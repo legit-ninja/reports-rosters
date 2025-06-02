@@ -26,6 +26,7 @@
 
 .filter-row select,
 .filter-row input[type="date"],
+.filter-row input[type="number"],
 .filter-row input[type="checkbox"] {
     margin-right: 15px;
     padding: 5px;
@@ -59,6 +60,7 @@
     .filter-row label,
     .filter-row select,
     .filter-row input[type="date"],
+    .filter-row input[type="number"],
     .filter-row input[type="checkbox"],
     .filter-row button {
         width: 100%;
@@ -87,4 +89,9 @@
 .button {
     padding: 5px 10px;
     line-height: normal;
+}
+
+/* Chart container styling */
+canvas {
+    max-width: 100%;
 }
