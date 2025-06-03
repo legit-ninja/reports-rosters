@@ -1,4 +1,52 @@
 document.addEventListener('DOMContentLoaded', function () {
+    // Current Attendance by Venue Chart (Bar Chart)
+    if (typeof currentVenueChartData !== 'undefined') {
+        const ctxCurrentVenue = document.getElementById('currentVenueChart').getContext('2d');
+        new Chart(ctxCurrentVenue, {
+            type: 'bar',
+            data: {
+                labels: currentVenueChartData.labels,
+                datasets: [{
+                    label: 'Current Attendees',
+                    data: currentVenueChartData.values,
+                    backgroundColor: 'rgba(153, 102, 255, 0.6)',
+                    borderColor: 'rgba(153, 102, 255, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Number of Attendees'
+                        },
+                        ticks: {
+                            stepSize: 1,
+                            callback: function(value) {
+                                return Number.isInteger(value) ? value : null;
+                            }
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Venue'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                }
+            }
+        });
+    }
+
     // Attendees by Region Chart (Bar Chart)
     if (typeof regionChartData !== 'undefined') {
         const ctxRegion = document.getElementById('regionChart').getContext('2d');
@@ -24,9 +72,9 @@ document.addEventListener('DOMContentLoaded', function () {
                             text: 'Number of Attendees'
                         },
                         ticks: {
-                            stepSize: 1, // Ensure integer steps
+                            stepSize: 1,
                             callback: function(value) {
-                                return Number.isInteger(value) ? value : null; // Only show integers
+                                return Number.isInteger(value) ? value : null;
                             }
                         }
                     },
@@ -72,9 +120,9 @@ document.addEventListener('DOMContentLoaded', function () {
                             text: 'Number of Attendees'
                         },
                         ticks: {
-                            stepSize: 1, // Ensure integer steps
+                            stepSize: 1,
                             callback: function(value) {
-                                return Number.isInteger(value) ? value : null; // Only show integers
+                                return Number.isInteger(value) ? value : null;
                             }
                         }
                     },
@@ -135,7 +183,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 if (label) {
                                     label += ': ';
                                 }
-                                label += Math.round(context.parsed); // Ensure whole numbers in tooltips
+                                label += Math.round(context.parsed);
                                 return label;
                             }
                         }
@@ -170,9 +218,9 @@ document.addEventListener('DOMContentLoaded', function () {
                             text: 'Number of Attendees'
                         },
                         ticks: {
-                            stepSize: 1, // Ensure integer steps
+                            stepSize: 1,
                             callback: function(value) {
-                                return Number.isInteger(value) ? value : null; // Only show integers
+                                return Number.isInteger(value) ? value : null;
                             }
                         }
                     },

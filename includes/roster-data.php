@@ -3,45 +3,39 @@
  * Roster data retrieval functionality for InterSoccer Reports and Rosters plugin.
  */
 
-// Fetch variations with assigned players
-function intersoccer_pe_get_variations_with_players($filters) {
+// Helper function to normalize attribute values for comparison
+function intersoccer_normalize_attribute($value) {
+    return trim(strtolower($value));
+}
+
+// Fetch variations for Camps with assigned players
+function intersoccer_pe_get_camp_variations($filters) {
     // Fetch all variable products
     $variable_products = wc_get_products([
         'type' => 'variable',
         'limit' => -1,
         'status' => 'publish',
     ]);
-    error_log('InterSoccer: Found ' . count($variable_products) . ' variable products');
+    error_log('InterSoccer: Found ' . count($variable_products) . ' variable products for Camps');
 
     $variation_data = [];
     $show_no_attendees = isset($filters['show_no_attendees']) && $filters['show_no_attendees'] === '1';
 
     // Log filter conditions
-    error_log('InterSoccer: Filter conditions - Region: ' . ($filters['region'] ?: 'None') . ', Venue: ' . ($filters['venue'] ?: 'None') . ', Age Group: ' . ($filters['age_group'] ?: 'None') . ', Booking Type: ' . ($filters['booking_type'] ?: 'None') . ', Season: ' . ($filters['season'] ?: 'None') . ', City: ' . ($filters['city'] ?: 'None') . ', Activity Type: ' . ($filters['activity_type'] ?: 'None') . ', Week: ' . ($filters['week'] ?: 'None') . ', Show No Attendees: ' . ($show_no_attendees ? 'Yes' : 'No'));
+    error_log('InterSoccer: Camp Filter conditions - Region: ' . ($filters['region'] ?: 'None') . ', Venue: ' . ($filters['venue'] ?: 'None') . ', Age Group: ' . ($filters['age_group'] ?: 'None') . ', Season: ' . ($filters['season'] ?: 'None') . ', City: ' . ($filters['city'] ?: 'None') . ', Activity Type: ' . ($filters['activity_type'] ?: 'None') . ', Week: ' . ($filters['week'] ?: 'None') . ', Show No Attendees: ' . ($show_no_attendees ? 'Yes' : 'No'));
 
     // Fetch all orders with relevant statuses
     $query_args = [
         'post_type' => 'shop_order',
-        'post_status' => ['wc-completed', 'wc-processing'],
+        'post_status' => ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'],
         'posts_per_page' => -1,
     ];
 
-    // Only apply date filter if a specific week is provided
-    if (!empty($filters['week'])) {
-        $query_args['date_query'] = [
-            [
-                'after' => $filters['week'],
-                'before' => date('Y-m-d', strtotime($filters['week'] . ' + 6 days')),
-                'inclusive' => true,
-            ],
-        ];
-    }
-
     $order_query = new WP_Query($query_args);
     $orders = $order_query->posts;
-    error_log('InterSoccer: Found ' . count($orders) . ' orders with statuses wc-completed, wc-processing');
+    error_log('InterSoccer: Found ' . count($orders) . ' orders with statuses wc-completed, wc-processing, wc-pending, wc-on-hold for Camps');
 
-    // Log each order's details, including user role
+    // Log each order's details
     foreach ($orders as $order_post) {
         $order = wc_get_order($order_post->ID);
         $user_id = $order ? $order->get_user_id() : 0;
@@ -54,7 +48,7 @@ function intersoccer_pe_get_variations_with_players($filters) {
     $variation_players = [];
     foreach ($orders as $order_post) {
         $order = wc_get_order($order_post->ID);
-        if (!$order || !in_array($order->get_status(), ['completed', 'processing'])) {
+        if (!$order || !in_array($order->get_status(), ['completed', 'processing', 'pending', 'on-hold'])) {
             error_log('InterSoccer: Order ID ' . $order_post->ID . ' skipped - Status: ' . ($order ? $order->get_status() : 'Invalid'));
             continue;
         }
@@ -66,28 +60,30 @@ function intersoccer_pe_get_variations_with_players($filters) {
                 continue;
             }
 
-            // Verify the variation exists
             $variation = wc_get_product($variation_id);
             if (!$variation) {
                 error_log('InterSoccer: Variation ID ' . $variation_id . ' from Order Item ID ' . $item->get_id() . ' does not exist');
                 continue;
             }
 
-            error_log('InterSoccer: Found Variation ID ' . $variation_id . ' in Order Item ID ' . $item->get_id());
+            $product_id = $variation->get_parent_id();
+            $booking_type = wc_get_product_terms($product_id, 'pa_booking-type', ['fields' => 'names'])[0] ?? 'Unknown';
+            if (!in_array($booking_type, ['Full Week', 'single-days'])) {
+                continue; // Skip non-Camp variations
+            }
 
-            // Check for Assigned Attendee metadata (current production key)
+            error_log('InterSoccer: Found Camp Variation ID ' . $variation_id . ' in Order Item ID ' . $item->get_id());
+
+            // Check for Assigned Attendee metadata
             $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Attendee', true);
             if (!$player_name) {
-                // Fallback to Assigned Player (legacy key)
                 $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Player', true);
                 if ($player_name) {
-                    // Normalize legacy metadata to current format
                     wc_update_order_item_meta($item->get_id(), 'Assigned Attendee', $player_name);
                     error_log('InterSoccer: Normalized legacy Assigned Player to Assigned Attendee for Order Item ID ' . $item->get_id());
                 }
             }
 
-            // Fallback to user metadata if necessary
             if (!$player_name) {
                 $player_index = wc_get_order_item_meta($item->get_id(), 'assigned_player', true);
                 $user_id = $order->get_user_id();
@@ -108,10 +104,10 @@ function intersoccer_pe_get_variations_with_players($filters) {
                 }
                 if (!in_array($player_name, $variation_players[$variation_id])) {
                     $variation_players[$variation_id][] = $player_name;
-                    error_log('InterSoccer: Attendee ' . $player_name . ' assigned to Variation ID ' . $variation_id);
+                    error_log('InterSoccer: Attendee ' . $player_name . ' assigned to Camp Variation ID ' . $variation_id);
                 }
             } else {
-                error_log('InterSoccer: No attendee assigned to Order Item ID ' . $item->get_id() . ' for Variation ID ' . $variation_id);
+                error_log('InterSoccer: No attendee assigned to Order Item ID ' . $item->get_id() . ' for Camp Variation ID ' . $variation_id);
             }
         }
     }
@@ -120,82 +116,399 @@ function intersoccer_pe_get_variations_with_players($filters) {
 
     // Log the number of variations with assigned players
     $variations_with_players_count = count($variation_players);
-    error_log('InterSoccer: Found ' . $variations_with_players_count . ' variations with assigned attendees');
+    error_log('InterSoccer: Found ' . $variations_with_players_count . ' Camp variations with assigned attendees');
 
     // Process variations and apply filters
+    $current_date = new DateTime('2025-06-02');
+    $end_date = (clone $current_date)->modify('+12 weeks'); // Include upcoming camps up to 12 weeks
+    $current_date_str = $current_date->format('Y-m-d');
+    $end_date_str = $end_date->format('Y-m-d');
+
     foreach ($variable_products as $product) {
         $product_id = $product->get_id();
         $variations = $product->get_children();
         foreach ($variations as $variation_id) {
             $variation = wc_get_product($variation_id);
             if (!$variation) {
-                error_log('InterSoccer: Variation ID ' . $variation_id . ' is invalid');
+                error_log('InterSoccer: Camp Variation ID ' . $variation_id . ' is invalid');
                 continue;
             }
 
             // Get product attributes
-            $variation_region = wc_get_product_terms($product_id, 'pa_canton-region', ['fields' => 'names'])[0] ?? 'Unknown';
-            $variation_venue = wc_get_product_terms($product_id, 'pa_intersoccer-venues', ['fields' => 'names'])[0] ?? 'Unknown';
-            $variation_age_group = wc_get_product_terms($product_id, 'pa_age-group', ['fields' => 'names'])[0] ?? 'Unknown';
+            $variation_region = wc_get_product_terms($product_id, 'pa_canton-region', ['fields' => 'names'])[0] ?? '';
+            $variation_venue = wc_get_product_terms($product_id, 'pa_intersoccer-venues', ['fields' => 'names'])[0] ?? '';
+            $variation_age_group = wc_get_product_terms($product_id, 'pa_age-group', ['fields' => 'names'])[0] ?? '';
             $variation_booking_type = wc_get_product_terms($product_id, 'pa_booking-type', ['fields' => 'names'])[0] ?? 'Unknown';
-            $variation_season = wc_get_product_terms($product_id, 'pa_season', ['fields' => 'names'])[0] ?? 'Unknown';
-            $variation_city = wc_get_product_terms($product_id, 'pa_city', ['fields' => 'names'])[0] ?? 'Unknown';
-            $variation_activity_type = wc_get_product_terms($product_id, 'pa_activity-type', ['fields' => 'names'])[0] ?? 'Unknown';
+            $variation_season = wc_get_product_terms($product_id, 'pa_season', ['fields' => 'names'])[0] ?? '';
+            $variation_city = wc_get_product_terms($product_id, 'pa_city', ['fields' => 'names'])[0] ?? '';
+            $variation_activity_type = wc_get_product_terms($product_id, 'pa_activity-type', ['fields' => 'names'])[0] ?? '';
+
+            // Skip non-Camp variations
+            if (!in_array($variation_booking_type, ['Full Week', 'single-days'])) {
+                continue;
+            }
+
+            // Normalize attribute values for comparison
+            $variation_region = intersoccer_normalize_attribute($variation_region);
+            $variation_venue = intersoccer_normalize_attribute($variation_venue);
+            $variation_age_group = intersoccer_normalize_attribute($variation_age_group);
+            $variation_season = intersoccer_normalize_attribute($variation_season);
+            $variation_city = intersoccer_normalize_attribute($variation_city);
+            $variation_activity_type = intersoccer_normalize_attribute($variation_activity_type);
+
+            $filter_region = intersoccer_normalize_attribute($filters['region']);
+            $filter_venue = intersoccer_normalize_attribute($filters['venue']);
+            $filter_age_group = intersoccer_normalize_attribute($filters['age_group']);
+            $filter_season = intersoccer_normalize_attribute($filters['season']);
+            $filter_city = intersoccer_normalize_attribute($filters['city']);
+            $filter_activity_type = intersoccer_normalize_attribute($filters['activity_type']);
 
             // Apply filters
-            if ($filters['region'] && $filters['region'] !== $variation_region) {
-                error_log('InterSoccer: Variation ID ' . $variation_id . ' filtered out - Region mismatch: ' . $variation_region . ' != ' . $filters['region']);
+            if ($filter_region && $variation_region !== $filter_region) {
+                error_log('InterSoccer: Camp Variation ID ' . $variation_id . ' filtered out - Region mismatch: ' . $variation_region . ' != ' . $filter_region);
                 continue;
             }
-            if ($filters['venue'] && $filters['venue'] !== $variation_venue) {
-                error_log('InterSoccer: Variation ID ' . $variation_id . ' filtered out - Venue mismatch: ' . $variation_venue . ' != ' . $filters['venue']);
+            if ($filter_venue && $variation_venue !== $filter_venue) {
+                error_log('InterSoccer: Camp Variation ID ' . $variation_id . ' filtered out - Venue mismatch: ' . $variation_venue . ' != ' . $filter_venue);
                 continue;
             }
-            if ($filters['age_group'] && $filters['age_group'] !== $variation_age_group) {
-                error_log('InterSoccer: Variation ID ' . $variation_id . ' filtered out - Age Group mismatch: ' . $variation_age_group . ' != ' . $filters['age_group']);
+            if ($filter_age_group && $variation_age_group !== $filter_age_group) {
+                error_log('InterSoccer: Camp Variation ID ' . $variation_id . ' filtered out - Age Group mismatch: ' . $variation_age_group . ' != ' . $filter_age_group);
                 continue;
             }
-            if ($filters['booking_type'] && $filters['booking_type'] !== $variation_booking_type) {
-                error_log('InterSoccer: Variation ID ' . $variation_id . ' filtered out - Booking Type mismatch: ' . $variation_booking_type . ' != ' . $filters['booking_type']);
+            if ($filter_season && $variation_season !== $filter_season) {
+                error_log('InterSoccer: Camp Variation ID ' . $variation_id . ' filtered out - Season mismatch: ' . $variation_season . ' != ' . $filter_season);
                 continue;
             }
-            if ($filters['season'] && $filters['season'] !== $variation_season) {
-                error_log('InterSoccer: Variation ID ' . $variation_id . ' filtered out - Season mismatch: ' . $variation_season . ' != ' . $filters['season']);
+            if ($filter_city && $variation_city !== $filter_city) {
+                error_log('InterSoccer: Camp Variation ID ' . $variation_id . ' filtered out - City mismatch: ' . $variation_city . ' != ' . $filter_city);
                 continue;
             }
-            if ($filters['city'] && $filters['city'] !== $variation_city) {
-                error_log('InterSoccer: Variation ID ' . $variation_id . ' filtered out - City mismatch: ' . $variation_city . ' != ' . $filters['city']);
+            if ($filter_activity_type && $variation_activity_type !== $filter_activity_type) {
+                error_log('InterSoccer: Camp Variation ID ' . $variation_id . ' filtered out - Activity Type mismatch: ' . $variation_activity_type . ' != ' . $filter_activity_type);
                 continue;
             }
-            if ($filters['activity_type'] && $filters['activity_type'] !== $variation_activity_type) {
-                error_log('InterSoccer: Variation ID ' . $variation_id . ' filtered out - Activity Type mismatch: ' . $variation_activity_type . ' != ' . $filters['activity_type']);
+
+            // Check if the event is upcoming
+            $start_date = wc_get_product_terms($product_id, 'pa_start-date', ['fields' => 'names'])[0] ?? null;
+            $end_date = wc_get_product_terms($product_id, 'pa_end-date', ['fields' => 'names'])[0] ?? null;
+            $is_upcoming = false;
+            if ($start_date && $end_date) {
+                $start = DateTime::createFromFormat('d/m/Y', $start_date);
+                $end = DateTime::createFromFormat('d/m/Y', $end_date);
+                if ($start && $end) {
+                    $start_str = $start->format('Y-m-d');
+                    $end_str = $end->format('Y-m-d');
+                    if ($start_str >= $current_date_str && $start_str <= $end_date_str) {
+                        $is_upcoming = true;
+                    }
+                }
+            } else {
+                // If dates are missing, include the event to avoid exclusion
+                $is_upcoming = true;
+                error_log('InterSoccer: Camp Variation ID ' . $variation_id . ' missing start_date or end_date, including by default');
+            }
+
+            if (!$is_upcoming) {
+                error_log('InterSoccer: Camp Variation ID ' . $variation_id . ' filtered out - Not upcoming');
                 continue;
             }
 
             $assigned_players = isset($variation_players[$variation_id]) ? $variation_players[$variation_id] : [];
 
-            // Default: Show events with attendees; if "Show events with no attendees" is checked, include those too
+            // Apply Show No Attendees filter
             if (!$show_no_attendees && empty($assigned_players)) {
-                error_log('InterSoccer: Variation ID ' . $variation_id . ' skipped - No attendees and show_no_attendees is not set');
+                error_log('InterSoccer: Camp Variation ID ' . $variation_id . ' skipped - No attendees and show_no_attendees is not set');
                 continue;
+            }
+
+            // Get week information for clearer event naming
+            $week = wc_get_product_terms($product_id, 'pa_week', ['fields' => 'names'])[0] ?? '';
+            if (!$week && $start_date) {
+                $date = DateTime::createFromFormat('d/m/Y', $start_date);
+                if ($date) {
+                    $week = 'Week ' . $date->format('W');
+                }
+            }
+
+            // Construct a clearer event name
+            $base_name = $product->get_name();
+            $variation_name = $variation->get_name();
+            if (stripos($variation_name, $base_name) !== false) {
+                $variation_name = trim(str_replace($base_name, '', $variation_name));
+            }
+            $event_name = $base_name . ($variation_name ? ' - ' . $variation_name : '');
+            if ($week) {
+                $event_name .= ' (' . $week . ')';
             }
 
             $variation_data[] = [
                 'variation_id' => $variation_id,
-                'product_name' => $product->get_name() . ' - ' . $variation->get_name(),
-                'region' => $variation_region,
-                'venue' => $variation_venue,
-                'age_group' => $variation_age_group,
+                'product_name' => $event_name,
+                'region' => $variation_region ?: 'Unknown',
+                'venue' => $variation_venue ?: 'Unknown',
+                'age_group' => $variation_age_group ?: 'Unknown',
                 'booking_type' => $variation_booking_type,
-                'season' => $variation_season,
-                'city' => $variation_city,
-                'activity_type' => $variation_activity_type,
+                'season' => $variation_season ?: 'Unknown',
+                'city' => $variation_city ?: 'Unknown',
+                'activity_type' => $variation_activity_type ?: 'Unknown',
                 'total_players' => count($assigned_players),
             ];
         }
     }
 
-    error_log('InterSoccer: Retrieved ' . count($variation_data) . ' variations with players');
+    error_log('InterSoccer: Retrieved ' . count($variation_data) . ' Camp variations with players');
+    return $variation_data;
+}
+
+// Fetch variations for Courses with assigned players
+function intersoccer_pe_get_course_variations($filters) {
+    // Fetch all variable products
+    $variable_products = wc_get_products([
+        'type' => 'variable',
+        'limit' => -1,
+        'status' => 'publish',
+    ]);
+    error_log('InterSoccer: Found ' . count($variable_products) . ' variable products for Courses');
+
+    $variation_data = [];
+    $show_no_attendees = isset($filters['show_no_attendees']) && $filters['show_no_attendees'] === '1';
+
+    // Log filter conditions
+    error_log('InterSoccer: Course Filter conditions - Region: ' . ($filters['region'] ?: 'None') . ', Venue: ' . ($filters['venue'] ?: 'None') . ', Age Group: ' . ($filters['age_group'] ?: 'None') . ', Season: ' . ($filters['season'] ?: 'None') . ', City: ' . ($filters['city'] ?: 'None') . ', Activity Type: ' . ($filters['activity_type'] ?: 'None') . ', Week: ' . ($filters['week'] ?: 'None') . ', Show No Attendees: ' . ($show_no_attendees ? 'Yes' : 'No'));
+
+    // Fetch all orders with relevant statuses
+    $query_args = [
+        'post_type' => 'shop_order',
+        'post_status' => ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'],
+        'posts_per_page' => -1,
+    ];
+
+    $order_query = new WP_Query($query_args);
+    $orders = $order_query->posts;
+    error_log('InterSoccer: Found ' . count($orders) . ' orders with statuses wc-completed, wc-processing, wc-pending, wc-on-hold for Courses');
+
+    // Log each order's details
+    foreach ($orders as $order_post) {
+        $order = wc_get_order($order_post->ID);
+        $user_id = $order ? $order->get_user_id() : 0;
+        $user = $user_id ? get_userdata($user_id) : null;
+        $user_roles = $user ? $user->roles : ['guest'];
+        error_log('InterSoccer: Order ID ' . $order_post->ID . ' - Status: ' . ($order ? $order->get_status() : 'Invalid') . ', User ID: ' . $user_id . ', User Roles: ' . implode(', ', $user_roles));
+    }
+
+    // Build a map of variation_id to assigned players
+    $variation_players = [];
+    foreach ($orders as $order_post) {
+        $order = wc_get_order($order_post->ID);
+        if (!$order || !in_array($order->get_status(), ['completed', 'processing', 'pending', 'on-hold'])) {
+            error_log('InterSoccer: Order ID ' . $order_post->ID . ' skipped - Status: ' . ($order ? $order->get_status() : 'Invalid'));
+            continue;
+        }
+
+        foreach ($order->get_items() as $item) {
+            $variation_id = $item->get_variation_id();
+            if (!$variation_id) {
+                error_log('InterSoccer: Order Item ID ' . $item->get_id() . ' has no variation ID in Order ID ' . $order->get_id());
+                continue;
+            }
+
+            $variation = wc_get_product($variation_id);
+            if (!$variation) {
+                error_log('InterSoccer: Variation ID ' . $variation_id . ' from Order Item ID ' . $item->get_id() . ' does not exist');
+                continue;
+            }
+
+            $product_id = $variation->get_parent_id();
+            $booking_type = wc_get_product_terms($product_id, 'pa_booking-type', ['fields' => 'names'])[0] ?? 'Unknown';
+            if (in_array($booking_type, ['Full Week', 'single-days'])) {
+                continue; // Skip Camp variations
+            }
+
+            error_log('InterSoccer: Found Course Variation ID ' . $variation_id . ' in Order Item ID ' . $item->get_id());
+
+            // Check for Assigned Attendee metadata
+            $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Attendee', true);
+            if (!$player_name) {
+                $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Player', true);
+                if ($player_name) {
+                    wc_update_order_item_meta($item->get_id(), 'Assigned Attendee', $player_name);
+                    error_log('InterSoccer: Normalized legacy Assigned Player to Assigned Attendee for Order Item ID ' . $item->get_id());
+                }
+            }
+
+            if (!$player_name) {
+                $player_index = wc_get_order_item_meta($item->get_id(), 'assigned_player', true);
+                $user_id = $order->get_user_id();
+                $players = get_user_meta($user_id, 'intersoccer_players', true) ?: [];
+                if ($player_index && isset($players[$player_index])) {
+                    $player = $players[$player_index];
+                    $player_name = $player['first_name'] . ' ' . $player['last_name'];
+                    wc_update_order_item_meta($item->get_id(), 'Assigned Attendee', $player_name);
+                    error_log('InterSoccer: Restored Assigned Attendee metadata for Order Item ID ' . $item->get_id() . ' as ' . $player_name);
+                }
+            }
+
+            error_log('InterSoccer: Order Item ID ' . $item->get_id() . ' - Assigned Attendee: ' . ($player_name ?: 'None'));
+
+            if ($player_name) {
+                if (!isset($variation_players[$variation_id])) {
+                    $variation_players[$variation_id] = [];
+                }
+                if (!in_array($player_name, $variation_players[$variation_id])) {
+                    $variation_players[$variation_id][] = $player_name;
+                    error_log('InterSoccer: Attendee ' . $player_name . ' assigned to Course Variation ID ' . $variation_id);
+                }
+            } else {
+                error_log('InterSoccer: No attendee assigned to Order Item ID ' . $item->get_id() . ' for Course Variation ID ' . $variation_id);
+            }
+        }
+    }
+
+    wp_reset_postdata();
+
+    // Log the number of variations with assigned players
+    $variations_with_players_count = count($variation_players);
+    error_log('InterSoccer: Found ' . $variations_with_players_count . ' Course variations with assigned attendees');
+
+    // Process variations and apply filters
+    $current_date = new DateTime('2025-06-02');
+    $current_date_str = $current_date->format('Y-m-d');
+
+    foreach ($variable_products as $product) {
+        $product_id = $product->get_id();
+        $variations = $product->get_children();
+        foreach ($variations as $variation_id) {
+            $variation = wc_get_product($variation_id);
+            if (!$variation) {
+                error_log('InterSoccer: Course Variation ID ' . $variation_id . ' is invalid');
+                continue;
+            }
+
+            // Get product attributes
+            $variation_region = wc_get_product_terms($product_id, 'pa_canton-region', ['fields' => 'names'])[0] ?? '';
+            $variation_venue = wc_get_product_terms($product_id, 'pa_intersoccer-venues', ['fields' => 'names'])[0] ?? '';
+            $variation_age_group = wc_get_product_terms($product_id, 'pa_age-group', ['fields' => 'names'])[0] ?? '';
+            $variation_booking_type = wc_get_product_terms($product_id, 'pa_booking-type', ['fields' => 'names'])[0] ?? 'Unknown';
+            $variation_season = wc_get_product_terms($product_id, 'pa_season', ['fields' => 'names'])[0] ?? '';
+            $variation_city = wc_get_product_terms($product_id, 'pa_city', ['fields' => 'names'])[0] ?? '';
+            $variation_activity_type = wc_get_product_terms($product_id, 'pa_activity-type', ['fields' => 'names'])[0] ?? '';
+
+            // Skip Camp variations
+            if (in_array($variation_booking_type, ['Full Week', 'single-days'])) {
+                continue;
+            }
+
+            // Normalize attribute values for comparison
+            $variation_region = intersoccer_normalize_attribute($variation_region);
+            $variation_venue = intersoccer_normalize_attribute($variation_venue);
+            $variation_age_group = intersoccer_normalize_attribute($variation_age_group);
+            $variation_season = intersoccer_normalize_attribute($variation_season);
+            $variation_city = intersoccer_normalize_attribute($variation_city);
+            $variation_activity_type = intersoccer_normalize_attribute($variation_activity_type);
+
+            $filter_region = intersoccer_normalize_attribute($filters['region']);
+            $filter_venue = intersoccer_normalize_attribute($filters['venue']);
+            $filter_age_group = intersoccer_normalize_attribute($filters['age_group']);
+            $filter_season = intersoccer_normalize_attribute($filters['season']);
+            $filter_city = intersoccer_normalize_attribute($filters['city']);
+            $filter_activity_type = intersoccer_normalize_attribute($filters['activity_type']);
+
+            // Apply filters
+            if ($filter_region && $variation_region !== $filter_region) {
+                error_log('InterSoccer: Course Variation ID ' . $variation_id . ' filtered out - Region mismatch: ' . $variation_region . ' != ' . $filter_region);
+                continue;
+            }
+            if ($filter_venue && $variation_venue !== $filter_venue) {
+                error_log('InterSoccer: Course Variation ID ' . $variation_id . ' filtered out - Venue mismatch: ' . $variation_venue . ' != ' . $filter_venue);
+                continue;
+            }
+            if ($filter_age_group && $variation_age_group !== $filter_age_group) {
+                error_log('InterSoccer: Course Variation ID ' . $variation_id . ' filtered out - Age Group mismatch: ' . $variation_age_group . ' != ' . $filter_age_group);
+                continue;
+            }
+            if ($filter_season && $variation_season !== $filter_season) {
+                error_log('InterSoccer: Course Variation ID ' . $variation_id . ' filtered out - Season mismatch: ' . $variation_season . ' != ' . $filter_season);
+                continue;
+            }
+            if ($filter_city && $variation_city !== $filter_city) {
+                error_log('InterSoccer: Course Variation ID ' . $variation_id . ' filtered out - City mismatch: ' . $variation_city . ' != ' . $filter_city);
+                continue;
+            }
+            if ($filter_activity_type && $variation_activity_type !== $filter_activity_type) {
+                error_log('InterSoccer: Course Variation ID ' . $variation_id . ' filtered out - Activity Type mismatch: ' . $variation_activity_type . ' != ' . $filter_activity_type);
+                continue;
+            }
+
+            // Check if the event is ongoing
+            $start_date = wc_get_product_terms($product_id, 'pa_start-date', ['fields' => 'names'])[0] ?? null;
+            $end_date = wc_get_product_terms($product_id, 'pa_end-date', ['fields' => 'names'])[0] ?? null;
+            $is_ongoing = false;
+            if ($start_date && $end_date) {
+                $start = DateTime::createFromFormat('d/m/Y', $start_date);
+                $end = DateTime::createFromFormat('d/m/Y', $end_date);
+                if ($start && $end) {
+                    $start_str = $start->format('Y-m-d');
+                    $end_str = $end->format('Y-m-d');
+                    if ($current_date_str >= $start_str && $current_date_str <= $end_str) {
+                        $is_ongoing = true;
+                    }
+                }
+            } else {
+                // If dates are missing, include the event to avoid exclusion
+                $is_ongoing = true;
+                error_log('InterSoccer: Course Variation ID ' . $variation_id . ' missing start_date or end_date, including by default');
+            }
+
+            if (!$is_ongoing) {
+                error_log('InterSoccer: Course Variation ID ' . $variation_id . ' filtered out - Not ongoing');
+                continue;
+            }
+
+            $assigned_players = isset($variation_players[$variation_id]) ? $variation_players[$variation_id] : [];
+
+            // Apply Show No Attendees filter
+            if (!$show_no_attendees && empty($assigned_players)) {
+                error_log('InterSoccer: Course Variation ID ' . $variation_id . ' skipped - No attendees and show_no_attendees is not set');
+                continue;
+            }
+
+            // Get week information for clearer event naming
+            $week = wc_get_product_terms($product_id, 'pa_week', ['fields' => 'names'])[0] ?? '';
+            if (!$week && $start_date) {
+                $date = DateTime::createFromFormat('d/m/Y', $start_date);
+                if ($date) {
+                    $week = 'Week ' . $date->format('W');
+                }
+            }
+
+            // Construct a clearer event name
+            $base_name = $product->get_name();
+            $variation_name = $variation->get_name();
+            if (stripos($variation_name, $base_name) !== false) {
+                $variation_name = trim(str_replace($base_name, '', $variation_name));
+            }
+            $event_name = $base_name . ($variation_name ? ' - ' . $variation_name : '');
+            if ($week) {
+                $event_name .= ' (' . $week . ')';
+            }
+
+            $variation_data[] = [
+                'variation_id' => $variation_id,
+                'product_name' => $event_name,
+                'region' => $variation_region ?: 'Unknown',
+                'venue' => $variation_venue ?: 'Unknown',
+                'age_group' => $variation_age_group ?: 'Unknown',
+                'booking_type' => $variation_booking_type,
+                'season' => $variation_season ?: 'Unknown',
+                'city' => $variation_city ?: 'Unknown',
+                'activity_type' => $variation_activity_type ?: 'Unknown',
+                'total_players' => count($assigned_players),
+            ];
+        }
+    }
+
+    error_log('InterSoccer: Retrieved ' . count($variation_data) . ' Course variations with players');
     return $variation_data;
 }
 
@@ -229,7 +542,7 @@ function intersoccer_pe_get_event_roster_by_variation($variation_id) {
     // Build order query using WP_Query
     $query_args = [
         'post_type' => 'shop_order',
-        'post_status' => ['wc-completed', 'wc-processing'],
+        'post_status' => ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'],
         'posts_per_page' => -1,
     ];
 
@@ -239,7 +552,7 @@ function intersoccer_pe_get_event_roster_by_variation($variation_id) {
 
     foreach ($orders as $order_post) {
         $order = wc_get_order($order_post->ID);
-        if (!$order || !in_array($order->get_status(), ['completed', 'processing'])) {
+        if (!$order || !in_array($order->get_status(), ['completed', 'processing', 'pending', 'on-hold'])) {
             error_log('InterSoccer: Order ID ' . $order_post->ID . ' skipped in roster - Status: ' . ($order ? $order->get_status() : 'Invalid'));
             continue;
         }
@@ -249,10 +562,9 @@ function intersoccer_pe_get_event_roster_by_variation($variation_id) {
                 continue;
             }
 
-            // Check for Assigned Attendee metadata (current production key)
+            // Check for Assigned Attendee metadata
             $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Attendee', true);
             if (!$player_name) {
-                // Fallback to Assigned Player (legacy key)
                 $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Player', true);
                 if ($player_name) {
                     wc_update_order_item_meta($item->get_id(), 'Assigned Attendee', $player_name);
@@ -325,7 +637,6 @@ function intersoccer_pe_get_event_roster_by_variation($variation_id) {
 
             if (!$player_data) {
                 error_log('InterSoccer: Failed to match attendee name ' . $player_name . ' in intersoccer_players for Order Item ID ' . $item->get_id());
-                // Log the intersoccer_players array for debugging
                 error_log('InterSoccer: intersoccer_players for User ID ' . $user_id . ': ' . print_r($players, true));
                 continue;
             }
@@ -339,13 +650,12 @@ function intersoccer_pe_get_event_roster_by_variation($variation_id) {
             if (isset($player_data['dob']) && !empty($player_data['dob'])) {
                 $dob = DateTime::createFromFormat('Y-m-d', $player_data['dob']);
                 if ($dob) {
-                    $current_date = new DateTime('2025-06-02'); // Current date as of June 2, 2025
+                    $current_date = new DateTime('2025-06-02');
                     $interval = $dob->diff($current_date);
                     $age = $interval->y;
-                    // Validate age range (2-15 years as per exceptions)
                     if ($age < 2 || $age > 15) {
                         error_log('InterSoccer: Attendee ' . $player_name . ' age ' . $age . ' is outside allowed range (2-15)');
-                        continue; // Skip players outside the allowed age range
+                        continue;
                     }
                 } else {
                     error_log('InterSoccer: Invalid DOB format for attendee ' . $player_name . ': ' . $player_data['dob']);
@@ -367,14 +677,12 @@ function intersoccer_pe_get_event_roster_by_variation($variation_id) {
             $days_to_display = [];
 
             if ($is_camp) {
-                // For Camps: Use Monday-Friday, adjusted by Selected Days
                 $days_to_display = $default_days;
                 if ($booking_type === 'single-days' && !empty($selected_days)) {
                     $selected_days_array = explode(',', esc_html($selected_days));
                     $days_to_display = array_intersect($default_days, $selected_days_array);
                 }
             } else {
-                // For Courses: Use the recurring days (e.g., every Monday, Wednesday)
                 $days_to_display = !empty($selected_days) ? explode(',', esc_html($selected_days)) : $default_days;
             }
 
@@ -402,10 +710,9 @@ function intersoccer_pe_get_event_roster_by_variation($variation_id) {
             // Retrieve Region and Season from product attributes
             $region = wc_get_product_terms($product_id, 'pa_canton-region', ['fields' => 'names'])[0] ?? 'Unknown';
             $venue = wc_get_product_terms($product_id, 'pa_intersoccer-venues', ['fields' => 'names'])[0] ?? 'Unknown';
-            $season = wc_get_order_item_meta($item->get_id(), 'pa_season', true);
-            if (!$season) {
-                $season = wc_get_product_terms($product_id, 'pa_season', ['fields' => 'names'])[0] ?? 'Unknown';
-            }
+            $season_terms = wc_get_product_terms($product_id, 'pa_season', ['fields' => 'names']);
+            error_log('InterSoccer: Product ID ' . $product_id . ' Season Terms in Roster: ' . print_r($season_terms, true));
+            $season = !empty($season_terms) ? $season_terms[0] : 'Unknown';
 
             // Get parent billing location details
             $parent_country = $order->get_billing_country() ?: 'N/A';
