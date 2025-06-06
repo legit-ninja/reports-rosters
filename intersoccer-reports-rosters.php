@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.0.1
+ * Version: 1.0.2
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  */
@@ -57,13 +57,11 @@ register_activation_hook(__FILE__, function () {
         );
     }
 
-    // Create custom tables
     global $wpdb;
     $charset_collate = $wpdb->get_charset_collate();
 
-    // Create wp_intersoccer_attendance table
     $attendance_table = $wpdb->prefix . 'intersoccer_attendance';
-    $attendance_sql = "CREATE TABLE $attendance_table (
+    $attendance_sql = "CREATE TABLE IF NOT EXISTS $attendance_table (
         id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
         event_id BIGINT(20) NOT NULL,
         player_name VARCHAR(255) NOT NULL,
@@ -78,9 +76,8 @@ register_activation_hook(__FILE__, function () {
     require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
     dbDelta($attendance_sql);
 
-    // Create wp_intersoccer_coach_notes table
     $notes_table = $wpdb->prefix . 'intersoccer_coach_notes';
-    $notes_sql = "CREATE TABLE $notes_table (
+    $notes_sql = "CREATE TABLE IF NOT EXISTS $notes_table (
         id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
         event_id BIGINT(20) NOT NULL,
         player_id VARCHAR(255) DEFAULT NULL,
@@ -95,9 +92,8 @@ register_activation_hook(__FILE__, function () {
     ) $charset_collate;";
     dbDelta($notes_sql);
 
-    // Create wp_intersoccer_audit_log table
-    $audit_table = $wpdb->prefix . 'intersoccer_audit_log';
-    $audit_sql = "CREATE TABLE $audit_table (
+    $audit_table = $wpdb->prefix . 'intersoccer_audit';
+    $audit_sql = "CREATE TABLE IF NOT EXISTS $audit_table (
         id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
         user_id BIGINT(20) NOT NULL,
         action VARCHAR(255) NOT NULL,
@@ -113,7 +109,7 @@ register_activation_hook(__FILE__, function () {
     flush_rewrite_rules();
 });
 
-// Include modular files
+// Include modular files safely
 $included_files = [];
 $files_to_include = [
     'utils.php',
@@ -128,15 +124,33 @@ $files_to_include = [
 foreach ($files_to_include as $file) {
     $file_path = plugin_dir_path(__FILE__) . 'includes/' . $file;
     if (!isset($included_files[$file]) && file_exists($file_path)) {
-        require_once $file_path;
-        $included_files[$file] = true;
-        error_log('InterSoccer: Included includes/' . $file);
+        try {
+            require_once $file_path;
+            $included_files[$file] = true;
+            error_log('InterSoccer: Included includes/' . $file);
+        } catch (Exception $e) {
+            error_log('InterSoccer: Error including includes/' . $file . ': ' . $e->getMessage());
+            add_action('admin_notices', function() use ($file) {
+                ?>
+                <div class="notice notice-error is-dismissible">
+                    <p><?php printf(__('Error loading %s in InterSoccer Reports and Rosters plugin. Please check the file for issues.', 'intersoccer-reports-rosters'), esc_html($file)); ?></p>
+                </div>
+                <?php
+            });
+        }
     } else {
         error_log('InterSoccer: Failed to include includes/' . $file . ' - File not found');
+        add_action('admin_notices', function() use ($file) {
+            ?>
+            <div class="notice notice-error is-dismissible">
+                <p><?php printf(__('Missing %s in InterSoccer Reports and Rosters plugin. Please ensure all required files are present.', 'intersoccer-reports-rosters'), esc_html($file)); ?></p>
+            </div>
+            <?php
+        });
     }
 }
 
-// Enqueue CSS and JS for Reports and Rosters pages
+// Enqueue CSS and JS
 add_action('admin_enqueue_scripts', function ($hook) {
     $screen = get_current_screen();
     if ($screen && in_array($screen->id, ['toplevel_page_intersoccer-reports-rosters', 'intersoccer-reports-rosters_page_intersoccer-reports', 'intersoccer-reports-rosters_page_intersoccer-rosters', 'intersoccer-reports-rosters_page_intersoccer-roster-details', 'intersoccer-reports-rosters_page_intersoccer-advanced'])) {
@@ -144,11 +158,10 @@ add_action('admin_enqueue_scripts', function ($hook) {
             'intersoccer-reports-rosters-css',
             plugin_dir_url(__FILE__) . 'css/reports-rosters.css',
             [],
-            '1.0.1'
+            '1.0.2'
         );
         error_log('InterSoccer: Enqueued reports-rosters.css on page ' . $screen->id);
 
-        // Enqueue Chart.js and custom chart script on Overview page
         if ($screen->id === 'toplevel_page_intersoccer-reports-rosters') {
             wp_enqueue_script(
                 'chart-js',
@@ -161,12 +174,11 @@ add_action('admin_enqueue_scripts', function ($hook) {
                 'intersoccer-overview-charts',
                 plugin_dir_url(__FILE__) . 'js/overview-charts.js',
                 ['chart-js'],
-                '1.0.1',
+                '1.0.2',
                 true
             );
         }
 
-        // Enqueue jsPDF for roster exports on Rosters and Roster Details pages
         if (in_array($screen->id, ['intersoccer-reports-rosters_page_intersoccer-rosters', 'intersoccer-reports-rosters_page_intersoccer-roster-details'])) {
             wp_enqueue_script(
                 'jspdf',
@@ -177,14 +189,13 @@ add_action('admin_enqueue_scripts', function ($hook) {
             );
         }
 
-        // Enqueue jQuery and AJAX scripts for Advanced page
         if ($screen->id === 'intersoccer-reports-rosters_page_intersoccer-advanced') {
             wp_enqueue_script('jquery');
             wp_enqueue_script(
                 'intersoccer-advanced-ajax',
                 plugin_dir_url(__FILE__) . 'js/advanced-ajax.js',
                 ['jquery'],
-                '1.0.1',
+                '1.0.2',
                 true
             );
             wp_localize_script(
@@ -204,7 +215,7 @@ add_action('admin_menu', function () {
     add_menu_page(
         __('InterSoccer Reports and Rosters', 'intersoccer-reports-rosters'),
         __('Reports and Rosters', 'intersoccer-reports-rosters'),
-        'read', // Allow access for all roles, checked in page callbacks
+        'read',
         'intersoccer-reports-rosters',
         'intersoccer_render_plugin_overview_page',
         'dashicons-chart-bar',
@@ -261,7 +272,7 @@ add_action('admin_menu', function () {
 function intersoccer_log_audit($action, $details) {
     global $wpdb;
     $user_id = get_current_user_id();
-    $table = $wpdb->prefix . 'intersoccer_audit_log';
+    $table = $wpdb->prefix . 'intersoccer_audit';
     $wpdb->insert(
         $table,
         [
@@ -275,7 +286,7 @@ function intersoccer_log_audit($action, $details) {
     error_log("InterSoccer: Audit logged - Action: $action, Details: $details, User ID: $user_id");
 }
 
-// Check if there are orders needing migration
+// Check if orders need migration
 function intersoccer_orders_need_migration() {
     $args = [
         'post_type' => 'shop_order',
@@ -436,7 +447,7 @@ function intersoccer_get_chart_data() {
     $current_date_str = $current_date->format('Y-m-d');
 
     foreach ($orders as $order) {
-        $order_date = new DateTime($order->get_date_created()->date('Y-m-d H:i:s'));
+        $order_date = new DateTime($order->get_date_created()->format('Y-m-d H:i:s'));
         $user_id = $order->get_user_id();
         $players = get_user_meta($user_id, 'intersoccer_players', true) ?: [];
         error_log('InterSoccer: Order ID ' . $order->get_id() . ' - User ID: ' . $user_id . ', Players: ' . print_r($players, true));
@@ -447,6 +458,7 @@ function intersoccer_get_chart_data() {
                 $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Player', true);
                 if ($player_name) {
                     wc_update_order_item_meta($item->get_id(), 'Assigned Attendee', $player_name);
+                    error_log('InterSoccer: Order Item ID ' . $item->get_id() . ' - Normalized legacy Assigned Player to Assigned Attendee');
                 }
             }
             if (!$player_name) {
