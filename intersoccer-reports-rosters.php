@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  */
@@ -95,6 +95,20 @@ register_activation_hook(__FILE__, function () {
     ) $charset_collate;";
     dbDelta($notes_sql);
 
+    // Create wp_intersoccer_audit_log table
+    $audit_table = $wpdb->prefix . 'intersoccer_audit_log';
+    $audit_sql = "CREATE TABLE $audit_table (
+        id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+        user_id BIGINT(20) NOT NULL,
+        action VARCHAR(255) NOT NULL,
+        details TEXT NOT NULL,
+        timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        INDEX idx_user_id (user_id),
+        INDEX idx_timestamp (timestamp)
+    ) $charset_collate;";
+    dbDelta($audit_sql);
+
     error_log('InterSoccer: Reports and Rosters plugin activated');
     flush_rewrite_rules();
 });
@@ -124,14 +138,13 @@ foreach ($files_to_include as $file) {
 
 // Enqueue CSS and JS for Reports and Rosters pages
 add_action('admin_enqueue_scripts', function ($hook) {
-    // Only enqueue on Reports and Rosters, Reports, Rosters, Roster Details, and Advanced pages
     $screen = get_current_screen();
     if ($screen && in_array($screen->id, ['toplevel_page_intersoccer-reports-rosters', 'intersoccer-reports-rosters_page_intersoccer-reports', 'intersoccer-reports-rosters_page_intersoccer-rosters', 'intersoccer-reports-rosters_page_intersoccer-roster-details', 'intersoccer-reports-rosters_page_intersoccer-advanced'])) {
         wp_enqueue_style(
             'intersoccer-reports-rosters-css',
             plugin_dir_url(__FILE__) . 'css/reports-rosters.css',
             [],
-            '1.0.0'
+            '1.0.1'
         );
         error_log('InterSoccer: Enqueued reports-rosters.css on page ' . $screen->id);
 
@@ -148,7 +161,18 @@ add_action('admin_enqueue_scripts', function ($hook) {
                 'intersoccer-overview-charts',
                 plugin_dir_url(__FILE__) . 'js/overview-charts.js',
                 ['chart-js'],
-                '1.0.0',
+                '1.0.1',
+                true
+            );
+        }
+
+        // Enqueue jsPDF for roster exports on Rosters and Roster Details pages
+        if (in_array($screen->id, ['intersoccer-reports-rosters_page_intersoccer-rosters', 'intersoccer-reports-rosters_page_intersoccer-roster-details'])) {
+            wp_enqueue_script(
+                'jspdf',
+                'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+                [],
+                '2.5.1',
                 true
             );
         }
@@ -160,7 +184,7 @@ add_action('admin_enqueue_scripts', function ($hook) {
                 'intersoccer-advanced-ajax',
                 plugin_dir_url(__FILE__) . 'js/advanced-ajax.js',
                 ['jquery'],
-                '1.0.0',
+                '1.0.1',
                 true
             );
             wp_localize_script(
@@ -177,67 +201,79 @@ add_action('admin_enqueue_scripts', function ($hook) {
 
 // Add admin menus
 add_action('admin_menu', function () {
-    // Reports and Rosters Top-Level Menu
     add_menu_page(
         __('InterSoccer Reports and Rosters', 'intersoccer-reports-rosters'),
         __('Reports and Rosters', 'intersoccer-reports-rosters'),
-        'manage_options',
+        'read', // Allow access for all roles, checked in page callbacks
         'intersoccer-reports-rosters',
-        'intersoccer_render_plugin_overview_page', // Default landing page
+        'intersoccer_render_plugin_overview_page',
         'dashicons-chart-bar',
         30
     );
 
-    // Overview Submenu (renamed from "Reports and Rosters")
     add_submenu_page(
         'intersoccer-reports-rosters',
         __('InterSoccer Overview', 'intersoccer-reports-rosters'),
         __('Overview', 'intersoccer-reports-rosters'),
-        'manage_options',
-        'intersoccer-reports-rosters', // Same slug as top-level to make it the default
+        'read',
+        'intersoccer-reports-rosters',
         'intersoccer_render_plugin_overview_page'
     );
 
-    // Reports Submenu
     add_submenu_page(
         'intersoccer-reports-rosters',
         __('InterSoccer Reports', 'intersoccer-reports-rosters'),
         __('Reports', 'intersoccer-reports-rosters'),
-        'manage_options',
+        'read',
         'intersoccer-reports',
         'intersoccer_render_reports_page'
     );
 
-    // Rosters Submenu
     add_submenu_page(
         'intersoccer-reports-rosters',
         __('InterSoccer Rosters', 'intersoccer-reports-rosters'),
         __('Rosters', 'intersoccer-reports-rosters'),
-        'manage_options',
+        'read',
         'intersoccer-rosters',
         'intersoccer_render_rosters_page'
     );
 
-    // Add submenu page for roster details (hidden from menu)
     add_submenu_page(
         'intersoccer-reports-rosters',
         __('Roster Details', 'intersoccer-reports-rosters'),
-        null, // Hidden from menu
-        'manage_options',
+        null,
+        'read',
         'intersoccer-roster-details',
         'intersoccer_render_roster_details_page'
     );
 
-    // Advanced Submenu
     add_submenu_page(
         'intersoccer-reports-rosters',
         __('InterSoccer Advanced', 'intersoccer-reports-rosters'),
         __('Advanced', 'intersoccer-reports-rosters'),
-        'manage_options',
+        'read',
         'intersoccer-advanced',
         'intersoccer_render_advanced_page'
     );
 });
+
+// Log actions to audit table
+function intersoccer_log_audit($action, $details) {
+    global $wpdb;
+    $user_id = get_current_user_id();
+    $table = $wpdb->prefix . 'intersoccer_audit_log';
+    $wpdb->insert(
+        $table,
+        [
+            'user_id' => $user_id,
+            'action' => sanitize_text_field($action),
+            'details' => wp_kses_post($details),
+            'timestamp' => current_time('mysql'),
+        ],
+        ['%d', '%s', '%s', '%s']
+    );
+    error_log("InterSoccer: Audit logged - Action: $action, Details: $details, User ID: $user_id");
+}
 
 // Check if there are orders needing migration
 function intersoccer_orders_need_migration() {
@@ -259,10 +295,8 @@ function intersoccer_orders_need_migration() {
         $players = get_user_meta($user_id, 'intersoccer_players', true) ?: [];
 
         foreach ($order->get_items() as $item) {
-            // Check for Assigned Attendee metadata (current production key)
             $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Attendee', true);
             if (!$player_name) {
-                // Fallback to Assigned Player (legacy key)
                 $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Player', true);
                 if ($player_name) {
                     wc_update_order_item_meta($item->get_id(), 'Assigned Attendee', $player_name);
@@ -270,7 +304,6 @@ function intersoccer_orders_need_migration() {
                 }
             }
 
-            // Fallback to user metadata if necessary
             if (!$player_name) {
                 $player_index = wc_get_order_item_meta($item->get_id(), 'assigned_player', true);
                 if ($player_index && isset($players[$player_index])) {
@@ -281,24 +314,24 @@ function intersoccer_orders_need_migration() {
                 }
             }
 
-            // If no player name, skip this item
             if (!$player_name) {
                 error_log('InterSoccer: Migration Check - No Assigned Attendee for Order Item ID ' . $item->get_id());
                 continue;
             }
 
-            // Check if age or gender metadata is missing
             $age = wc_get_order_item_meta($item->get_id(), 'Player Age', true);
             $gender = wc_get_order_item_meta($item->get_id(), 'Player Gender', true);
+            $medical = wc_get_order_item_meta($item->get_id(), 'Medical Conditions', true);
+            $late_pickup = wc_get_order_item_meta($item->get_id(), 'Late Pickup', true);
 
-            if (empty($age) || empty($gender)) {
-                error_log('InterSoccer: Migration Check - Order Item ID ' . $item->get_id() . ' needs migration (Age: ' . ($age ?: 'missing') . ', Gender: ' . ($gender ?: 'missing') . ')');
-                return true; // Found an order needing migration
+            if (empty($age) || empty($gender) || empty($medical) || empty($late_pickup)) {
+                error_log('InterSoccer: Migration Check - Order Item ID ' . $item->get_id() . ' needs migration (Age: ' . ($age ?: 'missing') . ', Gender: ' . ($gender ?: 'missing') . ', Medical: ' . ($medical ?: 'missing') . ', Late Pickup: ' . ($late_pickup ?: 'missing') . ')');
+                return true;
             }
         }
     }
     error_log('InterSoccer: Migration Check - No orders need migration');
-    return false; // No orders need migration
+    return false;
 }
 
 // Diagnostic function to check Assigned Attendee metadata
@@ -328,14 +361,12 @@ function intersoccer_diagnose_assigned_player_metadata() {
         $can_restore_metadata = false;
 
         foreach ($order->get_items() as $item) {
-            // Check for Assigned Attendee metadata (current production key)
             $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Attendee', true);
             if ($player_name) {
                 $has_assigned_player = true;
                 break;
             }
 
-            // Fallback to Assigned Player (legacy key)
             $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Player', true);
             if ($player_name) {
                 $has_assigned_player = true;
@@ -344,7 +375,6 @@ function intersoccer_diagnose_assigned_player_metadata() {
                 break;
             }
 
-            // Check if assigned_player index exists but Assigned Attendee is missing
             $player_index = wc_get_order_item_meta($item->get_id(), 'assigned_player', true);
             if ($player_index && isset($players[$player_index])) {
                 $has_assigned_player = true;
@@ -380,14 +410,12 @@ function intersoccer_diagnose_assigned_player_metadata() {
 
 // Fetch data for charts
 function intersoccer_get_chart_data() {
-    // Fetch all orders
     $orders = wc_get_orders([
-        'status' => ['completed', 'processing', 'pending', 'on-hold'], // Align with roster logic
+        'status' => ['completed', 'processing', 'pending', 'on-hold'],
         'limit' => -1,
     ]);
     error_log('InterSoccer: Found ' . count($orders) . ' orders for chart data');
 
-    // Attendees by Region (Bar Chart)
     $region_counts = [];
     $genders = ['Male' => 0, 'Female' => 0, 'Other' => 0];
     $age_groups = [
@@ -396,16 +424,14 @@ function intersoccer_get_chart_data() {
         '10-13' => 0,
         '14-15' => 0,
     ];
-    // Weekly attendance trends for the last 12 weeks
     $weekly_trends = [];
-    $current_date = new DateTime('2025-06-02');
+    $current_date = new DateTime(current_time('Y-m-d'));
     for ($i = 11; $i >= 0; $i--) {
         $week_start = (clone $current_date)->modify("-$i weeks")->setTime(0, 0, 0);
         $week_label = $week_start->format('Y-m-d');
         $weekly_trends[$week_label] = 0;
     }
 
-    // Current attendance by venue (for events active on the current date)
     $current_attendance_by_venue = [];
     $current_date_str = $current_date->format('Y-m-d');
 
@@ -416,10 +442,8 @@ function intersoccer_get_chart_data() {
         error_log('InterSoccer: Order ID ' . $order->get_id() . ' - User ID: ' . $user_id . ', Players: ' . print_r($players, true));
 
         foreach ($order->get_items() as $item) {
-            // Check for Assigned Attendee metadata
             $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Attendee', true);
             if (!$player_name) {
-                // Fallback to Assigned Player (legacy key)
                 $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Player', true);
                 if ($player_name) {
                     wc_update_order_item_meta($item->get_id(), 'Assigned Attendee', $player_name);
@@ -430,7 +454,6 @@ function intersoccer_get_chart_data() {
                 continue;
             }
 
-            // Get product attributes
             $variation_id = $item->get_variation_id();
             $product_id = $item->get_product_id();
             $region = wc_get_product_terms($product_id, 'pa_canton-region', ['fields' => 'names'])[0] ?? 'Unknown';
@@ -438,17 +461,14 @@ function intersoccer_get_chart_data() {
             $start_date = wc_get_product_terms($product_id, 'pa_start-date', ['fields' => 'names'])[0] ?? null;
             $end_date = wc_get_product_terms($product_id, 'pa_end-date', ['fields' => 'names'])[0] ?? null;
 
-            // Increment region counts for overall attendees
             $region_counts[$region] = ($region_counts[$region] ?? 0) + 1;
 
-            // Calculate weekly attendance
             $week_start = (clone $order_date)->modify('monday this week')->setTime(0, 0, 0);
             $week_label = $week_start->format('Y-m-d');
             if (isset($weekly_trends[$week_label])) {
                 $weekly_trends[$week_label]++;
             }
 
-            // Check if the event is active on the current date (for Current Attendance by Venue chart)
             $is_active = false;
             if ($start_date && $end_date) {
                 $start = DateTime::createFromFormat('d/m/Y', $start_date);
@@ -462,23 +482,19 @@ function intersoccer_get_chart_data() {
                 }
             }
 
-            // Increment current attendance by venue if the event is active
             if ($is_active) {
                 $current_attendance_by_venue[$venue] = ($current_attendance_by_venue[$venue] ?? 0) + 1;
                 error_log('InterSoccer: Order Item ID ' . $item->get_id() . ' - Added to current attendance for Venue: ' . $venue);
             }
 
-            // Fetch player details for age and gender (no date filtering for these charts)
             $player_index = wc_get_order_item_meta($item->get_id(), 'assigned_player', true);
             if ($player_index && isset($players[$player_index])) {
                 $player = $players[$player_index];
                 error_log('InterSoccer: Order Item ID ' . $item->get_id() . ' - Player Index: ' . $player_index . ', Player Data: ' . print_r($player, true));
 
-                // Age distribution
                 if (isset($player['dob']) && !empty($player['dob'])) {
                     $dob = DateTime::createFromFormat('Y-m-d', $player['dob']);
                     if ($dob) {
-                        $current_date = new DateTime('2025-06-02');
                         $age = $dob->diff($current_date)->y;
                         error_log('InterSoccer: Order Item ID ' . $item->get_id() . ' - Player Age: ' . $age);
                         if ($age >= 2 && $age <= 5) {
@@ -497,7 +513,6 @@ function intersoccer_get_chart_data() {
                     error_log('InterSoccer: Order Item ID ' . $item->get_id() . ' - DOB not set for player');
                 }
 
-                // Gender distribution
                 $gender = isset($player['gender']) && !empty($player['gender']) ? ucfirst($player['gender']) : 'Other';
                 if (in_array($gender, ['Male', 'Female', 'Other'])) {
                     $genders[$gender]++;
@@ -510,7 +525,6 @@ function intersoccer_get_chart_data() {
         }
     }
 
-    // Ensure all counts are integers
     $region_counts = array_map('intval', $region_counts);
     $genders = array_map('intval', $genders);
     $age_groups = array_map('intval', $age_groups);
@@ -530,13 +544,14 @@ function intersoccer_get_chart_data() {
     ];
 }
 
-// Overview page (default landing page for the plugin)
+// Overview page
 function intersoccer_render_plugin_overview_page() {
     if (!current_user_can('manage_options')) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
     }
 
-    // Fetch chart data
+    intersoccer_log_audit('view_overview', 'User accessed the Reports and Rosters Overview page');
+
     $chart_data = intersoccer_get_chart_data();
     $region_counts = $chart_data['region_counts'];
     $age_groups = $chart_data['age_groups'];
@@ -544,7 +559,6 @@ function intersoccer_render_plugin_overview_page() {
     $weekly_trends = $chart_data['weekly_trends'];
     $current_attendance_by_venue = $chart_data['current_attendance_by_venue'];
 
-    // Prepare data for Chart.js
     $region_labels = json_encode(array_keys($region_counts));
     $region_values = json_encode(array_values($region_counts));
     $age_labels = json_encode(array_keys($age_groups));
@@ -566,31 +580,25 @@ function intersoccer_render_plugin_overview_page() {
             <li><a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-advanced')); ?>" class="button"><?php _e('Advanced Features', 'intersoccer-reports-rosters'); ?></a> - <?php _e('Access advanced tools like attendance management, coach notes, and data migration.', 'intersoccer-reports-rosters'); ?></li>
         </ul>
 
-        <!-- Analytics Dashboard -->
         <div class="filter-section">
             <h2><?php _e('Analytics Dashboard', 'intersoccer-reports-rosters'); ?></h2>
             <div style="display: flex; flex-wrap: wrap; gap: 20px;">
-                <!-- Current Attendance by Venue (Bar Chart) -->
                 <div style="flex: 1; min-width: 300px;">
                     <h3><?php _e('Current Attendance by Venue (Today)', 'intersoccer-reports-rosters'); ?></h3>
                     <canvas id="currentVenueChart" width="400" height="400"></canvas>
                 </div>
-                <!-- Attendees by Region (Bar Chart) -->
                 <div style="flex: 1; min-width: 300px;">
                     <h3><?php _e('Attendees by Region', 'intersoccer-reports-rosters'); ?></h3>
                     <canvas id="regionChart" width="400" height="400"></canvas>
                 </div>
-                <!-- Age Distribution of Attendees (Bar Chart) -->
                 <div style="flex: 1; min-width: 300px;">
                     <h3><?php _e('Age Distribution of Attendees', 'intersoccer-reports-rosters'); ?></h3>
                     <canvas id="ageChart" width="400" height="400"></canvas>
                 </div>
-                <!-- Gender Distribution (Pie Chart) -->
                 <div style="flex: 1; min-width: 300px;">
                     <h3><?php _e('Gender Distribution', 'intersoccer-reports-rosters'); ?></h3>
                     <canvas id="genderChart" width="400" height="400"></canvas>
                 </div>
-                <!-- Weekly Attendance Trends (Line Chart) -->
                 <div style="flex: 1; min-width: 300px;">
                     <h3><?php _e('Weekly Attendance Trends', 'intersoccer-reports-rosters'); ?></h3>
                     <canvas id="weeklyTrendsChart" width="400" height="200"></canvas>
@@ -598,7 +606,6 @@ function intersoccer_render_plugin_overview_page() {
             </div>
         </div>
 
-        <!-- Future Enhancements -->
         <div class="filter-section">
             <h2><?php _e('Future Enhancements', 'intersoccer-reports-rosters'); ?></h2>
             <p><?php _e('Upcoming features include:', 'intersoccer-reports-rosters'); ?></p>
@@ -610,7 +617,6 @@ function intersoccer_render_plugin_overview_page() {
         </div>
     </div>
 
-    <!-- Inline JavaScript to pass data to overview-charts.js -->
     <script>
         var regionChartData = {
             labels: <?php echo $region_labels; ?>,
@@ -637,13 +643,12 @@ function intersoccer_render_plugin_overview_page() {
     error_log('InterSoccer: Rendered Reports and Rosters Overview page');
 }
 
-// Migration function to update existing orders with player age and gender
+// Migration function to update existing orders with player data
 function intersoccer_migrate_player_data_to_orders() {
     if (!current_user_can('manage_options')) {
         wp_die(__('You do not have sufficient permissions to perform this action.', 'intersoccer-reports-rosters'));
     }
 
-    // Fetch all completed, processing, pending, and on-hold orders
     $args = [
         'post_type' => 'shop_order',
         'post_status' => ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'],
@@ -668,17 +673,13 @@ function intersoccer_migrate_player_data_to_orders() {
         foreach ($order->get_items() as $item) {
             $player_index = wc_get_order_item_meta($item->get_id(), 'assigned_player', true);
             $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Attendee', true);
-            
-            // Skip if no player index or player data exists
+
             if (!$player_index || !isset($players[$player_index])) {
                 error_log('InterSoccer: Migration - No player index or player data for Order Item ID ' . $item->get_id() . ' in Order ID ' . $order->get_id());
                 continue;
             }
 
-            // Verify Assigned Attendee metadata exists
             if (!$player_name) {
-                error_log('InterSoccer: Migration - Missing Assigned Attendee metadata for Order Item ID ' . $item->get_id() . ' in Order ID ' . $order->get_id());
-                // Attempt to restore Assigned Attendee from user metadata
                 $player = $players[$player_index];
                 $player_name = $player['first_name'] . ' ' . $player['last_name'];
                 wc_update_order_item_meta($item->get_id(), 'Assigned Attendee', $player_name);
@@ -686,33 +687,33 @@ function intersoccer_migrate_player_data_to_orders() {
             }
 
             $player = $players[$player_index];
-            $player_name = $player['first_name'] . ' ' . $player['last_name'];
-
-            // Calculate age from DOB
             $age = 'N/A';
             if (isset($player['dob']) && !empty($player['dob'])) {
                 $dob = DateTime::createFromFormat('Y-m-d', $player['dob']);
                 if ($dob) {
-                    $current_date = new DateTime('2025-06-02'); // Current date as of June 2, 2025
+                    $current_date = new DateTime(current_time('Y-m-d'));
                     $interval = $dob->diff($current_date);
                     $age = $interval->y;
                 }
             }
 
-            // Get gender
             $gender = isset($player['gender']) && !empty($player['gender']) ? ucfirst($player['gender']) : 'N/A';
+            $medical = isset($player['medical_conditions']) ? $player['medical_conditions'] : 'None';
+            $late_pickup = wc_get_order_item_meta($item->get_id(), 'late_pickup', true) ?: 'No';
 
-            // Check if age and gender are already in metadata
             $existing_age = wc_get_order_item_meta($item->get_id(), 'Player Age', true);
             $existing_gender = wc_get_order_item_meta($item->get_id(), 'Player Gender', true);
+            $existing_medical = wc_get_order_item_meta($item->get_id(), 'Medical Conditions', true);
+            $existing_late_pickup = wc_get_order_item_meta($item->get_id(), 'Late Pickup', true);
 
-            if (!$existing_age || !$existing_gender) {
-                // Update order item metadata
+            if (!$existing_age || !$existing_gender || !$existing_medical || !$existing_late_pickup) {
                 wc_update_order_item_meta($item->get_id(), 'Player Age', $age);
                 wc_update_order_item_meta($item->get_id(), 'Player Gender', $gender);
+                wc_update_order_item_meta($item->get_id(), 'Medical Conditions', $medical);
+                wc_update_order_item_meta($item->get_id(), 'Late Pickup', $late_pickup);
                 $updated_items++;
                 $order_updated = true;
-                error_log('InterSoccer: Migration - Updated Order Item ID ' . $item->get_id() . ' with Age: ' . $age . ', Gender: ' . $gender);
+                error_log('InterSoccer: Migration - Updated Order Item ID ' . $item->get_id() . ' with Age: ' . $age . ', Gender: ' . $gender . ', Medical: ' . $medical . ', Late Pickup: ' . $late_pickup);
             }
         }
 
@@ -722,16 +723,16 @@ function intersoccer_migrate_player_data_to_orders() {
         }
     }
 
-    // Display notice
+    intersoccer_log_audit('migrate_player_data', "Updated $updated_orders orders and $updated_items order items with player data");
+
     add_action('admin_notices', function() use ($updated_orders, $updated_items) {
         ?>
         <div class="notice notice-success is-dismissible">
-            <p><?php printf(__('Migration completed: Updated %d orders and %d order items with player age and gender metadata.', 'intersoccer-reports-rosters'), $updated_orders, $updated_items); ?></p>
+            <p><?php printf(__('Migration completed: Updated %d orders and %d order items with player data.', 'intersoccer-reports-rosters'), $updated_orders, $updated_items); ?></p>
         </div>
         <?php
     });
 
-    // Redirect to Advanced page
     wp_redirect(admin_url('admin.php?page=intersoccer-advanced'));
     exit;
 }
