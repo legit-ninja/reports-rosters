@@ -169,7 +169,7 @@ function intersoccer_export_roster_to_pdf($variation_id) {
                     $player['parent_phone'],
                     $player['parent_email'],
                     $player['medical_conditions'],
-                    $player['late_pickup'] === '18h' ? '<?php _e('Yes', 'intersoccer-reports-rosters'); ?>' : '<?php _e('No', 'intersoccer-reports-rosters'); ?>',
+                    $player['late_pickup'] === '18h' ? '<?php _e("Yes", "intersoccer-reports-rosters"); ?>' : '<?php _e("No", "intersoccer-reports-rosters"); ?>',
                     $is_camp ? implode(', ', $player['selected_days']) : $player['discount_info'],
                 ];
             }, $roster)); ?>;
