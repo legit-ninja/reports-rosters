@@ -1,97 +1,66 @@
-/* Styles for InterSoccer Reports and Rosters plugin */
-
-/* General table styling */
-.widefat th, .widefat td {
-    padding: 8px 10px;
-    vertical-align: middle;
+/* InterSoccer Reports and Rosters CSS */
+.intersoccer-reports-rosters-rosters, .intersoccer-reports-rosters-reports, .intersoccer-reports-rosters-roster-details, .intersoccer-reports-rosters-dashboard, .intersoccer-reports-rosters-advanced {
+    margin: 20px 0;
 }
 
-/* Ensure filter section has proper spacing */
-.filter-section {
+.filter-section, .export-section {
     margin-bottom: 20px;
-    padding: 15px;
-    background: #f9f9f9;
-    border: 1px solid #e5e5e5;
-    border-radius: 4px;
 }
 
 .filter-row {
-    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 10px;
 }
 
 .filter-row label {
-    margin-right: 10px;
-    font-weight: bold;
+    margin-right: 5px;
 }
 
-.filter-row select,
-.filter-row input[type="date"],
-.filter-row input[type="number"],
-.filter-row input[type="checkbox"] {
-    margin-right: 15px;
-    padding: 5px;
-}
-
-/* Responsive table wrapper */
 .table-responsive {
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
 }
 
-/* Minimum width for table to ensure columns don't collapse too much */
-.table-responsive table {
-    min-width: 800px; /* Adjust based on content needs */
+.widefat {
+    width: 100%;
+    border-collapse: collapse;
 }
 
-/* Ensure table cells have a minimum width to prevent excessive wrapping */
 .widefat th, .widefat td {
-    min-width: 100px; /* Adjust as needed */
+    padding: 8px;
+    border: 1px solid #ddd;
 }
 
-/* Specific adjustments for smaller screens */
-@media screen and (max-width: 782px) {
-    /* Stack filter form elements vertically on mobile */
-    .filter-row {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-
-    .filter-row label,
-    .filter-row select,
-    .filter-row input[type="date"],
-    .filter-row input[type="number"],
-    .filter-row input[type="checkbox"],
-    .filter-row button {
-        width: 100%;
-        margin-right: 0;
-        margin-bottom: 10px;
-    }
-
-    /* Ensure table is scrollable horizontally */
-    .table-responsive {
-        margin-bottom: 20px;
-    }
-
-    /* Reduce padding in table cells for better fit */
-    .widefat th, .widefat td {
-        padding: 5px;
-        min-width: 80px; /* Slightly smaller for mobile */
-    }
-
-    /* Ensure the Actions column (with buttons) doesn’t wrap */
-    .widefat td:last-child {
-        white-space: nowrap;
-    }
+.widefat th {
+    background: #f9f9f9;
 }
 
-/* Ensure buttons have consistent styling */
-.button {
-    padding: 5px 10px;
-    line-height: normal;
+/* Tab Styling */
+.nav-tab-wrapper {
+    margin-bottom: 20px;
+    border-bottom: 1px solid #ccc;
 }
 
-/* Chart container styling */
-canvas {
-    max-width: 100%;
+.nav-tab {
+    display: inline-block;
+    padding: 10px 20px;
+    margin: 0 5px -1px 0;
+    border: 1px solid #ccc;
+    border-bottom: none;
+    background: #f1f1f1;
+    cursor: pointer;
+    text-decoration: none;
+    color: #555;
+}
+
+.nav-tab-active {
+    background: #fff;
+    border-bottom: 1px solid #fff;
+    font-weight: bold;
+    color: #000;
+}
+
+.tab-content {
+    padding: 10px 0;
 }

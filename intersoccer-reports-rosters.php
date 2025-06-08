@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.0.4
+ * Version: 1.0.3
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  */
@@ -39,7 +39,7 @@ register_activation_hook(__FILE__, function () {
         $required_plugins = [
             'woocommerce/woocommerce.php' => 'WooCommerce',
             'intersoccer-product-variations/intersoccer-product-variations.php' => 'InterSoccer Product Variations',
-            'player-management/player-management.php' => 'Player Management',
+            'intersoccer-player-management/intersoccer-player-management.php' => 'InterSoccer Player Management',
         ];
 
         $missing = [];
@@ -138,7 +138,7 @@ foreach ($files_to_include as $file) {
             $included_files[$file] = true;
             error_log('InterSoccer: Included includes/' . $file);
         } catch (Exception $e) {
-            error_log('InterSoccer: Error including includes/' . $file . ': ' . $e->getMessage());
+            error_log('InterSoccer: Error including includes/' . $file . ': ' . $e->getMessage() . ' in ' . $e->getFile() . ' on line ' . $e->getLine());
             add_action('admin_notices', function() use ($file) {
                 ?>
                 <div class="notice notice-error is-dismissible">
@@ -148,7 +148,7 @@ foreach ($files_to_include as $file) {
             });
         }
     } else {
-        error_log('InterSoccer: Failed to include includes/' . $file . ' - File not found');
+        error_log('InterSoccer: Failed to include includes/' . $file . ' - File not found at ' . $file_path);
         add_action('admin_notices', function() use ($file) {
             ?>
             <div class="notice notice-error is-dismissible">
@@ -161,145 +161,157 @@ foreach ($files_to_include as $file) {
 
 // Enqueue CSS and JS
 add_action('admin_enqueue_scripts', function ($hook) {
-    $screen = get_current_screen();
-    if ($screen && in_array($screen->id, ['toplevel_page_intersoccer-reports-rosters', 'intersoccer-reports-rosters_page_intersoccer-reports', 'intersoccer-reports-rosters_page_intersoccer-rosters', 'intersoccer-reports-rosters_page_intersoccer-roster-details', 'intersoccer-reports-rosters_page_intersoccer-advanced'])) {
-        wp_enqueue_style(
-            'intersoccer-reports-rosters-css',
-            plugin_dir_url(__FILE__) . 'css/reports-rosters.css',
-            [],
-            '1.0.3'
-        );
-        error_log('InterSoccer: Enqueued reports-rosters.css on page ' . $screen->id);
-
-        if ($screen->id === 'toplevel_page_intersoccer-reports-rosters') {
-            wp_enqueue_script(
-                'chart-js',
-                'https://cdn.jsdelivr.net/npm/chart.js',
+    try {
+        $screen = get_current_screen();
+        if ($screen && in_array($screen->id, ['toplevel_page_intersoccer-reports-rosters', 'intersoccer-reports-rosters_page_intersoccer-reports', 'intersoccer-reports-rosters_page_intersoccer-rosters', 'intersoccer-reports-rosters_page_intersoccer-roster-details', 'intersoccer-reports-rosters_page_intersoccer-advanced'])) {
+            wp_enqueue_style(
+                'intersoccer-reports-rosters-css',
+                plugin_dir_url(__FILE__) . 'css/reports-rosters.css',
                 [],
-                '3.9.1',
-                true
+                '1.0.3'
             );
-            wp_enqueue_script(
-                'intersoccer-overview-charts',
-                plugin_dir_url(__FILE__) . 'js/overview-charts.js',
-                ['chart-js'],
-                '1.0.3',
-                true
-            );
-        }
+            error_log('InterSoccer: Enqueued reports-rosters.css on page ' . $screen->id);
 
-        if (in_array($screen->id, ['intersoccer-reports-rosters_page_intersoccer-rosters', 'intersoccer-reports-rosters_page_intersoccer-roster-details'])) {
-            wp_enqueue_script(
-                'jspdf',
-                'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-                [],
-                '2.5.1',
-                true
-            );
-        }
+            if ($screen->id === 'toplevel_page_intersoccer-reports-rosters') {
+                wp_enqueue_script(
+                    'chart-js',
+                    'https://cdn.jsdelivr.net/npm/chart.js',
+                    [],
+                    '3.9.1',
+                    true
+                );
+                wp_enqueue_script(
+                    'intersoccer-overview-charts',
+                    plugin_dir_url(__FILE__) . 'js/overview-charts.js',
+                    ['chart-js'],
+                    '1.0.3',
+                    true
+                );
+            }
 
-        if ($screen->id === 'intersoccer-reports-rosters_page_intersoccer-advanced') {
-            wp_enqueue_script('jquery');
-            wp_enqueue_script(
-                'intersoccer-advanced-ajax',
-                plugin_dir_url(__FILE__) . 'js/advanced-ajax.js',
-                ['jquery'],
-                '1.0.3',
-                true
-            );
-            wp_localize_script(
-                'intersoccer-advanced-ajax',
-                'intersoccer_ajax',
-                [
-                    'ajax_url' => admin_url('admin-ajax.php'),
-                    'nonce' => wp_create_nonce('intersoccer_advanced_nonce'),
-                ]
-            );
+            if (in_array($screen->id, ['intersoccer-reports-rosters_page_intersoccer-rosters', 'intersoccer-reports-rosters_page_intersoccer-roster-details'])) {
+                wp_enqueue_script(
+                    'intersoccer-rosters-tabs',
+                    plugin_dir_url(__FILE__) . 'js/rosters-tabs.js',
+                    ['jquery'],
+                    '1.0.3',
+                    true
+                );
+            }
+
+            if ($screen->id === 'intersoccer-reports-rosters_page_intersoccer-advanced') {
+                wp_enqueue_script('jquery');
+                wp_enqueue_script(
+                    'intersoccer-advanced-ajax',
+                    plugin_dir_url(__FILE__) . 'js/advanced-ajax.js',
+                    ['jquery'],
+                    '1.0.3',
+                    true
+                );
+                wp_localize_script(
+                    'intersoccer-advanced-ajax',
+                    'intersoccer_ajax',
+                    [
+                        'ajax_url' => admin_url('admin-ajax.php'),
+                        'nonce' => wp_create_nonce('intersoccer_advanced_nonce'),
+                    ]
+                );
+            }
         }
+    } catch (Exception $e) {
+        error_log('InterSoccer: Error enqueuing scripts/styles: ' . $e->getMessage());
     }
 });
 
 // Add admin menus
 add_action('admin_menu', function () {
-    add_menu_page(
-        __('InterSoccer Reports and Rosters', 'intersoccer-reports-rosters'),
-        __('Reports and Rosters', 'intersoccer-reports-rosters'),
-        'read',
-        'intersoccer-reports-rosters',
-        'intersoccer_render_plugin_overview_page',
-        'dashicons-chart-bar',
-        30
-    );
+    try {
+        add_menu_page(
+            __('InterSoccer Reports and Rosters', 'intersoccer-reports-rosters'),
+            __('Reports and Rosters', 'intersoccer-reports-rosters'),
+            'read',
+            'intersoccer-reports-rosters',
+            'intersoccer_render_plugin_overview_page',
+            'dashicons-chart-bar',
+            30
+        );
 
-    add_submenu_page(
-        'intersoccer-reports-rosters',
-        __('InterSoccer Overview', 'intersoccer-reports-rosters'),
-        __('Overview', 'intersoccer-reports-rosters'),
-        'read',
-        'intersoccer-reports-rosters',
-        'intersoccer_render_plugin_overview_page'
-    );
+        add_submenu_page(
+            'intersoccer-reports-rosters',
+            __('InterSoccer Overview', 'intersoccer-reports-rosters'),
+            __('Overview', 'intersoccer-reports-rosters'),
+            'read',
+            'intersoccer-reports-rosters',
+            'intersoccer_render_plugin_overview_page'
+        );
 
-    add_submenu_page(
-        'intersoccer-reports-rosters',
-        __('InterSoccer Reports', 'intersoccer-reports-rosters'),
-        __('Reports', 'intersoccer-reports-rosters'),
-        'read',
-        'intersoccer-reports',
-        'intersoccer_render_reports_page'
-    );
+        add_submenu_page(
+            'intersoccer-reports-rosters',
+            __('InterSoccer Reports', 'intersoccer-reports-rosters'),
+            __('Reports', 'intersoccer-reports-rosters'),
+            'read',
+            'intersoccer-reports',
+            'intersoccer_render_reports_page'
+        );
 
-    add_submenu_page(
-        'intersoccer-reports-rosters',
-        __('InterSoccer Rosters', 'intersoccer-reports-rosters'),
-        __('Rosters', 'intersoccer-reports-rosters'),
-        'read',
-        'intersoccer-rosters',
-        'intersoccer_render_rosters_page'
-    );
+        add_submenu_page(
+            'intersoccer-reports-rosters',
+            __('InterSoccer Rosters', 'intersoccer-reports-rosters'),
+            __('Rosters', 'intersoccer-reports-rosters'),
+            'read',
+            'intersoccer-rosters',
+            'intersoccer_render_rosters_page'
+        );
 
-    add_submenu_page(
-        'intersoccer-reports-rosters',
-        __('Roster Details', 'intersoccer-reports-rosters'),
-        null,
-        'read',
-        'intersoccer-roster-details',
-        'intersoccer_render_roster_details_page'
-    );
+        add_submenu_page(
+            'intersoccer-reports-rosters',
+            __('Roster Details', 'intersoccer-reports-rosters'),
+            null,
+            'read',
+            'intersoccer-roster-details',
+            'intersoccer_render_roster_details_page'
+        );
 
-    add_submenu_page(
-        'intersoccer-reports-rosters',
-        __('InterSoccer Advanced', 'intersoccer-reports-rosters'),
-        __('Advanced', 'intersoccer-reports-rosters'),
-        'read',
-        'intersoccer-advanced',
-        'intersoccer_render_advanced_page'
-    );
+        add_submenu_page(
+            'intersoccer-reports-rosters',
+            __('InterSoccer Advanced', 'intersoccer-reports-rosters'),
+            __('Advanced', 'intersoccer-reports-rosters'),
+            'read',
+            'intersoccer-advanced',
+            'intersoccer_render_advanced_page'
+        );
+    } catch (Exception $e) {
+        error_log('InterSoccer: Error adding admin menus: ' . $e->getMessage());
+    }
 });
 
 // Log actions to audit table
 function intersoccer_log_audit($action, $details) {
-    global $wpdb;
-    if (!isset($wpdb)) {
-        error_log('InterSoccer: Audit logging failed - $wpdb not available');
-        return;
-    }
-    $user_id = get_current_user_id();
-    $table = $wpdb->prefix . 'intersoccer_audit';
-    $result = $wpdb->insert(
-        $table,
-        [
-            'user_id' => $user_id,
-            'action' => sanitize_text_field($action),
-            'details' => wp_kses_post($details),
-            'timestamp' => current_time('mysql'),
-        ],
-        ['%d', '%s', '%s', '%s']
-    );
-    if ($result === false) {
-        error_log('InterSoccer: Audit logging failed - Database error: ' . $wpdb->last_error);
-    } else {
-        error_log("InterSoccer: Audit logged - Action: $action, Details: $details, User ID: $user_id");
+    try {
+        global $wpdb;
+        if (!isset($wpdb)) {
+            error_log('InterSoccer: Audit logging failed - $wpdb not available');
+            return;
+        }
+        $user_id = get_current_user_id();
+        $table = $wpdb->prefix . 'intersoccer_audit';
+        $result = $wpdb->insert(
+            $table,
+            [
+                'user_id' => $user_id,
+                'action' => sanitize_text_field($action),
+                'details' => wp_kses_post($details),
+                'timestamp' => current_time('mysql'),
+            ],
+            ['%d', '%s', '%s', '%s']
+        );
+        if ($result === false) {
+            error_log('InterSoccer: Audit logging failed - Database error: ' . $wpdb->last_error);
+        } else {
+            error_log("InterSoccer: Audit logged - Action: $action, Details: $details, User ID: $user_id");
+        }
+    } catch (Exception $e) {
+        error_log('InterSoccer: Audit logging error: ' . $e->getMessage());
     }
 }
 
@@ -602,11 +614,11 @@ function intersoccer_get_chart_data() {
 
 // Overview page
 function intersoccer_render_plugin_overview_page() {
-    if (!current_user_can('manage_options')) {
-        wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
-    }
-
     try {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
+        }
+
         intersoccer_log_audit('view_overview', 'User accessed the Reports and Rosters Overview page');
 
         $chart_data = intersoccer_get_chart_data();
@@ -706,11 +718,11 @@ function intersoccer_render_plugin_overview_page() {
 
 // Migration function to update existing orders with player data
 function intersoccer_migrate_player_data_to_orders() {
-    if (!current_user_can('manage_options')) {
-        wp_die(__('You do not have sufficient permissions to perform this action.', 'intersoccer-reports-rosters'));
-    }
-
     try {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('You do not have sufficient permissions to perform this action.', 'intersoccer-reports-rosters'));
+        }
+
         $args = [
             'post_type' => 'shop_order',
             'post_status' => ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'],
