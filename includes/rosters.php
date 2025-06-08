@@ -3,314 +3,341 @@
  * Rosters page functionality for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
+ * @version 1.0.3
  * @author Jeremy Lee
  */
 
 defined('ABSPATH') or die('Restricted access');
 
-// Rosters page
+/**
+ * Render the Rosters page.
+ */
 function intersoccer_render_rosters_page() {
-    if (!current_user_can('coach') && !current_user_can('event_organizer') && !current_user_can('shop_manager') && !current_user_can('administrator')) {
-        wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
-    }
-
-    intersoccer_log_audit('view_rosters', 'User accessed the Rosters page');
-
-    $current_date = new DateTime(current_time('Y-m-d'));
-    $current_date_str = $current_date->format('Y-m-d');
-
-    $filters = [
-        'region' => isset($_GET['region']) ? sanitize_text_field($_GET['region']) : '',
-        'venue' => isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '',
-        'age_group' => isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '',
-        'booking_type' => isset($_GET['booking_type']) ? sanitize_text_field($_GET['booking_type']) : '',
-        'season' => isset($_GET['season']) ? sanitize_text_field($_GET['season']) : '',
-        'city' => isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '',
-        'activity_type' => isset($_GET['activity_type']) ? sanitize_text_field($_GET['activity_type']) : '',
-        'week' => isset($_GET['week']) ? sanitize_text_field($_GET['week']) : $current_date_str,
-        'show_no_attendees' => isset($_GET['show_no_attendees']) ? sanitize_text_field($_GET['show_no_attendees']) : '',
-    ];
-
-    $camps = intersoccer_pe_get_camp_variations($filters);
-    $courses = intersoccer_pe_get_course_variations($filters);
-
-    if (isset($_GET['action'])) {
-        if ($_GET['action'] === 'export_all_rosters' && check_admin_referer('export_all_rosters_nonce')) {
-            intersoccer_export_all_rosters_to_csv($camps, $courses, 'all');
-        } elseif ($_GET['action'] === 'export_camp_rosters' && check_admin_referer('export_camp_rosters_nonce')) {
-            intersoccer_export_all_rosters_to_csv($camps, [], 'camps');
-        } elseif ($_GET['action'] === 'export_course_rosters' && check_admin_referer('export_course_rosters_nonce')) {
-            intersoccer_export_all_rosters_to_csv([], $courses, 'courses');
+    try {
+        if (!current_user_can('coach') && !current_user_can('event_organizer') && !current_user_can('shop_manager') && !current_user_can('administrator')) {
+            wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
         }
-    }
 
-    $query_string = http_build_query(array_filter($filters, function($value) {
-        return !empty($value);
-    }));
+        intersoccer_log_audit('view_rosters', 'User accessed the Rosters page');
 
-    $normalize_attribute = function($value) {
-        return trim(strtolower($value));
-    };
+        $current_date = new DateTime(current_time('Y-m-d'));
+        $current_date_str = $current_date->format('Y-m-d');
 
-    ?>
-    <div class="wrap intersoccer-reports-rosters-rosters">
-        <h1><?php _e('InterSoccer Rosters', 'intersoccer-reports-rosters'); ?></h1>
+        $filters = [
+            'region' => isset($_GET['region']) ? sanitize_text_field($_GET['region']) : '',
+            'venue' => isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '',
+            'show_no_attendees' => isset($_GET['show_no_attendees']) ? sanitize_text_field($_GET['show_no_attendees']) : '',
+        ];
 
-        <form id="roster-filter-form" method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>">
-            <input type="hidden" name="page" value="intersoccer-rosters" />
-            <div class="filter-section">
-                <h2><?php _e('Filter Rosters', 'intersoccer-reports-rosters'); ?></h2>
-                <div class="filter-row">
-                    <label for="region"><?php _e('Region:', 'intersoccer-reports-rosters'); ?></label>
-                    <select name="region" id="region">
-                        <option value=""><?php _e('All Regions', 'intersoccer-reports-rosters'); ?></option>
-                        <?php
-                        $regions = wc_get_product_terms(null, 'pa_canton-region', ['fields' => 'names']);
-                        foreach ($regions as $region) {
-                            $normalized_region = $normalize_attribute($region);
-                            ?>
-                            <option value="<?php echo esc_attr($normalized_region); ?>" <?php selected($filters['region'], $normalized_region); ?>><?php echo esc_html($region); ?></option>
-                            <?php
-                        }
-                        ?>
-                    </select>
+        $camps = intersoccer_pe_get_camp_variations($filters);
+        $courses = intersoccer_pe_get_course_variations($filters);
+        $girls_only = intersoccer_pe_get_girls_only_variations($filters); // New function for Girls Only events
 
-                    <label for="venue"><?php _e('Venue:', 'intersoccer-reports-rosters'); ?></label>
-                    <select name="venue" id="venue">
-                        <option value=""><?php _e('All Venues', 'intersoccer-reports-rosters'); ?></option>
-                        <?php
-                        $venues = wc_get_product_terms(null, 'pa_intersoccer-venues', ['fields' => 'names']);
-                        foreach ($venues as $venue) {
-                            $normalized_venue = $normalize_attribute($venue);
-                            ?>
-                            <option value="<?php echo esc_attr($normalized_venue); ?>" <?php selected($filters['venue'], $normalized_venue); ?>><?php echo esc_html($venue); ?></option>
-                            <?php
-                        }
-                        ?>
-                    </select>
+        $active_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'courses';
 
-                    <label for="season"><?php _e('Season:', 'intersoccer-reports-rosters'); ?></label>
-                    <select name="season" id="season">
-                        <option value=""><?php _e('All Seasons', 'intersoccer-reports-rosters'); ?></option>
-                        <?php
-                        $seasons = wc_get_product_terms(null, 'pa_season', ['fields' => 'names']);
-                        foreach ($seasons as $season) {
-                            $normalized_season = $normalize_attribute($season);
-                            ?>
-                            <option value="<?php echo esc_attr($normalized_season); ?>" <?php selected($filters['season'], $normalized_season); ?>><?php echo esc_html($season); ?></option>
-                            <?php
-                        }
-                        ?>
-                    </select>
-                </div>
-
-                <div class="filter-row">
-                    <label for="city"><?php _e('City:', 'intersoccer-reports-rosters'); ?></label>
-                    <select name="city" id="city">
-                        <option value=""><?php _e('All Cities', 'intersoccer-reports-rosters'); ?></option>
-                        <?php
-                        $cities = wc_get_product_terms(null, 'pa_city', ['fields' => 'names']);
-                        foreach ($cities as $city) {
-                            $normalized_city = $normalize_attribute($city);
-                            ?>
-                            <option value="<?php echo esc_attr($normalized_city); ?>" <?php selected($filters['city'], $normalized_city); ?>><?php echo esc_html($city); ?></option>
-                            <?php
-                        }
-                        ?>
-                    </select>
-
-                    <label for="week"><?php _e('Date:', 'intersoccer-reports-rosters'); ?></label>
-                    <input type="date" name="week" id="week" value="<?php echo esc_attr($filters['week']); ?>" />
-
-                    <label for="show_no_attendees"><?php _e('Show Events with No Attendees:', 'intersoccer-reports-rosters'); ?></label>
-                    <input type="checkbox" name="show_no_attendees" id="show_no_attendees" value="1" <?php checked($filters['show_no_attendees'], '1'); ?> />
-                </div>
-
-                <div class="filter-row">
-                    <button type="submit" class="button"><?php _e('Filter', 'intersoccer-reports-rosters'); ?></button>
-                </div>
-            </div>
-        </form>
-
-        <div class="export-section">
-            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-rosters&action=export_all_rosters' . ($query_string ? '&' . $query_string : '')), 'export_all_rosters_nonce')); ?>" class="button button-primary"><?php _e('Export All Rosters', 'intersoccer-reports-rosters'); ?></a>
-            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-rosters&action=export_camp_rosters' . ($query_string ? '&' . $query_string : '')), 'export_camp_rosters_nonce')); ?>" class="button button-primary"><?php _e('Export All Camp Rosters', 'intersoccer-reports-rosters'); ?></a>
-            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-rosters&action=export_course_rosters' . ($query_string ? '&' . $query_string : '')), 'export_course_rosters_nonce')); ?>" class="button button-primary"><?php _e('Export All Course Rosters', 'intersoccer-reports-rosters'); ?></a>
-        </div>
-
-        <h2><?php _e('Ongoing Courses Rosters', 'intersoccer-reports-rosters'); ?></h2>
-        <?php if (!empty($courses)): ?>
-            <div class="table-responsive">
-                <table class="widefat fixed">
-                    <thead>
-                        <tr>
-                            <th><?php _e('Event Name', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Region', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Total Players', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Actions', 'intersoccer-reports-rosters'); ?></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($courses as $variation): ?>
-                            <tr>
-                                <td><?php echo esc_html($variation['product_name']); ?></td>
-                                <td><?php echo esc_html($variation['region']); ?></td>
-                                <td><?php echo esc_html($variation['venue']); ?></td>
-                                <td><?php echo esc_html($variation['total_players']); ?></td>
-                                <td>
-                                    <a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . $variation['variation_id'])); ?>" class="button"><?php _e('View Roster', 'intersoccer-reports-rosters'); ?></a>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-        <?php else: ?>
-            <p><?php _e('No ongoing course rosters found matching the selected filters.', 'intersoccer-reports-rosters'); ?></p>
-        <?php endif; ?>
-
-        <h2><?php _e('Upcoming Camps Rosters', 'intersoccer-reports-rosters'); ?></h2>
-        <?php if (!empty($camps)): ?>
-            <div class="table-responsive">
-                <table class="widefat fixed">
-                    <thead>
-                        <tr>
-                            <th><?php _e('Event Name', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Region', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Total Players', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Actions', 'intersoccer-reports-rosters'); ?></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($camps as $variation): ?>
-                            <tr>
-                                <td><?php echo esc_html($variation['product_name']); ?></td>
-                                <td><?php echo esc_html($variation['region']); ?></td>
-                                <td><?php echo esc_html($variation['venue']); ?></td>
-                                <td><?php echo esc_html($variation['total_players']); ?></td>
-                                <td>
-                                    <a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . $variation['variation_id'])); ?>" class="button"><?php _e('View Roster', 'intersoccer-reports-rosters'); ?></a>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-        <?php else: ?>
-            <p><?php _e('No upcoming camp rosters found matching the selected filters.', 'intersoccer-reports-rosters'); ?></p>
-        <?php endif; ?>
-    </div>
-    <?php
-    error_log('InterSoccer: Rendered Rosters page');
-}
-
-// Roster details page
-function intersoccer_render_roster_details_page() {
-    if (!current_user_can('coach') && !current_user_can('event_organizer') && !current_user_can('shop_manager') && !current_user_can('administrator')) {
-        wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
-    }
-
-    $variation_id = isset($_GET['variation_id']) ? intval($_GET['variation_id']) : 0;
-    if (!$variation_id) {
-        wp_die(__('Invalid variation ID.', 'intersoccer-reports-rosters'));
-    }
-
-    if (isset($_GET['action']) && check_admin_referer('export_roster_nonce')) {
-        if ($_GET['action'] === 'export_csv') {
-            intersoccer_export_roster_to_csv($variation_id);
-        } elseif ($_GET['action'] === 'export_pdf') {
-            intersoccer_export_roster_to_pdf($variation_id);
-        }
-        exit;
-    }
-
-    $roster = intersoccer_pe_get_event_roster_by_variation($variation_id);
-    $is_camp = !empty($roster) && in_array($roster[0]['booking_type'], ['Full Week', 'single-days']);
-
-    $variation = wc_get_product($variation_id);
-    $product_id = $variation ? $variation->get_parent_id() : 0;
-    $product = $product_id ? wc_get_product($product_id) : null;
-    $event_name = $product ? $product->get_name() : 'Unknown Event';
-    $region = wc_get_product_terms($product_id, 'pa_canton-region', ['fields' => 'names'])[0] ?? 'Unknown';
-    $venue = wc_get_product_terms($product_id, 'pa_intersoccer-venues', ['fields' => 'names'])[0] ?? 'Unknown';
-    $camp_term = '';
-    if ($is_camp) {
-        $camp_term = wc_get_product_terms($product_id, 'pa_week', ['fields' => 'names'])[0] ?? '';
-        if (!$camp_term) {
-            $start_date = wc_get_product_terms($product_id, 'pa_start-date', ['fields' => 'names'])[0] ?? '';
-            if ($start_date) {
-                $date = DateTime::createFromFormat('d/m/Y', $start_date);
-                if ($date) {
-                    $camp_term = 'Week ' . $date->format('W');
-                }
+        if (isset($_GET['action'])) {
+            if ($_GET['action'] === 'export_all_rosters' && check_admin_referer('export_all_rosters_nonce')) {
+                intersoccer_export_all_rosters_to_csv(array_merge($camps, $courses, $girls_only), [], 'all');
+            } elseif ($_GET['action'] === 'export_camp_rosters' && check_admin_referer('export_camp_rosters_nonce')) {
+                intersoccer_export_all_rosters_to_csv($camps, [], 'camps');
+            } elseif ($_GET['action'] === 'export_course_rosters' && check_admin_referer('export_course_rosters_nonce')) {
+                intersoccer_export_all_rosters_to_csv($courses, [], 'courses');
+            } elseif ($_GET['action'] === 'export_girls_only_rosters' && check_admin_referer('export_girls_only_rosters_nonce')) {
+                intersoccer_export_all_rosters_to_csv($girls_only, [], 'girls_only');
             }
         }
-    }
 
-    intersoccer_log_audit('view_roster_details', "User viewed roster details for Variation ID $variation_id");
+        $query_string = http_build_query(array_filter($filters, function($value) {
+            return !empty($value);
+        }));
 
-    ?>
-    <div class="wrap intersoccer-reports-rosters-roster-details">
-        <h1><?php printf(__('Roster for %s (Variation ID %d)', 'intersoccer-reports-rosters'), esc_html($event_name), $variation_id); ?></h1>
-        <p>
-            <strong><?php _e('Region:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html($region); ?><br>
-            <strong><?php _e('Venue:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html($venue); ?>
-            <?php if ($is_camp && $camp_term): ?>
-                <br><strong><?php _e('Camp Term:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html($camp_term); ?>
-            <?php endif; ?>
-        </p>
+        $normalize_attribute = function($value) {
+            return trim(strtolower($value));
+        };
 
-        <div class="export-section">
-            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . $variation_id . '&action=export_csv'), 'export_roster_nonce')); ?>" class="button button-primary"><?php _e('Export to CSV', 'intersoccer-reports-rosters'); ?></a>
-            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . $variation_id . '&action=export_pdf'), 'export_roster_nonce')); ?>" class="button button-primary"><?php _e('Export to PDF', 'intersoccer-reports-rosters'); ?></a>
+        ?>
+        <div class="wrap intersoccer-reports-rosters-rosters">
+            <h1><?php _e('InterSoccer Rosters', 'intersoccer-reports-rosters'); ?></h1>
+
+            <form id="roster-filter-form" method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>">
+                <input type="hidden" name="page" value="intersoccer-rosters" />
+                <input type="hidden" name="tab" value="<?php echo esc_attr($active_tab); ?>" />
+                <div class="filter-section">
+                    <h2><?php _e('Filter Rosters', 'intersoccer-reports-rosters'); ?></h2>
+                    <div class="filter-row">
+                        <label for="region"><?php _e('Region:', 'intersoccer-reports-rosters'); ?></label>
+                        <select name="region" id="region">
+                            <option value=""><?php _e('All Regions', 'intersoccer-reports-rosters'); ?></option>
+                            <?php
+                            $regions = get_terms(['taxonomy' => 'pa_canton-region', 'fields' => 'names']);
+                            if (!is_wp_error($regions)) {
+                                foreach ($regions as $region) {
+                                    $normalized_region = $normalize_attribute($region);
+                                    ?>
+                                    <option value="<?php echo esc_attr($normalized_region); ?>" <?php selected($filters['region'], $normalized_region); ?>><?php echo esc_html($region); ?></option>
+                                    <?php
+                                }
+                            }
+                            ?>
+                        </select>
+
+                        <label for="venue"><?php _e('Venue:', 'intersoccer-reports-rosters'); ?></label>
+                        <select name="venue" id="venue">
+                            <option value=""><?php _e('All Venues', 'intersoccer-reports-rosters'); ?></option>
+                            <?php
+                            $venues = get_terms(['taxonomy' => 'pa_intersoccer-venues', 'fields' => 'names']);
+                            if (!is_wp_error($venues)) {
+                                foreach ($venues as $venue) {
+                                    $normalized_venue = $normalize_attribute($venue);
+                                    ?>
+                                    <option value="<?php echo esc_attr($normalized_venue); ?>" <?php selected($filters['venue'], $normalized_venue); ?>><?php echo esc_html($venue); ?></option>
+                                    <?php
+                                }
+                            }
+                            ?>
+                        </select>
+
+                        <label for="show_no_attendees"><?php _e('Show Empty Rosters:', 'intersoccer-reports-rosters'); ?></label>
+                        <input type="checkbox" name="show_no_attendees" id="show_no_attendees" value="1" <?php checked($filters['show_no_attendees'], '1'); ?> />
+                    </div>
+
+                    <div class="filter-row">
+                        <button type="submit" class="button"><?php _e('Filter', 'intersoccer-reports-rosters'); ?></button>
+                    </div>
+                </div>
+            </form>
+
+            <div class="export-section">
+                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-rosters&action=export_all_rosters' . ($query_string ? '&' . $query_string : '')), 'export_all_rosters_nonce')); ?>" class="button button-primary"><?php _e('Export All Rosters', 'intersoccer-reports-rosters'); ?></a>
+                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-rosters&action=export_camp_rosters' . ($query_string ? '&' . $query_string : '')), 'export_camp_rosters_nonce')); ?>" class="button button-primary"><?php _e('Export All Camp Rosters', 'intersoccer-reports-rosters'); ?></a>
+                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-rosters&action=export_course_rosters' . ($query_string ? '&' . $query_string : '')), 'export_course_rosters_nonce')); ?>" class="button button-primary"><?php _e('Export All Course Rosters', 'intersoccer-reports-rosters'); ?></a>
+                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-rosters&action=export_girls_only_rosters' . ($query_string ? '&' . $query_string : '')), 'export_girls_only_rosters_nonce')); ?>" class="button button-primary"><?php _e('Export All Girls Only Rosters', 'intersoccer-reports-rosters'); ?></a>
+            </div>
+
+            <div class="tab-section">
+                <ul class="nav-tab-wrapper">
+                    <li class="nav-tab <?php echo $active_tab === 'courses' ? 'nav-tab-active' : ''; ?>">
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-rosters&tab=courses')); ?>" class="tab-link"><?php _e('Courses', 'intersoccer-reports-rosters'); ?></a>
+                    </li>
+                    <li class="nav-tab <?php echo $active_tab === 'camps' ? 'nav-tab-active' : ''; ?>">
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-rosters&tab=camps')); ?>" class="tab-link"><?php _e('Camps', 'intersoccer-reports-rosters'); ?></a>
+                    </li>
+                    <li class="nav-tab <?php echo $active_tab === 'girls_only' ? 'nav-tab-active' : ''; ?>">
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-rosters&tab=girls_only')); ?>" class="tab-link"><?php _e('Girls Only', 'intersoccer-reports-rosters'); ?></a>
+                    </li>
+                </ul>
+
+                <div id="courses-tab" class="tab-content" style="<?php echo $active_tab === 'courses' ? '' : 'display: none;'; ?>">
+                    <h2><?php _e('Ongoing Courses Rosters', 'intersoccer-reports-rosters'); ?></h2>
+                    <?php if (!empty($courses)): ?>
+                        <div class="table-responsive">
+                            <table class="widefat fixed">
+                                <thead>
+                                    <tr>
+                                        <th><?php _e('Event Name', 'intersoccer-reports-rosters'); ?></th>
+                                        <th><?php _e('Region', 'intersoccer-reports-rosters'); ?></th>
+                                        <th><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
+                                        <th><?php _e('Total Players', 'intersoccer-reports-rosters'); ?></th>
+                                        <th><?php _e('Actions', 'intersoccer-reports-rosters'); ?></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($courses as $variation): ?>
+                                        <tr>
+                                            <td><?php echo esc_html($variation['product_name']); ?></td>
+                                            <td><?php echo esc_html($variation['region']); ?></td>
+                                            <td><?php echo esc_html($variation['venue']); ?></td>
+                                            <td><?php echo esc_html($variation['total_players']); ?></td>
+                                            <td>
+                                                <a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . $variation['variation_id'])); ?>" class="button"><?php _e('View Roster', 'intersoccer-reports-rosters'); ?></a>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php else: ?>
+                        <p><?php _e('No ongoing course rosters found matching the selected filters.', 'intersoccer-reports-rosters'); ?></p>
+                    <?php endif; ?>
+                </div>
+
+                <div id="camps-tab" class="tab-content" style="<?php echo $active_tab === 'camps' ? '' : 'display: none;'; ?>">
+                    <h2><?php _e('Upcoming Camps Rosters', 'intersoccer-reports-rosters'); ?></h2>
+                    <?php if (!empty($camps)): ?>
+                        <div class="table-responsive">
+                            <table class="widefat fixed">
+                                <thead>
+                                    <tr>
+                                        <th><?php _e('Event Name', 'intersoccer-reports-rosters'); ?></th>
+                                        <th><?php _e('Camp Term', 'intersoccer-reports-rosters'); ?></th>
+                                        <th><?php _e('Region', 'intersoccer-reports-rosters'); ?></th>
+                                        <th><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
+                                        <th><?php _e('Total Players', 'intersoccer-reports-rosters'); ?></th>
+                                        <th><?php _e('Actions', 'intersoccer-reports-rosters'); ?></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($camps as $variation): ?>
+                                        <tr>
+                                            <td><?php echo esc_html($variation['product_name']); ?></td>
+                                            <td><?php echo esc_html($variation['camp_terms']); ?></td>
+                                            <td><?php echo esc_html($variation['region']); ?></td>
+                                            <td><?php echo esc_html($variation['venue']); ?></td>
+                                            <td><?php echo esc_html($variation['total_players']); ?></td>
+                                            <td>
+                                                <a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . $variation['variation_id'])); ?>" class="button"><?php _e('View Roster', 'intersoccer-reports-rosters'); ?></a>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php else: ?>
+                        <p><?php _e('No upcoming camp rosters found matching the selected filters.', 'intersoccer-reports-rosters'); ?></p>
+                    <?php endif; ?>
+                </div>
+
+                <div id="girls_only-tab" class="tab-content" style="<?php echo $active_tab === 'girls_only' ? '' : 'display: none;'; ?>">
+                    <h2><?php _e('Girls Only Rosters', 'intersoccer-reports-rosters'); ?></h2>
+                    <?php if (!empty($girls_only)): ?>
+                        <div class="table-responsive">
+                            <table class="widefat fixed">
+                                <thead>
+                                    <tr>
+                                        <th><?php _e('Event Name', 'intersoccer-reports-rosters'); ?></th>
+                                        <th><?php _e('Region', 'intersoccer-reports-rosters'); ?></th>
+                                        <th><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
+                                        <th><?php _e('Total Players', 'intersoccer-reports-rosters'); ?></th>
+                                        <th><?php _e('Actions', 'intersoccer-reports-rosters'); ?></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($girls_only as $variation): ?>
+                                        <tr>
+                                            <td><?php echo esc_html($variation['product_name']); ?></td>
+                                            <td><?php echo esc_html($variation['region']); ?></td>
+                                            <td><?php echo esc_html($variation['venue']); ?></td>
+                                            <td><?php echo esc_html($variation['total_players']); ?></td>
+                                            <td>
+                                                <a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . $variation['variation_id'])); ?>" class="button"><?php _e('View Roster', 'intersoccer-reports-rosters'); ?></a>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php else: ?>
+                        <p><?php _e('No girls only rosters found matching the selected filters.', 'intersoccer-reports-rosters'); ?></p>
+                    <?php endif; ?>
+                </div>
+            </div>
         </div>
+        <?php
+        error_log('InterSoccer: Rendered Rosters page');
+    } catch (Exception $e) {
+        error_log('InterSoccer: Error rendering rosters page: ' . $e->getMessage());
+        wp_die(__('An error occurred while rendering the rosters page.', 'intersoccer-reports-rosters'));
+    }
+}
 
-        <?php if (!empty($roster)): ?>
-            <table class="widefat fixed">
-                <thead>
-                    <tr>
-                        <th><?php _e('First Name', 'intersoccer-reports-rosters'); ?></th>
-                        <th><?php _e('Last Name', 'intersoccer-reports-rosters'); ?></th>
-                        <th><?php _e('Gender', 'intersoccer-reports-rosters'); ?></th>
-                        <th><?php _e('Parent Phone', 'intersoccer-reports-rosters'); ?></th>
-                        <th><?php _e('Parent Email', 'intersoccer-reports-rosters'); ?></th>
-                        <th><?php _e('Medical/Dietary', 'intersoccer-reports-rosters'); ?></th>
-                        <th><?php _e('Late Pick-Up (18h)', 'intersoccer-reports-rosters'); ?></th>
-                        <?php if ($is_camp): ?>
-                            <th><?php _e('Selected Days', 'intersoccer-reports-rosters'); ?></th>
-                        <?php else: ?>
-                            <th><?php _e('Discount Info', 'intersoccer-reports-rosters'); ?></th>
-                        <?php endif; ?>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($roster as $player): ?>
+/**
+ * Render the Roster Details page for a specific variation.
+ */
+function intersoccer_render_roster_details_page() {
+    try {
+        if (!current_user_can('coach') && !current_user_can('event_organizer') && !current_user_can('shop_manager') && !current_user_can('administrator')) {
+            wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
+        }
+
+        $variation_id = isset($_GET['variation_id']) ? intval($_GET['variation_id']) : 0;
+        if (!$variation_id) {
+            wp_die(__('Invalid variation ID.', 'intersoccer-reports-rosters'));
+        }
+
+        if (isset($_GET['action']) && check_admin_referer('export-roster_nonce')) {
+            if ($_GET['action'] === 'export_csv') {
+                intersoccer_export_roster_to_csv($variation_id);
+            }
+            exit;
+        }
+
+        $roster = intersoccer_pe_get_event_roster_by_variation($variation_id);
+        $is_camp = !empty($roster) && in_array($roster[0]['booking_type'], ['Full Week', 'single-days']);
+
+        $variation = wc_get_product($variation_id);
+        $product_id = $variation ? $variation->get_parent_id() : 0;
+        $product = $product_id ? wc_get_product($product_id) : null;
+        $event_name = $product ? $product->get_name() : 'Unknown Event';
+        $region = wc_get_product_terms($product_id, 'pa_canton-region', ['fields' => 'names'])[0] ?? 'Unknown';
+        $venue = wc_get_product_terms($product_id, 'pa_intersoccer-venues', ['fields' => 'names'])[0] ?? 'Unknown';
+        intersoccer_log_audit('view_roster_details', "User viewed roster details for Variation ID $variation_id");
+
+        ?>
+        <div class="wrap intersoccer-reports-rosters-roster-details">
+            <h1><?php printf(__('Roster for %s (Variation ID %d)', 'intersoccer-reports-rosters'), esc_html($event_name), $variation_id); ?></h1>
+            <p>
+                <strong><?php _e('Region:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html($region); ?><br>
+                <strong><?php _e('Venue:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html($venue); ?>
+            </p>
+
+            <div class="export-section">
+                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . $variation_id . '&action=export_csv'), 'export-roster_nonce')); ?>" class="button button-primary"><?php _e('Export to CSV', 'intersoccer-reports-rosters'); ?></a>
+            </div>
+
+            <?php if (!empty($roster)): ?>
+                <table class="widefat fixed">
+                    <thead>
                         <tr>
-                            <td><?php echo esc_html($player['first_name']); ?></td>
-                            <td><?php echo esc_html($player['last_name']); ?></td>
-                            <td><?php echo esc_html($player['gender']); ?></td>
-                            <td><?php echo esc_html($player['parent_phone']); ?></td>
-                            <td><?php echo esc_html($player['parent_email']); ?></td>
-                            <td><?php echo wp_kses_post($player['medical_conditions']); ?></td>
-                            <td><?php echo esc_html($player['late_pickup'] === '18h' ? __('Yes', 'intersoccer-reports-rosters') : __('No', 'intersoccer-reports-rosters')); ?></td>
+                            <th><?php _e('First Name', 'intersoccer-reports-rosters'); ?></th>
+                            <th><?php _e('Last Name', 'intersoccer-reports-rosters'); ?></th>
+                            <th><?php _e('Gender', 'intersoccer-reports-rosters'); ?></th>
+                            <th><?php _e('Parent Phone', 'intersoccer-reports-rosters'); ?></th>
+                            <th><?php _e('Parent Email', 'intersoccer-reports-rosters'); ?></th>
+                            <th><?php _e('Medical/Dietary', 'intersoccer-reports-rosters'); ?></th>
+                            <th><?php _e('Late Pick-Up (18h)', 'intersoccer-reports-rosters'); ?></th>
                             <?php if ($is_camp): ?>
-                                <td><?php echo esc_html(implode(', ', $player['selected_days'])); ?></td>
+                                <th><?php _e('Selected Days', 'intersoccer-reports-rosters'); ?></th>
+                                <th><?php _e('Camp Terms', 'intersoccer-reports-rosters'); ?></th>
                             <?php else: ?>
-                                <td><?php echo esc_html($player['discount_info']); ?></td>
+                                <th><?php _e('Discount Info', 'intersoccer-reports-rosters'); ?></th>
+                                <th><?php _e('Start Date', 'intersoccer-reports-rosters'); ?></th>
+                                <th><?php _e('End Date', 'intersoccer-reports-rosters'); ?></th>
                             <?php endif; ?>
                         </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php else: ?>
-            <p><?php _e('No players found for this event.', 'intersoccer-reports-rosters'); ?></p>
-        <?php endif; ?>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($roster as $player): ?>
+                            <tr>
+                                <td><?php echo esc_html($player['first_name'] ?? 'N/A'); ?></td>
+                                <td><?php echo esc_html($player['last_name'] ?? 'N/A'); ?></td>
+                                <td><?php echo esc_html($player['gender'] ?? 'N/A'); ?></td>
+                                <td><?php echo esc_html($player['parent_phone'] ?? 'N/A'); ?></td>
+                                <td><?php echo esc_html($player['parent_email'] ?? 'N/A'); ?></td>
+                                <td><?php echo wp_kses_post($player['medical_conditions'] ?? 'None'); ?></td>
+                                <td><?php echo esc_html($player['late_pickup'] === '18h' ? __('Yes', 'intersoccer-reports-rosters') : __('No', 'intersoccer-reports-rosters')); ?></td>
+                                <?php if ($is_camp): ?>
+                                    <td><?php echo esc_html(implode(', ', $player['selected_days'] ?? [])); ?></td>
+                                    <td><?php echo esc_html($player['camp_terms'] ?? 'N/A'); ?></td>
+                                <?php else: ?>
+                                    <td><?php echo esc_html($player['discount_info'] ?? 'None'); ?></td>
+                                    <td><?php echo esc_html($player['start_date'] ?? 'N/A'); ?></td>
+                                    <td><?php echo esc_html($player['end_date'] ?? 'N/A'); ?></td>
+                                <?php endif; ?>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php else: ?>
+                <p><?php _e('No players found for this event.', 'intersoccer-reports-rosters'); ?></p>
+            <?php endif; ?>
 
-        <p><a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-rosters')); ?>" class="button"><?php _e('Back to Rosters', 'intersoccer-reports-rosters'); ?></a></p>
-    </div>
-    <?php
-    error_log('InterSoccer: Rendered Roster Details page for Variation ID ' . $variation_id);
+            <p><a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-rosters')); ?>" class="button"><?php _e('Back to Rosters', 'intersoccer-reports-rosters'); ?></a></p>
+        </div>
+        <?php
+        error_log('InterSoccer: Rendered Roster Details page for Variation ID ' . $variation_id);
+    } catch (Exception $e) {
+        error_log('InterSoccer: Error rendering roster details page: ' . $e->getMessage());
+        wp_die(__('An error occurred while rendering the roster details page.', 'intersoccer-reports-rosters'));
+    }
 }
 ?>
