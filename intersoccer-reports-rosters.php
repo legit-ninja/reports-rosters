@@ -39,7 +39,7 @@ register_activation_hook(__FILE__, function () {
         $required_plugins = [
             'woocommerce/woocommerce.php' => 'WooCommerce',
             'intersoccer-product-variations/intersoccer-product-variations.php' => 'InterSoccer Product Variations',
-            'intersoccer-player-management/intersoccer-player-management.php' => 'InterSoccer Player Management',
+            // 'intersoccer-player-management/intersoccer-player-management.php' => 'InterSoccer Player Management',
         ];
 
         $missing = [];
