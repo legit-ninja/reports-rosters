@@ -10,7 +10,7 @@
 defined('ABSPATH') or die('Restricted access');
 
 // Require PHPSpreadsheet autoloader (install via Composer: composer require phpoffice/phpspreadsheet)
-require_once __DIR__ . '/../vendor/autoload.php';
+require_once dirname(__DIR__) . '/vendor/autoload.php';
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
@@ -59,7 +59,10 @@ function intersoccer_export_roster($variation_ids, $format = 'excel', $context =
         if ($format === 'excel') {
             $spreadsheet = new Spreadsheet();
             $sheet = $spreadsheet->getActiveSheet();
-            $sheet->setTitle(substr($context['camp_terms'] ?? $venue . ' - ' . $roster[0]['product_name'], 0, 31)); // Use camp_terms if provided
+            $camp_terms = $context['camp_terms'] ?? $roster[0]['camp_terms'] ?? 'Unknown Term';
+            $sanitized_title = preg_replace('/[^A-Za-z0-9\-\s]/', '', $camp_terms);
+            $sheet_title = substr($sanitized_title, 0, 31); // Limit to 31 characters
+            $sheet->setTitle($sheet_title);
 
             if ($is_camp) {
                 $headers = [
@@ -160,6 +163,7 @@ function intersoccer_export_roster($variation_ids, $format = 'excel', $context =
             $writer = new Xlsx($spreadsheet);
             $writer->save('php://output');
             intersoccer_log_audit('export_roster_excel', "Exported Excel roster for Variation ID(s) " . implode(',', $variation_ids));
+            error_log("InterSoccer: Exported roster with title $sheet_title for variation IDs " . implode(',', $variation_ids));
         }
 
         exit;
@@ -200,24 +204,56 @@ function intersoccer_export_all_rosters($camps, $courses, $export_type = 'all', 
             $spreadsheet = new Spreadsheet();
             $sheet_index = 0;
 
-            if ($export_type === 'camps' && !empty($camps)) {
-                // Group all camp variations by pa_camp-terms
-                $camp_terms_groups = [];
-                foreach ($camps as $config) {
-                    $camp_terms = $config['camp_terms'] ?? 'Unknown Term';
-                    if (!isset($camp_terms_groups[$camp_terms])) {
-                        $camp_terms_groups[$camp_terms] = [];
-                    }
-                    $camp_terms_groups[$camp_terms] = array_merge($camp_terms_groups[$camp_terms], $config['variation_ids']);
-                }
+            if ($export_type === 'camps') {
+                // Fetch all variable products with Activity Type "Camp"
+                $camp_products = wc_get_products([
+                    'type' => 'variable',
+                    'limit' => -1,
+                    'status' => 'publish',
+                    'tax_query' => [
+                        [
+                            'taxonomy' => 'pa_activity-type',
+                            'field' => 'name',
+                            'terms' => 'camp',
+                        ],
+                    ],
+                ]);
 
-                error_log("InterSoccer: Total unique camp terms for export: " . count($camp_terms_groups));
-                foreach ($camp_terms_groups as $camp_term => $term_variation_ids) {
-                    $unique_variation_ids = array_unique($term_variation_ids);
-                    error_log("InterSoccer: Exporting camp term $camp_term with " . count($unique_variation_ids) . " variation IDs");
+                // Collect all unique camp terms
+                $all_camp_terms = [];
+                foreach ($camp_products as $product) {
+                    $product_id = $product->get_id();
+                    $terms = wc_get_product_terms($product_id, 'pa_camp-terms', ['fields' => 'names']);
+                    if (!is_wp_error($terms) && !empty($terms)) {
+                        $all_camp_terms = array_merge($all_camp_terms, $terms);
+                    }
+                }
+                $all_camp_terms = array_unique($all_camp_terms);
+                error_log("InterSoccer: Total unique camp terms found: " . count($all_camp_terms));
+
+                // Generate a tab for each camp term
+                foreach ($all_camp_terms as $camp_term) {
+                    // Get all variations for this camp term
+                    $term_variation_ids = [];
+                    foreach ($camp_products as $product) {
+                        $product_id = $product->get_id();
+                        $variations = $product->get_children();
+                        foreach ($variations as $variation_id) {
+                            $variation = wc_get_product($variation_id);
+                            if ($variation) {
+                                $variation_terms = wc_get_product_terms($product_id, 'pa_camp-terms', ['fields' => 'names']);
+                                if (in_array($camp_term, $variation_terms)) {
+                                    $term_variation_ids[] = $variation_id;
+                                }
+                            }
+                        }
+                    }
+                    $term_variation_ids = array_unique($term_variation_ids);
+                    error_log("InterSoccer: Exporting camp term $camp_term with " . count($term_variation_ids) . " variation IDs");
+
                     $context = ['camp_terms' => $camp_term];
                     ob_start();
-                    intersoccer_export_roster($unique_variation_ids, $format, $context);
+                    intersoccer_export_roster($term_variation_ids, $format, $context);
                     $temp_content = ob_get_clean();
 
                     // Load the temporary spreadsheet content
@@ -228,7 +264,9 @@ function intersoccer_export_all_rosters($camps, $courses, $export_type = 'all', 
 
                     // Create a new sheet in the main spreadsheet
                     $new_sheet = $spreadsheet->createSheet($sheet_index);
-                    $new_sheet->setTitle(substr(preg_replace('/[^A-Za-z0-9\-\s]/', '', $camp_term), 0, 31)); // Use camp_terms as sheet title
+                    $sanitized_title = preg_replace('/[^A-Za-z0-9\-\s]/', '', $camp_term);
+                    $sheet_title = substr($sanitized_title, 0, 31); // Limit to 31 characters
+                    $new_sheet->setTitle($sheet_title);
                     $row = 1;
                     foreach ($temp_sheet->getRowIterator() as $row_iter) {
                         $cell_iterator = $row_iter->getCellIterator();
@@ -286,8 +324,10 @@ function intersoccer_export_all_rosters($camps, $courses, $export_type = 'all', 
                         $venue = $config['venue'] ?? 'Unknown Venue';
                         $term = $is_camp ? ($config['camp_terms'] ?? 'Unknown Term') : ($config['product_name'] ?? 'Unknown Course');
                         $sheet_title = $is_camp ? "$term - $venue" : "$venue - $term";
+                        $sanitized_title = preg_replace('/[^A-Za-z0-9\-\s]/', '', $sheet_title);
+                        $sheet_title = substr($sanitized_title, 0, 31); // Limit to 31 characters
                         $sheet = $spreadsheet->createSheet($sheet_index);
-                        $sheet->setTitle(substr(preg_replace('/[^A-Za-z0-9\-\s]/', '', $sheet_title), 0, 31)); // Sanitize title
+                        $sheet->setTitle($sheet_title);
 
                         if ($is_camp) {
                             $headers = [
@@ -331,84 +371,84 @@ function intersoccer_export_all_rosters($camps, $courses, $export_type = 'all', 
                                     $day_presence['Monday'],
                                     $day_presence['Tuesday'],
                                     $day_presence['Wednesday'],
-                                    $day_presence['Thursday'],
-                                    $day_presence['Friday'],
-                                ];
-                                $sheet->fromArray($data, NULL, 'A' . $row);
-                                $row++;
-                            }
-                        } else {
-                            $headers = [
-                                __('Venue', 'intersoccer-reports-rosters'),
-                                __('Course Name', 'intersoccer-reports-rosters'),
-                                __('Start Date', 'intersoccer-reports-rosters'),
-                                __('End Date', 'intersoccer-reports-rosters'),
-                                __('First Name', 'intersoccer-reports-rosters'),
-                                __('Last Name', 'intersoccer-reports-rosters'),
-                                __('Gender', 'intersoccer-reports-rosters'),
-                                __('Parent Phone', 'intersoccer-reports-rosters'),
-                                __('Parent Email', 'intersoccer-reports-rosters'),
-                                __('Medical/Dietary', 'intersoccer-reports-rosters'),
-                                __('Late', 'intersoccer-reports-rosters'),
-                            ];
-                            $sheet->fromArray($headers, NULL, 'A1');
-
-                            $row = 2;
-                            foreach ($roster as $player) {
-                                $data = [
-                                    $venue,
-                                    $player['product_name'] ?? 'N/A',
-                                    $player['start_date'] ?? 'N/A',
-                                    $player['end_date'] ?? 'N/A',
-                                    $player['first_name'] ?? 'N/A',
-                                    $player['last_name'] ?? 'N/A',
-                                    $player['gender'] ?? 'N/A',
-                                    $player['parent_phone'] ?? 'N/A',
-                                    $player['parent_email'] ?? 'N/A',
-                                    $player['medical_conditions'] ?? 'None',
-                                    $player['late_pickup'] === '18h' ? __('Yes', 'intersoccer-reports-rosters') : __('No', 'intersoccer-reports-rosters'),
-                                ];
-                                $sheet->fromArray($data, NULL, 'A' . $row);
-                                $row++;
-                            }
-                        }
-
-                        $sheet->setCellValue('A' . ($row + 1), __('Total Players:', 'intersoccer-reports-rosters') . ' ' . count($roster));
-                        error_log("InterSoccer: Processed sheet for $sheet_title with " . count($roster) . " attendees");
-                        $sheet_index++;
-                        $processed_configs++;
-                    }
-                    error_log("InterSoccer: Total configurations processed for this type: $processed_configs");
-                };
-
-                $has_data = false;
-                if ($export_type === 'all' || $export_type === 'courses') {
-                    if (!empty($courses)) {
-                        $write_rosters($courses, $spreadsheet, $sheet_index, false);
-                        $has_data = true;
-                    }
-                }
-            }
-
-            if (!$has_data) {
-                $sheet = $spreadsheet->getActiveSheet();
-                $sheet->setCellValue('A1', __('No rosters found matching the selected filters for this export type.', 'intersoccer-reports-rosters'));
-            }
-
-            $spreadsheet->setActiveSheetIndex(0);
-            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-            header('Content-Disposition: attachment; filename="intersoccer_' . $filename_suffix . '_' . date('Y-m-d_H-i-s') . '.xlsx"');
-            header('Cache-Control: max-age=0');
-
-            $writer = new Xlsx($spreadsheet);
-            $writer->save('php://output');
-            intersoccer_log_audit('export_all_rosters_excel', "Exported $export_type rosters to Excel");
-        }
-
-        exit;
-    } catch (Exception $e) {
-        error_log('InterSoccer: Error in intersoccer_export_all_rosters: ' . $e->getMessage());
-        wp_die(__('An error occurred while exporting rosters.', 'intersoccer-reports-rosters'));
+            $day_presence['Thursday'],
+            $day_presence['Friday'],
+        ];
+        $sheet->fromArray($data, NULL, 'A' . $row);
+        $row++;
     }
+} else {
+    $headers = [
+        __('Venue', 'intersoccer-reports-rosters'),
+        __('Course Name', 'intersoccer-reports-rosters'),
+        __('Start Date', 'intersoccer-reports-rosters'),
+        __('End Date', 'intersoccer-reports-rosters'),
+        __('First Name', 'intersoccer-reports-rosters'),
+        __('Last Name', 'intersoccer-reports-rosters'),
+        __('Gender', 'intersoccer-reports-rosters'),
+        __('Parent Phone', 'intersoccer-reports-rosters'),
+        __('Parent Email', 'intersoccer-reports-rosters'),
+        __('Medical/Dietary', 'intersoccer-reports-rosters'),
+        __('Late', 'intersoccer-reports-rosters'),
+    ];
+    $sheet->fromArray($headers, NULL, 'A1');
+
+    $row = 2;
+    foreach ($roster as $player) {
+        $data = [
+            $venue,
+            $player['product_name'] ?? 'N/A',
+            $player['start_date'] ?? 'N/A',
+            $player['end_date'] ?? 'N/A',
+            $player['first_name'] ?? 'N/A',
+            $player['last_name'] ?? 'N/A',
+            $player['gender'] ?? 'N/A',
+            $player['parent_phone'] ?? 'N/A',
+            $player['parent_email'] ?? 'N/A',
+            $player['medical_conditions'] ?? 'None',
+            $player['late_pickup'] === '18h' ? __('Yes', 'intersoccer-reports-rosters') : __('No', 'intersoccer-reports-rosters'),
+        ];
+        $sheet->fromArray($data, NULL, 'A' . $row);
+        $row++;
+    }
+}
+
+$sheet->setCellValue('A' . ($row + 1), __('Total Players:', 'intersoccer-reports-rosters') . ' ' . count($roster));
+error_log("InterSoccer: Processed sheet for $sheet_title with " . count($roster) . " attendees");
+$sheet_index++;
+$processed_configs++;
+}
+error_log("InterSoccer: Total configurations processed for this type: $processed_configs");
+};
+
+$has_data = false;
+if ($export_type === 'all' || $export_type === 'courses') {
+    if (!empty($courses)) {
+        $write_rosters($courses, $spreadsheet, $sheet_index, false);
+        $has_data = true;
+    }
+}
+}
+
+if (!$has_data) {
+    $sheet = $spreadsheet->getActiveSheet();
+    $sheet->setCellValue('A1', __('No rosters found matching the selected filters for this export type.', 'intersoccer-reports-rosters'));
+}
+
+$spreadsheet->setActiveSheetIndex(0);
+header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+header('Content-Disposition: attachment; filename="intersoccer_' . $filename_suffix . '_' . date('Y-m-d_H-i-s') . '.xlsx"');
+header('Cache-Control: max-age=0');
+
+$writer = new Xlsx($spreadsheet);
+$writer->save('php://output');
+intersoccer_log_audit('export_all_rosters_excel', "Exported $export_type rosters to Excel");
+}
+
+exit;
+} catch (Exception $e) {
+    error_log('InterSoccer: Error in intersoccer_export_all_rosters: ' . $e->getMessage());
+    wp_die(__('An error occurred while exporting rosters.', 'intersoccer-reports-rosters'));
+}
 }
 ?>

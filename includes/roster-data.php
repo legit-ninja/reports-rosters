@@ -20,33 +20,43 @@ function intersoccer_normalize_attribute($value) {
 }
 
 /**
- * Parse date range from camp terms (e.g., "June 30-July 4" from "Summer Week 2: June 30-July 4 (5 days)").
+ * Parse date range from camp terms (e.g., "June 30-July 4 (5 days)" or "July 7-11 (5 days)" from camp terms).
  *
  * @param string $camp_terms The camp terms string.
  * @return array|null Array with start and end dates or null if parsing fails.
  */
 function intersoccer_parse_camp_dates($camp_terms) {
-    if (preg_match('/(\w+\s+\d+(?:st|nd|rd|th)?\s*-\s*\w+\s+\d+(?:st|nd|rd|th)?(?:\s+\(\d+\s+days\))?)/i', $camp_terms, $matches)) {
-        $date_range = trim($matches[1]);
-        $dates = preg_split('/\s*-\s*/', $date_range);
-        if (count($dates) === 2) {
-            $start_parts = preg_split('/\s+/', trim($dates[0]));
-            $end_parts = preg_split('/\s+/', trim($dates[1]));
-            if (count($start_parts) >= 2 && count($end_parts) >= 1) {
-                $start_month = $start_parts[0];
-                $start_day = (int)preg_replace('/(st|nd|rd|th)/', '', $start_parts[1]);
-                $end_month = count($end_parts) > 1 ? $end_parts[0] : $start_month; // Assume same month if not specified
-                $end_day = (int)preg_replace('/(st|nd|rd|th)/', '', $end_parts[count($end_parts) - 1]);
-                $year = date('Y'); // Assume current year
-                $start_date = DateTime::createFromFormat('F j Y', "$start_month $start_day $year");
-                $end_date = DateTime::createFromFormat('F j Y', "$end_month $end_day $year");
-                if ($start_date && $end_date && $end_date >= $start_date) {
-                    error_log("InterSoccer: Successfully parsed $camp_terms to $start_date->format('Y-m-d') - $end_date->format('Y-m-d')");
+    // Match pattern: Month Day-Month Day (X days) or Month Day-Day (X days)
+    if (preg_match('/(\w+\s+\d+(?:st|nd|rd|th)?)\s*(?:-|\s+-\s+)(\w+\s+\d+(?:st|nd|rd|th)?)\s*\((\d+)\s+days\)/i', $camp_terms, $matches)) {
+        $start_date_str = trim($matches[1]);
+        $end_date_str = trim($matches[2]);
+        $expected_days = (int)$matches[3];
+
+        $start_parts = preg_split('/\s+/', $start_date_str);
+        $end_parts = preg_split('/\s+/', $end_date_str);
+        if (count($start_parts) >= 2 && count($end_parts) >= 1) {
+            $start_month = $start_parts[0];
+            $start_day = (int)preg_replace('/(st|nd|rd|th)/', '', $start_parts[1]);
+            $end_month = $end_parts[0];
+            $end_day = (int)preg_replace('/(st|nd|rd|th)/', '', $end_parts[1] ?? $end_parts[0]);
+            $year = date('Y'); // Assume current year
+
+            $start_date = DateTime::createFromFormat('F j Y', "$start_month $start_day $year");
+            $end_date = DateTime::createFromFormat('F j Y', "$end_month $end_day $year");
+
+            if ($start_date && $end_date && $end_date >= $start_date) {
+                $diff = $start_date->diff($end_date);
+                $actual_days = $diff->days + 1; // Inclusive days
+                if ($actual_days === $expected_days && in_array($actual_days, [4, 5])) { // Validate 4 or 5 days
+                    error_log("InterSoccer: Successfully parsed $camp_terms to " . $start_date->format('Y-m-d') . " - " . $end_date->format('Y-m-d') . " with $actual_days days");
                     return ['start' => $start_date, 'end' => $end_date];
+                } else {
+                    error_log("InterSoccer: Parsed $camp_terms to " . $start_date->format('Y-m-d') . " - " . $end_date->format('Y-m-d') . " but duration ($actual_days days) does not match expected ($expected_days days) or is not 4/5 days");
+                    return null;
                 }
             }
         }
-        error_log("InterSoccer: Failed to parse dates from camp term: $camp_terms after match attempt");
+        error_log("InterSoccer: Failed to parse dates from camp term: $camp_terms due to invalid date parts");
     } else {
         error_log("InterSoccer: No date range match found in camp term: $camp_terms");
     }
@@ -145,9 +155,9 @@ function intersoccer_pe_get_camp_variations($filters) {
 
         wp_reset_postdata();
 
-        $current_date = new DateTime(current_time('Y-m-d'));
-        $past_date = (clone $current_date)->modify('-52 weeks'); // Extend to 1 year past
-        $end_date = (clone $current_date)->modify('+52 weeks'); // Extend to 1 year future
+        $current_date = new DateTime(current_time('Y-m-d')); // 06:47 PM EDT, June 10, 2025
+        $past_date = (clone $current_date)->modify('-52 weeks');
+        $end_date = (clone $current_date)->modify('+52 weeks');
         $current_date_str = $current_date->format('Y-m-d');
         $past_date_str = $past_date->format('Y-m-d');
         $end_date_str = $end_date->format('Y-m-d');
@@ -194,11 +204,13 @@ function intersoccer_pe_get_camp_variations($filters) {
                 }
 
                 $camp_dates = intersoccer_parse_camp_dates($variation_camp_terms);
-                $is_active_or_upcoming = true; // Temporarily disable strict date check for debugging
+                $is_active_or_upcoming = true; // Temporarily disabled for debugging
                 if ($camp_dates) {
                     $start_str = $camp_dates['start']->format('Y-m-d');
                     $end_str = $camp_dates['end']->format('Y-m-d');
-                    error_log("InterSoccer: Camp term $variation_camp_terms parsed to $start_str - $end_str, status: " . ($end_str >= $past_date_str && $start_str <= $end_date_str ? 'active/upcoming' : 'excluded'));
+                    $diff = $camp_dates['start']->diff($camp_dates['end']);
+                    $actual_days = $diff->days + 1;
+                    error_log("InterSoccer: Camp term $variation_camp_terms parsed to $start_str - $end_str, duration: $actual_days days, status: " . ($end_str >= $past_date_str && $start_str <= $end_date_str ? 'active/upcoming' : 'excluded'));
                     if ($end_str >= $past_date_str && $start_str <= $end_date_str) {
                         $is_active_or_upcoming = true;
                     }
@@ -635,11 +647,13 @@ function intersoccer_pe_get_girls_only_variations($filters) {
                 }
 
                 $camp_dates = intersoccer_parse_camp_dates($variation_camp_terms);
-                $is_active_or_upcoming = true; // Temporarily disable strict date check for debugging
+                $is_active_or_upcoming = true; // Temporarily disabled for debugging
                 if ($camp_dates) {
                     $start_str = $camp_dates['start']->format('Y-m-d');
                     $end_str = $camp_dates['end']->format('Y-m-d');
-                    error_log("InterSoccer: Girls Only camp term $variation_camp_terms parsed to $start_str - $end_str, status: " . ($end_str >= $current_date_str && $start_str <= $end_date_str ? 'active/upcoming' : 'excluded'));
+                    $diff = $camp_dates['start']->diff($camp_dates['end']);
+                    $actual_days = $diff->days + 1;
+                    error_log("InterSoccer: Girls Only camp term $variation_camp_terms parsed to $start_str - $end_str, duration: $actual_days days, status: " . ($end_str >= $current_date_str && $start_str <= $end_date_str ? 'active/upcoming' : 'excluded'));
                     if ($end_str >= $current_date_str && $start_str <= $end_date_str) {
                         $is_active_or_upcoming = true;
                     }
