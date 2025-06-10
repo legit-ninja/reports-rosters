@@ -1,0 +1,16 @@
+{
+    "name": "underdog/reports-rosters",
+    "description": "Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.",
+    "type": "library",
+    "require": {
+        "phpoffice/phpspreadsheet": "^4.3"
+    },
+    "license": "Apache2",
+    "authors": [
+        {
+            "name": "Jeremy Lee",
+            "email": "jlee@underdogunlimited.com"
+        }
+    ],
+    "minimum-stability": "stable"
+}
