@@ -3,7 +3,7 @@
  * Export functionality for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.0.56
+ * @version 1.2.90
  */
 
 defined('ABSPATH') or die('Restricted access');
@@ -31,33 +31,21 @@ function intersoccer_export_roster($variation_ids, $format = 'excel', $context =
         $sheet_title = substr(preg_replace('/[^A-Za-z0-9\-\s]/', '', $is_camp ? $roster[0]['camp_terms'] : $roster[0]['event_dates']), 0, 31);
         $sheet->setTitle($sheet_title);
 
-        $headers = $is_camp ? [
-            'Camp Terms', 'Venue', 'Age Group', 'Booking Type', 'First Name', 'Last Name', 'Age', 'Gender',
-            'Parent Phone', 'Parent Email', 'Medical/Dietary', 'Late', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'
-        ] : [
-            'Venue', 'Booking Type', 'Event Dates', 'First Name', 'Last Name', 'Age', 'Gender',
-            'Parent Phone', 'Parent Email', 'Medical/Dietary', 'Late'
+        $headers = [
+            'First Name', 'Last Name', 'Gender', 'Parent Phone', 'Parent Email', 'Medical/Dietary', 'Late Pickup'
         ];
         $sheet->fromArray($headers, NULL, 'A1');
 
         $row = 2;
         foreach ($roster as $player) {
-            $required_keys = ['first_name', 'last_name', 'gender', 'parent_phone', 'parent_email', 'medical_conditions', 'late_pickup'];
-            if (array_diff($required_keys, array_keys($player))) {
-                error_log("InterSoccer: Missing required data for player {$player['player_name']}: " . json_encode(array_diff($required_keys, array_keys($player))));
-                continue;
-            }
-            $day_presence = json_decode($player['day_presence'], true) ?: ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
-            $data = $is_camp ? [
-                $player['camp_terms'] ?? 'N/A', $player['venue'] ?? 'N/A', $player['age_group'] ?? 'N/A', $player['booking_type'],
-                $player['first_name'], $player['last_name'], $player['age'] ?? 'N/A', $player['gender'],
-                $player['parent_phone'], $player['parent_email'], $player['medical_conditions'], $player['late_pickup'] === '18h' ? 'Yes' : 'No',
-                $day_presence['Monday'] ?? 'No', $day_presence['Tuesday'] ?? 'No', $day_presence['Wednesday'] ?? 'No',
-                $day_presence['Thursday'] ?? 'No', $day_presence['Friday'] ?? 'No'
-            ] : [
-                $player['venue'] ?? 'N/A', $player['booking_type'], $player['event_dates'] ?? ($player['start_date'] . ' to ' . $player['end_date']),
-                $player['first_name'], $player['last_name'], $player['age'] ?? 'N/A', $player['gender'],
-                $player['parent_phone'], $player['parent_email'], $player['medical_conditions'], $player['late_pickup'] === '18h' ? 'Yes' : 'No'
+            $data = [
+                $player['first_name'],
+                $player['last_name'],
+                $player['gender'],
+                $player['parent_phone'],
+                $player['parent_email'],
+                $player['medical_conditions'] ?? 'None',
+                $player['late_pickup'] === '18h' ? 'Yes' : 'No'
             ];
             $sheet->fromArray($data, NULL, 'A' . $row++);
         }
@@ -95,28 +83,22 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 $sheet = $spreadsheet->createSheet($sheet_index++);
                 $sheet_title = substr(preg_replace('/[^A-Za-z0-9\-\s]/', '', $config['product_name'] . ' - ' . $config['venues'][array_key_first($config['venues'])]['venue'] ?? ''), 0, 31);
                 $sheet->setTitle($sheet_title);
-                $is_camp = in_array('Camp', array_map('intersoccer_normalize_attribute', explode(', ', $config['activity_type'] ?? '')));
-                $headers = $is_camp ? [
-                    'Camp Terms', 'Venue', 'Age Group', 'Booking Type', 'First Name', 'Last Name', 'Age', 'Gender',
-                    'Parent Phone', 'Parent Email', 'Medical/Dietary', 'Late', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'
-                ] : [
-                    'Venue', 'Booking Type', 'Event Dates', 'First Name', 'Last Name', 'Age', 'Gender',
-                    'Parent Phone', 'Parent Email', 'Medical/Dietary', 'Late'
+
+                $headers = [
+                    'First Name', 'Last Name', 'Gender', 'Parent Phone', 'Parent Email', 'Medical/Dietary', 'Late Pickup'
                 ];
                 $sheet->fromArray($headers, NULL, 'A1');
+
                 $row = 2;
                 foreach ($roster as $player) {
-                    $day_presence = json_decode($player['day_presence'], true) ?: ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
-                    $data = $is_camp ? [
-                        $player['camp_terms'] ?? 'N/A', $player['venue'] ?? 'N/A', $player['age_group'] ?? 'N/A', $player['booking_type'],
-                        $player['first_name'], $player['last_name'], $player['age'] ?? 'N/A', $player['gender'],
-                        $player['parent_phone'], $player['parent_email'], $player['medical_conditions'], $player['late_pickup'] === '18h' ? 'Yes' : 'No',
-                        $day_presence['Monday'] ?? 'No', $day_presence['Tuesday'] ?? 'No', $day_presence['Wednesday'] ?? 'No',
-                        $day_presence['Thursday'] ?? 'No', $day_presence['Friday'] ?? 'No'
-                    ] : [
-                        $player['venue'] ?? 'N/A', $player['booking_type'], $player['event_dates'] ?? ($player['start_date'] . ' to ' . $player['end_date']),
-                        $player['first_name'], $player['last_name'], $player['age'] ?? 'N/A', $player['gender'],
-                        $player['parent_phone'], $player['parent_email'], $player['medical_conditions'], $player['late_pickup'] === '18h' ? 'Yes' : 'No'
+                    $data = [
+                        $player['first_name'],
+                        $player['last_name'],
+                        $player['gender'],
+                        $player['parent_phone'],
+                        $player['parent_email'],
+                        $player['medical_conditions'] ?? 'None',
+                        $player['late_pickup'] === '18h' ? 'Yes' : 'No'
                     ];
                     $sheet->fromArray($data, NULL, 'A' . $row++);
                 }

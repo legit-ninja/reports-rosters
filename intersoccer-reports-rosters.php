@@ -112,15 +112,16 @@ add_action('admin_enqueue_scripts', function ($hook) {
     }
 });
 
-
-
 add_action('admin_menu', function () {
     add_menu_page(__('InterSoccer Reports and Rosters', 'intersoccer-reports-rosters'), __('Reports and Rosters', 'intersoccer-reports-rosters'), 'read', 'intersoccer-reports-rosters', 'intersoccer_render_plugin_overview_page', 'dashicons-chart-bar', 30);
     add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Overview', 'intersoccer-reports-rosters'), __('Overview', 'intersoccer-reports-rosters'), 'read', 'intersoccer-reports-rosters', 'intersoccer_render_plugin_overview_page');
-    add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Rosters', 'intersoccer-reports-rosters'), __('Rosters', 'intersoccer-reports-rosters'), 'read', 'intersoccer-rosters', 'intersoccer_render_rosters_page');
-    add_submenu_page('intersoccer-reports-rosters', __('Roster Details', 'intersoccer-reports-rosters'), null, 'read', 'intersoccer-roster-details', 'intersoccer_render_roster_details_page');
+    add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Reports', 'intersoccer-reports-rosters'), __('Reports', 'intersoccer-reports-rosters'), 'read', 'intersoccer-reports', 'intersoccer_render_reports_page');
+    add_submenu_page('intersoccer-reports-rosters', __('All Rosters', 'intersoccer-reports-rosters'), __('All Rosters', 'intersoccer-reports-rosters'), 'read', 'intersoccer-all-rosters', 'intersoccer_render_all_rosters_page');
+    add_submenu_page('intersoccer-reports-rosters', __('Camps', 'intersoccer-reports-rosters'), __('Camps', 'intersoccer-reports-rosters'), 'read', 'intersoccer-camps', 'intersoccer_render_camps_page');
+    add_submenu_page('intersoccer-reports-rosters', __('Courses', 'intersoccer-reports-rosters'), __('Courses', 'intersoccer-reports-rosters'), 'read', 'intersoccer-courses', 'intersoccer_render_courses_page');
+    add_submenu_page('intersoccer-reports-rosters', __('Girls Only', 'intersoccer-reports-rosters'), __('Girls Only', 'intersoccer-reports-rosters'), 'read', 'intersoccer-girls-only', 'intersoccer_render_girls_only_page');
+    add_submenu_page('intersoccer-reports-rosters', __('Other Events', 'intersoccer-reports-rosters'), __('Other Events', 'intersoccer-reports-rosters'), 'read', 'intersoccer-other-events', 'intersoccer_render_other_events_page');
     add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Advanced', 'intersoccer-reports-rosters'), __('Advanced', 'intersoccer-reports-rosters'), 'read', 'intersoccer-advanced', 'intersoccer_render_advanced_page');
-    add_submenu_page('intersoccer-reports-rosters', __('Export Rosters', 'intersoccer-reports-rosters'), __('Export Rosters', 'intersoccer-reports-rosters'), 'manage_options', 'intersoccer-export-rosters', 'intersoccer_render_export_page');
 });
 
 function intersoccer_log_audit($action, $details) {
@@ -650,7 +651,7 @@ function intersoccer_auto_add_to_rosters($order_id, $old_status, $new_status, $o
     }
 }
 
-// Reconcile rosters on page load
+// Reconcile Rosters
 function intersoccer_reconcile_rosters() {
     if (current_user_can('manage_options') || current_user_can('coach')) {
         global $wpdb;
@@ -659,164 +660,143 @@ function intersoccer_reconcile_rosters() {
         $existing_rosters = $wpdb->get_col("SELECT order_item_id FROM $rosters_table");
         $updated = 0;
 
-        foreach ($items as $item) {
-            $order_item_id = $item->get_id();
-            if (!in_array($order_item_id, $existing_rosters)) {
-                $product = $item->get_product();
-                if ($product) {
-                    $order_item_meta = $item->get_meta_data() ? array_column(array_map('get_object_vars', $item->get_meta_data()), 'value', 'key') : [];
-                    $product_id = $product->get_id();
-                    $variation_id = $item->get_variation_id() ?: $product_id;
-                    $parent_product = wc_get_product($product_id);
+        foreach ($orders as $order) {
+            $items = $order->get_items();
+            if (empty($items)) continue;
 
-                    $player_assignment = wc_get_order_item_meta($order_item_id, 'assigned_player', true);
-                    $assigned_attendee = wc_get_order_item_meta($order_item_id, 'Assigned Attendee', true);
-                    if (!$assigned_attendee && $player_assignment !== false && $player_assignment !== '' && is_numeric($player_assignment)) {
+            foreach ($items as $item) {
+                $order_item_id = $item->get_id();
+                if (!in_array($order_item_id, $existing_rosters)) {
+                    $product = $item->get_product();
+                    if ($product) {
+                        $order_item_meta = $item->get_meta_data() ? array_column(array_map('get_object_vars', $item->get_meta_data()), 'value', 'key') : [];
+                        $product_id = $product->get_id();
+                        $variation_id = $item->get_variation_id() ?: $product_id;
+                        $parent_product = wc_get_product($product_id);
+
+                        $assigned_attendees = wc_get_order_item_meta($order_item_id, 'Assigned Attendee', false);
+                        if (empty($assigned_attendees)) {
+                            $assigned_attendees = [wc_get_order_item_meta($order_item_id, 'Assigned Attendee', true)];
+                        }
+                        $player_assignments = wc_get_order_item_meta($order_item_id, 'assigned_player', false) ?: [];
+
                         $user_id = $order->get_user_id();
                         $players = get_user_meta($user_id, 'intersoccer_players', true) ?: [];
-                        $assigned_attendee = isset($players[$player_assignment]) ? trim($players[$player_assignment]['first_name'] . ' ' . $players[$player_assignment]['last_name']) : $assigned_attendee;
-                        error_log('InterSoccer: Resolved Assigned Attendee from assigned_player ' . $player_assignment . ': ' . $assigned_attendee);
-                    }
-                    if (!$assigned_attendee) {
-                        $assigned_attendee = 'Unknown Attendee';
-                        error_log('InterSoccer: No Assigned Attendee or valid assigned_player for order ' . $order_id . ', item ' . $order_item_id);
-                    }
-                    $player_name_parts = explode(' ', $assigned_attendee, 2);
-                    $first_name = !empty($player_name_parts[0]) ? $player_name_parts[0] : 'Unknown';
-                    $last_name = !empty($player_name_parts[1]) ? $player_name_parts[1] : 'Unknown';
 
-                    $booking_type = $order_item_meta['Booking Type'] ?? $order_item_meta['pa_booking-type'];
-                    $selected_days = $order_item_meta['Days Selected'] ?? $order_item_meta['pa_days-of-week'];
-                    $camp_terms = $order_item_meta['Camp Terms'] ?? $order_item_meta['pa_camp-terms'];
-                    $venue = $order_item_meta['InterSoccer Venues'] ?? $order_item_meta['pa_intersoccer-venues'];
-                    $age_group = $order_item_meta['Age Group'] ?? $order_item_meta['pa_age-group'];
-                    $start_date = DateTime::createFromFormat('m/d/Y', $order_item_meta['Start Date'] ?? '') ? 
-                                DateTime::createFromFormat('m/d/Y', $order_item_meta['Start Date'])->format('Y-m-d') : 
-                                (DateTime::createFromFormat('Y-m-d', $order_item_meta['Start Date'] ?? '') ? DateTime::createFromFormat('Y-m-d', $order_item_meta['Start Date'])->format('Y-m-d') : 'N/A');
-                    $end_date = DateTime::createFromFormat('m/d/Y', $order_item_meta['End Date'] ?? '') ? 
-                            DateTime::createFromFormat('m/d/Y', $order_item_meta['End Date'])->format('Y-m-d') : 
-                            (DateTime::createFromFormat('Y-m-d', $order_item_meta['End Date'] ?? '') ? DateTime::createFromFormat('Y-m-d', $order_item_meta['End Date'])->format('Y-m-d') : 'N/A');
-                    $event_dates = $order_item_meta['pa_event_dates'] ?? $order_item_meta['event-start-date'] . ' to ' . $order_item_meta['event-end-date'] ?? 'N/A';
-                    $parent_phone = $order->get_billing_phone() ?: 'N/A';
-                    $parent_email = $order->get_billing_email() ?: 'N/A';
-                    $medical_conditions = $order_item_meta['Medical Conditions'] ?? $order_item_meta['medical_conditions'] ?? $order_item_meta['Medical/Dietary Conditions'] ?? '';
-                    $late_pickup = $order_item_meta['Late Pickup'] ?? $order_item_meta['late_pickup'] ?? 'No';
+                        foreach ($assigned_attendees as $index => $assigned_attendee) {
+                            if (!$assigned_attendee && isset($player_assignments[$index]) && is_numeric($player_assignments[$index])) {
+                                $assigned_attendee = isset($players[$player_assignments[$index]]) ? trim($players[$player_assignments[$index]]['first_name'] . ' ' . $players[$player_assignments[$index]]['last_name']) : 'Unknown Attendee';
+                                error_log('InterSoccer: Resolved Assigned Attendee from assigned_player ' . $player_assignments[$index] . ': ' . $assigned_attendee);
+                            }
+                            if (!$assigned_attendee) {
+                                $assigned_attendee = 'Unknown Attendee';
+                                error_log('InterSoccer: No Assigned Attendee or valid assigned_player for order ' . $order->get_id() . ', item ' . $order_item_id . ', index ' . $index);
+                            }
+                            $player_name_parts = explode(' ', $assigned_attendee, 2);
+                            $first_name = !empty($player_name_parts[0]) ? $player_name_parts[0] : 'Unknown';
+                            $last_name = !empty($player_name_parts[1]) ? $player_name_parts[1] : 'Unknown';
 
-                    $day_presence = ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
-                    if (strtolower($booking_type) === 'single-days') {
-                        $days = is_array($selected_days) ? $selected_days : array_map('trim', explode(',', $selected_days));
-                        foreach ($days as $day) {
-                            $day = trim(strtolower($day));
-                            if (in_array($day, ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'])) {
-                                $day_presence[ucfirst($day)] = 'Yes';
+                            $booking_type = $order_item_meta['Booking Type'] ?? $order_item_meta['pa_booking-type'];
+                            $selected_days = $order_item_meta['Days Selected'] ?? $order_item_meta['pa_days-of-week'];
+                            $camp_terms = $order_item_meta['Camp Terms'] ?? $order_item_meta['pa_camp-terms'];
+                            $venue = $order_item_meta['InterSoccer Venues'] ?? $order_item_meta['pa_intersoccer-venues'];
+                            $age_group = $order_item_meta['Age Group'] ?? $order_item_meta['pa_age-group'];
+                            $start_date = DateTime::createFromFormat('m/d/Y', $order_item_meta['Start Date'] ?? '') ? 
+                                        DateTime::createFromFormat('m/d/Y', $order_item_meta['Start Date'])->format('Y-m-d') : 
+                                        (DateTime::createFromFormat('Y-m-d', $order_item_meta['Start Date'] ?? '') ? DateTime::createFromFormat('Y-m-d', $order_item_meta['Start Date'])->format('Y-m-d') : 'N/A');
+                            $end_date = DateTime::createFromFormat('m/d/Y', $order_item_meta['End Date'] ?? '') ? 
+                                    DateTime::createFromFormat('m/d/Y', $order_item_meta['End Date'])->format('Y-m-d') : 
+                                    (DateTime::createFromFormat('Y-m-d', $order_item_meta['End Date'] ?? '') ? DateTime::createFromFormat('Y-m-d', $order_item_meta['End Date'])->format('Y-m-d') : 'N/A');
+                            $event_dates = $order_item_meta['pa_event_dates'] ?? $order_item_meta['event-start-date'] . ' to ' . $order_item_meta['event-end-date'] ?? 'N/A';
+                            $parent_phone = $order->get_billing_phone() ?: 'N/A';
+                            $parent_email = $order->get_billing_email() ?: 'N/A';
+                            $medical_conditions = $order_item_meta['Medical Conditions'] ?? $order_item_meta['medical_conditions'] ?? $order_item_meta['Medical/Dietary Conditions'] ?? '';
+                            $late_pickup = $order_item_meta['Late Pickup'] ?? $order_item_meta['late_pickup'] ?? 'No';
+
+                            $day_presence = ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
+                            if (strtolower($booking_type) === 'single-days') {
+                                $days = is_array($selected_days) ? $selected_days : array_map('trim', explode(',', $selected_days));
+                                foreach ($days as $day) {
+                                    $day = trim(strtolower($day));
+                                    if (in_array($day, ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'])) {
+                                        $day_presence[ucfirst($day)] = 'Yes';
+                                    }
+                                }
+                            }
+
+                            $age = null;
+                            $gender = 'N/A';
+                            $found_player = false;
+                            foreach ($players as $player_index => $player) {
+                                $player_full_name = trim($player['first_name'] . ' ' . $player['last_name']);
+                                if (strtolower($player_full_name) === strtolower($assigned_attendee)) {
+                                    $first_name = $player['first_name'] ?? $first_name;
+                                    $last_name = $player['last_name'] ?? $last_name;
+                                    $age = $player['dob'] ? (new DateTime($player['dob']))->diff(new DateTime())->y : $age;
+                                    $gender = $player['gender'] ?? $gender;
+                                    $medical_conditions = $player['medical_conditions'] ?? $medical_conditions;
+                                    $found_player = true;
+                                    break;
+                                }
+                            }
+                            if (!$found_player) {
+                                $age = (int)$order_item_meta['Player Age'] ?? $age;
+                                $gender = $order_item_meta['Player Gender'] ?? $order_item_meta['gender'] ?? $gender;
+                            }
+
+                            $product_name = $product->get_name();
+                            $activity_type_terms = $parent_product ? wc_get_product_terms($product_id, 'pa_activity-type', ['fields' => 'names']) : [];
+                            $activity_type = 'Unknown';
+                            if (isset($order_item_meta['Activity Type']) && $order_item_meta['Activity Type']) {
+                                $raw_activity_type = $order_item_meta['Activity Type'];
+                                $activity_types = preg_split('/,(?=(?:[^\'"]|\'[^\']*\'|"[^"]*")*$)/', $raw_activity_type, -1, PREG_SPLIT_NO_EMPTY);
+                                $activity_types = array_map('trim', $activity_types);
+                                $activity_types = array_map(function($type) { return str_replace("'", '', $type); }, $activity_types);
+                                $activity_type = implode(', ', array_filter($activity_types));
+                            } elseif (!empty($activity_type_terms)) {
+                                $activity_type = implode(', ', $activity_type_terms);
+                            } else {
+                                $activity_type = (stripos($product_name, 'Camp') !== false ? 'Camp' :
+                                                (stripos($product_name, 'Course') !== false ? 'Course' :
+                                                (stripos($product_name, 'Girls') !== false ? 'Girls Only' :
+                                                (stripos($product_name, 'Birthday') !== false ? 'Event' : 'Other'))));
+                            }
+
+                            $roster_entry = [
+                                'order_item_id' => $order_item_id,
+                                'variation_id' => $variation_id,
+                                'player_name' => $assigned_attendee,
+                                'first_name' => $first_name,
+                                'last_name' => $last_name,
+                                'age' => $age,
+                                'gender' => $gender,
+                                'booking_type' => $booking_type,
+                                'selected_days' => $selected_days,
+                                'camp_terms' => $camp_terms,
+                                'venue' => $venue,
+                                'parent_phone' => $parent_phone,
+                                'parent_email' => $parent_email,
+                                'medical_conditions' => $medical_conditions,
+                                'late_pickup' => $late_pickup,
+                                'day_presence' => json_encode($day_presence),
+                                'age_group' => $age_group,
+                                'start_date' => ($start_date === 'N/A' ? null : $start_date),
+                                'end_date' => ($end_date === 'N/A' ? null : $end_date),
+                                'event_dates' => $event_dates,
+                                'product_name' => $product_name,
+                                'activity_type' => (string)$activity_type,
+                            ];
+
+                            $result = $wpdb->insert($rosters_table, $roster_entry, [
+                                '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'
+                            ]);
+                            if ($result === false) {
+                                error_log("InterSoccer: Insert failed for order " . $order->get_id() . ", item $order_item_id, attendee $assigned_attendee: " . $wpdb->last_error);
+                            } else {
+                                $updated++;
+                                error_log('InterSoccer: Reconciled new roster for order ' . $order->get_id() . ', item ' . $order_item_id . ', attendee ' . $assigned_attendee . ' (Variation ID: ' . $variation_id . ')');
                             }
                         }
-                    }
-
-                    $user_id = $order->get_user_id();
-                    $players = get_user_meta($user_id, 'intersoccer_players', true) ?: [];
-                    $age = null;
-                    $gender = 'N/A';
-                    $found_player = false;
-                    foreach ($players as $index => $player) {
-                        $player_full_name = trim($player['first_name'] . ' ' . $player['last_name']);
-                        if (strtolower($player_full_name) === strtolower($assigned_attendee)) {
-                            $first_name = $player['first_name'] ?? $first_name;
-                            $last_name = $player['last_name'] ?? $last_name;
-                            $age = $player['dob'] ? (new DateTime($player['dob']))->diff(new DateTime())->y : $age;
-                            $gender = $player['gender'] ?? $gender;
-                            $medical_conditions = $player['medical_conditions'] ?? $medical_conditions;
-                            $found_player = true;
-                            break;
-                        }
-                    }
-                    if (!$found_player) {
-                        $age = (int)$order_item_meta['Player Age'] ?? $age;
-                        $gender = $order_item_meta['Player Gender'] ?? $order_item_meta['gender'] ?? $gender;
-                    }
-
-                    $product_name = $product->get_name();
-                    $activity_type_terms = $parent_product ? wc_get_product_terms($product_id, 'pa_activity-type', ['fields' => 'names']) : [];
-                    error_log("InterSoccer: Raw activity type terms for product $product_id: " . print_r($activity_type_terms, true));
-                    $activity_type = 'Unknown'; // Default to a string
-                    if (isset($order_item_meta['Activity Type']) && $order_item_meta['Activity Type']) {
-                        $raw_activity_type = $order_item_meta['Activity Type'];
-                        error_log("InterSoccer: Raw Activity Type from order meta: $raw_activity_type for order $order_id, item $order_item_id");
-                        // Use preg_split to handle commas outside quotes
-                        $activity_types = preg_split('/,(?=(?:[^\'"]|\'[^\']*\'|"[^"]*")*$)/', $raw_activity_type, -1, PREG_SPLIT_NO_EMPTY);
-                        $activity_types = array_map('trim', $activity_types);
-                        error_log("InterSoccer: Parsed activity types before normalization: " . print_r($activity_types, true));
-                        // Forcefully remove apostrophes
-                        $activity_types = array_map(function($type) {
-                            return str_replace("'", '', $type); // Explicitly remove all apostrophes
-                        }, $activity_types);
-                        error_log("InterSoccer: Parsed activity types after normalization: " . print_r($activity_types, true));
-                        $activity_type = implode(', ', array_filter($activity_types)); // Join with filtering out empty values
-                        error_log("InterSoccer: Assigned activity_type from order meta: $activity_type for order $order_id, item $order_item_id");
-                    } elseif (!empty($activity_type_terms)) {
-                        $activity_type = implode(', ', $activity_type_terms);
-                        error_log("InterSoccer: Assigned activity_type from terms: $activity_type for product $product_id");
-                    } else {
-                        $activity_type = (stripos($product_name, 'Camp') !== false ? 'Camp' :
-                                        (stripos($product_name, 'Course') !== false ? 'Course' :
-                                        (stripos($product_name, 'Girls') !== false ? 'Girls Only' :
-                                        (stripos($product_name, 'Birthday') !== false ? 'Event' : 'Other'))));
-                        error_log("InterSoccer: Assigned activity_type from product name: $activity_type for product $product_id");
-                    }
-                    error_log("InterSoccer: Final activity_type before insert for order $order_id, item $order_item_id: $activity_type");
-
-                    $roster_entry = [
-                        'order_item_id' => $order_item_id,
-                        'player_name' => $assigned_attendee,
-                        'first_name' => $first_name,
-                        'last_name' => $last_name,
-                        'age' => $age,
-                        'gender' => $gender,
-                        'booking_type' => $booking_type,
-                        'selected_days' => $selected_days,
-                        'camp_terms' => $camp_terms,
-                        'venue' => $venue,
-                        'parent_phone' => $parent_phone,
-                        'parent_email' => $parent_email,
-                        'medical_conditions' => $medical_conditions,
-                        'late_pickup' => $late_pickup,
-                        'day_presence' => json_encode($day_presence),
-                        'age_group' => $age_group,
-                        'start_date' => ($start_date === 'N/A' ? null : $start_date),
-                        'end_date' => ($end_date === 'N/A' ? null : $end_date),
-                        'event_dates' => $event_dates,
-                        'product_name' => $product_name,
-                        'activity_type' => (string)$activity_type,
-                    ];
-
-                    error_log("InterSoccer: Roster entry before insert for order $order_id, item $order_item_id: " . print_r($roster_entry, true));
-
-                    // Prepare and log the exact query
-                    $fields = implode(', ', array_keys($roster_entry));
-                    $placeholders = implode(', ', array_fill(0, count($roster_entry), '%s')); // Force all as strings
-                    $query = "INSERT INTO $rosters_table ($fields) VALUES ($placeholders)";
-                    $prepared_query = $wpdb->prepare($query, array_values($roster_entry));
-                    error_log("InterSoccer: Prepared query for order $order_id, item $order_item_id: $prepared_query");
-
-                    // Perform the insert
-                    $result = $wpdb->insert($rosters_table, $roster_entry, [
-                        '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'
-                    ]);
-                    if ($result === false) {
-                        error_log("InterSoccer: Insert failed for order $order_id, item $order_item_id: " . $wpdb->last_error . ' - SQL Query: ' . $wpdb->last_query . ' - Entry: ' . print_r($roster_entry, true));
-                    } else {
-                        $inserted_id = $wpdb->insert_id;
-                        $inserted_data = $wpdb->get_row($wpdb->prepare("SELECT activity_type FROM $rosters_table WHERE id = %d", $inserted_id));
-                        if ($inserted_data) {
-                            error_log("InterSoccer: Inserted activity_type for ID $inserted_id: " . $inserted_data->activity_type);
-                            if ($inserted_data->activity_type !== $activity_type) {
-                                error_log("InterSoccer: Mismatch! Expected $activity_type, got " . $inserted_data->activity_type . ' for order $order_id, item $order_item_id');
-                            }
-                        } else {
-                            error_log("InterSoccer: Failed to retrieve inserted data for ID $inserted_id");
-                        }
-                        $updated++;
-                        error_log('InterSoccer: Reconciled new roster for order ' . $order_id . ', item ' . $order_item_id . ' (Activity: ' . $activity_type . ')');
                     }
                 }
             }
@@ -1008,4 +988,37 @@ function intersoccer_validate_rosters_cron() {
         error_log('InterSoccer: Hourly validation completed - Added ' . $validated . ' rosters, failed ' . $missing . ' items');
     }
 }
+
+function intersoccer_get_roster_data($filter = []) {
+    global $wpdb;
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+
+    $where = ['1=1']; // Default true condition
+    $params = [];
+
+    if (!empty($filter['activity_type'])) {
+        $where[] = 'activity_type = %s';
+        $params[] = $filter['activity_type'];
+    }
+    if (!empty($filter['variation_id'])) {
+        $where[] = 'variation_id = %d';
+        $params[] = $filter['variation_id'];
+    }
+
+    $where_clause = implode(' AND ', $where);
+    $query = "SELECT * FROM $rosters_table WHERE $where_clause ORDER BY updated_at DESC";
+    $rosters = $wpdb->get_results($wpdb->prepare($query, $params), ARRAY_A);
+
+    error_log('InterSoccer: Retrieved ' . count($rosters) . ' raw rosters with filter: ' . json_encode($filter));
+
+    $grouped_rosters = [];
+    foreach ($rosters as $roster) {
+        $key = $roster['camp_terms'] . '|' . $roster['venue']; // Group by Camp Terms and Venue
+        $grouped_rosters[$key][] = $roster;
+    }
+
+    error_log('InterSoccer: Grouped into ' . count($grouped_rosters) . ' unique groups');
+    return $grouped_rosters;
+}
+
 ?>

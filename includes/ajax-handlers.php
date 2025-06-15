@@ -53,4 +53,31 @@ function intersoccer_get_camp_report_ajax() {
     $report = intersoccer_pe_get_camp_report_data($region, $week, $camp_type, $year);
     wp_send_json_success(['data' => $report]);
 }
+
+/**
+ * AJAX handler for exporting a single roster
+ */
+function intersoccer_export_roster_ajax() {
+    check_ajax_referer('intersoccer_reports_rosters_nonce', 'export_nonce', true); // Exit with error if nonce fails
+
+    if (!current_user_can('manage_options') && !current_user_can('coach') && !current_user_can('event_organizer') && !current_user_can('shop_manager')) {
+        error_log('InterSoccer: Export roster AJAX unauthorized for user ID ' . get_current_user_id());
+        wp_send_json_error(['message' => __('Unauthorized access.', 'intersoccer-reports-rosters')]);
+    }
+
+    $variation_ids = isset($_POST['variation_ids']) ? array_map('intval', $_POST['variation_ids']) : [];
+    if (empty($variation_ids)) {
+        error_log('InterSoccer: Export roster AJAX received empty variation_ids');
+        wp_send_json_error(['message' => __('Invalid variation IDs.', 'intersoccer-reports-rosters')]);
+    }
+
+    error_log('InterSoccer: Export roster AJAX triggered for variation_ids: ' . implode(',', $variation_ids));
+    ob_start();
+    intersoccer_export_roster($variation_ids);
+    ob_end_clean();
+    wp_die(); // Ensure proper exit
+}
+
+add_action('wp_ajax_intersoccer_export_roster', 'intersoccer_export_roster_ajax');
+
 ?>
