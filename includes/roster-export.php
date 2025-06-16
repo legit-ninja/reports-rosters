@@ -3,7 +3,7 @@
  * Export functionality for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.2.93
+ * @version 1.2.96
  */
 
 defined('ABSPATH') or die('Restricted access');
@@ -11,6 +11,20 @@ defined('ABSPATH') or die('Restricted access');
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+
+/**
+ * Retrieve the parent's name from the WordPress user table based on email.
+ * @param string $email The parent's email address.
+ * @return string The parent's display name, or 'Unknown Parent' if not found.
+ */
+function intersoccer_get_parent_name($email) {
+    global $wpdb;
+    if (empty($email) || $email === 'N/A') {
+        return 'Unknown Parent';
+    }
+    $user = $wpdb->get_row($wpdb->prepare("SELECT display_name FROM $wpdb->users WHERE user_email = %s LIMIT 1", $email));
+    return $user ? $user->display_name : 'Unknown Parent (Email: ' . $email . ')';
+}
 
 function intersoccer_export_roster($variation_ids, $format = 'excel', $context = []) {
     try {
@@ -98,15 +112,54 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
         }
 
         $spreadsheet = new Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('All_Rosters');
+        if ($export_type === 'camps') {
+            $rosters = $wpdb->get_results("SELECT venue, product_name, camp_terms, booking_type, first_name, last_name, age, gender, medical_conditions, late_pickup, day_presence, parent_phone, parent_email FROM $rosters_table WHERE activity_type = 'Camp' ORDER BY updated_at DESC", ARRAY_A);
+            error_log('InterSoccer: Retrieved ' . count($rosters) . ' camp rosters for export by user ' . $user_id);
+            if (empty($rosters)) wp_die(__('No camp roster data.', 'intersoccer-reports-rosters'));
 
-        // Direct SQL dump for 'all' export type
-        if ($export_type === 'all') {
+            $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setTitle('Camp_Rosters');
+            $headers = ['InterSoccer Venue', 'Camp Name', 'Camp Terms', 'Booking Type', 'First Name', 'Last Name', 'Age', 'Gender', 'Medical/Dietary', 'Late Pickup', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Parent Phone', 'Parent Email', 'Parent Name'];
+            $sheet->fromArray($headers, NULL, 'A1');
+
+            $row = 2;
+            foreach ($rosters as $roster) {
+                $day_presence = json_decode($roster['day_presence'], true) ?: ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
+                // Default to 'yes' for all days if booking_type is 'full week'
+                if (strtolower($roster['booking_type']) === 'full week') {
+                    $day_presence = ['Monday' => 'Yes', 'Tuesday' => 'Yes', 'Wednesday' => 'Yes', 'Thursday' => 'Yes', 'Friday' => 'Yes'];
+                }
+                $parent_name = intersoccer_get_parent_name($roster['parent_email']);
+                $data = [
+                    $roster['venue'],
+                    $roster['product_name'],
+                    $roster['camp_terms'],
+                    $roster['booking_type'],
+                    $roster['first_name'],
+                    $roster['last_name'],
+                    $roster['age'] ?? 'N/A',
+                    $roster['gender'],
+                    $roster['medical_conditions'] ?? 'None',
+                    $roster['late_pickup'] === '18h' ? 'Yes' : 'No',
+                    $day_presence['Monday'],
+                    $day_presence['Tuesday'],
+                    $day_presence['Wednesday'],
+                    $day_presence['Thursday'],
+                    $day_presence['Friday'],
+                    $roster['parent_phone'] ?? 'N/A',
+                    $roster['parent_email'] ?? 'N/A',
+                    $parent_name
+                ];
+                $sheet->fromArray($data, NULL, 'A' . $row++);
+            }
+            $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
+        } elseif ($export_type === 'all') {
             $rosters = $wpdb->get_results("SELECT * FROM $rosters_table ORDER BY updated_at DESC", ARRAY_A);
             error_log('InterSoccer: Retrieved ' . count($rosters) . ' rows for all rosters export by user ' . $user_id);
             if (empty($rosters)) wp_die(__('No roster data.', 'intersoccer-reports-rosters'));
 
+            $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setTitle('All_Rosters');
             $headers = array_keys($rosters[0]);
             $sheet->fromArray($headers, NULL, 'A1');
 
@@ -117,7 +170,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
         } else {
             // Handle specific activity types (to be refined after validation)
-            $export_types = ['camps' => $camps, 'courses' => $courses, 'girls_only' => $girls_only];
+            $export_types = ['courses' => $courses, 'girls_only' => $girls_only];
             foreach (array_intersect_key($export_types, array_fill_keys([$export_type], true)) as $type => $variations) {
                 if (empty($variations)) continue;
                 foreach ($variations as $config_key => $config) {
