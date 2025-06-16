@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.2.84
+ * Version: 1.2.87
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -55,7 +55,7 @@ function intersoccer_activate_plugin() {
             end_date DATE DEFAULT NULL,
             event_dates VARCHAR(100) DEFAULT 'N/A',
             product_name VARCHAR(255) NOT NULL,
-            activity_type VARCHAR(100) NOT NULL, -- Increased to 100 to accommodate multiple types
+            activity_type VARCHAR(100) NOT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             UNIQUE KEY uniq_order_item_id (order_item_id),
@@ -103,7 +103,7 @@ add_action('admin_enqueue_scripts', function ($hook) {
         }
         if ($screen->id === 'intersoccer-reports-rosters_page_intersoccer-advanced') {
             wp_enqueue_script('intersoccer-advanced-ajax', plugin_dir_url(__FILE__) . 'js/advanced-ajax.js', ['jquery'], '1.0.6', true);
-            wp_localize_script('intersoccer-advanced-ajax', 'intersoccer_ajax', ['ajax_url' => admin_url('admin-ajax.php'), 'nonce' => wp_create_nonce('intersoccer_advanced_nonce')]);
+            wp_localize_script('intersoccer-advanced-ajax', 'intersoccer_ajax', ['ajax_url' => admin_url('admin-ajax.php'), 'nonce' => wp_create_nonce('intersoccer_rebuild_nonce')]);
         }
         if ($screen->id === 'intersoccer-reports-rosters_page_intersoccer-export-rosters') {
             wp_enqueue_script('intersoccer-export-ajax', plugin_dir_url(__FILE__) . 'js/export-ajax.js', ['jquery'], '1.0.6', true);
@@ -205,19 +205,6 @@ function intersoccer_render_plugin_overview_page() {
     <?php
 }
 
-function intersoccer_trigger_rebuild() {
-    if (isset($_GET['intersoccer_force_rebuild']) && current_user_can('manage_options')) {
-        error_log('InterSoccer: Manual rebuild triggered at ' . current_time('mysql'));
-        ob_start();
-        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-        $result = intersoccer_rebuild_rosters();
-        $output = ob_get_clean();
-        error_log('InterSoccer: Rebuild result: ' . print_r($result, true) . ' Output: ' . $output);
-        wp_die('Manual rebuild completed. Check debug.log for details. Inserted: ' . ($result['inserted'] ?? 0) . ' rosters.');
-    }
-}
-add_action('init', 'intersoccer_trigger_rebuild');
-
 function intersoccer_render_export_page() {
     if (!current_user_can('manage_options')) wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     intersoccer_log_audit('view_export', 'Accessed Export Rosters');
@@ -232,11 +219,15 @@ function intersoccer_render_export_page() {
 add_action('wp_ajax_intersoccer_export_all_rosters', function () {
     check_ajax_referer('intersoccer_export_nonce', 'nonce');
     $export_type = sanitize_text_field($_POST['export_type'] ?? 'all');
+    $format = sanitize_text_field($_POST['format'] ?? 'excel');
+    $debug_user = sanitize_text_field($_POST['debug_user'] ?? 'unknown');
+    error_log('InterSoccer: Export initiated by user ' . $debug_user . ' for type ' . $export_type . ' in format ' . $format);
+
     $filters = ['show_no_attendees' => '1'];
     $camp_variations = intersoccer_pe_get_camp_variations($filters);
     $course_variations = intersoccer_pe_get_course_variations($filters);
     $girls_only_variations = intersoccer_pe_get_girls_only_variations($filters);
-    intersoccer_export_all_rosters($camp_variations, $course_variations, $girls_only_variations, $export_type, 'excel');
+    intersoccer_export_all_rosters($camp_variations, $course_variations, $girls_only_variations, $export_type, $format);
     wp_die();
 });
 
@@ -507,56 +498,114 @@ function intersoccer_reconcile_rosters() {
 }
 
 /**
- * Rebuild the roster database from all completed orders.
+ * Rebuild the roster database from all completed orders via AJAX.
  */
 function intersoccer_rebuild_rosters() {
-    if (current_user_can('manage_options') || current_user_can('coach')) {
-        global $wpdb;
-        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+    if (!current_user_can('manage_options') && !current_user_can('coach')) {
+        wp_send_json_error(__('Permission denied.', 'intersoccer-reports-rosters'));
+    }
+    check_ajax_referer('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field');
 
-        // Clear the existing table
-        $wpdb->query("TRUNCATE TABLE $rosters_table");
+    global $wpdb;
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-        // Fetch all completed orders
-        $orders = wc_get_orders(['status' => 'completed', 'limit' => -1]);
-        foreach ($orders as $order) {
-            foreach ($order->get_items() as $item) {
-                $product = $item->get_product();
-                if ($product && $product->is_type('variation')) {
-                    $meta_data = $item->get_meta_data() ? array_column(array_map('get_object_vars', $item->get_meta_data()), 'value', 'key') : [];
-                    $venue = $meta_data['InterSoccer Venues'][0] ?? 'Unknown Venue';
-                    $age_group = $meta_data['Age Group'][0] ?? 'N/A';
-                    $start_date = $meta_data['Start Date'][0] ?? '';
-                    $end_date = $meta_data['End Date'][0] ?? '';
-                    $activity_type = $meta_data['Activity Type'][0] ?? '';
+    // Clear the existing table
+    $wpdb->query("TRUNCATE TABLE $rosters_table");
+    error_log('InterSoccer: Table truncated for rebuild at ' . current_time('mysql'));
 
-                    $wpdb->insert($rosters_table, [
-                        'order_item_id' => $item->get_id(),
-                        'player_name' => $meta_data['Assigned Attendee'][0] ?? 'Unknown Attendee',
-                        'first_name' => explode(' ', $meta_data['Assigned Attendee'][0] ?? 'Unknown Attendee', 2)[0] ?? 'Unknown',
-                        'last_name' => explode(' ', $meta_data['Assigned Attendee'][0] ?? 'Unknown Attendee', 2)[1] ?? 'Unknown',
-                        'age' => null,
-                        'gender' => 'N/A',
-                        'booking_type' => $meta_data['Booking Type'][0] ?? 'Unknown',
-                        'selected_days' => $meta_data['Days Selected'][0] ?? 'N/A',
-                        'camp_terms' => $meta_data['Camp Terms'][0] ?? 'N/A',
-                        'venue' => $venue,
-                        'parent_phone' => $order->get_billing_phone() ?: 'N/A',
-                        'parent_email' => $order->get_billing_email() ?: 'N/A',
-                        'medical_conditions' => $meta_data['Medical Conditions'][0] ?? '',
-                        'late_pickup' => $meta_data['Late Pickup'][0] ?? 'No',
-                        'day_presence' => json_encode(['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No']),
-                        'age_group' => $age_group,
-                        'start_date' => $start_date,
-                        'end_date' => $end_date,
-                        'event_dates' => $start_date . ' to ' . $end_date,
-                        'product_name' => $product->get_name(),
-                        'activity_type' => $activity_type,
-                        'updated_at' => current_time('mysql'),
-                    ]);
-                }
+    // Fetch all completed orders
+    $orders = wc_get_orders(['status' => 'completed', 'limit' => -1]);
+    $inserted = 0;
+    foreach ($orders as $order) {
+        foreach ($order->get_items() as $item) {
+            $product = $item->get_product();
+            if ($product && $product->is_type('variation')) {
+                $meta_data = $item->get_meta_data() ? array_column(array_map('get_object_vars', $item->get_meta_data()), 'value', 'key') : [];
+                $venue = $meta_data['InterSoccer Venues'][0] ?? 'Unknown Venue';
+                $age_group = $meta_data['Age Group'][0] ?? 'N/A';
+                $start_date = $meta_data['Start Date'][0] ?? '';
+                $end_date = $meta_data['End Date'][0] ?? '';
+                $activity_type = $meta_data['Activity Type'][0] ?? '';
+
+                $wpdb->insert($rosters_table, [
+                    'order_item_id' => $item->get_id(),
+                    'player_name' => $meta_data['Assigned Attendee'][0] ?? 'Unknown Attendee',
+                    'first_name' => explode(' ', $meta_data['Assigned Attendee'][0] ?? 'Unknown Attendee', 2)[0] ?? 'Unknown',
+                    'last_name' => explode(' ', $meta_data['Assigned Attendee'][0] ?? 'Unknown Attendee', 2)[1] ?? 'Unknown',
+                    'age' => null,
+                    'gender' => 'N/A',
+                    'booking_type' => $meta_data['Booking Type'][0] ?? 'Unknown',
+                    'selected_days' => $meta_data['Days Selected'][0] ?? 'N/A',
+                    'camp_terms' => $meta_data['Camp Terms'][0] ?? 'N/A',
+                    'venue' => $venue,
+                    'parent_phone' => $order->get_billing_phone() ?: 'N/A',
+                    'parent_email' => $order->get_billing_email() ?: 'N/A',
+                    'medical_conditions' => $meta_data['Medical Conditions'][0] ?? '',
+                    'late_pickup' => $meta_data['Late Pickup'][0] ?? 'No',
+                    'day_presence' => json_encode(['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No']),
+                    'age_group' => $age_group,
+                    'start_date' => $start_date,
+                    'end_date' => $end_date,
+                    'event_dates' => $start_date . ' to ' . $end_date,
+                    'product_name' => $product->get_name(),
+                    'activity_type' => $activity_type,
+                    'updated_at' => current_time('mysql'),
+                ]);
+                $inserted++;
             }
         }
-        error_log('InterSoccer: Rosters rebuilt at ' . current_time('mysql'));
     }
+    error_log('InterSoccer: Rosters rebuilt, inserted ' . $inserted . ' entries at ' . current_time('mysql'));
+    wp_send_json_success(['inserted' => $inserted, 'message' => __('Rebuild completed.', 'intersoccer-reports-rosters')]);
+}
+add_action('wp_ajax_intersoccer_rebuild_rosters', 'intersoccer_rebuild_rosters');
+
+function intersoccer_render_advanced_page() {
+    if (!current_user_can('manage_options')) {
+        wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
+    }
+    ?>
+    <div class="wrap">
+        <h1><?php _e('InterSoccer Advanced Features', 'intersoccer-reports-rosters'); ?></h1>
+        <div id="intersoccer-rebuild-status"></div>
+        <form id="intersoccer-rebuild-form" method="post" action="">
+            <?php wp_nonce_field('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field'); ?>
+            <input type="hidden" name="action" value="intersoccer_rebuild_rosters">
+            <button type="submit" class="button button-primary" id="intersoccer-rebuild-button"><?php _e('Rebuild Rosters', 'intersoccer-reports-rosters'); ?></button>
+        </form>
+        <p>
+            <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
+                <input type="hidden" name="action" value="intersoccer_export_all_rosters">
+                <input type="hidden" name="export_type" value="all">
+                <input type="hidden" name="format" value="csv">
+                <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_export_nonce')); ?>">
+                <input type="hidden" name="debug_user" value="<?php echo esc_attr(get_current_user_id()); ?>">
+                <input type="submit" name="export_all_csv" class="button button-primary" value="<?php _e('Export All Rosters (CSV)', 'intersoccer-reports-rosters'); ?>">
+            </form>
+        </p>
+        <script type="text/javascript">
+            jQuery(document).ready(function($) {
+                $('#intersoccer-rebuild-form').on('submit', function(e) {
+                    e.preventDefault();
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: $(this).serialize(),
+                        beforeSend: function() {
+                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuilding... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
+                        },
+                        success: function(response) {
+                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuild completed. Check debug.log for details. Inserted: ', 'intersoccer-reports-rosters'); ?>' + response.data.inserted + ' rosters.</p>');
+                            console.log('Rebuild response: ', response);
+                        },
+                        error: function(xhr, status, error) {
+                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuild failed: ', 'intersoccer-reports-rosters'); ?>' + error + '</p>');
+                            console.error('AJAX Error: ', status, error);
+                        }
+                    });
+                });
+            });
+        </script>
+    </div>
+    <?php
 }

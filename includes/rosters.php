@@ -3,7 +3,7 @@
  * Rosters pages for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.0.13
+ * @version 1.0.16
  * @author Jeremy Lee
  */
 
@@ -19,33 +19,35 @@ function intersoccer_render_all_rosters_page() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    // Handle manual actions
-    if (isset($_GET['action']) && $_GET['action'] === 'reconcile' && check_admin_referer('intersoccer_reconcile')) {
-        intersoccer_reconcile_rosters();
-        echo '<div class="notice notice-success"><p>' . __('Rosters reconciled successfully.', 'intersoccer-reports-rosters') . '</p></div>';
-    } elseif (isset($_GET['action']) && $_GET['action'] === 'rebuild' && check_admin_referer('intersoccer_rebuild')) {
-        intersoccer_rebuild_rosters();
-        echo '<div class="notice notice-success"><p>' . __('Rosters rebuilt successfully.', 'intersoccer-reports-rosters') . '</p></div>';
-    }
+    // Check if reconcile is needed (compare with completed orders)
+    $completed_items = $wpdb->get_col(
+        "SELECT oi.order_item_id FROM {$wpdb->prefix}woocommerce_order_items oi
+         JOIN {$wpdb->prefix}wc_orders o ON oi.order_id = o.id
+         WHERE o.status = 'completed' AND oi.order_item_type = 'line_item'"
+    );
+    $existing_rosters = $wpdb->get_col("SELECT order_item_id FROM $rosters_table");
+    $reconcile_needed = array_diff($completed_items, $existing_rosters) || array_diff($existing_rosters, $completed_items);
 
     // Fetch and display roster data (read-only)
     $rosters = $wpdb->get_results("SELECT * FROM $rosters_table ORDER BY updated_at DESC");
     error_log('InterSoccer: Retrieved ' . count($rosters) . ' rosters for display on ' . current_time('mysql'));
 
+    $export_nonce = wp_create_nonce('intersoccer_export_nonce');
     ?>
     <div class="wrap">
         <h1><?php _e('All Rosters', 'intersoccer-reports-rosters'); ?></h1>
-        <p>
-            <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-all-rosters&action=reconcile'), 'intersoccer_reconcile'); ?>" class="button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></a>
-            <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-all-rosters&action=rebuild'), 'intersoccer_rebuild'); ?>" class="button" onclick="return confirm('<?php _e('Are you sure you want to rebuild the rosters? This will delete all existing data and rebuild from scratch.', 'intersoccer-reports-rosters'); ?>');"><?php _e('Rebuild Rosters', 'intersoccer-reports-rosters'); ?></a>
-        </p>
+        <?php if ($reconcile_needed) : ?>
+            <div class="notice notice-warning"><p><?php _e('Reconcile is needed to sync rosters with completed orders.', 'intersoccer-reports-rosters'); ?></p></div>
+        <?php endif; ?>
         <?php if (empty($rosters)) : ?>
-            <p><?php _e('No rosters available. Please rebuild or wait for reconciliation.', 'intersoccer-reports-rosters'); ?></p>
+            <p><?php _e('No rosters available. Please rebuild or reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
         <?php else : ?>
             <div class="export-buttons">
                 <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
                     <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                     <input type="hidden" name="export_type" value="all">
+                    <input type="hidden" name="nonce" value="<?php echo esc_attr($export_nonce); ?>">
+                    <input type="hidden" name="debug_user" value="<?php echo esc_attr(get_current_user_id()); ?>">
                     <input type="submit" name="export_all" class="button button-primary" value="<?php _e('Export All Rosters', 'intersoccer-reports-rosters'); ?>">
                 </form>
             </div>
@@ -80,6 +82,9 @@ function intersoccer_render_all_rosters_page() {
                 ?>
             </div>
         <?php endif; ?>
+        <p>
+            <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-all-rosters&action=reconcile'), 'intersoccer_reconcile'); ?>" class="button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></a>
+        </p>
     </div>
     <?php
 }
@@ -99,21 +104,22 @@ function intersoccer_render_camps_page() {
     $rosters = $wpdb->get_results("SELECT * FROM $rosters_table WHERE activity_type = 'Camp' ORDER BY updated_at DESC");
     error_log('InterSoccer: Retrieved ' . count($rosters) . ' camp rosters for display on ' . current_time('mysql'));
 
+    $export_nonce = wp_create_nonce('intersoccer_export_nonce');
     ?>
     <div class="wrap">
         <h1><?php _e('Camps', 'intersoccer-reports-rosters'); ?></h1>
         <p>
             <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-camps&action=reconcile'), 'intersoccer_reconcile'); ?>" class="button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></a>
-            <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-camps&action=rebuild'), 'intersoccer_rebuild'); ?>" class="button" onclick="return confirm('<?php _e('Are you sure you want to rebuild the rosters? This will delete all existing data and rebuild from scratch.', 'intersoccer-reports-rosters'); ?>');"><?php _e('Rebuild Rosters', 'intersoccer-reports-rosters'); ?></a>
         </p>
         <?php if (empty($rosters)) : ?>
-            <p><?php _e('No camp rosters available. Please rebuild or wait for reconciliation.', 'intersoccer-reports-rosters'); ?></p>
+            <p><?php _e('No camp rosters available. Please rebuild or reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
         <?php else : ?>
             <div class="export-buttons">
                 <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
                     <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                     <input type="hidden" name="export_type" value="camps">
-                    <?php wp_nonce_field('intersoccer_reports_rosters_nonce', 'export_nonce'); ?>
+                    <input type="hidden" name="nonce" value="<?php echo esc_attr($export_nonce); ?>">
+                    <input type="hidden" name="debug_user" value="<?php echo esc_attr(get_current_user_id()); ?>">
                     <input type="submit" name="export_camps" class="button button-primary" value="<?php _e('Export All Camp Rosters', 'intersoccer-reports-rosters'); ?>">
                 </form>
             </div>
@@ -162,20 +168,22 @@ function intersoccer_render_courses_page() {
     $rosters = $wpdb->get_results("SELECT * FROM $rosters_table WHERE activity_type = 'Course' ORDER BY updated_at DESC");
     error_log('InterSoccer: Retrieved ' . count($rosters) . ' course rosters for display on ' . current_time('mysql'));
 
+    $export_nonce = wp_create_nonce('intersoccer_export_nonce');
     ?>
     <div class="wrap">
         <h1><?php _e('Courses', 'intersoccer-reports-rosters'); ?></h1>
         <p>
             <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-courses&action=reconcile'), 'intersoccer_reconcile'); ?>" class="button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></a>
-            <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-courses&action=rebuild'), 'intersoccer_rebuild'); ?>" class="button" onclick="return confirm('<?php _e('Are you sure you want to rebuild the rosters? This will delete all existing data and rebuild from scratch.', 'intersoccer-reports-rosters'); ?>');"><?php _e('Rebuild Rosters', 'intersoccer-reports-rosters'); ?></a>
         </p>
         <?php if (empty($rosters)) : ?>
-            <p><?php _e('No course rosters available. Please rebuild or wait for reconciliation.', 'intersoccer-reports-rosters'); ?></p>
+            <p><?php _e('No course rosters available. Please rebuild or reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
         <?php else : ?>
             <div class="export-buttons">
                 <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
                     <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                     <input type="hidden" name="export_type" value="courses">
+                    <input type="hidden" name="nonce" value="<?php echo esc_attr($export_nonce); ?>">
+                    <input type="hidden" name="debug_user" value="<?php echo esc_attr(get_current_user_id()); ?>">
                     <input type="submit" name="export_courses" class="button button-primary" value="<?php _e('Export All Course Rosters', 'intersoccer-reports-rosters'); ?>">
                 </form>
             </div>
@@ -229,20 +237,22 @@ function intersoccer_render_girls_only_page() {
     $rosters = $wpdb->get_results("SELECT * FROM $rosters_table WHERE activity_type = 'Girls Only' ORDER BY updated_at DESC");
     error_log('InterSoccer: Retrieved ' . count($rosters) . ' girls only rosters for display on ' . current_time('mysql'));
 
+    $export_nonce = wp_create_nonce('intersoccer_export_nonce');
     ?>
     <div class="wrap">
         <h1><?php _e('Girls Only', 'intersoccer-reports-rosters'); ?></h1>
         <p>
             <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-girls-only&action=reconcile'), 'intersoccer_reconcile'); ?>" class="button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></a>
-            <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-girls-only&action=rebuild'), 'intersoccer_rebuild'); ?>" class="button" onclick="return confirm('<?php _e('Are you sure you want to rebuild the rosters? This will delete all existing data and rebuild from scratch.', 'intersoccer-reports-rosters'); ?>');"><?php _e('Rebuild Rosters', 'intersoccer-reports-rosters'); ?></a>
         </p>
         <?php if (empty($rosters)) : ?>
-            <p><?php _e('No girls only rosters available. Please rebuild or wait for reconciliation.', 'intersoccer-reports-rosters'); ?></p>
+            <p><?php _e('No girls only rosters available. Please rebuild or reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
         <?php else : ?>
             <div class="export-buttons">
                 <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
                     <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                     <input type="hidden" name="export_type" value="girls_only">
+                    <input type="hidden" name="nonce" value="<?php echo esc_attr($export_nonce); ?>">
+                    <input type="hidden" name="debug_user" value="<?php echo esc_attr(get_current_user_id()); ?>">
                     <input type="submit" name="export_girls_only" class="button button-primary" value="<?php _e('Export All Girls\' Only Rosters', 'intersoccer-reports-rosters'); ?>">
                 </form>
             </div>
@@ -291,20 +301,22 @@ function intersoccer_render_other_events_page() {
     $rosters = $wpdb->get_results("SELECT * FROM $rosters_table WHERE activity_type IN ('Event', 'Other') ORDER BY updated_at DESC");
     error_log('InterSoccer: Retrieved ' . count($rosters) . ' other event rosters for display on ' . current_time('mysql'));
 
+    $export_nonce = wp_create_nonce('intersoccer_export_nonce');
     ?>
     <div class="wrap">
         <h1><?php _e('Other Events', 'intersoccer-reports-rosters'); ?></h1>
         <p>
             <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-other-events&action=reconcile'), 'intersoccer_reconcile'); ?>" class="button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></a>
-            <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-other-events&action=rebuild'), 'intersoccer_rebuild'); ?>" class="button" onclick="return confirm('<?php _e('Are you sure you want to rebuild the rosters? This will delete all existing data and rebuild from scratch.', 'intersoccer-reports-rosters'); ?>');"><?php _e('Rebuild Rosters', 'intersoccer-reports-rosters'); ?></a>
         </p>
         <?php if (empty($rosters)) : ?>
-            <p><?php _e('No other event rosters available. Please rebuild or wait for reconciliation.', 'intersoccer-reports-rosters'); ?></p>
+            <p><?php _e('No other event rosters available. Please rebuild or reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
         <?php else : ?>
             <div class="export-buttons">
                 <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
                     <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                     <input type="hidden" name="export_type" value="other">
+                    <input type="hidden" name="nonce" value="<?php echo esc_attr($export_nonce); ?>">
+                    <input type="hidden" name="debug_user" value="<?php echo esc_attr(get_current_user_id()); ?>">
                     <input type="submit" name="export_other" class="button button-primary" value="<?php _e('Export All Other Rosters', 'intersoccer-reports-rosters'); ?>">
                 </form>
             </div>
