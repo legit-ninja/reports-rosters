@@ -3,7 +3,7 @@
  * Roster details page for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.0.5
+ * @version 1.0.6
  * @author Jeremy Lee
  */
 
@@ -27,35 +27,46 @@ function intersoccer_render_roster_details_page() {
             wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
         }
 
-        $order_item_id = isset($_GET['order_item_id']) ? intval($_GET['order_item_id']) : 0;
-        if (!$order_item_id) {
-            error_log('InterSoccer: No order_item_id provided in request: ' . json_encode($_GET));
-            wp_die(__('No order_item_id provided.', 'intersoccer-reports-rosters'));
-        }
-
         global $wpdb;
         $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-        $rosters = $wpdb->get_results(
-            $wpdb->prepare("SELECT * FROM $rosters_table WHERE order_item_id = %d ORDER BY updated_at DESC", $order_item_id),
-            ARRAY_A
-        );
-        error_log('InterSoccer: Retrieved ' . count($rosters) . ' rosters for order_item_id ' . $order_item_id);
+        $rosters = [];
 
-        if (empty($rosters)) {
-            wp_die(__('No roster data available for this order item.', 'intersoccer-reports-rosters'));
+        if (isset($_GET['order_item_id'])) {
+            $order_item_id = intval($_GET['order_item_id']);
+            if (!$order_item_id) {
+                wp_die(__('Invalid order_item_id provided.', 'intersoccer-reports-rosters'));
+            }
+            $rosters = $wpdb->get_results(
+                $wpdb->prepare("SELECT * FROM $rosters_table WHERE order_item_id = %d ORDER BY updated_at DESC", $order_item_id),
+                ARRAY_A
+            );
+            $title = __('Roster Details for Order Item ID: ', 'intersoccer-reports-rosters') . $order_item_id;
+        } elseif (isset($_GET['product_name']) && isset($_GET['venue']) && isset($_GET['age_group'])) {
+            $product_name = sanitize_text_field($_GET['product_name']);
+            $venue = sanitize_text_field($_GET['venue']);
+            $age_group = sanitize_text_field($_GET['age_group']);
+            $rosters = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT * FROM $rosters_table WHERE product_name = %s AND venue = %s AND age_group = %s ORDER BY updated_at DESC",
+                    $product_name,
+                    $venue,
+                    $age_group
+                ),
+                ARRAY_A
+            );
+            $title = __('Roster Details for ', 'intersoccer-reports-rosters') . esc_html("$product_name - $venue - $age_group");
+        } else {
+            wp_die(__('Invalid parameters provided.', 'intersoccer-reports-rosters'));
         }
 
-        $roster = $rosters[0]; // Use the most recent entry
+        error_log('InterSoccer: Retrieved ' . count($rosters) . ' rosters for display on ' . current_time('mysql'));
+        if (empty($rosters)) {
+            wp_die(__('No roster data available.', 'intersoccer-reports-rosters'));
+        }
 
         ?>
         <div class="wrap intersoccer-roster-details">
-            <h1><?php _e('Roster Details', 'intersoccer-reports-rosters'); ?></h1>
-            <p><?php echo esc_html('Event: ' . $roster['product_name'] . ' (Order Item ID: ' . $order_item_id . ')'); ?></p>
-            <p><?php echo esc_html('Venue: ' . ($roster['venue'] ?? 'Unknown Venue')); ?></p>
-            <p><?php echo esc_html('Age Group: ' . ($roster['age_group'] ?? 'N/A')); ?></p>
-            <p><?php echo esc_html('Start Date: ' . ($roster['start_date'] ?? 'N/A')); ?></p>
-            <p><?php echo esc_html('End Date: ' . ($roster['end_date'] ?? 'N/A')); ?></p>
-
+            <h1><?php echo esc_html($title); ?></h1>
             <table class="wp-list-table widefat fixed striped">
                 <thead>
                     <tr>
@@ -102,14 +113,17 @@ function intersoccer_render_roster_details_page() {
             </table>
             <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
                 <input type="hidden" name="action" value="intersoccer_export_roster">
-                <input type="hidden" name="variation_ids[]" value="<?php echo esc_attr($roster['order_item_id']); ?>">
+                <?php foreach ($rosters as $roster) : ?>
+                    <input type="hidden" name="variation_ids[]" value="<?php echo esc_attr($roster['order_item_id']); ?>">
+                <?php endforeach; ?>
                 <?php wp_nonce_field('intersoccer_reports_rosters_nonce', 'export_nonce'); ?>
                 <input type="submit" name="export_roster" class="button button-primary" value="<?php _e('Export This Roster', 'intersoccer-reports-rosters'); ?>">
             </form>
         </div>
         <?php
     } catch (Exception $e) {
-        error_log('InterSoccer: Roster Details page error for order_item_id ' . $order_item_id . ': ' . $e->getMessage());
+        error_log('InterSoccer: Roster Details page error: ' . $e->getMessage());
         wp_die(__('An error occurred while rendering the roster details page.', 'intersoccer-reports-rosters'));
     }
 }
+?>

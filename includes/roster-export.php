@@ -3,7 +3,7 @@
  * Export functionality for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.3.0
+ * @version 1.3.1
  */
 
 defined('ABSPATH') or die('Restricted access');
@@ -41,7 +41,7 @@ function intersoccer_export_roster($variation_ids, $format = 'excel', $context =
         }
         $sheet->setCellValue('A' . $row, 'Total Players: ' . count($roster));
 
-        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
         header('Content-Disposition: attachment; filename="intersoccer_roster_variation_' . reset($variation_ids) . '_' . date('Y-m-d_H-i-s') . '.xlsx"');
         $writer = new Xlsx($spreadsheet);
         $writer->save('php://output');
@@ -68,7 +68,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
         error_log('InterSoccer: Starting export for type ' . $export_type . ' by user ' . $user_id);
 
         if ($format === 'csv') {
-            header('Content-Type: text/csv');
+            header('Content-Type: text/csv; charset=UTF-8');
             header('Content-Disposition: attachment; filename="intersoccer_' . ($export_type === 'all' ? 'master' : $export_type) . '_rosters_' . date('Y-m-d_H-i-s') . '.csv"');
             $output = fopen('php://output', 'w');
             if ($export_type === 'all') {
@@ -76,7 +76,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 if (empty($rosters)) wp_die(__('No roster data.', 'intersoccer-reports-rosters'));
                 fputcsv($output, array_keys($rosters[0]));
                 foreach ($rosters as $roster) {
-                    fputcsv($output, array_map('strval', array_values($roster)));
+                    fputcsv($output, array_map('mb_convert_encoding', array_values($roster), 'UTF-8', 'auto'));
                 }
             } else {
                 $export_types = ['camps' => $camps, 'courses' => $courses, 'girls_only' => $girls_only];
@@ -87,7 +87,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                         if (empty($roster)) continue;
                         fputcsv($output, array_keys($roster[0]));
                         foreach ($roster as $player) {
-                            fputcsv($output, array_map('strval', array_values($player)));
+                            fputcsv($output, array_map('mb_convert_encoding', array_values($player), 'UTF-8', 'auto'));
                         }
                     }
                 }
@@ -111,7 +111,6 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             $row = 2;
             foreach ($rosters as $roster) {
                 $day_presence = json_decode($roster['day_presence'], true) ?: ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
-                // Default to 'yes' for all days if booking_type is 'full week'
                 if (strtolower($roster['booking_type']) === 'full week') {
                     $day_presence = ['Monday' => 'Yes', 'Tuesday' => 'Yes', 'Wednesday' => 'Yes', 'Thursday' => 'Yes', 'Friday' => 'Yes'];
                 }
@@ -165,7 +164,6 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             }
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
         } else {
-            // Handle specific activity types (to be refined after validation)
             $export_types = ['girls_only' => $girls_only];
             foreach (array_intersect_key($export_types, array_fill_keys([$export_type], true)) as $type => $variations) {
                 if (empty($variations)) continue;
@@ -188,7 +186,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             }
         }
 
-        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
         header('Content-Disposition: attachment; filename="intersoccer_' . ($export_type === 'all' ? 'master' : $export_type) . '_rosters_' . date('Y-m-d_H-i-s') . '.xlsx"');
         $writer = new Xlsx($spreadsheet);
         $writer->save('php://output');
@@ -199,3 +197,4 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
     }
     exit;
 }
+?>

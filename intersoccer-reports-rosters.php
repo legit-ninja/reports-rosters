@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.2.86
+ * Version: 1.2.89
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -31,7 +31,7 @@ function intersoccer_activate_plugin() {
         if (!function_exists('dbDelta')) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         }
-        $charset_collate = $wpdb->get_charset_collate();
+        $charset_collate = 'CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
         $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
         $sql = "CREATE TABLE $rosters_table (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -55,13 +55,13 @@ function intersoccer_activate_plugin() {
             end_date DATE DEFAULT NULL,
             event_dates VARCHAR(100) DEFAULT 'N/A',
             product_name VARCHAR(255) NOT NULL,
-            activity_type VARCHAR(100) NOT NULL, -- Increased to 100 to accommodate multiple types
+            activity_type VARCHAR(100) NOT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             UNIQUE KEY uniq_order_item_id (order_item_id),
             INDEX idx_player_name (player_name),
             INDEX idx_venue (venue),
-            INDEX idx_activity_type (activity_type(50)), -- Partial index on first 50 chars
+            INDEX idx_activity_type (activity_type(50)),
             INDEX idx_start_date (start_date)
         ) $charset_collate;";
         $result = dbDelta($sql);
@@ -69,8 +69,8 @@ function intersoccer_activate_plugin() {
             error_log('InterSoccer: dbDelta failed during activation: ' . $result->get_error_message());
             wp_die(__('Table creation failed. Check debug.log for details.', 'intersoccer-reports-rosters'), __('Plugin Activation Error', 'intersoccer-reports-rosters'), ['back_link' => true]);
         }
-        error_log('InterSoccer: Table ' . $rosters_table . ' created or verified during activation with unique constraint');
-        intersoccer_rebuild_rosters_and_reports(); // Populate immediately
+        error_log('InterSoccer: Table ' . $rosters_table . ' created or verified during activation with utf8mb4 encoding');
+        intersoccer_rebuild_rosters_and_reports();
     } catch (Exception $e) {
         error_log('InterSoccer: Activation error: ' . $e->getMessage());
         wp_die(__('Activation failed. Check logs.', 'intersoccer-reports-rosters'), __('Plugin Activation Error', 'intersoccer-reports-rosters'), ['back_link' => true]);
@@ -267,7 +267,7 @@ add_action('wp_ajax_intersoccer_rebuild_rosters', function() {
     wp_die();
 });
 
-// Restore the missing rebuild function
+// Rebuild function with improved metadata and date handling
 function intersoccer_rebuild_rosters_and_reports() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
@@ -276,7 +276,7 @@ function intersoccer_rebuild_rosters_and_reports() {
     if (!function_exists('dbDelta')) {
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
     }
-    $charset_collate = $wpdb->get_charset_collate();
+    $charset_collate = 'CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
     $sql = "CREATE TABLE $rosters_table (
         id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
         order_item_id BIGINT(20) NOT NULL,
@@ -299,22 +299,22 @@ function intersoccer_rebuild_rosters_and_reports() {
         end_date DATE DEFAULT NULL,
         event_dates VARCHAR(100) DEFAULT 'N/A',
         product_name VARCHAR(255) NOT NULL,
-        activity_type VARCHAR(100) NOT NULL, -- Increased to 100 to accommodate multiple types
+        activity_type VARCHAR(100) NOT NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
         UNIQUE KEY uniq_order_item_id (order_item_id),
         INDEX idx_player_name (player_name),
         INDEX idx_venue (venue),
-        INDEX idx_activity_type (activity_type(50)), -- Partial index on first 50 chars
+        INDEX idx_activity_type (activity_type(50)),
         INDEX idx_start_date (start_date)
     ) $charset_collate;";
-    $wpdb->query("DROP TABLE IF EXISTS $rosters_table"); // Ensure a clean slate
+    $wpdb->query("DROP TABLE IF EXISTS $rosters_table");
     $result = dbDelta($sql);
     if (is_wp_error($result)) {
         error_log('InterSoccer: dbDelta failed: ' . $result->get_error_message());
         return ['status' => 'error', 'message' => 'Table creation failed: ' . $result->get_error_message()];
     }
-    error_log('InterSoccer: Table ' . $rosters_table . ' created or verified with dbDelta');
+    error_log('InterSoccer: Table ' . $rosters_table . ' created or verified with utf8mb4 encoding');
 
     $wpdb->query('START TRANSACTION');
     $wpdb->query("TRUNCATE TABLE $rosters_table");
@@ -360,18 +360,39 @@ function intersoccer_rebuild_rosters_and_reports() {
 
             // Extract player details from user meta using assigned_player index
             $user_id = $order->get_user_id();
-            $players = get_user_meta($user_id, 'intersoccer_players', true) ?: [];
+            $players = maybe_unserialize(get_user_meta($user_id, 'intersoccer_players', true)) ?: [];
             $player_index = $order_item_meta['assigned_player'] ?? false;
             $age = null;
             $gender = 'N/A';
             $medical_conditions = '';
-            if ($player_index !== false && isset($players[$player_index])) {
+            error_log("InterSoccer: Processing item $order_item_id, user_id: $user_id, assigned_player: " . ($player_index !== false ? $player_index : 'not set') . ", players count: " . count($players));
+            if ($player_index !== false && is_array($players) && isset($players[$player_index])) {
                 $player = $players[$player_index];
+                error_log("InterSoccer: Found player at index $player_index: " . print_r($player, true));
                 $first_name = $player['first_name'] ?? $first_name;
                 $last_name = $player['last_name'] ?? $last_name;
-                $age = $player['dob'] ? (new DateTime($player['dob']))->diff(new DateTime())->y : null;
+                $dob = $player['dob'] ?? null;
+                $age = $dob ? (new DateTime($dob))->diff(new DateTime())->y : null;
                 $gender = $player['gender'] ?? $gender;
                 $medical_conditions = $player['medical_conditions'] ?? $medical_conditions;
+            } else {
+                error_log("InterSoccer: No player found for index $player_index, players: " . print_r($players, true));
+                // Fallback to name-based matching if index fails
+                $player_full_name = trim("$first_name $last_name");
+                foreach ($players as $index => $player) {
+                    if (trim($player['first_name'] . ' ' . $player['last_name']) === $player_full_name) {
+                        $dob = $player['dob'] ?? null;
+                        $age = $dob ? (new DateTime($dob))->diff(new DateTime())->y : null;
+                        $gender = $player['gender'] ?? $gender;
+                        $medical_conditions = $player['medical_conditions'] ?? $medical_conditions;
+                        error_log("InterSoccer: Matched player by name at index $index: " . print_r($player, true));
+                        break;
+                    }
+                }
+                // Final fallback to order item meta
+                $age = $order_item_meta['Player Age'] ? (int)$order_item_meta['Player Age'] : $age;
+                $gender = $order_item_meta['Player Gender'] ?? $gender;
+                $medical_conditions = $order_item_meta['Medical Conditions'] ?? $medical_conditions;
             }
 
             // Extract event details directly from order item meta
@@ -381,22 +402,21 @@ function intersoccer_rebuild_rosters_and_reports() {
             $venue = $order_item_meta['pa_intersoccer-venues'] ?? 'Unknown Venue';
             $age_group = $order_item_meta['pa_age-group'] ?? 'N/A';
 
-            // Parse dates from camp_terms or order item meta
-            $start_date = 'N/A';
-            $end_date = 'N/A';
+            // Improved date parsing
+            $start_date = null;
+            $end_date = null;
             $event_dates = 'N/A';
-            if ($camp_terms !== 'N/A') {
-                if (preg_match('/(\w+)-week-\d+-(\w+)-(\d{2})-(\d{2})-\d+-days/', $camp_terms, $matches)) {
-                    $month = $matches[2];
-                    $start_day = $matches[3];
-                    $end_day = $matches[4];
-                    $year = $order_item_meta['Season'] ? substr($order_item_meta['Season'], -4) : date('Y');
-                    $start_date = DateTime::createFromFormat('F j Y', "$month $start_day $year");
-                    $end_date = DateTime::createFromFormat('F j Y', "$month $end_day $year");
-                    $start_date = $start_date ? $start_date->format('Y-m-d') : 'N/A';
-                    $end_date = $end_date ? $end_date->format('Y-m-d') : 'N/A';
-                    $event_dates = "$start_date to $end_date";
-                }
+            error_log("InterSoccer: camp_terms: $camp_terms, Start Date: " . ($order_item_meta['Start Date'] ?? 'N/A') . ", End Date: " . ($order_item_meta['End Date'] ?? 'N/A') . " for order $order_id, item $order_item_id");
+            if ($camp_terms !== 'N/A' && preg_match('/(\w+)-week-\d+-(\w+)-(\d{2})-(\d{2})-\d+-days/', $camp_terms, $matches)) {
+                $month = $matches[2];
+                $start_day = $matches[3];
+                $end_day = $matches[4];
+                $year = $order_item_meta['Season'] ? substr($order_item_meta['Season'], -4) : date('Y');
+                $start_date_obj = DateTime::createFromFormat('F j Y', "$month $start_day $year");
+                $end_date_obj = DateTime::createFromFormat('F j Y', "$month $end_day $year");
+                $start_date = $start_date_obj ? $start_date_obj->format('Y-m-d') : null;
+                $end_date = $end_date_obj ? $end_date_obj->format('Y-m-d') : null;
+                $event_dates = $start_date && $end_date ? "$start_date to $end_date" : 'N/A';
             } elseif (!empty($order_item_meta['Start Date']) && !empty($order_item_meta['End Date'])) {
                 $start_date = DateTime::createFromFormat('m/d/Y', $order_item_meta['Start Date'])->format('Y-m-d');
                 $end_date = DateTime::createFromFormat('m/d/Y', $order_item_meta['End Date'])->format('Y-m-d');
@@ -413,25 +433,25 @@ function intersoccer_rebuild_rosters_and_reports() {
                 foreach ($days as $day) {
                     $day_presence[$day] = 'Yes';
                 }
+            } elseif (strtolower($booking_type) === 'full-week') {
+                $day_presence = ['Monday' => 'Yes', 'Tuesday' => 'Yes', 'Wednesday' => 'Yes', 'Thursday' => 'Yes', 'Friday' => 'Yes'];
             }
 
             // Determine activity_type to handle multiple types with forced apostrophe removal
             $activity_type_terms = $parent_product ? wc_get_product_terms($product_id, 'pa_activity-type', ['fields' => 'names']) : [];
             error_log("InterSoccer: Raw activity type terms for product $product_id: " . print_r($activity_type_terms, true));
-            $activity_type = 'Unknown'; // Default to a string
+            $activity_type = 'Unknown';
             if (isset($order_item_meta['Activity Type']) && $order_item_meta['Activity Type']) {
                 $raw_activity_type = $order_item_meta['Activity Type'];
                 error_log("InterSoccer: Raw Activity Type from order meta: $raw_activity_type for order $order_id, item $order_item_id");
-                // Use preg_split to handle commas outside quotes
                 $activity_types = preg_split('/,(?=(?:[^\'"]|\'[^\']*\'|"[^"]*")*$)/', $raw_activity_type, -1, PREG_SPLIT_NO_EMPTY);
                 $activity_types = array_map('trim', $activity_types);
                 error_log("InterSoccer: Parsed activity types before normalization: " . print_r($activity_types, true));
-                // Forcefully remove apostrophes
                 $activity_types = array_map(function($type) {
-                    return str_replace("'", '', $type); // Explicitly remove all apostrophes
+                    return str_replace("'", '', $type);
                 }, $activity_types);
                 error_log("InterSoccer: Parsed activity types after normalization: " . print_r($activity_types, true));
-                $activity_type = implode(', ', array_filter($activity_types)); // Join with filtering out empty values
+                $activity_type = implode(', ', array_filter($activity_types));
                 error_log("InterSoccer: Assigned activity_type from order meta: $activity_type for order $order_id, item $order_item_id");
             } elseif (!empty($activity_type_terms)) {
                 $activity_type = implode(', ', $activity_type_terms);
@@ -462,8 +482,8 @@ function intersoccer_rebuild_rosters_and_reports() {
                 'late_pickup' => $late_pickup,
                 'day_presence' => json_encode($day_presence),
                 'age_group' => $age_group,
-                'start_date' => ($start_date === 'N/A' ? null : $start_date),
-                'end_date' => ($end_date === 'N/A' ? null : $end_date),
+                'start_date' => $start_date,
+                'end_date' => $end_date,
                 'event_dates' => $event_dates,
                 'product_name' => $product_name,
                 'activity_type' => (string)$activity_type,
@@ -471,14 +491,12 @@ function intersoccer_rebuild_rosters_and_reports() {
 
             error_log("InterSoccer: Roster entry before insert for order $order_id, item $order_item_id: " . print_r($roster_entry, true));
 
-            // Prepare and log the exact query
             $fields = implode(', ', array_keys($roster_entry));
-            $placeholders = implode(', ', array_fill(0, count($roster_entry), '%s')); // Force all as strings
+            $placeholders = implode(', ', array_fill(0, count($roster_entry), '%s'));
             $query = "INSERT INTO $rosters_table ($fields) VALUES ($placeholders)";
             $prepared_query = $wpdb->prepare($query, array_values($roster_entry));
             error_log("InterSoccer: Prepared query for order $order_id, item $order_item_id: $prepared_query");
 
-            // Perform the insert
             $result = $wpdb->insert($rosters_table, $roster_entry, [
                 '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'
             ]);
@@ -556,6 +574,7 @@ function intersoccer_auto_add_to_rosters($order_id, $old_status, $new_status, $o
             $parent_phone = $order->get_billing_phone() ?: 'N/A';
             $parent_email = $order->get_billing_email() ?: 'N/A';
             $medical_conditions = $order_item_meta['Medical Conditions'] ?? $order_item_meta['medical_conditions'] ?? $order_item_meta['Medical/Dietary Conditions'] ?? '';
+
             $late_pickup = $order_item_meta['Late Pickup'] ?? $order_item_meta['late_pickup'] ?? 'No';
 
             $day_presence = ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
@@ -571,16 +590,18 @@ function intersoccer_auto_add_to_rosters($order_id, $old_status, $new_status, $o
 
             // Enrich with player meta
             $user_id = $order->get_user_id();
-            $players = get_user_meta($user_id, 'intersoccer_players', true) ?: [];
+            $players = maybe_unserialize(get_user_meta($user_id, 'intersoccer_players', true)) ?: [];
             $age = null;
             $gender = 'N/A';
+            $medical_conditions = '';
             $found_player = false;
             foreach ($players as $index => $player) {
                 $player_full_name = trim($player['first_name'] . ' ' . $player['last_name']);
                 if (strtolower($player_full_name) === strtolower($assigned_attendee) || (string)$index === $player_assignment) {
                     $first_name = $player['first_name'] ?? $first_name;
                     $last_name = $player['last_name'] ?? $last_name;
-                    $age = $player['dob'] ? (new DateTime($player['dob']))->diff(new DateTime())->y : $age;
+                    $dob = $player['dob'] ?? null;
+                    $age = $dob ? (new DateTime($dob))->diff(new DateTime())->y : null;
                     $gender = $player['gender'] ?? $gender;
                     $medical_conditions = $player['medical_conditions'] ?? $medical_conditions;
                     $found_player = true;
@@ -590,25 +611,24 @@ function intersoccer_auto_add_to_rosters($order_id, $old_status, $new_status, $o
             if (!$found_player) {
                 $age = (int)$order_item_meta['Player Age'] ?? $age;
                 $gender = $order_item_meta['Player Gender'] ?? $order_item_meta['gender'] ?? $gender;
+                $medical_conditions = $order_item_meta['Medical Conditions'] ?? $medical_conditions;
             }
 
             $product_name = $product->get_name();
             $activity_type_terms = $parent_product ? wc_get_product_terms($product_id, 'pa_activity-type', ['fields' => 'names']) : [];
             error_log("InterSoccer: Raw activity type terms for product $product_id: " . print_r($activity_type_terms, true));
-            $activity_type = 'Unknown'; // Default to a string
+            $activity_type = 'Unknown';
             if (isset($order_item_meta['Activity Type']) && $order_item_meta['Activity Type']) {
                 $raw_activity_type = $order_item_meta['Activity Type'];
                 error_log("InterSoccer: Raw Activity Type from order meta: $raw_activity_type for order $order_id, item $order_item_id");
-                // Use preg_split to handle commas outside quotes
                 $activity_types = preg_split('/,(?=(?:[^\'"]|\'[^\']*\'|"[^"]*")*$)/', $raw_activity_type, -1, PREG_SPLIT_NO_EMPTY);
                 $activity_types = array_map('trim', $activity_types);
                 error_log("InterSoccer: Parsed activity types before normalization: " . print_r($activity_types, true));
-                // Forcefully remove apostrophes
                 $activity_types = array_map(function($type) {
-                    return str_replace("'", '', $type); // Explicitly remove all apostrophes
+                    return str_replace("'", '', $type);
                 }, $activity_types);
                 error_log("InterSoccer: Parsed activity types after normalization: " . print_r($activity_types, true));
-                $activity_type = implode(', ', array_filter($activity_types)); // Join with filtering out empty values
+                $activity_type = implode(', ', array_filter($activity_types));
                 error_log("InterSoccer: Assigned activity_type from order meta: $activity_type for order $order_id, item $order_item_id");
             } elseif (!empty($activity_type_terms)) {
                 $activity_type = implode(', ', $activity_type_terms);
@@ -648,14 +668,12 @@ function intersoccer_auto_add_to_rosters($order_id, $old_status, $new_status, $o
 
             error_log("InterSoccer: Roster entry before insert for order $order_id, item $order_item_id: " . print_r($roster_entry, true));
 
-            // Prepare and log the exact query
             $fields = implode(', ', array_keys($roster_entry));
-            $placeholders = implode(', ', array_fill(0, count($roster_entry), '%s')); // Force all as strings
+            $placeholders = implode(', ', array_fill(0, count($roster_entry), '%s'));
             $query = "INSERT INTO $rosters_table ($fields) VALUES ($placeholders)";
             $prepared_query = $wpdb->prepare($query, array_values($roster_entry));
             error_log("InterSoccer: Prepared query for order $order_id, item $order_item_id: $prepared_query");
 
-            // Perform the insert
             $result = $wpdb->insert($rosters_table, $roster_entry, [
                 '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'
             ]);
@@ -672,9 +690,14 @@ function intersoccer_auto_add_to_rosters($order_id, $old_status, $new_status, $o
                 } else {
                     error_log("InterSoccer: Failed to retrieve inserted data for ID $inserted_id");
                 }
-                error_log('InterSoccer: Auto-inserted roster for order ' . $order_id . ', item ' . $order_item_id . ' (Activity: ' . $activity_type . ')');
+                $inserted_items++;
+                error_log("InterSoccer: Inserted roster for order $order_id, item $order_item_id - Player: $assigned_attendee, Activity: $activity_type");
             }
         }
     }
+
+    $wpdb->query('COMMIT');
+    error_log('InterSoccer: Transaction committed. Processed ' . $total_items . ' items, inserted ' . $inserted_items . ' rosters');
+    return ['status' => 'success', 'inserted' => $inserted_items];
 }
 ?>
