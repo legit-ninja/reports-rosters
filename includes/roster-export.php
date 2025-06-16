@@ -3,7 +3,7 @@
  * Export functionality for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.3.1
+ * @version 1.3.2
  */
 
 defined('ABSPATH') or die('Restricted access');
@@ -31,13 +31,30 @@ function intersoccer_export_roster($variation_ids, $format = 'excel', $context =
         $sheet_title = substr(preg_replace('/[^A-Za-z0-9\-\s]/', '', $is_camp ? $roster[0]['camp_terms'] : $roster[0]['event_dates']), 0, 31);
         $sheet->setTitle($sheet_title);
 
+        // Reordered headers with "Surname" instead of "Last Name"
         $headers = array_keys($roster[0]);
-        $sheet->fromArray($headers, NULL, 'A1');
+        $reordered_headers = [];
+        foreach (['player_name', 'last_name', 'gender', 'parent_phone', 'parent_email', 'age', 'medical_conditions'] as $key) {
+            if (in_array($key, $headers)) {
+                $reordered_headers[$key] = $key === 'last_name' ? 'Surname' : ucfirst(str_replace('_', ' ', $key));
+            }
+        }
+        // Append remaining headers
+        foreach ($headers as $header) {
+            if (!in_array($header, array_keys($reordered_headers))) {
+                $reordered_headers[$header] = ucfirst(str_replace('_', ' ', $header));
+            }
+        }
+        $sheet->fromArray(array_values($reordered_headers), NULL, 'A1');
 
         $row = 2;
         foreach ($roster as $player) {
             $data = array_values($player);
-            $sheet->fromArray($data, NULL, 'A' . $row++);
+            $reordered_data = [];
+            foreach (array_keys($reordered_headers) as $key) {
+                $reordered_data[] = $player[$key] ?? 'N/A';
+            }
+            $sheet->fromArray($reordered_data, NULL, 'A' . $row++);
         }
         $sheet->setCellValue('A' . $row, 'Total Players: ' . count($roster));
 
@@ -74,9 +91,25 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             if ($export_type === 'all') {
                 $rosters = $wpdb->get_results("SELECT * FROM $rosters_table ORDER BY updated_at DESC", ARRAY_A);
                 if (empty($rosters)) wp_die(__('No roster data.', 'intersoccer-reports-rosters'));
-                fputcsv($output, array_keys($rosters[0]));
+                $headers = array_keys($rosters[0]);
+                $reordered_headers = [];
+                foreach (['player_name', 'last_name', 'gender', 'parent_phone', 'parent_email', 'age', 'medical_conditions'] as $key) {
+                    if (in_array($key, $headers)) {
+                        $reordered_headers[$key] = $key === 'last_name' ? 'Surname' : ucfirst(str_replace('_', ' ', $key));
+                    }
+                }
+                foreach ($headers as $header) {
+                    if (!in_array($header, array_keys($reordered_headers))) {
+                        $reordered_headers[$header] = ucfirst(str_replace('_', ' ', $header));
+                    }
+                }
+                fputcsv($output, array_values($reordered_headers));
                 foreach ($rosters as $roster) {
-                    fputcsv($output, array_map('mb_convert_encoding', array_values($roster), 'UTF-8', 'auto'));
+                    $reordered_data = [];
+                    foreach (array_keys($reordered_headers) as $key) {
+                        $reordered_data[] = $roster[$key] ?? 'N/A';
+                    }
+                    fputcsv($output, array_map('mb_convert_encoding', $reordered_data, 'UTF-8', 'auto'));
                 }
             } else {
                 $export_types = ['camps' => $camps, 'courses' => $courses, 'girls_only' => $girls_only];
@@ -85,9 +118,25 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     foreach ($variations as $config_key => $config) {
                         $roster = intersoccer_pe_get_event_roster_by_variation($config['variation_ids']);
                         if (empty($roster)) continue;
-                        fputcsv($output, array_keys($roster[0]));
+                        $headers = array_keys($roster[0]);
+                        $reordered_headers = [];
+                        foreach (['player_name', 'last_name', 'gender', 'parent_phone', 'parent_email', 'age', 'medical_conditions'] as $key) {
+                            if (in_array($key, $headers)) {
+                                $reordered_headers[$key] = $key === 'last_name' ? 'Surname' : ucfirst(str_replace('_', ' ', $key));
+                            }
+                        }
+                        foreach ($headers as $header) {
+                            if (!in_array($header, array_keys($reordered_headers))) {
+                                $reordered_headers[$header] = ucfirst(str_replace('_', ' ', $header));
+                            }
+                        }
+                        fputcsv($output, array_values($reordered_headers));
                         foreach ($roster as $player) {
-                            fputcsv($output, array_map('mb_convert_encoding', array_values($player), 'UTF-8', 'auto'));
+                            $reordered_data = [];
+                            foreach (array_keys($reordered_headers) as $key) {
+                                $reordered_data[] = $player[$key] ?? 'N/A';
+                            }
+                            fputcsv($output, array_map('mb_convert_encoding', $reordered_data, 'UTF-8', 'auto'));
                         }
                     }
                 }
@@ -99,14 +148,25 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
 
         $spreadsheet = new Spreadsheet();
         if ($export_type === 'camps') {
-            $rosters = $wpdb->get_results("SELECT venue, product_name, camp_terms, booking_type, first_name, last_name, age, gender, medical_conditions, late_pickup, day_presence, parent_phone, parent_email, age_group FROM $rosters_table WHERE activity_type = 'Camp' ORDER BY updated_at DESC", ARRAY_A);
+            $rosters = $wpdb->get_results("SELECT * FROM $rosters_table WHERE activity_type = 'Camp' ORDER BY updated_at DESC", ARRAY_A);
             error_log('InterSoccer: Retrieved ' . count($rosters) . ' camp rosters for export by user ' . $user_id);
             if (empty($rosters)) wp_die(__('No camp roster data.', 'intersoccer-reports-rosters'));
 
             $sheet = $spreadsheet->getActiveSheet();
             $sheet->setTitle('Camp_Rosters');
             $headers = array_keys($rosters[0]);
-            $sheet->fromArray($headers, NULL, 'A1');
+            $reordered_headers = [];
+            foreach (['player_name', 'last_name', 'gender', 'parent_phone', 'parent_email', 'age', 'medical_conditions'] as $key) {
+                if (in_array($key, $headers)) {
+                    $reordered_headers[$key] = $key === 'last_name' ? 'Surname' : ucfirst(str_replace('_', ' ', $key));
+                }
+            }
+            foreach ($headers as $header) {
+                if (!in_array($header, array_keys($reordered_headers))) {
+                    $reordered_headers[$header] = ucfirst(str_replace('_', ' ', $header));
+                }
+            }
+            $sheet->fromArray(array_values($reordered_headers), NULL, 'A1');
 
             $row = 2;
             foreach ($rosters as $roster) {
@@ -114,38 +174,41 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 if (strtolower($roster['booking_type']) === 'full week') {
                     $day_presence = ['Monday' => 'Yes', 'Tuesday' => 'Yes', 'Wednesday' => 'Yes', 'Thursday' => 'Yes', 'Friday' => 'Yes'];
                 }
-                $data = array_values($roster);
-                $sheet->fromArray($data, NULL, 'A' . $row++);
+                $reordered_data = [];
+                foreach (array_keys($reordered_headers) as $key) {
+                    $reordered_data[] = $roster[$key] ?? 'N/A';
+                }
+                $sheet->fromArray($reordered_data, NULL, 'A' . $row++);
             }
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
         } elseif ($export_type === 'courses') {
-            $rosters = $wpdb->get_results("SELECT product_name, venue, age_group, start_date, end_date, first_name, last_name, age, gender, medical_conditions, late_pickup, parent_phone, parent_email FROM $rosters_table WHERE activity_type = 'Course' ORDER BY updated_at DESC", ARRAY_A);
+            $rosters = $wpdb->get_results("SELECT * FROM $rosters_table WHERE activity_type = 'Course' ORDER BY updated_at DESC", ARRAY_A);
             error_log('InterSoccer: Retrieved ' . count($rosters) . ' course rosters for export by user ' . $user_id);
             if (empty($rosters)) wp_die(__('No course roster data.', 'intersoccer-reports-rosters'));
 
             $sheet = $spreadsheet->getActiveSheet();
             $sheet->setTitle('Course_Rosters');
-            $headers = ['Product Name', 'Venue', 'Age Group', 'Start Date', 'End Date', 'First Name', 'Last Name', 'Age', 'Gender', 'Medical Conditions', 'Late Pickup', 'Parent Phone', 'Parent Email'];
-            $sheet->fromArray($headers, NULL, 'A1');
+            $headers = array_keys($rosters[0]);
+            $reordered_headers = [];
+            foreach (['player_name', 'last_name', 'gender', 'parent_phone', 'parent_email', 'age', 'medical_conditions'] as $key) {
+                if (in_array($key, $headers)) {
+                    $reordered_headers[$key] = $key === 'last_name' ? 'Surname' : ucfirst(str_replace('_', ' ', $key));
+                }
+            }
+            foreach ($headers as $header) {
+                if (!in_array($header, array_keys($reordered_headers))) {
+                    $reordered_headers[$header] = ucfirst(str_replace('_', ' ', $header));
+                }
+            }
+            $sheet->fromArray(array_values($reordered_headers), NULL, 'A1');
 
             $row = 2;
             foreach ($rosters as $roster) {
-                $data = [
-                    $roster['product_name'],
-                    $roster['venue'],
-                    $roster['age_group'] ?? 'N/A',
-                    $roster['start_date'] ?? 'N/A',
-                    $roster['end_date'] ?? 'N/A',
-                    $roster['first_name'],
-                    $roster['last_name'],
-                    $roster['age'] ?? 'N/A',
-                    $roster['gender'],
-                    $roster['medical_conditions'] ?? 'None',
-                    $roster['late_pickup'] === '18h' ? 'Yes' : 'No',
-                    $roster['parent_phone'] ?? 'N/A',
-                    $roster['parent_email'] ?? 'N/A'
-                ];
-                $sheet->fromArray($data, NULL, 'A' . $row++);
+                $reordered_data = [];
+                foreach (array_keys($reordered_headers) as $key) {
+                    $reordered_data[] = $roster[$key] ?? 'N/A';
+                }
+                $sheet->fromArray($reordered_data, NULL, 'A' . $row++);
             }
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
         } elseif ($export_type === 'all') {
@@ -156,11 +219,26 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             $sheet = $spreadsheet->getActiveSheet();
             $sheet->setTitle('All_Rosters');
             $headers = array_keys($rosters[0]);
-            $sheet->fromArray($headers, NULL, 'A1');
+            $reordered_headers = [];
+            foreach (['player_name', 'last_name', 'gender', 'parent_phone', 'parent_email', 'age', 'medical_conditions'] as $key) {
+                if (in_array($key, $headers)) {
+                    $reordered_headers[$key] = $key === 'last_name' ? 'Surname' : ucfirst(str_replace('_', ' ', $key));
+                }
+            }
+            foreach ($headers as $header) {
+                if (!in_array($header, array_keys($reordered_headers))) {
+                    $reordered_headers[$header] = ucfirst(str_replace('_', ' ', $header));
+                }
+            }
+            $sheet->fromArray(array_values($reordered_headers), NULL, 'A1');
 
             $row = 2;
             foreach ($rosters as $roster) {
-                $sheet->fromArray(array_values($roster), NULL, 'A' . $row++);
+                $reordered_data = [];
+                foreach (array_keys($reordered_headers) as $key) {
+                    $reordered_data[] = $roster[$key] ?? 'N/A';
+                }
+                $sheet->fromArray($reordered_data, NULL, 'A' . $row++);
             }
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
         } else {
@@ -175,11 +253,26 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $sheet->setTitle($sheet_title);
 
                     $headers = array_keys($roster[0]);
-                    $sheet->fromArray($headers, NULL, 'A1');
+                    $reordered_headers = [];
+                    foreach (['player_name', 'last_name', 'gender', 'parent_phone', 'parent_email', 'age', 'medical_conditions'] as $key) {
+                        if (in_array($key, $headers)) {
+                            $reordered_headers[$key] = $key === 'last_name' ? 'Surname' : ucfirst(str_replace('_', ' ', $key));
+                        }
+                    }
+                    foreach ($headers as $header) {
+                        if (!in_array($header, array_keys($reordered_headers))) {
+                            $reordered_headers[$header] = ucfirst(str_replace('_', ' ', $header));
+                        }
+                    }
+                    $sheet->fromArray(array_values($reordered_headers), NULL, 'A1');
 
                     $row = 2;
                     foreach ($roster as $player) {
-                        $sheet->fromArray(array_values($player), NULL, 'A' . $row++);
+                        $reordered_data = [];
+                        foreach (array_keys($reordered_headers) as $key) {
+                            $reordered_data[] = $player[$key] ?? 'N/A';
+                        }
+                        $sheet->fromArray($reordered_data, NULL, 'A' . $row++);
                     }
                     $sheet->setCellValue('A' . $row, 'Total Players: ' . count($roster));
                 }
