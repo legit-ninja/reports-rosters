@@ -4,6 +4,7 @@
  * Author: Jeremy Lee
  * Description: Handles AJAX requests for rosters and reports.
  * Dependencies: WooCommerce, intersoccer-product-variations, intersoccer-player-management
+ * Version: 1.0.7
  */
 
 if (!defined('ABSPATH')) {
@@ -13,7 +14,7 @@ if (!defined('ABSPATH')) {
 /**
  * AJAX handler for fetching event roster
  */
-function intersoccer_get_event_roster_ajax() {
+function intersoccer_reports_get_event_roster_ajax() {
     check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
 
     if (!current_user_can('manage_options')) {
@@ -31,14 +32,14 @@ function intersoccer_get_event_roster_ajax() {
         wp_send_json_error(['message' => __('Invalid product ID.', 'intersoccer-reports-rosters')]);
     }
 
-    $roster = intersoccer_pe_get_event_roster($product_id, $filters);
+    $roster = intersoccer_pe_get_event_roster($product_id, $filters); // Assuming this function exists or needs adjustment
     wp_send_json_success(['data' => $roster]);
 }
 
 /**
  * AJAX handler for fetching camp report
  */
-function intersoccer_get_camp_report_ajax() {
+function intersoccer_reports_get_camp_report_ajax() {
     check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
 
     if (!current_user_can('manage_options')) {
@@ -50,14 +51,14 @@ function intersoccer_get_camp_report_ajax() {
     $camp_type = isset($_POST['camp_type']) ? sanitize_text_field($_POST['camp_type']) : '';
     $year = isset($_POST['year']) ? sanitize_text_field($_POST['year']) : date('Y');
 
-    $report = intersoccer_pe_get_camp_report_data($region, $week, $camp_type, $year);
+    $report = intersoccer_pe_get_camp_report_data($region, $week, $camp_type, $year); // Assuming this function exists
     wp_send_json_success(['data' => $report]);
 }
 
 /**
  * AJAX handler for exporting a single roster
  */
-function intersoccer_export_roster_ajax() {
+function intersoccer_reports_export_roster_ajax() {
     check_ajax_referer('intersoccer_reports_rosters_nonce', 'export_nonce', true); // Exit with error if nonce fails
 
     if (!current_user_can('manage_options') && !current_user_can('coach') && !current_user_can('event_organizer') && !current_user_can('shop_manager')) {
@@ -78,6 +79,5 @@ function intersoccer_export_roster_ajax() {
     wp_die(); // Ensure proper exit
 }
 
-add_action('wp_ajax_intersoccer_export_roster', 'intersoccer_export_roster_ajax');
-
+add_action('wp_ajax_intersoccer_export_roster', 'intersoccer_reports_export_roster_ajax');
 ?>
