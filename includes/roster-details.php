@@ -3,7 +3,7 @@
  * Roster details page for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.0.6
+ * @version 1.0.9
  * @author Jeremy Lee
  */
 
@@ -42,9 +42,9 @@ function intersoccer_render_roster_details_page() {
             );
             $title = __('Roster Details for Order Item ID: ', 'intersoccer-reports-rosters') . $order_item_id;
         } elseif (isset($_GET['product_name']) && isset($_GET['venue']) && isset($_GET['age_group'])) {
-            $product_name = sanitize_text_field($_GET['product_name']);
-            $venue = sanitize_text_field($_GET['venue']);
-            $age_group = sanitize_text_field($_GET['age_group']);
+            $product_name = trim(sanitize_text_field($_GET['product_name']));
+            $venue = trim(sanitize_text_field($_GET['venue']));
+            $age_group = trim(sanitize_text_field($_GET['age_group']));
             $rosters = $wpdb->get_results(
                 $wpdb->prepare(
                     "SELECT * FROM $rosters_table WHERE product_name = %s AND venue = %s AND age_group = %s ORDER BY updated_at DESC",
@@ -54,14 +54,16 @@ function intersoccer_render_roster_details_page() {
                 ),
                 ARRAY_A
             );
-            $title = __('Roster Details for ', 'intersoccer-reports-rosters') . esc_html("$product_name - $venue - $age_group");
+            $venue_name = intersoccer_get_term_name($venue, 'pa_intersoccer-venues');
+            $age_group_name = intersoccer_get_term_name($age_group, 'pa_age-group');
+            $title = __('Roster Details for ', 'intersoccer-reports-rosters') . esc_html("$product_name - $venue_name - $age_group_name");
         } else {
             wp_die(__('Invalid parameters provided.', 'intersoccer-reports-rosters'));
         }
 
-        error_log('InterSoccer: Retrieved ' . count($rosters) . ' rosters for display on ' . current_time('mysql'));
+        error_log('InterSoccer: Retrieved ' . count($rosters) . ' rosters from wp_intersoccer_rosters for display on ' . current_time('mysql'));
         if (empty($rosters)) {
-            wp_die(__('No roster data available.', 'intersoccer-reports-rosters'));
+            wp_die(__('No roster data available for the given parameters.', 'intersoccer-reports-rosters'));
         }
 
         ?>
@@ -101,7 +103,7 @@ function intersoccer_render_roster_details_page() {
                             <td><?php echo esc_html($roster['age'] ?? 'N/A'); ?></td>
                             <td><?php echo esc_html($roster['booking_type']); ?></td>
                             <td><?php echo esc_html($roster['selected_days'] ?? 'N/A'); ?></td>
-                            <td><?php echo esc_html($roster['camp_terms'] ?? 'N/A'); ?></td>
+                            <td><?php echo esc_html(intersoccer_get_term_name($roster['camp_terms'], 'pa_camp-terms')); ?></td>
                             <td><?php echo esc_html(json_decode($roster['day_presence'], true) ? json_encode(json_decode($roster['day_presence'], true)) : 'N/A'); ?></td>
                             <td><?php echo esc_html($roster['event_dates'] ?? 'N/A'); ?></td>
                             <td><?php echo esc_html($roster['product_name']); ?></td>

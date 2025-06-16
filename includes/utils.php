@@ -27,4 +27,10 @@ if (!function_exists('intersoccer_normalize_attribute')) {
 }
 
 error_log('InterSoccer: Loaded utils.php');
+
+// Function to get term name from slug
+function intersoccer_get_term_name($slug, $taxonomy) {
+    $term = get_term_by('slug', $slug, $taxonomy);
+    return $term ? $term->name : $slug;
+}
 ?>
