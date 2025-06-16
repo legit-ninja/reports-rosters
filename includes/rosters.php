@@ -3,7 +3,7 @@
  * Rosters pages for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.0.22
+ * @version 1.0.26
  * @author Jeremy Lee
  */
 
@@ -22,18 +22,18 @@ function intersoccer_render_all_rosters_page() {
     $product_names = $wpdb->get_col("SELECT DISTINCT product_name FROM $rosters_table ORDER BY product_name");
     error_log('InterSoccer: Retrieved ' . count($product_names) . ' unique product names for All Rosters on ' . current_time('mysql'));
 
-    $export_nonce = wp_create_nonce('intersoccer_export_nonce');
+    $reconcile_nonce = wp_create_nonce('intersoccer_reconcile');
     ?>
     <div class="wrap">
         <h1><?php _e('All Rosters', 'intersoccer-reports-rosters'); ?></h1>
         <?php if (empty($product_names)) : ?>
-            <p><?php _e('No rosters available. Please rebuild or reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
+            <p><?php _e('No rosters available. Please reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
         <?php else : ?>
             <div class="export-buttons">
                 <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
                     <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                     <input type="hidden" name="export_type" value="all">
-                    <input type="hidden" name="nonce" value="<?php echo esc_attr($export_nonce); ?>">
+                    <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_export_nonce')); ?>">
                     <input type="submit" name="export_all" class="button button-primary" value="<?php _e('Export All Rosters', 'intersoccer-reports-rosters'); ?>">
                 </form>
             </div>
@@ -42,10 +42,10 @@ function intersoccer_render_all_rosters_page() {
                 foreach ($product_names as $product_name) {
                     $groups = $wpdb->get_results(
                         $wpdb->prepare(
-                            "SELECT venue, age_group, COUNT(*) as total_players
+                            "SELECT venue, age_group, variation_id, COUNT(*) as total_players
                              FROM $rosters_table
-                             WHERE product_name = %s
-                             GROUP BY venue, age_group
+                             GROUP BY venue, age_group, variation_id
+                             HAVING product_name = %s
                              ORDER BY venue, age_group",
                             $product_name
                         ),
@@ -62,7 +62,7 @@ function intersoccer_render_all_rosters_page() {
                         echo '<th>' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
                         echo '</tr></thead><tbody>';
                         foreach ($groups as $group) {
-                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&product_name=' . urlencode($product_name) . '&venue=' . urlencode($group['venue']) . '&age_group=' . urlencode($group['age_group']));
+                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . urlencode($group['variation_id']));
                             echo '<tr>';
                             echo '<td>' . esc_html(intersoccer_get_term_name($group['venue'], 'pa_intersoccer-venues')) . '</td>';
                             echo '<td>' . esc_html(intersoccer_get_term_name($group['age_group'], 'pa_age-group')) . '</td>';
@@ -93,22 +93,22 @@ function intersoccer_render_camps_page() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    $camp_terms_list = $wpdb->get_col("SELECT DISTINCT camp_terms FROM $rosters_table WHERE activity_type = 'Camp' ORDER BY camp_terms");
+    $camp_terms_list = $wpdb->get_col("SELECT DISTINCT camp_terms FROM $rosters_table WHERE FIND_IN_SET('Camp', activity_type) > 0 ORDER BY camp_terms");
     error_log('InterSoccer: Retrieved ' . count($camp_terms_list) . ' unique camp terms for Camps on ' . current_time('mysql'));
 
-    $export_nonce = wp_create_nonce('intersoccer_export_nonce');
+    $reconcile_nonce = wp_create_nonce('intersoccer_reconcile');
     ?>
     <div class="wrap">
         <h1><?php _e('Camps', 'intersoccer-reports-rosters'); ?></h1>
         <p><a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-camps&action=reconcile'), 'intersoccer_reconcile'); ?>" class="button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></a></p>
         <?php if (empty($camp_terms_list)) : ?>
-            <p><?php _e('No camp rosters available. Please rebuild or reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
+            <p><?php _e('No camp rosters available. Please reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
         <?php else : ?>
             <div class="export-buttons">
                 <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
                     <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                     <input type="hidden" name="export_type" value="camps">
-                    <input type="hidden" name="nonce" value="<?php echo esc_attr($export_nonce); ?>">
+                    <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_export_nonce')); ?>">
                     <input type="submit" name="export_camps" class="button button-primary" value="<?php _e('Export All Camp Rosters', 'intersoccer-reports-rosters'); ?>">
                 </form>
             </div>
@@ -118,10 +118,10 @@ function intersoccer_render_camps_page() {
                     $camp_terms_name = intersoccer_get_term_name($camp_terms, 'pa_camp-terms');
                     $groups = $wpdb->get_results(
                         $wpdb->prepare(
-                            "SELECT product_name, venue, age_group, COUNT(*) as total_players
+                            "SELECT product_name, venue, age_group, variation_id, COUNT(*) as total_players
                              FROM $rosters_table
-                             WHERE activity_type = 'Camp' AND camp_terms = %s
-                             GROUP BY product_name, venue, age_group
+                             WHERE FIND_IN_SET('Camp', activity_type) > 0 AND camp_terms = %s
+                             GROUP BY product_name, venue, age_group, variation_id
                              ORDER BY product_name, venue, age_group",
                             $camp_terms
                         ),
@@ -139,7 +139,7 @@ function intersoccer_render_camps_page() {
                         echo '<th>' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
                         echo '</tr></thead><tbody>';
                         foreach ($groups as $group) {
-                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&product_name=' . urlencode($group['product_name']) . '&venue=' . urlencode($group['venue']) . '&age_group=' . urlencode($group['age_group']));
+                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . urlencode($group['variation_id']));
                             echo '<tr>';
                             echo '<td>' . esc_html($group['product_name']) . '</td>';
                             echo '<td>' . esc_html(intersoccer_get_term_name($group['venue'], 'pa_intersoccer-venues')) . '</td>';
@@ -170,22 +170,22 @@ function intersoccer_render_courses_page() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    $rosters = $wpdb->get_results("SELECT * FROM $rosters_table WHERE activity_type = 'Course' ORDER BY updated_at DESC");
+    $rosters = $wpdb->get_results("SELECT * FROM $rosters_table WHERE FIND_IN_SET('Course', activity_type) > 0 ORDER BY updated_at DESC");
     error_log('InterSoccer: Retrieved ' . count($rosters) . ' course rosters for display on ' . current_time('mysql'));
 
-    $export_nonce = wp_create_nonce('intersoccer_export_nonce');
+    $reconcile_nonce = wp_create_nonce('intersoccer_reconcile');
     ?>
     <div class="wrap">
         <h1><?php _e('Courses', 'intersoccer-reports-rosters'); ?></h1>
         <p><a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-courses&action=reconcile'), 'intersoccer_reconcile'); ?>" class="button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></a></p>
         <?php if (empty($rosters)) : ?>
-            <p><?php _e('No course rosters available. Please rebuild or reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
+            <p><?php _e('No course rosters available. Please reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
         <?php else : ?>
             <div class="export-buttons">
                 <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
                     <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                     <input type="hidden" name="export_type" value="courses">
-                    <input type="hidden" name="nonce" value="<?php echo esc_attr($export_nonce); ?>">
+                    <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_export_nonce')); ?>">
                     <input type="submit" name="export_courses" class="button button-primary" value="<?php _e('Export All Course Rosters', 'intersoccer-reports-rosters'); ?>">
                 </form>
             </div>
@@ -211,7 +211,7 @@ function intersoccer_render_courses_page() {
                         echo '<td>' . esc_html($venue_rosters[0]->product_name) . '</td>';
                         echo '<td>' . esc_html(intersoccer_get_term_name($venue, 'pa_intersoccer-venues')) . '</td>';
                         echo '<td>' . esc_html(count($venue_rosters)) . '</td>';
-                        echo '<td><a href="' . esc_url(admin_url('admin.php?page=intersoccer-roster-details&order_item_id=' . $venue_rosters[0]->order_item_id)) . '" class="button">' . __('View Roster', 'intersoccer-reports-rosters') . '</a></td>';
+                        echo '<td><a href="' . esc_url(admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . $venue_rosters[0]->variation_id)) . '" class="button">' . __('View Roster', 'intersoccer-reports-rosters') . '</a></td>';
                         echo '</tr>';
                         echo '</tbody></table>';
                         echo '</div>';
@@ -236,27 +236,24 @@ function intersoccer_render_girls_only_page() {
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
     $rosters = $wpdb->get_results(
-        $wpdb->prepare(
-            "SELECT * FROM $rosters_table WHERE activity_type = %s ORDER BY updated_at DESC",
-            'Girls Only'
-        ),
+        "SELECT * FROM $rosters_table WHERE FIND_IN_SET('Girls Only', activity_type) > 0 ORDER BY updated_at DESC",
         ARRAY_A
     );
     error_log('InterSoccer: Retrieved ' . count($rosters) . ' Girls Only rosters on ' . current_time('mysql'));
 
-    $export_nonce = wp_create_nonce('intersoccer_export_nonce');
+    $reconcile_nonce = wp_create_nonce('intersoccer_reconcile');
     ?>
     <div class="wrap">
         <h1><?php _e('Girls Only', 'intersoccer-reports-rosters'); ?></h1>
         <p><a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-girls-only&action=reconcile'), 'intersoccer_reconcile'); ?>" class="button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></a></p>
         <?php if (empty($rosters)) : ?>
-            <p><?php _e('No Girls Only rosters available. Please rebuild or reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
+            <p><?php _e('No Girls Only rosters available. Please reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
         <?php else : ?>
             <div class="export-buttons">
                 <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
                     <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                     <input type="hidden" name="export_type" value="girls_only">
-                    <input type="hidden" name="nonce" value="<?php echo esc_attr($export_nonce); ?>">
+                    <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_export_nonce')); ?>">
                     <input type="submit" name="export_girls_only" class="button button-primary" value="<?php _e('Export All Girls Only Rosters', 'intersoccer-reports-rosters'); ?>">
                 </form>
             </div>
@@ -279,7 +276,7 @@ function intersoccer_render_girls_only_page() {
                         echo '<th>' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
                         echo '</tr></thead><tbody>';
                         foreach ($venue_rosters as $roster) {
-                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&order_item_id=' . $roster['order_item_id']);
+                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . $roster['variation_id']);
                             echo '<tr>';
                             echo '<td>' . esc_html($roster['product_name']) . '</td>';
                             echo '<td>' . esc_html(intersoccer_get_term_name($roster['venue'], 'pa_intersoccer-venues')) . '</td>';
@@ -309,22 +306,22 @@ function intersoccer_render_other_events_page() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    $rosters = $wpdb->get_results("SELECT * FROM $rosters_table WHERE activity_type IN ('Event', 'Other') ORDER BY updated_at DESC");
+    $rosters = $wpdb->get_results("SELECT * FROM $rosters_table WHERE FIND_IN_SET('Event', activity_type) > 0 OR FIND_IN_SET('Other', activity_type) > 0 ORDER BY updated_at DESC");
     error_log('InterSoccer: Retrieved ' . count($rosters) . ' other event rosters for display on ' . current_time('mysql'));
 
-    $export_nonce = wp_create_nonce('intersoccer_export_nonce');
+    $reconcile_nonce = wp_create_nonce('intersoccer_reconcile');
     ?>
     <div class="wrap">
         <h1><?php _e('Other Events', 'intersoccer-reports-rosters'); ?></h1>
         <p><a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-other-events&action=reconcile'), 'intersoccer_reconcile'); ?>" class="button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></a></p>
         <?php if (empty($rosters)) : ?>
-            <p><?php _e('No other event rosters available. Please rebuild or reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
+            <p><?php _e('No other event rosters available. Please reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
         <?php else : ?>
             <div class="export-buttons">
                 <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
                     <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                     <input type="hidden" name="export_type" value="other">
-                    <input type="hidden" name="nonce" value="<?php echo esc_attr($export_nonce); ?>">
+                    <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_export_nonce')); ?>">
                     <input type="submit" name="export_other" class="button button-primary" value="<?php _e('Export All Other Rosters', 'intersoccer-reports-rosters'); ?>">
                 </form>
             </div>
@@ -350,7 +347,7 @@ function intersoccer_render_other_events_page() {
                         echo '<td>' . esc_html($venue_rosters[0]->product_name) . '</td>';
                         echo '<td>' . esc_html(intersoccer_get_term_name($venue, 'pa_intersoccer-venues')) . '</td>';
                         echo '<td>' . esc_html(count($venue_rosters)) . '</td>';
-                        echo '<td><a href="' . esc_url(admin_url('admin.php?page=intersoccer-roster-details&order_item_id=' . $venue_rosters[0]->order_item_id)) . '" class="button">' . __('View Roster', 'intersoccer-reports-rosters') . '</a></td>';
+                        echo '<td><a href="' . esc_url(admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . $venue_rosters[0]->variation_id)) . '" class="button">' . __('View Roster', 'intersoccer-reports-rosters') . '</a></td>';
                         echo '</tr>';
                         echo '</tbody></table>';
                         echo '</div>';
@@ -376,5 +373,20 @@ function intersoccer_render_reports_page() {
         <p><?php _e('Reports functionality to be implemented.', 'intersoccer-reports-rosters'); ?></p>
     </div>
     <?php
+}
+
+// AJAX handler for reconcile
+add_action('wp_ajax_intersoccer_reconcile_rosters', 'intersoccer_reconcile_rosters_ajax');
+function intersoccer_reconcile_rosters_ajax() {
+    check_ajax_referer('intersoccer_reconcile', 'nonce');
+    if (!current_user_can('manage_options') && !current_user_can('coach')) {
+        wp_send_json_error(__('You do not have permission to reconcile rosters.', 'intersoccer-reports-rosters'));
+    }
+    $result = intersoccer_rebuild_rosters_and_reports();
+    if ($result['status'] === 'success') {
+        wp_send_json_success(__('Rosters reconciled successfully. Inserted ' . $result['inserted'] . ' records.', 'intersoccer-reports-rosters'));
+    } else {
+        wp_send_json_error(__('Roster reconciliation failed: ' . $result['message'], 'intersoccer-reports-rosters'));
+    }
 }
 ?>

@@ -3,7 +3,7 @@
  * Roster data functions for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.0.62
+ * @version 1.0.63
  */
 
 defined('ABSPATH') or die('Restricted access');
@@ -118,7 +118,7 @@ function intersoccer_pe_get_girls_only_variations($filters) {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    $where = ["activity_type = 'Girls-Only'"];
+    $where = ["activity_type = 'Girls Only'"]; // Corrected from 'Girls-Only'
     if ($filters['region'] ?? '') $where[] = $wpdb->prepare("venue LIKE %s", '%' . intersoccer_normalize_attribute($filters['region']) . '%');
     if ($filters['venue'] ?? '') $where[] = $wpdb->prepare("venue = %s", intersoccer_normalize_attribute($filters['venue']));
     if ($filters['age_group'] ?? '') $where[] = $wpdb->prepare("age_group = %s", intersoccer_normalize_attribute($filters['age_group']));
