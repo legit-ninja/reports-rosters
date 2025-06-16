@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.2.87
+ * Version: 1.3.0
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -437,7 +437,7 @@ function intersoccer_reconcile_rosters() {
             if ($product && $product->is_type('variation')) {
                 $meta_data = $item->get_meta_data() ? array_column(array_map('get_object_vars', $item->get_meta_data()), 'value', 'key') : [];
                 $venue = $meta_data['InterSoccer Venues'][0] ?? 'Unknown Venue';
-                $age_group = $meta_data['Age Group'][0] ?? 'N/A';
+                $age_group = $meta_data['Age Group'][0] ?? $meta_data['pa_age-group'] ?? (wc_get_product_terms($product->get_id(), 'pa_age-group', ['fields' => 'names'])[0] ?? 'N/A');
                 $start_date = $meta_data['Start Date'][0] ?? '';
                 $end_date = $meta_data['End Date'][0] ?? '';
                 $activity_type = $meta_data['Activity Type'][0] ?? '';
@@ -466,6 +466,9 @@ function intersoccer_reconcile_rosters() {
                     }
                 } else {
                     // Insert missing entry
+                    $order = $item->get_order();
+                    $parent_phone = $order->get_billing_phone() ?: 'N/A';
+                    $parent_email = $order->get_billing_email() ?: 'N/A';
                     $wpdb->insert($rosters_table, [
                         'order_item_id' => $item_id,
                         'player_name' => $meta_data['Assigned Attendee'][0] ?? 'Unknown Attendee',
@@ -477,8 +480,8 @@ function intersoccer_reconcile_rosters() {
                         'selected_days' => $meta_data['Days Selected'][0] ?? 'N/A',
                         'camp_terms' => $meta_data['Camp Terms'][0] ?? 'N/A',
                         'venue' => $venue,
-                        'parent_phone' => $item->get_order()->get_billing_phone() ?: 'N/A',
-                        'parent_email' => $item->get_order()->get_billing_email() ?: 'N/A',
+                        'parent_phone' => $parent_phone,
+                        'parent_email' => $parent_email,
                         'medical_conditions' => $meta_data['Medical Conditions'][0] ?? '',
                         'late_pickup' => $meta_data['Late Pickup'][0] ?? 'No',
                         'day_presence' => json_encode(['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No']),
@@ -522,11 +525,13 @@ function intersoccer_rebuild_rosters() {
             if ($product && $product->is_type('variation')) {
                 $meta_data = $item->get_meta_data() ? array_column(array_map('get_object_vars', $item->get_meta_data()), 'value', 'key') : [];
                 $venue = $meta_data['InterSoccer Venues'][0] ?? 'Unknown Venue';
-                $age_group = $meta_data['Age Group'][0] ?? 'N/A';
+                $age_group = $meta_data['Age Group'][0] ?? $meta_data['pa_age-group'] ?? (wc_get_product_terms($product->get_id(), 'pa_age-group', ['fields' => 'names'])[0] ?? 'N/A');
                 $start_date = $meta_data['Start Date'][0] ?? '';
                 $end_date = $meta_data['End Date'][0] ?? '';
                 $activity_type = $meta_data['Activity Type'][0] ?? '';
 
+                $parent_phone = $order->get_billing_phone() ?: 'N/A';
+                $parent_email = $order->get_billing_email() ?: 'N/A';
                 $wpdb->insert($rosters_table, [
                     'order_item_id' => $item->get_id(),
                     'player_name' => $meta_data['Assigned Attendee'][0] ?? 'Unknown Attendee',
@@ -538,8 +543,8 @@ function intersoccer_rebuild_rosters() {
                     'selected_days' => $meta_data['Days Selected'][0] ?? 'N/A',
                     'camp_terms' => $meta_data['Camp Terms'][0] ?? 'N/A',
                     'venue' => $venue,
-                    'parent_phone' => $order->get_billing_phone() ?: 'N/A',
-                    'parent_email' => $order->get_billing_email() ?: 'N/A',
+                    'parent_phone' => $parent_phone,
+                    'parent_email' => $parent_email,
                     'medical_conditions' => $meta_data['Medical Conditions'][0] ?? '',
                     'late_pickup' => $meta_data['Late Pickup'][0] ?? 'No',
                     'day_presence' => json_encode(['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No']),
@@ -559,53 +564,3 @@ function intersoccer_rebuild_rosters() {
     wp_send_json_success(['inserted' => $inserted, 'message' => __('Rebuild completed.', 'intersoccer-reports-rosters')]);
 }
 add_action('wp_ajax_intersoccer_rebuild_rosters', 'intersoccer_rebuild_rosters');
-
-function intersoccer_render_advanced_page() {
-    if (!current_user_can('manage_options')) {
-        wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
-    }
-    ?>
-    <div class="wrap">
-        <h1><?php _e('InterSoccer Advanced Features', 'intersoccer-reports-rosters'); ?></h1>
-        <div id="intersoccer-rebuild-status"></div>
-        <form id="intersoccer-rebuild-form" method="post" action="">
-            <?php wp_nonce_field('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field'); ?>
-            <input type="hidden" name="action" value="intersoccer_rebuild_rosters">
-            <button type="submit" class="button button-primary" id="intersoccer-rebuild-button"><?php _e('Rebuild Rosters', 'intersoccer-reports-rosters'); ?></button>
-        </form>
-        <p>
-            <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
-                <input type="hidden" name="action" value="intersoccer_export_all_rosters">
-                <input type="hidden" name="export_type" value="all">
-                <input type="hidden" name="format" value="csv">
-                <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_export_nonce')); ?>">
-                <input type="hidden" name="debug_user" value="<?php echo esc_attr(get_current_user_id()); ?>">
-                <input type="submit" name="export_all_csv" class="button button-primary" value="<?php _e('Export All Rosters (CSV)', 'intersoccer-reports-rosters'); ?>">
-            </form>
-        </p>
-        <script type="text/javascript">
-            jQuery(document).ready(function($) {
-                $('#intersoccer-rebuild-form').on('submit', function(e) {
-                    e.preventDefault();
-                    $.ajax({
-                        url: ajaxurl,
-                        type: 'POST',
-                        data: $(this).serialize(),
-                        beforeSend: function() {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuilding... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
-                        },
-                        success: function(response) {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuild completed. Check debug.log for details. Inserted: ', 'intersoccer-reports-rosters'); ?>' + response.data.inserted + ' rosters.</p>');
-                            console.log('Rebuild response: ', response);
-                        },
-                        error: function(xhr, status, error) {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuild failed: ', 'intersoccer-reports-rosters'); ?>' + error + '</p>');
-                            console.error('AJAX Error: ', status, error);
-                        }
-                    });
-                });
-            });
-        </script>
-    </div>
-    <?php
-}
