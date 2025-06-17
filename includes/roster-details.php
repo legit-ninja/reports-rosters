@@ -82,7 +82,21 @@ function intersoccer_render_roster_details_page() {
     echo '<div class="wrap">';
     echo '<h1>' . esc_html__('Roster Details for Variation #', 'intersoccer-reports-rosters') . esc_html(implode(', ', $related_variation_ids)) . '</h1>';
     echo '<table class="wp-list-table widefat fixed striped">';
-    echo '<tr><th>' . esc_html__('Name') . '</th><th>' . esc_html__('Surname') . '</th><th>' . esc_html__('Gender') . '</th><th>' . esc_html__('Phone') . '</th><th>' . esc_html__('Email') . '</th><th>' . esc_html__('Age') . '</th><th>' . esc_html__('Medical/Dietary') . '</th><th>' . esc_html__('Booking Type') . '</th></tr>';
+    echo '<tr>';
+    echo '<th>' . esc_html__('Name') . '</th>';
+    echo '<th>' . esc_html__('Surname') . '</th>';
+    echo '<th>' . esc_html__('Gender') . '</th>';
+    echo '<th>' . esc_html__('Phone') . '</th>';
+    echo '<th>' . esc_html__('Email') . '</th>';
+    echo '<th>' . esc_html__('Age') . '</th>';
+    echo '<th>' . esc_html__('Medical/Dietary') . '</th>';
+    if ($base_roster->activity_type === 'Camp') {
+        echo '<th>' . esc_html__('Booking Type') . '</th>';
+    }
+    if ($base_roster->activity_type === 'Course') {
+        echo '<th>' . esc_html__('Course Day') . '</th>';
+    }
+    echo '</tr>';
     foreach ($rosters as $row) {
         $late_pickup_display = ($row->late_pickup === 'Yes') ? 'Yes (18:00)' : 'No';
         echo '<tr>';
@@ -93,7 +107,25 @@ function intersoccer_render_roster_details_page() {
         echo '<td>' . esc_html($row->parent_email) . '</td>';
         echo '<td>' . esc_html($row->age ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->medical_conditions ?? 'N/A') . '</td>';
-        echo '<td>' . esc_html($row->booking_type ?? 'N/A') . '</td>'; // Added Booking Type column
+        if ($base_roster->activity_type === 'Camp') {
+            echo '<td>' . esc_html($row->booking_type ?? 'N/A') . '</td>';
+        }
+        if ($base_roster->activity_type === 'Course') {
+            // Fetch Course Day from order_item_metadata if not in rosters table yet
+            $course_day = $row->course_day ?? 'N/A';
+            if ($course_day === 'N/A') {
+                $order_item_id = $row->order_item_id;
+                $course_day_meta = $wpdb->get_var(
+                    $wpdb->prepare(
+                        "SELECT meta_value FROM {$wpdb->prefix}woocommerce_order_itemmeta 
+                         WHERE order_item_id = %d AND meta_key = 'Course Day' LIMIT 1",
+                        $order_item_id
+                    )
+                );
+                $course_day = $course_day_meta ?: 'N/A';
+            }
+            echo '<td>' . esc_html($course_day !== 'N/A' ? 'Yes' : 'N/A') . '</td>';
+        }
         echo '</tr>';
     }
     echo '</table>';

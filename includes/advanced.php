@@ -3,7 +3,7 @@
  * Advanced features page for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.0.9
+ * @version 1.3.55
  * @author Jeremy Lee
  */
 
@@ -115,6 +115,7 @@ function intersoccer_rebuild_rosters_and_reports() {
     $charset_collate = 'CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
     $sql = "CREATE TABLE $rosters_table (
         id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+        order_id BIGINT(20) NOT NULL,
         order_item_id BIGINT(20) NOT NULL,
         variation_id BIGINT(20) DEFAULT NULL,
         player_name VARCHAR(255) NOT NULL,
@@ -137,6 +138,9 @@ function intersoccer_rebuild_rosters_and_reports() {
         event_dates VARCHAR(100) DEFAULT 'N/A',
         product_name VARCHAR(255) NOT NULL,
         activity_type VARCHAR(100) NOT NULL DEFAULT 'Unknown',
+        shirt_size VARCHAR(50) DEFAULT 'N/A',
+        shorts_size VARCHAR(50) DEFAULT 'N/A',
+        registration_timestamp DATETIME DEFAULT NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
         UNIQUE KEY uniq_order_item_id (order_item_id),
@@ -144,7 +148,8 @@ function intersoccer_rebuild_rosters_and_reports() {
         INDEX idx_venue (venue),
         INDEX idx_activity_type (activity_type(50)),
         INDEX idx_start_date (start_date),
-        INDEX idx_variation_id (variation_id)
+        INDEX idx_variation_id (variation_id),
+        INDEX idx_order_id (order_id)
     ) $charset_collate;";
     $wpdb->query("DROP TABLE IF EXISTS $rosters_table");
     $result = dbDelta($sql);
@@ -171,6 +176,7 @@ function intersoccer_rebuild_rosters_and_reports() {
 
     foreach ($orders as $order) {
         $order_id = $order->get_id();
+        $order_date = $order->get_date_created() ? $order->get_date_created()->format('Y-m-d H:i:s') : null;
         $items = $order->get_items();
         $total_items += count($items);
         error_log('InterSoccer: Processing order ' . $order_id . ' with ' . count($items) . ' items');
@@ -192,7 +198,7 @@ function intersoccer_rebuild_rosters_and_reports() {
                 $activity_type = trim(html_entity_decode($activity_type, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
                 // Ensure "Girls Only" is correctly identified
                 if (stripos($activity_type, 'Girls Only') !== false && stripos($activity_type, 'Camp') === false) {
-                    $activity_type = 'Girls Only'; // Normalize standalone Girls Only events
+                    $activity_type = 'Girls Only';
                 }
                 $activity_type = str_replace("Girls' Only", "Girls Only", $activity_type);
                 error_log("InterSoccer: Activity type from order item meta for order $order_id, item $order_item_id: $activity_type");
@@ -206,9 +212,8 @@ function intersoccer_rebuild_rosters_and_reports() {
                         $variation_activity_type = implode(', ', array_map('trim', $variation_activity_type));
                     }
                     $activity_type = trim(html_entity_decode($variation_activity_type, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-                    // Ensure "Girls Only" is correctly identified
                     if (stripos($activity_type, 'Girls Only') !== false && stripos($activity_type, 'Camp') === false) {
-                        $activity_type = 'Girls Only'; // Normalize standalone Girls Only events
+                        $activity_type = 'Girls Only';
                     }
                     $activity_type = str_replace("Girls' Only", "Girls Only", $activity_type);
                     error_log("InterSoccer: Activity type from variation attribute for order $order_id, item $order_item_id: $activity_type");
@@ -217,7 +222,6 @@ function intersoccer_rebuild_rosters_and_reports() {
                     error_log("InterSoccer: No activity type found, defaulting to Unknown for order $order_id, item $order_item_id");
                 }
             }
-            // Apply normalization to other meta fields
             $order_item_meta = array_combine(
                 array_keys($raw_order_item_meta),
                 array_map(function ($value, $key) {
@@ -305,11 +309,9 @@ function intersoccer_rebuild_rosters_and_reports() {
                 $day_presence = ['Monday' => 'Yes', 'Tuesday' => 'Yes', 'Wednesday' => 'Yes', 'Thursday' => 'Yes', 'Friday' => 'Yes'];
             }
 
-            // Debug: Halt and inspect
-            // var_dump($activity_type); exit;
-
             // Prepare roster_entry for insertion
             $roster_entry = array(
+                'order_id' => $order_id,
                 'order_item_id' => $order_item_id,
                 'variation_id' => $variation_id,
                 'player_name' => $assigned_attendee,
@@ -332,6 +334,7 @@ function intersoccer_rebuild_rosters_and_reports() {
                 'event_dates' => $event_dates,
                 'product_name' => $product_name,
                 'activity_type' => $activity_type,
+                'registration_timestamp' => $order_date, // Populate with order creation date
             );
             if (!is_string($roster_entry['activity_type'])) {
                 $roster_entry['activity_type'] = 'Unknown';
@@ -340,16 +343,14 @@ function intersoccer_rebuild_rosters_and_reports() {
             error_log("InterSoccer: Roster entry for order $order_id, item $order_item_id before insert: " . print_r($roster_entry, true));
 
             // Prepare the insert with error handling
-            $format = array('%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');
+            $format = array('%d', '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');
             try {
                 $query = $wpdb->prepare(
-                    "INSERT INTO $rosters_table (order_item_id, variation_id, player_name, first_name, last_name, age, gender, booking_type, selected_days, camp_terms, venue, parent_phone, parent_email, medical_conditions, late_pickup, day_presence, age_group, start_date, end_date, event_dates, product_name, activity_type) VALUES (%d, %d, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    "INSERT INTO $rosters_table (order_id, order_item_id, variation_id, player_name, first_name, last_name, age, gender, booking_type, selected_days, camp_terms, venue, parent_phone, parent_email, medical_conditions, late_pickup, day_presence, age_group, start_date, end_date, event_dates, product_name, activity_type, registration_timestamp) VALUES (%d, %d, %d, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     array_values($roster_entry)
                 );
                 error_log("InterSoccer: Prepared insert query for order $order_id, item $order_item_id: $query");
-                if (!$wpdb->get_var($wpdb->prepare("SELECT 1 FROM $rosters_table WHERE order_item_id = %d", $order_item_id))) {
-                    $result = $wpdb->query($query);
-                }
+                $result = $wpdb->query($query);
                 if ($result === false) {
                     error_log("InterSoccer: Insert failed for order $order_id, item $order_item_id: " . $wpdb->last_error);
                 } else {
@@ -376,31 +377,31 @@ function intersoccer_upgrade_database() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    // Check if variation_id column exists
-    $column_exists = $wpdb->get_row("SHOW COLUMNS FROM $rosters_table LIKE 'variation_id'");
+    // Check if registration_timestamp column exists
+    $column_exists = $wpdb->get_row("SHOW COLUMNS FROM $rosters_table LIKE 'registration_timestamp'");
     if (!$column_exists) {
-        $wpdb->query("ALTER TABLE $rosters_table ADD COLUMN variation_id BIGINT(20) DEFAULT NULL");
-        $wpdb->query("CREATE INDEX idx_variation_id ON $rosters_table(variation_id)");
-        error_log('InterSoccer: Added variation_id column and index to ' . $rosters_table);
+        $wpdb->query("ALTER TABLE $rosters_table ADD COLUMN registration_timestamp DATETIME DEFAULT NULL");
+        error_log('InterSoccer: Added registration_timestamp column to ' . $rosters_table);
 
         // Backfill existing rows
-        $orders = $wpdb->get_results("SELECT order_item_id FROM $rosters_table WHERE variation_id IS NULL", ARRAY_A);
-        foreach ($orders as $order) {
-            $order_item_id = $order['order_item_id'];
-            $order_id = $wpdb->get_var($wpdb->prepare("SELECT order_id FROM {$wpdb->prefix}woocommerce_order_items WHERE order_item_id = %d", $order_item_id));
-            $order = $order_id ? wc_get_order($order_id) : null;
-            $item = $order ? $order->get_item($order_item_id) : null;
-            if ($item) {
-                $variation_id = $item->get_variation_id() ?: $item->get_product_id();
-                $wpdb->update($rosters_table, ['variation_id' => $variation_id], ['order_item_id' => $order_item_id]);
-                error_log("InterSoccer: Backfilled variation_id $variation_id for order_item_id $order_item_id");
+        $rows = $wpdb->get_results("SELECT id, order_id FROM $rosters_table WHERE registration_timestamp IS NULL", ARRAY_A);
+        foreach ($rows as $row) {
+            $order_date = $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT post_date FROM {$wpdb->prefix}posts WHERE ID = %d AND post_type = 'shop_order' LIMIT 1",
+                    $row['order_id']
+                )
+            );
+            if ($order_date) {
+                $wpdb->update($rosters_table, ['registration_timestamp' => $order_date], ['id' => $row['id']]);
+                error_log("InterSoccer: Backfilled registration_timestamp $order_date for roster id $row[id]");
             } else {
-                error_log("InterSoccer: Failed to retrieve order item for order_item_id $order_item_id");
+                error_log("InterSoccer: Failed to retrieve order_date for order_id $row[order_id]");
             }
         }
-        error_log('InterSoccer: Completed backfill of variation_id for ' . count($orders) . ' rows');
+        error_log('InterSoccer: Completed backfill of registration_timestamp for ' . count($rows) . ' rows');
     } else {
-        error_log('InterSoccer: variation_id column already exists in ' . $rosters_table);
+        error_log('InterSoccer: registration_timestamp column already exists in ' . $rosters_table);
     }
 }
 

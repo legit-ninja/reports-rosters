@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.3.44
+ * Version: 1.3.55
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -34,6 +34,7 @@ function intersoccer_activate_plugin() {
         $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
         $sql = "CREATE TABLE $rosters_table (
             id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            order_id BIGINT(20) NOT NULL,
             order_item_id BIGINT(20) NOT NULL,
             variation_id BIGINT(20) DEFAULT NULL,
             player_name VARCHAR(255) NOT NULL,
@@ -56,6 +57,9 @@ function intersoccer_activate_plugin() {
             event_dates VARCHAR(100) DEFAULT 'N/A',
             product_name VARCHAR(255) NOT NULL,
             activity_type VARCHAR(100) NOT NULL DEFAULT 'Unknown',
+            shirt_size VARCHAR(50) DEFAULT 'N/A',
+            shorts_size VARCHAR(50) DEFAULT 'N/A',
+            registration_timestamp DATETIME DEFAULT NULL, -- Added for order creation date
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             UNIQUE KEY uniq_order_item_id (order_item_id),
@@ -63,7 +67,8 @@ function intersoccer_activate_plugin() {
             INDEX idx_venue (venue),
             INDEX idx_activity_type (activity_type(50)),
             INDEX idx_start_date (start_date),
-            INDEX idx_variation_id (variation_id)
+            INDEX idx_variation_id (variation_id),
+            INDEX idx_order_id (order_id)
         ) $charset_collate;";
         $result = dbDelta($sql);
         if (is_wp_error($result)) {
@@ -91,12 +96,98 @@ foreach ($files_to_include as $file) {
     }
 }
 
-// Temporary placeholder function to prevent fatal error
-if (!function_exists('intersoccer_render_plugin_overview_page')) {
-    function intersoccer_render_plugin_overview_page() {
-        echo '<div class="wrap"><h1>InterSoccer Reports and Rosters - Overview (Placeholder)</h1><p>This page is temporarily unavailable. Please check the plugin configuration or contact support.</p></div>';
-        error_log('InterSoccer: Using temporary placeholder for intersoccer_render_plugin_overview_page');
+/**
+ * Render the plugin overview page with charts and statistics.
+ */
+function intersoccer_render_plugin_overview_page() {
+    if (!current_user_can('manage_options')) {
+        wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
     }
+
+    global $wpdb;
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+
+    // Fetch data for charts
+    $current_venue_data = $wpdb->get_results("SELECT venue, COUNT(*) as count FROM $rosters_table WHERE start_date <= CURDATE() AND end_date >= CURDATE() GROUP BY venue", ARRAY_A);
+    $region_data = $wpdb->get_results("SELECT venue, COUNT(*) as count FROM $rosters_table GROUP BY venue", ARRAY_A);
+    $age_data = $wpdb->get_results("SELECT age_group, COUNT(*) as count FROM $rosters_table WHERE age_group != 'N/A' GROUP BY age_group", ARRAY_A);
+    $gender_data = $wpdb->get_results("SELECT gender, COUNT(*) as count FROM $rosters_table WHERE gender != 'N/A' GROUP BY gender", ARRAY_A);
+    $weekly_trends = $wpdb->get_results("SELECT DATE(start_date) as week_start, COUNT(*) as count FROM $rosters_table WHERE start_date IS NOT NULL GROUP BY DATE(start_date) ORDER BY start_date", ARRAY_A);
+
+    $current_venue_labels = json_encode(array_column($current_venue_data, 'venue'));
+    $current_venue_values = json_encode(array_column($current_venue_data, 'count'));
+    $region_labels = json_encode(array_column($region_data, 'venue'));
+    $region_values = json_encode(array_column($region_data, 'count'));
+    $age_labels = json_encode(array_column($age_data, 'age_group'));
+    $age_values = json_encode(array_column($age_data, 'count'));
+    $gender_labels = json_encode(array_column($gender_data, 'gender'));
+    $gender_values = json_encode(array_column($gender_data, 'count'));
+    $weekly_labels = json_encode(array_column($weekly_trends, 'week_start'));
+    $weekly_values = json_encode(array_column($weekly_trends, 'count'));
+
+    ?>
+    <div class="wrap">
+        <h1><?php _e('InterSoccer Reports and Rosters - Overview', 'intersoccer-reports-rosters'); ?></h1>
+
+        <div class="chart-container">
+            <div class="chart-box">
+                <h2><?php _e('Current Attendance by Venue', 'intersoccer-reports-rosters'); ?></h2>
+                <canvas id="currentVenueChart" width="400" height="200"></canvas>
+                <script>
+                    var currentVenueChartData = {
+                        labels: <?php echo $current_venue_labels; ?>,
+                        values: <?php echo $current_venue_values; ?>
+                    };
+                </script>
+            </div>
+
+            <div class="chart-box">
+                <h2><?php _e('Attendees by Region', 'intersoccer-reports-rosters'); ?></h2>
+                <canvas id="regionChart" width="400" height="200"></canvas>
+                <script>
+                    var regionChartData = {
+                        labels: <?php echo $region_labels; ?>,
+                        values: <?php echo $region_values; ?>
+                    };
+                </script>
+            </div>
+
+            <div class="chart-box">
+                <h2><?php _e('Age Distribution', 'intersoccer-reports-rosters'); ?></h2>
+                <canvas id="ageChart" width="400" height="200"></canvas>
+                <script>
+                    var ageChartData = {
+                        labels: <?php echo $age_labels; ?>,
+                        values: <?php echo $age_values; ?>
+                    };
+                </script>
+            </div>
+
+            <div class="chart-box">
+                <h2><?php _e('Gender Distribution', 'intersoccer-reports-rosters'); ?></h2>
+                <canvas id="genderChart" width="400" height="200"></canvas>
+                <script>
+                    var genderChartData = {
+                        labels: <?php echo $gender_labels; ?>,
+                        values: <?php echo $gender_values; ?>
+                    };
+                </script>
+            </div>
+
+            <div class="chart-box">
+                <h2><?php _e('Weekly Attendance Trends', 'intersoccer-reports-rosters'); ?></h2>
+                <canvas id="weeklyTrendsChart" width="400" height="200"></canvas>
+                <script>
+                    var weeklyTrendsChartData = {
+                        labels: <?php echo $weekly_labels; ?>,
+                        values: <?php echo $weekly_values; ?>
+                    };
+                </script>
+            </div>
+        </div>
+    </div>
+    <?php
+    error_log('InterSoccer: Rendered Overview page with charts');
 }
 
 add_action('admin_enqueue_scripts', function ($hook) {
@@ -150,7 +241,6 @@ add_action('admin_menu', function () {
     add_submenu_page('intersoccer-reports-rosters', __('Girls Only', 'intersoccer-reports-rosters'), __('Girls Only', 'intersoccer-reports-rosters'), 'read', 'intersoccer-girls-only', 'intersoccer_render_girls_only_page');
     add_submenu_page('intersoccer-reports-rosters', __('Other Events', 'intersoccer-reports-rosters'), __('Other Events', 'intersoccer-reports-rosters'), 'read', 'intersoccer-other-events', 'intersoccer_render_other_events_page');
     add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Advanced', 'intersoccer-reports-rosters'), __('Advanced', 'intersoccer-reports-rosters'), 'read', 'intersoccer-advanced', 'intersoccer_render_advanced_page');
-    // Re-add Roster Details subpage
     add_submenu_page('intersoccer-reports-rosters', __('Roster Details', 'intersoccer-reports-rosters'), __('Roster Details', 'intersoccer-reports-rosters'), 'read', 'intersoccer-roster-details', 'intersoccer_render_roster_details_page');
 });
 
