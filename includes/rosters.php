@@ -3,7 +3,7 @@
  * Rosters pages for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.0.29
+ * @version 1.3.49
  * @author Jeremy Lee
  */
 
@@ -42,11 +42,10 @@ function intersoccer_render_all_rosters_page() {
                 foreach ($product_names as $product_name) {
                     $groups = $wpdb->get_results(
                         $wpdb->prepare(
-                            "SELECT product_name, venue, age_group, variation_id, COUNT(*) as total_players
+                            "SELECT variation_id, product_name, venue, age_group, COUNT(*) as total_players
                              FROM $rosters_table
-                             GROUP BY product_name, venue, age_group, variation_id
-                             HAVING product_name = %s
-                             ORDER BY venue, age_group",
+                             GROUP BY variation_id, product_name, venue, age_group
+                             ORDER BY product_name, venue, age_group",
                             $product_name
                         ),
                         ARRAY_A
@@ -118,11 +117,11 @@ function intersoccer_render_camps_page() {
                     $camp_terms_name = intersoccer_get_term_name($camp_terms, 'pa_camp-terms');
                     $groups = $wpdb->get_results(
                         $wpdb->prepare(
-                            "SELECT product_name, venue, age_group, variation_id, COUNT(*) as total_players
+                            "SELECT variation_id, product_name, venue, age_group, camp_terms, COUNT(*) as total_players
                              FROM $rosters_table
                              WHERE FIND_IN_SET('Camp', activity_type) > 0 AND camp_terms = %s
-                             GROUP BY product_name, venue, age_group, variation_id
-                             ORDER BY product_name, venue, age_group",
+                             GROUP BY variation_id, product_name, venue, age_group, camp_terms
+                             ORDER BY product_name, venue",
                             $camp_terms
                         ),
                         ARRAY_A
@@ -132,11 +131,11 @@ function intersoccer_render_camps_page() {
                         echo '<h2>' . esc_html($camp_terms_name) . ' (' . array_sum(array_column($groups, 'total_players')) . ' players)</h2>';
                         echo '<table class="wp-list-table widefat fixed striped">';
                         echo '<thead><tr>';
-                        echo '<th>' . __('Product Name', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th>' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th>' . __('Age Group', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th>' . __('Total Players', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th>' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:30%">' . __('Product Name', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:30%">' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:20%">' . __('Age Group', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:10%">' . __('Total Players', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:10%">' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
                         echo '</tr></thead><tbody>';
                         foreach ($groups as $group) {
                             $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . urlencode($group['variation_id']));
@@ -376,7 +375,9 @@ function intersoccer_render_reports_page() {
     <?php
 }
 
-// AJAX handler for reconcile
+/**
+ * AJAX handler for reconcile
+ */
 add_action('wp_ajax_intersoccer_reconcile_rosters', 'intersoccer_reconcile_rosters_ajax');
 function intersoccer_reconcile_rosters_ajax() {
     check_ajax_referer('intersoccer_reconcile', 'nonce');
