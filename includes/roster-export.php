@@ -29,8 +29,12 @@ function intersoccer_export_roster($variation_ids, $format = 'excel', $context =
         if (!current_user_can('coach') && !current_user_can('event_organizer') && !current_user_can('shop_manager') && !current_user_can('administrator')) {
             wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
         }
-        if (ob_get_length()) ob_end_clean();
-        if (!class_exists('PhpOffice\PhpSpreadsheet\Spreadsheet')) wp_die(__('PhpSpreadsheet missing.', 'intersoccer-reports-rosters'));
+        // Ensure output buffer is clean and disabled for this request
+        while (ob_get_level()) ob_end_clean();
+        if (!class_exists('PhpOffice\PhpSpreadsheet\Spreadsheet')) {
+            error_log('InterSoccer: PhpSpreadsheet class not found in ' . __FILE__);
+            wp_die(__('PhpSpreadsheet missing.', 'intersoccer-reports-rosters'));
+        }
         if (!function_exists('wc_get_product')) wp_die(__('WooCommerce unavailable.', 'intersoccer-reports-rosters'));
 
         $variation_ids = (array)$variation_ids;
@@ -96,14 +100,16 @@ function intersoccer_export_roster($variation_ids, $format = 'excel', $context =
             }
         }
 
+        // Debug: Log the number of rows before saving
+        error_log('InterSoccer: Exporting roster for variation_id ' . $variation_id . ' with ' . (count($roster) + 6) . ' rows');
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
         header('Content-Disposition: attachment; filename="intersoccer_roster_variation_' . $variation_id . '_' . date('Y-m-d_H-i-s') . '.xlsx"');
         $writer = new Xlsx($spreadsheet);
         $writer->save('php://output');
         intersoccer_log_audit('export_roster_excel', 'Exported for ' . implode(',', $variation_ids));
     } catch (Exception $e) {
-        error_log('InterSoccer: Export roster error: ' . $e->getMessage());
-        wp_die(__('Export failed.', 'intersoccer-reports-rosters'));
+        error_log('InterSoccer: Export roster error in production: ' . $e->getMessage() . ' on line ' . $e->getLine());
+        wp_die(__('Export failed. Check server logs for details.', 'intersoccer-reports-rosters'));
     }
     exit;
 }
@@ -115,8 +121,12 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             error_log('InterSoccer: Export denied for user ID ' . $user_id . ' due to insufficient permissions.');
             wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
         }
-        if (ob_get_length()) ob_end_clean();
-        if (!class_exists('PhpOffice\PhpSpreadsheet\Spreadsheet')) wp_die(__('PhpSpreadsheet missing.', 'intersoccer-reports-rosters'));
+        // Ensure output buffer is clean and disabled for this request
+        while (ob_get_level()) ob_end_clean();
+        if (!class_exists('PhpOffice\PhpSpreadsheet\Spreadsheet')) {
+            error_log('InterSoccer: PhpSpreadsheet class not found in ' . __FILE__ . ' for export type ' . $export_type);
+            wp_die(__('PhpSpreadsheet missing.', 'intersoccer-reports-rosters'));
+        }
 
         global $wpdb;
         $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
@@ -333,14 +343,16 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
         }
 
+        // Debug: Log the number of rows before saving
+        error_log('InterSoccer: Exporting all rosters for type ' . $export_type . ' with ' . $sheet->getHighestRow() . ' rows');
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
         header('Content-Disposition: attachment; filename="intersoccer_' . ($export_type === 'all' ? 'master' : $export_type) . '_rosters_' . date('Y-m-d_H-i-s') . '.xlsx"');
         $writer = new Xlsx($spreadsheet);
         $writer->save('php://output');
         intersoccer_log_audit('export_all_rosters_excel', 'Exported ' . $export_type . ' by user ' . $user_id);
     } catch (Exception $e) {
-        error_log('InterSoccer: Export all rosters error for user ' . $user_id . ': ' . $e->getMessage());
-        wp_die(__('Export failed.', 'intersoccer-reports-rosters'));
+        error_log('InterSoccer: Export all rosters error in production for user ' . $user_id . ': ' . $e->getMessage() . ' on line ' . $e->getLine());
+        wp_die(__('Export failed. Check server logs for details.', 'intersoccer-reports-rosters'));
     }
     exit;
 }
