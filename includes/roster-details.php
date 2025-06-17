@@ -82,7 +82,7 @@ function intersoccer_render_roster_details_page() {
     echo '<div class="wrap">';
     echo '<h1>' . esc_html__('Roster Details for Variation #', 'intersoccer-reports-rosters') . esc_html(implode(', ', $related_variation_ids)) . '</h1>';
     echo '<table class="wp-list-table widefat fixed striped">';
-    echo '<tr><th>' . esc_html__('Name') . '</th><th>' . esc_html__('Surname') . '</th><th>' . esc_html__('Gender') . '</th><th>' . esc_html__('Phone') . '</th><th>' . esc_html__('Email') . '</th><th>' . esc_html__('Age') . '</th><th>' . esc_html__('Medical/Dietary') . '</th></tr>';
+    echo '<tr><th>' . esc_html__('Name') . '</th><th>' . esc_html__('Surname') . '</th><th>' . esc_html__('Gender') . '</th><th>' . esc_html__('Phone') . '</th><th>' . esc_html__('Email') . '</th><th>' . esc_html__('Age') . '</th><th>' . esc_html__('Medical/Dietary') . '</th><th>' . esc_html__('Booking Type') . '</th></tr>';
     foreach ($rosters as $row) {
         $late_pickup_display = ($row->late_pickup === 'Yes') ? 'Yes (18:00)' : 'No';
         echo '<tr>';
@@ -93,6 +93,7 @@ function intersoccer_render_roster_details_page() {
         echo '<td>' . esc_html($row->parent_email) . '</td>';
         echo '<td>' . esc_html($row->age ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->medical_conditions ?? 'N/A') . '</td>';
+        echo '<td>' . esc_html($row->booking_type ?? 'N/A') . '</td>'; // Added Booking Type column
         echo '</tr>';
     }
     echo '</table>';
