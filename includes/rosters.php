@@ -3,7 +3,7 @@
  * Rosters pages for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.0.26
+ * @version 1.0.29
  * @author Jeremy Lee
  */
 
@@ -42,9 +42,9 @@ function intersoccer_render_all_rosters_page() {
                 foreach ($product_names as $product_name) {
                     $groups = $wpdb->get_results(
                         $wpdb->prepare(
-                            "SELECT venue, age_group, variation_id, COUNT(*) as total_players
+                            "SELECT product_name, venue, age_group, variation_id, COUNT(*) as total_players
                              FROM $rosters_table
-                             GROUP BY venue, age_group, variation_id
+                             GROUP BY product_name, venue, age_group, variation_id
                              HAVING product_name = %s
                              ORDER BY venue, age_group",
                             $product_name
@@ -236,7 +236,10 @@ function intersoccer_render_girls_only_page() {
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
     $rosters = $wpdb->get_results(
-        "SELECT * FROM $rosters_table WHERE FIND_IN_SET('Girls Only', activity_type) > 0 ORDER BY updated_at DESC",
+        $wpdb->prepare(
+            "SELECT * FROM $rosters_table WHERE activity_type LIKE %s ORDER BY updated_at DESC",
+            '%' . $wpdb->esc_like('Girls Only') . '%'
+        ),
         ARRAY_A
     );
     error_log('InterSoccer: Retrieved ' . count($rosters) . ' Girls Only rosters on ' . current_time('mysql'));
@@ -280,7 +283,7 @@ function intersoccer_render_girls_only_page() {
                             echo '<tr>';
                             echo '<td>' . esc_html($roster['product_name']) . '</td>';
                             echo '<td>' . esc_html(intersoccer_get_term_name($roster['venue'], 'pa_intersoccer-venues')) . '</td>';
-                            echo '<td>' . esc_html(1) . '</td>';
+                            echo '<td>' . esc_html(1) . '</td>'; // Count per roster, adjust if grouping needed
                             echo '<td><a href="' . esc_url($view_url) . '" class="button">' . __('View Roster', 'intersoccer-reports-rosters') . '</a></td>';
                             echo '</tr>';
                         }
