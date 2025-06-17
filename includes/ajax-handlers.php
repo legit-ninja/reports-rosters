@@ -59,26 +59,49 @@ function intersoccer_reports_get_camp_report_ajax() {
  * AJAX handler for exporting a single roster
  */
 function intersoccer_reports_export_roster_ajax() {
-    check_ajax_referer('intersoccer_reports_rosters_nonce', 'export_nonce', true); // Exit with error if nonce fails
+    check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
 
     if (!current_user_can('manage_options') && !current_user_can('coach') && !current_user_can('event_organizer') && !current_user_can('shop_manager')) {
-        error_log('InterSoccer: Export roster AJAX unauthorized for user ID ' . get_current_user_id());
         wp_send_json_error(['message' => __('Unauthorized access.', 'intersoccer-reports-rosters')]);
     }
 
     $variation_ids = isset($_POST['variation_ids']) ? array_map('intval', $_POST['variation_ids']) : [];
     if (empty($variation_ids)) {
-        error_log('InterSoccer: Export roster AJAX received empty variation_ids');
         wp_send_json_error(['message' => __('Invalid variation IDs.', 'intersoccer-reports-rosters')]);
     }
 
-    error_log('InterSoccer: Export roster AJAX triggered for variation_ids: ' . implode(',', $variation_ids));
     ob_start();
     intersoccer_export_roster($variation_ids);
-    ob_end_clean();
-    wp_die(); // Ensure proper exit
+    ob_end_clean(); // Clean output buffer to prevent interference
+    wp_die(); // Ensure proper exit after export
+}
+
+/**
+ * AJAX handler for exporting a single roster
+ */
+function intersoccer_reports_export_all_rosters_ajax() {
+    check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
+
+    if (!current_user_can('manage_options') && !current_user_can('coach') && !current_user_can('event_organizer') && !current_user_can('shop_manager')) {
+        wp_send_json_error(['message' => __('Unauthorized access.', 'intersoccer-reports-rosters')]);
+    }
+
+    $export_type = isset($_POST['export_type']) ? sanitize_text_field($_POST['export_type']) : 'all';
+    if (!in_array($export_type, ['all', 'camps', 'courses', 'girls_only', 'other'])) {
+        wp_send_json_error(['message' => __('Invalid export type.', 'intersoccer-reports-rosters')]);
+    }
+
+    // Placeholder for $camps, $courses, $girls_only - these should be fetched based on export_type if needed
+    $camps = ($export_type === 'camps') ? intersoccer_pe_get_camp_variations([]) : [];
+    $courses = ($export_type === 'courses') ? intersoccer_pe_get_course_variations([]) : [];
+    $girls_only = ($export_type === 'girls_only') ? intersoccer_pe_get_girls_only_variations([]) : [];
+
+    ob_start();
+    intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_type);
+    ob_end_clean(); // Clean output buffer to prevent interference
+    wp_die(); // Ensure proper exit after export
 }
 
 add_action('wp_ajax_intersoccer_export_roster', 'intersoccer_reports_export_roster_ajax');
-add_action('wp_ajax_intersoccer_get_roster_details', 'intersoccer_get_roster_details_ajax');
+add_action('wp_ajax_intersoccer_export_all_rosters', 'intersoccer_reports_export_all_rosters_ajax');
 ?>

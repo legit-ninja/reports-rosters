@@ -58,11 +58,21 @@ function intersoccer_render_roster_details_page() {
         echo '</tr>';
     }
     echo '</table>';
-    // Display late pickup summary if applicable
-    $late_pickup_count = count(array_filter(array_column((array)$rosters, 'late_pickup'), function($v) { return $v === 'Yes'; }));
-    if ($late_pickup_count > 0) {
-        echo '<p><strong>' . esc_html__('Late Pickup (18:00)') . ':</strong> ' . esc_html($late_pickup_count) . ' attendee(s)</p>';
+    echo '<p><strong>' . esc_html__('Late Pickup') . ':</strong> ' . esc_html($late_pickup_display) . '</p>';
+    echo '<form method="post" action="' . esc_url(admin_url('admin-ajax.php')) . '" class="export-form">';
+    echo '<input type="hidden" name="action" value="intersoccer_export_roster">';
+    echo '<input type="hidden" name="variation_ids[]" value="' . esc_attr($variation_id) . '">';
+    echo '<input type="hidden" name="nonce" value="' . esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')) . '">';
+    echo '<input type="submit" name="export_roster" class="button button-primary" value="' . esc_attr__('Export Roster', 'intersoccer-reports-rosters') . '">';
+    echo '</form>';
+    echo '<p><strong>' . esc_html__('Event Details') . ':</strong></p>';
+    echo '<p>' . esc_html__('Product Name: ') . esc_html($rosters[0]->product_name ?? 'N/A') . '</p>';
+    echo '<p>' . esc_html__('Venue: ') . esc_html($rosters[0]->venue ?? 'N/A') . '</p>';
+    echo '<p>' . esc_html__('Age Group: ') . esc_html($rosters[0]->age_group ?? 'N/A') . '</p>';
+    if ($rosters[0]->activity_type === 'Camp') {
+        echo '<p>' . esc_html__('Camp Terms: ') . esc_html($rosters[0]->camp_terms ?? 'N/A') . '</p>';
     }
+    echo '<p><strong>' . esc_html__('Total Players') . ':</strong> ' . esc_html(count($rosters)) . '</p>';
     echo '</div>';
 }
 ?>
