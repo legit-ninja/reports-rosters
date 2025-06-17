@@ -46,6 +46,16 @@ function intersoccer_export_roster($variation_ids, $format = 'excel', $context =
             $wpdb->prepare("SELECT * FROM $rosters_table WHERE variation_id = %d ORDER BY player_name", $variation_id),
             ARRAY_A
         );
+
+        // Add logic to merge day_presence for "Full Week" and "Single Day(s)"
+        $merged_day_presence = [];
+        foreach ($roster as $player) {
+            $day_presence = json_decode($player['day_presence'] ?? '{}', true);
+            if (strtolower($player['booking_type']) === 'full week' && empty($day_presence)) {
+                $day_presence = ['Monday' => 'Yes', 'Tuesday' => 'Yes', 'Wednesday' => 'Yes', 'Thursday' => 'Yes', 'Friday' => 'Yes'];
+            }
+            $merged_day_presence[$player['player_name']] = $day_presence;
+        }
         if (empty($roster)) wp_die(__('No roster data.', 'intersoccer-reports-rosters'));
 
         $spreadsheet = new Spreadsheet();
