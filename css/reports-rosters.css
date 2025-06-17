@@ -64,3 +64,18 @@
 .tab-content {
     padding: 10px 0;
 }
+
+.roster-details {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid #ccc;
+    background: #f9f9f9;
+}
+.roster-details table {
+    width: 100%;
+}
+.roster-details table th,
+.roster-details table td {
+    padding: 8px;
+    border-bottom: 1px solid #ddd;
+}

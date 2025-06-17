@@ -198,6 +198,7 @@ function intersoccer_render_reports_page() {
     }
 }
 
+
 /**
  * Export reports to CSV.
  *

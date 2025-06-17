@@ -237,8 +237,9 @@ function intersoccer_render_girls_only_page() {
 
     $rosters = $wpdb->get_results(
         $wpdb->prepare(
-            "SELECT * FROM $rosters_table WHERE activity_type LIKE %s ORDER BY updated_at DESC",
-            '%' . $wpdb->esc_like('Girls Only') . '%'
+            "SELECT * FROM $rosters_table WHERE activity_type LIKE %s OR activity_type LIKE %s ORDER BY updated_at DESC",
+            '%' . $wpdb->esc_like('Girls Only') . '%',
+            '%' . $wpdb->esc_like('Girls') . '%'
         ),
         ARRAY_A
     );
@@ -262,15 +263,15 @@ function intersoccer_render_girls_only_page() {
             </div>
             <div class="roster-groups">
                 <?php
-                $venues = [];
+                $variations = [];
                 foreach ($rosters as $roster) {
-                    $venues[$roster['venue']][] = $roster;
+                    $variations[$roster['variation_id']][] = $roster;
                 }
-                ksort($venues);
-                foreach ($venues as $venue => $venue_rosters) {
-                    if ($venue && $venue !== 'Unknown Venue') {
+                foreach ($variations as $variation_id => $variation_rosters) {
+                    if (!empty($variation_rosters)) {
+                        $first_roster = $variation_rosters[0];
                         echo '<div class="roster-group">';
-                        echo '<h3>' . esc_html(intersoccer_get_term_name($venue, 'pa_intersoccer-venues')) . ' (' . count($venue_rosters) . ' players)</h3>';
+                        echo '<h3>' . esc_html($first_roster['product_name']) . ' - ' . esc_html(intersoccer_get_term_name($first_roster['venue'], 'pa_intersoccer-venues')) . ' (' . count($variation_rosters) . ' players)</h3>';
                         echo '<table class="wp-list-table widefat fixed striped">';
                         echo '<thead><tr>';
                         echo '<th>' . __('Event Name', 'intersoccer-reports-rosters') . '</th>';
@@ -278,15 +279,12 @@ function intersoccer_render_girls_only_page() {
                         echo '<th>' . __('Total Players', 'intersoccer-reports-rosters') . '</th>';
                         echo '<th>' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
                         echo '</tr></thead><tbody>';
-                        foreach ($venue_rosters as $roster) {
-                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . $roster['variation_id']);
-                            echo '<tr>';
-                            echo '<td>' . esc_html($roster['product_name']) . '</td>';
-                            echo '<td>' . esc_html(intersoccer_get_term_name($roster['venue'], 'pa_intersoccer-venues')) . '</td>';
-                            echo '<td>' . esc_html(1) . '</td>'; // Count per roster, adjust if grouping needed
-                            echo '<td><a href="' . esc_url($view_url) . '" class="button">' . __('View Roster', 'intersoccer-reports-rosters') . '</a></td>';
-                            echo '</tr>';
-                        }
+                        echo '<tr>';
+                        echo '<td>' . esc_html($first_roster['product_name']) . '</td>';
+                        echo '<td>' . esc_html(intersoccer_get_term_name($first_roster['venue'], 'pa_intersoccer-venues')) . '</td>';
+                        echo '<td>' . esc_html(count($variation_rosters)) . '</td>';
+                        echo '<td><a href="' . esc_url(admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . $variation_id)) . '" class="button">' . __('View Roster', 'intersoccer-reports-rosters') . '</a></td>';
+                        echo '</tr>';
                         echo '</tbody></table>';
                         echo '</div>';
                     }

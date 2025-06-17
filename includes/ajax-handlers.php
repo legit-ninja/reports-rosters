@@ -80,4 +80,5 @@ function intersoccer_reports_export_roster_ajax() {
 }
 
 add_action('wp_ajax_intersoccer_export_roster', 'intersoccer_reports_export_roster_ajax');
+add_action('wp_ajax_intersoccer_get_roster_details', 'intersoccer_get_roster_details_ajax');
 ?>

@@ -1,24 +1,40 @@
 jQuery(document).ready(function($) {
-    $('.nav-tab').on('click', function(e) {
+    console.log('rosters-tabs.js loaded'); // Debug log to confirm script load
+    $('.intersoccer-view-roster').on('click', function(e) {
+        console.log('Button clicked for variation ID:', $(this).data('variation-id')); // Debug log
         e.preventDefault();
-        var targetTab = $(this).attr('href').substring(1); // Extract #tab-camp, etc.
+        var variationId = $(this).data('variation-id');
+        var detailsDiv = $('#roster-details-' + variationId);
 
-        // Update active tab
-        $('.nav-tab').removeClass('nav-tab-active');
-        $(this).addClass('nav-tab-active');
-
-        // Show/hide tab content
-        $('.tab-content').hide();
-        $('#' + targetTab).show();
-
-        // Update URL without reloading
-        var url = new URL(window.location);
-        url.searchParams.set('tab', targetTab.replace('tab-', ''));
-        window.history.pushState({}, '', url);
+        if (detailsDiv.length) {
+            if (detailsDiv.is(':empty')) {
+                detailsDiv.html('<p>Loading...</p>').slideDown(); // Show loading state
+                $.ajax({
+                    url: intersoccer_ajax.ajax_url,
+                    type: 'POST',
+                    data: {
+                        action: 'intersoccer_get_roster_details',
+                        nonce: intersoccer_ajax.nonce,
+                        variation_id: variationId
+                    },
+                    success: function(response) {
+                        console.log('AJAX success:', response); // Debug log
+                        if (response.success) {
+                            detailsDiv.html(response.data.details).slideDown();
+                        } else {
+                            detailsDiv.html('<p>Error: ' + (response.data.message || 'Unknown error') + '</p>').slideDown();
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        console.log('AJAX error:', status, error); // Debug log
+                        detailsDiv.html('<p>Error loading roster details: ' + error + '</p>').slideDown();
+                    }
+                });
+            } else {
+                detailsDiv.slideToggle();
+            }
+        } else {
+            console.error('Details div not found for variation ID: ' + variationId);
+        }
     });
-
-    // Set initial tab based on URL parameter
-    var urlParams = new URLSearchParams(window.location.search);
-    var initialTab = urlParams.get('tab') || 'camp';
-    $('.nav-tab[href="#tab-' + initialTab + '"]').trigger('click');
 });

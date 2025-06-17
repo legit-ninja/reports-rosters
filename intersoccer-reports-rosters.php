@@ -101,14 +101,33 @@ if (!function_exists('intersoccer_render_plugin_overview_page')) {
 
 add_action('admin_enqueue_scripts', function ($hook) {
     $screen = get_current_screen();
-    if ($screen && in_array($screen->id, ['toplevel_page_intersoccer-reports-rosters', 'intersoccer-reports-rosters_page_intersoccer-rosters', 'intersoccer-reports-rosters_page_intersoccer-roster-details', 'intersoccer-reports-rosters_page_intersoccer-advanced', 'intersoccer-reports-rosters_page_intersoccer-export-rosters'])) {
+    error_log('Enqueuing scripts for screen ID: ' . ($screen ? $screen->id : 'No screen'));
+    if ($screen) {
+        $roster_pages = [
+            'intersoccer-reports-rosters_page_intersoccer-all-rosters',
+            'intersoccer-reports-rosters_page_intersoccer-camps',
+            'intersoccer-reports-rosters_page_intersoccer-courses',
+            'intersoccer-reports-rosters_page_intersoccer-girls-only',
+            'intersoccer-reports-rosters_page_intersoccer-other-events'
+        ];
         wp_enqueue_style('intersoccer-reports-rosters-css', plugin_dir_url(__FILE__) . 'css/reports-rosters.css', [], '1.0.6');
         if ($screen->id === 'toplevel_page_intersoccer-reports-rosters') {
             wp_enqueue_script('chart-js', 'https://cdn.jsdelivr.net/npm/chart.js', [], '3.9.1', true);
             wp_enqueue_script('intersoccer-overview-charts', plugin_dir_url(__FILE__) . 'js/overview-charts.js', ['chart-js'], '1.0.6', true);
         }
-        if (in_array($screen->id, ['intersoccer-reports-rosters_page_intersoccer-rosters', 'intersoccer-reports-rosters_page_intersoccer-roster-details'])) {
-            wp_enqueue_script('intersoccer-rosters-tabs', plugin_dir_url(__FILE__) . 'js/rosters-tabs.js', ['jquery'], '1.0.6', true);
+        if (in_array($screen->id, $roster_pages)) {
+            $script_path = plugin_dir_path(__FILE__) . 'js/rosters-tabs.js';
+            error_log('Attempting to enqueue rosters-tabs.js from: ' . $script_path);
+            if (file_exists($script_path)) {
+                wp_enqueue_script('intersoccer-rosters-tabs', plugin_dir_url(__FILE__) . 'js/rosters-tabs.js', ['jquery'], '1.0.6', true);
+                wp_localize_script('intersoccer-rosters-tabs', 'intersoccer_ajax', [
+                    'ajax_url' => admin_url('admin-ajax.php'),
+                    'nonce' => wp_create_nonce('intersoccer_reports_rosters_nonce')
+                ]);
+                error_log('rosters-tabs.js enqueued successfully for screen ID: ' . $screen->id);
+            } else {
+                error_log('rosters-tabs.js not found at: ' . $script_path);
+            }
         }
         if ($screen->id === 'intersoccer-reports-rosters_page_intersoccer-advanced') {
             wp_enqueue_script('intersoccer-advanced-ajax', plugin_dir_url(__FILE__) . 'js/advanced-ajax.js', ['jquery'], '1.0.6', true);
@@ -131,6 +150,7 @@ add_action('admin_menu', function () {
     add_submenu_page('intersoccer-reports-rosters', __('Girls Only', 'intersoccer-reports-rosters'), __('Girls Only', 'intersoccer-reports-rosters'), 'read', 'intersoccer-girls-only', 'intersoccer_render_girls_only_page');
     add_submenu_page('intersoccer-reports-rosters', __('Other Events', 'intersoccer-reports-rosters'), __('Other Events', 'intersoccer-reports-rosters'), 'read', 'intersoccer-other-events', 'intersoccer_render_other_events_page');
     add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Advanced', 'intersoccer-reports-rosters'), __('Advanced', 'intersoccer-reports-rosters'), 'read', 'intersoccer-advanced', 'intersoccer_render_advanced_page');
+    // Re-add Roster Details subpage
     add_submenu_page('intersoccer-reports-rosters', __('Roster Details', 'intersoccer-reports-rosters'), __('Roster Details', 'intersoccer-reports-rosters'), 'read', 'intersoccer-roster-details', 'intersoccer_render_roster_details_page');
 });
 
