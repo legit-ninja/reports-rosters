@@ -3,7 +3,7 @@
  * Rosters pages for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.3.52
+ * @version 1.3.59
  * @author Jeremy Lee
  */
 
@@ -56,14 +56,16 @@ function intersoccer_render_all_rosters_page() {
                         echo '<h3>' . esc_html($product_name) . ' (' . array_sum(array_column($groups, 'total_players')) . ' players)</h3>';
                         echo '<table class="wp-list-table widefat fixed striped">';
                         echo '<thead><tr>';
-                        echo '<th>' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th>' . __('Age Group', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th>' . __('Total Players', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th>' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:22.5%">' . __('Product Name', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:22.5%">' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:12.5%">' . __('Age Group', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:10%">' . __('Total Players', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:10%">' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
                         echo '</tr></thead><tbody>';
                         foreach ($groups as $group) {
                             $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . urlencode($group['variation_id']));
                             echo '<tr>';
+                            echo '<td>' . esc_html(intersoccer_get_term_name($group['product_name'], 'product')) . '</td>';
                             echo '<td>' . esc_html(intersoccer_get_term_name($group['venue'], 'pa_intersoccer-venues')) . '</td>';
                             echo '<td>' . esc_html(intersoccer_get_term_name($group['age_group'], 'pa_age-group')) . '</td>';
                             echo '<td>' . esc_html($group['total_players']) . '</td>';
@@ -132,14 +134,13 @@ function intersoccer_render_camps_page() {
                         echo '<h2>' . esc_html($camp_terms_name) . ' (' . array_sum(array_column($groups, 'total_players')) . ' players)</h2>';
                         echo '<table class="wp-list-table widefat fixed striped">';
                         echo '<thead><tr>';
-                        echo '<th style="width:30%">' . __('Product Name', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="width:30%">' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="width:20%">' . __('Age Group', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:22.5%">' . __('Product Name', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:22.5%">' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:12.5%">' . __('Age Group', 'intersoccer-reports-rosters') . '</th>';
                         echo '<th style="width:10%">' . __('Total Players', 'intersoccer-reports-rosters') . '</th>';
                         echo '<th style="width:10%">' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
                         echo '</tr></thead><tbody>';
                         foreach ($groups as $group) {
-                            // Use the first variation_id as a representative for the group; adjust if needed for linking
                             $variation_id = $wpdb->get_var(
                                 $wpdb->prepare(
                                     "SELECT variation_id FROM $rosters_table WHERE product_name = %s AND venue = %s AND age_group = %s AND camp_terms = %s LIMIT 1",
@@ -204,10 +205,10 @@ function intersoccer_render_courses_page() {
                 foreach ($product_names as $product_name) {
                     $groups = $wpdb->get_results(
                         $wpdb->prepare(
-                            "SELECT variation_id, product_name, venue, age_group, COUNT(DISTINCT player_name) as total_players
+                            "SELECT variation_id, product_name, venue, age_group, course_day, COUNT(DISTINCT player_name) as total_players
                              FROM $rosters_table
                              WHERE FIND_IN_SET('Course', activity_type) > 0 AND product_name = %s
-                             GROUP BY variation_id, product_name, venue, age_group
+                             GROUP BY variation_id, product_name, venue, age_group, course_day
                              ORDER BY product_name, venue",
                             $product_name
                         ),
@@ -218,9 +219,10 @@ function intersoccer_render_courses_page() {
                         echo '<h2>' . esc_html($product_name) . ' (' . array_sum(array_column($groups, 'total_players')) . ' players)</h2>';
                         echo '<table class="wp-list-table widefat fixed striped">';
                         echo '<thead><tr>';
-                        echo '<th style="width:30%">' . __('Product Name', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="width:30%">' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="width:20%">' . __('Age Group', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:22.5%">' . __('Product Name', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:22.5%">' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:12.5%">' . __('Age Group', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:15%">' . __('Course Day', 'intersoccer-reports-rosters') . '</th>';
                         echo '<th style="width:10%">' . __('Total Players', 'intersoccer-reports-rosters') . '</th>';
                         echo '<th style="width:10%">' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
                         echo '</tr></thead><tbody>';
@@ -230,6 +232,7 @@ function intersoccer_render_courses_page() {
                             echo '<td>' . esc_html($group['product_name']) . '</td>';
                             echo '<td>' . esc_html(intersoccer_get_term_name($group['venue'], 'pa_intersoccer-venues')) . '</td>';
                             echo '<td>' . esc_html(intersoccer_get_term_name($group['age_group'], 'pa_age-group')) . '</td>';
+                            echo '<td>' . esc_html($group['course_day']) . '</td>';
                             echo '<td>' . esc_html($group['total_players']) . '</td>';
                             echo '<td><a href="' . esc_url($view_url) . '" class="button">' . __('View Roster', 'intersoccer-reports-rosters') . '</a></td>';
                             echo '</tr>';
@@ -295,10 +298,10 @@ function intersoccer_render_girls_only_page() {
                         echo '<h3>' . esc_html($first_roster['product_name']) . ' - ' . esc_html(intersoccer_get_term_name($first_roster['venue'], 'pa_intersoccer-venues')) . ' (' . count($variation_rosters) . ' players)</h3>';
                         echo '<table class="wp-list-table widefat fixed striped">';
                         echo '<thead><tr>';
-                        echo '<th>' . __('Event Name', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th>' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th>' . __('Total Players', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th>' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:22.5%">' . __('Event Name', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:22.5%">' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:12.5%">' . __('Total Players', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:10%">' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
                         echo '</tr></thead><tbody>';
                         echo '<tr>';
                         echo '<td>' . esc_html($first_roster['product_name']) . '</td>';
@@ -360,10 +363,10 @@ function intersoccer_render_other_events_page() {
                         echo '<h3>' . esc_html(intersoccer_get_term_name($venue, 'pa_intersoccer-venues')) . ' (' . count($venue_rosters) . ' players)</h3>';
                         echo '<table class="wp-list-table widefat fixed striped">';
                         echo '<thead><tr>';
-                        echo '<th>' . __('Event Name', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th>' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th>' . __('Total Players', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th>' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:22.5%">' . __('Event Name', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:22.5%">' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:12.5%">' . __('Total Players', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:10%">' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
                         echo '</tr></thead><tbody>';
                         echo '<tr>';
                         echo '<td>' . esc_html($venue_rosters[0]->product_name) . '</td>';

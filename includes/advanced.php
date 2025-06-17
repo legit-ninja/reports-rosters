@@ -3,7 +3,7 @@
  * Advanced features page for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.3.55
+ * @version 1.3.58
  * @author Jeremy Lee
  */
 
@@ -141,6 +141,7 @@ function intersoccer_rebuild_rosters_and_reports() {
         shirt_size VARCHAR(50) DEFAULT 'N/A',
         shorts_size VARCHAR(50) DEFAULT 'N/A',
         registration_timestamp DATETIME DEFAULT NULL,
+        course_day VARCHAR(20) DEFAULT 'N/A', -- Populated from order_item_metadata for Courses
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
         UNIQUE KEY uniq_order_item_id (order_item_id),
@@ -275,6 +276,7 @@ function intersoccer_rebuild_rosters_and_reports() {
             $camp_terms = $order_item_meta['pa_camp-terms'] ?? ($variation ? $variation->get_attribute('pa_camp-terms') : $parent_product->get_attribute('pa_camp-terms')) ?? 'N/A';
             $venue = $order_item_meta['pa_intersoccer-venues'] ?? ($variation ? $variation->get_attribute('pa_intersoccer-venues') : $parent_product->get_attribute('pa_intersoccer-venues')) ?? 'Unknown Venue';
             $age_group = $order_item_meta['pa_age-group'] ?? ($variation ? $variation->get_attribute('pa_age-group') : $parent_product->get_attribute('pa_age-group')) ?? 'N/A';
+            $course_day = $order_item_meta['pa_course-day'] ?? 'N/A'; // Corrected to use 'pa_course-day'
 
             $start_date = null;
             $end_date = null;
@@ -334,7 +336,8 @@ function intersoccer_rebuild_rosters_and_reports() {
                 'event_dates' => $event_dates,
                 'product_name' => $product_name,
                 'activity_type' => $activity_type,
-                'registration_timestamp' => $order_date, // Populate with order creation date
+                'registration_timestamp' => $order_date,
+                'course_day' => ($activity_type === 'Course' ? $course_day : 'N/A'), // Updated to use 'pa_course-day'
             );
             if (!is_string($roster_entry['activity_type'])) {
                 $roster_entry['activity_type'] = 'Unknown';
@@ -343,10 +346,10 @@ function intersoccer_rebuild_rosters_and_reports() {
             error_log("InterSoccer: Roster entry for order $order_id, item $order_item_id before insert: " . print_r($roster_entry, true));
 
             // Prepare the insert with error handling
-            $format = array('%d', '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');
+            $format = array('%d', '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');
             try {
                 $query = $wpdb->prepare(
-                    "INSERT INTO $rosters_table (order_id, order_item_id, variation_id, player_name, first_name, last_name, age, gender, booking_type, selected_days, camp_terms, venue, parent_phone, parent_email, medical_conditions, late_pickup, day_presence, age_group, start_date, end_date, event_dates, product_name, activity_type, registration_timestamp) VALUES (%d, %d, %d, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    "INSERT INTO $rosters_table (order_id, order_item_id, variation_id, player_name, first_name, last_name, age, gender, booking_type, selected_days, camp_terms, venue, parent_phone, parent_email, medical_conditions, late_pickup, day_presence, age_group, start_date, end_date, event_dates, product_name, activity_type, registration_timestamp, course_day) VALUES (%d, %d, %d, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     array_values($roster_entry)
                 );
                 error_log("InterSoccer: Prepared insert query for order $order_id, item $order_item_id: $query");
@@ -377,32 +380,8 @@ function intersoccer_upgrade_database() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    // Check if registration_timestamp column exists
-    $column_exists = $wpdb->get_row("SHOW COLUMNS FROM $rosters_table LIKE 'registration_timestamp'");
-    if (!$column_exists) {
-        $wpdb->query("ALTER TABLE $rosters_table ADD COLUMN registration_timestamp DATETIME DEFAULT NULL");
-        error_log('InterSoccer: Added registration_timestamp column to ' . $rosters_table);
-
-        // Backfill existing rows
-        $rows = $wpdb->get_results("SELECT id, order_id FROM $rosters_table WHERE registration_timestamp IS NULL", ARRAY_A);
-        foreach ($rows as $row) {
-            $order_date = $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT post_date FROM {$wpdb->prefix}posts WHERE ID = %d AND post_type = 'shop_order' LIMIT 1",
-                    $row['order_id']
-                )
-            );
-            if ($order_date) {
-                $wpdb->update($rosters_table, ['registration_timestamp' => $order_date], ['id' => $row['id']]);
-                error_log("InterSoccer: Backfilled registration_timestamp $order_date for roster id $row[id]");
-            } else {
-                error_log("InterSoccer: Failed to retrieve order_date for order_id $row[order_id]");
-            }
-        }
-        error_log('InterSoccer: Completed backfill of registration_timestamp for ' . count($rows) . ' rows');
-    } else {
-        error_log('InterSoccer: registration_timestamp column already exists in ' . $rosters_table);
-    }
+    // No additional upgrade needed for this change since course_day is already added
+    error_log('InterSoccer: No new schema changes required for this upgrade.');
 }
 
 // AJAX handler for upgrade

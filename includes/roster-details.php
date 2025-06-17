@@ -124,7 +124,7 @@ function intersoccer_render_roster_details_page() {
                 );
                 $course_day = $course_day_meta ?: 'N/A';
             }
-            echo '<td>' . esc_html($course_day !== 'N/A' ? 'Yes' : 'N/A') . '</td>';
+            echo '<td>' . esc_html($course_day) . '</td>';
         }
         echo '</tr>';
     }

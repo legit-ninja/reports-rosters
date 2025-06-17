@@ -3,7 +3,7 @@
  * Export functionality for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.3.55
+ * @version 1.3.60
  */
 
 defined('ABSPATH') or die('Restricted access');
@@ -53,10 +53,13 @@ function intersoccer_export_roster($variation_ids, $format = 'excel', $context =
         $sheet_title = substr(preg_replace('/[^A-Za-z0-9\-\s]/', '', $roster[0]['product_name'] . ' - ' . $roster[0]['venue']), 0, 31);
         $sheet->setTitle($sheet_title);
 
-        // Toni's requested headers and order
+        // Toni's requested headers and order, with Course Day for Courses
         $headers = ['First Name' => 'first_name', 'Surname' => 'last_name', 'Gender' => 'gender', 'Phone' => 'parent_phone', 'Email' => 'parent_email', 'Age' => 'age', 'Medical/Dietary' => 'medical_conditions', 'Late Pickup' => 'late_pickup', 'Registration Timestamp' => 'registration_timestamp'];
         if ($roster[0]['activity_type'] === 'Camp') {
             $headers = array_merge($headers, ['Monday' => 'monday', 'Tuesday' => 'tuesday', 'Wednesday' => 'wednesday', 'Thursday' => 'thursday', 'Friday' => 'friday', 'Booking Type' => 'booking_type']);
+        }
+        if ($roster[0]['activity_type'] === 'Course') {
+            $headers = array_merge($headers, ['Course Day' => 'course_day']);
         }
         $sheet->fromArray(array_keys($headers), NULL, 'A1');
 
@@ -85,6 +88,11 @@ function intersoccer_export_roster($variation_ids, $format = 'excel', $context =
                     $day_presence['Thursday'] ?? 'No',
                     $day_presence['Friday'] ?? 'No',
                     $player['booking_type'] ?? 'N/A'
+                ]);
+            }
+            if ($player['activity_type'] === 'Course') {
+                $data = array_merge($data, [
+                    $player['course_day'] ?? 'N/A'
                 ]);
             }
             $sheet->fromArray($data, NULL, 'A' . $row++);
@@ -167,7 +175,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                         if ($type === 'camps') {
                             $headers = ['First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 'Late Pickup', 'Registration Timestamp', 'Camp Terms', 'Venue', 'Age Group', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Booking Type'];
                         } elseif ($type === 'courses') {
-                            $headers = ['First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 'Late Pickup', 'Registration Timestamp', 'Season', 'Age Group', 'Venue'];
+                            $headers = ['First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 'Late Pickup', 'Registration Timestamp', 'Course Day', 'Season', 'Age Group', 'Venue'];
                         } elseif ($type === 'girls_only') {
                             $headers = ['First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 'Late Pickup', 'Registration Timestamp', 'Event Name', 'Venue', 'Age Group'];
                         }
@@ -203,6 +211,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                                 ]);
                             } elseif ($type === 'courses') {
                                 $data = array_merge($data, [
+                                    $player['course_day'] ?? 'N/A',
                                     $season,
                                     $player['age_group'] ?? 'N/A',
                                     $player['venue'] ?? 'N/A'
@@ -258,7 +267,6 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $day_presence['Tuesday'] ?? 'No',
                     $day_presence['Wednesday'] ?? 'No',
                     $day_presence['Thursday'] ?? 'No',
-                    $day_presence['Friday'] ?? 'No',
                     $roster['booking_type'] ?? 'N/A'
                 ];
                 $sheet->fromArray($data, NULL, 'A' . $row++);
@@ -271,7 +279,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
 
             $sheet = $spreadsheet->getActiveSheet();
             $sheet->setTitle('Course_Rosters');
-            $headers = ['First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 'Late Pickup', 'Registration Timestamp', 'Season', 'Age Group', 'Venue'];
+            $headers = ['First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 'Late Pickup', 'Registration Timestamp', 'Course Day', 'Season', 'Age Group', 'Venue'];
             $sheet->fromArray($headers, NULL, 'A1');
 
             $row = 2;
@@ -287,6 +295,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['medical_conditions'] ?? 'N/A',
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
                     $roster['registration_timestamp'] ?? 'N/A',
+                    $roster['course_day'] ?? 'N/A',
                     $season,
                     $roster['age_group'] ?? 'N/A',
                     $roster['venue'] ?? 'N/A'

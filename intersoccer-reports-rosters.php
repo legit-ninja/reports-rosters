@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.3.55
+ * Version: 1.3.56
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -59,7 +59,8 @@ function intersoccer_activate_plugin() {
             activity_type VARCHAR(100) NOT NULL DEFAULT 'Unknown',
             shirt_size VARCHAR(50) DEFAULT 'N/A',
             shorts_size VARCHAR(50) DEFAULT 'N/A',
-            registration_timestamp DATETIME DEFAULT NULL, -- Added for order creation date
+            registration_timestamp DATETIME DEFAULT NULL,
+            course_day VARCHAR(20) DEFAULT 'N/A', -- Added to store Course Day from order_item_metadata
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             UNIQUE KEY uniq_order_item_id (order_item_id),
