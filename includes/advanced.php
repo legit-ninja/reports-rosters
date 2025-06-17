@@ -347,7 +347,9 @@ function intersoccer_rebuild_rosters_and_reports() {
                     array_values($roster_entry)
                 );
                 error_log("InterSoccer: Prepared insert query for order $order_id, item $order_item_id: $query");
-                $result = $wpdb->query($query);
+                if (!$wpdb->get_var($wpdb->prepare("SELECT 1 FROM $rosters_table WHERE order_item_id = %d", $order_item_id))) {
+                    $result = $wpdb->query($query);
+                }
                 if ($result === false) {
                     error_log("InterSoccer: Insert failed for order $order_id, item $order_item_id: " . $wpdb->last_error);
                 } else {
