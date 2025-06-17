@@ -31,18 +31,56 @@ function intersoccer_render_roster_details_page() {
         return;
     }
 
-    $rosters = $wpdb->get_results(
-        $wpdb->prepare("SELECT * FROM $rosters_table WHERE variation_id = %d ORDER BY player_name", $variation_id)
+    // Fetch the base roster to get event attributes
+    $base_roster = $wpdb->get_row(
+        $wpdb->prepare("SELECT * FROM $rosters_table WHERE variation_id = %d LIMIT 1", $variation_id)
     );
 
-    if (!$rosters) {
+    if (!$base_roster) {
         echo '<div class="wrap"><h1>' . esc_html__('Roster Details', 'intersoccer-reports-rosters') . '</h1>';
         echo '<p>' . esc_html__('No rosters found for variation ID ', 'intersoccer-reports-rosters') . esc_html($variation_id) . '.</p></div>';
         return;
     }
 
+    // For Camp activities, find all variation_ids with matching attributes except booking_type
+    $related_variation_ids = [$variation_id];
+    if ($base_roster->activity_type === 'Camp') {
+        $related_variation_ids = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT DISTINCT variation_id FROM $rosters_table
+                 WHERE activity_type = 'Camp'
+                 AND product_name = %s
+                 AND venue = %s
+                 AND camp_terms = %s
+                 AND age_group = %s
+                 AND variation_id != %d",
+                $base_roster->product_name,
+                $base_roster->venue,
+                $base_roster->camp_terms,
+                $base_roster->age_group,
+                $variation_id
+            )
+        );
+        $related_variation_ids[] = $variation_id; // Include the base variation_id
+    }
+
+    // Fetch all rosters for the related variation_ids
+    $place_holders = implode(',', array_fill(0, count($related_variation_ids), '%d'));
+    $rosters = $wpdb->get_results(
+        $wpdb->prepare(
+            "SELECT * FROM $rosters_table WHERE variation_id IN ($place_holders) ORDER BY player_name",
+            $related_variation_ids
+        )
+    );
+
+    if (!$rosters) {
+        echo '<div class="wrap"><h1>' . esc_html__('Roster Details', 'intersoccer-reports-rosters') . '</h1>';
+        echo '<p>' . esc_html__('No rosters found for variation ID(s) ', 'intersoccer-reports-rosters') . esc_html(implode(', ', $related_variation_ids)) . '.</p></div>';
+        return;
+    }
+
     echo '<div class="wrap">';
-    echo '<h1>' . esc_html__('Roster Details for Variation #', 'intersoccer-reports-rosters') . esc_html($variation_id) . '</h1>';
+    echo '<h1>' . esc_html__('Roster Details for Variation #', 'intersoccer-reports-rosters') . esc_html(implode(', ', $related_variation_ids)) . '</h1>';
     echo '<table class="wp-list-table widefat fixed striped">';
     echo '<tr><th>' . esc_html__('Name') . '</th><th>' . esc_html__('Surname') . '</th><th>' . esc_html__('Gender') . '</th><th>' . esc_html__('Phone') . '</th><th>' . esc_html__('Email') . '</th><th>' . esc_html__('Age') . '</th><th>' . esc_html__('Medical/Dietary') . '</th></tr>';
     foreach ($rosters as $row) {
@@ -61,16 +99,18 @@ function intersoccer_render_roster_details_page() {
     echo '<p><strong>' . esc_html__('Late Pickup') . ':</strong> ' . esc_html($late_pickup_display) . '</p>';
     echo '<form method="post" action="' . esc_url(admin_url('admin-ajax.php')) . '" class="export-form">';
     echo '<input type="hidden" name="action" value="intersoccer_export_roster">';
-    echo '<input type="hidden" name="variation_ids[]" value="' . esc_attr($variation_id) . '">';
+    foreach ($related_variation_ids as $id) {
+        echo '<input type="hidden" name="variation_ids[]" value="' . esc_attr($id) . '">';
+    }
     echo '<input type="hidden" name="nonce" value="' . esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')) . '">';
     echo '<input type="submit" name="export_roster" class="button button-primary" value="' . esc_attr__('Export Roster', 'intersoccer-reports-rosters') . '">';
     echo '</form>';
     echo '<p><strong>' . esc_html__('Event Details') . ':</strong></p>';
-    echo '<p>' . esc_html__('Product Name: ') . esc_html($rosters[0]->product_name ?? 'N/A') . '</p>';
-    echo '<p>' . esc_html__('Venue: ') . esc_html($rosters[0]->venue ?? 'N/A') . '</p>';
-    echo '<p>' . esc_html__('Age Group: ') . esc_html($rosters[0]->age_group ?? 'N/A') . '</p>';
-    if ($rosters[0]->activity_type === 'Camp') {
-        echo '<p>' . esc_html__('Camp Terms: ') . esc_html($rosters[0]->camp_terms ?? 'N/A') . '</p>';
+    echo '<p>' . esc_html__('Product Name: ') . esc_html($base_roster->product_name ?? 'N/A') . '</p>';
+    echo '<p>' . esc_html__('Venue: ') . esc_html($base_roster->venue ?? 'N/A') . '</p>';
+    echo '<p>' . esc_html__('Age Group: ') . esc_html($base_roster->age_group ?? 'N/A') . '</p>';
+    if ($base_roster->activity_type === 'Camp') {
+        echo '<p>' . esc_html__('Camp Terms: ') . esc_html($base_roster->camp_terms ?? 'N/A') . '</p>';
     }
     echo '<p><strong>' . esc_html__('Total Players') . ':</strong> ' . esc_html(count($rosters)) . '</p>';
     echo '</div>';
