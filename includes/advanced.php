@@ -197,11 +197,14 @@ function intersoccer_rebuild_rosters_and_reports() {
                     $activity_type = implode(', ', array_map('trim', $activity_type));
                 }
                 $activity_type = trim(html_entity_decode($activity_type, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                $activity_types = array_map('trim', explode(',', $activity_type));
+                error_log("InterSoccer: Raw activity_types for order $order_id, item $order_item_id: " . print_r($activity_types, true));
                 // Ensure "Girls Only" is correctly identified
-                if (stripos($activity_type, 'Girls Only') !== false && stripos($activity_type, 'Camp') === false) {
-                    $activity_type = 'Girls Only';
+                if (in_array('Girls Only', $activity_types) || in_array("Girls' Only", $activity_types)) {
+                    $activity_type = 'Girls Only'; // Prioritize Girls Only if present
+                } else {
+                    $activity_type = implode(', ', $activity_types);
                 }
-                $activity_type = str_replace("Girls' Only", "Girls Only", $activity_type);
                 error_log("InterSoccer: Activity type from order item meta for order $order_id, item $order_item_id: $activity_type");
             } else {
                 // Fallback to variation attribute if available
@@ -213,10 +216,13 @@ function intersoccer_rebuild_rosters_and_reports() {
                         $variation_activity_type = implode(', ', array_map('trim', $variation_activity_type));
                     }
                     $activity_type = trim(html_entity_decode($variation_activity_type, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-                    if (stripos($activity_type, 'Girls Only') !== false && stripos($activity_type, 'Camp') === false) {
+                    $activity_types = array_map('trim', explode(',', $activity_type));
+                    error_log("InterSoccer: Raw variation activity_types for order $order_id, item $order_item_id: " . print_r($activity_types, true));
+                    if (in_array('Girls Only', $activity_types) || in_array("Girls' Only", $activity_types)) {
                         $activity_type = 'Girls Only';
+                    } else {
+                        $activity_type = implode(', ', $activity_types);
                     }
-                    $activity_type = str_replace("Girls' Only", "Girls Only", $activity_type);
                     error_log("InterSoccer: Activity type from variation attribute for order $order_id, item $order_item_id: $activity_type");
                 } else {
                     $activity_type = 'Unknown';
@@ -311,6 +317,15 @@ function intersoccer_rebuild_rosters_and_reports() {
                 $day_presence = ['Monday' => 'Yes', 'Tuesday' => 'Yes', 'Wednesday' => 'Yes', 'Thursday' => 'Yes', 'Friday' => 'Yes'];
             }
 
+            // Add clothing sizes for Girls Only camps
+            $shirt_size = 'N/A';
+            $shorts_size = 'N/A';
+            if (in_array('Girls Only', $activity_types) || in_array("Girls' Only", $activity_types)) {
+                $shirt_size = $order_item_meta['pa_what-size-t-shirt-does-your'] ?? $order_item_meta['pa_what-size-t-shirt-does-your-child-wear'] ?? 'N/A';
+                $shorts_size = $order_item_meta['pa_what-size-shorts-does-your-c'] ?? $order_item_meta['pa_what-size-shorts-does-your-child-wear'] ?? 'N/A';
+            }
+            error_log("InterSoccer: For order $order_id, item $order_item_id - shirt_size: $shirt_size, shorts_size: $shorts_size, raw_order_item_meta: " . print_r($raw_order_item_meta, true));
+
             // Prepare roster_entry for insertion
             $roster_entry = array(
                 'order_id' => $order_id,
@@ -336,6 +351,8 @@ function intersoccer_rebuild_rosters_and_reports() {
                 'event_dates' => $event_dates,
                 'product_name' => $product_name,
                 'activity_type' => $activity_type,
+                'shirt_size' => $shirt_size,
+                'shorts_size' => $shorts_size,
                 'registration_timestamp' => $order_date,
                 'course_day' => ($activity_type === 'Course' ? $course_day : 'N/A'), // Updated to use 'pa_course-day'
             );
@@ -349,7 +366,7 @@ function intersoccer_rebuild_rosters_and_reports() {
             $format = array('%d', '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');
             try {
                 $query = $wpdb->prepare(
-                    "INSERT INTO $rosters_table (order_id, order_item_id, variation_id, player_name, first_name, last_name, age, gender, booking_type, selected_days, camp_terms, venue, parent_phone, parent_email, medical_conditions, late_pickup, day_presence, age_group, start_date, end_date, event_dates, product_name, activity_type, registration_timestamp, course_day) VALUES (%d, %d, %d, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    "INSERT INTO $rosters_table (order_id, order_item_id, variation_id, player_name, first_name, last_name, age, gender, booking_type, selected_days, camp_terms, venue, parent_phone, parent_email, medical_conditions, late_pickup, day_presence, age_group, start_date, end_date, event_dates, product_name, activity_type, shirt_size, shorts_size, registration_timestamp, course_day) VALUES (%d, %d, %d, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     array_values($roster_entry)
                 );
                 error_log("InterSoccer: Prepared insert query for order $order_id, item $order_item_id: $query");
@@ -380,7 +397,7 @@ function intersoccer_upgrade_database() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    // No additional upgrade needed for this change since course_day is already added
+    // No additional upgrade needed for this change since course_day, shirt_size, and shorts_size are already added
     error_log('InterSoccer: No new schema changes required for this upgrade.');
 }
 

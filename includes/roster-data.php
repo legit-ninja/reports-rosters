@@ -118,30 +118,32 @@ function intersoccer_pe_get_girls_only_variations($filters) {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    $where = ["activity_type = 'Girls Only'"]; // Corrected from 'Girls-Only'
+    $where = ["activity_type = 'Girls Only'"];
     if ($filters['region'] ?? '') $where[] = $wpdb->prepare("venue LIKE %s", '%' . intersoccer_normalize_attribute($filters['region']) . '%');
     if ($filters['venue'] ?? '') $where[] = $wpdb->prepare("venue = %s", intersoccer_normalize_attribute($filters['venue']));
     if ($filters['age_group'] ?? '') $where[] = $wpdb->prepare("age_group = %s", intersoccer_normalize_attribute($filters['age_group']));
     $where_clause = implode(' AND ', $where);
 
     $results = $wpdb->get_results(
-        "SELECT camp_terms, venue, age_group, product_name, 
+        "SELECT camp_terms, venue, age_group, product_name, shirt_size, shorts_size,
                 COUNT(*) as total_players, GROUP_CONCAT(DISTINCT order_item_id) as variation_ids
          FROM $rosters_table
          WHERE $where_clause
-         GROUP BY camp_terms, venue, age_group, product_name",
+         GROUP BY camp_terms, venue, age_group, product_name, shirt_size, shorts_size",
         ARRAY_A
     );
 
     $config_grouped = [];
     foreach ($results as $row) {
-        $config_key = $row['camp_terms'] . '|' . $row['venue'] . '|' . $row['age_group'];
+        $config_key = $row['camp_terms'] . '|' . $row['venue'] . '|' . $row['age_group'] . '|' . $row['shirt_size'] . '|' . $row['shorts_size'];
         $config_grouped[$config_key] = [
             'product_name' => $row['product_name'],
             'camp_terms' => $row['camp_terms'],
             'region' => '', // Add region logic if needed
             'venues' => [$row['venue'] => ['variation_ids' => explode(',', $row['variation_ids'])]],
             'age_group' => $row['age_group'],
+            'shirt_size' => $row['shirt_size'],
+            'shorts_size' => $row['shorts_size'],
             'total_players' => $row['total_players'],
             'variation_ids' => explode(',', $row['variation_ids'])
         ];

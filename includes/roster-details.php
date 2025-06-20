@@ -42,6 +42,8 @@ function intersoccer_render_roster_details_page() {
         return;
     }
 
+    error_log('InterSoccer: Base roster for variation_id ' . $variation_id . ' - activity_type: ' . $base_roster->activity_type . ', shirt_size: ' . $base_roster->shirt_size . ', shorts_size: ' . $base_roster->shorts_size);
+
     // For Camp activities, find all variation_ids with matching attributes except booking_type
     $related_variation_ids = [$variation_id];
     if ($base_roster->activity_type === 'Camp') {
@@ -96,6 +98,10 @@ function intersoccer_render_roster_details_page() {
     if ($base_roster->activity_type === 'Course') {
         echo '<th>' . esc_html__('Course Day') . '</th>';
     }
+    if ($base_roster->activity_type === 'Girls Only') {
+        echo '<th>' . esc_html__('Shirt Size') . '</th>';
+        echo '<th>' . esc_html__('Shorts Size') . '</th>';
+    }
     echo '</tr>';
     foreach ($rosters as $row) {
         $late_pickup_display = ($row->late_pickup === 'Yes') ? 'Yes (18:00)' : 'No';
@@ -125,6 +131,10 @@ function intersoccer_render_roster_details_page() {
                 $course_day = $course_day_meta ?: 'N/A';
             }
             echo '<td>' . esc_html($course_day) . '</td>';
+        }
+        if ($base_roster->activity_type === 'Girls Only') {
+            echo '<td>' . esc_html($row->shirt_size ?? 'N/A') . '</td>';
+            echo '<td>' . esc_html($row->shorts_size ?? 'N/A') . '</td>';
         }
         echo '</tr>';
     }
