@@ -279,6 +279,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $day_presence['Tuesday'] ?? 'No',
                     $day_presence['Wednesday'] ?? 'No',
                     $day_presence['Thursday'] ?? 'No',
+                    $day_presence['Friday'] ?? 'No',
                     $roster['booking_type'] ?? 'N/A'
                 ];
                 $sheet->fromArray($data, NULL, 'A' . $row++);
