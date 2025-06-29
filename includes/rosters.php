@@ -386,21 +386,6 @@ function intersoccer_render_other_events_page() {
 }
 
 /**
- * Render the Reports page (placeholder - to be implemented).
- */
-function intersoccer_render_reports_page() {
-    if (!current_user_can('manage_options') && !current_user_can('coach')) {
-        wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
-    }
-    ?>
-    <div class="wrap">
-        <h1><?php _e('InterSoccer Reports', 'intersoccer-reports-rosters'); ?></h1>
-        <p><?php _e('Reports functionality to be implemented.', 'intersoccer-reports-rosters'); ?></p>
-    </div>
-    <?php
-}
-
-/**
  * AJAX handler for reconcile
  */
 add_action('wp_ajax_intersoccer_reconcile_rosters', 'intersoccer_reconcile_rosters_ajax');

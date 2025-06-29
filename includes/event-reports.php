@@ -3,7 +3,7 @@
  * Event reports functionality for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.0.3
+ * @version 1.0.4
  * @author Jeremy Lee
  */
 
@@ -16,9 +16,11 @@ defined('ABSPATH') or die('Restricted access');
  * @param string $week Week filter (Y-m-d).
  * @param string $camp_type Camp type filter.
  * @param string $year Year filter.
+ * @param bool $list_variations Whether to list all variations.
+ * @param int $variation_id Specific variation ID to filter.
  * @return array Report data.
  */
-function intersoccer_pe_get_camp_report_data($region = '', $week = '', $camp_type = '', $year = '') {
+function intersoccer_pe_get_camp_report_data($region = '', $week = '', $camp_type = '', $year = '', $list_variations = false, $variation_id = 0) {
     try {
         if (!function_exists('wc_get_products')) {
             error_log('InterSoccer: wc_get_products not available in intersoccer_pe_get_camp_report_data');
@@ -63,9 +65,9 @@ function intersoccer_pe_get_camp_report_data($region = '', $week = '', $camp_typ
             $product_id = $product->get_id();
             $variations = $product->get_children();
 
-            foreach ($variations as $variation_id) {
-                $variation = wc_get_product($variation_id);
-                if (!$variation) {
+            foreach ($variations as $var_id) {
+                $variation = wc_get_product($var_id);
+                if (!$variation || ($variation_id && $var_id != $variation_id)) {
                     continue;
                 }
 
@@ -73,6 +75,7 @@ function intersoccer_pe_get_camp_report_data($region = '', $week = '', $camp_typ
                 $variation_venue = wc_get_product_terms($product_id, 'pa_intersoccer-venues', ['fields' => 'names'])[0] ?? 'Unknown';
                 $variation_camp_type = wc_get_product_terms($product_id, 'pa_age-group', ['fields' => 'names'])[0] ?? 'Unknown';
                 $variation_booking_type = wc_get_product_terms($product_id, 'pa_booking-type', ['fields' => 'names'])[0] ?? 'Unknown';
+                $variation_name = $variation->get_name();
 
                 if ($region && $region !== $variation_region) {
                     continue;
@@ -81,42 +84,36 @@ function intersoccer_pe_get_camp_report_data($region = '', $week = '', $camp_typ
                     continue;
                 }
 
-                $days = [
-                    'Monday' => 0,
-                    'Tuesday' => 0,
-                    'Wednesday' => 0,
-                    'Thursday' => 0,
-                    'Friday' => 0,
-                ];
+                if ($list_variations) {
+                    $total = 0;
+                    foreach ($orders as $order_post) {
+                        $order = wc_get_order($order_post->ID);
+                        if (!$order) continue;
+                        foreach ($order->get_items() as $item) {
+                            if ($item->get_variation_id() == $var_id) $total += $item->get_quantity();
+                        }
+                    }
+                    $report_data[] = [
+                        'variation_id' => $var_id,
+                        'variation_name' => $variation_name,
+                        'total' => $total,
+                    ];
+                    continue;
+                }
 
+                $days = ['Monday' => 0, 'Tuesday' => 0, 'Wednesday' => 0, 'Thursday' => 0, 'Friday' => 0];
                 $total = 0;
-                $total_range = 0;
-                $buyclub = 0;
-                $girls_only = 0;
-                $full_week = 0;
                 $ages = [];
                 $genders = ['Male' => 0, 'Female' => 0, 'Other' => 0];
+                $attendees = [];
 
                 foreach ($orders as $order_post) {
                     $order = wc_get_order($order_post->ID);
-                    if (!$order) {
-                        continue;
-                    }
-
+                    if (!$order) continue;
                     foreach ($order->get_items() as $item) {
-                        if ($item->get_variation_id() != $variation_id) {
-                            continue;
-                        }
+                        if ($item->get_variation_id() != $var_id) continue;
 
                         $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Attendee', true);
-                        if (!$player_name) {
-                            $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Player', true);
-                            if ($player_name) {
-                                wc_update_order_item_meta($item->get_id(), 'Assigned Attendee', $player_name);
-                                error_log('InterSoccer: Reports - Normalized Assigned Player to Assigned Attendee for Order Item ID ' . $item->get_id());
-                            }
-                        }
-
                         $player_index = wc_get_order_item_meta($item->get_id(), 'assigned_player', true);
                         $user_id = $order->get_user_id();
                         $players = get_user_meta($user_id, 'intersoccer_players', true) ?: [];
@@ -125,13 +122,9 @@ function intersoccer_pe_get_camp_report_data($region = '', $week = '', $camp_typ
                             $player = $players[$player_index];
                             $player_name = $player['first_name'] . ' ' . $player['last_name'];
                             wc_update_order_item_meta($item->get_id(), 'Assigned Attendee', $player_name);
-                            error_log('InterSoccer: Reports - Restored Assigned Attendee metadata for Order Item ID ' . $item->get_id() . ' as ' . $player_name);
                         }
 
-                        if (!$player_name) {
-                            error_log('InterSoccer: Reports - No Assigned Attendee for Order Item ID ' . $item->get_id());
-                            continue;
-                        }
+                        if (!$player_name) continue;
 
                         $age = 'N/A';
                         $gender = 'N/A';
@@ -141,10 +134,7 @@ function intersoccer_pe_get_camp_report_data($region = '', $week = '', $camp_typ
                                 $dob = DateTime::createFromFormat('Y-m-d', $player['dob']);
                                 if ($dob) {
                                     $current_date = new DateTime(current_time('Y-m-d'));
-                                    $interval = $dob->diff($current_date);
-                                    $age = $interval->y;
-                                } else {
-                                    error_log('InterSoccer: Reports - Invalid DOB format for Order Item ID ' . $item->get_id() . ': ' . $player['dob']);
+                                    $age = $dob->diff($current_date)->y;
                                 }
                             }
                             $gender = isset($player['gender']) && !empty($player['gender']) ? ucfirst($player['gender']) : 'Other';
@@ -154,56 +144,35 @@ function intersoccer_pe_get_camp_report_data($region = '', $week = '', $camp_typ
                         $days_array = $days_of_week ? explode(',', $days_of_week) : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
                         if ($variation_booking_type === 'Full Week') {
-                            $full_week++;
-                            foreach ($days as $day => $count) {
-                                $days[$day]++;
-                            }
+                            foreach ($days as $day => $count) $days[$day]++;
                         } else {
-                            foreach ($days_array as $day) {
-                                $day = trim($day);
-                                if (isset($days[$day])) {
-                                    $days[$day]++;
-                                }
-                            }
+                            foreach ($days_array as $day) if (isset($days[trim($day)])) $days[trim($day)]++;
                         }
 
-                        $total++;
-                        $buyclub += (int) wc_get_order_item_meta($item->get_id(), 'buyclub', true);
-                        $girls_only += (int) wc_get_order_item_meta($item->get_id(), 'girls_only', true);
-
-                        if (is_numeric($age)) {
-                            $ages[] = $age;
-                        }
-                        if (in_array($gender, ['Male', 'Female', 'Other'])) {
-                            $genders[$gender]++;
-                        } else {
-                            error_log('InterSoccer: Reports - Invalid gender for Order Item ID ' . $item->get_id() . ': ' . $gender);
-                        }
+                        $total += $item->get_quantity();
+                        if (is_numeric($age)) $ages[] = $age;
+                        if (in_array($gender, ['Male', 'Female', 'Other'])) $genders[$gender]++;
+                        $attendees[] = [
+                            'name' => $player_name,
+                            'age' => $age,
+                            'gender' => $gender,
+                            'days' => implode(', ', $days_array),
+                        ];
                     }
                 }
 
                 $average_age = !empty($ages) ? round(array_sum($ages) / count($ages), 1) : 'N/A';
-                $gender_distribution = sprintf(
-                    'Male: %d, Female: %d, Other: %d',
-                    $genders['Male'],
-                    $genders['Female'],
-                    $genders['Other']
-                );
-
+                $gender_distribution = sprintf('Male: %d, Female: %d, Other: %d', $genders['Male'], $genders['Female'], $genders['Other']);
                 $report_data[] = [
+                    'variation_id' => $var_id,
+                    'variation_name' => $variation_name,
                     'venue' => $variation_venue,
                     'region' => $variation_region,
-                    'week' => $week ?: 'All',
-                    'year' => $year,
                     'camp_type' => $variation_camp_type,
-                    'full_week' => $full_week,
-                    'buyclub' => $buyclub,
-                    'girls_only' => $girls_only,
-                    'days' => $days,
+                    'total' => $total,
                     'average_age' => $average_age,
                     'gender_distribution' => $gender_distribution,
-                    'total' => $total,
-                    'total_range' => $total * 5,
+                    'attendees' => $attendees,
                 ];
             }
         }
@@ -212,6 +181,124 @@ function intersoccer_pe_get_camp_report_data($region = '', $week = '', $camp_typ
     } catch (Exception $e) {
         error_log('InterSoccer: Error in intersoccer_pe_get_camp_report_data: ' . $e->getMessage());
         return [];
+    }
+}
+
+/**
+ * Render the Event Report page.
+ */
+function intersoccer_render_event_report_page() {
+    try {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
+        }
+
+        $variation_id = isset($_GET['variation_id']) ? intval($_GET['variation_id']) : 0;
+        $report_data = intersoccer_pe_get_camp_report_data('', '', '', '', false, $variation_id);
+
+        if (isset($_GET['action']) && $_GET['action'] === 'export' && check_admin_referer('export_report_nonce')) {
+            intersoccer_export_reports_csv($report_data, false, $variation_id);
+        }
+
+        if (empty($report_data)) {
+            wp_die(__('No report data available for this variation.', 'intersoccer-reports-rosters'));
+        }
+
+        $row = $report_data[0];
+        ?>
+        <div class="wrap intersoccer-reports-rosters-reports">
+            <h1><?php echo esc_html(__('Event Report for ', 'intersoccer-reports-rosters') . $row['variation_name']); ?></h1>
+            <div class="export-section">
+                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-event-reports&variation_id=' . $variation_id . '&action=export'), 'export_report_nonce')); ?>" class="button button-primary"><?php _e('Export Report', 'intersoccer-reports-rosters'); ?></a>
+            </div>
+            <table class="widefat fixed">
+                <thead>
+                    <tr>
+                        <th><?php _e('Attendee Name', 'intersoccer-reports-rosters'); ?></th>
+                        <th><?php _e('Age', 'intersoccer-reports-rosters'); ?></th>
+                        <th><?php _e('Gender', 'intersoccer-reports-rosters'); ?></th>
+                        <th><?php _e('Days', 'intersoccer-reports-rosters'); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($row['attendees'] as $attendee): ?>
+                        <tr>
+                            <td><?php echo esc_html($attendee['name']); ?></td>
+                            <td><?php echo esc_html($attendee['age']); ?></td>
+                            <td><?php echo esc_html($attendee['gender']); ?></td>
+                            <td><?php echo esc_html($attendee['days']); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <p><?php echo esc_html(__('Total Attendees: ', 'intersoccer-reports-rosters') . $row['total']); ?></p>
+            <p><?php echo esc_html(__('Average Age: ', 'intersoccer-reports-rosters') . $row['average_age']); ?></p>
+            <p><?php echo esc_html(__('Gender Distribution: ', 'intersoccer-reports-rosters') . $row['gender_distribution']); ?></p>
+        </div>
+        <?php
+    } catch (Exception $e) {
+        error_log('InterSoccer: Error rendering event report page: ' . $e->getMessage());
+        wp_die(__('An error occurred while rendering the event report page.', 'intersoccer-reports-rosters'));
+    }
+}
+
+/**
+ * Export reports to CSV.
+ *
+ * @param array $report_data Report data to export.
+ * @param bool $all_events Whether to export all events.
+ * @param int $variation_id Specific variation ID for single event export.
+ */
+function intersoccer_export_reports_csv($report_data, $all_events = true, $variation_id = 0) {
+    try {
+        if (ob_get_length()) ob_end_clean();
+
+        $filename = $all_events ? 'all_reports_' : 'event_report_' . $variation_id . '_';
+        $filename .= date('Y-m-d_H-i-s') . '.csv';
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: no-cache, no-store, must-revalidate');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        $output = fopen('php://output', 'w');
+
+        if ($all_events) {
+            $headers = ['Variation ID', 'Variation Name', 'Venue', 'Region', 'Camp Type', 'Total Players', 'Average Age', 'Gender Distribution'];
+            fputcsv($output, $headers);
+            foreach ($report_data as $row) {
+                fputcsv($output, [
+                    $row['variation_id'],
+                    $row['variation_name'],
+                    $row['venue'],
+                    $row['region'],
+                    $row['camp_type'],
+                    $row['total'],
+                    $row['average_age'],
+                    $row['gender_distribution'],
+                ]);
+            }
+        } else {
+            $row = $report_data[0];
+            $headers = ['Attendee Name', 'Age', 'Gender', 'Days'];
+            fputcsv($output, $headers);
+            foreach ($row['attendees'] as $attendee) {
+                fputcsv($output, [
+                    $attendee['name'],
+                    $attendee['age'],
+                    $attendee['gender'],
+                    $attendee['days'],
+                ]);
+            }
+        }
+
+        fclose($output);
+        intersoccer_log_audit('export_reports_csv', 'Exported ' . ($all_events ? 'all reports' : 'event report for variation ' . $variation_id) . ' to CSV');
+        exit;
+    } catch (Exception $e) {
+        error_log('InterSoccer: Error in intersoccer_export_reports_csv: ' . $e->getMessage());
+        wp_die(__('An error occurred while exporting reports to CSV.', 'intersoccer-reports-rosters'));
     }
 }
 ?>
