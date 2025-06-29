@@ -38,14 +38,23 @@ function intersoccer_export_roster($variation_ids, $format = 'excel', $context =
         if (!function_exists('wc_get_product')) wp_die(__('WooCommerce unavailable.', 'intersoccer-reports-rosters'));
 
         $variation_ids = (array)$variation_ids;
-        $variation_id = $variation_ids[0]; // Use the first variation_id
+        if (empty($variation_ids)) {
+            wp_die(__('No variation IDs provided.', 'intersoccer-reports-rosters'));
+        }
 
         global $wpdb;
         $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        
+        // Prepare placeholders for all variation_ids
+        $place_holders = implode(',', array_fill(0, count($variation_ids), '%d'));
         $roster = $wpdb->get_results(
-            $wpdb->prepare("SELECT * FROM $rosters_table WHERE variation_id = %d ORDER BY player_name", $variation_id),
+            $wpdb->prepare(
+                "SELECT * FROM $rosters_table WHERE variation_id IN ($place_holders) ORDER BY player_name",
+                ...$variation_ids
+            ),
             ARRAY_A
         );
+        
         if (empty($roster)) wp_die(__('No roster data.', 'intersoccer-reports-rosters'));
 
         $spreadsheet = new Spreadsheet();
@@ -121,9 +130,9 @@ function intersoccer_export_roster($variation_ids, $format = 'excel', $context =
         }
 
         // Debug: Log the number of rows before saving
-        error_log('InterSoccer: Exporting roster for variation_id ' . $variation_id . ' with ' . (count($roster) + 6) . ' rows');
+        error_log('InterSoccer: Exporting roster for variation_id ' . implode(',', $variation_ids) . ' with ' . (count($roster) + 6) . ' rows');
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
-        header('Content-Disposition: attachment; filename="intersoccer_roster_variation_' . $variation_id . '_' . date('Y-m-d_H-i-s') . '.xlsx"');
+        header('Content-Disposition: attachment; filename="intersoccer_roster_variation_' . implode('_', $variation_ids) . '_' . date('Y-m-d_H-i-s') . '.xlsx"');
         $writer = new Xlsx($spreadsheet);
         $writer->save('php://output');
         intersoccer_log_audit('export_roster_excel', 'Exported for ' . implode(',', $variation_ids));
