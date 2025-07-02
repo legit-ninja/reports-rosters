@@ -166,7 +166,6 @@ function intersoccer_render_roster_details_page() {
     if ($base_roster->activity_type === 'Camp') {
         echo '<p>' . esc_html__('Camp Terms: ') . esc_html($base_roster->camp_terms ?? 'N/A') . '</p>';
     }
-    echo '<p><strong>' . esc_html__('Total Players') . ':</strong> ' . esc_html(count($rosters)) . '</p>';
-    echo '</div>';
+    echo '<p><strong>' . esc_html__('Total Unique Players') . ':</strong> ' . esc_html(count($rosters)) . '</p>';
 }
 ?>

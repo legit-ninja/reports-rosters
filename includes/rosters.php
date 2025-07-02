@@ -3,7 +3,7 @@
  * Rosters pages for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.3.70
+ * @version 1.3.71
  * @author Jeremy Lee
  */
 
@@ -104,7 +104,7 @@ function intersoccer_render_camps_page() {
 
     // Build the query with the filter, excluding Girls Only
     $base_query = "SELECT product_name, venue, camp_terms, 
-                   COUNT(DISTINCT player_name) as total_players,
+                   COUNT(*) as total_players,
                    SUM(CASE WHEN player_name = 'Unknown Attendee' THEN 1 ELSE 0 END) as unknown_count
                    FROM $rosters_table
                    WHERE FIND_IN_SET('Camp', activity_type) > 0 AND activity_type NOT LIKE '%girls%'";
@@ -117,6 +117,16 @@ function intersoccer_render_camps_page() {
 
     $groups = $wpdb->get_results($query, ARRAY_A);
     error_log('InterSoccer: Retrieved ' . count($groups) . ' camp groups with filter ' . $selected_camp_term . ' on ' . current_time('mysql'));
+
+    // Check for duplicates
+    $duplicate_check = $wpdb->get_results(
+        "SELECT product_name, venue, camp_terms, player_name, COUNT(*) as count, GROUP_CONCAT(order_item_id) as order_item_ids
+         FROM $rosters_table
+         WHERE FIND_IN_SET('Camp', activity_type) > 0 AND activity_type NOT LIKE '%girls%'
+         GROUP BY product_name, venue, camp_terms, player_name
+         HAVING count > 1"
+    );
+    error_log('InterSoccer: Duplicate player_name check for Camps: ' . json_encode($duplicate_check));
 
     $reconcile_nonce = wp_create_nonce('intersoccer_reconcile');
     ?>
@@ -155,12 +165,10 @@ function intersoccer_render_camps_page() {
                     $term_player_totals = [];
                     // Pre-calculate total players and unknown attendees per camp term with base query, no filter
                     $term_totals_query = "SELECT product_name, venue, camp_terms, 
-                                         SUM(total_players) as term_total,
-                                         SUM(unknown_count) as term_unknown_count
-                                         FROM (
-                                             $base_query
-                                             GROUP BY product_name, venue, camp_terms
-                                         ) as subquery
+                                         COUNT(*) as term_total,
+                                         SUM(CASE WHEN player_name = 'Unknown Attendee' THEN 1 ELSE 0 END) as term_unknown_count
+                                         FROM $rosters_table
+                                         WHERE FIND_IN_SET('Camp', activity_type) > 0 AND activity_type NOT LIKE '%girls%'
                                          GROUP BY product_name, venue, camp_terms";
                     $term_totals = $wpdb->get_results($term_totals_query, ARRAY_A);
                     foreach ($term_totals as $total) {
@@ -182,9 +190,8 @@ function intersoccer_render_camps_page() {
                             $camp_terms_name = intersoccer_get_term_name($group['camp_terms'], 'pa_camp-terms');
                             $total_players_for_term = $term_player_totals[$key]['total_players'] ?? 0;
                             $unknown_count_for_term = $term_player_totals[$key]['unknown_count'] ?? 0;
-                            $row_total_for_term = array_sum(array_column(array_filter($groups, fn($g) => $g['product_name'] === $group['product_name'] && $g['venue'] === $group['venue'] && $g['camp_terms'] === $group['camp_terms']), 'total_players'));
-                            $sql_total = $wpdb->get_var("SELECT SUM(total_players) FROM ($base_query GROUP BY product_name, venue, camp_terms) as subquery WHERE product_name = '{$group['product_name']}' AND venue = '{$group['venue']}' AND camp_terms = '{$group['camp_terms']}'") ?? 0;
-                            error_log("InterSoccer: Displaying header for key $key - term_total: $total_players_for_term, row_total: $row_total_for_term, sql_total: $sql_total, unknown_count: $unknown_count_for_term");
+                            $sql_total = $wpdb->get_var("SELECT COUNT(*) FROM $rosters_table WHERE FIND_IN_SET('Camp', activity_type) > 0 AND activity_type NOT LIKE '%girls%' AND product_name = '{$group['product_name']}' AND venue = '{$group['venue']}' AND camp_terms = '{$group['camp_terms']}'") ?? 0;
+                            error_log("InterSoccer: Displaying header for key $key - term_total: $total_players_for_term, sql_total: $sql_total, unknown_count: $unknown_count_for_term");
                             echo '<div class="roster-group">';
                             echo '<h2>' . esc_html($camp_terms_name) . ' (' . $total_players_for_term . ' players)</h2>';
                             if ($unknown_count_for_term > 0) {
