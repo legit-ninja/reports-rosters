@@ -21,160 +21,98 @@ defined('ABSPATH') or die('Restricted access');
  * @return array Report data.
  */
 function intersoccer_pe_get_camp_report_data($region = '', $week = '', $camp_type = '', $year = '', $list_variations = false, $variation_id = 0) {
+    global $wpdb;
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+
     try {
         if (!function_exists('wc_get_products')) {
-            error_log('InterSoccer: wc_get_products not available in intersoccer_pe_get_camp_report_data');
+            error_log('InterSoccer: wc_get_products not available');
             return [];
         }
 
-        $args = [
-            'type' => 'variable',
-            'limit' => -1,
-            'status' => 'publish',
-        ];
-        $products = wc_get_products($args);
-        $report_data = [];
-
-        $query_args = [
-            'post_type' => 'shop_order',
-            'post_status' => ['wc-completed', 'wc-processing'],
-            'posts_per_page' => -1,
-        ];
-
-        if ($week) {
-            $query_args['date_query'] = [
-                [
-                    'after' => $week,
-                    'before' => date('Y-m-d', strtotime($week . ' + 6 days')),
-                    'inclusive' => true,
-                ],
+        if ($list_variations) {
+            $args = [
+                'type' => 'variation',
+                'limit' => -1,
+                'status' => 'publish',
             ];
-        }
+            if ($region) {
+                $args['attribute_pa_canton-region'] = sanitize_title($region);
+            }
+            if ($camp_type) {
+                $args['attribute_pa_age-group'] = sanitize_title($camp_type);
+            }
+            $variations = wc_get_products($args);
+            $variation_ids = array_map(function($v) { return $v->get_id(); }, $variations);
 
-        if ($year) {
-            $query_args['date_query'] = [
-                [
-                    'year' => $year,
-                ],
-            ];
-        }
+            if (empty($variation_ids)) {
+                return [];
+            }
 
-        $orders = get_posts($query_args);
+            // Prepare the query with placeholders for variation_ids
+            $query = "SELECT variation_id, COUNT(*) as total FROM $rosters_table WHERE variation_id IN (" . implode(',', array_fill(0, count($variation_ids), '%d')) . ")";
+            $params = $variation_ids;
 
-        foreach ($products as $product) {
-            $product_id = $product->get_id();
-            $variations = $product->get_children();
+            if ($year) {
+                $query .= " AND YEAR(start_date) = %d";
+                $params[] = $year;
+            }
+            $query .= " GROUP BY variation_id";
 
-            foreach ($variations as $var_id) {
-                $variation = wc_get_product($var_id);
-                if (!$variation || ($variation_id && $var_id != $variation_id)) {
-                    continue;
-                }
+            $prepared_query = $wpdb->prepare($query, $params);
+            $results = $wpdb->get_results($prepared_query, ARRAY_A);
 
-                $variation_region = wc_get_product_terms($product_id, 'pa_canton-region', ['fields' => 'names'])[0] ?? 'Unknown';
-                $variation_venue = wc_get_product_terms($product_id, 'pa_intersoccer-venues', ['fields' => 'names'])[0] ?? 'Unknown';
-                $variation_camp_type = wc_get_product_terms($product_id, 'pa_age-group', ['fields' => 'names'])[0] ?? 'Unknown';
-                $variation_booking_type = wc_get_product_terms($product_id, 'pa_booking-type', ['fields' => 'names'])[0] ?? 'Unknown';
-                $variation_name = $variation->get_name();
-
-                if ($region && $region !== $variation_region) {
-                    continue;
-                }
-                if ($camp_type && $camp_type !== $variation_camp_type) {
-                    continue;
-                }
-
-                if ($list_variations) {
-                    $total = 0;
-                    foreach ($orders as $order_post) {
-                        $order = wc_get_order($order_post->ID);
-                        if (!$order) continue;
-                        foreach ($order->get_items() as $item) {
-                            if ($item->get_variation_id() == $var_id) $total += $item->get_quantity();
-                        }
-                    }
+            $report_data = [];
+            foreach ($results as $row) {
+                $variation = wc_get_product($row['variation_id']);
+                if ($variation) {
                     $report_data[] = [
-                        'variation_id' => $var_id,
-                        'variation_name' => $variation_name,
-                        'total' => $total,
+                        'variation_id' => $row['variation_id'],
+                        'variation_name' => $variation->get_name(),
+                        'total' => $row['total'],
                     ];
-                    continue;
                 }
+            }
+        } else if ($variation_id) {
+            $roster = $wpdb->get_results(
+                $wpdb->prepare("SELECT * FROM $rosters_table WHERE variation_id = %d", $variation_id),
+                ARRAY_A
+            );
+            if (empty($roster)) {
+                return [];
+            }
 
-                $days = ['Monday' => 0, 'Tuesday' => 0, 'Wednesday' => 0, 'Thursday' => 0, 'Friday' => 0];
-                $total = 0;
-                $ages = [];
-                $genders = ['Male' => 0, 'Female' => 0, 'Other' => 0];
-                $attendees = [];
+            $variation = wc_get_product($variation_id);
+            $product_id = $variation->get_parent_id();
+            $total = count($roster);
+            $ages = array_filter(array_column($roster, 'age'), 'is_numeric');
+            $average_age = !empty($ages) ? round(array_sum($ages) / count($ages), 1) : 'N/A';
+            $genders = array_count_values(array_column($roster, 'gender'));
+            $gender_distribution = sprintf('Male: %d, Female: %d, Other: %d', $genders['Male'] ?? 0, $genders['Female'] ?? 0, $genders['Other'] ?? 0);
 
-                foreach ($orders as $order_post) {
-                    $order = wc_get_order($order_post->ID);
-                    if (!$order) continue;
-                    foreach ($order->get_items() as $item) {
-                        if ($item->get_variation_id() != $var_id) continue;
-
-                        $player_name = wc_get_order_item_meta($item->get_id(), 'Assigned Attendee', true);
-                        $player_index = wc_get_order_item_meta($item->get_id(), 'assigned_player', true);
-                        $user_id = $order->get_user_id();
-                        $players = get_user_meta($user_id, 'intersoccer_players', true) ?: [];
-
-                        if (!$player_name && $player_index && isset($players[$player_index])) {
-                            $player = $players[$player_index];
-                            $player_name = $player['first_name'] . ' ' . $player['last_name'];
-                            wc_update_order_item_meta($item->get_id(), 'Assigned Attendee', $player_name);
-                        }
-
-                        if (!$player_name) continue;
-
-                        $age = 'N/A';
-                        $gender = 'N/A';
-                        if ($player_index && isset($players[$player_index])) {
-                            $player = $players[$player_index];
-                            if (isset($player['dob']) && !empty($player['dob'])) {
-                                $dob = DateTime::createFromFormat('Y-m-d', $player['dob']);
-                                if ($dob) {
-                                    $current_date = new DateTime(current_time('Y-m-d'));
-                                    $age = $dob->diff($current_date)->y;
-                                }
-                            }
-                            $gender = isset($player['gender']) && !empty($player['gender']) ? ucfirst($player['gender']) : 'Other';
-                        }
-
-                        $days_of_week = wc_get_order_item_meta($item->get_id(), 'Days of Week', true);
-                        $days_array = $days_of_week ? explode(',', $days_of_week) : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-
-                        if ($variation_booking_type === 'Full Week') {
-                            foreach ($days as $day => $count) $days[$day]++;
-                        } else {
-                            foreach ($days_array as $day) if (isset($days[trim($day)])) $days[trim($day)]++;
-                        }
-
-                        $total += $item->get_quantity();
-                        if (is_numeric($age)) $ages[] = $age;
-                        if (in_array($gender, ['Male', 'Female', 'Other'])) $genders[$gender]++;
-                        $attendees[] = [
-                            'name' => $player_name,
-                            'age' => $age,
-                            'gender' => $gender,
-                            'days' => implode(', ', $days_array),
-                        ];
-                    }
-                }
-
-                $average_age = !empty($ages) ? round(array_sum($ages) / count($ages), 1) : 'N/A';
-                $gender_distribution = sprintf('Male: %d, Female: %d, Other: %d', $genders['Male'], $genders['Female'], $genders['Other']);
-                $report_data[] = [
-                    'variation_id' => $var_id,
-                    'variation_name' => $variation_name,
-                    'venue' => $variation_venue,
-                    'region' => $variation_region,
-                    'camp_type' => $variation_camp_type,
-                    'total' => $total,
-                    'average_age' => $average_age,
-                    'gender_distribution' => $gender_distribution,
-                    'attendees' => $attendees,
+            $attendees = [];
+            foreach ($roster as $player) {
+                $days = json_decode($player['day_presence'], true) ?: [];
+                $attendees[] = [
+                    'name' => $player['player_name'],
+                    'age' => $player['age'],
+                    'gender' => $player['gender'],
+                    'days' => implode(', ', array_keys(array_filter($days))),
                 ];
             }
+
+            $report_data = [[
+                'variation_id' => $variation_id,
+                'variation_name' => $variation->get_name(),
+                'venue' => $roster[0]['venue'],
+                'region' => wc_get_product_terms($product_id, 'pa_canton-region', ['fields' => 'names'])[0] ?? 'Unknown',
+                'camp_type' => $roster[0]['age_group'],
+                'total' => $total,
+                'average_age' => $average_age,
+                'gender_distribution' => $gender_distribution,
+                'attendees' => $attendees,
+                'camp_terms' => $roster[0]['camp_terms'] ?? 'N/A',
+            ]];
         }
 
         return $report_data;
@@ -189,7 +127,7 @@ function intersoccer_pe_get_camp_report_data($region = '', $week = '', $camp_typ
  */
 function intersoccer_render_event_report_page() {
     try {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can('manage_options') || !current_user_can('coach') || !current_user_can('event_organizer')) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
         }
 

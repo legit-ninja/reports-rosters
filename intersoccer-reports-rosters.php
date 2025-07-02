@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.3.65
+ * Version: 1.3.66
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -60,7 +60,7 @@ function intersoccer_activate_plugin() {
             shirt_size VARCHAR(50) DEFAULT 'N/A',
             shorts_size VARCHAR(50) DEFAULT 'N/A',
             registration_timestamp DATETIME DEFAULT NULL,
-            course_day VARCHAR(20) DEFAULT 'N/A', -- Added to store Course Day from order_item_metadata
+            course_day VARCHAR(20) DEFAULT 'N/A',
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             UNIQUE KEY uniq_order_item_id (order_item_id),
@@ -85,7 +85,7 @@ function intersoccer_activate_plugin() {
 }
 
 $included_files = [];
-$files_to_include = ['event-reports.php', 'reports.php', 'utils.php', 'rosters.php', 'roster-data.php', 'roster-details.php', 'roster-export.php', 'advanced.php', 'ajax-handlers.php'];
+$files_to_include = ['event-reports.php', 'reports.php', 'utils.php', 'rosters.php', 'roster-data.php', 'roster-details.php', 'roster-export.php', 'advanced.php', 'ajax-handlers.php']; // Removed summer-camps-report.php
 foreach ($files_to_include as $file) {
     $file_path = plugin_dir_path(__FILE__) . 'includes/' . $file;
     if (file_exists($file_path)) {
@@ -243,6 +243,7 @@ add_action('admin_menu', function () {
     add_submenu_page('intersoccer-reports-rosters', __('Other Events', 'intersoccer-reports-rosters'), __('Other Events', 'intersoccer-reports-rosters'), 'read', 'intersoccer-other-events', 'intersoccer_render_other_events_page');
     add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Advanced', 'intersoccer-reports-rosters'), __('Advanced', 'intersoccer-reports-rosters'), 'read', 'intersoccer-advanced', 'intersoccer_render_advanced_page');
     add_submenu_page('intersoccer-reports-rosters', __('Roster Details', 'intersoccer-reports-rosters'), __('Roster Details', 'intersoccer-reports-rosters'), 'read', 'intersoccer-roster-details', 'intersoccer_render_roster_details_page');
+    add_submenu_page('intersoccer-reports-rosters', __('Roster Details', 'intersoccer-reports-rosters'), __('Roster Details', 'intersoccer-reports-rosters'),'manage_options','intersoccer-roster-details','intersoccer_render_roster_details_page');
 });
 
 add_action('wp_ajax_intersoccer_upgrade_database', 'intersoccer_upgrade_database');
