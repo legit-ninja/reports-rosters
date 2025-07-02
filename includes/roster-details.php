@@ -5,6 +5,7 @@
  * Handles rendering of detailed roster views.
  *
  * @package InterSoccer Reports and Rosters
+ * @version 1.3.75
  */
 
 if (!defined('ABSPATH')) {
@@ -53,34 +54,42 @@ function intersoccer_render_roster_details_page() {
                  WHERE activity_type = 'Camp'
                  AND product_name = %s
                  AND venue = %s
-                 AND camp_terms = %s
-                 AND variation_id != %d",
+                 AND camp_terms = %s",
                 $base_roster->product_name,
                 $base_roster->venue,
-                $base_roster->camp_terms,
-                $variation_id
+                $base_roster->camp_terms
             )
         );
-        $related_variation_ids[] = $variation_id; // Include the base variation_id
     }
 
     error_log('InterSoccer: Related variation_ids for variation_id ' . $variation_id . ': ' . implode(', ', $related_variation_ids));
 
-    // Fetch rosters for the related variation_ids, ensuring unique players
+    // Fetch rosters for the related variation_ids, counting all rows
     $place_holders = implode(',', array_fill(0, count($related_variation_ids), '%d'));
     $rosters = $wpdb->get_results(
         $wpdb->prepare(
-            "SELECT DISTINCT player_name, first_name, last_name, gender, parent_phone, parent_email, age, medical_conditions, late_pickup, booking_type, course_day, shirt_size, shorts_size, order_item_id, variation_id
+            "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, medical_conditions, late_pickup, booking_type, course_day, shirt_size, shorts_size, order_item_id, variation_id, age_group
              FROM $rosters_table
              WHERE variation_id IN ($place_holders)
-             ORDER BY player_name",
+             ORDER BY player_name, variation_id, order_item_id",
             $related_variation_ids
         )
     );
 
     // Count Unknown Attendees
     $unknown_count = count(array_filter($rosters, fn($row) => $row->player_name === 'Unknown Attendee'));
-    error_log('InterSoccer: Retrieved ' . count($rosters) . ' unique roster rows for variation_ids: ' . implode(', ', $related_variation_ids) . ', including ' . $unknown_count . ' Unknown Attendee entries');
+    $duplicate_check = $wpdb->get_results(
+        $wpdb->prepare(
+            "SELECT player_name, COUNT(*) as count, GROUP_CONCAT(order_item_id) as order_item_ids
+             FROM $rosters_table
+             WHERE variation_id IN ($place_holders)
+             GROUP BY player_name
+             HAVING count > 1",
+            $related_variation_ids
+        )
+    );
+    error_log('InterSoccer: Retrieved ' . count($rosters) . ' roster rows for variation_ids: ' . implode(', ', $related_variation_ids) . ', including ' . $unknown_count . ' Unknown Attendee entries');
+    error_log('InterSoccer: Duplicate player_name check: ' . json_encode($duplicate_check));
 
     if (!$rosters) {
         echo '<div class="wrap"><h1>' . esc_html__('Roster Details', 'intersoccer-reports-rosters') . '</h1>';
@@ -94,7 +103,7 @@ function intersoccer_render_roster_details_page() {
         echo '<p style="color: red;">' . esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)) . '</p>';
     }
     echo '<table class="wp-list-table widefat fixed striped">';
-    echo '<tr>';
+    echo '<thead><tr>';
     echo '<th>' . esc_html__('Name') . '</th>';
     echo '<th>' . esc_html__('Surname') . '</th>';
     echo '<th>' . esc_html__('Gender') . '</th>';
@@ -104,6 +113,7 @@ function intersoccer_render_roster_details_page() {
     echo '<th>' . esc_html__('Medical/Dietary') . '</th>';
     if ($base_roster->activity_type === 'Camp') {
         echo '<th>' . esc_html__('Booking Type') . '</th>';
+        echo '<th>' . esc_html__('Age Group') . '</th>';
     }
     if ($base_roster->activity_type === 'Course') {
         echo '<th>' . esc_html__('Course Day') . '</th>';
@@ -112,7 +122,7 @@ function intersoccer_render_roster_details_page() {
         echo '<th>' . esc_html__('Shirt Size') . '</th>';
         echo '<th>' . esc_html__('Shorts Size') . '</th>';
     }
-    echo '</tr>';
+    echo '</tr></thead><tbody>';
     foreach ($rosters as $row) {
         $late_pickup_display = ($row->late_pickup === 'Yes') ? 'Yes (18:00)' : 'No';
         $is_unknown = $row->player_name === 'Unknown Attendee';
@@ -126,9 +136,9 @@ function intersoccer_render_roster_details_page() {
         echo '<td>' . esc_html($row->medical_conditions ?? 'N/A') . '</td>';
         if ($base_roster->activity_type === 'Camp') {
             echo '<td>' . esc_html($row->booking_type ?? 'N/A') . '</td>';
+            echo '<td>' . esc_html(intersoccer_get_term_name($row->age_group, 'pa_age-group')) . '</td>';
         }
         if ($base_roster->activity_type === 'Course') {
-            // Fetch Course Day from order_item_metadata if not in rosters table yet
             $course_day = $row->course_day ?? 'N/A';
             if ($course_day === 'N/A') {
                 $order_item_id = $row->order_item_id;
@@ -149,7 +159,7 @@ function intersoccer_render_roster_details_page() {
         }
         echo '</tr>';
     }
-    echo '</table>';
+    echo '</tbody></table>';
     echo '<p><strong>' . esc_html__('Late Pickup') . ':</strong> ' . esc_html($late_pickup_display) . '</p>';
     echo '<form method="post" action="' . esc_url(admin_url('admin-ajax.php')) . '" class="export-form">';
     echo '<input type="hidden" name="action" value="intersoccer_export_roster">';
@@ -166,6 +176,6 @@ function intersoccer_render_roster_details_page() {
     if ($base_roster->activity_type === 'Camp') {
         echo '<p>' . esc_html__('Camp Terms: ') . esc_html($base_roster->camp_terms ?? 'N/A') . '</p>';
     }
-    echo '<p><strong>' . esc_html__('Total Unique Players') . ':</strong> ' . esc_html(count($rosters)) . '</p>';
+    echo '<p><strong>' . esc_html__('Total Players') . ':</strong> ' . esc_html(count($rosters)) . '</p>';
 }
 ?>

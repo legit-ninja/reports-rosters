@@ -3,7 +3,7 @@
  * Rosters pages for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.3.73
+ * @version 1.3.75
  * @author Jeremy Lee
  */
 
@@ -42,7 +42,7 @@ function intersoccer_render_all_rosters_page() {
                 foreach ($product_names as $product_name) {
                     $groups = $wpdb->get_results(
                         $wpdb->prepare(
-                            "SELECT variation_id, product_name, venue, age_group, COUNT(DISTINCT player_name) as total_players
+                            "SELECT variation_id, product_name, venue, age_group, COUNT(*) as total_players
                              FROM $rosters_table
                              WHERE product_name = %s
                              GROUP BY variation_id, product_name, venue, age_group
@@ -105,7 +105,8 @@ function intersoccer_render_camps_page() {
     // Build the query with the filter, excluding Girls Only
     $base_query = "SELECT product_name, venue, camp_terms, 
                    COUNT(*) as total_players,
-                   SUM(CASE WHEN player_name = 'Unknown Attendee' THEN 1 ELSE 0 END) as unknown_count
+                   SUM(CASE WHEN player_name = 'Unknown Attendee' THEN 1 ELSE 0 END) as unknown_count,
+                   GROUP_CONCAT(DISTINCT variation_id) as variation_ids
                    FROM $rosters_table
                    WHERE FIND_IN_SET('Camp', activity_type) > 0 AND activity_type NOT LIKE '%girls%'";
     $query = $base_query;
@@ -120,17 +121,11 @@ function intersoccer_render_camps_page() {
 
     // Check for duplicates
     $duplicate_check = $wpdb->get_results(
-        $wpdb->prepare(
-            "SELECT product_name, venue, camp_terms, player_name, COUNT(*) as count, GROUP_CONCAT(order_item_id) as order_item_ids
-             FROM $rosters_table
-             WHERE FIND_IN_SET('Camp', activity_type) > 0 AND activity_type NOT LIKE '%girls%'
-             AND product_name = %s AND venue = %s AND camp_terms = %s
-             GROUP BY product_name, venue, camp_terms, player_name
-             HAVING count > 1",
-            'Geneva Summer Camps',
-            'geneva-stade-de-varembe-nations',
-            'summer-week-3-july-7-11-5-days'
-        )
+        "SELECT product_name, venue, camp_terms, player_name, COUNT(*) as count, GROUP_CONCAT(order_item_id) as order_item_ids
+         FROM $rosters_table
+         WHERE FIND_IN_SET('Camp', activity_type) > 0 AND activity_type NOT LIKE '%girls%'
+         GROUP BY product_name, venue, camp_terms, player_name
+         HAVING count > 1"
     );
     error_log('InterSoccer: Duplicate player_name check for Camps: ' . json_encode($duplicate_check));
 
@@ -167,51 +162,54 @@ function intersoccer_render_camps_page() {
             <div class="roster-groups">
                 <?php
                 if (!empty($groups)) {
-                    $current_camp_term = null;
                     foreach ($groups as $group) {
                         $key = $group['product_name'] . '|' . $group['venue'] . '|' . $group['camp_terms'];
-                        if ($current_camp_term !== $group['camp_terms']) {
-                            if ($current_camp_term !== null) {
-                                echo '</tbody></table></div>'; // Close previous table and roster-group
-                            }
-                            $current_camp_term = $group['camp_terms'];
-                            $camp_terms_name = intersoccer_get_term_name($group['camp_terms'], 'pa_camp-terms');
-                            $total_players = $group['total_players'] ?? 0;
-                            $unknown_count = $group['unknown_count'] ?? 0;
-                            error_log("InterSoccer: Displaying header for key $key - total_players: $total_players, unknown_count: $unknown_count");
-                            echo '<div class="roster-group">';
-                            echo '<h2>' . esc_html($camp_terms_name) . ' (' . $total_players . ' players)</h2>';
-                            if ($unknown_count > 0) {
-                                echo '<p style="color: red;">' . esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)) . '</p>';
-                            }
-                            echo '<table class="wp-list-table widefat fixed striped">';
-                            echo '<thead><tr>';
-                            echo '<th style="width:22.5%">' . __('Product Name', 'intersoccer-reports-rosters') . '</th>';
-                            echo '<th style="width:22.5%">' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
-                            echo '<th style="width:12.5%">' . __('Age Group', 'intersoccer-reports-rosters') . '</th>';
-                            echo '<th style="width:10%">' . __('Total Players', 'intersoccer-reports-rosters') . '</th>';
-                            echo '<th style="width:10%">' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
-                            echo '</tr></thead><tbody>';
+                        $camp_terms_name = intersoccer_get_term_name($group['camp_terms'], 'pa_camp-terms');
+                        $total_players = $group['total_players'] ?? 0;
+                        $unknown_count = $group['unknown_count'] ?? 0;
+                        $variation_ids = explode(',', $group['variation_ids']);
+                        error_log("InterSoccer: Rendering roster group for key $key - total_players: $total_players, unknown_count: $unknown_count, variation_ids: " . implode(', ', $variation_ids));
+                        echo '<div class="roster-group">';
+                        echo '<h2>' . esc_html($group['product_name']) . ' - ' . esc_html(intersoccer_get_term_name($group['venue'], 'pa_intersoccer-venues')) . ' - ' . esc_html($camp_terms_name) . ' (' . $total_players . ' players)</h2>';
+                        if ($unknown_count > 0) {
+                            echo '<p style="color: red;">' . esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)) . '</p>';
                         }
-                        // Fetch all variation_ids for this group to link to a unified roster
-                        $variation_ids = $wpdb->get_col(
+                        echo '<table class="wp-list-table widefat fixed striped">';
+                        echo '<thead><tr>';
+                        echo '<th style="width:22.5%">' . __('Product Name', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:22.5%">' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:12.5%">' . __('Age Group / Booking Type', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:10%">' . __('Total Players', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th style="width:10%">' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
+                        echo '</tr></thead><tbody>';
+                        // Fetch variation-specific data to avoid merging
+                        $variation_groups = $wpdb->get_results(
                             $wpdb->prepare(
-                                "SELECT variation_id FROM $rosters_table WHERE product_name = %s AND venue = %s AND camp_terms = %s",
+                                "SELECT variation_id, age_group, booking_type, COUNT(*) as total_players,
+                                        SUM(CASE WHEN player_name = 'Unknown Attendee' THEN 1 ELSE 0 END) as unknown_count
+                                 FROM $rosters_table
+                                 WHERE product_name = %s AND venue = %s AND camp_terms = %s
+                                 GROUP BY variation_id, age_group, booking_type
+                                 ORDER BY variation_id",
                                 $group['product_name'],
                                 $group['venue'],
                                 $group['camp_terms']
-                            )
+                            ),
+                            ARRAY_A
                         );
-                        $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . urlencode($variation_ids[0])); // Use first variation_id as representative
-                        echo '<tr>';
-                        echo '<td>' . esc_html($group['product_name']) . '</td>';
-                        echo '<td>' . esc_html(intersoccer_get_term_name($group['venue'], 'pa_intersoccer-venues')) . '</td>';
-                        echo '<td>' . esc_html('All Ages') . '</td>'; // Indicate combined age groups
-                        echo '<td>' . esc_html($group['total_players']) . '</td>';
-                        echo '<td><a href="' . esc_url($view_url) . '" class="button">' . __('View Roster', 'intersoccer-reports-rosters') . '</a></td>';
-                        echo '</tr>';
+                        foreach ($variation_groups as $v_group) {
+                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . urlencode($v_group['variation_id']));
+                            echo '<tr>';
+                            echo '<td>' . esc_html($group['product_name']) . '</td>';
+                            echo '<td>' . esc_html(intersoccer_get_term_name($group['venue'], 'pa_intersoccer-venues')) . '</td>';
+                            echo '<td>' . esc_html(intersoccer_get_term_name($v_group['age_group'], 'pa_age-group')) . ' (' . esc_html($v_group['booking_type']) . ')</td>';
+                            echo '<td>' . esc_html($v_group['total_players']) . '</td>';
+                            echo '<td><a href="' . esc_url($view_url) . '" class="button">' . __('View Roster', 'intersoccer-reports-rosters') . '</a></td>';
+                            echo '</tr>';
+                        }
+                        echo '</tbody></table>';
+                        echo '</div>';
                     }
-                    echo '</tbody></table></div>'; // Close the last table and roster-group
                 }
                 ?>
             </div>
@@ -255,7 +253,7 @@ function intersoccer_render_courses_page() {
                 foreach ($product_names as $product_name) {
                     $groups = $wpdb->get_results(
                         $wpdb->prepare(
-                            "SELECT variation_id, product_name, venue, age_group, course_day, COUNT(DISTINCT player_name) as total_players
+                            "SELECT variation_id, product_name, venue, age_group, course_day, COUNT(*) as total_players
                              FROM $rosters_table
                              WHERE FIND_IN_SET('Course', activity_type) > 0 AND activity_type NOT LIKE '%girls%' AND product_name = %s
                              GROUP BY variation_id, product_name, venue, age_group, course_day
@@ -266,7 +264,7 @@ function intersoccer_render_courses_page() {
                     );
                     if (!empty($groups)) {
                         echo '<div class="roster-group">';
-                        echo '<h2>' . esc_html($product_name) . ' (' . array_sum(array_column($groups, 'total_players')) . ' players)</h2>';
+                        echo '<h3>' . esc_html($product_name) . ' (' . array_sum(array_column($groups, 'total_players')) . ' players)</h3>';
                         echo '<table class="wp-list-table widefat fixed striped">';
                         echo '<thead><tr>';
                         echo '<th style="width:22.5%">' . __('Product Name', 'intersoccer-reports-rosters') . '</th>';
@@ -344,8 +342,13 @@ function intersoccer_render_girls_only_page() {
                 foreach ($variations as $variation_id => $variation_rosters) {
                     if (!empty($variation_rosters)) {
                         $first_roster = $variation_rosters[0];
+                        $total_players = count($variation_rosters);
+                        $unknown_count = count(array_filter($variation_rosters, fn($row) => $row['player_name'] === 'Unknown Attendee'));
                         echo '<div class="roster-group">';
-                        echo '<h3>' . esc_html($first_roster['product_name']) . ' - ' . esc_html(intersoccer_get_term_name($first_roster['venue'], 'pa_intersoccer-venues')) . ' (' . count($variation_rosters) . ' players)</h3>';
+                        echo '<h3>' . esc_html($first_roster['product_name']) . ' - ' . esc_html(intersoccer_get_term_name($first_roster['venue'], 'pa_intersoccer-venues')) . ' (' . $total_players . ' players)</h3>';
+                        if ($unknown_count > 0) {
+                            echo '<p style="color: red;">' . esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)) . '</p>';
+                        }
                         echo '<table class="wp-list-table widefat fixed striped">';
                         echo '<thead><tr>';
                         echo '<th style="width:22.5%">' . __('Event Name', 'intersoccer-reports-rosters') . '</th>';
@@ -356,7 +359,7 @@ function intersoccer_render_girls_only_page() {
                         echo '<tr>';
                         echo '<td>' . esc_html($first_roster['product_name']) . '</td>';
                         echo '<td>' . esc_html(intersoccer_get_term_name($first_roster['venue'], 'pa_intersoccer-venues')) . '</td>';
-                        echo '<td>' . esc_html(count($variation_rosters)) . '</td>';
+                        echo '<td>' . esc_html($total_players) . '</td>';
                         echo '<td><a href="' . esc_url(admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . $variation_id)) . '" class="button">' . __('View Roster', 'intersoccer-reports-rosters') . '</a></td>';
                         echo '</tr>';
                         echo '</tbody></table>';
@@ -409,8 +412,13 @@ function intersoccer_render_other_events_page() {
                 ksort($venues);
                 foreach ($venues as $venue => $venue_rosters) {
                     if ($venue && $venue !== 'Unknown Venue') {
+                        $total_players = count($venue_rosters);
+                        $unknown_count = count(array_filter($venue_rosters, fn($row) => $row->player_name === 'Unknown Attendee'));
                         echo '<div class="roster-group">';
-                        echo '<h3>' . esc_html(intersoccer_get_term_name($venue, 'pa_intersoccer-venues')) . ' (' . count($venue_rosters) . ' players)</h3>';
+                        echo '<h3>' . esc_html(intersoccer_get_term_name($venue, 'pa_intersoccer-venues')) . ' (' . $total_players . ' players)</h3>';
+                        if ($unknown_count > 0) {
+                            echo '<p style="color: red;">' . esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)) . '</p>';
+                        }
                         echo '<table class="wp-list-table widefat fixed striped">';
                         echo '<thead><tr>';
                         echo '<th style="width:22.5%">' . __('Event Name', 'intersoccer-reports-rosters') . '</th>';
@@ -421,7 +429,7 @@ function intersoccer_render_other_events_page() {
                         echo '<tr>';
                         echo '<td>' . esc_html($venue_rosters[0]->product_name) . '</td>';
                         echo '<td>' . esc_html(intersoccer_get_term_name($venue, 'pa_intersoccer-venues')) . '</td>';
-                        echo '<td>' . esc_html(count($venue_rosters)) . '</td>';
+                        echo '<td>' . esc_html($total_players) . '</td>';
                         echo '<td><a href="' . esc_url(admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . $venue_rosters[0]->variation_id)) . '" class="button">' . __('View Roster', 'intersoccer-reports-rosters') . '</a></td>';
                         echo '</tr>';
                         echo '</tbody></table>';
