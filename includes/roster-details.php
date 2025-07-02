@@ -42,9 +42,9 @@ function intersoccer_render_roster_details_page() {
         return;
     }
 
-    error_log('InterSoccer: Base roster for variation_id ' . $variation_id . ' - activity_type: ' . $base_roster->activity_type . ', shirt_size: ' . $base_roster->shirt_size . ', shorts_size: ' . $base_roster->shorts_size);
+    error_log('InterSoccer: Base roster for variation_id ' . $variation_id . ' - product_name: ' . ($base_roster->product_name ?? 'N/A') . ', venue: ' . ($base_roster->venue ?? 'N/A') . ', camp_terms: ' . ($base_roster->camp_terms ?? 'N/A') . ', age_group: ' . ($base_roster->age_group ?? 'N/A') . ', activity_type: ' . ($base_roster->activity_type ?? 'N/A'));
 
-    // For Camp activities, find all variation_ids with matching attributes except booking_type
+    // For Camp activities, find all variation_ids with matching attributes
     $related_variation_ids = [$variation_id];
     if ($base_roster->activity_type === 'Camp') {
         $related_variation_ids = $wpdb->get_col(
@@ -54,26 +54,33 @@ function intersoccer_render_roster_details_page() {
                  AND product_name = %s
                  AND venue = %s
                  AND camp_terms = %s
-                 AND age_group = %s
                  AND variation_id != %d",
                 $base_roster->product_name,
                 $base_roster->venue,
                 $base_roster->camp_terms,
-                $base_roster->age_group,
                 $variation_id
             )
         );
         $related_variation_ids[] = $variation_id; // Include the base variation_id
     }
 
-    // Fetch all rosters for the related variation_ids
+    error_log('InterSoccer: Related variation_ids for variation_id ' . $variation_id . ': ' . implode(', ', $related_variation_ids));
+
+    // Fetch rosters for the related variation_ids, ensuring unique players
     $place_holders = implode(',', array_fill(0, count($related_variation_ids), '%d'));
     $rosters = $wpdb->get_results(
         $wpdb->prepare(
-            "SELECT * FROM $rosters_table WHERE variation_id IN ($place_holders) ORDER BY player_name",
+            "SELECT DISTINCT player_name, first_name, last_name, gender, parent_phone, parent_email, age, medical_conditions, late_pickup, booking_type, course_day, shirt_size, shorts_size, order_item_id, variation_id
+             FROM $rosters_table
+             WHERE variation_id IN ($place_holders)
+             ORDER BY player_name",
             $related_variation_ids
         )
     );
+
+    // Count Unknown Attendees
+    $unknown_count = count(array_filter($rosters, fn($row) => $row->player_name === 'Unknown Attendee'));
+    error_log('InterSoccer: Retrieved ' . count($rosters) . ' unique roster rows for variation_ids: ' . implode(', ', $related_variation_ids) . ', including ' . $unknown_count . ' Unknown Attendee entries');
 
     if (!$rosters) {
         echo '<div class="wrap"><h1>' . esc_html__('Roster Details', 'intersoccer-reports-rosters') . '</h1>';
@@ -83,6 +90,9 @@ function intersoccer_render_roster_details_page() {
 
     echo '<div class="wrap">';
     echo '<h1>' . esc_html__('Roster Details for Variation #', 'intersoccer-reports-rosters') . esc_html(implode(', ', $related_variation_ids)) . '</h1>';
+    if ($unknown_count > 0) {
+        echo '<p style="color: red;">' . esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)) . '</p>';
+    }
     echo '<table class="wp-list-table widefat fixed striped">';
     echo '<tr>';
     echo '<th>' . esc_html__('Name') . '</th>';
@@ -105,9 +115,10 @@ function intersoccer_render_roster_details_page() {
     echo '</tr>';
     foreach ($rosters as $row) {
         $late_pickup_display = ($row->late_pickup === 'Yes') ? 'Yes (18:00)' : 'No';
+        $is_unknown = $row->player_name === 'Unknown Attendee';
         echo '<tr>';
-        echo '<td>' . esc_html($row->first_name) . '</td>';
-        echo '<td>' . esc_html($row->last_name) . '</td>';
+        echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($row->first_name) . '</td>';
+        echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($row->last_name) . '</td>';
         echo '<td>' . esc_html($row->gender) . '</td>';
         echo '<td>' . esc_html($row->parent_phone) . '</td>';
         echo '<td>' . esc_html($row->parent_email) . '</td>';

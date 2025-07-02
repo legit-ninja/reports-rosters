@@ -3,7 +3,7 @@
  * Rosters pages for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.3.59
+ * @version 1.3.70
  * @author Jeremy Lee
  */
 
@@ -103,14 +103,15 @@ function intersoccer_render_camps_page() {
     $selected_camp_term = isset($_GET['camp_term']) ? sanitize_text_field($_GET['camp_term']) : '';
 
     // Build the query with the filter, excluding Girls Only
-    $base_query = "SELECT product_name, venue, camp_terms, COUNT(DISTINCT player_name) as total_players
+    $base_query = "SELECT product_name, venue, camp_terms, 
+                   COUNT(DISTINCT player_name) as total_players,
+                   SUM(CASE WHEN player_name = 'Unknown Attendee' THEN 1 ELSE 0 END) as unknown_count
                    FROM $rosters_table
                    WHERE FIND_IN_SET('Camp', activity_type) > 0 AND activity_type NOT LIKE '%girls%'";
     $query = $base_query;
     if ($selected_camp_term) {
         $query .= $wpdb->prepare(" AND camp_terms = %s", $selected_camp_term);
     }
-    // Group by product, venue, and camp_terms to combine across age_group and booking_type
     $query .= " GROUP BY product_name, venue, camp_terms
                 ORDER BY camp_terms, product_name, venue";
 
@@ -152,8 +153,10 @@ function intersoccer_render_camps_page() {
                 if (!empty($groups)) {
                     $current_camp_term = null;
                     $term_player_totals = [];
-                    // Pre-calculate total players per camp term with base query, no filter
-                    $term_totals_query = "SELECT product_name, venue, camp_terms, SUM(total_players) as term_total
+                    // Pre-calculate total players and unknown attendees per camp term with base query, no filter
+                    $term_totals_query = "SELECT product_name, venue, camp_terms, 
+                                         SUM(total_players) as term_total,
+                                         SUM(unknown_count) as term_unknown_count
                                          FROM (
                                              $base_query
                                              GROUP BY product_name, venue, camp_terms
@@ -162,8 +165,11 @@ function intersoccer_render_camps_page() {
                     $term_totals = $wpdb->get_results($term_totals_query, ARRAY_A);
                     foreach ($term_totals as $total) {
                         $key = $total['product_name'] . '|' . $total['venue'] . '|' . $total['camp_terms'];
-                        $term_player_totals[$key] = $total['term_total'];
-                        error_log("InterSoccer: Calculated term_total for key $key: {$total['term_total']}");
+                        $term_player_totals[$key] = [
+                            'total_players' => $total['term_total'],
+                            'unknown_count' => $total['term_unknown_count']
+                        ];
+                        error_log("InterSoccer: Calculated term_total for key $key: {$total['term_total']}, unknown_count: {$total['term_unknown_count']}");
                     }
 
                     foreach ($groups as $group) {
@@ -174,12 +180,16 @@ function intersoccer_render_camps_page() {
                             }
                             $current_camp_term = $group['camp_terms'];
                             $camp_terms_name = intersoccer_get_term_name($group['camp_terms'], 'pa_camp-terms');
-                            $total_players_for_term = $term_player_totals[$key] ?? 0;
+                            $total_players_for_term = $term_player_totals[$key]['total_players'] ?? 0;
+                            $unknown_count_for_term = $term_player_totals[$key]['unknown_count'] ?? 0;
                             $row_total_for_term = array_sum(array_column(array_filter($groups, fn($g) => $g['product_name'] === $group['product_name'] && $g['venue'] === $group['venue'] && $g['camp_terms'] === $group['camp_terms']), 'total_players'));
                             $sql_total = $wpdb->get_var("SELECT SUM(total_players) FROM ($base_query GROUP BY product_name, venue, camp_terms) as subquery WHERE product_name = '{$group['product_name']}' AND venue = '{$group['venue']}' AND camp_terms = '{$group['camp_terms']}'") ?? 0;
-                            error_log("InterSoccer: Displaying header for key $key - term_total: $total_players_for_term, row_total: $row_total_for_term, sql_total: $sql_total");
+                            error_log("InterSoccer: Displaying header for key $key - term_total: $total_players_for_term, row_total: $row_total_for_term, sql_total: $sql_total, unknown_count: $unknown_count_for_term");
                             echo '<div class="roster-group">';
                             echo '<h2>' . esc_html($camp_terms_name) . ' (' . $total_players_for_term . ' players)</h2>';
+                            if ($unknown_count_for_term > 0) {
+                                echo '<p style="color: red;">' . esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count_for_term, 'intersoccer-reports-rosters'), $unknown_count_for_term)) . '</p>';
+                            }
                             echo '<table class="wp-list-table widefat fixed striped">';
                             echo '<thead><tr>';
                             echo '<th style="width:22.5%">' . __('Product Name', 'intersoccer-reports-rosters') . '</th>';
@@ -189,7 +199,7 @@ function intersoccer_render_camps_page() {
                             echo '<th style="width:10%">' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
                             echo '</tr></thead><tbody>';
                         }
-                        // Fetch all variation_ids for this group
+                        // Fetch all variation_ids for this group to link to a unified roster
                         $variation_ids = $wpdb->get_col(
                             $wpdb->prepare(
                                 "SELECT variation_id FROM $rosters_table WHERE product_name = %s AND venue = %s AND camp_terms = %s",
@@ -198,9 +208,7 @@ function intersoccer_render_camps_page() {
                                 $group['camp_terms']
                             )
                         );
-                        // Create a query parameter with all variation_ids for the roster details page
-                        $variation_id_param = implode(',', $variation_ids);
-                        $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_ids=' . urlencode($variation_id_param));
+                        $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . urlencode($variation_ids[0])); // Use first variation_id as representative
                         echo '<tr>';
                         echo '<td>' . esc_html($group['product_name']) . '</td>';
                         echo '<td>' . esc_html(intersoccer_get_term_name($group['venue'], 'pa_intersoccer-venues')) . '</td>';
