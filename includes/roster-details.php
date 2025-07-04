@@ -5,7 +5,7 @@
  * Handles rendering of detailed roster views.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.3.107
+ * @version 1.3.108
  * @author Jeremy Lee
  */
 
@@ -30,19 +30,21 @@ function intersoccer_render_roster_details_page() {
     // Get query parameters
     $variation_id = isset($_GET['variation_id']) ? intval($_GET['variation_id']) : 0;
     $camp_terms = isset($_GET['camp_terms']) ? sanitize_text_field($_GET['camp_terms']) : '';
+    $course_day = isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '';
     $venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
     $age_group = isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '';
 
-    // Check if the request comes from the Camps sub-page
+    // Check if the request comes from the Camps or Courses sub-page
     $referer = wp_get_referer();
     $is_from_camps_page = strpos($referer, 'page=intersoccer-camps') !== false;
+    $is_from_courses_page = strpos($referer, 'page=intersoccer-courses') !== false;
 
-    error_log('InterSoccer: Roster details parameters - variation_id: ' . $variation_id . ', camp_terms: ' . ($camp_terms ?: 'N/A') . ', venue: ' . ($venue ?: 'N/A') . ', age_group: ' . ($age_group ?: 'N/A') . ', is_from_camps_page: ' . ($is_from_camps_page ? 'yes' : 'no'));
+    error_log('InterSoccer: Roster details parameters - variation_id: ' . $variation_id . ', camp_terms: ' . ($camp_terms ?: 'N/A') . ', course_day: ' . ($course_day ?: 'N/A') . ', venue: ' . ($venue ?: 'N/A') . ', age_group: ' . ($age_group ?: 'N/A') . ', is_from_camps_page: ' . ($is_from_camps_page ? 'yes' : 'no') . ', is_from_courses_page: ' . ($is_from_courses_page ? 'yes' : 'no'));
 
     // Log table schema and available variations
     $schema = $wpdb->get_results("SHOW COLUMNS FROM $rosters_table");
     error_log('InterSoccer: wp_intersoccer_rosters schema: ' . json_encode($schema));
-    $all_variations = $wpdb->get_results("SELECT DISTINCT variation_id, activity_type, age_group, camp_terms, venue FROM $rosters_table", ARRAY_A);
+    $all_variations = $wpdb->get_results("SELECT DISTINCT variation_id, activity_type, age_group, camp_terms, course_day, venue FROM $rosters_table", ARRAY_A);
     error_log('InterSoccer: All available variations in wp_intersoccer_rosters: ' . json_encode($all_variations));
 
     // Build query based on parameters
@@ -60,15 +62,21 @@ function intersoccer_render_roster_details_page() {
             $query_params[] = $age_group;
             $query_params[] = '%' . $age_group . '%';
         }
-    } elseif ($camp_terms || $venue || $age_group) {
-        // Use 'Camp' only if coming from Camps sub-page, otherwise include Girls Only
-        $activity_types = $is_from_camps_page ? ['Camp'] : ['Camp', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only'];
+    } elseif ($camp_terms || $course_day || $venue || $age_group) {
+        // Use 'Camp' for Camps sub-page, 'Course' for Courses sub-page, otherwise include all
+        $activity_types = $is_from_camps_page ? ['Camp'] : ($is_from_courses_page ? ['Course'] : ['Camp', 'Course', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only']);
         $where_clauses[] = "r.activity_type IN ('" . implode("','", array_map('esc_sql', $activity_types)) . "')";
         if ($camp_terms) {
             $where_clauses[] = $wpdb->prepare("(r.camp_terms = %s OR r.camp_terms LIKE %s OR (r.camp_terms IS NULL AND %s = 'N/A'))", $camp_terms, '%' . $wpdb->esc_like($camp_terms) . '%', $camp_terms);
             $query_params[] = $camp_terms;
             $query_params[] = '%' . $camp_terms . '%';
             $query_params[] = $camp_terms;
+        }
+        if ($course_day) {
+            $where_clauses[] = $wpdb->prepare("(r.course_day = %s OR r.course_day LIKE %s OR (r.course_day IS NULL AND %s = 'N/A'))", $course_day, '%' . $wpdb->esc_like($course_day) . '%', $course_day);
+            $query_params[] = $course_day;
+            $query_params[] = '%' . $course_day . '%';
+            $query_params[] = $course_day;
         }
         if ($venue) {
             $where_clauses[] = $wpdb->prepare("(r.venue = %s OR r.venue LIKE %s OR (r.venue IS NULL AND %s = 'N/A'))", $venue, '%' . $wpdb->esc_like($venue) . '%', $venue);
@@ -118,7 +126,7 @@ function intersoccer_render_roster_details_page() {
 
     if (!$rosters) {
         // Fallback query to debug
-        $fallback_query = "SELECT r.player_name, r.first_name, r.last_name, r.variation_id, r.age_group, r.activity_type, r.camp_terms, r.venue, r.booking_type, r.shirt_size, r.shorts_size, r.day_presence, r.order_item_id FROM $rosters_table r LIMIT 5";
+        $fallback_query = "SELECT r.player_name, r.first_name, r.last_name, r.variation_id, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.venue, r.booking_type, r.shirt_size, r.shorts_size, r.day_presence, r.order_item_id FROM $rosters_table r LIMIT 5";
         $fallback_results = $wpdb->get_results($fallback_query, OBJECT);
         error_log('InterSoccer: Fallback query: ' . $fallback_query);
         error_log('InterSoccer: Fallback results: ' . json_encode(array_map(function($row) {
@@ -129,6 +137,7 @@ function intersoccer_render_roster_details_page() {
                 'age_group' => $row->age_group,
                 'activity_type' => $row->activity_type,
                 'camp_terms' => $row->camp_terms,
+                'course_day' => $row->course_day,
                 'venue' => $row->venue,
                 'booking_type' => $row->booking_type,
                 'shirt_size' => $row->shirt_size,
@@ -147,47 +156,66 @@ function intersoccer_render_roster_details_page() {
 
     // Fetch related variation IDs for export, filtered by parent product ID
     $related_variation_ids = [$variation_id];
-    if (!$variation_id && ($camp_terms || $venue || $age_group)) {
+    if (!$variation_id && ($camp_terms || $course_day || $venue || $age_group)) {
         $variation_query = $wpdb->prepare(
             "SELECT DISTINCT r.variation_id 
              FROM $rosters_table r
              JOIN $posts_table p ON r.variation_id = p.ID
              WHERE r.activity_type IN ('" . implode("','", array_map('esc_sql', $activity_types)) . "')
-             AND p.post_parent = %d
-             AND (r.camp_terms = %s OR r.camp_terms LIKE %s OR (r.camp_terms IS NULL AND %s = 'N/A'))
-             AND (r.venue = %s OR r.venue LIKE %s OR (r.venue IS NULL AND %s = 'N/A'))
-             AND (r.age_group = %s OR r.age_group LIKE %s)",
-            $base_roster->post_parent,
-            $camp_terms,
-            '%' . $wpdb->esc_like($camp_terms) . '%',
-            $camp_terms,
-            $venue,
-            '%' . $wpdb->esc_like($venue) . '%',
-            $venue,
-            $age_group,
-            '%' . $wpdb->esc_like($age_group) . '%'
+             AND p.post_parent = %d",
+            $base_roster->post_parent
         );
-        $related_variation_ids = $wpdb->get_col($variation_query);
-        // Ensure only variation IDs are selected
+        $variation_params = [$base_roster->post_parent];
+        if ($camp_terms) {
+            $variation_query .= $wpdb->prepare(" AND (r.camp_terms = %s OR r.camp_terms LIKE %s OR (r.camp_terms IS NULL AND %s = 'N/A'))", $camp_terms, '%' . $wpdb->esc_like($camp_terms) . '%', $camp_terms);
+            $variation_params[] = $camp_terms;
+            $variation_params[] = '%' . $camp_terms . '%';
+            $variation_params[] = $camp_terms;
+        }
+        if ($course_day) {
+            $variation_query .= $wpdb->prepare(" AND (r.course_day = %s OR r.course_day LIKE %s OR (r.course_day IS NULL AND %s = 'N/A'))", $course_day, '%' . $wpdb->esc_like($course_day) . '%', $course_day);
+            $variation_params[] = $course_day;
+            $variation_params[] = '%' . $course_day . '%';
+            $variation_params[] = $course_day;
+        }
+        if ($venue) {
+            $variation_query .= $wpdb->prepare(" AND (r.venue = %s OR r.venue LIKE %s OR (r.venue IS NULL AND %s = 'N/A'))", $venue, '%' . $wpdb->esc_like($venue) . '%', $venue);
+            $variation_params[] = $venue;
+            $variation_params[] = '%' . $venue . '%';
+            $variation_params[] = $venue;
+        }
+        if ($age_group) {
+            $variation_query .= $wpdb->prepare(" AND (r.age_group = %s OR r.age_group LIKE %s)", $age_group, '%' . $wpdb->esc_like($age_group) . '%');
+            $variation_params[] = $age_group;
+            $variation_params[] = '%' . $age_group . '%';
+        }
+        $related_variation_ids = $wpdb->get_col($wpdb->prepare($variation_query, $variation_params));
         $related_variation_ids = array_map('intval', array_filter($related_variation_ids, 'is_numeric'));
-        // If no variations found, try broader query without post_parent restriction
+        // Fallback query without post_parent restriction
         if (empty($related_variation_ids)) {
             $variation_query = $wpdb->prepare(
                 "SELECT DISTINCT r.variation_id 
                  FROM $rosters_table r
                  WHERE r.activity_type IN ('" . implode("','", array_map('esc_sql', $activity_types)) . "')
-                 AND (r.camp_terms = %s OR r.camp_terms LIKE %s OR (r.camp_terms IS NULL AND %s = 'N/A'))
+                 AND (r.camp_terms = %s OR r.camp_terms LIKE %s OR (r.camp_terms IS NULL AND %s = 'N/A') OR %s = '')
+                 AND (r.course_day = %s OR r.course_day LIKE %s OR (r.course_day IS NULL AND %s = '') OR %s = '')
                  AND (r.venue = %s OR r.venue LIKE %s OR (r.venue IS NULL AND %s = 'N/A'))
                  AND (r.age_group = %s OR r.age_group LIKE %s)",
                 $camp_terms,
                 '%' . $wpdb->esc_like($camp_terms) . '%',
                 $camp_terms,
+                $camp_terms,
+                $course_day,
+                '%' . $wpdb->esc_like($course_day) . '%',
+                $course_day,
+                $course_day,
                 $venue,
                 '%' . $wpdb->esc_like($venue) . '%',
                 $venue,
                 $age_group,
                 '%' . $wpdb->esc_like($age_group) . '%'
             );
+            $variation_params = [$camp_terms, $camp_terms, $camp_terms, $course_day, $course_day, $course_day, $course_day, $venue, $venue, $venue, $age_group, $age_group];
             $related_variation_ids = $wpdb->get_col($variation_query);
             $related_variation_ids = array_map('intval', array_filter($related_variation_ids, 'is_numeric'));
         }
@@ -196,15 +224,16 @@ function intersoccer_render_roster_details_page() {
             "SELECT DISTINCT r.variation_id 
              FROM $rosters_table r
              JOIN $posts_table p ON r.variation_id = p.ID
-             WHERE r.activity_type IN ('Camp', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only') 
+             WHERE r.activity_type IN ('Camp', 'Course', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only') 
              AND p.post_parent = (SELECT post_parent FROM $posts_table WHERE ID = %d)
              AND r.venue = %s 
-             AND r.camp_terms = %s",
+             AND (r.camp_terms = %s OR r.course_day = %s)",
             $variation_id,
             $base_roster->venue,
-            $base_roster->camp_terms
+            $base_roster->camp_terms,
+            $base_roster->course_day
         );
-        $variation_params = [$variation_id, $base_roster->venue, $base_roster->camp_terms];
+        $variation_params = [$variation_id, $base_roster->venue, $base_roster->camp_terms, $base_roster->course_day];
         if ($age_group) {
             $variation_query .= $wpdb->prepare(" AND (r.age_group = %s OR r.age_group LIKE %s)", $age_group, '%' . $wpdb->esc_like($age_group) . '%');
             $variation_params[] = $age_group;
@@ -221,7 +250,7 @@ function intersoccer_render_roster_details_page() {
     $unknown_count = count(array_filter($rosters, fn($row) => $row->player_name === 'Unknown Attendee'));
 
     echo '<div class="wrap">';
-    echo '<h1>' . esc_html__('Roster Details for ', 'intersoccer-reports-rosters') . esc_html($base_roster->camp_terms) . ' - ' . esc_html($base_roster->venue) . ' (' . esc_html($age_group) . ')</h1>';
+    echo '<h1>' . esc_html__('Roster Details for ', 'intersoccer-reports-rosters') . esc_html($base_roster->course_day ?: $base_roster->camp_terms) . ' - ' . esc_html($base_roster->venue) . ' (' . esc_html($age_group) . ')</h1>';
     if ($unknown_count > 0) {
         echo '<p style="color: red;">' . esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)) . '</p>';
     }
@@ -277,7 +306,7 @@ function intersoccer_render_roster_details_page() {
     echo '<p>' . esc_html__('Product Name: ') . esc_html($base_roster->product_name ?? 'N/A') . '</p>';
     echo '<p>' . esc_html__('Venue: ') . esc_html($base_roster->venue ?? 'N/A') . '</p>';
     echo '<p>' . esc_html__('Age Group: ') . esc_html($base_roster->age_group ?? 'N/A') . '</p>';
-    echo '<p>' . esc_html__('Camp Terms: ') . esc_html($base_roster->camp_terms ?? 'N/A') . '</p>';
+    echo '<p>' . ($base_roster->course_day ? esc_html__('Course Day: ') . esc_html($base_roster->course_day) : esc_html__('Camp Terms: ') . esc_html($base_roster->camp_terms ?? 'N/A')) . '</p>';
     echo '<p>' . esc_html__('Variation IDs: ') . esc_html(implode(', ', $related_variation_ids) ?: 'N/A') . '</p>';
     echo '<p><strong>' . esc_html__('Total Players') . ':</strong> ' . esc_html(count($rosters)) . '</p>';
     echo '</div>';

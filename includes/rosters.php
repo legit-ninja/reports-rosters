@@ -3,7 +3,7 @@
  * Rosters pages for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.4.04
+ * @version 1.4.05
  * @author Jeremy Lee
  */
 
@@ -276,6 +276,7 @@ function intersoccer_render_courses_page() {
 
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+    $posts_table = $wpdb->prefix . 'posts';
     error_log('InterSoccer: Database prefix: ' . $wpdb->prefix);
 
     // Clear all caches
@@ -292,38 +293,55 @@ function intersoccer_render_courses_page() {
     // Get the selected course day from the request, default to empty
     $selected_course_day = isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '';
 
-    // Build separate queries for full-day and half-day courses
-    $base_query_full_day = "SELECT COALESCE(venue, 'N/A') as venue, course_day, age_group, 
-                           COUNT(DISTINCT order_item_id) as total_players,
-                           SUM(CASE WHEN player_name = 'Unknown Attendee' THEN 1 ELSE 0 END) as unknown_count,
-                           GROUP_CONCAT(DISTINCT variation_id) as variation_ids
-                           FROM $rosters_table
-                           WHERE activity_type = 'Course'
-                           AND (age_group LIKE '%Full Day%' OR age_group LIKE '%full-day%' OR age_group = '5-13y-full-day')";
-    $base_query_half_day = "SELECT COALESCE(venue, 'N/A') as venue, course_day, age_group, 
-                           COUNT(DISTINCT order_item_id) as total_players,
-                           SUM(CASE WHEN player_name = 'Unknown Attendee' THEN 1 ELSE 0 END) as unknown_count,
-                           GROUP_CONCAT(DISTINCT variation_id) as variation_ids
-                           FROM $rosters_table
-                           WHERE activity_type = 'Course'
-                           AND (age_group LIKE '%Half-Day%' OR age_group LIKE '%half-day%' OR age_group = '3-5y-half-day')";
-
-    $query_full_day = $base_query_full_day;
-    $query_half_day = $base_query_half_day;
+    // Define valid age groups from project scope
+    $valid_age_groups = [
+        '3-10y', '3-12y', '3-4y', '3-5y', '3-6y', '3-7y', '3-8y', '3-9y',
+        '4-5y', '5-7y', '5-8y', '6-10y', '6-7y', '6-8y', '6-9y', '7-9y', '8-12y'
+    ];
+    $age_group_conditions = implode("','", array_map('esc_sql', $valid_age_groups));
+    
+    // Build query for courses, grouping by course_day, venue, age_group, and parent product
+    $base_query = "SELECT r.course_day, r.venue, r.age_group, 
+                          COUNT(DISTINCT r.order_item_id) as total_players,
+                          SUM(CASE WHEN r.player_name = 'Unknown Attendee' THEN 1 ELSE 0 END) as unknown_count,
+                          GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids,
+                          p.post_parent,
+                          parent.post_title as parent_product_name
+                   FROM $rosters_table r
+                   JOIN $posts_table p ON r.variation_id = p.ID
+                   JOIN $posts_table parent ON p.post_parent = parent.ID
+                   WHERE r.activity_type = 'Course'
+                   AND r.age_group IN ('$age_group_conditions')";
     if ($selected_course_day) {
-        $query_full_day .= $wpdb->prepare(" AND course_day = %s", $selected_course_day);
-        $query_half_day .= $wpdb->prepare(" AND course_day = %s", $selected_course_day);
+        $base_query .= $wpdb->prepare(" AND r.course_day = %s", $selected_course_day);
     }
-    $query_full_day .= " GROUP BY venue, course_day, age_group ORDER BY course_day, venue, age_group";
-    $query_half_day .= " GROUP BY venue, course_day, age_group ORDER BY course_day, venue, age_group";
+    $base_query .= " GROUP BY r.course_day, r.venue, r.age_group, p.post_parent, parent.post_title
+                    ORDER BY r.course_day, r.venue, r.age_group, parent.post_title";
 
-    $full_day_groups = $wpdb->get_results($query_full_day, ARRAY_A);
-    $half_day_groups = $wpdb->get_results($query_half_day, ARRAY_A);
-    error_log('InterSoccer: Courses full-day query: ' . $wpdb->last_query);
-    error_log('InterSoccer: Courses full-day groups: ' . json_encode($full_day_groups));
-    error_log('InterSoccer: Courses half-day query: ' . $wpdb->last_query);
-    error_log('InterSoccer: Courses half-day groups: ' . json_encode($half_day_groups));
+    $groups = $wpdb->get_results($base_query, ARRAY_A);
+    error_log('InterSoccer: Courses query: ' . $wpdb->last_query);
+    error_log('InterSoccer: Courses results count: ' . count($groups));
     error_log('InterSoccer: Last SQL error: ' . $wpdb->last_error);
+    if ($groups) {
+        error_log('InterSoccer: Courses data sample: ' . json_encode(array_slice($groups, 0, 5)));
+    }
+
+    // Group by parent product and course day
+    $grouped_by_product = [];
+    foreach ($groups as $group) {
+        $parent_id = $group['post_parent'];
+        $course_day = $group['course_day'] ?: 'N/A';
+        if (!isset($grouped_by_product[$parent_id])) {
+            $grouped_by_product[$parent_id] = [
+                'product_name' => $group['parent_product_name'],
+                'course_days' => []
+            ];
+        }
+        if (!isset($grouped_by_product[$parent_id]['course_days'][$course_day])) {
+            $grouped_by_product[$parent_id]['course_days'][$course_day] = [];
+        }
+        $grouped_by_product[$parent_id]['course_days'][$course_day][] = $group;
+    }
 
     $reconcile_nonce = wp_create_nonce('intersoccer_reconcile');
     ?>
@@ -350,138 +368,62 @@ function intersoccer_render_courses_page() {
             <div class="export-buttons">
                 <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
                     <input type="hidden" name="action" value="intersoccer_export_all_rosters">
-                    <input type="hidden" name="export_type" value="courses_full_day">
+                    <input type="hidden" name="export_type" value="courses">
                     <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
-                    <input type="submit" name="export_courses_full_day" class="button button-primary" value="<?php _e('Export Full-Day Course Rosters', 'intersoccer-reports-rosters'); ?>">
-                </form>
-                <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
-                    <input type="hidden" name="action" value="intersoccer_export_all_rosters">
-                    <input type="hidden" name="export_type" value="courses_half_day">
-                    <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
-                    <input type="submit" name="export_courses_half_day" class="button button-primary" value="<?php _e('Export Half-Day Course Rosters', 'intersoccer-reports-rosters'); ?>">
+                    <input type="submit" name="export_courses" class="button button-primary" value="<?php _e('Export All Course Rosters', 'intersoccer-reports-rosters'); ?>">
                 </form>
             </div>
 
-            <!-- Full-Day Courses -->
             <div class="roster-groups">
-                <h2><?php _e('Full-Day Courses', 'intersoccer-reports-rosters'); ?></h2>
-                <?php
-                if (!empty($full_day_groups)) {
-                    foreach ($full_day_groups as $group) {
-                        $key = $group['course_day'] . '|' . $group['venue'] . '|' . $group['age_group'];
-                        $total_players = $group['total_players'] ?? 0;
-                        $unknown_count = $group['unknown_count'] ?? 0;
-                        $variation_ids = explode(',', $group['variation_ids'] ?? '');
-                        error_log('InterSoccer: Rendering full-day course group for key ' . $key . ' - total_players: ' . $total_players . ', unknown_count: ' . $unknown_count . ', variation_ids: ' . implode(', ', $variation_ids));
-                        echo '<div class="roster-group">';
-                        echo '<h3>' . esc_html($group['course_day']) . ' - ' . esc_html(intersoccer_get_term_name($group['venue'], 'pa_intersoccer-venues')) . ' - ' . esc_html($group['age_group']) . ' (' . $total_players . ' players)</h3>';
-                        if ($unknown_count > 0) {
-                            echo '<p style="color: red;">' . esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)) . '</p>';
-                        }
-                        echo '<table class="wp-list-table widefat fixed striped">';
-                        echo '<thead><tr>';
-                        echo '<th style="width:22.5%">' . __('Player Name', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="width:15%">' . __('First Name', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="width:15%">' . __('Last Name', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="width:10%">' . __('Age', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="width:10%">' . __('Gender', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="width:10%">' . __('Medical Conditions', 'intersoccer-reports-rosters') . '</th>';
-                        echo '</tr></thead><tbody>';
-                        $variation_groups = $wpdb->get_results(
-                            $wpdb->prepare(
-                                "SELECT variation_id, player_name, first_name, last_name, age, gender, medical_conditions, parent_phone, parent_email, booking_type
-                                 FROM $rosters_table
-                                 WHERE activity_type = 'Course' AND course_day = %s AND (venue = %s OR (venue IS NULL AND %s = 'N/A')) AND (age_group LIKE '%Full Day%' OR age_group LIKE '%full-day%' OR age_group = '5-13y-full-day')",
-                                $group['course_day'],
-                                $group['venue'] === 'N/A' ? '' : $group['venue'],
-                                $group['venue']
-                            ),
-                            ARRAY_A
-                        );
-                        error_log('InterSoccer: Courses full-day variation groups query: ' . $wpdb->last_query);
-                        error_log('InterSoccer: Courses full-day variation groups results: ' . json_encode($variation_groups));
-                        if (!empty($variation_groups)) {
-                            foreach ($variation_groups as $v_group) {
-                                echo '<tr>';
-                                echo '<td>' . esc_html($v_group['player_name']) . '</td>';
-                                echo '<td>' . esc_html($v_group['first_name']) . '</td>';
-                                echo '<td>' . esc_html($v_group['last_name']) . '</td>';
-                                echo '<td>' . esc_html($v_group['age']) . '</td>';
-                                echo '<td>' . esc_html($v_group['gender']) . '</td>';
-                                echo '<td>' . esc_html($v_group['medical_conditions']) . '</td>';
-                                echo '</tr>';
-                            }
-                        } else {
-                            echo '<tr><td colspan="6">' . __('No roster details available.', 'intersoccer-reports-rosters') . '</td></tr>';
-                        }
-                        echo '</tbody></table>';
-                        echo '</div>';
-                    }
-                } else {
-                    echo '<p>' . __('No full-day course rosters available.', 'intersoccer-reports-rosters') . '</p>';
-                }
-                ?>
-            </div>
-
-            <!-- Half-Day Courses -->
-            <div class="roster-groups">
-                <h2><?php _e('Half-Day Courses', 'intersoccer-reports-rosters'); ?></h2>
-                <?php
-                if (!empty($half_day_groups)) {
-                    foreach ($half_day_groups as $group) {
-                        $key = $group['course_day'] . '|' . $group['venue'] . '|' . $group['age_group'];
-                        $total_players = $group['total_players'] ?? 0;
-                        $unknown_count = $group['unknown_count'] ?? 0;
-                        $variation_ids = explode(',', $group['variation_ids'] ?? '');
-                        error_log('InterSoccer: Rendering half-day course group for key ' . $key . ' - total_players: ' . $total_players . ', unknown_count: ' . $unknown_count . ', variation_ids: ' . implode(', ', $variation_ids));
-                        echo '<div class="roster-group">';
-                        echo '<h3>' . esc_html($group['course_day']) . ' - ' . esc_html(intersoccer_get_term_name($group['venue'], 'pa_intersoccer-venues')) . ' - ' . esc_html($group['age_group']) . ' (' . $total_players . ' players)</h3>';
-                        if ($unknown_count > 0) {
-                            echo '<p style="color: red;">' . esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)) . '</p>';
-                        }
-                        echo '<table class="wp-list-table widefat fixed striped">';
-                        echo '<thead><tr>';
-                        echo '<th style="width:22.5%">' . __('Player Name', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="width:15%">' . __('First Name', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="width:15%">' . __('Last Name', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="width:10%">' . __('Age', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="width:10%">' . __('Gender', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="width:10%">' . __('Medical Conditions', 'intersoccer-reports-rosters') . '</th>';
-                        echo '</tr></thead><tbody>';
-                        $variation_groups = $wpdb->get_results(
-                            $wpdb->prepare(
-                                "SELECT variation_id, player_name, first_name, last_name, age, gender, medical_conditions, parent_phone, parent_email, booking_type
-                                 FROM $rosters_table
-                                 WHERE activity_type = 'Course' AND course_day = %s AND (venue = %s OR (venue IS NULL AND %s = 'N/A')) AND (age_group LIKE '%Half-Day%' OR age_group LIKE '%half-day%' OR age_group = '3-5y-half-day')",
-                                $group['course_day'],
-                                $group['venue'] === 'N/A' ? '' : $group['venue'],
-                                $group['venue']
-                            ),
-                            ARRAY_A
-                        );
-                        error_log('InterSoccer: Courses half-day variation groups query: ' . $wpdb->last_query);
-                        error_log('InterSoccer: Courses half-day variation groups results: ' . json_encode($variation_groups));
-                        if (!empty($variation_groups)) {
-                            foreach ($variation_groups as $v_group) {
-                                echo '<tr>';
-                                echo '<td>' . esc_html($v_group['player_name']) . '</td>';
-                                echo '<td>' . esc_html($v_group['first_name']) . '</td>';
-                                echo '<td>' . esc_html($v_group['last_name']) . '</td>';
-                                echo '<td>' . esc_html($v_group['age']) . '</td>';
-                                echo '<td>' . esc_html($v_group['gender']) . '</td>';
-                                echo '<td>' . esc_html($v_group['medical_conditions']) . '</td>';
-                                echo '</tr>';
-                            }
-                        } else {
-                            echo '<tr><td colspan="6">' . __('No roster details available.', 'intersoccer-reports-rosters') . '</td></tr>';
-                        }
-                        echo '</tbody></table>';
-                        echo '</div>';
-                    }
-                } else {
-                    echo '<p>' . __('No half-day course rosters available.', 'intersoccer-reports-rosters') . '</p>';
-                }
-                ?>
+                <?php foreach ($grouped_by_product as $parent_id => $product_data) : ?>
+                    <?php
+                    $total_players = array_sum(array_map(function($day_groups) {
+                        return array_sum(array_column($day_groups, 'total_players'));
+                    }, $product_data['course_days']));
+                    ?>
+                    <div class="product-group">
+                        <h2><?php echo esc_html($product_data['product_name']) . ' (ID: ' . esc_html($parent_id) . ', ' . esc_html($total_players) . ' players)'; ?></h2>
+                        <?php foreach ($product_data['course_days'] as $course_day => $day_groups) : ?>
+                            <div class="course-day-group">
+                                <h3><?php echo esc_html($course_day) . ' (' . array_sum(array_column($day_groups, 'total_players')) . ' players)'; ?></h3>
+                                <table class="wp-list-table widefat fixed striped">
+                                    <thead>
+                                        <tr>
+                                            <th width='70%'><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
+                                            <th width='10%'><?php _e('Age Group', 'intersoccer-reports-rosters'); ?></th>
+                                            <th width='10%'><?php _e('Total Players', 'intersoccer-reports-rosters'); ?></th>
+                                            <th width='10%'><?php _e('Actions', 'intersoccer-reports-rosters'); ?></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($day_groups as $group) : ?>
+                                            <?php
+                                            $unknown_count = $group['unknown_count'] ?? 0;
+                                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&course_day=' . urlencode($course_day) . '&venue=' . urlencode($group['venue']) . '&age_group=' . urlencode($group['age_group']));
+                                            ?>
+                                            <tr>
+                                                <td><?php echo esc_html(intersoccer_get_term_name($group['venue'], 'pa_intersoccer-venues')); ?></td>
+                                                <td><?php echo esc_html(intersoccer_get_term_name($group['age_group'], 'pa_age-group')); ?></td>
+                                                <td><?php echo esc_html($group['total_players']); ?></td>
+                                                <td><a href="<?php echo esc_url($view_url); ?>" class="button"><?php _e('View Roster', 'intersoccer-reports-rosters'); ?></a></td>
+                                            </tr>
+                                            <?php if ($unknown_count > 0) : ?>
+                                                <tr>
+                                                    <td colspan="5" style="color: red;">
+                                                        <?php echo esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)); ?>
+                                                    </td>
+                                                </tr>
+                                            <?php endif; ?>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endforeach; ?>
+                <?php if (empty($grouped_by_product)) : ?>
+                    <p><?php _e('No course rosters available.', 'intersoccer-reports-rosters'); ?></p>
+                <?php endif; ?>
             </div>
         <?php endif; ?>
     </div>
@@ -607,6 +549,7 @@ function intersoccer_render_girls_only_page() {
                                     <th><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
                                     <th><?php _e('Age Group', 'intersoccer-reports-rosters'); ?></th>
                                     <th><?php _e('Total Players', 'intersoccer-reports-rosters'); ?></th>
+                                    <th><?php _e('Variation IDs', 'intersoccer-reports-rosters'); ?></th>
                                     <th><?php _e('Actions', 'intersoccer-reports-rosters'); ?></th>
                                 </tr>
                             </thead>
@@ -621,11 +564,12 @@ function intersoccer_render_girls_only_page() {
                                         <td><?php echo esc_html(intersoccer_get_term_name($roster['venue'], 'pa_intersoccer-venues')); ?></td>
                                         <td><?php echo esc_html(intersoccer_get_term_name($roster['age_group'], 'pa_age-group')); ?></td>
                                         <td><?php echo esc_html($roster['total_players']); ?></td>
+                                        <td><?php echo esc_html($roster['variation_id'] ?: 'N/A'); ?></td>
                                         <td><a href="<?php echo esc_url($view_url); ?>" class="button"><?php _e('View Roster', 'intersoccer-reports-rosters'); ?></a></td>
                                     </tr>
                                     <?php if ($unknown_count > 0) : ?>
                                         <tr>
-                                            <td colspan="4" style="color: red;">
+                                            <td colspan="5" style="color: red;">
                                                 <?php echo esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)); ?>
                                             </td>
                                         </tr>
