@@ -263,7 +263,9 @@ function intersoccer_render_roster_details_page() {
     echo '<th>' . esc_html__('Email') . '</th>';
     echo '<th>' . esc_html__('Age') . '</th>';
     echo '<th>' . esc_html__('Medical/Dietary') . '</th>';
-    echo '<th>' . esc_html__('Booking Type') . '</th>';
+    if ($base_roster->activity_type === 'Camp') {
+        echo '<th>' . esc_html__('Booking Type') . '</th>';
+    }
     echo '<th>' . esc_html__('Age Group') . '</th>';
     if ($base_roster->activity_type === 'Girls Only' || $base_roster->activity_type === 'Camp, Girls Only' || $base_roster->activity_type === 'Camp, Girls\' only') {
         echo '<th>' . esc_html__('Shirt Size') . '</th>';
@@ -281,7 +283,9 @@ function intersoccer_render_roster_details_page() {
         echo '<td>' . esc_html($row->parent_email ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->age ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->medical_conditions ?? 'N/A') . '</td>';
-        echo '<td>' . esc_html($row->booking_type ?? 'N/A') . '</td>';
+        if ($base_roster->activity_type === 'Camp') {
+            echo '<td>' . esc_html($row->booking_type ?? 'N/A') . '</td>';
+        }
         echo '<td>' . esc_html(intersoccer_get_term_name($row->age_group, 'pa_age-group') ?? 'N/A') . '</td>';
         if ($base_roster->activity_type === 'Girls Only' || $base_roster->activity_type === 'Camp, Girls Only' || $base_roster->activity_type === 'Camp, Girls\' only') {
             echo '<td>' . esc_html($row->shirt_size ?? 'N/A') . '</td>';
