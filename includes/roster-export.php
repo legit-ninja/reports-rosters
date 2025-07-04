@@ -1,9 +1,10 @@
+```php
 <?php
 /**
  * Export functionality for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.3.100
+ * @version 1.3.102
  * @author Jeremy Lee
  */
 
@@ -15,6 +16,7 @@ ob_start();
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
 if (!function_exists('intersoccer_log_audit')) {
     /**
@@ -75,6 +77,7 @@ function intersoccer_export_roster() {
             $day_presence = !empty($row['day_presence']) ? json_decode($row['day_presence'], true) : [];
             return [
                 'player_name' => $row['player_name'],
+                'parent_phone' => $row['parent_phone'],
                 'booking_type' => $row['booking_type'],
                 'shirt_size' => $row['shirt_size'],
                 'shorts_size' => $row['shorts_size'],
@@ -127,6 +130,12 @@ function intersoccer_export_roster() {
 
     $sheet->fromArray($headers, NULL, 'A1');
 
+    // Set phone number column (D) to Text format
+    $phone_column = 'D'; // Phone is the 4th column (index 3)
+    $sheet->getStyle($phone_column . '2:' . $phone_column . (count($rosters) + 1))
+          ->getNumberFormat()
+          ->setFormatCode(NumberFormat::FORMAT_TEXT);
+
     $row = 2;
     foreach ($rosters as $player) {
         $day_presence = !empty($player['day_presence']) ? json_decode($player['day_presence'], true) : [];
@@ -178,6 +187,7 @@ function intersoccer_export_roster() {
     }
     ob_start();
 
+    error_log('InterSoccer: Sending headers for roster export');
     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
     header('Cache-Control: max-age=0');
@@ -240,6 +250,11 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             ];
             $sheet->fromArray($headers, NULL, 'A1');
 
+            // Set phone number column (D) to Text format
+            $sheet->getStyle('D2:D' . (count($rosters) + 1))
+                  ->getNumberFormat()
+                  ->setFormatCode(NumberFormat::FORMAT_TEXT);
+
             $row = 2;
             foreach ($rosters as $roster) {
                 $day_presence = !empty($roster['day_presence']) ? json_decode($roster['day_presence'], true) : [];
@@ -298,6 +313,11 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             }
             $sheet->fromArray($headers, NULL, 'A1');
 
+            // Set phone number column (D) to Text format
+            $sheet->getStyle('D2:D' . (count($rosters) + 1))
+                  ->getNumberFormat()
+                  ->setFormatCode(NumberFormat::FORMAT_TEXT);
+
             $row = 2;
             foreach ($rosters as $roster) {
                 $day_presence = !empty($roster['day_presence']) ? json_decode($roster['day_presence'], true) : [];
@@ -352,6 +372,11 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             $headers = ['First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 'Late Pickup', 'Course Day', 'Season', 'Age Group', 'Venue'];
             $sheet->fromArray($headers, NULL, 'A1');
 
+            // Set phone number column (D) to Text format
+            $sheet->getStyle('D2:D' . (count($rosters) + 1))
+                  ->getNumberFormat()
+                  ->setFormatCode(NumberFormat::FORMAT_TEXT);
+
             $row = 2;
             foreach ($rosters as $roster) {
                 $season = date('Y', strtotime($roster['start_date'] ?? '1970-01-01'));
@@ -394,6 +419,11 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 'Age Group', 'Event Name', 'Venue', 'Camp Terms', 'Shirt Size', 'Shorts Size'
             ];
             $sheet->fromArray($headers, NULL, 'A1');
+
+            // Set phone number column (D) to Text format
+            $sheet->getStyle('D2:D' . (count($rosters) + 1))
+                  ->getNumberFormat()
+                  ->setFormatCode(NumberFormat::FORMAT_TEXT);
 
             $row = 2;
             foreach ($rosters as $roster) {
@@ -451,6 +481,11 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             ];
             $sheet->fromArray($headers, NULL, 'A1');
 
+            // Set phone number column (D) to Text format
+            $sheet->getStyle('D2:D' . (count($rosters) + 1))
+                  ->getNumberFormat()
+                  ->setFormatCode(NumberFormat::FORMAT_TEXT);
+
             $row = 2;
             foreach ($rosters as $roster) {
                 $day_presence = !empty($roster['day_presence']) ? json_decode($roster['day_presence'], true) : [];
@@ -504,6 +539,11 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 'Late Pickup', 'Booking Type', 'Age Group', 'Event Name', 'Venue'
             ];
             $sheet->fromArray($headers, NULL, 'A1');
+
+            // Set phone number column (D) to Text format
+            $sheet->getStyle('D2:D' . (count($rosters) + 1))
+                  ->getNumberFormat()
+                  ->setFormatCode(NumberFormat::FORMAT_TEXT);
 
             $row = 2;
             foreach ($rosters as $roster) {
