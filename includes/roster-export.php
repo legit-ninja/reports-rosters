@@ -3,11 +3,14 @@
  * Export functionality for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.3.99
+ * @version 1.3.100
  * @author Jeremy Lee
  */
 
 defined('ABSPATH') or die('Restricted access');
+
+// Start output buffering early
+ob_start();
 
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -33,6 +36,7 @@ function intersoccer_export_roster() {
     check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
 
     if (!current_user_can('manage_options') && !current_user_can('coach')) {
+        ob_end_clean();
         wp_send_json_error(__('You do not have permission to export rosters.', 'intersoccer-reports-rosters'));
     }
 
@@ -43,11 +47,12 @@ function intersoccer_export_roster() {
     $age_group = isset($_POST['age_group']) ? sanitize_text_field($_POST['age_group']) : '';
 
     if (empty($variation_ids)) {
+        ob_end_clean();
         wp_send_json_error(__('No variation IDs provided for export.', 'intersoccer-reports-rosters'));
     }
 
-    // Start output buffering
-    ob_start();
+    // Increase memory limit for large exports
+    ini_set('memory_limit', '256M');
 
     // Build query
     $query = $wpdb->prepare(
@@ -167,9 +172,18 @@ function intersoccer_export_roster() {
     $sheet->setCellValue('A' . ($row + 4), 'Event: ' . ($base_roster['course_day'] ?: ($base_roster['camp_terms'] ?? 'N/A')));
     $sheet->setCellValue('A' . ($row + 5), 'Total Players: ' . count($rosters));
 
+    // Clear all output buffers
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    ob_start();
+
     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
     header('Cache-Control: max-age=0');
+    header('Expires: 0');
+    header('Pragma: public');
+
     $writer = new Xlsx($spreadsheet);
     $writer->save('php://output');
     intersoccer_log_audit('export_roster_excel', 'Exported for variation_ids: ' . implode(',', $variation_ids));
@@ -185,9 +199,19 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
         $user_id = get_current_user_id();
         if (!current_user_can('coach') && !current_user_can('event_organizer') && !current_user_can('shop_manager') && !current_user_can('administrator')) {
             error_log('InterSoccer: Export denied for user ID ' . $user_id . ' due to insufficient permissions.');
+            ob_end_clean();
             wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
         }
+
+        // Increase memory limit for large exports
+        ini_set('memory_limit', '256M');
+
+        // Clear all output buffers
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
         ob_start();
+
         if (!class_exists('PhpOffice\PhpSpreadsheet\Spreadsheet')) {
             error_log('InterSoccer: PhpSpreadsheet class not found in ' . __FILE__ . ' for export type ' . $export_type);
             ob_end_clean();
@@ -503,9 +527,19 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
         }
 
         error_log('InterSoccer: Exporting all rosters for type ' . $export_type . ' with ' . $sheet->getHighestRow() . ' rows');
+        
+        // Clear all output buffers
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+        ob_start();
+
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
         header('Content-Disposition: attachment; filename="intersoccer_' . ($export_type === 'all' ? 'master' : $export_type) . '_rosters_' . date('Y-m-d_H-i-s') . '.xlsx"');
         header('Cache-Control: max-age=0');
+        header('Expires: 0');
+        header('Pragma: public');
+
         $writer = new Xlsx($spreadsheet);
         $writer->save('php://output');
         intersoccer_log_audit('export_all_rosters_excel', 'Exported ' . $export_type . ' by user ' . $user_id);
