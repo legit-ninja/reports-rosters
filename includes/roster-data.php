@@ -3,7 +3,7 @@
  * Roster data functions for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.0.63
+ * @version 1.0.64
  */
 
 defined('ABSPATH') or die('Restricted access');
@@ -21,22 +21,13 @@ function intersoccer_pe_get_event_roster_by_variation($variation_id, $context = 
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    $roster = $wpdb->get_results(
-        $wpdb->prepare(
-            "SELECT * FROM $rosters_table WHERE order_item_id IN (
-                SELECT order_item_id FROM {$wpdb->prefix}woocommerce_order_items 
-                WHERE order_item_type = 'line_item' 
-                AND order_id IN (
-                    SELECT order_id FROM {$wpdb->prefix}woocommerce_order_itemmeta 
-                    WHERE meta_key = '_variation_id' AND meta_value = %d
-                )
-            )",
-            $variation_id
-        ),
-        ARRAY_A
-    );
+    $query = "SELECT * FROM $rosters_table WHERE variation_id = %d";
+    if (!empty($context['age_group'])) {
+        $query .= $wpdb->prepare(" AND (age_group = %s OR age_group LIKE %s)", $context['age_group'], '%' . $wpdb->esc_like($context['age_group']) . '%');
+    }
+    $roster = $wpdb->get_results($wpdb->prepare($query, $variation_id), ARRAY_A);
 
-    error_log('InterSoccer: Retrieved ' . count($roster) . ' roster entries for variation ' . $variation_id);
+    error_log('InterSoccer: Retrieved ' . count($roster) . ' roster entries for variation ' . $variation_id . ' with context ' . json_encode($context));
     return $roster ?: [];
 }
 
@@ -44,14 +35,16 @@ function intersoccer_pe_get_camp_variations($filters) {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    $where = ["activity_type = 'Camp'"];
+    $where = ["activity_type IN ('Camp', 'Girls Only')"];
     if ($filters['region'] ?? '') $where[] = $wpdb->prepare("venue LIKE %s", '%' . intersoccer_normalize_attribute($filters['region']) . '%');
     if ($filters['venue'] ?? '') $where[] = $wpdb->prepare("venue = %s", intersoccer_normalize_attribute($filters['venue']));
-    if ($filters['age_group'] ?? '') $where[] = $wpdb->prepare("age_group = %s", intersoccer_normalize_attribute($filters['age_group']));
+    if ($filters['age_group'] ?? '') {
+        $where[] = $wpdb->prepare("(age_group = %s OR age_group LIKE %s)", $filters['age_group'], '%' . $wpdb->esc_like($filters['age_group']) . '%');
+    }
     $where_clause = implode(' AND ', $where);
 
     $results = $wpdb->get_results(
-        "SELECT camp_terms, venue, age_group, product_name, 
+        "SELECT camp_terms, venue, age_group, product_name, start_date, 
                 COUNT(*) as total_players, GROUP_CONCAT(DISTINCT order_item_id) as variation_ids
          FROM $rosters_table
          WHERE $where_clause
@@ -69,11 +62,12 @@ function intersoccer_pe_get_camp_variations($filters) {
             'venues' => [$row['venue'] => ['variation_ids' => explode(',', $row['variation_ids'])]],
             'age_group' => $row['age_group'],
             'total_players' => $row['total_players'],
-            'variation_ids' => explode(',', $row['variation_ids'])
+            'variation_ids' => explode(',', $row['variation_ids']),
+            'start_date' => $row['start_date']
         ];
     }
 
-    uasort($config_grouped, fn($a, $b) => (intersoccer_parse_dates($a['camp_terms'])['start'] ?? new DateTime()) <=> (intersoccer_parse_dates($b['camp_terms'])['start'] ?? new DateTime()));
+    uasort($config_grouped, fn($a, $b) => (new DateTime($a['start_date'] ?? '1970-01-01')) <=> (new DateTime($b['start_date'] ?? '1970-01-01')));
     return $config_grouped;
 }
 
@@ -84,11 +78,13 @@ function intersoccer_pe_get_course_variations($filters) {
     $where = ["activity_type = 'Course'"];
     if ($filters['region'] ?? '') $where[] = $wpdb->prepare("venue LIKE %s", '%' . intersoccer_normalize_attribute($filters['region']) . '%');
     if ($filters['venue'] ?? '') $where[] = $wpdb->prepare("venue = %s", intersoccer_normalize_attribute($filters['venue']));
-    if ($filters['age_group'] ?? '') $where[] = $wpdb->prepare("age_group = %s", intersoccer_normalize_attribute($filters['age_group']));
+    if ($filters['age_group'] ?? '') {
+        $where[] = $wpdb->prepare("(age_group = %s OR age_group LIKE %s)", $filters['age_group'], '%' . $wpdb->esc_like($filters['age_group']) . '%');
+    }
     $where_clause = implode(' AND ', $where);
 
     $results = $wpdb->get_results(
-        "SELECT selected_days as course_day, venue, age_group, product_name, 
+        "SELECT course_day, venue, age_group, product_name, start_date, 
                 COUNT(*) as total_players, GROUP_CONCAT(DISTINCT order_item_id) as variation_ids
          FROM $rosters_table
          WHERE $where_clause
@@ -106,7 +102,8 @@ function intersoccer_pe_get_course_variations($filters) {
             'venues' => [$row['venue'] => ['variation_ids' => explode(',', $row['variation_ids'])]],
             'age_group' => $row['age_group'],
             'total_players' => $row['total_players'],
-            'variation_ids' => explode(',', $row['variation_ids'])
+            'variation_ids' => explode(',', $row['variation_ids']),
+            'start_date' => $row['start_date']
         ];
     }
 
@@ -118,14 +115,16 @@ function intersoccer_pe_get_girls_only_variations($filters) {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    $where = ["activity_type = 'Girls Only'"];
+    $where = ["activity_type IN ('Girls Only', 'Camp, Girls'' Only')"];
     if ($filters['region'] ?? '') $where[] = $wpdb->prepare("venue LIKE %s", '%' . intersoccer_normalize_attribute($filters['region']) . '%');
     if ($filters['venue'] ?? '') $where[] = $wpdb->prepare("venue = %s", intersoccer_normalize_attribute($filters['venue']));
-    if ($filters['age_group'] ?? '') $where[] = $wpdb->prepare("age_group = %s", intersoccer_normalize_attribute($filters['age_group']));
+    if ($filters['age_group'] ?? '') {
+        $where[] = $wpdb->prepare("(age_group = %s OR age_group LIKE %s)", $filters['age_group'], '%' . $wpdb->esc_like($filters['age_group']) . '%');
+    }
     $where_clause = implode(' AND ', $where);
 
     $results = $wpdb->get_results(
-        "SELECT camp_terms, venue, age_group, product_name, shirt_size, shorts_size,
+        "SELECT camp_terms, venue, age_group, product_name, shirt_size, shorts_size, start_date,
                 COUNT(*) as total_players, GROUP_CONCAT(DISTINCT order_item_id) as variation_ids
          FROM $rosters_table
          WHERE $where_clause
@@ -145,11 +144,12 @@ function intersoccer_pe_get_girls_only_variations($filters) {
             'shirt_size' => $row['shirt_size'],
             'shorts_size' => $row['shorts_size'],
             'total_players' => $row['total_players'],
-            'variation_ids' => explode(',', $row['variation_ids'])
+            'variation_ids' => explode(',', $row['variation_ids']),
+            'start_date' => $row['start_date']
         ];
     }
 
-    uasort($config_grouped, fn($a, $b) => (intersoccer_parse_dates($a['camp_terms'])['start'] ?? new DateTime()) <=> (intersoccer_parse_dates($b['camp_terms'])['start'] ?? new DateTime()));
+    uasort($config_grouped, fn($a, $b) => (new DateTime($a['start_date'] ?? '1970-01-01')) <=> (new DateTime($b['start_date'] ?? '1970-01-01')));
     return $config_grouped;
 }
 ?>
