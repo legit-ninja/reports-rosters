@@ -1,4 +1,3 @@
-```php
 <?php
 /**
  * Export functionality for InterSoccer Reports and Rosters plugin.
