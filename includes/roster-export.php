@@ -3,7 +3,7 @@
  * Export functionality for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.3.102
+ * @version 1.3.117
  * @author Jeremy Lee
  */
 
@@ -16,6 +16,7 @@ require_once dirname(__DIR__) . '/vendor/autoload.php';
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 
 if (!function_exists('intersoccer_log_audit')) {
     /**
@@ -27,6 +28,112 @@ if (!function_exists('intersoccer_log_audit')) {
     function intersoccer_log_audit($action, $message) {
         error_log("InterSoccer Audit [$action]: $message");
     }
+}
+
+/**
+ * Normalize phone number to standard format (e.g., +41xxxxxxxxx)
+ *
+ * @param string $phone The raw phone number.
+ * @return string The normalized phone number or original if invalid or N/A.
+ */
+function intersoccer_normalize_phone_number($phone) {
+    if (empty($phone) || $phone === 'N/A') {
+        return 'N/A';
+    }
+
+    // Preserve + prefix and clean spaces, hyphens, dots, and parentheses
+    $cleaned = preg_replace('/[\s\-\.\(\)]+/', '', $phone);
+    error_log("InterSoccer: Cleaned phone number: {$phone} -> {$cleaned}");
+
+    // Handle invalid numbers first
+    $reason = 'unknown';
+    if (!preg_match('/^\+?\d+$/', $cleaned)) {
+        $reason = 'non-numeric characters after cleaning';
+    } elseif (strlen($cleaned) < 7) {
+        $reason = 'too short';
+    } elseif (strlen($cleaned) > 15) {
+        $reason = 'too long';
+    } elseif (preg_match('/^([0-1]{2,4})\1+$/', $cleaned)) {
+        $reason = 'repetitive pattern (possible test data)';
+    }
+    if ($reason !== 'unknown') {
+        error_log("InterSoccer: Invalid phone number format: {$phone} (Reason: {$reason})");
+        return (string)$phone; // Return as string
+    }
+
+    // Handle 00 prefix (e.g., 0041795351346 -> +41795351346)
+    if (strpos($cleaned, '00') === 0) {
+        $cleaned = '+' . substr($cleaned, 2);
+    }
+
+    // Handle Swiss numbers starting with 07 (e.g., 0784027071 -> +41784027071)
+    if (preg_match('/^0?7(\d{7,10})$/', $cleaned, $matches)) {
+        $local_number = $matches[1];
+        // Normalize to 9 digits
+        if (strlen($local_number) > 9) {
+            $local_number = substr($local_number, 0, 9); // Truncate to 9 digits
+        } elseif (strlen($local_number) < 9) {
+            $local_number = str_pad($local_number, 9, '0', STR_PAD_RIGHT); // Pad with zeros
+        }
+        $normalized = '+41' . $local_number;
+        error_log("InterSoccer: Normalized phone number: {$phone} -> {$normalized} (Swiss match)");
+        return (string)$normalized; // Ensure string type
+    }
+
+    // Handle Swiss numbers starting with +41 or 41 (e.g., +41789414742, +41 78 941 47 42)
+    if (preg_match('/^\+?41(\d{7,12})$/', $cleaned, $matches)) {
+        $local_number = $matches[1];
+        // Normalize to 9 digits
+        if (strlen($local_number) > 9) {
+            $local_number = substr($local_number, 0, 9); // Truncate to 9 digits
+        } elseif (strlen($local_number) < 9) {
+            $local_number = str_pad($local_number, 9, '0', STR_PAD_RIGHT); // Pad with zeros
+        }
+        $normalized = '+41' . $local_number;
+        error_log("InterSoccer: Normalized phone number: {$phone} -> {$normalized} (Swiss match)");
+        return (string)$normalized; // Ensure string type
+    }
+
+    // Match other international numbers: +33xxxxxxxxx, 33xxxxxxxxxx, etc.
+    if (preg_match('/^\+?(\d{1,3})(\d{7,12})$/', $cleaned, $matches)) {
+        $country_code = '+' . $matches[1]; // Always prepend +
+        $local_number = $matches[2];
+        // Validate country code
+        $valid_country_codes = ['33', '44', '40', '49', '39', '34', '31', '32', '971', '354', '1', '46'];
+        if (!in_array($matches[1], $valid_country_codes)) {
+            error_log("InterSoccer: Invalid country code for phone: {$phone}, assuming Swiss");
+            $country_code = '+41';
+            $local_number = $matches[1] . $matches[2]; // Treat entire number as local part
+        }
+        // Normalize local number to 9 digits
+        if (strlen($local_number) > 9) {
+            $local_number = substr($local_number, 0, 9); // Truncate to 9 digits
+        } elseif (strlen($local_number) < 9) {
+            $local_number = str_pad($local_number, 9, '0', STR_PAD_RIGHT); // Pad with zeros
+        }
+        $normalized = $country_code . $local_number;
+        error_log("InterSoccer: Normalized phone number: {$phone} -> {$normalized} (country code match)");
+        return (string)$normalized; // Ensure string type
+    }
+
+    // Handle ambiguous numbers with 7-12 digits (assume Swiss)
+    if (preg_match('/^\d{7,12}$/', $cleaned, $matches)) {
+        $local_number = $cleaned;
+        $country_code = '+41'; // Assume Swiss
+        // Normalize to 9 digits
+        if (strlen($local_number) > 9) {
+            $local_number = substr($local_number, 0, 9); // Truncate to 9 digits
+        } elseif (strlen($local_number) < 9) {
+            $local_number = str_pad($local_number, 9, '0', STR_PAD_RIGHT); // Pad with zeros
+        }
+        $normalized = $country_code . $local_number;
+        error_log("InterSoccer: Normalized phone number: {$phone} -> {$normalized} (ambiguous match)");
+        return (string)$normalized; // Ensure string type
+    }
+
+    // Fallback for any unhandled cases
+    error_log("InterSoccer: Invalid phone number format: {$phone} (Reason: unhandled format)");
+    return (string)$phone; // Return as string
 }
 
 /**
@@ -129,11 +236,12 @@ function intersoccer_export_roster() {
 
     $sheet->fromArray($headers, NULL, 'A1');
 
-    // Set phone number column (D) to Text format
+    // Set phone number column (D) to Text format and adjust width
     $phone_column = 'D'; // Phone is the 4th column (index 3)
     $sheet->getStyle($phone_column . '2:' . $phone_column . (count($rosters) + 1))
           ->getNumberFormat()
-          ->setFormatCode(NumberFormat::FORMAT_TEXT);
+          ->setFormatCode('@'); // Use simple text format
+    $sheet->getColumnDimension($phone_column)->setWidth(15); // Set column width
 
     $row = 2;
     foreach ($rosters as $player) {
@@ -143,11 +251,17 @@ function intersoccer_export_roster() {
         $wednesday = isset($day_presence['Wednesday']) ? $day_presence['Wednesday'] : 'No';
         $thursday = isset($day_presence['Thursday']) ? $day_presence['Thursday'] : 'No';
         $friday = isset($day_presence['Friday']) ? $day_presence['Friday'] : 'No';
+        // Normalize phone number
+        $raw_phone = $player['parent_phone'] ?? 'N/A';
+        $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone); // Explicitly cast to string
+        error_log("InterSoccer: Raw phone: {$raw_phone}, Normalized phone: {$processed_phone}");
+        // Prepend space to force Excel to treat as text
+        $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
         $data = [
             $player['first_name'] ?? 'N/A',
             $player['last_name'] ?? 'N/A',
             $player['gender'] ?? 'N/A',
-            $player['parent_phone'] ?? 'N/A',
+            $processed_phone,
             $player['parent_email'] ?? 'N/A',
             $player['age'] ?? 'N/A',
             $player['medical_conditions'] ?? 'N/A',
@@ -158,6 +272,7 @@ function intersoccer_export_roster() {
             intersoccer_get_term_name($player['venue'], 'pa_intersoccer-venues') ?? 'N/A',
             $player['course_day'] ?: ($player['camp_terms'] ?? 'N/A')
         ];
+        error_log("InterSoccer: Data array for row {$row}: " . json_encode($data));
         if ($player['activity_type'] === 'Camp' || $player['activity_type'] === 'Girls Only' || $player['activity_type'] === 'Camp, Girls Only' || $player['activity_type'] === 'Camp, Girls\' only') {
             $data = array_merge(
                 array_slice($data, 0, 9),
@@ -169,7 +284,18 @@ function intersoccer_export_roster() {
             $data[] = $player['shirt_size'] ?? 'N/A';
             $data[] = $player['shorts_size'] ?? 'N/A';
         }
-        $sheet->fromArray($data, NULL, 'A' . $row++);
+        // Write first three columns (A-C) explicitly
+        $sheet->setCellValue('A' . $row, $data[0]);
+        $sheet->setCellValue('B' . $row, $data[1]);
+        $sheet->setCellValue('C' . $row, $data[2]);
+        // Write phone number (D) explicitly
+        $sheet->setCellValueExplicit('D' . $row, $excel_phone, DataType::TYPE_STRING);
+        // Write remaining columns starting at E
+        $other_data = array_slice($data, 4);
+        error_log("InterSoccer: Other data for row {$row}: " . json_encode($other_data));
+        $sheet->fromArray($other_data, NULL, 'E' . $row);
+        error_log("InterSoccer: Set cell D{$row} to {$excel_phone} (type: string)");
+        $row++;
     }
 
     // Add event details
@@ -249,10 +375,11 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             ];
             $sheet->fromArray($headers, NULL, 'A1');
 
-            // Set phone number column (D) to Text format
+            // Set phone number column (D) to Text format and adjust width
             $sheet->getStyle('D2:D' . (count($rosters) + 1))
                   ->getNumberFormat()
-                  ->setFormatCode(NumberFormat::FORMAT_TEXT);
+                  ->setFormatCode('@'); // Use simple text format
+            $sheet->getColumnDimension('D')->setWidth(15); // Set column width
 
             $row = 2;
             foreach ($rosters as $roster) {
@@ -262,11 +389,17 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 $wednesday = isset($day_presence['Wednesday']) ? $day_presence['Wednesday'] : 'No';
                 $thursday = isset($day_presence['Thursday']) ? $day_presence['Thursday'] : 'No';
                 $friday = isset($day_presence['Friday']) ? $day_presence['Friday'] : 'No';
+                // Normalize phone number
+                $raw_phone = $roster['parent_phone'] ?? 'N/A';
+                $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone); // Explicitly cast to string
+                error_log("InterSoccer: Raw phone (all rosters): {$raw_phone}, Normalized phone: {$processed_phone}");
+                // Prepend space to force Excel to treat as text
+                $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
                 $data = [
                     $roster['first_name'] ?? 'N/A',
                     $roster['last_name'] ?? 'N/A',
                     $roster['gender'] ?? 'N/A',
-                    $roster['parent_phone'] ?? 'N/A',
+                    $processed_phone,
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
                     $roster['medical_conditions'] ?? 'N/A',
@@ -284,7 +417,19 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['course_day'] ?? 'N/A',
                     $roster['activity_type'] ?? 'N/A'
                 ];
-                $sheet->fromArray($data, NULL, 'A' . $row++);
+                error_log("InterSoccer: Data array for row {$row}: " . json_encode($data));
+                // Write first three columns (A-C) explicitly
+                $sheet->setCellValue('A' . $row, $data[0]);
+                $sheet->setCellValue('B' . $row, $data[1]);
+                $sheet->setCellValue('C' . $row, $data[2]);
+                // Write phone number (D) explicitly
+                $sheet->setCellValueExplicit('D' . $row, $excel_phone, DataType::TYPE_STRING);
+                // Write remaining columns starting at E
+                $other_data = array_slice($data, 4);
+                error_log("InterSoccer: Other data for row {$row}: " . json_encode($other_data));
+                $sheet->fromArray($other_data, NULL, 'E' . $row);
+                error_log("InterSoccer: Set cell D{$row} to {$excel_phone} (type: string)");
+                $row++;
             }
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
         } elseif ($export_type === 'camps') {
@@ -312,10 +457,11 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             }
             $sheet->fromArray($headers, NULL, 'A1');
 
-            // Set phone number column (D) to Text format
+            // Set phone number column (D) to Text format and adjust width
             $sheet->getStyle('D2:D' . (count($rosters) + 1))
                   ->getNumberFormat()
-                  ->setFormatCode(NumberFormat::FORMAT_TEXT);
+                  ->setFormatCode('@'); // Use simple text format
+            $sheet->getColumnDimension('D')->setWidth(15); // Set column width
 
             $row = 2;
             foreach ($rosters as $roster) {
@@ -325,11 +471,17 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 $wednesday = isset($day_presence['Wednesday']) ? $day_presence['Wednesday'] : 'No';
                 $thursday = isset($day_presence['Thursday']) ? $day_presence['Thursday'] : 'No';
                 $friday = isset($day_presence['Friday']) ? $day_presence['Friday'] : 'No';
+                // Normalize phone number
+                $raw_phone = $roster['parent_phone'] ?? 'N/A';
+                $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone); // Explicitly cast to string
+                error_log("InterSoccer: Raw phone (camps): {$raw_phone}, Normalized phone: {$processed_phone}");
+                // Prepend space to force Excel to treat as text
+                $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
                 $data = [
                     $roster['first_name'] ?? 'N/A',
                     $roster['last_name'] ?? 'N/A',
                     $roster['gender'] ?? 'N/A',
-                    $roster['parent_phone'] ?? 'N/A',
+                    $processed_phone,
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
                     $roster['medical_conditions'] ?? 'N/A',
@@ -344,13 +496,25 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['camp_terms'] ?? 'N/A',
                     intersoccer_get_term_name($roster['venue'], 'pa_intersoccer-venues') ?? 'N/A'
                 ];
+                error_log("InterSoccer: Data array for row {$row}: " . json_encode($data));
+                // Write first three columns (A-C) explicitly
+                $sheet->setCellValue('A' . $row, $data[0]);
+                $sheet->setCellValue('B' . $row, $data[1]);
+                $sheet->setCellValue('C' . $row, $data[2]);
+                // Write phone number (D) explicitly
+                $sheet->setCellValueExplicit('D' . $row, $excel_phone, DataType::TYPE_STRING);
+                // Write remaining columns starting at E
+                $other_data = array_slice($data, 4);
+                error_log("InterSoccer: Other data for row {$row}: " . json_encode($other_data));
+                $sheet->fromArray($other_data, NULL, 'E' . $row);
+                error_log("InterSoccer: Set cell D{$row} to {$excel_phone} (type: string)");
                 if ($roster['activity_type'] === 'Girls Only' || $roster['activity_type'] === 'Camp, Girls Only' || $roster['activity_type'] === 'Camp, Girls\' only') {
                     $data = array_merge($data, [
                         $roster['shirt_size'] ?? 'N/A',
                         $roster['shorts_size'] ?? 'N/A'
                     ]);
                 }
-                $sheet->fromArray($data, NULL, 'A' . $row++);
+                $row++;
             }
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
         } elseif ($export_type === 'courses') {
@@ -371,19 +535,26 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             $headers = ['First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 'Late Pickup', 'Course Day', 'Season', 'Age Group', 'Venue'];
             $sheet->fromArray($headers, NULL, 'A1');
 
-            // Set phone number column (D) to Text format
+            // Set phone number column (D) to Text format and adjust width
             $sheet->getStyle('D2:D' . (count($rosters) + 1))
                   ->getNumberFormat()
-                  ->setFormatCode(NumberFormat::FORMAT_TEXT);
+                  ->setFormatCode('@'); // Use simple text format
+            $sheet->getColumnDimension('D')->setWidth(15); // Set column width
 
             $row = 2;
             foreach ($rosters as $roster) {
                 $season = date('Y', strtotime($roster['start_date'] ?? '1970-01-01'));
+                // Normalize phone number
+                $raw_phone = $roster['parent_phone'] ?? 'N/A';
+                $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone); // Explicitly cast to string
+                error_log("InterSoccer: Raw phone (courses): {$raw_phone}, Normalized phone: {$processed_phone}");
+                // Prepend space to force Excel to treat as text
+                $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
                 $data = [
                     $roster['first_name'] ?? 'N/A',
                     $roster['last_name'] ?? 'N/A',
                     $roster['gender'] ?? 'N/A',
-                    $roster['parent_phone'] ?? 'N/A',
+                    $processed_phone,
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
                     $roster['medical_conditions'] ?? 'N/A',
@@ -393,7 +564,19 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     intersoccer_get_term_name($roster['age_group'], 'pa_age-group') ?? 'N/A',
                     intersoccer_get_term_name($roster['venue'], 'pa_intersoccer-venues') ?? 'N/A'
                 ];
-                $sheet->fromArray($data, NULL, 'A' . $row++);
+                error_log("InterSoccer: Data array for row {$row}: " . json_encode($data));
+                // Write first three columns (A-C) explicitly
+                $sheet->setCellValue('A' . $row, $data[0]);
+                $sheet->setCellValue('B' . $row, $data[1]);
+                $sheet->setCellValue('C' . $row, $data[2]);
+                // Write phone number (D) explicitly
+                $sheet->setCellValueExplicit('D' . $row, $excel_phone, DataType::TYPE_STRING);
+                // Write remaining columns starting at E
+                $other_data = array_slice($data, 4);
+                error_log("InterSoccer: Other data for row {$row}: " . json_encode($other_data));
+                $sheet->fromArray($other_data, NULL, 'E' . $row);
+                error_log("InterSoccer: Set cell D{$row} to {$excel_phone} (type: string)");
+                $row++;
             }
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
         } elseif ($export_type === 'girls_only_full_day') {
@@ -419,10 +602,11 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             ];
             $sheet->fromArray($headers, NULL, 'A1');
 
-            // Set phone number column (D) to Text format
+            // Set phone number column (D) to Text format and adjust width
             $sheet->getStyle('D2:D' . (count($rosters) + 1))
                   ->getNumberFormat()
-                  ->setFormatCode(NumberFormat::FORMAT_TEXT);
+                  ->setFormatCode('@'); // Use simple text format
+            $sheet->getColumnDimension('D')->setWidth(15); // Set column width
 
             $row = 2;
             foreach ($rosters as $roster) {
@@ -432,11 +616,17 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 $wednesday = isset($day_presence['Wednesday']) ? $day_presence['Wednesday'] : 'No';
                 $thursday = isset($day_presence['Thursday']) ? $day_presence['Thursday'] : 'No';
                 $friday = isset($day_presence['Friday']) ? $day_presence['Friday'] : 'No';
+                // Normalize phone number
+                $raw_phone = $roster['parent_phone'] ?? 'N/A';
+                $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone); // Explicitly cast to string
+                error_log("InterSoccer: Raw phone (girls_only_full_day): {$raw_phone}, Normalized phone: {$processed_phone}");
+                // Prepend space to force Excel to treat as text
+                $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
                 $data = [
                     $roster['first_name'] ?? 'N/A',
                     $roster['last_name'] ?? 'N/A',
                     $roster['gender'] ?? 'N/A',
-                    $roster['parent_phone'] ?? 'N/A',
+                    $processed_phone,
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
                     $roster['medical_conditions'] ?? 'N/A',
@@ -454,7 +644,19 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['shirt_size'] ?? 'N/A',
                     $roster['shorts_size'] ?? 'N/A'
                 ];
-                $sheet->fromArray($data, NULL, 'A' . $row++);
+                error_log("InterSoccer: Data array for row {$row}: " . json_encode($data));
+                // Write first three columns (A-C) explicitly
+                $sheet->setCellValue('A' . $row, $data[0]);
+                $sheet->setCellValue('B' . $row, $data[1]);
+                $sheet->setCellValue('C' . $row, $data[2]);
+                // Write phone number (D) explicitly
+                $sheet->setCellValueExplicit('D' . $row, $excel_phone, DataType::TYPE_STRING);
+                // Write remaining columns starting at E
+                $other_data = array_slice($data, 4);
+                error_log("InterSoccer: Other data for row {$row}: " . json_encode($other_data));
+                $sheet->fromArray($other_data, NULL, 'E' . $row);
+                error_log("InterSoccer: Set cell D{$row} to {$excel_phone} (type: string)");
+                $row++;
             }
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
         } elseif ($export_type === 'girls_only_half_day') {
@@ -480,10 +682,11 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             ];
             $sheet->fromArray($headers, NULL, 'A1');
 
-            // Set phone number column (D) to Text format
+            // Set phone number column (D) to Text format and adjust width
             $sheet->getStyle('D2:D' . (count($rosters) + 1))
                   ->getNumberFormat()
-                  ->setFormatCode(NumberFormat::FORMAT_TEXT);
+                  ->setFormatCode('@'); // Use simple text format
+            $sheet->getColumnDimension('D')->setWidth(15); // Set column width
 
             $row = 2;
             foreach ($rosters as $roster) {
@@ -493,11 +696,17 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 $wednesday = isset($day_presence['Wednesday']) ? $day_presence['Wednesday'] : 'No';
                 $thursday = isset($day_presence['Thursday']) ? $day_presence['Thursday'] : 'No';
                 $friday = isset($day_presence['Friday']) ? $day_presence['Friday'] : 'No';
+                // Normalize phone number
+                $raw_phone = $roster['parent_phone'] ?? 'N/A';
+                $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone); // Explicitly cast to string
+                error_log("InterSoccer: Raw phone (girls_only_half_day): {$raw_phone}, Normalized phone: {$processed_phone}");
+                // Prepend space to force Excel to treat as text
+                $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
                 $data = [
                     $roster['first_name'] ?? 'N/A',
                     $roster['last_name'] ?? 'N/A',
                     $roster['gender'] ?? 'N/A',
-                    $roster['parent_phone'] ?? 'N/A',
+                    $processed_phone,
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
                     $roster['medical_conditions'] ?? 'N/A',
@@ -515,7 +724,19 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['shirt_size'] ?? 'N/A',
                     $roster['shorts_size'] ?? 'N/A'
                 ];
-                $sheet->fromArray($data, NULL, 'A' . $row++);
+                error_log("InterSoccer: Data array for row {$row}: " . json_encode($data));
+                // Write first three columns (A-C) explicitly
+                $sheet->setCellValue('A' . $row, $data[0]);
+                $sheet->setCellValue('B' . $row, $data[1]);
+                $sheet->setCellValue('C' . $row, $data[2]);
+                // Write phone number (D) explicitly
+                $sheet->setCellValueExplicit('D' . $row, $excel_phone, DataType::TYPE_STRING);
+                // Write remaining columns starting at E
+                $other_data = array_slice($data, 4);
+                error_log("InterSoccer: Other data for row {$row}: " . json_encode($other_data));
+                $sheet->fromArray($other_data, NULL, 'E' . $row);
+                error_log("InterSoccer: Set cell D{$row} to {$excel_phone} (type: string)");
+                $row++;
             }
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
         } elseif ($export_type === 'other') {
@@ -539,18 +760,25 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             ];
             $sheet->fromArray($headers, NULL, 'A1');
 
-            // Set phone number column (D) to Text format
+            // Set phone number column (D) to Text format and adjust width
             $sheet->getStyle('D2:D' . (count($rosters) + 1))
                   ->getNumberFormat()
-                  ->setFormatCode(NumberFormat::FORMAT_TEXT);
+                  ->setFormatCode('@'); // Use simple text format
+            $sheet->getColumnDimension('D')->setWidth(15); // Set column width
 
             $row = 2;
             foreach ($rosters as $roster) {
+                // Normalize phone number
+                $raw_phone = $roster['parent_phone'] ?? 'N/A';
+                $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone); // Explicitly cast to string
+                error_log("InterSoccer: Raw phone (other): {$raw_phone}, Normalized phone: {$processed_phone}");
+                // Prepend space to force Excel to treat as text
+                $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
                 $data = [
                     $roster['first_name'] ?? 'N/A',
                     $roster['last_name'] ?? 'N/A',
                     $roster['gender'] ?? 'N/A',
-                    $roster['parent_phone'] ?? 'N/A',
+                    $processed_phone,
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
                     $roster['medical_conditions'] ?? 'N/A',
@@ -560,7 +788,19 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['product_name'] ?? 'N/A',
                     intersoccer_get_term_name($roster['venue'], 'pa_intersoccer-venues') ?? 'N/A'
                 ];
-                $sheet->fromArray($data, NULL, 'A' . $row++);
+                error_log("InterSoccer: Data array for row {$row}: " . json_encode($data));
+                // Write first three columns (A-C) explicitly
+                $sheet->setCellValue('A' . $row, $data[0]);
+                $sheet->setCellValue('B' . $row, $data[1]);
+                $sheet->setCellValue('C' . $row, $data[2]);
+                // Write phone number (D) explicitly
+                $sheet->setCellValueExplicit('D' . $row, $excel_phone, DataType::TYPE_STRING);
+                // Write remaining columns starting at E
+                $other_data = array_slice($data, 4);
+                error_log("InterSoccer: Other data for row {$row}: " . json_encode($other_data));
+                $sheet->fromArray($other_data, NULL, 'E' . $row);
+                error_log("InterSoccer: Set cell D{$row} to {$excel_phone} (type: string)");
+                $row++;
             }
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
         }
