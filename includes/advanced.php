@@ -3,7 +3,7 @@
  * Advanced features page for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.3.87
+ * @version  1.4.4
  * @author Jeremy Lee
  */
 
@@ -38,6 +38,12 @@ function intersoccer_render_advanced_page() {
                 <button type="submit" class="button button-primary" id="intersoccer-rebuild-button"><?php _e('Rebuild Rosters', 'intersoccer-reports-rosters'); ?></button>
             </form>
             <p><?php _e('Note: This will recreate the rosters table and repopulate it with current order data.', 'intersoccer-reports-rosters'); ?></p>
+            <form id="intersoccer-process-processing-form" method="post" action="">
+                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field'); ?>
+                <input type="hidden" name="action" value="intersoccer_process_existing_processing_orders">
+                <button type="submit" class="button button-secondary" id="intersoccer-process-processing-button"><?php _e('Process Existing Processing Orders', 'intersoccer-reports-rosters'); ?></button>
+            </form>
+            <p><?php _e('Note: This will populate missing rosters for Processing orders and complete them if fully populated.', 'intersoccer-reports-rosters'); ?></p>
         </div>
         <div class="export-options">
             <h2><?php _e('Export Options', 'intersoccer-reports-rosters'); ?></h2>
@@ -52,42 +58,24 @@ function intersoccer_render_advanced_page() {
         </div>
         <script type="text/javascript">
             jQuery(document).ready(function($) {
-                $('#intersoccer-rebuild-form').on('submit', function(e) {
+                // Existing submit handlers for rebuild and upgrade...
+
+                $('#intersoccer-process-processing-form').on('submit', function(e) {
                     e.preventDefault();
                     $.ajax({
                         url: ajaxurl,
                         type: 'POST',
                         data: $(this).serialize(),
                         beforeSend: function() {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuilding... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
+                            $('#intersoccer-rebuild-status').html('<p><?php _e('Processing existing orders... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
                         },
                         success: function(response) {
                             $('#intersoccer-rebuild-status').html('<p>' + response.data.message + '</p>');
-                            console.log('Rebuild response: ', response);
+                            console.log('Process response: ', response);
                         },
                         error: function(xhr, status, error) {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuild failed: ', 'intersoccer-reports-rosters'); ?>' + (xhr.responseJSON ? xhr.responseJSON.message : error) + '</p>');
+                            $('#intersoccer-rebuild-status').html('<p><?php _e('Processing failed: ', 'intersoccer-reports-rosters'); ?>' + (xhr.responseJSON ? xhr.responseJSON.message : error) + '</p>');
                             console.error('AJAX Error: ', status, error, xhr.responseText);
-                        }
-                    });
-                });
-
-                $('#intersoccer-upgrade-form').on('submit', function(e) {
-                    e.preventDefault();
-                    $.ajax({
-                        url: ajaxurl,
-                        type: 'POST',
-                        data: $(this).serialize(),
-                        beforeSend: function() {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Upgrading database... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
-                        },
-                        success: function(response) {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Database upgrade completed. Check debug.log for details.', 'intersoccer-reports-rosters'); ?></p>');
-                            console.log('Upgrade response: ', response);
-                        },
-                        error: function(xhr, status, error) {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Database upgrade failed: ', 'intersoccer-reports-rosters'); ?>' + error + '</p>');
-                            console.error('AJAX Error: ', status, error);
                         }
                     });
                 });
@@ -492,6 +480,67 @@ function intersoccer_rebuild_rosters_and_reports() {
 }
 
 /**
+ * Process existing Processing orders: Populate missing rosters, complete if fully populated.
+ */
+function intersoccer_process_existing_processing_orders() {
+    global $wpdb;
+    $orders = wc_get_orders([
+        'status' => 'processing',
+        'limit' => -1,
+    ]);
+    $processed = 0;
+    $completed = 0;
+    $errors = 0;
+
+    error_log('InterSoccer: Starting bulk process for ' . count($orders) . ' existing Processing orders');
+
+    foreach ($orders as $order) {
+        $order_id = $order->get_id();
+        error_log('InterSoccer: Evaluating order ' . $order_id . ' for bulk processing');
+
+        // Count eligible items (camp/course/birthday)
+        $eligible_items = 0;
+        foreach ($order->get_items() as $item) {
+            $product_type = intersoccer_get_product_type($item->get_product_id());
+            if (in_array($product_type, ['camp', 'course', 'birthday'])) {
+                $eligible_items++;
+            }
+        }
+        error_log('InterSoccer: Order ' . $order_id . ' has ' . $eligible_items . ' eligible items');
+
+        if ($eligible_items === 0) {
+            continue; // No action needed
+        }
+
+        // Count existing rosters for this order
+        $roster_count = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}intersoccer_rosters WHERE order_id = %d", $order_id));
+        error_log('InterSoccer: Order ' . $order_id . ' has ' . $roster_count . ' existing roster entries');
+
+        if ($roster_count >= $eligible_items) {
+            // Fully populated: Complete the order
+            $order->update_status('completed', 'Automatically completed via bulk tool - rosters fully populated.');
+            $completed++;
+            error_log('InterSoccer: Completed order ' . $order_id . ' - already fully populated');
+        } elseif ($roster_count < $eligible_items) {
+            // Partially or not populated: Run population
+            intersoccer_populate_rosters_and_complete_order($order_id);
+            // Re-check after population
+            $new_roster_count = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}intersoccer_rosters WHERE order_id = %d", $order_id));
+            if ($new_roster_count >= $eligible_items) {
+                $completed++;
+                error_log('InterSoccer: Completed order ' . $order_id . ' after population - now fully populated');
+            } else {
+                $errors++;
+                error_log('InterSoccer: Failed to fully populate order ' . $order_id . ' (new count: ' . $new_roster_count . ') - check metadata');
+            }
+            $processed++;
+        }
+    }
+
+    return ['status' => 'success', 'message' => __('Processed ' . $processed . ' orders, completed ' . $completed . ' (' . $errors . ' errors). Check debug.log for details.', 'intersoccer-reports-rosters')];
+}
+
+/**
  * Upgrade database schema
  */
 function intersoccer_upgrade_database() {
@@ -528,4 +577,17 @@ function intersoccer_rebuild_rosters_and_reports_ajax() {
         wp_send_json_error(['message' => __('Rebuild failed: ' . $result['message'], 'intersoccer-reports-rosters')]);
     }
 }
+
+// AJAX handler for processing existing Processing orders
+add_action('wp_ajax_intersoccer_process_existing_processing_orders', 'intersoccer_process_existing_processing_orders_ajax');
+function intersoccer_process_existing_processing_orders_ajax() {
+    check_ajax_referer('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(__('You do not have permission to process orders.', 'intersoccer-reports-rosters'));
+    }
+    error_log('InterSoccer: AJAX process existing Processing request received with data: ' . print_r($_POST, true));
+    $result = intersoccer_process_existing_processing_orders();
+    wp_send_json_success(['message' => $result['message']]);
+}
+
 ?>
