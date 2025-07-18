@@ -3,7 +3,7 @@
  * Rosters pages for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.4.05
+ * @version 1.4.14
  * @author Jeremy Lee
  */
 
@@ -219,11 +219,11 @@ function intersoccer_render_camps_page() {
                         <table class="wp-list-table widefat fixed striped">
                             <thead>
                                 <tr>
-                                    <th><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
-                                    <th><?php _e('Camp Times', 'intersoccer-reports-rosters'); ?></th>
-                                    <th><?php _e('Age Group', 'intersoccer-reports-rosters'); ?></th>
-                                    <th><?php _e('Total Players', 'intersoccer-reports-rosters'); ?></th>
-                                    <th><?php _e('Actions', 'intersoccer-reports-rosters'); ?></th>
+                                    <th width='60%'><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
+                                    <th width='10%'><?php _e('Camp Times', 'intersoccer-reports-rosters'); ?></th>
+                                    <th width='10%'><?php _e('Age Group', 'intersoccer-reports-rosters'); ?></th>
+                                    <th width='10%'><?php _e('Total Players', 'intersoccer-reports-rosters'); ?></th>
+                                    <th width='10%'><?php _e('Actions', 'intersoccer-reports-rosters'); ?></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -534,12 +534,12 @@ function intersoccer_render_girls_only_page() {
                         <table class="wp-list-table widefat fixed striped">
                             <thead>
                                 <tr>
-                                    <th><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
-                                    <th><?php _e('Camp Times', 'intersoccer-reports-rosters'); ?></th>
-                                    <th><?php _e('Age Group', 'intersoccer-reports-rosters'); ?></th>
-                                    <th><?php _e('Total Players', 'intersoccer-reports-rosters'); ?></th>
-                                    <th><?php _e('Variation IDs', 'intersoccer-reports-rosters'); ?></th>
-                                    <th><?php _e('Actions', 'intersoccer-reports-rosters'); ?></th>
+                                    <th width='50%'><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
+                                    <th width='10%'><?php _e('Camp Times', 'intersoccer-reports-rosters'); ?></th>
+                                    <th width='10%'><?php _e('Age Group', 'intersoccer-reports-rosters'); ?></th>
+                                    <th width='10%'><?php _e('Total Players', 'intersoccer-reports-rosters'); ?></th>
+                                    <th width='10%'><?php _e('Variation IDs', 'intersoccer-reports-rosters'); ?></th>
+                                    <th width='10%'><?php _e('Actions', 'intersoccer-reports-rosters'); ?></th>
                                 </tr>
                             </thead>
                             <tbody>
