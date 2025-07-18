@@ -579,6 +579,164 @@ function intersoccer_render_girls_only_page() {
 }
 
 /**
+ * Render the Other Events page.
+ */
+function intersoccer_render_other_events_page() {
+    if (!current_user_can('manage_options') && !current_user_can('coach')) {
+        wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
+    }
+
+    global $wpdb;
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+    $posts_table = $wpdb->prefix . 'posts';
+    error_log('InterSoccer: Database prefix: ' . $wpdb->prefix);
+
+    // Clear all caches
+    wp_cache_flush();
+    delete_transient('intersoccer_rosters_cache');
+    if (function_exists('wp_cache_clear_cache')) {
+        wp_cache_clear_cache();
+    }
+
+    // Fetch unique product names for Other Events filter
+    $product_names_list = $wpdb->get_col("SELECT DISTINCT product_name FROM $rosters_table WHERE (activity_type NOT IN ('Camp', 'Course', 'Girls Only') OR activity_type IS NULL OR activity_type = 'unknown') AND product_name != '' ORDER BY product_name");
+    error_log('InterSoccer: Retrieved ' . count($product_names_list) . ' unique product names for Other Events on ' . current_time('mysql'));
+
+    // Get the selected product name from the request, default to empty
+    $selected_product_name = isset($_GET['product_name']) ? sanitize_text_field($_GET['product_name']) : '';
+
+    // Build query for other events, grouping by product_name, event_dates (or term if available), venue, age_group
+    $base_query = "SELECT r.product_name, r.event_dates, r.venue, r.age_group, r.times,
+                          COUNT(DISTINCT r.order_item_id) as total_players,
+                          SUM(CASE WHEN r.player_name = 'Unknown Attendee' THEN 1 ELSE 0 END) as unknown_count,
+                          GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids,
+                          p.post_parent,
+                          parent.post_title as parent_product_name
+                   FROM $rosters_table r
+                   JOIN $posts_table p ON r.variation_id = p.ID
+                   JOIN $posts_table parent ON p.post_parent = parent.ID
+                   WHERE (r.activity_type NOT IN ('Camp', 'Course', 'Girls Only') OR r.activity_type IS NULL OR r.activity_type = 'unknown')";
+    if ($selected_product_name) {
+        $base_query .= $wpdb->prepare(" AND r.product_name = %s", $selected_product_name);
+    }
+    $base_query .= " GROUP BY r.product_name, r.event_dates, r.venue, r.age_group, r.times, p.post_parent, parent.post_title
+                    ORDER BY r.product_name, r.event_dates, r.venue, r.age_group";
+
+    $groups = $wpdb->get_results($base_query, ARRAY_A);
+    error_log('InterSoccer: Other Events query: ' . $wpdb->last_query);
+    error_log('InterSoccer: Other Events results count: ' . count($groups));
+    error_log('InterSoccer: Last SQL error: ' . $wpdb->last_error);
+    if ($groups) {
+        error_log('InterSoccer: Other Events data sample: ' . json_encode(array_slice($groups, 0, 5)));
+    }
+
+    // Group by parent product and event_dates (or term if event_dates 'N/A')
+    $grouped_by_product = [];
+    foreach ($groups as $group) {
+        $parent_id = $group['post_parent'];
+        $event_key = ($group['event_dates'] !== 'N/A') ? $group['event_dates'] : ($group['term'] ?: 'N/A');
+        if (!isset($grouped_by_product[$parent_id])) {
+            $grouped_by_product[$parent_id] = [
+                'product_name' => $group['parent_product_name'],
+                'events' => []
+            ];
+        }
+        if (!isset($grouped_by_product[$parent_id]['events'][$event_key])) {
+            $grouped_by_product[$parent_id]['events'][$event_key] = [];
+        }
+        $grouped_by_product[$parent_id]['events'][$event_key][] = $group;
+    }
+
+    $reconcile_nonce = wp_create_nonce('intersoccer_reconcile');
+    ?>
+    <div class="wrap">
+        <h1><?php _e('Other Events', 'intersoccer-reports-rosters'); ?></h1>
+        <p><a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-other-events&action=reconcile'), 'intersoccer_reconcile'); ?>" class="button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></a></p>
+        <?php if (empty($product_names_list)) : ?>
+            <p><?php _e('No other event rosters available. Please reconcile manually.', 'intersoccer-reports-rosters'); ?></p>
+        <?php else : ?>
+            <!-- Product Name Filter -->
+            <form method="get" action="" style="margin-bottom: 20px;">
+                <input type="hidden" name="page" value="intersoccer-other-events">
+                <label for="product_name"><?php _e('Filter by Product Name:', 'intersoccer-reports-rosters'); ?></label>
+                <select name="product_name" id="product_name" onchange="this.form.submit()">
+                    <option value=""><?php _e('All Products', 'intersoccer-reports-rosters'); ?></option>
+                    <?php foreach ($product_names_list as $product_name) : ?>
+                        <option value="<?php echo esc_attr($product_name); ?>" <?php selected($selected_product_name, $product_name); ?>>
+                            <?php echo esc_html($product_name); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
+
+            <div class="export-buttons">
+                <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
+                    <input type="hidden" name="action" value="intersoccer_export_all_rosters">
+                    <input type="hidden" name="export_type" value="other_events">
+                    <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
+                    <input type="submit" name="export_other_events" class="button button-primary" value="<?php _e('Export All Other Event Rosters', 'intersoccer-reports-rosters'); ?>">
+                </form>
+            </div>
+
+            <div class="roster-groups">
+                <?php foreach ($grouped_by_product as $parent_id => $product_data) : ?>
+                    <?php
+                    $total_players = array_sum(array_map(function($event_groups) {
+                        return array_sum(array_column($event_groups, 'total_players'));
+                    }, $product_data['events']));
+                    ?>
+                    <div class="product-group">
+                        <h2><?php echo esc_html($product_data['product_name']) . ' (ID: ' . esc_html($parent_id) . ', ' . esc_html($total_players) . ' players)'; ?></h2>
+                        <?php foreach ($product_data['events'] as $event_key => $event_groups) : ?>
+                            <div class="event-group">
+                                <h3><?php echo esc_html($event_key) . ' (' . array_sum(array_column($event_groups, 'total_players')) . ' players)'; ?></h3>
+                                <table class="wp-list-table widefat fixed striped">
+                                    <thead>
+                                        <tr>
+                                            <th width='60%'><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
+                                            <th width='10%'><?php _e('Times', 'intersoccer-reports-rosters'); ?></th>
+                                            <th width='10%'><?php _e('Age Group', 'intersoccer-reports-rosters'); ?></th>
+                                            <th width='10%'><?php _e('Total Players', 'intersoccer-reports-rosters'); ?></th>
+                                            <th width='10%'><?php _e('Actions', 'intersoccer-reports-rosters'); ?></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($event_groups as $group) : ?>
+                                            <?php
+                                            $unknown_count = $group['unknown_count'] ?? 0;
+                                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&product_name=' . urlencode($group['product_name']) . '&event_dates=' . urlencode($event_key) . '&venue=' . urlencode($group['venue']) . '&age_group=' . urlencode($group['age_group']) . '&times=' . urlencode($group['times']));
+                                            ?>
+                                            <tr>
+                                                <td><?php echo esc_html(intersoccer_get_term_name($group['venue'], 'pa_intersoccer-venues')); ?></td>
+                                                <td><?php echo esc_html($group['times'] ?? 'N/A'); ?></td>
+                                                <td><?php echo esc_html(intersoccer_get_term_name($group['age_group'], 'pa_age-group')); ?></td>
+                                                <td><?php echo esc_html($group['total_players']); ?></td>
+                                                <td><a href="<?php echo esc_url($view_url); ?>" class="button"><?php _e('View Roster', 'intersoccer-reports-rosters'); ?></a></td>
+                                            </tr>
+                                            <?php if ($unknown_count > 0) : ?>
+                                                <tr>
+                                                    <td colspan="5" style="color: red;">
+                                                        <?php echo esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)); ?>
+                                                    </td>
+                                                </tr>
+                                            <?php endif; ?>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endforeach; ?>
+                <?php if (empty($grouped_by_product)) : ?>
+                    <p><?php _e('No other event rosters available.', 'intersoccer-reports-rosters'); ?></p>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php
+}
+
+/**
  * AJAX handler for reconcile
  */
 add_action('wp_ajax_intersoccer_reconcile_rosters', 'intersoccer_reconcile_rosters_ajax');

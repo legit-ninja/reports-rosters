@@ -5,7 +5,7 @@
  * Handles rendering of detailed roster views.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.3.108
+ * @version 1.4.14
  * @author Jeremy Lee
  */
 
@@ -34,6 +34,8 @@ function intersoccer_render_roster_details_page() {
     $venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
     $age_group = isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '';
     $times = isset($_GET['times']) ? sanitize_text_field($_GET['times']) : '';
+    $product_name = isset($_GET['product_name']) ? sanitize_text_field($_GET['product_name']) : '';
+    $event_dates = isset($_GET['event_dates']) ? sanitize_text_field($_GET['event_dates']) : '';
 
     // Check if the request comes from the Camps or Courses sub-page
     $referer = wp_get_referer();
@@ -55,34 +57,16 @@ function intersoccer_render_roster_details_page() {
              JOIN $posts_table p ON r.variation_id = p.ID";
     
     $where_clauses = [];
-    if ($variation_id > 0) {
-        $where_clauses[] = $wpdb->prepare("r.variation_id = %d", $variation_id);
-        $query_params[] = $variation_id;
-        if ($age_group) {
-            $where_clauses[] = $wpdb->prepare("(r.age_group = %s OR r.age_group LIKE %s)", $age_group, '%' . $wpdb->esc_like($age_group) . '%');
-            $query_params[] = $age_group;
-            $query_params[] = '%' . $age_group . '%';
-        }
-    } elseif ($camp_terms || $course_day || $venue || $age_group) {
-        // Use 'Camp' for Camps sub-page, 'Course' for Courses sub-page, otherwise include all
-        $activity_types = $is_from_camps_page ? ['Camp'] : ($is_from_courses_page ? ['Course'] : ['Camp', 'Course', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only']);
-        $where_clauses[] = "r.activity_type IN ('" . implode("','", array_map('esc_sql', $activity_types)) . "')";
-        if ($camp_terms) {
-            $where_clauses[] = $wpdb->prepare("(r.camp_terms = %s OR r.camp_terms LIKE %s OR (r.camp_terms IS NULL AND %s = 'N/A'))", $camp_terms, '%' . $wpdb->esc_like($camp_terms) . '%', $camp_terms);
-            $query_params[] = $camp_terms;
-            $query_params[] = '%' . $camp_terms . '%';
-            $query_params[] = $camp_terms;
-        }
-        if ($course_day) {
-            $where_clauses[] = $wpdb->prepare("(r.course_day = %s OR r.course_day LIKE %s OR (r.course_day IS NULL AND %s = 'N/A'))", $course_day, '%' . $wpdb->esc_like($course_day) . '%', $course_day);
-            $query_params[] = $course_day;
-            $query_params[] = '%' . $course_day . '%';
-            $query_params[] = $course_day;
+
+    if ($product_name) {
+        $where_clauses[] = $wpdb->prepare("r.product_name = %s", $product_name);
+        $query_params[] = $product_name;
+        if ($event_dates && $event_dates !== 'N/A') {
+            $where_clauses[] = $wpdb->prepare("r.event_dates = %s", $event_dates);
+            $query_params[] = $event_dates;
         }
         if ($venue) {
-            $where_clauses[] = $wpdb->prepare("(r.venue = %s OR r.venue LIKE %s OR (r.venue IS NULL AND %s = 'N/A'))", $venue, '%' . $wpdb->esc_like($venue) . '%', $venue);
-            $query_params[] = $venue;
-            $query_params[] = '%' . $venue . '%';
+            $where_clauses[] = $wpdb->prepare("r.venue = %s", $venue);
             $query_params[] = $venue;
         }
         if ($age_group) {
@@ -91,11 +75,54 @@ function intersoccer_render_roster_details_page() {
             $query_params[] = '%' . $age_group . '%';
         }
         if ($times) {
-            $where_clauses[] = $wpdb->prepare("(r.times = %s OR (r.times IS NULL AND %s = 'N/A'))", $times, $times);
-            $query_params[] = $times;
+            $where_clauses[] = $wpdb->prepare("r.times = %s", $times);
             $query_params[] = $times;
         }
+    } else {
+        if ($variation_id > 0) {
+            $where_clauses[] = $wpdb->prepare("r.variation_id = %d", $variation_id);
+            $query_params[] = $variation_id;
+            if ($age_group) {
+                $where_clauses[] = $wpdb->prepare("(r.age_group = %s OR r.age_group LIKE %s)", $age_group, '%' . $wpdb->esc_like($age_group) . '%');
+                $query_params[] = $age_group;
+                $query_params[] = '%' . $age_group . '%';
+            }
+        } elseif ($camp_terms || $course_day || $venue || $age_group) {
+            // Use 'Camp' for Camps sub-page, 'Course' for Courses sub-page, otherwise include all
+            $activity_types = $is_from_camps_page ? ['Camp'] : ($is_from_courses_page ? ['Course'] : ['Camp', 'Course', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only']);
+            $where_clauses[] = "r.activity_type IN ('" . implode("','", array_map('esc_sql', $activity_types)) . "')";
+            if ($camp_terms) {
+                $where_clauses[] = $wpdb->prepare("(r.camp_terms = %s OR r.camp_terms LIKE %s OR (r.camp_terms IS NULL AND %s = 'N/A'))", $camp_terms, '%' . $wpdb->esc_like($camp_terms) . '%', $camp_terms);
+                $query_params[] = $camp_terms;
+                $query_params[] = '%' . $camp_terms . '%';
+                $query_params[] = $camp_terms;
+            }
+            if ($course_day) {
+                $where_clauses[] = $wpdb->prepare("(r.course_day = %s OR r.course_day LIKE %s OR (r.course_day IS NULL AND %s = 'N/A'))", $course_day, '%' . $wpdb->esc_like($course_day) . '%', $course_day);
+                $query_params[] = $course_day;
+                $query_params[] = '%' . $course_day . '%';
+                $query_params[] = $course_day;
+            }
+            if ($venue) {
+                $where_clauses[] = $wpdb->prepare("(r.venue = %s OR r.venue LIKE %s OR (r.venue IS NULL AND %s = 'N/A'))", $venue, '%' . $wpdb->esc_like($venue) . '%', $venue);
+                $query_params[] = $venue;
+                $query_params[] = '%' . $venue . '%';
+                $query_params[] = $venue;
+            }
+            if ($age_group) {
+                $where_clauses[] = $wpdb->prepare("(r.age_group = %s OR r.age_group LIKE %s)", $age_group, '%' . $wpdb->esc_like($age_group) . '%');
+                $query_params[] = $age_group;
+                $query_params[] = '%' . $age_group . '%';
+            }
+            if ($times) {
+                $where_clauses[] = $wpdb->prepare("(r.times = %s OR (r.times IS NULL AND %s = 'N/A'))", $times, $times);
+                $query_params[] = $times;
+                $query_params[] = $times;
+            }
+        }
     }
+
+    
 
     if (!empty($where_clauses)) {
         $query .= " WHERE " . implode(' AND ', $where_clauses);
