@@ -620,6 +620,70 @@ function intersoccer_rebuild_rosters_and_reports_ajax() {
     }
 }
 
+
+/**
+ * Process existing orders to populate rosters and complete them.
+ * Scans for 'processing' and 'on-hold' orders, calls populate on each, log counts.
+ */
+function intersoccer_process_existing_orders() {
+    error_log('InterSoccer: Starting process existing orders');
+
+    $orders = wc_get_orders([
+        'limit' => -1,
+        'status' => ['wc-processing', 'wc-on-hold'],  // Target legacy statuses
+    ]);
+    error_log('InterSoccer: Found ' . count($orders) . ' eligible orders to process');
+
+    $processed = 0;
+    $inserted = 0;
+    $completed = 0;
+    global $wpdb;
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+    foreach ($orders as $order) {
+        $order_id = $order->get_id();
+        $initial_status = $order->get_status();
+        error_log('InterSoccer: Processing existing order ' . $order_id . ' (initial status: ' . $initial_status . ')');
+        
+        // Check if already populated
+        $existing_rosters = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $rosters_table WHERE order_id = %d", $order_id));
+        error_log('InterSoccer: Existing rosters for order ' . $order_id . ': ' . $existing_rosters);
+        
+        // Call the populate function from woocommerce-orders.php
+        ob_start();  // Suppress any output
+        intersoccer_populate_rosters_and_complete_order($order_id);
+        ob_end_clean();
+        
+        // Verify inserts and status
+        $new_inserts = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $rosters_table WHERE order_id = %d", $order_id)) - $existing_rosters;
+        $new_status = wc_get_order($order_id)->get_status();  // Reload to check change
+        if ($new_inserts > 0) {
+            $inserted += $new_inserts;
+            $processed++;
+            error_log('InterSoccer: Added ' . $new_inserts . ' new inserts for order ' . $order_id);
+        } else {
+            error_log('InterSoccer: No new inserts for order ' . $order_id . ' (already populated or skipped)');
+        }
+        
+        // If populated (existing or new) and still processing, force complete
+        $total_rosters = $existing_rosters + $new_inserts;
+        if ($total_rosters > 0 && $new_status === 'processing') {
+            $order->update_status('completed', 'Completed via admin process (rosters already populated).');
+            $new_status = $order->get_status();
+            error_log('InterSoccer: Forced complete for populated order ' . $order_id . ' (total rosters: ' . $total_rosters . ')');
+        }
+        
+        if ($new_status === 'completed' && $initial_status !== 'completed') {
+            $completed++;
+            error_log('InterSoccer: Order ' . $order_id . ' status changed to completed');
+        } else {
+            error_log('InterSoccer: Order ' . $order_id . ' status not changed (remains ' . $new_status . ')');
+        }
+    }
+
+    error_log('InterSoccer: Completed processing. Processed ' . $processed . ' orders, total inserts: ' . $inserted . ', completed: ' . $completed);
+    return ['status' => 'success', 'processed' => $processed, 'inserted' => $inserted, 'completed' => $completed, 'message' => __('Processed ' . $processed . ' orders, inserted ' . $inserted . ' rosters, completed ' . $completed . ' orders.', 'intersoccer-reports-rosters')];
+}
+
 add_action('wp_ajax_intersoccer_process_existing_orders', 'intersoccer_process_existing_orders_ajax');
 function intersoccer_process_existing_orders_ajax() {
     check_ajax_referer('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field');
