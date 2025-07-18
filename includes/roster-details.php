@@ -33,13 +33,14 @@ function intersoccer_render_roster_details_page() {
     $course_day = isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '';
     $venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
     $age_group = isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '';
+    $times = isset($_GET['times']) ? sanitize_text_field($_GET['times']) : '';
 
     // Check if the request comes from the Camps or Courses sub-page
     $referer = wp_get_referer();
     $is_from_camps_page = strpos($referer, 'page=intersoccer-camps') !== false;
     $is_from_courses_page = strpos($referer, 'page=intersoccer-courses') !== false;
 
-    error_log('InterSoccer: Roster details parameters - variation_id: ' . $variation_id . ', camp_terms: ' . ($camp_terms ?: 'N/A') . ', course_day: ' . ($course_day ?: 'N/A') . ', venue: ' . ($venue ?: 'N/A') . ', age_group: ' . ($age_group ?: 'N/A') . ', is_from_camps_page: ' . ($is_from_camps_page ? 'yes' : 'no') . ', is_from_courses_page: ' . ($is_from_courses_page ? 'yes' : 'no'));
+    error_log('InterSoccer: Roster details parameters - variation_id: ' . $variation_id . ', camp_terms: ' . ($camp_terms ?: 'N/A') . ', course_day: ' . ($course_day ?: 'N/A') . ', venue: ' . ($venue ?: 'N/A') . ', age_group: ' . ($age_group ?: 'N/A') . ', times: ' . ($times ?: 'N/A') . ', is_from_camps_page: ' . ($is_from_camps_page ? 'yes' : 'no') . ', is_from_courses_page: ' . ($is_from_courses_page ? 'yes' : 'no'));
 
     // Log table schema and available variations
     $schema = $wpdb->get_results("SHOW COLUMNS FROM $rosters_table");
@@ -49,7 +50,7 @@ function intersoccer_render_roster_details_page() {
 
     // Build query based on parameters
     $query_params = [];
-    $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.day_presence, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, p.post_parent
+    $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.day_presence, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, p.post_parent
              FROM $rosters_table r
              JOIN $posts_table p ON r.variation_id = p.ID";
     
@@ -88,6 +89,11 @@ function intersoccer_render_roster_details_page() {
             $where_clauses[] = $wpdb->prepare("(r.age_group = %s OR r.age_group LIKE %s)", $age_group, '%' . $wpdb->esc_like($age_group) . '%');
             $query_params[] = $age_group;
             $query_params[] = '%' . $age_group . '%';
+        }
+        if ($times) {
+            $where_clauses[] = $wpdb->prepare("(r.times = %s OR (r.times IS NULL AND %s = 'N/A'))", $times, $times);
+            $query_params[] = $times;
+            $query_params[] = $times;
         }
     }
 
@@ -189,6 +195,11 @@ function intersoccer_render_roster_details_page() {
             $variation_params[] = $age_group;
             $variation_params[] = '%' . $age_group . '%';
         }
+        if ($times) {
+            $variation_query .= $wpdb->prepare(" AND (r.times = %s OR (r.times IS NULL AND %s = 'N/A'))", $times, $times);
+            $variation_params[] = $times;
+            $variation_params[] = $times;
+        }
         $related_variation_ids = $wpdb->get_col($wpdb->prepare($variation_query, $variation_params));
         $related_variation_ids = array_map('intval', array_filter($related_variation_ids, 'is_numeric'));
         // Fallback query without post_parent restriction
@@ -200,7 +211,8 @@ function intersoccer_render_roster_details_page() {
                  AND (r.camp_terms = %s OR r.camp_terms LIKE %s OR (r.camp_terms IS NULL AND %s = 'N/A') OR %s = '')
                  AND (r.course_day = %s OR r.course_day LIKE %s OR (r.course_day IS NULL AND %s = '') OR %s = '')
                  AND (r.venue = %s OR r.venue LIKE %s OR (r.venue IS NULL AND %s = 'N/A'))
-                 AND (r.age_group = %s OR r.age_group LIKE %s)",
+                 AND (r.age_group = %s OR r.age_group LIKE %s)
+                 AND (r.times = %s OR (r.times IS NULL AND %s = 'N/A'))",
                 $camp_terms,
                 '%' . $wpdb->esc_like($camp_terms) . '%',
                 $camp_terms,
@@ -213,9 +225,11 @@ function intersoccer_render_roster_details_page() {
                 '%' . $wpdb->esc_like($venue) . '%',
                 $venue,
                 $age_group,
-                '%' . $wpdb->esc_like($age_group) . '%'
+                '%' . $wpdb->esc_like($age_group) . '%',
+                $times,
+                $times
             );
-            $variation_params = [$camp_terms, $camp_terms, $camp_terms, $course_day, $course_day, $course_day, $course_day, $venue, $venue, $venue, $age_group, $age_group];
+            $variation_params = [$camp_terms, $camp_terms, $camp_terms, $course_day, $course_day, $course_day, $course_day, $venue, $venue, $venue, $age_group, $age_group, $times, $times];
             $related_variation_ids = $wpdb->get_col($variation_query);
             $related_variation_ids = array_map('intval', array_filter($related_variation_ids, 'is_numeric'));
         }
@@ -239,6 +253,11 @@ function intersoccer_render_roster_details_page() {
             $variation_params[] = $age_group;
             $variation_params[] = '%' . $age_group . '%';
         }
+        if ($times) {
+            $variation_query .= $wpdb->prepare(" AND (r.times = %s OR (r.times IS NULL AND %s = 'N/A'))", $times, $times);
+            $variation_params[] = $times;
+            $variation_params[] = $times;
+        }
         $related_variation_ids = $wpdb->get_col($variation_query);
         $related_variation_ids = array_map('intval', array_filter($related_variation_ids, 'is_numeric'));
     }
@@ -255,26 +274,42 @@ function intersoccer_render_roster_details_page() {
         echo '<p style="color: red;">' . esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)) . '</p>';
     }
     echo '<table class="wp-list-table widefat fixed striped">';
-    echo '<thead><tr>';
-    echo '<th>' . esc_html__('Name') . '</th>';
-    echo '<th>' . esc_html__('Surname') . '</th>';
-    echo '<th>' . esc_html__('Gender') . '</th>';
-    echo '<th>' . esc_html__('Phone') . '</th>';
-    echo '<th>' . esc_html__('Email') . '</th>';
-    echo '<th>' . esc_html__('Age') . '</th>';
-    echo '<th>' . esc_html__('Medical/Dietary') . '</th>';
-    if ($base_roster->activity_type === 'Camp') {
-        echo '<th>' . esc_html__('Booking Type') . '</th>';
+    echo '<thead>';
+    // First row of headers with rowspans and colspans
+    echo '<tr>';
+    echo '<th rowspan="2">' . esc_html__('Name') . '</th>';
+    echo '<th rowspan="2">' . esc_html__('Surname') . '</th>';
+    echo '<th rowspan="2">' . esc_html__('Gender') . '</th>';
+    echo '<th rowspan="2">' . esc_html__('Phone') . '</th>';
+    echo '<th rowspan="2">' . esc_html__('Email') . '</th>';
+    echo '<th rowspan="2">' . esc_html__('Age') . '</th>';
+    echo '<th rowspan="2">' . esc_html__('Medical/Dietary') . '</th>';
+    $is_camp_like = ($base_roster->activity_type === 'Camp' || strpos($base_roster->activity_type, 'Girls Only') !== false || strpos($base_roster->activity_type, 'Girls\' only') !== false);
+    if ($is_camp_like) {
+        echo '<th rowspan="2">' . esc_html__('Booking Type') . '</th>';
+        echo '<th colspan="5">' . esc_html__('Days of Week') . '</th>';
     }
-    echo '<th>' . esc_html__('Age Group') . '</th>';
-    if ($base_roster->activity_type === 'Girls Only' || $base_roster->activity_type === 'Camp, Girls Only' || $base_roster->activity_type === 'Camp, Girls\' only') {
-        echo '<th>' . esc_html__('Shirt Size') . '</th>';
-        echo '<th>' . esc_html__('Shorts Size') . '</th>';
+    echo '<th rowspan="2">' . esc_html__('Age Group') . '</th>';
+    if (strpos($base_roster->activity_type, 'Girls Only') !== false || strpos($base_roster->activity_type, 'Girls\' only') !== false) {
+        echo '<th rowspan="2">' . esc_html__('Shirt Size') . '</th>';
+        echo '<th rowspan="2">' . esc_html__('Shorts Size') . '</th>';
     }
-    echo '</tr></thead><tbody>';
+    echo '</tr>';
+    // Second row for day sub-headers
+    echo '<tr>';
+    if ($is_camp_like) {
+        echo '<th>Mon</th>';
+        echo '<th>Tue</th>';
+        echo '<th>Wed</th>';
+        echo '<th>Thu</th>';
+        echo '<th>Fri</th>';
+    }
+    echo '</tr>';
+    echo '</thead><tbody>';
     foreach ($rosters as $row) {
         $late_pickup_display = ($row->late_pickup === 'Yes') ? 'Yes (18:00)' : 'No';
         $is_unknown = $row->player_name === 'Unknown Attendee';
+        $day_presence = !empty($row->day_presence) ? json_decode($row->day_presence, true) : [];
         echo '<tr>';
         echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($row->first_name ?? 'N/A') . '</td>';
         echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($row->last_name ?? 'N/A') . '</td>';
@@ -283,11 +318,17 @@ function intersoccer_render_roster_details_page() {
         echo '<td>' . esc_html($row->parent_email ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->age ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->medical_conditions ?? 'N/A') . '</td>';
-        if ($base_roster->activity_type === 'Camp') {
+        if ($is_camp_like) {
             echo '<td>' . esc_html($row->booking_type ?? 'N/A') . '</td>';
+            $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+            foreach ($days as $day) {
+                $presence = $day_presence[$day] ?? 'No';
+                $style = ($presence === 'Yes') ? 'background-color: green; color: black;' : 'background-color: lightpink; color: black;';
+                echo '<td style="' . esc_attr($style) . '">' . esc_html($presence) . '</td>';
+            }
         }
         echo '<td>' . esc_html(intersoccer_get_term_name($row->age_group, 'pa_age-group') ?? 'N/A') . '</td>';
-        if ($base_roster->activity_type === 'Girls Only' || $base_roster->activity_type === 'Camp, Girls Only' || $base_roster->activity_type === 'Camp, Girls\' only') {
+        if (strpos($base_roster->activity_type, 'Girls Only') !== false || strpos($base_roster->activity_type, 'Girls\' only') !== false) {
             echo '<td>' . esc_html($row->shirt_size ?? 'N/A') . '</td>';
             echo '<td>' . esc_html($row->shorts_size ?? 'N/A') . '</td>';
         }
@@ -311,6 +352,8 @@ function intersoccer_render_roster_details_page() {
     echo '<p>' . esc_html__('Venue: ') . esc_html($base_roster->venue ?? 'N/A') . '</p>';
     echo '<p>' . esc_html__('Age Group: ') . esc_html($base_roster->age_group ?? 'N/A') . '</p>';
     echo '<p>' . ($base_roster->course_day ? esc_html__('Course Day: ') . esc_html($base_roster->course_day) : esc_html__('Camp Terms: ') . esc_html($base_roster->camp_terms ?? 'N/A')) . '</p>';
+    $times_label = ($base_roster->activity_type === 'Course') ? __('Course Times: ', 'intersoccer-reports-rosters') : __('Camp Times: ', 'intersoccer-reports-rosters');
+    echo '<p>' . esc_html($times_label) . esc_html($base_roster->times ?? 'N/A') . '</p>';
     echo '<p>' . esc_html__('Variation IDs: ') . esc_html(implode(', ', $related_variation_ids) ?: 'N/A') . '</p>';
     echo '<p><strong>' . esc_html__('Total Players') . ':</strong> ' . esc_html(count($rosters)) . '</p>';
     echo '</div>';

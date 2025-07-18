@@ -3,7 +3,7 @@
  * Advanced features page for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version  1.4.4
+ * @version 1.4.14
  * @author Jeremy Lee
  */
 
@@ -58,24 +58,42 @@ function intersoccer_render_advanced_page() {
         </div>
         <script type="text/javascript">
             jQuery(document).ready(function($) {
-                // Existing submit handlers for rebuild and upgrade...
-
-                $('#intersoccer-process-processing-form').on('submit', function(e) {
+                $('#intersoccer-rebuild-form').on('submit', function(e) {
                     e.preventDefault();
                     $.ajax({
                         url: ajaxurl,
                         type: 'POST',
                         data: $(this).serialize(),
                         beforeSend: function() {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Processing existing orders... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
+                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuilding... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
                         },
                         success: function(response) {
                             $('#intersoccer-rebuild-status').html('<p>' + response.data.message + '</p>');
-                            console.log('Process response: ', response);
+                            console.log('Rebuild response: ', response);
                         },
                         error: function(xhr, status, error) {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Processing failed: ', 'intersoccer-reports-rosters'); ?>' + (xhr.responseJSON ? xhr.responseJSON.message : error) + '</p>');
+                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuild failed: ', 'intersoccer-reports-rosters'); ?>' + (xhr.responseJSON ? xhr.responseJSON.message : error) + '</p>');
                             console.error('AJAX Error: ', status, error, xhr.responseText);
+                        }
+                    });
+                });
+
+                $('#intersoccer-upgrade-form').on('submit', function(e) {
+                    e.preventDefault();
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: $(this).serialize(),
+                        beforeSend: function() {
+                            $('#intersoccer-rebuild-status').html('<p><?php _e('Upgrading database... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
+                        },
+                        success: function(response) {
+                            $('#intersoccer-rebuild-status').html('<p><?php _e('Database upgrade completed. Check debug.log for details.', 'intersoccer-reports-rosters'); ?></p>');
+                            console.log('Upgrade response: ', response);
+                        },
+                        error: function(xhr, status, error) {
+                            $('#intersoccer-rebuild-status').html('<p><?php _e('Database upgrade failed: ', 'intersoccer-reports-rosters'); ?>' + error + '</p>');
+                            console.error('AJAX Error: ', status, error);
                         }
                     });
                 });
@@ -100,45 +118,62 @@ function intersoccer_rebuild_rosters_and_reports() {
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
     error_log('InterSoccer: Starting forced rebuild for table ' . $rosters_table);
 
-    $charset_collate = 'CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
+    $charset_collate = $wpdb->get_charset_collate();
     $sql = "CREATE TABLE $rosters_table (
-        id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-        order_id BIGINT(20) NOT NULL,
-        order_item_id BIGINT(20) NOT NULL,
-        variation_id BIGINT(20) DEFAULT NULL,
-        player_name VARCHAR(255) NOT NULL,
-        first_name VARCHAR(100) NOT NULL,
-        last_name VARCHAR(100) NOT NULL,
-        age INT DEFAULT NULL,
-        gender VARCHAR(20) DEFAULT 'N/A',
-        booking_type VARCHAR(50) NOT NULL,
-        selected_days TEXT,
-        camp_terms VARCHAR(100) DEFAULT NULL,
-        venue VARCHAR(100) NOT NULL,
-        parent_phone VARCHAR(20) DEFAULT 'N/A',
-        parent_email VARCHAR(100) DEFAULT 'N/A',
-        medical_conditions TEXT,
-        late_pickup VARCHAR(10) DEFAULT 'No',
-        day_presence TEXT,
-        age_group VARCHAR(50) DEFAULT 'N/A',
-        start_date DATE DEFAULT NULL,
-        end_date DATE DEFAULT NULL,
-        event_dates VARCHAR(100) DEFAULT 'N/A',
-        product_name VARCHAR(255) NOT NULL,
-        activity_type VARCHAR(100) NOT NULL DEFAULT 'Unknown',
-        shirt_size VARCHAR(50) DEFAULT 'N/A',
-        shorts_size VARCHAR(50) DEFAULT 'N/A',
-        registration_timestamp DATETIME DEFAULT NULL,
-        course_day VARCHAR(20) DEFAULT 'N/A',
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        id bigint unsigned NOT NULL AUTO_INCREMENT,
+        order_id bigint unsigned NOT NULL,
+        order_item_id bigint unsigned NOT NULL,
+        variation_id bigint unsigned NOT NULL,
+        player_name varchar(255) NOT NULL,
+        first_name varchar(100) NOT NULL,
+        last_name varchar(100) NOT NULL,
+        age int DEFAULT NULL,
+        gender varchar(20) DEFAULT 'N/A',
+        booking_type varchar(50) NOT NULL,
+        selected_days text,
+        camp_terms varchar(100) DEFAULT NULL,
+        venue varchar(200) DEFAULT '',
+        parent_phone varchar(20) DEFAULT 'N/A',
+        parent_email varchar(100) DEFAULT 'N/A',
+        medical_conditions text,
+        late_pickup varchar(10) DEFAULT 'No',
+        day_presence text,
+        age_group varchar(50) DEFAULT '',
+        start_date date DEFAULT NULL,
+        end_date date DEFAULT NULL,
+        event_dates varchar(100) DEFAULT 'N/A',
+        product_name varchar(255) NOT NULL,
+        activity_type varchar(50) DEFAULT '',
+        shirt_size varchar(50) DEFAULT 'N/A',
+        shorts_size varchar(50) DEFAULT 'N/A',
+        registration_timestamp datetime DEFAULT NULL,
+        course_day varchar(20) DEFAULT 'N/A',
+        updated_at timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        product_id bigint unsigned NOT NULL,
+        player_first_name varchar(100) NOT NULL,
+        player_last_name varchar(100) NOT NULL,
+        player_dob date NOT NULL,
+        player_gender varchar(10) DEFAULT '',
+        player_medical text DEFAULT '',
+        player_dietary text DEFAULT '',
+        parent_first_name varchar(100) NOT NULL,
+        parent_last_name varchar(100) NOT NULL,
+        emergency_contact varchar(20) DEFAULT '',
+        term varchar(200) DEFAULT '',
+        times varchar(50) DEFAULT '',
+        days_selected varchar(200) DEFAULT '',
+        season varchar(50) DEFAULT '',
+        canton_region varchar(100) DEFAULT '',
+        city varchar(100) DEFAULT '',
+        created_at datetime DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
         UNIQUE KEY uniq_order_item_id (order_item_id),
-        INDEX idx_player_name (player_name),
-        INDEX idx_venue (venue),
-        INDEX idx_activity_type (activity_type(50)),
-        INDEX idx_start_date (start_date),
-        INDEX idx_variation_id (variation_id),
-        INDEX idx_order_id (order_id)
+        KEY idx_player_name (player_name),
+        KEY idx_venue (venue),
+        KEY idx_activity_type (activity_type(50)),
+        KEY idx_start_date (start_date),
+        KEY idx_variation_id (variation_id),
+        KEY idx_order_id (order_id)
     ) $charset_collate;";
     $wpdb->query("DROP TABLE IF EXISTS $rosters_table");
     $result = dbDelta($sql);
@@ -322,6 +357,9 @@ function intersoccer_rebuild_rosters_and_reports() {
                 $age_group = $order_item_meta['pa_age-group'] ?? ($variation ? $variation->get_attribute('pa_age-group') : $parent_product->get_attribute('pa_age_group')) ?? 'N/A';
                 $course_day = ($activity_type === 'Course') ? ($order_item_meta['pa_course-day'] ?? ($variation ? $variation->get_attribute('pa_course-day') : 'N/A')) : 'N/A';
 
+                // Extract times
+                $times = $order_item_meta['Course Times'] ?? $order_item_meta['Camp Times'] ?? ($variation ? $variation->get_attribute('pa_course-times') ?? $variation->get_attribute('pa_camp-times') : 'N/A');
+
                 $start_date = null;
                 $end_date = null;
                 $event_dates = 'N/A';
@@ -449,12 +487,13 @@ function intersoccer_rebuild_rosters_and_reports() {
                     'shorts_size' => $shorts_size,
                     'registration_timestamp' => $order_date,
                     'course_day' => $course_day,
+                    'times' => $times,
                 ];
 
-                $format = array('%d', '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');
+                $format = array('%d', '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');
                 try {
                     $query = $wpdb->prepare(
-                        "INSERT INTO $rosters_table (order_id, order_item_id, variation_id, player_name, first_name, last_name, age, gender, booking_type, selected_days, camp_terms, venue, parent_phone, parent_email, medical_conditions, late_pickup, day_presence, age_group, start_date, end_date, event_dates, product_name, activity_type, shirt_size, shorts_size, registration_timestamp, course_day) VALUES (%d, %d, %d, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                        "INSERT INTO $rosters_table (order_id, order_item_id, variation_id, player_name, first_name, last_name, age, gender, booking_type, selected_days, camp_terms, venue, parent_phone, parent_email, medical_conditions, late_pickup, day_presence, age_group, start_date, end_date, event_dates, product_name, activity_type, shirt_size, shorts_size, registration_timestamp, course_day, times) VALUES (%d, %d, %d, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                         array_values($roster_entry)
                     );
                     error_log("InterSoccer: Prepared insert query for order $order_id, item $order_item_id: $query");
@@ -477,67 +516,6 @@ function intersoccer_rebuild_rosters_and_reports() {
     $wpdb->query('COMMIT');
     error_log('InterSoccer: Transaction committed. Processed ' . $total_items . ' items, inserted ' . $inserted_items . ' rosters');
     return ['status' => 'success', 'inserted' => $inserted_items];
-}
-
-/**
- * Process existing Processing orders: Populate missing rosters, complete if fully populated.
- */
-function intersoccer_process_existing_processing_orders() {
-    global $wpdb;
-    $orders = wc_get_orders([
-        'status' => 'processing',
-        'limit' => -1,
-    ]);
-    $processed = 0;
-    $completed = 0;
-    $errors = 0;
-
-    error_log('InterSoccer: Starting bulk process for ' . count($orders) . ' existing Processing orders');
-
-    foreach ($orders as $order) {
-        $order_id = $order->get_id();
-        error_log('InterSoccer: Evaluating order ' . $order_id . ' for bulk processing');
-
-        // Count eligible items (camp/course/birthday)
-        $eligible_items = 0;
-        foreach ($order->get_items() as $item) {
-            $product_type = intersoccer_get_product_type($item->get_product_id());
-            if (in_array($product_type, ['camp', 'course', 'birthday'])) {
-                $eligible_items++;
-            }
-        }
-        error_log('InterSoccer: Order ' . $order_id . ' has ' . $eligible_items . ' eligible items');
-
-        if ($eligible_items === 0) {
-            continue; // No action needed
-        }
-
-        // Count existing rosters for this order
-        $roster_count = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}intersoccer_rosters WHERE order_id = %d", $order_id));
-        error_log('InterSoccer: Order ' . $order_id . ' has ' . $roster_count . ' existing roster entries');
-
-        if ($roster_count >= $eligible_items) {
-            // Fully populated: Complete the order
-            $order->update_status('completed', 'Automatically completed via bulk tool - rosters fully populated.');
-            $completed++;
-            error_log('InterSoccer: Completed order ' . $order_id . ' - already fully populated');
-        } elseif ($roster_count < $eligible_items) {
-            // Partially or not populated: Run population
-            intersoccer_populate_rosters_and_complete_order($order_id);
-            // Re-check after population
-            $new_roster_count = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}intersoccer_rosters WHERE order_id = %d", $order_id));
-            if ($new_roster_count >= $eligible_items) {
-                $completed++;
-                error_log('InterSoccer: Completed order ' . $order_id . ' after population - now fully populated');
-            } else {
-                $errors++;
-                error_log('InterSoccer: Failed to fully populate order ' . $order_id . ' (new count: ' . $new_roster_count . ') - check metadata');
-            }
-            $processed++;
-        }
-    }
-
-    return ['status' => 'success', 'message' => __('Processed ' . $processed . ' orders, completed ' . $completed . ' (' . $errors . ' errors). Check debug.log for details.', 'intersoccer-reports-rosters')];
 }
 
 /**
@@ -577,17 +555,4 @@ function intersoccer_rebuild_rosters_and_reports_ajax() {
         wp_send_json_error(['message' => __('Rebuild failed: ' . $result['message'], 'intersoccer-reports-rosters')]);
     }
 }
-
-// AJAX handler for processing existing Processing orders
-add_action('wp_ajax_intersoccer_process_existing_processing_orders', 'intersoccer_process_existing_processing_orders_ajax');
-function intersoccer_process_existing_processing_orders_ajax() {
-    check_ajax_referer('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field');
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error(__('You do not have permission to process orders.', 'intersoccer-reports-rosters'));
-    }
-    error_log('InterSoccer: AJAX process existing Processing request received with data: ' . print_r($_POST, true));
-    $result = intersoccer_process_existing_processing_orders();
-    wp_send_json_success(['message' => $result['message']]);
-}
-
 ?>

@@ -44,23 +44,24 @@ function intersoccer_pe_get_camp_variations($filters) {
     $where_clause = implode(' AND ', $where);
 
     $results = $wpdb->get_results(
-        "SELECT camp_terms, venue, age_group, product_name, start_date, 
+        "SELECT camp_terms, venue, age_group, product_name, times, start_date, 
                 COUNT(*) as total_players, GROUP_CONCAT(DISTINCT order_item_id) as variation_ids
          FROM $rosters_table
          WHERE $where_clause
-         GROUP BY camp_terms, venue, age_group, product_name",
+         GROUP BY camp_terms, venue, age_group, product_name, times",
         ARRAY_A
     );
 
     $config_grouped = [];
     foreach ($results as $row) {
-        $config_key = $row['camp_terms'] . '|' . $row['venue'] . '|' . $row['age_group'];
+        $config_key = $row['camp_terms'] . '|' . $row['venue'] . '|' . $row['age_group'] . '|' . $row['times'];
         $config_grouped[$config_key] = [
             'product_name' => $row['product_name'],
             'camp_terms' => $row['camp_terms'],
             'region' => '', // Add region logic if needed
             'venues' => [$row['venue'] => ['variation_ids' => explode(',', $row['variation_ids'])]],
             'age_group' => $row['age_group'],
+            'times' => $row['times'],
             'total_players' => $row['total_players'],
             'variation_ids' => explode(',', $row['variation_ids']),
             'start_date' => $row['start_date']
@@ -84,23 +85,24 @@ function intersoccer_pe_get_course_variations($filters) {
     $where_clause = implode(' AND ', $where);
 
     $results = $wpdb->get_results(
-        "SELECT course_day, venue, age_group, product_name, start_date, 
+        "SELECT course_day, venue, age_group, product_name, times, start_date, 
                 COUNT(*) as total_players, GROUP_CONCAT(DISTINCT order_item_id) as variation_ids
          FROM $rosters_table
          WHERE $where_clause
-         GROUP BY course_day, venue, age_group, product_name",
+         GROUP BY course_day, venue, age_group, product_name, times",
         ARRAY_A
     );
 
     $config_grouped = [];
     foreach ($results as $row) {
-        $config_key = $row['course_day'] . '|' . $row['venue'] . '|' . $row['age_group'];
+        $config_key = $row['course_day'] . '|' . $row['venue'] . '|' . $row['age_group'] . '|' . $row['times'];
         $config_grouped[$config_key] = [
             'product_name' => $row['product_name'],
             'course_day' => $row['course_day'],
             'region' => '', // Add region logic if needed
             'venues' => [$row['venue'] => ['variation_ids' => explode(',', $row['variation_ids'])]],
             'age_group' => $row['age_group'],
+            'times' => $row['times'],
             'total_players' => $row['total_players'],
             'variation_ids' => explode(',', $row['variation_ids']),
             'start_date' => $row['start_date']
@@ -124,23 +126,24 @@ function intersoccer_pe_get_girls_only_variations($filters) {
     $where_clause = implode(' AND ', $where);
 
     $results = $wpdb->get_results(
-        "SELECT camp_terms, venue, age_group, product_name, shirt_size, shorts_size, start_date,
+        "SELECT camp_terms, venue, age_group, product_name, times, shirt_size, shorts_size, start_date,
                 COUNT(*) as total_players, GROUP_CONCAT(DISTINCT order_item_id) as variation_ids
          FROM $rosters_table
          WHERE $where_clause
-         GROUP BY camp_terms, venue, age_group, product_name, shirt_size, shorts_size",
+         GROUP BY camp_terms, venue, age_group, product_name, times, shirt_size, shorts_size",
         ARRAY_A
     );
 
     $config_grouped = [];
     foreach ($results as $row) {
-        $config_key = $row['camp_terms'] . '|' . $row['venue'] . '|' . $row['age_group'] . '|' . $row['shirt_size'] . '|' . $row['shorts_size'];
+        $config_key = $row['camp_terms'] . '|' . $row['venue'] . '|' . $row['age_group'] . '|' . $row['times'] . '|' . $row['shirt_size'] . '|' . $row['shorts_size'];
         $config_grouped[$config_key] = [
             'product_name' => $row['product_name'],
             'camp_terms' => $row['camp_terms'],
             'region' => '', // Add region logic if needed
             'venues' => [$row['venue'] => ['variation_ids' => explode(',', $row['variation_ids'])]],
             'age_group' => $row['age_group'],
+            'times' => $row['times'],
             'shirt_size' => $row['shirt_size'],
             'shorts_size' => $row['shorts_size'],
             'total_players' => $row['total_players'],

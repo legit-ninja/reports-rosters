@@ -135,6 +135,7 @@ function intersoccer_render_camps_page() {
     $base_query = "SELECT COALESCE(camp_terms, 'N/A') as camp_terms, 
                           COALESCE(venue, 'N/A') as venue, 
                           age_group, 
+                          times,
                           COUNT(DISTINCT order_item_id) as total_players,
                           GROUP_CONCAT(DISTINCT variation_id) as variation_ids
                    FROM $rosters_table
@@ -142,7 +143,7 @@ function intersoccer_render_camps_page() {
     if ($selected_camp_term) {
         $base_query .= $wpdb->prepare(" AND COALESCE(camp_terms, 'N/A') = %s", $selected_camp_term);
     }
-    $base_query .= " GROUP BY camp_terms, venue, age_group ORDER BY camp_terms, venue, age_group";
+    $base_query .= " GROUP BY camp_terms, venue, age_group, times ORDER BY camp_terms, venue, age_group";
 
     $groups = $wpdb->get_results($base_query, ARRAY_A);
     error_log('InterSoccer: Camps query: ' . $wpdb->last_query);
@@ -165,23 +166,6 @@ function intersoccer_render_camps_page() {
             $players = $wpdb->get_results($player_query, ARRAY_A);
             error_log('InterSoccer: Camps player details for summer-week-3-july-7-11-5-days: ' . json_encode($players));
         }
-    }
-
-    // Log excluded Girls Only records for verification
-    if ($selected_camp_term === 'summer-week-3-july-7-11-5-days') {
-        $girls_only_query = $wpdb->prepare(
-            "SELECT order_item_id, player_name, activity_type, booking_type, day_presence
-             FROM $rosters_table
-             WHERE activity_type IN ('Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only')
-             AND camp_terms = %s
-             AND venue = %s
-             AND age_group = %s",
-            'summer-week-3-july-7-11-5-days',
-            'nyon-centre-sportif-colovray',
-            '5-13y-full-day'
-        );
-        $girls_only_players = $wpdb->get_results($girls_only_query, ARRAY_A);
-        error_log('InterSoccer: Excluded Girls Only players for summer-week-3-july-7-11-5-days: ' . json_encode($girls_only_players));
     }
 
     // Group the results by camp term
@@ -236,6 +220,7 @@ function intersoccer_render_camps_page() {
                             <thead>
                                 <tr>
                                     <th><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
+                                    <th><?php _e('Camp Times', 'intersoccer-reports-rosters'); ?></th>
                                     <th><?php _e('Age Group', 'intersoccer-reports-rosters'); ?></th>
                                     <th><?php _e('Total Players', 'intersoccer-reports-rosters'); ?></th>
                                     <th><?php _e('Actions', 'intersoccer-reports-rosters'); ?></th>
@@ -244,10 +229,11 @@ function intersoccer_render_camps_page() {
                             <tbody>
                                 <?php foreach ($term_groups as $group) : ?>
                                     <?php
-                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&camp_terms=' . urlencode($term) . '&venue=' . urlencode($group['venue']) . '&age_group=' . urlencode($group['age_group']));
+                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&camp_terms=' . urlencode($term) . '&venue=' . urlencode($group['venue']) . '&age_group=' . urlencode($group['age_group']) . '&times=' . urlencode($group['times']));
                                     ?>
                                     <tr>
                                         <td><?php echo esc_html(intersoccer_get_term_name($group['venue'], 'pa_intersoccer-venues')); ?></td>
+                                        <td><?php echo esc_html($group['times'] ?? 'N/A'); ?></td>
                                         <td><?php echo esc_html(intersoccer_get_term_name($group['age_group'], 'pa_age-group')); ?></td>
                                         <td><?php echo esc_html($group['total_players']); ?></td>
                                         <td><a href="<?php echo esc_url($view_url); ?>" class="button"><?php _e('View Roster', 'intersoccer-reports-rosters'); ?></a></td>
@@ -300,8 +286,8 @@ function intersoccer_render_courses_page() {
     ];
     $age_group_conditions = implode("','", array_map('esc_sql', $valid_age_groups));
     
-    // Build query for courses, grouping by course_day, venue, age_group, and parent product
-    $base_query = "SELECT r.course_day, r.venue, r.age_group, 
+    // Build query for courses, grouping by course_day, venue, age_group, times, and parent product
+    $base_query = "SELECT r.course_day, r.venue, r.age_group, r.times,
                           COUNT(DISTINCT r.order_item_id) as total_players,
                           SUM(CASE WHEN r.player_name = 'Unknown Attendee' THEN 1 ELSE 0 END) as unknown_count,
                           GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids,
@@ -315,7 +301,7 @@ function intersoccer_render_courses_page() {
     if ($selected_course_day) {
         $base_query .= $wpdb->prepare(" AND r.course_day = %s", $selected_course_day);
     }
-    $base_query .= " GROUP BY r.course_day, r.venue, r.age_group, p.post_parent, parent.post_title
+    $base_query .= " GROUP BY r.course_day, r.venue, r.age_group, r.times, p.post_parent, parent.post_title
                     ORDER BY r.course_day, r.venue, r.age_group, parent.post_title";
 
     $groups = $wpdb->get_results($base_query, ARRAY_A);
@@ -389,7 +375,8 @@ function intersoccer_render_courses_page() {
                                 <table class="wp-list-table widefat fixed striped">
                                     <thead>
                                         <tr>
-                                            <th width='70%'><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
+                                            <th width='60%'><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
+                                            <th width='10%'><?php _e('Course Times', 'intersoccer-reports-rosters'); ?></th>
                                             <th width='10%'><?php _e('Age Group', 'intersoccer-reports-rosters'); ?></th>
                                             <th width='10%'><?php _e('Total Players', 'intersoccer-reports-rosters'); ?></th>
                                             <th width='10%'><?php _e('Actions', 'intersoccer-reports-rosters'); ?></th>
@@ -399,10 +386,11 @@ function intersoccer_render_courses_page() {
                                         <?php foreach ($day_groups as $group) : ?>
                                             <?php
                                             $unknown_count = $group['unknown_count'] ?? 0;
-                                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&course_day=' . urlencode($course_day) . '&venue=' . urlencode($group['venue']) . '&age_group=' . urlencode($group['age_group']));
+                                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&course_day=' . urlencode($course_day) . '&venue=' . urlencode($group['venue']) . '&age_group=' . urlencode($group['age_group']) . '&times=' . urlencode($group['times']));
                                             ?>
                                             <tr>
                                                 <td><?php echo esc_html(intersoccer_get_term_name($group['venue'], 'pa_intersoccer-venues')); ?></td>
+                                                <td><?php echo esc_html($group['times'] ?? 'N/A'); ?></td>
                                                 <td><?php echo esc_html(intersoccer_get_term_name($group['age_group'], 'pa_age-group')); ?></td>
                                                 <td><?php echo esc_html($group['total_players']); ?></td>
                                                 <td><a href="<?php echo esc_url($view_url); ?>" class="button"><?php _e('View Roster', 'intersoccer-reports-rosters'); ?></a></td>
@@ -466,7 +454,7 @@ function intersoccer_render_girls_only_page() {
     $selected_product_id = isset($_GET['product_id']) ? intval($_GET['product_id']) : 0;
 
     // Build the query for Girls Only rosters
-    $base_query = "SELECT r.variation_id, r.product_name, r.venue, r.age_group, r.camp_terms, 
+    $base_query = "SELECT r.variation_id, r.product_name, r.venue, r.age_group, r.times, r.camp_terms, 
                           COUNT(DISTINCT r.order_item_id) as total_players,
                           SUM(CASE WHEN r.player_name = 'Unknown Attendee' THEN 1 ELSE 0 END) as unknown_count,
                           p.post_parent as parent_id,
@@ -478,7 +466,7 @@ function intersoccer_render_girls_only_page() {
     if ($selected_product_id) {
         $base_query .= $wpdb->prepare(" AND p.post_parent = %d", $selected_product_id);
     }
-    $base_query .= " GROUP BY r.variation_id, r.product_name, r.venue, r.age_group, r.camp_terms, p.post_parent, parent.post_title
+    $base_query .= " GROUP BY r.variation_id, r.product_name, r.venue, r.age_group, r.times, r.camp_terms, p.post_parent, parent.post_title
                     ORDER BY parent.post_title, r.camp_terms, r.venue, r.age_group";
 
     $groups = $wpdb->get_results($base_query, ARRAY_A);
@@ -547,6 +535,7 @@ function intersoccer_render_girls_only_page() {
                             <thead>
                                 <tr>
                                     <th><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
+                                    <th><?php _e('Camp Times', 'intersoccer-reports-rosters'); ?></th>
                                     <th><?php _e('Age Group', 'intersoccer-reports-rosters'); ?></th>
                                     <th><?php _e('Total Players', 'intersoccer-reports-rosters'); ?></th>
                                     <th><?php _e('Variation IDs', 'intersoccer-reports-rosters'); ?></th>
@@ -557,11 +546,12 @@ function intersoccer_render_girls_only_page() {
                                 <?php foreach ($product_data['rosters'] as $roster) : ?>
                                     <?php
                                     $unknown_count = $roster['unknown_count'] ?? 0;
-                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . urlencode($roster['variation_id']) . '&age_group=' . urlencode($roster['age_group']));
+                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . urlencode($roster['variation_id']) . '&age_group=' . urlencode($roster['age_group']) . '&times=' . urlencode($roster['times']));
                                     error_log('InterSoccer: Girls Only View Roster URL for variation ' . $roster['variation_id'] . ': ' . $view_url);
                                     ?>
                                     <tr>
                                         <td><?php echo esc_html(intersoccer_get_term_name($roster['venue'], 'pa_intersoccer-venues')); ?></td>
+                                        <td><?php echo esc_html($roster['times'] ?? 'N/A'); ?></td>
                                         <td><?php echo esc_html(intersoccer_get_term_name($roster['age_group'], 'pa_age-group')); ?></td>
                                         <td><?php echo esc_html($roster['total_players']); ?></td>
                                         <td><?php echo esc_html($roster['variation_id'] ?: 'N/A'); ?></td>
