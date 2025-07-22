@@ -85,7 +85,7 @@ function intersoccer_activate_plugin() {
 }
 
 $included_files = [];
-$files_to_include = ['event-reports.php', 'reports.php', 'utils.php', 'rosters.php', 'roster-data.php', 'roster-details.php', 'roster-export.php', 'advanced.php', 'ajax-handlers.php', 'woocommerce-orders.php']; 
+$files_to_include = ['event-reports.php', 'reports.php', 'utils.php', 'rosters.php', 'roster-data.php', 'roster-details.php', 'roster-export.php', 'advanced.php', 'woocommerce-orders.php']; 
 foreach ($files_to_include as $file) {
     $file_path = plugin_dir_path(__FILE__) . 'includes/' . $file;
     if (file_exists($file_path)) {
