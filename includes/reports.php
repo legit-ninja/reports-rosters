@@ -434,14 +434,14 @@ function intersoccer_get_booking_report($start_date = '', $end_date = '', $year 
     $report_data = [];
     foreach ($results as $row) {
         // Fetch attendee details from intersoccer_players using customer_user
-        $attendee_name = !empty($row['assigned_attendee']) ? $row['assigned_attendee'] : 'Unknown';
+        $attendee_name = !empty($row['assigned_attendee']) && $row['assigned_attendee'] !== 'Unknown Attendee' ? $row['assigned_attendee'] : 'Unknown';
         $user_id = $row['customer_user'] ?? 0;
-        if ($user_id && !empty($row['assigned_attendee'])) {
+        if ($user_id && !empty($row['assigned_attendee']) && $row['assigned_attendee'] !== 'Unknown Attendee') {
             $players = get_user_meta($user_id, 'intersoccer_players', true);
-            if (is_array($players)) {
+            if (is_array($players) && !empty($players)) {
                 foreach ($players as $player) {
-                    $player_full_name = ($player['first_name'] ?? '') . ' ' . ($player['last_name'] ?? '');
-                    if (trim($player_full_name) === trim($row['assigned_attendee'])) {
+                    $player_full_name = trim(($player['first_name'] ?? '') . ' ' . ($player['last_name'] ?? ''));
+                    if ($player_full_name === trim($row['assigned_attendee'])) {
                         $attendee_name = $player_full_name;
                         break;
                     }
@@ -450,10 +450,11 @@ function intersoccer_get_booking_report($start_date = '', $end_date = '', $year 
                     error_log("InterSoccer: No matching player found for Order ID {$row['ref']}, Assigned Attendee {$row['assigned_attendee']}, user_id {$user_id}");
                 }
             } else {
-                error_log("InterSoccer: No intersoccer_players data for user_id {$user_id} in Order ID {$row['ref']}");
+                error_log("InterSoccer: No intersoccer_players data for user_id {$user_id} in Order ID {$row['ref']}, falling back to Assigned Attendee");
+                $attendee_name = $row['assigned_attendee'] ?: 'Unknown';
             }
         } else {
-            error_log("InterSoccer: Missing customer_user or Assigned Attendee for Order ID {$row['ref']}");
+            error_log("InterSoccer: Missing customer_user or invalid Assigned Attendee for Order ID {$row['ref']}, using fallback: {$attendee_name}");
         }
 
         // Calculate prorated coupon discount based on line_subtotal
@@ -554,8 +555,18 @@ function intersoccer_get_booking_report($start_date = '', $end_date = '', $year 
  * @param array $visible_columns Columns to include in export.
  */
 function intersoccer_export_booking_excel($report_data, $start_date, $end_date, $year, $region, $visible_columns) {
-    // Clear all output buffers
+    // Exit early if any output has been sent
+    if (headers_sent()) {
+        error_log('InterSoccer: Headers already sent before booking export');
+        wp_die(__('Export failed due to prior output. Check server logs.', 'intersoccer-reports-rosters'));
+    }
+
+    // Clear all output buffers and log residual content
     while (ob_get_level()) {
+        $buffer_content = ob_get_contents();
+        if ($buffer_content) {
+            error_log('InterSoccer: Residual output detected before export: ' . substr($buffer_content, 0, 100));
+        }
         ob_end_clean();
     }
     ob_start();
@@ -568,16 +579,23 @@ function intersoccer_export_booking_excel($report_data, $start_date, $end_date, 
         }
 
         // Increase memory limit and execution time
-        ini_set('memory_limit', '512M'); // Increased from 256M
-        ini_set('max_execution_time', 300); // 5 minutes
+        ini_set('memory_limit', '512M');
+        ini_set('max_execution_time', 300);
         error_log('InterSoccer: Memory limit set to 512M, execution time to 300s for booking export');
 
         $start_memory = memory_get_usage();
         error_log('InterSoccer: Starting memory usage: ' . round($start_memory / 1024 / 1024, 2) . ' MB');
 
-        $spreadsheet = new PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('Booking_Report_' . ($start_date && $end_date ? "$start_date_to_$end_date" : $year));
+        // Shorten sheet title to fit within 31 characters
+        $date_range = ($start_date && $end_date) ? substr("{$start_date}_to_{$end_date}", 0, 23) : $year;
+        $sheet_title = 'Booking_' . $date_range;
+        if (strlen($sheet_title) > 31) {
+            $sheet_title = substr($sheet_title, 0, 31);
+            error_log('InterSoccer: Truncated sheet title to 31 characters: ' . $sheet_title);
+        }
+        $sheet->setTitle($sheet_title);
 
         // Define all possible columns
         $all_columns = [
@@ -604,7 +622,7 @@ function intersoccer_export_booking_excel($report_data, $start_date, $end_date, 
 
         // Write data in chunks to reduce memory usage
         $row_number = 2;
-        $chunk_size = 100; // Process 100 rows at a time
+        $chunk_size = 100;
         $data_chunks = array_chunk($report_data, $chunk_size);
         error_log('InterSoccer: Processing ' . count($report_data) . ' rows in ' . count($data_chunks) . ' chunks of ' . $chunk_size);
 
@@ -619,7 +637,6 @@ function intersoccer_export_booking_excel($report_data, $start_date, $end_date, 
             }
             $sheet->fromArray($chunk_data, null, "A$row_number");
             $row_number += count($chunk);
-            // Free memory after each chunk
             unset($chunk_data);
             gc_collect_cycles();
             error_log('InterSoccer: Processed chunk ' . ($chunk_index + 1) . '/' . count($data_chunks) . ', current memory: ' . round(memory_get_usage() / 1024 / 1024, 2) . ' MB');
@@ -655,7 +672,8 @@ function intersoccer_export_booking_excel($report_data, $start_date, $end_date, 
         $end_memory = memory_get_usage();
         error_log('InterSoccer: Final memory usage: ' . round($end_memory / 1024 / 1024, 2) . ' MB');
 
-        $filename = 'booking_report_' . ($start_date && $end_date ? "$start_date_to_$end_date" : $year) . ($region ? "_$region" : '') . '_' . date('Y-m-d_H-i-s') . '.xlsx';
+        // Use same date_range for filename
+        $filename = 'booking_report_' . $date_range . ($region ? "_$region" : '') . '_' . date('Y-m-d_H-i-s') . '.xlsx';
         error_log('InterSoccer: Sending headers for booking report export: ' . $filename);
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -663,7 +681,13 @@ function intersoccer_export_booking_excel($report_data, $start_date, $end_date, 
         header('Expires: 0');
         header('Pragma: public');
 
-        $writer = new Xlsx($spreadsheet);
+        // Disable output compression
+        if (ini_get('zlib.output_compression')) {
+            ini_set('zlib.output_compression', 'Off');
+            error_log('InterSoccer: Disabled zlib.output_compression for export');
+        }
+
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
         $writer->save('php://output');
         intersoccer_log_audit('export_booking_excel', "Exported booking report for year $year, region $region, start_date $start_date, end_date $end_date, columns " . implode(',', $visible_columns));
         ob_end_flush();
