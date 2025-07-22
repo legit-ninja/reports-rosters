@@ -567,10 +567,15 @@ function intersoccer_export_booking_excel($report_data, $start_date, $end_date, 
             wp_die(__('PhpSpreadsheet missing.', 'intersoccer-reports-rosters'));
         }
 
-        // Increase memory limit for large exports
-        ini_set('memory_limit', '256M');
+        // Increase memory limit and execution time
+        ini_set('memory_limit', '512M'); // Increased from 256M
+        ini_set('max_execution_time', 300); // 5 minutes
+        error_log('InterSoccer: Memory limit set to 512M, execution time to 300s for booking export');
 
-        $spreadsheet = new Spreadsheet();
+        $start_memory = memory_get_usage();
+        error_log('InterSoccer: Starting memory usage: ' . round($start_memory / 1024 / 1024, 2) . ' MB');
+
+        $spreadsheet = new PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Booking_Report_' . ($start_date && $end_date ? "$start_date_to_$end_date" : $year));
 
@@ -597,15 +602,27 @@ function intersoccer_export_booking_excel($report_data, $start_date, $end_date, 
         }
         $sheet->fromArray($headers, null, 'A1');
 
-        // Data
+        // Write data in chunks to reduce memory usage
         $row_number = 2;
-        foreach ($report_data as $row) {
-            $row_data = [];
-            foreach ($visible_columns as $key) {
-                $row_data[] = $row[$key];
+        $chunk_size = 100; // Process 100 rows at a time
+        $data_chunks = array_chunk($report_data, $chunk_size);
+        error_log('InterSoccer: Processing ' . count($report_data) . ' rows in ' . count($data_chunks) . ' chunks of ' . $chunk_size);
+
+        foreach ($data_chunks as $chunk_index => $chunk) {
+            $chunk_data = [];
+            foreach ($chunk as $row) {
+                $row_data = [];
+                foreach ($visible_columns as $key) {
+                    $row_data[] = $row[$key];
+                }
+                $chunk_data[] = $row_data;
             }
-            $sheet->fromArray($row_data, null, "A$row_number");
-            $row_number++;
+            $sheet->fromArray($chunk_data, null, "A$row_number");
+            $row_number += count($chunk);
+            // Free memory after each chunk
+            unset($chunk_data);
+            gc_collect_cycles();
+            error_log('InterSoccer: Processed chunk ' . ($chunk_index + 1) . '/' . count($data_chunks) . ', current memory: ' . round(memory_get_usage() / 1024 / 1024, 2) . ' MB');
         }
 
         // Styling
@@ -615,9 +632,9 @@ function intersoccer_export_booking_excel($report_data, $start_date, $end_date, 
         // Set columns to text for non-numeric fields
         foreach ($visible_columns as $index => $key) {
             if (in_array($key, ['booker_email', 'attendee_name', 'start_date', 'discount_codes', 'class_name', 'venue', 'ref', 'booked'])) {
-                $sheet->getStyle(chr(65 + $index) . '2:' . chr(65 + $index) . ($row_number - 1))->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_TEXT);
+                $sheet->getStyle(chr(65 + $index) . '2:' . chr(65 + $index) . ($row_number - 1))->getNumberFormat()->setFormatCode(\PhpOffice\PhpSpreadsheet\Style\NumberFormat::FORMAT_TEXT);
             } else {
-                $sheet->getStyle(chr(65 + $index) . '2:' . chr(65 + $index) . ($row_number - 1))->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_NUMBER_00);
+                $sheet->getStyle(chr(65 + $index) . '2:' . chr(65 + $index) . ($row_number - 1))->getNumberFormat()->setFormatCode(\PhpOffice\PhpSpreadsheet\Style\NumberFormat::FORMAT_NUMBER_00);
             }
         }
 
@@ -626,8 +643,20 @@ function intersoccer_export_booking_excel($report_data, $start_date, $end_date, 
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
+        // Add totals summary
+        $sheet->setCellValue('A' . $row_number, 'Total Bookings: ' . count($report_data));
+        $sheet->setCellValue('A' . ($row_number + 1), 'Total Base Price: ' . number_format(array_sum(array_map('floatval', array_column($report_data, 'base_price'))), 2) . ' CHF');
+        $sheet->setCellValue('A' . ($row_number + 2), 'Total Discount Amount: ' . number_format(array_sum(array_map('floatval', array_column($report_data, 'discount_amount'))), 2) . ' CHF');
+        $sheet->setCellValue('A' . ($row_number + 3), 'Total Final Price: ' . number_format(array_sum(array_map('floatval', array_column($report_data, 'final_price'))), 2) . ' CHF');
+        $sheet->setCellValue('A' . ($row_number + 4), 'Total Reimbursement: ' . number_format(array_sum(array_map('floatval', array_column($report_data, 'reimbursement'))), 2) . ' CHF');
+        $sheet->setCellValue('A' . ($row_number + 5), 'Total Net Revenue: ' . number_format(array_sum(array_map('floatval', array_column($report_data, 'final_price'))) - array_sum(array_map('floatval', array_column($report_data, 'reimbursement'))), 2) . ' CHF');
+
+        // Log final memory usage
+        $end_memory = memory_get_usage();
+        error_log('InterSoccer: Final memory usage: ' . round($end_memory / 1024 / 1024, 2) . ' MB');
+
         $filename = 'booking_report_' . ($start_date && $end_date ? "$start_date_to_$end_date" : $year) . ($region ? "_$region" : '') . '_' . date('Y-m-d_H-i-s') . '.xlsx';
-        error_log('InterSoccer: Sending headers for booking report export');
+        error_log('InterSoccer: Sending headers for booking report export: ' . $filename);
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         header('Cache-Control: max-age=0');

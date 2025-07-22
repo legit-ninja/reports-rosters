@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.4.14
+ * Version: 1.4.20
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -115,14 +115,35 @@ function intersoccer_render_plugin_overview_page() {
     $gender_data = $wpdb->get_results("SELECT gender, COUNT(*) as count FROM $rosters_table WHERE gender != 'N/A' GROUP BY gender", ARRAY_A);
     $weekly_trends = $wpdb->get_results("SELECT DATE(start_date) as week_start, COUNT(*) as count FROM $rosters_table WHERE start_date IS NOT NULL GROUP BY DATE(start_date) ORDER BY start_date", ARRAY_A);
 
+    // Manually order: male, female, other
+    $ordered_genders = ['male', 'female', 'other'];
+    $ordered_gender_labels = [];
+    $ordered_gender_values = [];
+
+    foreach ($ordered_genders as $gender) {
+        $found = false;
+        foreach ($gender_data as $entry) {
+            if (strtolower($entry['gender']) === $gender) {
+                $ordered_gender_labels[] = ucfirst($gender); // Capitalize for display
+                $ordered_gender_values[] = $entry['count'];
+                $found = true;
+                break;
+            }
+        }
+        if (!$found) {
+            $ordered_gender_labels[] = ucfirst($gender);
+            $ordered_gender_values[] = 0;
+        }
+    }
+
     $current_venue_labels = json_encode(array_column($current_venue_data, 'venue'));
     $current_venue_values = json_encode(array_column($current_venue_data, 'count'));
     $region_labels = json_encode(array_column($region_data, 'venue'));
     $region_values = json_encode(array_column($region_data, 'count'));
     $age_labels = json_encode(array_column($age_data, 'age_group'));
     $age_values = json_encode(array_column($age_data, 'count'));
-    $gender_labels = json_encode(array_column($gender_data, 'gender'));
-    $gender_values = json_encode(array_column($gender_data, 'count'));
+    $gender_labels = json_encode($ordered_gender_labels);
+    $gender_values = json_encode($ordered_gender_values);
     $weekly_labels = json_encode(array_column($weekly_trends, 'week_start'));
     $weekly_values = json_encode(array_column($weekly_trends, 'count'));
 
@@ -243,7 +264,7 @@ add_action('admin_menu', function () {
     add_submenu_page('intersoccer-reports-rosters', __('Other Events', 'intersoccer-reports-rosters'), __('Other Events', 'intersoccer-reports-rosters'), 'read', 'intersoccer-other-events', 'intersoccer_render_other_events_page');
     add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Advanced', 'intersoccer-reports-rosters'), __('Advanced', 'intersoccer-reports-rosters'), 'read', 'intersoccer-advanced', 'intersoccer_render_advanced_page');
     add_submenu_page('intersoccer-reports-rosters', __('Roster Details', 'intersoccer-reports-rosters'), __('Roster Details', 'intersoccer-reports-rosters'), 'read', 'intersoccer-roster-details', 'intersoccer_render_roster_details_page');
-    add_submenu_page('intersoccer-reports-rosters', __('Roster Details', 'intersoccer-reports-rosters'), __('Roster Details', 'intersoccer-reports-rosters'),'manage_options','intersoccer-roster-details','intersoccer_render_roster_details_page');
+    add_submenu_page('intersoccer-reports-rosters', __('Report Details', 'intersoccer-reports-rosters'), __('Roster Details', 'intersoccer-reports-rosters'),'manage_options','intersoccer-roster-details','intersoccer_render_roster_details_page');
 });
 
 add_action('wp_ajax_intersoccer_upgrade_database', 'intersoccer_upgrade_database');
