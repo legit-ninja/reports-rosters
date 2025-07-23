@@ -3,7 +3,7 @@
  * Export functionality for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.4.21
+ * @version 1.4.22 // Incremented for AVS
  * @author Jeremy Lee
  */
 
@@ -164,7 +164,7 @@ function intersoccer_export_roster() {
 
     // Build query
     $query = $wpdb->prepare(
-        "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, medical_conditions, late_pickup, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size
+        "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, medical_conditions, late_pickup, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
          FROM $rosters_table
          WHERE variation_id IN (" . implode(',', array_fill(0, count($variation_ids), '%d')) . ")",
         $variation_ids
@@ -188,7 +188,8 @@ function intersoccer_export_roster() {
                 'shirt_size' => $row['shirt_size'],
                 'shorts_size' => $row['shorts_size'],
                 'day_presence' => $day_presence,
-                'activity_type' => $row['activity_type']
+                'activity_type' => $row['activity_type'],
+                'avs_number' => $row['avs_number'] ?? 'N/A' // Added for log
             ];
         }, array_slice($rosters, 0, 1))));
     }
@@ -214,6 +215,7 @@ function intersoccer_export_roster() {
         __('Email', 'intersoccer-reports-rosters'),
         __('Age', 'intersoccer-reports-rosters'),
         __('Medical/Dietary Conditions', 'intersoccer-reports-rosters'),
+        __('AVS Number', 'intersoccer-reports-rosters'), // Added
         __('Late Pickup', 'intersoccer-reports-rosters'),
         __('Booking Type', 'intersoccer-reports-rosters'),
         __('Age Group', 'intersoccer-reports-rosters'),
@@ -228,7 +230,7 @@ function intersoccer_export_roster() {
     }
     if ($base_roster['activity_type'] === 'Camp' || $base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
         $headers = array_merge(
-            array_slice($headers, 0, 9),
+            array_slice($headers, 0, 9), // Adjust slice for added AVS (now after 7th: Medical)
             [__('Monday', 'intersoccer-reports-rosters'), __('Tuesday', 'intersoccer-reports-rosters'), __('Wednesday', 'intersoccer-reports-rosters'), __('Thursday', 'intersoccer-reports-rosters'), __('Friday', 'intersoccer-reports-rosters')],
             array_slice($headers, 9)
         );
@@ -274,6 +276,7 @@ function intersoccer_export_roster() {
             $player['parent_email'] ?? 'N/A',
             $player['age'] ?? 'N/A',
             $player['medical_conditions'] ?? 'N/A',
+            $player['avs_number'] ?? 'N/A', // Added
             ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
             $player['booking_type'] ?? 'N/A',
             intersoccer_get_term_name($player['age_group'], 'pa_age-group') ?? 'N/A',
@@ -284,9 +287,9 @@ function intersoccer_export_roster() {
         error_log("InterSoccer: Data array for row {$row}: " . json_encode($data));
         if ($player['activity_type'] === 'Camp' || $player['activity_type'] === 'Girls Only' || $player['activity_type'] === 'Camp, Girls Only' || $player['activity_type'] === 'Camp, Girls\' only') {
             $data = array_merge(
-                array_slice($data, 0, 9),
+                array_slice($data, 0, 10), // Adjust for added AVS (after 7th: Medical, so slice to 8 now)
                 [$monday, $tuesday, $wednesday, $thursday, $friday],
-                array_slice($data, 9)
+                array_slice($data, 10)
             );
             // Add times after event
             $data = array_merge(
@@ -388,6 +391,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             $sheet->setTitle('All_Rosters');
             $headers = [
                 'First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 
+                'AVS Number', // Added
                 'Late Pickup', 'Booking Type', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
                 'Age Group', 'Product Name', 'Venue', 'Camp Terms', 'Course Day', 'Activity Type', 'Times'
             ];
@@ -421,6 +425,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
                     $roster['medical_conditions'] ?? 'N/A',
+                    $roster['avs_number'] ?? 'N/A', // Added
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
                     $roster['booking_type'] ?? 'N/A',
                     $monday,
@@ -468,6 +473,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             $sheet->setTitle('Camp_Rosters');
             $headers = [
                 'First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 
+                'AVS Number', // Added
                 'Late Pickup', 'Booking Type', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
                 'Age Group', 'Camp Terms', 'Venue', 'Times'
             ];
@@ -504,6 +510,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
                     $roster['medical_conditions'] ?? 'N/A',
+                    $roster['avs_number'] ?? 'N/A', // Added
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
                     $roster['booking_type'] ?? 'N/A',
                     $monday,
@@ -552,7 +559,11 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
 
             $sheet = $spreadsheet->getActiveSheet();
             $sheet->setTitle('Course_Rosters');
-            $headers = ['First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 'Late Pickup', 'Course Day', 'Course Times', 'Season', 'Age Group', 'Venue'];
+            $headers = [
+                'First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 
+                'AVS Number', // Added
+                'Late Pickup', 'Course Day', 'Course Times', 'Season', 'Age Group', 'Venue'
+            ];
             $sheet->fromArray($headers, NULL, 'A1');
 
             // Set phone number column (D) to Text format and adjust width
@@ -578,6 +589,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
                     $roster['medical_conditions'] ?? 'N/A',
+                    $roster['avs_number'] ?? 'N/A', // Added
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
                     $roster['course_day'] ?? 'N/A',
                     $roster['times'] ?? 'N/A',
@@ -618,6 +630,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             $sheet->setTitle('Full_Day_Girls_Only_Rosters');
             $headers = [
                 'First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 
+                'AVS Number', // Added
                 'Late Pickup', 'Booking Type', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
                 'Age Group', 'Event Name', 'Venue', 'Times', 'Camp Terms', 'Shirt Size', 'Shorts Size'
             ];
@@ -651,6 +664,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
                     $roster['medical_conditions'] ?? 'N/A',
+                    $roster['avs_number'] ?? 'N/A', // Added
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
                     $roster['booking_type'] ?? 'N/A',
                     $monday,
@@ -699,6 +713,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             $sheet->setTitle('Half_Day_Girls_Only_Rosters');
             $headers = [
                 'First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 
+                'AVS Number', // Added
                 'Late Pickup', 'Booking Type', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
                 'Age Group', 'Event Name', 'Venue', 'Times', 'Camp Terms', 'Shirt Size', 'Shorts Size'
             ];
@@ -732,6 +747,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
                     $roster['medical_conditions'] ?? 'N/A',
+                    $roster['avs_number'] ?? 'N/A', // Added
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
                     $roster['booking_type'] ?? 'N/A',
                     $monday,
@@ -765,7 +781,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
         } elseif ($export_type === 'other') {
             $rosters = $wpdb->get_results(
                 "SELECT * FROM $rosters_table 
-                 WHERE activity_type IN ('Event', 'Other') 
+                 WHERE (activity_type NOT IN ('Camp', 'Course', 'Girls Only') OR activity_type IS NULL OR activity_type = 'unknown')
                  ORDER BY updated_at DESC",
                 ARRAY_A
             );
@@ -779,7 +795,8 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             $sheet->setTitle('Other_Event_Rosters');
             $headers = [
                 'First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 
-                'Late Pickup', 'Booking Type', 'Age Group', 'Event Name', 'Venue', 'Times'
+                'AVS Number', // Added
+                'Late Pickup', 'Booking Type', 'Age Group', 'Product Name', 'Venue', 'Times'
             ];
             $sheet->fromArray($headers, NULL, 'A1');
 
@@ -805,6 +822,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
                     $roster['medical_conditions'] ?? 'N/A',
+                    $roster['avs_number'] ?? 'N/A', // Added
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
                     $roster['booking_type'] ?? 'N/A',
                     intersoccer_get_term_name($roster['age_group'], 'pa_age-group') ?? 'N/A',
@@ -830,7 +848,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
         }
 
         error_log('InterSoccer: Exporting all rosters for type ' . $export_type . ' with ' . $sheet->getHighestRow() . ' rows');
-        
+
         // Clear all output buffers
         while (ob_get_level()) {
             ob_end_clean();
@@ -915,13 +933,13 @@ function intersoccer_reports_export_roster_ajax() {
     }
 
     ob_start();
-    intersoccer_export_roster($variation_ids);
+    intersoccer_export_roster();
     ob_end_clean(); // Clean output buffer to prevent interference
     wp_die(); // Ensure proper exit after export
 }
 
 /**
- * AJAX handler for exporting a single roster
+ * AJAX handler for exporting all rosters
  */
 function intersoccer_reports_export_all_rosters_ajax() {
     check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
@@ -931,14 +949,16 @@ function intersoccer_reports_export_all_rosters_ajax() {
     }
 
     $export_type = isset($_POST['export_type']) ? sanitize_text_field($_POST['export_type']) : 'all';
-    if (!in_array($export_type, ['all', 'camps', 'courses', 'girls_only', 'other'])) {
+    error_log("Received export_type: '$export_type' | Full POST: " . print_r($_POST, true)); // Added log for validation
+
+    if (!in_array($export_type, ['all', 'camps', 'courses', 'girls_only_full_day', 'girls_only_half_day', 'other'])) { // Updated array
         wp_send_json_error(['message' => __('Invalid export type.', 'intersoccer-reports-rosters')]);
     }
 
     // Placeholder for $camps, $courses, $girls_only - these should be fetched based on export_type if needed
     $camps = ($export_type === 'camps') ? intersoccer_pe_get_camp_variations([]) : [];
     $courses = ($export_type === 'courses') ? intersoccer_pe_get_course_variations([]) : [];
-    $girls_only = ($export_type === 'girls_only') ? intersoccer_pe_get_girls_only_variations([]) : [];
+    $girls_only = ($export_type === 'girls_only_full_day' || $export_type === 'girls_only_half_day') ? intersoccer_pe_get_girls_only_variations([]) : [];
 
     ob_start();
     intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_type);

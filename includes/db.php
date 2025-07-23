@@ -1,6 +1,6 @@
 <?php
 /**
- * Export functionality for InterSoccer Reports and Rosters plugin.
+ * Database config and maintenance for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
  * @version 1.4.21
@@ -15,7 +15,6 @@ function intersoccer_create_rosters_table() {
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
     $charset_collate = $wpdb->get_charset_collate();
 
-    // Same SQL as in rebuild, but without DROP
     $sql = "CREATE TABLE $rosters_table (
         id bigint unsigned NOT NULL AUTO_INCREMENT,
         order_id bigint unsigned NOT NULL,
@@ -62,6 +61,7 @@ function intersoccer_create_rosters_table() {
         season varchar(50) DEFAULT '',
         canton_region varchar(100) DEFAULT '',
         city varchar(100) DEFAULT '',
+        avs_number varchar(50) DEFAULT 'N/A',
         created_at datetime DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
         UNIQUE KEY uniq_order_item_id (order_item_id),
@@ -133,6 +133,7 @@ function intersoccer_rebuild_rosters_and_reports() {
         season varchar(50) DEFAULT '',
         canton_region varchar(100) DEFAULT '',
         city varchar(100) DEFAULT '',
+        avs_number varchar(50) DEFAULT 'N/A',
         created_at datetime DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
         UNIQUE KEY uniq_order_item_id (order_item_id),
@@ -193,7 +194,7 @@ function intersoccer_rebuild_rosters_and_reports() {
             }
             $product_id = $item->get_product_id();
             $variation_id = $item->get_variation_id();
-            $variation = $variation_id ? wc_get_product($variation_id) : $product;
+            $variation = wc_get_product($variation_id) ? wc_get_product($variation_id) : $product;
             $parent_product = wc_get_product($product_id);
             error_log("InterSoccer: Variation object for order $order_id, item $order_item_id, variation_id: $variation_id - " . ($variation ? 'Loaded (ID: ' . $variation->get_id() . ')' : 'Failed'));
             error_log("InterSoccer: Parent product for order $order_id, item $order_item_id, product_id: $product_id - " . ($parent_product ? 'Loaded (ID: ' . $parent_product->get_id() . ')' : 'Failed'));
@@ -277,9 +278,15 @@ function intersoccer_rebuild_rosters_and_reports() {
             $attendees = is_array($assigned_attendees) ? $assigned_attendees : [$assigned_attendees];
 
             foreach ($attendees as $assigned_attendee) {
+                // Strip leading numeric prefix + space
+                $assigned_attendee = preg_replace('/^\d+\s*/', '', trim($assigned_attendee));
                 $player_name_parts = explode(' ', $assigned_attendee, 2);
                 $first_name = !empty($player_name_parts[0]) ? $player_name_parts[0] : 'Unknown';
                 $last_name = !empty($player_name_parts[1]) ? $player_name_parts[1] : 'Unknown';
+
+                // Normalize for matching (lowercase, trim, remove non-alpha, translit accents)
+                $first_name_norm = strtolower(trim(preg_replace('/[^a-z]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $first_name) ?? $first_name)));
+                $last_name_norm = strtolower(trim(preg_replace('/[^a-z]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $last_name) ?? $last_name)));
 
                 $user_id = $order->get_user_id();
                 $players = maybe_unserialize(get_user_meta($user_id, 'intersoccer_players', true)) ?: [];
@@ -287,6 +294,7 @@ function intersoccer_rebuild_rosters_and_reports() {
                 $age = isset($order_item_meta['Player Age']) ? (int)$order_item_meta['Player Age'] : null;
                 $gender = $order_item_meta['Player Gender'] ?? 'N/A';
                 $medical_conditions = $order_item_meta['Medical Conditions'] ?? '';
+                $avs_number = 'N/A'; // Default
                 if ($player_index !== false && is_array($players) && isset($players[$player_index])) {
                     $player = $players[$player_index];
                     $first_name = $player['first_name'] ?? $first_name;
@@ -295,15 +303,35 @@ function intersoccer_rebuild_rosters_and_reports() {
                     $age = $dob ? (new DateTime($dob))->diff(new DateTime())->y : $age;
                     $gender = $player['gender'] ?? $gender;
                     $medical_conditions = $player['medical_conditions'] ?? $medical_conditions;
+                    $avs_number = $player['avs_number'] ?? 'N/A';
                 } else {
-                    $player_full_name = trim("$first_name $last_name");
+                    $matched = false;
                     foreach ($players as $player) {
-                        if (trim($player['first_name'] . ' ' . $player['last_name']) === $player_full_name) {
+                        $meta_first_norm = strtolower(trim(preg_replace('/[^a-z]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $player['first_name'] ?? '') ?? '')));
+                        $meta_last_norm = strtolower(trim(preg_replace('/[^a-z]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $player['last_name'] ?? '') ?? '')));
+                        if ($meta_first_norm === $first_name_norm && $meta_last_norm === $last_name_norm) {
                             $dob = $player['dob'] ?? null;
                             $age = $dob ? (new DateTime($dob))->diff(new DateTime())->y : $age;
                             $gender = $player['gender'] ?? $gender;
                             $medical_conditions = $player['medical_conditions'] ?? $medical_conditions;
+                            $avs_number = $player['avs_number'] ?? 'N/A';
+                            $matched = true;
                             break;
+                        }
+                    }
+                    // Fallback to first-name only if no exact match
+                    if (!$matched) {
+                        foreach ($players as $player) {
+                            $meta_first_norm = strtolower(trim(preg_replace('/[^a-z]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $player['first_name'] ?? '') ?? '')));
+                            if ($meta_first_norm === $first_name_norm) {
+                                $dob = $player['dob'] ?? null;
+                                $age = $dob ? (new DateTime($dob))->diff(new DateTime())->y : $age;
+                                $gender = $player['gender'] ?? $gender;
+                                $medical_conditions = $player['medical_conditions'] ?? $medical_conditions;
+                                $avs_number = $player['avs_number'] ?? 'N/A';
+                                error_log("InterSoccer: Fallback first-name match for attendee $assigned_attendee in rebuild order $order_id item $order_item_id");
+                                break;
+                            }
                         }
                     }
                 }
@@ -403,7 +431,6 @@ function intersoccer_rebuild_rosters_and_reports() {
                     $day_presence = ['Monday' => 'Yes', 'Tuesday' => 'Yes', 'Wednesday' => 'Yes', 'Thursday' => 'Yes', 'Friday' => 'Yes'];
                 }
 
-                // Handle Girls Only specific fields with prioritized key search
                 $shirt_size = 'N/A';
                 $shorts_size = 'N/A';
                 if ($activity_type === 'Girls Only' || in_array($variation_id, $girls_only_variation_ids)) {
@@ -485,6 +512,7 @@ function intersoccer_rebuild_rosters_and_reports() {
                     'season' => $season_year ?: '',
                     'canton_region' => '',
                     'city' => '',
+                    'avs_number' => substr($avs_number, 0, 50),
                     'created_at' => current_time('mysql'),
                 ];
 
@@ -492,10 +520,10 @@ function intersoccer_rebuild_rosters_and_reports() {
                 error_log('InterSoccer: Order object type for ' . $order_id . ': ' . (is_object($order) ? get_class($order) : 'Invalid') . ' | Billing last name: ' . $order->get_billing_last_name());
 
                 // Insert into table
-                $format = array('%d', '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');
+                $format = array('%d', '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');
                 try {
                     $query = $wpdb->prepare(
-                        "INSERT INTO $rosters_table (order_id, order_item_id, variation_id, player_name, first_name, last_name, age, gender, booking_type, selected_days, camp_terms, venue, parent_phone, parent_email, medical_conditions, late_pickup, day_presence, age_group, start_date, end_date, event_dates, product_name, activity_type, shirt_size, shorts_size, registration_timestamp, course_day, updated_at, product_id, player_first_name, player_last_name, player_dob, player_gender, player_medical, player_dietary, parent_first_name, parent_last_name, emergency_contact, term, times, days_selected, season, canton_region, city, created_at) VALUES (%d, %d, %d, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                        "INSERT INTO $rosters_table (order_id, order_item_id, variation_id, player_name, first_name, last_name, age, gender, booking_type, selected_days, camp_terms, venue, parent_phone, parent_email, medical_conditions, late_pickup, day_presence, age_group, start_date, end_date, event_dates, product_name, activity_type, shirt_size, shorts_size, registration_timestamp, course_day, updated_at, product_id, player_first_name, player_last_name, player_dob, player_gender, player_medical, player_dietary, parent_first_name, parent_last_name, emergency_contact, term, times, days_selected, season, canton_region, city, avs_number, created_at) VALUES (%d, %d, %d, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                         array_values($roster_entry)
                     );
                     error_log("InterSoccer: Prepared insert query for order $order_id, item $order_item_id: $query");
@@ -526,7 +554,47 @@ function intersoccer_rebuild_rosters_and_reports() {
 function intersoccer_upgrade_database() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-    error_log('InterSoccer: No new schema changes required for this upgrade.');
+    $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $rosters_table LIKE 'avs_number'");
+    if (empty($column_exists)) {
+        $wpdb->query("ALTER TABLE $rosters_table ADD COLUMN avs_number varchar(50) DEFAULT 'N/A' AFTER city");
+        error_log('InterSoccer: Added avs_number column to rosters table.');
+    } else {
+        error_log('InterSoccer: avs_number column already exists.');
+    }
+    // Backfill existing data
+    $rows_to_update = $wpdb->get_results("SELECT order_id, player_first_name, player_last_name FROM $rosters_table WHERE avs_number = 'N/A' OR avs_number IS NULL");
+    foreach ($rows_to_update as $row) {
+        $order = wc_get_order($row->order_id);
+        if ($order) {
+            $user_id = $order->get_user_id();
+            $players = maybe_unserialize(get_user_meta($user_id, 'intersoccer_players', true)) ?: [];
+            $first_name_norm = strtolower(trim(preg_replace('/[^a-z]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $row->player_first_name) ?? $row->player_first_name)));
+            $last_name_norm = strtolower(trim(preg_replace('/[^a-z]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $row->player_last_name) ?? $row->player_last_name)));
+            foreach ($players as $player) {
+                $meta_first_norm = strtolower(trim(preg_replace('/[^a-z]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $player['first_name'] ?? '') ?? '')));
+                $meta_last_norm = strtolower(trim(preg_replace('/[^a-z]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $player['last_name'] ?? '') ?? '')));
+                if ($meta_first_norm === $first_name_norm && $meta_last_norm === $last_name_norm) {
+                    $avs_number = $player['avs_number'] ?? 'N/A';
+                    $wpdb->update($rosters_table, ['avs_number' => substr($avs_number, 0, 50)], ['order_id' => $row->order_id, 'player_first_name' => $row->player_first_name, 'player_last_name' => $row->player_last_name]);
+                    error_log('InterSoccer: Backfilled avs_number for order ' . $row->order_id . ': ' . $avs_number);
+                    break;
+                }
+            }
+            // Fallback partial match if needed
+            if ($avs_number === 'N/A') {
+                foreach ($players as $player) {
+                    $meta_first_norm = strtolower(trim(preg_replace('/[^a-z]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $player['first_name'] ?? '') ?? '')));
+                    if ($meta_first_norm === $first_name_norm) {
+                        $avs_number = $player['avs_number'] ?? 'N/A';
+                        $wpdb->update($rosters_table, ['avs_number' => substr($avs_number, 0, 50)], ['order_id' => $row->order_id, 'player_first_name' => $row->player_first_name, 'player_last_name' => $row->player_last_name]);
+                        error_log('InterSoccer: Backfilled avs_number (partial match) for order ' . $row->order_id . ': ' . $avs_number);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    error_log('InterSoccer: Database upgrade completed.');
 }
 
 
@@ -619,6 +687,7 @@ function intersoccer_validate_rosters_table() {
         'season' => 'varchar(50)',
         'canton_region' => 'varchar(100)',
         'city' => 'varchar(100)',
+        'avs_number' => 'varchar(50)',
         'created_at' => 'datetime',
     ];
 
