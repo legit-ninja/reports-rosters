@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.4.20
+ * Version: 1.4.25
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -13,79 +13,64 @@ defined('ABSPATH') or die('Restricted access');
 
 error_log('InterSoccer: Loading intersoccer-reports-rosters.php at ' . current_time('mysql'));
 
-add_filter('load_textdomain_mofile', function ($mofile, $domain) {
-    if (($domain === 'woocommerce' || $domain === 'woocommerce-products-filter') && !did_action('init')) {
-        return '';
-    }
-    return $mofile;
-}, 10, 2);
+// add_filter('load_textdomain_mofile', function ($mofile, $domain) {
+//     if (($domain === 'woocommerce' || $domain === 'woocommerce-products-filter') && !did_action('init')) {
+//         return '';
+//     }
+//     return $mofile;
+// }, 10, 2);
 
 add_filter('deprecated_function_trigger_error', '__return_false', 10, 2);
 
-register_activation_hook(__FILE__, 'intersoccer_activate_plugin');
+// Activation hook
+function intersoccer_plugin_activation() {
+    error_log('InterSoccer: Plugin activation started.');
 
-function intersoccer_activate_plugin() {
-    try {
-        global $wpdb;
-        if (!function_exists('dbDelta')) {
-            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    // Check dependencies
+    $dependencies = [
+        'woocommerce/woocommerce.php' => 'WooCommerce',
+        'intersoccer-product-variations/intersoccer-product-variations.php' => 'Product Variations',
+        'player-management/player-management.php' => 'Player Management',
+    ];
+    $missing = [];
+    foreach ($dependencies as $plugin => $name) {
+        if (!is_plugin_active($plugin)) {
+            $missing[] = $name;
+            error_log("InterSoccer: Missing dependency - $name ($plugin) not active.");
+        } else {
+            error_log("InterSoccer: Dependency check passed - $name active.");
         }
-        $charset_collate = 'CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
-        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-        $sql = "CREATE TABLE $rosters_table (
-            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-            order_id BIGINT(20) NOT NULL,
-            order_item_id BIGINT(20) NOT NULL,
-            variation_id BIGINT(20) DEFAULT NULL,
-            player_name VARCHAR(255) NOT NULL,
-            first_name VARCHAR(100) NOT NULL,
-            last_name VARCHAR(100) NOT NULL,
-            age INT DEFAULT NULL,
-            gender VARCHAR(20) DEFAULT 'N/A',
-            booking_type VARCHAR(50) NOT NULL,
-            selected_days TEXT,
-            camp_terms VARCHAR(100) DEFAULT NULL,
-            venue VARCHAR(100) NOT NULL,
-            parent_phone VARCHAR(20) DEFAULT 'N/A',
-            parent_email VARCHAR(100) DEFAULT 'N/A',
-            medical_conditions TEXT,
-            late_pickup VARCHAR(10) DEFAULT 'No',
-            day_presence TEXT,
-            age_group VARCHAR(50) DEFAULT 'N/A',
-            start_date DATE DEFAULT NULL,
-            end_date DATE DEFAULT NULL,
-            event_dates VARCHAR(100) DEFAULT 'N/A',
-            product_name VARCHAR(255) NOT NULL,
-            activity_type VARCHAR(100) NOT NULL DEFAULT 'Unknown',
-            shirt_size VARCHAR(50) DEFAULT 'N/A',
-            shorts_size VARCHAR(50) DEFAULT 'N/A',
-            registration_timestamp DATETIME DEFAULT NULL,
-            course_day VARCHAR(20) DEFAULT 'N/A',
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            UNIQUE KEY uniq_order_item_id (order_item_id),
-            INDEX idx_player_name (player_name),
-            INDEX idx_venue (venue),
-            INDEX idx_activity_type (activity_type(50)),
-            INDEX idx_start_date (start_date),
-            INDEX idx_variation_id (variation_id),
-            INDEX idx_order_id (order_id)
-        ) $charset_collate;";
-        $result = dbDelta($sql);
-        if (is_wp_error($result)) {
-            error_log('InterSoccer: dbDelta failed during activation: ' . $result->get_error_message());
-            wp_die(__('Table creation failed. Check debug.log for details.', 'intersoccer-reports-rosters'), __('Plugin Activation Error', 'intersoccer-reports-rosters'), ['back_link' => true]);
-        }
-        error_log('InterSoccer: Table ' . $rosters_table . ' created or verified during activation with utf8mb4 encoding');
-        intersoccer_rebuild_rosters_and_reports();
-    } catch (Exception $e) {
-        error_log('InterSoccer: Activation error: ' . $e->getMessage());
-        wp_die(__('Activation failed. Check logs.', 'intersoccer-reports-rosters'), __('Plugin Activation Error', 'intersoccer-reports-rosters'), ['back_link' => true]);
     }
+
+    if (!empty($missing)) {
+        add_action('admin_notices', 'intersoccer_missing_dependencies_notice');
+        deactivate_plugins(plugin_basename(__FILE__)); // Deactivate if critical deps missing
+        error_log('InterSoccer: Plugin deactivated due to missing dependencies: ' . implode(', ', $missing));
+        return; // Skip DB ops
+    }
+
+    // Proceed to DB validation
+    intersoccer_create_rosters_table(); // Create if missing
+    intersoccer_validate_rosters_table(); // Validate schema
+
+    error_log('InterSoccer: Plugin activation completed.');
+}
+register_activation_hook(__FILE__, 'intersoccer_plugin_activation');
+
+/**
+ * Admin notice for missing dependencies.
+ */
+function intersoccer_missing_dependencies_notice() {
+    global $missing; // Assume set in activation or use transient
+    ?>
+    <div class="notice notice-error">
+        <p><?php printf(__('InterSoccer Reports & Rosters requires the following plugins to be active: %s. Plugin deactivated.', 'intersoccer-reports-rosters'), implode(', ', $missing)); ?></p>
+    </div>
+    <?php
 }
 
 $included_files = [];
-$files_to_include = ['event-reports.php', 'reports.php', 'utils.php', 'rosters.php', 'roster-data.php', 'roster-details.php', 'roster-export.php', 'advanced.php', 'woocommerce-orders.php']; 
+$files_to_include = ['event-reports.php', 'reports.php', 'utils.php', 'rosters.php', 'roster-data.php', 'roster-details.php', 'roster-export.php', 'advanced.php', 'woocommerce-orders.php', 'db.php']; 
 foreach ($files_to_include as $file) {
     $file_path = plugin_dir_path(__FILE__) . 'includes/' . $file;
     if (file_exists($file_path)) {
@@ -226,7 +211,7 @@ add_action('admin_enqueue_scripts', function ($hook) {
         wp_enqueue_style('intersoccer-reports-rosters-css', plugin_dir_url(__FILE__) . 'css/reports-rosters.css', [], '1.0.6');
         if ($screen->id === 'toplevel_page_intersoccer-reports-rosters') {
             wp_enqueue_script('chart-js', 'https://cdn.jsdelivr.net/npm/chart.js', [], '3.9.1', true);
-            wp_enqueue_script('intersoccer-overview-charts', plugin_dir_url(__FILE__) . 'js/overview-charts.js', ['chart-js'], '1.0.6', true);
+            wp_enquregister_activation_hookeue_script('intersoccer-overview-charts', plugin_dir_url(__FILE__) . 'js/overview-charts.js', ['chart-js'], '1.0.6', true);
         }
         if (in_array($screen->id, $roster_pages)) {
             $script_path = plugin_dir_path(__FILE__) . 'js/rosters-tabs.js';
