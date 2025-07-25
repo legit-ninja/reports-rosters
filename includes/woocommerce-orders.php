@@ -4,7 +4,7 @@
  * Description: Handles WooCommerce order status changes to populate the intersoccer_rosters table and auto-complete orders for the InterSoccer Reports and Rosters plugin.
  * Dependencies: WooCommerce
  * Author: Jeremy Lee
- * Version: 1.4.18  // Incremented for fix
+ * Version: 1.4.40
  */
 
 // Prevent direct access
@@ -230,12 +230,34 @@ function intersoccer_populate_rosters_and_complete_order($order_id) {
 
         error_log('InterSoccer: Player lookup for ' . $assigned_attendee . ' (user_id: ' . $user_id . ') in order ' . $order_id . ': ' . ($matched ? 'Matched - AVS: ' . $avs_number : 'Not matched, default N/A'));
 
-        // Load product and variation for attribute fallbacks
-        $product = $item->get_product();
-        $variation = wc_get_product($variation_id);
-        $parent_product = wc_get_product($product_id);
+        if (!$player) {
+            error_log('InterSoccer: Player not found in user meta for ' . $assigned_attendee . ' (user_id: ' . $user_id . ') in order ' . $order_id);
+            continue;
+        }
+        error_log('InterSoccer: Found player details for ' . $assigned_attendee . ': ' . print_r($player, true));
 
-        // ... (rest of the function remains the same as in your provided code, including activity_type logic, event details, dates, day_presence, shirt/short, etc.)
+        // Parent info from order billing
+        $parent_first = $order->get_billing_first_name() ?: 'Unknown';
+        $parent_last = $order->get_billing_last_name() ?: 'Unknown';
+        $parent_email = $order->get_billing_email() ?: 'N/A';
+        $parent_phone = $order->get_billing_phone() ?: 'N/A';
+
+        // Emergency contact (fallback to parent phone if not set in player)
+        $emergency_contact = $player['emergency_contact'] ?? $parent_phone;
+
+        // Event details from item meta
+        $venue = $item_meta['InterSoccer Venues'] ?? '';
+        $age_group = $item_meta['Age Group'] ?? '';
+        $term = $item_meta['Camp Terms'] ?? $item_meta['Course Day'] ?? '';
+        $times = $item_meta['Camp Times'] ?? $item_meta['Course Times'] ?? '';
+        $booking_type = $item_meta['Booking Type'] ?? '';
+        $days_selected = $item_meta['Days Selected'] ?? '';
+        $season = $item_meta['Season'] ?? '';
+        $canton = $item_meta['Canton / Region'] ?? '';
+        $city = $item_meta['City'] ?? '';
+        $activity_type = $item_meta['Activity Type'] ?? '';
+        $start_date = $item_meta['Start Date'] ?? null;
+        $end_date = $item_meta['End Date'] ?? null;
 
         // Prepare data for insertion
         $data = [
