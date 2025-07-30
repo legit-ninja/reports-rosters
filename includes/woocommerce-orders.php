@@ -4,7 +4,7 @@
  * Description: Handles WooCommerce order status changes to populate the intersoccer_rosters table and auto-complete orders for the InterSoccer Reports and Rosters plugin.
  * Dependencies: WooCommerce
  * Author: Jeremy Lee
- * Version: 1.4.41
+ * Version: 1.4.42 // Incremented for date fix
  */
 
 // Prevent direct access
@@ -120,7 +120,14 @@ function intersoccer_populate_rosters_and_complete_order($order_id) {
     error_log('InterSoccer: Processing order ' . $order_id . ' for roster population. Status: ' . $order->get_status() . ', Items count: ' . count($order->get_items()));
 
     $inserted = false;
-    $order_date = $order->get_date_created() ? $order->get_date_created()->format('Y-m-d H:i:s') : null;
+    $date_created = $order->get_date_created();
+    error_log('InterSoccer: date_created type for order ' . $order_id . ': ' . gettype($date_created) . ', value: ' . var_export($date_created, true)); // Added log
+    if ($date_created instanceof WC_DateTime) {
+        $order_date = $date_created->format('Y-m-d H:i:s');
+    } else {
+        error_log('InterSoccer: Order date_created is not WC_DateTime for order ' . $order_id . ', using current time as fallback');
+        $order_date = current_time('mysql');
+    }
     $parent_phone = $order->get_billing_phone() ?: 'N/A';
     $parent_email = $order->get_billing_email() ?: 'N/A';
     $parent_first_name = $order->get_billing_first_name() ?: 'Unknown';
@@ -315,9 +322,19 @@ function intersoccer_populate_rosters_and_complete_order($order_id) {
                 }
             }
         } elseif ($product_type === 'course' && $start_date && $end_date) {
-            $start_date = DateTime::createFromFormat('m/d/Y', $start_date)->format('Y-m-d');
-            $end_date = DateTime::createFromFormat('m/d/Y', $end_date)->format('Y-m-d');
-            $event_dates = "$start_date to $end_date";
+            error_log('InterSoccer: Processing course dates for item ' . $item_id . ' in order ' . $order_id . ' - start_date: ' . var_export($start_date, true) . ', end_date: ' . var_export($end_date, true));
+            $start_date_obj = DateTime::createFromFormat('m/d/Y', $start_date);
+            $end_date_obj = DateTime::createFromFormat('m/d/Y', $end_date);
+            if ($start_date_obj && $end_date_obj) {
+                $start_date = $start_date_obj->format('Y-m-d');
+                $end_date = $end_date_obj->format('Y-m-d');
+                $event_dates = "$start_date to $end_date";
+            } else {
+                error_log('InterSoccer: Invalid course date format for item ' . $item_id . ' in order ' . $order_id . ' - Using defaults');
+                $start_date = '1970-01-01';
+                $end_date = '1970-01-01';
+                $event_dates = 'N/A';
+            }
         }
 
         // Day presence
