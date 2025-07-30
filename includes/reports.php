@@ -132,7 +132,7 @@ function intersoccer_filter_report_callback() {
     $end_date = isset($_POST['end_date']) ? sanitize_text_field($_POST['end_date']) : '2025-12-31';
     $year = isset($_POST['year']) ? sanitize_text_field($_POST['year']) : date('Y');
     $region = isset($_POST['region']) ? sanitize_text_field($_POST['region']) : '';
-    $visible_columns = isset($_POST['columns']) ? array_map('sanitize_text_field', (array)$_POST['columns']) : ['ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'final_price', 'discount_codes', 'class_name', 'start_date', 'venue', 'booker_email', 'attendee_name', 'attendee_age', 'attendee_gender'];
+    $visible_columns = isset($_POST['columns']) ? array_map('sanitize_text_field', (array)$_POST['columns']) : ['ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'final_price', 'discount_codes', 'class_name', 'start_date', 'venue', 'booker_email', 'attendee_name', 'attendee_age', 'attendee_gender', 'parent_phone'];
 
     $report_data = intersoccer_get_booking_report($start_date, $end_date, $year, $region);
 
@@ -170,6 +170,7 @@ function intersoccer_filter_report_callback() {
                             'attendee_name' => __('Attendee Name', 'intersoccer-reports-rosters'),
                             'attendee_age' => __('Attendee Age', 'intersoccer-reports-rosters'),
                             'attendee_gender' => __('Attendee Gender', 'intersoccer-reports-rosters'),
+                            'parent_phone' => __('Parent Phone', 'intersoccer-reports-rosters'),
                         ];
                         foreach ($visible_columns as $key): ?>
                             <th><?php echo esc_html($all_columns[$key]); ?></th>
@@ -202,7 +203,7 @@ function intersoccer_render_booking_report_tab() {
     $end_date = isset($_GET['end_date']) ? sanitize_text_field($_GET['end_date']) : '2025-12-31';
     $year = isset($_GET['year']) ? sanitize_text_field($_GET['year']) : date('Y');
     $region = isset($_GET['region']) ? sanitize_text_field($_GET['region']) : '';
-    $visible_columns = isset($_GET['columns']) ? array_map('sanitize_text_field', (array)$_GET['columns']) : ['ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'final_price', 'discount_codes', 'class_name', 'start_date', 'venue', 'booker_email', 'attendee_name', 'attendee_gender', 'attendee_age'];
+    $visible_columns = isset($_GET['columns']) ? array_map('sanitize_text_field', (array)$_GET['columns']) : ['ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'final_price', 'discount_codes', 'class_name', 'start_date', 'venue', 'booker_email', 'attendee_name', 'attendee_gender', 'attendee_age', 'parent_phone'];
     $report_data = intersoccer_get_booking_report($start_date, $end_date, $year, $region);
 
     if (isset($_GET['action']) && $_GET['action'] === 'export' && check_admin_referer('export_booking_nonce')) {
@@ -225,6 +226,7 @@ function intersoccer_render_booking_report_tab() {
         'attendee_name' => __('Attendee Name', 'intersoccer-reports-rosters'),
         'attendee_age' => __('Attendee Age', 'intersoccer-reports-rosters'),
         'attendee_gender' => __('Attendee Gender', 'intersoccer-reports-rosters'),
+        'parent_phone' => __('Parent Phone', 'intersoccer-reports-rosters'),
     ];
 
     // Calculate totals
@@ -343,6 +345,7 @@ function intersoccer_get_booking_report($start_date = '', $end_date = '', $year 
             r.start_date AS start_date,
             r.age AS attendee_age,
             r.gender AS attendee_gender,
+            r.parent_phone AS parent_phone,
             t.name AS venue,
             om_venue.meta_value AS venue_slug,
             pm_billing_email.meta_value AS booker_email,
@@ -536,6 +539,7 @@ function intersoccer_get_booking_report($start_date = '', $end_date = '', $year 
             'attendee_name' => $attendee_name,
             'attendee_age' => $row['attendee_age'] ?? 'N/A',
             'attendee_gender' => $row['attendee_gender'] ?? 'N/A',
+            'parent_phone' => $row['parent_phone'] ?? 'N/A',
         ];
     }
 
@@ -621,6 +625,7 @@ function intersoccer_export_booking_excel($report_data, $start_date, $end_date, 
             'attendee_name' => __('Attendee Name', 'intersoccer-reports-rosters'),
             'attendee_age' => __('Attendee Age', 'intersoccer-reports-rosters'),
             'attendee_gender' => __('Attendee Gender', 'intersoccer-reports-rosters'),
+            'parent_phone' => __('Parent Phone', 'intersoccer-reports-rosters'),
         ];
 
         // Headers in user-selected order
@@ -658,7 +663,7 @@ function intersoccer_export_booking_excel($report_data, $start_date, $end_date, 
 
         // Set columns to text for non-numeric fields
         foreach ($visible_columns as $index => $key) {
-            if (in_array($key, ['booker_email', 'attendee_name', 'attendee_age', 'attendee_gender', 'start_date', 'discount_codes', 'class_name', 'venue', 'ref', 'booked'])) {
+            if (in_array($key, ['booker_email', 'attendee_name', 'attendee_age', 'attendee_gender', 'start_date', 'discount_codes', 'class_name', 'venue', 'ref', 'booked', 'parent_phone'])) {
                 $sheet->getStyle(chr(65 + $index) . '2:' . chr(65 + $index) . ($row_number - 1))->getNumberFormat()->setFormatCode(\PhpOffice\PhpSpreadsheet\Style\NumberFormat::FORMAT_TEXT);
             } else {
                 $sheet->getStyle(chr(65 + $index) . '2:' . chr(65 + $index) . ($row_number - 1))->getNumberFormat()->setFormatCode(\PhpOffice\PhpSpreadsheet\Style\NumberFormat::FORMAT_NUMBER_00);
