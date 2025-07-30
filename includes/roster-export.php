@@ -3,7 +3,7 @@
  * Export functionality for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.4.22 // Incremented for AVS
+ * @version 1.4.24 // Incremented for grouping fix
  * @author Jeremy Lee
  */
 
@@ -151,30 +151,85 @@ function intersoccer_export_roster() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
+    $use_fields = isset($_POST['use_fields']) ? (bool)$_POST['use_fields'] : false;
+    $product_id = isset($_POST['product_id']) ? intval($_POST['product_id']) : 0;
     $variation_ids = isset($_POST['variation_ids']) ? array_map('intval', (array)$_POST['variation_ids']) : [];
+    $camp_terms = isset($_POST['camp_terms']) ? sanitize_text_field($_POST['camp_terms']) : '';
+    $course_day = isset($_POST['course_day']) ? sanitize_text_field($_POST['course_day']) : '';
+    $venue = isset($_POST['venue']) ? sanitize_text_field($_POST['venue']) : '';
     $age_group = isset($_POST['age_group']) ? sanitize_text_field($_POST['age_group']) : '';
+    $times = isset($_POST['times']) ? sanitize_text_field($_POST['times']) : '';
+    $activity_types_str = isset($_POST['activity_types']) ? sanitize_text_field($_POST['activity_types']) : '';
+    $activity_types = $activity_types_str ? explode(',', $activity_types_str) : ['Camp', 'Course', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only'];
 
-    if (empty($variation_ids)) {
+    if (!$use_fields && empty($variation_ids)) {
         ob_end_clean();
-        wp_send_json_error(__('No variation IDs provided for export.', 'intersoccer-reports-rosters'));
+        wp_send_json_error(__('No variation IDs or fields provided for export.', 'intersoccer-reports-rosters'));
     }
 
     // Increase memory limit for large exports
     ini_set('memory_limit', '256M');
 
     // Build query
-    $query = $wpdb->prepare(
-        "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, medical_conditions, late_pickup, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
-         FROM $rosters_table
-         WHERE variation_id IN (" . implode(',', array_fill(0, count($variation_ids), '%d')) . ")",
-        $variation_ids
-    );
-
-    if ($age_group) {
-        $query .= $wpdb->prepare(" AND (age_group = %s OR age_group LIKE %s)", $age_group, '%' . $wpdb->esc_like($age_group) . '%');
+    $query_params = [];
+    if ($use_fields) {
+        $query = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, medical_conditions, late_pickup, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
+                  FROM $rosters_table";
+        $where_clauses = [];
+        $where_clauses[] = "activity_type IN ('" . implode("','", array_map('esc_sql', $activity_types)) . "')";
+        if ($product_id > 0) {
+            $where_clauses[] = $wpdb->prepare("product_id = %d", $product_id);
+            $query_params[] = $product_id;
+        }
+        if ($camp_terms) {
+            $where_clauses[] = $wpdb->prepare("(camp_terms = %s OR camp_terms LIKE %s OR (camp_terms IS NULL AND %s = 'N/A'))", $camp_terms, '%' . $wpdb->esc_like($camp_terms) . '%', $camp_terms);
+            $query_params[] = $camp_terms;
+            $query_params[] = '%' . $camp_terms . '%';
+            $query_params[] = $camp_terms;
+        }
+        if ($course_day) {
+            $where_clauses[] = $wpdb->prepare("(course_day = %s OR course_day LIKE %s OR (course_day IS NULL AND %s = 'N/A'))", $course_day, '%' . $wpdb->esc_like($course_day) . '%', $course_day);
+            $query_params[] = $course_day;
+            $query_params[] = '%' . $course_day . '%';
+            $query_params[] = $course_day;
+        }
+        if ($venue) {
+            $where_clauses[] = $wpdb->prepare("(venue = %s OR venue LIKE %s OR (venue IS NULL AND %s = 'N/A'))", $venue, '%' . $wpdb->esc_like($venue) . '%', $venue);
+            $query_params[] = $venue;
+            $query_params[] = '%' . $venue . '%';
+            $query_params[] = $venue;
+        }
+        if ($age_group) {
+            $where_clauses[] = $wpdb->prepare("(age_group = %s OR age_group LIKE %s)", $age_group, '%' . $wpdb->esc_like($age_group) . '%');
+            $query_params[] = $age_group;
+            $query_params[] = '%' . $age_group . '%';
+        }
+        if ($times) {
+            $where_clauses[] = $wpdb->prepare("(times = %s OR (times IS NULL AND %s = 'N/A'))", $times, $times);
+            $query_params[] = $times;
+            $query_params[] = $times;
+        }
+        if (!empty($where_clauses)) {
+            $query .= " WHERE " . implode(' AND ', $where_clauses);
+        }
+        $query .= " ORDER BY player_name";
+        $rosters = $wpdb->get_results($wpdb->prepare($query, $query_params), ARRAY_A);
+    } else {
+        $query = $wpdb->prepare(
+            "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, medical_conditions, late_pickup, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
+             FROM $rosters_table
+             WHERE variation_id IN (" . implode(',', array_fill(0, count($variation_ids), '%d')) . ")",
+            $variation_ids
+        );
+        if ($product_id > 0) {
+            $query .= $wpdb->prepare(" AND product_id = %d", $product_id);
+        }
+        if ($age_group) {
+            $query .= $wpdb->prepare(" AND (age_group = %s OR age_group LIKE %s)", $age_group, '%' . $wpdb->esc_like($age_group) . '%');
+        }
+        $rosters = $wpdb->get_results($query, ARRAY_A);
     }
 
-    $rosters = $wpdb->get_results($query, ARRAY_A);
     error_log('InterSoccer: Export roster query: ' . $wpdb->last_query);
     error_log('InterSoccer: Export roster results count: ' . count($rosters));
     error_log('InterSoccer: Last SQL error: ' . $wpdb->last_error);
@@ -230,9 +285,9 @@ function intersoccer_export_roster() {
     }
     if ($base_roster['activity_type'] === 'Camp' || $base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
         $headers = array_merge(
-            array_slice($headers, 0, 9), // Adjust slice for added AVS (now after 7th: Medical)
+            array_slice($headers, 0, 10), // Adjust slice for added AVS (now after 7th: Medical)
             [__('Monday', 'intersoccer-reports-rosters'), __('Tuesday', 'intersoccer-reports-rosters'), __('Wednesday', 'intersoccer-reports-rosters'), __('Thursday', 'intersoccer-reports-rosters'), __('Friday', 'intersoccer-reports-rosters')],
-            array_slice($headers, 9)
+            array_slice($headers, 10)
         );
         // Add Times after Event for Camps
         $headers = array_merge(
@@ -279,9 +334,9 @@ function intersoccer_export_roster() {
             $player['avs_number'] ?? 'N/A', // Added
             ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
             $player['booking_type'] ?? 'N/A',
-            intersoccer_get_term_name($player['age_group'], 'pa_age-group') ?? 'N/A',
+            $player['age_group'] ?? 'N/A',
             $player['product_name'] ?? 'N/A',
-            intersoccer_get_term_name($player['venue'], 'pa_intersoccer-venues') ?? 'N/A',
+            $player['venue'] ?? 'N/A',
             $player['course_day'] ?: ($player['camp_terms'] ?? 'N/A')
         ];
         error_log("InterSoccer: Data array for row {$row}: " . json_encode($data));
@@ -390,7 +445,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             $sheet = $spreadsheet->getActiveSheet();
             $sheet->setTitle('All_Rosters');
             $headers = [
-                'First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary', 
+                'First Name', 'Surname', 'Gender', 'Phone', 'Email', 'Age', 'Medical/Dietary',
                 'AVS Number', // Added
                 'Late Pickup', 'Booking Type', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
                 'Age Group', 'Product Name', 'Venue', 'Camp Terms', 'Course Day', 'Activity Type', 'Times'
