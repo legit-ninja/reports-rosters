@@ -411,9 +411,45 @@ function intersoccer_rebuild_rosters_and_reports() {
                         error_log("InterSoccer: Regex failed to match camp_terms $camp_terms for order $order_id, item $order_item_id");
                     }
                 } elseif ($activity_type === 'Course' && !empty($order_item_meta['Start Date']) && !empty($order_item_meta['End Date'])) {
-                    $start_date = DateTime::createFromFormat('m/d/Y', $order_item_meta['Start Date'])->format('Y-m-d');
-                    $end_date = DateTime::createFromFormat('m/d/Y', $order_item_meta['End Date'])->format('Y-m-d');
-                    $event_dates = "$start_date to $end_date";
+                    // Log raw date values for debugging
+                    error_log("InterSoccer: Raw Start Date for order $order_id, item $order_item_id: " . print_r($order_item_meta['Start Date'], true));
+                    error_log("InterSoccer: Raw End Date for order $order_id, item $order_item_id: " . print_r($order_item_meta['End Date'], true));
+
+                    // Try multiple date formats
+                    $possible_formats = ['m/d/Y', 'd/m/Y', 'Y-m-d', 'j F Y'];
+                    $start_date = null;
+                    $end_date = null;
+                    foreach ($possible_formats as $format) {
+                        $start_date_obj = DateTime::createFromFormat($format, $order_item_meta['Start Date']);
+                        if ($start_date_obj !== false) {
+                            $start_date = $start_date_obj->format('Y-m-d');
+                            error_log("InterSoccer: Parsed Start Date for order $order_id, item $order_item_id with format $format: $start_date");
+                            break;
+                        }
+                    }
+                    foreach ($possible_formats as $format) {
+                        $end_date_obj = DateTime::createFromFormat($format, $order_item_meta['End Date']);
+                        if ($end_date_obj !== false) {
+                            $end_date = $end_date_obj->format('Y-m-d');
+                            error_log("InterSoccer: Parsed End Date for order $order_id, item $order_item_id with format $format: $end_date");
+                            break;
+                        }
+                    }
+
+                    // Fallback if parsing fails
+                    if (!$start_date || !$end_date) {
+                        error_log("InterSoccer: Date parsing failed for order $order_id, item $order_item_id. Using default dates.");
+                        $start_date = '1970-01-01';
+                        $end_date = '1970-01-01';
+                        $event_dates = 'N/A';
+                    } else {
+                        $event_dates = "$start_date to $end_date";
+                    }
+                } else {
+                    error_log("InterSoccer: Missing or invalid Start Date/End Date for Course in order $order_id, item $order_item_id. Using defaults.");
+                    $start_date = '1970-01-01';
+                    $end_date = '1970-01-01';
+                    $event_dates = 'N/A';
                 }
 
                 $late_pickup = $order_item_meta['Late Pickup'] ?? 'No';
