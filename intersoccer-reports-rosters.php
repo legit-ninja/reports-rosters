@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.4.44
+ * Version: 1.4.50
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -208,7 +208,7 @@ add_action('admin_enqueue_scripts', function ($hook) {
             'intersoccer-reports-rosters_page_intersoccer-girls-only',
             'intersoccer-reports-rosters_page_intersoccer-other-events'
         ];
-        wp_enqueue_style('intersoccer-reports-rosters-css', plugin_dir_url(__FILE__) . 'css/reports-rosters.css', [], '1.0.6');
+        wp_enqueue_style('intersoccer-reports-rosters-css', plugin_dir_url(__FILE__) . 'css/styles.css', [], '1.0.6');
         if ($screen->id === 'toplevel_page_intersoccer-reports-rosters') {
             wp_enqueue_script('chart-js', 'https://cdn.jsdelivr.net/npm/chart.js', [], '3.9.1', true);
             wp_enqueue_script('intersoccer-overview-charts', plugin_dir_url(__FILE__) . 'js/overview-charts.js', ['chart-js'], '1.0.6', true);
@@ -254,4 +254,51 @@ add_action('admin_menu', function () {
 
 add_action('wp_ajax_intersoccer_upgrade_database', 'intersoccer_upgrade_database');
 add_action('wp_ajax_intersoccer_rebuild_rosters_and_reports', 'intersoccer_rebuild_rosters_and_reports');
+
+// Enqueue script for WooCommerce Orders page to add the Process Orders button
+function intersoccer_enqueue_orders_page_scripts($hook) {
+    error_log('InterSoccer: Admin hook called: ' . $hook); // Debug hook
+    $screen = get_current_screen();
+    error_log('InterSoccer: Current screen ID: ' . ($screen ? $screen->id : 'none')); // Debug screen ID
+    if (isset($_GET['post_type'])) {
+        error_log('InterSoccer: post_type query param: ' . $_GET['post_type']);
+    }
+
+    // Correct condition for legacy (edit.php with post_type=shop_order) and HPOS (woocommerce_page_wc-orders)
+    if ( $hook === 'woocommerce_page_wc-orders' || ( $hook === 'edit.php' && isset( $_GET['post_type'] ) && $_GET['post_type'] === 'shop_order' ) ) {
+        error_log('InterSoccer: Entered enqueue condition for Orders page'); // Confirm entry
+
+        $plugin_dir_url = plugin_dir_url(__FILE__);
+        error_log('InterSoccer: Plugin dir URL for JS: ' . $plugin_dir_url . 'js/woo-op.js'); // Log full URL for verification
+
+        wp_enqueue_script(
+            'intersoccer-orders-js',
+            $plugin_dir_url . 'js/woo-op.js',
+            ['jquery'],
+            '1.4.24',
+            true
+        );
+
+        // Enqueue custom stylesheet
+        wp_enqueue_style(
+            'intersoccer-styles',
+            $plugin_dir_url . 'css/styles.css',
+            [],
+            '1.4.24'
+        );
+
+        // Localize script to pass nonce
+        wp_localize_script(
+            'intersoccer-orders-js',
+            'intersoccer_orders',
+            [
+                'nonce' => wp_create_nonce('intersoccer_rebuild_nonce'),
+                'ajaxurl' => admin_url('admin-ajax.php')
+            ]
+        );
+
+        error_log('InterSoccer: Enqueued woo-op.js and styles.css for Orders page');
+    }
+}
+add_action('admin_enqueue_scripts', 'intersoccer_enqueue_orders_page_scripts');
 ?>

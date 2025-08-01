@@ -3,7 +3,7 @@
  * Advanced features page for InterSoccer Reports and Rosters plugin.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.4.20  // Incremented for fix
+ * @version 1.4.20
  * @author Jeremy Lee
  */
 
