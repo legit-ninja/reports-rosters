@@ -5,7 +5,7 @@
  * Handles rendering of detailed roster views.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.4.16
+ * @version 1.4.45  // Incremented for activity_type fix
  * @author Jeremy Lee
  */
 
@@ -156,7 +156,7 @@ function intersoccer_render_roster_details_page() {
                 'variation_id' => $row->variation_id,
                 'product_id' => $row->product_id
             ];
-        }, $rosters))); // Log all records to detect duplicates
+        }, $rosters)));
     }
 
     if (!$rosters) {
@@ -304,6 +304,29 @@ function intersoccer_render_roster_details_page() {
     echo '</tr>';
     echo '</thead><tbody>';
     foreach ($rosters as $row) {
+        // Activity type processing (fixed logic)
+        $activity_type = $row->activity_type ?? '';
+        error_log('InterSoccer: Roster Details - Activity Type value for order_item_id ' . $row->order_item_id . ': ' . var_export($activity_type, true));
+
+        if ($activity_type) {
+            error_log('InterSoccer: Roster Details - Entered if block for activity_type processing, order_item_id ' . $row->order_item_id);
+            $activity_type = trim(strtolower(html_entity_decode($activity_type, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            $activity_types = array_map('trim', explode(',', $activity_type));
+            error_log('InterSoccer: Roster Details - $activity_types set to: ' . print_r($activity_types, true));
+
+            if (in_array('girls only', $activity_types) || in_array('camp, girls\' only', $activity_types) || in_array('camp, girls only', $activity_types)) {
+                $activity_type = 'Girls Only';
+                error_log('InterSoccer: Roster Details - Assigned Girls Only for order_item_id ' . $row->order_item_id);
+            } else {
+                error_log('InterSoccer: Roster Details - Before implode, $activity_types: ' . var_export($activity_types, true));
+                $activity_type = implode(', ', array_map('ucfirst', $activity_types));
+                error_log('InterSoccer: Roster Details - Set activity_type to: ' . $activity_type . ' for order_item_id ' . $row->order_item_id);
+            }
+        } else {
+            error_log('InterSoccer: Roster Details - Entered else block, defaulting activity_type to Unknown for order_item_id ' . $row->order_item_id);
+            $activity_type = 'Unknown';
+        }
+
         $late_pickup_display = ($row->late_pickup === 'Yes') ? 'Yes (18:00)' : 'No';
         $is_unknown = $row->player_name === 'Unknown Attendee';
         $day_presence = !empty($row->day_presence) ? json_decode($row->day_presence, true) : [];
@@ -325,7 +348,7 @@ function intersoccer_render_roster_details_page() {
             }
         }
         echo '<td>' . esc_html(intersoccer_get_term_name($row->age_group, 'pa_age-group') ?? 'N/A') . '</td>';
-        if (strpos($base_roster->activity_type, 'Girls Only') !== false || strpos($base_roster->activity_type, 'Girls\' only') !== false) {
+        if (strpos($activity_type, 'Girls Only') !== false) {
             echo '<td>' . esc_html($row->shirt_size ?? 'N/A') . '</td>';
             echo '<td>' . esc_html($row->shorts_size ?? 'N/A') . '</td>';
         }
@@ -353,10 +376,10 @@ function intersoccer_render_roster_details_page() {
     echo '<p>' . esc_html__('Venue: ') . esc_html($base_roster->venue ?? 'N/A') . '</p>';
     echo '<p>' . esc_html__('Age Group: ') . esc_html($base_roster->age_group ?? 'N/A') . '</p>';
     echo '<p>' . ($base_roster->course_day ? esc_html__('Course Day: ') . esc_html($base_roster->course_day) : esc_html__('Camp Terms: ') . esc_html($base_roster->camp_terms ?? 'N/A')) . '</p>';
-    $times_label = ($base_roster->activity_type === 'Course') ? __('Course Times: ', 'intersoccer-reports-rosters') : __('Camp Times: ', 'intersoccer-reports-rosters');
+    $times_label = ($activity_type === 'Course') ? __('Course Times: ', 'intersoccer-reports-rosters') : __('Camp Times: ', 'intersoccer-reports-rosters');
     echo '<p>' . esc_html($times_label) . esc_html($base_roster->times ?? 'N/A') . '</p>';
     echo '<p>' . esc_html__('Variation IDs: ') . esc_html(implode(', ', $related_variation_ids) ?: 'N/A') . '</p>';
-    echo '<p>' . esc_html__('Parent Product ID: ') . esc_html($base_roster->product_id ?? 'N/A') . '</p>'; // Added for debug
+    echo '<p>' . esc_html__('Parent Product ID: ') . esc_html($base_roster->product_id ?? 'N/A') . '</p>';
     echo '<p><strong>' . esc_html__('Total Players') . ':</strong> ' . esc_html(count($rosters)) . '</p>';
     echo '</div>';
 }
