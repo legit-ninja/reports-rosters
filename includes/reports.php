@@ -620,6 +620,7 @@ function intersoccer_export_booking_excel($report_data, $start_date, $end_date, 
             'discount_codes' => __('Discount Codes', 'intersoccer-reports-rosters'),
             'class_name' => __('Class Name', 'intersoccer-reports-rosters'),
             'start_date' => __('Start Date', 'intersoccer-reports-rosters'),
+            'end_date' => __('End Date', 'intersoccer-reports-rosters'), // Added
             'venue' => __('Venue', 'intersoccer-reports-rosters'),
             'booker_email' => __('Booker Email', 'intersoccer-reports-rosters'),
             'attendee_name' => __('Attendee Name', 'intersoccer-reports-rosters'),
