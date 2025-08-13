@@ -18,89 +18,6 @@ error_log('InterSoccer: woocommerce-orders.php file loaded');
 // Define known Girls Only variation IDs
 $girls_only_variation_ids = ['32648', '32649', '33957', '32645', '32641'];
 
-// Define intersoccer_get_product_type if not already defined (to avoid redeclaration)
-if (!function_exists('intersoccer_get_product_type')) {
-    function intersoccer_get_product_type($product_id) {
-        $product = wc_get_product($product_id);
-        if (!$product) {
-            error_log('InterSoccer: Invalid product for type detection: ' . $product_id);
-            return '';
-        }
-
-        // Check existing meta
-        $product_type = get_post_meta($product_id, '_intersoccer_product_type', true);
-        if ($product_type) {
-            error_log('InterSoccer: Product type from meta for product ' . $product_id . ': ' . $product_type);
-            return $product_type;
-        }
-
-        // Check categories (on parent)
-        $categories = wp_get_post_terms($product_id, 'product_cat', array('fields' => 'slugs'));
-        if (is_wp_error($categories)) {
-            error_log('InterSoccer: Error fetching categories for product ' . $product_id . ': ' . $categories->get_error_message());
-            $categories = [];
-        } else {
-            $categories = array_map('strtolower', $categories); // Normalize case
-            error_log('InterSoccer: Categories for product ' . $product_id . ': ' . print_r($categories, true));
-        }
-
-        if (in_array('camps', $categories, true) || in_array('camp', $categories, true)) {
-            $product_type = 'camp';
-        } elseif (in_array('courses', $categories, true) || in_array('course', $categories, true)) {
-            $product_type = 'course';
-        } elseif (in_array('birthdays', $categories, true) || in_array('birthday', $categories, true)) {
-            $product_type = 'birthday';
-        }
-
-        // Fallback: Check attributes (on variation if available, else parent)
-        if (!$product_type) {
-            $attributes = $product->get_attributes();
-            error_log('InterSoccer: Attributes for product ' . $product_id . ': ' . print_r($attributes, true));
-            if (isset($attributes['pa_activity-type']) && $attributes['pa_activity-type'] instanceof WC_Product_Attribute) {
-                $attribute = $attributes['pa_activity-type'];
-                if ($attribute->is_taxonomy()) {
-                    $terms = wc_get_product_terms($product_id, 'pa_activity-type', ['fields' => 'slugs']);
-                    $terms = array_map('strtolower', $terms); // Normalize case
-                    error_log('InterSoccer: pa_activity-type terms for product ' . $product_id . ': ' . print_r($terms, true));
-                    if (in_array('course', $terms)) {
-                        $product_type = 'course';
-                    } elseif (in_array('camp', $terms)) {
-                        $product_type = 'camp';
-                    } elseif (in_array('birthday', $terms)) {
-                        $product_type = 'birthday';
-                    }
-                } else {
-                    error_log('InterSoccer: pa_activity-type attribute is not a taxonomy for product ' . $product_id);
-                }
-            } else {
-                error_log('InterSoccer: pa_activity-type attribute not found for product ' . $product_id);
-            }
-        }
-
-        // Fallback: Check product title as a last resort
-        if (!$product_type) {
-            $title = strtolower($product->get_title());
-            if (strpos($title, 'course') !== false) {
-                $product_type = 'course';
-            } elseif (strpos($title, 'camp') !== false) {
-                $product_type = 'camp';
-            } elseif (strpos($title, 'birthday') !== false) {
-                $product_type = 'birthday';
-            }
-            error_log('InterSoccer: Fallback to title for product type detection for product ' . $product_id . ', title: ' . $product->get_title() . ', type: ' . ($product_type ?: 'none'));
-        }
-
-        // Save the detected type to meta for future consistency
-        if ($product_type) {
-            update_post_meta($product_id, '_intersoccer_product_type', $product_type);
-            error_log('InterSoccer: Determined and saved product type for product ' . $product_id . ': ' . $product_type);
-        } else {
-            error_log('InterSoccer: Could not determine product type for product ' . $product_id . ', categories: ' . print_r($categories, true));
-        }
-
-        return $product_type;
-    }
-}
 
 // Hook into order status change to processing
 add_action('woocommerce_order_status_processing', 'intersoccer_populate_rosters_and_complete_order');
@@ -453,5 +370,67 @@ function intersoccer_populate_rosters_and_complete_order($order_id) {
     $verification_query = $wpdb->prepare("SELECT * FROM $table_name WHERE order_id = %d", $order_id);
     $results = $wpdb->get_results($verification_query);
     error_log('InterSoccer: Verification query results for order ' . $order_id . ': ' . print_r($results, true));
+}
+
+/**
+ * Insert or update roster entry from order item.
+ *
+ * @param int $order_id Order ID.
+ * @param int $order_item_id Order item ID.
+ * @param array $data Roster data.
+ */
+function intersoccer_insert_roster($order_id, $order_item_id, $data) {
+    global $wpdb;
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+
+    $order = wc_get_order($order_id);
+    $item = $order->get_item($order_item_id);
+
+    // Financial data
+    $base_price = (float) $item->get_subtotal();
+    $final_price = (float) $item->get_total();
+    $discount_amount = $base_price - $final_price;
+    $reimbursement = 0; // Calculate if needed (e.g., from meta)
+    $discount_codes = implode(',', $order->get_coupon_codes());
+
+    // Timestamp
+    $registration_timestamp = $order->get_date_created()->date('Y-m-d H:i:s');
+
+    // Add to data array
+    $data['base_price'] = $base_price;
+    $data['discount_amount'] = $discount_amount;
+    $data['final_price'] = $final_price;
+    $data['reimbursement'] = $reimbursement;
+    $data['discount_codes'] = $discount_codes;
+    $data['registration_timestamp'] = $registration_timestamp;
+
+    // Insert or update
+    $wpdb->replace($rosters_table, $data);
+    error_log("InterSoccer: Inserted/updated roster for order_item_id={$order_item_id} with timestamp={$registration_timestamp}, base_price={$base_price}");
+}
+
+// Hook to order completion or wherever insertion happens
+add_action('woocommerce_order_status_completed', function($order_id) {
+    $order = wc_get_order($order_id);
+    foreach ($order->get_items() as $item_id => $item) {
+        // Gather $data from item meta, then call intersoccer_insert_roster($order_id, $item_id, $data);
+    }
+}, 10, 1);
+
+function intersoccer_debug_populate_rosters($order_id) {
+    ob_start();
+    error_log('InterSoccer: Debug wrapper called for order ' . $order_id);
+    try {
+        intersoccer_populate_rosters_and_complete_order($order_id);
+        $output = ob_get_clean();
+        if (!empty($output)) {
+            error_log('InterSoccer: Debug wrapper output for order ' . $order_id . ': ' . substr($output, 0, 1000));
+        }
+        return true;
+    } catch (Exception $e) {
+        error_log('InterSoccer: Debug wrapper error for order ' . $order_id . ': ' . $e->getMessage());
+        ob_end_clean();
+        return false;
+    }
 }
 ?>
