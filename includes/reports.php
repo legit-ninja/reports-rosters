@@ -296,6 +296,13 @@ function intersoccer_enqueue_datepicker() {
                 }
                 
                 // Initialize with current data
+                // Set default dates if fields are empty on page load
+                if (!$("#start_date").val() && !$("#end_date").val()) {
+                    var today = new Date();
+                    var thirtyDaysAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30);
+                    $("#start_date").val(thirtyDaysAgo.toISOString().split("T")[0]);
+                    $("#end_date").val(today.toISOString().split("T")[0]);
+                }
                 intersoccerUpdateReport();
             });
         ');
@@ -478,8 +485,18 @@ add_action('wp_ajax_intersoccer_filter_report', 'intersoccer_filter_report_callb
  */
 function intersoccer_render_booking_report_tab() {
     // Get current filters from URL or defaults
-    $start_date = isset($_GET['start_date']) ? sanitize_text_field($_GET['start_date']) : '';
-    $end_date = isset($_GET['end_date']) ? sanitize_text_field($_GET['end_date']) : '';
+    $default_end_date = date('Y-m-d'); // Today
+    $default_start_date = date('Y-m-d', strtotime('-30 days')); // 30 days ago
+
+    $start_date = isset($_GET['start_date']) && !empty($_GET['start_date']) 
+        ? sanitize_text_field($_GET['start_date']) 
+        : $default_start_date;
+        
+    $end_date = isset($_GET['end_date']) && !empty($_GET['end_date']) 
+        ? sanitize_text_field($_GET['end_date']) 
+        : $default_end_date;
+
+    // Also update the year logic to use current year as fallback only
     $year = isset($_GET['year']) ? sanitize_text_field($_GET['year']) : date('Y');
     
     // Default visible columns
