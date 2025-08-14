@@ -76,6 +76,8 @@ function intersoccer_create_rosters_table() {
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
     dbDelta($sql);
     error_log('InterSoccer: Rosters table created/verified on activation (no rebuild).');
+    $describe = $wpdb->get_results("DESCRIBE $rosters_table", ARRAY_A);
+    error_log('InterSoccer: Post-rebuild DESCRIBE: ' . print_r($describe, true));
 }
 
 /**
@@ -144,6 +146,8 @@ function intersoccer_rebuild_rosters_and_reports() {
         KEY idx_variation_id (variation_id),
         KEY idx_order_id (order_id)
     ) $charset_collate;";
+    $pre_describe = $wpdb->get_results("DESCRIBE $rosters_table", ARRAY_A);
+    error_log('InterSoccer: Pre-rebuild DESCRIBE: ' . print_r($pre_describe, true));
     $wpdb->query("DROP TABLE IF EXISTS $rosters_table");
     $result = dbDelta($sql);
     if (is_wp_error($result)) {
@@ -647,16 +651,29 @@ function intersoccer_upgrade_database_ajax() {
 
 add_action('wp_ajax_intersoccer_rebuild_rosters_and_reports', 'intersoccer_rebuild_rosters_and_reports_ajax');
 function intersoccer_rebuild_rosters_and_reports_ajax() {
+    // Start output buffering immediately to capture any stray output
+    ob_start();
+
     check_ajax_referer('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field');
     if (!current_user_can('manage_options')) {
+        ob_clean();  // Clean buffer before sending
         wp_send_json_error(__('You do not have permission to rebuild rosters.', 'intersoccer-reports-rosters'));
     }
     error_log('InterSoccer: AJAX rebuild request received with data: ' . print_r($_POST, true));
-    $result = intersoccer_rebuild_rosters_and_reports();
-    if ($result['status'] === 'success') {
-        wp_send_json_success(['inserted' => $result['inserted'], 'message' => __('Rebuild completed. Inserted ' . $result['inserted'] . ' rosters.', 'intersoccer-reports-rosters')]);
-    } else {
-        wp_send_json_error(['message' => __('Rebuild failed: ' . $result['message'], 'intersoccer-reports-rosters')]);
+
+    try {
+        $result = intersoccer_rebuild_rosters_and_reports();
+        if ($result['status'] === 'success') {
+            ob_clean();  // Ensure no prior output (e.g., notices)
+            wp_send_json_success(['inserted' => $result['inserted'], 'message' => __('Rebuild completed. Inserted ' . $result['inserted'] . ' rosters.', 'intersoccer-reports-rosters')]);
+        } else {
+            ob_clean();
+            wp_send_json_error(['message' => __('Rebuild failed: ' . $result['message'], 'intersoccer-reports-rosters')]);
+        }
+    } catch (Exception $e) {
+        error_log('InterSoccer: Rebuild exception: ' . $e->getMessage());
+        ob_clean();
+        wp_send_json_error(['message' => __('Rebuild failed with exception: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
     }
 }
 
