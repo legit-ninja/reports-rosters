@@ -67,96 +67,334 @@ function intersoccer_enqueue_datepicker() {
     if (isset($_GET['page']) && $_GET['page'] === 'intersoccer-reports' && isset($_GET['tab']) && $_GET['tab'] === 'booking') {
         wp_enqueue_script('jquery-ui-datepicker');
         wp_enqueue_style('jquery-ui-css', '//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
-        wp_enqueue_script('intersoccer-reports', plugin_dir_url(__FILE__) . 'js/reports.js', ['jquery'], '1.3.98', true);
+        wp_enqueue_script('intersoccer-reports', plugin_dir_url(__FILE__) . 'js/reports.js', ['jquery'], '1.3.99', true);
         wp_localize_script('intersoccer-reports', 'intersoccerReports', [
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('intersoccer_reports_filter'),
         ]);
+        
+        // Enhanced inline script with better UX
         wp_add_inline_script('intersoccer-reports', '
             jQuery(document).ready(function($) {
+                var updateTimeout;
+                
+                // Enhanced datepicker with better options
                 $("#start_date, #end_date").datepicker({
                     dateFormat: "yy-mm-dd",
                     changeMonth: true,
                     changeYear: true,
+                    yearRange: "2020:+2",
+                    maxDate: "+1y",
                     onSelect: function() {
+                        validateDateRange();
                         intersoccerUpdateReport();
                     }
                 });
+                
+                // Auto-filter on input changes with debouncing
                 $("#region, #year").on("change", function() {
                     intersoccerUpdateReport();
                 });
+                
+                // Debounced column checkbox changes
+                $("input[name=\'columns[]\']").on("change", function() {
+                    clearTimeout(updateTimeout);
+                    updateTimeout = setTimeout(intersoccerUpdateReport, 300);
+                });
+                
+                // Date range validation
+                function validateDateRange() {
+                    var startDate = $("#start_date").val();
+                    var endDate = $("#end_date").val();
+                    var errorMsg = $("#date-error-message");
+                    
+                    if (startDate && endDate) {
+                        if (new Date(startDate) > new Date(endDate)) {
+                            errorMsg.show().text("Start date must be before end date");
+                            $("#export-booking-report").prop("disabled", true);
+                            return false;
+                        }
+                    }
+                    errorMsg.hide();
+                    $("#export-booking-report").prop("disabled", false);
+                    return true;
+                }
+                
+                // Quick date range buttons
+                $(".quick-date-range").on("click", function(e) {
+                    e.preventDefault();
+                    var range = $(this).data("range");
+                    var today = new Date();
+                    var startDate, endDate;
+                    
+                    switch(range) {
+                        case "today":
+                            startDate = endDate = today;
+                            break;
+                        case "week":
+                            startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7);
+                            endDate = today;
+                            break;
+                        case "month":
+                            startDate = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+                            endDate = today;
+                            break;
+                        case "quarter":
+                            startDate = new Date(today.getFullYear(), today.getMonth() - 3, today.getDate());
+                            endDate = today;
+                            break;
+                        case "year":
+                            startDate = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
+                            endDate = today;
+                            break;
+                        case "clear":
+                            $("#start_date, #end_date").val("");
+                            intersoccerUpdateReport();
+                            return;
+                    }
+                    
+                    $("#start_date").val(startDate.toISOString().split("T")[0]);
+                    $("#end_date").val(endDate.toISOString().split("T")[0]);
+                    validateDateRange();
+                    intersoccerUpdateReport();
+                });
+                
+                // Enhanced update function with loading states
                 function intersoccerUpdateReport() {
-                    var start_date = $("#start_date").val();
-                    var end_date = $("#end_date").val();
-                    var year = $("#year").val();
-                    var region = $("#region").val();
-                    var columns = $("input[name=\'columns[]\']:checked").map(function() { return this.value; }).get();
+                    if (!validateDateRange()) return;
+                    
+                    var $loadingIndicator = $("#loading-indicator");
+                    var $tableContainer = $("#intersoccer-report-table");
+                    var $totalsContainer = $("#intersoccer-report-totals");
+                    
+                    // Show loading state
+                    $loadingIndicator.show();
+                    $tableContainer.addClass("loading");
+                    $("#export-booking-report").prop("disabled", true).text("Loading...");
+                    
+                    var formData = {
+                        action: "intersoccer_filter_report",
+                        nonce: intersoccerReports.nonce,
+                        start_date: $("#start_date").val(),
+                        end_date: $("#end_date").val(),
+                        year: $("#year").val(),
+                        region: $("#region").val(),
+                        columns: $("input[name=\'columns[]\']:checked").map(function() { 
+                            return this.value; 
+                        }).get()
+                    };
+                    
                     $.ajax({
                         url: intersoccerReports.ajaxurl,
                         type: "POST",
-                        data: {
-                            action: "intersoccer_filter_report",
-                            nonce: intersoccerReports.nonce,
-                            start_date: start_date,
-                            end_date: end_date,
-                            year: year,
-                            region: region,
-                            columns: columns
-                        },
+                        data: formData,
+                        timeout: 30000,
                         success: function(response) {
                             if (response.success) {
-                                $("#intersoccer-report-table").html(response.data.table);
-                                $("#intersoccer-report-totals").html(response.data.totals);
+                                $tableContainer.html(response.data.table).removeClass("loading");
+                                $totalsContainer.html(response.data.totals);
+                                
+                                // Update record count
+                                var recordCount = $(response.data.table).find("tbody tr").length;
+                                $("#record-count").text(recordCount + " records found");
+                                
+                                // Store current filters for export
+                                window.intersoccerCurrentFilters = formData;
                             } else {
-                                console.error("Filter error: " + response.data.message);
+                                $tableContainer.html("<p class=\"error\">Error: " + (response.data.message || "Unknown error") + "</p>");
+                                console.error("Filter error:", response.data.message);
                             }
                         },
                         error: function(xhr, status, error) {
-                            console.error("AJAX error: " + error);
+                            $tableContainer.html("<p class=\"error\">Connection error. Please try again.</p>");
+                            console.error("AJAX error:", error);
+                        },
+                        complete: function() {
+                            $loadingIndicator.hide();
+                            $("#export-booking-report").prop("disabled", false).text("Export to Excel");
                         }
                     });
                 }
+                
+                // Enhanced export with current filters
                 $("#export-booking-report").on("click", function(e) {
                     e.preventDefault();
-                    var start_date = $("#start_date").val();
-                    var end_date = $("#end_date").val();
-                    var year = $("#year").val();
-                    var region = $("#region").val();
-                    var columns = $("input[name=\'columns[]\']:checked").map(function() { return this.value; }).get();
+                    
+                    if (!validateDateRange()) {
+                        alert("Please fix date range errors before exporting.");
+                        return;
+                    }
+                    
+                    var $exportBtn = $(this);
+                    $exportBtn.prop("disabled", true).text("Exporting...");
+                    
+                    // Use stored filters or current form state
+                    var exportData = window.intersoccerCurrentFilters || {
+                        start_date: $("#start_date").val(),
+                        end_date: $("#end_date").val(),
+                        year: $("#year").val(),
+                        region: $("#region").val(),
+                        columns: $("input[name=\'columns[]\']:checked").map(function() { 
+                            return this.value; 
+                        }).get()
+                    };
+                    
+                    exportData.action = "intersoccer_export_booking_report";
+                    exportData.nonce = intersoccerReports.nonce;
+                    
                     $.ajax({
                         url: intersoccerReports.ajaxurl,
                         type: "POST",
-                        data: {
-                            action: "intersoccer_export_booking_report",
-                            nonce: intersoccerReports.nonce,
-                            start_date: start_date,
-                            end_date: end_date,
-                            year: year,
-                            region: region,
-                            columns: columns
-                        },
+                        data: exportData,
+                        timeout: 60000,
                         success: function(response) {
                             if (response.success) {
+                                // Create and trigger download
                                 var binary = atob(response.data.content);
                                 var array = new Uint8Array(binary.length);
                                 for (var i = 0; i < binary.length; i++) {
                                     array[i] = binary.charCodeAt(i);
                                 }
-                                var blob = new Blob([array], {type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+                                var blob = new Blob([array], {
+                                    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                });
                                 var link = document.createElement("a");
                                 link.href = window.URL.createObjectURL(blob);
                                 link.download = response.data.filename;
+                                document.body.appendChild(link);
                                 link.click();
+                                document.body.removeChild(link);
+                                
+                                // Show success message
+                                showNotification("Export completed successfully!", "success");
                             } else {
-                                console.error("Export error: " + (response.data.message || "Unknown"));
+                                showNotification("Export failed: " + (response.data.message || "Unknown error"), "error");
+                                console.error("Export error:", response.data.message);
                             }
                         },
                         error: function(xhr, status, error) {
-                            console.error("AJAX export error: " + error);
+                            if (status === "timeout") {
+                                showNotification("Export timeout. Please try with a smaller date range.", "error");
+                            } else {
+                                showNotification("Export failed: Connection error", "error");
+                            }
+                            console.error("AJAX export error:", error);
+                        },
+                        complete: function() {
+                            $exportBtn.prop("disabled", false).text("Export to Excel");
                         }
                     });
                 });
+                
+                // Notification system
+                function showNotification(message, type) {
+                    var $notification = $("<div class=\"notice notice-" + type + " is-dismissible\"><p>" + message + "</p></div>");
+                    $(".wrap h1").after($notification);
+                    setTimeout(function() {
+                        $notification.fadeOut();
+                    }, 5000);
+                }
+                
+                // Initialize with current data
+                intersoccerUpdateReport();
             });
+        ');
+        
+        // Add custom CSS for better UX
+        wp_add_inline_style('jquery-ui-css', '
+            .intersoccer-filters {
+                background: #f9f9f9;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 20px;
+                margin: 20px 0;
+            }
+            .filter-row {
+                display: flex;
+                gap: 15px;
+                align-items: center;
+                margin-bottom: 15px;
+                flex-wrap: wrap;
+            }
+            .filter-group {
+                display: flex;
+                flex-direction: column;
+                gap: 5px;
+            }
+            .filter-group label {
+                font-weight: 600;
+                font-size: 13px;
+            }
+            .quick-dates {
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+            .quick-date-range {
+                padding: 4px 8px;
+                font-size: 12px;
+                border-radius: 3px;
+                border: 1px solid #ccc;
+                background: #fff;
+                cursor: pointer;
+                text-decoration: none;
+            }
+            .quick-date-range:hover {
+                background: #f0f0f0;
+            }
+            .columns-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 10px;
+                margin-top: 10px;
+            }
+            .column-checkbox {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 5px;
+                background: #fff;
+                border-radius: 3px;
+                border: 1px solid #e0e0e0;
+            }
+            #loading-indicator {
+                display: none;
+                color: #0073aa;
+                font-weight: 600;
+            }
+            .loading {
+                opacity: 0.6;
+                pointer-events: none;
+            }
+            #date-error-message {
+                color: #d63638;
+                font-size: 13px;
+                margin-top: 5px;
+                display: none;
+            }
+            .stats-bar {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin: 15px 0;
+                padding: 10px;
+                background: #fff;
+                border-left: 4px solid #0073aa;
+            }
+            #record-count {
+                font-weight: 600;
+                color: #0073aa;
+            }
+            .intersoccer-reports-rosters-reports-tab h1 {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .intersoccer-reports-rosters-reports-tab p {
+                color: #666;
+                font-style: italic;
+                margin-bottom: 20px;
+            }
         ');
     }
 }
@@ -239,107 +477,114 @@ add_action('wp_ajax_intersoccer_filter_report', 'intersoccer_filter_report_callb
  * Render the Booking Report tab content.
  */
 function intersoccer_render_booking_report_tab() {
+    // Get current filters from URL or defaults
     $start_date = isset($_GET['start_date']) ? sanitize_text_field($_GET['start_date']) : '';
     $end_date = isset($_GET['end_date']) ? sanitize_text_field($_GET['end_date']) : '';
     $year = isset($_GET['year']) ? sanitize_text_field($_GET['year']) : date('Y');
-    $region = isset($_GET['region']) ? sanitize_text_field($_GET['region']) : '';
-    $visible_columns = isset($_GET['columns']) ? array_map('sanitize_text_field', (array)$_GET['columns']) : ['ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'final_price', 'discount_codes', 'class_name', 'start_date', 'venue', 'booker_email', 'attendee_name', 'attendee_gender', 'attendee_age', 'parent_phone'];
-    $report_data = intersoccer_get_booking_report($start_date, $end_date, $year, $region);
+    
+    // Default visible columns
+    $default_columns = ['ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'final_price', 
+                       'discount_codes', 'class_name', 'start_date', 'venue', 'booker_email', 
+                       'attendee_name', 'attendee_gender', 'attendee_age', 'parent_phone'];
+    $visible_columns = isset($_GET['columns']) ? array_map('sanitize_text_field', (array)$_GET['columns']) : $default_columns;
 
     // Define all possible columns
     $all_columns = [
-        'ref' => __('Ref', 'intersoccer-reports-rosters'),
-        'booked' => __('Booked', 'intersoccer-reports-rosters'),
-        'base_price' => __('Base Price', 'intersoccer-reports-rosters'),
-        'discount_amount' => __('Discount Amount', 'intersoccer-reports-rosters'),
-        'reimbursement' => __('Reimbursement', 'intersoccer-reports-rosters'),
-        'final_price' => __('Final Price', 'intersoccer-reports-rosters'),
-        'discount_codes' => __('Discount Codes', 'intersoccer-reports-rosters'),
-        'class_name' => __('Class Name', 'intersoccer-reports-rosters'),
-        'start_date' => __('Start Date', 'intersoccer-reports-rosters'),
-        'venue' => __('Venue', 'intersoccer-reports-rosters'),
-        'booker_email' => __('Booker Email', 'intersoccer-reports-rosters'),
-        'attendee_name' => __('Attendee Name', 'intersoccer-reports-rosters'),
+        'ref' => __('Reference', 'intersoccer-reports-rosters'),
+        'booked' => __('Booking Date', 'intersoccer-reports-rosters'),
+        'base_price' => __('Base Price (CHF)', 'intersoccer-reports-rosters'),
+        'discount_amount' => __('Discount Amount (CHF)', 'intersoccer-reports-rosters'),
+        'reimbursement' => __('Reimbursement (CHF)', 'intersoccer-reports-rosters'),
+        'final_price' => __('Final Price (CHF)', 'intersoccer-reports-rosters'),
+        'discount_codes' => __('Discount Codes Used', 'intersoccer-reports-rosters'),
+        'class_name' => __('Event/Class Name', 'intersoccer-reports-rosters'),
+        'start_date' => __('Event Start Date', 'intersoccer-reports-rosters'),
+        'venue' => __('Venue Location', 'intersoccer-reports-rosters'),
+        'booker_email' => __('Parent/Booker Email', 'intersoccer-reports-rosters'),
+        'attendee_name' => __('Child/Attendee Name', 'intersoccer-reports-rosters'),
         'attendee_age' => __('Attendee Age', 'intersoccer-reports-rosters'),
         'attendee_gender' => __('Attendee Gender', 'intersoccer-reports-rosters'),
-        'parent_phone' => __('Parent Phone', 'intersoccer-reports-rosters'),
+        'parent_phone' => __('Emergency Phone', 'intersoccer-reports-rosters'),
     ];
-
-    // Calculate totals
-    $total_bookings = count($report_data['data']);
-    $total_base_price = array_sum(array_map('floatval', array_column($report_data['data'], 'base_price')));
-    $total_discount_amount = array_sum(array_map('floatval', array_column($report_data['data'], 'discount_amount')));
-    $total_final_price = array_sum(array_map('floatval', array_column($report_data['data'], 'final_price')));
-    $total_reimbursement = array_sum(array_map('floatval', array_column($report_data['data'], 'reimbursement')));
-    $total_net_revenue = $total_final_price - $total_reimbursement;
     ?>
     <div class="wrap intersoccer-reports-rosters-reports-tab">
-        <h2><?php echo esc_html(sprintf(__('Booking Report %s', 'intersoccer-reports-rosters'), $start_date && $end_date ? "$start_date to $end_date" : $year)); ?></h2>
-        <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" id="intersoccer-report-filter">
-            <input type="hidden" name="page" value="intersoccer-reports" />
-            <input type="hidden" name="tab" value="booking" />
-            <label for="start_date"><?php _e('Start Date:', 'intersoccer-reports-rosters'); ?></label>
-            <input type="text" name="start_date" id="start_date" value="<?php echo esc_attr($start_date); ?>" placeholder="YYYY-MM-DD" />
-            <label for="end_date"><?php _e('End Date:', 'intersoccer-reports-rosters'); ?></label>
-            <input type="text" name="end_date" id="end_date" value="<?php echo esc_attr($end_date); ?>" placeholder="YYYY-MM-DD" />
-            <label for="year"><?php _e('Year:', 'intersoccer-reports-rosters'); ?></label>
-            <input type="number" name="year" id="year" value="<?php echo esc_attr($year); ?>" />
-            <label for="region"><?php _e('Region:', 'intersoccer-reports-rosters'); ?></label>
-            <select name="region" id="region">
-                <option value=""><?php _e('All Regions', 'intersoccer-reports-rosters'); ?></option>
-                <?php
-                $regions = get_terms(['taxonomy' => 'pa_canton-region', 'hide_empty' => false, 'fields' => 'names']);
-                foreach ($regions as $r) {
-                    echo '<option value="' . esc_attr($r) . '"' . selected($region, $r, false) . '>' . esc_html($r) . '</option>';
-                }
-                ?>
-            </select>
-            <div style="margin-top: 10px;">
-                <h4><?php _e('Select Columns:', 'intersoccer-reports-rosters'); ?></h4>
-                <?php foreach ($all_columns as $key => $label): ?>
-                    <label style="margin-right: 15px;">
-                        <input type="checkbox" name="columns[]" value="<?php echo esc_attr($key); ?>" <?php checked(in_array($key, $visible_columns)); ?> />
-                        <?php echo esc_html($label); ?>
-                    </label>
-                <?php endforeach; ?>
+        <h1><?php _e('📊 Booking Report Dashboard', 'intersoccer-reports-rosters'); ?></h1>
+        <p><?php _e('Filter and export detailed booking data with revenue analysis.', 'intersoccer-reports-rosters'); ?></p>
+        
+        <!-- Streamlined Filter Panel -->
+        <div class="intersoccer-filters">
+            <h3><?php _e('🔍 Filter Options', 'intersoccer-reports-rosters'); ?></h3>
+            
+            <!-- Primary Date Controls -->
+            <div class="filter-row">
+                <div class="filter-group">
+                    <label for="start_date"><?php _e('Start Date:', 'intersoccer-reports-rosters'); ?></label>
+                    <input type="text" name="start_date" id="start_date" value="<?php echo esc_attr($start_date); ?>" 
+                           placeholder="YYYY-MM-DD" style="width: 140px;" />
+                </div>
+                <div class="filter-group">
+                    <label for="end_date"><?php _e('End Date:', 'intersoccer-reports-rosters'); ?></label>
+                    <input type="text" name="end_date" id="end_date" value="<?php echo esc_attr($end_date); ?>" 
+                           placeholder="YYYY-MM-DD" style="width: 140px;" />
+                </div>
+                <div class="filter-group">
+                    <label for="year"><?php _e('Year (if no dates):', 'intersoccer-reports-rosters'); ?></label>
+                    <input type="number" name="year" id="year" value="<?php echo esc_attr($year); ?>" 
+                           min="2020" max="<?php echo date('Y') + 2; ?>" style="width: 100px;" />
+                </div>
             </div>
-        </form>
-        <div class="export-section" style="margin-top: 10px;">
-            <button id="export-booking-report" class="button button-primary"><?php _e('Export to Excel', 'intersoccer-reports-rosters'); ?></button>
+            
+            <!-- Quick Date Range Buttons -->
+            <div class="filter-row">
+                <strong><?php _e('Quick Ranges:', 'intersoccer-reports-rosters'); ?></strong>
+                <div class="quick-dates">
+                    <a href="#" class="quick-date-range button button-small" data-range="today"><?php _e('Today', 'intersoccer-reports-rosters'); ?></a>
+                    <a href="#" class="quick-date-range button button-small" data-range="week"><?php _e('Last 7 Days', 'intersoccer-reports-rosters'); ?></a>
+                    <a href="#" class="quick-date-range button button-small" data-range="month"><?php _e('Last 30 Days', 'intersoccer-reports-rosters'); ?></a>
+                    <a href="#" class="quick-date-range button button-small" data-range="quarter"><?php _e('Last 3 Months', 'intersoccer-reports-rosters'); ?></a>
+                    <a href="#" class="quick-date-range button button-small" data-range="year"><?php _e('Last Year', 'intersoccer-reports-rosters'); ?></a>
+                    <a href="#" class="quick-date-range button button-small" data-range="clear"><?php _e('Clear Dates', 'intersoccer-reports-rosters'); ?></a>
+                </div>
+            </div>
+            
+            <div id="date-error-message"></div>
+            
+            <!-- Collapsible Column Selection -->
+            <div class="filter-row" style="flex-direction: column; align-items: flex-start;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <h4 style="margin: 0;"><?php _e('📋 Columns to Display', 'intersoccer-reports-rosters'); ?></h4>
+                    <button type="button" id="toggle-columns" class="button button-small" style="font-size: 12px;">
+                        <?php _e('Show/Hide Columns', 'intersoccer-reports-rosters'); ?>
+                    </button>
+                </div>
+                <div id="columns-panel" class="columns-grid" style="display: none; margin-top: 10px;">
+                    <?php foreach ($all_columns as $key => $label): ?>
+                        <label class="column-checkbox">
+                            <input type="checkbox" name="columns[]" value="<?php echo esc_attr($key); ?>" 
+                                   <?php checked(in_array($key, $visible_columns)); ?> />
+                            <span><?php echo esc_html($label); ?></span>
+                        </label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
         </div>
-        <div id="intersoccer-report-totals" class="report-totals" style="margin-bottom: 20px;">
-            <h3><?php _e('Summary', 'intersoccer-reports-rosters'); ?></h3>
-            <p><strong><?php _e('Total Bookings:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html($total_bookings); ?></p>
-            <p><strong><?php _e('Total Base Price:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html(number_format($total_base_price, 2)); ?> CHF</p>
-            <p><strong><?php _e('Total Discount Amount:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html(number_format($total_discount_amount, 2)); ?> CHF</p>
-            <p><strong><?php _e('Total Final Price:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html(number_format($total_final_price, 2)); ?> CHF</p>
-            <p><strong><?php _e('Total Reimbursement:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html(number_format($total_reimbursement, 2)); ?> CHF</p>
-            <p><strong><?php _e('Total Net Revenue:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html(number_format($total_net_revenue, 2)); ?> CHF</p>
+        
+        <!-- Stats and Export Bar -->
+        <div class="stats-bar">
+            <div>
+                <span id="loading-indicator">🔄 Loading data...</span>
+                <span id="record-count">0 records found</span>
+            </div>
+            <div>
+                <button id="export-booking-report" class="button button-primary">
+                    📥 <?php _e('Export to Excel', 'intersoccer-reports-rosters'); ?>
+                </button>
+            </div>
         </div>
-        <div id="intersoccer-report-table">
-            <?php if (empty($report_data['data'])): ?>
-                <p><?php _e('No data available for the selected filters.', 'intersoccer-reports-rosters'); ?></p>
-            <?php else: ?>
-                <table class="widefat fixed">
-                    <thead>
-                        <tr>
-                            <?php foreach ($visible_columns as $key): ?>
-                                <th><?php echo esc_html($all_columns[$key]); ?></th>
-                            <?php endforeach; ?>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($report_data['data'] as $row): ?>
-                            <tr>
-                                <?php foreach ($visible_columns as $key): ?>
-                                    <td><?php echo esc_html($row[$key]); ?></td>
-                                <?php endforeach; ?>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            <?php endif; ?>
-        </div>
+        
+        <!-- Results Section -->
+        <div id="intersoccer-report-totals"></div>
+        <div id="intersoccer-report-table"></div>
     </div>
     <?php
 }
@@ -350,146 +595,235 @@ function intersoccer_render_booking_report_tab() {
 function intersoccer_export_booking_report_callback() {
     check_ajax_referer('intersoccer_reports_filter', 'nonce');
 
+    // Get and validate the same filters used in the display (removed region)
     $start_date = isset($_POST['start_date']) ? sanitize_text_field($_POST['start_date']) : '';
     $end_date = isset($_POST['end_date']) ? sanitize_text_field($_POST['end_date']) : '';
-    $year = isset($_POST['year']) ? sanitize_text_field($_POST['year']) : date('Y');
-    $region = isset($_POST['region']) ? sanitize_text_field($_POST['region']) : '';
+    $year = isset($_POST['year']) ? absint($_POST['year']) : date('Y');
     $visible_columns = isset($_POST['columns']) ? array_map('sanitize_text_field', (array)$_POST['columns']) : [
         'ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'final_price', 'discount_codes',
         'class_name', 'start_date', 'venue', 'booker_email', 'attendee_name', 'attendee_age', 'attendee_gender', 'parent_phone'
     ];
 
-    $report_data = intersoccer_get_booking_report($start_date, $end_date, $year, $region);
-
-    if (empty($report_data['data'])) {
-        wp_send_json_error(['message' => __('No data available for export.', 'intersoccer-reports-rosters')]);
+    // Validate inputs (same as filter callback)
+    if ($start_date && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date)) {
+        wp_send_json_error(['message' => 'Invalid start date format. Use YYYY-MM-DD.']);
+    }
+    if ($end_date && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) {
+        wp_send_json_error(['message' => 'Invalid end date format. Use YYYY-MM-DD.']);
+    }
+    if ($start_date && $end_date && strtotime($start_date) > strtotime($end_date)) {
+        wp_send_json_error(['message' => 'Start date must be before or equal to end date.']);
     }
 
     try {
+        // Get the EXACT same data that was displayed to the user (removed region)
+        $report_data = intersoccer_get_booking_report($start_date, $end_date, $year, '');
+        
+        if (empty($report_data['data'])) {
+            wp_send_json_error(['message' => __('No data available for export with current filters.', 'intersoccer-reports-rosters')]);
+        }
+
+        // Log export parameters for debugging
+        error_log('InterSoccer IMPROVED: Exporting ' . count($report_data['data']) . ' records with filters: ' . 
+                  json_encode(['start_date' => $start_date, 'end_date' => $end_date, 'year' => $year]));
+
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('Booking Report');
-
-        // Define all columns with proper labels
+        
+        // Create descriptive sheet title
+        $date_range = '';
+        if ($start_date && $end_date) {
+            $date_range = date('M j', strtotime($start_date)) . ' - ' . date('M j Y', strtotime($end_date));
+        } else {
+            $date_range = $year;
+        }
+        $sheet_title = 'Bookings ' . $date_range;
+        $sheet->setTitle(substr($sheet_title, 0, 31)); // Excel limit
+        
+        // Define column headers
         $all_columns = [
             'ref' => __('Reference', 'intersoccer-reports-rosters'),
             'order_id' => __('Order ID', 'intersoccer-reports-rosters'),
-            'booked' => __('Booked Date', 'intersoccer-reports-rosters'),
+            'booked' => __('Booking Date', 'intersoccer-reports-rosters'),
             'base_price' => __('Base Price (CHF)', 'intersoccer-reports-rosters'),
             'discount_amount' => __('Discount Amount (CHF)', 'intersoccer-reports-rosters'),
             'reimbursement' => __('Reimbursement (CHF)', 'intersoccer-reports-rosters'),
             'final_price' => __('Final Price (CHF)', 'intersoccer-reports-rosters'),
             'discount_codes' => __('Discount Codes', 'intersoccer-reports-rosters'),
-            'class_name' => __('Class/Event Name', 'intersoccer-reports-rosters'),
-            'start_date' => __('Start Date', 'intersoccer-reports-rosters'),
+            'class_name' => __('Event/Class Name', 'intersoccer-reports-rosters'),
+            'start_date' => __('Event Start Date', 'intersoccer-reports-rosters'),
             'venue' => __('Venue', 'intersoccer-reports-rosters'),
             'booker_email' => __('Booker Email', 'intersoccer-reports-rosters'),
             'attendee_name' => __('Attendee Name', 'intersoccer-reports-rosters'),
-            'attendee_age' => __('Attendee Age', 'intersoccer-reports-rosters'),
-            'attendee_gender' => __('Attendee Gender', 'intersoccer-reports-rosters'),
-            'parent_phone' => __('Parent Phone', 'intersoccer-reports-rosters'),
+            'attendee_age' => __('Age', 'intersoccer-reports-rosters'),
+            'attendee_gender' => __('Gender', 'intersoccer-reports-rosters'),
+            'parent_phone' => __('Emergency Phone', 'intersoccer-reports-rosters'),
         ];
 
-        // Create headers
+        // Create header row
         $header_row = [];
-        $column_letters = [];
-        $col_index = 1;
         foreach ($visible_columns as $key) {
             if (isset($all_columns[$key])) {
                 $header_row[] = $all_columns[$key];
-                $column_letters[$key] = $col_index;
-                $col_index++;
             }
         }
-        
         $sheet->fromArray($header_row, null, 'A1');
-        
-        // Style headers
-        $headerRange = 'A1:' . chr(64 + count($header_row)) . '1';
-        $sheet->getStyle($headerRange)->getFont()->setBold(true);
-        $sheet->getStyle($headerRange)->getFill()
+
+        // Style header row
+        $header_range = 'A1:' . chr(64 + count($header_row)) . '1';
+        $sheet->getStyle($header_range)->getFont()->setBold(true);
+        $sheet->getStyle($header_range)->getFill()
               ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
-              ->getStartColor()->setARGB('FFCCCCCC');
+              ->getStartColor()->setARGB('FF4472C4');
+        $sheet->getStyle($header_range)->getFont()->getColor()->setARGB('FFFFFFFF');
 
         // Add data rows
         $row_index = 2;
-        foreach ($report_data['data'] as $row) {
-            $data_row = [];
+        foreach ($report_data['data'] as $data_row) {
+            $excel_row = [];
             foreach ($visible_columns as $key) {
-                $value = $row[$key] ?? '';
+                $value = $data_row[$key] ?? '';
                 
-                // Special handling for order_id to create hyperlink
-                if ($key === 'order_id' && !empty($value)) {
-                    $order_url = admin_url('post.php?post=' . $value . '&action=edit');
-                    $sheet->setCellValue(chr(64 + $column_letters[$key]) . $row_index, $value);
-                    $sheet->getCell(chr(64 + $column_letters[$key]) . $row_index)->getHyperlink()->setUrl($order_url);
+                // Clean numeric values for Excel
+                if (in_array($key, ['base_price', 'discount_amount', 'reimbursement', 'final_price'])) {
+                    $excel_row[] = floatval(str_replace([',', ' CHF'], '', $value));
                 } else {
-                    $data_row[] = $value;
+                    $excel_row[] = $value;
                 }
             }
-            
-            // Insert data (skip order_id if it was handled specially)
-            $data_start_col = isset($column_letters['order_id']) ? 'B' : 'A';
-            if (isset($column_letters['order_id'])) {
-                array_shift($data_row); // Remove first element if order_id was handled
-            }
-            
-            $sheet->fromArray($data_row, null, $data_start_col . $row_index);
+            $sheet->fromArray($excel_row, null, 'A' . $row_index);
             $row_index++;
         }
 
-        // Add summary section
-        $summary_start_row = $row_index + 2;
-        $sheet->setCellValue('A' . $summary_start_row, __('SUMMARY', 'intersoccer-reports-rosters'));
-        $sheet->getStyle('A' . $summary_start_row)->getFont()->setBold(true);
-        
-        $sheet->setCellValue('A' . ($summary_start_row + 1), __('Total Bookings:', 'intersoccer-reports-rosters'));
-        $sheet->setCellValue('B' . ($summary_start_row + 1), $report_data['totals']['bookings']);
-        
-        $sheet->setCellValue('A' . ($summary_start_row + 2), __('Total Base Price:', 'intersoccer-reports-rosters'));
-        $sheet->setCellValue('B' . ($summary_start_row + 2), $report_data['totals']['base_price']);
-        
-        $sheet->setCellValue('A' . ($summary_start_row + 3), __('Total Discounts:', 'intersoccer-reports-rosters'));
-        $sheet->setCellValue('B' . ($summary_start_row + 3), $report_data['totals']['discount_amount']);
-        
-        $sheet->setCellValue('A' . ($summary_start_row + 4), __('Total Reimbursements:', 'intersoccer-reports-rosters'));
-        $sheet->setCellValue('B' . ($summary_start_row + 4), $report_data['totals']['reimbursement']);
-        
-        $sheet->setCellValue('A' . ($summary_start_row + 5), __('Total Final Price:', 'intersoccer-reports-rosters'));
-        $sheet->setCellValue('B' . ($summary_start_row + 5), $report_data['totals']['final_price']);
-
         // Format currency columns
-        $currency_range = 'B' . ($summary_start_row + 2) . ':B' . ($summary_start_row + 5);
-        $sheet->getStyle($currency_range)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
+        foreach ($visible_columns as $col_index => $key) {
+            if (in_array($key, ['base_price', 'discount_amount', 'reimbursement', 'final_price'])) {
+                $col_letter = chr(65 + $col_index);
+                $range = $col_letter . '2:' . $col_letter . ($row_index - 1);
+                $sheet->getStyle($range)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
+            }
+        }
+
+        // ENHANCED: Add comprehensive totals section at bottom for Susan
+        $totals_start = $row_index + 2;
+        
+        // Title row
+        $sheet->setCellValue('A' . $totals_start, '=== FINANCIAL SUMMARY FOR FINANCE ===');
+        $sheet->getStyle('A' . $totals_start)->getFont()->setBold(true)->setSize(14)->getColor()->setARGB('FF0073AA');
+        $sheet->mergeCells('A' . $totals_start . ':D' . $totals_start);
+        
+        // Summary data with enhanced formatting
+        $net_revenue = $report_data['totals']['final_price'] - $report_data['totals']['reimbursement'];
+        $avg_order_value = $report_data['totals']['bookings'] > 0 ? $report_data['totals']['final_price'] / $report_data['totals']['bookings'] : 0;
+        $discount_rate = $report_data['totals']['base_price'] > 0 ? ($report_data['totals']['discount_amount'] / $report_data['totals']['base_price']) * 100 : 0;
+        $refund_rate = $report_data['totals']['final_price'] > 0 ? ($report_data['totals']['reimbursement'] / $report_data['totals']['final_price']) * 100 : 0;
+        
+        $summary_data = [
+            ['Metric', 'Value', 'Notes'],
+            ['Total Bookings:', $report_data['totals']['bookings'], 'Number of individual line items'],
+            ['Gross Revenue:', $report_data['totals']['base_price'], 'Total before discounts'],
+            ['Total Discounts:', $report_data['totals']['discount_amount'], 'Coupon + combo discounts'],
+            ['Final Revenue:', $report_data['totals']['final_price'], 'After all discounts'],
+            ['Reimbursements:', $report_data['totals']['reimbursement'], 'Refunds processed'],
+            ['NET REVENUE:', $net_revenue, 'Final - Reimbursements'],
+            ['', '', ''], // Spacer
+            ['Average Order Value:', $avg_order_value, 'Final revenue / bookings'],
+            ['Discount Rate:', $discount_rate, 'Percentage of gross discounted'],
+            ['Refund Rate:', $refund_rate, 'Percentage of final refunded']
+        ];
+        
+        $current_row = $totals_start + 1;
+        foreach ($summary_data as $index => $summary_row) {
+            $sheet->setCellValue('A' . $current_row, $summary_row[0]);
+            $sheet->setCellValue('B' . $current_row, $summary_row[1]);
+            $sheet->setCellValue('C' . $current_row, $summary_row[2]);
+            
+            // Format the header row
+            if ($index === 0) {
+                $range = 'A' . $current_row . ':C' . $current_row;
+                $sheet->getStyle($range)->getFont()->setBold(true);
+                $sheet->getStyle($range)->getFill()
+                      ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                      ->getStartColor()->setARGB('FFE6F3FF');
+            }
+            // Format NET REVENUE row specially
+            elseif ($summary_row[0] === 'NET REVENUE:') {
+                $range = 'A' . $current_row . ':C' . $current_row;
+                $sheet->getStyle($range)->getFont()->setBold(true)->setSize(12);
+                $sheet->getStyle($range)->getFill()
+                      ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                      ->getStartColor()->setARGB('FFFFEB3B');
+            }
+            // Format currency values
+            if (is_numeric($summary_row[1]) && $summary_row[1] > 0 && !strpos($summary_row[0], 'Rate') && !strpos($summary_row[0], 'Bookings') && !strpos($summary_row[0], 'Average')) {
+                $sheet->getStyle('B' . $current_row)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
+            }
+            // Format percentage values
+            elseif (strpos($summary_row[0], 'Rate') !== false) {
+                $sheet->getStyle('B' . $current_row)->getNumberFormat()->setFormatCode('0.0"%"');
+                $sheet->setCellValue('B' . $current_row, $summary_row[1] / 100); // Convert to decimal for Excel
+            }
+            // Format average order value
+            elseif (strpos($summary_row[0], 'Average') !== false) {
+                $sheet->getStyle('B' . $current_row)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
+            }
+            
+            $current_row++;
+        }
+        
+        // Add generation info at the bottom
+        $info_row = $current_row + 1;
+        $generation_info = 'Generated: ' . date('Y-m-d H:i:s') . ' | ';
+        if ($start_date && $end_date) {
+            $generation_info .= "Period: {$start_date} to {$end_date} | ";
+        } else {
+            $generation_info .= "Year: {$year} | ";
+        }
+        $generation_info .= 'Records: ' . count($report_data['data']);
+        
+        $sheet->setCellValue('A' . $info_row, $generation_info);
+        $sheet->getStyle('A' . $info_row)->getFont()->setItalic(true)->setSize(10);
+        $sheet->mergeCells('A' . $info_row . ':D' . $info_row);
 
         // Auto-size columns
-        foreach (range('A', chr(64 + count($header_row))) as $col) {
+        foreach (range('A', chr(64 + max(count($header_row), 4))) as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
-        // Generate file
+        // Generate and send file
         $writer = new Xlsx($spreadsheet);
         ob_start();
         $writer->save('php://output');
         $content = ob_get_clean();
 
-        $filename = 'booking_report_' . ($start_date && $end_date ? $start_date . '_to_' . $end_date : $year) . '_' . date('Y-m-d_H-i-s') . '.xlsx';
-        
-        error_log('InterSoccer FIXED: Export completed successfully for ' . count($report_data['data']) . ' records');
+        // Create descriptive filename (removed region)
+        $filename_parts = ['booking_report'];
+        if ($start_date && $end_date) {
+            $filename_parts[] = date('Y-m-d', strtotime($start_date)) . '_to_' . date('Y-m-d', strtotime($end_date));
+        } else {
+            $filename_parts[] = $year;
+        }
+        $filename_parts[] = date('Y-m-d_H-i-s');
+        $filename = implode('_', $filename_parts) . '.xlsx';
+
+        error_log('InterSoccer IMPROVED: Export completed with totals. File: ' . $filename . ', Records: ' . count($report_data['data']));
         
         wp_send_json_success([
-            'content' => base64_encode($content), 
-            'filename' => $filename
+            'content' => base64_encode($content),
+            'filename' => $filename,
+            'record_count' => count($report_data['data']),
+            'file_size' => strlen($content)
         ]);
 
     } catch (\Throwable $e) {
-        error_log('InterSoccer FIXED: Export error: ' . $e->getMessage() . ' on line ' . $e->getLine() . ' in ' . $e->getFile());
+        error_log('InterSoccer IMPROVED: Export error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
         wp_send_json_error([
             'message' => __('Export failed: ', 'intersoccer-reports-rosters') . $e->getMessage()
         ]);
     }
 }
 add_action('wp_ajax_intersoccer_export_booking_report', 'intersoccer_export_booking_report_callback');
+
 /**
  * Generate Booking Report data from WooCommerce tables.
  *
@@ -1139,4 +1473,63 @@ function intersoccer_log_audit($action, $message) {
     error_log("InterSoccer Audit: [$action] $message");
 }
 
+
+function intersoccer_render_booking_totals($totals) {
+    $net_revenue = $totals['final_price'] - $totals['reimbursement'];
+    ?>
+    <div class="report-totals" style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">
+        <h3 style="margin-top: 0; color: #0073aa;"><?php _e('📈 Financial Summary', 'intersoccer-reports-rosters'); ?></h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minspace(200px, 1fr)); gap: 15px;">
+            <div class="summary-item">
+                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Total Bookings', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 24px; font-weight: 600; color: #0073aa;"><?php echo esc_html(number_format($totals['bookings'])); ?></div>
+            </div>
+            <div class="summary-item">
+                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Gross Revenue', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 24px; font-weight: 600; color: #28a745;"><?php echo esc_html(number_format($totals['base_price'], 2)); ?> CHF</div>
+            </div>
+            <div class="summary-item">
+                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Total Discounts', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 24px; font-weight: 600; color: #ffc107;"><?php echo esc_html(number_format($totals['discount_amount'], 2)); ?> CHF</div>
+            </div>
+            <div class="summary-item">
+                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Final Revenue', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 24px; font-weight: 600; color: #17a2b8;"><?php echo esc_html(number_format($totals['final_price'], 2)); ?> CHF</div>
+            </div>
+            <div class="summary-item">
+                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Reimbursements', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 24px; font-weight: 600; color: #dc3545;"><?php echo esc_html(number_format($totals['reimbursement'], 2)); ?> CHF</div>
+            </div>
+            <div class="summary-item" style="border-left: 3px solid #0073aa; padding-left: 15px;">
+                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Net Revenue', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 28px; font-weight: 700; color: #0073aa;"><?php echo esc_html(number_format($net_revenue, 2)); ?> CHF</div>
+            </div>
+        </div>
+        
+        <!-- Additional Metrics -->
+        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                <div>
+                    <strong><?php _e('Average Order Value:', 'intersoccer-reports-rosters'); ?></strong> 
+                    <span style="color: #0073aa; font-weight: 600;">
+                        <?php echo $totals['bookings'] > 0 ? esc_html(number_format($totals['final_price'] / $totals['bookings'], 2)) : '0.00'; ?> CHF
+                    </span>
+                </div>
+                <div>
+                    <strong><?php _e('Discount Rate:', 'intersoccer-reports-rosters'); ?></strong> 
+                    <span style="color: #ffc107; font-weight: 600;">
+                        <?php echo $totals['base_price'] > 0 ? esc_html(number_format(($totals['discount_amount'] / $totals['base_price']) * 100, 1)) : '0.0'; ?>%
+                    </span>
+                </div>
+                <div>
+                    <strong><?php _e('Refund Rate:', 'intersoccer-reports-rosters'); ?></strong> 
+                    <span style="color: #dc3545; font-weight: 600;">
+                        <?php echo $totals['final_price'] > 0 ? esc_html(number_format(($totals['reimbursement'] / $totals['final_price']) * 100, 1)) : '0.0'; ?>%
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php
+}
 ?>
