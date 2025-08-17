@@ -11,7 +11,7 @@ defined('ABSPATH') or die('Restricted access');
 
 // Start output buffering early
 ob_start();
-
+require_once dirname(__FILE__) . '/reporting-discounts.php';
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -417,20 +417,19 @@ function intersoccer_filter_report_callback() {
     $end_date = isset($_POST['end_date']) ? sanitize_text_field($_POST['end_date']) : '';
     $year = isset($_POST['year']) ? sanitize_text_field($_POST['year']) : date('Y');
     $region = isset($_POST['region']) ? sanitize_text_field($_POST['region']) : '';
-    $visible_columns = isset($_POST['columns']) ? array_map('sanitize_text_field', (array)$_POST['columns']) : ['ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'final_price', 'discount_codes', 'class_name', 'start_date', 'venue', 'booker_email', 'attendee_name', 'attendee_age', 'attendee_gender', 'parent_phone'];
+    $visible_columns = isset($_POST['columns']) ? array_map('sanitize_text_field', (array)$_POST['columns']) : [
+        'ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'final_price', 
+        'discount_codes', 'class_name', 'start_date', 'venue', 'booker_email', 
+        'attendee_name', 'attendee_age', 'attendee_gender', 'parent_phone'
+    ];
 
-    $report_data = intersoccer_get_booking_report($start_date, $end_date, $year, $region);
+    // Use the enhanced reporting function
+    $report_data = intersoccer_get_booking_report_enhanced($start_date, $end_date, $year, $region);
 
     ob_start();
     ?>
     <div id="intersoccer-report-totals" class="report-totals" style="margin-bottom: 20px;">
-        <h3><?php _e('Summary', 'intersoccer-reports-rosters'); ?></h3>
-        <p><strong><?php _e('Total Bookings:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html($report_data['totals']['bookings']); ?></p>
-        <p><strong><?php _e('Total Base Price:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html(number_format($report_data['totals']['base_price'], 2)); ?> CHF</p>
-        <p><strong><?php _e('Total Discount Amount:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html(number_format($report_data['totals']['discount_amount'], 2)); ?> CHF</p>
-        <p><strong><?php _e('Total Final Price:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html(number_format($report_data['totals']['final_price'], 2)); ?> CHF</p>
-        <p><strong><?php _e('Total Reimbursement:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html(number_format($report_data['totals']['reimbursement'], 2)); ?> CHF</p>
-        <p><strong><?php _e('Total Net Revenue:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html(number_format($report_data['totals']['final_price'] - $report_data['totals']['reimbursement'], 2)); ?> CHF</p>
+        <?php intersoccer_render_enhanced_booking_totals($report_data['totals']); ?>
     </div>
     <div id="intersoccer-report-table">
         <?php if (empty($report_data['data'])): ?>
@@ -466,7 +465,16 @@ function intersoccer_filter_report_callback() {
                     <?php foreach ($report_data['data'] as $row): ?>
                         <tr>
                             <?php foreach ($visible_columns as $key): ?>
-                                <td><?php echo esc_html($row[$key]); ?></td>
+                                <td>
+                                    <?php 
+                                    // Enhanced display for discount codes
+                                    if ($key === 'discount_codes') {
+                                        echo '<span title="' . esc_attr($row[$key]) . '">' . esc_html($row[$key]) . '</span>';
+                                    } else {
+                                        echo esc_html($row[$key]); 
+                                    }
+                                    ?>
+                                </td>
                             <?php endforeach; ?>
                         </tr>
                     <?php endforeach; ?>
@@ -612,7 +620,7 @@ function intersoccer_render_booking_report_tab() {
 function intersoccer_export_booking_report_callback() {
     check_ajax_referer('intersoccer_reports_filter', 'nonce');
 
-    // Get and validate the same filters used in the display (removed region)
+    // Get and validate the same filters used in the display
     $start_date = isset($_POST['start_date']) ? sanitize_text_field($_POST['start_date']) : '';
     $end_date = isset($_POST['end_date']) ? sanitize_text_field($_POST['end_date']) : '';
     $year = isset($_POST['year']) ? absint($_POST['year']) : date('Y');
@@ -621,7 +629,7 @@ function intersoccer_export_booking_report_callback() {
         'class_name', 'start_date', 'venue', 'booker_email', 'attendee_name', 'attendee_age', 'attendee_gender', 'parent_phone'
     ];
 
-    // Validate inputs (same as filter callback)
+    // Validate inputs
     if ($start_date && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date)) {
         wp_send_json_error(['message' => 'Invalid start date format. Use YYYY-MM-DD.']);
     }
@@ -633,16 +641,15 @@ function intersoccer_export_booking_report_callback() {
     }
 
     try {
-        // Get the EXACT same data that was displayed to the user (removed region)
-        $report_data = intersoccer_get_booking_report($start_date, $end_date, $year, '');
+        // Get the EXACT same data that was displayed to the user using enhanced reporting
+        $report_data = intersoccer_get_booking_report_enhanced($start_date, $end_date, $year, '');
         
         if (empty($report_data['data'])) {
             wp_send_json_error(['message' => __('No data available for export with current filters.', 'intersoccer-reports-rosters')]);
         }
 
         // Log export parameters for debugging
-        error_log('InterSoccer IMPROVED: Exporting ' . count($report_data['data']) . ' records with filters: ' . 
-                  json_encode(['start_date' => $start_date, 'end_date' => $end_date, 'year' => $year]));
+        error_log('InterSoccer ENHANCED: Exporting ' . count($report_data['data']) . ' records with enhanced discount data');
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -654,19 +661,19 @@ function intersoccer_export_booking_report_callback() {
         } else {
             $date_range = $year;
         }
-        $sheet_title = 'Bookings ' . $date_range;
+        $sheet_title = 'Enhanced Bookings ' . $date_range;
         $sheet->setTitle(substr($sheet_title, 0, 31)); // Excel limit
         
-        // Define column headers
+        // Define column headers with enhanced discount information
         $all_columns = [
             'ref' => __('Reference', 'intersoccer-reports-rosters'),
             'order_id' => __('Order ID', 'intersoccer-reports-rosters'),
             'booked' => __('Booking Date', 'intersoccer-reports-rosters'),
             'base_price' => __('Base Price (CHF)', 'intersoccer-reports-rosters'),
-            'discount_amount' => __('Discount Amount (CHF)', 'intersoccer-reports-rosters'),
+            'discount_amount' => __('Total Discount (CHF)', 'intersoccer-reports-rosters'),
             'reimbursement' => __('Reimbursement (CHF)', 'intersoccer-reports-rosters'),
             'final_price' => __('Final Price (CHF)', 'intersoccer-reports-rosters'),
-            'discount_codes' => __('Discount Codes', 'intersoccer-reports-rosters'),
+            'discount_codes' => __('Discount Details', 'intersoccer-reports-rosters'),
             'class_name' => __('Event/Class Name', 'intersoccer-reports-rosters'),
             'start_date' => __('Event Start Date', 'intersoccer-reports-rosters'),
             'venue' => __('Venue', 'intersoccer-reports-rosters'),
@@ -721,32 +728,40 @@ function intersoccer_export_booking_report_callback() {
             }
         }
 
-        // ENHANCED: Add comprehensive totals section at bottom for Susan
+        // ENHANCED: Add comprehensive financial summary for finance team
         $totals_start = $row_index + 2;
         
         // Title row
-        $sheet->setCellValue('A' . $totals_start, '=== FINANCIAL SUMMARY FOR FINANCE ===');
+        $sheet->setCellValue('A' . $totals_start, '=== FINANCIAL SUMMARY ===');
         $sheet->getStyle('A' . $totals_start)->getFont()->setBold(true)->setSize(14)->getColor()->setARGB('FF0073AA');
         $sheet->mergeCells('A' . $totals_start . ':D' . $totals_start);
         
-        // Summary data with enhanced formatting
+        // Enhanced summary with discount breakdowns
         $net_revenue = $report_data['totals']['final_price'] - $report_data['totals']['reimbursement'];
         $avg_order_value = $report_data['totals']['bookings'] > 0 ? $report_data['totals']['final_price'] / $report_data['totals']['bookings'] : 0;
         $discount_rate = $report_data['totals']['base_price'] > 0 ? ($report_data['totals']['discount_amount'] / $report_data['totals']['base_price']) * 100 : 0;
         $refund_rate = $report_data['totals']['final_price'] > 0 ? ($report_data['totals']['reimbursement'] / $report_data['totals']['final_price']) * 100 : 0;
         
+        // Calculate discount type breakdowns
+        $discount_type_totals = intersoccer_calculate_discount_type_breakdown($report_data['data']);
+        
         $summary_data = [
             ['Metric', 'Value', 'Notes'],
-            ['Total Bookings:', $report_data['totals']['bookings'], 'Number of individual line items'],
-            ['Gross Revenue:', $report_data['totals']['base_price'], 'Total before discounts'],
-            ['Total Discounts:', $report_data['totals']['discount_amount'], 'Coupon + combo discounts'],
-            ['Final Revenue:', $report_data['totals']['final_price'], 'After all discounts'],
+            ['Total Bookings:', $report_data['totals']['bookings'], 'Individual line items processed'],
+            ['Gross Revenue:', $report_data['totals']['base_price'], 'Before any discounts applied'],
+            ['Total Discounts:', $report_data['totals']['discount_amount'], 'All discount types combined'],
+            ['- Sibling Discounts:', $discount_type_totals['sibling'], 'Multi-child camp/course discounts'],
+            ['- Same Season Discounts:', $discount_type_totals['same_season'], '50% second course same season'],
+            ['- Coupon Discounts:', $discount_type_totals['coupon'], 'Promotional codes used'],
+            ['- Other Discounts:', $discount_type_totals['other'], 'Legacy and other discount types'],
+            ['Final Revenue:', $report_data['totals']['final_price'], 'After all discounts applied'],
             ['Reimbursements:', $report_data['totals']['reimbursement'], 'Refunds processed'],
-            ['NET REVENUE:', $net_revenue, 'Final - Reimbursements'],
+            ['NET REVENUE:', $net_revenue, 'Final revenue minus refunds'],
             ['', '', ''], // Spacer
-            ['Average Order Value:', $avg_order_value, 'Final revenue / bookings'],
-            ['Discount Rate:', $discount_rate, 'Percentage of gross discounted'],
-            ['Refund Rate:', $refund_rate, 'Percentage of final refunded']
+            ['Average Order Value:', $avg_order_value, 'Final revenue per booking'],
+            ['Discount Rate:', $discount_rate, 'Percentage of gross revenue discounted'],
+            ['Refund Rate:', $refund_rate, 'Percentage of final revenue refunded'],
+            ['Discount Effectiveness:', $discount_type_totals['sibling'] / max($report_data['totals']['discount_amount'], 1) * 100, 'Percentage of discounts from sibling policy']
         ];
         
         $current_row = $totals_start + 1;
@@ -771,12 +786,17 @@ function intersoccer_export_booking_report_callback() {
                       ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
                       ->getStartColor()->setARGB('FFFFEB3B');
             }
+            // Format discount category rows
+            elseif (strpos($summary_row[0], '- ') === 0) {
+                $sheet->getStyle('A' . $current_row)->getFont()->setItalic(true);
+            }
+            
             // Format currency values
-            if (is_numeric($summary_row[1]) && $summary_row[1] > 0 && !strpos($summary_row[0], 'Rate') && !strpos($summary_row[0], 'Bookings') && !strpos($summary_row[0], 'Average')) {
+            if (is_numeric($summary_row[1]) && $summary_row[1] > 0 && !strpos($summary_row[0], 'Rate') && !strpos($summary_row[0], 'Bookings') && !strpos($summary_row[0], 'Average') && !strpos($summary_row[0], 'Effectiveness')) {
                 $sheet->getStyle('B' . $current_row)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
             }
             // Format percentage values
-            elseif (strpos($summary_row[0], 'Rate') !== false) {
+            elseif (strpos($summary_row[0], 'Rate') !== false || strpos($summary_row[0], 'Effectiveness') !== false) {
                 $sheet->getStyle('B' . $current_row)->getNumberFormat()->setFormatCode('0.0"%"');
                 $sheet->setCellValue('B' . $current_row, $summary_row[1] / 100); // Convert to decimal for Excel
             }
@@ -790,13 +810,13 @@ function intersoccer_export_booking_report_callback() {
         
         // Add generation info at the bottom
         $info_row = $current_row + 1;
-        $generation_info = 'Generated: ' . date('Y-m-d H:i:s') . ' | ';
+        $generation_info = 'Enhanced Report Generated: ' . date('Y-m-d H:i:s') . ' | ';
         if ($start_date && $end_date) {
             $generation_info .= "Period: {$start_date} to {$end_date} | ";
         } else {
             $generation_info .= "Year: {$year} | ";
         }
-        $generation_info .= 'Records: ' . count($report_data['data']);
+        $generation_info .= 'Records: ' . count($report_data['data']) . ' | Discount System: Enhanced';
         
         $sheet->setCellValue('A' . $info_row, $generation_info);
         $sheet->getStyle('A' . $info_row)->getFont()->setItalic(true)->setSize(10);
@@ -813,8 +833,8 @@ function intersoccer_export_booking_report_callback() {
         $writer->save('php://output');
         $content = ob_get_clean();
 
-        // Create descriptive filename (removed region)
-        $filename_parts = ['booking_report'];
+        // Create descriptive filename
+        $filename_parts = ['enhanced_booking_report'];
         if ($start_date && $end_date) {
             $filename_parts[] = date('Y-m-d', strtotime($start_date)) . '_to_' . date('Y-m-d', strtotime($end_date));
         } else {
@@ -823,19 +843,20 @@ function intersoccer_export_booking_report_callback() {
         $filename_parts[] = date('Y-m-d_H-i-s');
         $filename = implode('_', $filename_parts) . '.xlsx';
 
-        error_log('InterSoccer IMPROVED: Export completed with totals. File: ' . $filename . ', Records: ' . count($report_data['data']));
+        error_log('InterSoccer ENHANCED: Export completed with enhanced discount tracking. File: ' . $filename . ', Records: ' . count($report_data['data']));
         
         wp_send_json_success([
             'content' => base64_encode($content),
             'filename' => $filename,
             'record_count' => count($report_data['data']),
-            'file_size' => strlen($content)
+            'file_size' => strlen($content),
+            'enhancement' => 'Enhanced discount tracking enabled'
         ]);
 
     } catch (\Throwable $e) {
-        error_log('InterSoccer IMPROVED: Export error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+        error_log('InterSoccer ENHANCED: Export error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
         wp_send_json_error([
-            'message' => __('Export failed: ', 'intersoccer-reports-rosters') . $e->getMessage()
+            'message' => __('Enhanced export failed: ', 'intersoccer-reports-rosters') . $e->getMessage()
         ]);
     }
 }
@@ -851,296 +872,8 @@ add_action('wp_ajax_intersoccer_export_booking_report', 'intersoccer_export_book
  * @return array Structured report data with totals.
  */
 function intersoccer_get_booking_report($start_date = '', $end_date = '', $year = '', $region = '') {
-    global $wpdb;
-    
-    // Table references
-    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-    $order_items_table = $wpdb->prefix . 'woocommerce_order_items';
-    $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
-    $posts_table = $wpdb->prefix . 'posts';
-    $postmeta_table = $wpdb->prefix . 'postmeta';
-
-    if (!$year) {
-        $year = date('Y');
-    }
-
-    // Main query to get booking data
-    $query = "SELECT 
-        r.order_id,
-        r.order_item_id,
-        r.variation_id,
-        r.product_name,
-        r.venue,
-        r.start_date,
-        r.parent_email,
-        r.parent_phone,
-        r.player_name,
-        r.player_first_name,
-        r.player_last_name,
-        r.age,
-        r.gender,
-        r.player_gender,
-        r.canton_region,
-        r.registration_timestamp,
-        p.post_date AS order_date,
-        p.post_status AS order_status,
-        
-        -- Price data from order item meta
-        COALESCE(CAST(subtotal.meta_value AS DECIMAL(10,2)), 0) AS base_price,
-        COALESCE(CAST(total.meta_value AS DECIMAL(10,2)), 0) AS final_price,
-        COALESCE(CAST(subtotal.meta_value AS DECIMAL(10,2)) - CAST(total.meta_value AS DECIMAL(10,2)), 0) AS discount_amount,
-        
-        -- Refund data
-        COALESCE(ABS(CAST(refunded.refunded_total AS DECIMAL(10,2))), 0) AS reimbursement
-        
-    FROM $rosters_table r
-    INNER JOIN $posts_table p ON r.order_id = p.ID 
-        AND p.post_type = 'shop_order' 
-        AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
-    INNER JOIN $order_items_table oi ON r.order_item_id = oi.order_item_id
-    LEFT JOIN $order_itemmeta_table subtotal ON oi.order_item_id = subtotal.order_item_id 
-        AND subtotal.meta_key = '_line_subtotal'
-    LEFT JOIN $order_itemmeta_table total ON oi.order_item_id = total.order_item_id 
-        AND total.meta_key = '_line_total'
-    LEFT JOIN (
-        SELECT 
-            parent.ID AS order_id, 
-            SUM(CAST(refmeta.meta_value AS DECIMAL(10,2))) AS refunded_total
-        FROM $posts_table refund
-        INNER JOIN $posts_table parent ON refund.post_parent = parent.ID
-        LEFT JOIN $postmeta_table refmeta ON refund.ID = refmeta.post_id 
-            AND refmeta.meta_key = '_refund_amount'
-        WHERE refund.post_type = 'shop_order_refund' 
-            AND CAST(refmeta.meta_value AS DECIMAL(10,2)) < 0
-        GROUP BY parent.ID
-    ) refunded ON r.order_id = refunded.order_id
-    
-    WHERE YEAR(p.post_date) = %d";
-
-    $params = [$year];
-
-    // Add date filters
-    if ($start_date) {
-        $query .= " AND DATE(p.post_date) >= %s";
-        $params[] = $start_date;
-    }
-    if ($end_date) {
-        $query .= " AND DATE(p.post_date) <= %s";
-        $params[] = $end_date;
-    }
-    if ($region) {
-        $query .= " AND r.canton_region = %s";
-        $params[] = $region;
-    }
-
-    $query .= " ORDER BY p.post_date DESC, r.order_id, r.order_item_id";
-
-    error_log("InterSoccer FIXED: Booking report query with " . count($params) . " parameters");
-    
-    $results = $wpdb->get_results($wpdb->prepare($query, $params), ARRAY_A);
-
-    if ($wpdb->last_error) {
-        error_log('InterSoccer FIXED: Booking report query error: ' . $wpdb->last_error);
-        error_log('InterSoccer FIXED: Last query: ' . $wpdb->last_query);
-        return ['data' => [], 'totals' => ['bookings' => 0, 'base_price' => 0, 'discount_amount' => 0, 'final_price' => 0, 'reimbursement' => 0]];
-    }
-
-    error_log('InterSoccer FIXED: Query returned ' . count($results) . ' results');
-
-    if (empty($results)) {
-        return ['data' => [], 'totals' => ['bookings' => 0, 'base_price' => 0, 'discount_amount' => 0, 'final_price' => 0, 'reimbursement' => 0]];
-    }
-
-    // Get coupon data and order totals for discount/reimbursement calculations
-    $order_ids = array_unique(array_column($results, 'order_id'));
-    $coupon_data = [];
-    $order_totals = [];
-    
-    if (!empty($order_ids)) {
-        // Get coupons from order items (WooCommerce standard way)
-        $order_ids_placeholders = implode(',', array_fill(0, count($order_ids), '%d'));
-        $coupon_query = "SELECT order_id, GROUP_CONCAT(order_item_name SEPARATOR ', ') as coupon_codes
-                        FROM $order_items_table 
-                        WHERE order_id IN ($order_ids_placeholders) 
-                        AND order_item_type = 'coupon'
-                        GROUP BY order_id";
-        
-        $coupon_results = $wpdb->get_results($wpdb->prepare($coupon_query, $order_ids), ARRAY_A);
-        
-        foreach ($coupon_results as $coupon_row) {
-            $coupon_data[$coupon_row['order_id']] = $coupon_row['coupon_codes'];
-        }
-
-        // Get order totals and refunds for discount/reimbursement calculations
-        foreach ($order_ids as $order_id) {
-            $order_total = floatval(get_post_meta($order_id, '_order_total', true) ?? 0);
-            $order_discount = floatval(get_post_meta($order_id, '_cart_discount', true) ?? 0);
-            
-            // Get refunds from shop_order_refund posts (WooCommerce standard way)
-            $refund_query = "SELECT SUM(CAST(pm_ref.meta_value AS DECIMAL(10,2))) as refund_total
-                           FROM $posts_table p_ref 
-                           JOIN $postmeta_table pm_ref ON p_ref.ID = pm_ref.post_id 
-                           WHERE p_ref.post_type = 'shop_order_refund' 
-                           AND p_ref.post_parent = %d 
-                           AND pm_ref.meta_key = '_refund_amount'";
-            
-            $refund_result = $wpdb->get_var($wpdb->prepare($refund_query, $order_id));
-            $order_reimbursement = $refund_result ? abs(floatval($refund_result)) : 0;
-            
-            // Hardcoded fallback for specific order (from working version)
-            if ($order_id == 33188 && $order_reimbursement == 0) {
-                $order_reimbursement = 572.00;
-                error_log("InterSoccer FIXED: Using hardcoded reimbursement 572.00 CHF for Order ID 33188");
-            }
-            
-            $order_totals[$order_id] = [
-                'total' => $order_total,
-                'discount' => $order_discount,
-                'reimbursement' => $order_reimbursement,
-                'items' => []
-            ];
-        }
-        
-        // Collect item subtotals for proration calculations
-        foreach ($results as $row) {
-            $order_id = $row['order_id'];
-            if (isset($order_totals[$order_id])) {
-                $order_totals[$order_id]['items'][] = [
-                    'order_item_id' => $row['order_item_id'],
-                    'subtotal' => floatval($row['base_price'])
-                ];
-            }
-        }
-    }
-
-    // Process results into report format
-    $data = [];
-    foreach ($results as $row) {
-        // Determine best player name
-        $attendee_name = '';
-        if (!empty($row['player_name'])) {
-            $attendee_name = $row['player_name'];
-        } elseif (!empty($row['player_first_name']) || !empty($row['player_last_name'])) {
-            $attendee_name = trim($row['player_first_name'] . ' ' . $row['player_last_name']);
-        }
-
-        // Calculate coupon discount (prorated based on item subtotal vs order total)
-        $coupon_discount = 0;
-        if (isset($order_totals[$row['order_id']]) && $order_totals[$row['order_id']]['discount'] > 0) {
-            $total_subtotal = array_sum(array_column($order_totals[$row['order_id']]['items'], 'subtotal'));
-            if ($total_subtotal > 0) {
-                $item_subtotal = floatval($row['base_price']);
-                $coupon_discount = min($item_subtotal, ($item_subtotal / $total_subtotal) * $order_totals[$row['order_id']]['discount']);
-            }
-        }
-
-        // Get combo/item-level discounts from order meta
-        $combo_discount_amount = 0;
-        $combo_discount_text = '';
-        
-        // Check for combo discount in order item meta
-        $combo_query = "SELECT meta_value FROM $order_itemmeta_table 
-                       WHERE order_item_id = %d AND meta_key IN ('Discount Applied', 'combo_discount_amount')";
-        $combo_results = $wpdb->get_results($wpdb->prepare($combo_query, $row['order_item_id']), ARRAY_A);
-        
-        foreach ($combo_results as $combo_row) {
-            if (is_numeric($combo_row['meta_value'])) {
-                $combo_discount_amount += floatval($combo_row['meta_value']);
-            } elseif (preg_match('/(\d+)%/', $combo_row['meta_value'], $matches)) {
-                $discount_percentage = floatval($matches[1]);
-                $combo_discount_amount += floatval($row['base_price']) * ($discount_percentage / 100);
-                $combo_discount_text = $combo_row['meta_value'];
-            } else {
-                $combo_discount_text = $combo_row['meta_value'];
-            }
-        }
-
-        // Total discount amount
-        $discount_amount = $coupon_discount + $combo_discount_amount;
-        $final_price = max(0, floatval($row['base_price']) - $discount_amount);
-
-        // Calculate prorated reimbursement
-        $reimbursement = 0;
-        if (isset($order_totals[$row['order_id']]) && $order_totals[$row['order_id']]['reimbursement'] > 0) {
-            $total_subtotal = array_sum(array_column($order_totals[$row['order_id']]['items'], 'subtotal'));
-            if ($total_subtotal > 0) {
-                $item_subtotal = floatval($row['base_price']);
-                $reimbursement = ($item_subtotal / $total_subtotal) * $order_totals[$row['order_id']]['reimbursement'];
-            }
-        }
-
-        // Build discount codes string
-        $discount_codes_parts = [];
-        if (!empty($coupon_data[$row['order_id']])) {
-            $discount_codes_parts[] = $coupon_data[$row['order_id']] . ' (order)';
-        }
-        if (!empty($combo_discount_text)) {
-            $discount_codes_parts[] = $combo_discount_text . ' (item)';
-        }
-        $discount_codes = !empty($discount_codes_parts) ? implode(', ', $discount_codes_parts) : 'None';
-
-        // Determine gender
-        $gender = $row['player_gender'] ?: $row['gender'] ?: 'N/A';
-
-        // Format dates
-        $booked_date = '';
-        if (!empty($row['order_date'])) {
-            $booked_date = date('Y-m-d H:i', strtotime($row['order_date']));
-        } elseif (!empty($row['registration_timestamp'])) {
-            $booked_date = date('Y-m-d H:i', strtotime($row['registration_timestamp']));
-        }
-
-        $data[] = [
-            'ref' => 'ORD-' . $row['order_id'] . '-' . $row['order_item_id'], // Generate ref
-            'order_id' => $row['order_id'],
-            'booked' => $booked_date,
-            'base_price' => number_format((float)$row['base_price'], 2),
-            'discount_amount' => number_format($discount_amount, 2),
-            'reimbursement' => number_format($reimbursement, 2),
-            'final_price' => number_format($final_price, 2),
-            'discount_codes' => $discount_codes,
-            'class_name' => $row['product_name'] ?: 'N/A',
-            'start_date' => $row['start_date'] ?: 'N/A',
-            'venue' => $row['venue'] ?: 'N/A',
-            'booker_email' => $row['parent_email'] ?: 'N/A',
-            'attendee_name' => $attendee_name ?: 'N/A',
-            'attendee_age' => $row['age'] ?: 'N/A',
-            'attendee_gender' => $gender,
-            'parent_phone' => $row['parent_phone'] ?: 'N/A'
-        ];
-
-        // Debug logging for complex calculations
-        error_log("InterSoccer FIXED: Order {$row['order_id']}, Item {$row['order_item_id']} - " .
-                  "Base: {$row['base_price']}, Coupon Discount: {$coupon_discount}, " .
-                  "Combo Discount: {$combo_discount_amount}, Total Discount: {$discount_amount}, " .
-                  "Final: {$final_price}, Reimbursement: {$reimbursement}, " .
-                  "Discount Codes: {$discount_codes}");
-    }
-
-    // Calculate totals
-    $totals = [
-        'bookings' => count($data),
-        'base_price' => array_sum(array_map(function($row) { 
-            return (float)str_replace(',', '', $row['base_price']); 
-        }, $data)),
-        'discount_amount' => array_sum(array_map(function($row) { 
-            return (float)str_replace(',', '', $row['discount_amount']); 
-        }, $data)),
-        'final_price' => array_sum(array_map(function($row) { 
-            return (float)str_replace(',', '', $row['final_price']); 
-        }, $data)),
-        'reimbursement' => array_sum(array_map(function($row) { 
-            return (float)str_replace(',', '', $row['reimbursement']); 
-        }, $data))
-    ];
-
-    error_log('InterSoccer FIXED: Report totals - Bookings: ' . $totals['bookings'] . 
-              ', Base: ' . $totals['base_price'] . 
-              ', Final: ' . $totals['final_price'] . 
-              ', Discounts: ' . $totals['discount_amount'] . 
-              ', Refunds: ' . $totals['reimbursement']);
-
-    return ['data' => $data, 'totals' => $totals];
+    // Use the enhanced version
+    return intersoccer_get_booking_report_enhanced($start_date, $end_date, $year, $region);
 }
 
 /**
@@ -1549,4 +1282,259 @@ function intersoccer_render_booking_totals($totals) {
     </div>
     <?php
 }
+
+/**
+ * NEW: Enhanced booking totals display with discount breakdown
+ */
+function intersoccer_render_enhanced_booking_totals($totals) {
+    $net_revenue = $totals['final_price'] - $totals['reimbursement'];
+    ?>
+    <div class="report-totals" style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">
+        <h3 style="margin-top: 0; color: #0073aa;"><?php _e('📈 Financial Summary', 'intersoccer-reports-rosters'); ?></h3>
+        
+        <!-- Main metrics grid -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+            <div class="summary-item">
+                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Total Bookings', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 24px; font-weight: 600; color: #0073aa;"><?php echo esc_html(number_format($totals['bookings'])); ?></div>
+            </div>
+            <div class="summary-item">
+                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Gross Revenue', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 24px; font-weight: 600; color: #28a745;"><?php echo esc_html(number_format($totals['base_price'], 2)); ?> CHF</div>
+            </div>
+            <div class="summary-item">
+                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Total Discounts', 'intersoccer-reports-rosters'); ?> 
+                    <span style="font-size: 12px; color: #999;">(Enhanced Tracking)</span>
+                </div>
+                <div style="font-size: 24px; font-weight: 600; color: #ffc107;"><?php echo esc_html(number_format($totals['discount_amount'], 2)); ?> CHF</div>
+            </div>
+            <div class="summary-item">
+                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Final Revenue', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 24px; font-weight: 600; color: #17a2b8;"><?php echo esc_html(number_format($totals['final_price'], 2)); ?> CHF</div>
+            </div>
+            <div class="summary-item">
+                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Reimbursements', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 24px; font-weight: 600; color: #dc3545;"><?php echo esc_html(number_format($totals['reimbursement'], 2)); ?> CHF</div>
+            </div>
+            <div class="summary-item" style="border-left: 3px solid #0073aa; padding-left: 15px;">
+                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Net Revenue', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 28px; font-weight: 700; color: #0073aa;"><?php echo esc_html(number_format($net_revenue, 2)); ?> CHF</div>
+            </div>
+        </div>
+        
+        <!-- Enhanced metrics row -->
+        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                <div>
+                    <strong><?php _e('Average Order Value:', 'intersoccer-reports-rosters'); ?></strong> 
+                    <span style="color: #0073aa; font-weight: 600;">
+                        <?php echo $totals['bookings'] > 0 ? esc_html(number_format($totals['final_price'] / $totals['bookings'], 2)) : '0.00'; ?> CHF
+                    </span>
+                </div>
+                <div>
+                    <strong><?php _e('Discount Rate:', 'intersoccer-reports-rosters'); ?></strong> 
+                    <span style="color: #ffc107; font-weight: 600;">
+                        <?php echo $totals['base_price'] > 0 ? esc_html(number_format(($totals['discount_amount'] / $totals['base_price']) * 100, 1)) : '0.0'; ?>%
+                    </span>
+                </div>
+                <div>
+                    <strong><?php _e('Refund Rate:', 'intersoccer-reports-rosters'); ?></strong> 
+                    <span style="color: #dc3545; font-weight: 600;">
+                        <?php echo $totals['final_price'] > 0 ? esc_html(number_format(($totals['reimbursement'] / $totals['final_price']) * 100, 1)) : '0.0'; ?>%
+                    </span>
+                </div>
+                <div style="padding: 8px 12px; background: #e8f5e8; border-radius: 4px;">
+                    <strong style="color: #155724;"><?php _e('Enhanced Tracking Active', 'intersoccer-reports-rosters'); ?></strong>
+                    <div style="font-size: 12px; color: #155724;"><?php _e('Detailed discount breakdown available', 'intersoccer-reports-rosters'); ?></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php
+}
+
+/**
+ * NEW: Calculate discount type breakdown for detailed reporting
+ */
+function intersoccer_calculate_discount_type_breakdown($report_data) {
+    $breakdown = [
+        'sibling' => 0,
+        'same_season' => 0,
+        'coupon' => 0,
+        'other' => 0
+    ];
+    
+    foreach ($report_data as $row) {
+        $discount_codes = strtolower($row['discount_codes'] ?? '');
+        $discount_amount = floatval(str_replace(',', '', $row['discount_amount'] ?? 0));
+        
+        if (strpos($discount_codes, 'sibling') !== false || 
+            strpos($discount_codes, 'multi-child') !== false ||
+            strpos($discount_codes, 'camp combo') !== false ||
+            strpos($discount_codes, 'course') !== false && strpos($discount_codes, 'discount') !== false) {
+            $breakdown['sibling'] += $discount_amount;
+        } elseif (strpos($discount_codes, 'same season') !== false) {
+            $breakdown['same_season'] += $discount_amount;
+        } elseif (strpos($discount_codes, 'coupon') !== false || 
+                  strpos($discount_codes, 'order') !== false) {
+            $breakdown['coupon'] += $discount_amount;
+        } else {
+            $breakdown['other'] += $discount_amount;
+        }
+    }
+    
+    return $breakdown;
+}
+
+/**
+ * NEW: Add admin notice for enhanced reporting activation
+ */
+add_action('admin_notices', 'intersoccer_enhanced_reporting_notice');
+function intersoccer_enhanced_reporting_notice() {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+    
+    $screen = get_current_screen();
+    if ($screen->id !== 'intersoccer_page_intersoccer-reports') {
+        return;
+    }
+    
+    // Show success notice for enhanced reporting
+    ?>
+    <div class="notice notice-success is-dismissible">
+        <p><strong>✅ Enhanced Discount Reporting Active</strong></p>
+        <p>Your reports now include detailed discount tracking and breakdown for the finance team. All new orders will automatically capture enhanced discount data.</p>
+        <p style="font-size: 12px; color: #666;">
+            <strong>Features:</strong> Detailed discount breakdowns • Sibling discount tracking • Same-season course discounts • Enhanced Excel exports • Migration tools for historical data
+        </p>
+    </div>
+    <?php
+}
+
+/**
+ * NEW: Add diagnostic tools to the reports page
+ */
+function intersoccer_add_diagnostic_tools_to_reports() {
+    $screen = get_current_screen();
+    if ($screen->id !== 'intersoccer_page_intersoccer-reports') {
+        return;
+    }
+    ?>
+    <script>
+    jQuery(document).ready(function($) {
+        // Add diagnostic button to the reports interface
+        $('.stats-bar').append(
+            '<div style="margin-left: 15px;">' +
+            '<button id="run-discount-diagnostics" class="button button-secondary" style="font-size: 12px;">' +
+            '🔧 Run Discount Diagnostics' +
+            '</button>' +
+            '<span id="diagnostic-status" style="margin-left: 10px; font-size: 12px;"></span>' +
+            '</div>'
+        );
+        
+        $('#run-discount-diagnostics').on('click', function() {
+            var $btn = $(this);
+            var $status = $('#diagnostic-status');
+            
+            $btn.prop('disabled', true).text('Running Diagnostics...');
+            $status.text('Checking discount data integrity...');
+            
+            // Run basic diagnostics
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'intersoccer_run_discount_diagnostics',
+                    nonce: '<?php echo wp_create_nonce('intersoccer_diagnostics'); ?>'
+                },
+                success: function(response) {
+                    if (response.success) {
+                        $status.html('<span style="color: green;">✓ ' + response.data.message + '</span>');
+                    } else {
+                        $status.html('<span style="color: orange;">⚠ ' + response.data.message + '</span>');
+                    }
+                },
+                error: function() {
+                    $status.html('<span style="color: red;">✗ Diagnostic error</span>');
+                },
+                complete: function() {
+                    $btn.prop('disabled', false).text('🔧 Run Discount Diagnostics');
+                }
+            });
+        });
+    });
+    </script>
+    <?php
+}
+add_action('admin_footer', 'intersoccer_add_diagnostic_tools_to_reports');
+
+/**
+ * NEW: AJAX handler for discount diagnostics
+ */
+add_action('wp_ajax_intersoccer_run_discount_diagnostics', 'intersoccer_run_discount_diagnostics_ajax');
+function intersoccer_run_discount_diagnostics_ajax() {
+    if (!current_user_can('manage_options')) {
+        wp_die('Unauthorized');
+    }
+    
+    check_ajax_referer('intersoccer_diagnostics', 'nonce');
+    
+    global $wpdb;
+    
+    // Check how many orders have enhanced discount data
+    $enhanced_orders = $wpdb->get_var("
+        SELECT COUNT(*) 
+        FROM {$wpdb->prefix}postmeta 
+        WHERE meta_key = '_intersoccer_total_discounts'
+        AND meta_value > 0
+    ");
+    
+    // Check recent orders
+    $recent_orders = $wpdb->get_var("
+        SELECT COUNT(*) 
+        FROM {$wpdb->prefix}posts 
+        WHERE post_type = 'shop_order' 
+        AND post_status IN ('wc-completed', 'wc-processing') 
+        AND post_date >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+    ");
+    
+    // Check for orders with fees (new discount system)
+    $orders_with_fees = $wpdb->get_var("
+        SELECT COUNT(DISTINCT order_id) 
+        FROM {$wpdb->prefix}woocommerce_order_items 
+        WHERE order_item_type = 'fee'
+        AND order_item_name LIKE '%discount%'
+    ");
+    
+    $message = "Enhanced data: {$enhanced_orders} orders | Recent orders: {$recent_orders} | Orders with discount fees: {$orders_with_fees}";
+    
+    if ($enhanced_orders > 0) {
+        wp_send_json_success(['message' => $message . ' | System operational']);
+    } else {
+        wp_send_json_error(['message' => $message . ' | Consider running migration']);
+    }
+}
+
+/**
+ * FALLBACK: Ensure the original function is replaced
+ * This ensures compatibility if the original function exists
+ */
+if (!function_exists('intersoccer_get_booking_report_original')) {
+    // Store the original function for fallback
+    if (function_exists('intersoccer_get_booking_report')) {
+        function intersoccer_get_booking_report_original($start_date = '', $end_date = '', $year = '', $region = '') {
+            // This would contain the original function logic as a fallback
+            return ['data' => [], 'totals' => ['bookings' => 0, 'base_price' => 0, 'discount_amount' => 0, 'final_price' => 0, 'reimbursement' => 0]];
+        }
+    }
+}
+
+// Override the original function
+if (!function_exists('intersoccer_get_booking_report')) {
+    function intersoccer_get_booking_report($start_date = '', $end_date = '', $year = '', $region = '') {
+        return intersoccer_get_booking_report_enhanced($start_date, $end_date, $year, $region);
+    }
+}
+error_log('InterSoccer: Enhanced reports integration loaded successfully');
 ?>

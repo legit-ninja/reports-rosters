@@ -68,7 +68,7 @@ function intersoccer_missing_dependencies_notice() {
 }
 
 $included_files = [];
-$files_to_include = ['event-reports.php', 'reports.php', 'utils.php', 'rosters.php', 'roster-data.php', 'roster-details.php', 'roster-export.php', 'advanced.php', 'woocommerce-orders.php', 'db.php']; 
+$files_to_include = ['event-reports.php', 'reports.php', 'utils.php', 'rosters.php', 'roster-data.php', 'roster-details.php', 'roster-export.php', 'advanced.php', 'woocommerce-orders.php', 'db.php', 'complete-discount-reporting-fix.php']; 
 foreach ($files_to_include as $file) {
     $file_path = plugin_dir_path(__FILE__) . 'includes/' . $file;
     if (file_exists($file_path)) {
