@@ -375,11 +375,7 @@ function intersoccer_rebuild_rosters_and_reports() {
                 $start_date = null;
                 $end_date = null;
                 $event_dates = 'N/A';
-                $season_year = $order_item_meta['pa_program-season'] ?? ($variation ? $variation->get_attribute('pa_program-season') : ($parent_product ? $parent_product->get_attribute('pa_program-season') : null));
-                if (!$season_year && isset($order_item_meta['Season'])) {
-                    preg_match('/(\d{4})/', $order_item_meta['Season'], $year_matches);
-                    $season_year = $year_matches[0] ?? null;
-                }
+                $season = $raw_order_item_meta['Season'][0] ?? 'N/A';
                 error_log("InterSoccer: Season year for order $order_id, item $order_item_id: $season_year");
                 if ($activity_type === 'Camp' && $camp_terms !== 'N/A') {
                     if (preg_match('/(\w+)-week-\d+-(\w+)-(\d{1,2})-(\w+)-(\d{1,2})-\d+-days/', $camp_terms, $matches)) {
@@ -549,7 +545,7 @@ function intersoccer_rebuild_rosters_and_reports() {
                     'term' => $camp_terms ?: $course_day,
                     'times' => $times,
                     'days_selected' => $selected_days,
-                    'season' => $season_year ?: '',
+                    'season' => $season ?: '',
                     'canton_region' => '',
                     'city' => '',
                     'avs_number' => substr($avs_number, 0, 50),
