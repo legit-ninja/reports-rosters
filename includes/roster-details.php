@@ -42,6 +42,7 @@ function intersoccer_render_roster_details_page() {
     $referer = wp_get_referer();
     $is_from_camps_page = strpos($referer, 'page=intersoccer-camps') !== false;
     $is_from_courses_page = strpos($referer, 'page=intersoccer-courses') !== false;
+    $activity_types = ['Camp', 'Course', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only'];
 
     error_log('InterSoccer: Roster details parameters - product_id: ' . $product_id . ', variation_id: ' . $variation_id . ', camp_terms: ' . ($camp_terms ?: 'N/A') . ', course_day: ' . ($course_day ?: 'N/A') . ', venue: ' . ($venue ?: 'N/A') . ', age_group: ' . ($age_group ?: 'N/A') . ', times: ' . ($times ?: 'N/A') . ', is_from_camps_page: ' . ($is_from_camps_page ? 'yes' : 'no') . ', is_from_courses_page: ' . ($is_from_courses_page ? 'yes' : 'no'));
 
@@ -93,7 +94,13 @@ function intersoccer_render_roster_details_page() {
             }
         } elseif ($camp_terms || $course_day || $venue || $age_group) {
             // Use 'Camp' for Camps sub-page, 'Course' for Courses sub-page, otherwise include all
-            $activity_types = $is_from_camps_page ? ['Camp'] : ($is_from_courses_page ? ['Course'] : ['Camp', 'Course', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only']);
+            if ($is_from_camps_page) {
+                $activity_types = ['Camp'];
+            } elseif ($is_from_courses_page) {
+                $activity_types = ['Course'];
+            } else {
+                $activity_types = ['Camp', 'Course', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only'];
+            }
             $where_clauses[] = "r.activity_type IN ('" . implode("','", array_map('esc_sql', $activity_types)) . "')";
             if ($camp_terms) {
                 $where_clauses[] = $wpdb->prepare("(r.camp_terms = %s OR r.camp_terms LIKE %s OR (r.camp_terms IS NULL AND %s = 'N/A'))", $camp_terms, '%' . $wpdb->esc_like($camp_terms) . '%', $camp_terms);
@@ -235,7 +242,7 @@ function intersoccer_render_roster_details_page() {
         $variation_query = $wpdb->prepare(
             "SELECT DISTINCT r.variation_id 
              FROM $rosters_table r
-             WHERE r.activity_type IN ('Camp', 'Course', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only') 
+             WHERE r.activity_type IN ('" . implode("','", array_map('esc_sql', $activity_types)) . "')
              AND r.product_id = (SELECT product_id FROM $rosters_table WHERE variation_id = %d LIMIT 1)
              AND r.venue = %s 
              AND (r.camp_terms = %s OR r.course_day = %s)",

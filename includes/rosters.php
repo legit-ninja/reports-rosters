@@ -867,17 +867,6 @@ function intersoccer_render_courses_page() {
         <div class="roster-filters">
             <form method="get" class="filter-form">
                 <input type="hidden" name="page" value="intersoccer-courses">
-                <div class="filter-group">
-                    <label><?php _e('Season', 'intersoccer-reports-rosters'); ?></label>
-                    <select name="season" onchange="this.form.submit()">
-                        <option value=""><?php _e('All Seasons', 'intersoccer-reports-rosters'); ?></option>
-                        <?php foreach ($all_seasons as $season): ?>
-                            <option value="<?php echo esc_attr($season); ?>" <?php selected($selected_season, $season); ?>>
-                                <?php echo esc_html($season); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
                 
                 <div class="filter-group">
                     <label><?php _e('Course Day', 'intersoccer-reports-rosters'); ?></label>
