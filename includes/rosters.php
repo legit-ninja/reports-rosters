@@ -553,12 +553,12 @@ function intersoccer_render_camps_page() {
         </div>
 
         <div class="export-buttons">
-            <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>">
-                <input type="hidden" name="action" value="intersoccer_export_camps">
+            <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" target="_blank">
+                <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                 <input type="hidden" name="export_type" value="camps">
                 <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
                 <input type="submit" name="export_camps" class="button button-primary" 
-                       value="<?php _e('📥 Export Camps', 'intersoccer-reports-rosters'); ?>">
+                    value="<?php _e('📥 Export Camps', 'intersoccer-reports-rosters'); ?>">
             </form>
         </div>
 
@@ -855,12 +855,12 @@ function intersoccer_render_courses_page() {
         </div>
 
         <div class="export-buttons">
-            <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>">
-                <input type="hidden" name="action" value="intersoccer_export_courses">
+            <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" target="_blank">
+                <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                 <input type="hidden" name="export_type" value="courses">
                 <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
                 <input type="submit" name="export_courses" class="button button-primary" 
-                       value="<?php _e('📥 Export Courses', 'intersoccer-reports-rosters'); ?>">
+                    value="<?php _e('📥 Export Courses', 'intersoccer-reports-rosters'); ?>">
             </form>
         </div>
 
@@ -1156,12 +1156,12 @@ function intersoccer_render_girls_only_page() {
         </div>
 
         <div class="export-buttons">
-            <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>">
-                <input type="hidden" name="action" value="intersoccer_export_girls_only">
-                <input type="hidden" name="export_type" value="girls_only">
+            <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" target="_blank">
+                <input type="hidden" name="action" value="intersoccer_export_all_rosters">
+                <input type="hidden" name="export_type" value="girls_only_full_day">
                 <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
                 <input type="submit" name="export_girls_only" class="button button-primary" 
-                       value="<?php _e('📥 Export Girls Only', 'intersoccer-reports-rosters'); ?>">
+                    value="<?php _e('📥 Export Girls Only', 'intersoccer-reports-rosters'); ?>">
             </form>
         </div>
 
@@ -1417,12 +1417,12 @@ function intersoccer_render_other_events_page() {
         </div>
 
         <div class="export-buttons">
-            <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>">
-                <input type="hidden" name="action" value="intersoccer_export_other_events">
-                <input type="hidden" name="export_type" value="other_events">
+            <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" target="_blank">
+                <input type="hidden" name="action" value="intersoccer_export_all_rosters">
+                <input type="hidden" name="export_type" value="other">
                 <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
                 <input type="submit" name="export_other_events" class="button button-primary" 
-                       value="<?php _e('📥 Export Other Events', 'intersoccer-reports-rosters'); ?>">
+                    value="<?php _e('📥 Export Other Events', 'intersoccer-reports-rosters'); ?>">
             </form>
         </div>
 
