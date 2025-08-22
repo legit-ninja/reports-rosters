@@ -499,7 +499,7 @@ function intersoccer_render_camps_page() {
     // Get filter options
     $selected_camp_term = isset($_GET['camp_terms']) ? sanitize_text_field($_GET['camp_terms']) : '';
     $selected_venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
-    $selected_status = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : 'active';
+    $selected_status = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : 'all';
 
     $display_camps = $all_camps;
 
@@ -1043,7 +1043,7 @@ function intersoccer_render_girls_only_page() {
                       GROUP_CONCAT(DISTINCT start_date) as start_dates,
                       GROUP_CONCAT(DISTINCT end_date) as end_dates
                FROM $rosters_table
-               WHERE activity_type LIKE '%Girls Only%'
+               WHERE activity_type LIKE '%Girls%'
                GROUP BY season, product_name, age_group, times
                ORDER BY season DESC, product_name, age_group";
 
@@ -1304,7 +1304,8 @@ function intersoccer_render_other_events_page() {
                           GROUP_CONCAT(DISTINCT start_date) as start_dates,
                           GROUP_CONCAT(DISTINCT end_date) as end_dates
                    FROM $rosters_table
-                   WHERE activity_type NOT IN ('Camp', 'Course', 'Girls Only')
+                   WHERE activity_type NOT IN ('Camp', 'Course')
+                   AND activity_type NOT LIKE '%Girls%'
                    GROUP BY season, product_name, age_group, times
                    ORDER BY season DESC, product_name, age_group";
 
