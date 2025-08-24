@@ -122,6 +122,10 @@ add_action('admin_head', function () {
             font-size: 22px;
             font-weight: 600;
         }
+
+        .season-title {
+            color: #ffffff;
+        }
         
         .week-date {
             font-size: 14px;
