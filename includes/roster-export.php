@@ -147,10 +147,7 @@ function intersoccer_export_roster() {
         ob_end_clean();
         wp_send_json_error(__('You do not have permission to export rosters.', 'intersoccer-reports-rosters'));
     }
-
-    global $wpdb;
-    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-
+    error_log('InterSoccer Export: Full POST data - ' . json_encode($_POST));
     $use_fields = isset($_POST['use_fields']) ? (bool)$_POST['use_fields'] : false;
     $product_id = isset($_POST['product_id']) ? intval($_POST['product_id']) : 0;
     $variation_ids = isset($_POST['variation_ids']) ? array_map('intval', (array)$_POST['variation_ids']) : [];
@@ -160,60 +157,86 @@ function intersoccer_export_roster() {
     $age_group = isset($_POST['age_group']) ? sanitize_text_field($_POST['age_group']) : '';
     $times = isset($_POST['times']) ? sanitize_text_field($_POST['times']) : '';
     $activity_types_str = isset($_POST['activity_types']) ? sanitize_text_field($_POST['activity_types']) : '';
-    $activity_types = $activity_types_str ? explode(',', $activity_types_str) : ['Camp', 'Course', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only'];
+    $activity_types = $activity_types_str ? array_map('trim', explode(',', $activity_types_str)) : ['Camp', 'Course', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only'];
 
     if (!$use_fields && empty($variation_ids)) {
         ob_end_clean();
         wp_send_json_error(__('No variation IDs or fields provided for export.', 'intersoccer-reports-rosters'));
     }
-
+    error_log('InterSoccer Export: Initial filters - activity_types: ' . json_encode($activity_types) . ', age_group: ' . $age_group . ', times: ' . $times);
     // Increase memory limit for large exports
     ini_set('memory_limit', '256M');
 
-    // Build query - UPDATED to include player_dob
+    global $wpdb;
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+    $query = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
+                FROM $rosters_table";
+    $where_clauses = [];
     $query_params = [];
+    
     if ($use_fields) {
-        $query = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
-                  FROM $rosters_table";
-        $where_clauses = [];
-        $where_clauses[] = "activity_type IN ('" . implode("','", array_map('esc_sql', $activity_types)) . "')";
+        if (!empty($activity_types)) {
+            $like_conditions = [];
+            foreach ($activity_types as $type) {
+                $like_conditions[] = $wpdb->prepare("activity_type LIKE %s", "%" . $wpdb->esc_like($type) . "%");
+                $query_params[] = "%" . $wpdb->esc_like($type) . "%";
+            }
+            // Require 'girls\' only' specifically if present
+            if (in_array("girls\' only", $activity_types)) {
+                $where_clauses[] = $wpdb->prepare("activity_type LIKE %s", "%girls\' only%");
+                $query_params[] = "%girls\' only%";
+            } else {
+                $where_clauses[] = "(" . implode(" OR ", $like_conditions) . ")";
+            }
+            error_log('InterSoccer Export: activity_types clause added - Clause: ' . $where_clauses[count($where_clauses) - 1] . ' | Params: ' . json_encode($query_params));
+        }
         if ($product_id > 0) {
             $where_clauses[] = $wpdb->prepare("product_id = %d", $product_id);
             $query_params[] = $product_id;
+            error_log('InterSoccer Export: Adding clause - ' . $where_clauses[count($where_clauses) - 1] . ' | Current params: ' . json_encode($query_params));
         }
         if ($camp_terms) {
             $where_clauses[] = $wpdb->prepare("(camp_terms = %s OR camp_terms LIKE %s OR (camp_terms IS NULL AND %s = 'N/A'))", $camp_terms, '%' . $wpdb->esc_like($camp_terms) . '%', $camp_terms);
-            $query_params[] = $camp_terms;
-            $query_params[] = '%' . $camp_terms . '%';
-            $query_params[] = $camp_terms;
+            $query_params[] = array_merge($query_params, [$camp_terms, '%' . $camp_terms . '%', $camp_terms]);
+            error_log('InterSoccer Export: Adding clause - ' . $where_clauses[count($where_clauses) - 1] . ' | Current params: ' . json_encode($query_params));
         }
         if ($course_day) {
             $where_clauses[] = $wpdb->prepare("(course_day = %s OR course_day LIKE %s OR (course_day IS NULL AND %s = 'N/A'))", $course_day, '%' . $wpdb->esc_like($course_day) . '%', $course_day);
-            $query_params[] = $course_day;
+            $query_params[] = array_merge($query_params, [$course_day, ]);
             $query_params[] = '%' . $course_day . '%';
             $query_params[] = $course_day;
+            error_log('InterSoccer Export: Adding clause - ' . $where_clauses[count($where_clauses) - 1] . ' | Current params: ' . json_encode($query_params));
         }
         if ($venue) {
             $where_clauses[] = $wpdb->prepare("(venue = %s OR venue LIKE %s OR (venue IS NULL AND %s = 'N/A'))", $venue, '%' . $wpdb->esc_like($venue) . '%', $venue);
-            $query_params[] = $venue;
-            $query_params[] = '%' . $venue . '%';
-            $query_params[] = $venue;
+            $query_params[] = array_merge($query_params, [$venue, '%' . $venue . '%', $venue]);
+            error_log('InterSoccer Export: Adding clause - ' . $where_clauses[count($where_clauses) - 1] . ' | Current params: ' . json_encode($query_params));
         }
         if ($age_group) {
             $where_clauses[] = $wpdb->prepare("(age_group = %s OR age_group LIKE %s)", $age_group, '%' . $wpdb->esc_like($age_group) . '%');
-            $query_params[] = $age_group;
-            $query_params[] = '%' . $age_group . '%';
+            $query_params[] = array_merge($query_params, [$age_group, '%' . $age_group . '%']);
+            error_log('InterSoccer Export: Adding clause - ' . $where_clauses[count($where_clauses) - 1] . ' | Current params: ' . json_encode($query_params));
         }
         if ($times) {
             $where_clauses[] = $wpdb->prepare("(times = %s OR (times IS NULL AND %s = 'N/A'))", $times, $times);
-            $query_params[] = $times;
-            $query_params[] = $times;
+            $query_params[] = array_merge($query_params, [$times, $times]);
+            error_log('InterSoccer Export: Adding clause - ' . $where_clauses[count($where_clauses) - 1] . ' | Current params: ' . json_encode($query_params));
         }
+        error_log('InterSoccer Export: Before WHERE - Clauses: ' . json_encode($where_clauses));
         if (!empty($where_clauses)) {
             $query .= " WHERE " . implode(' AND ', $where_clauses);
         }
         $query .= " ORDER BY player_name";
+        error_log('InterSoccer Export: Before prepare - Query: ' . $query . ' | Params: ' . json_encode($query_params));
+        error_log('InterSoccer Export: Param count - ' . count($query_params));
+        error_log('InterSoccer Export: Expected placeholders - ' . implode(',', array_fill(0, count($query_params), '%s')));
+        error_log('InterSoccer Export: Applied filters - activity_type: ' . ($where_clauses[0] ?? 'N/A') . ', age_group: ' . ($where_clauses[1] ?? 'N/A') . ', times: ' . ($where_clauses[2] ?? 'N/A'));
         $rosters = $wpdb->get_results($wpdb->prepare($query, $query_params), ARRAY_A);
+        error_log('InterSoccer Export: After prepare - Executed query: ' . $wpdb->last_query . ' | Results count: ' . count($rosters) . ' | Last error: ' . $wpdb->last_error);
+        error_log('InterSoccer Export: Post-execution params applied - First row activity_type: ' . ($rosters[0]['activity_type'] ?? 'N/A'));
+        error_log('InterSoccer Export: Full first row - ' . json_encode($rosters[0] ?? 'No data'));
+        
+        error_log('InterSoccer Export: Expected placeholders - ' . implode(',', array_fill(0, count($query_params), '%s')));
     } else {
         $query = $wpdb->prepare(
             "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
@@ -449,7 +472,6 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             ob_end_clean();
             wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
         }
-
         // Increase memory limit for large exports
         ini_set('memory_limit', '256M');
 

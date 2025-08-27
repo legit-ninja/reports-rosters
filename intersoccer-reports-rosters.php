@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.4.109
+ * Version: 1.4.121
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -233,6 +233,20 @@ add_action('admin_enqueue_scripts', function ($hook) {
             wp_enqueue_script('intersoccer-export-ajax', plugin_dir_url(__FILE__) . 'js/export-ajax.js', ['jquery'], '1.0.6', true);
             wp_localize_script('intersoccer-export-ajax', 'intersoccer_export_ajax', ['ajax_url' => admin_url('admin-ajax.php'), 'nonce' => wp_create_nonce('intersoccer_export_nonce')]);
         }
+        if ($screen->id === 'intersoccer-reports-rosters_page_intersoccer-advanced') {
+            wp_enqueue_style('intersoccer-reports-rosters-rebuild-admin-css', plugin_dir_url(__FILE__) . 'css/rebuild-admin.css', [], '1.0.6');            wp_enqueue_script('intersoccer-rebuild-admin-ajax', plugin_dir_url(__FILE__) . 'js/rebuild-admin.js', ['jquery'], '1.0.6', true);
+            wp_localize_script('intersoccer-rebuild-admin-ajax', 'intersoccerRebuild', [
+                'ajax_url' => admin_url('admin-ajax.php'), 
+                'nonce' => wp_create_nonce('intersoccer_rebuild_nonce'),
+                'strings' => array(
+                    'confirm_rebuild' => __('Are you sure you want to rebuild the database? This will clear all existing roster data and rebuild it from WooCommerce orders.', 'intersoccer'),
+                    'rebuilding' => __('Rebuilding database...', 'intersoccer'),
+                    'completed' => __('Database rebuild completed!', 'intersoccer'),
+                    'error' => __('An error occurred during the rebuild process.', 'intersoccer'),
+                    'processing' => __('Processing batch', 'intersoccer'),
+                    'of' => __('of', 'intersoccer')
+                )
+            ]);        }
     }
 });
 
@@ -299,4 +313,49 @@ function intersoccer_enqueue_orders_page_scripts($hook) {
     }
 }
 add_action('admin_enqueue_scripts', 'intersoccer_enqueue_orders_page_scripts');
+
+/**
+ * AJAX handler for getting rebuild errors
+ */
+add_action('wp_ajax_intersoccer_get_rebuild_errors', 'intersoccer_get_rebuild_errors');
+
+function intersoccer_get_rebuild_errors() {
+    if (!current_user_can('manage_options')) {
+        wp_die('Unauthorized');
+    }
+    
+    check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
+    
+    $errors = get_option('intersoccer_rebuild_errors', array());
+    
+    // Limit to last 50 errors to avoid overwhelming the UI
+    $errors = array_slice($errors, -50);
+    
+    wp_send_json_success(array(
+        'errors' => $errors,
+        'count' => count($errors)
+    ));
+}
+
+/**
+ * AJAX handler for clearing rebuild data and logs
+ */
+add_action('wp_ajax_intersoccer_clear_rebuild_data', 'intersoccer_clear_rebuild_data');
+
+function intersoccer_clear_rebuild_data() {
+    if (!current_user_can('manage_options')) {
+        wp_die('Unauthorized');
+    }
+    
+    check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
+    
+    // Clear progress and error data
+    delete_option('intersoccer_rebuild_progress');
+    delete_option('intersoccer_rebuild_errors');
+    delete_option('intersoccer_rebuild_status');
+    
+    wp_send_json_success(array(
+        'message' => 'Rebuild data cleared successfully'
+    ));
+}
 ?>
