@@ -1,4 +1,3 @@
-```php
 <?php
 /**
  * Roster Details and Specific Event Pages
@@ -424,4 +423,3 @@ function intersoccer_render_roster_details_page() {
     echo '</div>';
 }
 ?>
-```
