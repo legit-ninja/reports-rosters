@@ -1,4 +1,3 @@
-```php
 <?php
 /**
  * Roster Details and Specific Event Pages
