@@ -1464,7 +1464,7 @@ function intersoccer_render_girls_only_page() {
                                                     </div>
                                                     <div class="detail-row">
                                                         <span class="detail-label">🌆 City</span>
-                                                        <span class="detail-value"><?php echo esc_html($camp['city'] ?: 'N/A'); ?></span>
+                                                        <span class="detail-value"><?php echo esc_html($course['city'] ?: 'N/A'); ?></span>
                                                     </div>
                                                 </div>
                                                 <div class="course-footer">

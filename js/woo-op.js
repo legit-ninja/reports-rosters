@@ -1,3 +1,4 @@
+// 1. Update woo-op.js to send the correct nonce parameter name
 jQuery(document).ready(function($) {
     console.log('InterSoccer: woo-op.js loaded on Orders page');
 
@@ -23,12 +24,19 @@ jQuery(document).ready(function($) {
         }
         
         console.log('InterSoccer: Process orders confirmed on Orders page, proceeding with AJAX');
+        
+        // Debug the nonce value
+        console.log('InterSoccer: Using nonce value:', intersoccer_orders.nonce);
+        
         $.ajax({
-            url: ajaxurl,
+            url: intersoccer_orders.ajaxurl, // Use the localized ajaxurl
             type: 'POST',
             data: {
                 action: 'intersoccer_process_existing_orders',
-                intersoccer_rebuild_nonce_field: intersoccer_orders.nonce
+                // FIXED: Use the correct nonce field name that matches PHP
+                intersoccer_rebuild_nonce_field: intersoccer_orders.nonce,
+                // Also send it as 'nonce' for compatibility
+                nonce: intersoccer_orders.nonce
             },
             beforeSend: function() {
                 // Show a temporary processing notice
@@ -51,8 +59,16 @@ jQuery(document).ready(function($) {
             error: function(xhr, status, error) {
                 // Remove processing notice and show error
                 $('#intersoccer-process-status').remove();
+                
+                // Log the full error response for debugging
+                console.error('InterSoccer: Full AJAX error response:', xhr.responseText);
+                console.error('InterSoccer: AJAX Error details:', {
+                    status: status,
+                    error: error,
+                    responseJSON: xhr.responseJSON
+                });
+                
                 $('<div id="intersoccer-process-status" class="notice notice-error is-dismissible"><p>Processing failed: ' + (xhr.responseJSON ? xhr.responseJSON.message : error) + '</p><button type="button" class="notice-dismiss"><span class="screen-reader-text">Dismiss this notice.</span></button></div>').insertAfter(processLink);
-                console.error('InterSoccer: AJAX Error on Orders page: ', status, error, xhr.responseText);
             }
         });
     });

@@ -72,7 +72,7 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     $product_id = $item->get_product_id();
     $variation_id = $item->get_variation_id();
     $type_id = $variation_id ?: $product_id;
-    $product_type = intersoccer_get_product_type($type_id);
+    $product_type = intersoccer_get_product_type_safe($product_id, $variation_id);
     error_log('InterSoccer: Item ' . $item_id . ' product_type: ' . $product_type . ' (using ID: ' . $type_id . ', parent: ' . $product_id . ', variation: ' . $variation_id . ')');
 
     if (!in_array($product_type, ['camp', 'course', 'birthday'])) {
@@ -187,28 +187,62 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
 
     // Determine girls_only and set activity_type to Camp or Course
     $girls_only = FALSE;
-    if ($activity_type) {
+    if (!empty($activity_type)) {
+        // Log the raw activity type for debugging
+        error_log('InterSoccer: Raw Activity Type for order ' . $order_id . ', item ' . $item_id . ': "' . $activity_type . '"');
+        
+        // Normalize for comparison - handle apostrophes and case variations
         $normalized_activity = trim(strtolower(html_entity_decode($activity_type, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
-        $normalized_activity = str_replace(["'", '"'], '', $normalized_activity);
-        $activity_types = array_map('trim', explode(',', $normalized_activity));
-        error_log('InterSoccer: Processed activity_types for order ' . $order_id . ', item ' . $item_id . ': ' . print_r($activity_types, true));
-        if (in_array('girls only', $activity_types) || in_array('camp girls only', $activity_types) || in_array('course girls only', $activity_types)) {
-            $girls_only = TRUE;
-            error_log('InterSoccer: Set girls_only = TRUE for order ' . $order_id . ', item ' . $item_id);
-            // Apply shirt/shorts size logic for Girls Only
-            $possible_shirt_keys = ['pa_what-size-t-shirt-does-your', 'pa_tshirt-size', 'pa_what-size-t-shirt-does-your-child-wear', 'Shirt Size', 'T-shirt Size'];
-            $possible_shorts_keys = ['pa_what-size-shorts-does-your-c', 'pa_what-size-shorts-does-your-child-wear', 'Shorts Size', 'Shorts'];
-            foreach ($possible_shirt_keys as $key) {
-                if (isset($item_meta[$key]) && $item_meta[$key] !== '') {
-                    $shirt_size = trim($item_meta[$key]);
-                    break;
-                }
+        
+        // Split by comma and check each part
+        $activity_parts = array_map('trim', explode(',', $normalized_activity));
+        error_log('InterSoccer: Activity Type parts: ' . print_r($activity_parts, true));
+        
+        foreach ($activity_parts as $part) {
+            // Remove apostrophes and check for girls only patterns
+            $clean_part = str_replace(["'", '"'], '', $part);
+            
+            if (strpos($clean_part, 'girls only') !== false ||
+                strpos($clean_part, 'girls-only') !== false ||
+                strpos($clean_part, 'girlsonly') !== false) {
+                
+                $girls_only = TRUE;
+                error_log('InterSoccer: Set girls_only = TRUE for order ' . $order_id . ', item ' . $item_id . ' based on Activity Type part: "' . $part . '"');
+                break;
             }
-            foreach ($possible_shorts_keys as $key) {
-                if (isset($item_meta[$key]) && $item_meta[$key] !== '') {
-                    $shorts_size = trim($item_meta[$key]);
-                    break;
-                }
+        }
+    }
+
+    // Fallback: Check product name if Activity Type didn't indicate Girls' Only
+    if (!$girls_only && !empty($product_name)) {
+        $normalized_product_name = trim(strtolower(html_entity_decode($product_name, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+        $clean_product_name = str_replace(['-', "'", '"'], ' ', $normalized_product_name);
+        
+        if (strpos($clean_product_name, 'girls only') !== false) {
+            $girls_only = TRUE;
+            error_log('InterSoccer: Set girls_only = TRUE for order ' . $order_id . ', item ' . $item_id . ' based on product name: "' . $product_name . '"');
+        }
+    }
+
+    // Apply shirt/shorts size logic for Girls Only events
+    if ($girls_only) {
+        error_log('InterSoccer: Applying shirt/shorts size logic for Girls Only event');
+        $possible_shirt_keys = ['pa_what-size-t-shirt-does-your', 'pa_tshirt-size', 'pa_what-size-t-shirt-does-your-child-wear', 'Shirt Size', 'T-shirt Size'];
+        $possible_shorts_keys = ['pa_what-size-shorts-does-your-c', 'pa_what-size-shorts-does-your-child-wear', 'Shorts Size', 'Shorts'];
+        
+        foreach ($possible_shirt_keys as $key) {
+            if (isset($item_meta[$key]) && $item_meta[$key] !== '') {
+                $shirt_size = trim($item_meta[$key]);
+                error_log('InterSoccer: Found shirt size from ' . $key . ': ' . $shirt_size);
+                break;
+            }
+        }
+        
+        foreach ($possible_shorts_keys as $key) {
+            if (isset($item_meta[$key]) && $item_meta[$key] !== '') {
+                $shorts_size = trim($item_meta[$key]);
+                error_log('InterSoccer: Found shorts size from ' . $key . ': ' . $shorts_size);
+                break;
             }
         }
     }
@@ -217,18 +251,9 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     error_log('InterSoccer: Set activity_type to ' . $activity_type . ' for order ' . $order_id . ', item ' . $item_id);
 
     // Parse dates
-    if ($product_type === 'camp' && $camp_terms) {
-        if (preg_match('/(\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})/', $camp_terms, $matches)) {
-            $start_date = $matches[1];
-            $end_date = $matches[2];
-            $event_dates = $start_date . ' to ' . $end_date;
-        } else {
-            error_log('InterSoccer: Invalid camp_terms format for item ' . $item_id . ' in order ' . $order_id . ' - Using defaults');
-            $start_date = '1970-01-01';
-            $end_date = '1970-01-01';
-            $event_dates = 'N/A';
-        }
-    } elseif ($product_type === 'course' && $start_date && $end_date) {
+    if ($product_type === 'camp' && !empty($camp_terms) && $camp_terms !== 'N/A') {
+        list($start_date, $end_date, $event_dates) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
+    } elseif ($product_type === 'course' && !empty($start_date) && !empty($end_date)) {
         error_log('InterSoccer: Processing course dates for item ' . $item_id . ' in order ' . $order_id . ' - start_date: ' . var_export($start_date, true) . ', end_date: ' . var_export($end_date, true));
         $start_date_obj = DateTime::createFromFormat('F j, Y', $start_date);
         $end_date_obj = DateTime::createFromFormat('F j, Y', $end_date);
@@ -349,3 +374,459 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         return false;
     }
 }
+
+/**
+ * Complete fix for Process Orders functionality
+ * Add these functions to your utils.php file
+ */
+
+// 1. Add the missing intersoccer_get_product_type function
+if (!function_exists('intersoccer_get_product_type')) {
+    /**
+     * Determine product type based on WooCommerce product attributes and categories
+     * 
+     * @param int $product_id Product or variation ID
+     * @return string Product type: 'camp', 'course', 'birthday', or 'unknown'
+     */
+    function intersoccer_get_product_type($product_id) {
+        if (!$product_id) {
+            error_log('InterSoccer: intersoccer_get_product_type called with empty product_id');
+            return 'unknown';
+        }
+
+        $product = wc_get_product($product_id);
+        if (!$product) {
+            error_log('InterSoccer: Product not found for ID: ' . $product_id);
+            return 'unknown';
+        }
+
+        error_log('InterSoccer: Checking product type for ID: ' . $product_id . ' (Type: ' . $product->get_type() . ')');
+
+        // Check activity type attribute first
+        $activity_type = '';
+        
+        // For variations, check both variation and parent product
+        if ($product->is_type('variation')) {
+            $activity_type = $product->get_attribute('pa_activity-type');
+            if (empty($activity_type)) {
+                $parent_product = wc_get_product($product->get_parent_id());
+                if ($parent_product) {
+                    $activity_type = $parent_product->get_attribute('pa_activity-type');
+                }
+            }
+        } else {
+            $activity_type = $product->get_attribute('pa_activity-type');
+        }
+
+        error_log('InterSoccer: Activity type attribute for product ' . $product_id . ': ' . var_export($activity_type, true));
+
+        // Process activity type
+        if (!empty($activity_type)) {
+            $normalized = strtolower(trim(html_entity_decode($activity_type, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            
+            // Handle comma-separated values
+            $activity_types = array_map('trim', explode(',', $normalized));
+            
+            foreach ($activity_types as $type) {
+                if (strpos($type, 'camp') !== false) {
+                    error_log('InterSoccer: Product ' . $product_id . ' identified as camp');
+                    return 'camp';
+                } elseif (strpos($type, 'course') !== false) {
+                    error_log('InterSoccer: Product ' . $product_id . ' identified as course');
+                    return 'course';
+                } elseif (strpos($type, 'birthday') !== false) {
+                    error_log('InterSoccer: Product ' . $product_id . ' identified as birthday');
+                    return 'birthday';
+                }
+            }
+        }
+
+        // Fallback: Check for course-specific attributes
+        $course_day = '';
+        if ($product->is_type('variation')) {
+            $course_day = $product->get_attribute('pa_course-day');
+            if (empty($course_day)) {
+                $parent_product = wc_get_product($product->get_parent_id());
+                if ($parent_product) {
+                    $course_day = $parent_product->get_attribute('pa_course-day');
+                }
+            }
+        } else {
+            $course_day = $product->get_attribute('pa_course-day');
+        }
+
+        if (!empty($course_day)) {
+            error_log('InterSoccer: Product ' . $product_id . ' has course-day attribute, identified as course');
+            return 'course';
+        }
+
+        // Fallback: Check for camp-specific attributes
+        $camp_terms = '';
+        if ($product->is_type('variation')) {
+            $camp_terms = $product->get_attribute('pa_camp-terms');
+            if (empty($camp_terms)) {
+                $parent_product = wc_get_product($product->get_parent_id());
+                if ($parent_product) {
+                    $camp_terms = $parent_product->get_attribute('pa_camp-terms');
+                }
+            }
+        } else {
+            $camp_terms = $product->get_attribute('pa_camp-terms');
+        }
+
+        if (!empty($camp_terms)) {
+            error_log('InterSoccer: Product ' . $product_id . ' has camp-terms attribute, identified as camp');
+            return 'camp';
+        }
+
+        // Final fallback: Check product categories
+        $product_id_for_cats = $product->is_type('variation') ? $product->get_parent_id() : $product->get_id();
+        $categories = wp_get_post_terms($product_id_for_cats, 'product_cat', array('fields' => 'names'));
+        
+        if (!is_wp_error($categories) && !empty($categories)) {
+            foreach ($categories as $category) {
+                $cat_lower = strtolower($category);
+                if (strpos($cat_lower, 'camp') !== false) {
+                    error_log('InterSoccer: Product ' . $product_id . ' in camp category, identified as camp');
+                    return 'camp';
+                }
+                if (strpos($cat_lower, 'course') !== false) {
+                    error_log('InterSoccer: Product ' . $product_id . ' in course category, identified as course');
+                    return 'course';
+                }
+                if (strpos($cat_lower, 'birthday') !== false) {
+                    error_log('InterSoccer: Product ' . $product_id . ' in birthday category, identified as birthday');
+                    return 'birthday';
+                }
+            }
+        }
+
+        error_log('InterSoccer: Could not determine product type for ID: ' . $product_id . ', returning unknown');
+        return 'unknown';
+    }
+}
+
+// 2. Enhanced debug function for the Process Orders functionality
+function intersoccer_debug_process_orders() {
+    error_log('=== InterSoccer: DEBUG PROCESS ORDERS START ===');
+    
+    // Check if required functions exist
+    $required_functions = [
+        'intersoccer_get_product_type',
+        'intersoccer_update_roster_entry',
+        'intersoccer_process_existing_orders'
+    ];
+    
+    foreach ($required_functions as $function) {
+        if (function_exists($function)) {
+            error_log('InterSoccer: ✓ Function ' . $function . ' exists');
+        } else {
+            error_log('InterSoccer: ✗ Function ' . $function . ' MISSING');
+        }
+    }
+    
+    // Check database table
+    global $wpdb;
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+    $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $rosters_table)) === $rosters_table;
+    error_log('InterSoccer: Rosters table exists: ' . ($table_exists ? 'yes' : 'no'));
+    
+    if ($table_exists) {
+        $row_count = $wpdb->get_var("SELECT COUNT(*) FROM $rosters_table");
+        error_log('InterSoccer: Rosters table row count: ' . $row_count);
+    }
+    
+    // Check orders to be processed
+    $orders = wc_get_orders([
+        'limit' => 5, // Just check first 5
+        'status' => ['wc-processing', 'wc-on-hold'],
+    ]);
+    error_log('InterSoccer: Found ' . count($orders) . ' orders with processing/on-hold status');
+    
+    foreach ($orders as $order) {
+        $order_id = $order->get_id();
+        error_log('InterSoccer: Order ' . $order_id . ' - Status: ' . $order->get_status() . ', Items: ' . count($order->get_items()));
+        
+        foreach ($order->get_items() as $item_id => $item) {
+            $product_id = $item->get_product_id();
+            $variation_id = $item->get_variation_id();
+            $type_id = $variation_id ?: $product_id;
+            $product_type = intersoccer_get_product_type_safe($product_id, $variation_id);
+            
+            $assigned_attendee = wc_get_order_item_meta($item_id, 'Assigned Attendee', true);
+            
+            error_log('InterSoccer: - Item ' . $item_id . ' - Product: ' . $product_id . ', Variation: ' . $variation_id . ', Type: ' . $product_type . ', Attendee: ' . ($assigned_attendee ?: 'NONE'));
+            
+            // Only check first item to avoid log spam
+            break;
+        }
+    }
+    
+    error_log('=== InterSoccer: DEBUG PROCESS ORDERS END ===');
+}
+
+// 3. Improved error handling for the update roster entry function
+function intersoccer_safe_update_roster_entry($order_id, $item_id) {
+    try {
+        error_log('InterSoccer: Starting safe_update_roster_entry for order ' . $order_id . ', item ' . $item_id);
+        
+        // Validate inputs
+        if (empty($order_id) || empty($item_id)) {
+            error_log('InterSoccer: Invalid parameters - order_id: ' . $order_id . ', item_id: ' . $item_id);
+            return false;
+        }
+        
+        // Check if order exists
+        $order = wc_get_order($order_id);
+        if (!$order) {
+            error_log('InterSoccer: Order not found: ' . $order_id);
+            return false;
+        }
+        
+        // Check if item exists
+        $item = $order->get_item($item_id);
+        if (!$item) {
+            error_log('InterSoccer: Item not found: ' . $item_id . ' in order ' . $order_id);
+            return false;
+        }
+        
+        // Check if intersoccer_update_roster_entry function exists
+        if (!function_exists('intersoccer_update_roster_entry')) {
+            error_log('InterSoccer: intersoccer_update_roster_entry function does not exist');
+            return false;
+        }
+        
+        // Call the actual function
+        $result = intersoccer_update_roster_entry($order_id, $item_id);
+        
+        error_log('InterSoccer: safe_update_roster_entry result for order ' . $order_id . ', item ' . $item_id . ': ' . ($result ? 'success' : 'failed'));
+        
+        return $result;
+        
+    } catch (Exception $e) {
+        error_log('InterSoccer: Exception in safe_update_roster_entry for order ' . $order_id . ', item ' . $item_id . ': ' . $e->getMessage());
+        return false;
+    }
+}
+
+// 4. Add this test function to verify everything is working
+function intersoccer_test_process_orders() {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+    
+    error_log('InterSoccer: Running test_process_orders');
+    
+    // Run debug check
+    intersoccer_debug_process_orders();
+    
+    // Test with one order
+    $orders = wc_get_orders([
+        'limit' => 1,
+        'status' => ['wc-processing', 'wc-on-hold'],
+    ]);
+    
+    if (empty($orders)) {
+        error_log('InterSoccer: No test orders found');
+        return;
+    }
+    
+    $order = $orders[0];
+    $order_id = $order->get_id();
+    
+    error_log('InterSoccer: Testing with order ' . $order_id);
+    
+    foreach ($order->get_items() as $item_id => $item) {
+        error_log('InterSoccer: Testing item ' . $item_id);
+        $result = intersoccer_safe_update_roster_entry($order_id, $item_id);
+        error_log('InterSoccer: Test result: ' . ($result ? 'SUCCESS' : 'FAILED'));
+        break; // Only test first item
+    }
+    
+    error_log('InterSoccer: Test completed');
+}
+
+// Add this action to run the test (remove after testing)
+add_action('admin_init', 'intersoccer_test_process_orders');
+
+function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
+    error_log('InterSoccer: get_product_type_safe called with product_id: ' . $product_id . ', variation_id: ' . $variation_id);
+    
+    // Check if the Product Variations plugin function exists
+    if (!function_exists('intersoccer_get_product_type')) {
+        error_log('InterSoccer: CRITICAL - intersoccer_get_product_type function not found from Product Variations plugin');
+        return 'unknown';
+    }
+    
+    // Try variation ID first if provided
+    if ($variation_id && $variation_id > 0) {
+        $type = intersoccer_get_product_type($variation_id);
+        error_log('InterSoccer: Product type for variation ' . $variation_id . ': ' . var_export($type, true));
+        if (!empty($type)) {
+            return $type;
+        }
+    }
+    
+    // Try parent product ID
+    $type = intersoccer_get_product_type($product_id);
+    error_log('InterSoccer: Product type for parent ' . $product_id . ': ' . var_export($type, true));
+    if (!empty($type)) {
+        return $type;
+    }
+    
+    // Manual fallback if the function fails
+    error_log('InterSoccer: Manual fallback for product type detection');
+    return intersoccer_manual_product_type_detection($product_id, $variation_id);
+}
+
+// 2. Manual fallback function based on the Product Variations logic
+function intersoccer_manual_product_type_detection($product_id, $variation_id = null) {
+    $check_id = $variation_id && $variation_id > 0 ? $variation_id : $product_id;
+    
+    error_log('InterSoccer: Manual product type detection for ID: ' . $check_id);
+    
+    // Check existing meta first
+    $product_type = get_post_meta($check_id, '_intersoccer_product_type', true);
+    if ($product_type) {
+        error_log('InterSoccer: Found product type in meta: ' . $product_type);
+        return $product_type;
+    }
+    
+    // Check parent meta if this is a variation
+    if ($variation_id && $variation_id > 0) {
+        $product_type = get_post_meta($product_id, '_intersoccer_product_type', true);
+        if ($product_type) {
+            error_log('InterSoccer: Found product type in parent meta: ' . $product_type);
+            return $product_type;
+        }
+    }
+    
+    // Check categories (use parent product for variations)
+    $cat_check_id = $variation_id && $variation_id > 0 ? $product_id : $check_id;
+    $categories = wp_get_post_terms($cat_check_id, 'product_cat', array('fields' => 'slugs'));
+    
+    if (!is_wp_error($categories) && !empty($categories)) {
+        error_log('InterSoccer: Categories for product ' . $cat_check_id . ': ' . print_r($categories, true));
+        
+        if (in_array('camps', $categories, true)) {
+            $product_type = 'camp';
+        } elseif (in_array('courses', $categories, true)) {
+            $product_type = 'course';
+        } elseif (in_array('birthdays', $categories, true)) {
+            $product_type = 'birthday';
+        }
+        
+        if ($product_type) {
+            error_log('InterSoccer: Product type from categories: ' . $product_type);
+            // Save to meta for future use
+            update_post_meta($check_id, '_intersoccer_product_type', $product_type);
+            return $product_type;
+        }
+    }
+    
+    // Check product attributes
+    $product = wc_get_product($check_id);
+    if ($product) {
+        $activity_type_attr = $product->get_attribute('pa_activity-type');
+        error_log('InterSoccer: Activity type attribute: ' . var_export($activity_type_attr, true));
+        
+        if (!empty($activity_type_attr)) {
+            $normalized = strtolower(trim($activity_type_attr));
+            if (strpos($normalized, 'camp') !== false) {
+                $product_type = 'camp';
+            } elseif (strpos($normalized, 'course') !== false) {
+                $product_type = 'course';
+            } elseif (strpos($normalized, 'birthday') !== false) {
+                $product_type = 'birthday';
+            }
+            
+            if ($product_type) {
+                error_log('InterSoccer: Product type from attributes: ' . $product_type);
+                update_post_meta($check_id, '_intersoccer_product_type', $product_type);
+                return $product_type;
+            }
+        }
+        
+        // Try parent product attributes if this is a variation
+        if ($variation_id && $variation_id > 0) {
+            $parent_product = wc_get_product($product_id);
+            if ($parent_product) {
+                $parent_activity_type = $parent_product->get_attribute('pa_activity-type');
+                error_log('InterSoccer: Parent activity type attribute: ' . var_export($parent_activity_type, true));
+                
+                if (!empty($parent_activity_type)) {
+                    $normalized = strtolower(trim($parent_activity_type));
+                    if (strpos($normalized, 'camp') !== false) {
+                        $product_type = 'camp';
+                    } elseif (strpos($normalized, 'course') !== false) {
+                        $product_type = 'course';
+                    } elseif (strpos($normalized, 'birthday') !== false) {
+                        $product_type = 'birthday';
+                    }
+                    
+                    if ($product_type) {
+                        error_log('InterSoccer: Product type from parent attributes: ' . $product_type);
+                        update_post_meta($check_id, '_intersoccer_product_type', $product_type);
+                        return $product_type;
+                    }
+                }
+            }
+        }
+    }
+    
+    error_log('InterSoccer: Could not determine product type manually for ID: ' . $check_id);
+    return 'unknown';
+}
+
+// 3. Update the intersoccer_update_roster_entry function to use the safe version
+// Replace this line in your intersoccer_update_roster_entry function:
+// $product_type = intersoccer_get_product_type($type_id);
+// With this:
+// $product_type = intersoccer_get_product_type_safe($product_id, $variation_id);
+
+// 4. Debug function to test specific problematic products
+function intersoccer_debug_specific_products() {
+    if (!current_user_can('manage_options')) return;
+    
+    error_log('=== DEBUG SPECIFIC PRODUCTS ===');
+    
+    // Test the problematic products from your logs
+    $test_products = [
+        ['product_id' => 25232, 'variation_id' => 35888], // Ray Cazin - Type: empty
+        ['product_id' => 25222, 'variation_id' => 28079], // Murtaja Al-Hamad - Type: empty
+        ['product_id' => 25222, 'variation_id' => 28081], // Frederick Mcintire - Type: camp (working)
+    ];
+    
+    foreach ($test_products as $test) {
+        error_log('Testing product ' . $test['product_id'] . ', variation ' . $test['variation_id']);
+        
+        // Test original function if available
+        if (function_exists('intersoccer_get_product_type')) {
+            $original_result = intersoccer_get_product_type($test['variation_id']);
+            error_log('Original function result for variation: ' . var_export($original_result, true));
+            
+            $original_parent = intersoccer_get_product_type($test['product_id']);
+            error_log('Original function result for parent: ' . var_export($original_parent, true));
+        }
+        
+        // Test safe function
+        $safe_result = intersoccer_get_product_type_safe($test['product_id'], $test['variation_id']);
+        error_log('Safe function result: ' . var_export($safe_result, true));
+        
+        // Check meta and categories directly
+        $variation_meta = get_post_meta($test['variation_id'], '_intersoccer_product_type', true);
+        $parent_meta = get_post_meta($test['product_id'], '_intersoccer_product_type', true);
+        $categories = wp_get_post_terms($test['product_id'], 'product_cat', array('fields' => 'slugs'));
+        
+        error_log('Variation meta: ' . var_export($variation_meta, true));
+        error_log('Parent meta: ' . var_export($parent_meta, true));
+        error_log('Parent categories: ' . print_r($categories, true));
+        
+        error_log('---');
+    }
+    
+    error_log('=== END DEBUG SPECIFIC PRODUCTS ===');
+}
+
+// Uncomment to run the debug test
+add_action('admin_init', 'intersoccer_debug_specific_products');

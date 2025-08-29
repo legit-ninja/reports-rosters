@@ -883,23 +883,88 @@ function intersoccer_get_booking_report($start_date = '', $end_date = '', $year 
  * @param string $year The year to use for date parsing
  * @return array Start and end dates
  */
-function intersoccer_parse_camp_dates($camp_terms, $year) {
-    $start_date = '';
-    $end_date = '';
+function intersoccer_parse_camp_dates_fixed($camp_terms, $season = '') {
+    error_log('InterSoccer: Parsing camp dates from: ' . $camp_terms . ' with season: ' . $season);
     
-    // Handle formats like "Summer Week 9: August 18-22 (5 days)"
-    if (preg_match('/(\w+)\s+(\d{1,2})-(\d{1,2})/', $camp_terms, $matches)) {
-        $month_start = $matches[1];
-        $day_start = $matches[2];
-        $day_end = $matches[3];
-        
-        $start_date = date('Y-m-d', strtotime("$month_start $day_start, $year"));
-        $end_date = date('Y-m-d', strtotime("$month_start $day_end, $year"));
-        
-        error_log("InterSoccer: FIXED - Parsed camp dates from '$camp_terms': $start_date to $end_date");
+    if (empty($camp_terms) || $camp_terms === 'N/A') {
+        error_log('InterSoccer: Empty or N/A camp terms, returning defaults');
+        return ['1970-01-01', '1970-01-01', 'N/A'];
     }
     
-    return ['start' => $start_date, 'end' => $end_date];
+    // Extract year from season (e.g., "Summer 2025" -> 2025)
+    preg_match('/\d{4}/', $season, $year_matches);
+    $year = !empty($year_matches) ? $year_matches[0] : date('Y');
+    error_log('InterSoccer: Using year: ' . $year);
+    
+    // Handle format: summer-week-10-august-25-29-5-days
+    // This regex matches: (season)-(anything)-week-(number)-(month)-(start_day)-(end_day)-(number)-day(s)
+    if (preg_match('/\w+-week-\d+-(\w+)-(\d{1,2})-(\d{1,2})-\d+-days?/', $camp_terms, $matches)) {
+        $month_name = $matches[1];  // august
+        $start_day = $matches[2];   // 25
+        $end_day = $matches[3];     // 29
+        
+        error_log('InterSoccer: Parsed same-month camp terms - Month: ' . $month_name . ', Start: ' . $start_day . ', End: ' . $end_day . ', Year: ' . $year);
+        
+        try {
+            // Create DateTime objects
+            $start_date_obj = DateTime::createFromFormat('F j Y', ucfirst($month_name) . ' ' . $start_day . ' ' . $year);
+            $end_date_obj = DateTime::createFromFormat('F j Y', ucfirst($month_name) . ' ' . $end_day . ' ' . $year);
+            
+            if ($start_date_obj && $end_date_obj) {
+                $start_date = $start_date_obj->format('Y-m-d');
+                $end_date = $end_date_obj->format('Y-m-d');
+                $event_dates = "$start_date to $end_date";
+                
+                error_log('InterSoccer: Successfully parsed same-month camp dates - Start: ' . $start_date . ', End: ' . $end_date);
+                return [$start_date, $end_date, $event_dates];
+            } else {
+                error_log('InterSoccer: DateTime creation failed for month: ' . ucfirst($month_name) . ', start: ' . $start_day . ', end: ' . $end_day . ', year: ' . $year);
+                
+                // Debug the DateTime creation
+                if (!$start_date_obj) {
+                    error_log('InterSoccer: Failed to create start date from: "' . ucfirst($month_name) . ' ' . $start_day . ' ' . $year . '"');
+                }
+                if (!$end_date_obj) {
+                    error_log('InterSoccer: Failed to create end date from: "' . ucfirst($month_name) . ' ' . $end_day . ' ' . $year . '"');
+                }
+            }
+        } catch (Exception $e) {
+            error_log('InterSoccer: Exception parsing same-month camp dates: ' . $e->getMessage());
+        }
+    } else {
+        error_log('InterSoccer: Regex did not match camp_terms format: ' . $camp_terms);
+        
+        // Try alternative regex patterns
+        
+        // Pattern for cross-month: summer-week-10-august-25-september-2-5-days
+        if (preg_match('/\w+-week-\d+-(\w+)-(\d{1,2})-(\w+)-(\d{1,2})-\d+-days?/', $camp_terms, $matches)) {
+            $start_month = $matches[1]; // august
+            $start_day = $matches[2];   // 25
+            $end_month = $matches[3];   // september
+            $end_day = $matches[4];     // 2
+            
+            error_log('InterSoccer: Parsed cross-month camp terms - Start: ' . $start_month . ' ' . $start_day . ', End: ' . $end_month . ' ' . $end_day . ', Year: ' . $year);
+            
+            try {
+                $start_date_obj = DateTime::createFromFormat('F j Y', ucfirst($start_month) . ' ' . $start_day . ' ' . $year);
+                $end_date_obj = DateTime::createFromFormat('F j Y', ucfirst($end_month) . ' ' . $end_day . ' ' . $year);
+                
+                if ($start_date_obj && $end_date_obj) {
+                    $start_date = $start_date_obj->format('Y-m-d');
+                    $end_date = $end_date_obj->format('Y-m-d');
+                    $event_dates = "$start_date to $end_date";
+                    
+                    error_log('InterSoccer: Successfully parsed cross-month camp dates - Start: ' . $start_date . ', End: ' . $end_date);
+                    return [$start_date, $end_date, $event_dates];
+                }
+            } catch (Exception $e) {
+                error_log('InterSoccer: Exception parsing cross-month camp dates: ' . $e->getMessage());
+            }
+        }
+    }
+    
+    error_log('InterSoccer: Could not parse camp dates from: ' . $camp_terms . ', using defaults');
+    return ['1970-01-01', '1970-01-01', 'N/A'];
 }
 
 /**
