@@ -597,8 +597,8 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
         } elseif ($export_type === 'camps') {
             $rosters = $wpdb->get_results(
                 "SELECT * FROM $rosters_table 
-                 WHERE activity_type = 'Camp' 
-                 ORDER BY updated_at DESC",
+                WHERE activity_type = 'Camp' AND girls_only = 0
+                ORDER BY updated_at DESC",
                 ARRAY_A
             );
             error_log('InterSoccer: Retrieved ' . count($rosters) . ' camp rosters for export by user ' . $user_id);
@@ -706,8 +706,8 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
         } elseif ($export_type === 'courses') {
             $rosters = $wpdb->get_results(
                 "SELECT * FROM $rosters_table 
-                 WHERE activity_type = 'Course' 
-                 ORDER BY updated_at DESC",
+                WHERE activity_type = 'Course' AND girls_only = 0
+                ORDER BY updated_at DESC",
                 ARRAY_A
             );
             error_log('InterSoccer: Retrieved ' . count($rosters) . ' course rosters for export by user ' . $user_id);
@@ -794,7 +794,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
         } elseif ($export_type === 'girls_only_full_day') {
             $rosters = $wpdb->get_results(
                 "SELECT * FROM $rosters_table 
-                 WHERE activity_type IN ('Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only') 
+                 WHERE girls_only = 1
                  AND (age_group LIKE '%Full Day%' OR age_group LIKE '%full-day%') 
                  ORDER BY updated_at DESC",
                 ARRAY_A
@@ -886,7 +886,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
         } elseif ($export_type === 'girls_only_half_day') {
             $rosters = $wpdb->get_results(
                 "SELECT * FROM $rosters_table 
-                 WHERE activity_type IN ('Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only') 
+                 WHERE girls_only = 1
                  AND (age_group LIKE '%Half-Day%' OR age_group LIKE '%half-day%') 
                  ORDER BY updated_at DESC",
                 ARRAY_A

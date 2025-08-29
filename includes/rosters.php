@@ -426,24 +426,30 @@ function intersoccer_render_camps_page() {
 
     // Fetch camp data with season extraction from camp_terms and city from order item metadata
     $base_query = "SELECT COALESCE(r.camp_terms, 'N/A') as camp_terms, 
-                          COALESCE(r.venue, 'N/A') as venue, 
-                          COALESCE(oim.meta_value, 'N/A') as city,
-                          r.age_group, 
-                          r.times,
-                          COUNT(DISTINCT r.order_item_id) as total_players,
-                          GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids,
-                          GROUP_CONCAT(DISTINCT r.player_name) as player_names,
-                          GROUP_CONCAT(DISTINCT r.start_date) as start_dates,
-                          GROUP_CONCAT(DISTINCT r.end_date) as end_dates
-                   FROM $rosters_table r
-                   LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
-                   WHERE r.activity_type IN ('Camp', 'Camp, Girls Only', 'Camp, Girls\' only')
-                   GROUP BY r.camp_terms, r.venue, oim.meta_value, r.age_group, r.times
-                   ORDER BY r.camp_terms, r.venue, r.age_group";
+                      COALESCE(r.venue, 'N/A') as venue, 
+                      COALESCE(oim.meta_value, 'N/A') as city,
+                      r.age_group, 
+                      r.times,
+                      COUNT(DISTINCT r.order_item_id) as total_players,
+                      GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids,
+                      GROUP_CONCAT(DISTINCT r.player_name) as player_names,
+                      GROUP_CONCAT(DISTINCT r.start_date) as start_dates,
+                      GROUP_CONCAT(DISTINCT r.end_date) as end_dates
+               FROM $rosters_table r
+               LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
+               WHERE r.activity_type IN ('Camp', 'Camp, Girls Only', 'Camp, Girls\' only')
+               AND r.girls_only = 0  -- EXCLUDE Girls Only events
+               GROUP BY r.camp_terms, r.venue, oim.meta_value, r.age_group, r.times
+               ORDER BY r.camp_terms, r.venue, r.age_group";
 
     $start_time = microtime(true);
     $groups = $wpdb->get_results($base_query, ARRAY_A);
     $query_time = microtime(true) - $start_time;
+    $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0 AND venue IS NOT NULL ORDER BY venue");
+    $all_camp_terms = $wpdb->get_col("SELECT DISTINCT camp_terms FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0 AND camp_terms IS NOT NULL ORDER BY camp_terms");
+    $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0 AND age_group IS NOT NULL ORDER BY age_group");
+    $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.activity_type = 'Camp' AND r.girls_only = 0 AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
+
     error_log("InterSoccer: Camps query results: " . print_r($groups, true));
     error_log("InterSoccer: Camps query execution time: " . $query_time . " seconds");
 
@@ -493,13 +499,36 @@ function intersoccer_render_camps_page() {
 
     // Get filter options
     $selected_season = isset($_GET['season']) ? sanitize_text_field($_GET['season']) : '';
-
+    $selected_venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
+    $selected_camp_terms = isset($_GET['camp_terms']) ? sanitize_text_field($_GET['camp_terms']) : '';
+    $selected_age_group = isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '';
+    $selected_city = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
     $display_groups = $all_groups;
 
     // Filter by season
     if ($selected_season) {
         $display_groups = array_filter($display_groups, function($group) use ($selected_season) {
             return $group['season'] === $selected_season;
+        });
+    }
+    if ($selected_venue) {
+        $display_groups = array_filter($display_groups, function($group) use ($selected_venue) {
+            return $group['venue'] === $selected_venue;
+        });
+    }
+    if ($selected_camp_terms) {
+        $display_groups = array_filter($display_groups, function($group) use ($selected_camp_terms) {
+            return $group['camp_terms'] === $selected_camp_terms;
+        });
+    }
+    if ($selected_age_group) {
+        $display_groups = array_filter($display_groups, function($group) use ($selected_age_group) {
+            return $group['age_group'] === $selected_age_group;
+        });
+    }
+    if ($selected_city) {
+        $display_groups = array_filter($display_groups, function($group) use ($selected_city) {
+            return $group['city'] === $selected_city;
         });
     }
 
@@ -540,17 +569,61 @@ function intersoccer_render_camps_page() {
             <form method="get" class="filter-form">
                 <input type="hidden" name="page" value="intersoccer-camps">
                 <div class="filter-group">
-                    <label><?php _e('Season', 'intersoccer-reports-rosters'); ?></label>
-                    <select name="season" onchange="this.form.submit()">
-                        <option value=""><?php _e('All Seasons', 'intersoccer-reports-rosters'); ?></option>
-                        <?php foreach ($all_seasons as $season): ?>
-                            <option value="<?php echo esc_attr($season); ?>" <?php selected($selected_season, $season); ?>>
-                                <?php echo esc_html($season); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <?php if ($selected_season): ?>
+            <label>Season</label>
+            <select name="season" onchange="this.form.submit()">
+                <option value="">All Seasons</option>
+                <?php foreach ($all_seasons as $season): ?>
+                    <option value="<?php echo esc_attr($season); ?>" <?php selected($selected_season, $season); ?>>
+                        <?php echo esc_html($season); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Venue</label>
+            <select name="venue" onchange="this.form.submit()">
+                <option value="">All Venues</option>
+                <?php foreach ($all_venues as $venue): ?>
+                    <option value="<?php echo esc_attr($venue); ?>" <?php selected($selected_venue, $venue); ?>>
+                        <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($venue, 'pa_intersoccer-venues') : $venue); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Camp Term</label>
+            <select name="camp_terms" onchange="this.form.submit()">
+                <option value="">All Camp Terms</option>
+                <?php foreach ($all_camp_terms as $camp_term): ?>
+                    <option value="<?php echo esc_attr($camp_term); ?>" <?php selected($selected_camp_terms, $camp_term); ?>>
+                        <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp_term, 'pa_camp-terms') : $camp_term); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Age Group</label>
+            <select name="age_group" onchange="this.form.submit()">
+                <option value="">All Age Groups</option>
+                <?php foreach ($all_age_groups as $age_group): ?>
+                    <option value="<?php echo esc_attr($age_group); ?>" <?php selected($selected_age_group, $age_group); ?>>
+                        <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($age_group, 'pa_age-group') : $age_group); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>City</label>
+            <select name="city" onchange="this.form.submit()">
+                <option value="">All Cities</option>
+                <?php foreach ($all_cities as $city): ?>
+                    <option value="<?php echo esc_attr($city); ?>" <?php selected($selected_city, $city); ?>>
+                        <?php echo esc_html($city); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <?php if ($selected_season || $selected_venue || $selected_camp_terms || $selected_age_group || $selected_city): ?>
                 <div class="filter-group">
                     <a href="<?php echo admin_url('admin.php?page=intersoccer-camps'); ?>" class="button button-secondary">
                         🔄 <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
@@ -592,23 +665,26 @@ function intersoccer_render_camps_page() {
                                 <div class="camp-card">
                                     <div class="camp-header">
                                         <h3 class="camp-venue">
-                                            📍 <?php echo esc_html($camp['venue'] ?: 'Unknown Venue'); ?>
+                                            📍 <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['venue'], 'pa_intersoccer-venues') : ($camp['venue'] ?: 'Unknown Venue')); ?>
                                         </h3>
                                     </div>
-                                    <span class="camp-type">
-                                        <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['age_group'], 'pa_age-group') : ($camp['age_group'] ?: 'Unknown Age')); ?>
-                                    </span>
                                     <div class="camp-details">
                                         <div class="detail-row">
-                                            <span class="detail-label">📅 Days</span>
-                                            <span class="detail-value"><?php echo esc_html($camp['camp_terms'] ?: 'TBD'); ?></span>
+                                            <span class="detail-label">📅 Camp Term</span>
+                                            <span class="detail-value"><?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['camp_terms'], 'pa_camp-terms') : ($camp['camp_terms'] ?: 'TBD')); ?></span>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">⏰ Times</span>
+                                            <span class="detail-value"><?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['times'], 'pa_camp-times') : ($camp['times'] ?: 'TBD')); ?></span>
                                         </div>
                                         <div class="detail-row">
                                             <span class="detail-label">👶 Age Group</span>
-                                            <span class="detail-value"><?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['age_group'], 'pa_age-group') : $camp['age_group']); ?></span>
+                                            <span class="detail-value">
+                                                <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['age_group'], 'pa_age-group') : $camp['age_group']); ?>
+                                            </span>
                                         </div>
                                         <div class="detail-row">
-                                            <span class="detail-label">⏰ Duration</span>
+                                            <span class="detail-label">📅 Duration</span>
                                             <span class="detail-value">
                                                 <?php 
                                                 if ($camp['corrected_start_date'] !== '1970-01-01' && $camp['corrected_end_date'] !== '1970-01-01') {
@@ -667,26 +743,31 @@ function intersoccer_render_courses_page() {
 
     // Fetch course data with season and city from order item metadata
     $base_query = "SELECT COALESCE(r.season, 'N/A') as season,
-                          COALESCE(r.venue, 'N/A') as venue,
-                          COALESCE(oim.meta_value, 'N/A') as city,
-                          r.age_group,
-                          r.times,
-                          r.course_day,
-                          COUNT(DISTINCT r.order_item_id) as total_players,
-                          GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids,
-                          GROUP_CONCAT(DISTINCT r.player_name) as player_names,
-                          GROUP_CONCAT(DISTINCT r.start_date) as start_dates,
-                          GROUP_CONCAT(DISTINCT r.end_date) as end_dates,
-                          GROUP_CONCAT(DISTINCT r.product_name) as product_names
-                   FROM $rosters_table r
-                   LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
-                   WHERE r.activity_type IN ('Course', 'Course, Girls Only', 'Course, Girls\' only')
-                   GROUP BY r.season, r.venue, oim.meta_value, r.age_group, r.times, r.course_day
-                   ORDER BY r.season DESC, r.course_day, r.venue, r.age_group";
+                      COALESCE(r.venue, 'N/A') as venue,
+                      COALESCE(oim.meta_value, 'N/A') as city,
+                      r.age_group,
+                      r.times,
+                      r.course_day,
+                      COUNT(DISTINCT r.order_item_id) as total_players,
+                      GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids,
+                      GROUP_CONCAT(DISTINCT r.player_name) as player_names,
+                      GROUP_CONCAT(DISTINCT r.start_date) as start_dates,
+                      GROUP_CONCAT(DISTINCT r.end_date) as end_dates,
+                      GROUP_CONCAT(DISTINCT r.product_name) as product_names
+               FROM $rosters_table r
+               LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
+               WHERE r.activity_type IN ('Course', 'Course, Girls Only', 'Course, Girls\' only')
+               AND r.girls_only = 0  -- EXCLUDE Girls Only events
+               GROUP BY r.season, r.venue, oim.meta_value, r.age_group, r.times, r.course_day
+               ORDER BY r.season DESC, r.course_day, r.venue, r.age_group";
 
     $start_time = microtime(true);
     $groups = $wpdb->get_results($base_query, ARRAY_A);
     $query_time = microtime(true) - $start_time;
+    $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0 AND venue IS NOT NULL ORDER BY venue");
+    $all_course_days = $wpdb->get_col("SELECT DISTINCT course_day FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0 AND course_day IS NOT NULL ORDER BY course_day");
+    $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0 AND age_group IS NOT NULL ORDER BY age_group");
+    $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.activity_type = 'Course' AND r.girls_only = 0 AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
     error_log("InterSoccer: Courses query results: " . print_r($groups, true));
     error_log("InterSoccer: Courses query execution time: " . $query_time . " seconds");
 
@@ -741,6 +822,10 @@ function intersoccer_render_courses_page() {
 
     // Get filter options
     $selected_season = isset($_GET['season']) ? sanitize_text_field($_GET['season']) : '';
+    $selected_venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
+    $selected_course_day = isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '';
+    $selected_age_group = isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '';
+    $selected_city = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
 
     $display_groups = $all_groups;
 
@@ -748,6 +833,26 @@ function intersoccer_render_courses_page() {
     if ($selected_season) {
         $display_groups = array_filter($display_groups, function($group) use ($selected_season) {
             return $group['season'] === $selected_season;
+        });
+    }
+    if ($selected_venue) {
+        $display_groups = array_filter($display_groups, function($group) use ($selected_venue) {
+            return $group['venue'] === $selected_venue;
+        });
+    }
+    if ($selected_course_day) {
+        $display_groups = array_filter($display_groups, function($group) use ($selected_course_day) {
+            return $group['course_day'] === $selected_course_day;
+        });
+    }
+    if ($selected_age_group) {
+        $display_groups = array_filter($display_groups, function($group) use ($selected_age_group) {
+            return $group['age_group'] === $selected_age_group;
+        });
+    }
+    if ($selected_city) {
+        $display_groups = array_filter($display_groups, function($group) use ($selected_city) {
+            return $group['city'] === $selected_city;
         });
     }
 
@@ -789,12 +894,56 @@ function intersoccer_render_courses_page() {
             <form method="get" class="filter-form">
                 <input type="hidden" name="page" value="intersoccer-courses">
                 <div class="filter-group">
-                    <label><?php _e('Season', 'intersoccer-reports-rosters'); ?></label>
+                    <label>Season</label>
                     <select name="season" onchange="this.form.submit()">
-                        <option value=""><?php _e('All Seasons', 'intersoccer-reports-rosters'); ?></option>
+                        <option value="">All Seasons</option>
                         <?php foreach ($all_seasons as $season): ?>
                             <option value="<?php echo esc_attr($season); ?>" <?php selected($selected_season, $season); ?>>
                                 <?php echo esc_html($season); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Venue</label>
+                    <select name="venue" onchange="this.form.submit()">
+                        <option value="">All Venues</option>
+                        <?php foreach ($all_venues as $venue): ?>
+                            <option value="<?php echo esc_attr($venue); ?>" <?php selected($selected_venue, $venue); ?>>
+                                <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($venue, 'pa_intersoccer-venues') : $venue); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Course Day</label>
+                    <select name="course_day" onchange="this.form.submit()">
+                        <option value="">All Days</option>
+                        <?php foreach ($all_course_days as $course_day): ?>
+                            <option value="<?php echo esc_attr($course_day); ?>" <?php selected($selected_course_day, $course_day); ?>>
+                                <?php echo esc_html(ucfirst($course_day)); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Age Group</label>
+                    <select name="age_group" onchange="this.form.submit()">
+                        <option value="">All Age Groups</option>
+                        <?php foreach ($all_age_groups as $age_group): ?>
+                            <option value="<?php echo esc_attr($age_group); ?>" <?php selected($selected_age_group, $age_group); ?>>
+                                <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($age_group, 'pa_age-group') : $age_group); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>City</label>
+                    <select name="city" onchange="this.form.submit()">
+                        <option value="">All Cities</option>
+                        <?php foreach ($all_cities as $city): ?>
+                            <option value="<?php echo esc_attr($city); ?>" <?php selected($selected_city, $city); ?>>
+                                <?php echo esc_html($city); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -850,7 +999,7 @@ function intersoccer_render_courses_page() {
                                         <div class="course-card">
                                             <div class="course-header">
                                                 <h3 class="course-venue">
-                                                    📍 <?php echo esc_html($course['venue'] ?: 'Unknown Venue'); ?>
+                                                    📍 <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($course['venue'], 'pa_intersoccer-venues') : ($course['venue'] ?: 'Unknown Venue')); ?>
                                                 </h3>
                                             </div>
                                             <div class="course-details">
@@ -922,7 +1071,7 @@ function intersoccer_render_girls_only_page() {
     wp_cache_flush();
     delete_transient('intersoccer_rosters_cache');
 
-    // Fetch girls only data with sub_type determination and city from order item metadata
+    // Simplified query using the new girls_only boolean column
     $base_query = "SELECT COALESCE(r.season, 'N/A') as season,
                           COALESCE(r.venue, 'N/A') as venue,
                           COALESCE(oim.meta_value, 'N/A') as city,
@@ -931,125 +1080,144 @@ function intersoccer_render_girls_only_page() {
                           r.camp_terms,
                           r.course_day,
                           r.activity_type,
-                          CASE WHEN LOWER(r.activity_type) LIKE '%camp%' THEN 'Camp' ELSE 'Course' END as sub_type,
+                          r.start_date,
+                          r.end_date,
                           COUNT(DISTINCT r.order_item_id) as total_players,
                           GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids,
                           GROUP_CONCAT(DISTINCT r.player_name) as player_names,
-                          GROUP_CONCAT(DISTINCT r.start_date) as start_dates,
-                          GROUP_CONCAT(DISTINCT r.end_date) as end_dates,
                           GROUP_CONCAT(DISTINCT r.product_name) as product_names
                    FROM $rosters_table r
                    LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
-                   WHERE LOWER(r.activity_type) LIKE '%girls only%' OR LOWER(r.activity_type) LIKE '%girls\' only%'
-                   GROUP BY r.season, r.activity_type, r.venue, oim.meta_value, r.age_group, r.times, r.camp_terms, r.course_day
+                   WHERE r.girls_only = 1
+                   GROUP BY r.season, r.activity_type, r.venue, oim.meta_value, r.age_group, r.times, r.camp_terms, r.course_day, r.start_date, r.end_date
                    ORDER BY r.season DESC, r.activity_type, r.venue, r.age_group";
 
     $start_time = microtime(true);
     $groups = $wpdb->get_results($base_query, ARRAY_A);
     $query_time = microtime(true) - $start_time;
+    $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE girls_only = 1 AND venue IS NOT NULL ORDER BY venue");
+    $all_camp_terms = $wpdb->get_col("SELECT DISTINCT camp_terms FROM $rosters_table WHERE girls_only = 1 AND camp_terms IS NOT NULL ORDER BY camp_terms");
+    $all_course_days = $wpdb->get_col("SELECT DISTINCT course_day FROM $rosters_table WHERE girls_only = 1 AND course_day IS NOT NULL ORDER BY course_day");
+    $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE girls_only = 1 AND age_group IS NOT NULL ORDER BY age_group");
+    $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.girls_only = 1 AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
     error_log("InterSoccer: Girls Only query results: " . print_r($groups, true));
     error_log("InterSoccer: Girls Only query execution time: " . $query_time . " seconds");
 
-    // Log unique city and activity type values
-    $cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $order_itemmeta_table oim WHERE oim.meta_key = 'City' AND oim.meta_value IS NOT NULL");
-    error_log("InterSoccer: Unique cities from order item metadata for Girls Only: " . json_encode($cities));
-    $activity_types = $wpdb->get_col("SELECT DISTINCT activity_type FROM $rosters_table WHERE LOWER(activity_type) LIKE '%girls only%' OR LOWER(activity_type) LIKE '%girls\' only%'");
-    error_log("InterSoccer: Unique activity types for Girls Only: " . json_encode($activity_types));
-
-    // Parse groups with date calculations
-    $all_groups = [];
+    // Process groups and separate camps from courses
+    $all_camps = [];
+    $all_courses = [];
     $all_seasons = [];
-    $all_sub_types = [];
 
     foreach ($groups as $group) {
-        error_log("InterSoccer: Raw activity_type for group: " . ($group['activity_type'] ?? 'N/A'));
-        error_log("InterSoccer: Course day for group: " . ($group['course_day'] ?? 'N/A'));
-        error_log("InterSoccer: City for group: " . ($group['city'] ?? 'N/A'));
-        $variation_ids = !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
-        if (empty($variation_ids)) {
-            error_log("InterSoccer: No valid variation_ids for girls only group - Raw: " . print_r($group['variation_ids'], true));
-            $variation_ids = [0];
-        }
-        $variation_id = $variation_ids[0];
-        $variation = $variation_id ? wc_get_product($variation_id) : false;
-        $parent_product = $variation ? wc_get_product($variation->get_parent_id()) : false;
-
-        // Log variation access
-        error_log("InterSoccer: Girls Only variation $variation_id - Loaded: " . ($variation ? 'Yes' : 'No') . ", Meta start: " . ($variation ? $variation->get_meta('_course_start_date') : 'N/A'));
-
-        // Fetch meta
-        $start = $variation ? $variation->get_meta('_course_start_date') : ($parent_product ? $parent_product->get_meta('_course_start_date') : '1970-01-01');
-        $total_weeks = $variation ? (int) $variation->get_meta('_course_total_weeks') : ($parent_product ? (int) $parent_product->get_meta('_course_total_weeks') : 0);
-        $holidays = $variation ? ($variation->get_meta('_course_holiday_dates') ?: []) : ($parent_product ? ($parent_product->get_meta('_course_holiday_dates') ?: []) : []);
-        $days = $parent_product ? (wc_get_product_terms($parent_product->get_id(), 'pa_course-day', ['fields' => 'names']) ?: wc_get_product_terms($parent_product->get_id(), 'pa_days-of-week', ['fields' => 'names']) ?: ['Monday']) : ['Monday'];
-
-        // Calculate end date
-        $end = '1970-01-01';
-        if ($start !== '1970-01-01' && $total_weeks > 0) {
-            $end = calculate_course_end_date($variation_id, $start, $total_weeks, $holidays, $days);
-            error_log("InterSoccer: Calculated girls only dates for variation $variation_id - Start: $start, End: $end");
-        } else {
-            error_log("InterSoccer: No valid meta for variation $variation_id - Using stored dates");
-            $start = !empty($group['start_dates']) && is_string($group['start_dates']) ? explode(',', $group['start_dates'])[0] : '1970-01-01';
-            $end = !empty($group['end_dates']) && is_string($group['end_dates']) ? explode(',', $group['end_dates'])[0] : '1970-01-01';
-        }
-
-        // Validate and format dates
-        $group['corrected_start_date'] = date('Y-m-d', strtotime($start)) ?: '1970-01-01';
-        $group['corrected_end_date'] = date('Y-m-d', strtotime($end)) ?: '1970-01-01';
-
-        // Collect unique seasons and sub_types
+        // Determine if this is a camp or course based on activity_type
+        $is_camp = (strtolower($group['activity_type']) === 'camp' || !empty($group['camp_terms']));
+        
+        // Collect unique seasons
         if ($group['season'] && $group['season'] !== 'N/A') {
             $all_seasons[$group['season']] = $group['season'];
         }
-        if ($group['sub_type']) {
-            $all_sub_types[$group['sub_type']] = $group['sub_type'];
-        }
 
-        $all_groups[] = $group;
+        // Add to appropriate array
+        if ($is_camp) {
+            $all_camps[] = $group;
+        } else {
+            $all_courses[] = $group;
+        }
     }
 
-    error_log("InterSoccer: Collected seasons: " . print_r($all_seasons, true));
-    error_log("InterSoccer: Collected sub_types: " . print_r($all_sub_types, true));
+    error_log("InterSoccer: Separated - Camps: " . count($all_camps) . ", Courses: " . count($all_courses));
 
     // Get filter options
     $selected_season = isset($_GET['season']) ? sanitize_text_field($_GET['season']) : '';
-    $selected_sub_type = isset($_GET['sub_type']) ? sanitize_text_field($_GET['sub_type']) : '';
-
-    $display_groups = $all_groups;
+    $selected_type = isset($_GET['type']) ? sanitize_text_field($_GET['type']) : '';
+    $selected_venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
+    $selected_camp_terms = isset($_GET['camp_terms']) ? sanitize_text_field($_GET['camp_terms']) : '';
+    $selected_course_day = isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '';
+    $selected_age_group = isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '';
+    $selected_city = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
 
     // Apply filters
+    $display_camps = $all_camps;
+    $display_courses = $all_courses;
+
     if ($selected_season) {
-        $display_groups = array_filter($display_groups, function($group) use ($selected_season) {
+        $display_camps = array_filter($display_camps, function($group) use ($selected_season) {
+            return $group['season'] === $selected_season;
+        });
+        $display_courses = array_filter($display_courses, function($group) use ($selected_season) {
             return $group['season'] === $selected_season;
         });
     }
-    if ($selected_sub_type) {
-        $display_groups = array_filter($display_groups, function($group) use ($selected_sub_type) {
-            return $group['sub_type'] === $selected_sub_type;
+
+    // Filter by type if specified
+    if ($selected_type === 'camps') {
+        $display_courses = [];
+    } elseif ($selected_type === 'courses') {
+        $display_camps = [];
+    }
+    if ($selected_venue) {
+        $display_camps = array_filter($display_camps, function($group) use ($selected_venue) {
+            return $group['venue'] === $selected_venue;
+        });
+        $display_courses = array_filter($display_courses, function($group) use ($selected_venue) {
+            return $group['venue'] === $selected_venue;
+        });
+    }
+    if ($selected_camp_terms) {
+        $display_camps = array_filter($display_camps, function($group) use ($selected_camp_terms) {
+            return $group['camp_terms'] === $selected_camp_terms;
+        });
+    }
+    if ($selected_course_day) {
+        $display_courses = array_filter($display_courses, function($group) use ($selected_course_day) {
+            return $group['course_day'] === $selected_course_day;
+        });
+    }
+    if ($selected_age_group) {
+        $display_camps = array_filter($display_camps, function($group) use ($selected_age_group) {
+            return $group['age_group'] === $selected_age_group;
+        });
+        $display_courses = array_filter($display_courses, function($group) use ($selected_age_group) {
+            return $group['age_group'] === $selected_age_group;
+        });
+    }
+    if ($selected_city) {
+        $display_camps = array_filter($display_camps, function($group) use ($selected_city) {
+            return $group['city'] === $selected_city;
+        });
+        $display_courses = array_filter($display_courses, function($group) use ($selected_city) {
+            return $group['city'] === $selected_city;
         });
     }
 
-    error_log("InterSoccer: Filtered Girls Only: " . print_r($display_groups, true));
+    error_log("InterSoccer: After filters - Camps: " . count($display_camps) . ", Courses: " . count($display_courses));
 
-    // Group by season then sub_type
-    $grouped = [];
-    foreach ($display_groups as $group) {
-        $season = $group['season'] ?: 'N/A';
-        $sub_type = $group['sub_type'];
-        $grouped[$season][$sub_type][] = $group;
+    // Group camps by season
+    $grouped_camps = [];
+    foreach ($display_camps as $camp) {
+        $season = $camp['season'] ?: 'N/A';
+        $grouped_camps[$season][] = $camp;
     }
-    krsort($grouped); // Latest seasons first
+    krsort($grouped_camps);
+
+    // Group courses by season then day
+    $grouped_courses = [];
+    foreach ($display_courses as $course) {
+        $season = $course['season'] ?: 'N/A';
+        $course_day = $course['course_day'] ?: 'N/A';
+        $grouped_courses[$season][$course_day][] = $course;
+    }
+    krsort($grouped_courses);
 
     // Render the page
     ?>
     <div class="wrap intersoccer-rosters-page">
         <div class="roster-header">
-            <h1>⚽ <?php _e('Girls Only', 'intersoccer-reports-rosters'); ?></h1>
+            <h1>Girls Only Events</h1>
             <div class="header-actions">
                 <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-girls-only&action=reconcile'), 'intersoccer_reconcile'); ?>" 
                    class="button button-secondary">
-                    🔄 <?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?>
+                    Reconcile Rosters
                 </a>
             </div>
         </div>
@@ -1060,7 +1228,7 @@ function intersoccer_render_girls_only_page() {
                 <input type="hidden" name="export_type" value="girls_only">
                 <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
                 <input type="submit" name="export_girls_only" class="button button-primary" 
-                    value="<?php _e('📥 Export Girls Only', 'intersoccer-reports-rosters'); ?>">
+                    value="<?php _e('Export Girls Only', 'intersoccer-reports-rosters'); ?>">
             </form>
         </div>
 
@@ -1068,31 +1236,87 @@ function intersoccer_render_girls_only_page() {
             <form method="get" class="filter-form">
                 <input type="hidden" name="page" value="intersoccer-girls-only">
                 <div class="filter-group">
-                    <label><?php _e('Season', 'intersoccer-reports-rosters'); ?></label>
-                    <select name="season" onchange="this.form.submit()">
-                        <option value=""><?php _e('All Seasons', 'intersoccer-reports-rosters'); ?></option>
-                        <?php foreach ($all_seasons as $season): ?>
-                            <option value="<?php echo esc_attr($season); ?>" <?php selected($selected_season, $season); ?>>
-                                <?php echo esc_html($season); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label><?php _e('Activity Type', 'intersoccer-reports-rosters'); ?></label>
-                    <select name="sub_type" onchange="this.form.submit()">
-                        <option value=""><?php _e('All Activity Types', 'intersoccer-reports-rosters'); ?></option>
-                        <?php foreach ($all_sub_types as $sub_type): ?>
-                            <option value="<?php echo esc_attr($sub_type); ?>" <?php selected($selected_sub_type, $sub_type); ?>>
-                                <?php echo esc_html($sub_type); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <?php if ($selected_season || $selected_sub_type): ?>
+            <label>Season</label>
+            <select name="season" onchange="this.form.submit()">
+                <option value="">All Seasons</option>
+                <?php foreach ($all_seasons as $season): ?>
+                    <option value="<?php echo esc_attr($season); ?>" <?php selected($selected_season, $season); ?>>
+                        <?php echo esc_html($season); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Type</label>
+            <select name="type" onchange="this.form.submit()">
+                <option value="">All Types</option>
+                <option value="camps" <?php selected($selected_type, 'camps'); ?>>Camps Only</option>
+                <option value="courses" <?php selected($selected_type, 'courses'); ?>>Courses Only</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Venue</label>
+            <select name="venue" onchange="this.form.submit()">
+                <option value="">All Venues</option>
+                <?php foreach ($all_venues as $venue): ?>
+                    <option value="<?php echo esc_attr($venue); ?>" <?php selected($selected_venue, $venue); ?>>
+                        <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($venue, 'pa_intersoccer-venues') : $venue); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <?php if (!empty($all_camp_terms)): ?>
+        <div class="filter-group">
+            <label>Camp Term</label>
+            <select name="camp_terms" onchange="this.form.submit()">
+                <option value="">All Camp Terms</option>
+                <?php foreach ($all_camp_terms as $camp_term): ?>
+                    <option value="<?php echo esc_attr($camp_term); ?>" <?php selected($selected_camp_terms, $camp_term); ?>>
+                        <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp_term, 'pa_camp-terms') : $camp_term); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <?php endif; ?>
+        <?php if (!empty($all_course_days)): ?>
+        <div class="filter-group">
+            <label>Course Day</label>
+            <select name="course_day" onchange="this.form.submit()">
+                <option value="">All Days</option>
+                <?php foreach ($all_course_days as $course_day): ?>
+                    <option value="<?php echo esc_attr($course_day); ?>" <?php selected($selected_course_day, $course_day); ?>>
+                        <?php echo esc_html(ucfirst($course_day)); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <?php endif; ?>
+        <div class="filter-group">
+            <label>Age Group</label>
+            <select name="age_group" onchange="this.form.submit()">
+                <option value="">All Age Groups</option>
+                <?php foreach ($all_age_groups as $age_group): ?>
+                    <option value="<?php echo esc_attr($age_group); ?>" <?php selected($selected_age_group, $age_group); ?>>
+                        <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($age_group, 'pa_age-group') : $age_group); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>City</label>
+            <select name="city" onchange="this.form.submit()">
+                <option value="">All Cities</option>
+                <?php foreach ($all_cities as $city): ?>
+                    <option value="<?php echo esc_attr($city); ?>" <?php selected($selected_city, $city); ?>>
+                        <?php echo esc_html($city); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <?php if ($selected_season || $selected_type || $selected_venue || $selected_camp_terms || $selected_course_day || $selected_age_group || $selected_city): ?>
                 <div class="filter-group">
                     <a href="<?php echo admin_url('admin.php?page=intersoccer-girls-only'); ?>" class="button button-secondary">
-                        🔄 <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
+                        Clear Filters
                     </a>
                 </div>
                 <?php endif; ?>
@@ -1100,82 +1324,74 @@ function intersoccer_render_girls_only_page() {
         </div>
 
         <div class="sports-rosters">
-            <?php if (empty($grouped)): ?>
+            <?php if (empty($grouped_camps) && empty($grouped_courses)): ?>
                 <div class="no-rosters">
                     <div class="no-rosters-icon">⚽</div>
-                    <h3><?php _e('No events found', 'intersoccer-reports-rosters'); ?></h3>
+                    <h3><?php _e('No girls only events found', 'intersoccer-reports-rosters'); ?></h3>
                     <p><?php _e('Try adjusting your filters or sync rosters to see available events.', 'intersoccer-reports-rosters'); ?></p>
                 </div>
             <?php else: ?>
-                <?php foreach ($grouped as $season => $sub_groups): ?>
-                    <!-- Camps Section -->
-                    <?php if (isset($sub_groups['Camp'])): ?>
+                
+                <!-- Camps Section -->
+                <?php if (!empty($grouped_camps)): ?>
+                    <?php foreach ($grouped_camps as $season => $camps): ?>
                         <div class="roster-season">
                             <div class="season-header">
                                 <h2 class="season-title">
-                                    <?php echo esc_html($season . ' - Camps'); ?>
+                                    <?php echo esc_html($season . ' - Girls Only Camps'); ?>
                                 </h2>
                                 <div class="season-stats">
                                     <?php 
-                                    $camp_total = array_sum(array_column($sub_groups['Camp'], 'total_players'));
-                                    $camp_count = count($sub_groups['Camp']);
+                                    $camp_total = array_sum(array_column($camps, 'total_players'));
+                                    $camp_count = count($camps);
                                     ?>
                                     <span class="stat-item">
-                                        👥 <?php echo $camp_total; ?> <?php _e('players', 'intersoccer-reports-rosters'); ?>
+                                        <?php echo $camp_total; ?> <?php _e('players', 'intersoccer-reports-rosters'); ?>
                                     </span>
                                     <span class="stat-item">
-                                        📚 <?php echo $camp_count; ?> <?php _e('camps', 'intersoccer-reports-rosters'); ?>
+                                        <?php echo $camp_count; ?> <?php _e('camps', 'intersoccer-reports-rosters'); ?>
                                     </span>
                                 </div>
                             </div>
                             <div class="camps-grid">
-                                <?php foreach ($sub_groups['Camp'] as $camp): ?>
+                                <?php foreach ($camps as $camp): ?>
                                     <div class="camp-card">
                                         <div class="camp-header">
                                             <h3 class="camp-venue">
-                                                📍 <?php echo esc_html($camp['venue'] ?: 'Unknown Venue'); ?>
+                                                📍 <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($course['venue'], 'pa_intersoccer-venues') : ($course['venue'] ?: 'Unknown Venue')); ?>
                                             </h3>
                                         </div>
-                                        <span class="camp-type">
-                                            <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['age_group'], 'pa_age-group') : ($camp['age_group'] ?: 'Unknown Age')); ?>
-                                        </span>
                                         <div class="camp-details">
                                             <div class="detail-row">
-                                                <span class="detail-label">📅 Days</span>
-                                                <span class="detail-value"><?php echo esc_html($camp['camp_terms'] ?: 'TBD'); ?></span>
-                                            </div>
+                                            <span class="detail-label">📅 Camp Term</span>
+                                            <span class="detail-value"><?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['camp_terms'], 'pa_camp-terms') : ($camp['camp_terms'] ?: 'TBD')); ?></span>
+                                        </div>
                                             <div class="detail-row">
                                                 <span class="detail-label">👶 Age Group</span>
-                                                <span class="detail-value"><?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['age_group'], 'pa_age-group') : $camp['age_group']); ?></span>
+                                                <span class="detail-value"><?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($course['age_group'], 'pa_age-group') : $course['age_group']); ?></span>
                                             </div>
-                                            <div class="detail-row">
-                                                <span class="detail-label">⏰ Duration</span>
-                                                <span class="detail-value">
-                                                    <?php 
-                                                    if ($camp['corrected_start_date'] !== '1970-01-01' && $camp['corrected_end_date'] !== '1970-01-01') {
-                                                        echo esc_html(date('M j', strtotime($camp['corrected_start_date'])) . ' - ' . date('M j, Y', strtotime($camp['corrected_end_date'])));
-                                                    } else {
-                                                        echo 'TBD';
-                                                    }
-                                                    ?>
-                                                </span>
-                                            </div>
-                                            <div class="detail-row">
+                                             <div class="detail-row">
                                                 <span class="detail-label">🌆 City</span>
                                                 <span class="detail-value"><?php echo esc_html($camp['city'] ?: 'N/A'); ?></span>
                                             </div>
+                                            <?php if ($camp['times']): ?>
+                                            <div class="detail-row">
+                                                <span class="detail-label">⏰ Times</span>
+                                                <span class="detail-value"><?php echo esc_html($camp['times']); ?></span>
+                                            </div>
+                                            <?php endif; ?>
                                         </div>
                                         <div class="camp-footer">
                                             <div class="player-count">
-                                                <span class="count-number"><?php echo esc_html($camp['total_players']); ?></span>
+                                                <span class="count-number <?php echo intersoccer_get_count_class($camp['total_players']); ?>"><?php echo esc_html($camp['total_players']); ?></span>
                                                 <span class="count-label"><?php _e('players', 'intersoccer-reports-rosters'); ?></span>
                                             </div>
                                             <div class="camp-actions">
                                                 <?php 
-                                                $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=girls-only&camp_terms=' . urlencode($camp['camp_terms'] ?: 'N/A') . '&venue=' . urlencode($camp['venue']) . '&age_group=' . urlencode($camp['age_group']) . '&times=' . urlencode($camp['times']));
+                                                $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=girls-only&camp_terms=' . urlencode($camp['camp_terms'] ?: 'N/A') . '&venue=' . urlencode($camp['venue']) . '&age_group=' . urlencode($camp['age_group']) . '&times=' . urlencode($camp['times']) . '&girls_only=1');
                                                 ?>
                                                 <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
-                                                    👀 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
+                                                    View Roster
                                                 </a>
                                             </div>
                                         </div>
@@ -1183,38 +1399,34 @@ function intersoccer_render_girls_only_page() {
                                 <?php endforeach; ?>
                             </div>
                         </div>
-                    <?php endif; ?>
+                    <?php endforeach; ?>
+                <?php endif; ?>
 
-                    <!-- Courses Section -->
-                    <?php if (isset($sub_groups['Course'])): ?>
+                <!-- Courses Section -->
+                <?php if (!empty($grouped_courses)): ?>
+                    <?php foreach ($grouped_courses as $season => $day_groups): ?>
                         <div class="roster-season">
                             <div class="season-header">
                                 <h2 class="season-title">
-                                    <?php echo esc_html($season . ' - Courses'); ?>
+                                    <?php echo esc_html($season . ' - Girls Only Courses'); ?>
                                 </h2>
                                 <div class="season-stats">
                                     <?php 
-                                    $course_total = array_sum(array_column($sub_groups['Course'], 'total_players'));
-                                    $course_count = count($sub_groups['Course']);
+                                    $course_total = 0;
+                                    $course_count = 0;
+                                    foreach ($day_groups as $day => $courses) {
+                                        $course_total += array_sum(array_column($courses, 'total_players'));
+                                        $course_count += count($courses);
+                                    }
                                     ?>
                                     <span class="stat-item">
-                                        👥 <?php echo $course_total; ?> <?php _e('players', 'intersoccer-reports-rosters'); ?>
+                                        <?php echo $course_total; ?> <?php _e('players', 'intersoccer-reports-rosters'); ?>
                                     </span>
                                     <span class="stat-item">
-                                        📚 <?php echo $course_count; ?> <?php _e('courses', 'intersoccer-reports-rosters'); ?>
+                                        <?php echo $course_count; ?> <?php _e('courses', 'intersoccer-reports-rosters'); ?>
                                     </span>
                                 </div>
                             </div>
-                            <?php 
-                            // Group courses by course_day for day-group rendering
-                            $day_groups = [];
-                            foreach ($sub_groups['Course'] as $course) {
-                                $day = $course['course_day'] ?: 'N/A';
-                                $day_groups[$day][] = $course;
-                            }
-                            ksort($day_groups); // Sort days alphabetically for consistent display
-                            error_log("InterSoccer: Course day groups for $season: " . print_r(array_keys($day_groups), true));
-                            ?>
                             <?php foreach ($day_groups as $day => $courses): ?>
                                 <?php if (!empty($courses)): ?>
                                     <div class="day-group">
@@ -1225,7 +1437,7 @@ function intersoccer_render_girls_only_page() {
                                             <div class="course-card">
                                                 <div class="course-header">
                                                     <h3 class="course-venue">
-                                                        📍 <?php echo esc_html($course['venue'] ?: 'Unknown Venue'); ?>
+                                                        📍 <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($course['venue'], 'pa_intersoccer-venues') : ($course['venue'] ?: 'Unknown Venue')); ?>
                                                     </h3>
                                                 </div>
                                                 <div class="course-details">
@@ -1241,8 +1453,9 @@ function intersoccer_render_girls_only_page() {
                                                         <span class="detail-label">📅 Duration</span>
                                                         <span class="detail-value">
                                                             <?php 
-                                                            if ($course['corrected_start_date'] !== '1970-01-01' && $course['corrected_end_date'] !== '1970-01-01') {
-                                                                echo esc_html(date('M j', strtotime($course['corrected_start_date'])) . ' - ' . date('M j, Y', strtotime($course['corrected_end_date'])));
+                                                            if ($course['start_date'] && $course['start_date'] !== '1970-01-01' && 
+                                                                $course['end_date'] && $course['end_date'] !== '1970-01-01') {
+                                                                echo esc_html(date('M j', strtotime($course['start_date'])) . ' - ' . date('M j, Y', strtotime($course['end_date'])));
                                                             } else {
                                                                 echo 'TBD';
                                                             }
@@ -1251,20 +1464,20 @@ function intersoccer_render_girls_only_page() {
                                                     </div>
                                                     <div class="detail-row">
                                                         <span class="detail-label">🌆 City</span>
-                                                        <span class="detail-value"><?php echo esc_html($course['city'] ?: 'N/A'); ?></span>
+                                                        <span class="detail-value"><?php echo esc_html($camp['city'] ?: 'N/A'); ?></span>
                                                     </div>
                                                 </div>
                                                 <div class="course-footer">
                                                     <div class="player-count">
-                                                        <span class="count-number"><?php echo esc_html($course['total_players']); ?></span>
+                                                        <span class="count-number <?php echo intersoccer_get_count_class($course['total_players']); ?>"><?php echo esc_html($course['total_players']); ?></span>
                                                         <span class="count-label"><?php _e('players', 'intersoccer-reports-rosters'); ?></span>
                                                     </div>
                                                     <div class="course-actions">
                                                         <?php 
-                                                        $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=girls-only&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']));
+                                                        $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=girls-only&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']) . '&girls_only=1');
                                                         ?>
                                                         <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
-                                                            👀 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
+                                                            View Roster
                                                         </a>
                                                     </div>
                                                 </div>
@@ -1274,8 +1487,8 @@ function intersoccer_render_girls_only_page() {
                                 <?php endif; ?>
                             <?php endforeach; ?>
                         </div>
-                    <?php endif; ?>
-                <?php endforeach; ?>
+                    <?php endforeach; ?>
+                <?php endif; ?>
             <?php endif; ?>
         </div>
     </div>
@@ -1349,18 +1562,19 @@ function intersoccer_render_other_events_page() {
 
     // Fetch Other Events data
     $base_query = "SELECT COALESCE(season, 'N/A') as season,
-                          COALESCE(product_name, 'N/A') as product_name,
-                          age_group,
-                          times,
-                          COUNT(DISTINCT order_item_id) as total_players,
-                          GROUP_CONCAT(DISTINCT variation_id) as variation_ids,
-                          GROUP_CONCAT(DISTINCT start_date) as start_dates,
-                          GROUP_CONCAT(DISTINCT end_date) as end_dates
-                   FROM $rosters_table
-                   WHERE activity_type NOT IN ('Camp', 'Course')
-                   AND activity_type NOT LIKE '%Girls%'
-                   GROUP BY season, product_name, age_group, times
-                   ORDER BY season DESC, product_name, age_group";
+                      COALESCE(product_name, 'N/A') as product_name,
+                      age_group,
+                      times,
+                      COUNT(DISTINCT order_item_id) as total_players,
+                      GROUP_CONCAT(DISTINCT variation_id) as variation_ids,
+                      GROUP_CONCAT(DISTINCT start_date) as start_dates,
+                      GROUP_CONCAT(DISTINCT end_date) as end_dates
+               FROM $rosters_table
+               WHERE activity_type NOT IN ('Camp', 'Course')
+               AND activity_type NOT LIKE '%Girls%'
+               AND girls_only = 0  -- EXCLUDE Girls Only events (double check)
+               GROUP BY season, product_name, age_group, times
+               ORDER BY season DESC, product_name, age_group";
 
     $groups = $wpdb->get_results($base_query, ARRAY_A);
     error_log("InterSoccer: Other Events query results: " . print_r($groups, true));
@@ -1694,4 +1908,20 @@ function intersoccer_render_all_rosters_page() {
         <?php endif; ?>
     </div>
     <?php
+}
+
+/**
+ * Helper function to get CSS class for participant count based on business rules
+ */
+function intersoccer_get_count_class($count) {
+    $count = (int) $count;
+    if ($count < 8) {
+        return 'count-critical'; // Red - Below break-even
+    } elseif ($count < 20) {
+        return 'count-low'; // Orange - Break-even but not ideal
+    } elseif ($count < 30) {
+        return 'count-good'; // Green - Good numbers
+    } else {
+        return 'count-optimal'; // Blue - Optimal numbers
+    }
 }
