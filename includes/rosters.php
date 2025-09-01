@@ -12,9 +12,83 @@
  */
 add_action('admin_head', function () {
     echo '<style>
-        /* Enhanced styling for roster pages */
+        /* Conditional formatting for participant counts */
+        .count-number.count-critical {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            animation: pulse-red 2s infinite;
+        }
+
+        .count-number.count-low {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+        }
+
+        .count-number.count-good {
+            background: linear-gradient(135deg, #10b981, #059669);
+        }
+
+        .count-number.count-optimal {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+        }
+
+        @keyframes pulse-red {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        /* Add tooltip for critical counts */
+        .count-critical::after {
+            content: "Event may be canceled";
+            position: absolute;
+            bottom: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            white-space: nowrap;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+
+        .count-critical:hover::after {
+            opacity: 1;
+        }
+
+        .player-count {
+            position: relative;
+        }
         .intersoccer-rosters-page {
-            max-width: 100%;
+            all: initial;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.5;
+            color: #111827;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            min-height: 100vh;
+            margin: 0 -20px 0 -22px;  /* Push outside admin area like roster-details */
+            position: relative;
+            box-sizing: border-box;
+        }
+        
+        .intersoccer-rosters-page * {
+            box-sizing: border-box;
+        }
+        
+        /* Hide WordPress admin notices within our custom pages */
+        .intersoccer-rosters-page .notice,
+        .intersoccer-rosters-page .updated,
+        .intersoccer-rosters-page .error,
+        .intersoccer-rosters-page .update-nag {
+            display: none !important;
+        }
+        
+        /* Ensure our content container has proper spacing */
+        .intersoccer-rosters-page .wrap {
+            margin: 0;
+            padding: 32px;
+            max-width: none;
         }
         
         .roster-header {
@@ -30,7 +104,7 @@ add_action('admin_head', function () {
         
         .roster-header h1 {
             margin: 0;
-            color: #0073aa;
+            color: #ffffffff;
             font-size: 28px;
         }
         
@@ -683,18 +757,7 @@ function intersoccer_render_camps_page() {
                                                 <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['age_group'], 'pa_age-group') : $camp['age_group']); ?>
                                             </span>
                                         </div>
-                                        <div class="detail-row">
-                                            <span class="detail-label">📅 Duration</span>
-                                            <span class="detail-value">
-                                                <?php 
-                                                if ($camp['corrected_start_date'] !== '1970-01-01' && $camp['corrected_end_date'] !== '1970-01-01') {
-                                                    echo esc_html(date('M j', strtotime($camp['corrected_start_date'])) . ' - ' . date('M j, Y', strtotime($camp['corrected_end_date'])));
-                                                } else {
-                                                    echo 'TBD';
-                                                }
-                                                ?>
-                                            </span>
-                                        </div>
+                                        
                                         <div class="detail-row">
                                             <span class="detail-label">🌆 City</span>
                                             <span class="detail-value"><?php echo esc_html($camp['city'] ?: 'N/A'); ?></span>
@@ -702,7 +765,7 @@ function intersoccer_render_camps_page() {
                                     </div>
                                     <div class="camp-footer">
                                         <div class="player-count">
-                                            <span class="count-number"><?php echo esc_html($camp['total_players']); ?></span>
+                                            <span class="count-number <?php echo intersoccer_get_count_class($camp['total_players']); ?>"><?php echo esc_html($camp['total_players']); ?></span>
                                             <span class="count-label"><?php _e('players', 'intersoccer-reports-rosters'); ?></span>
                                         </div>
                                         <div class="camp-actions">
@@ -1030,7 +1093,7 @@ function intersoccer_render_courses_page() {
                                             </div>
                                             <div class="course-footer">
                                                 <div class="player-count">
-                                                    <span class="count-number"><?php echo esc_html($course['total_players']); ?></span>
+                                                   <span class="count-number <?php echo intersoccer_get_count_class($course['total_players']); ?>"><?php echo esc_html($course['total_players']); ?></span>
                                                     <span class="count-label"><?php _e('players', 'intersoccer-reports-rosters'); ?></span>
                                                 </div>
                                                 <div class="course-actions">
@@ -1782,7 +1845,7 @@ function intersoccer_render_other_events_page() {
                                         </div>
                                         <div class="course-footer">
                                             <div class="player-count">
-                                                <span class="count-number"><?php echo esc_html($event['total_players']); ?></span>
+                                                <span class="count-number <?php echo intersoccer_get_count_class($event['total_players']); ?>"><?php echo esc_html($event['total_players']); ?></span>
                                                 <span class="count-label"><?php _e('players', 'intersoccer-reports-rosters'); ?></span>
                                             </div>
                                             <div class="course-actions">
@@ -1915,13 +1978,13 @@ function intersoccer_render_all_rosters_page() {
  */
 function intersoccer_get_count_class($count) {
     $count = (int) $count;
-    if ($count < 8) {
-        return 'count-critical'; // Red - Below break-even
-    } elseif ($count < 20) {
-        return 'count-low'; // Orange - Break-even but not ideal
-    } elseif ($count < 30) {
-        return 'count-good'; // Green - Good numbers
+    if ($count <= 7) {
+        return 'count-critical'; // Red - Event canceled
+    } elseif ($count <= 20) {
+        return 'count-low'; // Orange - Event can proceed but not ideal
+    } elseif ($count <= 29) {
+        return 'count-good'; // Green - Good attendance
     } else {
-        return 'count-optimal'; // Blue - Optimal numbers
+        return 'count-optimal'; // Blue - Optimal attendance (30+)
     }
 }

@@ -16,35 +16,36 @@ if (!defined('ABSPATH')) {
 require_once plugin_dir_path(dirname(__FILE__)) . 'includes/roster-data.php';
 
 /**
- * Add auction house style CSS
+ * Add amazing interface styles
  */
 add_action('admin_head', function () {
     echo '<style>
-        /* Reset admin styles to prevent plugin conflicts */
+        /* Reset and base styles */
         .roster-app {
             all: initial;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            line-height: 1.4;
-            color: #2c3e50;
-            background: #f5f7fa;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.5;
+            color: #111827;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
             min-height: 100vh;
-            padding: 0;
             margin: 0 -20px 0 -22px;
+            position: relative;
         }
         
         .roster-app * {
             box-sizing: border-box;
         }
         
-        /* Header Section */
+        /* Header with enhanced gradient */
         .roster-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #4338ca 0%, #7c3aed 50%, #db2777 100%);
             color: white;
-            padding: 24px 30px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            padding: 28px 32px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.12);
             position: sticky;
-            top: 32px;
-            z-index: 100;
+            top: 0px;
+            z-index: 1000;
+            border-radius: 0 0 16px 16px;
         }
         
         .header-content {
@@ -54,54 +55,59 @@ add_action('admin_head', function () {
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
-            gap: 15px;
+            gap: 20px;
         }
         
-        .roster-title {
+        .event-title {
             margin: 0;
-            font-size: 24px;
+            font-size: 28px;
             font-weight: 700;
             display: flex;
             align-items: center;
             gap: 12px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         
-        .event-badge {
+        .girls-only-badge {
             background: rgba(255,255,255,0.25);
-            padding: 4px 12px;
-            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            padding: 6px 12px;
+            border-radius: 16px;
             font-size: 11px;
-            font-weight: 600;
+            font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 1px;
         }
         
         .header-stats {
             display: flex;
             gap: 20px;
+            font-size: 15px;
             flex-wrap: wrap;
         }
         
-        .stat-pill {
+        .stat-item {
             background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(10px);
             padding: 8px 16px;
             border-radius: 20px;
-            font-size: 13px;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 6px;
+            font-weight: 600;
+            border: 1px solid rgba(255,255,255,0.1);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.1);
         }
         
-        /* Controls Bar */
-        .controls-bar {
-            background: white;
-            border-bottom: 1px solid #e1e8ed;
-            padding: 16px 30px;
+        /* Controls with glass morphism */
+        .controls-section {
+            background: rgba(255,255,255,0.8);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 20px 32px;
             position: sticky;
-            top: 96px;
-            z-index: 99;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            top: 120px;
+            z-index: 999;
+            margin: 20px 0;
+            border-radius: 16px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
         }
         
         .controls-content {
@@ -109,12 +115,11 @@ add_action('admin_head', function () {
             margin: 0 auto;
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            gap: 24px;
             flex-wrap: wrap;
-            gap: 16px;
         }
         
-        .search-box {
+        .search-container {
             position: relative;
             flex: 1;
             min-width: 280px;
@@ -123,477 +128,642 @@ add_action('admin_head', function () {
         
         .search-input {
             width: 100%;
-            padding: 10px 16px 10px 40px;
-            border: 2px solid #e1e8ed;
-            border-radius: 8px;
-            font-size: 14px;
+            padding: 12px 16px 12px 44px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            font-size: 15px;
+            background: white;
             transition: all 0.2s ease;
-            background: #fafbfc;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
         
         .search-input:focus {
             outline: none;
-            border-color: #667eea;
-            background: white;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: #4338ca;
+            box-shadow: 0 0 0 4px rgba(67, 56, 202, 0.1), 0 4px 12px rgba(0,0,0,0.1);
         }
         
         .search-icon {
             position: absolute;
-            left: 12px;
+            left: 16px;
             top: 50%;
             transform: translateY(-50%);
-            color: #8899a6;
+            color: #6b7280;
             font-size: 16px;
         }
         
-        .filter-tabs {
+        .filter-buttons {
             display: flex;
-            background: #f5f8fa;
-            border-radius: 8px;
-            padding: 3px;
-            gap: 2px;
+            gap: 8px;
+            flex-wrap: wrap;
         }
         
-        .filter-tab {
+        .filter-btn {
             padding: 8px 16px;
-            background: transparent;
-            border: none;
-            border-radius: 6px;
-            font-size: 13px;
+            background: rgba(255,255,255,0.9);
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 14px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s ease;
-            color: #657786;
+            backdrop-filter: blur(8px);
         }
         
-        .filter-tab:hover {
-            background: white;
-            color: #14171a;
+        .filter-btn:hover {
+            background: #f3f4f6;
+            border-color: #d1d5db;
+            transform: translateY(-1px);
         }
         
-        .filter-tab.active {
-            background: white;
-            color: #667eea;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        .filter-btn.active {
+            background: #4338ca;
+            border-color: #4338ca;
+            color: white;
+            box-shadow: 0 4px 12px rgba(67, 56, 202, 0.3);
         }
         
-        .sort-dropdown {
+        .sort-select {
             padding: 8px 12px;
-            border: 2px solid #e1e8ed;
-            border-radius: 8px;
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 14px;
             background: white;
-            font-size: 13px;
             cursor: pointer;
-            min-width: 140px;
+            font-weight: 500;
         }
         
-        /* Main Content */
-        .roster-content {
+        /* Main content area */
+        .main-content {
             max-width: 1400px;
             margin: 0 auto;
-            padding: 20px 30px;
+            padding: 0 32px 40px;
         }
         
-        /* Player List Table */
-        .players-table {
-            background: white;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-            border: 1px solid #e1e8ed;
-        }
-        
-        .table-header {
-            background: #f8fafc;
-            border-bottom: 2px solid #e1e8ed;
-            padding: 0;
+        /* Beautiful player grid */
+        .players-grid {
             display: grid;
-            grid-template-columns: 40px 200px 300px 140px 180px 120px 140px 100px;
-            gap: 0;
-            font-weight: 600;
-            font-size: 12px;
-            color: #536471;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
         }
         
-        .header-cell {
-            padding: 16px 12px;
-            display: flex;
-            align-items: center;
-            border-right: 1px solid #e1e8ed;
+        .player-card {
+            background: rgba(255,255,255,0.9);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 16px;
+            padding: 24px;
             cursor: pointer;
-            transition: background 0.2s ease;
-        }
-        
-        .header-cell:hover {
-            background: #f0f3f7;
-        }
-        
-        .header-cell:last-child {
-            border-right: none;
-        }
-        
-        .player-row {
-            display: grid;
-            grid-template-columns: 40px 200px 300px 140px 180px 120px 140px 100px;
-            gap: 0;
-            border-bottom: 1px solid #f0f3f7;
-            transition: all 0.2s ease;
-            cursor: pointer;
-        }
-        
-        .player-row:hover {
-            background: #f8fafc;
-        }
-        
-        .player-row.unknown {
-            background: #fff5f5;
-            border-left: 4px solid #ef4444;
-        }
-        
-        .player-row.has-medical {
-            border-left: 4px solid #f59e0b;
-        }
-        
-        .player-row.highlighted {
-            background: #eff6ff;
-            border-left: 4px solid #3b82f6;
-        }
-        
-        .player-cell {
-            padding: 16px 12px;
-            display: flex;
-            align-items: center;
-            justify-content: flex-start;
-            text-align: left;
-            border-right: 1px solid #f0f3f7;
-            font-size: 14px;
-            min-height: 54px;
-            flex-wrap: wrap;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
             overflow: hidden;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.08);
         }
         
-        .player-cell:last-child {
-            border-right: none;
+        .player-card::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #4338ca, #7c3aed, #db2777);
+            opacity: 0;
+            transition: opacity 0.3s ease;
         }
         
-        /* Player Avatar */
+        .player-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+            border-color: rgba(67, 56, 202, 0.3);
+        }
+        
+        .player-card:hover::before {
+            opacity: 1;
+        }
+        
+        .player-card.selected {
+            background: rgba(239, 246, 255, 0.95);
+            border-color: #4338ca;
+            transform: translateY(-4px);
+        }
+        
+        .player-card.selected::before {
+            opacity: 1;
+        }
+        
+        .player-card.unknown {
+            background: rgba(254, 242, 242, 0.9);
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+        
+        .player-card.has-medical {
+            border-left: 6px solid #f59e0b;
+        }
+        
+        .player-card.has-medical::after {
+            content: "⚕️";
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 18px;
+            opacity: 0.7;
+        }
+        
+        /* Card header */
+        .card-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        
         .player-avatar {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #667eea, #764ba2);
+            width: 56px;
+            height: 56px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #4338ca, #7c3aed);
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
             font-weight: 700;
-            font-size: 12px;
-            margin-right: 8px;
+            font-size: 20px;
             flex-shrink: 0;
+            box-shadow: 0 4px 12px rgba(67, 56, 202, 0.3);
         }
         
-        /* Player Name Cell */
-        .player-name-cell {
-            display: flex;
-            align-items: center;
-            justify-content: flex-start;
-            flex-wrap: wrap;
-            gap: 8px;
+        .unknown .player-avatar {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+        }
+        
+        .player-info {
+            flex: 1;
+            min-width: 0;
         }
         
         .player-name {
-            font-weight: 600;
-            color: #14171a;
+            font-weight: 700;
+            font-size: 18px;
+            color: #111827;
+            margin-bottom: 4px;
+            line-height: 1.2;
         }
         
-        .player-age {
-            font-size: 12px;
-            color: #657786;
-        }
-        
-        .unknown-player .player-name {
+        .unknown .player-name {
             color: #ef4444;
             font-style: italic;
         }
         
-        /* Contact Cell */
-        .contact-cell {
+        .player-meta {
             display: flex;
-            align-items: center;
-            justify-content: flex-start;
+            gap: 12px;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #6b7280;
             flex-wrap: wrap;
+        }
+        
+        .meta-item {
+            background: #f3f4f6;
+            padding: 2px 8px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        /* Status badges */
+        .status-badges {
+            display: flex;
             gap: 8px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .badge-confirmed {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+        }
+        
+        .badge-unknown {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+        }
+        
+        .badge-medical {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+        }
+        
+        .booking-type-badge {
+            background: linear-gradient(135deg, #6366f1, #4f46e5);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        
+        /* Contact info */
+        .contact-info {
+            margin-bottom: 16px;
         }
         
         .contact-item {
-            font-size: 12px;
-            color: #657786;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+            color: #4b5563;
             text-decoration: none;
+            font-size: 14px;
             transition: color 0.2s ease;
         }
         
         .contact-item:hover {
-            color: #667eea;
+            color: #4338ca;
         }
         
-        /* Status Badges */
-        .status-badge {
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
+        .contact-icon {
+            font-size: 14px;
+            opacity: 0.7;
         }
         
-        .badge-confirmed {
-            background: #dcfce7;
-            color: #166534;
-        }
-        
-        .badge-unknown {
-            background: #fef2f2;
-            color: #991b1b;
-        }
-        
-        .badge-medical {
-            background: #fef3c7;
-            color: #92400e;
-        }
-        
-        .badge-late-pickup {
-            background: #e0e7ff;
-            color: #3730a3;
-        }
-        
-        /* Attendance Grid */
-        .attendance-grid {
-            display: flex;
-            gap: 2px;
-        }
-        
-        .day-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #e5e7eb;
-        }
-        
-        .day-dot.present {
-            background: #22c55e;
-        }
-        
-        .day-dot.absent {
-            background: #ef4444;
-        }
-        
-        /* Gender Badge */
-        .gender-badge {
-            width: 24px;
-            height: 24px;
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 10px;
-            font-weight: 700;
-            color: white;
-            text-align: center;
-        }
-        
-        .gender-m {
-            background: #3b82f6;
-        }
-        
-        .gender-f {
-            background: #ec4899;
-        }
-        
-        .gender-other {
-            background: #8b5cf6;
-        }
-        
-        /* Export Section */
-        .export-bar {
-            background: white;
-            padding: 16px 30px;
-            border-top: 1px solid #e1e8ed;
-            position: sticky;
-            bottom: 0;
-            z-index: 98;
-            box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
-        }
-        
-        .export-content {
-            max-width: 1400px;
-            margin: 0 auto;
+        /* Card actions */
+        .card-actions {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding-top: 16px;
+            border-top: 1px solid #f3f4f6;
         }
         
-        .export-btn {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .action-btn {
+            padding: 8px 12px;
+            background: rgba(67, 56, 202, 0.1);
             border: none;
-            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 14px;
+            color: #4338ca;
+            font-weight: 500;
+        }
+        
+        .action-btn:hover {
+            background: #4338ca;
+            color: white;
+            transform: translateY(-1px);
+        }
+        
+        .view-details-btn {
+            background: linear-gradient(135deg, #4338ca, #7c3aed);
+            color: white;
+            padding: 8px 16px;
             border-radius: 8px;
             font-size: 13px;
             font-weight: 600;
+        }
+        
+        .view-details-btn:hover {
+            background: linear-gradient(135deg, #3730a3, #6d28d9);
+            transform: translateY(-1px);
+        }
+        
+        /* Detail Panel - Enhanced */
+        .detail-panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 480px;
+            height: 100vh;
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(20px);
+            border-left: 1px solid rgba(255,255,255,0.2);
+            box-shadow: -8px 0 32px rgba(0,0,0,0.12);
+            transform: translateX(100%);
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1001;
+            overflow-y: auto;
+        }
+        
+        .detail-panel.open {
+            transform: translateX(0);
+        }
+        
+        .detail-header {
+            background: linear-gradient(135deg, #4338ca, #7c3aed);
+            color: white;
+            padding: 32px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .detail-title {
+            font-size: 24px;
+            font-weight: 700;
+            margin: 0 0 8px 0;
+            color: white;
+        }
+        
+        .detail-subtitle {
+            opacity: 0.9;
+            font-size: 14px;
+            margin: 0;
+        }
+        
+        .close-btn {
+            position: absolute;
+            top: 24px;
+            right: 24px;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            font-size: 18px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s ease;
+        }
+        
+        .close-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .detail-content {
+            padding: 32px;
+        }
+        
+        .detail-section {
+            margin-bottom: 32px;
+            background: rgba(255,255,255,0.8);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .section-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .section-icon {
+            font-size: 18px;
+        }
+        
+        .detail-grid {
+            display: grid;
+            gap: 16px;
+        }
+        
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(243, 244, 246, 0.5);
+        }
+        
+        .detail-item:last-child {
+            border-bottom: none;
+        }
+        
+        .detail-label {
+            font-size: 14px;
+            color: #6b7280;
+            font-weight: 600;
+        }
+        
+        .detail-value {
+            font-size: 14px;
+            color: #111827;
+            font-weight: 600;
+            text-align: right;
+        }
+        
+        .contact-link {
+            color: #4338ca;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        
+        .contact-link:hover {
+            text-decoration: underline;
+        }
+        
+        .medical-alert {
+            background: linear-gradient(135deg, #fef3c7, #fed7aa);
+            border: 2px solid #f59e0b;
+            border-radius: 12px;
+            padding: 16px;
+            color: #92400e;
+            font-weight: 600;
+            line-height: 1.5;
+        }
+        
+        /* Attendance grid in detail panel */
+        .attendance-grid-detail {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 12px;
+            margin-top: 16px;
+        }
+        
+        .attendance-day {
+            text-align: center;
+            padding: 12px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        
+        .day-present {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+        }
+        
+        .day-absent {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+        }
+        
+        /* Export section */
+        .export-section {
+            background: rgba(255,255,255,0.9);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 16px;
+            padding: 24px;
+            margin: 32px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+        }
+        
+        .export-btn {
+            background: linear-gradient(135deg, #4338ca, #7c3aed);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
         
         .export-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(67, 56, 202, 0.4);
+            background: linear-gradient(135deg, #3730a3, #6d28d9);
         }
         
-        .results-info {
-            font-size: 13px;
-            color: #657786;
+        .results-summary {
+            font-size: 16px;
+            color: #374151;
+            font-weight: 600;
         }
         
-        /* Responsive Design */
+        /* Responsive design */
         @media (max-width: 1200px) {
-            .table-header,
-            .player-row {
-                grid-template-columns: 36px 180px 250px 120px 160px 100px 80px;
+            .players-grid {
+                grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+                gap: 16px;
             }
             
-            .header-cell:nth-child(7),
-            .player-cell:nth-child(7) {
-                display: none;
+            .detail-panel {
+                width: 420px;
             }
         }
         
-        @media (max-width: 968px) {
-            .roster-header {
-                padding: 20px;
+        @media (max-width: 768px) {
+            .roster-app {
+                margin: 0;
             }
             
-            .controls-bar,
-            .roster-content,
-            .export-bar {
-                padding-left: 20px;
-                padding-right: 20px;
+            .roster-header {
+                padding: 24px 20px;
+                border-radius: 0;
+            }
+            
+            .event-title {
+                font-size: 24px;
+            }
+            
+            .controls-section {
+                margin: 16px 20px;
+                padding: 16px 20px;
+                top: 100px;
+            }
+            
+            .main-content {
+                padding: 0 20px 40px;
             }
             
             .controls-content {
                 flex-direction: column;
                 align-items: stretch;
-                gap: 12px;
+                gap: 16px;
             }
             
-            .search-box {
-                min-width: 100%;
+            .search-container {
                 max-width: none;
+                min-width: auto;
             }
             
-            .filter-tabs {
-                justify-content: center;
+            .players-grid {
+                grid-template-columns: 1fr;
+                gap: 16px;
             }
             
-            .table-header,
-            .player-row {
-                grid-template-columns: 32px 250px 160px 80px;
-            }
-            
-            .header-cell:nth-child(n+5),
-            .player-cell:nth-child(n+5) {
-                display: none;
-            }
-            
-            .player-cell {
-                padding: 8px 12px;
-                min-height: 48px;
-            }
-        }
-        
-        @media (max-width: 640px) {
-            .roster-header {
-                padding: 16px;
-            }
-            
-            .roster-title {
-                font-size: 20px;
-            }
-            
-            .header-stats {
+            .detail-panel {
                 width: 100%;
-                justify-content: space-between;
+                left: 0;
+                transform: translateY(100%);
             }
             
-            .table-header,
-            .player-row {
-                grid-template-columns: 200px 100px 60px;
-            }
-            
-            .header-cell:nth-child(1),
-            .player-cell:nth-child(1) {
-                display: none; /* Hide avatar on small screens */
-            }
-            
-            .header-cell:nth-child(n+4),
-            .player-cell:nth-child(n+4) {
-                display: none;
-            }
-            
-            .player-name-cell {
-                display: flex;
-                align-items: center;
-                justify-content: flex-start;
-                flex-wrap: wrap;
-                gap: 8px;
+            .detail-panel.open {
+                transform: translateY(0);
             }
         }
         
-        /* Loading States */
+        /* Loading and animations */
         .loading {
             opacity: 0.6;
             pointer-events: none;
         }
         
-        .skeleton {
-            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-            background-size: 200% 100%;
-            animation: shimmer 2s infinite;
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         
-        @keyframes shimmer {
-            0% { background-position: -200% 0; }
-            100% { background-position: 200% 0; }
+        .player-card {
+            animation: slideInUp 0.4s ease-out;
         }
         
-        /* Tooltips */
-        .tooltip {
-            position: relative;
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: #6b7280;
+            background: rgba(255,255,255,0.8);
+            border-radius: 16px;
+            backdrop-filter: blur(16px);
         }
         
-        .tooltip:hover::after {
-            content: attr(data-tooltip);
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #1f2937;
-            color: white;
-            padding: 6px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            white-space: nowrap;
-            z-index: 1000;
+        .empty-state h3 {
+            font-size: 24px;
+            margin-bottom: 12px;
+            color: #374151;
+        }
+        
+        .empty-state p {
+            font-size: 16px;
+            max-width: 400px;
+            margin: 0 auto;
         }
     </style>';
 });
 
 /**
- * Render the auction house style roster page
+ * Render the amazing roster interface
  */
 function intersoccer_render_roster_details_page() {
     if (!current_user_can('manage_options') && !current_user_can('coach')) {
@@ -603,7 +773,7 @@ function intersoccer_render_roster_details_page() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    // Get query parameters
+    // Get query parameters (same as before)
     $product_id = isset($_GET['product_id']) ? intval($_GET['product_id']) : 0;
     $variation_id = isset($_GET['variation_id']) ? intval($_GET['variation_id']) : 0;
     $camp_terms = isset($_GET['camp_terms']) ? sanitize_text_field($_GET['camp_terms']) : '';
@@ -616,14 +786,13 @@ function intersoccer_render_roster_details_page() {
     $from_page = isset($_GET['from']) ? sanitize_text_field($_GET['from']) : '';
     $girls_only = isset($_GET['girls_only']) ? (bool) $_GET['girls_only'] : false;
 
-    // Build query
+    // Build query (same as before)
     $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.day_presence, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only";
     $query .= " FROM $rosters_table r";
     
     $where_clauses = [];
     $query_params = [];
 
-    // Apply filters based on parameters
     if ($girls_only) {
         $where_clauses[] = "r.girls_only = 1";
     }
@@ -661,7 +830,7 @@ function intersoccer_render_roster_details_page() {
     }
 
     if (empty($where_clauses)) {
-        echo '<div class="roster-app"><div style="padding: 40px; text-align: center;">No valid parameters provided.</div></div>';
+        echo '<div class="roster-app"><div class="empty-state"><h3>No Parameters</h3><p>Invalid parameters provided for roster lookup.</p></div></div>';
         return;
     }
 
@@ -671,21 +840,19 @@ function intersoccer_render_roster_details_page() {
     $rosters = $wpdb->get_results($wpdb->prepare($query, $query_params), OBJECT);
 
     if (!$rosters) {
-        echo '<div class="roster-app"><div style="padding: 40px; text-align: center;">No players found for the specified criteria.</div></div>';
+        echo '<div class="roster-app"><div class="empty-state"><h3>No Players Found</h3><p>No roster entries match the specified criteria.</p></div></div>';
         return;
     }
 
-    // Get base roster info
+    // Calculate stats
     $base_roster = $rosters[0];
     $is_camp_like = ($base_roster->activity_type === 'Camp' || !empty($base_roster->camp_terms));
     $is_girls_only = (bool) $base_roster->girls_only;
-
-    // Calculate stats
+    
     $total_count = count($rosters);
     $unknown_count = count(array_filter($rosters, fn($row) => $row->player_name === 'Unknown Attendee'));
     $confirmed_count = $total_count - $unknown_count;
     $medical_count = count(array_filter($rosters, fn($row) => !empty($row->medical_conditions) && $row->medical_conditions !== 'N/A'));
-    $late_pickup_count = count(array_filter($rosters, fn($row) => $row->late_pickup === 'Yes'));
 
     ?>
     <div class="roster-app">
@@ -693,61 +860,80 @@ function intersoccer_render_roster_details_page() {
         <div class="roster-header">
             <div class="header-content">
                 <div>
-                    <h1 class="roster-title">
-                        <?php echo esc_html($base_roster->course_day ?: $base_roster->camp_terms); ?>
+                    <h1 class="event-title">
+                        <?php 
+                        if ($is_camp_like) {
+                            // For camps, show camp terms and age group
+                            $camp_name = function_exists('intersoccer_get_term_name') ? 
+                                intersoccer_get_term_name($base_roster->camp_terms, 'pa_camp-terms') : 
+                                $base_roster->camp_terms;
+                            $age_display = function_exists('intersoccer_get_term_name') ? 
+                                intersoccer_get_term_name($base_roster->age_group, 'pa_age-group') : 
+                                $base_roster->age_group;
+                            echo esc_html($camp_name . ' - ' . $age_display);
+                        } else {
+                            // For courses, show course day and age group
+                            $age_display = function_exists('intersoccer_get_term_name') ? 
+                                intersoccer_get_term_name($base_roster->age_group, 'pa_age-group') : 
+                                $base_roster->age_group;
+                            echo esc_html(ucfirst($base_roster->course_day) . ' - ' . $age_display);
+                        }
+                        ?>
                         <?php if ($is_girls_only): ?>
-                        <span class="event-badge">Girls Only</span>
+                        <span class="girls-only-badge">Girls Only</span>
                         <?php endif; ?>
                     </h1>
-                    <div style="margin-top: 8px; font-size: 14px; opacity: 0.9;">
-                        <?php echo esc_html($base_roster->venue); ?> • 
-                        <?php echo esc_html($base_roster->age_group); ?> • 
-                        <?php echo esc_html($base_roster->times); ?>
+                    <div style="font-size: 16px; opacity: 0.9; margin-top: 8px; font-weight: 500;">
+                        <?php 
+                        $venue_name = function_exists('intersoccer_get_term_name') ? 
+                            intersoccer_get_term_name($base_roster->venue, 'pa_intersoccer-venues') : 
+                            $base_roster->venue;
+                        $times_display = function_exists('intersoccer_get_term_name') ? 
+                            intersoccer_get_term_name($base_roster->times, 'pa_camp-times') : 
+                            $base_roster->times;
+                        echo esc_html($venue_name . ' • ' . $times_display);
+                        if ($is_camp_like) {
+                            echo ' • Camp';
+                        } else {
+                            echo ' • Course';
+                        }
+                        ?>
                     </div>
                 </div>
                 
                 <div class="header-stats">
-                    <div class="stat-pill">
-                        <strong><?php echo $total_count; ?></strong> Total
-                    </div>
-                    <div class="stat-pill">
-                        <strong><?php echo $confirmed_count; ?></strong> Confirmed
-                    </div>
+                    <div class="stat-item"><?php echo $total_count; ?> Total</div>
+                    <div class="stat-item"><?php echo $confirmed_count; ?> Confirmed</div>
                     <?php if ($unknown_count > 0): ?>
-                    <div class="stat-pill">
-                        <strong><?php echo $unknown_count; ?></strong> Unknown
-                    </div>
+                    <div class="stat-item" style="background: rgba(239,68,68,0.3); border-color: rgba(239,68,68,0.4);"><?php echo $unknown_count; ?> Unknown</div>
                     <?php endif; ?>
                     <?php if ($medical_count > 0): ?>
-                    <div class="stat-pill">
-                        <strong><?php echo $medical_count; ?></strong> Medical
-                    </div>
+                    <div class="stat-item" style="background: rgba(245,158,11,0.3); border-color: rgba(245,158,11,0.4);"><?php echo $medical_count; ?> Medical</div>
                     <?php endif; ?>
                 </div>
             </div>
         </div>
 
         <!-- Controls -->
-        <div class="controls-bar">
+        <div class="controls-section">
             <div class="controls-content">
-                <div class="search-box">
-                    <span class="search-icon">⚡</span>
-                    <input type="text" class="search-input" id="playerSearch" 
-                           placeholder="Search players by name, email, or phone...">
+                <div class="search-container">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" class="search-input" id="playerSearch" placeholder="Search by name, email, or phone...">
                 </div>
                 
-                <div class="filter-tabs">
-                    <button class="filter-tab active" data-filter="all">All Players</button>
-                    <button class="filter-tab" data-filter="confirmed">Confirmed</button>
+                <div class="filter-buttons">
+                    <button class="filter-btn active" data-filter="all">All Players</button>
+                    <button class="filter-btn" data-filter="confirmed">Confirmed</button>
                     <?php if ($unknown_count > 0): ?>
-                    <button class="filter-tab" data-filter="unknown">Unknown</button>
+                    <button class="filter-btn" data-filter="unknown">Unknown</button>
                     <?php endif; ?>
                     <?php if ($medical_count > 0): ?>
-                    <button class="filter-tab" data-filter="medical">Medical</button>
+                    <button class="filter-btn" data-filter="medical">Medical</button>
                     <?php endif; ?>
                 </div>
                 
-                <select class="sort-dropdown" id="sortSelect">
+                <select class="sort-select" id="sortSelect">
                     <option value="name-asc">Name A-Z</option>
                     <option value="name-desc">Name Z-A</option>
                     <option value="age-asc">Age (Youngest)</option>
@@ -757,163 +943,142 @@ function intersoccer_render_roster_details_page() {
         </div>
 
         <!-- Main Content -->
-        <div class="roster-content">
-            <div class="players-table">
-                <!-- Table Header -->
-                <div class="table-header">
-                    <div class="header-cell"></div>
-                    <div class="header-cell">Player</div>
-                    <div class="header-cell">Contact</div>
-                    <div class="header-cell">Status</div>
-                    <div class="header-cell">Details</div>
-                    <div class="header-cell">Gender</div>
-                    <?php if ($is_camp_like): ?>
-                    <div class="header-cell">Attendance</div>
-                    <?php endif; ?>
-                    <div class="header-cell">Actions</div>
-                </div>
-
-                <!-- Player Rows -->
-                <div id="playersContainer">
-                    <?php foreach ($rosters as $player): ?>
-                        <?php 
-                        $is_unknown = $player->player_name === 'Unknown Attendee';
-                        $has_medical = !empty($player->medical_conditions) && $player->medical_conditions !== 'N/A';
-                        $day_presence = !empty($player->day_presence) ? json_decode($player->day_presence, true) : [];
+        <div class="main-content">
+            <!-- Players Grid -->
+            <div class="players-grid" id="playersGrid">
+                <?php foreach ($rosters as $index => $player): ?>
+                    <?php 
+                    $is_unknown = $player->player_name === 'Unknown Attendee';
+                    $has_medical = !empty($player->medical_conditions) && $player->medical_conditions !== 'N/A';
+                    $day_presence = !empty($player->day_presence) ? json_decode($player->day_presence, true) : [];
+                    
+                    $card_classes = ['player-card'];
+                    if ($is_unknown) $card_classes[] = 'unknown';
+                    if ($has_medical) $card_classes[] = 'has-medical';
+                    
+                    $search_text = strtolower(
+                        ($player->first_name ?: '') . ' ' . 
+                        ($player->last_name ?: '') . ' ' . 
+                        ($player->parent_email ?: '') . ' ' . 
+                        ($player->parent_phone ?: '')
+                    );
+                    
+                    $initials = '';
+                    if ($player->first_name) $initials .= substr($player->first_name, 0, 1);
+                    if ($player->last_name) $initials .= substr($player->last_name, 0, 1);
+                    if (empty($initials)) $initials = '?';
+                    
+                    $full_name = trim(($player->first_name ?: '') . ' ' . ($player->last_name ?: ''));
+                    ?>
+                    
+                    <div class="<?php echo implode(' ', $card_classes); ?>"
+                         data-player-index="<?php echo $index; ?>"
+                         data-search="<?php echo esc_attr($search_text); ?>"
+                         data-filter-type="<?php echo $is_unknown ? 'unknown' : 'confirmed'; ?>"
+                         data-has-medical="<?php echo $has_medical ? 'true' : 'false'; ?>"
+                         data-age="<?php echo intval($player->age ?: 0); ?>"
+                         data-name="<?php echo esc_attr($full_name); ?>">
                         
-                        $row_classes = ['player-row'];
-                        if ($is_unknown) $row_classes[] = 'unknown';
-                        if ($has_medical) $row_classes[] = 'has-medical';
-                        
-                        $search_text = strtolower(
-                            ($player->first_name ?: '') . ' ' . 
-                            ($player->last_name ?: '') . ' ' . 
-                            ($player->parent_email ?: '') . ' ' . 
-                            ($player->parent_phone ?: '')
-                        );
-                        
-                        $initials = '';
-                        if ($player->first_name) $initials .= substr($player->first_name, 0, 1);
-                        if ($player->last_name) $initials .= substr($player->last_name, 0, 1);
-                        if (empty($initials)) $initials = '?';
-                        ?>
-                        
-                        <div class="<?php echo implode(' ', $row_classes); ?>" 
-                             data-search="<?php echo esc_attr($search_text); ?>"
-                             data-filter-type="<?php echo $is_unknown ? 'unknown' : 'confirmed'; ?>"
-                             data-has-medical="<?php echo $has_medical ? 'true' : 'false'; ?>"
-                             data-age="<?php echo intval($player->age ?: 0); ?>"
-                             data-name="<?php echo esc_attr($player->first_name . ' ' . $player->last_name); ?>">
-                            
-                            <!-- Avatar -->
-                            <div class="player-cell">
-                                <div class="player-avatar"><?php echo esc_html($initials); ?></div>
-                            </div>
-                            
-                            <!-- Player Name -->
-                            <div class="player-cell player-name-cell">
-                                <div class="player-name <?php echo $is_unknown ? 'unknown-player' : ''; ?>">
-                                    <?php echo esc_html(trim(($player->first_name ?: '') . ' ' . ($player->last_name ?: ''))); ?>
-                                </div>
-                                <?php if ($player->age): ?>
-                                <div class="player-age">Age <?php echo esc_html($player->age); ?></div>
-                                <?php endif; ?>
-                            </div>
-                            
-                            <!-- Contact -->
-                            <div class="player-cell contact-cell">
-                                <?php if ($player->parent_email && $player->parent_email !== 'N/A'): ?>
-                                <a href="mailto:<?php echo esc_attr($player->parent_email); ?>" class="contact-item">
-                                    <?php echo esc_html($player->parent_email); ?>
-                                </a>
-                                <?php endif; ?>
-                                <?php if ($player->parent_phone && $player->parent_phone !== 'N/A'): ?>
-                                <a href="tel:<?php echo esc_attr($player->parent_phone); ?>" class="contact-item">
-                                    <?php echo esc_html($player->parent_phone); ?>
-                                </a>
-                                <?php endif; ?>
-                            </div>
-                            
-                            <!-- Status -->
-                            <div class="player-cell">
-                                <?php if ($is_unknown): ?>
-                                <span class="status-badge badge-unknown">Unknown</span>
-                                <?php else: ?>
-                                <span class="status-badge badge-confirmed">Confirmed</span>
-                                <?php endif; ?>
-                            </div>
-                            
-                            <!-- Details -->
-                            <div class="player-cell">
-                                <?php if ($has_medical): ?>
-                                <div class="tooltip" data-tooltip="<?php echo esc_attr($player->medical_conditions); ?>">
-                                    <span class="status-badge badge-medical">Medical</span>
-                                </div>
-                                <?php endif; ?>
-                                <?php if ($player->late_pickup === 'Yes'): ?>
-                                <span class="status-badge badge-late-pickup">Late Pickup</span>
-                                <?php endif; ?>
-                                <?php if ($is_camp_like && $player->booking_type && $player->booking_type !== 'N/A'): ?>
-                                <div style="font-size: 12px; color: #657786; margin-top: 4px;">
-                                    <?php echo esc_html($player->booking_type); ?>
-                                </div>
-                                <?php endif; ?>
-                            </div>
-                            
-                            <!-- Gender -->
-                            <div class="player-cell">
-                                <?php if ($player->gender): ?>
-                                <div class="gender-badge gender-<?php echo strtolower(substr($player->gender, 0, 1)); ?>">
-                                    <?php echo esc_html(strtoupper(substr($player->gender, 0, 1))); ?>
-                                </div>
-                                <?php endif; ?>
-                            </div>
-                            
-                            <!-- Attendance (for camps) -->
-                            <?php if ($is_camp_like): ?>
-                            <div class="player-cell">
-                                <div class="attendance-grid" title="Mon-Tue-Wed-Thu-Fri">
-                                    <?php 
-                                    $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-                                    foreach ($days as $day): 
-                                        $presence = $day_presence[$day] ?? 'No';
-                                        $class = ($presence === 'Yes') ? 'present' : 'absent';
-                                    ?>
-                                    <div class="day-dot <?php echo $class; ?>"></div>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                            <?php endif; ?>
-                            
-                            <!-- Actions -->
-                            <div class="player-cell">
-                                <div style="display: flex; gap: 4px; font-size: 12px;">
-                                    <?php if ($player->parent_phone && $player->parent_phone !== 'N/A'): ?>
-                                    <a href="tel:<?php echo esc_attr($player->parent_phone); ?>" 
-                                       style="color: #22c55e; text-decoration: none; padding: 4px;" title="Call">📞</a>
+                        <!-- Card Header -->
+                        <div class="card-header">
+                            <div class="player-avatar"><?php echo esc_html($initials); ?></div>
+                            <div class="player-info">
+                                <div class="player-name"><?php echo esc_html($full_name ?: 'Unknown Player'); ?></div>
+                                <div class="player-meta">
+                                    <?php if ($player->age): ?>
+                                    <span class="meta-item">Age <?php echo esc_html($player->age); ?></span>
                                     <?php endif; ?>
-                                    <?php if ($player->parent_email && $player->parent_email !== 'N/A'): ?>
-                                    <a href="mailto:<?php echo esc_attr($player->parent_email); ?>" 
-                                       style="color: #3b82f6; text-decoration: none; padding: 4px;" title="Email">✉️</a>
-                                    <?php endif; ?>
-                                    <?php if ($has_medical): ?>
-                                    <span style="color: #f59e0b; padding: 4px;" title="Medical Needs">⚕️</span>
+                                    <?php if ($player->gender): ?>
+                                    <span class="meta-item"><?php echo esc_html($player->gender); ?></span>
                                     <?php endif; ?>
                                 </div>
                             </div>
                         </div>
-                    <?php endforeach; ?>
-                </div>
+                        
+                        <!-- Status Badges -->
+                        <div class="status-badges">
+                            <?php if ($is_unknown): ?>
+                            <span class="status-badge badge-unknown">Unknown</span>
+                            <?php else: ?>
+                            <span class="status-badge badge-confirmed">Confirmed</span>
+                            <?php endif; ?>
+                            
+                            <?php if ($has_medical): ?>
+                            <span class="status-badge badge-medical">Medical Alert</span>
+                            <?php endif; ?>
+                            
+                            <?php if ($player->booking_type && $player->booking_type !== 'N/A'): ?>
+                            <span class="booking-type-badge"><?php echo esc_html($player->booking_type); ?></span>
+                            <?php endif; ?>
+                        </div>
+                        
+                        <!-- Contact Info -->
+                        <div class="contact-info">
+                            <?php if ($player->parent_email && $player->parent_email !== 'N/A'): ?>
+                            <a href="mailto:<?php echo esc_attr($player->parent_email); ?>" class="contact-item">
+                                <span class="contact-icon">📧</span>
+                                <?php echo esc_html($player->parent_email); ?>
+                            </a>
+                            <?php endif; ?>
+                            
+                            <?php if ($player->parent_phone && $player->parent_phone !== 'N/A'): ?>
+                            <a href="tel:<?php echo esc_attr($player->parent_phone); ?>" class="contact-item">
+                                <span class="contact-icon">📞</span>
+                                <?php echo esc_html($player->parent_phone); ?>
+                            </a>
+                            <?php endif; ?>
+                        </div>
+                        
+                        <!-- Card Actions -->
+                        <div class="card-actions">
+                            <div class="action-buttons">
+                                <?php if ($player->parent_phone && $player->parent_phone !== 'N/A'): ?>
+                                <a href="tel:<?php echo esc_attr($player->parent_phone); ?>" class="action-btn">Call</a>
+                                <?php endif; ?>
+                                <?php if ($player->parent_email && $player->parent_email !== 'N/A'): ?>
+                                <a href="mailto:<?php echo esc_attr($player->parent_email); ?>" class="action-btn">Email</a>
+                                <?php endif; ?>
+                            </div>
+                            <button class="view-details-btn" onclick="openPlayerDetail(<?php echo $index; ?>)">
+                                View Details
+                            </button>
+                        </div>
+                        
+                        <!-- Hidden data for detail panel -->
+                        <script type="application/json" class="player-data">
+                        <?php 
+                        echo json_encode([
+                            'index' => $index,
+                            'name' => $full_name ?: 'Unknown Player',
+                            'firstName' => $player->first_name ?: '',
+                            'lastName' => $player->last_name ?: '',
+                            'age' => $player->age ?: '',
+                            'gender' => $player->gender ?: '',
+                            'email' => $player->parent_email ?: '',
+                            'phone' => $player->parent_phone ?: '',
+                            'medical' => $player->medical_conditions ?: '',
+                            'latePickup' => $player->late_pickup === 'Yes',
+                            'bookingType' => $player->booking_type ?: '',
+                            'isUnknown' => $is_unknown,
+                            'hasMedical' => $has_medical,
+                            'dayPresence' => $day_presence,
+                            'shirtSize' => $player->shirt_size ?: '',
+                            'shortsSize' => $player->shorts_size ?: '',
+                            'isCampLike' => $is_camp_like,
+                            'isGirlsOnly' => $is_girls_only
+                        ], JSON_HEX_APOS | JSON_HEX_QUOT);
+                        ?>
+                        </script>
+                    </div>
+                <?php endforeach; ?>
             </div>
-        </div>
 
-        <!-- Export Bar -->
-        <div class="export-bar">
-            <div class="export-content">
-                <div class="results-info">
+            <!-- Export Section -->
+            <div class="export-section">
+                <div class="results-summary">
                     <span id="resultsCount"><?php echo $total_count; ?> players shown</span>
                     <?php if ($unknown_count > 0): ?>
-                    • <span style="color: #ef4444;"><?php echo $unknown_count; ?> need assignment</span>
+                    • <span style="color: #ef4444; font-weight: 700;"><?php echo $unknown_count; ?> need assignment</span>
                     <?php endif; ?>
                 </div>
                 
@@ -931,23 +1096,38 @@ function intersoccer_render_roster_details_page() {
                 </form>
             </div>
         </div>
+
+        <!-- Detail Panel -->
+        <div class="detail-panel" id="detailPanel">
+            <div class="detail-header">
+                <div>
+                    <h2 class="detail-title" id="detailTitle">Player Details</h2>
+                    <p class="detail-subtitle" id="detailSubtitle">Complete information</p>
+                </div>
+                <button class="close-btn" onclick="closePlayerDetail()">×</button>
+            </div>
+            <div class="detail-content" id="detailContent">
+                <!-- Content populated by JavaScript -->
+            </div>
+        </div>
     </div>
 
-    <!-- JavaScript for functionality -->
+    <!-- JavaScript -->
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         const searchInput = document.getElementById('playerSearch');
         const sortSelect = document.getElementById('sortSelect');
-        const filterTabs = document.querySelectorAll('.filter-tab');
-        const playersContainer = document.getElementById('playersContainer');
-        const playerRows = playersContainer.querySelectorAll('.player-row');
+        const filterBtns = document.querySelectorAll('.filter-btn');
+        const playersGrid = document.getElementById('playersGrid');
+        const playerCards = playersGrid.querySelectorAll('.player-card');
         const resultsCount = document.getElementById('resultsCount');
+        const detailPanel = document.getElementById('detailPanel');
         
         let currentFilter = 'all';
         let currentSort = 'name-asc';
         let currentSearch = '';
         
-        // Search functionality with debouncing
+        // Search with debouncing
         let searchTimeout;
         searchInput.addEventListener('input', function() {
             clearTimeout(searchTimeout);
@@ -957,10 +1137,10 @@ function intersoccer_render_roster_details_page() {
             }, 200);
         });
         
-        // Filter tabs
-        filterTabs.forEach(tab => {
-            tab.addEventListener('click', function() {
-                filterTabs.forEach(t => t.classList.remove('active'));
+        // Filter buttons
+        filterBtns.forEach(btn => {
+            btn.addEventListener('click', function() {
+                filterBtns.forEach(b => b.classList.remove('active'));
                 this.classList.add('active');
                 currentFilter = this.dataset.filter;
                 filterAndSort();
@@ -973,37 +1153,37 @@ function intersoccer_render_roster_details_page() {
             filterAndSort();
         });
         
+        // Filter and sort function
         function filterAndSort() {
-            let visibleRows = [];
+            let visibleCards = [];
             
-            // Filter rows
-            playerRows.forEach(row => {
+            playerCards.forEach(card => {
                 const matchesSearch = currentSearch === '' || 
-                    row.dataset.search.includes(currentSearch);
+                    card.dataset.search.includes(currentSearch);
                 
                 let matchesFilter = true;
                 switch(currentFilter) {
                     case 'confirmed':
-                        matchesFilter = row.dataset.filterType === 'confirmed';
+                        matchesFilter = card.dataset.filterType === 'confirmed';
                         break;
                     case 'unknown':
-                        matchesFilter = row.dataset.filterType === 'unknown';
+                        matchesFilter = card.dataset.filterType === 'unknown';
                         break;
                     case 'medical':
-                        matchesFilter = row.dataset.hasMedical === 'true';
+                        matchesFilter = card.dataset.hasMedical === 'true';
                         break;
                 }
                 
                 if (matchesSearch && matchesFilter) {
-                    row.style.display = 'grid';
-                    visibleRows.push(row);
+                    card.style.display = 'block';
+                    visibleCards.push(card);
                 } else {
-                    row.style.display = 'none';
+                    card.style.display = 'none';
                 }
             });
             
-            // Sort visible rows
-            visibleRows.sort((a, b) => {
+            // Sort visible cards
+            visibleCards.sort((a, b) => {
                 switch(currentSort) {
                     case 'name-desc':
                         return b.dataset.name.localeCompare(a.dataset.name);
@@ -1011,46 +1191,169 @@ function intersoccer_render_roster_details_page() {
                         return parseInt(a.dataset.age) - parseInt(b.dataset.age);
                     case 'age-desc':
                         return parseInt(b.dataset.age) - parseInt(a.dataset.age);
-                    default: // name-asc
+                    default:
                         return a.dataset.name.localeCompare(b.dataset.name);
                 }
             });
             
-            // Reorder DOM elements
-            visibleRows.forEach((row, index) => {
-                row.style.order = index;
+            // Reorder DOM
+            visibleCards.forEach((card, index) => {
+                card.style.order = index;
             });
             
-            // Update results count
-            resultsCount.textContent = `${visibleRows.length} players shown`;
-            
-            // Update search placeholder
-            searchInput.placeholder = `Search ${visibleRows.length} players...`;
+            // Update count
+            resultsCount.textContent = `${visibleCards.length} players shown`;
+            searchInput.placeholder = `Search ${visibleCards.length} players...`;
         }
         
-        // Keyboard shortcuts
-        document.addEventListener('keydown', function(e) {
-            if (e.ctrlKey || e.metaKey) {
-                switch(e.key) {
-                    case 'f':
-                        e.preventDefault();
-                        searchInput.focus();
-                        break;
-                }
-            }
-        });
-        
-        // Row hover effects for better UX
-        playerRows.forEach(row => {
-            row.addEventListener('mouseenter', function() {
-                this.style.transform = 'scale(1.005)';
-                this.style.zIndex = '10';
-            });
+        // Player detail functions
+        window.openPlayerDetail = function(index) {
+            const card = document.querySelector(`[data-player-index="${index}"]`);
+            if (!card) return;
             
-            row.addEventListener('mouseleave', function() {
-                this.style.transform = 'scale(1)';
-                this.style.zIndex = '1';
-            });
+            const playerDataScript = card.querySelector('.player-data');
+            if (!playerDataScript) return;
+            
+            const playerData = JSON.parse(playerDataScript.textContent);
+            
+            // Update detail panel
+            document.getElementById('detailTitle').textContent = playerData.name;
+            document.getElementById('detailSubtitle').textContent = `${playerData.age ? 'Age ' + playerData.age : ''} ${playerData.gender ? '• ' + playerData.gender : ''}`;
+            
+            let detailHTML = '';
+            
+            // Contact Section
+            if (playerData.email || playerData.phone) {
+                detailHTML += '<div class="detail-section">';
+                detailHTML += '<div class="section-title"><span class="section-icon">📞</span>Contact Information</div>';
+                detailHTML += '<div class="detail-grid">';
+                
+                if (playerData.email && playerData.email !== 'N/A') {
+                    detailHTML += `<div class="detail-item">
+                        <span class="detail-label">Email</span>
+                        <a href="mailto:${playerData.email}" class="detail-value contact-link">${playerData.email}</a>
+                    </div>`;
+                }
+                
+                if (playerData.phone && playerData.phone !== 'N/A') {
+                    detailHTML += `<div class="detail-item">
+                        <span class="detail-label">Phone</span>
+                        <a href="tel:${playerData.phone}" class="detail-value contact-link">${playerData.phone}</a>
+                    </div>`;
+                }
+                
+                detailHTML += '</div></div>';
+            }
+            
+            // Player Information Section
+            detailHTML += '<div class="detail-section">';
+            detailHTML += '<div class="section-title"><span class="section-icon">👤</span>Player Information</div>';
+            detailHTML += '<div class="detail-grid">';
+            
+            if (playerData.age) {
+                detailHTML += `<div class="detail-item">
+                    <span class="detail-label">Age</span>
+                    <span class="detail-value">${playerData.age} years old</span>
+                </div>`;
+            }
+            
+            if (playerData.gender) {
+                detailHTML += `<div class="detail-item">
+                    <span class="detail-label">Gender</span>
+                    <span class="detail-value">${playerData.gender}</span>
+                </div>`;
+            }
+            
+            if (playerData.bookingType && playerData.bookingType !== 'N/A') {
+                detailHTML += `<div class="detail-item">
+                    <span class="detail-label">Booking Type</span>
+                    <span class="detail-value">${playerData.bookingType}</span>
+                </div>`;
+            }
+            
+            if (playerData.latePickup) {
+                detailHTML += `<div class="detail-item">
+                    <span class="detail-label">Late Pickup</span>
+                    <span class="detail-value" style="color: #ef4444; font-weight: 700;">Yes (18:00)</span>
+                </div>`;
+            }
+            
+            detailHTML += '</div></div>';
+            
+            // Medical Section
+            if (playerData.medical && playerData.medical !== 'N/A') {
+                detailHTML += '<div class="detail-section">';
+                detailHTML += '<div class="section-title"><span class="section-icon">⚕️</span>Medical/Dietary Information</div>';
+                detailHTML += `<div class="medical-alert">${playerData.medical}</div>`;
+                detailHTML += '</div>';
+            }
+            
+            // Girls Only Section
+            if (playerData.isGirlsOnly && (playerData.shirtSize || playerData.shortsSize)) {
+                detailHTML += '<div class="detail-section">';
+                detailHTML += '<div class="section-title"><span class="section-icon">👕</span>Uniform Sizes</div>';
+                detailHTML += '<div class="detail-grid">';
+                
+                if (playerData.shirtSize && playerData.shirtSize !== 'N/A') {
+                    detailHTML += `<div class="detail-item">
+                        <span class="detail-label">Shirt Size</span>
+                        <span class="detail-value">${playerData.shirtSize}</span>
+                    </div>`;
+                }
+                
+                if (playerData.shortsSize && playerData.shortsSize !== 'N/A') {
+                    detailHTML += `<div class="detail-item">
+                        <span class="detail-label">Shorts Size</span>
+                        <span class="detail-value">${playerData.shortsSize}</span>
+                    </div>`;
+                }
+                
+                detailHTML += '</div></div>';
+            }
+            
+            // Attendance Section
+            if (playerData.isCampLike && playerData.dayPresence && Object.keys(playerData.dayPresence).length > 0) {
+                detailHTML += '<div class="detail-section">';
+                detailHTML += '<div class="section-title"><span class="section-icon">📅</span>Weekly Attendance</div>';
+                detailHTML += '<div class="attendance-grid-detail">';
+                
+                const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+                days.forEach(day => {
+                    const present = playerData.dayPresence[day] === 'Yes';
+                    const dayShort = day.substring(0, 3);
+                    const className = present ? 'day-present' : 'day-absent';
+                    detailHTML += `<div class="attendance-day ${className}">${dayShort}</div>`;
+                });
+                
+                detailHTML += '</div></div>';
+            }
+            
+            document.getElementById('detailContent').innerHTML = detailHTML;
+            
+            // Mark card as selected
+            playerCards.forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            
+            // Show panel
+            detailPanel.classList.add('open');
+        };
+        
+        window.closePlayerDetail = function() {
+            detailPanel.classList.remove('open');
+            playerCards.forEach(c => c.classList.remove('selected'));
+        };
+        
+        // Close panel on escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && detailPanel.classList.contains('open')) {
+                closePlayerDetail();
+            }
+            
+            // Search shortcut
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                e.preventDefault();
+                searchInput.focus();
+            }
         });
         
         // Initialize
