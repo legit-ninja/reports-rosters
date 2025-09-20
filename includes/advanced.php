@@ -364,4 +364,91 @@ function intersoccer_process_existing_orders_ajax() {
         wp_send_json_error(['message' => $result['message']]);
     }
 }
+
+add_action('wp_ajax_intersoccer_move_players', 'intersoccer_move_players_ajax');
+
+function intersoccer_move_players_ajax() {
+    check_ajax_referer('intersoccer_move_nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
+    }
+
+    $target_variation_id = intval($_POST['target_variation_id']);
+    $order_item_ids = array_map('intval', (array) $_POST['order_item_ids']);
+
+    if (!$target_variation_id || empty($order_item_ids)) {
+        wp_send_json_error(['message' => __('Invalid input.', 'intersoccer-reports-rosters')]);
+    }
+
+    $variation = wc_get_product($target_variation_id);
+    if (!$variation || !$variation->is_type('variation')) {
+        wp_send_json_error(['message' => __('Invalid target variation.', 'intersoccer-reports-rosters')]);
+    }
+
+    $moved_count = 0;
+    $errors = [];
+
+    foreach ($order_item_ids as $item_id) {
+        // Find order from item (query woocommerce_order_items)
+        global $wpdb;
+        $order_id = $wpdb->get_var($wpdb->prepare("SELECT order_id FROM {$wpdb->prefix}woocommerce_order_items WHERE order_item_id = %d", $item_id));
+        if (!$order_id) continue;
+
+        $order = wc_get_order($order_id);
+        if (!$order) continue;
+
+        $item = null;
+        foreach ($order->get_items() as $order_item) {
+            if ($order_item->get_id() === $item_id) {
+                $item = $order_item;
+                break;
+            }
+        }
+        if (!$item) continue;
+
+        // Log before
+        error_log("InterSoccer: Moving item $item_id (order $order_id) from variation {$item->get_variation_id()} to $target_variation_id. Original subtotal: {$item->get_subtotal()}, total: {$item->get_total()}");
+
+        // Preserve prices
+        $original_subtotal = $item->get_subtotal();
+        $original_total = $item->get_total();
+
+        // Update variation and product if needed
+        $new_product_id = $variation->get_parent_id();
+        $item->set_product_id($new_product_id);
+        $item->set_variation_id($target_variation_id);
+
+        // Sync attributes (pa_ meta)
+        $new_attributes = $variation->get_attributes();
+        foreach ($new_attributes as $key => $value) {
+            wc_update_order_item_meta($item_id, $key, $value);
+            error_log("InterSoccer: Updated meta $key to $value for item $item_id");
+        }
+
+        // Other meta updates if needed (e.g., Assigned Attendee remains same)
+
+        // Restore prices (prevent recalc)
+        $item->set_subtotal($original_subtotal);
+        $item->set_total($original_total);
+
+        $item->save();
+        $order->calculate_taxes(); // Minimal recalc, but totals preserved
+        $order->save();
+
+        // Update roster
+        intersoccer_update_roster_entry($order_id, $item_id);
+
+        // Log after
+        $new_base_price = $variation->get_regular_price(); // For rosters table, but update_entry handles
+        error_log("InterSoccer: Moved item $item_id. New base price: $new_base_price. Preserved subtotal: $original_subtotal, total: $original_total");
+
+        $moved_count++;
+    }
+
+    if ($moved_count > 0) {
+        wp_send_json_success(['message' => __("Moved $moved_count players.", 'intersoccer-reports-rosters')]);
+    } else {
+        wp_send_json_error(['message' => __('No players moved.', 'intersoccer-reports-rosters')]);
+    }
+}
 ?>
