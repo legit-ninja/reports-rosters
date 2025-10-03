@@ -164,8 +164,9 @@ function intersoccer_export_roster() {
         wp_send_json_error(__('No variation IDs or fields provided for export.', 'intersoccer-reports-rosters'));
     }
     error_log('InterSoccer Export: Initial filters - activity_types: ' . json_encode($activity_types) . ', age_group: ' . $age_group . ', times: ' . $times);
-    // Increase memory limit for large exports
-    ini_set('memory_limit', '256M');
+    // Increase memory limit for large exports - increased for small exports too
+    ini_set('memory_limit', '512M');
+    ini_set('max_execution_time', 300); // 5 minutes timeout
 
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
@@ -281,184 +282,288 @@ function intersoccer_export_roster() {
     // Prepare Excel data
     $base_roster = $rosters[0];
     $filename = 'roster_' . sanitize_title($base_roster['product_name'] . '_' . ($base_roster['camp_terms'] ?: $base_roster['course_day']) . '_' . $base_roster['venue']) . '_' . date('Y-m-d_H-i-s') . '.xlsx';
-    $spreadsheet = new Spreadsheet();
-    $sheet = $spreadsheet->getActiveSheet();
-    $sheet_title = substr(preg_replace('/[^A-Za-z0-9\-\s]/', '', $base_roster['product_name'] . ' - ' . $base_roster['venue']), 0, 31);
-    $sheet->setTitle($sheet_title);
-
-    // UPDATED headers to include Birth Date
-    $headers = [
-        __('First Name', 'intersoccer-reports-rosters'),
-        __('Surname', 'intersoccer-reports-rosters'),
-        __('Gender', 'intersoccer-reports-rosters'),
-        __('Phone', 'intersoccer-reports-rosters'),
-        __('Email', 'intersoccer-reports-rosters'),
-        __('Age', 'intersoccer-reports-rosters'),
-        __('Birth Date', 'intersoccer-reports-rosters'), // ADDED
-        __('Medical/Dietary Conditions', 'intersoccer-reports-rosters'),
-        __('AVS Number', 'intersoccer-reports-rosters'),
-        __('Late Pickup', 'intersoccer-reports-rosters'),
-        __('Booking Type', 'intersoccer-reports-rosters'),
-        __('Age Group', 'intersoccer-reports-rosters'),
-        __('Product Name', 'intersoccer-reports-rosters'),
-        __('Venue', 'intersoccer-reports-rosters'),
-        __('Event', 'intersoccer-reports-rosters')
-    ];
-
-    if ($base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
-        $headers[] = __('Shirt Size', 'intersoccer-reports-rosters');
-        $headers[] = __('Shorts Size', 'intersoccer-reports-rosters');
-    }
-    if ($base_roster['activity_type'] === 'Camp' || $base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
-        $headers = array_merge(
-            array_slice($headers, 0, 11), // Adjust slice for added Birth Date (now after 6th: Age)
-            [__('Monday', 'intersoccer-reports-rosters'), __('Tuesday', 'intersoccer-reports-rosters'), __('Wednesday', 'intersoccer-reports-rosters'), __('Thursday', 'intersoccer-reports-rosters'), __('Friday', 'intersoccer-reports-rosters')],
-            array_slice($headers, 11)
-        );
-        // Add Times after Event for Camps
-        $headers = array_merge(
-            array_slice($headers, 0, count($headers) - 2),
-            [__('Times', 'intersoccer-reports-rosters')],
-            array_slice($headers, count($headers) - 2)
-        );
-    } else if ($base_roster['activity_type'] === 'Course') {
-        // Add Times after Event for Courses
-        $headers[] = __('Times', 'intersoccer-reports-rosters');
-    }
-
-    $sheet->fromArray($headers, NULL, 'A1');
-
-    // Set phone number column (D) to Text format and adjust width
-    $phone_column = 'D';
-    $sheet->getStyle($phone_column . '2:' . $phone_column . (count($rosters) + 1))
-          ->getNumberFormat()
-          ->setFormatCode('@');
-    $sheet->getColumnDimension($phone_column)->setWidth(15);
-
-    // Set birth date column (G) to Date format
-    $birth_date_column = 'G';
-    $sheet->getStyle($birth_date_column . '2:' . $birth_date_column . (count($rosters) + 1))
-          ->getNumberFormat()
-          ->setFormatCode('dd/mm/yyyy');
-    $sheet->getColumnDimension($birth_date_column)->setWidth(12);
-
-    $row = 2;
-    foreach ($rosters as $player) {
-        $day_presence = !empty($player['day_presence']) ? json_decode($player['day_presence'], true) : [];
-        $monday = isset($day_presence['Monday']) ? $day_presence['Monday'] : 'No';
-        $tuesday = isset($day_presence['Tuesday']) ? $day_presence['Tuesday'] : 'No';
-        $wednesday = isset($day_presence['Wednesday']) ? $day_presence['Wednesday'] : 'No';
-        $thursday = isset($day_presence['Thursday']) ? $day_presence['Thursday'] : 'No';
-        $friday = isset($day_presence['Friday']) ? $day_presence['Friday'] : 'No';
+    
+    try {
+        error_log('InterSoccer: Starting Excel creation. Memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
         
-        // Normalize phone number
-        $raw_phone = $player['parent_phone'] ?? 'N/A';
-        $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone);
-        $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet_title = substr(preg_replace('/[^A-Za-z0-9\-\s]/', '', $base_roster['product_name'] . ' - ' . $base_roster['venue']), 0, 31);
+        $sheet->setTitle($sheet_title);
 
-        // Format birth date for Excel from player_dob
-        $birth_date = $player['player_dob'] ?? '';
-        $formatted_birth_date = 'N/A';
-        if (!empty($birth_date) && $birth_date !== '0000-00-00' && $birth_date !== '1970-01-01') {
-            // Try to parse various date formats
-            $date_obj = DateTime::createFromFormat('Y-m-d', $birth_date);
-            if (!$date_obj) {
-                $date_obj = DateTime::createFromFormat('d/m/Y', $birth_date);
-            }
-            if (!$date_obj) {
-                $date_obj = DateTime::createFromFormat('m/d/Y', $birth_date);
-            }
-            if ($date_obj) {
-                $formatted_birth_date = $date_obj->format('d/m/Y');
-            } else {
-                error_log("InterSoccer: Could not parse birth date: $birth_date for player: " . ($player['player_name'] ?? 'Unknown'));
-                $formatted_birth_date = $birth_date; // Use original if parsing fails
-            }
-        }
-
-        $data = [
-            $player['first_name'] ?? 'N/A',
-            $player['last_name'] ?? 'N/A',
-            $player['gender'] ?? 'N/A',
-            $processed_phone,
-            $player['parent_email'] ?? 'N/A',
-            $player['age'] ?? 'N/A',
-            $formatted_birth_date, // ADDED - Birth Date from player_dob
-            $player['medical_conditions'] ?? 'N/A',
-            $player['avs_number'] ?? 'N/A',
-            ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
-            $player['booking_type'] ?? 'N/A',
-            $player['age_group'] ?? 'N/A',
-            $player['product_name'] ?? 'N/A',
-            $player['venue'] ?? 'N/A',
-            $player['course_day'] ?: ($player['camp_terms'] ?? 'N/A')
+        // UPDATED headers to include Birth Date
+        $headers = [
+            __('First Name', 'intersoccer-reports-rosters'),
+            __('Surname', 'intersoccer-reports-rosters'),
+            __('Gender', 'intersoccer-reports-rosters'),
+            __('Phone', 'intersoccer-reports-rosters'),
+            __('Email', 'intersoccer-reports-rosters'),
+            __('Age', 'intersoccer-reports-rosters'),
+            __('Birth Date', 'intersoccer-reports-rosters'), // ADDED
+            __('Medical/Dietary Conditions', 'intersoccer-reports-rosters'),
+            __('AVS Number', 'intersoccer-reports-rosters'),
+            __('Late Pickup', 'intersoccer-reports-rosters'),
+            __('Booking Type', 'intersoccer-reports-rosters'),
+            __('Age Group', 'intersoccer-reports-rosters'),
+            __('Product Name', 'intersoccer-reports-rosters'),
+            __('Venue', 'intersoccer-reports-rosters'),
+            __('Event', 'intersoccer-reports-rosters')
         ];
 
-        if ($player['activity_type'] === 'Camp' || $player['activity_type'] === 'Girls Only' || $player['activity_type'] === 'Camp, Girls Only' || $player['activity_type'] === 'Camp, Girls\' only') {
-            $data = array_merge(
-                array_slice($data, 0, 11), // Up to and including booking_type
-                [$monday, $tuesday, $wednesday, $thursday, $friday],
-                array_slice($data, 11)
-            );
-            // Add times after event
-            $data = array_merge(
-                array_slice($data, 0, count($data) - 2),
-                [$player['times'] ?? 'N/A'],
-                array_slice($data, count($data) - 2)
-            );
-        } else if ($player['activity_type'] === 'Course') {
-            // Add times after event
-            $data[] = $player['times'] ?? 'N/A';
+        if ($base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
+            $headers[] = __('Shirt Size', 'intersoccer-reports-rosters');
+            $headers[] = __('Shorts Size', 'intersoccer-reports-rosters');
         }
-        
-        if ($player['activity_type'] === 'Girls Only' || $player['activity_type'] === 'Camp, Girls Only' || $player['activity_type'] === 'Camp, Girls\' only') {
-            $data[] = $player['shirt_size'] ?? 'N/A';
-            $data[] = $player['shorts_size'] ?? 'N/A';
+        if ($base_roster['activity_type'] === 'Camp' || $base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
+            $headers = array_merge(
+                array_slice($headers, 0, 11), // Adjust slice for added Birth Date (now after 6th: Age)
+                [__('Monday', 'intersoccer-reports-rosters'), __('Tuesday', 'intersoccer-reports-rosters'), __('Wednesday', 'intersoccer-reports-rosters'), __('Thursday', 'intersoccer-reports-rosters'), __('Friday', 'intersoccer-reports-rosters')],
+                array_slice($headers, 11)
+            );
+            // Add Times after Event for Camps
+            $headers = array_merge(
+                array_slice($headers, 0, count($headers) - 2),
+                [__('Times', 'intersoccer-reports-rosters')],
+                array_slice($headers, count($headers) - 2)
+            );
+        } else if ($base_roster['activity_type'] === 'Course') {
+            // Add Times after Event for Courses
+            $headers[] = __('Times', 'intersoccer-reports-rosters');
         }
 
-        // Write data to Excel - Updated to handle birth date in column G
-        $sheet->setCellValue('A' . $row, $data[0]);
-        $sheet->setCellValue('B' . $row, $data[1]);
-        $sheet->setCellValue('C' . $row, $data[2]);
-        $sheet->setCellValueExplicit('D' . $row, $excel_phone, DataType::TYPE_STRING);
-        $sheet->setCellValue('E' . $row, $data[4]);
-        $sheet->setCellValue('F' . $row, $data[5]);
-        $sheet->setCellValue('G' . $row, $data[6]); // Birth date
-        
-        // Write remaining columns starting at H
-        $other_data = array_slice($data, 7);
-        $sheet->fromArray($other_data, NULL, 'H' . $row);
-        
-        error_log("InterSoccer: Set cell G{$row} to {$data[6]} (birth date from player_dob: {$birth_date})");
-        $row++;
+        $sheet->fromArray($headers, NULL, 'A1');
+
+        // Set phone number column (D) to Text format and adjust width
+        $phone_column = 'D';
+        $sheet->getStyle($phone_column . '2:' . $phone_column . (count($rosters) + 1))
+              ->getNumberFormat()
+              ->setFormatCode('@');
+        $sheet->getColumnDimension($phone_column)->setWidth(15);
+
+        // Set birth date column (G) to Date format
+        $birth_date_column = 'G';
+        $sheet->getStyle($birth_date_column . '2:' . $birth_date_column . (count($rosters) + 1))
+              ->getNumberFormat()
+              ->setFormatCode('dd/mm/yyyy');
+        $sheet->getColumnDimension($birth_date_column)->setWidth(12);
+
+        $row = 2;
+        foreach ($rosters as $player) {
+            $day_presence = !empty($player['day_presence']) ? json_decode($player['day_presence'], true) : [];
+            $monday = isset($day_presence['Monday']) ? $day_presence['Monday'] : 'No';
+            $tuesday = isset($day_presence['Tuesday']) ? $day_presence['Tuesday'] : 'No';
+            $wednesday = isset($day_presence['Wednesday']) ? $day_presence['Wednesday'] : 'No';
+            $thursday = isset($day_presence['Thursday']) ? $day_presence['Thursday'] : 'No';
+            $friday = isset($day_presence['Friday']) ? $day_presence['Friday'] : 'No';
+            
+            // Normalize phone number
+            $raw_phone = $player['parent_phone'] ?? 'N/A';
+            $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone);
+            $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
+
+            // Format birth date for Excel from player_dob
+            $birth_date = $player['player_dob'] ?? '';
+            $formatted_birth_date = 'N/A';
+            if (!empty($birth_date) && $birth_date !== '0000-00-00' && $birth_date !== '1970-01-01') {
+                // Try to parse various date formats
+                $date_obj = DateTime::createFromFormat('Y-m-d', $birth_date);
+                if (!$date_obj) {
+                    $date_obj = DateTime::createFromFormat('d/m/Y', $birth_date);
+                }
+                if (!$date_obj) {
+                    $date_obj = DateTime::createFromFormat('m/d/Y', $birth_date);
+                }
+                if ($date_obj) {
+                    $formatted_birth_date = $date_obj->format('d/m/Y');
+                } else {
+                    error_log("InterSoccer: Could not parse birth date: $birth_date for player: " . ($player['player_name'] ?? 'Unknown'));
+                    $formatted_birth_date = $birth_date; // Use original if parsing fails
+                }
+            }
+
+            $data = [
+                $player['first_name'] ?? 'N/A',
+                $player['last_name'] ?? 'N/A',
+                $player['gender'] ?? 'N/A',
+                $processed_phone,
+                $player['parent_email'] ?? 'N/A',
+                $player['age'] ?? 'N/A',
+                $formatted_birth_date, // ADDED - Birth Date from player_dob
+                $player['medical_conditions'] ?? 'N/A',
+                $player['avs_number'] ?? 'N/A',
+                ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
+                $player['booking_type'] ?? 'N/A',
+                $player['age_group'] ?? 'N/A',
+                $player['product_name'] ?? 'N/A',
+                $player['venue'] ?? 'N/A',
+                $player['course_day'] ?: ($player['camp_terms'] ?? 'N/A')
+            ];
+
+            if ($player['activity_type'] === 'Camp' || $player['activity_type'] === 'Girls Only' || $player['activity_type'] === 'Camp, Girls Only' || $player['activity_type'] === 'Camp, Girls\' only') {
+                $data = array_merge(
+                    array_slice($data, 0, 11), // Up to and including booking_type
+                    [$monday, $tuesday, $wednesday, $thursday, $friday],
+                    array_slice($data, 11)
+                );
+                // Add times after event
+                $data = array_merge(
+                    array_slice($data, 0, count($data) - 2),
+                    [$player['times'] ?? 'N/A'],
+                    array_slice($data, count($data) - 2)
+                );
+            } else if ($player['activity_type'] === 'Course') {
+                // Add times after event
+                $data[] = $player['times'] ?? 'N/A';
+            }
+            
+            if ($player['activity_type'] === 'Girls Only' || $player['activity_type'] === 'Camp, Girls Only' || $player['activity_type'] === 'Camp, Girls\' only') {
+                $data[] = $player['shirt_size'] ?? 'N/A';
+                $data[] = $player['shorts_size'] ?? 'N/A';
+            }
+
+            // Write data to Excel - Optimized for memory efficiency
+            $col = 0;
+            foreach ($data as $value) {
+                $columnLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col + 1);
+                $sheet->setCellValue($columnLetter . $row, $value);
+                $col++;
+            }
+
+            error_log("InterSoccer: Set cell G{$row} to {$data[6]} (birth date from player_dob: {$birth_date})");
+            $row++;
+        }
+
+        // Add event details
+        $sheet->setCellValue('A' . $row, 'Event Details:');
+        $sheet->setCellValue('A' . ($row + 1), 'Product Name: ' . ($base_roster['product_name'] ?? 'N/A'));
+        $sheet->setCellValue('A' . ($row + 2), 'Venue: ' . ($base_roster['venue'] ?? 'N/A'));
+        $sheet->setCellValue('A' . ($row + 3), 'Age Group: ' . ($base_roster['age_group'] ?? 'N/A'));
+        $sheet->setCellValue('A' . ($row + 4), 'Event: ' . ($base_roster['course_day'] ?: ($base_roster['camp_terms'] ?? 'N/A')));
+        $sheet->setCellValue('A' . ($row + 5), 'Total Players: ' . count($rosters));
+
+        // Clear all output buffers
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+        ob_start();
+
+        error_log('InterSoccer: Sending headers for roster export with birth dates');
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+        header('Expires: 0');
+        header('Pragma: public');
+
+        $writer = new Xlsx($spreadsheet);
+        error_log('InterSoccer: Before Excel save. Memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
+        $writer->save('php://output');
+        intersoccer_log_audit('export_roster_excel', 'Exported for variation_ids: ' . implode(',', $variation_ids));
+        ob_end_flush();
+        exit;
+    } catch (Exception $e) {
+        error_log('InterSoccer: Excel export error: ' . $e->getMessage() . ' on line ' . $e->getLine() . '. Memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
+        // Fallback to CSV export
+        try {
+            error_log('InterSoccer: Attempting CSV export as fallback');
+            $filename_csv = 'roster_' . sanitize_title($base_roster['product_name'] . '_' . ($base_roster['camp_terms'] ?: $base_roster['course_day']) . '_' . $base_roster['venue']) . '_' . date('Y-m-d_H-i-s') . '.csv';
+            header('Content-Type: text/csv; charset=UTF-8');
+            header('Content-Disposition: attachment; filename="' . $filename_csv . '"');
+            header('Pragma: no-cache');
+            header('Expires: 0');
+
+            $output = fopen('php://output', 'w');
+            // Output BOM for UTF-8
+            fwrite($output, "\xEF\xBB\xBF");
+
+            // Output headers
+            fputcsv($output, $headers, ';');
+
+            foreach ($rosters as $player) {
+                $day_presence = !empty($player['day_presence']) ? json_decode($player['day_presence'], true) : [];
+                $monday = isset($day_presence['Monday']) ? $day_presence['Monday'] : 'No';
+                $tuesday = isset($day_presence['Tuesday']) ? $day_presence['Tuesday'] : 'No';
+                $wednesday = isset($day_presence['Wednesday']) ? $day_presence['Wednesday'] : 'No';
+                $thursday = isset($day_presence['Thursday']) ? $day_presence['Thursday'] : 'No';
+                $friday = isset($day_presence['Friday']) ? $day_presence['Friday'] : 'No';
+                
+                // Normalize phone number
+                $raw_phone = $player['parent_phone'] ?? 'N/A';
+                $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone);
+                $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
+
+                // Format birth date for CSV from player_dob
+                $birth_date = $player['player_dob'] ?? '';
+                $formatted_birth_date = 'N/A';
+                if (!empty($birth_date) && $birth_date !== '0000-00-00' && $birth_date !== '1970-01-01') {
+                    // Try to parse various date formats
+                    $date_obj = DateTime::createFromFormat('Y-m-d', $birth_date);
+                    if (!$date_obj) {
+                        $date_obj = DateTime::createFromFormat('d/m/Y', $birth_date);
+                    }
+                    if (!$date_obj) {
+                        $date_obj = DateTime::createFromFormat('m/d/Y', $birth_date);
+                    }
+                    if ($date_obj) {
+                        $formatted_birth_date = $date_obj->format('d/m/Y');
+                    } else {
+                        error_log("InterSoccer: Could not parse birth date: {$birth_date}");
+                        $formatted_birth_date = (string)$birth_date; // Fallback
+                    }
+                }
+
+                $data = [
+                    $player['first_name'] ?? 'N/A',
+                    $player['last_name'] ?? 'N/A',
+                    $player['gender'] ?? 'N/A',
+                    $processed_phone,
+                    $player['parent_email'] ?? 'N/A',
+                    $player['age'] ?? 'N/A',
+                    $formatted_birth_date, // ADDED - Birth Date from player_dob
+                    $player['medical_conditions'] ?? 'N/A',
+                    $player['avs_number'] ?? 'N/A',
+                    ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
+                    $player['booking_type'] ?? 'N/A',
+                    $player['age_group'] ?? 'N/A',
+                    $player['product_name'] ?? 'N/A',
+                    $player['venue'] ?? 'N/A',
+                    $player['course_day'] ?: ($player['camp_terms'] ?? 'N/A')
+                ];
+
+                if ($base_roster['activity_type'] === 'Camp' || $base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
+                    $data = array_merge(
+                        array_slice($data, 0, 11), // Adjust slice for added Birth Date (now after 6th: Age)
+                        [$monday, $tuesday, $wednesday, $thursday, $friday],
+                        array_slice($data, 11)
+                    );
+                    // Add times after event
+                    $data = array_merge(
+                        array_slice($data, 0, count($data) - 2),
+                        [$player['times'] ?? 'N/A'],
+                        array_slice($data, count($data) - 2)
+                    );
+                } else if ($base_roster['activity_type'] === 'Course') {
+                    // Add times after event
+                    $data[] = $player['times'] ?? 'N/A';
+                }
+                
+                if ($base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
+                    $data[] = $player['shirt_size'] ?? 'N/A';
+                    $data[] = $player['shorts_size'] ?? 'N/A';
+                }
+
+                fputcsv($output, $data, ';');
+            }
+
+            fclose($output);
+            intersoccer_log_audit('export_roster_csv', 'Exported for variation_ids: ' . implode(',', $variation_ids) . ' (small roster, used CSV)');
+            ob_end_flush();
+            exit;
+        } catch (Exception $e) {
+            error_log('InterSoccer: CSV export error: ' . $e->getMessage() . ' on line ' . $e->getLine());
+            ob_end_clean();
+            wp_die(__('Export failed. Check server logs for details.', 'intersoccer-reports-rosters'));
+        }
     }
-
-    // Add event details
-    $sheet->setCellValue('A' . $row, 'Event Details:');
-    $sheet->setCellValue('A' . ($row + 1), 'Product Name: ' . ($base_roster['product_name'] ?? 'N/A'));
-    $sheet->setCellValue('A' . ($row + 2), 'Venue: ' . ($base_roster['venue'] ?? 'N/A'));
-    $sheet->setCellValue('A' . ($row + 3), 'Age Group: ' . ($base_roster['age_group'] ?? 'N/A'));
-    $sheet->setCellValue('A' . ($row + 4), 'Event: ' . ($base_roster['course_day'] ?: ($base_roster['camp_terms'] ?? 'N/A')));
-    $sheet->setCellValue('A' . ($row + 5), 'Total Players: ' . count($rosters));
-
-    // Clear all output buffers
-    while (ob_get_level()) {
-        ob_end_clean();
-    }
-    ob_start();
-
-    error_log('InterSoccer: Sending headers for roster export with birth dates');
-    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
-    header('Content-Disposition: attachment; filename="' . $filename . '"');
-    header('Cache-Control: max-age=0');
-    header('Expires: 0');
-    header('Pragma: public');
-
-    $writer = new Xlsx($spreadsheet);
-    $writer->save('php://output');
-    intersoccer_log_audit('export_roster_excel', 'Exported for variation_ids: ' . implode(',', $variation_ids));
-    ob_end_flush();
-    exit;
 }
 
 /**
@@ -473,7 +578,8 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
         }
         // Increase memory limit for large exports
-        ini_set('memory_limit', '256M');
+        ini_set('memory_limit', '512M');
+        ini_set('max_execution_time', 300); // 5 minutes timeout
 
         // Clear all output buffers
         while (ob_get_level()) {
@@ -921,12 +1027,23 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 $wednesday = isset($day_presence['Wednesday']) ? $day_presence['Wednesday'] : 'No';
                 $thursday = isset($day_presence['Thursday']) ? $day_presence['Thursday'] : 'No';
                 $friday = isset($day_presence['Friday']) ? $day_presence['Friday'] : 'No';
-                // Normalize phone number
+                
+                // Normalize phone number and format birth date
                 $raw_phone = $roster['parent_phone'] ?? 'N/A';
-                $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone); // Explicitly cast to string
-                error_log("InterSoccer: Raw phone (girls_only_half_day): {$raw_phone}, Normalized phone: {$processed_phone}");
-                // Prepend space to force Excel to treat as text
+                $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone);
                 $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
+
+                $birth_date = $roster['player_dob'] ?? '';
+                $formatted_birth_date = 'N/A';
+                if (!empty($birth_date) && $birth_date !== '0000-00-00' && $birth_date !== '1970-01-01') {
+                    $date_obj = DateTime::createFromFormat('Y-m-d', $birth_date);
+                    if ($date_obj) {
+                        $formatted_birth_date = $date_obj->format('d/m/Y');
+                    } else {
+                        $formatted_birth_date = $birth_date;
+                    }
+                }
+
                 $data = [
                     $roster['first_name'] ?? 'N/A',
                     $roster['last_name'] ?? 'N/A',
@@ -934,15 +1051,12 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $processed_phone,
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
+                    $formatted_birth_date, // ADDED
                     $roster['medical_conditions'] ?? 'N/A',
-                    $roster['avs_number'] ?? 'N/A', // Added
+                    $roster['avs_number'] ?? 'N/A',
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
                     $roster['booking_type'] ?? 'N/A',
-                    $monday,
-                    $tuesday,
-                    $wednesday,
-                    $thursday,
-                    $friday,
+                    $monday, $tuesday, $wednesday, $thursday, $friday,
                     intersoccer_get_term_name($roster['age_group'], 'pa_age-group') ?? 'N/A',
                     $roster['product_name'] ?? 'N/A',
                     intersoccer_get_term_name($roster['venue'], 'pa_intersoccer-venues') ?? 'N/A',
@@ -951,21 +1065,22 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['shirt_size'] ?? 'N/A',
                     $roster['shorts_size'] ?? 'N/A'
                 ];
-                error_log("InterSoccer: Data array for row {$row}: " . json_encode($data));
-                // Write first three columns (A-C) explicitly
+
+                // Write data with explicit handling for phone and birth date
                 $sheet->setCellValue('A' . $row, $data[0]);
                 $sheet->setCellValue('B' . $row, $data[1]);
                 $sheet->setCellValue('C' . $row, $data[2]);
-                // Write phone number (D) explicitly
                 $sheet->setCellValueExplicit('D' . $row, $excel_phone, DataType::TYPE_STRING);
-                // Write remaining columns starting at E
-                $other_data = array_slice($data, 4);
-                error_log("InterSoccer: Other data for row {$row}: " . json_encode($other_data));
-                $sheet->fromArray($other_data, NULL, 'E' . $row);
-                error_log("InterSoccer: Set cell D{$row} to {$excel_phone} (type: string)");
+                $sheet->setCellValue('E' . $row, $data[4]);
+                $sheet->setCellValue('F' . $row, $data[5]);
+                $sheet->setCellValue('G' . $row, $data[6]); // Birth date
+                $other_data = array_slice($data, 7);
+                $sheet->fromArray($other_data, NULL, 'H' . $row);
+
                 $row++;
             }
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
+
         } elseif ($export_type === 'other') {
             $rosters = $wpdb->get_results(
                 "SELECT * FROM $rosters_table 
@@ -1050,6 +1165,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
         header('Pragma: public');
 
         $writer = new Xlsx($spreadsheet);
+        error_log('InterSoccer: Before Excel save. Memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
         $writer->save('php://output');
         intersoccer_log_audit('export_all_rosters_excel', 'Exported ' . $export_type . ' by user ' . $user_id);
         ob_end_flush();
@@ -1058,7 +1174,6 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
         ob_end_clean();
         wp_die(__('Export failed. Check server logs for details.', 'intersoccer-reports-rosters'));
     }
-    exit;
 }
 
 /**
@@ -1120,12 +1235,16 @@ function intersoccer_reports_export_roster_ajax() {
         wp_send_json_error(['message' => __('Invalid variation IDs.', 'intersoccer-reports-rosters')]);
     }
 
-    ob_start();
-    intersoccer_export_roster();
-    ob_end_clean(); // Clean output buffer to prevent interference
-    wp_die(); // Ensure proper exit after export
-}
+ }
 
+// ob_start();
+// intersoccer_export_roster();
+// ob_end_clean(); // Clean output buffer to prevent interference
+
+// ob_start();
+// intersoccer_export_roster();
+// ob_end_clean(); // Clean output buffer to prevent interference
+// wp_die(); // Ensure proper exit after export
 /**
  * AJAX handler for exporting all rosters
  */
@@ -1137,23 +1256,13 @@ function intersoccer_reports_export_all_rosters_ajax() {
     }
 
     $export_type = isset($_POST['export_type']) ? sanitize_text_field($_POST['export_type']) : 'all';
-    error_log("Received export_type: '$export_type' | Full POST: " . print_r($_POST, true)); // Added log for validation
 
-    if (!in_array($export_type, ['all', 'camps', 'courses', 'girls_only_full_day', 'girls_only_half_day', 'other'])) { // Updated array
-        wp_send_json_error(['message' => __('Invalid export type.', 'intersoccer-reports-rosters')]);
-    }
+    // Log the export request
+    error_log('InterSoccer: Export all rosters AJAX request - User ID: ' . get_current_user_id() . ', Export Type: ' . $export_type);
 
-    // Placeholder for $camps, $courses, $girls_only - these should be fetched based on export_type if needed
-    $camps = ($export_type === 'camps') ? intersoccer_pe_get_camp_variations([]) : [];
-    $courses = ($export_type === 'courses') ? intersoccer_pe_get_course_variations([]) : [];
-    $girls_only = ($export_type === 'girls_only_full_day' || $export_type === 'girls_only_half_day') ? intersoccer_pe_get_girls_only_variations([]) : [];
-
+    // Call the export function directly
     ob_start();
-    intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_type);
-    ob_end_clean(); // Clean output buffer to prevent interference
-    wp_die(); // Ensure proper exit after export
+    intersoccer_export_all_rosters(null, null, null, $export_type);
+    ob_end_clean();
+    wp_die();
 }
-
-add_action('wp_ajax_intersoccer_export_roster', 'intersoccer_reports_export_roster_ajax');
-add_action('wp_ajax_intersoccer_export_all_rosters', 'intersoccer_reports_export_all_rosters_ajax');
-?>

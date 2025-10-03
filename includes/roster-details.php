@@ -5,7 +5,7 @@
  * Handles rendering of detailed roster views.
  *
  * @package InterSoccer_Reports_Rosters
- * @version 1.4.49  // Incremented for activity type and referer fix
+ * @version 1.4.50  // Incremented for activity type and referer fix
  * @author Jeremy Lee
  */
 
@@ -14,6 +14,26 @@ if (!defined('ABSPATH')) {
 }
 
 require_once plugin_dir_path(dirname(__FILE__)) . 'includes/roster-data.php';
+
+/**
+ * Generate URL for sortable column
+ */
+function intersoccer_get_sort_url($sort_field, $current_sort, $current_order) {
+    $params = $_GET;
+    $params['sort'] = $sort_field;
+    $params['order'] = ($current_sort === $sort_field && $current_order === 'asc') ? 'desc' : 'asc';
+    return add_query_arg($params, admin_url('admin.php?page=intersoccer-roster-details'));
+}
+
+/**
+ * Get sort indicator for column header
+ */
+function intersoccer_get_sort_indicator($field, $current_sort, $current_order) {
+    if ($current_sort !== $field) {
+        return ' ⇅'; // Neutral sort indicator
+    }
+    return $current_order === 'asc' ? ' ↑' : ' ↓';
+}
 
 /**
  * Render the roster details page
@@ -38,6 +58,18 @@ function intersoccer_render_roster_details_page() {
     $event_dates = isset($_GET['event_dates']) ? sanitize_text_field($_GET['event_dates']) : '';
     $from_page = isset($_GET['from']) ? sanitize_text_field($_GET['from']) : '';
     $girls_only = isset($_GET['girls_only']) ? (bool) $_GET['girls_only'] : false;
+    $season = isset($_GET['season']) ? sanitize_text_field($_GET['season']) : '';
+    $sort_by = isset($_GET['sort']) ? sanitize_text_field($_GET['sort']) : 'order_date';
+    $sort_order = isset($_GET['order']) ? sanitize_text_field($_GET['order']) : 'asc';
+
+    // Validate sort parameters
+    $allowed_sort_fields = ['order_date', 'player_name', 'last_name', 'gender', 'age', 'age_group'];
+    if (!in_array($sort_by, $allowed_sort_fields)) {
+        $sort_by = 'order_date';
+    }
+    if (!in_array($sort_order, ['asc', 'desc'])) {
+        $sort_order = 'asc';
+    }
 
     // Check referer and from param
     $referer = wp_get_referer();
@@ -48,12 +80,17 @@ function intersoccer_render_roster_details_page() {
     error_log('InterSoccer: Roster details parameters - girls_only: ' . ($girls_only ? 'yes' : 'no') . ', from_page: ' . ($from_page ?: 'N/A'));
 
     // Build query - SIMPLIFIED using girls_only boolean
-    $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.day_presence, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only";
+    // $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.day_presence, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only";
+    // $query .= " FROM $rosters_table r";
+    $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.day_presence, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only, p.post_date as order_date";
     $query .= " FROM $rosters_table r";
+    $query .= " JOIN {$wpdb->posts} p ON r.order_id = p.ID";
     
     $where_clauses = [];
     $query_params = [];
 
+    $where_clauses[] = "p.post_status = 'wc-completed'";
+    
     // Girls Only filtering - UPDATED to use boolean column
     if ($is_from_girls_only_page || $girls_only) {
         $where_clauses[] = "r.girls_only = 1";
@@ -116,6 +153,11 @@ function intersoccer_render_roster_details_page() {
         $query_params[] = $times;
     }
 
+    if ($season) { 
+        $where_clauses[] = "r.season = %s";
+        $query_params[] = $season; 
+    }
+
     if (empty($where_clauses)) {
         error_log('InterSoccer: No valid parameters provided for roster details');
         echo '<div class="wrap"><h1>' . esc_html__('Roster Details', 'intersoccer-reports-rosters') . '</h1>';
@@ -124,7 +166,19 @@ function intersoccer_render_roster_details_page() {
     }
 
     $query .= " WHERE " . implode(' AND ', $where_clauses);
-    $query .= " ORDER BY r.player_name, r.variation_id, r.order_item_id";
+    
+    // Build ORDER BY clause based on sort parameters
+    $order_by_map = [
+        'order_date' => 'p.post_date',
+        'player_name' => 'r.first_name',
+        'last_name' => 'r.last_name',
+        'gender' => 'r.gender',
+        'age' => 'CAST(r.age AS UNSIGNED)',
+        'age_group' => 'r.age_group'
+    ];
+    
+    $order_field = $order_by_map[$sort_by] ?? 'p.post_date';
+    $query .= " ORDER BY {$order_field} {$sort_order}, r.first_name ASC, r.last_name ASC";
     
     $rosters = $wpdb->get_results($wpdb->prepare($query, $query_params), OBJECT);
 
@@ -144,6 +198,32 @@ function intersoccer_render_roster_details_page() {
     $is_camp_like = ($base_roster->activity_type === 'Camp' || !empty($base_roster->camp_terms));
     $is_girls_only = (bool) $base_roster->girls_only;
 
+    // Fetch available destination rosters for migration
+    $available_rosters_query = $wpdb->prepare("
+        SELECT DISTINCT 
+            r.product_id,
+            r.variation_id,
+            r.product_name,
+            r.venue,
+            r.age_group,
+            r.activity_type,
+            r.camp_terms,
+            r.course_day,
+            r.times,
+            r.season,
+            COUNT(DISTINCT r.order_item_id) as current_players
+        FROM $rosters_table r
+        JOIN {$wpdb->posts} p ON r.order_id = p.ID
+        WHERE p.post_status = 'wc-completed'
+        AND r.activity_type = %s
+        AND r.girls_only = %d
+        AND r.variation_id != %d
+        GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season
+        ORDER BY r.product_name, r.venue, r.age_group
+    ", $base_roster->activity_type, $is_girls_only ? 1 : 0, $variation_id);
+    
+    $available_rosters = $wpdb->get_results($available_rosters_query, OBJECT);
+
     // Count Unknown Attendees
     $unknown_count = count(array_filter($rosters, fn($row) => $row->player_name === 'Unknown Attendee'));
 
@@ -160,12 +240,13 @@ function intersoccer_render_roster_details_page() {
     echo '<thead>';
     echo '<tr>';
     echo '<th><input type="checkbox" id="selectAll"></th>'; // New: Checkbox for select all
-    echo '<th>' . esc_html__('Name') . '</th>';
-    echo '<th>' . esc_html__('Surname') . '</th>';
-    echo '<th>' . esc_html__('Gender') . '</th>';
+    echo '<th><a href="' . esc_url(intersoccer_get_sort_url('order_date', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Order Date') . intersoccer_get_sort_indicator('order_date', $sort_by, $sort_order) . '</a></th>';
+    echo '<th><a href="' . esc_url(intersoccer_get_sort_url('player_name', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Name') . intersoccer_get_sort_indicator('player_name', $sort_by, $sort_order) . '</a></th>';
+    echo '<th><a href="' . esc_url(intersoccer_get_sort_url('last_name', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Surname') . intersoccer_get_sort_indicator('last_name', $sort_by, $sort_order) . '</a></th>';
+    echo '<th><a href="' . esc_url(intersoccer_get_sort_url('gender', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Gender') . intersoccer_get_sort_indicator('gender', $sort_by, $sort_order) . '</a></th>';
     echo '<th>' . esc_html__('Phone') . '</th>';
     echo '<th>' . esc_html__('Email') . '</th>';
-    echo '<th>' . esc_html__('Age') . '</th>';
+    echo '<th><a href="' . esc_url(intersoccer_get_sort_url('age', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Age') . intersoccer_get_sort_indicator('age', $sort_by, $sort_order) . '</a></th>';
     echo '<th>' . esc_html__('Medical/Dietary') . '</th>';
     
     if ($is_camp_like) {
@@ -177,7 +258,7 @@ function intersoccer_render_roster_details_page() {
         echo '<th>' . esc_html__('Friday') . '</th>';
     }
     
-    echo '<th>' . esc_html__('Age Group') . '</th>';
+    echo '<th><a href="' . esc_url(intersoccer_get_sort_url('age_group', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Age Group') . intersoccer_get_sort_indicator('age_group', $sort_by, $sort_order) . '</a></th>';
     
     if ($is_girls_only) {
         echo '<th>' . esc_html__('Shirt Size') . '</th>';
@@ -193,6 +274,7 @@ function intersoccer_render_roster_details_page() {
         
         echo '<tr data-order-item-id="' . esc_attr($row->order_item_id) . '">';
         echo '<td><input type="checkbox" class="player-select"></td>'; // New: Checkbox for selection
+        echo '<td>' . esc_html($row->order_date ? date('Y-m-d H:i', strtotime($row->order_date)) : 'N/A') . '</td>';
         echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($row->first_name ?? 'N/A') . '</td>';
         echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($row->last_name ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->gender ?? 'N/A') . '</td>';
@@ -224,16 +306,55 @@ function intersoccer_render_roster_details_page() {
     echo '</tbody></table>';
     
     // Bulk actions section - New: Added for player migration
-    echo '<div class="bulk-actions" style="margin-top: 20px;">';
-    echo '<select id="bulkActionSelect">';
-    echo '<option value="">Bulk Actions</option>';
-    echo '<option value="move">Move to Another Roster</option>';
-    echo '</select>';
-    echo '<div id="moveOptions" style="display: none; margin-left: 10px; margin-right: 10px;">';
-    echo '<label for="targetVariation">Target Variation ID:</label>';
-    echo '<input type="number" id="targetVariation" min="1" placeholder="Enter Variation ID" style="margin-left: 5px;">';
-    echo '</div>';
-    echo '<button id="applyBulk" class="button button-secondary">Apply</button>';
+    echo '<div class="bulk-actions">';
+    echo '    <h3 style="margin: 0 0 15px 0; color: #2c3338;">Player Management</h3>';
+    echo '    <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">';
+    echo '        <div>';
+    echo '            <label for="bulkActionSelect" style="font-weight: 500; margin-right: 8px;">Action:</label>';
+    echo '            <select id="bulkActionSelect">';
+    echo '                <option value="">Select Action</option>';
+    echo '                <option value="move">Move to Another Roster</option>';
+    echo '            </select>';
+    echo '        </div>';
+            
+    echo '        <div id="moveOptions" style="display: none;">';
+    echo '            <label for="targetRosterSelect" style="font-weight: 500; margin-right: 8px;">Destination Roster:</label>';
+    echo '            <select id="targetRosterSelect" style="min-width: 300px;">';
+    echo '                <option value="">Select a destination roster...</option>';
+    if (!empty($available_rosters)) {
+        foreach ($available_rosters as $roster) {
+            $roster_label = sprintf(
+                '%s - %s (%s) - %d players',
+                esc_html($roster->product_name),
+                esc_html($roster->venue ?: 'No Venue'),
+                esc_html($roster->age_group ?: 'No Age Group'),
+                intval($roster->current_players)
+            );
+            if ($roster->camp_terms && $roster->camp_terms !== 'N/A') {
+                $roster_label .= ' - ' . esc_html($roster->camp_terms);
+            } elseif ($roster->course_day && $roster->course_day !== 'N/A') {
+                $roster_label .= ' - ' . esc_html($roster->course_day);
+            }
+            echo '                <option value="' . esc_attr($roster->variation_id) . '">' . esc_html($roster_label) . '</option>';
+        }
+    } else {
+        echo '                <option value="" disabled>No other rosters available for migration</option>';
+    }
+    echo '            </select>';
+    echo '        </div>';
+            
+    echo '        <button id="applyBulk" class="button button-primary">Apply</button>';
+    echo '    </div>';
+        
+    echo '    <div style="margin-top: 10px; font-size: 13px; color: #666;">';
+    echo '        <strong>Instructions:</strong> ';
+    echo '        1) Select players using checkboxes ';
+    echo '        2) Choose "Move to Another Roster" ';
+    echo '        3) Select the destination roster from the dropdown (shows event name, venue, age group, and current player count) ';
+    echo '        4) Click Apply';
+    echo '        <br>';
+    echo '        <strong>Note:</strong> This will update order items and preserve original pricing. Changes cannot be undone.';
+    echo '    </div>';
     echo '</div>';
     
     // Export form - UPDATED to include girls_only parameter
@@ -261,7 +382,7 @@ function intersoccer_render_roster_details_page() {
     echo '<p><strong>' . esc_html__('Total Players') . ':</strong> ' . esc_html(count($rosters)) . '</p>';
     echo '</div>';
     
-    // JavaScript for bulk actions - New: Added for player migration
+    // JavaScript for bulk actions
     ?>
     <script type="text/javascript">
     jQuery(document).ready(function($) {
@@ -270,66 +391,176 @@ function intersoccer_render_roster_details_page() {
         const bulkActionSelect = $('#bulkActionSelect');
         const moveOptions = $('#moveOptions');
         const applyBulk = $('#applyBulk');
-        const targetVariation = $('#targetVariation');
+        const targetRosterSelect = $('#targetRosterSelect');
+
+        // Enhanced logging for debugging
+        console.log('InterSoccer Migration: JavaScript initialized');
+        console.log('InterSoccer Migration: Found elements - selectAll:', selectAll.length, 'playerSelects:', playerSelects.length);
 
         selectAll.on('change', function() {
+            console.log('InterSoccer Migration: Select all toggled:', this.checked);
             playerSelects.prop('checked', this.checked);
         });
 
         bulkActionSelect.on('change', function() {
-            moveOptions.toggle(this.value === 'move');
+            const isMove = this.value === 'move';
+            console.log('InterSoccer Migration: Bulk action changed to:', this.value, 'Show move options:', isMove);
+            moveOptions.toggle(isMove);
+            
+            // Reset target roster selection when switching away from move
+            if (!isMove) {
+                targetRosterSelect.val('');
+            }
+        });
+
+        // Add validation for target roster selection
+        targetRosterSelect.on('change', function() {
+            const value = $(this).val().trim();
+            console.log('InterSoccer Migration: Target roster selected:', value);
         });
 
         applyBulk.on('click', function() {
+            console.log('InterSoccer Migration: Apply bulk action clicked');
+            
             const action = bulkActionSelect.val();
-            if (action !== 'move') return;
+            if (action !== 'move') {
+                console.log('InterSoccer Migration: No move action selected');
+                return;
+            }
 
-            const targetVar = targetVariation.val().trim();
-            if (!targetVar || isNaN(targetVar)) {
-                alert('Please enter a valid Variation ID.');
+            const targetVar = targetRosterSelect.val().trim();
+            if (!targetVar) {
+                alert('Please select a destination roster.');
+                targetRosterSelect.focus();
                 return;
             }
 
             const selectedItems = [];
             playerSelects.each(function() {
                 if ($(this).prop('checked')) {
-                    selectedItems.push($(this).closest('tr').data('order-item-id'));
+                    const itemId = $(this).closest('tr').data('order-item-id');
+                    if (itemId) {
+                        selectedItems.push(itemId);
+                    }
                 }
             });
+
+            console.log('InterSoccer Migration: Selected items:', selectedItems);
 
             if (selectedItems.length === 0) {
                 alert('No players selected.');
                 return;
             }
 
-            // AJAX call to move
+            // Enhanced confirmation with details
+            const selectedOption = targetRosterSelect.find('option:selected');
+            const destinationName = selectedOption.text();
+            const confirmMessage = `Are you sure you want to move ${selectedItems.length} player(s) to "${destinationName}"?\n\nThis will:\n- Update their order items\n- Change their roster assignment\n- Preserve original pricing\n\nThis action cannot be undone.`;
+            
+            if (!confirm(confirmMessage)) {
+                console.log('InterSoccer Migration: Migration cancelled by user');
+                return;
+            }
+
+            console.log('InterSoccer Migration: Starting AJAX request');
+
+            // Enhanced AJAX call with better error handling
             $.ajax({
                 url: ajaxurl,
                 type: 'POST',
                 data: {
                     action: 'intersoccer_move_players',
                     nonce: '<?php echo esc_js(wp_create_nonce('intersoccer_move_nonce')); ?>',
-                    target_variation_id: targetVar,
+                    target_variation_id: parseInt(targetVar),
                     order_item_ids: selectedItems
                 },
                 beforeSend: function() {
-                    applyBulk.prop('disabled', true).text('Moving...');
+                    console.log('InterSoccer Migration: AJAX request started');
+                    applyBulk.prop('disabled', true).text('Moving Players...');
+                    
+                    // Show progress indicator
+                    $('<div id="migration-progress" style="margin-top: 10px; padding: 10px; background: #f0f8ff; border: 1px solid #0073aa; border-radius: 4px;">' +
+                    '<strong>Migration in Progress...</strong><br>' +
+                    'Moving ' + selectedItems.length + ' player(s) to "' + destinationName + '"...' +
+                    '</div>').insertAfter(applyBulk);
                 },
                 success: function(response) {
+                    console.log('InterSoccer Migration: AJAX success:', response);
+                    
+                    $('#migration-progress').remove();
+                    
                     if (response.success) {
-                        alert('Players moved successfully. Reloading...');
+                        alert('Success: ' + response.data.message);
+                        
+                        // Clear selections and reset form
+                        playerSelects.prop('checked', false);
+                        selectAll.prop('checked', false);
+                        bulkActionSelect.val('');
+                        targetRosterSelect.val('');
+                        moveOptions.hide();
+                        
+                        // Reload page to show updated data
+                        console.log('InterSoccer Migration: Reloading page to show changes');
                         location.reload();
                     } else {
-                        alert('Error: ' + (response.data.message || 'Unknown error'));
+                        alert('Error: ' + (response.data?.message || 'Unknown error occurred'));
+                        console.error('InterSoccer Migration: Server returned error:', response.data);
                     }
                 },
-                error: function() {
-                    alert('AJAX error occurred.');
+                error: function(xhr, status, error) {
+                    console.error('InterSoccer Migration: AJAX error:', {
+                        status: status,
+                        error: error,
+                        responseText: xhr.responseText,
+                        statusCode: xhr.status
+                    });
+                    
+                    $('#migration-progress').remove();
+                    
+                    let errorMessage = 'AJAX error occurred.';
+                    
+                    // Try to parse JSON error response
+                    try {
+                        const errorResponse = JSON.parse(xhr.responseText);
+                        if (errorResponse.data && errorResponse.data.message) {
+                            errorMessage = 'Error: ' + errorResponse.data.message;
+                        }
+                    } catch (e) {
+                        // If not JSON, use status text or generic message
+                        if (xhr.status === 403) {
+                            errorMessage = 'Permission denied. Please refresh the page and try again.';
+                        } else if (xhr.status === 404) {
+                            errorMessage = 'Migration function not found. Please check plugin configuration.';
+                        } else if (xhr.status >= 500) {
+                            errorMessage = 'Server error occurred. Please check the error logs.';
+                        }
+                    }
+                    
+                    alert(errorMessage);
                 },
                 complete: function() {
+                    console.log('InterSoccer Migration: AJAX request completed');
                     applyBulk.prop('disabled', false).text('Apply');
+                    $('#migration-progress').remove();
                 }
             });
+        });
+
+        // Add keyboard shortcuts for better UX
+        $(document).on('keydown', function(e) {
+            // Ctrl+A to select all (when focused on table)
+            if (e.ctrlKey && e.key === 'a' && $(e.target).closest('table').length) {
+                e.preventDefault();
+                selectAll.prop('checked', true).trigger('change');
+            }
+            
+            // Escape to clear selections
+            if (e.key === 'Escape') {
+                playerSelects.prop('checked', false);
+                selectAll.prop('checked', false);
+                bulkActionSelect.val('');
+                moveOptions.hide();
+            }
         });
     });
     </script>
