@@ -368,87 +368,304 @@ function intersoccer_process_existing_orders_ajax() {
 add_action('wp_ajax_intersoccer_move_players', 'intersoccer_move_players_ajax');
 
 function intersoccer_move_players_ajax() {
+    // Log start of migration request
+    error_log('InterSoccer Migration: Starting player migration request');
+    error_log('InterSoccer Migration: POST data: ' . print_r($_POST, true));
+    
     check_ajax_referer('intersoccer_move_nonce', 'nonce');
     if (!current_user_can('manage_options')) {
+        error_log('InterSoccer Migration: Permission denied for user ' . get_current_user_id());
         wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
     }
 
     $target_variation_id = intval($_POST['target_variation_id']);
     $order_item_ids = array_map('intval', (array) $_POST['order_item_ids']);
 
+    error_log('InterSoccer Migration: Target variation: ' . $target_variation_id);
+    error_log('InterSoccer Migration: Order item IDs: ' . implode(', ', $order_item_ids));
+
+    // Validation
     if (!$target_variation_id || empty($order_item_ids)) {
+        error_log('InterSoccer Migration: Invalid input - target_variation_id: ' . $target_variation_id . ', order_item_ids count: ' . count($order_item_ids));
         wp_send_json_error(['message' => __('Invalid input.', 'intersoccer-reports-rosters')]);
     }
 
+    // Validate target variation exists and is available
     $variation = wc_get_product($target_variation_id);
     if (!$variation || !$variation->is_type('variation')) {
+        error_log('InterSoccer Migration: Invalid target variation - ID: ' . $target_variation_id . ', exists: ' . ($variation ? 'yes' : 'no') . ', type: ' . ($variation ? $variation->get_type() : 'N/A'));
         wp_send_json_error(['message' => __('Invalid target variation.', 'intersoccer-reports-rosters')]);
+    }
+
+    // Check if variation is purchasable
+    if (!$variation->is_purchasable()) {
+        error_log('InterSoccer Migration: Target variation not purchasable - ID: ' . $target_variation_id);
+        wp_send_json_error(['message' => __('Target variation is not available for purchase.', 'intersoccer-reports-rosters')]);
     }
 
     $moved_count = 0;
     $errors = [];
+    global $wpdb;
 
     foreach ($order_item_ids as $item_id) {
-        // Find order from item (query woocommerce_order_items)
-        global $wpdb;
-        $order_id = $wpdb->get_var($wpdb->prepare("SELECT order_id FROM {$wpdb->prefix}woocommerce_order_items WHERE order_item_id = %d", $item_id));
-        if (!$order_id) continue;
-
-        $order = wc_get_order($order_id);
-        if (!$order) continue;
-
-        $item = null;
-        foreach ($order->get_items() as $order_item) {
-            if ($order_item->get_id() === $item_id) {
-                $item = $order_item;
-                break;
+        error_log('InterSoccer Migration: Processing item ID: ' . $item_id);
+        
+        try {
+            // Get order from item
+            $order_id = $wpdb->get_var($wpdb->prepare(
+                "SELECT order_id FROM {$wpdb->prefix}woocommerce_order_items WHERE order_item_id = %d", 
+                $item_id
+            ));
+            
+            if (!$order_id) {
+                $error = 'Order not found for item ' . $item_id;
+                error_log('InterSoccer Migration: ' . $error);
+                $errors[] = $error;
+                continue;
             }
+
+            $order = wc_get_order($order_id);
+            if (!$order) {
+                $error = 'Order object not loaded for order ' . $order_id;
+                error_log('InterSoccer Migration: ' . $error);
+                $errors[] = $error;
+                continue;
+            }
+
+            // Find the specific order item
+            $item = null;
+            foreach ($order->get_items() as $order_item) {
+                if ($order_item->get_id() === $item_id) {
+                    $item = $order_item;
+                    break;
+                }
+            }
+            
+            if (!$item) {
+                $error = 'Order item not found: ' . $item_id;
+                error_log('InterSoccer Migration: ' . $error);
+                $errors[] = $error;
+                continue;
+            }
+
+            // Log original state
+            $original_variation_id = $item->get_variation_id();
+            $original_product_id = $item->get_product_id();
+            $original_subtotal = $item->get_subtotal();
+            $original_total = $item->get_total();
+            $assigned_attendee = wc_get_order_item_meta($item_id, 'Assigned Attendee', true);
+            
+            error_log('InterSoccer Migration: Item ' . $item_id . ' original state:');
+            error_log('  - Original variation: ' . $original_variation_id);
+            error_log('  - Original product: ' . $original_product_id);
+            error_log('  - Original subtotal: ' . $original_subtotal);
+            error_log('  - Original total: ' . $original_total);
+            error_log('  - Assigned attendee: ' . $assigned_attendee);
+
+            // Get target product information
+            $new_product_id = $variation->get_parent_id();
+            $new_attributes = $variation->get_attributes();
+            
+            error_log('InterSoccer Migration: Target variation details:');
+            error_log('  - New product ID: ' . $new_product_id);
+            error_log('  - New attributes: ' . print_r($new_attributes, true));
+
+            // Start transaction-like approach
+            $migration_success = true;
+
+            // Step 1: Update the order item variation and product
+            try {
+                $item->set_product_id($new_product_id);
+                $item->set_variation_id($target_variation_id);
+                
+                // Preserve original pricing
+                $item->set_subtotal($original_subtotal);
+                $item->set_total($original_total);
+                
+                error_log('InterSoccer Migration: Updated item variation and preserved pricing');
+            } catch (Exception $e) {
+                error_log('InterSoccer Migration: Failed to update item: ' . $e->getMessage());
+                $migration_success = false;
+            }
+
+            // Step 2: Update variation attributes in order item metadata
+            if ($migration_success) {
+                try {
+                    foreach ($new_attributes as $key => $value) {
+                        wc_update_order_item_meta($item_id, $key, $value);
+                        error_log('InterSoccer Migration: Updated meta ' . $key . ' = ' . $value);
+                    }
+                    
+                    // Preserve critical metadata
+                    if (!empty($assigned_attendee)) {
+                        wc_update_order_item_meta($item_id, 'Assigned Attendee', $assigned_attendee);
+                        error_log('InterSoccer Migration: Preserved Assigned Attendee: ' . $assigned_attendee);
+                    }
+                } catch (Exception $e) {
+                    error_log('InterSoccer Migration: Failed to update metadata: ' . $e->getMessage());
+                    $migration_success = false;
+                }
+            }
+
+            // Step 3: Save the order item and order
+            if ($migration_success) {
+                try {
+                    $item->save();
+                    
+                    // Minimal order recalculation to preserve pricing
+                    $order->calculate_taxes();
+                    $order->save();
+                    
+                    error_log('InterSoccer Migration: Saved order item and order');
+                } catch (Exception $e) {
+                    error_log('InterSoccer Migration: Failed to save order: ' . $e->getMessage());
+                    $migration_success = false;
+                }
+            }
+
+            // Step 4: Update roster entry
+            if ($migration_success) {
+                try {
+                    // Check if roster update function exists
+                    if (function_exists('intersoccer_update_roster_entry')) {
+                        intersoccer_update_roster_entry($order_id, $item_id);
+                        error_log('InterSoccer Migration: Updated roster entry via intersoccer_update_roster_entry');
+                    } else {
+                        // Fallback: manual roster update
+                        intersoccer_manual_update_roster_entry($order_id, $item_id, $target_variation_id);
+                        error_log('InterSoccer Migration: Updated roster entry via manual method');
+                    }
+                } catch (Exception $e) {
+                    error_log('InterSoccer Migration: Failed to update roster: ' . $e->getMessage());
+                    $migration_success = false;
+                }
+            }
+
+            // Step 5: Verify the migration
+            if ($migration_success) {
+                // Reload and verify
+                $updated_item = new WC_Order_Item_Product($item_id);
+                $new_variation_id = $updated_item->get_variation_id();
+                $preserved_subtotal = $updated_item->get_subtotal();
+                $preserved_total = $updated_item->get_total();
+                
+                if ($new_variation_id == $target_variation_id && 
+                    $preserved_subtotal == $original_subtotal && 
+                    $preserved_total == $original_total) {
+                    
+                    $moved_count++;
+                    error_log('InterSoccer Migration: Successfully migrated item ' . $item_id);
+                    error_log('  - Verification: variation=' . $new_variation_id . ', subtotal=' . $preserved_subtotal . ', total=' . $preserved_total);
+                } else {
+                    $error = 'Migration verification failed for item ' . $item_id;
+                    error_log('InterSoccer Migration: ' . $error);
+                    error_log('  - Expected variation: ' . $target_variation_id . ', got: ' . $new_variation_id);
+                    error_log('  - Expected subtotal: ' . $original_subtotal . ', got: ' . $preserved_subtotal);
+                    error_log('  - Expected total: ' . $original_total . ', got: ' . $preserved_total);
+                    $errors[] = $error;
+                }
+            } else {
+                $errors[] = 'Migration failed for item ' . $item_id;
+            }
+
+        } catch (Exception $e) {
+            $error = 'Exception during migration of item ' . $item_id . ': ' . $e->getMessage();
+            error_log('InterSoccer Migration: ' . $error);
+            $errors[] = $error;
         }
-        if (!$item) continue;
+    }
 
-        // Log before
-        error_log("InterSoccer: Moving item $item_id (order $order_id) from variation {$item->get_variation_id()} to $target_variation_id. Original subtotal: {$item->get_subtotal()}, total: {$item->get_total()}");
-
-        // Preserve prices
-        $original_subtotal = $item->get_subtotal();
-        $original_total = $item->get_total();
-
-        // Update variation and product if needed
-        $new_product_id = $variation->get_parent_id();
-        $item->set_product_id($new_product_id);
-        $item->set_variation_id($target_variation_id);
-
-        // Sync attributes (pa_ meta)
-        $new_attributes = $variation->get_attributes();
-        foreach ($new_attributes as $key => $value) {
-            wc_update_order_item_meta($item_id, $key, $value);
-            error_log("InterSoccer: Updated meta $key to $value for item $item_id");
-        }
-
-        // Other meta updates if needed (e.g., Assigned Attendee remains same)
-
-        // Restore prices (prevent recalc)
-        $item->set_subtotal($original_subtotal);
-        $item->set_total($original_total);
-
-        $item->save();
-        $order->calculate_taxes(); // Minimal recalc, but totals preserved
-        $order->save();
-
-        // Update roster
-        intersoccer_update_roster_entry($order_id, $item_id);
-
-        // Log after
-        $new_base_price = $variation->get_regular_price(); // For rosters table, but update_entry handles
-        error_log("InterSoccer: Moved item $item_id. New base price: $new_base_price. Preserved subtotal: $original_subtotal, total: $original_total");
-
-        $moved_count++;
+    // Final logging and response
+    error_log('InterSoccer Migration: Completed. Moved: ' . $moved_count . ', Errors: ' . count($errors));
+    if (!empty($errors)) {
+        error_log('InterSoccer Migration: Errors encountered: ' . implode('; ', $errors));
     }
 
     if ($moved_count > 0) {
-        wp_send_json_success(['message' => __("Moved $moved_count players.", 'intersoccer-reports-rosters')]);
+        $message = sprintf(__('Successfully moved %d players.', 'intersoccer-reports-rosters'), $moved_count);
+        if (!empty($errors)) {
+            $message .= ' ' . sprintf(__('%d errors occurred.', 'intersoccer-reports-rosters'), count($errors));
+        }
+        wp_send_json_success(['message' => $message]);
     } else {
-        wp_send_json_error(['message' => __('No players moved.', 'intersoccer-reports-rosters')]);
+        wp_send_json_error(['message' => __('No players moved. Check logs for details.', 'intersoccer-reports-rosters')]);
     }
+}
+
+/**
+ * Manual roster update function as fallback
+ */
+function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_variation_id) {
+    global $wpdb;
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+    
+    error_log('InterSoccer Migration: Manual roster update for item ' . $item_id);
+    
+    // Get the new variation product
+    $variation = wc_get_product($target_variation_id);
+    if (!$variation) {
+        throw new Exception('Cannot load target variation ' . $target_variation_id);
+    }
+    
+    $parent_product = wc_get_product($variation->get_parent_id());
+    if (!$parent_product) {
+        throw new Exception('Cannot load parent product for variation ' . $target_variation_id);
+    }
+    
+    // Extract new roster data from variation
+    $new_roster_data = [];
+    
+    // Get attributes from variation
+    $attributes = $variation->get_attributes();
+    foreach ($attributes as $key => $value) {
+        switch ($key) {
+            case 'pa_intersoccer-venues':
+                $new_roster_data['venue'] = $value;
+                break;
+            case 'pa_age-group':
+                $new_roster_data['age_group'] = $value;
+                break;
+            case 'pa_camp-terms':
+                $new_roster_data['camp_terms'] = $value;
+                break;
+            case 'pa_camp-times':
+            case 'pa_course-times':
+                $new_roster_data['times'] = $value;
+                break;
+            // Add other mappings as needed
+        }
+    }
+    
+    // Get course day from order item metadata or product
+    $course_day = wc_get_order_item_meta($item_id, 'Course Day', true);
+    if (empty($course_day)) {
+        // Try to get from product terms
+        $course_days = wc_get_product_terms($parent_product->get_id(), 'pa_course-day', ['fields' => 'names']);
+        if (!empty($course_days)) {
+            $course_day = $course_days[0];
+        }
+    }
+    if (!empty($course_day)) {
+        $new_roster_data['course_day'] = $course_day;
+    }
+    
+    // Update the roster entry
+    $update_result = $wpdb->update(
+        $rosters_table,
+        array_merge($new_roster_data, [
+            'variation_id' => $target_variation_id,
+            'product_id' => $variation->get_parent_id(),
+            'product_name' => $parent_product->get_name()
+        ]),
+        ['order_item_id' => $item_id],
+        ['%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s'], // format for new data
+        ['%d'] // format for where clause
+    );
+    
+    if ($update_result === false) {
+        throw new Exception('Database update failed for roster entry');
+    }
+    
+    error_log('InterSoccer Migration: Updated roster entry with new data: ' . print_r($new_roster_data, true));
 }
 ?>
