@@ -324,9 +324,13 @@ function intersoccer_get_booking_report_enhanced($start_date = '', $end_date = '
         COALESCE(CAST(subtotal.meta_value AS DECIMAL(10,2)), 0) AS base_price,
         COALESCE(CAST(total.meta_value AS DECIMAL(10,2)), 0) AS final_price,
         
-        -- Enhanced discount data
+        -- Enhanced discount data from order level
         COALESCE(CAST(intersoccer_discount.meta_value AS DECIMAL(10,2)), 0) AS intersoccer_discount_amount,
         intersoccer_breakdown.meta_value AS intersoccer_discount_breakdown,
+        
+        -- InterSoccer discount data from order item level
+        item_discounts.meta_value AS intersoccer_item_discounts,
+        COALESCE(CAST(item_total_discount.meta_value AS DECIMAL(10,2)), 0) AS intersoccer_item_total_discount,
         
         -- Refund data
         COALESCE(ABS(CAST(refunded.refunded_total AS DECIMAL(10,2))), 0) AS reimbursement
@@ -334,7 +338,7 @@ function intersoccer_get_booking_report_enhanced($start_date = '', $end_date = '
     FROM $rosters_table r
     INNER JOIN $posts_table p ON r.order_id = p.ID 
         AND p.post_type = 'shop_order' 
-        AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
+        AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold', 'wc-refunded')
     INNER JOIN $order_items_table oi ON r.order_item_id = oi.order_item_id
     LEFT JOIN $order_itemmeta_table subtotal ON oi.order_item_id = subtotal.order_item_id 
         AND subtotal.meta_key = '_line_subtotal'
@@ -346,6 +350,12 @@ function intersoccer_get_booking_report_enhanced($start_date = '', $end_date = '
         AND intersoccer_discount.meta_key = '_intersoccer_total_discounts'
     LEFT JOIN $postmeta_table intersoccer_breakdown ON p.ID = intersoccer_breakdown.post_id 
         AND intersoccer_breakdown.meta_key = '_intersoccer_all_discounts'
+        
+    -- Join with item-level InterSoccer discount data
+    LEFT JOIN $order_itemmeta_table item_discounts ON oi.order_item_id = item_discounts.order_item_id 
+        AND item_discounts.meta_key = '_intersoccer_item_discounts'
+    LEFT JOIN $order_itemmeta_table item_total_discount ON oi.order_item_id = item_total_discount.order_item_id 
+        AND item_total_discount.meta_key = '_intersoccer_total_item_discount'
         
     LEFT JOIN (
         SELECT 
@@ -425,6 +435,10 @@ function intersoccer_get_booking_report_enhanced($start_date = '', $end_date = '
             $attendee_name = trim($row['player_first_name'] . ' ' . $row['player_last_name']);
         }
 
+        // Use item-level InterSoccer discount data if available, otherwise fall back to order-level
+        $item_discounts = maybe_unserialize($row['intersoccer_item_discounts']);
+        $item_total_discount = floatval($row['intersoccer_item_total_discount']);
+        
         // Use enhanced discount data if available
         $enhanced_discount = floatval($row['intersoccer_discount_amount']);
         $discount_breakdown = $row['intersoccer_discount_breakdown'];
@@ -432,13 +446,22 @@ function intersoccer_get_booking_report_enhanced($start_date = '', $end_date = '
         // Calculate traditional discount as fallback
         $traditional_discount = floatval($row['base_price']) - floatval($row['final_price']);
         
-        // Use enhanced discount data if available, otherwise fall back
-        $total_discount = $enhanced_discount > 0 ? $enhanced_discount : $traditional_discount;
+        // Use item-level discount if available, otherwise order-level, otherwise traditional
+        $total_discount = $item_total_discount > 0 ? $item_total_discount : 
+                         ($enhanced_discount > 0 ? $enhanced_discount : $traditional_discount);
         $final_price = floatval($row['base_price']) - $total_discount;
 
         // Parse discount breakdown for detailed reporting
         $discount_details = array();
-        if (!empty($discount_breakdown)) {
+        if (!empty($item_discounts) && is_array($item_discounts)) {
+            // Use item-level discount details
+            foreach ($item_discounts as $discount_detail) {
+                if (is_array($discount_detail) && isset($discount_detail['name']) && isset($discount_detail['amount'])) {
+                    $discount_details[] = $discount_detail['name'] . ' (' . number_format($discount_detail['amount'], 2) . ' CHF)';
+                }
+            }
+        } elseif (!empty($discount_breakdown)) {
+            // Fall back to order-level discount breakdown
             $parsed_breakdown = maybe_unserialize($discount_breakdown);
             if (is_array($parsed_breakdown)) {
                 foreach ($parsed_breakdown as $discount_detail) {
@@ -462,6 +485,12 @@ function intersoccer_get_booking_report_enhanced($start_date = '', $end_date = '
         // Reimbursement
         $reimbursement = floatval($row['reimbursement']);
 
+        // Calculate Stripe Fee (2.9% + 0.30 CHF per transaction)
+        $stripe_fee = 0;
+        if ($final_price > 0) {
+            $stripe_fee = ($final_price * 0.029) + 0.30;
+        }
+
         // Determine gender
         $gender = $row['player_gender'] ? $row['player_gender'] : ($row['gender'] ? $row['gender'] : 'N/A');
 
@@ -480,6 +509,7 @@ function intersoccer_get_booking_report_enhanced($start_date = '', $end_date = '
             'base_price' => number_format((float)$row['base_price'], 2),
             'discount_amount' => number_format($total_discount, 2),
             'reimbursement' => number_format($reimbursement, 2),
+            'stripe_fee' => number_format($stripe_fee, 2),
             'final_price' => number_format($final_price, 2),
             'discount_codes' => $discount_codes,
             'class_name' => $row['product_name'] ? $row['product_name'] : 'N/A',
@@ -507,6 +537,9 @@ function intersoccer_get_booking_report_enhanced($start_date = '', $end_date = '
         }, $data)),
         'reimbursement' => array_sum(array_map(function($row) { 
             return (float)str_replace(',', '', $row['reimbursement']); 
+        }, $data)),
+        'stripe_fee' => array_sum(array_map(function($row) { 
+            return (float)str_replace(',', '', $row['stripe_fee']); 
         }, $data))
     );
 
@@ -514,7 +547,8 @@ function intersoccer_get_booking_report_enhanced($start_date = '', $end_date = '
               ', Base: ' . $totals['base_price'] . 
               ', Final: ' . $totals['final_price'] . 
               ', Discounts: ' . $totals['discount_amount'] . 
-              ', Refunds: ' . $totals['reimbursement']);
+              ', Refunds: ' . $totals['reimbursement'] . 
+              ', Stripe Fees: ' . $totals['stripe_fee']);
 
     return array('data' => $data, 'totals' => $totals);
 }

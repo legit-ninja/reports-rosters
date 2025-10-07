@@ -26,36 +26,9 @@ function intersoccer_render_reports_page() {
         wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
     }
 
-    $active_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'general';
-    $tabs = [
-        'general' => __('General Reports', 'intersoccer-reports-rosters'),
-        'summer-camps' => __('Summer Camps Report', 'intersoccer-reports-rosters'),
-        'booking' => __('Booking Report', 'intersoccer-reports-rosters'),
-    ];
     ?>
     <div class="wrap intersoccer-reports-rosters-reports">
-        <h1><?php _e('InterSoccer Reports', 'intersoccer-reports-rosters'); ?></h1>
-        <nav class="nav-tab-wrapper">
-            <?php foreach ($tabs as $tab => $label): ?>
-                <a href="?page=intersoccer-reports&tab=<?php echo esc_attr($tab); ?>" class="nav-tab <?php echo $active_tab === $tab ? 'nav-tab-active' : ''; ?>"><?php echo esc_html($label); ?></a>
-            <?php endforeach; ?>
-        </nav>
-        <div class="tab-content">
-            <?php
-            switch ($active_tab) {
-                case 'booking':
-                    intersoccer_render_booking_report_tab();
-                    break;
-                case 'summer-camps':
-                    intersoccer_render_summer_camps_report_tab();
-                    break;
-                case 'general':
-                default:
-                    echo '<p>' . __('General reports content goes here.', 'intersoccer-reports-rosters') . '</p>';
-                    break;
-            }
-            ?>
-        </div>
+        <?php intersoccer_render_booking_report_tab(); ?>
     </div>
     <?php
 }
@@ -64,7 +37,7 @@ function intersoccer_render_reports_page() {
  * Enqueue jQuery UI Datepicker and AJAX for auto-apply filters.
  */
 function intersoccer_enqueue_datepicker() {
-    if (isset($_GET['page']) && $_GET['page'] === 'intersoccer-reports' && isset($_GET['tab']) && $_GET['tab'] === 'booking') {
+    if (isset($_GET['page']) && $_GET['page'] === 'intersoccer-reports') {
         wp_enqueue_script('jquery-ui-datepicker');
         wp_enqueue_style('jquery-ui-css', '//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
         wp_enqueue_script('intersoccer-reports', plugin_dir_url(__FILE__) . 'js/reports.js', ['jquery'], '1.3.99', true);
@@ -418,9 +391,8 @@ function intersoccer_filter_report_callback() {
     $year = isset($_POST['year']) ? sanitize_text_field($_POST['year']) : date('Y');
     $region = isset($_POST['region']) ? sanitize_text_field($_POST['region']) : '';
     $visible_columns = isset($_POST['columns']) ? array_map('sanitize_text_field', (array)$_POST['columns']) : [
-        'ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'final_price', 
-        'discount_codes', 'class_name', 'start_date', 'venue', 'booker_email', 
-        'attendee_name', 'attendee_age', 'attendee_gender', 'parent_phone'
+        'ref', 'booked', 'base_price', 'discount_amount', 'stripe_fee', 'final_price', 
+        'class_name', 'venue', 'booker_email'
     ];
 
     // Use the enhanced reporting function
@@ -435,6 +407,24 @@ function intersoccer_filter_report_callback() {
         <?php if (empty($report_data['data'])): ?>
             <p><?php _e('No data available for the selected filters.', 'intersoccer-reports-rosters'); ?></p>
         <?php else: ?>
+            <style>
+                .intersoccer-reports-rosters-reports-tab table.widefat th,
+                .intersoccer-reports-rosters-reports-tab table.widefat td {
+                    padding: 8px 12px;
+                    font-size: 13px;
+                }
+                .intersoccer-reports-rosters-reports-tab table.widefat th {
+                    background: #f8f9fa;
+                    font-weight: 600;
+                    border-bottom: 2px solid #dee2e6;
+                }
+                .intersoccer-reports-rosters-reports-tab table.widefat tbody tr:nth-child(even) {
+                    background: #f8f9fa;
+                }
+                .intersoccer-reports-rosters-reports-tab table.widefat tbody tr:hover {
+                    background: #e9ecef;
+                }
+            </style>
             <table class="widefat fixed">
                 <thead>
                     <tr>
@@ -443,18 +433,12 @@ function intersoccer_filter_report_callback() {
                             'ref' => __('Ref', 'intersoccer-reports-rosters'),
                             'booked' => __('Booked', 'intersoccer-reports-rosters'),
                             'base_price' => __('Base Price', 'intersoccer-reports-rosters'),
-                            'discount_amount' => __('Discount Amount', 'intersoccer-reports-rosters'),
-                            'reimbursement' => __('Reimbursement', 'intersoccer-reports-rosters'),
+                            'discount_amount' => __('Discount', 'intersoccer-reports-rosters'),
+                            'stripe_fee' => __('Stripe Fee', 'intersoccer-reports-rosters'),
                             'final_price' => __('Final Price', 'intersoccer-reports-rosters'),
-                            'discount_codes' => __('Discount Codes', 'intersoccer-reports-rosters'),
-                            'class_name' => __('Class Name', 'intersoccer-reports-rosters'),
-                            'start_date' => __('Start Date', 'intersoccer-reports-rosters'),
+                            'class_name' => __('Event', 'intersoccer-reports-rosters'),
                             'venue' => __('Venue', 'intersoccer-reports-rosters'),
-                            'booker_email' => __('Booker Email', 'intersoccer-reports-rosters'),
-                            'attendee_name' => __('Attendee Name', 'intersoccer-reports-rosters'),
-                            'attendee_age' => __('Attendee Age', 'intersoccer-reports-rosters'),
-                            'attendee_gender' => __('Attendee Gender', 'intersoccer-reports-rosters'),
-                            'parent_phone' => __('Parent Phone', 'intersoccer-reports-rosters'),
+                            'booker_email' => __('Email', 'intersoccer-reports-rosters'),
                         ];
                         foreach ($visible_columns as $key): ?>
                             <th><?php echo esc_html($all_columns[$key]); ?></th>
@@ -507,10 +491,9 @@ function intersoccer_render_booking_report_tab() {
     // Also update the year logic to use current year as fallback only
     $year = isset($_GET['year']) ? sanitize_text_field($_GET['year']) : date('Y');
     
-    // Default visible columns
-    $default_columns = ['ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'final_price', 
-                       'discount_codes', 'class_name', 'start_date', 'venue', 'booker_email', 
-                       'attendee_name', 'attendee_gender', 'attendee_age', 'parent_phone'];
+    // Default visible columns - focused view for finance team
+    $default_columns = ['ref', 'booked', 'base_price', 'discount_amount', 'stripe_fee', 'final_price', 
+                       'class_name', 'venue', 'booker_email'];
     $visible_columns = isset($_GET['columns']) ? array_map('sanitize_text_field', (array)$_GET['columns']) : $default_columns;
 
     // Define all possible columns
@@ -518,14 +501,15 @@ function intersoccer_render_booking_report_tab() {
         'ref' => __('Reference', 'intersoccer-reports-rosters'),
         'booked' => __('Booking Date', 'intersoccer-reports-rosters'),
         'base_price' => __('Base Price (CHF)', 'intersoccer-reports-rosters'),
-        'discount_amount' => __('Discount Amount (CHF)', 'intersoccer-reports-rosters'),
+        'discount_amount' => __('Discount (CHF)', 'intersoccer-reports-rosters'),
         'reimbursement' => __('Reimbursement (CHF)', 'intersoccer-reports-rosters'),
+        'stripe_fee' => __('Stripe Fee (CHF)', 'intersoccer-reports-rosters'),
         'final_price' => __('Final Price (CHF)', 'intersoccer-reports-rosters'),
         'discount_codes' => __('Discount Codes Used', 'intersoccer-reports-rosters'),
         'class_name' => __('Event/Class Name', 'intersoccer-reports-rosters'),
         'start_date' => __('Event Start Date', 'intersoccer-reports-rosters'),
-        'venue' => __('Venue Location', 'intersoccer-reports-rosters'),
-        'booker_email' => __('Parent/Booker Email', 'intersoccer-reports-rosters'),
+        'venue' => __('Venue', 'intersoccer-reports-rosters'),
+        'booker_email' => __('Booker Email', 'intersoccer-reports-rosters'),
         'attendee_name' => __('Child/Attendee Name', 'intersoccer-reports-rosters'),
         'attendee_age' => __('Attendee Age', 'intersoccer-reports-rosters'),
         'attendee_gender' => __('Attendee Gender', 'intersoccer-reports-rosters'),
@@ -600,7 +584,10 @@ function intersoccer_render_booking_report_tab() {
                 <span id="loading-indicator">🔄 Loading data...</span>
                 <span id="record-count">0 records found</span>
             </div>
-            <div>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <small style="color: #666; font-style: italic;">
+                    💡 <?php _e('All columns available in Excel export', 'intersoccer-reports-rosters'); ?>
+                </small>
                 <button id="export-booking-report" class="button button-primary">
                     📥 <?php _e('Export to Excel', 'intersoccer-reports-rosters'); ?>
                 </button>
@@ -625,7 +612,7 @@ function intersoccer_export_booking_report_callback() {
     $end_date = isset($_POST['end_date']) ? sanitize_text_field($_POST['end_date']) : '';
     $year = isset($_POST['year']) ? absint($_POST['year']) : date('Y');
     $visible_columns = isset($_POST['columns']) ? array_map('sanitize_text_field', (array)$_POST['columns']) : [
-        'ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'final_price', 'discount_codes',
+        'ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'stripe_fee', 'final_price', 'discount_codes',
         'class_name', 'start_date', 'venue', 'booker_email', 'attendee_name', 'attendee_age', 'attendee_gender', 'parent_phone'
     ];
 
@@ -672,6 +659,7 @@ function intersoccer_export_booking_report_callback() {
             'base_price' => __('Base Price (CHF)', 'intersoccer-reports-rosters'),
             'discount_amount' => __('Total Discount (CHF)', 'intersoccer-reports-rosters'),
             'reimbursement' => __('Reimbursement (CHF)', 'intersoccer-reports-rosters'),
+            'stripe_fee' => __('Stripe Fee (CHF)', 'intersoccer-reports-rosters'),
             'final_price' => __('Final Price (CHF)', 'intersoccer-reports-rosters'),
             'discount_codes' => __('Discount Details', 'intersoccer-reports-rosters'),
             'class_name' => __('Event/Class Name', 'intersoccer-reports-rosters'),
@@ -1315,9 +1303,13 @@ function intersoccer_render_booking_totals($totals) {
                 <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Reimbursements', 'intersoccer-reports-rosters'); ?></div>
                 <div style="font-size: 24px; font-weight: 600; color: #dc3545;"><?php echo esc_html(number_format($totals['reimbursement'], 2)); ?> CHF</div>
             </div>
+            <div class="summary-item">
+                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Stripe Fees', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 24px; font-weight: 600; color: #6c757d;"><?php echo esc_html(number_format($stripe_fee, 2)); ?> CHF</div>
+            </div>
             <div class="summary-item" style="border-left: 3px solid #0073aa; padding-left: 15px;">
-                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Net Revenue', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 28px; font-weight: 700; color: #0073aa;"><?php echo esc_html(number_format($net_revenue, 2)); ?> CHF</div>
+                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Net Revenue (After Fees)', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 28px; font-weight: 700; color: #0073aa;"><?php echo esc_html(number_format($net_after_fees, 2)); ?> CHF</div>
             </div>
         </div>
         
@@ -1353,68 +1345,119 @@ function intersoccer_render_booking_totals($totals) {
  */
 function intersoccer_render_enhanced_booking_totals($totals) {
     $net_revenue = $totals['final_price'] - $totals['reimbursement'];
+    $stripe_fee = isset($totals['stripe_fee']) ? $totals['stripe_fee'] : 0;
+    $net_after_fees = $net_revenue - $stripe_fee;
     ?>
     <div class="report-totals" style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">
         <h3 style="margin-top: 0; color: #0073aa;"><?php _e('📈 Financial Summary', 'intersoccer-reports-rosters'); ?></h3>
         
-        <!-- Main metrics grid -->
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
-            <div class="summary-item">
-                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Total Bookings', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 24px; font-weight: 600; color: #0073aa;"><?php echo esc_html(number_format($totals['bookings'])); ?></div>
+        <!-- Main metrics grid - Improved for desktop readability -->
+        <div style="
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+            gap: 20px; 
+            margin-bottom: 25px;
+            /* Desktop optimization: 4 columns on larger screens */
+            @media (min-width: 1200px) {
+                grid-template-columns: repeat(4, 1fr);
+            }
+            @media (min-width: 768px) and (max-width: 1199px) {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        ">
+            <div class="summary-item" style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef; transition: transform 0.2s ease;">
+                <div style="font-size: 14px; color: #666; margin-bottom: 8px; font-weight: 500;"><?php _e('Total Bookings', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 28px; font-weight: 700; color: #0073aa; line-height: 1.2;"><?php echo esc_html(number_format($totals['bookings'])); ?></div>
             </div>
-            <div class="summary-item">
-                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Gross Revenue', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 24px; font-weight: 600; color: #28a745;"><?php echo esc_html(number_format($totals['base_price'], 2)); ?> CHF</div>
+            <div class="summary-item" style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef; transition: transform 0.2s ease;">
+                <div style="font-size: 14px; color: #666; margin-bottom: 8px; font-weight: 500;"><?php _e('Gross Revenue', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 28px; font-weight: 700; color: #28a745; line-height: 1.2;"><?php echo esc_html(number_format($totals['base_price'], 2)); ?> CHF</div>
             </div>
-            <div class="summary-item">
-                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Total Discounts', 'intersoccer-reports-rosters'); ?> 
+            <div class="summary-item" style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef; transition: transform 0.2s ease;">
+                <div style="font-size: 14px; color: #666; margin-bottom: 8px; font-weight: 500;"><?php _e('Total Discounts', 'intersoccer-reports-rosters'); ?> 
                     <span style="font-size: 12px; color: #999;">(Enhanced Tracking)</span>
                 </div>
-                <div style="font-size: 24px; font-weight: 600; color: #ffc107;"><?php echo esc_html(number_format($totals['discount_amount'], 2)); ?> CHF</div>
+                <div style="font-size: 28px; font-weight: 700; color: #ffc107; line-height: 1.2;"><?php echo esc_html(number_format($totals['discount_amount'], 2)); ?> CHF</div>
             </div>
-            <div class="summary-item">
-                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Final Revenue', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 24px; font-weight: 600; color: #17a2b8;"><?php echo esc_html(number_format($totals['final_price'], 2)); ?> CHF</div>
+            <div class="summary-item" style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef; transition: transform 0.2s ease;">
+                <div style="font-size: 14px; color: #666; margin-bottom: 8px; font-weight: 500;"><?php _e('Final Revenue', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 28px; font-weight: 700; color: #17a2b8; line-height: 1.2;"><?php echo esc_html(number_format($totals['final_price'], 2)); ?> CHF</div>
             </div>
-            <div class="summary-item">
-                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Reimbursements', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 24px; font-weight: 600; color: #dc3545;"><?php echo esc_html(number_format($totals['reimbursement'], 2)); ?> CHF</div>
+            <div class="summary-item" style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef; transition: transform 0.2s ease;">
+                <div style="font-size: 14px; color: #666; margin-bottom: 8px; font-weight: 500;"><?php _e('Reimbursements', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 28px; font-weight: 700; color: #dc3545; line-height: 1.2;"><?php echo esc_html(number_format($totals['reimbursement'], 2)); ?> CHF</div>
             </div>
-            <div class="summary-item" style="border-left: 3px solid #0073aa; padding-left: 15px;">
-                <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Net Revenue', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 28px; font-weight: 700; color: #0073aa;"><?php echo esc_html(number_format($net_revenue, 2)); ?> CHF</div>
+            <div class="summary-item" style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef; transition: transform 0.2s ease;">
+                <div style="font-size: 14px; color: #666; margin-bottom: 8px; font-weight: 500;"><?php _e('Stripe Fees', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 28px; font-weight: 700; color: #6c757d; line-height: 1.2;"><?php echo esc_html(number_format($stripe_fee, 2)); ?> CHF</div>
+            </div>
+            <div class="summary-item" style="
+                background: linear-gradient(135deg, #0073aa 0%, #005a87 100%); 
+                color: white; 
+                padding: 20px; 
+                border-radius: 8px; 
+                border: 2px solid #0073aa; 
+                grid-column: span 1;
+                transition: transform 0.2s ease;
+            ">
+                <div style="font-size: 14px; color: rgba(255,255,255,0.9); margin-bottom: 8px; font-weight: 500;"><?php _e('Net Revenue (After Fees)', 'intersoccer-reports-rosters'); ?></div>
+                <div style="font-size: 32px; font-weight: 800; color: white; line-height: 1.2; text-shadow: 0 1px 2px rgba(0,0,0,0.1);"><?php echo esc_html(number_format($net_after_fees, 2)); ?> CHF</div>
             </div>
         </div>
         
-        <!-- Enhanced metrics row -->
-        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-                <div>
-                    <strong><?php _e('Average Order Value:', 'intersoccer-reports-rosters'); ?></strong> 
-                    <span style="color: #0073aa; font-weight: 600;">
+        <!-- Enhanced metrics row - Improved spacing and layout -->
+        <div style="margin-top: 25px; padding-top: 20px; border-top: 2px solid #e9ecef; background: #f8f9fa; border-radius: 6px; padding: 20px;">
+            <div style="
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                gap: 20px;
+                align-items: center;
+            ">
+                <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <strong style="font-size: 13px; color: #495057; text-transform: uppercase; letter-spacing: 0.5px;"><?php _e('Average Order Value', 'intersoccer-reports-rosters'); ?></strong> 
+                    <span style="font-size: 18px; font-weight: 700; color: #0073aa;">
                         <?php echo $totals['bookings'] > 0 ? esc_html(number_format($totals['final_price'] / $totals['bookings'], 2)) : '0.00'; ?> CHF
                     </span>
                 </div>
-                <div>
-                    <strong><?php _e('Discount Rate:', 'intersoccer-reports-rosters'); ?></strong> 
-                    <span style="color: #ffc107; font-weight: 600;">
+                <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <strong style="font-size: 13px; color: #495057; text-transform: uppercase; letter-spacing: 0.5px;"><?php _e('Discount Rate', 'intersoccer-reports-rosters'); ?></strong> 
+                    <span style="font-size: 18px; font-weight: 700; color: #ffc107;">
                         <?php echo $totals['base_price'] > 0 ? esc_html(number_format(($totals['discount_amount'] / $totals['base_price']) * 100, 1)) : '0.0'; ?>%
                     </span>
                 </div>
-                <div>
-                    <strong><?php _e('Refund Rate:', 'intersoccer-reports-rosters'); ?></strong> 
-                    <span style="color: #dc3545; font-weight: 600;">
+                <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <strong style="font-size: 13px; color: #495057; text-transform: uppercase; letter-spacing: 0.5px;"><?php _e('Refund Rate', 'intersoccer-reports-rosters'); ?></strong> 
+                    <span style="font-size: 18px; font-weight: 700; color: #dc3545;">
                         <?php echo $totals['final_price'] > 0 ? esc_html(number_format(($totals['reimbursement'] / $totals['final_price']) * 100, 1)) : '0.0'; ?>%
                     </span>
                 </div>
-                <div style="padding: 8px 12px; background: #e8f5e8; border-radius: 4px;">
-                    <strong style="color: #155724;"><?php _e('Enhanced Tracking Active', 'intersoccer-reports-rosters'); ?></strong>
-                    <div style="font-size: 12px; color: #155724;"><?php _e('Detailed discount breakdown available', 'intersoccer-reports-rosters'); ?></div>
+                <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <strong style="font-size: 13px; color: #495057; text-transform: uppercase; letter-spacing: 0.5px;"><?php _e('Stripe Fee Rate', 'intersoccer-reports-rosters'); ?></strong> 
+                    <span style="font-size: 18px; font-weight: 700; color: #6c757d;">
+                        <?php echo $totals['final_price'] > 0 ? esc_html(number_format(($stripe_fee / $totals['final_price']) * 100, 1)) : '0.0'; ?>%
+                    </span>
                 </div>
             </div>
         </div>
     </div>
+    
+    <style>
+        .summary-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        @media (max-width: 767px) {
+            .report-totals .summary-item {
+                padding: 15px !important;
+            }
+            .report-totals .summary-item div:first-child {
+                font-size: 12px !important;
+            }
+            .report-totals .summary-item div:last-child {
+                font-size: 24px !important;
+            }
+        }
+    </style>
     <?php
 }
 
@@ -1450,156 +1493,3 @@ function intersoccer_calculate_discount_type_breakdown($report_data) {
     
     return $breakdown;
 }
-
-/**
- * NEW: Add admin notice for enhanced reporting activation
- */
-add_action('admin_notices', 'intersoccer_enhanced_reporting_notice');
-function intersoccer_enhanced_reporting_notice() {
-    if (!current_user_can('manage_options')) {
-        return;
-    }
-    
-    $screen = get_current_screen();
-    if ($screen->id !== 'intersoccer_page_intersoccer-reports') {
-        return;
-    }
-    
-    // Show success notice for enhanced reporting
-    ?>
-    <div class="notice notice-success is-dismissible">
-        <p><strong>✅ Enhanced Discount Reporting Active</strong></p>
-        <p>Your reports now include detailed discount tracking and breakdown for the finance team. All new orders will automatically capture enhanced discount data.</p>
-        <p style="font-size: 12px; color: #666;">
-            <strong>Features:</strong> Detailed discount breakdowns • Sibling discount tracking • Same-season course discounts • Enhanced Excel exports • Migration tools for historical data
-        </p>
-    </div>
-    <?php
-}
-
-/**
- * NEW: Add diagnostic tools to the reports page
- */
-function intersoccer_add_diagnostic_tools_to_reports() {
-    $screen = get_current_screen();
-    if ($screen->id !== 'intersoccer_page_intersoccer-reports') {
-        return;
-    }
-    ?>
-    <script>
-    jQuery(document).ready(function($) {
-        // Add diagnostic button to the reports interface
-        $('.stats-bar').append(
-            '<div style="margin-left: 15px;">' +
-            '<button id="run-discount-diagnostics" class="button button-secondary" style="font-size: 12px;">' +
-            '🔧 Run Discount Diagnostics' +
-            '</button>' +
-            '<span id="diagnostic-status" style="margin-left: 10px; font-size: 12px;"></span>' +
-            '</div>'
-        );
-        
-        $('#run-discount-diagnostics').on('click', function() {
-            var $btn = $(this);
-            var $status = $('#diagnostic-status');
-            
-            $btn.prop('disabled', true).text('Running Diagnostics...');
-            $status.text('Checking discount data integrity...');
-            
-            // Run basic diagnostics
-            $.ajax({
-                url: ajaxurl,
-                type: 'POST',
-                data: {
-                    action: 'intersoccer_run_discount_diagnostics',
-                    nonce: '<?php echo wp_create_nonce('intersoccer_diagnostics'); ?>'
-                },
-                success: function(response) {
-                    if (response.success) {
-                        $status.html('<span style="color: green;">✓ ' + response.data.message + '</span>');
-                    } else {
-                        $status.html('<span style="color: orange;">⚠ ' + response.data.message + '</span>');
-                    }
-                },
-                error: function() {
-                    $status.html('<span style="color: red;">✗ Diagnostic error</span>');
-                },
-                complete: function() {
-                    $btn.prop('disabled', false).text('🔧 Run Discount Diagnostics');
-                }
-            });
-        });
-    });
-    </script>
-    <?php
-}
-add_action('admin_footer', 'intersoccer_add_diagnostic_tools_to_reports');
-
-/**
- * NEW: AJAX handler for discount diagnostics
- */
-add_action('wp_ajax_intersoccer_run_discount_diagnostics', 'intersoccer_run_discount_diagnostics_ajax');
-function intersoccer_run_discount_diagnostics_ajax() {
-    if (!current_user_can('manage_options')) {
-        wp_die('Unauthorized');
-    }
-    
-    check_ajax_referer('intersoccer_diagnostics', 'nonce');
-    
-    global $wpdb;
-    
-    // Check how many orders have enhanced discount data
-    $enhanced_orders = $wpdb->get_var("
-        SELECT COUNT(*) 
-        FROM {$wpdb->prefix}postmeta 
-        WHERE meta_key = '_intersoccer_total_discounts'
-        AND meta_value > 0
-    ");
-    
-    // Check recent orders
-    $recent_orders = $wpdb->get_var("
-        SELECT COUNT(*) 
-        FROM {$wpdb->prefix}posts 
-        WHERE post_type = 'shop_order' 
-        AND post_status IN ('wc-completed', 'wc-processing') 
-        AND post_date >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-    ");
-    
-    // Check for orders with fees (new discount system)
-    $orders_with_fees = $wpdb->get_var("
-        SELECT COUNT(DISTINCT order_id) 
-        FROM {$wpdb->prefix}woocommerce_order_items 
-        WHERE order_item_type = 'fee'
-        AND order_item_name LIKE '%discount%'
-    ");
-    
-    $message = "Enhanced data: {$enhanced_orders} orders | Recent orders: {$recent_orders} | Orders with discount fees: {$orders_with_fees}";
-    
-    if ($enhanced_orders > 0) {
-        wp_send_json_success(['message' => $message . ' | System operational']);
-    } else {
-        wp_send_json_error(['message' => $message . ' | Consider running migration']);
-    }
-}
-
-/**
- * FALLBACK: Ensure the original function is replaced
- * This ensures compatibility if the original function exists
- */
-if (!function_exists('intersoccer_get_booking_report_original')) {
-    // Store the original function for fallback
-    if (function_exists('intersoccer_get_booking_report')) {
-        function intersoccer_get_booking_report_original($start_date = '', $end_date = '', $year = '', $region = '') {
-            // This would contain the original function logic as a fallback
-            return ['data' => [], 'totals' => ['bookings' => 0, 'base_price' => 0, 'discount_amount' => 0, 'final_price' => 0, 'reimbursement' => 0]];
-        }
-    }
-}
-
-// Override the original function
-if (!function_exists('intersoccer_get_booking_report')) {
-    function intersoccer_get_booking_report($start_date = '', $end_date = '', $year = '', $region = '') {
-        return intersoccer_get_booking_report_enhanced($start_date, $end_date, $year, $region);
-    }
-}
-error_log('InterSoccer: Enhanced reports integration loaded successfully');
-?>
