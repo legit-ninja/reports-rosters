@@ -1850,7 +1850,7 @@ function intersoccer_render_other_events_page() {
                                             </div>
                                             <div class="course-actions">
                                                 <?php 
-                                                $view_url = admin_url('admin.php?page=intersoccer-roster-details&product_name=' . urlencode($event['product_name']) . '&age_group=' . urlencode($event['age_group']) . '&times=' . urlencode($event['times']));
+                                                $view_url = admin_url('admin.php?page=intersoccer-roster-details&product_name=' . urlencode($event['product_name']) . '&age_group=' . urlencode($event['age_group']) . '&times=' . urlencode($event['times']) . '&season=' . urlencode($season));
                                                 ?>
                                                 <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                     👀 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
@@ -1923,7 +1923,7 @@ function intersoccer_render_all_rosters_page() {
                         $wpdb->prepare(
                             "SELECT variation_id, product_name, venue, age_group, COUNT(DISTINCT order_item_id) as total_players
                              FROM $rosters_table
-                             WHERE product_name = %s
+                             WHERE product_name = %s AND p.post_status = 'wc-completed'
                              GROUP BY variation_id, product_name, venue, age_group
                              ORDER BY product_name, venue, age_group",
                             $product_name

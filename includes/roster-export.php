@@ -43,7 +43,10 @@ function intersoccer_normalize_phone_number($phone) {
 
     // Preserve + prefix and clean spaces, hyphens, dots, and parentheses
     $cleaned = preg_replace('/[\s\-\.\(\)]+/', '', $phone);
-    error_log("InterSoccer: Cleaned phone number: {$phone} -> {$cleaned}");
+    // Only log cleaning for debugging if WP_DEBUG is enabled
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("InterSoccer: Cleaned phone number: {$phone} -> {$cleaned}");
+    }
 
     // Handle invalid numbers first
     $reason = 'unknown';
@@ -57,7 +60,10 @@ function intersoccer_normalize_phone_number($phone) {
         $reason = 'repetitive pattern (possible test data)';
     }
     if ($reason !== 'unknown') {
-        error_log("InterSoccer: Invalid phone number format: {$phone} (Reason: {$reason})");
+        // Only log invalid numbers if debugging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("InterSoccer: Invalid phone number format: {$phone} (Reason: {$reason})");
+        }
         return (string)$phone; // Return as string
     }
 
@@ -76,7 +82,6 @@ function intersoccer_normalize_phone_number($phone) {
             $local_number = str_pad($local_number, 9, '0', STR_PAD_RIGHT); // Pad with zeros
         }
         $normalized = '+41' . $local_number;
-        error_log("InterSoccer: Normalized phone number: {$phone} -> {$normalized} (Swiss match)");
         return (string)$normalized; // Ensure string type
     }
 
@@ -90,7 +95,6 @@ function intersoccer_normalize_phone_number($phone) {
             $local_number = str_pad($local_number, 9, '0', STR_PAD_RIGHT); // Pad with zeros
         }
         $normalized = '+41' . $local_number;
-        error_log("InterSoccer: Normalized phone number: {$phone} -> {$normalized} (Swiss match)");
         return (string)$normalized; // Ensure string type
     }
 
@@ -112,7 +116,10 @@ function intersoccer_normalize_phone_number($phone) {
             $local_number = str_pad($local_number, 9, '0', STR_PAD_RIGHT); // Pad with zeros
         }
         $normalized = $country_code . $local_number;
-        error_log("InterSoccer: Normalized phone number: {$phone} -> {$normalized} (country code match)");
+        // Only log if debugging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("InterSoccer: Normalized phone number: {$phone} -> {$normalized} (country code match)");
+        }
         return (string)$normalized; // Ensure string type
     }
 
@@ -132,7 +139,10 @@ function intersoccer_normalize_phone_number($phone) {
     }
 
     // Fallback for any unhandled cases
-    error_log("InterSoccer: Invalid phone number format: {$phone} (Reason: unhandled format)");
+    // Only log if debugging
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("InterSoccer: Invalid phone number format: {$phone} (Reason: unhandled format)");
+    }
     return (string)$phone; // Return as string
 }
 
@@ -147,7 +157,10 @@ function intersoccer_export_roster() {
         ob_end_clean();
         wp_send_json_error(__('You do not have permission to export rosters.', 'intersoccer-reports-rosters'));
     }
-    error_log('InterSoccer Export: Full POST data - ' . json_encode($_POST));
+    // Only log if debugging
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer Export: Full POST data - ' . json_encode($_POST));
+    }
     $use_fields = isset($_POST['use_fields']) ? (bool)$_POST['use_fields'] : false;
     $product_id = isset($_POST['product_id']) ? intval($_POST['product_id']) : 0;
     $variation_ids = isset($_POST['variation_ids']) ? array_map('intval', (array)$_POST['variation_ids']) : [];
@@ -163,10 +176,21 @@ function intersoccer_export_roster() {
         ob_end_clean();
         wp_send_json_error(__('No variation IDs or fields provided for export.', 'intersoccer-reports-rosters'));
     }
-    error_log('InterSoccer Export: Initial filters - activity_types: ' . json_encode($activity_types) . ', age_group: ' . $age_group . ', times: ' . $times);
-    // Increase memory limit for large exports - increased for small exports too
-    ini_set('memory_limit', '512M');
-    ini_set('max_execution_time', 300); // 5 minutes timeout
+    // Only log if debugging
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer Export: Initial filters - activity_types: ' . json_encode($activity_types) . ', age_group: ' . $age_group . ', times: ' . $times);
+    }
+    // Increase memory limit for exports - use reasonable limits for shared hosting
+    $current_limit = ini_get('memory_limit');
+    $current_limit_bytes = wp_convert_hr_to_bytes($current_limit);
+    
+    // Only increase if current limit is less than 256MB
+    if ($current_limit_bytes < 268435456) { // 256MB
+        ini_set('memory_limit', '256M');
+    }
+    
+    // Set reasonable execution time
+    ini_set('max_execution_time', 180); // 3 minutes should be sufficient
 
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
@@ -189,55 +213,55 @@ function intersoccer_export_roster() {
             } else {
                 $where_clauses[] = "(" . implode(" OR ", $like_conditions) . ")";
             }
-            error_log('InterSoccer Export: activity_types clause added - Clause: ' . $where_clauses[count($where_clauses) - 1] . ' | Params: ' . json_encode($query_params));
+            // Only log if debugging
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer Export: activity_types clause added - Clause: ' . $where_clauses[count($where_clauses) - 1]);
+            }
         }
         if ($product_id > 0) {
             $where_clauses[] = $wpdb->prepare("product_id = %d", $product_id);
             $query_params[] = $product_id;
-            error_log('InterSoccer Export: Adding clause - ' . $where_clauses[count($where_clauses) - 1] . ' | Current params: ' . json_encode($query_params));
+            // Only log if debugging
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer Export: Adding clause - ' . $where_clauses[count($where_clauses) - 1] . ' | Current params: ' . json_encode($query_params));
+            }
         }
         if ($camp_terms) {
             $where_clauses[] = $wpdb->prepare("(camp_terms = %s OR camp_terms LIKE %s OR (camp_terms IS NULL AND %s = 'N/A'))", $camp_terms, '%' . $wpdb->esc_like($camp_terms) . '%', $camp_terms);
             $query_params[] = array_merge($query_params, [$camp_terms, '%' . $camp_terms . '%', $camp_terms]);
-            error_log('InterSoccer Export: Adding clause - ' . $where_clauses[count($where_clauses) - 1] . ' | Current params: ' . json_encode($query_params));
         }
         if ($course_day) {
             $where_clauses[] = $wpdb->prepare("(course_day = %s OR course_day LIKE %s OR (course_day IS NULL AND %s = 'N/A'))", $course_day, '%' . $wpdb->esc_like($course_day) . '%', $course_day);
             $query_params[] = array_merge($query_params, [$course_day, ]);
             $query_params[] = '%' . $course_day . '%';
             $query_params[] = $course_day;
-            error_log('InterSoccer Export: Adding clause - ' . $where_clauses[count($where_clauses) - 1] . ' | Current params: ' . json_encode($query_params));
         }
         if ($venue) {
             $where_clauses[] = $wpdb->prepare("(venue = %s OR venue LIKE %s OR (venue IS NULL AND %s = 'N/A'))", $venue, '%' . $wpdb->esc_like($venue) . '%', $venue);
             $query_params[] = array_merge($query_params, [$venue, '%' . $venue . '%', $venue]);
-            error_log('InterSoccer Export: Adding clause - ' . $where_clauses[count($where_clauses) - 1] . ' | Current params: ' . json_encode($query_params));
         }
         if ($age_group) {
             $where_clauses[] = $wpdb->prepare("(age_group = %s OR age_group LIKE %s)", $age_group, '%' . $wpdb->esc_like($age_group) . '%');
             $query_params[] = array_merge($query_params, [$age_group, '%' . $age_group . '%']);
-            error_log('InterSoccer Export: Adding clause - ' . $where_clauses[count($where_clauses) - 1] . ' | Current params: ' . json_encode($query_params));
         }
         if ($times) {
             $where_clauses[] = $wpdb->prepare("(times = %s OR (times IS NULL AND %s = 'N/A'))", $times, $times);
             $query_params[] = array_merge($query_params, [$times, $times]);
-            error_log('InterSoccer Export: Adding clause - ' . $where_clauses[count($where_clauses) - 1] . ' | Current params: ' . json_encode($query_params));
         }
-        error_log('InterSoccer Export: Before WHERE - Clauses: ' . json_encode($where_clauses));
-        if (!empty($where_clauses)) {
-            $query .= " WHERE " . implode(' AND ', $where_clauses);
+        // Only log if debugging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer Export: Before WHERE - Clauses: ' . json_encode($where_clauses));
+            error_log('InterSoccer Export: Expected placeholders - ' . implode(',', array_fill(0, count($query_params), '%s')));
+            error_log('InterSoccer Export: Applied filters - activity_type: ' . ($where_clauses[0] ?? 'N/A') . ', age_group: ' . ($where_clauses[1] ?? 'N/A') . ', times: ' . ($where_clauses[2] ?? 'N/A'));
         }
-        $query .= " ORDER BY player_name";
-        error_log('InterSoccer Export: Before prepare - Query: ' . $query . ' | Params: ' . json_encode($query_params));
-        error_log('InterSoccer Export: Param count - ' . count($query_params));
-        error_log('InterSoccer Export: Expected placeholders - ' . implode(',', array_fill(0, count($query_params), '%s')));
-        error_log('InterSoccer Export: Applied filters - activity_type: ' . ($where_clauses[0] ?? 'N/A') . ', age_group: ' . ($where_clauses[1] ?? 'N/A') . ', times: ' . ($where_clauses[2] ?? 'N/A'));
         $rosters = $wpdb->get_results($wpdb->prepare($query, $query_params), ARRAY_A);
-        error_log('InterSoccer Export: After prepare - Executed query: ' . $wpdb->last_query . ' | Results count: ' . count($rosters) . ' | Last error: ' . $wpdb->last_error);
-        error_log('InterSoccer Export: Post-execution params applied - First row activity_type: ' . ($rosters[0]['activity_type'] ?? 'N/A'));
-        error_log('InterSoccer Export: Full first row - ' . json_encode($rosters[0] ?? 'No data'));
-        
-        error_log('InterSoccer Export: Expected placeholders - ' . implode(',', array_fill(0, count($query_params), '%s')));
+        // Only log query execution details if debugging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer Export: After prepare - Executed query: ' . $wpdb->last_query . ' | Results count: ' . count($rosters) . ' | Last error: ' . $wpdb->last_error);
+            error_log('InterSoccer Export: Post-execution params applied - First row activity_type: ' . ($rosters[0]['activity_type'] ?? 'N/A'));
+            error_log('InterSoccer Export: Full first row - ' . json_encode($rosters[0] ?? 'No data'));
+            error_log('InterSoccer Export: Expected placeholders - ' . implode(',', array_fill(0, count($query_params), '%s')));
+        }
     } else {
         $query = $wpdb->prepare(
             "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
@@ -254,9 +278,12 @@ function intersoccer_export_roster() {
         $rosters = $wpdb->get_results($query, ARRAY_A);
     }
 
-    error_log('InterSoccer: Export roster query: ' . $wpdb->last_query);
-    error_log('InterSoccer: Export roster results count: ' . count($rosters));
-    error_log('InterSoccer: Last SQL error: ' . $wpdb->last_error);
+    // Only log if debugging
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer: Export roster query: ' . $wpdb->last_query);
+        error_log('InterSoccer: Export roster results count: ' . count($rosters));
+        error_log('InterSoccer: Last SQL error: ' . $wpdb->last_error);
+    }
     
     if ($rosters) {
         // Log sample data including player_dob
@@ -271,7 +298,10 @@ function intersoccer_export_roster() {
                 'avs_number' => $row['avs_number'] ?? 'N/A'
             ];
         }, array_slice($rosters, 0, 1));
-        error_log('InterSoccer: Export roster data sample with player_dob: ' . json_encode($sample_data));
+        // Only log if debugging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer: Export roster data sample with player_dob: ' . json_encode($sample_data));
+        }
     }
 
     if (empty($rosters)) {
@@ -279,12 +309,127 @@ function intersoccer_export_roster() {
         wp_send_json_error(__('No roster data found for export.', 'intersoccer-reports-rosters'));
     }
 
+    // For very small rosters (1-2 participants), use CSV to avoid Excel memory overhead
+    if (count($rosters) <= 2) {
+        // Only log if debugging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer: Using CSV export for very small roster (' . count($rosters) . ' participants)');
+        }
+        
+        // Clear all output buffers
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+        ob_start();
+
+        $filename_csv = 'roster_' . sanitize_title($base_roster['product_name'] . '_' . ($base_roster['camp_terms'] ?: $base_roster['course_day']) . '_' . $base_roster['venue']) . '_' . date('Y-m-d_H-i-s') . '.csv';
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="' . $filename_csv . '"');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        $output = fopen('php://output', 'w');
+        // Output BOM for UTF-8
+        fwrite($output, "\xEF\xBB\xBF");
+
+        // Output headers
+        fputcsv($output, $headers, ';');
+
+        foreach ($rosters as $player) {
+            $day_presence = !empty($player['day_presence']) ? json_decode($player['day_presence'], true) : [];
+            $monday = isset($day_presence['Monday']) ? $day_presence['Monday'] : 'No';
+            $tuesday = isset($day_presence['Tuesday']) ? $day_presence['Tuesday'] : 'No';
+            $wednesday = isset($day_presence['Wednesday']) ? $day_presence['Wednesday'] : 'No';
+            $thursday = isset($day_presence['Thursday']) ? $day_presence['Thursday'] : 'No';
+            $friday = isset($day_presence['Friday']) ? $day_presence['Friday'] : 'No';
+            
+            // Normalize phone number
+            $raw_phone = $player['parent_phone'] ?? 'N/A';
+            $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone);
+            $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
+
+            // Format birth date for CSV from player_dob
+            $birth_date = $player['player_dob'] ?? '';
+            $formatted_birth_date = 'N/A';
+            if (!empty($birth_date) && $birth_date !== '0000-00-00' && $birth_date !== '1970-01-01') {
+                // Try to parse various date formats
+                $date_obj = DateTime::createFromFormat('Y-m-d', $birth_date);
+                if (!$date_obj) {
+                    $date_obj = DateTime::createFromFormat('d/m/Y', $birth_date);
+                }
+                if (!$date_obj) {
+                    $date_obj = DateTime::createFromFormat('m/d/Y', $birth_date);
+                }
+                if ($date_obj) {
+                    $formatted_birth_date = $date_obj->format('d/m/Y');
+                } else {
+                    // Only log parsing errors if debugging
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log("InterSoccer: Could not parse birth date: {$birth_date}");
+                    }
+                    $formatted_birth_date = (string)$birth_date; // Fallback
+                }
+            }
+
+            $data = [
+                $player['first_name'] ?? 'N/A',
+                $player['last_name'] ?? 'N/A',
+                $player['gender'] ?? 'N/A',
+                $processed_phone,
+                $player['parent_email'] ?? 'N/A',
+                $player['age'] ?? 'N/A',
+                $formatted_birth_date, // ADDED - Birth Date from player_dob
+                $player['medical_conditions'] ?? 'N/A',
+                $player['avs_number'] ?? 'N/A',
+                ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
+                $player['booking_type'] ?? 'N/A',
+                $player['age_group'] ?? 'N/A',
+                $player['product_name'] ?? 'N/A',
+                $player['venue'] ?? 'N/A',
+                $player['course_day'] ?: ($player['camp_terms'] ?? 'N/A')
+            ];
+
+            if ($base_roster['activity_type'] === 'Camp' || $base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
+                $data = array_merge(
+                    array_slice($data, 0, 11), // Adjust slice for added Birth Date (now after 6th: Age)
+                    [$monday, $tuesday, $wednesday, $thursday, $friday],
+                    array_slice($data, 11)
+                );
+                // Add times after event
+                $data = array_merge(
+                    array_slice($data, 0, count($data) - 2),
+                    [$player['times'] ?? 'N/A'],
+                    array_slice($data, count($data) - 2)
+                );
+            } else if ($base_roster['activity_type'] === 'Course') {
+                // Add times after event
+                $data[] = $player['times'] ?? 'N/A';
+            }
+            
+            if ($base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
+                $data[] = $player['shirt_size'] ?? 'N/A';
+                $data[] = $player['shorts_size'] ?? 'N/A';
+            }
+
+            fputcsv($output, $data, ';');
+        }
+
+        fclose($output);
+        intersoccer_log_audit('export_roster_csv', 'Exported for variation_ids: ' . implode(',', $variation_ids) . ' (very small roster, used CSV)');
+        ob_end_flush();
+        exit;
+    }
+
+    // For larger rosters, use Excel
     // Prepare Excel data
     $base_roster = $rosters[0];
     $filename = 'roster_' . sanitize_title($base_roster['product_name'] . '_' . ($base_roster['camp_terms'] ?: $base_roster['course_day']) . '_' . $base_roster['venue']) . '_' . date('Y-m-d_H-i-s') . '.xlsx';
     
     try {
-        error_log('InterSoccer: Starting Excel creation. Memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
+        // Only log if debugging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer: Starting Excel creation. Memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
+        }
         
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -447,6 +592,10 @@ function intersoccer_export_roster() {
         }
         ob_start();
 
+        // Only log if debugging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer: Before Excel save. Memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
+        }
         error_log('InterSoccer: Sending headers for roster export with birth dates');
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -506,7 +655,10 @@ function intersoccer_export_roster() {
                     if ($date_obj) {
                         $formatted_birth_date = $date_obj->format('d/m/Y');
                     } else {
-                        error_log("InterSoccer: Could not parse birth date: {$birth_date}");
+                        // Only log parsing errors if debugging
+                        if (defined('WP_DEBUG') && WP_DEBUG) {
+                            error_log("InterSoccer: Could not parse birth date: {$birth_date}");
+                        }
                         $formatted_birth_date = (string)$birth_date; // Fallback
                     }
                 }
@@ -558,10 +710,10 @@ function intersoccer_export_roster() {
             intersoccer_log_audit('export_roster_csv', 'Exported for variation_ids: ' . implode(',', $variation_ids) . ' (small roster, used CSV)');
             ob_end_flush();
             exit;
-        } catch (Exception $e) {
-            error_log('InterSoccer: CSV export error: ' . $e->getMessage() . ' on line ' . $e->getLine());
-            ob_end_clean();
-            wp_die(__('Export failed. Check server logs for details.', 'intersoccer-reports-rosters'));
+        } catch (Exception $csv_e) {
+            error_log('InterSoccer: CSV fallback export also failed: ' . $csv_e->getMessage() . ' on line ' . $csv_e->getLine());
+            // If both Excel and CSV fail, show error to user
+            wp_die(__('Export failed due to memory or system constraints. Please contact support.', 'intersoccer-reports-rosters'));
         }
     }
 }
@@ -573,7 +725,10 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
     try {
         $user_id = get_current_user_id();
         if (!current_user_can('coach') && !current_user_can('event_organizer') && !current_user_can('shop_manager') && !current_user_can('administrator')) {
-            error_log('InterSoccer: Export denied for user ID ' . $user_id . ' due to insufficient permissions.');
+            // Only log if debugging
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer: Export denied for user ID ' . $user_id . ' due to insufficient permissions.');
+            }
             ob_end_clean();
             wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
         }
@@ -588,7 +743,10 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
         ob_start();
 
         if (!class_exists('PhpOffice\PhpSpreadsheet\Spreadsheet')) {
-            error_log('InterSoccer: PhpSpreadsheet class not found in ' . __FILE__ . ' for export type ' . $export_type);
+            // Only log if debugging
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer: PhpSpreadsheet class not found in ' . __FILE__ . ' for export type ' . $export_type);
+            }
             ob_end_clean();
             wp_die(__('PhpSpreadsheet missing.', 'intersoccer-reports-rosters'));
         }
@@ -601,7 +759,10 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
         
         if ($export_type === 'all') {
             $rosters = $wpdb->get_results("SELECT * FROM $rosters_table ORDER BY updated_at DESC", ARRAY_A);
-            error_log('InterSoccer: Retrieved ' . count($rosters) . ' rows for all rosters export by user ' . $user_id);
+            // Only log if debugging
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer: Retrieved ' . count($rosters) . ' rows for all rosters export by user ' . $user_id);
+            }
             if (empty($rosters)) {
                 ob_end_clean();
                 wp_die(__('No roster data.', 'intersoccer-reports-rosters'));
@@ -643,15 +804,26 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone);
                 $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
 
-                // Format birth date from player_dob
+                // Format birth date for CSV from player_dob
                 $birth_date = $roster['player_dob'] ?? '';
                 $formatted_birth_date = 'N/A';
                 if (!empty($birth_date) && $birth_date !== '0000-00-00' && $birth_date !== '1970-01-01') {
+                    // Try to parse various date formats
                     $date_obj = DateTime::createFromFormat('Y-m-d', $birth_date);
+                    if (!$date_obj) {
+                        $date_obj = DateTime::createFromFormat('d/m/Y', $birth_date);
+                    }
+                    if (!$date_obj) {
+                        $date_obj = DateTime::createFromFormat('m/d/Y', $birth_date);
+                    }
                     if ($date_obj) {
                         $formatted_birth_date = $date_obj->format('d/m/Y');
                     } else {
-                        $formatted_birth_date = $birth_date;
+                        // Only log parsing errors if debugging
+                        if (defined('WP_DEBUG') && WP_DEBUG) {
+                            error_log("InterSoccer: Could not parse birth date: {$birth_date}");
+                        }
+                        $formatted_birth_date = (string)$birth_date; // Fallback
                     }
                 }
 
@@ -662,23 +834,16 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $processed_phone,
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
-                    $formatted_birth_date, // ADDED
+                    $formatted_birth_date, // ADDED - Birth Date from player_dob
                     $roster['medical_conditions'] ?? 'N/A',
                     $roster['avs_number'] ?? 'N/A',
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
                     $roster['booking_type'] ?? 'N/A',
-                    $monday,
-                    $tuesday,
-                    $wednesday,
-                    $thursday,
-                    $friday,
-                    intersoccer_get_term_name($roster['age_group'], 'pa_age-group') ?? 'N/A',
+                    $roster['age_group'] ?? 'N/A',
                     $roster['product_name'] ?? 'N/A',
-                    intersoccer_get_term_name($roster['venue'], 'pa_intersoccer-venues') ?? 'N/A',
-                    $roster['camp_terms'] ?? 'N/A',
+                    $roster['venue'] ?? 'N/A',
                     $roster['course_day'] ?? 'N/A',
-                    $roster['activity_type'] ?? 'N/A',
-                    $roster['times'] ?? 'N/A'
+                    $roster['camp_terms'] ?? 'N/A'
                 ];
 
                 // Write first three columns (A-C) explicitly
@@ -707,7 +872,10 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 ORDER BY updated_at DESC",
                 ARRAY_A
             );
-            error_log('InterSoccer: Retrieved ' . count($rosters) . ' camp rosters for export by user ' . $user_id);
+            // Only log if debugging
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer: Retrieved ' . count($rosters) . ' camp rosters for export by user ' . $user_id);
+            }
             if (empty($rosters)) {
                 ob_end_clean();
                 wp_die(__('No camp roster data.', 'intersoccer-reports-rosters'));
@@ -720,9 +888,6 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 'Medical/Dietary', 'AVS Number', 'Late Pickup', 'Booking Type', 'Monday', 'Tuesday', 
                 'Wednesday', 'Thursday', 'Friday', 'Age Group', 'Camp Terms', 'Venue', 'Times'
             ];
-            if (isset($rosters[0]['activity_type']) && ($rosters[0]['activity_type'] === 'Girls Only' || $rosters[0]['activity_type'] === 'Camp, Girls Only' || $rosters[0]['activity_type'] === 'Camp, Girls\' only')) {
-                $headers = array_merge($headers, ['Shirt Size', 'Shorts Size']);
-            }
             $sheet->fromArray($headers, NULL, 'A1');
 
             // Set phone number column (D) to Text format and adjust width
@@ -751,15 +916,26 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone);
                 $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
 
-                // Format birth date from player_dob
+                // Format birth date for CSV from player_dob
                 $birth_date = $roster['player_dob'] ?? '';
                 $formatted_birth_date = 'N/A';
                 if (!empty($birth_date) && $birth_date !== '0000-00-00' && $birth_date !== '1970-01-01') {
+                    // Try to parse various date formats
                     $date_obj = DateTime::createFromFormat('Y-m-d', $birth_date);
+                    if (!$date_obj) {
+                        $date_obj = DateTime::createFromFormat('d/m/Y', $birth_date);
+                    }
+                    if (!$date_obj) {
+                        $date_obj = DateTime::createFromFormat('m/d/Y', $birth_date);
+                    }
                     if ($date_obj) {
                         $formatted_birth_date = $date_obj->format('d/m/Y');
                     } else {
-                        $formatted_birth_date = $birth_date;
+                        // Only log parsing errors if debugging
+                        if (defined('WP_DEBUG') && WP_DEBUG) {
+                            error_log("InterSoccer: Could not parse birth date: {$birth_date}");
+                        }
+                        $formatted_birth_date = (string)$birth_date; // Fallback
                     }
                 }
 
@@ -770,7 +946,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $processed_phone,
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
-                    $formatted_birth_date, // ADDED
+                    $formatted_birth_date, // ADDED - Birth Date from player_dob
                     $roster['medical_conditions'] ?? 'N/A',
                     $roster['avs_number'] ?? 'N/A',
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
@@ -816,7 +992,10 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 ORDER BY updated_at DESC",
                 ARRAY_A
             );
-            error_log('InterSoccer: Retrieved ' . count($rosters) . ' course rosters for export by user ' . $user_id);
+            // Only log if debugging
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer: Retrieved ' . count($rosters) . ' course rosters for export by user ' . $user_id);
+            }
             if (empty($rosters)) {
                 ob_end_clean();
                 wp_die(__('No course roster data.', 'intersoccer-reports-rosters'));
@@ -905,7 +1084,10 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                  ORDER BY updated_at DESC",
                 ARRAY_A
             );
-            error_log('InterSoccer: Retrieved ' . count($rosters) . ' full-day girls only rosters for export by user ' . $user_id);
+            // Only log if debugging
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer: Retrieved ' . count($rosters) . ' full-day girls only rosters for export by user ' . $user_id);
+            }
             if (empty($rosters)) {
                 ob_end_clean();
                 wp_die(__('No full-day girls only roster data.', 'intersoccer-reports-rosters'));
@@ -959,19 +1141,20 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $processed_phone,
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
-                    $formatted_birth_date, // ADDED
+                    $formatted_birth_date, // ADDED - Birth Date from player_dob
                     $roster['medical_conditions'] ?? 'N/A',
                     $roster['avs_number'] ?? 'N/A',
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
                     $roster['booking_type'] ?? 'N/A',
-                    $monday, $tuesday, $wednesday, $thursday, $friday,
+                    $monday,
+                    $tuesday,
+                    $wednesday,
+                    $thursday,
+                    $friday,
                     intersoccer_get_term_name($roster['age_group'], 'pa_age-group') ?? 'N/A',
                     $roster['product_name'] ?? 'N/A',
                     intersoccer_get_term_name($roster['venue'], 'pa_intersoccer-venues') ?? 'N/A',
-                    $roster['times'] ?? 'N/A',
-                    $roster['camp_terms'] ?? 'N/A',
-                    $roster['shirt_size'] ?? 'N/A',
-                    $roster['shorts_size'] ?? 'N/A'
+                    $roster['times'] ?? 'N/A'
                 ];
 
                 // Write data with explicit handling for phone and birth date
@@ -997,7 +1180,10 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                  ORDER BY updated_at DESC",
                 ARRAY_A
             );
-            error_log('InterSoccer: Retrieved ' . count($rosters) . ' half-day girls only rosters for export by user ' . $user_id);
+            // Only log if debugging
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer: Retrieved ' . count($rosters) . ' half-day girls only rosters for export by user ' . $user_id);
+            }
             if (empty($rosters)) {
                 ob_end_clean();
                 wp_die(__('No half-day girls only roster data.', 'intersoccer-reports-rosters'));
@@ -1051,19 +1237,20 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $processed_phone,
                     $roster['parent_email'] ?? 'N/A',
                     $roster['age'] ?? 'N/A',
-                    $formatted_birth_date, // ADDED
+                    $formatted_birth_date, // ADDED - Birth Date from player_dob
                     $roster['medical_conditions'] ?? 'N/A',
                     $roster['avs_number'] ?? 'N/A',
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
                     $roster['booking_type'] ?? 'N/A',
-                    $monday, $tuesday, $wednesday, $thursday, $friday,
+                    $monday,
+                    $tuesday,
+                    $wednesday,
+                    $thursday,
+                    $friday,
                     intersoccer_get_term_name($roster['age_group'], 'pa_age-group') ?? 'N/A',
                     $roster['product_name'] ?? 'N/A',
                     intersoccer_get_term_name($roster['venue'], 'pa_intersoccer-venues') ?? 'N/A',
-                    $roster['times'] ?? 'N/A',
-                    $roster['camp_terms'] ?? 'N/A',
-                    $roster['shirt_size'] ?? 'N/A',
-                    $roster['shorts_size'] ?? 'N/A'
+                    $roster['times'] ?? 'N/A'
                 ];
 
                 // Write data with explicit handling for phone and birth date
@@ -1088,7 +1275,10 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                  ORDER BY updated_at DESC",
                 ARRAY_A
             );
-            error_log('InterSoccer: Retrieved ' . count($rosters) . ' other event rosters for export by user ' . $user_id);
+            // Only log if debugging
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer: Retrieved ' . count($rosters) . ' other event rosters for export by user ' . $user_id);
+            }
             if (empty($rosters)) {
                 ob_end_clean();
                 wp_die(__('No other event roster data.', 'intersoccer-reports-rosters'));
@@ -1150,7 +1340,10 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
         }
 
-        error_log('InterSoccer: Exporting all rosters for type ' . $export_type . ' with ' . $sheet->getHighestRow() . ' rows');
+        // Only log if debugging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer: Exporting all rosters for type ' . $export_type . ' with ' . $sheet->getHighestRow() . ' rows');
+        }
 
         // Clear all output buffers
         while (ob_get_level()) {
@@ -1159,7 +1352,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
         ob_start();
 
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
-        header('Content-Disposition: attachment; filename="intersoccer_' . ($export_type === 'all' ? 'master' : $export_type) . '_rosters_' . date('Y-m-d_H-i-s') . '.xlsx"');
+        header('Content-Disposition: attachment; filename="intersoccer_' . ($export_type === 'master' ? 'all' : $export_type) . '_rosters_' . date('Y-m-d_H-i-s') . '.xlsx"');
         header('Cache-Control: max-age=0');
         header('Expires: 0');
         header('Pragma: public');
