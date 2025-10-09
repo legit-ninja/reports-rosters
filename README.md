@@ -1,81 +1,140 @@
 # InterSoccer Reports and Rosters Plugin
 
 ## Overview
-The InterSoccer Reports and Rosters plugin is a WordPress extension designed to integrate with WooCommerce, enabling the generation of event rosters and reports for InterSoccer Switzerland's Camps, Courses, and other events. This plugin facilitates booking management, roster creation, and data export for administrators, coaches, and organizers, targeting Swiss parents, coaches, and admins.
+The InterSoccer Reports and Rosters plugin is a comprehensive WordPress extension that integrates with WooCommerce to provide advanced event roster management, analytics, and reporting capabilities for InterSoccer Switzerland's sports programs. It automatically generates and maintains rosters from completed orders, provides detailed analytics dashboards, and offers sophisticated export functionality for administrators, coaches, and organizers.
 
 ## Version
-- **Current Version:** 1.2.87
-- **Release Date:** June 15, 2025
+- **Current Version:** 1.10.9
+- **Release Date:** October 9, 2025
 
-## Functionality
+## Core Features
 
-### Current Features
-- **Roster Generation:**
-  - Automatically generates rosters from WooCommerce orders when the order status changes from "Processing" to "Completed."
-  - Stores roster data in a custom database table (`wp_intersoccer_rosters`) with fields including `order_item_id`, `player_name`, `first_name`, `last_name`, `age`, `gender`, `booking_type`, `selected_days`, `camp_terms`, `venue`, `parent_phone`, `parent_email`, `medical_conditions`, `late_pickup`, `day_presence`, `age_group`, `start_date`, `end_date`, `event_dates`, `product_name`, `activity_type`, and `updated_at`.
-  - Provides a read-only Admin UI with tabs for "All Rosters," "Camps," "Courses," "Girls Only," and "Other Events," allowing filtering by venue and activity type.
+### Roster Management System
+- **Automatic Roster Generation**: Creates roster entries when WooCommerce orders transition from "Processing" to "Completed"
+- **Comprehensive Database**: Stores detailed player information in custom `wp_intersoccer_rosters` table with 50+ fields including player details, medical info, contact data, and event metadata
+- **Real-time Synchronization**: Maintains roster accuracy through reconciliation with WooCommerce orders
+- **Advanced Filtering**: Multi-tab interface with venue and activity type filtering
 
-- **Manual Management:**
-  - **Reconcile Rosters:** Syncs the roster database with completed WooCommerce orders, adding missing entries and removing obsolete ones. Accessible via a button on each roster page.
-  - **Rebuild Rosters:** Clears and rebuilds the roster database from all completed orders. Available via AJAX on the "Advanced" sub-menu page.
+### Analytics Dashboard
+- **Interactive Charts**: Built with Chart.js for real-time data visualization
+- **Key Metrics**:
+  - Current attendance by venue
+  - Regional attendance distribution
+  - Age group demographics
+  - Gender distribution
+  - Weekly attendance trends
+- **Responsive Design**: Mobile-friendly admin interface
 
-- **Export Capabilities:**
-  - Exports all rosters to Excel (`.xlsx`) format via AJAX, including all columns for a direct database dump when selecting "All Rosters."
-  - Supports CSV export for "All Rosters" on the "Advanced" page (implementation in progress).
-  - Individual roster exports are available from the "Roster Details" page.
+### Roster Organization
+Rosters are intelligently grouped for efficient management:
 
-- **User Roles and Permissions:**
-  - **Administrator:** Full access to all features.
-  - **Coach:** Read-only access to rosters and export capabilities, with permission to reconcile and rebuild.
-  - **Event Organizer/Shop Manager:** Similar to Coach, with export access.
+- **All Rosters**: Master view grouped by venue with participant counts
+- **Camps**: Full-week and single-day camps grouped by product name, term, and venue
+- **Courses**: Seasonal courses grouped by venue with session tracking
+- **Girls Only**: Gender-specific events with individual listings
+- **Other Events**: Miscellaneous activities (birthdays, special events)
 
-- **Analytics and Reporting:**
-  - Displays overview charts (age groups, genders, weekly trends, venue attendance) on the main plugin page.
-  - Placeholder for future detailed reports (to be implemented).
+### Advanced Database Management
+- **Reconciliation**: Syncs roster data with WooCommerce orders without changing order statuses
+- **Rebuild Functionality**: Complete database reconstruction from order history
+- **Schema Management**: Automatic table creation and upgrades with data preservation
+- **Batch Processing**: Efficient handling of large datasets with progress tracking
+- **Error Logging**: Comprehensive debugging and error tracking
 
-### Roster Groupings
-Rosters are organized and displayed based on the following groupings to provide a structured view for administrators, coaches, and organizers:
+### Export Capabilities
+- **Excel Export**: Full-featured `.xlsx` exports using PhpSpreadsheet
+- **Flexible Formats**: Different column sets optimized for each activity type
+- **Phone Number Normalization**: Swiss phone number formatting (+41xxxxxxxxx)
+- **Birth Date Processing**: Automatic date format standardization
+- **Audit Logging**: Export activity tracking
 
-- **All Rosters:**
-  - **Definition:** A comprehensive list of all roster entries across all activity types, grouped by venue. This serves as a master view for all events, including Camps, Courses, Girls Only, and Other Events.
-  - **Grouping Logic:** Rosters are grouped by `venue` column, with each group showing the total number of players and a link to view details for the first order item ID in that group.
-  - **Purpose:** Provides a high-level overview for administrative export and reconciliation.
+### User Roles & Permissions
+- **Administrator**: Full access to all features, database management, and exports
+- **Coach**: Read-only roster access with export capabilities and reconciliation
+- **Event Organizer/Shop Manager**: Export access with roster management permissions
 
-- **Camps:**
-  - **Definition:** Rosters for full-week or single-day Camps, identified by `activity_type = 'Camp'`.
-  - **Grouping Logic:** Grouped by `product_name` and date range (`start_date` to `end_date`), with sub-grouping by `venue` within each camp term. Each group includes the total player count and a link to view details.
-  - **Purpose:** Tailored for camp-specific management, reflecting holiday-adjusted schedules.
+### Integration Features
+- **WooCommerce Integration**: Seamless order-to-roster conversion
+- **Player Management**: Integration with player assignment system
+- **Product Variations**: Works with complex product attribute structures
+- **Late Pickup**: Handles add-on services and pricing
+- **Discount Tracking**: Records pricing adjustments and sibling discounts
 
-- **Courses:**
-  - **Definition:** Rosters for weekly afterschool or weekend Courses, identified by `activity_type = 'Course'`.
-  - **Grouping Logic:** Grouped by `venue`, with each group showing the total number of players and a link to view details for the first order item ID.
-  - **Purpose:** Supports seasonal course tracking with prorated pricing considerations.
+## Technical Architecture
 
-- **Girls Only:**
-  - **Definition:** Rosters for Girls Only Camps, identified by `activity_type = 'Girls Only'`, typically 1-2 day events.
-  - **Grouping Logic:** Listed individually by `product_name` and `venue`, with each entry showing one player (current limitation) and a link to view details.
-  - **Purpose:** Caters to gender-specific event management.
+### Database Schema
+Custom roster table with comprehensive indexing:
+- Player information (name, contact, medical, emergency contacts)
+- Event details (dates, venue, activity type, pricing)
+- Order integration (order_id, order_item_id, variation_id)
+- Administrative fields (timestamps, audit trails)
 
-- **Other Events:**
-  - **Definition:** Rosters for miscellaneous events (e.g., Birthdays), identified by `activity_type IN ('Event', 'Other')`.
-  - **Grouping Logic:** Grouped by `venue`, with each group showing the total number of players and a link to view details for the first order item ID.
-  - **Purpose:** Handles ad-hoc event rosters outside standard Camps and Courses.
+### AJAX-Powered Interface
+- Real-time roster updates without page refreshes
+- Asynchronous export processing
+- Progress tracking for long-running operations
+- Dynamic filtering and search capabilities
 
-### Installation
-1. Upload the plugin files to the `/wp-content/plugins/intersoccer-reports-rosters/` directory.
-2. Activate the plugin through the 'Plugins' menu in WordPress.
-3. Ensure WooCommerce and PhpSpreadsheet (via Composer) are installed and configured.
+### Security & Performance
+- Nonce-based AJAX security
+- Role-based access control
+- Efficient database queries with proper indexing
+- Memory management for large exports
+- Input sanitization and validation
 
-### Development Workflow
-- **Coding:** Develop locally, test on `dev.intersoccer.legit.ninja`, commit to `github.com/legit-ninja/reports-rosters`, and deploy via FTP.
-- **Debugging:** Enable `WP_DEBUG` and `WP_DEBUG_LOG` in `wp-config.php`, check `wp-content/debug.log`, and use SSH/SCP for file access if needed.
-- **Testing:** Use PHPUnit for unit tests and Cypress for E2E tests. Follow the staging checklist (activate plugin, verify features, test exports).
+## Dependencies
+- **Required Plugins**:
+  - WooCommerce (core e-commerce functionality)
+  - InterSoccer Product Variations (product type detection)
+  - Player Management (player assignment system)
+- **PHP Libraries**:
+  - PhpSpreadsheet (^4.3) - Excel export functionality
+- **JavaScript Libraries**:
+  - Chart.js (3.9.1) - Analytics visualization
+  - jQuery UI Datepicker - Date filtering
 
-### Future Enhancements
-- Tailor exports for specific activity types with customized column sets.
-- Implement Google Sheets and Office365 API integrations for automated exports.
-- Add mobile check-in features for parents and coaches.
-- Introduce administration fees for order changes or late pickups.
+## Installation & Setup
+1. Upload plugin files to `/wp-content/plugins/intersoccer-reports-rosters/`
+2. Activate through WordPress admin
+3. Ensure all required plugins are active
+4. Run database setup (automatic on activation)
+5. Configure user roles and permissions
 
-### License
-This plugin is licensed under the GPL-2.0+ license. See `LICENSE` for details.
+## Development Workflow
+- **Local Development**: Code locally, test on `dev.intersoccer.legit.ninja`
+- **Version Control**: Commit to `github.com/legit-ninja/reports-rosters`
+- **Deployment**: FTP deployment with staging verification
+- **Testing**: PHPUnit unit tests and Cypress E2E tests
+- **Code Quality**: Pre-commit hooks for automated testing
+
+## Configuration
+- **Database**: Automatic table creation and schema management
+- **User Roles**: Custom roles for coaches and organizers
+- **Export Settings**: Configurable export formats and data processing
+- **Analytics**: Chart configuration and data aggregation settings
+
+## Key Metrics & Monitoring
+- Roster accuracy and synchronization rates
+- Export processing times and success rates
+- User adoption and feature utilization
+- Database performance and query optimization
+
+## Future Enhancements
+- Google Sheets API integration for automated exports
+- Mobile check-in applications for coaches
+- Advanced reporting with custom date ranges
+- API endpoints for external system integration
+- Enhanced analytics with predictive modeling
+
+## Troubleshooting
+- **Debug Mode**: Enable `WP_DEBUG` for detailed error logging
+- **Database Issues**: Use Advanced page rebuild functionality
+- **Export Problems**: Check server memory limits and timeout settings
+- **Permission Errors**: Verify user roles and capabilities
+- **Performance**: Monitor database query performance and optimize indexes
+
+## License
+GPL-2.0+ - See LICENSE file for details.
+
+## Contributors
+- Jeremy Lee (Lead Developer)
