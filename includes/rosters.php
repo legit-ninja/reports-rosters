@@ -540,6 +540,7 @@ function intersoccer_render_camps_page() {
             error_log("InterSoccer: No valid variation_ids for camp group - Raw: " . print_r($group['variation_ids'], true));
             $variation_ids = [0];
         }
+        $group['variation_ids'] = $variation_ids;
         $variation_id = $variation_ids[0];
         $variation = $variation_id ? wc_get_product($variation_id) : false;
         $parent_product = $variation ? wc_get_product($variation->get_parent_id()) : false;
@@ -847,6 +848,7 @@ function intersoccer_render_courses_page() {
             error_log("InterSoccer: No valid variation_ids for course group - Raw: " . print_r($group['variation_ids'], true));
             $variation_ids = [0];
         }
+        $group['variation_ids'] = $variation_ids;
         $variation_id = $variation_ids[0];
         $variation = $variation_id ? wc_get_product($variation_id) : false;
         $parent_product = $variation ? wc_get_product($variation->get_parent_id()) : false;
@@ -1173,6 +1175,13 @@ function intersoccer_render_girls_only_page() {
     $all_seasons = [];
 
     foreach ($groups as $group) {
+        $variation_ids = !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
+        if (empty($variation_ids)) {
+            error_log("InterSoccer: No valid variation_ids for girls-only group - Raw: " . print_r($group['variation_ids'], true));
+            $variation_ids = [0];
+        }
+        $group['variation_ids'] = $variation_ids;
+        
         // Determine if this is a camp or course based on activity_type
         $is_camp = (strtolower($group['activity_type']) === 'camp' || !empty($group['camp_terms']));
         
@@ -1588,7 +1597,7 @@ function intersoccer_get_course_day_from_order_item($order_item_id) {
             "SELECT meta_value FROM $order_itemmeta_table 
              WHERE order_item_id = %d AND meta_key = %s 
              AND meta_value IS NOT NULL AND meta_value != ''
-             LIMIT 1",
+             LIMIT  1",
             $order_item_id,
             $meta_key
         ));
