@@ -295,6 +295,12 @@ function intersoccer_export_roster() {
             error_log('InterSoccer Export: Expected placeholders - ' . implode(',', array_fill(0, count($query_params), '%s')));
             error_log('InterSoccer Export: Applied filters - activity_type: ' . ($where_clauses[0] ?? 'N/A') . ', age_group: ' . ($where_clauses[1] ?? 'N/A') . ', times: ' . ($where_clauses[2] ?? 'N/A'));
         }
+        
+        // Add WHERE clause if there are conditions
+        if (!empty($where_clauses)) {
+            $query .= " WHERE " . implode(' AND ', $where_clauses);
+        }
+        
         $rosters = $wpdb->get_results($wpdb->prepare($query, $query_params), ARRAY_A);
         // Only log query execution details if debugging
         if (defined('WP_DEBUG') && WP_DEBUG) {
