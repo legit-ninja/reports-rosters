@@ -80,15 +80,19 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         return false;
     }
 
-    // Get item metadata
-    $item_meta = [];
-    foreach ($item->get_meta_data() as $meta) {
-        $data = $meta->get_data();
-        $item_meta[$data['key']] = $data['value'];
-    }
+    // Get item metadata - use same robust method as prepare_roster_entry
     $raw_order_item_meta = wc_get_order_item_meta($item_id, '', true);
-    error_log('InterSoccer: Item metadata for ' . $item_id . ': ' . print_r($item_meta, true));
     error_log('InterSoccer: Raw order item meta for order ' . $order_id . ', item ' . $item_id . ': ' . print_r($raw_order_item_meta, true));
+
+    $item_meta = array_combine(
+        array_keys($raw_order_item_meta),
+        array_map(function ($value, $key) {
+            if ($key !== 'Activity Type' && is_array($value)) {
+                return $value[0] ?? implode(', ', array_map('trim', $value));
+            }
+            return is_array($value) ? $value[0] ?? implode(', ', array_map('trim', $value)) : trim($value);
+        }, array_values($raw_order_item_meta), array_keys($raw_order_item_meta))
+    );
 
     // Day-related log for debugging
     $day_related_keys = array_filter($item_meta, function($k) { return stripos($k, 'course') !== false || stripos($k, 'day') !== false; }, ARRAY_FILTER_USE_KEY);
@@ -180,7 +184,8 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         $term = get_term_by('slug', $course_day_slug, 'pa_course-day');
         $course_day = $term ? $term->name : ucfirst($course_day_slug);
     }
-    $late_pickup = $item_meta['Late Pickup'] ?? 'No';
+    $late_pickup = (!empty($item_meta['Late Pickup Type'])) ? 'Yes' : 'No';
+    $late_pickup_days = $item_meta['Late Pickup Days'] ?? '';
     $product_name = $item->get_name();
     $shirt_size = 'N/A';
     $shorts_size = 'N/A';
@@ -323,6 +328,7 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         'parent_email' => substr($parent_email, 0, 100),
         'medical_conditions' => $medical_conditions,
         'late_pickup' => substr($late_pickup, 0, 10),
+        'late_pickup_days' => $late_pickup_days,
         'day_presence' => json_encode($day_presence),
         'age_group' => substr($age_group, 0, 50),
         'start_date' => $start_date ?: '1970-01-01',
