@@ -163,18 +163,27 @@ function intersoccer_export_roster() {
     }
     $use_fields = isset($_POST['use_fields']) ? (bool)$_POST['use_fields'] : false;
     $product_id = isset($_POST['product_id']) ? intval($_POST['product_id']) : 0;
-    $variation_ids = isset($_POST['variation_ids']) ? array_map('intval', (array)$_POST['variation_ids']) : [];
+    $variation_id = isset($_POST['variation_id']) ? intval($_POST['variation_id']) : 0;
+    $variation_ids_str = isset($_POST['variation_ids']) ? sanitize_text_field($_POST['variation_ids']) : '';
+    $variation_ids = $variation_ids_str ? array_map('intval', explode(',', $variation_ids_str)) : [];
     $camp_terms = isset($_POST['camp_terms']) ? sanitize_text_field($_POST['camp_terms']) : '';
     $course_day = isset($_POST['course_day']) ? sanitize_text_field($_POST['course_day']) : '';
     $venue = isset($_POST['venue']) ? sanitize_text_field($_POST['venue']) : '';
     $age_group = isset($_POST['age_group']) ? sanitize_text_field($_POST['age_group']) : '';
     $times = isset($_POST['times']) ? sanitize_text_field($_POST['times']) : '';
+    $girls_only = isset($_POST['girls_only']) ? intval($_POST['girls_only']) : 0;
     $activity_types_str = isset($_POST['activity_types']) ? sanitize_text_field($_POST['activity_types']) : '';
     $activity_types = $activity_types_str ? array_map('trim', explode(',', $activity_types_str)) : ['Camp', 'Course', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only'];
 
     if (!$use_fields && empty($variation_ids)) {
         ob_end_clean();
         wp_send_json_error(__('No variation IDs or fields provided for export.', 'intersoccer-reports-rosters'));
+    }
+    
+    // Additional validation for use_fields mode
+    if ($use_fields && $variation_id <= 0 && empty($variation_ids) && empty($activity_types)) {
+        ob_end_clean();
+        wp_send_json_error(__('No variation ID, variation IDs, or activity types provided for field-based export.', 'intersoccer-reports-rosters'));
     }
     // Only log if debugging
     if (defined('WP_DEBUG') && WP_DEBUG) {
@@ -194,59 +203,91 @@ function intersoccer_export_roster() {
 
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-    $query = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
+    $query = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
                 FROM $rosters_table";
     $where_clauses = [];
     $query_params = [];
     
     if ($use_fields) {
-        if (!empty($activity_types)) {
-            $like_conditions = [];
-            foreach ($activity_types as $type) {
-                $like_conditions[] = $wpdb->prepare("activity_type LIKE %s", "%" . $wpdb->esc_like($type) . "%");
-                $query_params[] = "%" . $wpdb->esc_like($type) . "%";
-            }
-            // Require 'girls\' only' specifically if present
-            if (in_array("girls\' only", $activity_types)) {
-                $where_clauses[] = $wpdb->prepare("activity_type LIKE %s", "%girls\' only%");
-                $query_params[] = "%girls\' only%";
-            } else {
-                $where_clauses[] = "(" . implode(" OR ", $like_conditions) . ")";
-            }
+        // Prioritize variation_id filtering if provided (from roster details page)
+        if ($variation_id > 0) {
+            $where_clauses[] = $wpdb->prepare("variation_id = %d", $variation_id);
+            $query_params[] = $variation_id;
             // Only log if debugging
             if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('InterSoccer Export: activity_types clause added - Clause: ' . $where_clauses[count($where_clauses) - 1]);
+                error_log('InterSoccer Export: variation_id filter added: ' . $variation_id);
             }
-        }
-        if ($product_id > 0) {
-            $where_clauses[] = $wpdb->prepare("product_id = %d", $product_id);
-            $query_params[] = $product_id;
+        } elseif (!empty($variation_ids)) {
+            // Handle variation_ids array (from courses/camps pages) - ONLY filter by these specific variations
+            $placeholders = implode(',', array_fill(0, count($variation_ids), '%d'));
+            $where_clauses[] = "variation_id IN ($placeholders)";
+            $query_params = array_merge($query_params, $variation_ids);
             // Only log if debugging
             if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('InterSoccer Export: Adding clause - ' . $where_clauses[count($where_clauses) - 1] . ' | Current params: ' . json_encode($query_params));
+                error_log('InterSoccer Export: variation_ids filter added: ' . implode(',', $variation_ids));
             }
-        }
-        if ($camp_terms) {
-            $where_clauses[] = $wpdb->prepare("(camp_terms = %s OR camp_terms LIKE %s OR (camp_terms IS NULL AND %s = 'N/A'))", $camp_terms, '%' . $wpdb->esc_like($camp_terms) . '%', $camp_terms);
-            $query_params[] = array_merge($query_params, [$camp_terms, '%' . $camp_terms . '%', $camp_terms]);
-        }
-        if ($course_day) {
-            $where_clauses[] = $wpdb->prepare("(course_day = %s OR course_day LIKE %s OR (course_day IS NULL AND %s = 'N/A'))", $course_day, '%' . $wpdb->esc_like($course_day) . '%', $course_day);
-            $query_params[] = array_merge($query_params, [$course_day, ]);
-            $query_params[] = '%' . $course_day . '%';
-            $query_params[] = $course_day;
-        }
-        if ($venue) {
-            $where_clauses[] = $wpdb->prepare("(venue = %s OR venue LIKE %s OR (venue IS NULL AND %s = 'N/A'))", $venue, '%' . $wpdb->esc_like($venue) . '%', $venue);
-            $query_params[] = array_merge($query_params, [$venue, '%' . $venue . '%', $venue]);
-        }
-        if ($age_group) {
-            $where_clauses[] = $wpdb->prepare("(age_group = %s OR age_group LIKE %s)", $age_group, '%' . $wpdb->esc_like($age_group) . '%');
-            $query_params[] = array_merge($query_params, [$age_group, '%' . $age_group . '%']);
-        }
-        if ($times) {
-            $where_clauses[] = $wpdb->prepare("(times = %s OR (times IS NULL AND %s = 'N/A'))", $times, $times);
-            $query_params[] = array_merge($query_params, [$times, $times]);
+            // When using specific variation_ids, skip additional field-based filtering to avoid including players from other events
+        } else {
+            // Fallback to field-based filtering when no specific variation_ids provided
+            if (!empty($activity_types)) {
+                $like_conditions = [];
+                foreach ($activity_types as $type) {
+                    $like_conditions[] = $wpdb->prepare("activity_type LIKE %s", "%" . $wpdb->esc_like($type) . "%");
+                    $query_params[] = "%" . $wpdb->esc_like($type) . "%";
+                }
+                // Require 'girls\' only' specifically if present
+                if (in_array("girls\' only", $activity_types)) {
+                    $where_clauses[] = $wpdb->prepare("activity_type LIKE %s", "%girls\' only%");
+                    $query_params[] = "%girls\' only%";
+                } else {
+                    $where_clauses[] = "(" . implode(" OR ", $like_conditions) . ")";
+                }
+                // Only log if debugging
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('InterSoccer Export: activity_types clause added - Clause: ' . $where_clauses[count($where_clauses) - 1]);
+                }
+            }
+            if ($product_id > 0) {
+                $where_clauses[] = $wpdb->prepare("product_id = %d", $product_id);
+                $query_params[] = $product_id;
+                // Only log if debugging
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('InterSoccer Export: Adding clause - ' . $where_clauses[count($where_clauses) - 1] . ' | Current params: ' . json_encode($query_params));
+                }
+            }
+            // Add field-based filters only when not using specific variation_ids
+            if ($camp_terms) {
+                $where_clauses[] = $wpdb->prepare("(camp_terms = %s OR camp_terms LIKE %s OR (camp_terms IS NULL AND %s = 'N/A'))", $camp_terms, '%' . $wpdb->esc_like($camp_terms) . '%', $camp_terms);
+                $query_params[] = $camp_terms;
+                $query_params[] = '%' . $camp_terms . '%';
+                $query_params[] = $camp_terms;
+            }
+            if ($course_day) {
+                $where_clauses[] = $wpdb->prepare("(course_day = %s OR course_day LIKE %s OR (course_day IS NULL AND %s = 'N/A'))", $course_day, '%' . $wpdb->esc_like($course_day) . '%', $course_day);
+                $query_params[] = $course_day;
+                $query_params[] = '%' . $course_day . '%';
+                $query_params[] = $course_day;
+            }
+            if ($venue) {
+                $where_clauses[] = $wpdb->prepare("(venue = %s OR venue LIKE %s OR (venue IS NULL AND %s = 'N/A'))", $venue, '%' . $wpdb->esc_like($venue) . '%', $venue);
+                $query_params[] = $venue;
+                $query_params[] = '%' . $venue . '%';
+                $query_params[] = $venue;
+            }
+            if ($age_group) {
+                $where_clauses[] = $wpdb->prepare("(age_group = %s OR age_group LIKE %s)", $age_group, '%' . $wpdb->esc_like($age_group) . '%');
+                $query_params[] = $age_group;
+                $query_params[] = '%' . $age_group . '%';
+            }
+            if ($times) {
+                $where_clauses[] = $wpdb->prepare("(times = %s OR (times IS NULL AND %s = 'N/A'))", $times, $times);
+                $query_params[] = $times;
+                $query_params[] = $times;
+            }
+            if ($girls_only) {
+                $where_clauses[] = $wpdb->prepare("girls_only = %d", $girls_only);
+                $query_params[] = $girls_only;
+            }
         }
         // Only log if debugging
         if (defined('WP_DEBUG') && WP_DEBUG) {
@@ -264,7 +305,7 @@ function intersoccer_export_roster() {
         }
     } else {
         $query = $wpdb->prepare(
-            "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
+            "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
              FROM $rosters_table
              WHERE variation_id IN (" . implode(',', array_fill(0, count($variation_ids), '%d')) . ")",
             $variation_ids
@@ -382,6 +423,7 @@ function intersoccer_export_roster() {
                 $player['medical_conditions'] ?? 'N/A',
                 $player['avs_number'] ?? 'N/A',
                 ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
+                $player['late_pickup_days'] ?? 'N/A',
                 $player['booking_type'] ?? 'N/A',
                 $player['age_group'] ?? 'N/A',
                 $player['product_name'] ?? 'N/A',
@@ -391,9 +433,9 @@ function intersoccer_export_roster() {
 
             if ($base_roster['activity_type'] === 'Camp' || $base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
                 $data = array_merge(
-                    array_slice($data, 0, 11), // Adjust slice for added Birth Date (now after 6th: Age)
+                    array_slice($data, 0, 12), // Up to and including booking_type
                     [$monday, $tuesday, $wednesday, $thursday, $friday],
-                    array_slice($data, 11)
+                    array_slice($data, 12)
                 );
                 // Add times after event
                 $data = array_merge(
@@ -438,21 +480,29 @@ function intersoccer_export_roster() {
 
         // UPDATED headers to include Birth Date
         $headers = [
-            __('First Name', 'intersoccer-reports-rosters'),
-            __('Surname', 'intersoccer-reports-rosters'),
-            __('Gender', 'intersoccer-reports-rosters'),
-            __('Phone', 'intersoccer-reports-rosters'),
-            __('Email', 'intersoccer-reports-rosters'),
-            __('Age', 'intersoccer-reports-rosters'),
-            __('Birth Date', 'intersoccer-reports-rosters'), // ADDED
-            __('Medical/Dietary Conditions', 'intersoccer-reports-rosters'),
-            __('AVS Number', 'intersoccer-reports-rosters'),
-            __('Late Pickup', 'intersoccer-reports-rosters'),
-            __('Booking Type', 'intersoccer-reports-rosters'),
-            __('Age Group', 'intersoccer-reports-rosters'),
-            __('Product Name', 'intersoccer-reports-rosters'),
-            __('Venue', 'intersoccer-reports-rosters'),
-            __('Event', 'intersoccer-reports-rosters')
+            'Player Name',
+            'First Name',
+            'Last Name',
+            'Gender',
+            'Parent Phone',
+            'Parent Email',
+            'Birth Date',
+            'Age',
+            'Medical Conditions',
+            'Late Pickup',
+            'Late Pickup Days',
+            'Booking Type',
+            'Day Presence',
+            'Age Group',
+            'Activity Type',
+            'Product Name',
+            'Camp Terms',
+            'Course Day',
+            'Venue',
+            'Times',
+            'Shirt Size',
+            'Shorts Size',
+            'AVS Number'
         ];
 
         if ($base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
@@ -537,6 +587,7 @@ function intersoccer_export_roster() {
                 $player['medical_conditions'] ?? 'N/A',
                 $player['avs_number'] ?? 'N/A',
                 ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
+                $player['late_pickup_days'] ?? 'N/A',
                 $player['booking_type'] ?? 'N/A',
                 $player['age_group'] ?? 'N/A',
                 $player['product_name'] ?? 'N/A',
@@ -546,9 +597,9 @@ function intersoccer_export_roster() {
 
             if ($player['activity_type'] === 'Camp' || $player['activity_type'] === 'Girls Only' || $player['activity_type'] === 'Camp, Girls Only' || $player['activity_type'] === 'Camp, Girls\' only') {
                 $data = array_merge(
-                    array_slice($data, 0, 11), // Up to and including booking_type
+                    array_slice($data, 0, 12), // Up to and including booking_type
                     [$monday, $tuesday, $wednesday, $thursday, $friday],
-                    array_slice($data, 11)
+                    array_slice($data, 12)
                 );
                 // Add times after event
                 $data = array_merge(
@@ -599,6 +650,7 @@ function intersoccer_export_roster() {
         error_log('InterSoccer: Sending headers for roster export with birth dates');
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Content-Transfer-Encoding: binary');
         header('Cache-Control: max-age=0');
         header('Expires: 0');
         header('Pragma: public');
@@ -674,6 +726,7 @@ function intersoccer_export_roster() {
                     $player['medical_conditions'] ?? 'N/A',
                     $player['avs_number'] ?? 'N/A',
                     ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
+                    $player['late_pickup_days'] ?? 'N/A',
                     $player['booking_type'] ?? 'N/A',
                     $player['age_group'] ?? 'N/A',
                     $player['product_name'] ?? 'N/A',
@@ -683,9 +736,9 @@ function intersoccer_export_roster() {
 
                 if ($base_roster['activity_type'] === 'Camp' || $base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
                     $data = array_merge(
-                        array_slice($data, 0, 11), // Adjust slice for added Birth Date (now after 6th: Age)
+                        array_slice($data, 0, 12), // Up to and including booking_type
                         [$monday, $tuesday, $wednesday, $thursday, $friday],
-                        array_slice($data, 11)
+                        array_slice($data, 12)
                     );
                     // Add times after event
                     $data = array_merge(
@@ -838,6 +891,7 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['medical_conditions'] ?? 'N/A',
                     $roster['avs_number'] ?? 'N/A',
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
+                    $roster['late_pickup_days'] ?? 'N/A',
                     $roster['booking_type'] ?? 'N/A',
                     $roster['age_group'] ?? 'N/A',
                     $roster['product_name'] ?? 'N/A',
@@ -950,37 +1004,29 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['medical_conditions'] ?? 'N/A',
                     $roster['avs_number'] ?? 'N/A',
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
+                    $roster['late_pickup_days'] ?? 'N/A',
                     $roster['booking_type'] ?? 'N/A',
-                    $monday,
-                    $tuesday,
-                    $wednesday,
-                    $thursday,
-                    $friday,
-                    intersoccer_get_term_name($roster['age_group'], 'pa_age-group') ?? 'N/A',
-                    $roster['camp_terms'] ?? 'N/A',
-                    intersoccer_get_term_name($roster['venue'], 'pa_intersoccer-venues') ?? 'N/A',
-                    $roster['times'] ?? 'N/A'
+                    $roster['age_group'] ?? 'N/A',
+                    $roster['product_name'] ?? 'N/A',
+                    $roster['venue'] ?? 'N/A',
+                    $roster['course_day'] ?: ($roster['camp_terms'] ?? 'N/A')
                 ];
 
-                // Write data with explicit handling for phone and birth date
+                // Write first three columns (A-C) explicitly
                 $sheet->setCellValue('A' . $row, $data[0]);
                 $sheet->setCellValue('B' . $row, $data[1]);
                 $sheet->setCellValue('C' . $row, $data[2]);
+                // Write phone number (D) explicitly
                 $sheet->setCellValueExplicit('D' . $row, $excel_phone, DataType::TYPE_STRING);
+                // Write columns E-F
                 $sheet->setCellValue('E' . $row, $data[4]);
                 $sheet->setCellValue('F' . $row, $data[5]);
-                $sheet->setCellValue('G' . $row, $data[6]); // Birth date
+                // Write birth date (G) explicitly
+                $sheet->setCellValue('G' . $row, $data[6]);
+                // Write remaining columns starting at H
                 $other_data = array_slice($data, 7);
                 $sheet->fromArray($other_data, NULL, 'H' . $row);
-
-                if ($roster['activity_type'] === 'Girls Only' || $roster['activity_type'] === 'Camp, Girls Only' || $roster['activity_type'] === 'Camp, Girls\' only') {
-                    $extra_data = [
-                        $roster['shirt_size'] ?? 'N/A',
-                        $roster['shorts_size'] ?? 'N/A'
-                    ];
-                    $last_col = chr(ord('H') + count($other_data) - 1);
-                    $sheet->fromArray($extra_data, NULL, chr(ord($last_col) + 1) . $row);
-                }
+                
                 $row++;
             }
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
@@ -1145,29 +1191,29 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['medical_conditions'] ?? 'N/A',
                     $roster['avs_number'] ?? 'N/A',
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
+                    $roster['late_pickup_days'] ?? 'N/A',
                     $roster['booking_type'] ?? 'N/A',
-                    $monday,
-                    $tuesday,
-                    $wednesday,
-                    $thursday,
-                    $friday,
-                    intersoccer_get_term_name($roster['age_group'], 'pa_age-group') ?? 'N/A',
+                    $roster['age_group'] ?? 'N/A',
                     $roster['product_name'] ?? 'N/A',
-                    intersoccer_get_term_name($roster['venue'], 'pa_intersoccer-venues') ?? 'N/A',
-                    $roster['times'] ?? 'N/A'
+                    $roster['venue'] ?? 'N/A',
+                    $roster['course_day'] ?: ($roster['camp_terms'] ?? 'N/A')
                 ];
 
-                // Write data with explicit handling for phone and birth date
+                // Write first three columns (A-C) explicitly
                 $sheet->setCellValue('A' . $row, $data[0]);
                 $sheet->setCellValue('B' . $row, $data[1]);
                 $sheet->setCellValue('C' . $row, $data[2]);
+                // Write phone number (D) explicitly
                 $sheet->setCellValueExplicit('D' . $row, $excel_phone, DataType::TYPE_STRING);
+                // Write columns E-F
                 $sheet->setCellValue('E' . $row, $data[4]);
                 $sheet->setCellValue('F' . $row, $data[5]);
-                $sheet->setCellValue('G' . $row, $data[6]); // Birth date
+                // Write birth date (G) explicitly
+                $sheet->setCellValue('G' . $row, $data[6]);
+                // Write remaining columns starting at H
                 $other_data = array_slice($data, 7);
                 $sheet->fromArray($other_data, NULL, 'H' . $row);
-
+                
                 $row++;
             }
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));
@@ -1200,10 +1246,8 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
             $sheet->fromArray($headers, NULL, 'A1');
 
             // Set phone number column (D) to Text format and adjust width
-            $sheet->getStyle('D2:D' . (count($rosters) + 1))
-                  ->getNumberFormat()
-                  ->setFormatCode('@'); // Use simple text format
-            $sheet->getColumnDimension('D')->setWidth(15); // Set column width
+            $sheet->getStyle('D2:D' . (count($rosters) + 1))->getNumberFormat()->setFormatCode('@');
+            $sheet->getColumnDimension('D')->setWidth(15);
 
             $row = 2;
             foreach ($rosters as $roster) {
@@ -1241,29 +1285,29 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                     $roster['medical_conditions'] ?? 'N/A',
                     $roster['avs_number'] ?? 'N/A',
                     ($roster['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
+                    $roster['late_pickup_days'] ?? 'N/A',
                     $roster['booking_type'] ?? 'N/A',
-                    $monday,
-                    $tuesday,
-                    $wednesday,
-                    $thursday,
-                    $friday,
-                    intersoccer_get_term_name($roster['age_group'], 'pa_age-group') ?? 'N/A',
+                    $roster['age_group'] ?? 'N/A',
                     $roster['product_name'] ?? 'N/A',
-                    intersoccer_get_term_name($roster['venue'], 'pa_intersoccer-venues') ?? 'N/A',
-                    $roster['times'] ?? 'N/A'
+                    $roster['venue'] ?? 'N/A',
+                    $roster['course_day'] ?: ($roster['camp_terms'] ?? 'N/A')
                 ];
 
-                // Write data with explicit handling for phone and birth date
+                // Write first three columns (A-C) explicitly
                 $sheet->setCellValue('A' . $row, $data[0]);
                 $sheet->setCellValue('B' . $row, $data[1]);
                 $sheet->setCellValue('C' . $row, $data[2]);
+                // Write phone number (D) explicitly
                 $sheet->setCellValueExplicit('D' . $row, $excel_phone, DataType::TYPE_STRING);
+                // Write columns E-F
                 $sheet->setCellValue('E' . $row, $data[4]);
                 $sheet->setCellValue('F' . $row, $data[5]);
-                $sheet->setCellValue('G' . $row, $data[6]); // Birth date
+                // Write birth date (G) explicitly
+                $sheet->setCellValue('G' . $row, $data[6]);
+                // Write remaining columns starting at H
                 $other_data = array_slice($data, 7);
                 $sheet->fromArray($other_data, NULL, 'H' . $row);
-
+                
                 $row++;
             }
             $sheet->setCellValue('A' . $row, 'Total Players: ' . count($rosters));

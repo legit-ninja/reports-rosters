@@ -49,6 +49,8 @@ function intersoccer_render_roster_details_page() {
     // Get query parameters
     $product_id = isset($_GET['product_id']) ? intval($_GET['product_id']) : 0;
     $variation_id = isset($_GET['variation_id']) ? intval($_GET['variation_id']) : 0;
+    $variation_ids_str = isset($_GET['variation_ids']) ? sanitize_text_field($_GET['variation_ids']) : '';
+    $variation_ids = $variation_ids_str ? array_map('intval', explode(',', $variation_ids_str)) : [];
     $camp_terms = isset($_GET['camp_terms']) ? sanitize_text_field($_GET['camp_terms']) : '';
     $course_day = isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '';
     $venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
@@ -82,14 +84,14 @@ function intersoccer_render_roster_details_page() {
     // Build query - SIMPLIFIED using girls_only boolean
     // $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.day_presence, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only";
     // $query .= " FROM $rosters_table r";
-    $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.day_presence, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only, p.post_date as order_date";
+    $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.late_pickup_days, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.day_presence, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only, p.post_date as order_date";
     $query .= " FROM $rosters_table r";
     $query .= " JOIN {$wpdb->posts} p ON r.order_id = p.ID";
     
     $where_clauses = [];
     $query_params = [];
 
-    $where_clauses[] = "p.post_status = 'wc-completed'";
+    $where_clauses[] = "p.post_status IN ('wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold')";
     
     // Girls Only filtering - UPDATED to use boolean column
     if ($is_from_girls_only_page || $girls_only) {
@@ -118,6 +120,12 @@ function intersoccer_render_roster_details_page() {
     if ($variation_id > 0) {
         $where_clauses[] = "r.variation_id = %d";
         $query_params[] = $variation_id;
+    }
+
+    if (!empty($variation_ids)) {
+        $placeholders = implode(',', array_fill(0, count($variation_ids), '%d'));
+        $where_clauses[] = "r.variation_id IN ($placeholders)";
+        $query_params = array_merge($query_params, $variation_ids);
     }
 
     if ($camp_terms && $camp_terms !== 'N/A') {
@@ -250,6 +258,8 @@ function intersoccer_render_roster_details_page() {
     echo '<th>' . esc_html__('Medical/Dietary') . '</th>';
     
     if ($is_camp_like) {
+        echo '<th>' . esc_html__('Late Pickup') . '</th>';
+        echo '<th>' . esc_html__('Late Pickup Days') . '</th>';
         echo '<th>' . esc_html__('Booking Type') . '</th>';
         echo '<th>' . esc_html__('Monday') . '</th>';
         echo '<th>' . esc_html__('Tuesday') . '</th>';
@@ -284,6 +294,8 @@ function intersoccer_render_roster_details_page() {
         echo '<td>' . esc_html($row->medical_conditions ?? 'N/A') . '</td>';
         
         if ($is_camp_like) {
+            echo '<td>' . esc_html($row->late_pickup ?? 'No') . '</td>';
+            echo '<td>' . esc_html($row->late_pickup_days ?? 'N/A') . '</td>';
             echo '<td>' . esc_html($row->booking_type ?? 'N/A') . '</td>';
             $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
             foreach ($days as $day) {
@@ -361,6 +373,13 @@ function intersoccer_render_roster_details_page() {
     echo '<form method="post" action="' . esc_url(admin_url('admin-ajax.php')) . '" class="export-form" style="margin-top: 20px;">';
     echo '<input type="hidden" name="action" value="intersoccer_export_roster">';
     echo '<input type="hidden" name="use_fields" value="1">';
+    if (!empty($variation_ids)) {
+        echo '<input type="hidden" name="variation_ids" value="' . esc_attr(implode(',', $variation_ids)) . '">';
+    } elseif ($variation_id > 0) {
+        echo '<input type="hidden" name="variation_id" value="' . esc_attr($variation_id) . '">';
+    }
+    echo '<input type="hidden" name="product_id" value="' . esc_attr($product_id) . '">';
+    echo '<input type="hidden" name="activity_types" value="' . esc_attr($base_roster->activity_type) . '">';
     echo '<input type="hidden" name="camp_terms" value="' . esc_attr($camp_terms) . '">';
     echo '<input type="hidden" name="course_day" value="' . esc_attr($course_day) . '">';
     echo '<input type="hidden" name="venue" value="' . esc_attr($venue) . '">';

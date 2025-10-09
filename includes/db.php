@@ -33,6 +33,7 @@ function intersoccer_create_rosters_table() {
         parent_email varchar(100) DEFAULT 'N/A',
         medical_conditions text,
         late_pickup varchar(10) DEFAULT 'No',
+        late_pickup_days text,
         day_presence text,
         age_group varchar(50) DEFAULT '',
         start_date date DEFAULT '1970-01-01',
@@ -424,6 +425,7 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
         }
 
         $late_pickup = $order_item_meta['Late Pickup'] ?? 'No';
+        $late_pickup_days = $order_item_meta['Late Pickup Days'] ?? '';
         $product_name = $product->get_name();
 
         $day_presence = ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
@@ -491,6 +493,7 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             'parent_email' => substr($order->get_billing_email() ?: 'N/A', 0, 100),
             'medical_conditions' => $medical_conditions,
             'late_pickup' => $late_pickup,
+            'late_pickup_days' => $late_pickup_days,
             'day_presence' => json_encode($day_presence),
             'age_group' => $age_group,
             'start_date' => $start_date ?: '1970-01-01',
@@ -549,6 +552,7 @@ function intersoccer_upgrade_database() {
         'reimbursement' => 'decimal(10,2) DEFAULT 0.00',
         'discount_codes' => 'varchar(255) DEFAULT \'\'',
         'girls_only' => 'BOOLEAN DEFAULT FALSE',
+        'late_pickup_days' => 'text',
     ];
 
     foreach ($new_columns as $col => $type) {
@@ -748,6 +752,7 @@ function intersoccer_validate_rosters_table() {
         'parent_email' => 'varchar(100)',
         'medical_conditions' => 'text',
         'late_pickup' => 'varchar(10)',
+        'late_pickup_days' => 'text',
         'day_presence' => 'text',
         'age_group' => 'varchar(50)',
         'start_date' => 'date',

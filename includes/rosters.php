@@ -770,7 +770,7 @@ function intersoccer_render_camps_page() {
                                         </div>
                                         <div class="camp-actions">
                                             <?php 
-                                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=camps&camp_terms=' . urlencode($camp['camp_terms'] ?: 'N/A') . '&venue=' . urlencode($camp['venue']) . '&age_group=' . urlencode($camp['age_group']) . '&times=' . urlencode($camp['times']));
+                                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=camps&variation_ids=' . urlencode(implode(',', $camp['variation_ids'])) . '&camp_terms=' . urlencode($camp['camp_terms'] ?: 'N/A') . '&venue=' . urlencode($camp['venue']) . '&age_group=' . urlencode($camp['age_group']) . '&times=' . urlencode($camp['times']));
                                             ?>
                                             <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                 👀 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
@@ -1098,7 +1098,8 @@ function intersoccer_render_courses_page() {
                                                 </div>
                                                 <div class="course-actions">
                                                     <?php 
-                                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=courses&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']));
+                                                    $variation_ids_str = is_array($course['variation_ids']) ? implode(',', $course['variation_ids']) : $course['variation_ids'];
+                                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=courses&variation_ids=' . urlencode($variation_ids_str) . '&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']));
                                                     ?>
                                                     <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                         👀 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
@@ -1451,7 +1452,8 @@ function intersoccer_render_girls_only_page() {
                                             </div>
                                             <div class="camp-actions">
                                                 <?php 
-                                                $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=girls-only&camp_terms=' . urlencode($camp['camp_terms'] ?: 'N/A') . '&venue=' . urlencode($camp['venue']) . '&age_group=' . urlencode($camp['age_group']) . '&times=' . urlencode($camp['times']) . '&girls_only=1');
+                                                $variation_ids_str = is_array($camp['variation_ids']) ? implode(',', $camp['variation_ids']) : $camp['variation_ids'];
+                                                $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=girls-only&variation_ids=' . urlencode($variation_ids_str) . '&camp_terms=' . urlencode($camp['camp_terms'] ?: 'N/A') . '&venue=' . urlencode($camp['venue']) . '&age_group=' . urlencode($camp['age_group']) . '&times=' . urlencode($camp['times']) . '&girls_only=1');
                                                 ?>
                                                 <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                     View Roster
@@ -1537,10 +1539,11 @@ function intersoccer_render_girls_only_page() {
                                                     </div>
                                                     <div class="course-actions">
                                                         <?php 
-                                                        $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=girls-only&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']) . '&girls_only=1');
+                                                        $variation_ids_str = is_array($course['variation_ids']) ? implode(',', $course['variation_ids']) : $course['variation_ids'];
+                                                        $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=courses&variation_ids=' . urlencode($variation_ids_str) . '&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']));
                                                         ?>
                                                         <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
-                                                            View Roster
+                                                            👀 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
                                                         </a>
                                                     </div>
                                                 </div>
@@ -1598,6 +1601,7 @@ function intersoccer_get_course_day_from_order_item($order_item_id) {
     
     // Log all available metadata if we can't find course_day
     $all_meta = $wpdb->get_results($wpdb->prepare(
+       
         "SELECT meta_key, meta_value FROM $order_itemmeta_table 
          WHERE order_item_id = %d AND meta_value IS NOT NULL AND meta_value != ''",
         $order_item_id
@@ -1850,7 +1854,7 @@ function intersoccer_render_other_events_page() {
                                             </div>
                                             <div class="course-actions">
                                                 <?php 
-                                                $view_url = admin_url('admin.php?page=intersoccer-roster-details&product_name=' . urlencode($event['product_name']) . '&age_group=' . urlencode($event['age_group']) . '&times=' . urlencode($event['times']) . '&season=' . urlencode($season));
+                                                $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_ids=' . urlencode($event['variation_ids']) . '&product_name=' . urlencode($event['product_name']) . '&age_group=' . urlencode($event['age_group']) . '&times=' . urlencode($event['times']) . '&season=' . urlencode($season));
                                                 ?>
                                                 <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                     👀 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
@@ -1970,7 +1974,7 @@ function intersoccer_render_all_rosters_page() {
             </div>
         <?php endif; ?>
     </div>
-    <?php
+<?php
 }
 
 /**
