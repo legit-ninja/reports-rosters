@@ -757,11 +757,10 @@ function intersoccer_render_camps_page() {
                                             <span class="detail-value">
                                                 <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['age_group'], 'pa_age-group') : $camp['age_group']); ?>
                                             </span>
-                                            
-                                            <div class="detail-row">
-                                                <span class="detail-label">🌆 City</span>
-                                                <span class="detail-value"><?php echo esc_html($camp['city'] ?: 'N/A'); ?></span>
-                                            </div>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">🌆 City</span>
+                                            <span class="detail-value"><?php echo esc_html($camp['city'] ?: 'N/A'); ?></span>
                                         </div>
                                     </div>
                                     <div class="camp-footer">
