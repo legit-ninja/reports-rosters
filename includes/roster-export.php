@@ -517,7 +517,6 @@ function intersoccer_export_roster() {
         exit;
     }
 
-    // For larger rosters, use Excel
     // Prepare Excel data
     $filename = 'roster_' . sanitize_title($base_roster['product_name'] . '_' . ($base_roster['camp_terms'] ?: $base_roster['course_day']) . '_' . $base_roster['venue']) . '_' . date('Y-m-d_H-i-s') . '.xlsx';
     
@@ -1079,19 +1078,31 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 $thursday = isset($day_presence['Thursday']) ? $day_presence['Thursday'] : 'No';
                 $friday = isset($day_presence['Friday']) ? $day_presence['Friday'] : 'No';
                 
-                // Normalize phone number and format birth date
+                // Normalize phone number
                 $raw_phone = $roster['parent_phone'] ?? 'N/A';
                 $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone);
                 $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
 
+                // Format birth date for CSV from player_dob
                 $birth_date = $roster['player_dob'] ?? '';
                 $formatted_birth_date = 'N/A';
                 if (!empty($birth_date) && $birth_date !== '0000-00-00' && $birth_date !== '1970-01-01') {
+                    // Try to parse various date formats
                     $date_obj = DateTime::createFromFormat('Y-m-d', $birth_date);
+                    if (!$date_obj) {
+                        $date_obj = DateTime::createFromFormat('d/m/Y', $birth_date);
+                    }
+                    if (!$date_obj) {
+                        $date_obj = DateTime::createFromFormat('m/d/Y', $birth_date);
+                    }
                     if ($date_obj) {
                         $formatted_birth_date = $date_obj->format('d/m/Y');
                     } else {
-                        $formatted_birth_date = $birth_date;
+                        // Only log parsing errors if debugging
+                        if (defined('WP_DEBUG') && WP_DEBUG) {
+                            error_log("InterSoccer: Could not parse birth date: {$birth_date}");
+                        }
+                        $formatted_birth_date = (string)$birth_date; // Fallback
                     }
                 }
 
@@ -1173,19 +1184,31 @@ function intersoccer_export_all_rosters($camps, $courses, $girls_only, $export_t
                 $thursday = isset($day_presence['Thursday']) ? $day_presence['Thursday'] : 'No';
                 $friday = isset($day_presence['Friday']) ? $day_presence['Friday'] : 'No';
                 
-                // Normalize phone number and format birth date
+                // Normalize phone number
                 $raw_phone = $roster['parent_phone'] ?? 'N/A';
                 $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone);
                 $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
 
+                // Format birth date for CSV from player_dob
                 $birth_date = $roster['player_dob'] ?? '';
                 $formatted_birth_date = 'N/A';
                 if (!empty($birth_date) && $birth_date !== '0000-00-00' && $birth_date !== '1970-01-01') {
+                    // Try to parse various date formats
                     $date_obj = DateTime::createFromFormat('Y-m-d', $birth_date);
+                    if (!$date_obj) {
+                        $date_obj = DateTime::createFromFormat('d/m/Y', $birth_date);
+                    }
+                    if (!$date_obj) {
+                        $date_obj = DateTime::createFromFormat('m/d/Y', $birth_date);
+                    }
                     if ($date_obj) {
                         $formatted_birth_date = $date_obj->format('d/m/Y');
                     } else {
-                        $formatted_birth_date = $birth_date;
+                        // Only log parsing errors if debugging
+                        if (defined('WP_DEBUG') && WP_DEBUG) {
+                            error_log("InterSoccer: Could not parse birth date: {$birth_date}");
+                        }
+                        $formatted_birth_date = (string)$birth_date; // Fallback
                     }
                 }
 
