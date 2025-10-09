@@ -424,7 +424,7 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             $event_dates = 'N/A';
         }
 
-        $late_pickup = $order_item_meta['Late Pickup'] ?? 'No';
+        $late_pickup = (!empty($order_item_meta['Late Pickup Type'])) ? 'Yes' : 'No';
         $late_pickup_days = $order_item_meta['Late Pickup Days'] ?? '';
         $product_name = $product->get_name();
 
@@ -590,6 +590,10 @@ function intersoccer_upgrade_database() {
             $activity_type = ucfirst($product_type);
         }
 
+        // Extract late pickup data
+        $late_pickup = (!empty($item_meta['Late Pickup Type'])) ? 'Yes' : 'No';
+        $late_pickup_days = $item_meta['Late Pickup Days'] ?? '';
+
         // Check order item metadata for girls_only
         $item_meta = [];
         foreach ($item->get_meta_data() as $meta) {
@@ -625,10 +629,12 @@ function intersoccer_upgrade_database() {
                 'discount_codes' => $discount_codes,
                 'girls_only' => $girls_only,
                 'activity_type' => $activity_type,
+                'late_pickup' => $late_pickup,
+                'late_pickup_days' => $late_pickup_days,
             ],
             ['order_item_id' => $row->order_item_id]
         );
-        error_log('InterSoccer: Backfilled financial data, girls_only, and activity_type for order_item_id ' . $row->order_item_id . ' (girls_only: ' . $girls_only . ', activity_type: ' . $activity_type . ')');
+        error_log('InterSoccer: Backfilled financial data, girls_only, activity_type, and late pickup data for order_item_id ' . $row->order_item_id . ' (girls_only: ' . $girls_only . ', activity_type: ' . $activity_type . ', late_pickup: ' . $late_pickup . ', late_pickup_days: ' . $late_pickup_days . ')');
     }
 
     // Backfill avs_number
