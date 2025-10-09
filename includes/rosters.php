@@ -756,11 +756,11 @@ function intersoccer_render_camps_page() {
                                             <span class="detail-value">
                                                 <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['age_group'], 'pa_age-group') : $camp['age_group']); ?>
                                             </span>
-                                        </div>
-                                        
-                                        <div class="detail-row">
-                                            <span class="detail-label">🌆 City</span>
-                                            <span class="detail-value"><?php echo esc_html($camp['city'] ?: 'N/A'); ?></span>
+                                            
+                                            <div class="detail-row">
+                                                <span class="detail-label">🌆 City</span>
+                                                <span class="detail-value"><?php echo esc_html($camp['city'] ?: 'N/A'); ?></span>
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="camp-footer">
@@ -821,7 +821,7 @@ function intersoccer_render_courses_page() {
                LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                WHERE r.activity_type IN ('Course', 'Course, Girls Only', 'Course, Girls\' only')
                AND r.girls_only = 0  -- EXCLUDE Girls Only events
-               GROUP BY r.season, r.venue, oim.meta_value, r.age_group, r.times, r.course_day
+               GROUP BY r.variation_id
                ORDER BY r.season DESC, r.course_day, r.venue, r.age_group";
 
     $start_time = microtime(true);
@@ -1153,7 +1153,7 @@ function intersoccer_render_girls_only_page() {
                    FROM $rosters_table r
                    LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                    WHERE r.girls_only = 1
-                   GROUP BY r.season, r.activity_type, r.venue, oim.meta_value, r.age_group, r.times, r.camp_terms, r.course_day, r.start_date, r.end_date
+                   GROUP BY r.variation_id
                    ORDER BY r.season DESC, r.activity_type, r.venue, r.age_group";
 
     $start_time = microtime(true);
