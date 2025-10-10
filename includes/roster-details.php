@@ -62,7 +62,7 @@ function intersoccer_render_roster_details_page() {
     $girls_only = isset($_GET['girls_only']) ? (bool) $_GET['girls_only'] : false;
     $season = isset($_GET['season']) ? sanitize_text_field($_GET['season']) : '';
     $sort_by = isset($_GET['sort']) ? sanitize_text_field($_GET['sort']) : 'order_date';
-    $sort_order = isset($_GET['order']) ? sanitize_text_field($_GET['order']) : 'asc';
+    $sort_order = isset($_GET['order']) ? sanitize_text_field($_GET['order']) : 'desc';
 
     // Validate sort parameters
     $allowed_sort_fields = ['order_date', 'player_name', 'last_name', 'gender', 'age', 'age_group'];
