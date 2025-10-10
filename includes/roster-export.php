@@ -452,7 +452,7 @@ function intersoccer_export_roster() {
             // Normalize phone number
             $raw_phone = $player['parent_phone'] ?? 'N/A';
             $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone);
-            $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
+            $excel_phone = $processed_phone;
 
             // Format date of birth for Excel from player_dob
             $birth_date = $player['player_dob'] ?? '';
@@ -529,7 +529,11 @@ function intersoccer_export_roster() {
             $col = 0;
             foreach ($data as $value) {
                 $columnLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col + 1);
-                $sheet->setCellValue($columnLetter . $row, $value);
+                if ($col == 4) { // Parent Phone column (0-based index)
+                    $sheet->setCellValueExplicit($columnLetter . $row, $value, DataType::TYPE_STRING);
+                } else {
+                    $sheet->setCellValue($columnLetter . $row, $value);
+                }
                 $col++;
             }
 
@@ -598,7 +602,7 @@ function intersoccer_export_roster() {
                 // Normalize phone number
                 $raw_phone = $player['parent_phone'] ?? 'N/A';
                 $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone);
-                $excel_phone = $processed_phone !== 'N/A' ? ' ' . $processed_phone : $processed_phone;
+                $excel_phone = $processed_phone;
 
                 // Format date of birth for CSV from player_dob
                 $birth_date = $player['player_dob'] ?? '';
