@@ -284,7 +284,7 @@ function intersoccer_render_roster_details_page() {
         
         echo '<tr data-order-item-id="' . esc_attr($row->order_item_id) . '">';
         echo '<td><input type="checkbox" class="player-select"></td>'; // New: Checkbox for selection
-        echo '<td>' . esc_html($row->order_date ? date('Y-m-d H:i', strtotime($row->order_date)) : 'N/A') . '</td>';
+        echo '<td>' . esc_html($row->order_date ? date_i18n('Y-m-d H:i', strtotime($row->order_date)) : 'N/A') . '</td>';
         echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($row->first_name ?? 'N/A') . '</td>';
         echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($row->last_name ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->gender ?? 'N/A') . '</td>';

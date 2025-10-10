@@ -1080,7 +1080,7 @@ function intersoccer_render_courses_page() {
                                                     <span class="detail-value">
                                                         <?php 
                                                         if ($course['corrected_start_date'] !== '1970-01-01' && $course['corrected_end_date'] !== '1970-01-01') {
-                                                            echo esc_html(date('M j', strtotime($course['corrected_start_date'])) . ' - ' . date('M j, Y', strtotime($course['corrected_end_date'])));
+                                                            echo esc_html(date_i18n('M j', strtotime($course['corrected_start_date'])) . ' - ' . date_i18n('M j, Y', strtotime($course['corrected_end_date'])));
                                                         } else {
                                                             echo 'TBD';
                                                         }
@@ -1528,7 +1528,7 @@ function intersoccer_render_girls_only_page() {
                                                             <?php 
                                                             if ($course['start_date'] && $course['start_date'] !== '1970-01-01' && 
                                                                 $course['end_date'] && $course['end_date'] !== '1970-01-01') {
-                                                                echo esc_html(date('M j', strtotime($course['start_date'])) . ' - ' . date('M j, Y', strtotime($course['end_date'])));
+                                                                echo esc_html(date_i18n('M j', strtotime($course['start_date'])) . ' - ' . date_i18n('M j, Y', strtotime($course['end_date'])));
                                                             } else {
                                                                 echo 'TBD';
                                                             }
@@ -1848,7 +1848,7 @@ function intersoccer_render_other_events_page() {
                                                 <span class="detail-label">📅 Duration</span>
                                                 <span class="detail-value"><?php 
                                                 if ($event['start_date'] !== '1970-01-01' && $event['end_date'] !== '1970-01-01') {
-                                                    echo esc_html(date('M j', $course['start_date']) . ' - ' . date('M j, Y', $course['end_date']));
+                                                    echo esc_html(date_i18n('M j', strtotime($event['start_date'])) . ' - ' . date_i18n('M j, Y', strtotime($event['end_date'])));
                                                 } else {
                                                     echo 'TBD';
                                                 }

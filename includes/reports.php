@@ -644,7 +644,7 @@ function intersoccer_export_booking_report_callback() {
         // Create descriptive sheet title
         $date_range = '';
         if ($start_date && $end_date) {
-            $date_range = date('M j', strtotime($start_date)) . ' - ' . date('M j Y', strtotime($end_date));
+            $date_range = date_i18n('M j', strtotime($start_date)) . ' - ' . date_i18n('M j Y', strtotime($end_date));
         } else {
             $date_range = $year;
         }
@@ -1289,27 +1289,27 @@ function intersoccer_render_booking_totals($totals) {
             </div>
             <div class="summary-item">
                 <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Gross Revenue', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 24px; font-weight: 600; color: #28a745;"><?php echo esc_html(number_format($totals['base_price'], 2)); ?> CHF</div>
+                <div style="font-size: 24px; font-weight: 600; color: #28a745;"><?php echo wp_kses_post(wc_price($totals['base_price'])); ?></div>
             </div>
             <div class="summary-item">
                 <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Total Discounts', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 24px; font-weight: 600; color: #ffc107;"><?php echo esc_html(number_format($totals['discount_amount'], 2)); ?> CHF</div>
+                <div style="font-size: 24px; font-weight: 600; color: #ffc107;"><?php echo wp_kses_post(wc_price($totals['discount_amount'])); ?></div>
             </div>
             <div class="summary-item">
                 <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Final Revenue', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 24px; font-weight: 600; color: #17a2b8;"><?php echo esc_html(number_format($totals['final_price'], 2)); ?> CHF</div>
+                <div style="font-size: 24px; font-weight: 600; color: #17a2b8;"><?php echo wp_kses_post(wc_price($totals['final_price'])); ?></div>
             </div>
             <div class="summary-item">
                 <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Reimbursements', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 24px; font-weight: 600; color: #dc3545;"><?php echo esc_html(number_format($totals['reimbursement'], 2)); ?> CHF</div>
+                <div style="font-size: 24px; font-weight: 600; color: #dc3545;"><?php echo wp_kses_post(wc_price($totals['reimbursement'])); ?></div>
             </div>
             <div class="summary-item">
                 <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Stripe Fees', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 24px; font-weight: 600; color: #6c757d;"><?php echo esc_html(number_format($stripe_fee, 2)); ?> CHF</div>
+                <div style="font-size: 24px; font-weight: 600; color: #6c757d;"><?php echo wp_kses_post(wc_price($stripe_fee)); ?></div>
             </div>
             <div class="summary-item" style="border-left: 3px solid #0073aa; padding-left: 15px;">
                 <div style="font-size: 14px; color: #666; margin-bottom: 5px;"><?php _e('Net Revenue (After Fees)', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 28px; font-weight: 700; color: #0073aa;"><?php echo esc_html(number_format($net_after_fees, 2)); ?> CHF</div>
+                <div style="font-size: 28px; font-weight: 700; color: #0073aa;"><?php echo wp_kses_post(wc_price($net_after_fees)); ?></div>
             </div>
         </div>
         
@@ -1319,7 +1319,7 @@ function intersoccer_render_booking_totals($totals) {
                 <div>
                     <strong><?php _e('Average Order Value:', 'intersoccer-reports-rosters'); ?></strong> 
                     <span style="color: #0073aa; font-weight: 600;">
-                        <?php echo $totals['bookings'] > 0 ? esc_html(number_format($totals['final_price'] / $totals['bookings'], 2)) : '0.00'; ?> CHF
+                        <?php echo $totals['bookings'] > 0 ? wp_kses_post(wc_price($totals['final_price'] / $totals['bookings'])) : wp_kses_post(wc_price(0)); ?>
                     </span>
                 </div>
                 <div>
@@ -1371,25 +1371,25 @@ function intersoccer_render_enhanced_booking_totals($totals) {
             </div>
             <div class="summary-item" style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef; transition: transform 0.2s ease;">
                 <div style="font-size: 14px; color: #666; margin-bottom: 8px; font-weight: 500;"><?php _e('Gross Revenue', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 28px; font-weight: 700; color: #28a745; line-height: 1.2;"><?php echo esc_html(number_format($totals['base_price'], 2)); ?> CHF</div>
+                <div style="font-size: 28px; font-weight: 700; color: #28a745; line-height: 1.2;"><?php echo wp_kses_post(wc_price($totals['base_price'])); ?></div>
             </div>
             <div class="summary-item" style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef; transition: transform 0.2s ease;">
                 <div style="font-size: 14px; color: #666; margin-bottom: 8px; font-weight: 500;"><?php _e('Total Discounts', 'intersoccer-reports-rosters'); ?> 
                     <span style="font-size: 12px; color: #999;">(Enhanced Tracking)</span>
                 </div>
-                <div style="font-size: 28px; font-weight: 700; color: #ffc107; line-height: 1.2;"><?php echo esc_html(number_format($totals['discount_amount'], 2)); ?> CHF</div>
+                <div style="font-size: 28px; font-weight: 700; color: #ffc107; line-height: 1.2;"><?php echo wp_kses_post(wc_price($totals['discount_amount'])); ?></div>
             </div>
-            <div class="summary-item" style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef; transition: transform 0.2s ease;">
+            <div class="summary-item" style="background: #f8f9fa; padding:  20px; border-radius: 8px; border: 1px solid #e9ecef; transition: transform 0.2s ease;">
                 <div style="font-size: 14px; color: #666; margin-bottom: 8px; font-weight: 500;"><?php _e('Final Revenue', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 28px; font-weight: 700; color: #17a2b8; line-height: 1.2;"><?php echo esc_html(number_format($totals['final_price'], 2)); ?> CHF</div>
+                <div style="font-size: 28px; font-weight: 700; color: #17a2b8; line-height: 1.2;"><?php echo wp_kses_post(wc_price($totals['final_price'])); ?></div>
             </div>
             <div class="summary-item" style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef; transition: transform 0.2s ease;">
                 <div style="font-size: 14px; color: #666; margin-bottom: 8px; font-weight: 500;"><?php _e('Reimbursements', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 28px; font-weight: 700; color: #dc3545; line-height: 1.2;"><?php echo esc_html(number_format($totals['reimbursement'], 2)); ?> CHF</div>
+                <div style="font-size: 24px; font-weight: 600; color: #dc3545;"><?php echo wp_kses_post(wc_price($totals['reimbursement'])); ?></div>
             </div>
             <div class="summary-item" style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef; transition: transform 0.2s ease;">
                 <div style="font-size: 14px; color: #666; margin-bottom: 8px; font-weight: 500;"><?php _e('Stripe Fees', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 28px; font-weight: 700; color: #6c757d; line-height: 1.2;"><?php echo esc_html(number_format($stripe_fee, 2)); ?> CHF</div>
+                <div style="font-size: 24px; font-weight: 600; color: #6c757d;"><?php echo wp_kses_post(wc_price($stripe_fee)); ?></div>
             </div>
             <div class="summary-item" style="
                 background: linear-gradient(135deg, #0073aa 0%, #005a87 100%); 
@@ -1401,7 +1401,7 @@ function intersoccer_render_enhanced_booking_totals($totals) {
                 transition: transform 0.2s ease;
             ">
                 <div style="font-size: 14px; color: rgba(255,255,255,0.9); margin-bottom: 8px; font-weight: 500;"><?php _e('Net Revenue (After Fees)', 'intersoccer-reports-rosters'); ?></div>
-                <div style="font-size: 32px; font-weight: 800; color: white; line-height: 1.2; text-shadow: 0 1px 2px rgba(0,0,0,0.1);"><?php echo esc_html(number_format($net_after_fees, 2)); ?> CHF</div>
+                <div style="font-size: 32px; font-weight: 800; color: white; line-height: 1.2; text-shadow: 0 1px 2px rgba(0,0,0,0.1);"><?php echo wp_kses_post(wc_price($net_after_fees)); ?></div>
             </div>
         </div>
         
@@ -1416,7 +1416,7 @@ function intersoccer_render_enhanced_booking_totals($totals) {
                 <div style="display: flex; flex-direction: column; gap: 5px;">
                     <strong style="font-size: 13px; color: #495057; text-transform: uppercase; letter-spacing: 0.5px;"><?php _e('Average Order Value', 'intersoccer-reports-rosters'); ?></strong> 
                     <span style="font-size: 18px; font-weight: 700; color: #0073aa;">
-                        <?php echo $totals['bookings'] > 0 ? esc_html(number_format($totals['final_price'] / $totals['bookings'], 2)) : '0.00'; ?> CHF
+                        <?php echo $totals['bookings'] > 0 ? wp_kses_post(wc_price($totals['final_price'] / $totals['bookings'])) : wp_kses_post(wc_price(0)); ?>
                     </span>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 5px;">

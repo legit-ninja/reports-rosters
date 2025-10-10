@@ -457,7 +457,7 @@ function intersoccer_get_booking_report_enhanced($start_date = '', $end_date = '
             // Use item-level discount details
             foreach ($item_discounts as $discount_detail) {
                 if (is_array($discount_detail) && isset($discount_detail['name']) && isset($discount_detail['amount'])) {
-                    $discount_details[] = $discount_detail['name'] . ' (' . number_format($discount_detail['amount'], 2) . ' CHF)';
+                    $discount_details[] = $discount_detail['name'] . ' (' . wp_kses_post(wc_price($discount_detail['amount'])) . ')';
                 }
             }
         } elseif (!empty($discount_breakdown)) {
@@ -466,7 +466,7 @@ function intersoccer_get_booking_report_enhanced($start_date = '', $end_date = '
             if (is_array($parsed_breakdown)) {
                 foreach ($parsed_breakdown as $discount_detail) {
                     if (is_array($discount_detail) && isset($discount_detail['name']) && isset($discount_detail['amount'])) {
-                        $discount_details[] = $discount_detail['name'] . ' (' . number_format($discount_detail['amount'], 2) . ' CHF)';
+                        $discount_details[] = $discount_detail['name'] . ' (' . wp_kses_post(wc_price($discount_detail['amount'])) . ')';
                     }
                 }
             }
@@ -497,9 +497,9 @@ function intersoccer_get_booking_report_enhanced($start_date = '', $end_date = '
         // Format dates
         $booked_date = '';
         if (!empty($row['order_date'])) {
-            $booked_date = date('Y-m-d H:i', strtotime($row['order_date']));
+            $booked_date = date_i18n('Y-m-d H:i', strtotime($row['order_date']));
         } elseif (!empty($row['registration_timestamp'])) {
-            $booked_date = date('Y-m-d H:i', strtotime($row['registration_timestamp']));
+            $booked_date = date_i18n('Y-m-d H:i', strtotime($row['registration_timestamp']));
         }
 
         $data[] = array(
