@@ -360,31 +360,36 @@ function intersoccer_export_roster() {
     $base_roster = $rosters[0];
     
     // Build headers based on activity type
-    $common_headers = [
-        'Player Name',
+    $base_headers = [
         'First Name',
-        'Last Name',
+        'Surname',
         'Gender',
-        'Parent Phone',
-        'Parent Email',
-        'Date of Birth',
+        'Phone',
+        'Email',
         'Age',
-        'Medical Conditions',
-        'Age Group',
-        'Activity Type',
-        'Product Name',
-        'Venue',
+        'Date of Birth',
+        'Medical/Dietary Conditions',
         'AVS Number'
     ];
     
-    $headers = $common_headers;
+    // Add camp-specific headers for camps only
+    if ($base_roster['activity_type'] === 'Camp' || $base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
+        $base_headers = array_merge($base_headers, ['Late Pickup', 'Booking Type']);
+    }
+    
+    // Add common remaining headers
+    $base_headers = array_merge($base_headers, [
+        'Age Group',
+        'Product Name',
+        'Venue'
+    ]);
+    
+    $headers = $base_headers;
     
     if ($base_roster['activity_type'] === 'Camp' || $base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
         // Add camp-specific headers
         $camp_headers = [
-            'Late Pickup',
             'Late Pickup Days',
-            'Booking Type',
             'Day Presence',
             'Monday',
             'Tuesday',
@@ -398,7 +403,7 @@ function intersoccer_export_roster() {
     } elseif ($base_roster['activity_type'] === 'Course') {
         // Add course-specific headers
         $course_headers = [
-            'Course Day',
+            'Event',
             'Times'
         ];
         $headers = array_merge($headers, $course_headers);
@@ -475,46 +480,53 @@ function intersoccer_export_roster() {
             }
 
             // Build data array based on activity type
-            $common_data = [
-                ($player['player_name'] ?? '') . ' ' . ($player['first_name'] ?? ''), // Player Name
-                $player['first_name'] ?? 'N/A',
-                $player['last_name'] ?? 'N/A',
-                $player['gender'] ?? 'N/A',
-                $processed_phone,
-                $player['parent_email'] ?? 'N/A',
-                $formatted_birth_date, // Date of Birth
+            $data = [
+                $player['first_name'] ?? 'N/A', // First Name
+                $player['last_name'] ?? 'N/A', // Surname
+                $player['gender'] ?? 'N/A', // Gender
+                $processed_phone, // Phone
+                $player['parent_email'] ?? 'N/A', // Email
                 $player['age'] ?? 'N/A', // Age
-                $player['player_dob'] ?? 'N/A', // Medical Conditions
-                $player['age_group'] ?? 'N/A',
-                $player['activity_type'] ?? 'N/A',
-                $player['product_name'] ?? 'N/A',
-                $player['venue'] ?? 'N/A',
-                $player['medical_conditions'] ?? 'N/A', // AVS Number
+                $formatted_birth_date, // Birth Date
+                $player['medical_conditions'] ?? 'N/A', // Medical/Dietary Conditions
+                $player['avs_number'] ?? 'N/A', // AVS Number
             ];
             
-            $data = $common_data;
+            // Add camp-specific data for camps only
+            if ($player['activity_type'] === 'Camp' || $player['activity_type'] === 'Girls Only' || $player['activity_type'] === 'Camp, Girls Only' || $player['activity_type'] === 'Camp, Girls\' only') {
+                $data = array_merge($data, [
+                    ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'), // Late Pickup
+                    $player['booking_type'] ?? 'N/A', // Booking Type
+                ]);
+            }
             
+            // Add common remaining data
+            $data = array_merge($data, [
+                $player['age_group'] ?? 'N/A', // Age Group
+                $player['product_name'] ?? 'N/A', // Product Name
+                $player['venue'] ?? 'N/A', // Venue
+            ]);
+            
+            // Add activity-specific data
             if ($player['activity_type'] === 'Camp' || $player['activity_type'] === 'Girls Only' || $player['activity_type'] === 'Camp, Girls Only' || $player['activity_type'] === 'Camp, Girls\' only') {
                 // Add camp-specific data
                 $camp_data = [
-                    ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
-                    $player['late_pickup_days'] ?? 'N/A',
-                    $player['booking_type'] ?? 'N/A',
+                    $player['late_pickup_days'] ?? 'N/A', // Late Pickup Days
                     '', // Day Presence (empty)
-                    $monday,
-                    $tuesday,
-                    $wednesday,
-                    $thursday,
-                    $friday,
-                    $player['camp_terms'] ?? 'N/A',
-                    $player['times'] ?? 'N/A',
+                    $monday, // Monday
+                    $tuesday, // Tuesday
+                    $wednesday, // Wednesday
+                    $thursday, // Thursday
+                    $friday, // Friday
+                    $player['camp_terms'] ?? 'N/A', // Camp Terms
+                    $player['times'] ?? 'N/A', // Times
                 ];
                 $data = array_merge($data, $camp_data);
             } elseif ($player['activity_type'] === 'Course') {
                 // Add course-specific data
                 $course_data = [
-                    $player['course_day'] ?? 'N/A',
-                    $player['times'] ?? 'N/A',
+                    $player['course_day'] ?? 'N/A', // Event
+                    $player['times'] ?? 'N/A', // Times
                 ];
                 $data = array_merge($data, $course_data);
             }
@@ -529,7 +541,7 @@ function intersoccer_export_roster() {
             $col = 0;
             foreach ($data as $value) {
                 $columnLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col + 1);
-                if ($col == 4) { // Parent Phone column (0-based index)
+                if ($col == 3) { // Phone column (0-based index)
                     $sheet->setCellValueExplicit($columnLetter . $row, $value, DataType::TYPE_STRING);
                 } else {
                     $sheet->setCellValue($columnLetter . $row, $value);
@@ -617,7 +629,7 @@ function intersoccer_export_roster() {
                         $date_obj = DateTime::createFromFormat('m/d/Y', $birth_date);
                     }
                     if ($date_obj) {
-                        $formatted_birth_date = $date_obj->format('d/m/Y');
+                        $formatted_birth_date = $date_obj->format('d.m.Y');
                     } else {
                         // Only log parsing errors if debugging
                         if (defined('WP_DEBUG') && WP_DEBUG) {
@@ -628,29 +640,61 @@ function intersoccer_export_roster() {
                 }
 
                 $data = [
-                    ($player['player_name'] ?? '') . ' ' . ($player['first_name'] ?? ''), // Player Name
-                    $player['first_name'] ?? 'N/A',
-                    $player['last_name'] ?? 'N/A',
-                    $player['gender'] ?? 'N/A',
-                    $processed_phone,
-                    $player['parent_email'] ?? 'N/A',
-                    $player['age'] ?? 'N/A',
+                    $player['first_name'] ?? 'N/A', // First Name
+                    $player['last_name'] ?? 'N/A', // Surname
+                    $player['gender'] ?? 'N/A', // Gender
+                    $processed_phone, // Phone
+                    $player['parent_email'] ?? 'N/A', // Email
+                    $player['age'] ?? 'N/A', // Age
                     $formatted_birth_date, // Birth Date
-                    $player['player_dob'] ?? 'N/A', // Medical Conditions
-                    ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'),
-                    $player['late_pickup_days'] ?? 'N/A',
-                    $player['booking_type'] ?? 'N/A',
-                    $player['age_group'] ?? 'N/A',
-                    $player['activity_type'] ?? 'N/A',
-                    $player['product_name'] ?? 'N/A',
-                    $player['camp_terms'] ?? 'N/A',
-                    $player['course_day'] ?? 'N/A',
-                    $player['venue'] ?? 'N/A',
-                    $player['times'] ?? 'N/A',
-                    $player['shirt_size'] ?? 'N/A',
-                    $player['shorts_size'] ?? 'N/A',
-                    $player['medical_conditions'] ?? 'N/A', // AVS Number
+                    $player['medical_conditions'] ?? 'N/A', // Medical/Dietary Conditions
+                    $player['avs_number'] ?? 'N/A', // AVS Number
                 ];
+
+                // Add camp-specific data for camps only
+                if ($player['activity_type'] === 'Camp' || $player['activity_type'] === 'Girls Only' || $player['activity_type'] === 'Camp, Girls Only' || $player['activity_type'] === 'Camp, Girls\' only') {
+                    $data = array_merge($data, [
+                        ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'), // Late Pickup
+                        $player['booking_type'] ?? 'N/A', // Booking Type
+                    ]);
+                }
+
+                // Add common remaining data
+                $data = array_merge($data, [
+                    $player['age_group'] ?? 'N/A', // Age Group
+                    $player['product_name'] ?? 'N/A', // Product Name
+                    $player['venue'] ?? 'N/A', // Venue
+                ]);
+
+                // Add activity-specific data
+                if ($player['activity_type'] === 'Camp' || $player['activity_type'] === 'Girls Only' || $player['activity_type'] === 'Camp, Girls Only' || $player['activity_type'] === 'Camp, Girls\' only') {
+                    // Add camp-specific data
+                    $camp_data = [
+                        $player['late_pickup_days'] ?? 'N/A', // Late Pickup Days
+                        '', // Day Presence (empty)
+                        $monday, // Monday
+                        $tuesday, // Tuesday
+                        $wednesday, // Wednesday
+                        $thursday, // Thursday
+                        $friday, // Friday
+                        $player['camp_terms'] ?? 'N/A', // Camp Terms
+                        $player['times'] ?? 'N/A', // Times
+                    ];
+                    $data = array_merge($data, $camp_data);
+                } elseif ($player['activity_type'] === 'Course') {
+                    // Add course-specific data
+                    $course_data = [
+                        $player['course_day'] ?? 'N/A', // Event
+                        $player['times'] ?? 'N/A', // Times
+                    ];
+                    $data = array_merge($data, $course_data);
+                }
+                
+                // Add girls-specific data if applicable
+                if ($player['activity_type'] === 'Girls Only' || $player['activity_type'] === 'Camp, Girls Only' || $player['activity_type'] === 'Camp, Girls\' only') {
+                    $data[] = $player['shirt_size'] ?? 'N/A';
+                    $data[] = $player['shorts_size'] ?? 'N/A';
+                }
 
                 // Write data to CSV
                 fputcsv($output, $data, ';');
