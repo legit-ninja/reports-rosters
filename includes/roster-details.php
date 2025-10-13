@@ -51,6 +51,7 @@ function intersoccer_render_roster_details_page() {
     $variation_id = isset($_GET['variation_id']) ? intval($_GET['variation_id']) : 0;
     $variation_ids_str = isset($_GET['variation_ids']) ? sanitize_text_field($_GET['variation_ids']) : '';
     $variation_ids = $variation_ids_str ? array_map('intval', explode(',', $variation_ids_str)) : [];
+    $event_signature = isset($_GET['event_signature']) ? sanitize_text_field($_GET['event_signature']) : '';
     $camp_terms = isset($_GET['camp_terms']) ? sanitize_text_field($_GET['camp_terms']) : '';
     $course_day = isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '';
     $venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
@@ -126,6 +127,13 @@ function intersoccer_render_roster_details_page() {
         $placeholders = implode(',', array_fill(0, count($variation_ids), '%d'));
         $where_clauses[] = "r.variation_id IN ($placeholders)";
         $query_params = array_merge($query_params, $variation_ids);
+    }
+
+    if ($event_signature && $event_signature !== 'N/A') {
+        $where_clauses[] = "(r.event_signature = %s OR r.event_signature LIKE %s OR (r.event_signature IS NULL AND %s = 'N/A'))";
+        $query_params[] = $event_signature;
+        $query_params[] = '%' . $wpdb->esc_like($event_signature) . '%';
+        $query_params[] = $event_signature;
     }
 
     if ($camp_terms && $camp_terms !== 'N/A') {
@@ -373,7 +381,9 @@ function intersoccer_render_roster_details_page() {
     echo '<form method="post" action="' . esc_url(admin_url('admin-ajax.php')) . '" class="export-form" style="margin-top: 20px;">';
     echo '<input type="hidden" name="action" value="intersoccer_export_roster">';
     echo '<input type="hidden" name="use_fields" value="1">';
-    if (!empty($variation_ids)) {
+    if ($event_signature) {
+        echo '<input type="hidden" name="event_signature" value="' . esc_attr($event_signature) . '">';
+    } elseif (!empty($variation_ids)) {
         echo '<input type="hidden" name="variation_ids" value="' . esc_attr(implode(',', $variation_ids)) . '">';
     } elseif ($variation_id > 0) {
         echo '<input type="hidden" name="variation_id" value="' . esc_attr($variation_id) . '">';

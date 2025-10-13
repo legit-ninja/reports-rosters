@@ -166,6 +166,7 @@ function intersoccer_export_roster() {
     $variation_id = isset($_POST['variation_id']) ? intval($_POST['variation_id']) : 0;
     $variation_ids_str = isset($_POST['variation_ids']) ? sanitize_text_field($_POST['variation_ids']) : '';
     $variation_ids = $variation_ids_str ? array_map('intval', explode(',', $variation_ids_str)) : [];
+    $event_signature = isset($_POST['event_signature']) ? sanitize_text_field($_POST['event_signature']) : '';
     $camp_terms = isset($_POST['camp_terms']) ? sanitize_text_field($_POST['camp_terms']) : '';
     $course_day = isset($_POST['course_day']) ? sanitize_text_field($_POST['course_day']) : '';
     $venue = isset($_POST['venue']) ? sanitize_text_field($_POST['venue']) : '';
@@ -175,9 +176,9 @@ function intersoccer_export_roster() {
     $activity_types_str = isset($_POST['activity_types']) ? sanitize_text_field($_POST['activity_types']) : '';
     $activity_types = $activity_types_str ? array_map('trim', explode(',', $activity_types_str)) : ['Camp', 'Course', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only'];
 
-    if (!$use_fields && empty($variation_ids)) {
+    if (!$use_fields && empty($variation_ids) && empty($event_signature)) {
         ob_end_clean();
-        wp_send_json_error(__('No variation IDs or fields provided for export.', 'intersoccer-reports-rosters'));
+        wp_send_json_error(__('No variation IDs, event signature, or fields provided for export.', 'intersoccer-reports-rosters'));
     }
     
     // Additional validation for use_fields mode
@@ -216,6 +217,14 @@ function intersoccer_export_roster() {
             // Only log if debugging
             if (defined('WP_DEBUG') && WP_DEBUG) {
                 error_log('InterSoccer Export: variation_id filter added: ' . $variation_id);
+            }
+        } elseif (!empty($event_signature)) {
+            // Handle event_signature (new method for stable event identification)
+            $where_clauses[] = "event_signature = %s";
+            $query_params[] = $event_signature;
+            // Only log if debugging
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer Export: event_signature filter added: ' . $event_signature);
             }
         } elseif (!empty($variation_ids)) {
             // Handle variation_ids array (from courses/camps pages) - ONLY filter by these specific variations

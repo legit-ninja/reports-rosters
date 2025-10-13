@@ -45,11 +45,11 @@ function intersoccer_pe_get_camp_variations($filters) {
     $where_clause = implode(' AND ', $where);
 
     $query = "SELECT r.product_id, r.camp_terms, r.venue, r.age_group, r.product_name, r.times, r.start_date, 
-                COUNT(*) as total_players, GROUP_CONCAT(DISTINCT r.order_item_id) as variation_ids
+                COUNT(*) as total_players, GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids, r.event_signature
          FROM $rosters_table r
          JOIN $posts_table p ON r.product_id = p.ID AND p.post_type = 'product' AND p.post_status = 'publish'
          WHERE $where_clause
-         GROUP BY r.product_id, r.camp_terms, r.venue, r.age_group, r.product_name, r.times";
+         GROUP BY r.event_signature, r.product_id, r.camp_terms, r.venue, r.age_group, r.product_name, r.times";
     error_log('InterSoccer: Camp variations query: ' . $query);
 
     $results = $wpdb->get_results($query, ARRAY_A);
@@ -96,11 +96,11 @@ function intersoccer_pe_get_course_variations($filters) {
     $where_clause = implode(' AND ', $where);
 
     $query = "SELECT r.product_id, r.course_day, r.venue, r.age_group, r.product_name, r.times, r.start_date, 
-                COUNT(*) as total_players, GROUP_CONCAT(DISTINCT r.order_item_id) as variation_ids
+                COUNT(*) as total_players, GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids, r.event_signature
          FROM $rosters_table r
          JOIN $posts_table p ON r.product_id = p.ID AND p.post_type = 'product' AND p.post_status = 'publish'
          WHERE $where_clause
-         GROUP BY r.product_id, r.course_day, r.venue, r.age_group, r.product_name, r.times";
+         GROUP BY r.event_signature, r.product_id, r.course_day, r.venue, r.age_group, r.product_name, r.times";
     error_log('InterSoccer: Course variations query: ' . $query);
 
     $results = $wpdb->get_results($query, ARRAY_A);
@@ -147,11 +147,11 @@ function intersoccer_pe_get_girls_only_variations($filters) {
     $where_clause = implode(' AND ', $where);
 
     $query = "SELECT r.product_id, r.camp_terms, r.venue, r.age_group, r.product_name, r.times, r.shirt_size, r.shorts_size, r.start_date,
-                COUNT(*) as total_players, GROUP_CONCAT(DISTINCT r.order_item_id) as variation_ids
+                COUNT(*) as total_players, GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids, r.event_signature
          FROM $rosters_table r
          JOIN $posts_table p ON r.product_id = p.ID AND p.post_type = 'product' AND p.post_status = 'publish'
          WHERE $where_clause
-         GROUP BY r.product_id, r.camp_terms, r.venue, r.age_group, r.product_name, r.times, r.shirt_size, r.shorts_size";
+         GROUP BY r.event_signature, r.product_id, r.camp_terms, r.venue, r.age_group, r.product_name, r.times, r.shirt_size, r.shorts_size";
     error_log('InterSoccer: Girls Only variations query: ' . $query);
 
     $results = $wpdb->get_results($query, ARRAY_A);

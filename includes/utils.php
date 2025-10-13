@@ -365,6 +365,17 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         'reimbursement' => $reimbursement,
         'discount_codes' => $discount_codes,
         'girls_only' => $girls_only,
+        'event_signature' => intersoccer_generate_event_signature([
+            'activity_type' => $activity_type,
+            'venue' => $venue,
+            'age_group' => $age_group,
+            'camp_terms' => $camp_terms,
+            'course_day' => $course_day,
+            'times' => $times,
+            'season' => $season,
+            'girls_only' => $girls_only,
+            'product_id' => $product_id,
+        ]),
     ];
 
     // Insert or update
@@ -836,3 +847,37 @@ function intersoccer_debug_specific_products() {
 
 // Uncomment to run the debug test
 add_action('admin_init', 'intersoccer_debug_specific_products');
+
+/**
+ * Generates a stable event signature for roster grouping that doesn't rely on variation_id.
+ * This ensures rosters remain properly grouped even when product variations are deleted.
+ *
+ * @param array $event_data Array containing event characteristics
+ * @return string MD5 hash of the event signature
+ */
+function intersoccer_generate_event_signature($event_data) {
+    // Essential characteristics that define event uniqueness
+    $signature_components = [
+        'activity_type' => $event_data['activity_type'] ?? '',
+        'venue' => $event_data['venue'] ?? '',
+        'age_group' => $event_data['age_group'] ?? '',
+        'camp_terms' => $event_data['camp_terms'] ?? '',
+        'course_day' => $event_data['course_day'] ?? '',
+        'times' => $event_data['times'] ?? '',
+        'season' => $event_data['season'] ?? '',
+        'girls_only' => $event_data['girls_only'] ? '1' : '0',
+        'product_id' => $event_data['product_id'] ?? '',
+    ];
+
+    // Create a normalized string from components
+    $signature_string = implode('|', array_map(function($key, $value) {
+        return $key . ':' . trim(strtolower($value));
+    }, array_keys($signature_components), $signature_components));
+
+    // Generate MD5 hash for consistent length and comparison
+    $signature = md5($signature_string);
+
+    error_log('InterSoccer: Generated event signature: ' . $signature . ' from components: ' . json_encode($signature_components));
+
+    return $signature;
+}

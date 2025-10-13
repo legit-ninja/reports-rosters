@@ -70,6 +70,7 @@ function intersoccer_create_rosters_table() {
         reimbursement decimal(10,2) DEFAULT 0.00,
         discount_codes varchar(255) DEFAULT '',
         girls_only BOOLEAN DEFAULT FALSE,
+        event_signature varchar(255) DEFAULT '',
         PRIMARY KEY (id),
         UNIQUE KEY uniq_order_item_id (order_item_id),
         KEY idx_player_name (player_name),
@@ -77,7 +78,8 @@ function intersoccer_create_rosters_table() {
         KEY idx_activity_type (activity_type(50)),
         KEY idx_start_date (start_date),
         KEY idx_variation_id (variation_id),
-        KEY idx_order_id (order_id)
+        KEY idx_order_id (order_id),
+        KEY idx_event_signature (event_signature(100))
     ) $charset_collate;";
 
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -85,6 +87,56 @@ function intersoccer_create_rosters_table() {
     error_log('InterSoccer: Rosters table created/verified on activation (no rebuild).');
     $describe = $wpdb->get_results("DESCRIBE $rosters_table", ARRAY_A);
     error_log('InterSoccer: Post-rebuild DESCRIBE: ' . print_r($describe, true));
+
+    // Migrate existing tables to add event_signature column if it doesn't exist
+    intersoccer_migrate_rosters_table();
+}
+
+/**
+ * Migrate existing rosters table to add new columns
+ */
+function intersoccer_migrate_rosters_table() {
+    global $wpdb;
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+
+    // Check if event_signature column exists
+    $columns = $wpdb->get_col("DESCRIBE $rosters_table", 0);
+    if (!in_array('event_signature', $columns)) {
+        error_log('InterSoccer: Adding event_signature column to existing rosters table');
+
+        // Add event_signature column
+        $wpdb->query("ALTER TABLE $rosters_table ADD COLUMN event_signature varchar(255) DEFAULT '' AFTER girls_only");
+
+        // Add index for event_signature
+        $wpdb->query("ALTER TABLE $rosters_table ADD KEY idx_event_signature (event_signature(100))");
+
+        // Populate event_signature for existing records
+        $existing_records = $wpdb->get_results("SELECT id, activity_type, venue, age_group, camp_terms, course_day, times, season, girls_only, product_id FROM $rosters_table WHERE event_signature = '' OR event_signature IS NULL", ARRAY_A);
+
+        foreach ($existing_records as $record) {
+            $signature = intersoccer_generate_event_signature([
+                'activity_type' => $record['activity_type'],
+                'venue' => $record['venue'],
+                'age_group' => $record['age_group'],
+                'camp_terms' => $record['camp_terms'],
+                'course_day' => $record['course_day'],
+                'times' => $record['times'],
+                'season' => $record['season'],
+                'girls_only' => $record['girls_only'],
+                'product_id' => $record['product_id'],
+            ]);
+
+            $wpdb->update(
+                $rosters_table,
+                ['event_signature' => $signature],
+                ['id' => $record['id']],
+                ['%s'],
+                ['%d']
+            );
+        }
+
+        error_log('InterSoccer: Migrated ' . count($existing_records) . ' existing roster records with event signatures');
+    }
 }
 
 /**
@@ -553,6 +605,7 @@ function intersoccer_upgrade_database() {
         'discount_codes' => 'varchar(255) DEFAULT \'\'',
         'girls_only' => 'BOOLEAN DEFAULT FALSE',
         'late_pickup_days' => 'text',
+        'event_signature' => 'varchar(255) DEFAULT \'\'',
     ];
 
     foreach ($new_columns as $col => $type) {
@@ -795,6 +848,7 @@ function intersoccer_validate_rosters_table() {
         'reimbursement' => 'decimal(10,2)',
         'discount_codes' => 'varchar(255)',
         'girls_only' => 'boolean',
+        'event_signature' => 'varchar(255)',
     ];
 
     $actual_columns_raw = $wpdb->get_results("DESCRIBE $rosters_table", ARRAY_A);

@@ -505,7 +505,8 @@ function intersoccer_render_camps_page() {
                       r.age_group, 
                       r.times,
                       COUNT(DISTINCT r.order_item_id) as total_players,
-                      GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids,
+                      GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids,
+                      r.event_signature,
                       GROUP_CONCAT(DISTINCT r.player_name) as player_names,
                       GROUP_CONCAT(DISTINCT r.start_date) as start_dates,
                       GROUP_CONCAT(DISTINCT r.end_date) as end_dates
@@ -513,7 +514,7 @@ function intersoccer_render_camps_page() {
                LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                WHERE r.activity_type IN ('Camp', 'Camp, Girls Only', 'Camp, Girls\' only')
                AND r.girls_only = 0  -- EXCLUDE Girls Only events
-               GROUP BY r.camp_terms, r.venue, oim.meta_value, r.age_group, r.times
+               GROUP BY r.event_signature, r.camp_terms, r.venue, oim.meta_value, r.age_group, r.times
                ORDER BY r.camp_terms, r.venue, r.age_group";
 
     $start_time = microtime(true);
@@ -770,7 +771,7 @@ function intersoccer_render_camps_page() {
                                         </div>
                                         <div class="camp-actions">
                                             <?php 
-                                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=camps&variation_ids=' . urlencode(implode(',', $camp['variation_ids'])) . '&camp_terms=' . urlencode($camp['camp_terms'] ?: 'N/A') . '&venue=' . urlencode($camp['venue']) . '&age_group=' . urlencode($camp['age_group']) . '&times=' . urlencode($camp['times']));
+                                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=camps&event_signature=' . urlencode($camp['event_signature']) . '&camp_terms=' . urlencode($camp['camp_terms'] ?: 'N/A') . '&venue=' . urlencode($camp['venue']) . '&age_group=' . urlencode($camp['age_group']) . '&times=' . urlencode($camp['times']));
                                             ?>
                                             <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                 👀 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
@@ -812,7 +813,8 @@ function intersoccer_render_courses_page() {
                       r.times,
                       r.course_day,
                       COUNT(DISTINCT r.order_item_id) as total_players,
-                      GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids,
+                      GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids,
+                      r.event_signature,
                       GROUP_CONCAT(DISTINCT r.player_name) as player_names,
                       GROUP_CONCAT(DISTINCT r.start_date) as start_dates,
                       GROUP_CONCAT(DISTINCT r.end_date) as end_dates,
@@ -821,8 +823,8 @@ function intersoccer_render_courses_page() {
                LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                WHERE r.activity_type IN ('Course', 'Course, Girls Only', 'Course, Girls\' only')
                AND r.girls_only = 0  -- EXCLUDE Girls Only events
-               GROUP BY r.variation_id
-               ORDER BY r.season DESC, r.course_day, r.venue, r.age_group";
+               GROUP BY r.event_signature, r.season, r.venue, oim.meta_value, r.age_group, r.times, r.course_day
+               ORDER BY r.season, r.venue, r.age_group";
 
     $start_time = microtime(true);
     $groups = $wpdb->get_results($base_query, ARRAY_A);
@@ -1099,8 +1101,7 @@ function intersoccer_render_courses_page() {
                                                 </div>
                                                 <div class="course-actions">
                                                     <?php 
-                                                    $variation_ids_str = is_array($course['variation_ids']) ? implode(',', $course['variation_ids']) : $course['variation_ids'];
-                                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=courses&variation_ids=' . urlencode($variation_ids_str) . '&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']));
+                                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=courses&event_signature=' . urlencode($course['event_signature']) . '&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']));
                                                     ?>
                                                     <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                         👀 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
@@ -1148,13 +1149,14 @@ function intersoccer_render_girls_only_page() {
                           r.start_date,
                           r.end_date,
                           COUNT(DISTINCT r.order_item_id) as total_players,
-                          GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids,
+                          GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids,
+                          r.event_signature,
                           GROUP_CONCAT(DISTINCT r.player_name) as player_names,
                           GROUP_CONCAT(DISTINCT r.product_name) as product_names
                    FROM $rosters_table r
                    LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                    WHERE r.girls_only = 1
-                   GROUP BY r.variation_id
+                   GROUP BY r.event_signature, r.season, r.venue, oim.meta_value, r.age_group, r.times, r.camp_terms, r.course_day, r.activity_type
                    ORDER BY r.season DESC, r.activity_type, r.venue, r.age_group";
 
     $start_time = microtime(true);
@@ -1460,8 +1462,7 @@ function intersoccer_render_girls_only_page() {
                                             </div>
                                             <div class="camp-actions">
                                                 <?php 
-                                                $variation_ids_str = is_array($camp['variation_ids']) ? implode(',', $camp['variation_ids']) : $camp['variation_ids'];
-                                                $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=girls-only&variation_ids=' . urlencode($variation_ids_str) . '&camp_terms=' . urlencode($camp['camp_terms'] ?: 'N/A') . '&venue=' . urlencode($camp['venue']) . '&age_group=' . urlencode($camp['age_group']) . '&times=' . urlencode($camp['times']) . '&girls_only=1');
+                                                $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=girls-only&event_signature=' . urlencode($camp['event_signature']) . '&camp_terms=' . urlencode($camp['camp_terms'] ?: 'N/A') . '&venue=' . urlencode($camp['venue']) . '&age_group=' . urlencode($camp['age_group']) . '&times=' . urlencode($camp['times']) . '&girls_only=1');
                                                 ?>
                                                 <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                     View Roster
@@ -1547,8 +1548,7 @@ function intersoccer_render_girls_only_page() {
                                                     </div>
                                                     <div class="course-actions">
                                                         <?php 
-                                                        $variation_ids_str = is_array($course['variation_ids']) ? implode(',', $course['variation_ids']) : $course['variation_ids'];
-                                                        $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=courses&variation_ids=' . urlencode($variation_ids_str) . '&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']));
+                                                        $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=courses&event_signature=' . urlencode($course['event_signature']) . '&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']));
                                                         ?>
                                                         <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                             👀 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
@@ -1584,7 +1584,7 @@ function intersoccer_get_course_day_from_order_item($order_item_id) {
     // Try multiple possible metadata key variations
     $possible_keys = [
         'Course Day',
-        'course_day', 
+        'course_day',
         'pa_course-day',
         'Course_Day',
         'courseDay',
