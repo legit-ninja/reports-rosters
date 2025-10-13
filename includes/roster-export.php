@@ -310,6 +310,9 @@ function intersoccer_export_roster() {
             $query .= " WHERE " . implode(' AND ', $where_clauses);
         }
         
+        // Sort by registration timestamp (most recent orders first)
+        $query .= " ORDER BY registration_timestamp DESC";
+        
         $rosters = $wpdb->get_results($wpdb->prepare($query, $query_params), ARRAY_A);
         // Only log query execution details if debugging
         if (defined('WP_DEBUG') && WP_DEBUG) {
@@ -331,6 +334,8 @@ function intersoccer_export_roster() {
         if ($age_group) {
             $query .= $wpdb->prepare(" AND (age_group = %s OR age_group LIKE %s)", $age_group, '%' . $wpdb->esc_like($age_group) . '%');
         }
+        // Sort by registration timestamp (most recent orders first)
+        $query .= " ORDER BY registration_timestamp DESC";
         $rosters = $wpdb->get_results($query, ARRAY_A);
     }
 
@@ -521,15 +526,15 @@ function intersoccer_export_roster() {
                 // Add camp-specific data
                 $camp_data = [
                     $player['late_pickup_days'] ?? 'N/A', // Late Pickup Days
-                    '', // Day Presence (empty)
-                    $monday, // Monday
-                    $tuesday, // Tuesday
-                    $wednesday, // Wednesday
-                    $thursday, // Thursday
-                    $friday, // Friday
+                    '' // Day Presence (empty)
+                ];
+                foreach (['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as $day) {
+                    $camp_data[] = isset($day_presence[$day]) ? $day_presence[$day] : 'No';
+                }
+                $camp_data = array_merge($camp_data, [
                     $player['camp_terms'] ?? 'N/A', // Camp Terms
                     $player['times'] ?? 'N/A', // Times
-                ];
+                ]);
                 $data = array_merge($data, $camp_data);
             } elseif ($player['activity_type'] === 'Course') {
                 // Add course-specific data
