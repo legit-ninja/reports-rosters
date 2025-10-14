@@ -263,8 +263,7 @@ add_action('admin_menu', function () {
     add_submenu_page('intersoccer-reports-rosters', __('Girls Only', 'intersoccer-reports-rosters'), __('Girls Only', 'intersoccer-reports-rosters'), 'read', 'intersoccer-girls-only', 'intersoccer_render_girls_only_page');
     add_submenu_page('intersoccer-reports-rosters', __('Other Events', 'intersoccer-reports-rosters'), __('Other Events', 'intersoccer-reports-rosters'), 'read', 'intersoccer-other-events', 'intersoccer_render_other_events_page');
     add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Advanced', 'intersoccer-reports-rosters'), __('Advanced', 'intersoccer-reports-rosters'), 'read', 'intersoccer-advanced', 'intersoccer_render_advanced_page');
-    add_submenu_page('intersoccer-reports-rosters', __('Roster Details', 'intersoccer-reports-rosters'), __('Roster Details', 'intersoccer-reports-rosters'), 'read', 'intersoccer-roster-details', 'intersoccer_render_roster_details_page');
-    add_submenu_page('intersoccer-reports-rosters', __('Report Details', 'intersoccer-reports-rosters'), __('Roster Details', 'intersoccer-reports-rosters'),'manage_options','intersoccer-roster-details','intersoccer_render_roster_details_page');
+    add_submenu_page(null, '', '', 'read', 'intersoccer-roster-details', 'intersoccer_render_roster_details_page');
 });
 
 add_action('wp_ajax_intersoccer_upgrade_database', 'intersoccer_upgrade_database');
