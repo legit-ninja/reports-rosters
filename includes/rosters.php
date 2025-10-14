@@ -536,9 +536,9 @@ function intersoccer_render_camps_page() {
     $all_groups = [];
     $all_seasons = [];
     foreach ($groups as $group) {
-        $variation_ids = !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
+        $variation_ids = isset($group['variation_ids']) && !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
         if (empty($variation_ids)) {
-            error_log("InterSoccer: No valid variation_ids for camp group - Raw: " . print_r($group['variation_ids'], true));
+            error_log("InterSoccer: No valid variation_ids for camp group - Raw: " . print_r(isset($group['variation_ids']) ? $group['variation_ids'] : 'KEY_NOT_SET', true));
             $variation_ids = [0];
         }
         $group['variation_ids'] = $variation_ids;
@@ -844,9 +844,9 @@ function intersoccer_render_courses_page() {
     $all_groups = [];
     $all_seasons = [];
     foreach ($groups as $group) {
-        $variation_ids = !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
+        $variation_ids = isset($group['variation_ids']) && !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
         if (empty($variation_ids)) {
-            error_log("InterSoccer: No valid variation_ids for course group - Raw: " . print_r($group['variation_ids'], true));
+            error_log("InterSoccer: No valid variation_ids for course group - Raw: " . print_r(isset($group['variation_ids']) ? $group['variation_ids'] : 'KEY_NOT_SET', true));
             $variation_ids = [0];
         }
         $group['variation_ids'] = $variation_ids;
@@ -1176,9 +1176,9 @@ function intersoccer_render_girls_only_page() {
     $all_seasons = [];
 
     foreach ($groups as $group) {
-        $variation_ids = !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
+        $variation_ids = isset($group['variation_ids']) && !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
         if (empty($variation_ids)) {
-            error_log("InterSoccer: No valid variation_ids for girls-only group - Raw: " . print_r($group['variation_ids'], true));
+            error_log("InterSoccer: No valid variation_ids for girls-only group - Raw: " . print_r(isset($group['variation_ids']) ? $group['variation_ids'] : 'KEY_NOT_SET', true));
             $variation_ids = [0];
         }
         $group['variation_ids'] = $variation_ids;
@@ -1661,11 +1661,12 @@ function intersoccer_render_other_events_page() {
 
     foreach ($groups as $group) {
         // Get variation for meta access
-        $variation_ids = !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
+        $variation_ids = isset($group['variation_ids']) && !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
         if (empty($variation_ids)) {
             error_log("InterSoccer: No valid variation_ids for event group - Raw: " . print_r($group['variation_ids'], true));
             $variation_ids = [0];
         }
+        $group['variation_ids'] = $variation_ids;
         $variation_id = $variation_ids[0];
         $variation = $variation_id ? wc_get_product($variation_id) : false;
         $parent_product = $variation ? wc_get_product($variation->get_parent_id()) : false;
