@@ -1,0 +1,1844 @@
+# English translations for PACKAGE package.
+# Copyright (C) 2025 THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# Jeremy Lee <jlee@underdogunlimited.com>, 2025.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-10-17 08:27-0400\n"
+"PO-Revision-Date: 2025-10-17 08:27-0400\n"
+"Last-Translator: Jeremy Lee <jlee@underdogunlimited.com>\n"
+"Language-Team: English\n"
+"Language: en_CH\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:43
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:17
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:378
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:490
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:797
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1129
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1628
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1892
+msgid "Permission denied."
+msgstr "Permission denied."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:179
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:205
+msgid "Roster Details"
+msgstr "Roster Details"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:180
+msgid "Invalid parameters provided."
+msgstr "Invalid parameters provided."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:206
+msgid "No rosters found for the provided parameters."
+msgstr "No rosters found for the provided parameters."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:249
+msgid "Roster Details for "
+msgstr "Roster Details for "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:252
+#, php-format
+msgid ""
+"%d Unknown Attendee entry found. Please update player assignments in the "
+"Player Management UI."
+msgid_plural ""
+"%d Unknown Attendee entries found. Please update player assignments in the "
+"Player Management UI."
+msgstr[0] ""
+"%d Unknown Attendee entry found. Please update player assignments in the "
+"Player Management UI."
+msgstr[1] ""
+"%d Unknown Attendee entries found. Please update player assignments in the "
+"Player Management UI."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:259
+msgid "Order Date"
+msgstr "Order Date"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:260
+msgid "Name"
+msgstr "Name"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:261
+msgid "Surname"
+msgstr "Surname"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:262
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/event-reports.php:157
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:671
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:242
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:392
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:319
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:251
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:433
+msgid "Gender"
+msgstr "Gender"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:263
+msgid "Phone"
+msgstr "Phone"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:264
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:441
+msgid "Email"
+msgstr "Email"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:265
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/event-reports.php:156
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:670
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:507
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:390
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:431
+msgid "Age"
+msgstr "Age"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:266
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:693
+msgid "Medical/Dietary"
+msgstr "Medical/Dietary"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:269
+msgid "Late Pickup"
+msgstr "Late Pickup"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:270
+msgid "Late Pickup Days"
+msgstr "Late Pickup Days"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:271
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:607
+msgid "Booking Type"
+msgstr "Booking Type"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:272
+msgid "Monday"
+msgstr "Monday"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:273
+msgid "Tuesday"
+msgstr "Tuesday"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:274
+msgid "Wednesday"
+msgstr "Wednesday"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:275
+msgid "Thursday"
+msgstr "Thursday"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:276
+msgid "Friday"
+msgstr "Friday"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:279
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1962
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:367
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:508
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:595
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:691
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:241
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:391
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:318
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:250
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:432
+msgid "Age Group"
+msgstr "Age Group"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:282
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-export.php:428
+msgid "Shirt Size"
+msgstr "Shirt Size"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:283
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-export.php:429
+msgid "Shorts Size"
+msgstr "Shorts Size"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:400
+msgid "Export Roster"
+msgstr "Export Roster"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:403
+msgid "Event Details"
+msgstr "Event Details"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:404
+msgid "Product Name: "
+msgstr "Product Name: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:405
+msgid "Venue: "
+msgstr "Venue: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:406
+msgid "Age Group: "
+msgstr "Age Group: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:407
+msgid "Course Day: "
+msgstr "Course Day: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:407
+msgid "Camp Terms: "
+msgstr "Camp Terms: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:408
+msgid "Camp Times: "
+msgstr "Camp Times: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:408
+msgid "Course Times: "
+msgstr "Course Times: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:410
+msgid "Girls Only: "
+msgstr "Girls Only: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:411
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1963
+msgid "Total Players"
+msgstr "Total Players"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/summer-camps-report.php:17
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/event-reports.php:131
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:26
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:91
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:241
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:366
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:66
+msgid "You do not have sufficient permissions to access this page."
+msgstr "You do not have sufficient permissions to access this page."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/summer-camps-report.php:29
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/summer-camps-report.php:30
+msgid "Summer Camps Report"
+msgstr "Summer Camps Report"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/event-reports.php:142
+msgid "No report data available for this variation."
+msgstr "No report data available for this variation."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/event-reports.php:148
+msgid "Event Report for "
+msgstr "Event Report for "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/event-reports.php:150
+msgid "Export Report"
+msgstr "Export Report"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/event-reports.php:155
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:669
+msgid "Attendee Name"
+msgstr "Attendee Name"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/event-reports.php:158
+msgid "Days"
+msgstr "Days"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/event-reports.php:172
+msgid "Total Attendees: "
+msgstr "Total Attendees: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/event-reports.php:173
+msgid "Average Age: "
+msgstr "Average Age: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/event-reports.php:174
+msgid "Gender Distribution: "
+msgstr "Gender Distribution: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/event-reports.php:179
+msgid "An error occurred while rendering the event report page."
+msgstr "An error occurred while rendering the event report page."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/event-reports.php:239
+msgid "An error occurred while exporting reports to CSV."
+msgstr "An error occurred while exporting reports to CSV."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/db.php:185
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/db.php:745
+msgid "Rebuild completed. Inserted "
+msgstr "Rebuild completed. Inserted "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/db.php:234
+msgid "Reconciled rosters: Synced "
+msgstr "Reconciled rosters: Synced "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/db.php:240
+msgid "Reconciliation failed: "
+msgstr "Reconciliation failed: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/db.php:725
+msgid "You do not have permission to upgrade the database."
+msgstr "You do not have permission to upgrade the database."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/db.php:728
+msgid "Database upgrade completed."
+msgstr "Database upgrade completed."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/db.php:737
+msgid "You do not have permission to rebuild rosters."
+msgstr "You do not have permission to rebuild rosters."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/db.php:747
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:89
+msgid "Rebuild failed: "
+msgstr "Rebuild failed: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/db.php:752
+msgid "Rebuild failed with exception: "
+msgstr "Rebuild failed with exception: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/db.php:762
+msgid "You do not have permission to reconcile rosters."
+msgstr "You do not have permission to reconcile rosters."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/db.php:777
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:112
+msgid "Reconcile failed: "
+msgstr "Reconcile failed: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/db.php:877
+msgid ""
+"InterSoccer Rosters table schema is outdated. Go to Advanced Features and "
+"click \"Upgrade Database\"."
+msgstr ""
+"InterSoccer Rosters table schema is outdated. Go to Advanced Features and "
+"click \"Upgrade Database\"."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:408
+msgid "No data available for the selected filters."
+msgstr "No data available for the selected filters."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:433
+msgid "Ref"
+msgstr "Ref"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:434
+msgid "Booked"
+msgstr "Booked"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:435
+msgid "Base Price"
+msgstr "Base Price"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:436
+msgid "Discount"
+msgstr "Discount"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:437
+msgid "Stripe Fee"
+msgstr "Stripe Fee"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:438
+msgid "Final Price"
+msgstr "Final Price"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:439
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1777
+msgid "Event"
+msgstr "Event"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:440
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:511
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:667
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1961
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:366
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:509
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:583
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:692
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:240
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:393
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:316
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:385
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:410
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:249
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:434
+msgid "Venue"
+msgstr "Venue"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:501
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:656
+msgid "Reference"
+msgstr "Reference"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:502
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:658
+msgid "Booking Date"
+msgstr "Booking Date"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:503
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:659
+msgid "Base Price (CHF)"
+msgstr "Base Price (CHF)"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:504
+msgid "Discount (CHF)"
+msgstr "Discount (CHF)"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:505
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:661
+msgid "Reimbursement (CHF)"
+msgstr "Reimbursement (CHF)"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:506
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:662
+msgid "Stripe Fee (CHF)"
+msgstr "Stripe Fee (CHF)"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:507
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:663
+msgid "Final Price (CHF)"
+msgstr "Final Price (CHF)"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:508
+msgid "Discount Codes Used"
+msgstr "Discount Codes Used"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:509
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:665
+msgid "Event/Class Name"
+msgstr "Event/Class Name"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:510
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:666
+msgid "Event Start Date"
+msgstr "Event Start Date"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:512
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:668
+msgid "Booker Email"
+msgstr "Booker Email"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:513
+msgid "Child/Attendee Name"
+msgstr "Child/Attendee Name"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:514
+msgid "Attendee Age"
+msgstr "Attendee Age"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:515
+msgid "Attendee Gender"
+msgstr "Attendee Gender"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:516
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:672
+msgid "Emergency Phone"
+msgstr "Emergency Phone"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:520
+msgid "📊 Booking Report Dashboard"
+msgstr "📊 Booking Report Dashboard"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:521
+msgid "Filter and export detailed booking data with revenue analysis."
+msgstr "Filter and export detailed booking data with revenue analysis."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:525
+msgid "🔍 Filter Options"
+msgstr "🔍 Filter Options"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:530
+msgid "Start Date:"
+msgstr "Start Date:"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:535
+msgid "End Date:"
+msgstr "End Date:"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:540
+msgid "Year (if no dates):"
+msgstr "Year (if no dates):"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:548
+msgid "Quick Ranges:"
+msgstr "Quick Ranges:"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:550
+msgid "Today"
+msgstr "Today"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:551
+msgid "Last 7 Days"
+msgstr "Last 7 Days"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:552
+msgid "Last 30 Days"
+msgstr "Last 30 Days"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:553
+msgid "Last 3 Months"
+msgstr "Last 3 Months"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:554
+msgid "Last Year"
+msgstr "Last Year"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:555
+msgid "Clear Dates"
+msgstr "Clear Dates"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:564
+msgid "📋 Columns to Display"
+msgstr "📋 Columns to Display"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:566
+msgid "Show/Hide Columns"
+msgstr "Show/Hide Columns"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:589
+msgid "All columns available in Excel export"
+msgstr "All columns available in Excel export"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:592
+msgid "Export to Excel"
+msgstr "Export to Excel"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:635
+msgid "No data available for export with current filters."
+msgstr "No data available for export with current filters."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:657
+msgid "Order ID"
+msgstr "Order ID"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:660
+msgid "Total Discount (CHF)"
+msgstr "Total Discount (CHF)"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:664
+msgid "Discount Details"
+msgstr "Discount Details"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:847
+msgid "Enhanced export failed: "
+msgstr "Enhanced export failed: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1001
+msgid "Year:"
+msgstr "Year:"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1003
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:626
+msgid "Filter"
+msgstr "Filter"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1006
+msgid "Export to CSV"
+msgstr "Export to CSV"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1009
+msgid "No data available for the selected year."
+msgstr "No data available for the selected year."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1264
+msgid "Export failed. Check server logs for details."
+msgstr "Export failed. Check server logs for details."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1284
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1352
+msgid "📈 Financial Summary"
+msgstr "📈 Financial Summary"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1287
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1369
+msgid "Total Bookings"
+msgstr "Total Bookings"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1291
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1373
+msgid "Gross Revenue"
+msgstr "Gross Revenue"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1295
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1377
+msgid "Total Discounts"
+msgstr "Total Discounts"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1299
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1383
+msgid "Final Revenue"
+msgstr "Final Revenue"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1303
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1387
+msgid "Reimbursements"
+msgstr "Reimbursements"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1307
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1391
+msgid "Stripe Fees"
+msgstr "Stripe Fees"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1311
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1403
+msgid "Net Revenue (After Fees)"
+msgstr "Net Revenue (After Fees)"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1320
+msgid "Average Order Value:"
+msgstr "Average Order Value:"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1326
+msgid "Discount Rate:"
+msgstr "Discount Rate:"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1332
+msgid "Refund Rate:"
+msgstr "Refund Rate:"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1417
+msgid "Average Order Value"
+msgstr "Average Order Value"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1423
+msgid "Discount Rate"
+msgstr "Discount Rate"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1429
+msgid "Refund Rate"
+msgstr "Refund Rate"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:1435
+msgid "Stripe Fee Rate"
+msgstr "Stripe Fee Rate"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:21
+msgid "InterSoccer Advanced Features"
+msgstr "InterSoccer Advanced Features"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:24
+msgid "Database Management"
+msgstr "Database Management"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:25
+msgid "Perform database upgrades or maintenance tasks."
+msgstr "Perform database upgrades or maintenance tasks."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:29
+msgid "Upgrade Database"
+msgstr "Upgrade Database"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:29
+msgid ""
+"This will modify the database structure and backfill data. Are you sure?"
+msgstr ""
+"This will modify the database structure and backfill data. Are you sure?"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:31
+msgid ""
+"Note: This action adds new columns (e.g., financial fields, girls_only) and "
+"backfills data. Use with caution."
+msgstr ""
+"Note: This action adds new columns (e.g., financial fields, girls_only) and "
+"backfills data. Use with caution."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:34
+msgid "Roster Management"
+msgstr "Roster Management"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:38
+msgid "Process Orders"
+msgstr "Process Orders"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:40
+msgid ""
+"Note: This will populate missing rosters for existing orders (e.g., "
+"processing or on-hold) and complete them if fully populated."
+msgstr ""
+"Note: This will populate missing rosters for existing orders (e.g., "
+"processing or on-hold) and complete them if fully populated."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:44
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:629
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:944
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1747
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1911
+msgid "Reconcile Rosters"
+msgstr "Reconcile Rosters"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:46
+msgid ""
+"Note: This syncs the rosters table with orders, adding missing entries, "
+"updating incomplete data, and removing obsolete ones. No order statuses are "
+"changed."
+msgstr ""
+"Note: This syncs the rosters table with orders, adding missing entries, "
+"updating incomplete data, and removing obsolete ones. No order statuses are "
+"changed."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:50
+msgid "Rebuild Rosters"
+msgstr "Rebuild Rosters"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:52
+msgid ""
+"Note: This will recreate the rosters table and repopulate it with current "
+"order data."
+msgstr ""
+"Note: This will recreate the rosters table and repopulate it with current "
+"order data."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:55
+msgid "Export Options"
+msgstr "Export Options"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:62
+msgid "Export All Rosters (CSV)"
+msgstr "Export All Rosters (CSV)"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:81
+msgid "Rebuilding... Please wait."
+msgstr "Rebuilding... Please wait."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:105
+msgid "Reconciling... Please wait."
+msgstr "Reconciling... Please wait."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:125
+msgid "Processing orders... Please wait."
+msgstr "Processing orders... Please wait."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:128
+msgid "Orders processed. Check debug.log for details."
+msgstr "Orders processed. Check debug.log for details."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:132
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:318
+msgid "Processing failed: "
+msgstr "Processing failed: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:144
+msgid "Upgrading database... Please wait."
+msgstr "Upgrading database... Please wait."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:147
+msgid "Database upgrade completed. Check debug.log for details."
+msgstr "Database upgrade completed. Check debug.log for details."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:151
+msgid "Database upgrade failed: "
+msgstr "Database upgrade failed: "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:312
+msgid "Processed "
+msgstr "Processed "
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:344
+msgid "Security check failed. Please refresh the page and try again."
+msgstr "Security check failed. Please refresh the page and try again."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:351
+msgid "You do not have permission to process orders."
+msgstr "You do not have permission to process orders."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:390
+msgid "Invalid input."
+msgstr "Invalid input."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:397
+msgid "Invalid target variation."
+msgstr "Invalid target variation."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:403
+msgid "Target variation is not available for purchase."
+msgstr "Target variation is not available for purchase."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:585
+#, php-format
+msgid "Successfully moved %d players."
+msgstr "Successfully moved %d players."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:587
+#, php-format
+msgid "%d errors occurred."
+msgstr "%d errors occurred."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:591
+msgid "No players moved. Check logs for details."
+msgstr "No players moved. Check logs for details."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-export.php:158
+msgid "You do not have permission to export rosters."
+msgstr "You do not have permission to export rosters."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-export.php:181
+msgid "No variation IDs, event signature, or fields provided for export."
+msgstr "No variation IDs, event signature, or fields provided for export."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-export.php:187
+msgid ""
+"No variation ID, variation IDs, or activity types provided for field-based "
+"export."
+msgstr ""
+"No variation ID, variation IDs, or activity types provided for field-based "
+"export."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-export.php:370
+msgid "No roster data found for export."
+msgstr "No roster data found for export."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-export.php:723
+msgid "Error generating export file."
+msgstr "Error generating export file."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:625
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:261
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:271
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:81
+msgid "Camps"
+msgstr "Camps"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:640
+msgid "📥 Export All Camps"
+msgstr "📥 Export All Camps"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:705
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1020
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1790
+msgid "Clear Filters"
+msgstr "Clear Filters"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:716
+msgid "No camps found"
+msgstr "No camps found"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:717
+msgid "Try adjusting your filters or sync rosters to see available camps."
+msgstr "Try adjusting your filters or sync rosters to see available camps."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:732
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:770
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1051
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1100
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1423
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1461
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1497
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1547
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1817
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1862
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1952
+msgid "players"
+msgstr "players"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:735
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1426
+msgid "camps"
+msgstr "camps"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:777
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1107
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1554
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1869
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1974
+msgid "View Roster"
+msgstr "View Roster"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:940
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:262
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:272
+msgid "Courses"
+msgstr "Courses"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:955
+msgid "📥 Export All Courses"
+msgstr "📥 Export All Courses"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1031
+msgid "No courses found"
+msgstr "No courses found"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1032
+msgid "Try adjusting your filters or sync rosters to see available courses."
+msgstr "Try adjusting your filters or sync rosters to see available courses."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1054
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1500
+msgid "courses"
+msgstr "courses"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1305
+msgid "Export Girls Only"
+msgstr "Export Girls Only"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1404
+msgid "No girls only events found"
+msgstr "No girls only events found"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1405
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1802
+msgid "Try adjusting your filters or sync rosters to see available events."
+msgstr "Try adjusting your filters or sync rosters to see available events."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1743
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:264
+msgid "Other Events"
+msgstr "Other Events"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1758
+msgid "📥 Export Other Events"
+msgstr "📥 Export Other Events"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1766
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:571
+msgid "Season"
+msgstr "Season"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1768
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:573
+msgid "All Seasons"
+msgstr "All Seasons"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1779
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:89
+msgid "All Events"
+msgstr "All Events"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1801
+msgid "No events found"
+msgstr "No events found"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1820
+msgid "events"
+msgstr "events"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1876
+msgid "No events available for this season."
+msgstr "No events available for this season."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1907
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:260
+msgid "All Rosters"
+msgstr "All Rosters"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1919
+msgid "No rosters available"
+msgstr "No rosters available"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1920
+msgid "Please reconcile manually to sync roster data."
+msgstr "Please reconcile manually to sync roster data."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1928
+msgid "📥 Export All Rosters"
+msgstr "📥 Export All Rosters"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1953
+msgid "variations"
+msgstr "variations"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1960
+msgid "Product Name"
+msgstr "Product Name"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1964
+msgid "Actions"
+msgstr "Actions"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/new-plugin-files/new-main-plugin-file.php:52
+#, php-format
+msgid ""
+"InterSoccer Reports & Rosters requires WordPress 5.0 or higher. Current "
+"version: %s"
+msgstr ""
+"InterSoccer Reports & Rosters requires WordPress 5.0 or higher. Current "
+"version: %s"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/new-plugin-files/new-main-plugin-file.php:65
+#, php-format
+msgid ""
+"InterSoccer Reports & Rosters requires PHP 7.4 or higher. Current version: %s"
+msgstr ""
+"InterSoccer Reports & Rosters requires PHP 7.4 or higher. Current version: %s"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/new-plugin-files/new-main-plugin-file.php:102
+#, php-format
+msgid "InterSoccer Reports & Rosters: Plugin initialization failed - %s"
+msgstr "InterSoccer Reports & Rosters: Plugin initialization failed - %s"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/new-plugin-files/new-main-plugin-file.php:148
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/core/plugin.php:240
+#, php-format
+msgid "InterSoccer Reports & Rosters activation failed: %s"
+msgstr "InterSoccer Reports & Rosters activation failed: %s"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/new-plugin-files/new-main-plugin-file.php:151
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/core/plugin.php:243
+msgid "Plugin Activation Error"
+msgstr "Plugin Activation Error"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/new-plugin-files/new-main-plugin-file.php:221
+#, php-format
+msgid ""
+"InterSoccer Reports & Rosters requires WooCommerce 4.0 or higher. Current "
+"version: %s"
+msgstr ""
+"InterSoccer Reports & Rosters requires WooCommerce 4.0 or higher. Current "
+"version: %s"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/new-plugin-files/new-main-plugin-file.php:252
+msgid "Dashboard"
+msgstr "Dashboard"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/new-plugin-files/new-main-plugin-file.php:254
+msgid "Settings"
+msgstr "Settings"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/new-plugin-files/new-main-plugin-file.php:270
+msgid "GitHub"
+msgstr "GitHub"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/new-plugin-files/new-main-plugin-file.php:272
+msgid "InterSoccer"
+msgstr "InterSoccer"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/new-plugin-files/new-main-plugin-file.php:292
+msgid "InterSoccer Reports & Rosters:"
+msgstr "InterSoccer Reports & Rosters:"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/new-plugin-files/new-main-plugin-file.php:294
+#, php-format
+msgid ""
+"Plugin updated to version %s. Visit the %s to run any necessary database "
+"updates."
+msgstr ""
+"Plugin updated to version %s. Visit the %s to run any necessary database "
+"updates."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/new-plugin-files/new-main-plugin-file.php:296
+msgid "Advanced Tools page"
+msgstr "Advanced Tools page"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/new-plugin-files/new-main-plugin-file.php:321
+msgid ""
+"InterSoccer Reports & Rosters requires WooCommerce to be installed and "
+"activated."
+msgstr ""
+"InterSoccer Reports & Rosters requires WooCommerce to be installed and "
+"activated."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/new-plugin-files/new-main-plugin-file.php:323
+msgid "Install WooCommerce"
+msgstr "Install WooCommerce"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:68
+#, php-format
+msgid ""
+"InterSoccer Reports & Rosters requires the following plugins to be active: "
+"%s. Plugin deactivated."
+msgstr ""
+"InterSoccer Reports & Rosters requires the following plugins to be active: "
+"%s. Plugin deactivated."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:138
+msgid "InterSoccer Reports and Rosters - Overview"
+msgstr "InterSoccer Reports and Rosters - Overview"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:142
+msgid "Current Attendance by Venue"
+msgstr "Current Attendance by Venue"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:153
+msgid "Attendees by Region"
+msgstr "Attendees by Region"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:164
+msgid "Age Distribution"
+msgstr "Age Distribution"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:175
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:385
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:238
+msgid "Gender Distribution"
+msgstr "Gender Distribution"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:186
+msgid "Weekly Attendance Trends"
+msgstr "Weekly Attendance Trends"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:245
+msgid ""
+"Are you sure you want to rebuild the database? This will clear all existing "
+"roster data and rebuild it from WooCommerce orders."
+msgstr ""
+"Are you sure you want to rebuild the database? This will clear all existing "
+"roster data and rebuild it from WooCommerce orders."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:246
+msgid "Rebuilding database..."
+msgstr "Rebuilding database..."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:247
+msgid "Database rebuild completed!"
+msgstr "Database rebuild completed!"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:248
+msgid "An error occurred during the rebuild process."
+msgstr "An error occurred during the rebuild process."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:249
+msgid "Processing batch"
+msgstr "Processing batch"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:250
+msgid "of"
+msgstr "of"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:257
+msgid "InterSoccer Reports and Rosters"
+msgstr "InterSoccer Reports and Rosters"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:257
+msgid "Reports and Rosters"
+msgstr "Reports and Rosters"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:258
+msgid "InterSoccer Overview"
+msgstr "InterSoccer Overview"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:258
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:71
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:837
+msgid "Overview"
+msgstr "Overview"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:259
+msgid "InterSoccer Reports"
+msgstr "InterSoccer Reports"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:259
+msgid "Reports"
+msgstr "Reports"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:263
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:273
+msgid "Girls Only"
+msgstr "Girls Only"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:265
+msgid "InterSoccer Advanced"
+msgstr "InterSoccer Advanced"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:265
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:92
+msgid "Advanced"
+msgstr "Advanced"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:397
+msgid "InterSoccer Reports & Rosters"
+msgstr "InterSoccer Reports & Rosters"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:400
+msgid "Error:"
+msgstr "Error:"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:404
+msgid "Please contact the administrator if this problem persists."
+msgstr "Please contact the administrator if this problem persists."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:409
+msgid "Troubleshooting"
+msgstr "Troubleshooting"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:411
+msgid "Ensure all required plugins are active and up to date"
+msgstr "Ensure all required plugins are active and up to date"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:412
+msgid "Check if your user role has sufficient permissions"
+msgstr "Check if your user role has sufficient permissions"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:413
+msgid "Try refreshing the page or clearing your browser cache"
+msgstr "Try refreshing the page or clearing your browser cache"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:416
+msgid "Visit the Advanced page to check system status"
+msgstr "Visit the Advanced page to check system status"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:658
+msgid "Overview Dashboard"
+msgstr "Overview Dashboard"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:659
+msgid ""
+"The Overview dashboard provides key statistics about your InterSoccer "
+"events, including attendance by venue, age distribution, and seasonal trends."
+msgstr ""
+"The Overview dashboard provides key statistics about your InterSoccer "
+"events, including attendance by venue, age distribution, and seasonal trends."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:665
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:120
+msgid "Camps Rosters"
+msgstr "Camps Rosters"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:666
+msgid ""
+"View and export rosters for camp events. Use the filters to find specific "
+"camps by season, venue, or date range."
+msgstr ""
+"View and export rosters for camp events. Use the filters to find specific "
+"camps by season, venue, or date range."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:672
+msgid "Courses Rosters"
+msgstr "Courses Rosters"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:673
+msgid ""
+"Manage course rosters and track ongoing registrations. Courses are weekly "
+"events that run throughout a season."
+msgstr ""
+"Manage course rosters and track ongoing registrations. Courses are weekly "
+"events that run throughout a season."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:679
+msgid "Advanced Tools"
+msgstr "Advanced Tools"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:680
+msgid ""
+"Advanced tools for database management, cache control, and system "
+"diagnostics. Use with caution as these operations can affect site "
+"performance."
+msgstr ""
+"Advanced tools for database management, cache control, and system "
+"diagnostics. Use with caution as these operations can affect site "
+"performance."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:694
+msgid "For more information:"
+msgstr "For more information:"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:695
+msgid "InterSoccer Website"
+msgstr "InterSoccer Website"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/admin/menu-manager.php:696
+msgid "Contact Support"
+msgstr "Contact Support"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:90
+msgid "All Programs"
+msgstr "All Programs"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:91
+msgid "Girls Camps"
+msgstr "Girls Camps"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:92
+msgid "Skills Training"
+msgstr "Skills Training"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:93
+msgid "Special Events"
+msgstr "Special Events"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:94
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:74
+msgid "Analytics"
+msgstr "Analytics"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:364
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:510
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:238
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:394
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:314
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:247
+msgid "Start Date"
+msgstr "Start Date"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:365
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:239
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:395
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:315
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:248
+msgid "End Date"
+msgstr "End Date"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:505
+msgid "Program"
+msgstr "Program"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:506
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:389
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:430
+msgid "Participant"
+msgstr "Participant"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:511
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:397
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:436
+msgid "Contact Email"
+msgstr "Contact Email"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:512
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:398
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:438
+msgid "Status"
+msgstr "Status"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:513
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:399
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:439
+msgid "Fee"
+msgstr "Fee"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/girls-only-page.php:518
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:396
+msgid "Skill Level"
+msgstr "Skill Level"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:65
+msgid "Access Denied"
+msgstr "Access Denied"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:215
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:585
+msgid "All Venues"
+msgstr "All Venues"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:233
+msgid "All Ages"
+msgstr "All Ages"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:249
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:258
+msgid "Male"
+msgstr "Male"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:250
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:261
+msgid "Female"
+msgstr "Female"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:251
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:274
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:264
+msgid "Other"
+msgstr "Other"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:255
+msgid "All Genders"
+msgstr "All Genders"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:278
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:609
+msgid "All Types"
+msgstr "All Types"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:294
+msgid "Paid"
+msgstr "Paid"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:295
+msgid "Pending"
+msgstr "Pending"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:296
+msgid "Failed"
+msgstr "Failed"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:297
+msgid "Cancelled"
+msgstr "Cancelled"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:301
+msgid "All Statuses"
+msgstr "All Statuses"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:121
+msgid ""
+"Manage and export camp attendance rosters for all InterSoccer camp events."
+msgstr ""
+"Manage and export camp attendance rosters for all InterSoccer camp events."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:387
+msgid "Export Camps"
+msgstr "Export Camps"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:395
+msgid "Refresh Data"
+msgstr "Refresh Data"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:483
+msgid "Camp data refreshed successfully."
+msgstr "Camp data refreshed successfully."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:526
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:911
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:1016
+msgid "Export failed. Please try again."
+msgstr "Export failed. Please try again."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:540
+msgid "Total Camps"
+msgstr "Total Camps"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:544
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:347
+msgid "Total Attendees"
+msgstr "Total Attendees"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:548
+msgid "Active Camps"
+msgstr "Active Camps"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:552
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:355
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:143
+msgid "Venues"
+msgstr "Venues"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:597
+msgid "All Age Groups"
+msgstr "All Age Groups"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:619
+msgid "Search"
+msgstr "Search"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:620
+msgid "Player name, email..."
+msgstr "Player name, email..."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:629
+msgid "Clear"
+msgstr "Clear"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:637
+msgid "Show only attendees with medical conditions"
+msgstr "Show only attendees with medical conditions"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:657
+#, php-format
+msgid "Showing %d camps with %d total attendees"
+msgstr "Showing %d camps with %d total attendees"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:672
+msgid "Export"
+msgstr "Export"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:681
+msgid "No Camps Found"
+msgstr "No Camps Found"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:682
+msgid ""
+"No camps match your current filters. Try adjusting your search criteria."
+msgstr ""
+"No camps match your current filters. Try adjusting your search criteria."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:689
+msgid "Camp Details"
+msgstr "Camp Details"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:690
+msgid "Attendee"
+msgstr "Attendee"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:694
+msgid "Contact"
+msgstr "Contact"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:711
+#, php-format
+msgid "Days: %s"
+msgstr "Days: %s"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:722
+#, php-format
+msgid "Age: %d"
+msgstr "Age: %d"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:742
+msgid "None"
+msgstr "None"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:908
+msgid "Loading camps data..."
+msgstr "Loading camps data..."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:909
+msgid "Preparing export..."
+msgstr "Preparing export..."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:910
+msgid "Export completed successfully"
+msgstr "Export completed successfully"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:912
+msgid "Applying filters..."
+msgstr "Applying filters..."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:913
+msgid "No camps found matching your criteria"
+msgstr "No camps found matching your criteria"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:914
+msgid "This will refresh all camp data. Continue?"
+msgstr "This will refresh all camp data. Continue?"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:955
+#, php-format
+msgid "Found %d camps with %d attendees"
+msgstr "Found %d camps with %d attendees"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:968
+msgid "Failed to filter camps data"
+msgstr "Failed to filter camps data"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:1001
+msgid "Export ready for download"
+msgstr "Export ready for download"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:89
+msgid "All Courses"
+msgstr "All Courses"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:90
+msgid "Beginner"
+msgstr "Beginner"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:91
+msgid "Intermediate"
+msgstr "Intermediate"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:93
+msgid "Goalkeeper"
+msgstr "Goalkeeper"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:94
+msgid "Coaching"
+msgstr "Coaching"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/courses-page.php:388
+msgid "Course Name"
+msgstr "Course Name"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:72
+msgid "Camps Report"
+msgstr "Camps Report"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:73
+msgid "Courses Report"
+msgstr "Courses Report"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:75
+msgid "Custom Report"
+msgstr "Custom Report"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:317
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:437
+msgid "Event Type"
+msgstr "Event Type"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:386
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:412
+msgid "Participants"
+msgstr "Participants"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:387
+msgid "Events"
+msgstr "Events"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:388
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:414
+msgid "Revenue"
+msgstr "Revenue"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:389
+msgid "Avg Age"
+msgstr "Avg Age"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:390
+msgid "Gender Split"
+msgstr "Gender Split"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:409
+msgid "Camp Name"
+msgstr "Camp Name"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:411
+msgid "Dates"
+msgstr "Dates"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:413
+msgid "Age Range"
+msgstr "Age Range"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/reports-page.php:415
+msgid "Payment Rate"
+msgstr "Payment Rate"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:330
+msgid "InterSoccer Reports & Rosters - Overview"
+msgstr "InterSoccer Reports & Rosters - Overview"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:343
+msgid "Quick Statistics"
+msgstr "Quick Statistics"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:351
+msgid "Active Events"
+msgstr "Active Events"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:359
+msgid "This Week's Registrations"
+msgstr "This Week's Registrations"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:374
+msgid "Analytics Overview"
+msgstr "Analytics Overview"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:377
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:77
+msgid "Attendance by Venue"
+msgstr "Attendance by Venue"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:381
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:164
+msgid "Age Group Distribution"
+msgstr "Age Group Distribution"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:389
+msgid "Weekly Registration Trends"
+msgstr "Weekly Registration Trends"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:405
+msgid "Recent Activity"
+msgstr "Recent Activity"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:409
+msgid "No recent activity to display"
+msgstr "No recent activity to display"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:441
+msgid "System Status"
+msgstr "System Status"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:444
+msgid "Database"
+msgstr "Database"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:446
+msgid "Connected"
+msgstr "Connected"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:446
+msgid "Error"
+msgstr "Error"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:451
+msgid "Cache Backend"
+msgstr "Cache Backend"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:456
+msgid "WooCommerce"
+msgstr "WooCommerce"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:458
+msgid "Inactive"
+msgstr "Inactive"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:463
+msgid "Total Cache Size"
+msgstr "Total Cache Size"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:468
+msgid "Last Data Sync"
+msgstr "Last Data Sync"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:727
+#, php-format
+msgid "%d minutes ago"
+msgstr "%d minutes ago"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:729
+#, php-format
+msgid "%d hours ago"
+msgstr "%d hours ago"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:731
+#, php-format
+msgid "%d days ago"
+msgstr "%d days ago"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:785
+msgid "Loading..."
+msgstr "Loading..."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:786
+msgid "Error loading data"
+msgstr "Error loading data"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:787
+msgid "No data available"
+msgstr "No data available"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:815
+msgid "Dashboard data refreshed successfully"
+msgstr "Dashboard data refreshed successfully"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/overview-page.php:825
+msgid "Failed to refresh dashboard data"
+msgstr "Failed to refresh dashboard data"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:90
+msgid "Tournaments"
+msgstr "Tournaments"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:91
+msgid "Workshops"
+msgstr "Workshops"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:92
+msgid "Exhibitions"
+msgstr "Exhibitions"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:93
+msgid "Clinics"
+msgstr "Clinics"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:94
+msgid "Miscellaneous"
+msgstr "Miscellaneous"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:429
+msgid "Event Name"
+msgstr "Event Name"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/other-events-page.php:435
+msgid "Date"
+msgstr "Date"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/export-component.php:38
+#, php-format
+msgid "Export %d records to your preferred format."
+msgstr "Export %d records to your preferred format."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/export-component.php:138
+msgid "Excel (.xlsx)"
+msgstr "Excel (.xlsx)"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/export-component.php:139
+msgid "CSV (.csv)"
+msgstr "CSV (.csv)"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/export-component.php:140
+msgid "PDF (.pdf)"
+msgstr "PDF (.pdf)"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/export-component.php:154
+msgid "Best for analysis and formatting"
+msgstr "Best for analysis and formatting"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/export-component.php:155
+msgid "Universal format, works with all applications"
+msgstr "Universal format, works with all applications"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/export-component.php:156
+msgid "Print-ready format"
+msgstr "Print-ready format"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/export-component.php:176
+#, php-format
+msgid "Records: %d"
+msgstr "Records: %d"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/export-component.php:177
+#, php-format
+msgid "Fields: %d"
+msgstr "Fields: %d"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/export-component.php:178
+#, php-format
+msgid "Estimated file size: %s"
+msgstr "Estimated file size: %s"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:104
+msgid "Attendees"
+msgstr "Attendees"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:137
+msgid "Number of Attendees"
+msgstr "Number of Attendees"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:326
+msgid "Registration Trends"
+msgstr "Registration Trends"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:349
+#, php-format
+msgid "Week %s"
+msgstr "Week %s"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:361
+msgid "Registrations"
+msgstr "Registrations"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:400
+msgid "Number of Registrations"
+msgstr "Number of Registrations"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:406
+msgid "Week"
+msgstr "Week"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:466
+msgid "No Data Available"
+msgstr "No Data Available"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:469
+#, php-format
+msgid "No data to display for %s"
+msgstr "No data to display for %s"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:551
+msgid "Loading chart data..."
+msgstr "Loading chart data..."
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:598
+msgid "Comparison Chart"
+msgstr "Comparison Chart"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:673
+msgid "Time Series Chart"
+msgstr "Time Series Chart"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/components/charts-component.php:692
+msgid "Value"
+msgstr "Value"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/core/plugin.php:178
+#, php-format
+msgid "InterSoccer Reports & Rosters plugin failed to initialize: %s"
+msgstr "InterSoccer Reports & Rosters plugin failed to initialize: %s"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/core/plugin.php:358
+#, php-format
+msgid "WordPress %s or higher is required (current: %s)"
+msgstr "WordPress %s or higher is required (current: %s)"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/core/plugin.php:367
+#, php-format
+msgid "PHP %s or higher is required (current: %s)"
+msgstr "PHP %s or higher is required (current: %s)"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/core/plugin.php:400
+#, php-format
+msgid ""
+"InterSoccer Reports & Rosters requires the following plugins to be active: %s"
+msgstr ""
+"InterSoccer Reports & Rosters requires the following plugins to be active: %s"
