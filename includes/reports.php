@@ -22,14 +22,6 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
 /**
- * Render the Reports page with tabs.
- */
-function intersoccer_render_reports_page() {
-    // Call the UI function (already included)
-    \intersoccer_render_reports_page();
-}
-
-/**
  * Enqueue jQuery UI Datepicker and AJAX for auto-apply filters.
  */
 function intersoccer_enqueue_datepicker() {

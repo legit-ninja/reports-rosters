@@ -115,21 +115,6 @@ function intersoccer_display_booking_report($start_date, $end_date, $activity_ty
 }
 
 /**
- * Get rowspan for week data
- */
-function intersoccer_get_rowspan_for_week($week_data) {
-    $rowspan = 0;
-    foreach ($week_data as $cantons) {
-        foreach ($cantons as $venues) {
-            foreach ($venues as $camp_types) {
-                $rowspan++;
-            }
-        }
-    }
-    return $rowspan;
-}
-
-/**
  * Get final reports data
  */
 function intersoccer_get_final_reports_data($year, $activity_type) {

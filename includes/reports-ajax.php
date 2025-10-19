@@ -41,11 +41,4 @@ function intersoccer_filter_report_callback() {
     wp_send_json_success(array('html' => $html));
 }
 
-/**
- * Export booking report callback
- */
-function intersoccer_export_booking_report_callback() {
-    // Include the export file
-    require_once plugin_dir_path(__FILE__) . 'reports-export.php';
-    intersoccer_export_booking_report_callback();
-}
+
