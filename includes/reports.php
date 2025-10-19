@@ -900,7 +900,7 @@ function intersoccer_render_final_reports_page() {
                             <th rowspan="2"><?php _e('Week', 'intersoccer-reports-rosters'); ?></th>
                             <th rowspan="2"><?php _e('Canton', 'intersoccer-reports-rosters'); ?></th>
                             <th rowspan="2"><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
-                            <th colspan="9"><?php _e('Full Day Camps', 'intersoccer-reports-rosters'); ?></th>
+                            <th colspan="9><?php _e('Full Day Camps', 'intersoccer-reports-rosters'); ?></th>
                             <th colspan="9"><?php _e('Mini - Half Day Camps', 'intersoccer-reports-rosters'); ?></th>
                         </tr>
                         <tr>
@@ -1049,7 +1049,7 @@ function intersoccer_render_final_reports_page() {
                 </table>
 
                 <!-- Course Overall Totals -->
-                <div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+                <div style="margin-top: 30px; padding: 20px; background: #f9f9fa; border-radius: 8px;">
                     <h3><?php _e('Overall Totals', 'intersoccer-reports-rosters'); ?></h3>
                     <table class="widefat fixed" style="margin-top: 10px;">
                         <thead>
@@ -1147,6 +1147,7 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
              LEFT JOIN $order_itemmeta_table om_age_group ON oi.order_item_id = om_age_group.order_item_id AND om_age_group.meta_key = 'age_group'
              LEFT JOIN $order_itemmeta_table om_activity_type ON oi.order_item_id = om_activity_type.order_item_id AND om_activity_type.meta_key = 'Activity Type'
              WHERE p.post_type = 'shop_order'
+             AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
              AND om_activity_type.meta_value = %s
              AND YEAR(p.post_date) = %d",
             $activity_type,
@@ -1154,22 +1155,33 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
         );
 
         $rosters = $wpdb->get_results($query, ARRAY_A);
+        error_log('InterSoccer Final Reports: Camp query returned ' . count($rosters) . ' records for year ' . $year);
         if (empty($rosters)) {
+            error_log('InterSoccer Final Reports: No camp records found for year ' . $year);
             return [];
         }
 
         // Determine camp type and BuyClub
+        $buyclub_count = 0;
         foreach ($rosters as &$roster) {
             $age_group = $roster['age_group'] ?? '';
             $roster['camp_type'] = (!empty($age_group) && (stripos($age_group, '3-5y') !== false || stripos($age_group, 'half-day') !== false)) ? 'Mini - Half Day' : 'Full Day';
 
-            // BuyClub: orders with 0 line total
+            // BuyClub: orders with original price > 0 and final price = 0
+            $line_subtotal_meta = $wpdb->get_var($wpdb->prepare(
+                "SELECT meta_value FROM $order_itemmeta_table WHERE order_item_id = %d AND meta_key = '_line_subtotal'",
+                $roster['order_item_id']
+            ));
             $line_total_meta = $wpdb->get_var($wpdb->prepare(
                 "SELECT meta_value FROM $order_itemmeta_table WHERE order_item_id = %d AND meta_key = '_line_total'",
                 $roster['order_item_id']
             ));
-            $roster['is_buyclub'] = floatval($line_total_meta) == 0;
+            $roster['is_buyclub'] = floatval($line_subtotal_meta) > 0 && floatval($line_total_meta) == 0;
+            if ($roster['is_buyclub']) {
+                $buyclub_count++;
+            }
         }
+        error_log('InterSoccer Final Reports: ' . $buyclub_count . ' out of ' . count($rosters) . ' camp records classified as BuyClub');
         unset($roster);
 
         // Group by week, canton, venue, camp_type
@@ -1262,6 +1274,7 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
              LEFT JOIN $order_itemmeta_table om_gender ON oi.order_item_id = om_gender.order_item_id AND om_gender.meta_key = 'gender'
              LEFT JOIN $order_itemmeta_table om_activity_type ON oi.order_item_id = om_activity_type.order_item_id AND om_activity_type.meta_key = 'Activity Type'
              WHERE p.post_type = 'shop_order'
+             AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
              AND om_activity_type.meta_value = %s
              AND YEAR(p.post_date) = %d",
             $activity_type,
@@ -1375,7 +1388,7 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
 function intersoccer_calculate_final_reports_totals($report_data, $activity_type) {
     if ($activity_type === 'Camp') {
         $totals = [
-            'full_day' => ['full_week' => 0, 'buyclub' => 0, 'individual_days' => 0, 'total' => 0],
+            'full_day' => ['full_week' => 0, 'buyclub' => 0, 'individual_days' =>  0, 'total' => 0],
             'mini' => ['full_week' => 0, 'buyclub' => 0, 'individual_days' => 0, 'total' => 0],
             'all' => ['full_week' => 0, 'buyclub' => 0, 'individual_days' => 0, 'total' => 0],
         ];
