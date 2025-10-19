@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.10.13
+ * Version: 1.10.19
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -256,7 +256,9 @@ add_action('admin_enqueue_scripts', function ($hook) {
 add_action('admin_menu', function () {
     add_menu_page(__('InterSoccer Reports and Rosters', 'intersoccer-reports-rosters'), __('Reports and Rosters', 'intersoccer-reports-rosters'), 'read', 'intersoccer-reports-rosters', 'intersoccer_render_plugin_overview_page', 'dashicons-chart-bar', 30);
     add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Overview', 'intersoccer-reports-rosters'), __('Overview', 'intersoccer-reports-rosters'), 'read', 'intersoccer-reports-rosters', 'intersoccer_render_plugin_overview_page');
-    add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Reports', 'intersoccer-reports-rosters'), __('Reports', 'intersoccer-reports-rosters'), 'read', 'intersoccer-reports', 'intersoccer_render_reports_page');
+    add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Booking Reports', 'intersoccer-reports-rosters'), __('Booking Reports', 'intersoccer-reports-rosters'), 'read', 'intersoccer-reports', 'intersoccer_render_reports_page');
+    add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Final Camp Reports', 'intersoccer-reports-rosters'), __('Final Camp Reports', 'intersoccer-reports-rosters'), 'read', 'intersoccer-final-camp-reports', 'intersoccer_render_final_camp_reports_page');
+    add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Final Course Reports', 'intersoccer-reports-rosters'), __('Final Course Reports', 'intersoccer-reports-rosters'), 'read', 'intersoccer-final-course-reports', 'intersoccer_render_final_course_reports_page');
     add_submenu_page('intersoccer-reports-rosters', __('All Rosters', 'intersoccer-reports-rosters'), __('All Rosters', 'intersoccer-reports-rosters'), 'read', 'intersoccer-all-rosters', 'intersoccer_render_all_rosters_page');
     add_submenu_page('intersoccer-reports-rosters', __('Camps', 'intersoccer-reports-rosters'), __('Camps', 'intersoccer-reports-rosters'), 'read', 'intersoccer-camps', 'intersoccer_render_camps_page');
     add_submenu_page('intersoccer-reports-rosters', __('Courses', 'intersoccer-reports-rosters'), __('Courses', 'intersoccer-reports-rosters'), 'read', 'intersoccer-courses', 'intersoccer_render_courses_page');
