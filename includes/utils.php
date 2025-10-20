@@ -310,72 +310,60 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     $reimbursement = 0; // TODO: Calculate from meta if needed
     $discount_codes = implode(',', $order->get_coupon_codes());
 
-    // Prepare data array
     $data = [
         'order_id' => $order_id,
         'order_item_id' => $item_id,
         'variation_id' => $variation_id,
-        'player_name' => substr($assigned_attendee, 0, 255),
-        'first_name' => substr($first_name, 0, 100),
-        'last_name' => substr($last_name, 0, 100),
+        'player_name' => substr((string)($assigned_attendee ?: 'Unknown Player'), 0, 255),
+        'first_name' => substr((string)($first_name ?: 'Unknown'), 0, 100),
+        'last_name' => substr((string)($last_name ?: 'Unknown'), 0, 100),
         'age' => $age,
-        'gender' => substr($gender, 0, 20),
-        'booking_type' => substr($booking_type, 0, 50),
+        'gender' => substr((string)($gender ?: 'N/A'), 0, 20),
+        'booking_type' => substr((string)($booking_type ?: 'Unknown'), 0, 50),
         'selected_days' => $selected_days,
-        'camp_terms' => substr($camp_terms, 0, 100),
-        'venue' => substr($venue, 0, 200),
-        'parent_phone' => substr($parent_phone, 0, 20),
-        'parent_email' => substr($parent_email, 0, 100),
+        'camp_terms' => substr((string)($camp_terms ?: 'N/A'), 0, 100),
+        'venue' => substr((string)($venue ?: 'Unknown Venue'), 0, 200),
+        'parent_phone' => substr((string)($parent_phone ?: 'N/A'), 0, 20),
+        'parent_email' => substr((string)($parent_email ?: 'N/A'), 0, 100),
         'medical_conditions' => $medical_conditions,
-        'late_pickup' => substr($late_pickup, 0, 10),
+        'late_pickup' => $late_pickup,
         'late_pickup_days' => $late_pickup_days,
         'day_presence' => json_encode($day_presence),
-        'age_group' => substr($age_group, 0, 50),
+        'age_group' => substr((string)($age_group ?: 'N/A'), 0, 50),
         'start_date' => $start_date ?: '1970-01-01',
         'end_date' => $end_date ?: '1970-01-01',
-        'event_dates' => substr($event_dates, 0, 100),
-        'product_name' => substr($product_name, 0, 255),
-        'activity_type' => substr($activity_type, 0, 50),
-        'shirt_size' => substr($shirt_size, 0, 50),
-        'shorts_size' => substr($shorts_size, 0, 50),
+        'event_dates' => substr((string)($event_dates ?: 'N/A'), 0, 100),
+        'product_name' => substr((string)($product_name ?: 'Unknown Product'), 0, 255),
+        'activity_type' => substr((string)($activity_type ?: 'Event'), 0, 50),
+        'shirt_size' => substr((string)($shirt_size ?: 'N/A'), 0, 50),
+        'shorts_size' => substr((string)($shorts_size ?: 'N/A'), 0, 50),
         'registration_timestamp' => $order_date,
-        'course_day' => substr($course_day, 0, 20),
+        'course_day' => substr((string)($course_day ?: 'N/A'), 0, 20),
         'product_id' => $product_id,
-        'player_first_name' => substr($first_name, 0, 100),
-        'player_last_name' => substr($last_name, 0, 100),
-        'player_dob' => $dob ?? '1970-01-01',
-        'player_gender' => substr($gender, 0, 10),
+        'player_first_name' => substr((string)($first_name ?: 'Unknown'), 0, 100),
+        'player_last_name' => substr((string)($last_name ?: 'Unknown'), 0, 100),
+        'player_dob' => $dob ?: '1970-01-01',
+        'player_gender' => substr((string)($gender ?: 'N/A'), 0, 10),
         'player_medical' => $medical_conditions,
         'player_dietary' => '',
-        'parent_first_name' => substr($parent_first_name, 0, 100),
-        'parent_last_name' => substr($parent_last_name, 0, 100),
-        'emergency_contact' => substr($parent_phone, 0, 20),
-        'term' => substr($camp_terms ?: $course_day, 0, 200),
-        'times' => substr($times, 0, 50),
-        'days_selected' => substr($selected_days, 0, 200),
-        'season' => substr($season, 0, 50),
-        'canton_region' => substr($canton_region, 0, 100),
-        'city' => substr($city, 0, 100),
-        'avs_number' => substr($avs_number, 0, 50),
+        'parent_first_name' => substr((string)($parent_first_name ?: 'Unknown'), 0, 100),
+        'parent_last_name' => substr((string)($parent_last_name ?: 'Unknown'), 0, 100),
+        'emergency_contact' => substr((string)($parent_phone ?: 'N/A'), 0, 20),
+        'term' => substr((string)(($camp_terms ?: $course_day) ?: 'N/A'), 0, 200),
+        'times' => substr((string)($times ?: 'N/A'), 0, 50),
+        'days_selected' => substr((string)($selected_days ?: 'N/A'), 0, 200),
+        'season' => substr((string)($season ?: 'N/A'), 0, 50),
+        'canton_region' => substr((string)($canton_region ?: ''), 0, 100),
+        'city' => substr((string)($city ?: ''), 0, 100),
+        'avs_number' => substr((string)($avs_number ?: 'N/A'), 0, 50),
         'created_at' => current_time('mysql'),
-        'updated_at' => current_time('mysql'),
         'base_price' => $base_price,
         'discount_amount' => $discount_amount,
         'final_price' => $final_price,
         'reimbursement' => $reimbursement,
         'discount_codes' => $discount_codes,
         'girls_only' => $girls_only,
-        'event_signature' => intersoccer_generate_event_signature([
-            'activity_type' => $activity_type,
-            'venue' => $venue,
-            'age_group' => $age_group,
-            'camp_terms' => $camp_terms,
-            'course_day' => $course_day,
-            'times' => $times,
-            'season' => $season,
-            'girls_only' => $girls_only,
-            'product_id' => $product_id,
-        ]),
+        'event_signature' => '',
     ];
 
     // Insert or update
@@ -880,4 +868,56 @@ function intersoccer_generate_event_signature($event_data) {
     error_log('InterSoccer: Generated event signature: ' . $signature . ' from components: ' . json_encode($signature_components));
 
     return $signature;
+}
+
+/**
+ * Parse camp dates from camp_terms string
+ * @param string $camp_terms The camp terms string
+ * @param string $season The season/year
+ * @return array [$start_date, $end_date, $event_dates]
+ */
+function intersoccer_parse_camp_dates_fixed($camp_terms, $season) {
+    $start_date = null;
+    $end_date = null;
+    $event_dates = 'N/A';
+
+    if (empty($camp_terms) || $camp_terms === 'N/A') {
+        return [$start_date, $end_date, $event_dates];
+    }
+
+    // Try first regex pattern: month-week-X-month-day-month-day-days
+    if (preg_match('/(\w+)-week-\d+-(\w+)-(\d{1,2})-(\w+)-(\d{1,2})-\d+-days/', $camp_terms, $matches)) {
+        $start_month = $matches[2];
+        $start_day = $matches[3];
+        $end_month = $matches[4];
+        $end_day = $matches[5];
+        $year = $season && is_numeric($season) ? $season : date('Y');
+
+        $start_date_obj = DateTime::createFromFormat('F j Y', "$start_month $start_day $year");
+        $end_date_obj = DateTime::createFromFormat('F j Y', "$end_month $end_day $year");
+
+        if ($start_date_obj && $end_date_obj) {
+            $start_date = $start_date_obj->format('Y-m-d');
+            $end_date = $end_date_obj->format('Y-m-d');
+            $event_dates = "$start_date to $end_date";
+        }
+    }
+    // Try second regex pattern: month-week-X-month-day-day-days
+    elseif (preg_match('/(\w+)-week-\d+-(\w+)-(\d{1,2})-(\d{1,2})-\d+-days/', $camp_terms, $matches)) {
+        $month = $matches[2];
+        $start_day = $matches[3];
+        $end_day = $matches[4];
+        $year = $season && is_numeric($season) ? $season : date('Y');
+
+        $start_date_obj = DateTime::createFromFormat('F j Y', "$month $start_day $year");
+        $end_date_obj = DateTime::createFromFormat('F j Y', "$month $end_day $year");
+
+        if ($start_date_obj && $end_date_obj) {
+            $start_date = $start_date_obj->format('Y-m-d');
+            $end_date = $end_date_obj->format('Y-m-d');
+            $event_dates = "$start_date to $end_date";
+        }
+    }
+
+    return [$start_date, $end_date, $event_dates];
 }
