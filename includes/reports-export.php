@@ -21,6 +21,11 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
  * Export final reports Excel
  */
 function intersoccer_export_final_reports_csv($year, $activity_type) {
+    // Check user capabilities
+    if (!current_user_can('manage_options')) {
+        wp_die(__('You do not have sufficient permissions to access this page.'));
+    }
+
     // Include the data processing file
     require_once plugin_dir_path(__FILE__) . 'reports-data.php';
 
