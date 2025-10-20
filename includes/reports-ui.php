@@ -111,7 +111,7 @@ function intersoccer_render_final_reports_page() {
         </form>
 
         <div class="export-section" style="margin-bottom: 20px;">
-            <a href="<?php echo esc_url(wp_nonce_url(admin_url("admin.php?page=intersoccer-final-reports&year=" . urlencode($year) . "&activity_type=" . urlencode($activity_type) . "&action=export"), 'export_final_reports_nonce')); ?>" class="button button-primary"><?php _e('Export to CSV', 'intersoccer-reports-rosters'); ?></a>
+            <a href="<?php echo esc_url(wp_nonce_url(admin_url("admin.php?page=intersoccer-final-reports&year=" . urlencode($year) . "&activity_type=" . urlencode($activity_type) . "&action=export"), 'export_final_reports_nonce')); ?>" class="button button-primary"><?php _e('Export to Excel', 'intersoccer-reports-rosters'); ?></a>
         </div>
 
         <?php if (empty($report_data)): ?>
