@@ -233,8 +233,8 @@ add_action('admin_enqueue_scripts', function ($hook) {
             wp_localize_script('intersoccer-advanced-ajax', 'intersoccer_ajax', ['ajax_url' => admin_url('admin-ajax.php'), 'nonce' => wp_create_nonce('intersoccer_rebuild_nonce')]);
         }
         if ($screen->id === 'intersoccer-reports-rosters_page_intersoccer-export-rosters') {
-            wp_enqueue_script('intersoccer-export-ajax', plugin_dir_url(__FILE__) . 'js/export-ajax.js', ['jquery'], '1.0.6', true);
-            wp_localize_script('intersoccer-export-ajax', 'intersoccer_export_ajax', ['ajax_url' => admin_url('admin-ajax.php'), 'nonce' => wp_create_nonce('intersoccer_export_nonce')]);
+            // wp_enqueue_script('intersoccer-export-ajax', plugin_dir_url(__FILE__) . 'js/export-ajax.js', ['jquery'], '1.0.6', true);
+            // wp_localize_script('intersoccer-export-ajax', 'intersoccer_export_ajax', ['ajax_url' => admin_url('admin-ajax.php'), 'nonce' => wp_create_nonce('intersoccer_export_nonce')]);
         }
         if ($screen->id === 'intersoccer-reports-rosters_page_intersoccer-advanced') {
             wp_enqueue_style('intersoccer-reports-rosters-rebuild-admin-css', plugin_dir_url(__FILE__) . 'css/rebuild-admin.css', [], '1.0.6');            wp_enqueue_script('intersoccer-rebuild-admin-ajax', plugin_dir_url(__FILE__) . 'js/rebuild-admin.js', ['jquery'], '1.0.6', true);
