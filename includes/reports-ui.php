@@ -241,7 +241,7 @@ function intersoccer_render_final_reports_page() {
                         <tr>
                             <th><?php _e('Region', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Course Name', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Online', 'intersoccer-reports-rosters'); ?></th>
+                            <th><?php _e('Direct Online', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Buy Club', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Total', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Final', 'intersoccer-reports-rosters'); ?></th>

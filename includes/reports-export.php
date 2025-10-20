@@ -149,7 +149,7 @@ function intersoccer_export_final_reports_callback() {
         $headers = array(
             'Region',
             'Course Name',
-            'Online',
+            'Direct Online',
             'BuyClub',
             'Total',
             'Final',
