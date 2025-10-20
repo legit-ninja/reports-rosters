@@ -23,7 +23,7 @@ function intersoccer_render_reports_page() {
     wp_enqueue_script('jquery');
     wp_enqueue_script('jquery-ui-datepicker');
     wp_enqueue_style('jquery-ui-css', 'https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
-    wp_enqueue_script('intersoccer-reports', plugin_dir_url(__FILE__) . '../js/reports.js', ['jquery'], '1.3.99', true);
+    wp_enqueue_script('intersoccer-reports-js', plugin_dir_url(__FILE__) . '../js/reports.js', ['jquery'], '1.3.99', true);
 
     // Localize script for AJAX
     wp_localize_script('intersoccer-reports-js', 'intersoccer_reports_ajax', array(
@@ -61,52 +61,6 @@ function intersoccer_render_reports_page() {
             $('.tab-content').hide();
             $(target).show();
         });
-
-        // Handle final reports export
-        $('#export-final-reports').click(function(e) {
-            e.preventDefault();
-            
-            var $button = $(this);
-            var originalText = $button.text();
-            
-            // Disable button and show loading
-            $button.prop('disabled', true).text('<?php _e('Exporting...', 'intersoccer-reports-rosters'); ?>');
-            
-            // Get current filter values
-            var year = $('input[name="year"]').val();
-            var activity_type = $('select[name="activity_type"]').val() || '<?php echo esc_js($activity_type); ?>';
-            
-            $.ajax({
-                url: ajaxurl,
-                type: 'POST',
-                data: {
-                    action: 'intersoccer_export_final_reports',
-                    nonce: '<?php echo wp_create_nonce('export_final_reports_nonce'); ?>',
-                    year: year,
-                    activity_type: activity_type
-                },
-                success: function(response) {
-                    if (response.success) {
-                        // Create download link
-                        var link = document.createElement('a');
-                        link.href = 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,' + response.data.content;
-                        link.download = response.data.filename;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        
-                        $button.prop('disabled', false).text(originalText);
-                    } else {
-                        alert('<?php _e('Export failed:', 'intersoccer-reports-rosters'); ?> ' + response.data);
-                        $button.prop('disabled', false).text(originalText);
-                    }
-                },
-                error: function() {
-                    alert('<?php _e('Export failed. Please try again.', 'intersoccer-reports-rosters'); ?>');
-                    $button.prop('disabled', false).text(originalText);
-                }
-            });
-        });
     });
     </script>
     <?php
@@ -122,6 +76,13 @@ function intersoccer_render_final_reports_page() {
     if (!current_user_can('manage_options')) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
     }
+
+    // Enqueue scripts and localize for AJAX
+    wp_enqueue_script('jquery');
+    wp_localize_script('jquery', 'intersoccer_reports_ajax', array(
+        'ajax_url' => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('intersoccer_reports_nonce')
+    ));
 
     $year = isset($_GET['year']) ? sanitize_text_field($_GET['year']) : date('Y');
     $activity_type = isset($_GET['activity_type']) ? sanitize_text_field($_GET['activity_type']) : 'Camp';
