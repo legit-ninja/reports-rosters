@@ -149,8 +149,7 @@ function intersoccer_export_final_reports_callback() {
         $headers = array(
             'Region',
             'Course Name',
-            'BO',
-            'Pitch Side',
+            'Online',
             'BuyClub',
             'Total',
             'Final',
@@ -173,8 +172,7 @@ function intersoccer_export_final_reports_callback() {
                 $excel_row = array(
                     $region,
                     $course_name,
-                    $data['bo'],
-                    $data['pitch_side'],
+                    $data['online'],
                     $data['buyclub'],
                     $data['total'],
                     $data['final'],
@@ -195,8 +193,7 @@ function intersoccer_export_final_reports_callback() {
         foreach ($totals['regions'] as $region => $region_total) {
             $sheet->setCellValue('A' . $totals_start, $region);
             $sheet->fromArray([
-                $region_total['bo'],
-                $region_total['pitch_side'],
+                $region_total['online'],
                 $region_total['buyclub'],
                 $region_total['total'],
                 $region_total['final'],
@@ -208,8 +205,7 @@ function intersoccer_export_final_reports_callback() {
         $sheet->setCellValue('A' . $totals_start, 'TOTAL:');
         $sheet->getStyle('A' . $totals_start)->getFont()->setBold(true);
         $sheet->fromArray([
-            $totals['all']['bo'],
-            $totals['all']['pitch_side'],
+            $totals['all']['online'],
             $totals['all']['buyclub'],
             $totals['all']['total'],
             $totals['all']['final'],

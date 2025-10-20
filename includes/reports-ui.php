@@ -241,8 +241,7 @@ function intersoccer_render_final_reports_page() {
                         <tr>
                             <th><?php _e('Region', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Course Name', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('BO', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Pitch Side', 'intersoccer-reports-rosters'); ?></th>
+                            <th><?php _e('Online', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Buy Club', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Total', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Final', 'intersoccer-reports-rosters'); ?></th>
@@ -256,8 +255,7 @@ function intersoccer_render_final_reports_page() {
                             <?php $region_total = $totals['regions'][$region] ?? ['bo' => 0, 'pitch_side' => 0, 'buyclub' => 0, 'total' => 0, 'final' => 0, 'girls_free' => 0]; ?>
                             <tr style="background-color: #f0f0f0; font-weight: bold;">
                                 <td colspan="2"><?php echo esc_html($region); ?> - TOTAL</td>
-                                <td><?php echo esc_html($region_total['bo']); ?></td>
-                                <td><?php echo esc_html($region_total['pitch_side']); ?></td>
+                                <td><?php echo esc_html($region_total['online']); ?></td>
                                 <td><?php echo esc_html($region_total['buyclub']); ?></td>
                                 <td><?php echo esc_html($region_total['total']); ?></td>
                                 <td><?php echo esc_html($region_total['final']); ?></td>
@@ -269,8 +267,7 @@ function intersoccer_render_final_reports_page() {
                                 <tr>
                                     <td><?php echo esc_html($region); ?></td>
                                     <td><?php echo esc_html($course_name); ?></td>
-                                    <td><?php echo esc_html($data['bo']); ?></td>
-                                    <td><?php echo esc_html($data['pitch_side']); ?></td>
+                                    <td><?php echo esc_html($data['online']); ?></td>
                                     <td><?php echo esc_html($data['buyclub']); ?></td>
                                     <td><?php echo esc_html($data['total']); ?></td>
                                     <td><?php echo esc_html($data['final']); ?></td>
@@ -290,8 +287,7 @@ function intersoccer_render_final_reports_page() {
                         <thead>
                             <tr>
                                 <th><?php _e('Category', 'intersoccer-reports-rosters'); ?></th>
-                                <th><?php _e('BO', 'intersoccer-reports-rosters'); ?></th>
-                                <th><?php _e('Pitch Side', 'intersoccer-reports-rosters'); ?></th>
+                                <th><?php _e('Online', 'intersoccer-reports-rosters'); ?></th>
                                 <th><?php _e('Buy Club', 'intersoccer-reports-rosters'); ?></th>
                                 <th><?php _e('Total', 'intersoccer-reports-rosters'); ?></th>
                                 <th><?php _e('Final', 'intersoccer-reports-rosters'); ?></th>
@@ -301,8 +297,7 @@ function intersoccer_render_final_reports_page() {
                         <tbody>
                             <tr style="font-weight: bold; background: #e9ecef;">
                                 <td><?php _e('All Courses', 'intersoccer-reports-rosters'); ?></td>
-                                <td><?php echo esc_html($totals['all']['bo']); ?></td>
-                                <td><?php echo esc_html($totals['all']['pitch_side']); ?></td>
+                                <td><?php echo esc_html($totals['all']['online']); ?></td>
                                 <td><?php echo esc_html($totals['all']['buyclub']); ?></td>
                                 <td><?php echo esc_html($totals['all']['total']); ?></td>
                                 <td><?php echo esc_html($totals['all']['final']); ?></td>
