@@ -19,7 +19,7 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
  */
 add_action('wp_ajax_intersoccer_export_final_reports', 'intersoccer_export_final_reports_callback');
 function intersoccer_export_final_reports_callback() {
-    check_ajax_referer('export_final_reports_nonce', 'nonce');
+    check_ajax_referer('intersoccer_reports_nonce', 'nonce');
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(__('You do not have sufficient permissions to export reports.', 'intersoccer-reports-rosters'));
@@ -229,7 +229,7 @@ function intersoccer_export_final_reports_callback() {
         $sheet->getColumnDimension($col)->setAutoSize(true);
     }
 
-    // Generate and send Excel file via AJAX
+    // Generate and send Excel file via AJAX (like booking report)
     $writer = new Xlsx($spreadsheet);
     ob_start();
     $writer->save('php://output');

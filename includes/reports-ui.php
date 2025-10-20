@@ -307,6 +307,85 @@ function intersoccer_render_final_reports_page() {
             <?php endif; ?>
         <?php endif; ?>
     </div>
+    <script>
+    jQuery(document).ready(function($) {
+        // Handle final reports export
+        $('#export-final-reports').click(function(e) {
+            e.preventDefault();
+            
+            var $button = $(this);
+            var originalText = $button.text();
+            
+            // Disable button and show loading
+            $button.prop('disabled', true).text('<?php _e('Exporting...', 'intersoccer-reports-rosters'); ?>');
+            
+            // Get current filter values
+            var year = $('input[name="year"]').val();
+            var activity_type = $('select[name="activity_type"]').val();
+            
+            // If no select element (on specific camp/course pages), use the PHP variable
+            if (!activity_type) {
+                activity_type = '<?php echo esc_js($activity_type); ?>';
+            }
+            
+            $.ajax({
+                url: intersoccer_reports_ajax.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'intersoccer_export_final_reports',
+                    nonce: intersoccer_reports_ajax.nonce,
+                    year: year,
+                    activity_type: activity_type
+                },
+                success: function(response) {
+                    if (response.success) {
+                        // Create and trigger download (same as booking reports)
+                        var binary = atob(response.data.content);
+                        var array = new Uint8Array(binary.length);
+                        for (var i = 0; i < binary.length; i++) {
+                            array[i] = binary.charCodeAt(i);
+                        }
+                        var blob = new Blob([array], {
+                            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        });
+                        var link = document.createElement("a");
+                        link.href = window.URL.createObjectURL(blob);
+                        link.download = response.data.filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        
+                        // Show success notification (same as booking reports)
+                        showNotification("<?php _e('Export completed successfully!', 'intersoccer-reports-rosters'); ?>", "success");
+                    } else {
+                        showNotification("<?php _e('Export failed:', 'intersoccer-reports-rosters'); ?> " + (response.data.message || "<?php _e('Unknown error', 'intersoccer-reports-rosters'); ?>"), "error");
+                        console.error("Export error:", response.data.message);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    if (status === "timeout") {
+                        showNotification("<?php _e('Export timeout. Please try again.', 'intersoccer-reports-rosters'); ?>", "error");
+                    } else {
+                        showNotification("<?php _e('Export failed: Connection error', 'intersoccer-reports-rosters'); ?>", "error");
+                    }
+                    console.error("AJAX export error:", error);
+                },
+                complete: function() {
+                    $button.prop('disabled', false).text(originalText);
+                }
+            });
+        });
+        
+        // Notification system (same as booking reports)
+        function showNotification(message, type) {
+            var $notification = $("<div class=\"notice notice-" + type + " is-dismissible\"><p>" + message + "</p></div>");
+            $(".wrap h1").after($notification);
+            setTimeout(function() {
+                $notification.fadeOut();
+            }, 5000);
+        }
+    });
+    </script>
     <?php
 }
 
