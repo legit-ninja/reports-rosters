@@ -313,3 +313,21 @@ function intersoccer_get_rowspan_for_week($week_data) {
     }
     return $count;
 }
+
+/**
+ * Render the Final Camp Reports page
+ */
+function intersoccer_render_final_camp_reports_page() {
+    // Set activity type to Camp and call the main final reports function
+    $_GET['activity_type'] = 'Camp';
+    intersoccer_render_final_reports_page();
+}
+
+/**
+ * Render the Final Course Reports page
+ */
+function intersoccer_render_final_course_reports_page() {
+    // Set activity type to Course and call the main final reports function
+    $_GET['activity_type'] = 'Course';
+    intersoccer_render_final_reports_page();
+}
