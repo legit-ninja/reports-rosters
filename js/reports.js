@@ -34,6 +34,9 @@ jQuery(document).ready(function($) {
         });
     }
 
+    // Initial load
+    intersoccerUpdateReport();
+
     // Trigger update on input changes
     $("#start_date, #end_date").datepicker({
         dateFormat: "yy-mm-dd",
