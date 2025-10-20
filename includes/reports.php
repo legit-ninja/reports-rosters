@@ -9,8 +9,10 @@
 
 defined('ABSPATH') or die('Restricted access');
 
-// Start output buffering early
-ob_start();
+// Start output buffering early - but NOT for AJAX requests
+if (!defined('DOING_AJAX') || !DOING_AJAX) {
+    ob_start();
+}
 require_once dirname(__FILE__) . '/reporting-discounts.php';
 require_once dirname(__FILE__) . '/reports-ui.php';
 require_once dirname(__FILE__) . '/reports-data.php';
@@ -751,3 +753,40 @@ function intersoccer_export_booking_report_callback() {
     }
 }
 add_action('wp_ajax_intersoccer_export_booking_report', 'intersoccer_export_booking_report_callback');
+
+/**
+ * Calculate discount type breakdown from booking report data
+ */
+function intersoccer_calculate_discount_type_breakdown($report_data) {
+    $totals = [
+        'sibling' => 0,
+        'same_season' => 0,
+        'coupon' => 0,
+        'other' => 0
+    ];
+
+    foreach ($report_data as $row) {
+        $discount_amount = floatval(str_replace([',', ' CHF'], '', $row['discount_amount'] ?? '0'));
+        $discount_codes = strtolower($row['discount_codes'] ?? '');
+
+        // Skip if no discount
+        if ($discount_amount <= 0) {
+            continue;
+        }
+
+        // Categorize discount types based on discount codes
+        if (strpos($discount_codes, 'sibling') !== false || strpos($discount_codes, 'multi-child') !== false) {
+            $totals['sibling'] += $discount_amount;
+        } elseif (strpos($discount_codes, 'same-season') !== false || strpos($discount_codes, 'second-course') !== false) {
+            $totals['same_season'] += $discount_amount;
+        } elseif (!empty($discount_codes) && $discount_codes !== 'none') {
+            // Check if it's a coupon code (not empty and not 'none')
+            $totals['coupon'] += $discount_amount;
+        } else {
+            // Any other discount type
+            $totals['other'] += $discount_amount;
+        }
+    }
+
+    return $totals;
+}
