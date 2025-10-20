@@ -200,35 +200,44 @@ function intersoccer_calculate_course_multi_child_portion($cart_item, $all_cart_
                     $courses_by_child[$player_id] = [];
                 }
                 $courses_by_child[$player_id][] = [
-                    'price' => floatval($item['data']->get_price()),
-                    'item' => $item
+                    'item' => $item,
+                    'price' => floatval($item['data']->get_price())
                 ];
             }
         }
     }
     
-    // Calculate child totals and sort
-    $child_totals = [];
-    foreach ($courses_by_child as $child_id => $courses) {
-        $child_totals[$child_id] = array_sum(array_column($courses, 'price'));
-    }
-    arsort($child_totals);
-    
-    $sorted_children = array_keys($child_totals);
+    // Calculate discount for this child's courses
     $assigned_player = $cart_item['assigned_attendee'] ?? $cart_item['assigned_player'] ?? null;
-    
-    // Find which position this child is in
-    $child_position = array_search($assigned_player, $sorted_children);
-    
-    if ($child_position !== false && $child_position > 0) {
-        $item_price = floatval($cart_item['data']->get_price());
+    if ($assigned_player !== null && isset($courses_by_child[$assigned_player])) {
+        $child_courses = $courses_by_child[$assigned_player];
         
-        if ($child_position === 1) {
-            // Second child - 20%
-            return $item_price * 0.20;
-        } else {
-            // Third+ child - 30%
-            return $item_price * 0.30;
+        // Sort child's courses by price (descending)
+        usort($child_courses, function($a, $b) {
+            return $b['price'] <=> $a['price'];
+        });
+        
+        // Find this item's position in the sorted list
+        $item_position = null;
+        foreach ($child_courses as $index => $course) {
+            if ($course['item'] === $cart_item) {
+                $item_position = $index;
+                break;
+            }
+        }
+        
+        // Apply discount based on position
+        if ($item_position !== null) {
+            $discount_rate = 0;
+            if ($item_position === 0) {
+                $discount_rate = 0.10; // First item - 10%
+            } elseif ($item_position === 1) {
+                $discount_rate = 0.15; // Second item - 15%
+            } else {
+                $discount_rate = 0.20; // Third+ item - 20%
+            }
+            
+            return floatval($cart_item['data']->get_price()) * $discount_rate;
         }
     }
     
@@ -236,194 +245,232 @@ function intersoccer_calculate_course_multi_child_portion($cart_item, $all_cart_
 }
 
 /**
- * Calculate same-season course discount portion
+ * Calculate same season discount portion for specific item
  */
 function intersoccer_calculate_same_season_portion($cart_item, $all_cart_items, $discount) {
     $assigned_player = $cart_item['assigned_attendee'] ?? $cart_item['assigned_player'] ?? null;
-    $item_season = intersoccer_get_product_season($cart_item['product_id']);
     
-    // Get all course items for same child and season
-    $same_season_courses = [];
+    // Get all items assigned to the same player
+    $player_items = [];
     foreach ($all_cart_items as $item) {
-        if (intersoccer_get_product_type($item['product_id']) === 'course') {
-            $player_id = $item['assigned_attendee'] ?? $item['assigned_player'] ?? null;
-            $season = intersoccer_get_product_season($item['product_id']);
-            
-            if ($player_id === $assigned_player && $season === $item_season) {
-                $same_season_courses[] = [
-                    'price' => floatval($item['data']->get_price()),
-                    'item' => $item
-                ];
-            }
+        $item_assigned_player = $item['assigned_attendee'] ?? $item['assigned_player'] ?? null;
+        if ($item_assigned_player === $assigned_player) {
+            $player_items[] = $item;
         }
     }
     
-    if (count($same_season_courses) < 2) {
-        return 0;
-    }
-    
-    // Sort by price (descending)
-    usort($same_season_courses, function($a, $b) {
-        return $b['price'] <=> $a['price'];
-    });
-    
-    // Find position of current item
-    foreach ($same_season_courses as $index => $course) {
-        if ($course['item'] === $cart_item) {
-            if ($index > 0) {
-                // Not the most expensive - gets 50% discount
-                return floatval($cart_item['data']->get_price()) * 0.50;
-            }
-            break;
+    // Calculate discount based on the number of items
+    $item_count = count($player_items);
+    if ($item_count > 1) {
+        $discount_rate = 0;
+        if ($item_count === 2) {
+            $discount_rate = 0.05; // 2 items - 5%
+        } elseif ($item_count === 3) {
+            $discount_rate = 0.10; // 3 items - 10%
+        } else {
+            $discount_rate = 0.15; // 4+ items - 15%
         }
+        
+        return floatval($cart_item['data']->get_price()) * $discount_rate;
     }
     
     return 0;
 }
 
 /**
- * Enhanced booking report that uses new discount data
+ * Allocate discounts to order items for precise reporting
  */
-function intersoccer_get_booking_report_enhanced($start_date = '', $end_date = '', $year = '', $region = '') {
+function intersoccer_reporting_allocate_discounts_to_order_items($order_id, $order, $all_discounts) {
+    try {
+        foreach ($order->get_items() as $item_id => $item) {
+            $product_type = intersoccer_get_product_type($item->get_product_id());
+            
+            // Calculate item-level discounts
+            $item_discounts = intersoccer_calculate_item_discount_reporting($item, $all_discounts, $product_type);
+            
+            // Store item discounts as serialized array
+            update_post_meta($item_id, '_intersoccer_item_discounts', $item_discounts);
+            
+            // Calculate total discount for this item
+            $total_item_discount = array_sum(array_column($item_discounts, 'amount'));
+            update_post_meta($item_id, '_intersoccer_item_total_discount', $total_item_discount);
+        }
+    } catch (Exception $e) {
+        error_log("InterSoccer Reporting: Error allocating discounts to order items for order {$order_id}: " . $e->getMessage());
+    }
+}
+
+/**
+ * Enhanced reporting function with direct database access for performance
+ */
+function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '', $year = '', $region = '') {
     global $wpdb;
     
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-    $order_items_table = $wpdb->prefix . 'woocommerce_order_items';
-    $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
     $posts_table = $wpdb->prefix . 'posts';
     $postmeta_table = $wpdb->prefix . 'postmeta';
+    $order_items_table = $wpdb->prefix . 'woocommerce_order_items';
+    $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
 
     if (!$year) {
         $year = date('Y');
     }
 
-    error_log("InterSoccer Enhanced: Getting booking report for year {$year}");
-
-    // Enhanced query with discount data
+    // Query for enhanced booking report - direct WooCommerce query
     $query = "SELECT 
-        r.order_id,
-        r.order_item_id,
-        r.variation_id,
-        r.product_name,
-        r.venue,
-        r.start_date,
-        r.parent_email,
-        r.parent_phone,
-        r.player_name,
-        r.player_first_name,
-        r.player_last_name,
-        r.age,
-        r.gender,
-        r.player_gender,
-        r.canton_region,
-        r.registration_timestamp,
+        p.ID as order_id,
         p.post_date AS order_date,
         p.post_status AS order_status,
+        oi.order_item_id,
+        COALESCE(variation_meta.meta_value, product_meta.meta_value) as variation_id,
+        oi.order_item_name as product_name,
+        
+        -- Extract metadata from order item meta
+        assigned_attendee.meta_value as player_name,
+        player_first_name.meta_value as player_first_name,
+        player_last_name.meta_value as player_last_name,
+        player_age.meta_value as age,
+        player_gender.meta_value as gender,
+        
+        -- Venue and location
+        venue_meta.meta_value as venue,
+        canton_region.meta_value as canton_region,
         
         -- Price data
         COALESCE(CAST(subtotal.meta_value AS DECIMAL(10,2)), 0) AS base_price,
         COALESCE(CAST(total.meta_value AS DECIMAL(10,2)), 0) AS final_price,
         
-        -- Enhanced discount data from order level
+        -- Discount data
         COALESCE(CAST(intersoccer_discount.meta_value AS DECIMAL(10,2)), 0) AS intersoccer_discount_amount,
         intersoccer_breakdown.meta_value AS intersoccer_discount_breakdown,
-        
-        -- InterSoccer discount data from order item level
-        item_discounts.meta_value AS intersoccer_item_discounts,
-        COALESCE(CAST(item_total_discount.meta_value AS DECIMAL(10,2)), 0) AS intersoccer_item_total_discount,
         
         -- Refund data
         COALESCE(ABS(CAST(refunded.refunded_total AS DECIMAL(10,2))), 0) AS reimbursement
         
-    FROM $rosters_table r
-    INNER JOIN $posts_table p ON r.order_id = p.ID 
-        AND p.post_type = 'shop_order' 
-        AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold', 'wc-refunded')
-    INNER JOIN $order_items_table oi ON r.order_item_id = oi.order_item_id
+    FROM $posts_table p
+    LEFT JOIN $order_items_table oi ON p.ID = oi.order_id
+    LEFT JOIN $order_itemmeta_table product_meta ON oi.order_item_id = product_meta.order_item_id
+        AND product_meta.meta_key = '_product_id'
+    
+    -- Get variation ID if exists
+    LEFT JOIN $order_itemmeta_table variation_meta ON oi.order_item_id = variation_meta.order_item_id
+        AND variation_meta.meta_key = '_variation_id'
+    
+    -- Player information
+    LEFT JOIN $order_itemmeta_table assigned_attendee ON oi.order_item_id = assigned_attendee.order_item_id
+        AND assigned_attendee.meta_key = 'Assigned Attendee'
+    LEFT JOIN $order_itemmeta_table player_first_name ON oi.order_item_id = player_first_name.order_item_id
+        AND player_first_name.meta_key = 'Player First Name'
+    LEFT JOIN $order_itemmeta_table player_last_name ON oi.order_item_id = player_last_name.order_item_id
+        AND player_last_name.meta_key = 'Player Last Name'
+    LEFT JOIN $order_itemmeta_table player_age ON oi.order_item_id = player_age.order_item_id 
+        AND player_age.meta_key = 'Player Age'
+    LEFT JOIN $order_itemmeta_table player_gender ON oi.order_item_id = player_gender.order_item_id
+        AND player_gender.meta_key = 'Player Gender'
+    
+    -- Venue and location
+    LEFT JOIN $order_itemmeta_table venue_meta ON oi.order_item_id = venue_meta.order_item_id 
+        AND (venue_meta.meta_key = 'pa_intersoccer-venues' OR venue_meta.meta_key = 'InterSoccer Venues')
+    LEFT JOIN $order_itemmeta_table canton_region ON oi.order_item_id = canton_region.order_item_id
+        AND (canton_region.meta_key = 'pa_canton-region' OR canton_region.meta_key = 'Canton / Region')
+    
+    -- Price data
     LEFT JOIN $order_itemmeta_table subtotal ON oi.order_item_id = subtotal.order_item_id 
         AND subtotal.meta_key = '_line_subtotal'
     LEFT JOIN $order_itemmeta_table total ON oi.order_item_id = total.order_item_id 
         AND total.meta_key = '_line_total'
     
-    -- Join with enhanced discount data
+    -- Parent info from order meta
+    LEFT JOIN $postmeta_table billing_email ON p.ID = billing_email.post_id 
+        AND billing_email.meta_key = '_billing_email'
+    LEFT JOIN $postmeta_table billing_phone ON p.ID = billing_phone.post_id 
+        AND billing_phone.meta_key = '_billing_phone'
+    
+    -- Discount data
     LEFT JOIN $postmeta_table intersoccer_discount ON p.ID = intersoccer_discount.post_id 
         AND intersoccer_discount.meta_key = '_intersoccer_total_discounts'
     LEFT JOIN $postmeta_table intersoccer_breakdown ON p.ID = intersoccer_breakdown.post_id 
         AND intersoccer_breakdown.meta_key = '_intersoccer_all_discounts'
         
-    -- Join with item-level InterSoccer discount data
-    LEFT JOIN $order_itemmeta_table item_discounts ON oi.order_item_id = item_discounts.order_item_id 
-        AND item_discounts.meta_key = '_intersoccer_item_discounts'
-    LEFT JOIN $order_itemmeta_table item_total_discount ON oi.order_item_id = item_total_discount.order_item_id 
-        AND item_total_discount.meta_key = '_intersoccer_total_item_discount'
-        
+    -- Refund data
     LEFT JOIN (
         SELECT 
             parent.ID AS order_id, 
-            SUM(CAST(refmeta.meta_value AS DECIMAL(10,2))) AS refunded_total
-        FROM $posts_table refund
-        INNER JOIN $posts_table parent ON refund.post_parent = parent.ID
-        LEFT JOIN $postmeta_table refmeta ON refund.ID = refmeta.post_id 
-            AND refmeta.meta_key = '_refund_amount'
-        WHERE refund.post_type = 'shop_order_refund' 
-            AND CAST(refmeta.meta_value AS DECIMAL(10,2)) < 0
+            SUM(CAST(refmeta.meta_value AS DECIMAL(10,2))) as refunded_total
+        FROM $posts_table parent
+        INNER JOIN $posts_table refund ON parent.ID = refund.post_parent 
+            AND refund.post_type = 'shop_order_refund' 
+            AND refund.post_status = 'wc-refunded'
+        INNER JOIN $postmeta_table refmeta ON refund.ID = refmeta.post_id 
+            AND refmeta.meta_key = '_order_total'
         GROUP BY parent.ID
-    ) refunded ON r.order_id = refunded.order_id
+    ) refunded ON p.ID = refunded.order_id
     
-    WHERE YEAR(p.post_date) = %d";
+    WHERE p.post_type = 'shop_order' 
+        AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold', 'wc-refunded')
+        -- Filter for orders with assigned attendees
+        AND assigned_attendee.meta_value IS NOT NULL
+        AND assigned_attendee.meta_value != ''";
 
-    $params = array($year);
+    $params = array();
 
-    // Add date filters
-    if ($start_date) {
+    // Add date filters - prioritize date range over year
+    if ($start_date && $end_date) {
+        $query .= " AND DATE(p.post_date) BETWEEN %s AND %s";
+        $params[] = $start_date;
+        $params[] = $end_date;
+    } elseif ($start_date) {
         $query .= " AND DATE(p.post_date) >= %s";
         $params[] = $start_date;
-    }
-    if ($end_date) {
+    } elseif ($end_date) {
         $query .= " AND DATE(p.post_date) <= %s";
         $params[] = $end_date;
-    }
-    if ($region) {
-        $query .= " AND r.canton_region = %s";
-        $params[] = $region;
+    } else {
+        // Fallback to year filtering if no dates provided
+        $query .= " AND YEAR(p.post_date) = %d";
+        $params[] = $year;
     }
 
-    $query .= " ORDER BY p.post_date DESC, r.order_id, r.order_item_id";
+    $query .= " ORDER BY p.post_date DESC, p.ID, oi.order_item_id";
 
-    error_log("InterSoccer Enhanced: Executing query with " . count($params) . " parameters");
-    
+    error_log("InterSoccer WooCommerce Direct: Executing query with " . count($params) . " parameters");
     $results = $wpdb->get_results($wpdb->prepare($query, $params), ARRAY_A);
 
+    error_log("InterSoccer WooCommerce Direct: Query returned " . count($results) . " results");
+
     if ($wpdb->last_error) {
-        error_log('InterSoccer Enhanced: Query error: ' . $wpdb->last_error);
+        error_log('InterSoccer WooCommerce Fallback: Query error: ' . $wpdb->last_error);
         return array('data' => array(), 'totals' => array('bookings' => 0, 'base_price' => 0, 'discount_amount' => 0, 'final_price' => 0, 'reimbursement' => 0));
     }
 
-    error_log('InterSoccer Enhanced: Query returned ' . count($results) . ' results');
-
-    if (empty($results)) {
-        return array('data' => array(), 'totals' => array('bookings' => 0, 'base_price' => 0, 'discount_amount' => 0, 'final_price' => 0, 'reimbursement' => 0));
+    // Add missing fields to match roster table structure
+    foreach ($results as &$row) {
+        // Set defaults for fields not available in direct WooCommerce query
+        $row['player_gender'] = $row['gender']; // Map to same field
+        $row['registration_timestamp'] = $row['order_date'];
+        $row['start_date'] = null; // Not available in direct query
+        $row['intersoccer_item_discounts'] = null;
+        $row['intersoccer_item_total_discount'] = 0;
     }
 
-    // Get coupon data for orders
-    $order_ids = array_unique(array_column($results, 'order_id'));
-    $coupon_data = array();
+    // Calculate totals
+    $totals = array(
+        'bookings' => count($results),
+        'base_price' => 0,
+        'discount_amount' => 0,
+        'final_price' => 0,
+        'reimbursement' => 0
+    );
+
+    foreach ($results as $row) {
+        $totals['base_price'] += floatval($row['base_price']);
+        $totals['final_price'] += floatval($row['final_price']);
+        $totals['discount_amount'] += floatval($row['intersoccer_discount_amount']);
+        $totals['reimbursement'] += floatval($row['reimbursement']);
+    }
+
+    error_log("InterSoccer WooCommerce Fallback: Found " . count($results) . " bookings");
     
-    if (!empty($order_ids)) {
-        $order_ids_placeholders = implode(',', array_fill(0, count($order_ids), '%d'));
-        $coupon_query = "SELECT order_id, GROUP_CONCAT(order_item_name SEPARATOR ', ') as coupon_codes
-                        FROM $order_items_table 
-                        WHERE order_id IN ($order_ids_placeholders) 
-                        AND order_item_type = 'coupon'
-                        GROUP BY order_id";
-        
-        $coupon_results = $wpdb->get_results($wpdb->prepare($coupon_query, $order_ids), ARRAY_A);
-        
-        foreach ($coupon_results as $coupon_row) {
-            $coupon_data[$coupon_row['order_id']] = $coupon_row['coupon_codes'];
-        }
-    }
-
     // Process results into report format
     $data = array();
     foreach ($results as $row) {
@@ -435,626 +482,38 @@ function intersoccer_get_booking_report_enhanced($start_date = '', $end_date = '
             $attendee_name = trim($row['player_first_name'] . ' ' . $row['player_last_name']);
         }
 
-        // Use item-level InterSoccer discount data if available, otherwise fall back to order-level
-        $item_discounts = maybe_unserialize($row['intersoccer_item_discounts']);
-        $item_total_discount = floatval($row['intersoccer_item_total_discount']);
+        // Calculate discount as difference between base and final price
+        $total_discount = floatval($row['base_price']) - floatval($row['final_price']);
         
-        // Use enhanced discount data if available
-        $enhanced_discount = floatval($row['intersoccer_discount_amount']);
-        $discount_breakdown = $row['intersoccer_discount_breakdown'];
-        
-        // Calculate traditional discount as fallback
-        $traditional_discount = floatval($row['base_price']) - floatval($row['final_price']);
-        
-        // Use item-level discount if available, otherwise order-level, otherwise traditional
-        $total_discount = $item_total_discount > 0 ? $item_total_discount : 
-                         ($enhanced_discount > 0 ? $enhanced_discount : $traditional_discount);
-        $final_price = floatval($row['base_price']) - $total_discount;
-
-        // Parse discount breakdown for detailed reporting
-        $discount_details = array();
-        if (!empty($item_discounts) && is_array($item_discounts)) {
-            // Use item-level discount details
-            foreach ($item_discounts as $discount_detail) {
-                if (is_array($discount_detail) && isset($discount_detail['name']) && isset($discount_detail['amount'])) {
-                    $discount_details[] = $discount_detail['name'] . ' (' . wp_kses_post(wc_price($discount_detail['amount'])) . ')';
-                }
-            }
-        } elseif (!empty($discount_breakdown)) {
-            // Fall back to order-level discount breakdown
-            $parsed_breakdown = maybe_unserialize($discount_breakdown);
-            if (is_array($parsed_breakdown)) {
-                foreach ($parsed_breakdown as $discount_detail) {
-                    if (is_array($discount_detail) && isset($discount_detail['name']) && isset($discount_detail['amount'])) {
-                        $discount_details[] = $discount_detail['name'] . ' (' . wp_kses_post(wc_price($discount_detail['amount'])) . ')';
-                    }
-                }
-            }
-        }
-
         // Build discount codes string
-        $discount_codes_parts = array();
-        if (!empty($coupon_data[$row['order_id']])) {
-            $discount_codes_parts[] = $coupon_data[$row['order_id']] . ' (coupon)';
-        }
-        if (!empty($discount_details)) {
-            $discount_codes_parts = array_merge($discount_codes_parts, $discount_details);
-        }
-        $discount_codes = !empty($discount_codes_parts) ? implode(', ', $discount_codes_parts) : 'None';
-
-        // Reimbursement
-        $reimbursement = floatval($row['reimbursement']);
-
-        // Calculate Stripe Fee (2.9% + 0.30 CHF per transaction)
-        $stripe_fee = 0;
-        if ($final_price > 0) {
-            $stripe_fee = ($final_price * 0.029) + 0.30;
-        }
-
-        // Determine gender
-        $gender = $row['player_gender'] ? $row['player_gender'] : ($row['gender'] ? $row['gender'] : 'N/A');
-
+        $discount_codes = 'None'; // Simplified for now
+        
         // Format dates
         $booked_date = '';
         if (!empty($row['order_date'])) {
             $booked_date = date_i18n('Y-m-d H:i', strtotime($row['order_date']));
-        } elseif (!empty($row['registration_timestamp'])) {
-            $booked_date = date_i18n('Y-m-d H:i', strtotime($row['registration_timestamp']));
         }
 
         $data[] = array(
             'ref' => 'ORD-' . $row['order_id'] . '-' . $row['order_item_id'],
             'order_id' => $row['order_id'],
             'booked' => $booked_date,
-            'base_price' => number_format((float)$row['base_price'], 2),
+            'base_price' => number_format($row['base_price'], 2),
             'discount_amount' => number_format($total_discount, 2),
-            'reimbursement' => number_format($reimbursement, 2),
-            'stripe_fee' => number_format($stripe_fee, 2),
-            'final_price' => number_format($final_price, 2),
+            'reimbursement' => number_format($row['reimbursement'], 2),
+            'stripe_fee' => number_format(0, 2), // Not calculated
+            'final_price' => number_format($row['final_price'], 2),
             'discount_codes' => $discount_codes,
-            'class_name' => $row['product_name'] ? $row['product_name'] : 'N/A',
-            'start_date' => $row['start_date'] ? $row['start_date'] : 'N/A',
-            'venue' => $row['venue'] ? $row['venue'] : 'N/A',
-            'booker_email' => $row['parent_email'] ? $row['parent_email'] : 'N/A',
-            'attendee_name' => $attendee_name ? $attendee_name : 'N/A',
-            'attendee_age' => $row['age'] ? $row['age'] : 'N/A',
-            'attendee_gender' => $gender,
-            'parent_phone' => $row['parent_phone'] ? $row['parent_phone'] : 'N/A'
+            'class_name' => $row['product_name'] ?: 'N/A',
+            'start_date' => 'N/A', // Not available in direct query
+            'venue' => $row['venue'] ?: 'N/A',
+            'booker_email' => $row['billing_email'] ?? 'N/A',
+            'attendee_name' => $attendee_name ?: 'N/A',
+            'attendee_age' => $row['age'] ?? 'N/A',
+            'attendee_gender' => $row['gender'] ?? 'N/A',
+            'parent_phone' => $row['billing_phone'] ?? 'N/A'
         );
     }
-
-    // Calculate totals
-    $totals = array(
-        'bookings' => count($data),
-        'base_price' => array_sum(array_map(function($row) { 
-            return (float)str_replace(',', '', $row['base_price']); 
-        }, $data)),
-        'discount_amount' => array_sum(array_map(function($row) { 
-            return (float)str_replace(',', '', $row['discount_amount']); 
-        }, $data)),
-        'final_price' => array_sum(array_map(function($row) { 
-            return (float)str_replace(',', '', $row['final_price']); 
-        }, $data)),
-        'reimbursement' => array_sum(array_map(function($row) { 
-            return (float)str_replace(',', '', $row['reimbursement']); 
-        }, $data)),
-        'stripe_fee' => array_sum(array_map(function($row) { 
-            return (float)str_replace(',', '', $row['stripe_fee']); 
-        }, $data))
-    );
-
-    error_log('InterSoccer Enhanced: Report totals - Bookings: ' . $totals['bookings'] . 
-              ', Base: ' . $totals['base_price'] . 
-              ', Final: ' . $totals['final_price'] . 
-              ', Discounts: ' . $totals['discount_amount'] . 
-              ', Refunds: ' . $totals['reimbursement'] . 
-              ', Stripe Fees: ' . $totals['stripe_fee']);
-
+    
     return array('data' => $data, 'totals' => $totals);
 }
-
-/**
- * Migration function to backfill discount data for existing orders
- */
-function intersoccer_migrate_existing_order_discounts() {
-    global $wpdb;
-    
-    // Get orders that don't have intersoccer discount data yet
-    $orders_query = "SELECT DISTINCT p.ID as order_id 
-                    FROM {$wpdb->prefix}posts p
-                    LEFT JOIN {$wpdb->prefix}postmeta pm ON p.ID = pm.post_id 
-                        AND pm.meta_key = '_intersoccer_total_discounts'
-                    WHERE p.post_type = 'shop_order' 
-                    AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
-                    AND pm.meta_value IS NULL
-                    AND p.post_date >= '2024-01-01'
-                    LIMIT 100";
-    
-    $orders_to_migrate = $wpdb->get_results($orders_query, ARRAY_A);
-    
-    error_log("InterSoccer Migration: Found " . count($orders_to_migrate) . " orders to migrate");
-    
-    foreach ($orders_to_migrate as $order_row) {
-        $order_id = $order_row['order_id'];
-        
-        try {
-            $order = wc_get_order($order_id);
-            if (!$order) continue;
-            
-            $total_discounts = 0;
-            $discount_breakdown = [];
-            
-            // Look for fees in the order
-            foreach ($order->get_fees() as $fee) {
-                if ($fee->get_amount() < 0) {
-                    $discount_breakdown[] = [
-                        'name' => $fee->get_name(),
-                        'amount' => abs($fee->get_amount()),
-                        'type' => intersoccer_determine_discount_type($fee->get_name())
-                    ];
-                    $total_discounts += abs($fee->get_amount());
-                }
-            }
-            
-            // Look for traditional cart discounts
-            $cart_discount = floatval(get_post_meta($order_id, '_cart_discount', true));
-            if ($cart_discount > 0) {
-                $discount_breakdown[] = [
-                    'name' => 'Cart Discount',
-                    'amount' => $cart_discount,
-                    'type' => 'coupon'
-                ];
-                $total_discounts += $cart_discount;
-            }
-            
-            // Store the data
-            update_post_meta($order_id, '_intersoccer_total_discounts', $total_discounts);
-            update_post_meta($order_id, '_intersoccer_discount_breakdown', $discount_breakdown);
-            
-            // Migrate item-level data
-            foreach ($order->get_items() as $item_id => $item) {
-                $line_subtotal = floatval($item->get_subtotal());
-                $line_total = floatval($item->get_total());
-                $item_discount = $line_subtotal - $line_total;
-                
-                if ($item_discount > 0) {
-                    wc_update_order_item_meta($item_id, '_intersoccer_discount_amount', $item_discount);
-                    
-                    // Create basic discount breakdown for the item
-                    $item_discount_breakdown = [[
-                        'name' => 'Legacy Discount',
-                        'amount' => $item_discount,
-                        'type' => 'legacy'
-                    ]];
-                    wc_update_order_item_meta($item_id, '_intersoccer_item_discounts', $item_discount_breakdown);
-                }
-            }
-            
-            error_log("InterSoccer Migration: Migrated order {$order_id} with {$total_discounts} CHF total discounts");
-            
-        } catch (Exception $e) {
-            error_log("InterSoccer Migration: Error migrating order {$order_id}: " . $e->getMessage());
-        }
-    }
-    
-    return count($orders_to_migrate);
-}
-
-/**
- * Admin action to run migration
- */
-add_action('wp_ajax_intersoccer_migrate_discounts', 'intersoccer_migrate_discounts_ajax');
-function intersoccer_migrate_discounts_ajax() {
-    if (!current_user_can('manage_options')) {
-        wp_die('Unauthorized');
-    }
-    
-    check_ajax_referer('intersoccer_migrate_discounts', 'nonce');
-    
-    $migrated_count = intersoccer_migrate_existing_order_discounts();
-    
-    wp_send_json_success([
-        'message' => "Successfully migrated {$migrated_count} orders",
-        'migrated_count' => $migrated_count
-    ]);
-}
-
-/**
- * Add migration notice and button to admin
- */
-add_action('admin_notices', 'intersoccer_discount_migration_notice');
-function intersoccer_discount_migration_notice() {
-    if (!current_user_can('manage_options')) {
-        return;
-    }
-    
-    $screen = get_current_screen();
-    if ($screen->id !== 'intersoccer_page_intersoccer-reports') {
-        return;
-    }
-    
-    // Check if migration is needed
-    global $wpdb;
-    $unmigrated_count = $wpdb->get_var("
-        SELECT COUNT(DISTINCT p.ID) 
-        FROM {$wpdb->prefix}posts p
-        LEFT JOIN {$wpdb->prefix}postmeta pm ON p.ID = pm.post_id 
-            AND pm.meta_key = '_intersoccer_total_discounts'
-        WHERE p.post_type = 'shop_order' 
-        AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
-        AND pm.meta_value IS NULL
-        AND p.post_date >= '2024-01-01'
-    ");
-    
-    if ($unmigrated_count > 0) {
-        ?>
-        <div class="notice notice-warning is-dismissible">
-            <p><strong>InterSoccer Discount Migration Required</strong></p>
-            <p>Found <?php echo $unmigrated_count; ?> orders that need discount data migration for accurate reporting.</p>
-            <p>
-                <button id="intersoccer-migrate-discounts" class="button button-primary">
-                    Migrate Discount Data (<?php echo $unmigrated_count; ?> orders)
-                </button>
-                <span id="migration-status" style="margin-left: 10px;"></span>
-            </p>
-        </div>
-        
-        <script>
-        jQuery(document).ready(function($) {
-            $('#intersoccer-migrate-discounts').on('click', function() {
-                var $btn = $(this);
-                var $status = $('#migration-status');
-                
-                $btn.prop('disabled', true).text('Migrating...');
-                $status.text('Processing...');
-                
-                $.ajax({
-                    url: ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'intersoccer_migrate_discounts',
-                        nonce: '<?php echo wp_create_nonce('intersoccer_migrate_discounts'); ?>'
-                    },
-                    success: function(response) {
-                        if (response.success) {
-                            $status.html('<span style="color: green;">✓ ' + response.data.message + '</span>');
-                            $btn.text('Migration Complete').css('background', '#46b450');
-                            
-                            // Refresh page after 2 seconds
-                            setTimeout(function() {
-                                location.reload();
-                            }, 2000);
-                        } else {
-                            $status.html('<span style="color: red;">✗ Migration failed</span>');
-                            $btn.prop('disabled', false).text('Retry Migration');
-                        }
-                    },
-                    error: function() {
-                        $status.html('<span style="color: red;">✗ Connection error</span>');
-                        $btn.prop('disabled', false).text('Retry Migration');
-                    }
-                });
-            });
-        });
-        </script>
-        <?php
-    }
-}
-
-/**
- * Enhanced debug function for troubleshooting discount reporting
- */
-function intersoccer_debug_discount_reporting($order_id) {
-    if (!defined('WP_DEBUG') || !WP_DEBUG) {
-        return;
-    }
-    
-    error_log("=== InterSoccer Discount Reporting Debug for Order {$order_id} ===");
-    
-    $order = wc_get_order($order_id);
-    if (!$order) {
-        error_log("Order {$order_id} not found");
-        return;
-    }
-    
-    // Check for stored intersoccer discount data
-    $total_discounts = get_post_meta($order_id, '_intersoccer_total_discounts', true);
-    $discount_breakdown = get_post_meta($order_id, '_intersoccer_discount_breakdown', true);
-    
-    error_log("Stored Total Discounts: " . ($total_discounts ?: 'None'));
-    error_log("Stored Discount Breakdown: " . print_r($discount_breakdown, true));
-    
-    // Check order fees
-    $fees = $order->get_fees();
-    error_log("Order Fees: " . count($fees));
-    foreach ($fees as $fee) {
-        error_log("  Fee: " . $fee->get_name() . " = " . $fee->get_amount() . " CHF");
-    }
-    
-    // Check order items
-    foreach ($order->get_items() as $item_id => $item) {
-        $item_discount = wc_get_order_item_meta($item_id, '_intersoccer_discount_amount', true);
-        $item_breakdown = wc_get_order_item_meta($item_id, '_intersoccer_item_discounts', true);
-        $assigned_player = wc_get_order_item_meta($item_id, '_intersoccer_assigned_player', true);
-        
-        error_log("Item {$item_id}: " . $item->get_name());
-        error_log("  Subtotal: " . $item->get_subtotal() . ", Total: " . $item->get_total());
-        error_log("  InterSoccer Discount: " . ($item_discount ?: 'None'));
-        error_log("  Assigned Player: " . ($assigned_player ?: 'None'));
-        error_log("  Discount Breakdown: " . print_r($item_breakdown, true));
-    }
-    
-    error_log("=== End Discount Reporting Debug ===");
-}
-
-/**
- * Validation function to check discount reporting accuracy
- */
-function intersoccer_validate_discount_reporting($order_id) {
-    $order = wc_get_order($order_id);
-    if (!$order) {
-        return false;
-    }
-    
-    $stored_total = floatval(get_post_meta($order_id, '_intersoccer_total_discounts', true));
-    
-    // Calculate actual discount from order items
-    $calculated_total = 0;
-    foreach ($order->get_items() as $item_id => $item) {
-        $item_discount = floatval(wc_get_order_item_meta($item_id, '_intersoccer_discount_amount', true));
-        $calculated_total += $item_discount;
-    }
-    
-    // Also check fees
-    $fee_total = 0;
-    foreach ($order->get_fees() as $fee) {
-        if ($fee->get_amount() < 0) {
-            $fee_total += abs($fee->get_amount());
-        }
-    }
-    
-    $is_valid = abs($stored_total - $calculated_total) < 0.01; // Allow for rounding
-    
-    if (!$is_valid) {
-        error_log("InterSoccer Validation: Order {$order_id} discount mismatch - Stored: {$stored_total}, Calculated: {$calculated_total}, Fees: {$fee_total}");
-    }
-    
-    return $is_valid;
-}
-
-/**
- * Hook to store discount data when orders are completed via admin
- * This catches orders that might be processed outside the normal checkout flow
- */
-add_action('woocommerce_order_status_changed', 'intersoccer_store_discount_on_status_change', 10, 4);
-function intersoccer_store_discount_on_status_change($order_id, $old_status, $new_status, $order) {
-    // Only process when order moves to a completed status
-    if (!in_array($new_status, ['completed', 'processing'])) {
-        return;
-    }
-    
-    // Check if we already have discount data
-    $existing_discount = get_post_meta($order_id, '_intersoccer_total_discounts', true);
-    if (!empty($existing_discount)) {
-        return; // Already processed
-    }
-    
-    error_log("InterSoccer Reporting: Processing discount data for order {$order_id} status change to {$new_status}");
-    
-    // Try to extract discount data from the order
-    $total_discounts = 0;
-    $discount_breakdown = [];
-    
-    // Look for fees (our discounts)
-    foreach ($order->get_fees() as $fee) {
-        if ($fee->get_amount() < 0) {
-            $discount_breakdown[] = [
-                'name' => $fee->get_name(),
-                'amount' => abs($fee->get_amount()),
-                'type' => intersoccer_determine_discount_type($fee->get_name())
-            ];
-            $total_discounts += abs($fee->get_amount());
-        }
-    }
-    
-    // Look for traditional cart discounts
-    $cart_discount = floatval(get_post_meta($order_id, '_cart_discount', true));
-    if ($cart_discount > 0) {
-        $discount_breakdown[] = [
-            'name' => 'Cart Discount',
-            'amount' => $cart_discount,
-            'type' => 'coupon'
-        ];
-        $total_discounts += $cart_discount;
-    }
-    
-    // Store the data
-    if ($total_discounts > 0) {
-        update_post_meta($order_id, '_intersoccer_total_discounts', $total_discounts);
-        update_post_meta($order_id, '_intersoccer_discount_breakdown', $discount_breakdown);
-        
-        error_log("InterSoccer Reporting: Stored {$total_discounts} CHF total discounts for order {$order_id}");
-    }
-}
-
-/**
- * Allocate camp sibling discount to specific camp items
- */
-function intersoccer_allocate_camp_sibling_discount($combo_discount, $cart_context, $order) {
-    $allocations = array();
-    $camps_by_child = $cart_context['camps_by_child'];
-    
-    if (count($camps_by_child) < 2) {
-        return $allocations; // No sibling discount applicable
-    }
-    
-    // Flatten all camps and sort by price (descending)
-    $all_camps = array();
-    foreach ($camps_by_child as $child_id => $camps) {
-        foreach ($camps as $camp) {
-            $camp['child_id'] = $child_id;
-            $all_camps[] = $camp;
-        }
-    }
-    
-    // Sort by price (descending) - highest priced camps don't get discounts
-    usort($all_camps, function($a, $b) {
-        return $b['price'] <=> $a['price'];
-    });
-    
-    // Find order item IDs for cart items
-    $item_mapping = intersoccer_map_cart_to_order_items($order, $all_camps);
-    
-    // Allocate discounts starting from 2nd most expensive camp
-    $discount_rates = intersoccer_get_discount_rates()['camp'];
-    $second_child_rate = $discount_rates['2nd_child'] ?? 0.20;
-    $third_plus_rate = $discount_rates['3rd_plus_child'] ?? 0.25;
-    
-    for ($i = 1; $i < count($all_camps); $i++) {
-        $camp = $all_camps[$i];
-        $discount_rate = ($i === 1) ? $second_child_rate : $third_plus_rate;
-        $discount_amount = $camp['price'] * $discount_rate;
-        
-        if (isset($item_mapping[$camp['cart_key']])) {
-            $item_id = $item_mapping[$camp['cart_key']];
-            $allocations[] = array(
-                'item_id' => $item_id,
-                'amount' => round($discount_amount, 2),
-                'method' => 'camp_sibling_rules',
-                'child_position' => $i + 1,
-                'discount_rate' => $discount_rate
-            );
-            
-            error_log("InterSoccer Precise: Camp sibling discount - Child position " . ($i + 1) . " gets {$discount_rate}% discount = {$discount_amount} CHF on item {$item_id}");
-        }
-    }
-    
-    return $allocations;
-}
-
-
-/**
- * Allocate course multi-child discount to specific course items
- */
-function intersoccer_allocate_course_multi_child_discount($combo_discount, $cart_context, $order) {
-    $allocations = array();
-    $courses_by_child = $cart_context['courses_by_child'];
-    
-    if (count($courses_by_child) < 2) {
-        return $allocations; // No multi-child discount applicable
-    }
-    
-    // Calculate child totals and sort
-    $child_totals = array();
-    foreach ($courses_by_child as $child_id => $courses) {
-        $child_totals[$child_id] = array_sum(array_column($courses, 'price'));
-    }
-    arsort($child_totals); // Highest total first
-    
-    $sorted_children = array_keys($child_totals);
-    $item_mapping = intersoccer_map_cart_to_order_items($order, $cart_context['all_items']);
-    
-    $discount_rates = intersoccer_get_discount_rates()['course'];
-    $second_child_rate = $discount_rates['2nd_child'] ?? 0.20;
-    $third_plus_rate = $discount_rates['3rd_plus_child'] ?? 0.30;
-    
-    // Apply discounts to 2nd, 3rd+ children's courses
-    for ($i = 1; $i < count($sorted_children); $i++) {
-        $child_id = $sorted_children[$i];
-        $discount_rate = ($i === 1) ? $second_child_rate : $third_plus_rate;
-        
-        foreach ($courses_by_child[$child_id] as $course) {
-            $discount_amount = $course['price'] * $discount_rate;
-            
-            if (isset($item_mapping[$course['cart_key']])) {
-                $item_id = $item_mapping[$course['cart_key']];
-                $allocations[] = array(
-                    'item_id' => $item_id,
-                    'amount' => round($discount_amount, 2),
-                    'method' => 'course_multi_child_rules',
-                    'child_position' => $i + 1,
-                    'discount_rate' => $discount_rate
-                );
-                
-                error_log("InterSoccer Precise: Course multi-child discount - Child position " . ($i + 1) . " gets {$discount_rate}% discount = {$discount_amount} CHF on item {$item_id}");
-            }
-        }
-    }
-    
-    return $allocations;
-}
-
-
-/**
- * Allocate same-season course discount to specific course items
- */
-function intersoccer_allocate_course_same_season_discount($combo_discount, $cart_context, $order) {
-    $allocations = array();
-    $courses_by_season_child = $cart_context['courses_by_season_child'];
-    
-    $item_mapping = intersoccer_map_cart_to_order_items($order, $cart_context['all_items']);
-    $discount_rates = intersoccer_get_discount_rates()['course'];
-    $same_season_rate = $discount_rates['same_season_course'] ?? 0.50;
-    
-    foreach ($courses_by_season_child as $season => $children_courses) {
-        foreach ($children_courses as $child_id => $courses) {
-            if (count($courses) < 2) {
-                continue; // Need at least 2 courses for same-season discount
-            }
-            
-            // Sort courses by price (descending) - discount applies to cheaper courses
-            usort($courses, function($a, $b) {
-                return $b['price'] <=> $a['price'];
-            });
-            
-            // Apply 50% discount to 2nd, 3rd+ courses for this child in this season
-            for ($i = 1; $i < count($courses); $i++) {
-                $course = $courses[$i];
-                $discount_amount = $course['price'] * $same_season_rate;
-                
-                if (isset($item_mapping[$course['cart_key']])) {
-                    $item_id = $item_mapping[$course['cart_key']];
-                    $allocations[] = array(
-                        'item_id' => $item_id,
-                        'amount' => round($discount_amount, 2),
-                        'method' => 'same_season_course_rules',
-                        'season' => $season,
-                        'course_position' => $i + 1,
-                        'discount_rate' => $same_season_rate
-                    );
-                    
-                    error_log("InterSoccer Precise: Same-season course discount - Course position " . ($i + 1) . " in {$season} gets {$same_season_rate}% discount = {$discount_amount} CHF on item {$item_id}");
-                }
-            }
-        }
-    }
-    
-    return $allocations;
-}
-
-/**
- * Add discount reporting diagnostic tools
- */
-add_action('wp_ajax_intersoccer_debug_order_discounts', 'intersoccer_debug_order_discounts_ajax');
-function intersoccer_debug_order_discounts_ajax() {
-    if (!current_user_can('manage_options')) {
-        wp_die('Unauthorized');
-    }
-    
-    $order_id = intval($_POST['order_id'] ?? 0);
-    if (!$order_id) {
-        wp_send_json_error(['message' => 'Invalid order ID']);
-    }
-    
-    intersoccer_debug_discount_reporting($order_id);
-    $is_valid = intersoccer_validate_discount_reporting($order_id);
-    
-    wp_send_json_success([
-        'message' => "Debug completed for order {$order_id}",
-        'is_valid' => $is_valid,
-        'debug_logged' => true
-    ]);
-}
-
-error_log('InterSoccer: Loaded enhanced discount reporting system for finance team');
-?>
