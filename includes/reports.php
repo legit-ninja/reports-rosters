@@ -31,7 +31,7 @@ function intersoccer_enqueue_datepicker() {
         wp_enqueue_script('jquery-ui-datepicker');
         wp_enqueue_style('jquery-ui-css', '//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
         wp_enqueue_script('intersoccer-reports', plugin_dir_url(__FILE__) . '../js/reports.js', ['jquery'], '1.3.99', true);
-        wp_localize_script('intersoccer-reports', 'intersoccerReports', [
+        wp_localize_script('intersoccer-reports', 'intersoccer_reports_ajax', [
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('intersoccer_reports_filter'),
         ]);
@@ -138,7 +138,7 @@ function intersoccer_enqueue_datepicker() {
                     
                     var formData = {
                         action: "intersoccer_filter_report",
-                        nonce: intersoccerReports.nonce,
+                        nonce: intersoccer_reports_ajax.nonce,
                         start_date: $("#start_date").val(),
                         end_date: $("#end_date").val(),
                         year: $("#year").val(),
@@ -149,7 +149,7 @@ function intersoccer_enqueue_datepicker() {
                     };
                     
                     $.ajax({
-                        url: intersoccerReports.ajaxurl,
+                        url: intersoccer_reports_ajax.ajaxurl,
                         type: "POST",
                         data: formData,
                         timeout: 30000,
@@ -204,10 +204,10 @@ function intersoccer_enqueue_datepicker() {
                     };
                     
                     exportData.action = "intersoccer_export_booking_report";
-                    exportData.nonce = intersoccerReports.nonce;
+                    exportData.nonce = intersoccer_reports_ajax.nonce;
                     
                     $.ajax({
-                        url: intersoccerReports.ajaxurl,
+                        url: intersoccer_reports_ajax.ajaxurl,
                         type: "POST",
                         data: exportData,
                         timeout: 60000,

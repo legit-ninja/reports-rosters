@@ -9,11 +9,11 @@ jQuery(document).ready(function($) {
         var columns = $("input[name='columns[]']:checked").map(function() { return this.value; }).get();
         
         $.ajax({
-            url: intersoccerReports.ajaxurl,
+            url: intersoccer_reports_ajax.ajaxurl,
             type: "POST",
             data: {
                 action: "intersoccer_filter_report",
-                nonce: intersoccerReports.nonce,
+                nonce: intersoccer_reports_ajax.nonce,
                 start_date: start_date,
                 end_date: end_date,
                 year: year,

@@ -25,7 +25,7 @@ function intersoccer_render_reports_page() {
     wp_enqueue_style('jquery-ui-css', 'https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
     wp_enqueue_script('intersoccer-reports-js', plugin_dir_url(__FILE__) . '../js/reports.js', ['jquery'], '1.3.99', true);
 
-    // Localize script for AJAX
+    // Localize script for AJAX - use consistent object name
     wp_localize_script('intersoccer-reports-js', 'intersoccer_reports_ajax', array(
         'ajax_url' => admin_url('admin-ajax.php'),
         'nonce' => wp_create_nonce('intersoccer_reports_nonce')
@@ -79,10 +79,6 @@ function intersoccer_render_final_reports_page() {
 
     // Enqueue scripts and localize for AJAX
     wp_enqueue_script('jquery');
-    wp_localize_script('jquery', 'intersoccer_reports_ajax', array(
-        'ajax_url' => admin_url('admin-ajax.php'),
-        'nonce' => wp_create_nonce('intersoccer_reports_nonce')
-    ));
 
     $year = isset($_GET['year']) ? sanitize_text_field($_GET['year']) : date('Y');
     $activity_type = isset($_GET['activity_type']) ? sanitize_text_field($_GET['activity_type']) : 'Camp';
