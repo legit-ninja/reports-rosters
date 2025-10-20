@@ -79,6 +79,10 @@ function intersoccer_render_final_reports_page() {
 
     // Enqueue scripts and localize for AJAX
     wp_enqueue_script('jquery');
+    wp_localize_script('jquery', 'intersoccer_reports_ajax', array(
+        'ajax_url' => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('intersoccer_reports_nonce')
+    ));
 
     $year = isset($_GET['year']) ? sanitize_text_field($_GET['year']) : date('Y');
     $activity_type = isset($_GET['activity_type']) ? sanitize_text_field($_GET['activity_type']) : 'Camp';
