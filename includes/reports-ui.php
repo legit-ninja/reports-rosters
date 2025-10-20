@@ -79,7 +79,8 @@ function intersoccer_render_final_reports_page() {
 
     // Enqueue scripts and localize for AJAX
     wp_enqueue_script('jquery');
-    wp_localize_script('jquery', 'intersoccer_reports_ajax', array(
+    wp_enqueue_script('intersoccer-final-reports-js', '', ['jquery'], '1.0.0', true);
+    wp_localize_script('intersoccer-final-reports-js', 'intersoccer_reports_ajax', array(
         'ajax_url' => admin_url('admin-ajax.php'),
         'nonce' => wp_create_nonce('intersoccer_reports_nonce')
     ));
