@@ -23,7 +23,7 @@ function intersoccer_render_reports_page() {
     wp_enqueue_script('jquery');
     wp_enqueue_script('jquery-ui-datepicker');
     wp_enqueue_style('jquery-ui-css', 'https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
-    wp_enqueue_script('intersoccer-reports-js', plugin_dir_url(dirname(__FILE__)) . 'js/reports.js', array('jquery'), '1.0.0', true);
+    wp_enqueue_script('intersoccer-reports', plugin_dir_url(__FILE__) . '../js/reports.js', ['jquery'], '1.3.99', true);
 
     // Localize script for AJAX
     wp_localize_script('intersoccer-reports-js', 'intersoccer_reports_ajax', array(
