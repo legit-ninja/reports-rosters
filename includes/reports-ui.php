@@ -61,6 +61,52 @@ function intersoccer_render_reports_page() {
             $('.tab-content').hide();
             $(target).show();
         });
+
+        // Handle final reports export
+        $('#export-final-reports').click(function(e) {
+            e.preventDefault();
+            
+            var $button = $(this);
+            var originalText = $button.text();
+            
+            // Disable button and show loading
+            $button.prop('disabled', true).text('<?php _e('Exporting...', 'intersoccer-reports-rosters'); ?>');
+            
+            // Get current filter values
+            var year = $('input[name="year"]').val();
+            var activity_type = $('select[name="activity_type"]').val() || '<?php echo esc_js($activity_type); ?>';
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'intersoccer_export_final_reports',
+                    nonce: '<?php echo wp_create_nonce('export_final_reports_nonce'); ?>',
+                    year: year,
+                    activity_type: activity_type
+                },
+                success: function(response) {
+                    if (response.success) {
+                        // Create download link
+                        var link = document.createElement('a');
+                        link.href = 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,' + response.data.content;
+                        link.download = response.data.filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        
+                        $button.prop('disabled', false).text(originalText);
+                    } else {
+                        alert('<?php _e('Export failed:', 'intersoccer-reports-rosters'); ?> ' + response.data);
+                        $button.prop('disabled', false).text(originalText);
+                    }
+                },
+                error: function() {
+                    alert('<?php _e('Export failed. Please try again.', 'intersoccer-reports-rosters'); ?>');
+                    $button.prop('disabled', false).text(originalText);
+                }
+            });
+        });
     });
     </script>
     <?php
@@ -83,10 +129,6 @@ function intersoccer_render_final_reports_page() {
     // Determine current page for form action
     $current_page = isset($_GET['page']) ? $_GET['page'] : 'intersoccer-final-reports';
     $show_activity_type_filter = !in_array($current_page, ['intersoccer-final-camp-reports', 'intersoccer-final-course-reports']);
-
-    if (isset($_GET['action']) && $_GET['action'] === 'export' && check_admin_referer('export_final_reports_nonce')) {
-        intersoccer_export_final_reports_csv($year, $activity_type);
-    }
 
     $report_data = intersoccer_get_final_reports_data($year, $activity_type);
     $totals = intersoccer_calculate_final_reports_totals($report_data, $activity_type);
@@ -111,7 +153,7 @@ function intersoccer_render_final_reports_page() {
         </form>
 
         <div class="export-section" style="margin-bottom: 20px;">
-            <a href="<?php echo esc_url(wp_nonce_url(admin_url("admin.php?page=intersoccer-final-reports&year=" . urlencode($year) . "&activity_type=" . urlencode($activity_type) . "&action=export"), 'export_final_reports_nonce')); ?>" class="button button-primary"><?php _e('Export to Excel', 'intersoccer-reports-rosters'); ?></a>
+            <button type="button" id="export-final-reports" class="button button-primary"><?php _e('Export to Excel', 'intersoccer-reports-rosters'); ?></button>
         </div>
 
         <?php if (empty($report_data)): ?>

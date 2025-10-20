@@ -15,16 +15,18 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 /**
- * Export booking report CSV
+ * Export final reports Excel (AJAX handler)
  */
-/**
- * Export final reports Excel
- */
-function intersoccer_export_final_reports_csv($year, $activity_type) {
-    // Check user capabilities
+add_action('wp_ajax_intersoccer_export_final_reports', 'intersoccer_export_final_reports_callback');
+function intersoccer_export_final_reports_callback() {
+    check_ajax_referer('export_final_reports_nonce', 'nonce');
+
     if (!current_user_can('manage_options')) {
-        wp_die(__('You do not have sufficient permissions to access this page.'));
+        wp_send_json_error(__('You do not have sufficient permissions to export reports.', 'intersoccer-reports-rosters'));
     }
+
+    $year = isset($_POST['year']) ? absint($_POST['year']) : date('Y');
+    $activity_type = isset($_POST['activity_type']) ? sanitize_text_field($_POST['activity_type']) : 'Camp';
 
     // Include the data processing file
     require_once plugin_dir_path(__FILE__) . 'reports-data.php';
@@ -227,13 +229,24 @@ function intersoccer_export_final_reports_csv($year, $activity_type) {
         $sheet->getColumnDimension($col)->setAutoSize(true);
     }
 
-    // Generate and send Excel file
+    // Generate and send Excel file via AJAX
     $writer = new Xlsx($spreadsheet);
-    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    header('Content-Disposition: attachment; filename="' . $filename . '"');
-    header('Cache-Control: max-age=0');
-    header('Pragma: public');
-
+    ob_start();
     $writer->save('php://output');
-    exit;
+    $content = ob_get_clean();
+
+    wp_send_json_success([
+        'content' => base64_encode($content),
+        'filename' => $filename,
+        'record_count' => count($report_data),
+        'file_size' => strlen($content)
+    ]);
+}
+
+/**
+ * Export final reports Excel (legacy direct URL access - deprecated)
+ */
+function intersoccer_export_final_reports_csv($year, $activity_type) {
+    // This function is deprecated - use AJAX export instead
+    wp_die(__('Export functionality has been updated. Please refresh the page and try again.', 'intersoccer-reports-rosters'));
 }
