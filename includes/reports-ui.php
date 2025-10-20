@@ -80,6 +80,10 @@ function intersoccer_render_final_reports_page() {
     $year = isset($_GET['year']) ? sanitize_text_field($_GET['year']) : date('Y');
     $activity_type = isset($_GET['activity_type']) ? sanitize_text_field($_GET['activity_type']) : 'Camp';
 
+    // Determine current page for form action
+    $current_page = isset($_GET['page']) ? $_GET['page'] : 'intersoccer-final-reports';
+    $show_activity_type_filter = !in_array($current_page, ['intersoccer-final-camp-reports', 'intersoccer-final-course-reports']);
+
     if (isset($_GET['action']) && $_GET['action'] === 'export' && check_admin_referer('export_final_reports_nonce')) {
         intersoccer_export_final_reports_csv($year, $activity_type);
     }
@@ -93,14 +97,16 @@ function intersoccer_render_final_reports_page() {
         <p><?php _e('Aggregated booking numbers for camps and courses by week, canton, and venue.', 'intersoccer-reports-rosters'); ?></p>
 
         <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" style="margin-bottom: 20px;">
-            <input type="hidden" name="page" value="intersoccer-final-reports" />
+            <input type="hidden" name="page" value="<?php echo esc_attr($current_page); ?>" />
             <label for="year"><?php _e('Year:', 'intersoccer-reports-rosters'); ?></label>
             <input type="number" name="year" id="year" value="<?php echo esc_attr($year); ?>" min="2020" max="<?php echo date('Y') + 2; ?>" />
-            <label for="activity_type"><?php _e('Activity Type:', 'intersoccer-reports-rosters'); ?></label>
-            <select name="activity_type" id="activity_type">
-                <option value="Camp" <?php selected($activity_type, 'Camp'); ?>><?php _e('Camp', 'intersoccer-reports-rosters'); ?></option>
-                <option value="Course" <?php selected($activity_type, 'Course'); ?>><?php _e('Course', 'intersoccer-reports-rosters'); ?></option>
-            </select>
+            <?php if ($show_activity_type_filter): ?>
+                <label for="activity_type"><?php _e('Activity Type:', 'intersoccer-reports-rosters'); ?></label>
+                <select name="activity_type" id="activity_type">
+                    <option value="Camp" <?php selected($activity_type, 'Camp'); ?>><?php _e('Camp', 'intersoccer-reports-rosters'); ?></option>
+                    <option value="Course" <?php selected($activity_type, 'Course'); ?>><?php _e('Course', 'intersoccer-reports-rosters'); ?></option>
+                </select>
+            <?php endif; ?>
             <button type="submit" class="button"><?php _e('Filter', 'intersoccer-reports-rosters'); ?></button>
         </form>
 
