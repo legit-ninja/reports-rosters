@@ -96,6 +96,12 @@ function intersoccer_render_final_reports_page() {
     $totals = intersoccer_calculate_final_reports_totals($report_data, $activity_type);
 
     ?>
+    <script>
+    var intersoccer_reports_ajax = {
+        ajax_url: '<?php echo esc_js(admin_url('admin-ajax.php')); ?>',
+        nonce: '<?php echo esc_js(wp_create_nonce('intersoccer_reports_nonce')); ?>'
+    };
+    </script>
     <div class="wrap intersoccer-reports-rosters-final-reports">
         <h1><?php _e('📊 Final Numbers Report', 'intersoccer-reports-rosters'); ?></h1>
         <p><?php _e('Aggregated booking numbers for camps and courses by week, canton, and venue.', 'intersoccer-reports-rosters'); ?></p>
