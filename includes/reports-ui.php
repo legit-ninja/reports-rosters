@@ -203,32 +203,28 @@ function intersoccer_render_final_reports_page() {
                         <thead>
                             <tr>
                                 <th><?php _e('Category', 'intersoccer-reports-rosters'); ?></th>
-                                <th><?php _e('Full Week', 'intersoccer-reports-rosters'); ?></th>
-                                <th><?php _e('BuyClub', 'intersoccer-reports-rosters'); ?></th>
-                                <th><?php _e('Individual Days', 'intersoccer-reports-rosters'); ?></th>
+                                <th><?php _e('Direct Online', 'intersoccer-reports-rosters'); ?></th>
+                                <th><?php _e('Buy Club', 'intersoccer-reports-rosters'); ?></th>
                                 <th><?php _e('Total Registrations', 'intersoccer-reports-rosters'); ?></th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
                                 <td><?php _e('Full Day Camps', 'intersoccer-reports-rosters'); ?></td>
-                                <td><?php echo esc_html($totals['full_day']['full_week']); ?></td>
+                                <td><?php echo esc_html($totals['full_day']['online']); ?></td>
                                 <td><?php echo esc_html($totals['full_day']['buyclub']); ?></td>
-                                <td><?php echo esc_html($totals['full_day']['individual_days']); ?></td>
                                 <td><?php echo esc_html($totals['full_day']['total']); ?></td>
                             </tr>
                             <tr>
                                 <td><?php _e('Mini - Half Day Camps', 'intersoccer-reports-rosters'); ?></td>
-                                <td><?php echo esc_html($totals['mini']['full_week']); ?></td>
+                                <td><?php echo esc_html($totals['mini']['online']); ?></td>
                                 <td><?php echo esc_html($totals['mini']['buyclub']); ?></td>
-                                <td><?php echo esc_html($totals['mini']['individual_days']); ?></td>
                                 <td><?php echo esc_html($totals['mini']['total']); ?></td>
                             </tr>
                             <tr style="font-weight: bold; background: #e9ecef;">
                                 <td><?php _e('All Registrations', 'intersoccer-reports-rosters'); ?></td>
-                                <td><?php echo esc_html($totals['all']['full_week']); ?></td>
+                                <td><?php echo esc_html($totals['all']['online']); ?></td>
                                 <td><?php echo esc_html($totals['all']['buyclub']); ?></td>
-                                <td><?php echo esc_html($totals['all']['individual_days']); ?></td>
                                 <td><?php echo esc_html($totals['all']['total']); ?></td>
                             </tr>
                         </tbody>

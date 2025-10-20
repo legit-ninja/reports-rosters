@@ -103,30 +103,25 @@ function intersoccer_export_final_reports_callback() {
         $sheet->mergeCells('A' . $totals_start . ':D' . $totals_start);
 
         $totals_start++;
+        $sheet->setCellValue('A' . $totals_start, 'Category');
+        $sheet->setCellValue('E' . $totals_start, 'Direct Online');
+        $sheet->setCellValue('F' . $totals_start, 'Buy Club');
+        $sheet->setCellValue('G' . $totals_start, 'Total');
+        $sheet->getStyle('A' . $totals_start . ':G' . $totals_start)->getFont()->setBold(true);
+
+        $totals_start++;
         $sheet->setCellValue('A' . $totals_start, 'Full Day Camps');
         $sheet->fromArray([
-            $totals['full_day']['full_week'],
-            $totals['full_day']['individual_days']['Monday'],
-            $totals['full_day']['individual_days']['Tuesday'],
-            $totals['full_day']['individual_days']['Wednesday'],
-            $totals['full_day']['individual_days']['Thursday'],
-            $totals['full_day']['individual_days']['Friday'],
+            $totals['full_day']['online'],
             $totals['full_day']['buyclub'],
-            '',
             $totals['full_day']['total']
         ], null, 'E' . $totals_start);
 
         $totals_start++;
         $sheet->setCellValue('A' . $totals_start, 'Mini - Half Day Camps');
         $sheet->fromArray([
-            $totals['mini']['full_week'],
-            $totals['mini']['individual_days']['Monday'],
-            $totals['mini']['individual_days']['Tuesday'],
-            $totals['mini']['individual_days']['Wednesday'],
-            $totals['mini']['individual_days']['Thursday'],
-            $totals['mini']['individual_days']['Friday'],
+            $totals['mini']['online'],
             $totals['mini']['buyclub'],
-            '',
             $totals['mini']['total']
         ], null, 'E' . $totals_start);
 
@@ -134,14 +129,8 @@ function intersoccer_export_final_reports_callback() {
         $sheet->setCellValue('A' . $totals_start, 'All Camps');
         $sheet->getStyle('A' . $totals_start)->getFont()->setBold(true);
         $sheet->fromArray([
-            $totals['all']['full_week'],
-            $totals['all']['individual_days']['Monday'],
-            $totals['all']['individual_days']['Tuesday'],
-            $totals['all']['individual_days']['Wednesday'],
-            $totals['all']['individual_days']['Thursday'],
-            $totals['all']['individual_days']['Friday'],
+            $totals['all']['online'],
             $totals['all']['buyclub'],
-            '',
             $totals['all']['total']
         ], null, 'E' . $totals_start);
     } else {

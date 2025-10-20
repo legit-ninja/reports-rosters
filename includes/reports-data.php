@@ -357,9 +357,9 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
 function intersoccer_calculate_final_reports_totals($report_data, $activity_type) {
     if ($activity_type === 'Camp') {
         $totals = [
-            'full_day' => ['full_week' => 0, 'buyclub' => 0, 'individual_days' => ['Monday' => 0, 'Tuesday' => 0, 'Wednesday' => 0, 'Thursday' => 0, 'Friday' => 0], 'total' => 0],
-            'mini' => ['full_week' => 0, 'buyclub' => 0, 'individual_days' => ['Monday' => 0, 'Tuesday' => 0, 'Wednesday' => 0, 'Thursday' => 0, 'Friday' => 0], 'total' => 0],
-            'all' => ['full_week' => 0, 'buyclub' => 0, 'individual_days' => ['Monday' => 0, 'Tuesday' => 0, 'Wednesday' => 0, 'Thursday' => 0, 'Friday' => 0], 'total' => 0],
+            'full_day' => ['full_week' => 0, 'buyclub' => 0, 'individual_days' => ['Monday' => 0, 'Tuesday' => 0, 'Wednesday' => 0, 'Thursday' => 0, 'Friday' => 0], 'online' => 0, 'total' => 0],
+            'mini' => ['full_week' => 0, 'buyclub' => 0, 'individual_days' => ['Monday' => 0, 'Tuesday' => 0, 'Wednesday' => 0, 'Thursday' => 0, 'Friday' => 0], 'online' => 0, 'total' => 0],
+            'all' => ['full_week' => 0, 'buyclub' => 0, 'individual_days' => ['Monday' => 0, 'Tuesday' => 0, 'Wednesday' => 0, 'Thursday' => 0, 'Friday' => 0], 'online' => 0, 'total' => 0],
         ];
 
         foreach ($report_data as $week => $cantons) {
@@ -372,6 +372,7 @@ function intersoccer_calculate_final_reports_totals($report_data, $activity_type
                             foreach ($data['individual_days'] as $day => $count) {
                                 $totals['full_day']['individual_days'][$day] += $count;
                             }
+                            $totals['full_day']['online'] = $totals['full_day']['full_week'] + array_sum($totals['full_day']['individual_days']);
                             $totals['full_day']['total'] += $data['full_week'] + $data['buyclub'] + array_sum($data['individual_days']);
                         } elseif ($camp_type === 'Mini - Half Day') {
                             $totals['mini']['full_week'] += $data['full_week'];
@@ -379,6 +380,7 @@ function intersoccer_calculate_final_reports_totals($report_data, $activity_type
                             foreach ($data['individual_days'] as $day => $count) {
                                 $totals['mini']['individual_days'][$day] += $count;
                             }
+                            $totals['mini']['online'] = $totals['mini']['full_week'] + array_sum($totals['mini']['individual_days']);
                             $totals['mini']['total'] += $data['full_week'] + $data['buyclub'] + array_sum($data['individual_days']);
                         }
                     }
@@ -393,6 +395,7 @@ function intersoccer_calculate_final_reports_totals($report_data, $activity_type
             foreach ($totals[$type]['individual_days'] as $day => $count) {
                 $totals['all']['individual_days'][$day] += $count;
             }
+            $totals['all']['online'] += $totals[$type]['online'];
             $totals['all']['total'] += $totals[$type]['total'];
         }
 
