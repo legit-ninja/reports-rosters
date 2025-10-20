@@ -28,7 +28,7 @@ function intersoccer_enqueue_datepicker() {
     if (isset($_GET['page']) && $_GET['page'] === 'intersoccer-reports') {
         wp_enqueue_script('jquery-ui-datepicker');
         wp_enqueue_style('jquery-ui-css', '//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
-        wp_enqueue_script('intersoccer-reports', plugin_dir_url(__FILE__) . 'js/reports.js', ['jquery'], '1.3.99', true);
+        wp_enqueue_script('intersoccer-reports', plugin_dir_url(__FILE__) . '../js/reports.js', ['jquery'], '1.3.99', true);
         wp_localize_script('intersoccer-reports', 'intersoccerReports', [
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('intersoccer_reports_filter'),
@@ -531,7 +531,7 @@ function intersoccer_export_booking_report_callback() {
 
     try {
         // Get the EXACT same data that was displayed to the user using enhanced reporting
-        $report_data = intersoccer_get_booking_report_enhanced($start_date, $end_date, $year, '');
+        $report_data = intersoccer_get_enhanced_booking_report($start_date, $end_date, $year, '');
         
         if (empty($report_data['data'])) {
             wp_send_json_error(['message' => __('No data available for export with current filters.', 'intersoccer-reports-rosters')]);
