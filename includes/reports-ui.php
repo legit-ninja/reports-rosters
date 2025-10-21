@@ -129,32 +129,30 @@ function intersoccer_render_final_reports_page() {
         <?php else: ?>
             <?php if ($activity_type === 'Camp'): ?>
                 <!-- Camp Report Table -->
-                <table class="widefat fixed">
+                <table class="widefat fixed" style="table-layout: auto;">
                     <thead>
                         <tr>
                             <th rowspan="2"><?php _e('Week', 'intersoccer-reports-rosters'); ?></th>
                             <th rowspan="2"><?php _e('Canton', 'intersoccer-reports-rosters'); ?></th>
                             <th rowspan="2"><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
-                            <th colspan="9"><?php _e('Full Day Camps', 'intersoccer-reports-rosters'); ?></th>
-                            <th colspan="9"><?php _e('Mini - Half Day Camps', 'intersoccer-reports-rosters'); ?></th>
+                            <th colspan="8"><?php _e('Full Day Camps', 'intersoccer-reports-rosters'); ?></th>
+                            <th colspan="8"><?php _e('Mini - Half Day Camps', 'intersoccer-reports-rosters'); ?></th>
                         </tr>
                         <tr>
                             <th><?php _e('Full Week', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('M', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('W', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('F', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="width: 30px;"><?php _e('M', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="width: 30px;"><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="width: 30px;"><?php _e('W', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="width: 30px;"><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="width: 30px;"><?php _e('F', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Total min-max', 'intersoccer-reports-rosters'); ?></th>
-                            <th></th>
                             <th><?php _e('Full Week', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('M', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('W', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('F', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="width: 30px;"><?php _e('M', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="width: 30px;"><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="width: 30px;"><?php _e('W', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="width: 30px;"><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="width: 30px;"><?php _e('F', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Total min-max', 'intersoccer-reports-rosters'); ?></th>
-                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -177,13 +175,11 @@ function intersoccer_render_final_reports_page() {
                                             <td><?php echo esc_html($count); ?></td>
                                         <?php endforeach; ?>
                                         <td><?php echo esc_html($full_day['min_max']); ?></td>
-                                        <td></td>
                                         <td><?php echo esc_html($mini['full_week']); ?></td>
                                         <?php foreach ($mini['individual_days'] as $count): ?>
                                             <td><?php echo esc_html($count); ?></td>
                                         <?php endforeach; ?>
                                         <td><?php echo esc_html($mini['min_max']); ?></td>
-                                        <td></td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endforeach; ?>
