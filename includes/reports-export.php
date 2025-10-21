@@ -54,7 +54,6 @@ function intersoccer_export_final_reports_callback() {
             'Wednesday',
             'Thursday',
             'Friday',
-            'BuyClub',
             'Min-Max',
             'Total'
         );
@@ -85,9 +84,8 @@ function intersoccer_export_final_reports_callback() {
                             $data['individual_days']['Wednesday'],
                             $data['individual_days']['Thursday'],
                             $data['individual_days']['Friday'],
-                            $data['buyclub'],
                             $data['min_max'],
-                            $data['full_week'] + $data['buyclub'] + array_sum($data['individual_days'])
+                            $data['full_week'] + array_sum($data['individual_days'])
                         );
                         $sheet->fromArray($excel_row, null, 'A' . $row_index);
                         $row_index++;
@@ -105,15 +103,13 @@ function intersoccer_export_final_reports_callback() {
         $totals_start++;
         $sheet->setCellValue('A' . $totals_start, 'Category');
         $sheet->setCellValue('E' . $totals_start, 'Direct Online');
-        $sheet->setCellValue('F' . $totals_start, 'Buy Club');
-        $sheet->setCellValue('G' . $totals_start, 'Total');
-        $sheet->getStyle('A' . $totals_start . ':G' . $totals_start)->getFont()->setBold(true);
+        $sheet->setCellValue('F' . $totals_start, 'Total');
+        $sheet->getStyle('A' . $totals_start . ':F' . $totals_start)->getFont()->setBold(true);
 
         $totals_start++;
         $sheet->setCellValue('A' . $totals_start, 'Full Day Camps');
         $sheet->fromArray([
             $totals['full_day']['online'],
-            $totals['full_day']['buyclub'],
             $totals['full_day']['total']
         ], null, 'E' . $totals_start);
 
@@ -121,7 +117,6 @@ function intersoccer_export_final_reports_callback() {
         $sheet->setCellValue('A' . $totals_start, 'Mini - Half Day Camps');
         $sheet->fromArray([
             $totals['mini']['online'],
-            $totals['mini']['buyclub'],
             $totals['mini']['total']
         ], null, 'E' . $totals_start);
 
@@ -130,7 +125,6 @@ function intersoccer_export_final_reports_callback() {
         $sheet->getStyle('A' . $totals_start)->getFont()->setBold(true);
         $sheet->fromArray([
             $totals['all']['online'],
-            $totals['all']['buyclub'],
             $totals['all']['total']
         ], null, 'E' . $totals_start);
     } else {
@@ -138,11 +132,9 @@ function intersoccer_export_final_reports_callback() {
         $headers = array(
             'Region',
             'Course Name',
+            'Course Day',
             'Direct Online',
-            'BuyClub',
-            'Total',
-            'Final',
-            'Girls Free'
+            'Total'
         );
         $sheet->fromArray($headers, null, 'A1');
 
@@ -157,18 +149,18 @@ function intersoccer_export_final_reports_callback() {
         // Course Excel data
         $row_index = 2;
         foreach ($report_data as $region => $courses) {
-            foreach ($courses as $course_name => $data) {
-                $excel_row = array(
-                    $region,
-                    $course_name,
-                    $data['online'],
-                    $data['buyclub'],
-                    $data['total'],
-                    $data['final'],
-                    $data['girls_free']
-                );
-                $sheet->fromArray($excel_row, null, 'A' . $row_index);
-                $row_index++;
+            foreach ($courses as $course_name => $course_days) {
+                foreach ($course_days as $course_day => $course_data) {
+                    $excel_row = array(
+                        $region,
+                        $course_name,
+                        $course_day,
+                        $course_data['online'],
+                        $course_data['total']
+                    );
+                    $sheet->fromArray($excel_row, null, 'A' . $row_index);
+                    $row_index++;
+                }
             }
         }
 
@@ -176,45 +168,22 @@ function intersoccer_export_final_reports_callback() {
         $totals_start = $row_index + 2;
         $sheet->setCellValue('A' . $totals_start, 'TOTALS');
         $sheet->getStyle('A' . $totals_start)->getFont()->setBold(true)->setSize(14)->getColor()->setARGB('FF0073AA');
-        $sheet->mergeCells('A' . $totals_start . ':B' . $totals_start);
+        $sheet->mergeCells('A' . $totals_start . ':C' . $totals_start);
 
         $totals_start++;
-        foreach ($totals['regions'] as $region => $region_total) {
-            $sheet->setCellValue('A' . $totals_start, $region);
-            $sheet->fromArray([
-                $region_total['online'],
-                $region_total['buyclub'],
-                $region_total['total'],
-                $region_total['final'],
-                $region_total['girls_free']
-            ], null, 'C' . $totals_start);
-            $totals_start++;
-        }
+        $sheet->setCellValue('A' . $totals_start, 'Category');
+        $sheet->setCellValue('D' . $totals_start, 'Online');
+        $sheet->setCellValue('E' . $totals_start, 'Total');
+        $sheet->getStyle('A' . $totals_start . ':E' . $totals_start)->getFont()->setBold(true);
 
-        $sheet->setCellValue('A' . $totals_start, 'TOTAL:');
-        $sheet->getStyle('A' . $totals_start)->getFont()->setBold(true);
-        $sheet->fromArray([
-            $totals['all']['online'],
-            $totals['all']['buyclub'],
-            $totals['all']['total'],
-            $totals['all']['final'],
-            $totals['all']['girls_free']
-        ], null, 'C' . $totals_start);
     }
 
-    // Add generation info
-    $info_row = $totals_start + 3;
-    $generation_info = 'Report Generated: ' . date('Y-m-d H:i:s') . ' | Year: ' . $year . ' | Activity: ' . $activity_type;
-    $sheet->setCellValue('A' . $info_row, $generation_info);
-    $sheet->getStyle('A' . $info_row)->getFont()->setItalic(true)->setSize(10);
-    $sheet->mergeCells('A' . $info_row . ':D' . $info_row);
-
-    // Auto-size columns
-    foreach (range('A', chr(64 + max(count($headers), 13))) as $col) {
-        $sheet->getColumnDimension($col)->setAutoSize(true);
+    // Set column widths
+    foreach (range('A', $sheet->getHighestDataColumn()) as $column) {
+        $sheet->getColumnDimension($column)->setAutoSize(true);
     }
 
-    // Generate and send Excel file via AJAX (like booking report)
+    // Generate and send file content directly
     $writer = new Xlsx($spreadsheet);
     ob_start();
     $writer->save('php://output');
@@ -222,16 +191,6 @@ function intersoccer_export_final_reports_callback() {
 
     wp_send_json_success([
         'content' => base64_encode($content),
-        'filename' => $filename,
-        'record_count' => count($report_data),
-        'file_size' => strlen($content)
+        'filename' => $filename
     ]);
-}
-
-/**
- * Export final reports Excel (legacy direct URL access - deprecated)
- */
-function intersoccer_export_final_reports_csv($year, $activity_type) {
-    // This function is deprecated - use AJAX export instead
-    wp_die(__('Export functionality has been updated. Please refresh the page and try again.', 'intersoccer-reports-rosters'));
 }
