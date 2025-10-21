@@ -129,61 +129,167 @@ function intersoccer_render_final_reports_page() {
         <?php else: ?>
             <?php if ($activity_type === 'Camp'): ?>
                 <!-- Camp Report Table -->
-                <table class="widefat fixed" style="table-layout: auto;">
+                <style>
+                .camp-reports-table {
+                    table-layout: fixed;
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 12px;
+                }
+                .camp-reports-table th, .camp-reports-table td {
+                    border: 1px solid #ddd;
+                    padding: 4px 8px;
+                    text-align: center;
+                }
+                .camp-reports-table col:nth-child(4),
+                .camp-reports-table col:nth-child(11) {
+                    width: 80px; /* Full Week columns */
+                }
+                .camp-reports-table col:nth-child(5), .camp-reports-table col:nth-child(6),
+                .camp-reports-table col:nth-child(7), .camp-reports-table col:nth-child(8),
+                .camp-reports-table col:nth-child(9),
+                .camp-reports-table col:nth-child(12), .camp-reports-table col:nth-child(13),
+                .camp-reports-table col:nth-child(14), .camp-reports-table col:nth-child(15),
+                .camp-reports-table col:nth-child(16) {
+                    width: 30px; /* Day columns (M, T, W, T, F) */
+                }
+                .camp-reports-table col:nth-child(10),
+                .camp-reports-table col:nth-child(17) {
+                    width: 80px; /* Total min-max columns */
+                }
+                </style>
+                <table class="widefat fixed striped camp-reports-table">
+                    <colgroup>
+                        <col style="width: 120px;"> <!-- Week -->
+                        <col style="width: 120px;"> <!-- Canton -->
+                        <col style="width: 120px;"> <!-- Venue -->
+                        <col style="width: 80px;">  <!-- Full Day Full Week -->
+                        <col style="width: 30px;">  <!-- Full Day M -->
+                        <col style="width: 30px;">  <!-- Full Day T -->
+                        <col style="width: 30px;">  <!-- Full Day W -->
+                        <col style="width: 30px;">  <!-- Full Day T -->
+                        <col style="width: 30px;">  <!-- Full Day F -->
+                        <col style="width: 80px;">  <!-- Full Day Total -->
+                        <col style="width: 80px;">  <!-- Mini Full Week -->
+                        <col style="width: 30px;">  <!-- Mini M -->
+                        <col style="width: 30px;">  <!-- Mini T -->
+                        <col style="width: 30px;">  <!-- Mini W -->
+                        <col style="width: 30px;">  <!-- Mini T -->
+                        <col style="width: 30px;">  <!-- Mini F -->
+                        <col style="width: 80px;">  <!-- Mini Total -->
+                    </colgroup>
                     <thead>
-                        <tr>
-                            <th rowspan="2"><?php _e('Week', 'intersoccer-reports-rosters'); ?></th>
-                            <th rowspan="2"><?php _e('Canton', 'intersoccer-reports-rosters'); ?></th>
-                            <th rowspan="2"><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
-                            <th colspan="8"><?php _e('Full Day Camps', 'intersoccer-reports-rosters'); ?></th>
-                            <th colspan="8"><?php _e('Mini - Half Day Camps', 'intersoccer-reports-rosters'); ?></th>
+                        <tr style="background-color: #f1f1f1;">
+                            <th rowspan="2" style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php _e('Week', 'intersoccer-reports-rosters'); ?></th>
+                            <th rowspan="2" style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php _e('Canton', 'intersoccer-reports-rosters'); ?></th>
+                            <th rowspan="2" style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
+                            <th colspan="7" style="border: 1px solid #ddd; padding: 8px; text-align: center; background-color: #e8f4f8;"><?php _e('Full Day Camps', 'intersoccer-reports-rosters'); ?></th>
+                            <th colspan="7" style="border: 1px solid #ddd; padding: 8px; text-align: center; background-color: #f8e8f4;"><?php _e('Mini - Half Day Camps', 'intersoccer-reports-rosters'); ?></th>
                         </tr>
-                        <tr>
-                            <th><?php _e('Full Week', 'intersoccer-reports-rosters'); ?></th>
-                            <th style="width: 30px;"><?php _e('M', 'intersoccer-reports-rosters'); ?></th>
-                            <th style="width: 30px;"><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
-                            <th style="width: 30px;"><?php _e('W', 'intersoccer-reports-rosters'); ?></th>
-                            <th style="width: 30px;"><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
-                            <th style="width: 30px;"><?php _e('F', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Total min-max', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Full Week', 'intersoccer-reports-rosters'); ?></th>
-                            <th style="width: 30px;"><?php _e('M', 'intersoccer-reports-rosters'); ?></th>
-                            <th style="width: 30px;"><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
-                            <th style="width: 30px;"><?php _e('W', 'intersoccer-reports-rosters'); ?></th>
-                            <th style="width: 30px;"><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
-                            <th style="width: 30px;"><?php _e('F', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Total min-max', 'intersoccer-reports-rosters'); ?></th>
+                        <tr style="background-color: #f8f8f8;">
+                            <th style="border: 1px solid #ddd; padding: 4px; text-align: center;"><?php _e('Full Week', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="border: 1px solid #ddd; padding: 4px; text-align: center;"><?php _e('M', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="border: 1px solid #ddd; padding: 4px; text-align: center;"><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="border: 1px solid #ddd; padding: 4px; text-align: center;"><?php _e('W', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="border: 1px solid #ddd; padding: 4px; text-align: center;"><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="border: 1px solid #ddd; padding: 4px; text-align: center;"><?php _e('F', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="border: 1px solid #ddd; padding: 4px; text-align: center;"><?php _e('Total min-max', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="border: 1px solid #ddd; padding: 4px; text-align: center;"><?php _e('Full Week', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="border: 1px solid #ddd; padding: 4px; text-align: center;"><?php _e('M', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="border: 1px solid #ddd; padding: 4px; text-align: center;"><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="border: 1px solid #ddd; padding: 4px; text-align: center;"><?php _e('W', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="border: 1px solid #ddd; padding: 4px; text-align: center;"><?php _e('T', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="border: 1px solid #ddd; padding: 4px; text-align: center;"><?php _e('F', 'intersoccer-reports-rosters'); ?></th>
+                            <th style="border: 1px solid #ddd; padding: 4px; text-align: center;"><?php _e('Total min-max', 'intersoccer-reports-rosters'); ?></th>
                         </tr>
                     </thead>
                     <tbody>
+                        <?php 
+                        $previous_week = null;
+                        $previous_canton = null;
+                        ?>
                         <?php foreach ($report_data as $week => $cantons): ?>
+                            <?php 
+                            // Calculate week totals
+                            $week_totals = [
+                                'full_day' => ['full_week' => 0, 'individual_days' => ['Monday' => 0, 'Tuesday' => 0, 'Wednesday' => 0, 'Thursday' => 0, 'Friday' => 0]],
+                                'mini' => ['full_week' => 0, 'individual_days' => ['Monday' => 0, 'Tuesday' => 0, 'Wednesday' => 0, 'Thursday' => 0, 'Friday' => 0]]
+                            ];
+                            
+                            foreach ($cantons as $canton => $venues) {
+                                foreach ($venues as $venue => $data) {
+                                    $full_day = $data['Full Day'] ?? ['full_week' => 0, 'individual_days' => array_fill_keys(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], 0)];
+                                    $mini = $data['Mini - Half Day'] ?? ['full_week' => 0, 'individual_days' => array_fill_keys(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], 0)];
+                                    
+                                    $week_totals['full_day']['full_week'] += $full_day['full_week'];
+                                    foreach ($full_day['individual_days'] as $day => $count) {
+                                        $week_totals['full_day']['individual_days'][$day] += $count;
+                                    }
+                                    
+                                    $week_totals['mini']['full_week'] += $mini['full_week'];
+                                    foreach ($mini['individual_days'] as $day => $count) {
+                                        $week_totals['mini']['individual_days'][$day] += $count;
+                                    }
+                                }
+                            }
+                            ?>
+                            
+                            <!-- Week Total Row -->
+                            <tr style="background-color: #f0f0f0; font-weight: bold;">
+                                <td colspan="3" style="text-align: left; padding: 12px;"><?php echo esc_html($week); ?> - TOTAL</td>
+                                <!-- Full Day Totals -->
+                                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['full_day']['full_week']); ?></td>
+                                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['full_day']['individual_days']['Monday']); ?></td>
+                                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['full_day']['individual_days']['Tuesday']); ?></td>
+                                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['full_day']['individual_days']['Wednesday']); ?></td>
+                                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['full_day']['individual_days']['Thursday']); ?></td>
+                                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['full_day']['individual_days']['Friday']); ?></td>
+                                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php 
+                                    $full_day_counts = array_values($week_totals['full_day']['individual_days']);
+                                    $full_day_min = !empty($full_day_counts) ? min($full_day_counts) : 0;
+                                    $full_day_max = !empty($full_day_counts) ? max($full_day_counts) : 0;
+                                    echo esc_html($full_day_min . '-' . $full_day_max);
+                                ?></td>
+                                <!-- Mini Totals -->
+                                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['mini']['full_week']); ?></td>
+                                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['mini']['individual_days']['Monday']); ?></td>
+                                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['mini']['individual_days']['Tuesday']); ?></td>
+                                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['mini']['individual_days']['Wednesday']); ?></td>
+                                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['mini']['individual_days']['Thursday']); ?></td>
+                                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['mini']['individual_days']['Friday']); ?></td>
+                                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php 
+                                    $mini_counts = array_values($week_totals['mini']['individual_days']);
+                                    $mini_min = !empty($mini_counts) ? min($mini_counts) : 0;
+                                    $mini_max = !empty($mini_counts) ? max($mini_counts) : 0;
+                                    echo esc_html($mini_min . '-' . $mini_max);
+                                ?></td>
+                            </tr>
+                            
                             <?php foreach ($cantons as $canton => $venues): ?>
                                 <?php foreach ($venues as $venue => $data): ?>
-                                    <tr>
-                                        <?php if (!isset($current_week) || $current_week !== $week): ?>
-                                            <td rowspan="<?php echo intersoccer_get_rowspan_for_week($report_data[$week]); ?>" style="background-color: #f0f0f0; font-weight: bold;"><?php echo esc_html($week); ?></td>
-                                            <?php $current_week = $week; ?>
-                                        <?php endif; ?>
-                                        <td><?php echo esc_html($canton); ?></td>
-                                        <td><?php echo esc_html($venue); ?></td>
+                                    <tr style="border: 1px solid #ddd;">
+                                        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"></td>
+                                        <td style="background-color: #f8f9fa; font-weight: bold; border: 1px solid #ddd; padding: 8px; text-align: center; <?php if ($previous_canton === $canton && $previous_week === $week) echo 'visibility: hidden;'; ?>"><?php echo esc_html($canton); ?></td>
+                                        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($venue); ?></td>
                                         <?php
                                         $full_day = $data['Full Day'] ?? ['full_week' => 0, 'individual_days' => array_fill_keys(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], 0), 'min_max' => '0-0'];
                                         $mini = $data['Mini - Half Day'] ?? ['full_week' => 0, 'individual_days' => array_fill_keys(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], 0), 'min_max' => '0-0'];
                                         ?>
-                                        <td><?php echo esc_html($full_day['full_week']); ?></td>
+                                        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($full_day['full_week']); ?></td>
                                         <?php foreach ($full_day['individual_days'] as $count): ?>
-                                            <td><?php echo esc_html($count); ?></td>
+                                            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($count); ?></td>
                                         <?php endforeach; ?>
-                                        <td><?php echo esc_html($full_day['min_max']); ?></td>
-                                        <td><?php echo esc_html($mini['full_week']); ?></td>
+                                        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($full_day['min_max']); ?></td>
+                                        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($mini['full_week']); ?></td>
                                         <?php foreach ($mini['individual_days'] as $count): ?>
-                                            <td><?php echo esc_html($count); ?></td>
+                                            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($count); ?></td>
                                         <?php endforeach; ?>
-                                        <td><?php echo esc_html($mini['min_max']); ?></td>
+                                        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($mini['min_max']); ?></td>
                                     </tr>
+                                    <?php $previous_canton = $canton; ?>
                                 <?php endforeach; ?>
                             <?php endforeach; ?>
-                            <?php unset($current_week); ?>
+                            <?php $previous_week = $week; ?>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
@@ -381,6 +487,17 @@ function intersoccer_get_rowspan_for_week($week_data) {
         foreach ($cantons as $venues) {
             $count += count($venues);
         }
+    }
+    return $count;
+}
+
+/**
+ * Get rowspan for a canton in the final reports table.
+ */
+function intersoccer_get_rowspan_for_canton($canton_data) {
+    $count = 0;
+    foreach ($canton_data as $venues) {
+        $count += count($venues);
     }
     return $count;
 }
