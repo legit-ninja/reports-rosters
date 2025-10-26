@@ -1,2 +1,4 @@
 *.txt
 *.log
+debug_*.php
+temp_*.php
