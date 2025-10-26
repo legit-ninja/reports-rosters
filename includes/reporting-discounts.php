@@ -306,6 +306,8 @@ function intersoccer_reporting_allocate_discounts_to_order_items($order_id, $ord
 function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '', $year = '', $region = '') {
     global $wpdb;
     
+    error_log("InterSoccer Enhanced Report: Called with start_date=$start_date, end_date=$end_date, year=$year, region=$region");
+    
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
     $posts_table = $wpdb->prefix . 'posts';
     $postmeta_table = $wpdb->prefix . 'postmeta';
@@ -332,6 +334,12 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
         player_age.meta_value as age,
         player_gender.meta_value as gender,
         
+        -- Booking details
+        booking_type_meta.meta_value as booking_type,
+        COALESCE(days_selected_meta.meta_value, days_of_week_meta.meta_value) as selected_days,
+        age_group_meta.meta_value as age_group,
+        activity_type_meta.meta_value as activity_type,
+        
         -- Venue and location
         venue_meta.meta_value as venue,
         canton_region.meta_value as canton_region,
@@ -348,7 +356,7 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
         COALESCE(ABS(CAST(refunded.refunded_total AS DECIMAL(10,2))), 0) AS reimbursement
         
     FROM $posts_table p
-    LEFT JOIN $order_items_table oi ON p.ID = oi.order_id
+    LEFT JOIN $order_items_table oi ON p.ID = oi.order_id AND oi.order_item_type = 'line_item'
     LEFT JOIN $order_itemmeta_table product_meta ON oi.order_item_id = product_meta.order_item_id
         AND product_meta.meta_key = '_product_id'
     
@@ -367,6 +375,18 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
         AND player_age.meta_key = 'Player Age'
     LEFT JOIN $order_itemmeta_table player_gender ON oi.order_item_id = player_gender.order_item_id
         AND player_gender.meta_key = 'Player Gender'
+    
+    -- Booking details
+    LEFT JOIN $order_itemmeta_table booking_type_meta ON oi.order_item_id = booking_type_meta.order_item_id
+        AND booking_type_meta.meta_key = 'pa_booking-type'
+    LEFT JOIN $order_itemmeta_table days_selected_meta ON oi.order_item_id = days_selected_meta.order_item_id
+        AND days_selected_meta.meta_key = 'Days Selected'
+    LEFT JOIN $order_itemmeta_table days_of_week_meta ON oi.order_item_id = days_of_week_meta.order_item_id
+        AND days_of_week_meta.meta_key = 'Days of Week'
+    LEFT JOIN $order_itemmeta_table age_group_meta ON oi.order_item_id = age_group_meta.order_item_id
+        AND age_group_meta.meta_key = 'pa_age-group'
+    LEFT JOIN $order_itemmeta_table activity_type_meta ON oi.order_item_id = activity_type_meta.order_item_id
+        AND (activity_type_meta.meta_key = 'Activity Type' OR activity_type_meta.meta_key = 'pa_activity-type')
     
     -- Venue and location
     LEFT JOIN $order_itemmeta_table venue_meta ON oi.order_item_id = venue_meta.order_item_id 
@@ -408,9 +428,9 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
     
     WHERE p.post_type = 'shop_order' 
         AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold', 'wc-refunded')
-        -- Filter for orders with assigned attendees
-        AND assigned_attendee.meta_value IS NOT NULL
-        AND assigned_attendee.meta_value != ''";
+        -- Include all orders (assigned attendee is now optional)
+        -- AND assigned_attendee.meta_value IS NOT NULL
+        -- AND assigned_attendee.meta_value != ''";
 
     $params = array();
 
@@ -516,4 +536,171 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
     }
     
     return array('data' => $data, 'totals' => $totals);
+}
+
+/**
+ * Get simplified booking report data for financial reporting
+ * Focuses on revenue per participant by querying WooCommerce orders directly
+ */
+function intersoccer_get_financial_booking_report($start_date = '', $end_date = '', $year = '', $region = '') {
+    error_log("=== InterSoccer Financial Report: Called with start_date=$start_date, end_date=$end_date, year=$year, region=$region ===");
+    global $wpdb;
+
+    // Build date filter
+    $date_where = '';
+    if (!empty($start_date) && !empty($end_date)) {
+        $date_where = $wpdb->prepare("AND p.post_date >= %s AND p.post_date <= %s", $start_date, $end_date);
+    } elseif (!empty($year)) {
+        $date_where = $wpdb->prepare("AND YEAR(p.post_date) = %d", $year);
+    }
+
+    // Build region filter (if needed)
+    $region_where = '';
+    if (!empty($region) && $region !== 'all') {
+        // This would need to be implemented based on how regions are stored
+        // For now, we'll skip region filtering
+    }
+
+    // Query WooCommerce orders with order items
+    $query = "
+        SELECT
+            p.ID as order_id,
+            p.post_date as order_date,
+            p.post_status as order_status,
+            oi.order_item_id,
+            oi.order_item_name,
+            oim_product.meta_value as product_id,
+            oim_variation.meta_value as variation_id,
+            oim_qty.meta_value as quantity,
+            oim_total.meta_value as line_total,
+            oim_subtotal.meta_value as line_subtotal
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->prefix}woocommerce_order_items oi ON p.ID = oi.order_id
+        LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim_product ON oi.order_item_id = oim_product.order_item_id AND oim_product.meta_key = '_product_id'
+        LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim_variation ON oi.order_item_id = oim_variation.order_item_id AND oim_variation.meta_key = '_variation_id'
+        LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim_qty ON oi.order_item_id = oim_qty.order_item_id AND oim_qty.meta_key = '_qty'
+        LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim_total ON oi.order_item_id = oim_total.order_item_id AND oim_total.meta_key = '_line_total'
+        LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim_subtotal ON oi.order_item_id = oim_subtotal.order_item_id AND oim_subtotal.meta_key = '_line_subtotal'
+        WHERE p.post_type = 'shop_order'
+        AND p.post_status IN ('wc-completed', 'wc-processing')
+        {$date_where}
+        ORDER BY p.post_date DESC, p.ID DESC
+    ";
+
+    $results = $wpdb->get_results($query);
+    error_log("=== InterSoccer Financial Report: Query returned " . count($results) . " results ===");
+
+    $data = [];
+    $totals = [
+        'bookings' => 0,
+        'base_price' => 0,
+        'discount_amount' => 0,
+        'final_price' => 0,
+        'reimbursement' => 0
+    ];
+
+    foreach ($results as $row) {
+        // Skip if this is a BuyClub order (check order meta)
+        $buyclub_check = $wpdb->get_var($wpdb->prepare(
+            "SELECT meta_value FROM {$wpdb->postmeta} WHERE post_id = %d AND meta_key = '_billing_company'",
+            $row->order_id
+        ));
+        if (stripos($buyclub_check, 'buyclub') !== false) {
+            continue;
+        }
+
+        // Get additional metadata for this order item
+        $item_meta = $wpdb->get_results($wpdb->prepare(
+            "SELECT meta_key, meta_value FROM {$wpdb->prefix}woocommerce_order_itemmeta
+             WHERE order_item_id = %d",
+            $row->order_item_id
+        ));
+
+        $meta_data = [];
+        foreach ($item_meta as $meta) {
+            $meta_data[$meta->meta_key] = $meta->meta_value;
+        }
+
+        // Extract participant information
+        $attendee_name = '';
+        $attendee_age = '';
+        $attendee_gender = '';
+        $parent_phone = '';
+        $selected_days = '';
+        $age_group = '';
+        $activity_type = '';
+        $venue = '';
+        $discount_codes = '';
+
+        // Check for various metadata keys that might contain participant info
+        if (isset($meta_data['Attendee Name'])) $attendee_name = $meta_data['Attendee Name'];
+        if (isset($meta_data['Child Name'])) $attendee_name = $meta_data['Child Name'];
+        if (isset($meta_data['Player Name'])) $attendee_name = $meta_data['Player Name'];
+
+        if (isset($meta_data['Attendee Age'])) $attendee_age = $meta_data['Attendee Age'];
+        if (isset($meta_data['Child Age'])) $attendee_age = $meta_data['Child Age'];
+
+        if (isset($meta_data['Attendee Gender'])) $attendee_gender = $meta_data['Attendee Gender'];
+        if (isset($meta_data['Child Gender'])) $attendee_gender = $meta_data['Child Gender'];
+
+        if (isset($meta_data['Emergency Phone'])) $parent_phone = $meta_data['Emergency Phone'];
+        if (isset($meta_data['Parent Phone'])) $parent_phone = $meta_data['Parent Phone'];
+
+        if (isset($meta_data['Days Selected'])) $selected_days = $meta_data['Days Selected'];
+        if (isset($meta_data['Days of Week'])) $selected_days = $meta_data['Days of Week'];
+
+        if (isset($meta_data['pa_age-group'])) $age_group = $meta_data['pa_age-group'];
+        if (isset($meta_data['Age Group'])) $age_group = $meta_data['Age Group'];
+
+        if (isset($meta_data['pa_booking-type'])) $activity_type = $meta_data['pa_booking-type'];
+        if (isset($meta_data['Activity Type'])) $activity_type = $meta_data['Activity Type'];
+
+        if (isset($meta_data['pa_intersoccer-venues'])) $venue = $meta_data['pa_intersoccer-venues'];
+        if (isset($meta_data['InterSoccer Venues'])) $venue = $meta_data['InterSoccer Venues'];
+
+        // Calculate pricing
+        $base_price = floatval($row->line_subtotal);
+        $final_price = floatval($row->line_total);
+        $discount_amount = $base_price - $final_price;
+
+        // Get discount codes used (from order coupons)
+        $coupons = $wpdb->get_col($wpdb->prepare(
+            "SELECT order_item_name FROM {$wpdb->prefix}woocommerce_order_items
+             WHERE order_id = %d AND order_item_type = 'coupon'",
+            $row->order_id
+        ));
+        $discount_codes = implode(', ', $coupons);
+
+        // Calculate Stripe fee (approximate 2.9% + 0.30 CHF)
+        $stripe_fee = $final_price > 0 ? ($final_price * 0.029) + 0.30 : 0;
+
+        $data[] = [
+            'ref' => $row->order_id . '-' . $row->order_item_id,
+            'booked' => date('Y-m-d', strtotime($row->order_date)),
+            'base_price' => number_format($base_price, 2),
+            'discount_amount' => number_format($discount_amount, 2),
+            'stripe_fee' => number_format($stripe_fee, 2),
+            'final_price' => number_format($final_price, 2),
+            'discount_codes' => $discount_codes,
+            'class_name' => $row->order_item_name,
+            'venue' => $venue,
+            'booker_email' => get_post_meta($row->order_id, '_billing_email', true),
+            'attendee_name' => $attendee_name,
+            'attendee_age' => $attendee_age,
+            'attendee_gender' => $attendee_gender,
+            'parent_phone' => $parent_phone,
+            'selected_days' => $selected_days,
+            'age_group' => $age_group,
+            'activity_type' => $activity_type
+        ];
+
+        // Update totals
+        $totals['bookings'] += intval($row->quantity);
+        $totals['base_price'] += $base_price;
+        $totals['discount_amount'] += $discount_amount;
+        $totals['final_price'] += $final_price;
+    }
+
+    error_log("=== InterSoccer Financial Report: Returning " . count($data) . " records with totals: " . json_encode($totals) . " ===");
+    return ['data' => $data, 'totals' => $totals];
 }
