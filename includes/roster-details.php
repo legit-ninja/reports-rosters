@@ -129,44 +129,39 @@ function intersoccer_render_roster_details_page() {
         $query_params = array_merge($query_params, $variation_ids);
     }
 
+    // If event_signature is provided and valid, use it as the primary filter
     if ($event_signature && $event_signature !== 'N/A') {
         $where_clauses[] = "(r.event_signature = %s OR r.event_signature LIKE %s OR (r.event_signature IS NULL AND %s = 'N/A'))";
         $query_params[] = $event_signature;
         $query_params[] = '%' . $wpdb->esc_like($event_signature) . '%';
         $query_params[] = $event_signature;
-    }
+    } else {
+        // When event_signature is empty, use strict exact matching for key grouping parameters
+        // This prevents over-broad matching that can include multiple events
+        if ($camp_terms && $camp_terms !== 'N/A') {
+            $where_clauses[] = "r.camp_terms = %s";
+            $query_params[] = $camp_terms;
+        }
 
-    if ($camp_terms && $camp_terms !== 'N/A') {
-        $where_clauses[] = "(r.camp_terms = %s OR r.camp_terms LIKE %s OR (r.camp_terms IS NULL AND %s = 'N/A'))";
-        $query_params[] = $camp_terms;
-        $query_params[] = '%' . $wpdb->esc_like($camp_terms) . '%';
-        $query_params[] = $camp_terms;
-    }
+        if ($course_day && $course_day !== 'N/A') {
+            $where_clauses[] = "r.course_day = %s";
+            $query_params[] = $course_day;
+        }
 
-    if ($course_day && $course_day !== 'N/A') {
-        $where_clauses[] = "(r.course_day = %s OR r.course_day LIKE %s OR (r.course_day IS NULL AND %s = 'N/A'))";
-        $query_params[] = $course_day;
-        $query_params[] = '%' . $wpdb->esc_like($course_day) . '%';
-        $query_params[] = $course_day;
-    }
+        if ($venue) {
+            $where_clauses[] = "r.venue = %s";
+            $query_params[] = $venue;
+        }
 
-    if ($venue) {
-        $where_clauses[] = "(r.venue = %s OR r.venue LIKE %s OR (r.venue IS NULL AND %s = 'N/A'))";
-        $query_params[] = $venue;
-        $query_params[] = '%' . $wpdb->esc_like($venue) . '%';
-        $query_params[] = $venue;
-    }
+        if ($age_group) {
+            $where_clauses[] = "r.age_group = %s";
+            $query_params[] = $age_group;
+        }
 
-    if ($age_group) {
-        $where_clauses[] = "(r.age_group = %s OR r.age_group LIKE %s)";
-        $query_params[] = $age_group;
-        $query_params[] = '%' . $wpdb->esc_like($age_group) . '%';
-    }
-
-    if ($times) {
-        $where_clauses[] = "(r.times = %s OR (r.times IS NULL AND %s = 'N/A'))";
-        $query_params[] = $times;
-        $query_params[] = $times;
+        if ($times) {
+            $where_clauses[] = "r.times = %s";
+            $query_params[] = $times;
+        }
     }
 
     if ($season) { 
@@ -211,7 +206,7 @@ function intersoccer_render_roster_details_page() {
     $base_roster = $rosters[0];
     
     // Determine if the event is camp-like - SIMPLIFIED
-    $is_camp_like = ($base_roster->activity_type === 'Camp' || !empty($base_roster->camp_terms));
+    $is_camp_like = ($base_roster->activity_type === 'Camp' || (!empty($base_roster->camp_terms) && $base_roster->camp_terms !== 'N/A'));
     $is_girls_only = (bool) $base_roster->girls_only;
 
     // Fetch available destination rosters for migration
@@ -255,32 +250,32 @@ function intersoccer_render_roster_details_page() {
     echo '<table class="wp-list-table widefat fixed striped">';
     echo '<thead>';
     echo '<tr>';
-    echo '<th><input type="checkbox" id="selectAll"></th>'; // New: Checkbox for select all
-    echo '<th><a href="' . esc_url(intersoccer_get_sort_url('order_date', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Order Date') . intersoccer_get_sort_indicator('order_date', $sort_by, $sort_order) . '</a></th>';
-    echo '<th><a href="' . esc_url(intersoccer_get_sort_url('player_name', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Name') . intersoccer_get_sort_indicator('player_name', $sort_by, $sort_order) . '</a></th>';
-    echo '<th><a href="' . esc_url(intersoccer_get_sort_url('last_name', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Surname') . intersoccer_get_sort_indicator('last_name', $sort_by, $sort_order) . '</a></th>';
-    echo '<th><a href="' . esc_url(intersoccer_get_sort_url('gender', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Gender') . intersoccer_get_sort_indicator('gender', $sort_by, $sort_order) . '</a></th>';
-    echo '<th>' . esc_html__('Phone') . '</th>';
-    echo '<th>' . esc_html__('Email') . '</th>';
-    echo '<th><a href="' . esc_url(intersoccer_get_sort_url('age', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Age') . intersoccer_get_sort_indicator('age', $sort_by, $sort_order) . '</a></th>';
-    echo '<th>' . esc_html__('Medical/Dietary') . '</th>';
+    echo '<th style="width: 15px;"><input type="checkbox" id="selectAll"></th>'; // New: Checkbox for select all
+    echo '<th style="width: 120px;"><a href="' . esc_url(intersoccer_get_sort_url('order_date', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Order Date') . intersoccer_get_sort_indicator('order_date', $sort_by, $sort_order) . '</a></th>';
+    echo '<th style="width: 140px;"><a href="' . esc_url(intersoccer_get_sort_url('player_name', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Name') . intersoccer_get_sort_indicator('player_name', $sort_by, $sort_order) . '</a></th>';
+    echo '<th style="width: 140px;"><a href="' . esc_url(intersoccer_get_sort_url('last_name', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Surname') . intersoccer_get_sort_indicator('last_name', $sort_by, $sort_order) . '</a></th>';
+    echo '<th style="width: 80px;"><a href="' . esc_url(intersoccer_get_sort_url('gender', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Gender') . intersoccer_get_sort_indicator('gender', $sort_by, $sort_order) . '</a></th>';
+    echo '<th style="width: 130px;">' . esc_html__('Phone') . '</th>';
+    echo '<th style="width: 200px;">' . esc_html__('Email') . '</th>';
+    echo '<th style="width: 50px;"><a href="' . esc_url(intersoccer_get_sort_url('age', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Age') . intersoccer_get_sort_indicator('age', $sort_by, $sort_order) . '</a></th>';
+    echo '<th style="width: 200px;">' . esc_html__('Medical/Dietary') . '</th>';
     
     if ($is_camp_like) {
-        echo '<th>' . esc_html__('Late Pickup') . '</th>';
-        echo '<th>' . esc_html__('Late Pickup Days') . '</th>';
-        echo '<th>' . esc_html__('Booking Type') . '</th>';
-        echo '<th>' . esc_html__('Monday') . '</th>';
-        echo '<th>' . esc_html__('Tuesday') . '</th>';
-        echo '<th>' . esc_html__('Wednesday') . '</th>';
-        echo '<th>' . esc_html__('Thursday') . '</th>';
-        echo '<th>' . esc_html__('Friday') . '</th>';
+        echo '<th style="width: 100px;">' . esc_html__('Late Pickup') . '</th>';
+        echo '<th style="width: 120px;">' . esc_html__('Late Pickup Days') . '</th>';
+        echo '<th style="width: 120px;">' . esc_html__('Booking Type') . '</th>';
+        echo '<th style="width: 70px;">' . esc_html__('Monday') . '</th>';
+        echo '<th style="width: 70px;">' . esc_html__('Tuesday') . '</th>';
+        echo '<th style="width: 70px;">' . esc_html__('Wednesday') . '</th>';
+        echo '<th style="width: 70px;">' . esc_html__('Thursday') . '</th>';
+        echo '<th style="width: 70px;">' . esc_html__('Friday') . '</th>';
     }
     
-    echo '<th><a href="' . esc_url(intersoccer_get_sort_url('age_group', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Age Group') . intersoccer_get_sort_indicator('age_group', $sort_by, $sort_order) . '</a></th>';
-    
+    echo '<th style="width: 100px;"><a href="' . esc_url(intersoccer_get_sort_url('age_group', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Age Group') . intersoccer_get_sort_indicator('age_group', $sort_by, $sort_order) . '</a></th>';
+
     if ($is_girls_only) {
-        echo '<th>' . esc_html__('Shirt Size') . '</th>';
-        echo '<th>' . esc_html__('Shorts Size') . '</th>';
+        echo '<th style="width: 90px;">' . esc_html__('Shirt Size') . '</th>';
+        echo '<th style="width: 90px;">' . esc_html__('Shorts Size') . '</th>';
     }
     
     echo '</tr>';
