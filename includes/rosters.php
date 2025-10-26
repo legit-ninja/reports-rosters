@@ -499,25 +499,24 @@ function intersoccer_render_camps_page() {
     delete_transient('intersoccer_rosters_cache');
 
     // Fetch camp data with season extraction from camp_terms and city from order item metadata
-    $base_query = "SELECT COALESCE(r.camp_terms, 'N/A') as camp_terms, 
-                      COALESCE(r.venue, 'N/A') as venue, 
+    $base_query = "SELECT COALESCE(r.camp_terms, 'N/A') as camp_terms,
+                      COALESCE(r.venue, 'N/A') as venue,
                       COALESCE(oim.meta_value, 'N/A') as city,
-                      r.age_group, 
+                      r.age_group,
                       r.times,
                       COUNT(DISTINCT r.order_item_id) as total_players,
                       GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids,
                       r.event_signature,
                       GROUP_CONCAT(DISTINCT r.player_name) as player_names,
                       GROUP_CONCAT(DISTINCT r.start_date) as start_dates,
-                      GROUP_CONCAT(DISTINCT r.end_date) as end_dates
+                      GROUP_CONCAT(DISTINCT r.end_date) as end_dates,
+                      GROUP_CONCAT(DISTINCT r.product_name) as product_names
                FROM $rosters_table r
                LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                WHERE r.activity_type IN ('Camp', 'Camp, Girls Only', 'Camp, Girls\' only')
                AND r.girls_only = 0  -- EXCLUDE Girls Only events
-               GROUP BY r.event_signature, r.camp_terms, r.venue, oim.meta_value, r.age_group, r.times
-               ORDER BY r.camp_terms, r.venue, r.age_group";
-
-    $start_time = microtime(true);
+               GROUP BY r.event_signature
+               ORDER BY r.camp_terms, r.venue, r.age_group";    $start_time = microtime(true);
     $groups = $wpdb->get_results($base_query, ARRAY_A);
     $query_time = microtime(true) - $start_time;
     $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0 AND venue IS NOT NULL ORDER BY venue");
@@ -555,7 +554,7 @@ function intersoccer_render_camps_page() {
             $parts = explode('-', $group['camp_terms']);
             $season = !empty($parts[0]) ? ucfirst($parts[0]) : 'N/A';
         }
-        $group['season'] = $season;
+        $group['season'] = intersoccer_normalize_season_for_display($season);
 
         // Fetch meta
         $start = $variation ? $variation->get_meta('_course_start_date') : ($parent_product ? $parent_product->get_meta('_course_start_date') : '1970-01-01');
@@ -650,7 +649,7 @@ function intersoccer_render_camps_page() {
                 <option value="">All Seasons</option>
                 <?php foreach ($all_seasons as $season): ?>
                     <option value="<?php echo esc_attr($season); ?>" <?php selected($selected_season, $season); ?>>
-                        <?php echo esc_html($season); ?>
+                        <?php echo esc_html(intersoccer_normalize_season_for_display($season)); ?>
                     </option>
                 <?php endforeach; ?>
             </select>
@@ -721,7 +720,7 @@ function intersoccer_render_camps_page() {
                     <div class="roster-season">
                         <div class="season-header">
                             <h2 class="season-title">
-                                <?php echo esc_html($season); ?>
+                                <?php echo esc_html(intersoccer_normalize_season_for_display($season)); ?>
                             </h2>
                             <div class="season-stats">
                                 <?php 
@@ -823,7 +822,7 @@ function intersoccer_render_courses_page() {
                LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                WHERE r.activity_type IN ('Course', 'Course, Girls Only', 'Course, Girls\' only')
                AND r.girls_only = 0  -- EXCLUDE Girls Only events
-               GROUP BY r.event_signature, r.season, r.venue, oim.meta_value, r.age_group, r.times, r.course_day
+               GROUP BY r.event_signature
                ORDER BY r.season, r.venue, r.age_group";
 
     $start_time = microtime(true);
@@ -877,6 +876,9 @@ function intersoccer_render_courses_page() {
         // Validate and format dates
         $group['corrected_start_date'] = date('Y-m-d', strtotime($start)) ?: '1970-01-01';
         $group['corrected_end_date'] = date('Y-m-d', strtotime($end)) ?: '1970-01-01';
+
+        // Normalize season for display
+        $group['season'] = intersoccer_normalize_season_for_display($group['season']);
 
         // Collect unique seasons
         if ($group['season'] && $group['season'] !== 'N/A') {
@@ -965,7 +967,7 @@ function intersoccer_render_courses_page() {
                         <option value="">All Seasons</option>
                         <?php foreach ($all_seasons as $season): ?>
                             <option value="<?php echo esc_attr($season); ?>" <?php selected($selected_season, $season); ?>>
-                                <?php echo esc_html($season); ?>
+                                <?php echo esc_html(intersoccer_normalize_season_for_display($season)); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -1036,7 +1038,7 @@ function intersoccer_render_courses_page() {
                     <div class="roster-season">
                         <div class="season-header">
                             <h2 class="season-title">
-                                <?php echo esc_html($season); ?>
+                                <?php echo esc_html(intersoccer_normalize_season_for_display($season)); ?>
                             </h2>
                             <div class="season-stats">
                                 <?php 
@@ -1100,7 +1102,7 @@ function intersoccer_render_courses_page() {
                                                     <span class="count-label"><?php _e('players', 'intersoccer-reports-rosters'); ?></span>
                                                 </div>
                                                 <div class="course-actions">
-                                                    <?php 
+                                                    <?php
                                                     $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=courses&event_signature=' . urlencode($course['event_signature']) . '&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']));
                                                     ?>
                                                     <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
@@ -1156,7 +1158,7 @@ function intersoccer_render_girls_only_page() {
                    FROM $rosters_table r
                    LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                    WHERE r.girls_only = 1
-                   GROUP BY r.event_signature, r.season, r.venue, oim.meta_value, r.age_group, r.times, r.camp_terms, r.course_day, r.activity_type
+                   GROUP BY r.event_signature
                    ORDER BY r.season DESC, r.activity_type, r.venue, r.age_group";
 
     $start_time = microtime(true);
@@ -1186,6 +1188,9 @@ function intersoccer_render_girls_only_page() {
         // Determine if this is a camp or course based on activity_type
         $is_camp = (strtolower($group['activity_type']) === 'camp' || !empty($group['camp_terms']));
         
+        // Normalize season for display
+        $group['season'] = intersoccer_normalize_season_for_display($group['season']);
+
         // Collect unique seasons
         if ($group['season'] && $group['season'] !== 'N/A') {
             $all_seasons[$group['season']] = $group['season'];
@@ -1315,7 +1320,7 @@ function intersoccer_render_girls_only_page() {
                 <option value="">All Seasons</option>
                 <?php foreach ($all_seasons as $season): ?>
                     <option value="<?php echo esc_attr($season); ?>" <?php selected($selected_season, $season); ?>>
-                        <?php echo esc_html($season); ?>
+                        <?php echo esc_html(intersoccer_normalize_season_for_display($season)); ?>
                     </option>
                 <?php endforeach; ?>
             </select>
@@ -1412,7 +1417,7 @@ function intersoccer_render_girls_only_page() {
                         <div class="roster-season">
                             <div class="season-header">
                                 <h2 class="season-title">
-                                    <?php echo esc_html($season . ' - Girls Only Camps'); ?>
+                                    <?php echo esc_html(intersoccer_normalize_season_for_display($season) . ' - Girls Only Camps'); ?>
                                 </h2>
                                 <div class="season-stats">
                                     <?php 
@@ -1482,7 +1487,7 @@ function intersoccer_render_girls_only_page() {
                         <div class="roster-season">
                             <div class="season-header">
                                 <h2 class="season-title">
-                                    <?php echo esc_html($season . ' - Girls Only Courses'); ?>
+                                    <?php echo esc_html(intersoccer_normalize_season_for_display($season) . ' - Girls Only Courses'); ?>
                                 </h2>
                                 <div class="season-stats">
                                     <?php 
@@ -1547,8 +1552,8 @@ function intersoccer_render_girls_only_page() {
                                                         <span class="count-label"><?php _e('players', 'intersoccer-reports-rosters'); ?></span>
                                                     </div>
                                                     <div class="course-actions">
-                                                        <?php 
-                                                        $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=courses&event_signature=' . urlencode($course['event_signature']) . '&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']));
+                                                        <?php
+                                                        $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=girls-only&event_signature=' . urlencode($course['event_signature']) . '&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']) . '&girls_only=1');
                                                         ?>
                                                         <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                             👀 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
@@ -1768,7 +1773,7 @@ function intersoccer_render_other_events_page() {
                         <option value=""><?php _e('All Seasons', 'intersoccer-reports-rosters'); ?></option>
                         <?php foreach ($all_seasons as $season): ?>
                             <option value="<?php echo esc_attr($season); ?>" <?php selected($selected_season, $season); ?>>
-                                <?php echo esc_html($season); ?>
+                                <?php echo esc_html(intersoccer_normalize_season_for_display($season)); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -1806,7 +1811,7 @@ function intersoccer_render_other_events_page() {
                     <div class="roster-season">
                         <div class="season-header">
                             <h2 class="season-title">
-                                <?php echo esc_html($season); ?>
+                                <?php echo esc_html(intersoccer_normalize_season_for_display($season)); ?>
                             </h2>
                             <div class="season-stats">
                                 <?php 
