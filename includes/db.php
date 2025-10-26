@@ -114,7 +114,7 @@ function intersoccer_migrate_rosters_table() {
         $existing_records = $wpdb->get_results("SELECT id, activity_type, venue, age_group, camp_terms, course_day, times, season, girls_only, product_id FROM $rosters_table WHERE event_signature = '' OR event_signature IS NULL", ARRAY_A);
 
         foreach ($existing_records as $record) {
-            $signature = intersoccer_generate_event_signature([
+            $normalized_data = intersoccer_normalize_event_data_for_signature([
                 'activity_type' => $record['activity_type'],
                 'venue' => $record['venue'],
                 'age_group' => $record['age_group'],
@@ -125,6 +125,8 @@ function intersoccer_migrate_rosters_table() {
                 'girls_only' => $record['girls_only'],
                 'product_id' => $record['product_id'],
             ]);
+
+            $signature = intersoccer_generate_event_signature($normalized_data);
 
             $wpdb->update(
                 $rosters_table,
@@ -137,6 +139,54 @@ function intersoccer_migrate_rosters_table() {
 
         error_log('InterSoccer: Migrated ' . count($existing_records) . ' existing roster records with event signatures');
     }
+}
+
+/**
+ * Rebuild event signatures for all existing roster records
+ * This ensures language normalization is applied to all records
+ */
+function intersoccer_rebuild_event_signatures() {
+    global $wpdb;
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+
+    error_log('InterSoccer: Starting event signature rebuild for all records');
+
+    // Get all records that need signature updates
+    $records = $wpdb->get_results("SELECT id, activity_type, venue, age_group, camp_terms, course_day, times, season, girls_only, product_id FROM $rosters_table", ARRAY_A);
+
+    $updated = 0;
+    foreach ($records as $record) {
+        $normalized_data = intersoccer_normalize_event_data_for_signature([
+            'activity_type' => $record['activity_type'],
+            'venue' => $record['venue'],
+            'age_group' => $record['age_group'],
+            'camp_terms' => $record['camp_terms'],
+            'course_day' => $record['course_day'],
+            'times' => $record['times'],
+            'season' => $record['season'],
+            'girls_only' => $record['girls_only'],
+            'product_id' => $record['product_id'],
+        ]);
+
+        $signature = intersoccer_generate_event_signature($normalized_data);
+
+        $wpdb->update(
+            $rosters_table,
+            ['event_signature' => $signature],
+            ['id' => $record['id']],
+            ['%s'],
+            ['%d']
+        );
+
+        $updated++;
+    }
+
+    error_log('InterSoccer: Rebuilt event signatures for ' . $updated . ' records');
+    return [
+        'status' => 'success',
+        'updated' => $updated,
+        'message' => __('Rebuilt event signatures for ' . $updated . ' records.', 'intersoccer-reports-rosters')
+    ];
 }
 
 /**
@@ -733,6 +783,31 @@ function intersoccer_upgrade_database_ajax() {
     }
     intersoccer_upgrade_database();
     wp_send_json_success(__('Database upgrade completed.', 'intersoccer-reports-rosters'));
+}
+
+add_action('wp_ajax_intersoccer_rebuild_event_signatures', 'intersoccer_rebuild_event_signatures_ajax');
+function intersoccer_rebuild_event_signatures_ajax() {
+    ob_start();
+    check_ajax_referer('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field');
+    if (!current_user_can('manage_options')) {
+        ob_clean();
+        wp_send_json_error(['message' => __('You do not have permission to rebuild event signatures.', 'intersoccer-reports-rosters')]);
+    }
+    error_log('InterSoccer: AJAX rebuild event signatures request received');
+
+    try {
+        $result = intersoccer_rebuild_event_signatures();
+        ob_clean();
+        if ($result['status'] === 'success') {
+            wp_send_json_success(['updated' => $result['updated'], 'message' => __('Event signatures rebuilt for ' . $result['updated'] . ' records.', 'intersoccer-reports-rosters')]);
+        } else {
+            wp_send_json_error(['message' => __('Event signature rebuild failed: ' . $result['message'], 'intersoccer-reports-rosters')]);
+        }
+    } catch (Exception $e) {
+        error_log('InterSoccer: Event signature rebuild exception: ' . $e->getMessage());
+        ob_clean();
+        wp_send_json_error(['message' => __('Event signature rebuild failed with exception: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
+    }
 }
 
 add_action('wp_ajax_intersoccer_rebuild_rosters_and_reports', 'intersoccer_rebuild_rosters_and_reports_ajax');

@@ -39,9 +39,9 @@ function intersoccer_display_booking_report($start_date, $end_date, $activity_ty
              LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_canton ON oi.order_item_id = om_canton.order_item_id AND om_canton.meta_key = 'Canton / Region'
              LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_venue ON oi.order_item_id = om_venue.order_item_id AND om_venue.meta_key = 'pa_intersoccer-venues'
              LEFT JOIN {$wpdb->terms} t ON om_venue.meta_value = t.slug
-             LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_booking_type ON oi.order_item_id = om_booking_type.order_item_id AND om_booking_type.meta_key = 'booking_type'
-             LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_selected_days ON oi.order_item_id = om_selected_days.order_item_id AND om_selected_days.meta_key = 'selected_days'
-             LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_age_group ON oi.order_item_id = om_age_group.order_item_id AND om_age_group.meta_key = 'age_group'
+             LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_booking_type ON oi.order_item_id = om_booking_type.order_item_id AND om_booking_type.meta_key = 'pa_booking-type'
+             LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_selected_days ON oi.order_item_id = om_selected_days.order_item_id AND om_selected_days.meta_key = 'Days of Week'
+             LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_age_group ON oi.order_item_id = om_age_group.order_item_id AND om_age_group.meta_key = 'pa_age-group'
              LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_gender ON oi.order_item_id = om_gender.order_item_id AND om_gender.meta_key = 'gender'
              LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_line_total ON oi.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
              LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_discount_codes ON oi.order_item_id = om_discount_codes.order_item_id AND om_discount_codes.meta_key = '_applied_discounts'
@@ -263,10 +263,6 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
 
                 error_log("InterSoccer Camp Processing: $canton|$venue|$camp_type - Processed: $processed_count, Skipped BuyClub: $skipped_buyclub, Full Week: $full_week, Days: " . json_encode($individual_days));
 
-                $daily_counts = [];
-                foreach ($individual_days as $day => $count) {
-                    $daily_counts[$day] = $full_week + $count;
-                }
                 $min = !empty($daily_counts) ? min($daily_counts) : 0;
                 $max = !empty($daily_counts) ? max($daily_counts) : 0;
 
@@ -292,7 +288,6 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
                 om_discount_codes.meta_value AS discount_codes,
                 om_gender.meta_value AS gender,
                 om_course_day.meta_value AS course_day,
-                COALESCE(om_activity_type.meta_value, pm_activity_type.meta_value) AS activity_type,
                 p.post_date
              FROM $posts_table p
              JOIN $order_items_table oi ON p.ID = oi.order_id AND oi.order_item_type = 'line_item'
@@ -372,10 +367,7 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
             $report_data[$region][$course_name][$course_day]['online']++;
             $report_data[$region][$course_name][$course_day]['total']++;
             $report_data[$region][$course_name][$course_day]['final']++;
-
-            if ($entry['is_girls_free']) {
-                $report_data[$region][$course_name][$course_day]['girls_free']++;
-            }
+            $report_data[$region][$course_name][$course_day]['girls_free'] += $entry['is_girls_free'] ? 1 : 0;
         }
 
         return $report_data;
@@ -465,3 +457,4 @@ function intersoccer_calculate_final_reports_totals($report_data, $activity_type
         return $totals;
     }
 }
+

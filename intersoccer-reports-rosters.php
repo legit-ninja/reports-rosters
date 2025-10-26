@@ -71,7 +71,7 @@ function intersoccer_missing_dependencies_notice() {
 }
 
 $included_files = [];
-$files_to_include = ['event-reports.php', 'reports.php', 'utils.php', 'rosters.php', 'roster-data.php', 'roster-details.php', 'roster-export.php', 'advanced.php', 'woocommerce-orders.php', 'db.php']; 
+$files_to_include = ['event-reports.php', 'reports.php', 'reports-ajax.php', 'utils.php', 'rosters.php', 'roster-data.php', 'roster-details.php', 'roster-export.php', 'advanced.php', 'woocommerce-orders.php', 'db.php']; 
 foreach ($files_to_include as $file) {
     $file_path = plugin_dir_path(__FILE__) . 'includes/' . $file;
     if (file_exists($file_path)) {
@@ -270,6 +270,7 @@ add_action('admin_menu', function () {
 
 add_action('wp_ajax_intersoccer_upgrade_database', 'intersoccer_upgrade_database');
 add_action('wp_ajax_intersoccer_rebuild_rosters_and_reports', 'intersoccer_rebuild_rosters_and_reports');
+add_action('wp_ajax_intersoccer_rebuild_event_signatures', 'intersoccer_rebuild_event_signatures_ajax');
 
 // Enqueue script for WooCommerce Orders page to add the Process Orders button
 function intersoccer_enqueue_orders_page_scripts($hook) {

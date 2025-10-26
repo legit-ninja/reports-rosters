@@ -39,7 +39,7 @@ function intersoccer_enqueue_datepicker() {
         // Enhanced inline script with better UX
         wp_add_inline_script('intersoccer-reports', '
             jQuery(document).ready(function($) {
-                var updateTimeout;
+                console.log("InterSoccer: Reports JavaScript loaded and document ready");
                 
                 // Enhanced datepicker with better options
                 $("#start_date, #end_date").datepicker({
@@ -56,7 +56,6 @@ function intersoccer_enqueue_datepicker() {
                 
                 // Auto-filter on input changes with debouncing
                 $("#region, #year").on("change", function() {
-                    intersoccerUpdateReport();
                     intersoccerUpdateReport();
                 });
                 
@@ -125,6 +124,7 @@ function intersoccer_enqueue_datepicker() {
                 
                 // Enhanced update function with loading states
                 function intersoccerUpdateReport() {
+                    console.log("InterSoccer: intersoccerUpdateReport called");
                     if (!validateDateRange()) return;
                     
                     var $loadingIndicator = $("#loading-indicator");
@@ -148,12 +148,15 @@ function intersoccer_enqueue_datepicker() {
                         }).get()
                     };
                     
+                    console.log("InterSoccer: Sending AJAX request with data:", formData);
+                    
                     $.ajax({
                         url: intersoccer_reports_ajax.ajaxurl,
                         type: "POST",
                         data: formData,
                         timeout: 30000,
                         success: function(response) {
+                            console.log("InterSoccer: AJAX success response:", response);
                             if (response.success) {
                                 $tableContainer.html(response.data.table).removeClass("loading");
                                 $totalsContainer.html(response.data.totals);
@@ -170,6 +173,7 @@ function intersoccer_enqueue_datepicker() {
                             }
                         },
                         error: function(xhr, status, error) {
+                            console.error("AJAX error:", error, xhr.responseText);
                             $tableContainer.html("<p class=\"error\">Connection error. Please try again.</p>");
                             console.error("AJAX error:", error);
                         },
@@ -267,6 +271,7 @@ function intersoccer_enqueue_datepicker() {
                     $("#start_date").val(thirtyDaysAgo.toISOString().split("T")[0]);
                     $("#end_date").val(today.toISOString().split("T")[0]);
                 }
+                console.log("InterSoccer: About to call initial intersoccerUpdateReport");
                 intersoccerUpdateReport();
             });
         ');
@@ -532,8 +537,8 @@ function intersoccer_export_booking_report_callback() {
     }
 
     try {
-        // Get the EXACT same data that was displayed to the user using enhanced reporting
-        $report_data = intersoccer_get_enhanced_booking_report($start_date, $end_date, $year, '');
+        // Get the EXACT same data that was displayed to the user using simplified financial reporting
+        $report_data = intersoccer_get_financial_booking_report($start_date, $end_date, $year, '');
         
         if (empty($report_data['data'])) {
             wp_send_json_error(['message' => __('No data available for export with current filters.', 'intersoccer-reports-rosters')]);

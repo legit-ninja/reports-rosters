@@ -44,6 +44,12 @@ function intersoccer_render_advanced_page() {
                 <button type="submit" class="button button-secondary" id="intersoccer-reconcile-button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></button>
             </form>
             <p><?php _e('Note: This syncs the rosters table with orders, adding missing entries, updating incomplete data, and removing obsolete ones. No order statuses are changed.', 'intersoccer-reports-rosters'); ?></p>
+            <form id="intersoccer-rebuild-signatures-form" method="post" action="">
+                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field'); ?>
+                <input type="hidden" name="action" value="intersoccer_rebuild_event_signatures">
+                <button type="submit" class="button button-secondary" id="intersoccer-rebuild-signatures-button"><?php _e('Rebuild Event Signatures', 'intersoccer-reports-rosters'); ?></button>
+            </form>
+            <p><?php _e('Note: This will regenerate event signatures for all existing rosters to ensure proper grouping across languages.', 'intersoccer-reports-rosters'); ?></p>
             <form id="intersoccer-rebuild-form" method="post" action="">
                 <?php wp_nonce_field('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field'); ?>
                 <input type="hidden" name="action" value="intersoccer_rebuild_rosters_and_reports">
@@ -110,6 +116,29 @@ function intersoccer_render_advanced_page() {
                         },
                         error: function(xhr, status, error) {
                             $('#intersoccer-rebuild-status').html('<p><?php _e('Reconcile failed: ', 'intersoccer-reports-rosters'); ?>' + (xhr.responseJSON ? xhr.responseJSON.message : error) + '</p>');
+                            console.error('AJAX Error: ', status, error, xhr.responseText);
+                        }
+                    });
+                });
+                $('#intersoccer-rebuild-signatures-form').on('submit', function(e) {
+                    e.preventDefault();
+                    console.log('InterSoccer: Rebuild signatures form submit triggered');
+                    if (!confirm("Are you sure you want to rebuild event signatures? This will regenerate signatures for all roster records to ensure proper grouping.")) {
+                        return false;
+                    }
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: $(this).serialize(),
+                        beforeSend: function() {
+                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuilding event signatures... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
+                        },
+                        success: function(response) {
+                            $('#intersoccer-rebuild-status').html('<p>' + response.data.message + '</p>');
+                            console.log('Rebuild signatures response: ', response);
+                        },
+                        error: function(xhr, status, error) {
+                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuild signatures failed: ', 'intersoccer-reports-rosters'); ?>' + (xhr.responseJSON ? xhr.responseJSON.message : error) + '</p>');
                             console.error('AJAX Error: ', status, error, xhr.responseText);
                         }
                     });
