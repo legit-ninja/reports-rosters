@@ -366,13 +366,28 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         'event_signature' => '',
     ];
 
+    // Generate event signature with normalized (English) values for consistent grouping
+    $normalized_event_data = intersoccer_normalize_event_data_for_signature([
+        'activity_type' => $activity_type,
+        'venue' => $venue,
+        'age_group' => $age_group,
+        'camp_terms' => $camp_terms,
+        'course_day' => $course_day,
+        'times' => $times,
+        'season' => $season,
+        'girls_only' => $girls_only,
+        'product_id' => $product_id,
+    ]);
+
+    $data['event_signature'] = intersoccer_generate_event_signature($normalized_event_data);
+
     // Insert or update
     $result = $wpdb->replace($table_name, $data);
     $insert_id = $wpdb->insert_id;
     error_log('InterSoccer: Upsert result for order ' . $order_id . ', item ' . $item_id . ': ' . var_export($result, true) . ' | Insert ID: ' . $insert_id . ' | Last DB error: ' . $wpdb->last_error . ' | Last query: ' . $wpdb->last_query);
 
     if ($result) {
-        error_log('InterSoccer: Successfully upserted roster entry for order ' . $order_id . ', item ' . $item_id . ' (ID: ' . $insert_id . ')');
+        error_log('InterSoccer: Successfully upserted roster entry for order ' . $order_id . ', item ' . $item_id . ' (ID: ' . $insert_id . ') with event_signature: ' . $data['event_signature']);
         return true;
     } else {
         error_log('InterSoccer: Failed to upsert roster entry for order ' . $order_id . ', item ' . $item_id . ' - Check DB error');
@@ -837,6 +852,193 @@ function intersoccer_debug_specific_products() {
 add_action('admin_init', 'intersoccer_debug_specific_products');
 
 /**
+ * Normalizes event data to English for consistent event signature generation.
+ * This ensures that orders placed in different languages are grouped with the correct rosters.
+ *
+ * @param array $event_data Array containing event characteristics
+ * @return array Normalized event data in English
+ */
+function intersoccer_normalize_event_data_for_signature($event_data) {
+    // Store current language if using WPML
+    $current_lang = '';
+    if (function_exists('wpml_get_current_language')) {
+        $current_lang = wpml_get_current_language();
+    }
+
+    // Switch to default language to get English values
+    $default_lang = '';
+    if (function_exists('wpml_get_default_language')) {
+        $default_lang = wpml_get_default_language();
+        if ($current_lang !== $default_lang) {
+            do_action('wpml_switch_language', $default_lang);
+        }
+    }
+
+    $normalized = $event_data;
+
+    try {
+        // For taxonomy-based attributes, the order metadata contains translated names
+        // We need to find the term by name in current language, then get the name in default language
+
+        // Normalize venue (taxonomy term name)
+        if (!empty($event_data['venue'])) {
+            $term = intersoccer_get_term_by_translated_name($event_data['venue'], 'pa_intersoccer-venues');
+            if ($term) {
+                $normalized['venue'] = $term->name;
+            }
+        }
+
+        // Normalize age_group (taxonomy term name)
+        if (!empty($event_data['age_group'])) {
+            $term = intersoccer_get_term_by_translated_name($event_data['age_group'], 'pa_age-group');
+            if ($term) {
+                $normalized['age_group'] = $term->name;
+            }
+        }
+
+        // Normalize camp_terms (taxonomy term name)
+        if (!empty($event_data['camp_terms'])) {
+            $term = intersoccer_get_term_by_translated_name($event_data['camp_terms'], 'pa_camp-terms');
+            if ($term) {
+                $normalized['camp_terms'] = $term->name;
+            }
+        }
+
+        // Normalize course_day (taxonomy term name)
+        if (!empty($event_data['course_day'])) {
+            $term = intersoccer_get_term_by_translated_name($event_data['course_day'], 'pa_course-day');
+            if ($term) {
+                $normalized['course_day'] = $term->name;
+            }
+        }
+
+        // Normalize times (taxonomy term name) - try different taxonomies
+        if (!empty($event_data['times'])) {
+            $term = null;
+            $taxonomies = ['pa_camp-times', 'pa_course-times'];
+            foreach ($taxonomies as $taxonomy) {
+                $term = intersoccer_get_term_by_translated_name($event_data['times'], $taxonomy);
+                if ($term) break;
+            }
+            if ($term) {
+                $normalized['times'] = $term->name;
+            }
+        }
+
+        // Normalize season (taxonomy term name)
+        if (!empty($event_data['season'])) {
+            $normalized['season'] = $event_data['season'];
+            $term = intersoccer_get_term_by_translated_name($event_data['season'], 'pa_program-season');
+            if ($term) {
+                $normalized['season'] = $term->name;
+            }
+            // Manual normalization as fallback to ensure English
+            $normalized['season'] = str_ireplace('Hiver', 'Winter', $normalized['season']);
+            $normalized['season'] = str_ireplace('hiver', 'winter', $normalized['season']);
+            $normalized['season'] = str_ireplace('Été', 'Summer', $normalized['season']);
+            $normalized['season'] = str_ireplace('été', 'summer', $normalized['season']);
+            $normalized['season'] = str_ireplace('Printemps', 'Spring', $normalized['season']);
+            $normalized['season'] = str_ireplace('printemps', 'spring', $normalized['season']);
+            $normalized['season'] = str_ireplace('Automne', 'Autumn', $normalized['season']);
+            $normalized['season'] = str_ireplace('automne', 'autumn', $normalized['season']);
+            // Capitalize first word
+            $normalized['season'] = ucfirst(strtolower($normalized['season']));
+        }
+
+        // Normalize activity_type - this might be a direct value, not a taxonomy term
+        if (!empty($event_data['activity_type'])) {
+            // Check if it's a taxonomy term first
+            $term = intersoccer_get_term_by_translated_name($event_data['activity_type'], 'pa_activity-type');
+            if ($term) {
+                $normalized['activity_type'] = $term->name;
+            } else {
+                // If not a taxonomy term, normalize the string directly
+                $normalized['activity_type'] = intersoccer_normalize_activity_type($event_data['activity_type']);
+            }
+        }
+
+        error_log('InterSoccer: Normalized event data for signature: ' . json_encode([
+            'original' => $event_data,
+            'normalized' => $normalized
+        ]));
+
+    } catch (Exception $e) {
+        error_log('InterSoccer: Error normalizing event data: ' . $e->getMessage());
+        // Return original data if normalization fails
+        $normalized = $event_data;
+    }
+
+    // Switch back to original language
+    if (!empty($current_lang) && $current_lang !== $default_lang && function_exists('do_action')) {
+        do_action('wpml_switch_language', $current_lang);
+    }
+
+    return $normalized;
+}
+
+/**
+ * Helper function to get term by translated name and return it in default language
+ */
+function intersoccer_get_term_by_translated_name($translated_name, $taxonomy) {
+    // Get all terms in the taxonomy
+    $terms = get_terms([
+        'taxonomy' => $taxonomy,
+        'hide_empty' => false,
+        'lang' => '' // Get all language versions
+    ]);
+
+    if (is_wp_error($terms)) {
+        return null;
+    }
+
+    // Find the term that matches the translated name
+    foreach ($terms as $term) {
+        // Check if this term's name in any language matches
+        if ($term->name === $translated_name) {
+            return $term;
+        }
+
+        // Also check WPML translations if available
+        if (function_exists('wpml_get_element_translations')) {
+            $translations = wpml_get_element_translations($term->term_id, 'tax_' . $taxonomy);
+            foreach ($translations as $translation) {
+                if ($translation->name === $translated_name) {
+                    return $term; // Return the original term
+                }
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Normalize activity type string to English
+ */
+function intersoccer_normalize_activity_type($activity_type) {
+    // Convert to lowercase and remove extra spaces
+    $normalized = strtolower(trim($activity_type));
+
+    // Handle common translations
+    $translations = [
+        'camp' => 'camp',
+        'cours' => 'course', // French for course
+        'camp de vacances' => 'camp',
+        'stage' => 'course',
+        'anniversaire' => 'birthday',
+    ];
+
+    foreach ($translations as $english => $pattern) {
+        if (strpos($normalized, $pattern) !== false) {
+            return $english;
+        }
+    }
+
+    // If no match found, return as-is but normalized
+    return $normalized;
+}
+
+/**
  * Generates a stable event signature for roster grouping that doesn't rely on variation_id.
  * This ensures rosters remain properly grouped even when product variations are deleted.
  *
@@ -868,6 +1070,24 @@ function intersoccer_generate_event_signature($event_data) {
     error_log('InterSoccer: Generated event signature: ' . $signature . ' from components: ' . json_encode($signature_components));
 
     return $signature;
+}
+
+/**
+ * Normalize season for display in English
+ */
+function intersoccer_normalize_season_for_display($season) {
+    if (empty($season)) return $season;
+
+    $normalized = str_ireplace('Hiver', 'Winter', $season);
+    $normalized = str_ireplace('hiver', 'winter', $normalized);
+    $normalized = str_ireplace('Été', 'Summer', $normalized);
+    $normalized = str_ireplace('été', 'summer', $normalized);
+    $normalized = str_ireplace('Printemps', 'Spring', $normalized);
+    $normalized = str_ireplace('printemps', 'spring', $normalized);
+    $normalized = str_ireplace('Automne', 'Autumn', $normalized);
+    $normalized = str_ireplace('automne', 'autumn', $normalized);
+
+    return $normalized;
 }
 
 /**
