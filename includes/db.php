@@ -71,6 +71,7 @@ function intersoccer_create_rosters_table() {
         discount_codes varchar(255) DEFAULT '',
         girls_only BOOLEAN DEFAULT FALSE,
         event_signature varchar(255) DEFAULT '',
+        is_placeholder TINYINT(1) DEFAULT 0,
         PRIMARY KEY (id),
         UNIQUE KEY uniq_order_item_id (order_item_id),
         KEY idx_player_name (player_name),
@@ -79,7 +80,8 @@ function intersoccer_create_rosters_table() {
         KEY idx_start_date (start_date),
         KEY idx_variation_id (variation_id),
         KEY idx_order_id (order_id),
-        KEY idx_event_signature (event_signature(100))
+        KEY idx_event_signature (event_signature(100)),
+        KEY idx_is_placeholder (is_placeholder)
     ) $charset_collate;";
 
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -138,6 +140,19 @@ function intersoccer_migrate_rosters_table() {
         }
 
         error_log('InterSoccer: Migrated ' . count($existing_records) . ' existing roster records with event signatures');
+    }
+
+    // Check if is_placeholder column exists
+    if (!in_array('is_placeholder', $columns)) {
+        error_log('InterSoccer: Adding is_placeholder column to existing rosters table');
+
+        // Add is_placeholder column
+        $wpdb->query("ALTER TABLE $rosters_table ADD COLUMN is_placeholder TINYINT(1) DEFAULT 0 AFTER event_signature");
+
+        // Add index for is_placeholder
+        $wpdb->query("ALTER TABLE $rosters_table ADD KEY idx_is_placeholder (is_placeholder)");
+
+        error_log('InterSoccer: Added is_placeholder column with index');
     }
 }
 
@@ -931,6 +946,7 @@ function intersoccer_validate_rosters_table() {
         'discount_codes' => 'varchar(255)',
         'girls_only' => 'boolean',
         'event_signature' => 'varchar(255)',
+        'is_placeholder' => 'tinyint',
     ];
 
     $actual_columns_raw = $wpdb->get_results("DESCRIBE $rosters_table", ARRAY_A);

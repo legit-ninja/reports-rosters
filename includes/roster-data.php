@@ -21,7 +21,7 @@ function intersoccer_pe_get_event_roster_by_variation($variation_id, $context = 
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    $query = "SELECT * FROM $rosters_table WHERE variation_id = %d";
+    $query = "SELECT * FROM $rosters_table WHERE variation_id = %d AND is_placeholder = 0";
     if (!empty($context['age_group'])) {
         $query .= $wpdb->prepare(" AND (age_group = %s OR age_group LIKE %s)", $context['age_group'], '%' . $wpdb->esc_like($context['age_group']) . '%');
     }
@@ -36,7 +36,7 @@ function intersoccer_pe_get_camp_variations($filters) {
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
     $posts_table = $wpdb->prefix . 'posts';
 
-    $where = ["r.activity_type IN ('Camp', 'Girls Only')"];
+    $where = ["r.activity_type IN ('Camp', 'Girls Only')", "r.is_placeholder = 0"];
     if ($filters['region'] ?? '') $where[] = $wpdb->prepare("r.venue LIKE %s", '%' . intersoccer_normalize_attribute($filters['region']) . '%');
     if ($filters['venue'] ?? '') $where[] = $wpdb->prepare("r.venue = %s", intersoccer_normalize_attribute($filters['venue']));
     if ($filters['age_group'] ?? '') {
@@ -87,7 +87,7 @@ function intersoccer_pe_get_course_variations($filters) {
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
     $posts_table = $wpdb->prefix . 'posts';
 
-    $where = ["r.activity_type = 'Course'"];
+    $where = ["r.activity_type = 'Course'", "r.is_placeholder = 0"];
     if ($filters['region'] ?? '') $where[] = $wpdb->prepare("r.venue LIKE %s", '%' . intersoccer_normalize_attribute($filters['region']) . '%');
     if ($filters['venue'] ?? '') $where[] = $wpdb->prepare("r.venue = %s", intersoccer_normalize_attribute($filters['venue']));
     if ($filters['age_group'] ?? '') {

@@ -392,6 +392,11 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     // Log final signature with key identifying info
     error_log('InterSoccer Signature: Generated event_signature=' . $data['event_signature'] . ' for Order=' . $order_id . ', Item=' . $item_id . ', Product=' . $product_id . ', Venue=' . $venue . ', Camp/Course=' . ($camp_terms ?: $course_day));
 
+    // Delete any placeholder roster with the same event_signature before inserting real roster
+    if (function_exists('intersoccer_delete_placeholder_by_signature')) {
+        intersoccer_delete_placeholder_by_signature($data['event_signature']);
+    }
+
     // Insert or update
     $result = $wpdb->replace($table_name, $data);
     $insert_id = $wpdb->insert_id;

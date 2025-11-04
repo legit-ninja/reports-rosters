@@ -141,7 +141,9 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
             'Week 10: August 26 - August 30' => ['start' => '08-26', 'end' => '08-30'],
         ];
 
-        // Query orders for camps
+        // Query orders for camps (with BuyClub data optimization)
+        // Note: Final Reports query WooCommerce directly, not the rosters table
+        // Placeholder filtering is only needed for roster display pages, not reports
         $query = $wpdb->prepare(
             "SELECT
                 oi.order_item_id,
@@ -152,7 +154,9 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
                 om_selected_days.meta_value AS selected_days,
                 om_age_group.meta_value AS age_group,
                 COALESCE(om_activity_type.meta_value, pm_activity_type.meta_value) AS activity_type,
-                p.post_date
+                p.post_date,
+                om_line_subtotal.meta_value AS line_subtotal,
+                om_line_total.meta_value AS line_total
              FROM $posts_table p
              JOIN $order_items_table oi ON p.ID = oi.order_id AND oi.order_item_type = 'line_item'
              LEFT JOIN $order_itemmeta_table om_canton ON oi.order_item_id = om_canton.order_item_id AND om_canton.meta_key = 'Canton / Region'
@@ -165,6 +169,8 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
              LEFT JOIN $order_itemmeta_table om_activity_type ON oi.order_item_id = om_activity_type.order_item_id AND om_activity_type.meta_key = 'Activity Type'
              LEFT JOIN $order_itemmeta_table om_product_id ON oi.order_item_id = om_product_id.order_item_id AND om_product_id.meta_key = '_product_id'
              LEFT JOIN {$wpdb->postmeta} pm_activity_type ON om_product_id.meta_value = pm_activity_type.post_id AND pm_activity_type.meta_key = 'pa_activity-type'
+             LEFT JOIN $order_itemmeta_table om_line_subtotal ON oi.order_item_id = om_line_subtotal.order_item_id AND om_line_subtotal.meta_key = '_line_subtotal'
+             LEFT JOIN $order_itemmeta_table om_line_total ON oi.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
              WHERE p.post_type = 'shop_order'
              AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
              AND COALESCE(om_activity_type.meta_value, pm_activity_type.meta_value) = %s
@@ -180,22 +186,17 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
             return [];
         }
 
-        // Determine camp type and BuyClub
+        // Determine camp type and BuyClub (using data from main query - no additional queries needed)
         $buyclub_count = 0;
         foreach ($rosters as &$roster) {
             $age_group = $roster['age_group'] ?? '';
             $roster['camp_type'] = (!empty($age_group) && (stripos($age_group, '3-5y') !== false || stripos($age_group, 'half-day') !== false)) ? 'Mini - Half Day' : 'Full Day';
 
             // BuyClub: orders with original price > 0 and final price = 0
-            $line_subtotal_meta = $wpdb->get_var($wpdb->prepare(
-                "SELECT meta_value FROM $order_itemmeta_table WHERE order_item_id = %d AND meta_key = '_line_subtotal'",
-                $roster['order_item_id']
-            ));
-            $line_total_meta = $wpdb->get_var($wpdb->prepare(
-                "SELECT meta_value FROM $order_itemmeta_table WHERE order_item_id = %d AND meta_key = '_line_total'",
-                $roster['order_item_id']
-            ));
-            $roster['is_buyclub'] = floatval($line_subtotal_meta) > 0 && floatval($line_total_meta) == 0;
+            // Now using data from main query (line_subtotal and line_total already fetched)
+            $line_subtotal = floatval($roster['line_subtotal'] ?? 0);
+            $line_total = floatval($roster['line_total'] ?? 0);
+            $roster['is_buyclub'] = $line_subtotal > 0 && $line_total === 0.0;
             if ($roster['is_buyclub']) {
                 $buyclub_count++;
             }
@@ -263,6 +264,8 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
 
                 error_log("InterSoccer Camp Processing: $canton|$venue|$camp_type - Processed: $processed_count, Skipped BuyClub: $skipped_buyclub, Full Week: $full_week, Days: " . json_encode($individual_days));
 
+                // Calculate min-max from individual day counts
+                $daily_counts = array_values($individual_days);
                 $min = !empty($daily_counts) ? min($daily_counts) : 0;
                 $max = !empty($daily_counts) ? max($daily_counts) : 0;
 
@@ -277,7 +280,9 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
         return $report_data;
     } else {
         // Course logic
-        // Query orders for courses
+        // Query orders for courses (with BuyClub data optimization)
+        // Note: Final Reports query WooCommerce directly, not the rosters table
+        // Placeholder filtering is only needed for roster display pages, not reports
         $query = $wpdb->prepare(
             "SELECT
                 oi.order_item_id,
@@ -288,7 +293,9 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
                 om_discount_codes.meta_value AS discount_codes,
                 om_gender.meta_value AS gender,
                 om_course_day.meta_value AS course_day,
-                p.post_date
+                p.post_date,
+                om_line_subtotal.meta_value AS line_subtotal,
+                om_line_total.meta_value AS line_total
              FROM $posts_table p
              JOIN $order_items_table oi ON p.ID = oi.order_id AND oi.order_item_type = 'line_item'
              LEFT JOIN $order_itemmeta_table om_canton ON oi.order_item_id = om_canton.order_item_id AND om_canton.meta_key = 'Canton / Region'
@@ -301,6 +308,8 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
              LEFT JOIN $order_itemmeta_table om_activity_type ON oi.order_item_id = om_activity_type.order_item_id AND om_activity_type.meta_key = 'Activity Type'
              LEFT JOIN $order_itemmeta_table om_course_day ON oi.order_item_id = om_course_day.order_item_id AND om_course_day.meta_key = 'pa_course-day'
              LEFT JOIN {$wpdb->postmeta} pm_activity_type ON om_product_id.meta_value = pm_activity_type.post_id AND pm_activity_type.meta_key = 'pa_activity-type'
+             LEFT JOIN $order_itemmeta_table om_line_subtotal ON oi.order_item_id = om_line_subtotal.order_item_id AND om_line_subtotal.meta_key = '_line_subtotal'
+             LEFT JOIN $order_itemmeta_table om_line_total ON oi.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
              WHERE p.post_type = 'shop_order'
              AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
              AND COALESCE(om_activity_type.meta_value, pm_activity_type.meta_value) = %s
@@ -314,18 +323,13 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
             return [];
         }
 
-        // Determine categories for courses
+        // Determine categories for courses (using data from main query - no additional queries needed)
         foreach ($rosters as &$roster) {
             // BuyClub: orders with original price > 0 and final price = 0
-            $line_subtotal_meta = $wpdb->get_var($wpdb->prepare(
-                "SELECT meta_value FROM $order_itemmeta_table WHERE order_item_id = %d AND meta_key = '_line_subtotal'",
-                $roster['order_item_id']
-            ));
-            $line_total_meta = $wpdb->get_var($wpdb->prepare(
-                "SELECT meta_value FROM $order_itemmeta_table WHERE order_item_id = %d AND meta_key = '_line_total'",
-                $roster['order_item_id']
-            ));
-            $roster['is_buyclub'] = floatval($line_subtotal_meta) > 0 && floatval($line_total_meta) == 0;
+            // Now using data from main query (line_subtotal and line_total already fetched)
+            $line_subtotal = floatval($roster['line_subtotal'] ?? 0);
+            $line_total = floatval($roster['line_total'] ?? 0);
+            $roster['is_buyclub'] = $line_subtotal > 0 && $line_total === 0.0;
 
             // Course Day: from pa_course-day attribute
             $roster['course_day'] = $roster['course_day'] ?? 'Unknown';

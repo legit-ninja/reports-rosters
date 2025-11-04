@@ -69,6 +69,8 @@ function intersoccer_render_advanced_page() {
             </form>
         </div>
 
+        <?php intersoccer_render_placeholder_management_section(); ?>
+
         <?php intersoccer_render_signature_verifier_section(); ?>
 
         <script type="text/javascript">
@@ -1226,5 +1228,130 @@ function intersoccer_test_event_signature_generation($post_data) {
         'signature' => $signature,
         'components' => $components,
     ];
+}
+
+/**
+ * Render the Placeholder Roster Management section
+ */
+function intersoccer_render_placeholder_management_section() {
+    global $wpdb;
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+    
+    // Get placeholder statistics
+    $placeholder_count = $wpdb->get_var("SELECT COUNT(*) FROM $rosters_table WHERE is_placeholder = 1");
+    $real_roster_count = $wpdb->get_var("SELECT COUNT(*) FROM $rosters_table WHERE is_placeholder = 0");
+    $total_count = $placeholder_count + $real_roster_count;
+    
+    ?>
+    <div class="placeholder-management-section">
+        <h2>📝 <?php _e('Placeholder Roster Management', 'intersoccer-reports-rosters'); ?></h2>
+        <p><?php _e('Placeholder rosters are automatically created for each product variation to allow player migration before the first order is placed.', 'intersoccer-reports-rosters'); ?></p>
+        
+        <div class="placeholder-stats">
+            <div class="stat-box">
+                <span class="stat-label"><?php _e('Placeholder Rosters:', 'intersoccer-reports-rosters'); ?></span>
+                <span class="stat-value"><?php echo esc_html($placeholder_count); ?></span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label"><?php _e('Real Rosters:', 'intersoccer-reports-rosters'); ?></span>
+                <span class="stat-value"><?php echo esc_html($real_roster_count); ?></span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label"><?php _e('Total:', 'intersoccer-reports-rosters'); ?></span>
+                <span class="stat-value"><?php echo esc_html($total_count); ?></span>
+            </div>
+        </div>
+        
+        <form id="intersoccer-sync-placeholders-form" method="post" action="">
+            <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
+            <input type="hidden" name="action" value="intersoccer_sync_placeholders">
+            <button type="submit" class="button button-secondary" id="intersoccer-sync-placeholders-button">
+                ↻ <?php _e('Sync All Placeholders', 'intersoccer-reports-rosters'); ?>
+            </button>
+        </form>
+        
+        <p class="description">
+            <?php _e('This will create or update placeholder rosters for all published product variations. Placeholders allow admins to migrate players to events before the first order is placed.', 'intersoccer-reports-rosters'); ?>
+        </p>
+        
+        <div id="intersoccer-placeholder-sync-status"></div>
+        
+        <style>
+            .placeholder-management-section {
+                background: #fff;
+                padding: 20px;
+                margin: 20px 0;
+                border: 1px solid #ccd0d4;
+                border-radius: 4px;
+            }
+            .placeholder-stats {
+                display: flex;
+                gap: 20px;
+                margin: 20px 0;
+            }
+            .stat-box {
+                background: #f0f0f1;
+                padding: 15px 20px;
+                border-radius: 4px;
+                display: flex;
+                flex-direction: column;
+                gap: 5px;
+            }
+            .stat-label {
+                font-weight: 600;
+                color: #646970;
+                font-size: 12px;
+                text-transform: uppercase;
+            }
+            .stat-value {
+                font-size: 24px;
+                font-weight: bold;
+                color: #1d2327;
+            }
+        </style>
+        
+        <script type="text/javascript">
+            jQuery(document).ready(function($) {
+                $('#intersoccer-sync-placeholders-form').on('submit', function(e) {
+                    e.preventDefault();
+                    console.log('InterSoccer: Sync placeholders form submit triggered');
+                    
+                    if (!confirm("<?php echo esc_js(__('This will create or update placeholder rosters for all published product variations. Continue?', 'intersoccer-reports-rosters')); ?>")) {
+                        return false;
+                    }
+                    
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: $(this).serialize(),
+                        beforeSend: function() {
+                            $('#intersoccer-placeholder-sync-status').html('<p><?php _e('Syncing placeholders... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
+                            $('#intersoccer-sync-placeholders-button').prop('disabled', true);
+                        },
+                        success: function(response) {
+                            console.log('Sync placeholders response:', response);
+                            if (response.success) {
+                                $('#intersoccer-placeholder-sync-status').html('<div class="notice notice-success"><p>' + response.data.message + '</p></div>');
+                                // Reload page to update stats
+                                setTimeout(function() {
+                                    location.reload();
+                                }, 2000);
+                            } else {
+                                $('#intersoccer-placeholder-sync-status').html('<div class="notice notice-error"><p>' + (response.data.message || '<?php _e('Sync failed', 'intersoccer-reports-rosters'); ?>') + '</p></div>');
+                            }
+                        },
+                        error: function(xhr, status, error) {
+                            console.error('AJAX Error:', status, error, xhr.responseText);
+                            $('#intersoccer-placeholder-sync-status').html('<div class="notice notice-error"><p><?php _e('Sync failed: ', 'intersoccer-reports-rosters'); ?>' + (xhr.responseJSON ? xhr.responseJSON.message : error) + '</p></div>');
+                        },
+                        complete: function() {
+                            $('#intersoccer-sync-placeholders-button').prop('disabled', false);
+                        }
+                    });
+                });
+            });
+        </script>
+    </div>
+    <?php
 }
 ?>
