@@ -367,7 +367,7 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     ];
 
     // Generate event signature with normalized (English) values for consistent grouping
-    $normalized_event_data = intersoccer_normalize_event_data_for_signature([
+    $original_event_data = [
         'activity_type' => $activity_type,
         'venue' => $venue,
         'age_group' => $age_group,
@@ -377,9 +377,20 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         'season' => $season,
         'girls_only' => $girls_only,
         'product_id' => $product_id,
-    ]);
+    ];
+    
+    // Log original event data before normalization
+    error_log('InterSoccer Signature: Original event data (Order: ' . $order_id . ', Item: ' . $item_id . '): ' . json_encode($original_event_data));
+    
+    $normalized_event_data = intersoccer_normalize_event_data_for_signature($original_event_data);
+    
+    // Log normalized event data after normalization
+    error_log('InterSoccer Signature: Normalized event data (Order: ' . $order_id . ', Item: ' . $item_id . '): ' . json_encode($normalized_event_data));
 
     $data['event_signature'] = intersoccer_generate_event_signature($normalized_event_data);
+    
+    // Log final signature with key identifying info
+    error_log('InterSoccer Signature: Generated event_signature=' . $data['event_signature'] . ' for Order=' . $order_id . ', Item=' . $item_id . ', Product=' . $product_id . ', Venue=' . $venue . ', Camp/Course=' . ($camp_terms ?: $course_day));
 
     // Insert or update
     $result = $wpdb->replace($table_name, $data);
@@ -401,7 +412,7 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
  */
 add_action('admin_init', function() {
     // Check if the required function exists
-    if (!function_exists('intersoccer_get_product_type')) {
+if (!function_exists('intersoccer_get_product_type')) {
         add_action('admin_notices', function() {
             ?>
             <div class="notice notice-error">
@@ -413,8 +424,8 @@ add_action('admin_init', function() {
         // Log the error
         if (defined('WP_DEBUG') && WP_DEBUG) {
             error_log('InterSoccer Reports & Rosters: DEPENDENCY ERROR - InterSoccer Product Variations plugin is not active or intersoccer_get_product_type() function is missing');
-        }
-    }
+                }
+            }
 });
 
 // 2. Enhanced debug function for the Process Orders functionality

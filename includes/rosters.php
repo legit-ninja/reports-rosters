@@ -490,6 +490,19 @@ function intersoccer_render_camps_page() {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 
+    // Check if user is a coach and filter venues accordingly
+    $current_user = wp_get_current_user();
+    $is_coach = in_array('coach', $current_user->roles);
+    $coach_accessible_venues = [];
+
+    if ($is_coach) {
+        // Include the coach assignments class
+        if (!class_exists('InterSoccer_Admin_Coach_Assignments')) {
+            require_once WP_PLUGIN_DIR . '/customer-referral-system/includes/class-admin-coach-assignments.php';
+        }
+        $coach_accessible_venues = InterSoccer_Admin_Coach_Assignments::get_coach_accessible_venues($current_user->ID);
+    }
+
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
     $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
@@ -514,9 +527,19 @@ function intersoccer_render_camps_page() {
                FROM $rosters_table r
                LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                WHERE r.activity_type IN ('Camp', 'Camp, Girls Only', 'Camp, Girls\' only')
-               AND r.girls_only = 0  -- EXCLUDE Girls Only events
-               GROUP BY r.event_signature
-               ORDER BY r.camp_terms, r.venue, r.age_group";    $start_time = microtime(true);
+               AND r.girls_only = 0";  // EXCLUDE Girls Only events
+
+    // Add coach venue filtering if user is a coach
+    if ($is_coach && !empty($coach_accessible_venues)) {
+        $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
+        $base_query .= $wpdb->prepare(" AND r.venue IN ($placeholders)", $coach_accessible_venues);
+    } elseif ($is_coach && empty($coach_accessible_venues)) {
+        // Coach has no venue assignments, show no results
+        $base_query .= " AND 1=0";
+    }
+
+    $base_query .= " GROUP BY r.event_signature
+                     ORDER BY r.camp_terms, r.venue, r.age_group";    $start_time = microtime(true);
     $groups = $wpdb->get_results($base_query, ARRAY_A);
     $query_time = microtime(true) - $start_time;
     $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0 AND venue IS NOT NULL ORDER BY venue");
@@ -796,6 +819,19 @@ function intersoccer_render_courses_page() {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 
+    // Check if user is a coach and filter venues accordingly
+    $current_user = wp_get_current_user();
+    $is_coach = in_array('coach', $current_user->roles);
+    $coach_accessible_venues = [];
+
+    if ($is_coach) {
+        // Include the coach assignments class
+        if (!class_exists('InterSoccer_Admin_Coach_Assignments')) {
+            require_once WP_PLUGIN_DIR . '/customer-referral-system/includes/class-admin-coach-assignments.php';
+        }
+        $coach_accessible_venues = InterSoccer_Admin_Coach_Assignments::get_coach_accessible_venues($current_user->ID);
+    }
+
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
     $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
@@ -821,9 +857,19 @@ function intersoccer_render_courses_page() {
                FROM $rosters_table r
                LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                WHERE r.activity_type IN ('Course', 'Course, Girls Only', 'Course, Girls\' only')
-               AND r.girls_only = 0  -- EXCLUDE Girls Only events
-               GROUP BY r.event_signature
-               ORDER BY r.season, r.venue, r.age_group";
+               AND r.girls_only = 0";  // EXCLUDE Girls Only events
+
+    // Add coach venue filtering if user is a coach
+    if ($is_coach && !empty($coach_accessible_venues)) {
+        $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
+        $base_query .= $wpdb->prepare(" AND r.venue IN ($placeholders)", $coach_accessible_venues);
+    } elseif ($is_coach && empty($coach_accessible_venues)) {
+        // Coach has no venue assignments, show no results
+        $base_query .= " AND 1=0";
+    }
+
+    $base_query .= " GROUP BY r.event_signature
+                     ORDER BY r.season, r.venue, r.age_group";
 
     $start_time = microtime(true);
     $groups = $wpdb->get_results($base_query, ARRAY_A);
@@ -1131,6 +1177,19 @@ function intersoccer_render_girls_only_page() {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 
+    // Check if user is a coach and filter venues accordingly
+    $current_user = wp_get_current_user();
+    $is_coach = in_array('coach', $current_user->roles);
+    $coach_accessible_venues = [];
+
+    if ($is_coach) {
+        // Include the coach assignments class
+        if (!class_exists('InterSoccer_Admin_Coach_Assignments')) {
+            require_once WP_PLUGIN_DIR . '/customer-referral-system/includes/class-admin-coach-assignments.php';
+        }
+        $coach_accessible_venues = InterSoccer_Admin_Coach_Assignments::get_coach_accessible_venues($current_user->ID);
+    }
+
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
     $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
@@ -1157,9 +1216,19 @@ function intersoccer_render_girls_only_page() {
                           GROUP_CONCAT(DISTINCT r.product_name) as product_names
                    FROM $rosters_table r
                    LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
-                   WHERE r.girls_only = 1
-                   GROUP BY r.event_signature
-                   ORDER BY r.season DESC, r.activity_type, r.venue, r.age_group";
+                   WHERE r.girls_only = 1";
+
+    // Add coach venue filtering if user is a coach
+    if ($is_coach && !empty($coach_accessible_venues)) {
+        $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
+        $base_query .= $wpdb->prepare(" AND r.venue IN ($placeholders)", $coach_accessible_venues);
+    } elseif ($is_coach && empty($coach_accessible_venues)) {
+        // Coach has no venue assignments, show no results
+        $base_query .= " AND 1=0";
+    }
+
+    $base_query .= " GROUP BY r.event_signature
+                     ORDER BY r.season DESC, r.activity_type, r.venue, r.age_group";
 
     $start_time = microtime(true);
     $groups = $wpdb->get_results($base_query, ARRAY_A);
@@ -1633,6 +1702,19 @@ function intersoccer_render_other_events_page() {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 
+    // Check if user is a coach and filter venues accordingly
+    $current_user = wp_get_current_user();
+    $is_coach = in_array('coach', $current_user->roles);
+    $coach_accessible_venues = [];
+
+    if ($is_coach) {
+        // Include the coach assignments class
+        if (!class_exists('InterSoccer_Admin_Coach_Assignments')) {
+            require_once WP_PLUGIN_DIR . '/customer-referral-system/includes/class-admin-coach-assignments.php';
+        }
+        $coach_accessible_venues = InterSoccer_Admin_Coach_Assignments::get_coach_accessible_venues($current_user->ID);
+    }
+
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
@@ -1642,6 +1724,7 @@ function intersoccer_render_other_events_page() {
 
     // Fetch Other Events data
     $base_query = "SELECT COALESCE(season, 'N/A') as season,
+                      COALESCE(venue, 'N/A') as venue,
                       COALESCE(product_name, 'N/A') as product_name,
                       age_group,
                       times,
@@ -1652,9 +1735,19 @@ function intersoccer_render_other_events_page() {
                FROM $rosters_table
                WHERE activity_type NOT IN ('Camp', 'Course')
                AND activity_type NOT LIKE '%Girls%'
-               AND girls_only = 0  -- EXCLUDE Girls Only events (double check)
-               GROUP BY season, product_name, age_group, times
-               ORDER BY season DESC, product_name, age_group";
+               AND girls_only = 0";  // EXCLUDE Girls Only events (double check)
+
+    // Add coach venue filtering if user is a coach
+    if ($is_coach && !empty($coach_accessible_venues)) {
+        $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
+        $base_query .= $wpdb->prepare(" AND venue IN ($placeholders)", $coach_accessible_venues);
+    } elseif ($is_coach && empty($coach_accessible_venues)) {
+        // Coach has no venue assignments, show no results
+        $base_query .= " AND 1=0";
+    }
+
+    $base_query .= " GROUP BY season, product_name, age_group, times
+                     ORDER BY season DESC, product_name, age_group";
 
     $groups = $wpdb->get_results($base_query, ARRAY_A);
     error_log("InterSoccer: Other Events query results: " . print_r($groups, true));
@@ -1896,6 +1989,19 @@ function intersoccer_render_all_rosters_page() {
     if (!current_user_can('manage_options') && !current_user_can('coach')) {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
+
+    // Check if user is a coach and filter venues accordingly
+    $current_user = wp_get_current_user();
+    $is_coach = in_array('coach', $current_user->roles);
+    $coach_accessible_venues = [];
+
+    if ($is_coach) {
+        // Include the coach assignments class
+        if (!class_exists('InterSoccer_Admin_Coach_Assignments')) {
+            require_once WP_PLUGIN_DIR . '/customer-referral-system/includes/class-admin-coach-assignments.php';
+        }
+        $coach_accessible_venues = InterSoccer_Admin_Coach_Assignments::get_coach_accessible_venues($current_user->ID);
+    }
     
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
@@ -1904,7 +2010,22 @@ function intersoccer_render_all_rosters_page() {
     wp_cache_flush();
     delete_transient('intersoccer_rosters_cache');
 
-    $product_names = $wpdb->get_col("SELECT DISTINCT product_name FROM $rosters_table WHERE product_name IS NOT NULL ORDER BY product_name");
+    $product_names_query = "SELECT DISTINCT product_name FROM $rosters_table WHERE product_name IS NOT NULL";
+
+    // Add coach venue filtering if user is a coach
+    if ($is_coach && !empty($coach_accessible_venues)) {
+        $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
+        $product_names_query .= " AND venue IN ($placeholders)";
+        $product_names = $wpdb->get_col($wpdb->prepare($product_names_query, $coach_accessible_venues));
+    } elseif ($is_coach && empty($coach_accessible_venues)) {
+        // Coach has no venue assignments, show no products
+        $product_names = [];
+    } else {
+        $product_names = $wpdb->get_col($product_names_query);
+    }
+
+    $product_names = array_filter($product_names); // Remove any null values
+    sort($product_names);
 
     ?>
     <div class="wrap intersoccer-rosters-page">
@@ -1937,15 +2058,27 @@ function intersoccer_render_all_rosters_page() {
             <div class="sports-rosters">
                 <?php
                 foreach ($product_names as $product_name) {
+                    $query = "SELECT variation_id, product_name, venue, age_group, COUNT(DISTINCT order_item_id) as total_players
+                              FROM $rosters_table
+                              WHERE product_name = %s";
+
+                    // Add coach venue filtering if user is a coach
+                    if ($is_coach && !empty($coach_accessible_venues)) {
+                        $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
+                        $query .= " AND venue IN ($placeholders)";
+                        $query_args = array_merge([$product_name], $coach_accessible_venues);
+                    } elseif ($is_coach && empty($coach_accessible_venues)) {
+                        // Coach has no venue assignments, skip this product
+                        continue;
+                    } else {
+                        $query_args = [$product_name];
+                    }
+
+                    $query .= " GROUP BY variation_id, product_name, venue, age_group
+                               ORDER BY product_name, venue, age_group";
+
                     $groups = $wpdb->get_results(
-                        $wpdb->prepare(
-                            "SELECT variation_id, product_name, venue, age_group, COUNT(DISTINCT order_item_id) as total_players
-                             FROM $rosters_table
-                             WHERE product_name = %s AND p.post_status = 'wc-completed'
-                             GROUP BY variation_id, product_name, venue, age_group
-                             ORDER BY product_name, venue, age_group",
-                            $product_name
-                        ),
+                        $wpdb->prepare($query, $query_args),
                         ARRAY_A
                     );
                     

@@ -1,0 +1,28 @@
+#!/bin/bash
+
+###############################################################################
+# InterSoccer Reports & Rosters - Local Deployment Configuration
+###############################################################################
+#
+# IMPORTANT: Copy this file to deploy.local.sh and set your credentials
+#
+#   cp deploy.local.sh.example deploy.local.sh
+#
+# deploy.local.sh is in .gitignore and won't be committed to version control
+#
+###############################################################################
+
+# SSH Connection Settings
+SERVER_USER="your-ssh-username"
+SERVER_HOST="intersoccer.legit.ninja"
+SERVER_PATH="/var/www/html/wp-content/plugins/intersoccer-reports-rosters"
+SSH_PORT="22"
+SSH_KEY="~/.ssh/id_rsa"
+
+# Example values (uncomment and modify):
+# SERVER_USER="jeremy"
+# SERVER_HOST="intersoccer.legit.ninja"
+# SERVER_PATH="/var/www/html/wp-content/plugins/intersoccer-reports-rosters"
+# SSH_PORT="22"
+# SSH_KEY="~/.ssh/id_rsa"
+

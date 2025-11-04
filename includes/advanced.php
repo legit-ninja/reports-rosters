@@ -68,6 +68,9 @@ function intersoccer_render_advanced_page() {
                 <input type="submit" name="export_all_csv" class="button button-primary" value="<?php _e('Export All Rosters (CSV)', 'intersoccer-reports-rosters'); ?>">
             </form>
         </div>
+
+        <?php intersoccer_render_signature_verifier_section(); ?>
+
         <script type="text/javascript">
             jQuery(document).ready(function($) {
                 console.log('InterSoccer: Advanced page JS loaded');
@@ -409,9 +412,11 @@ function intersoccer_move_players_ajax() {
 
     $target_variation_id = intval($_POST['target_variation_id']);
     $order_item_ids = array_map('intval', (array) $_POST['order_item_ids']);
+    $allow_cross_gender = isset($_POST['allow_cross_gender']) && $_POST['allow_cross_gender'] === '1';
 
     error_log('InterSoccer Migration: Target variation: ' . $target_variation_id);
     error_log('InterSoccer Migration: Order item IDs: ' . implode(', ', $order_item_ids));
+    error_log('InterSoccer Migration: Allow cross-gender: ' . ($allow_cross_gender ? 'YES' : 'NO'));
 
     // Validation
     if (!$target_variation_id || empty($order_item_ids)) {
@@ -696,5 +701,530 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
     }
     
     error_log('InterSoccer Migration: Updated roster entry with new data: ' . print_r($new_roster_data, true));
+}
+
+/**
+ * Render the Event Signature Verifier section
+ */
+function intersoccer_render_signature_verifier_section() {
+    // Handle form submission
+    $test_results = [];
+    if (isset($_POST['test_signature']) && check_admin_referer('test_event_signature')) {
+        $test_results = intersoccer_test_event_signature_generation($_POST);
+    }
+
+    ?>
+    <div class="signature-verifier-section" style="margin-top: 30px;">
+        <h2>🔍 <?php _e('Event Signature Verifier', 'intersoccer-reports-rosters'); ?></h2>
+        
+        <!-- Documentation Link -->
+        <div style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 15px; margin: 15px 0;">
+            <p style="margin: 0;">
+                <strong>📚 <?php _e('About Event Signatures:', 'intersoccer-reports-rosters'); ?></strong> 
+                <?php _e('Event signatures ensure that the same physical event generates a unique identifier regardless of which language the customer used when purchasing. This prevents roster fragmentation across languages.', 'intersoccer-reports-rosters'); ?>
+            </p>
+            <p style="margin: 10px 0 0 0;">
+                <em><?php _e('For complete technical documentation, see <code>docs/MULTILINGUAL-EVENT-SIGNATURES.md</code> in the plugin repository.', 'intersoccer-reports-rosters'); ?></em>
+            </p>
+        </div>
+
+        <!-- Test Form -->
+        <div style="background: #fff; border: 1px solid #ccd0d4; padding: 20px; margin: 15px 0;">
+            <h3><?php _e('Test Event Data', 'intersoccer-reports-rosters'); ?></h3>
+            <p><?php _e('Select event data from your existing product attributes. The dropdown values show terms in the currently active WPML language.', 'intersoccer-reports-rosters'); ?></p>
+
+            <?php
+            // Show current WPML language if active
+            if (function_exists('wpml_get_current_language')) {
+                $current_wpml_lang = wpml_get_current_language();
+                $lang_names = [
+                    'en' => 'English',
+                    'fr' => 'Français',
+                    'de' => 'Deutsch'
+                ];
+                $lang_display = $lang_names[$current_wpml_lang] ?? $current_wpml_lang;
+                ?>
+                <div style="background: #e7f3ff; padding: 10px; margin-bottom: 15px; border-left: 4px solid #2271b1;">
+                    <strong>🌍 <?php _e('Current WPML Language:', 'intersoccer-reports-rosters'); ?></strong> 
+                    <span style="font-size: 16px; font-weight: bold;"><?php echo esc_html($lang_display . ' (' . $current_wpml_lang . ')'); ?></span>
+                    <p style="margin: 5px 0 0 0; font-size: 12px;">
+                        <?php _e('Dropdown values are shown in this language. To test different languages, switch the WPML admin language and refresh this page.', 'intersoccer-reports-rosters'); ?>
+                    </p>
+                </div>
+            <?php } ?>
+
+            <form method="post" action="">
+                <?php wp_nonce_field('test_event_signature'); ?>
+
+                <!-- Quick Load from Recent Orders -->
+                <div style="background: #f0f6fc; border: 1px solid #c3dafe; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+                    <h4 style="margin-top: 0;">⚡ <?php _e('Quick Load from Recent Order', 'intersoccer-reports-rosters'); ?></h4>
+                    <p><?php _e('Load event data from a recent order for quick testing:', 'intersoccer-reports-rosters'); ?></p>
+                    <?php
+                    global $wpdb;
+                    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+                    $recent_events = $wpdb->get_results("
+                        SELECT DISTINCT 
+                            event_signature,
+                            activity_type,
+                            venue,
+                            age_group,
+                            camp_terms,
+                            course_day,
+                            times,
+                            season,
+                            girls_only,
+                            product_id,
+                            product_name
+                        FROM {$rosters_table}
+                        WHERE event_signature != ''
+                        ORDER BY created_at DESC
+                        LIMIT 20
+                    ", ARRAY_A);
+                    
+                    if (!empty($recent_events)) : ?>
+                        <select id="quick_load_event" class="regular-text" style="margin-bottom: 10px;">
+                            <option value=""><?php _e('-- Select a Recent Event --', 'intersoccer-reports-rosters'); ?></option>
+                            <?php foreach ($recent_events as $idx => $event) : ?>
+                                <option value="<?php echo esc_attr(json_encode($event)); ?>">
+                                    <?php 
+                                    $display = $event['activity_type'] . ': ' . $event['venue'];
+                                    if (!empty($event['camp_terms'])) {
+                                        $display .= ' - ' . substr($event['camp_terms'], 0, 40);
+                                    } elseif (!empty($event['course_day'])) {
+                                        $display .= ' - ' . $event['course_day'];
+                                    }
+                                    $display .= ' (' . $event['season'] . ')';
+                                    echo esc_html($display);
+                                    ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <button type="button" id="load_event_btn" class="button button-secondary">
+                            📥 <?php _e('Load Selected Event', 'intersoccer-reports-rosters'); ?>
+                        </button>
+                    <?php else : ?>
+                        <p style="color: #666; font-style: italic;"><?php _e('No recent events found. Process some orders first.', 'intersoccer-reports-rosters'); ?></p>
+                    <?php endif; ?>
+                </div>
+
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">
+                            <label for="activity_type"><?php _e('Activity Type', 'intersoccer-reports-rosters'); ?></label>
+                        </th>
+                        <td>
+                            <select name="activity_type" id="activity_type" class="regular-text">
+                                <option value="Camp" <?php selected($_POST['activity_type'] ?? '', 'Camp'); ?>>Camp</option>
+                                <option value="Course" <?php selected($_POST['activity_type'] ?? '', 'Course'); ?>>Course</option>
+                                <option value="Birthday" <?php selected($_POST['activity_type'] ?? '', 'Birthday'); ?>>Birthday</option>
+                            </select>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th scope="row">
+                            <label for="venue"><?php _e('Venue', 'intersoccer-reports-rosters'); ?></label>
+                        </th>
+                        <td>
+                            <?php
+                            $venues = get_terms(['taxonomy' => 'pa_intersoccer-venues', 'hide_empty' => false]);
+                            $selected_venue = $_POST['venue'] ?? '';
+                            ?>
+                            <select name="venue" id="venue" class="regular-text">
+                                <option value=""><?php _e('-- Select a Venue --', 'intersoccer-reports-rosters'); ?></option>
+                                <?php if (!is_wp_error($venues) && !empty($venues)) : ?>
+                                    <?php foreach ($venues as $venue) : ?>
+                                        <option value="<?php echo esc_attr($venue->name); ?>" <?php selected($selected_venue, $venue->name); ?>>
+                                            <?php echo esc_html($venue->name); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </select>
+                            <p class="description"><?php _e('Select from existing venues in your system', 'intersoccer-reports-rosters'); ?></p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th scope="row">
+                            <label for="age_group"><?php _e('Age Group', 'intersoccer-reports-rosters'); ?></label>
+                        </th>
+                        <td>
+                            <?php
+                            $age_groups = get_terms(['taxonomy' => 'pa_age-group', 'hide_empty' => false]);
+                            $selected_age_group = $_POST['age_group'] ?? '';
+                            ?>
+                            <select name="age_group" id="age_group" class="regular-text">
+                                <option value=""><?php _e('-- Select an Age Group --', 'intersoccer-reports-rosters'); ?></option>
+                                <?php if (!is_wp_error($age_groups) && !empty($age_groups)) : ?>
+                                    <?php foreach ($age_groups as $age_group) : ?>
+                                        <option value="<?php echo esc_attr($age_group->name); ?>" <?php selected($selected_age_group, $age_group->name); ?>>
+                                            <?php echo esc_html($age_group->name); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </select>
+                            <p class="description"><?php _e('Select from existing age groups', 'intersoccer-reports-rosters'); ?></p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th scope="row">
+                            <label for="camp_terms"><?php _e('Camp Terms', 'intersoccer-reports-rosters'); ?></label>
+                        </th>
+                        <td>
+                            <?php
+                            $camp_terms_list = get_terms(['taxonomy' => 'pa_camp-terms', 'hide_empty' => false]);
+                            $selected_camp_terms = $_POST['camp_terms'] ?? '';
+                            ?>
+                            <select name="camp_terms" id="camp_terms" class="regular-text">
+                                <option value=""><?php _e('-- Select Camp Terms (for camps) --', 'intersoccer-reports-rosters'); ?></option>
+                                <?php if (!is_wp_error($camp_terms_list) && !empty($camp_terms_list)) : ?>
+                                    <?php foreach ($camp_terms_list as $camp_term) : ?>
+                                        <option value="<?php echo esc_attr($camp_term->name); ?>" <?php selected($selected_camp_terms, $camp_term->name); ?>>
+                                            <?php echo esc_html($camp_term->name); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </select>
+                            <p class="description"><?php _e('For camps only - leave empty for courses', 'intersoccer-reports-rosters'); ?></p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th scope="row">
+                            <label for="course_day"><?php _e('Course Day', 'intersoccer-reports-rosters'); ?></label>
+                        </th>
+                        <td>
+                            <?php
+                            $course_days = get_terms(['taxonomy' => 'pa_course-day', 'hide_empty' => false]);
+                            $selected_course_day = $_POST['course_day'] ?? '';
+                            ?>
+                            <select name="course_day" id="course_day" class="regular-text">
+                                <option value=""><?php _e('-- Select Course Day (for courses) --', 'intersoccer-reports-rosters'); ?></option>
+                                <?php if (!is_wp_error($course_days) && !empty($course_days)) : ?>
+                                    <?php foreach ($course_days as $course_day) : ?>
+                                        <option value="<?php echo esc_attr($course_day->name); ?>" <?php selected($selected_course_day, $course_day->name); ?>>
+                                            <?php echo esc_html($course_day->name); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </select>
+                            <p class="description"><?php _e('For courses only - leave empty for camps', 'intersoccer-reports-rosters'); ?></p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th scope="row">
+                            <label for="times"><?php _e('Times', 'intersoccer-reports-rosters'); ?></label>
+                        </th>
+                        <td>
+                            <?php
+                            // Try both camp and course times taxonomies
+                            $camp_times = get_terms(['taxonomy' => 'pa_camp-times', 'hide_empty' => false]);
+                            $course_times = get_terms(['taxonomy' => 'pa_course-times', 'hide_empty' => false]);
+                            $all_times = [];
+                            if (!is_wp_error($camp_times)) {
+                                $all_times = array_merge($all_times, $camp_times);
+                            }
+                            if (!is_wp_error($course_times)) {
+                                $all_times = array_merge($all_times, $course_times);
+                            }
+                            // Remove duplicates by name
+                            $unique_times = [];
+                            $seen_names = [];
+                            foreach ($all_times as $time) {
+                                if (!in_array($time->name, $seen_names)) {
+                                    $unique_times[] = $time;
+                                    $seen_names[] = $time->name;
+                                }
+                            }
+                            $selected_times = $_POST['times'] ?? '';
+                            ?>
+                            <select name="times" id="times" class="regular-text">
+                                <option value=""><?php _e('-- Select Times --', 'intersoccer-reports-rosters'); ?></option>
+                                <?php if (!empty($unique_times)) : ?>
+                                    <?php foreach ($unique_times as $time) : ?>
+                                        <option value="<?php echo esc_attr($time->name); ?>" <?php selected($selected_times, $time->name); ?>>
+                                            <?php echo esc_html($time->name); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </select>
+                            <p class="description"><?php _e('Select from existing camp/course times', 'intersoccer-reports-rosters'); ?></p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th scope="row">
+                            <label for="season"><?php _e('Season', 'intersoccer-reports-rosters'); ?></label>
+                        </th>
+                        <td>
+                            <?php
+                            $seasons = get_terms(['taxonomy' => 'pa_program-season', 'hide_empty' => false]);
+                            $selected_season = $_POST['season'] ?? '';
+                            ?>
+                            <select name="season" id="season" class="regular-text">
+                                <option value=""><?php _e('-- Select a Season --', 'intersoccer-reports-rosters'); ?></option>
+                                <?php if (!is_wp_error($seasons) && !empty($seasons)) : ?>
+                                    <?php foreach ($seasons as $season) : ?>
+                                        <option value="<?php echo esc_attr($season->name); ?>" <?php selected($selected_season, $season->name); ?>>
+                                            <?php echo esc_html($season->name); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </select>
+                            <p class="description"><?php _e('Select from existing seasons', 'intersoccer-reports-rosters'); ?></p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th scope="row">
+                            <label for="product_id"><?php _e('Product ID', 'intersoccer-reports-rosters'); ?></label>
+                        </th>
+                        <td>
+                            <input type="number" name="product_id" id="product_id" class="regular-text" 
+                                   placeholder="<?php esc_attr_e('e.g., 12345', 'intersoccer-reports-rosters'); ?>" 
+                                   value="<?php echo isset($_POST['product_id']) ? esc_attr($_POST['product_id']) : ''; ?>">
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th scope="row">
+                            <label for="girls_only"><?php _e('Girls Only', 'intersoccer-reports-rosters'); ?></label>
+                        </th>
+                        <td>
+                            <input type="checkbox" name="girls_only" id="girls_only" value="1" 
+                                   <?php checked(isset($_POST['girls_only'])); ?>>
+                            <span class="description"><?php _e('Is this a girls-only event?', 'intersoccer-reports-rosters'); ?></span>
+                        </td>
+                    </tr>
+                </table>
+
+                <p class="submit">
+                    <button type="submit" name="test_signature" class="button button-primary">
+                        🔍 <?php _e('Test Signature Generation', 'intersoccer-reports-rosters'); ?>
+                    </button>
+                </p>
+            </form>
+        </div>
+
+        <?php if (!empty($test_results)) : ?>
+        <!-- Test Results -->
+        <div style="background: #fff; border: 1px solid #ccd0d4; padding: 20px; margin: 15px 0;">
+            <h3>📊 <?php _e('Test Results', 'intersoccer-reports-rosters'); ?></h3>
+
+            <!-- Original Data -->
+            <div style="margin: 15px 0; padding: 15px; background: #f0f0f1; border-radius: 4px;">
+                <h4><?php _e('1. Original Input Data', 'intersoccer-reports-rosters'); ?></h4>
+                <pre style="background: #fff; padding: 10px; border: 1px solid #ddd; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;"><?php echo esc_html(json_encode($test_results['original'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)); ?></pre>
+            </div>
+
+            <!-- Normalized Data -->
+            <div style="margin: 15px 0; padding: 15px; background: #e7f3ff; border-radius: 4px;">
+                <h4><?php _e('2. Normalized Data (English)', 'intersoccer-reports-rosters'); ?></h4>
+                <pre style="background: #fff; padding: 10px; border: 1px solid #ddd; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;"><?php echo esc_html(json_encode($test_results['normalized'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)); ?></pre>
+                <?php if (!empty($test_results['changes'])) : ?>
+                <div style="margin-top: 10px; padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107;">
+                    <strong><?php _e('Changed Fields:', 'intersoccer-reports-rosters'); ?></strong>
+                    <ul style="margin: 5px 0;">
+                        <?php foreach ($test_results['changes'] as $field => $change) : ?>
+                            <li>
+                                <code><?php echo esc_html($field); ?></code>: 
+                                <span style="color: #d63638;"><?php echo esc_html($change['from']); ?></span> 
+                                → 
+                                <span style="color: #00a32a;"><?php echo esc_html($change['to']); ?></span>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+                <?php else : ?>
+                <div style="margin-top: 10px; padding: 10px; background: #d1f0d1; border-left: 4px solid #00a32a;">
+                    <strong>✓ <?php _e('No changes needed - data was already in English!', 'intersoccer-reports-rosters'); ?></strong>
+                </div>
+                <?php endif; ?>
+            </div>
+
+            <!-- Generated Signature -->
+            <div style="margin: 15px 0; padding: 15px; background: #d1f0d1; border-radius: 4px;">
+                <h4><?php _e('3. Generated Event Signature', 'intersoccer-reports-rosters'); ?></h4>
+                <div style="font-size: 18px; font-weight: bold; color: #00a32a; background: #fff; padding: 15px; border: 2px solid #00a32a; border-radius: 4px; font-family: monospace;">
+                    <?php echo esc_html($test_results['signature']); ?>
+                </div>
+                <p style="margin-top: 10px;">
+                    <strong><?php _e('Important:', 'intersoccer-reports-rosters'); ?></strong> 
+                    <?php _e('This signature should be IDENTICAL for the same event in all languages!', 'intersoccer-reports-rosters'); ?>
+                </p>
+            </div>
+
+            <!-- Signature Components -->
+            <div style="margin: 15px 0; padding: 15px; background: #f6f7f7; border-radius: 4px;">
+                <h4><?php _e('4. Signature Components', 'intersoccer-reports-rosters'); ?></h4>
+                <p><?php _e('The signature is generated from these normalized components:', 'intersoccer-reports-rosters'); ?></p>
+                <pre style="background: #fff; padding: 10px; border: 1px solid #ddd; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;"><?php echo esc_html(json_encode($test_results['components'], JSON_PRETTY_PRINT)); ?></pre>
+            </div>
+        </div>
+
+        <!-- Testing Instructions -->
+        <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 15px 0;">
+            <h4 style="margin-top: 0;">💡 <?php _e('Testing Instructions', 'intersoccer-reports-rosters'); ?></h4>
+            <ol>
+                <li><?php _e('Use the <strong>Quick Load</strong> dropdown to select a recent event, OR manually select event attributes', 'intersoccer-reports-rosters'); ?></li>
+                <li><?php _e('Test in <strong>English</strong>: Switch WPML to English, refresh page, select event, and note the generated signature', 'intersoccer-reports-rosters'); ?></li>
+                <li><?php _e('Test in <strong>French</strong>: Switch WPML to French, refresh page, select THE SAME event (translated terms), test again', 'intersoccer-reports-rosters'); ?></li>
+                <li><?php _e('Test in <strong>German</strong>: Switch WPML to German, refresh page, select THE SAME event (translated terms), test again', 'intersoccer-reports-rosters'); ?></li>
+                <li><?php _e('Verify that ALL THREE generate the <strong>IDENTICAL signature</strong>', 'intersoccer-reports-rosters'); ?></li>
+            </ol>
+            <p><strong><?php _e('If signatures differ:', 'intersoccer-reports-rosters'); ?></strong></p>
+            <ul>
+                <li><?php _e('Check that taxonomy terms have complete WPML translations', 'intersoccer-reports-rosters'); ?></li>
+                <li><?php _e('Verify term names are consistent across languages', 'intersoccer-reports-rosters'); ?></li>
+                <li><?php _e('Check debug.log for normalization warnings', 'intersoccer-reports-rosters'); ?></li>
+            </ul>
+        </div>
+        <?php endif; ?>
+        
+        <!-- JavaScript for Quick Load functionality -->
+        <script>
+        jQuery(document).ready(function($) {
+            console.log('InterSoccer: Event Signature Verifier loaded');
+            
+            // Handle Quick Load button click
+            $('#load_event_btn').on('click', function() {
+                var selectedJson = $('#quick_load_event').val();
+                
+                if (!selectedJson) {
+                    alert('<?php _e('Please select an event from the dropdown', 'intersoccer-reports-rosters'); ?>');
+                    return;
+                }
+                
+                try {
+                    var eventData = JSON.parse(selectedJson);
+                    console.log('Loading event data:', eventData);
+                    
+                    // Populate form fields
+                    $('#activity_type').val(eventData.activity_type || 'Camp');
+                    
+                    // For select fields, try to find matching option by value
+                    if (eventData.venue) {
+                        $('#venue option').filter(function() {
+                            return $(this).val() === eventData.venue;
+                        }).prop('selected', true);
+                    }
+                    
+                    if (eventData.age_group) {
+                        $('#age_group option').filter(function() {
+                            return $(this).val() === eventData.age_group;
+                        }).prop('selected', true);
+                    }
+                    
+                    if (eventData.camp_terms) {
+                        $('#camp_terms option').filter(function() {
+                            return $(this).val() === eventData.camp_terms;
+                        }).prop('selected', true);
+                    }
+                    
+                    if (eventData.course_day) {
+                        $('#course_day option').filter(function() {
+                            return $(this).val() === eventData.course_day;
+                        }).prop('selected', true);
+                    }
+                    
+                    if (eventData.times) {
+                        $('#times option').filter(function() {
+                            return $(this).val() === eventData.times;
+                        }).prop('selected', true);
+                    }
+                    
+                    if (eventData.season) {
+                        $('#season option').filter(function() {
+                            return $(this).val() === eventData.season;
+                        }).prop('selected', true);
+                    }
+                    
+                    $('#product_id').val(eventData.product_id || '');
+                    $('#girls_only').prop('checked', eventData.girls_only == '1');
+                    
+                    // Show success message
+                    var productName = eventData.product_name || 'Event';
+                    alert('✓ Loaded: ' + productName);
+                    
+                    // Scroll to form
+                    $('html, body').animate({
+                        scrollTop: $('#activity_type').offset().top - 100
+                    }, 500);
+                    
+                } catch (e) {
+                    console.error('Error parsing event data:', e);
+                    alert('<?php _e('Error loading event data. Please try again.', 'intersoccer-reports-rosters'); ?>');
+                }
+            });
+            
+            console.log('InterSoccer: Quick Load handler attached');
+        });
+        </script>
+    </div>
+    <?php
+}
+
+/**
+ * Test event signature generation
+ */
+function intersoccer_test_event_signature_generation($post_data) {
+    // Sanitize input
+    $original_data = [
+        'activity_type' => sanitize_text_field($post_data['activity_type'] ?? 'Camp'),
+        'venue' => sanitize_text_field($post_data['venue'] ?? ''),
+        'age_group' => sanitize_text_field($post_data['age_group'] ?? ''),
+        'camp_terms' => sanitize_text_field($post_data['camp_terms'] ?? ''),
+        'course_day' => sanitize_text_field($post_data['course_day'] ?? ''),
+        'times' => sanitize_text_field($post_data['times'] ?? ''),
+        'season' => sanitize_text_field($post_data['season'] ?? ''),
+        'girls_only' => isset($post_data['girls_only']),
+        'product_id' => intval($post_data['product_id'] ?? 0),
+    ];
+
+    // Normalize the data
+    $normalized_data = intersoccer_normalize_event_data_for_signature($original_data);
+
+    // Track changes
+    $changes = [];
+    foreach ($original_data as $key => $original_value) {
+        $normalized_value = $normalized_data[$key] ?? $original_value;
+        // Convert boolean to string for comparison
+        $original_display = is_bool($original_value) ? ($original_value ? '1' : '0') : $original_value;
+        $normalized_display = is_bool($normalized_value) ? ($normalized_value ? '1' : '0') : $normalized_value;
+        
+        if ($original_display !== $normalized_display && !empty($original_display)) {
+            $changes[$key] = [
+                'from' => $original_display,
+                'to' => $normalized_display
+            ];
+        }
+    }
+
+    // Generate signature
+    $signature = intersoccer_generate_event_signature($normalized_data);
+
+    // Get signature components (for display)
+    $components = [
+        'activity_type' => $normalized_data['activity_type'] ?? '',
+        'venue_slug' => intersoccer_get_term_slug_by_name($normalized_data['venue'] ?? '', 'pa_intersoccer-venues'),
+        'age_group_slug' => intersoccer_get_term_slug_by_name($normalized_data['age_group'] ?? '', 'pa_age-group'),
+        'camp_terms' => $normalized_data['camp_terms'] ?? '',
+        'course_day_slug' => intersoccer_get_term_slug_by_name($normalized_data['course_day'] ?? '', 'pa_course-day'),
+        'times' => $normalized_data['times'] ?? '',
+        'season_slug' => intersoccer_get_term_slug_by_name($normalized_data['season'] ?? '', 'pa_program-season'),
+        'girls_only' => $normalized_data['girls_only'] ? '1' : '0',
+        'product_id' => $normalized_data['product_id'] ?? '',
+    ];
+
+    return [
+        'original' => $original_data,
+        'normalized' => $normalized_data,
+        'changes' => $changes,
+        'signature' => $signature,
+        'components' => $components,
+    ];
 }
 ?>

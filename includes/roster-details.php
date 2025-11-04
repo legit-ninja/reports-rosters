@@ -210,6 +210,8 @@ function intersoccer_render_roster_details_page() {
     $is_girls_only = (bool) $base_roster->girls_only;
 
     // Fetch available destination rosters for migration
+    // NOTE: This initial query respects gender type to show safe default options
+    // JavaScript will reload with cross-gender option if checkbox is enabled
     $available_rosters_query = $wpdb->prepare("
         SELECT DISTINCT 
             r.product_id,
@@ -222,6 +224,7 @@ function intersoccer_render_roster_details_page() {
             r.course_day,
             r.times,
             r.season,
+            r.girls_only,
             COUNT(DISTINCT r.order_item_id) as current_players
         FROM $rosters_table r
         JOIN {$wpdb->posts} p ON r.order_id = p.ID
@@ -229,11 +232,38 @@ function intersoccer_render_roster_details_page() {
         AND r.activity_type = %s
         AND r.girls_only = %d
         AND r.variation_id != %d
-        GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season
+        GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season, r.girls_only
         ORDER BY r.product_name, r.venue, r.age_group
     ", $base_roster->activity_type, $is_girls_only ? 1 : 0, $variation_id);
     
     $available_rosters = $wpdb->get_results($available_rosters_query, OBJECT);
+    
+    // Also fetch cross-gender rosters (for when checkbox is enabled)
+    $cross_gender_rosters_query = $wpdb->prepare("
+        SELECT DISTINCT 
+            r.product_id,
+            r.variation_id,
+            r.product_name,
+            r.venue,
+            r.age_group,
+            r.activity_type,
+            r.camp_terms,
+            r.course_day,
+            r.times,
+            r.season,
+            r.girls_only,
+            COUNT(DISTINCT r.order_item_id) as current_players
+        FROM $rosters_table r
+        JOIN {$wpdb->posts} p ON r.order_id = p.ID
+        WHERE p.post_status = 'wc-completed'
+        AND r.activity_type = %s
+        AND r.girls_only != %d
+        AND r.variation_id != %d
+        GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season, r.girls_only
+        ORDER BY r.product_name, r.venue, r.age_group
+    ", $base_roster->activity_type, $is_girls_only ? 1 : 0, $variation_id);
+    
+    $cross_gender_rosters = $wpdb->get_results($cross_gender_rosters_query, OBJECT);
 
     // Count Unknown Attendees
     $unknown_count = count(array_filter($rosters, fn($row) => $row->player_name === 'Unknown Attendee'));
@@ -331,29 +361,91 @@ function intersoccer_render_roster_details_page() {
     echo '                <option value="move">Move to Another Roster</option>';
     echo '            </select>';
     echo '        </div>';
+    echo '    </div>';
+    
+    // Cross-Gender Override Option
+    echo '    <div id="crossGenderOption" style="display: none; margin: 15px 0 10px 0; padding: 12px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">';
+    echo '        <label style="cursor: pointer;">';
+    echo '            <input type="checkbox" id="allowCrossGender" value="1">';
+    echo '            <strong style="color: #856404;">⚠️ Allow moving between Girls Only and Regular rosters</strong>';
+    echo '        </label>';
+    echo '        <p style="margin: 8px 0 0 24px; font-size: 13px; color: #856404; line-height: 1.5;">';
+    echo '            <strong>Use this to fix purchase mistakes.</strong> When enabled, you can move players between rosters with different gender types. ';
+    echo '            The player\'s details will be preserved, but they will be assigned to a different event type.';
+    echo '        </p>';
+    echo '    </div>';
             
-    echo '        <div id="moveOptions" style="display: none;">';
-    echo '            <label for="targetRosterSelect" style="font-weight: 500; margin-right: 8px;">Destination Roster:</label>';
-    echo '            <select id="targetRosterSelect" style="min-width: 300px;">';
-    echo '                <option value="">Select a destination roster...</option>';
-    if (!empty($available_rosters)) {
-        foreach ($available_rosters as $roster) {
-            $roster_label = sprintf(
-                '%s - %s (%s) - %d players',
-                esc_html($roster->product_name),
-                esc_html($roster->venue ?: 'No Venue'),
-                esc_html($roster->age_group ?: 'No Age Group'),
-                intval($roster->current_players)
-            );
-            if ($roster->camp_terms && $roster->camp_terms !== 'N/A') {
-                $roster_label .= ' - ' . esc_html($roster->camp_terms);
-            } elseif ($roster->course_day && $roster->course_day !== 'N/A') {
-                $roster_label .= ' - ' . esc_html($roster->course_day);
-            }
-            echo '                <option value="' . esc_attr($roster->variation_id) . '">' . esc_html($roster_label) . '</option>';
+    echo '    <div id="moveOptions" style="display: none; margin-top: 10px;">';
+    echo '        <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">';
+    echo '            <div>';
+    echo '                <label for="targetRosterSelect" style="font-weight: 500; margin-right: 8px;">Destination Roster:</label>';
+    echo '                <select id="targetRosterSelect" style="min-width: 400px;">';
+    echo '                    <option value="">Select a destination roster...</option>';
+    
+    // Helper function to generate roster label
+    $generate_roster_label = function($roster, $is_cross_gender = false) use ($is_girls_only) {
+        // Activity icon
+        $icon = $roster->activity_type === 'Course' ? '🏐' : ($roster->activity_type === 'Camp' ? '⛺' : '🎂');
+        
+        // Build label with enhanced information
+        $roster_label = sprintf(
+            '%s %s - %s (%s)',
+            $icon,
+            $roster->product_name,
+            $roster->venue ?: 'No Venue',
+            $roster->age_group ?: 'No Age Group'
+        );
+        
+        // Add camp terms or course day
+        if ($roster->camp_terms && $roster->camp_terms !== 'N/A') {
+            $roster_label .= ' - ' . substr($roster->camp_terms, 0, 50);
+        } elseif ($roster->course_day && $roster->course_day !== 'N/A') {
+            $roster_label .= ' - ' . $roster->course_day;
         }
-    } else {
-        echo '                <option value="" disabled>No other rosters available for migration</option>';
+        
+        // Add time if available
+        if (!empty($roster->times)) {
+            $roster_label .= ' | ' . $roster->times;
+        }
+        
+        // Add player count
+        $roster_label .= sprintf(' | 👥 %d players', intval($roster->current_players));
+        
+        // Add girls-only badge
+        if ($roster->girls_only) {
+            $roster_label .= ' | 🚺 Girls Only';
+        }
+        
+        // Warning if different gender from source
+        if ($is_girls_only !== (bool)$roster->girls_only) {
+            $roster_label .= ' | ⚠️ Different Gender';
+        }
+        
+        return $roster_label;
+    };
+    
+    // Same-gender rosters (always shown)
+    if (!empty($available_rosters)) {
+        echo '                <optgroup label="' . esc_attr__('Same Gender Type', 'intersoccer-reports-rosters') . ' (' . count($available_rosters) . ')">';
+        foreach ($available_rosters as $roster) {
+            $roster_label = $generate_roster_label($roster, false);
+            echo '                    <option value="' . esc_attr($roster->variation_id) . '" data-girls-only="' . esc_attr($roster->girls_only ? '1' : '0') . '" data-cross-gender="0">' . esc_html($roster_label) . '</option>';
+        }
+        echo '                </optgroup>';
+    }
+    
+    // Cross-gender rosters (hidden by default, shown when checkbox enabled)
+    if (!empty($cross_gender_rosters)) {
+        echo '                <optgroup label="' . esc_attr__('⚠️ Different Gender Type (Enable checkbox above)', 'intersoccer-reports-rosters') . ' (' . count($cross_gender_rosters) . ')" id="crossGenderRosterGroup" style="display: none;">';
+        foreach ($cross_gender_rosters as $roster) {
+            $roster_label = $generate_roster_label($roster, true);
+            echo '                    <option value="' . esc_attr($roster->variation_id) . '" data-girls-only="' . esc_attr($roster->girls_only ? '1' : '0') . '" data-cross-gender="1" class="cross-gender-option" style="display: none;">' . esc_html($roster_label) . '</option>';
+        }
+        echo '                </optgroup>';
+    }
+    
+    if (empty($available_rosters) && empty($cross_gender_rosters)) {
+        echo '                <option value="" disabled>No other rosters available</option>';
     }
     echo '            </select>';
     echo '        </div>';
@@ -430,10 +522,12 @@ function intersoccer_render_roster_details_page() {
             const isMove = this.value === 'move';
             console.log('InterSoccer Migration: Bulk action changed to:', this.value, 'Show move options:', isMove);
             moveOptions.toggle(isMove);
+            $('#crossGenderOption').toggle(isMove);
             
             // Reset target roster selection when switching away from move
             if (!isMove) {
                 targetRosterSelect.val('');
+                $('#allowCrossGender').prop('checked', false);
             }
         });
 
@@ -441,6 +535,29 @@ function intersoccer_render_roster_details_page() {
         targetRosterSelect.on('change', function() {
             const value = $(this).val().trim();
             console.log('InterSoccer Migration: Target roster selected:', value);
+        });
+        
+        // Handle cross-gender checkbox toggle
+        $('#allowCrossGender').on('change', function() {
+            const isChecked = $(this).is(':checked');
+            console.log('InterSoccer Migration: Cross-gender checkbox toggled:', isChecked);
+            
+            if (isChecked) {
+                // Show cross-gender options
+                $('#crossGenderRosterGroup').show();
+                $('.cross-gender-option').show();
+                console.log('InterSoccer Migration: Showing cross-gender roster options');
+            } else {
+                // Hide cross-gender options and reset selection if it was a cross-gender roster
+                const currentSelection = targetRosterSelect.find('option:selected');
+                if (currentSelection.data('cross-gender') === 1 || currentSelection.hasClass('cross-gender-option')) {
+                    targetRosterSelect.val('');
+                    console.log('InterSoccer Migration: Cleared cross-gender selection');
+                }
+                $('#crossGenderRosterGroup').hide();
+                $('.cross-gender-option').hide();
+                console.log('InterSoccer Migration: Hiding cross-gender roster options');
+            }
         });
 
         applyBulk.on('click', function() {
@@ -479,14 +596,37 @@ function intersoccer_render_roster_details_page() {
             // Enhanced confirmation with details
             const selectedOption = targetRosterSelect.find('option:selected');
             const destinationName = selectedOption.text();
-            const confirmMessage = `Are you sure you want to move ${selectedItems.length} player(s) to "${destinationName}"?\n\nThis will:\n- Update their order items\n- Change their roster assignment\n- Preserve original pricing\n\nThis action cannot be undone.`;
+            const destinationGirlsOnly = selectedOption.data('girls-only') === '1' || selectedOption.data('girls-only') === 1;
+            const sourceGirlsOnly = <?php echo $is_girls_only ? 'true' : 'false'; ?>;
+            const allowCrossGender = $('#allowCrossGender').is(':checked');
+            const isCrossGender = sourceGirlsOnly !== destinationGirlsOnly;
+            
+            // Build confirmation message
+            let confirmMessage = `Move ${selectedItems.length} player(s) to:\n"${destinationName}"\n\n`;
+            
+            // Add gender warning if applicable
+            if (isCrossGender) {
+                if (sourceGirlsOnly && !destinationGirlsOnly) {
+                    confirmMessage += '⚠️ WARNING: Moving from Girls Only to Regular (Mixed Gender) roster\n\n';
+                } else {
+                    confirmMessage += '⚠️ WARNING: Moving from Regular to Girls Only roster\n\n';
+                }
+            }
+            
+            confirmMessage += 'This will:\n';
+            confirmMessage += '  ✓ Update order items to new variation\n';
+            confirmMessage += '  ✓ Change roster assignment\n';
+            confirmMessage += '  ✓ Preserve original pricing\n';
+            confirmMessage += '  ✓ Update roster database\n\n';
+            confirmMessage += 'This action cannot be undone.\n\n';
+            confirmMessage += 'Continue?';
             
             if (!confirm(confirmMessage)) {
                 console.log('InterSoccer Migration: Migration cancelled by user');
                 return;
             }
 
-            console.log('InterSoccer Migration: Starting AJAX request');
+            console.log('InterSoccer Migration: Starting AJAX request with allow_cross_gender=' + allowCrossGender);
 
             // Enhanced AJAX call with better error handling
             $.ajax({
@@ -496,7 +636,8 @@ function intersoccer_render_roster_details_page() {
                     action: 'intersoccer_move_players',
                     nonce: '<?php echo esc_js(wp_create_nonce('intersoccer_move_nonce')); ?>',
                     target_variation_id: parseInt(targetVar),
-                    order_item_ids: selectedItems
+                    order_item_ids: selectedItems,
+                    allow_cross_gender: allowCrossGender ? '1' : '0'
                 },
                 beforeSend: function() {
                     console.log('InterSoccer Migration: AJAX request started');
