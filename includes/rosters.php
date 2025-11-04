@@ -8,6 +8,23 @@
  */
 
 /**
+ * Helper: Get placeholder filter for WHERE clause
+ */
+function intersoccer_roster_placeholder_where() {
+    global $wpdb;
+    static $filter = null;
+    
+    if ($filter === null) {
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        $columns = $wpdb->get_col("DESCRIBE $rosters_table", 0);
+        $has_column = in_array('is_placeholder', $columns);
+        $filter = $has_column ? " AND (is_placeholder = 0 OR is_placeholder IS NULL)" : "";
+    }
+    
+    return $filter;
+}
+
+/**
  * Add improved inline CSS for better layout
  */
 add_action('admin_head', function () {
@@ -527,8 +544,7 @@ function intersoccer_render_camps_page() {
                FROM $rosters_table r
                LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                WHERE r.activity_type IN ('Camp', 'Camp, Girls Only', 'Camp, Girls\' only')
-               AND r.girls_only = 0
-               AND r.is_placeholder = 0";  // EXCLUDE Girls Only events and placeholders
+               AND r.girls_only = 0" . intersoccer_roster_placeholder_where();  // EXCLUDE Girls Only events and placeholders
 
     // Add coach venue filtering if user is a coach
     if ($is_coach && !empty($coach_accessible_venues)) {
@@ -543,10 +559,11 @@ function intersoccer_render_camps_page() {
                      ORDER BY r.camp_terms, r.venue, r.age_group";    $start_time = microtime(true);
     $groups = $wpdb->get_results($base_query, ARRAY_A);
     $query_time = microtime(true) - $start_time;
-    $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0 AND is_placeholder = 0 AND venue IS NOT NULL ORDER BY venue");
-    $all_camp_terms = $wpdb->get_col("SELECT DISTINCT camp_terms FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0 AND is_placeholder = 0 AND camp_terms IS NOT NULL ORDER BY camp_terms");
-    $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0 AND is_placeholder = 0 AND age_group IS NOT NULL ORDER BY age_group");
-    $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.activity_type = 'Camp' AND r.girls_only = 0 AND r.is_placeholder = 0 AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
+    $filter = intersoccer_roster_placeholder_where();
+    $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0{$filter} AND venue IS NOT NULL ORDER BY venue");
+    $all_camp_terms = $wpdb->get_col("SELECT DISTINCT camp_terms FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0{$filter} AND camp_terms IS NOT NULL ORDER BY camp_terms");
+    $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0{$filter} AND age_group IS NOT NULL ORDER BY age_group");
+    $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.activity_type = 'Camp' AND r.girls_only = 0" . str_replace('is_placeholder', 'r.is_placeholder', $filter) . " AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
 
     error_log("InterSoccer: Camps query results: " . print_r($groups, true));
     error_log("InterSoccer: Camps query execution time: " . $query_time . " seconds");
@@ -858,8 +875,7 @@ function intersoccer_render_courses_page() {
                FROM $rosters_table r
                LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                WHERE r.activity_type IN ('Course', 'Course, Girls Only', 'Course, Girls\' only')
-               AND r.girls_only = 0
-               AND r.is_placeholder = 0";  // EXCLUDE Girls Only events and placeholders
+               AND r.girls_only = 0" . intersoccer_roster_placeholder_where();  // EXCLUDE Girls Only events and placeholders
 
     // Add coach venue filtering if user is a coach
     if ($is_coach && !empty($coach_accessible_venues)) {
@@ -876,10 +892,11 @@ function intersoccer_render_courses_page() {
     $start_time = microtime(true);
     $groups = $wpdb->get_results($base_query, ARRAY_A);
     $query_time = microtime(true) - $start_time;
-    $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0 AND is_placeholder = 0 AND venue IS NOT NULL ORDER BY venue");
-    $all_course_days = $wpdb->get_col("SELECT DISTINCT course_day FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0 AND is_placeholder = 0 AND course_day IS NOT NULL ORDER BY course_day");
-    $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0 AND is_placeholder = 0 AND age_group IS NOT NULL ORDER BY age_group");
-    $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.activity_type = 'Course' AND r.girls_only = 0 AND r.is_placeholder = 0 AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
+    $filter = intersoccer_roster_placeholder_where();
+    $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND venue IS NOT NULL ORDER BY venue");
+    $all_course_days = $wpdb->get_col("SELECT DISTINCT course_day FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND course_day IS NOT NULL ORDER BY course_day");
+    $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND age_group IS NOT NULL ORDER BY age_group");
+    $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.activity_type = 'Course' AND r.girls_only = 0" . str_replace('is_placeholder', 'r.is_placeholder', $filter) . " AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
     error_log("InterSoccer: Courses query results: " . print_r($groups, true));
     error_log("InterSoccer: Courses query execution time: " . $query_time . " seconds");
 
@@ -1218,8 +1235,7 @@ function intersoccer_render_girls_only_page() {
                           GROUP_CONCAT(DISTINCT r.product_name) as product_names
                    FROM $rosters_table r
                    LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
-                   WHERE r.girls_only = 1
-                   AND r.is_placeholder = 0";
+                   WHERE r.girls_only = 1" . intersoccer_roster_placeholder_where();
 
     // Add coach venue filtering if user is a coach
     if ($is_coach && !empty($coach_accessible_venues)) {
@@ -1236,11 +1252,12 @@ function intersoccer_render_girls_only_page() {
     $start_time = microtime(true);
     $groups = $wpdb->get_results($base_query, ARRAY_A);
     $query_time = microtime(true) - $start_time;
-    $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE girls_only = 1 AND is_placeholder = 0 AND venue IS NOT NULL ORDER BY venue");
-    $all_camp_terms = $wpdb->get_col("SELECT DISTINCT camp_terms FROM $rosters_table WHERE girls_only = 1 AND is_placeholder = 0 AND camp_terms IS NOT NULL ORDER BY camp_terms");
-    $all_course_days = $wpdb->get_col("SELECT DISTINCT course_day FROM $rosters_table WHERE girls_only = 1 AND is_placeholder = 0 AND course_day IS NOT NULL ORDER BY course_day");
-    $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE girls_only = 1 AND is_placeholder = 0 AND age_group IS NOT NULL ORDER BY age_group");
-    $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.girls_only = 1 AND r.is_placeholder = 0 AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
+    $filter = intersoccer_roster_placeholder_where();
+    $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE girls_only = 1{$filter} AND venue IS NOT NULL ORDER BY venue");
+    $all_camp_terms = $wpdb->get_col("SELECT DISTINCT camp_terms FROM $rosters_table WHERE girls_only = 1{$filter} AND camp_terms IS NOT NULL ORDER BY camp_terms");
+    $all_course_days = $wpdb->get_col("SELECT DISTINCT course_day FROM $rosters_table WHERE girls_only = 1{$filter} AND course_day IS NOT NULL ORDER BY course_day");
+    $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE girls_only = 1{$filter} AND age_group IS NOT NULL ORDER BY age_group");
+    $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.girls_only = 1" . str_replace('is_placeholder', 'r.is_placeholder', $filter) . " AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
     error_log("InterSoccer: Girls Only query results: " . print_r($groups, true));
     error_log("InterSoccer: Girls Only query execution time: " . $query_time . " seconds");
 
@@ -2013,7 +2030,7 @@ function intersoccer_render_all_rosters_page() {
     wp_cache_flush();
     delete_transient('intersoccer_rosters_cache');
 
-    $product_names_query = "SELECT DISTINCT product_name FROM $rosters_table WHERE product_name IS NOT NULL AND is_placeholder = 0";
+    $product_names_query = "SELECT DISTINCT product_name FROM $rosters_table WHERE product_name IS NOT NULL" . intersoccer_roster_placeholder_where();
 
     // Add coach venue filtering if user is a coach
     if ($is_coach && !empty($coach_accessible_venues)) {
@@ -2063,7 +2080,7 @@ function intersoccer_render_all_rosters_page() {
                 foreach ($product_names as $product_name) {
                     $query = "SELECT variation_id, product_name, venue, age_group, COUNT(DISTINCT order_item_id) as total_players
                               FROM $rosters_table
-                              WHERE product_name = %s AND is_placeholder = 0";
+                              WHERE product_name = %s" . intersoccer_roster_placeholder_where();
 
                     // Add coach venue filtering if user is a coach
                     if ($is_coach && !empty($coach_accessible_venues)) {

@@ -335,7 +335,6 @@ function intersoccer_render_final_reports_page() {
                             <th><?php _e('Direct Online', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Total', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Final', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Girls Free', 'intersoccer-reports-rosters'); ?></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -343,14 +342,13 @@ function intersoccer_render_final_reports_page() {
                         $current_region = '';
                         $current_course = '';
                         foreach ($report_data as $region => $courses): ?>
-                            <?php $region_total = $totals['regions'][$region] ?? ['bo' => 0, 'pitch_side' => 0, 'buyclub' => 0, 'total' => 0, 'final' => 0, 'girls_free' => 0]; ?>
+                            <?php $region_total = $totals['regions'][$region] ?? ['bo' => 0, 'pitch_side' => 0, 'buyclub' => 0, 'total' => 0, 'final' => 0]; ?>
                             <tr style="background-color: #f0f0f0; font-weight: bold;">
                                 <td colspan="2"><?php echo esc_html($region); ?> - TOTAL</td>
                                 <td></td>
                                 <td><?php echo esc_html($region_total['online']); ?></td>
                                 <td><?php echo esc_html($region_total['total']); ?></td>
                                 <td><?php echo esc_html($region_total['final']); ?></td>
-                                <td><?php echo esc_html($region_total['girls_free']); ?></td>
                             </tr>
                             <?php foreach ($courses as $course_name => $data): ?>
                                 <?php foreach ($data as $course_day => $course_data): ?>
@@ -361,7 +359,6 @@ function intersoccer_render_final_reports_page() {
                                         <td><?php echo esc_html($course_data['online']); ?></td>
                                         <td><?php echo esc_html($course_data['total']); ?></td>
                                         <td><?php echo esc_html($course_data['final']); ?></td>
-                                        <td><?php echo esc_html($course_data['girls_free']); ?></td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endforeach; ?>
@@ -379,7 +376,6 @@ function intersoccer_render_final_reports_page() {
                                 <th><?php _e('Online', 'intersoccer-reports-rosters'); ?></th>
                                 <th><?php _e('Total', 'intersoccer-reports-rosters'); ?></th>
                                 <th><?php _e('Final', 'intersoccer-reports-rosters'); ?></th>
-                                <th><?php _e('Girls Free 24', 'intersoccer-reports-rosters'); ?></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -388,7 +384,6 @@ function intersoccer_render_final_reports_page() {
                                 <td><?php echo esc_html($totals['all']['online']); ?></td>
                                 <td><?php echo esc_html($totals['all']['total']); ?></td>
                                 <td><?php echo esc_html($totals['all']['final']); ?></td>
-                                <td><?php echo esc_html($totals['all']['girls_free']); ?></td>
                             </tr>
                         </tbody>
                     </table>

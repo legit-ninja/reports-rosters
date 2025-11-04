@@ -94,12 +94,13 @@ function intersoccer_render_plugin_overview_page() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    // Fetch data for charts (excluding placeholders)
-    $current_venue_data = $wpdb->get_results("SELECT venue, COUNT(*) as count FROM $rosters_table WHERE start_date <= CURDATE() AND end_date >= CURDATE() AND is_placeholder = 0 GROUP BY venue", ARRAY_A);
-    $region_data = $wpdb->get_results("SELECT venue, COUNT(*) as count FROM $rosters_table WHERE is_placeholder = 0 GROUP BY venue", ARRAY_A);
-    $age_data = $wpdb->get_results("SELECT age_group, COUNT(*) as count FROM $rosters_table WHERE age_group != 'N/A' AND is_placeholder = 0 GROUP BY age_group", ARRAY_A);
-    $gender_data = $wpdb->get_results("SELECT gender, COUNT(*) as count FROM $rosters_table WHERE gender != 'N/A' AND is_placeholder = 0 GROUP BY gender", ARRAY_A);
-    $weekly_trends = $wpdb->get_results("SELECT DATE(start_date) as week_start, COUNT(*) as count FROM $rosters_table WHERE start_date IS NOT NULL AND is_placeholder = 0 GROUP BY DATE(start_date) ORDER BY start_date", ARRAY_A);
+    // Fetch data for charts (excluding placeholders if column exists)
+    $filter = function_exists('intersoccer_roster_placeholder_where') ? intersoccer_roster_placeholder_where() : '';
+    $current_venue_data = $wpdb->get_results("SELECT venue, COUNT(*) as count FROM $rosters_table WHERE start_date <= CURDATE() AND end_date >= CURDATE(){$filter} GROUP BY venue", ARRAY_A);
+    $region_data = $wpdb->get_results("SELECT venue, COUNT(*) as count FROM $rosters_table WHERE 1=1{$filter} GROUP BY venue", ARRAY_A);
+    $age_data = $wpdb->get_results("SELECT age_group, COUNT(*) as count FROM $rosters_table WHERE age_group != 'N/A'{$filter} GROUP BY age_group", ARRAY_A);
+    $gender_data = $wpdb->get_results("SELECT gender, COUNT(*) as count FROM $rosters_table WHERE gender != 'N/A'{$filter} GROUP BY gender", ARRAY_A);
+    $weekly_trends = $wpdb->get_results("SELECT DATE(start_date) as week_start, COUNT(*) as count FROM $rosters_table WHERE start_date IS NOT NULL{$filter} GROUP BY DATE(start_date) ORDER BY start_date", ARRAY_A);
 
     // Manually order: male, female, other
     $ordered_genders = ['male', 'female', 'other'];

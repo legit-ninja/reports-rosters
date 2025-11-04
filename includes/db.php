@@ -666,6 +666,9 @@ function intersoccer_upgrade_database() {
 
     error_log('InterSoccer: Starting database upgrade');
 
+    // Run migration to add any missing columns (including is_placeholder)
+    intersoccer_migrate_rosters_table();
+
     $columns = $wpdb->get_results("DESCRIBE $rosters_table");
     $existing_cols = wp_list_pluck($columns, 'Field');
 

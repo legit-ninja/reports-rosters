@@ -8,6 +8,36 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+/**
+ * Helper: Check if is_placeholder column exists (cached)
+ */
+function intersoccer_has_placeholder_column() {
+    static $has_column = null;
+    
+    if ($has_column === null) {
+        global $wpdb;
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        $columns = $wpdb->get_col("DESCRIBE $rosters_table", 0);
+        $has_column = in_array('is_placeholder', $columns);
+        
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer: is_placeholder column exists: ' . ($has_column ? 'YES' : 'NO'));
+        }
+    }
+    
+    return $has_column;
+}
+
+/**
+ * Helper: Get placeholder filter SQL clause
+ */
+function intersoccer_get_placeholder_filter($alias = 'r') {
+    if (!intersoccer_has_placeholder_column()) {
+        return ''; // Column doesn't exist yet, no filter
+    }
+    return " AND ({$alias}.is_placeholder = 0 OR {$alias}.is_placeholder IS NULL)";
+}
+
 function intersoccer_parse_dates($date_string) {
     if (preg_match('/(\w+\s+\d+(?:st|nd|rd|th)?)\s*(?:-|\s+-\s+)(\w+\s+\d+(?:st|nd|rd|th)?)\s*\((\d+)\s+days\)/i', $date_string, $matches)) {
         $start = DateTime::createFromFormat('F j Y', trim($matches[1]) . ' ' . date('Y'));
@@ -21,7 +51,7 @@ function intersoccer_pe_get_event_roster_by_variation($variation_id, $context = 
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    $query = "SELECT * FROM $rosters_table WHERE variation_id = %d AND is_placeholder = 0";
+    $query = "SELECT * FROM $rosters_table WHERE variation_id = %d" . intersoccer_get_placeholder_filter();
     if (!empty($context['age_group'])) {
         $query .= $wpdb->prepare(" AND (age_group = %s OR age_group LIKE %s)", $context['age_group'], '%' . $wpdb->esc_like($context['age_group']) . '%');
     }
@@ -36,7 +66,11 @@ function intersoccer_pe_get_camp_variations($filters) {
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
     $posts_table = $wpdb->prefix . 'posts';
 
-    $where = ["r.activity_type IN ('Camp', 'Girls Only')", "r.is_placeholder = 0"];
+    $where = ["r.activity_type IN ('Camp', 'Girls Only')"];
+    $placeholder_filter = intersoccer_get_placeholder_filter('r');
+    if ($placeholder_filter) {
+        $where[] = "1=1" . $placeholder_filter; // Add as separate condition
+    }
     if ($filters['region'] ?? '') $where[] = $wpdb->prepare("r.venue LIKE %s", '%' . intersoccer_normalize_attribute($filters['region']) . '%');
     if ($filters['venue'] ?? '') $where[] = $wpdb->prepare("r.venue = %s", intersoccer_normalize_attribute($filters['venue']));
     if ($filters['age_group'] ?? '') {
@@ -87,7 +121,11 @@ function intersoccer_pe_get_course_variations($filters) {
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
     $posts_table = $wpdb->prefix . 'posts';
 
-    $where = ["r.activity_type = 'Course'", "r.is_placeholder = 0"];
+    $where = ["r.activity_type = 'Course'"];
+    $placeholder_filter = intersoccer_get_placeholder_filter('r');
+    if ($placeholder_filter) {
+        $where[] = "1=1" . $placeholder_filter; // Add as separate condition
+    }
     if ($filters['region'] ?? '') $where[] = $wpdb->prepare("r.venue LIKE %s", '%' . intersoccer_normalize_attribute($filters['region']) . '%');
     if ($filters['venue'] ?? '') $where[] = $wpdb->prepare("r.venue = %s", intersoccer_normalize_attribute($filters['venue']));
     if ($filters['age_group'] ?? '') {

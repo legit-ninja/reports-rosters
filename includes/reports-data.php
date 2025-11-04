@@ -333,10 +333,6 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
 
             // Course Day: from pa_course-day attribute
             $roster['course_day'] = $roster['course_day'] ?? 'Unknown';
-
-            // Girls Free: discount code 'GIRLSFREE24' and gender female
-            $discount_codes = strtolower($roster['discount_codes'] ?? '');
-            $roster['is_girls_free'] = (strpos($discount_codes, 'girlsfree24') !== false && strtolower($roster['gender'] ?? '') === 'female');
         }
         unset($roster);
 
@@ -364,14 +360,12 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
                     'online' => 0,
                     'total' => 0,
                     'final' => 0,
-                    'girls_free' => 0,
                 ];
             }
 
             $report_data[$region][$course_name][$course_day]['online']++;
             $report_data[$region][$course_name][$course_day]['total']++;
             $report_data[$region][$course_name][$course_day]['final']++;
-            $report_data[$region][$course_name][$course_day]['girls_free'] += $entry['is_girls_free'] ? 1 : 0;
         }
 
         return $report_data;
@@ -430,7 +424,6 @@ function intersoccer_calculate_final_reports_totals($report_data, $activity_type
                 'online' => 0,
                 'total' => 0,
                 'final' => 0,
-                'girls_free' => 0,
             ]
         ];
 
@@ -439,7 +432,6 @@ function intersoccer_calculate_final_reports_totals($report_data, $activity_type
                 'online' => 0,
                 'total' => 0,
                 'final' => 0,
-                'girls_free' => 0,
                 'prev_year' => 0, // Placeholder for previous year data
             ];
 
@@ -448,12 +440,10 @@ function intersoccer_calculate_final_reports_totals($report_data, $activity_type
                     $totals['regions'][$region]['online'] += $data['online'];
                     $totals['regions'][$region]['total'] += $data['total'];
                     $totals['regions'][$region]['final'] += $data['final'];
-                    $totals['regions'][$region]['girls_free'] += $data['girls_free'];
 
                     $totals['all']['online'] += $data['online'];
                     $totals['all']['total'] += $data['total'];
                     $totals['all']['final'] += $data['final'];
-                    $totals['all']['girls_free'] += $data['girls_free'];
                 }
             }
         }
