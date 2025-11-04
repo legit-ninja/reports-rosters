@@ -120,18 +120,19 @@ $roster['is_buyclub'] = $line_subtotal > 0 && $line_total === 0.0;
 ## 📊 Overall Impact
 
 ### Before P0 Fixes:
-- ❌ Placeholder rosters polluting data
+- ❌ Placeholder rosters polluting data (initially thought this was an issue)
 - ❌ Min-max always showing "0-0"
 - ❌ 1,000+ queries for large datasets
 - ❌ 5-10 second page loads
 - ❌ PHP warnings in error log
 
-### After P0 Fixes:
-- ✅ Clean, accurate data
+### After P0 Fixes (Corrected):
 - ✅ Correct min-max calculations (e.g., "5-25")
 - ✅ Single optimized query per report
 - ✅ <1 second page loads
 - ✅ No PHP errors
+- ✅ All 600+ rosters displaying correctly
+- ✅ Placeholder filtering properly scoped to roster display pages only
 
 ---
 
