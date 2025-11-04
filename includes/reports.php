@@ -426,12 +426,12 @@ function intersoccer_render_booking_report_tab() {
     ];
     ?>
     <div class="wrap intersoccer-reports-rosters-reports-tab">
-        <h1><?php _e('📊 Booking Report Dashboard', 'intersoccer-reports-rosters'); ?></h1>
+        <h1><?php _e('Booking Report Dashboard', 'intersoccer-reports-rosters'); ?></h1>
         <p><?php _e('Filter and export detailed booking data with revenue analysis.', 'intersoccer-reports-rosters'); ?></p>
         
         <!-- Streamlined Filter Panel -->
         <div class="intersoccer-filters">
-            <h3><?php _e('🔍 Filter Options', 'intersoccer-reports-rosters'); ?></h3>
+            <h3><?php _e('Filter Options', 'intersoccer-reports-rosters'); ?></h3>
             
             <!-- Primary Date Controls -->
             <div class="filter-row">
@@ -470,7 +470,7 @@ function intersoccer_render_booking_report_tab() {
             <!-- Collapsible Column Selection -->
             <div class="filter-row" style="flex-direction: column; align-items: flex-start;">
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <h4 style="margin: 0;"><?php _e('📋 Columns to Display', 'intersoccer-reports-rosters'); ?></h4>
+                    <h4 style="margin: 0;"><?php _e('Columns to Display', 'intersoccer-reports-rosters'); ?></h4>
                     <button type="button" id="toggle-columns" class="button button-small" style="font-size: 12px;">
                         <?php _e('Show/Hide Columns', 'intersoccer-reports-rosters'); ?>
                     </button>
@@ -495,10 +495,10 @@ function intersoccer_render_booking_report_tab() {
             </div>
             <div style="display: flex; align-items: center; gap: 15px;">
                 <small style="color: #666; font-style: italic;">
-                    💡 <?php _e('All columns available in Excel export', 'intersoccer-reports-rosters'); ?>
+                    <?php _e('Note: All columns available in Excel export', 'intersoccer-reports-rosters'); ?>
                 </small>
                 <button id="export-booking-report" class="button button-primary">
-                    📥 <?php _e('Export to Excel', 'intersoccer-reports-rosters'); ?>
+                    ↓ <?php _e('Export to Excel', 'intersoccer-reports-rosters'); ?>
                 </button>
             </div>
         </div>

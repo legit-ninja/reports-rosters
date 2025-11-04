@@ -648,7 +648,7 @@ function intersoccer_render_camps_page() {
             <div class="header-actions">
                 <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-camps&action=reconcile'), 'intersoccer_reconcile'); ?>" 
                    class="button button-secondary">
-                    🔄 <?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?>
+                    ↻ <?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?>
                 </a>
             </div>
         </div>
@@ -659,7 +659,7 @@ function intersoccer_render_camps_page() {
                 <input type="hidden" name="export_type" value="camps">
                 <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
                 <input type="submit" name="export_camps" class="button button-primary" 
-                    value="<?php _e('📥 Export All Camps', 'intersoccer-reports-rosters'); ?>">
+                    value="<?php _e('↓ Export All Camps', 'intersoccer-reports-rosters'); ?>">
             </form>
         </div>
 
@@ -724,7 +724,7 @@ function intersoccer_render_camps_page() {
         <?php if ($selected_season || $selected_venue || $selected_camp_terms || $selected_age_group || $selected_city): ?>
                 <div class="filter-group">
                     <a href="<?php echo admin_url('admin.php?page=intersoccer-camps'); ?>" class="button button-secondary">
-                        🔄 <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
+                        ↻ <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
                     </a>
                 </div>
                 <?php endif; ?>
@@ -751,10 +751,10 @@ function intersoccer_render_camps_page() {
                                 $camp_count = count($camps);
                                 ?>
                                 <span class="stat-item">
-                                    👥 <?php echo $season_total; ?> <?php _e('players', 'intersoccer-reports-rosters'); ?>
+                                    Players: <?php echo $season_total; ?> <?php _e('players', 'intersoccer-reports-rosters'); ?>
                                 </span>
                                 <span class="stat-item">
-                                    📚 <?php echo $camp_count; ?> <?php _e('camps', 'intersoccer-reports-rosters'); ?>
+                                    Camps: <?php echo $camp_count; ?> <?php _e('camps', 'intersoccer-reports-rosters'); ?>
                                 </span>
                             </div>
                         </div>
@@ -796,7 +796,7 @@ function intersoccer_render_camps_page() {
                                             $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=camps&event_signature=' . urlencode($camp['event_signature']) . '&camp_terms=' . urlencode($camp['camp_terms'] ?: 'N/A') . '&venue=' . urlencode($camp['venue']) . '&age_group=' . urlencode($camp['age_group']) . '&times=' . urlencode($camp['times']));
                                             ?>
                                             <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
-                                                👀 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
+                                                <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
                                             </a>
                                         </div>
                                     </div>
@@ -989,7 +989,7 @@ function intersoccer_render_courses_page() {
             <div class="header-actions">
                 <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-courses&action=reconcile'), 'intersoccer_reconcile'); ?>" 
                    class="button button-secondary">
-                    🔄 <?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?>
+                    ↻ <?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?>
                 </a>
             </div>
         </div>
@@ -1000,7 +1000,7 @@ function intersoccer_render_courses_page() {
                 <input type="hidden" name="export_type" value="courses">
                 <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
                 <input type="submit" name="export_courses" class="button button-primary" 
-                    value="<?php _e('📥 Export All Courses', 'intersoccer-reports-rosters'); ?>">
+                    value="<?php _e('↓ Export All Courses', 'intersoccer-reports-rosters'); ?>">
             </form>
         </div>
 
@@ -1065,7 +1065,7 @@ function intersoccer_render_courses_page() {
                 <?php if ($selected_season): ?>
                 <div class="filter-group">
                     <a href="<?php echo admin_url('admin.php?page=intersoccer-courses'); ?>" class="button button-secondary">
-                        🔄 <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
+                        ↻ <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
                     </a>
                 </div>
                 <?php endif; ?>
@@ -1096,10 +1096,10 @@ function intersoccer_render_courses_page() {
                                 }
                                 ?>
                                 <span class="stat-item">
-                                    👥 <?php echo $season_total; ?> <?php _e('players', 'intersoccer-reports-rosters'); ?>
+                                    Players: <?php echo $season_total; ?> <?php _e('players', 'intersoccer-reports-rosters'); ?>
                                 </span>
                                 <span class="stat-item">
-                                    📚 <?php echo $event_count; ?> <?php _e('courses', 'intersoccer-reports-rosters'); ?>
+                                    Camps: <?php echo $event_count; ?> <?php _e('courses', 'intersoccer-reports-rosters'); ?>
                                 </span>
                             </div>
                         </div>
@@ -1152,7 +1152,7 @@ function intersoccer_render_courses_page() {
                                                     $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=courses&event_signature=' . urlencode($course['event_signature']) . '&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']));
                                                     ?>
                                                     <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
-                                                        👀 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
+                                                        <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
                                                     </a>
                                                 </div>
                                             </div>
@@ -1625,7 +1625,7 @@ function intersoccer_render_girls_only_page() {
                                                         $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=girls-only&event_signature=' . urlencode($course['event_signature']) . '&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']) . '&girls_only=1');
                                                         ?>
                                                         <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
-                                                            👀 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
+                                                            <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
                                                         </a>
                                                     </div>
                                                 </div>
@@ -1842,7 +1842,7 @@ function intersoccer_render_other_events_page() {
             <div class="header-actions">
                 <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-other-events&action=reconcile'), 'intersoccer_reconcile'); ?>" 
                    class="button button-secondary">
-                    🔄 <?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?>
+                    ↻ <?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?>
                 </a>
             </div>
         </div>
@@ -1853,7 +1853,7 @@ function intersoccer_render_other_events_page() {
                 <input type="hidden" name="export_type" value="other">
                 <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
                 <input type="submit" name="export_other_events" class="button button-primary" 
-                    value="<?php _e('📥 Export Other Events', 'intersoccer-reports-rosters'); ?>">
+                    value="<?php _e('↓ Export Other Events', 'intersoccer-reports-rosters'); ?>">
             </form>
         </div>
 
@@ -1885,7 +1885,7 @@ function intersoccer_render_other_events_page() {
                 <?php if ($selected_season || $selected_product_name): ?>
                 <div class="filter-group">
                     <a href="<?php echo admin_url('admin.php?page=intersoccer-other-events'); ?>" class="button button-secondary">
-                        🔄 <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
+                        ↻ <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
                     </a>
                 </div>
                 <?php endif; ?>
@@ -1912,10 +1912,10 @@ function intersoccer_render_other_events_page() {
                                 $event_count = is_array($events) ? count($events) : 0;
                                 ?>
                                 <span class="stat-item">
-                                    👥 <?php echo $season_total; ?> <?php _e('players', 'intersoccer-reports-rosters'); ?>
+                                    Players: <?php echo $season_total; ?> <?php _e('players', 'intersoccer-reports-rosters'); ?>
                                 </span>
                                 <span class="stat-item">
-                                    📚 <?php echo $event_count; ?> <?php _e('events', 'intersoccer-reports-rosters'); ?>
+                                    Camps: <?php echo $event_count; ?> <?php _e('events', 'intersoccer-reports-rosters'); ?>
                                 </span>
                             </div>
                         </div>
@@ -1964,7 +1964,7 @@ function intersoccer_render_other_events_page() {
                                                 $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_ids=' . urlencode($event['variation_ids']) . '&product_name=' . urlencode($event['product_name']) . '&age_group=' . urlencode($event['age_group']) . '&times=' . urlencode($event['times']) . '&season=' . urlencode($season));
                                                 ?>
                                                 <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
-                                                    👀 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
+                                                    <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
                                                 </a>
                                             </div>
                                         </div>
@@ -2034,7 +2034,7 @@ function intersoccer_render_all_rosters_page() {
             <div class="header-actions">
                 <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-all-rosters&action=reconcile'), 'intersoccer_reconcile'); ?>" 
                    class="button button-secondary">
-                    🔄 <?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?>
+                    ↻ <?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?>
                 </a>
             </div>
         </div>
@@ -2051,7 +2051,7 @@ function intersoccer_render_all_rosters_page() {
                     <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                     <input type="hidden" name="export_type" value="all">
                     <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
-                    <input type="submit" name="export_all" class="button button-primary" value="<?php _e('📥 Export All Rosters', 'intersoccer-reports-rosters'); ?>">
+                    <input type="submit" name="export_all" class="button button-primary" value="<?php _e('↓ Export All Rosters', 'intersoccer-reports-rosters'); ?>">
                 </form>
             </div>
             
@@ -2087,8 +2087,8 @@ function intersoccer_render_all_rosters_page() {
                         echo '<div class="season-header">';
                         echo '<h2 class="season-title">' . esc_html($product_name) . '</h2>';
                         echo '<div class="season-stats">';
-                        echo '<span class="stat-item">👥 ' . array_sum(array_column($groups, 'total_players')) . ' ' . __('players', 'intersoccer-reports-rosters') . '</span>';
-                        echo '<span class="stat-item">📚 ' . count($groups) . ' ' . __('variations', 'intersoccer-reports-rosters') . '</span>';
+                        echo '<span class="stat-item">Players: ' . array_sum(array_column($groups, 'total_players')) . ' ' . __('players', 'intersoccer-reports-rosters') . '</span>';
+                        echo '<span class="stat-item">Camps: ' . count($groups) . ' ' . __('variations', 'intersoccer-reports-rosters') . '</span>';
                         echo '</div>';
                         echo '</div>';
                         
@@ -2109,7 +2109,7 @@ function intersoccer_render_all_rosters_page() {
                             echo '<td style="padding: 15px;">' . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($group['venue'] ?: 'N/A', 'pa_intersoccer-venues') : ($group['venue'] ?: 'N/A')) . '</td>';
                             echo '<td style="padding: 15px;">' . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($group['age_group'], 'pa_age-group') : $group['age_group']) . '</td>';
                             echo '<td style="padding: 15px;"><strong>' . esc_html($group['total_players']) . '</strong></td>';
-                            echo '<td style="padding: 15px;"><a href="' . esc_url($view_url) . '" class="button-roster-view">👀 ' . __('View Roster', 'intersoccer-reports-rosters') . '</a></td>';
+                            echo '<td style="padding: 15px;"><a href="' . esc_url($view_url) . '" class="button-roster-view">' . __('View Roster', 'intersoccer-reports-rosters') . '</a></td>';
                             echo '</tr>';
                         }
                         echo '</tbody></table>';

@@ -715,12 +715,12 @@ function intersoccer_render_signature_verifier_section() {
 
     ?>
     <div class="signature-verifier-section" style="margin-top: 30px;">
-        <h2>🔍 <?php _e('Event Signature Verifier', 'intersoccer-reports-rosters'); ?></h2>
+        <h2><?php _e('Event Signature Verifier', 'intersoccer-reports-rosters'); ?></h2>
         
         <!-- Documentation Link -->
         <div style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 15px; margin: 15px 0;">
             <p style="margin: 0;">
-                <strong>📚 <?php _e('About Event Signatures:', 'intersoccer-reports-rosters'); ?></strong> 
+                <strong><?php _e('About Event Signatures:', 'intersoccer-reports-rosters'); ?></strong> 
                 <?php _e('Event signatures ensure that the same physical event generates a unique identifier regardless of which language the customer used when purchasing. This prevents roster fragmentation across languages.', 'intersoccer-reports-rosters'); ?>
             </p>
             <p style="margin: 10px 0 0 0;">
@@ -745,7 +745,7 @@ function intersoccer_render_signature_verifier_section() {
                 $lang_display = $lang_names[$current_wpml_lang] ?? $current_wpml_lang;
                 ?>
                 <div style="background: #e7f3ff; padding: 10px; margin-bottom: 15px; border-left: 4px solid #2271b1;">
-                    <strong>🌍 <?php _e('Current WPML Language:', 'intersoccer-reports-rosters'); ?></strong> 
+                    <strong><?php _e('Current WPML Language:', 'intersoccer-reports-rosters'); ?></strong> 
                     <span style="font-size: 16px; font-weight: bold;"><?php echo esc_html($lang_display . ' (' . $current_wpml_lang . ')'); ?></span>
                     <p style="margin: 5px 0 0 0; font-size: 12px;">
                         <?php _e('Dropdown values are shown in this language. To test different languages, switch the WPML admin language and refresh this page.', 'intersoccer-reports-rosters'); ?>
@@ -801,7 +801,7 @@ function intersoccer_render_signature_verifier_section() {
                             <?php endforeach; ?>
                         </select>
                         <button type="button" id="load_event_btn" class="button button-secondary">
-                            📥 <?php _e('Load Selected Event', 'intersoccer-reports-rosters'); ?>
+                            ↓ <?php _e('Load Selected Event', 'intersoccer-reports-rosters'); ?>
                         </button>
                     <?php else : ?>
                         <p style="color: #666; font-style: italic;"><?php _e('No recent events found. Process some orders first.', 'intersoccer-reports-rosters'); ?></p>
@@ -1003,7 +1003,7 @@ function intersoccer_render_signature_verifier_section() {
 
                 <p class="submit">
                     <button type="submit" name="test_signature" class="button button-primary">
-                        🔍 <?php _e('Test Signature Generation', 'intersoccer-reports-rosters'); ?>
+                        <?php _e('Test Signature Generation', 'intersoccer-reports-rosters'); ?>
                     </button>
                 </p>
             </form>
@@ -1012,7 +1012,7 @@ function intersoccer_render_signature_verifier_section() {
         <?php if (!empty($test_results)) : ?>
         <!-- Test Results -->
         <div style="background: #fff; border: 1px solid #ccd0d4; padding: 20px; margin: 15px 0;">
-            <h3>📊 <?php _e('Test Results', 'intersoccer-reports-rosters'); ?></h3>
+            <h3><?php _e('Test Results', 'intersoccer-reports-rosters'); ?></h3>
 
             <!-- Original Data -->
             <div style="margin: 15px 0; padding: 15px; background: #f0f0f1; border-radius: 4px;">
@@ -1067,7 +1067,7 @@ function intersoccer_render_signature_verifier_section() {
 
         <!-- Testing Instructions -->
         <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 15px 0;">
-            <h4 style="margin-top: 0;">💡 <?php _e('Testing Instructions', 'intersoccer-reports-rosters'); ?></h4>
+            <h4 style="margin-top: 0;"><?php _e('Testing Instructions', 'intersoccer-reports-rosters'); ?></h4>
             <ol>
                 <li><?php _e('Use the <strong>Quick Load</strong> dropdown to select a recent event, OR manually select event attributes', 'intersoccer-reports-rosters'); ?></li>
                 <li><?php _e('Test in <strong>English</strong>: Switch WPML to English, refresh page, select event, and note the generated signature', 'intersoccer-reports-rosters'); ?></li>

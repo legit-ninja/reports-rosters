@@ -103,7 +103,7 @@ function intersoccer_render_final_reports_page() {
     };
     </script>
     <div class="wrap intersoccer-reports-rosters-final-reports">
-        <h1><?php _e('📊 Final Numbers Report', 'intersoccer-reports-rosters'); ?></h1>
+        <h1><?php _e('Final Numbers Report', 'intersoccer-reports-rosters'); ?></h1>
         <p><?php _e('Aggregated booking numbers for camps and courses by week, canton, and venue.', 'intersoccer-reports-rosters'); ?></p>
 
         <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" style="margin-bottom: 20px;">
