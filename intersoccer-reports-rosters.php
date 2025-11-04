@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.11.3
+ * Version: 1.12.0
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -71,7 +71,7 @@ function intersoccer_missing_dependencies_notice() {
 }
 
 $included_files = [];
-$files_to_include = ['event-reports.php', 'reports.php', 'reports-ajax.php', 'utils.php', 'rosters.php', 'roster-data.php', 'roster-details.php', 'roster-export.php', 'advanced.php', 'woocommerce-orders.php', 'db.php']; 
+$files_to_include = ['event-reports.php', 'reports.php', 'reports-ajax.php', 'utils.php', 'rosters.php', 'roster-data.php', 'roster-details.php', 'roster-export.php', 'advanced.php', 'woocommerce-orders.php', 'db.php', 'placeholder-rosters.php']; 
 foreach ($files_to_include as $file) {
     $file_path = plugin_dir_path(__FILE__) . 'includes/' . $file;
     if (file_exists($file_path)) {
@@ -94,12 +94,12 @@ function intersoccer_render_plugin_overview_page() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    // Fetch data for charts
-    $current_venue_data = $wpdb->get_results("SELECT venue, COUNT(*) as count FROM $rosters_table WHERE start_date <= CURDATE() AND end_date >= CURDATE() GROUP BY venue", ARRAY_A);
-    $region_data = $wpdb->get_results("SELECT venue, COUNT(*) as count FROM $rosters_table GROUP BY venue", ARRAY_A);
-    $age_data = $wpdb->get_results("SELECT age_group, COUNT(*) as count FROM $rosters_table WHERE age_group != 'N/A' GROUP BY age_group", ARRAY_A);
-    $gender_data = $wpdb->get_results("SELECT gender, COUNT(*) as count FROM $rosters_table WHERE gender != 'N/A' GROUP BY gender", ARRAY_A);
-    $weekly_trends = $wpdb->get_results("SELECT DATE(start_date) as week_start, COUNT(*) as count FROM $rosters_table WHERE start_date IS NOT NULL GROUP BY DATE(start_date) ORDER BY start_date", ARRAY_A);
+    // Fetch data for charts (excluding placeholders)
+    $current_venue_data = $wpdb->get_results("SELECT venue, COUNT(*) as count FROM $rosters_table WHERE start_date <= CURDATE() AND end_date >= CURDATE() AND is_placeholder = 0 GROUP BY venue", ARRAY_A);
+    $region_data = $wpdb->get_results("SELECT venue, COUNT(*) as count FROM $rosters_table WHERE is_placeholder = 0 GROUP BY venue", ARRAY_A);
+    $age_data = $wpdb->get_results("SELECT age_group, COUNT(*) as count FROM $rosters_table WHERE age_group != 'N/A' AND is_placeholder = 0 GROUP BY age_group", ARRAY_A);
+    $gender_data = $wpdb->get_results("SELECT gender, COUNT(*) as count FROM $rosters_table WHERE gender != 'N/A' AND is_placeholder = 0 GROUP BY gender", ARRAY_A);
+    $weekly_trends = $wpdb->get_results("SELECT DATE(start_date) as week_start, COUNT(*) as count FROM $rosters_table WHERE start_date IS NOT NULL AND is_placeholder = 0 GROUP BY DATE(start_date) ORDER BY start_date", ARRAY_A);
 
     // Manually order: male, female, other
     $ordered_genders = ['male', 'female', 'other'];
