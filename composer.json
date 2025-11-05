@@ -3,7 +3,24 @@
     "description": "Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.",
     "type": "library",
     "require": {
+        "php": ">=7.4",
         "phpoffice/phpspreadsheet": "^4.3"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.6",
+        "yoast/phpunit-polyfills": "^1.0",
+        "mockery/mockery": "^1.5",
+        "brain/monkey": "^2.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "InterSoccer\\ReportsRosters\\": "classes/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "InterSoccer\\ReportsRosters\\Tests\\": "tests/"
+        }
     },
     "license": "Apache2",
     "authors": [
@@ -12,5 +29,11 @@
             "email": "jlee@underdogunlimited.com"
         }
     ],
-    "minimum-stability": "stable"
+    "minimum-stability": "stable",
+    "scripts": {
+        "test": "phpunit",
+        "test:coverage": "phpunit --coverage-html coverage",
+        "test:unit": "phpunit --testsuite=Unit",
+        "test:integration": "phpunit --testsuite=Integration"
+    }
 }
