@@ -4,11 +4,11 @@
  * 
  * Camp-specific report for InterSoccer Reports & Rosters Plugin
  * 
- * @package InterSoccerReportsRosters\Reports
+ * @package InterSoccer\ReportsRosters\Reports
  * @version 2.0.0
  */
 
-namespace InterSoccerReportsRosters\Reports;
+namespace InterSoccer\ReportsRosters\Reports;
 
 defined('ABSPATH') or die('Restricted access');
 
@@ -268,5 +268,21 @@ class CampReport extends AbstractReport {
             'most_popular_venue' => $stats['most_popular_venue'],
             'generated_at' => date('Y-m-d H:i:s')
         ];
+    }
+    
+    /**
+     * Filter report data by date range
+     * 
+     * @param string $start_date Start date (Y-m-d)
+     * @param string $end_date End date (Y-m-d)
+     * @return array Filtered data
+     */
+    public function filterByDateRange($start_date, $end_date) {
+        $filters = [
+            'date_from' => $start_date,
+            'date_to' => $end_date
+        ];
+        
+        return $this->generate($filters);
     }
 }

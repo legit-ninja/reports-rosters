@@ -85,14 +85,14 @@ class RosterRepository implements RepositoryInterface {
     /**
      * Constructor
      * 
-     * @param Logger $logger Logger instance
-     * @param Database $database Database instance
-     * @param CacheManager $cache Cache manager instance
+     * @param Logger|null $logger Logger instance
+     * @param Database|null $database Database instance
+     * @param CacheManager|null $cache Cache manager instance
      */
-    public function __construct(Logger $logger, Database $database, CacheManager $cache) {
-        $this->logger = $logger;
-        $this->database = $database;
-        $this->cache = $cache;
+    public function __construct(Logger $logger = null, Database $database = null, CacheManager $cache = null) {
+        $this->logger = $logger ?: new Logger();
+        $this->database = $database ?: new Database($this->logger);
+        $this->cache = $cache ?: new CacheManager($this->logger);
     }
     
     /**

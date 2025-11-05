@@ -8,17 +8,17 @@
  * - Pro-rated pricing for courses
  * - Age group pricing variations
  * 
- * @package InterSoccer_Reports_Rosters
+ * @package InterSoccer\ReportsRosters\Services
  * @subpackage Services
  * @version 1.0.0
  */
 
-namespace InterSoccer\Services;
+namespace InterSoccer\ReportsRosters\Services;
 
-use InterSoccer\Core\Logger;
-use InterSoccer\Utils\DateHelper;
-use InterSoccer\Utils\ValidationHelper;
-use InterSoccer\Exceptions\ValidationException;
+use InterSoccer\ReportsRosters\Core\Logger;
+use InterSoccer\ReportsRosters\Utils\DateHelper;
+use InterSoccer\ReportsRosters\Utils\ValidationHelper;
+use InterSoccer\ReportsRosters\Exceptions\ValidationException;
 
 if (!defined('ABSPATH')) {
     exit;

@@ -361,7 +361,7 @@ class Activator {
      * 
      * @return bool Validation passed
      */
-    private function validate_database_schema() {
+    public function validate_database_schema() {
         try {
             $this->logger->debug('Validating database schema');
             
@@ -402,7 +402,7 @@ class Activator {
      * 
      * @return bool Success status
      */
-    private function setup_capabilities() {
+    public function setup_capabilities() {
         try {
             $this->logger->debug('Setting up user capabilities');
             

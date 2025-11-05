@@ -790,4 +790,46 @@ class Dependencies {
             'plugin_path' => $plugin_path
         ]);
     }
+    
+    /**
+     * Check if a specific plugin is active and meets version requirements
+     * 
+     * @param string $plugin_path Plugin path (e.g., 'woocommerce/woocommerce.php')
+     * @return bool True if plugin is active and meets requirements
+     */
+    public function check_plugin($plugin_path) {
+        try {
+            // Check if plugin is active
+            if (!function_exists('is_plugin_active')) {
+                require_once ABSPATH . 'wp-admin/includes/plugin.php';
+            }
+            
+            if (!is_plugin_active($plugin_path)) {
+                $this->logger->debug('Plugin not active', ['plugin' => $plugin_path]);
+                return false;
+            }
+            
+            // Check if plugin is in our required or optional list
+            $plugin_info = null;
+            if (isset($this->required_plugins[$plugin_path])) {
+                $plugin_info = $this->required_plugins[$plugin_path];
+            } elseif (isset($this->optional_plugins[$plugin_path])) {
+                $plugin_info = $this->optional_plugins[$plugin_path];
+            }
+            
+            // If we have version requirements, check them
+            if ($plugin_info && !empty($plugin_info['version'])) {
+                return $this->check_plugin_version($plugin_path, $plugin_info);
+            }
+            
+            return true;
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Error checking plugin', [
+                'plugin' => $plugin_path,
+                'error' => $e->getMessage()
+            ]);
+            return false;
+        }
+    }
 }

@@ -14,16 +14,15 @@
  * - File-based caching
  * - Redis (if available)
  * 
- * @package InterSoccer_Reports_Rosters
+ * @package InterSoccer\ReportsRosters\Services
  * @subpackage Services
  * @version 1.0.0
  */
 
-namespace InterSoccer\Services;
+namespace InterSoccer\ReportsRosters\Services;
 
-use InterSoccer\Core\Logger;
-use InterSoccer\Utils\ValidationHelper;
-use InterSoccer\Exceptions\PluginException;
+use InterSoccer\ReportsRosters\Core\Logger;
+use InterSoccer\ReportsRosters\Utils\ValidationHelper;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -746,8 +745,9 @@ class CacheManager {
     /**
      * Cleanup expired cache entries
      */
-    private function cleanup_expired() {
+    public function cleanup_expired() {
         try {
+            $deleted = 0;
             switch ($this->backend) {
                 case 'file':
                     $files = glob($this->cache_dir . $this->key_prefix . '*.cache');
@@ -755,16 +755,137 @@ class CacheManager {
                         $cache_data = @unserialize(file_get_contents($file));
                         if ($cache_data && $cache_data['expires'] < time()) {
                             unlink($file);
+                            $deleted++;
                         }
                     }
                     break;
                     
                 // Redis and transients handle expiration automatically
             }
+            
+            return $deleted;
         } catch (\Exception $e) {
             $this->logger->warning('Cache cleanup failed', [
                 'error' => $e->getMessage()
             ]);
+            return 0;
+        }
+    }
+    
+    /**
+     * Check if a cache key exists
+     * 
+     * @param string $key Cache key
+     * @param string $group Cache group
+     * @return bool
+     */
+    public function has($key, $group = 'default') {
+        $data = $this->get($key, $group);
+        return $data !== null && $data !== false;
+    }
+    
+    /**
+     * Generate a cache key from data
+     * 
+     * @param string $base_key Base key
+     * @param array $params Parameters to include in key
+     * @return string Generated cache key
+     */
+    public function generate_key($base_key, array $params = []) {
+        if (empty($params)) {
+            return $base_key;
+        }
+        
+        // Sort params for consistent key generation
+        ksort($params);
+        
+        // Create hash of params
+        $param_hash = md5(json_encode($params));
+        
+        return $base_key . '_' . $param_hash;
+    }
+    
+    /**
+     * Delete a cache entry (alias for delete)
+     * 
+     * @param string $key Cache key
+     * @param string $group Cache group
+     * @return bool Success status
+     */
+    public function forget($key, $group = 'default') {
+        return $this->delete($key, $group);
+    }
+    
+    /**
+     * Flush pattern (alias for flush_pattern for test compatibility)
+     * 
+     * @param string $pattern Pattern to match
+     * @return int Number deleted
+     */
+    public function forgetPattern($pattern) {
+        return $this->flush_pattern($pattern);
+    }
+    
+    /**
+     * Flush cache entries matching a pattern
+     * 
+     * @param string $pattern Pattern to match (e.g., 'roster', 'report')
+     * @return int Number of entries deleted
+     */
+    public function flush_pattern($pattern) {
+        try {
+            $deleted = 0;
+            global $wpdb;
+            
+            switch ($this->backend) {
+                case 'transients':
+                    // Delete from WordPress options table
+                    if ($wpdb) {
+                        $like_pattern = $wpdb->esc_like($this->key_prefix . $pattern) . '%';
+                        $deleted = $wpdb->query($wpdb->prepare(
+                            "DELETE FROM {$wpdb->options} 
+                             WHERE option_name LIKE %s 
+                             OR option_name LIKE %s",
+                            '_transient_' . $like_pattern,
+                            '_transient_timeout_' . $like_pattern
+                        ));
+                    }
+                    break;
+                    
+                case 'file':
+                    $files = glob($this->cache_dir . $this->key_prefix . '*' . $pattern . '*.cache');
+                    foreach ($files as $file) {
+                        if (unlink($file)) {
+                            $deleted++;
+                        }
+                    }
+                    break;
+                    
+                case 'redis':
+                    if ($this->redis) {
+                        $keys = $this->redis->keys($this->key_prefix . '*' . $pattern . '*');
+                        foreach ($keys as $key) {
+                            if ($this->redis->del($key)) {
+                                $deleted++;
+                            }
+                        }
+                    }
+                    break;
+            }
+            
+            $this->logger->info('Flushed cache by pattern', [
+                'pattern' => $pattern,
+                'deleted' => $deleted
+            ]);
+            
+            return $deleted;
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Failed to flush cache pattern', [
+                'pattern' => $pattern,
+                'error' => $e->getMessage()
+            ]);
+            return 0;
         }
     }
 }

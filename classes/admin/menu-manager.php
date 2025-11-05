@@ -10,7 +10,7 @@
  * @version 1.0.0
  */
 
-namespace InterSoccer\Admin;
+namespace InterSoccer\ReportsRosters\Admin;
 
 use InterSoccer\Core\Logger;
 use InterSoccer\UI\Pages\OverviewPage;

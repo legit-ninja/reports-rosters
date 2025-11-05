@@ -8,7 +8,7 @@
  * @version 2.0.0
  */
 
-namespace InterSoccerReportsRosters\WooCommerce;
+namespace InterSoccer\ReportsRosters\WooCommerce;
 
 defined('ABSPATH') or die('Restricted access');
 
@@ -336,5 +336,67 @@ class ProductVariationHandler {
         }
         
         return $data;
+    }
+    
+    /**
+     * Extract activity type from variation
+     * 
+     * @param \WC_Product_Variation $variation Product variation
+     * @return string Activity type (Camp, Course, Birthday Party, etc.)
+     */
+    public function extractActivityType($variation) {
+        if (!$variation) {
+            return '';
+        }
+        
+        // Try to get from attribute
+        $activity_type = $variation->get_attribute('pa_activity-type');
+        
+        if ($activity_type) {
+            return $activity_type;
+        }
+        
+        // Try from variation meta
+        $activity_type = $variation->get_meta('activity_type', true);
+        
+        if ($activity_type) {
+            return $activity_type;
+        }
+        
+        // Try from variation data
+        $variation_data = $this->get_variation_data($variation);
+        
+        return $variation_data['activity_type'] ?? '';
+    }
+    
+    /**
+     * Extract venue from variation
+     * 
+     * @param \WC_Product_Variation $variation Product variation
+     * @return string Venue name
+     */
+    public function extractVenue($variation) {
+        if (!$variation) {
+            return '';
+        }
+        
+        // Try to get from attribute
+        $venue = $variation->get_attribute('pa_venue');
+        
+        if ($venue) {
+            return $venue;
+        }
+        
+        // Try from variation meta
+        $venue = $variation->get_meta('venue', true);
+        
+        if ($venue) {
+            return $venue;
+        }
+        
+        // Try from variation data
+        $variation_data = $this->get_variation_data($variation);
+        
+        return $variation_data['venue'] ?? '';
     }
 }

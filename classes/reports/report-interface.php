@@ -8,7 +8,7 @@
  * @version 2.0.0
  */
 
-namespace InterSoccerReportsRosters\Reports;
+namespace InterSoccer\ReportsRosters\Reports;
 
 defined('ABSPATH') or die('Restricted access');
 

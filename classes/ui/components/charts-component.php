@@ -10,7 +10,7 @@
  * @version 1.0.0
  */
 
-namespace InterSoccer\UI\Components;
+namespace InterSoccer\ReportsRosters\UI\Components;
 
 use InterSoccer\Core\Logger;
 

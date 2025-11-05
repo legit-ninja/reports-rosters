@@ -184,6 +184,15 @@ class Player extends AbstractModel {
     }
     
     /**
+     * Calculate current age (alias for getAge for test compatibility)
+     * 
+     * @return int Age in years
+     */
+    public function calculateAge() {
+        return $this->getAge();
+    }
+    
+    /**
      * Get age attribute accessor
      * 
      * @param mixed $value Raw value (unused)
@@ -223,6 +232,15 @@ class Player extends AbstractModel {
             if (isset($activity_groups[$age_group])) {
                 return $activity_groups[$age_group];
             }
+        }
+        
+        // Try to parse "Under" age groups (e.g., "U14", "U12", "Under 14")
+        if (preg_match('/U(\d+)/i', $age_group, $matches) || 
+            preg_match('/Under\s*(\d+)/i', $age_group, $matches)) {
+            return [
+                'min' => 0,
+                'max' => (int) $matches[1]
+            ];
         }
         
         // Try to parse dynamic age groups (e.g., "5-13y", "3-5y (Half-Day)")

@@ -945,4 +945,63 @@ class EventMatcher {
             'total_venues' => array_sum(array_map('count', $this->venue_mappings))
         ];
     }
+    
+    /**
+     * Generate event signature for matching
+     * 
+     * Creates a unique signature from event data for comparison and deduplication
+     * 
+     * @param array $event_data Event data array
+     * @return string Event signature hash
+     */
+    public function generate_signature(array $event_data) {
+        // Extract key identifying fields
+        $signature_fields = [
+            'activity_type' => $event_data['activity_type'] ?? '',
+            'venue' => $event_data['venue'] ?? '',
+            'start_date' => $event_data['start_date'] ?? '',
+            'age_group' => $event_data['age_group'] ?? '',
+            'season' => $event_data['season'] ?? ''
+        ];
+        
+        // Normalize fields
+        $signature_fields = array_map(function($value) {
+            return strtolower(trim($value));
+        }, $signature_fields);
+        
+        // Sort for consistency
+        ksort($signature_fields);
+        
+        // Generate hash
+        $signature = md5(json_encode($signature_fields));
+        
+        $this->logger->debug('Generated event signature', [
+            'fields' => $signature_fields,
+            'signature' => $signature
+        ]);
+        
+        return $signature;
+    }
+    
+    /**
+     * Check if two events match based on their signatures
+     * 
+     * @param array $event1 First event data
+     * @param array $event2 Second event data
+     * @return bool True if events match
+     */
+    public function matches(array $event1, array $event2) {
+        $signature1 = $this->generate_signature($event1);
+        $signature2 = $this->generate_signature($event2);
+        
+        $matches = ($signature1 === $signature2);
+        
+        $this->logger->debug('Event match comparison', [
+            'signature1' => $signature1,
+            'signature2' => $signature2,
+            'matches' => $matches
+        ]);
+        
+        return $matches;
+    }
 }

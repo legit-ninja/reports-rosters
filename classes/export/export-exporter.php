@@ -8,7 +8,7 @@
  * @version 2.0.0
  */
 
-namespace InterSoccerReportsRosters\Export;
+namespace InterSoccer\ReportsRosters\Export;
 
 defined('ABSPATH') or die('Restricted access');
 

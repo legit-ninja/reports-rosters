@@ -4,11 +4,11 @@
  * 
  * Calculates sibling and other discounts for InterSoccer Reports & Rosters Plugin
  * 
- * @package InterSoccerReportsRosters\WooCommerce
+ * @package InterSoccer\ReportsRosters\WooCommerce
  * @version 2.0.0
  */
 
-namespace InterSoccerReportsRosters\WooCommerce;
+namespace InterSoccer\ReportsRosters\WooCommerce;
 
 defined('ABSPATH') or die('Restricted access');
 
@@ -484,5 +484,93 @@ class DiscountCalculator {
         }
         
         return $summary;
+    }
+    
+    /**
+     * Calculate cart-level discount
+     * 
+     * @param \WC_Cart $cart WooCommerce cart object
+     * @return float Total discount amount
+     */
+    public function calculateCartDiscount($cart) {
+        $total_discount = 0.0;
+        
+        if (!$cart || !method_exists($cart, 'get_cart')) {
+            return $total_discount;
+        }
+        
+        $cart_items = $cart->get_cart();
+        
+        // Group items by activity type
+        $camps = [];
+        $courses = [];
+        
+        foreach ($cart_items as $cart_item_key => $cart_item) {
+            $activity_type = $cart_item['variation']['attribute_pa_activity-type'] ?? '';
+            
+            if ($activity_type === 'Camp') {
+                $camps[] = $cart_item;
+            } elseif ($activity_type === 'Course') {
+                $courses[] = $cart_item;
+            }
+        }
+        
+        // Apply camp discounts
+        if (count($camps) > 1) {
+            foreach ($camps as $index => $item) {
+                if ($index > 0) { // Skip first child
+                    $discount_rate = ($index === 1) ? 0.20 : 0.25; // 20% for 2nd, 25% for 3rd+
+                    $total_discount += ($item['line_total'] ?? 0) * $discount_rate;
+                }
+            }
+        }
+        
+        // Apply course discounts
+        if (count($courses) > 1) {
+            foreach ($courses as $index => $item) {
+                if ($index > 0) { // Skip first child
+                    $discount_rate = ($index === 1) ? 0.20 : 0.30; // 20% for 2nd, 30% for 3rd+
+                    $total_discount += ($item['line_total'] ?? 0) * $discount_rate;
+                }
+            }
+        }
+        
+        return $total_discount;
+    }
+    
+    /**
+     * Apply camp discount for Nth child
+     * 
+     * @param float $price Original price
+     * @param int $child_number Child number (1, 2, 3+)
+     * @return float Discounted price
+     */
+    public function applyCampDiscount($price, $child_number) {
+        if ($child_number <= 1) {
+            return $price; // No discount for first child
+        }
+        
+        // 20% off for 2nd child, 25% off for 3rd+ children
+        $discount_rate = ($child_number === 2) ? 0.20 : 0.25;
+        
+        return $price * (1 - $discount_rate);
+    }
+    
+    /**
+     * Apply course discount for Nth child
+     * 
+     * @param float $price Original price
+     * @param int $child_number Child number (1, 2, 3+)
+     * @return float Discounted price
+     */
+    public function applyCourseDiscount($price, $child_number) {
+        if ($child_number <= 1) {
+            return $price; // No discount for first child
+        }
+        
+        // 20% off for 2nd child, 30% off for 3rd+ children
+        $discount_rate = ($child_number === 2) ? 0.20 : 0.30;
+        
+        return $price * (1 - $discount_rate);
     }
 }

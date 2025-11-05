@@ -8,7 +8,7 @@
  * @version 2.0.0
  */
 
-namespace InterSoccerReportsRosters\UI\Components;
+namespace InterSoccer\ReportsRosters\UI\Components;
 
 defined('ABSPATH') or die('Restricted access');
 

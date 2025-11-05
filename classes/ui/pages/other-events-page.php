@@ -8,7 +8,7 @@
  * @version 2.0.0
  */
 
-namespace InterSoccerReportsRosters\UI\Pages;
+namespace InterSoccer\ReportsRosters\UI\Pages;
 
 use InterSoccerReportsRosters\Data\Repositories\RosterRepository;
 use InterSoccerReportsRosters\UI\Components\TabsComponent;

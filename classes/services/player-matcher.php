@@ -820,4 +820,30 @@ class PlayerMatcher {
             'priority' => $priority
         ]);
     }
+    
+    /**
+     * Match a player by index from a collection
+     * 
+     * @param int $player_index Player index to find
+     * @param PlayersCollection $players Collection to search
+     * @return Player|null Matched player or null
+     */
+    public function matchByIndex($player_index, PlayersCollection $players) {
+        foreach ($players as $player) {
+            if (isset($player->player_index) && $player->player_index == $player_index) {
+                $this->logger->debug('Matched player by index', [
+                    'player_index' => $player_index,
+                    'player' => $player->first_name . ' ' . $player->last_name
+                ]);
+                return $player;
+            }
+        }
+        
+        $this->logger->warning('No player found for index', [
+            'player_index' => $player_index,
+            'available_players' => $players->count()
+        ]);
+        
+        return null;
+    }
 }

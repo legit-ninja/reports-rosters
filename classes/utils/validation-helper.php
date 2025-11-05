@@ -9,12 +9,12 @@
  * - Product variation validation
  * - Cache key validation
  * 
- * @package InterSoccer_Reports_Rosters
+ * @package InterSoccer\ReportsRosters\Utils
  * @subpackage Utils
  * @version 1.0.0
  */
 
-namespace InterSoccer\Utils;
+namespace InterSoccer\ReportsRosters\Utils;
 
 if (!defined('ABSPATH')) {
     exit;

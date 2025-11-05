@@ -8,9 +8,9 @@
  * @version 2.0.0
  */
 
-namespace InterSoccerReportsRosters\WooCommerce;
+namespace InterSoccer\ReportsRosters\WooCommerce;
 
-use InterSoccerReportsRosters\Data\Repositories\RosterRepository;
+use InterSoccer\ReportsRosters\Data\Repositories\RosterRepository;
 
 defined('ABSPATH') or die('Restricted access');
 
@@ -543,5 +543,52 @@ class OrderProcessor {
      */
     public function clear_cache() {
         $this->processed_orders = [];
+    }
+    
+    /**
+     * Process a WooCommerce order
+     * 
+     * @param int $order_id Order ID
+     * @return bool Success status
+     */
+    public function processOrder($order_id) {
+        try {
+            $order = wc_get_order($order_id);
+            
+            if (!$order) {
+                return false;
+            }
+            
+            // Check if order should be processed
+            if (!$this->shouldProcess($order)) {
+                return false;
+            }
+            
+            // Process order items and create roster entries
+            $this->process_order_items($order);
+            
+            return true;
+            
+        } catch (\Exception $e) {
+            error_log('OrderProcessor error: ' . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Check if an order should be processed
+     * 
+     * @param \WC_Order $order Order object
+     * @return bool Should process
+     */
+    public function shouldProcess($order) {
+        if (!$order) {
+            return false;
+        }
+        
+        // Only process completed or processing orders
+        $valid_statuses = ['completed', 'processing'];
+        
+        return in_array($order->get_status(), $valid_statuses);
     }
 }

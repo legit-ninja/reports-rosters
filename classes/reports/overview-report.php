@@ -8,7 +8,7 @@
  * @version 2.0.0
  */
 
-namespace InterSoccerReportsRosters\Reports;
+namespace InterSoccer\ReportsRosters\Reports;
 
 defined('ABSPATH') or die('Restricted access');
 
@@ -317,5 +317,38 @@ class OverviewReport extends AbstractReport {
             'payment_rate' => $stats['payment_rate'],
             'generated_at' => date('Y-m-d H:i:s')
         ];
+    }
+    
+    /**
+     * Generate overview statistics
+     * 
+     * @param array $filters Optional filters
+     * @return array Statistics data
+     */
+    public function generateStatistics(array $filters = []) {
+        return $this->generate($filters);
+    }
+    
+    /**
+     * Get attendance breakdown by venue
+     * 
+     * @param array $filters Optional filters
+     * @return array Venue attendance data
+     */
+    public function getAttendanceByVenue(array $filters = []) {
+        global $wpdb;
+        
+        $table = $wpdb->prefix . 'intersoccer_rosters';
+        
+        $results = $wpdb->get_results(
+            "SELECT venue, COUNT(*) as count 
+             FROM {$table} 
+             WHERE venue IS NOT NULL 
+             GROUP BY venue 
+             ORDER BY count DESC",
+            ARRAY_A
+        );
+        
+        return $results ?: [];
     }
 }

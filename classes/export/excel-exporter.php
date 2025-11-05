@@ -4,11 +4,11 @@
  * 
  * Excel export functionality for InterSoccer Reports & Rosters Plugin
  * 
- * @package InterSoccerReportsRosters\Export
+ * @package InterSoccer\ReportsRosters\Export
  * @version 2.0.0
  */
 
-namespace InterSoccerReportsRosters\Export;
+namespace InterSoccer\ReportsRosters\Export;
 
 defined('ABSPATH') or die('Restricted access');
 
