@@ -320,6 +320,49 @@ jQuery(document).ready(function($) {
     
     // Initialize the rebuild manager
     rebuildManager.init();
+
+    // Handle database upgrade form submission via AJAX
+    (function handleDatabaseUpgrade() {
+        var $form = $('#intersoccer-upgrade-form');
+        if (!$form.length) {
+            return;
+        }
+
+        var $button = $form.find('input[type="submit"]');
+        var originalLabel = $button.val();
+        var $status = $('#intersoccer-rebuild-status');
+        var strings = (window.intersoccerRebuild && intersoccerRebuild.strings) ? intersoccerRebuild.strings : {};
+        var upgradingText = strings.upgrading || 'Upgrading...';
+        var successText = strings.upgrade_success || 'Database upgrade completed successfully.';
+        var failureText = strings.upgrade_failed || 'Database upgrade failed.';
+        var networkText = strings.upgrade_failed_network || 'Database upgrade failed due to a network error.';
+
+        $form.on('submit', function(event) {
+            event.preventDefault();
+
+            $button.prop('disabled', true).val(upgradingText);
+            $status.removeClass('notice notice-success notice-error').hide().text('');
+
+            $.ajax({
+                url: $form.attr('action'),
+                method: 'POST',
+                data: $form.serialize(),
+                dataType: 'json'
+            }).done(function(response) {
+                var message = (response && response.data && response.data.message) ? response.data.message : '';
+
+                if (response && response.success) {
+                    $status.removeClass('notice-error').addClass('notice notice-success').text(message || successText).show();
+                } else {
+                    $status.removeClass('notice-success').addClass('notice notice-error').text(message || failureText).show();
+                }
+            }).fail(function() {
+                $status.removeClass('notice-success').addClass('notice notice-error').text(networkText).show();
+            }).always(function() {
+                $button.prop('disabled', false).val(originalLabel);
+            });
+        });
+    })();
     
     // Add CSS animation for spinning icons
     var style = $('<style>').text(`

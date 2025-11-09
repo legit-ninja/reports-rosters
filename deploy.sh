@@ -329,6 +329,19 @@ unlink(__FILE__);
     echo -e "${GREEN}✓ Server caches cleared${NC}"
 }
 
+run_php_lint() {
+    print_header "Running PHP Lint"
+
+    if [ ! -x "scripts/run-php-lint.sh" ]; then
+        echo -e "${YELLOW}⚠ Lint script missing or not executable${NC}"
+        echo "  Expected at: scripts/run-php-lint.sh"
+        return 1
+    fi
+
+    bash scripts/run-php-lint.sh
+    return $?
+}
+
 ###############################################################################
 # Main Script
 ###############################################################################
@@ -340,6 +353,9 @@ echo "  Server: ${SERVER_USER}@${SERVER_HOST}"
 echo "  Path: ${SERVER_PATH}"
 echo "  SSH Port: ${SSH_PORT}"
 echo ""
+
+# Run PHP lint checks before tests
+run_php_lint
 
 # ALWAYS run PHPUnit tests before deployment
 # Temporarily disable exit-on-error to handle test results ourselves

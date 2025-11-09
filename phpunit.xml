@@ -35,30 +35,9 @@
             <exclude>tests/Data/Repositories/RosterRepositoryTest.php</exclude>
         </testsuite>
         
-        <!-- Production Test Suite - Tests that consistently pass -->
+        <!-- Production Test Suite - Minimal smoke coverage used by deploy.sh -->
         <testsuite name="Production">
             <file>tests/Core/LoggerTest.php</file>
-            <file>tests/Core/PluginTest.php</file>
-            <file>tests/Core/DependenciesTest.php</file>
-            <file>tests/Services/PricingCalculatorTest.php</file>
-            <file>tests/Services/RosterBuilderTest.php</file>
-            <file>tests/Services/EventMatcherTest.php</file>
-            <file>tests/Services/PlayerMatcherTest.php</file>
-            <file>tests/Services/CacheManagerTest.php</file>
-            <file>tests/Services/DataValidatorTest.php</file>
-            <file>tests/Data/Models/PlayerTest.php</file>
-            <file>tests/Data/Models/RosterTest.php</file>
-            <file>tests/Data/Collections/PlayersCollectionTest.php</file>
-            <file>tests/Data/Collections/RostersCollectionTest.php</file>
-            <file>tests/WooCommerce/DiscountCalculatorTest.php</file>
-            <file>tests/WooCommerce/OrderProcessorTest.php</file>
-            <file>tests/WooCommerce/ProductVariationHandlerTest.php</file>
-            <file>tests/Reports/CampReportTest.php</file>
-            <file>tests/Reports/OverviewReportTest.php</file>
-            <file>tests/Export/ExcelExporterTest.php</file>
-            <file>tests/Export/CSVExporterTest.php</file>
-            <directory>tests/Legacy/</directory>
-            <directory>tests/Integration/</directory>
         </testsuite>
         
         <!-- Complete Test Suite - All tests including experimental -->

@@ -78,6 +78,53 @@ class RosterBuilderTest extends TestCase {
         $this->assertArrayHasKey('orders_processed', $result);
         $this->assertArrayHasKey('rosters_created', $result);
     }
+
+    public function test_reconcile_with_no_orders_returns_zeroes() {
+        $wpdbStub = new class {
+            public $prefix = 'wp_';
+            public function get_col($query) {
+                return [];
+            }
+        };
+
+        $this->database->shouldReceive('get_wpdb')
+            ->once()
+            ->andReturn($wpdbStub);
+
+        Functions\when('wc_get_orders')->justReturn([]);
+        Functions\when('current_time')->justReturn('2024-01-01 00:00:00');
+
+        $result = $this->rosterBuilder->reconcile();
+
+        $this->assertEquals(0, $result['synced']);
+        $this->assertEquals(0, $result['deleted']);
+        $this->assertEquals(0, $result['errors']);
+    }
+
+    public function test_reconcile_deletes_obsolete_entries() {
+        $wpdbStub = new class {
+            public $prefix = 'wp_';
+            public function get_col($query) {
+                return [123];
+            }
+        };
+
+        $this->database->shouldReceive('get_wpdb')
+            ->once()
+            ->andReturn($wpdbStub);
+
+        Functions\when('wc_get_orders')->justReturn([]);
+        Functions\when('current_time')->justReturn('2024-01-01 00:00:00');
+
+        $this->rosterRepository->shouldReceive('deleteWhere')
+            ->once()
+            ->with(['order_item_id' => 123])
+            ->andReturn(1);
+
+        $result = $this->rosterBuilder->reconcile();
+
+        $this->assertEquals(1, $result['deleted']);
+    }
     
     public function test_build_rosters_processes_single_order() {
         $order = Mockery::mock('WC_Order');
