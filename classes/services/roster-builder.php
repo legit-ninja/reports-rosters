@@ -106,21 +106,21 @@ class RosterBuilder {
      * @param PlayerMatcher $player_matcher Player matcher
      */
     public function __construct(
-        Logger $logger,
-        Database $database,
-        PlayerRepository $player_repository,
-        RosterRepository $roster_repository,
-        DataValidator $validator,
-        EventMatcher $event_matcher,
-        PlayerMatcher $player_matcher
+        Logger $logger = null,
+        Database $database = null,
+        PlayerRepository $player_repository = null,
+        RosterRepository $roster_repository = null,
+        DataValidator $validator = null,
+        EventMatcher $event_matcher = null,
+        PlayerMatcher $player_matcher = null
     ) {
-        $this->logger = $logger;
-        $this->database = $database;
-        $this->player_repository = $player_repository;
-        $this->roster_repository = $roster_repository;
-        $this->validator = $validator;
-        $this->event_matcher = $event_matcher;
-        $this->player_matcher = $player_matcher;
+        $this->logger = $logger ?: new Logger();
+        $this->database = $database ?: new Database($this->logger);
+        $this->player_repository = $player_repository ?: new PlayerRepository($this->logger, $this->database);
+        $this->roster_repository = $roster_repository ?: new RosterRepository($this->logger, $this->database);
+        $this->validator = $validator ?: new DataValidator($this->logger);
+        $this->event_matcher = $event_matcher ?: new EventMatcher($this->logger);
+        $this->player_matcher = $player_matcher ?: new PlayerMatcher($this->logger);
         
         $this->init_build_stats();
     }
@@ -191,6 +191,155 @@ class RosterBuilder {
         }
     }
     
+    /**
+     * Reconcile rosters with current WooCommerce orders
+     *
+     * Syncs existing roster entries with current orders, adds missing entries,
+     * and removes obsolete entries when requested.
+     *
+     * @param array $options Reconcile options
+     * @return array Results containing synced, deleted, and error metrics
+     */
+    public function reconcile(array $options = []) {
+        $start_time = microtime(true);
+
+        $defaults = [
+            'status' => ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'],
+            'delete_obsolete' => true,
+            'validate_data' => true,
+            'skip_duplicates' => false,
+            'update_existing' => true,
+        ];
+        $options = array_merge($defaults, $options);
+
+        $results = [
+            'synced' => 0,
+            'deleted' => 0,
+            'errors' => 0,
+            'error_messages' => [],
+            'start_time' => current_time('mysql'),
+            'end_time' => null,
+            'duration' => 0,
+        ];
+
+        $this->logger->info('Starting roster reconciliation', $options);
+
+        try {
+            $wpdb = $this->database->get_wpdb();
+            $table = $wpdb->prefix . 'intersoccer_rosters';
+
+            $existing_item_ids = $wpdb->get_col("SELECT DISTINCT order_item_id FROM {$table}");
+            $existing_item_map = [];
+            foreach ($existing_item_ids as $item_id) {
+                if ($item_id !== null && $item_id !== '') {
+                    $existing_item_map[(int) $item_id] = true;
+                }
+            }
+
+            $orders = wc_get_orders([
+                'limit' => -1,
+                'status' => $options['status'],
+                'return' => 'objects',
+            ]);
+
+            $this->logger->info('Orders fetched for reconciliation', ['count' => count($orders)]);
+
+            foreach ($orders as $order) {
+                $order_id = $order->get_id();
+
+                try {
+                    $customer_id = $order->get_customer_id();
+                    if (!$customer_id) {
+                        throw new \Exception("Order {$order_id} has no customer ID");
+                    }
+
+                    $customer_players = $this->player_repository->getPlayersByCustomerId($customer_id);
+                    $customer_data = $this->extractCustomerData($order);
+
+                    foreach ($order->get_items() as $item_id => $item) {
+                        try {
+                            $item_rosters = $this->processOrderItem(
+                                $order,
+                                $item_id,
+                                $item,
+                                $customer_players,
+                                $customer_data,
+                                [
+                                    'validate_data' => $options['validate_data'],
+                                    'skip_duplicates' => false,
+                                    'update_existing' => true,
+                                ]
+                            );
+
+                            if ($item_rosters->count() > 0) {
+                                $results['synced'] += $item_rosters->count();
+                                unset($existing_item_map[$item_id]);
+                            }
+
+                        } catch (\Exception $e) {
+                            $results['errors']++;
+                            $error_msg = "Order {$order_id}, Item {$item_id}: {$e->getMessage()}";
+                            $results['error_messages'][] = $error_msg;
+                            $this->logger->error('Failed to reconcile order item', [
+                                'order_id' => $order_id,
+                                'item_id' => $item_id,
+                                'error' => $e->getMessage()
+                            ]);
+                        }
+                    }
+
+                } catch (\Exception $e) {
+                    $results['errors']++;
+                    $results['error_messages'][] = "Order {$order_id}: " . $e->getMessage();
+                    $this->logger->error('Failed to reconcile order', [
+                        'order_id' => $order_id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            if ($options['delete_obsolete'] && !empty($existing_item_map)) {
+                foreach (array_keys($existing_item_map) as $obsolete_item_id) {
+                    try {
+                        $deleted_count = $this->roster_repository->deleteWhere(['order_item_id' => $obsolete_item_id]);
+                        $results['deleted'] += $deleted_count;
+                        $this->logger->debug('Deleted obsolete roster entries', [
+                            'order_item_id' => $obsolete_item_id,
+                            'deleted' => $deleted_count
+                        ]);
+                    } catch (\Exception $e) {
+                        $results['errors']++;
+                        $results['error_messages'][] = "Failed to delete obsolete roster {$obsolete_item_id}: {$e->getMessage()}";
+                        $this->logger->error('Failed to delete obsolete roster entry', [
+                            'order_item_id' => $obsolete_item_id,
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+                }
+            }
+
+            $results['end_time'] = current_time('mysql');
+            $results['duration'] = round(microtime(true) - $start_time, 2);
+
+            $this->logger->info('Roster reconciliation completed', $results);
+
+            return $results;
+
+        } catch (\Exception $e) {
+            $results['end_time'] = current_time('mysql');
+            $results['duration'] = round(microtime(true) - $start_time, 2);
+            $results['errors']++;
+            $results['error_messages'][] = 'Reconciliation failed: ' . $e->getMessage();
+
+            $this->logger->error('Roster reconciliation failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return $results;
+        }
+    }
+
     /**
      * Build roster from a single WooCommerce order
      * 

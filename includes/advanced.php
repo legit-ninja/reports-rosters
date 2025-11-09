@@ -16,16 +16,30 @@ function intersoccer_render_advanced_page() {
     if (!current_user_can('manage_options')) {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
+
+    $current_version = get_option('intersoccer_db_version', '1.0.0');
+    $oop_enabled = defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database');
+    $engine_label = $oop_enabled ? __('OOP Migrator', 'intersoccer-reports-rosters') : __('Legacy Migrator', 'intersoccer-reports-rosters');
     ?>
-    <div class="wrap">
-        <h1><?php _e('InterSoccer Advanced Features', 'intersoccer-reports-rosters'); ?></h1>
-        <div id="intersoccer-rebuild-status"></div>
-        <div class="advanced-options">
+    <div class="wrap intersoccer-reports-rosters-settings">
+        <h1><?php _e('InterSoccer Settings', 'intersoccer-reports-rosters'); ?></h1>
+        <p class="description">
+            <?php
+                printf(
+                    /* translators: 1: current schema version, 2: migration engine */
+                    esc_html__('Current schema version: %1$s (Engine: %2$s)', 'intersoccer-reports-rosters'),
+                    esc_html($current_version),
+                    esc_html($engine_label)
+                );
+            ?>
+        </p>
+        <div id="intersoccer-rebuild-status" style="display:none;"></div>
+        <div class="advanced-options settings-section">
             <h2><?php _e('Database Management', 'intersoccer-reports-rosters'); ?></h2>
             <p><?php _e('Perform database upgrades or maintenance tasks.', 'intersoccer-reports-rosters'); ?></p>
             <form id="intersoccer-upgrade-form" method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="upgrade-form">
                 <input type="hidden" name="action" value="intersoccer_upgrade_database">
-                <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_rebuild_nonce')); ?>">
+                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
                 <input type="submit" name="upgrade_database" class="button button-primary" value="<?php _e('Upgrade Database', 'intersoccer-reports-rosters'); ?>" onclick="return confirm('<?php echo esc_js(__('This will modify the database structure and backfill data. Are you sure?', 'intersoccer-reports-rosters')); ?>');">
             </form>
             <p><?php _e('Note: This action adds new columns (e.g., financial fields, girls_only) and backfills data. Use with caution.', 'intersoccer-reports-rosters'); ?></p>
@@ -33,25 +47,25 @@ function intersoccer_render_advanced_page() {
         <div class="rebuild-options">
             <h2><?php _e('Roster Management', 'intersoccer-reports-rosters'); ?></h2>
             <form id="intersoccer-process-processing-form" method="post" action="">
-                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field'); ?>
+                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
                 <input type="hidden" name="action" value="intersoccer_process_existing_orders">
                 <button type="submit" class="button button-secondary" id="intersoccer-process-processing-button"><?php _e('Process Orders', 'intersoccer-reports-rosters'); ?></button>
             </form>
             <p><?php _e('Note: This will populate missing rosters for existing orders (e.g., processing or on-hold) and complete them if fully populated.', 'intersoccer-reports-rosters'); ?></p>
             <form id="intersoccer-reconcile-form" method="post" action="">
-                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field'); ?>
+                <?php wp_nonce_field('intersoccer_reports_rosters_nonce', 'nonce'); ?>
                 <input type="hidden" name="action" value="intersoccer_reconcile_rosters">
                 <button type="submit" class="button button-secondary" id="intersoccer-reconcile-button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></button>
             </form>
             <p><?php _e('Note: This syncs the rosters table with orders, adding missing entries, updating incomplete data, and removing obsolete ones. No order statuses are changed.', 'intersoccer-reports-rosters'); ?></p>
             <form id="intersoccer-rebuild-signatures-form" method="post" action="">
-                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field'); ?>
+                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
                 <input type="hidden" name="action" value="intersoccer_rebuild_event_signatures">
                 <button type="submit" class="button button-secondary" id="intersoccer-rebuild-signatures-button"><?php _e('Rebuild Event Signatures', 'intersoccer-reports-rosters'); ?></button>
             </form>
             <p><?php _e('Note: This will regenerate event signatures for all existing rosters to ensure proper grouping across languages.', 'intersoccer-reports-rosters'); ?></p>
             <form id="intersoccer-rebuild-form" method="post" action="">
-                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field'); ?>
+                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
                 <input type="hidden" name="action" value="intersoccer_rebuild_rosters_and_reports">
                 <button type="submit" class="button button-primary" id="intersoccer-rebuild-button"><?php _e('Rebuild Rosters', 'intersoccer-reports-rosters'); ?></button>
             </form>
@@ -227,6 +241,38 @@ function intersoccer_safe_populate_rosters($order_id) {
  * Process existing orders to populate rosters and complete them.
  */
 function intersoccer_process_existing_orders() {
+    if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('orders')) {
+        try {
+            $orders = wc_get_orders([
+                'limit' => -1,
+                'status' => ['processing', 'on-hold', 'completed'],
+                'return' => 'ids',
+            ]);
+
+            $result = intersoccer_oop_process_orders_batch($orders);
+
+            return [
+                'status' => !empty($result['success']) ? 'success' : 'error',
+                'processed' => $result['processed_orders'] ?? 0,
+                'completed' => $result['completed_orders'] ?? 0,
+                'failed' => count($result['failed_orders'] ?? []),
+                'roster_entries' => $result['roster_entries'] ?? 0,
+                'message' => $result['message'] ?? (
+                    !empty($result['success'])
+                        ? __('Processed orders via OOP OrderProcessor. Check logs for per-order details.', 'intersoccer-reports-rosters')
+                        : __('OOP order processing failed. Check logs for details.', 'intersoccer-reports-rosters')
+                ),
+            ];
+
+        } catch (\Exception $e) {
+            error_log('InterSoccer (OOP Orders): Batch processing exception - ' . $e->getMessage());
+            return [
+                'status' => 'error',
+                'message' => __('OOP processing failed: ', 'intersoccer-reports-rosters') . $e->getMessage(),
+            ];
+        }
+    }
+
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 

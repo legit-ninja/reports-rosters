@@ -202,12 +202,44 @@ function intersoccer_export_roster() {
     // Set reasonable execution time
     ini_set('max_execution_time', 180); // 3 minutes should be sufficient
 
-    global $wpdb;
-    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-    $query = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
+    $export_filters = [
+        'use_fields' => $use_fields,
+        'product_id' => $product_id,
+        'variation_id' => $variation_id,
+        'variation_ids' => $variation_ids,
+        'event_signature' => $event_signature,
+        'camp_terms' => $camp_terms,
+        'course_day' => $course_day,
+        'venue' => $venue,
+        'age_group' => $age_group,
+        'times' => $times,
+        'girls_only' => $girls_only,
+        'activity_types' => $activity_types,
+    ];
+
+    $rosters = [];
+    $using_oop_export = defined('INTERSOCCER_OOP_ACTIVE')
+        && INTERSOCCER_OOP_ACTIVE
+        && function_exists('intersoccer_use_oop_for')
+        && intersoccer_use_oop_for('export')
+        && function_exists('intersoccer_oop_get_roster_export_service');
+
+    if ($using_oop_export) {
+        try {
+            $rosters = intersoccer_oop_get_roster_export_service()->getExportRows($export_filters);
+        } catch (\Exception $e) {
+            error_log('InterSoccer Export (OOP): Failed to generate export dataset - ' . $e->getMessage());
+            $rosters = [];
+        }
+    }
+
+    if (!$using_oop_export) {
+        global $wpdb;
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        $query = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
                 FROM $rosters_table";
-    $where_clauses = [];
-    $query_params = [];
+        $where_clauses = [];
+        $query_params = [];
     
     if ($use_fields) {
         // Prioritize variation_id filtering if provided (from roster details page)
@@ -338,12 +370,17 @@ function intersoccer_export_roster() {
         $query .= " ORDER BY registration_timestamp DESC";
         $rosters = $wpdb->get_results($query, ARRAY_A);
     }
+    }
 
     // Only log if debugging
     if (defined('WP_DEBUG') && WP_DEBUG) {
-        error_log('InterSoccer: Export roster query: ' . $wpdb->last_query);
-        error_log('InterSoccer: Export roster results count: ' . count($rosters));
-        error_log('InterSoccer: Last SQL error: ' . $wpdb->last_error);
+        if ($using_oop_export) {
+            error_log('InterSoccer Export (OOP): Retrieved ' . count($rosters) . ' rows for export.');
+        } else {
+            error_log('InterSoccer: Export roster query: ' . $wpdb->last_query);
+            error_log('InterSoccer: Export roster results count: ' . count($rosters));
+            error_log('InterSoccer: Last SQL error: ' . $wpdb->last_error);
+        }
     }
     
     if ($rosters) {

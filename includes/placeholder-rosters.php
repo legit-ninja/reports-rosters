@@ -25,14 +25,28 @@ add_action('woocommerce_update_product', 'intersoccer_create_placeholders_for_pr
  * @param int $product_id The product ID
  */
 function intersoccer_create_placeholders_for_product($product_id) {
+    if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database')) {
+        try {
+            $manager = intersoccer_oop_get_placeholder_manager();
+            $result = $manager->createForProduct($product_id);
+
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer Placeholder (OOP): Processed product ' . $product_id . ' - ' . json_encode($result));
+            }
+
+            return;
+        } catch (\Exception $e) {
+            error_log('InterSoccer Placeholder (OOP): Failed to create placeholders for product ' . $product_id . ' - ' . $e->getMessage());
+        }
+    }
+
     $product = wc_get_product($product_id);
-    
+
     if (!$product) {
         error_log('InterSoccer Placeholder: Invalid product ID ' . $product_id);
         return;
     }
 
-    // Only create placeholders for published products
     if ($product->get_status() !== 'publish') {
         if (defined('WP_DEBUG') && WP_DEBUG) {
             error_log('InterSoccer Placeholder: Skipping non-published product ' . $product_id);
@@ -40,7 +54,6 @@ function intersoccer_create_placeholders_for_product($product_id) {
         return;
     }
 
-    // Only process variable products
     if (!$product->is_type('variable')) {
         if (defined('WP_DEBUG') && WP_DEBUG) {
             error_log('InterSoccer Placeholder: Skipping non-variable product ' . $product_id);
@@ -60,7 +73,7 @@ function intersoccer_create_placeholders_for_product($product_id) {
     foreach ($variations as $variation_data) {
         $variation_id = $variation_data['variation_id'];
         $result = intersoccer_create_placeholder_from_variation($variation_id, $product_id);
-        
+
         if ($result === 'created') {
             $created++;
         } elseif ($result === 'updated') {
@@ -303,6 +316,15 @@ function intersoccer_extract_event_data_from_variation($variation, $parent_produ
  * @param string $event_signature The event signature to match
  */
 function intersoccer_delete_placeholder_by_signature($event_signature) {
+    if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database')) {
+        try {
+            return intersoccer_oop_delete_placeholder_by_signature($event_signature);
+        } catch (\Exception $e) {
+            error_log('InterSoccer Placeholder (OOP): Failed to delete by signature ' . $event_signature . ' - ' . $e->getMessage());
+            return 0;
+        }
+    }
+
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
@@ -328,6 +350,15 @@ function intersoccer_delete_placeholder_by_signature($event_signature) {
  * @param int $product_id The product ID
  */
 function intersoccer_delete_placeholders_for_product($product_id) {
+    if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database')) {
+        try {
+            return intersoccer_oop_delete_placeholders_for_product($product_id);
+        } catch (\Exception $e) {
+            error_log('InterSoccer Placeholder (OOP): Failed to delete placeholders for product ' . $product_id . ' - ' . $e->getMessage());
+            return 0;
+        }
+    }
+
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 

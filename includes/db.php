@@ -11,6 +11,10 @@ defined('ABSPATH') or die('Restricted access');
  * Create or upgrade the rosters table schema without dropping or populating data.
  */
 function intersoccer_create_rosters_table() {
+    if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database')) {
+        return intersoccer_oop_create_rosters_table();
+    }
+
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
     $charset_collate = $wpdb->get_charset_collate();
@@ -72,6 +76,7 @@ function intersoccer_create_rosters_table() {
         girls_only BOOLEAN DEFAULT FALSE,
         event_signature varchar(255) DEFAULT '',
         is_placeholder TINYINT(1) DEFAULT 0,
+        event_completed TINYINT(1) DEFAULT 0,
         PRIMARY KEY (id),
         UNIQUE KEY uniq_order_item_id (order_item_id),
         KEY idx_player_name (player_name),
@@ -81,7 +86,8 @@ function intersoccer_create_rosters_table() {
         KEY idx_variation_id (variation_id),
         KEY idx_order_id (order_id),
         KEY idx_event_signature (event_signature(100)),
-        KEY idx_is_placeholder (is_placeholder)
+        KEY idx_is_placeholder (is_placeholder),
+        KEY idx_event_completed (event_completed)
     ) $charset_collate;";
 
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -98,6 +104,10 @@ function intersoccer_create_rosters_table() {
  * Migrate existing rosters table to add new columns
  */
 function intersoccer_migrate_rosters_table() {
+    if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database')) {
+        return intersoccer_oop_migrate_rosters_table();
+    }
+
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
@@ -153,6 +163,29 @@ function intersoccer_migrate_rosters_table() {
         $wpdb->query("ALTER TABLE $rosters_table ADD KEY idx_is_placeholder (is_placeholder)");
 
         error_log('InterSoccer: Added is_placeholder column with index');
+        $columns[] = 'is_placeholder';
+    }
+
+    if (!in_array('event_completed', $columns)) {
+        error_log('InterSoccer: Adding event_completed column to existing rosters table');
+
+        $added = $wpdb->query("ALTER TABLE $rosters_table ADD COLUMN event_completed TINYINT(1) DEFAULT 0 AFTER is_placeholder");
+        if ($added === false) {
+            error_log('InterSoccer: Failed to add event_completed column - ' . $wpdb->last_error);
+        }
+
+        $index_exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(1) FROM INFORMATION_SCHEMA.STATISTICS WHERE table_schema = DATABASE() AND table_name = %s AND index_name = 'idx_event_completed'",
+            $rosters_table
+        ));
+
+        if (empty($index_exists)) {
+            $wpdb->query("ALTER TABLE $rosters_table ADD KEY idx_event_completed (event_completed)");
+            error_log('InterSoccer: Added idx_event_completed index');
+        }
+
+        $columns[] = 'event_completed';
+        error_log('InterSoccer: Added event_completed column with index');
     }
 }
 
@@ -208,6 +241,49 @@ function intersoccer_rebuild_event_signatures() {
  * Rebuild rosters and reports table
  */
 function intersoccer_rebuild_rosters_and_reports() {
+    if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database')) {
+        error_log('InterSoccer: Routing roster rebuild through OOP RosterBuilder');
+
+        try {
+            $result = intersoccer_oop_rebuild_rosters([
+                'clear_existing' => true,
+            ]);
+
+            if (!is_array($result)) {
+                error_log('InterSoccer: OOP rebuild returned unexpected result');
+                return [
+                    'status' => 'error',
+                    'inserted' => 0,
+                    'message' => __('OOP roster rebuild failed: unexpected response.', 'intersoccer-reports-rosters')
+                ];
+            }
+
+            $errors = array_filter($result['errors'] ?? []);
+            $inserted = intval(($result['rosters_created'] ?? 0) + ($result['rosters_updated'] ?? 0));
+            $orders = intval($result['orders_processed'] ?? 0);
+
+            $message = empty($errors)
+                ? sprintf(__('Rebuild completed via OOP engine. Orders processed: %d.', 'intersoccer-reports-rosters'), $orders)
+                : sprintf(__('Rebuild completed with warnings. Orders processed: %d. Check logs for details.', 'intersoccer-reports-rosters'), $orders);
+
+            return [
+                'status' => empty($errors) ? 'success' : 'success',
+                'inserted' => $inserted,
+                'message' => $message,
+                'stats' => $result,
+                'warnings' => $errors,
+            ];
+
+        } catch (Exception $e) {
+            error_log('InterSoccer: OOP roster rebuild exception - ' . $e->getMessage());
+            return [
+                'status' => 'error',
+                'inserted' => 0,
+                'message' => __('OOP roster rebuild failed: ', 'intersoccer-reports-rosters') . $e->getMessage()
+            ];
+        }
+    }
+
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
     error_log('InterSoccer: Starting forced rebuild for table ' . $rosters_table);
@@ -252,6 +328,46 @@ function intersoccer_rebuild_rosters_and_reports() {
 }
 
 function intersoccer_reconcile_rosters() {
+    if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database')) {
+        error_log('InterSoccer: Routing roster reconciliation through OOP RosterBuilder');
+
+        try {
+            $result = intersoccer_oop_reconcile_rosters([
+                'delete_obsolete' => true,
+            ]);
+
+            $message = sprintf(
+                __('Reconciled rosters via OOP engine: Synced %1$d entries, deleted %2$d obsolete ones.', 'intersoccer-reports-rosters'),
+                intval($result['synced'] ?? 0),
+                intval($result['deleted'] ?? 0)
+            );
+
+            if (!empty($result['errors'])) {
+                $message .= ' ' . __('Some items reported errors. Check the logs for details.', 'intersoccer-reports-rosters');
+            }
+
+            return [
+                'status' => !empty($result['errors']) ? 'warning' : 'success',
+                'synced' => intval($result['synced'] ?? 0),
+                'deleted' => intval($result['deleted'] ?? 0),
+                'errors' => intval($result['errors'] ?? 0),
+                'warnings' => $result['error_messages'] ?? [],
+                'message' => $message,
+            ];
+
+        } catch (Exception $e) {
+            error_log('InterSoccer: OOP roster reconciliation exception - ' . $e->getMessage());
+            return [
+                'status' => 'error',
+                'synced' => 0,
+                'deleted' => 0,
+                'errors' => 1,
+                'warnings' => [],
+                'message' => __('OOP roster reconciliation failed: ', 'intersoccer-reports-rosters') . $e->getMessage(),
+            ];
+        }
+    }
+
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
@@ -304,6 +420,98 @@ function intersoccer_reconcile_rosters() {
             'status' => 'error',
             'message' => __('Reconciliation failed: ' . $e->getMessage(), 'intersoccer-reports-rosters')
         ];
+    }
+}
+
+if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('ajax')) {
+    if (function_exists('intersoccer_oop_register_roster_ajax_handlers')) {
+        intersoccer_oop_register_roster_ajax_handlers();
+    }
+} else {
+    add_action('wp_ajax_intersoccer_rebuild_rosters_and_reports', 'intersoccer_rebuild_rosters_and_reports_ajax');
+    add_action('wp_ajax_intersoccer_reconcile_rosters', 'intersoccer_reconcile_rosters_ajax');
+
+    if (!function_exists('intersoccer_rebuild_rosters_and_reports_ajax')) {
+        function intersoccer_rebuild_rosters_and_reports_ajax() {
+            ob_start();
+
+            $nonce_valid = false;
+            if (isset($_POST['nonce'])) {
+                $nonce_valid = wp_verify_nonce(sanitize_text_field($_POST['nonce']), 'intersoccer_rebuild_nonce');
+            } elseif (isset($_POST['intersoccer_rebuild_nonce_field'])) {
+                $nonce_valid = wp_verify_nonce(sanitize_text_field($_POST['intersoccer_rebuild_nonce_field']), 'intersoccer_rebuild_nonce');
+            }
+
+            if (!$nonce_valid) {
+                ob_clean();
+                wp_send_json_error(['message' => __('Security check failed. Please refresh the page and try again.', 'intersoccer-reports-rosters')]);
+            }
+
+            if (!current_user_can('manage_options')) {
+                ob_clean();
+                wp_send_json_error(['message' => __('You do not have permission to rebuild rosters.', 'intersoccer-reports-rosters')]);
+            }
+            error_log('InterSoccer: AJAX rebuild request received with data: ' . print_r($_POST, true));
+
+            try {
+                $result = intersoccer_rebuild_rosters_and_reports();
+                ob_clean();
+                if ($result['status'] === 'success') {
+                    wp_send_json_success([
+                        'inserted' => $result['inserted'],
+                        'message' => __('Rebuild completed. Inserted ' . $result['inserted'] . ' rosters.', 'intersoccer-reports-rosters')
+                    ]);
+                } else {
+                    wp_send_json_error(['message' => __('Rebuild failed: ' . $result['message'], 'intersoccer-reports-rosters')]);
+                }
+            } catch (Exception $e) {
+                error_log('InterSoccer: Rebuild exception: ' . $e->getMessage());
+                ob_clean();
+                wp_send_json_error(['message' => __('Rebuild failed with exception: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
+            }
+        }
+    }
+
+    if (!function_exists('intersoccer_reconcile_rosters_ajax')) {
+        function intersoccer_reconcile_rosters_ajax() {
+            ob_start();
+
+            $nonce_valid = false;
+            if (isset($_POST['nonce'])) {
+                $nonce_valid = wp_verify_nonce(sanitize_text_field($_POST['nonce']), 'intersoccer_reports_rosters_nonce');
+            } elseif (isset($_POST['intersoccer_rebuild_nonce_field'])) {
+                $nonce_valid = wp_verify_nonce(sanitize_text_field($_POST['intersoccer_rebuild_nonce_field']), 'intersoccer_rebuild_nonce');
+            }
+
+            if (!$nonce_valid) {
+                ob_clean();
+                wp_send_json_error(['message' => __('Security check failed. Please refresh the page and try again.', 'intersoccer-reports-rosters')]);
+            }
+
+            if (!current_user_can('manage_options')) {
+                ob_clean();
+                wp_send_json_error(['message' => __('You do not have permission to reconcile rosters.', 'intersoccer-reports-rosters')]);
+            }
+            error_log('InterSoccer: AJAX reconcile request received with data: ' . print_r($_POST, true));
+
+            try {
+                $result = intersoccer_reconcile_rosters();
+                ob_clean();
+                if ($result['status'] === 'success') {
+                    wp_send_json_success([
+                        'message' => $result['message'],
+                        'synced' => $result['synced'],
+                        'deleted' => $result['deleted']
+                    ]);
+                } else {
+                    wp_send_json_error(['message' => $result['message']]);
+                }
+            } catch (Exception $e) {
+                error_log('InterSoccer: Reconcile exception: ' . $e->getMessage());
+                ob_clean();
+                wp_send_json_error(['message' => __('Reconcile failed: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
+            }
+        }
     }
 }
 
@@ -647,7 +855,8 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             'reimbursement' => 0.00,
             'discount_codes' => '',
             'girls_only' => FALSE,
-            'event_signature' => '',
+        'event_signature' => '',
+        'event_completed' => 0,
         ];
 
         // Log to validate $order before insert
@@ -661,6 +870,10 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
  * Upgrade database schema
  */
 function intersoccer_upgrade_database() {
+    if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database')) {
+        return intersoccer_oop_upgrade_database();
+    }
+
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
@@ -681,13 +894,25 @@ function intersoccer_upgrade_database() {
         'girls_only' => 'BOOLEAN DEFAULT FALSE',
         'late_pickup_days' => 'text',
         'event_signature' => 'varchar(255) DEFAULT \'\'',
+        'event_completed' => 'TINYINT(1) DEFAULT 0',
     ];
 
     foreach ($new_columns as $col => $type) {
         if (!in_array($col, $existing_cols)) {
             $wpdb->query("ALTER TABLE $rosters_table ADD $col $type");
             error_log('InterSoccer: Added column ' . $col . ' to rosters table');
+            $existing_cols[] = $col;
         }
+    }
+
+    $has_event_completed_index = $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(1) FROM INFORMATION_SCHEMA.STATISTICS WHERE table_schema = DATABASE() AND table_name = %s AND index_name = 'idx_event_completed'",
+        $rosters_table
+    ));
+
+    if (empty($has_event_completed_index)) {
+        $wpdb->query("ALTER TABLE $rosters_table ADD KEY idx_event_completed (event_completed)");
+        error_log('InterSoccer: Added idx_event_completed index during upgrade');
     }
 
     // Backfill financial data and girls_only
@@ -789,6 +1014,8 @@ function intersoccer_upgrade_database() {
     }
 
     error_log('InterSoccer: Database upgrade completed.');
+
+    return true;
 }
 
 
@@ -799,8 +1026,26 @@ function intersoccer_upgrade_database_ajax() {
     if (!current_user_can('manage_options')) {
         wp_send_json_error(__('You do not have permission to upgrade the database.', 'intersoccer-reports-rosters'));
     }
-    intersoccer_upgrade_database();
-    wp_send_json_success(__('Database upgrade completed.', 'intersoccer-reports-rosters'));
+    $success = intersoccer_upgrade_database();
+    $version = get_option('intersoccer_db_version', '1.0.0');
+    $engine_label = (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database'))
+        ? __('OOP Migrator', 'intersoccer-reports-rosters')
+        : __('Legacy Migrator', 'intersoccer-reports-rosters');
+
+    if ($success === false) {
+        wp_send_json_error(__('Database upgrade failed. Check logs for details.', 'intersoccer-reports-rosters'));
+    }
+
+    wp_send_json_success([
+        'message' => sprintf(
+            /* translators: 1: current schema version, 2: migration engine */
+            __('Database upgrade completed. Schema version is now %1$s (Engine: %2$s).', 'intersoccer-reports-rosters'),
+            $version,
+            $engine_label
+        ),
+        'version' => $version,
+        'engine' => $engine_label,
+    ]);
 }
 
 add_action('wp_ajax_intersoccer_rebuild_event_signatures', 'intersoccer_rebuild_event_signatures_ajax');
@@ -828,61 +1073,15 @@ function intersoccer_rebuild_event_signatures_ajax() {
     }
 }
 
-add_action('wp_ajax_intersoccer_rebuild_rosters_and_reports', 'intersoccer_rebuild_rosters_and_reports_ajax');
-function intersoccer_rebuild_rosters_and_reports_ajax() {
-    ob_start();
-    check_ajax_referer('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field');
-    if (!current_user_can('manage_options')) {
-        ob_clean();
-        wp_send_json_error(['message' => __('You do not have permission to rebuild rosters.', 'intersoccer-reports-rosters')]);
-    }
-    error_log('InterSoccer: AJAX rebuild request received with data: ' . print_r($_POST, true));
-
-    try {
-        $result = intersoccer_rebuild_rosters_and_reports();
-        ob_clean();
-        if ($result['status'] === 'success') {
-            wp_send_json_success(['inserted' => $result['inserted'], 'message' => __('Rebuild completed. Inserted ' . $result['inserted'] . ' rosters.', 'intersoccer-reports-rosters')]);
-        } else {
-            wp_send_json_error(['message' => __('Rebuild failed: ' . $result['message'], 'intersoccer-reports-rosters')]);
-        }
-    } catch (Exception $e) {
-        error_log('InterSoccer: Rebuild exception: ' . $e->getMessage());
-        ob_clean();
-        wp_send_json_error(['message' => __('Rebuild failed with exception: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
-    }
-}
-
-add_action('wp_ajax_intersoccer_reconcile_rosters', 'intersoccer_reconcile_rosters_ajax');
-function intersoccer_reconcile_rosters_ajax() {
-    ob_start();
-    check_ajax_referer('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field');
-    if (!current_user_can('manage_options')) {
-        ob_clean();
-        wp_send_json_error(['message' => __('You do not have permission to reconcile rosters.', 'intersoccer-reports-rosters')]);
-    }
-    error_log('InterSoccer: AJAX reconcile request received with data: ' . print_r($_POST, true));
-
-    try {
-        $result = intersoccer_reconcile_rosters();
-        ob_clean();
-        if ($result['status'] === 'success') {
-            wp_send_json_success(['message' => $result['message'], 'synced' => $result['synced'], 'deleted' => $result['deleted']]);
-        } else {
-            wp_send_json_error(['message' => $result['message']]);
-        }
-    } catch (Exception $e) {
-        error_log('InterSoccer: Reconcile exception: ' . $e->getMessage());
-        ob_clean();
-        wp_send_json_error(['message' => __('Reconcile failed: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
-    }
-}
-
 /**
  * Validate the rosters table: Check existence and schema match.
  * Returns true if valid, else false and sets admin notice.
  */
 function intersoccer_validate_rosters_table() {
+    if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database')) {
+        return intersoccer_oop_validate_rosters_table();
+    }
+
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
@@ -950,6 +1149,7 @@ function intersoccer_validate_rosters_table() {
         'girls_only' => 'boolean',
         'event_signature' => 'varchar(255)',
         'is_placeholder' => 'tinyint',
+        'event_completed' => 'tinyint',
     ];
 
     $actual_columns_raw = $wpdb->get_results("DESCRIBE $rosters_table", ARRAY_A);

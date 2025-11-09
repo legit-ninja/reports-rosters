@@ -82,137 +82,191 @@ function intersoccer_render_roster_details_page() {
 
     error_log('InterSoccer: Roster details parameters - girls_only: ' . ($girls_only ? 'yes' : 'no') . ', from_page: ' . ($from_page ?: 'N/A'));
 
-    // Build query - SIMPLIFIED using girls_only boolean
-    // $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.day_presence, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only";
-    // $query .= " FROM $rosters_table r";
-    $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.late_pickup_days, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.day_presence, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only, p.post_date as order_date";
-    $query .= " FROM $rosters_table r";
-    $query .= " JOIN {$wpdb->posts} p ON r.order_id = p.ID";
-    
-    $where_clauses = [];
-    $query_params = [];
+    $use_oop_rosters = defined('INTERSOCCER_OOP_ACTIVE')
+        && INTERSOCCER_OOP_ACTIVE
+        && function_exists('intersoccer_use_oop_for')
+        && intersoccer_use_oop_for('rosters')
+        && function_exists('intersoccer_oop_get_roster_details_service');
 
-    $where_clauses[] = "p.post_status IN ('wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold')";
-    
-    // Girls Only filtering - UPDATED to use boolean column
-    if ($is_from_girls_only_page || $girls_only) {
-        $where_clauses[] = "r.girls_only = 1";
-    } elseif ($is_from_camps_page) {
-        $where_clauses[] = "r.activity_type = 'Camp' AND r.girls_only = 0";
-    } elseif ($is_from_courses_page) {
-        $where_clauses[] = "r.activity_type = 'Course' AND r.girls_only = 0";
-    }
+    if ($use_oop_rosters) {
+        $service = intersoccer_oop_get_roster_details_service();
+        $result = $service->getRosterContext(
+            [
+                'product_id' => $product_id,
+                'variation_id' => $variation_id,
+                'variation_ids' => $variation_ids,
+                'event_signature' => $event_signature,
+                'camp_terms' => $camp_terms,
+                'course_day' => $course_day,
+                'venue' => $venue,
+                'age_group' => $age_group,
+                'times' => $times,
+                'season' => $season,
+                'girls_only' => $girls_only,
+            ],
+            [
+                'is_from_camps_page' => $is_from_camps_page,
+                'is_from_courses_page' => $is_from_courses_page,
+                'is_from_girls_only_page' => $is_from_girls_only_page,
+                'sort_by' => $sort_by,
+                'sort_order' => $sort_order,
+            ]
+        );
 
-    // Other filters remain the same
-    if ($product_id > 0) {
-        $where_clauses[] = "r.product_id = %d";
-        $query_params[] = $product_id;
-    }
-
-    if ($product_name) {
-        $where_clauses[] = "r.product_name = %s";
-        $query_params[] = $product_name;
-        if ($event_dates && $event_dates !== 'N/A') {
-            $where_clauses[] = "r.event_dates = %s";
-            $query_params[] = $event_dates;
+        if (!$result['success']) {
+            echo '<div class="wrap"><h1>' . esc_html__('Roster Details', 'intersoccer-reports-rosters') . '</h1>';
+            echo '<p>' . esc_html($result['error']) . '</p></div>';
+            return;
         }
-    }
 
-    if ($variation_id > 0) {
-        $where_clauses[] = "r.variation_id = %d";
-        $query_params[] = $variation_id;
-    }
+        $rosters = $result['rosters'];
+        $base_roster = $result['base_roster'];
+        $available_rosters = $result['available_rosters'];
+        $cross_gender_rosters = $result['cross_gender_rosters'];
+        $unknown_count = $result['unknown_count'];
 
-    if (!empty($variation_ids)) {
-        $placeholders = implode(',', array_fill(0, count($variation_ids), '%d'));
-        $where_clauses[] = "r.variation_id IN ($placeholders)";
-        $query_params = array_merge($query_params, $variation_ids);
-    }
+        error_log('InterSoccer OOP: Roster details results count: ' . count($rosters));
 
-    // If event_signature is provided and valid, use it as the primary filter
-    if ($event_signature && $event_signature !== 'N/A') {
-        $where_clauses[] = "(r.event_signature = %s OR r.event_signature LIKE %s OR (r.event_signature IS NULL AND %s = 'N/A'))";
-        $query_params[] = $event_signature;
-        $query_params[] = '%' . $wpdb->esc_like($event_signature) . '%';
-        $query_params[] = $event_signature;
+        if ($product_id <= 0 && !empty($base_roster->product_id)) {
+            $product_id = (int) $base_roster->product_id;
+        }
+        if (empty($camp_terms) && !empty($base_roster->camp_terms)) {
+            $camp_terms = $base_roster->camp_terms;
+        }
+        if (empty($course_day) && !empty($base_roster->course_day)) {
+            $course_day = $base_roster->course_day;
+        }
+        if (empty($venue) && !empty($base_roster->venue)) {
+            $venue = $base_roster->venue;
+        }
+        if (empty($age_group) && !empty($base_roster->age_group)) {
+            $age_group = $base_roster->age_group;
+        }
+        if (empty($times) && !empty($base_roster->times)) {
+            $times = $base_roster->times;
+        }
+        if (!$girls_only && !empty($base_roster->girls_only)) {
+            $girls_only = (bool) $base_roster->girls_only;
+        }
+        if (empty($season) && !empty($base_roster->season)) {
+            $season = $base_roster->season;
+        }
     } else {
-        // When event_signature is empty, use strict exact matching for key grouping parameters
-        // This prevents over-broad matching that can include multiple events
-        if ($camp_terms && $camp_terms !== 'N/A') {
-            $where_clauses[] = "r.camp_terms = %s";
-            $query_params[] = $camp_terms;
+        $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.late_pickup_days, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.day_presence, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only, p.post_date as order_date";
+        $query .= " FROM $rosters_table r";
+        $query .= " JOIN {$wpdb->posts} p ON r.order_id = p.ID";
+
+        $where_clauses = [];
+        $query_params = [];
+
+        $where_clauses[] = "p.post_status IN ('wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold')";
+
+        if ($is_from_girls_only_page || $girls_only) {
+            $where_clauses[] = "r.girls_only = 1";
+        } elseif ($is_from_camps_page) {
+            $where_clauses[] = "r.activity_type = 'Camp' AND r.girls_only = 0";
+        } elseif ($is_from_courses_page) {
+            $where_clauses[] = "r.activity_type = 'Course' AND r.girls_only = 0";
         }
 
-        if ($course_day && $course_day !== 'N/A') {
-            $where_clauses[] = "r.course_day = %s";
-            $query_params[] = $course_day;
+        if ($product_id > 0) {
+            $where_clauses[] = "r.product_id = %d";
+            $query_params[] = $product_id;
         }
 
-        if ($venue) {
-            $where_clauses[] = "r.venue = %s";
-            $query_params[] = $venue;
+        if ($product_name) {
+            $where_clauses[] = "r.product_name = %s";
+            $query_params[] = $product_name;
+            if ($event_dates && $event_dates !== 'N/A') {
+                $where_clauses[] = "r.event_dates = %s";
+                $query_params[] = $event_dates;
+            }
         }
 
-        if ($age_group) {
-            $where_clauses[] = "r.age_group = %s";
-            $query_params[] = $age_group;
+        if ($variation_id > 0) {
+            $where_clauses[] = "r.variation_id = %d";
+            $query_params[] = $variation_id;
         }
 
-        if ($times) {
-            $where_clauses[] = "r.times = %s";
-            $query_params[] = $times;
+        if (!empty($variation_ids)) {
+            $placeholders = implode(',', array_fill(0, count($variation_ids), '%d'));
+            $where_clauses[] = "r.variation_id IN ($placeholders)";
+            $query_params = array_merge($query_params, $variation_ids);
         }
-    }
 
-    if ($season) { 
-        $where_clauses[] = "r.season = %s";
-        $query_params[] = $season; 
-    }
+        if ($event_signature && $event_signature !== 'N/A') {
+            $where_clauses[] = "(r.event_signature = %s OR r.event_signature LIKE %s OR (r.event_signature IS NULL AND %s = 'N/A'))";
+            $query_params[] = $event_signature;
+            $query_params[] = '%' . $wpdb->esc_like($event_signature) . '%';
+            $query_params[] = $event_signature;
+        } else {
+            if ($camp_terms && $camp_terms !== 'N/A') {
+                $where_clauses[] = "r.camp_terms = %s";
+                $query_params[] = $camp_terms;
+            }
 
-    if (empty($where_clauses)) {
-        error_log('InterSoccer: No valid parameters provided for roster details');
-        echo '<div class="wrap"><h1>' . esc_html__('Roster Details', 'intersoccer-reports-rosters') . '</h1>';
-        echo '<p>' . esc_html__('Invalid parameters provided.', 'intersoccer-reports-rosters') . '</p></div>';
-        return;
-    }
+            if ($course_day && $course_day !== 'N/A') {
+                $where_clauses[] = "r.course_day = %s";
+                $query_params[] = $course_day;
+            }
 
-    $query .= " WHERE " . implode(' AND ', $where_clauses);
-    
-    // Build ORDER BY clause based on sort parameters
-    $order_by_map = [
-        'order_date' => 'p.post_date',
-        'player_name' => 'r.first_name',
-        'last_name' => 'r.last_name',
-        'gender' => 'r.gender',
-        'age' => 'CAST(r.age AS UNSIGNED)',
-        'age_group' => 'r.age_group'
-    ];
-    
-    $order_field = $order_by_map[$sort_by] ?? 'p.post_date';
-    $query .= " ORDER BY {$order_field} {$sort_order}, r.first_name ASC, r.last_name ASC";
-    
-    $rosters = $wpdb->get_results($wpdb->prepare($query, $query_params), OBJECT);
+            if ($venue) {
+                $where_clauses[] = "r.venue = %s";
+                $query_params[] = $venue;
+            }
 
-    error_log('InterSoccer: Roster details query: ' . $wpdb->last_query);
-    error_log('InterSoccer: Roster details results count: ' . count($rosters));
+            if ($age_group) {
+                $where_clauses[] = "r.age_group = %s";
+                $query_params[] = $age_group;
+            }
 
-    if (!$rosters) {
-        echo '<div class="wrap"><h1>' . esc_html__('Roster Details', 'intersoccer-reports-rosters') . '</h1>';
-        echo '<p>' . esc_html__('No rosters found for the provided parameters.', 'intersoccer-reports-rosters') . '</p></div>';
-        return;
-    }
+            if ($times) {
+                $where_clauses[] = "r.times = %s";
+                $query_params[] = $times;
+            }
+        }
 
-    // Get base roster for event attributes
-    $base_roster = $rosters[0];
-    
-    // Determine if the event is camp-like - SIMPLIFIED
-    $is_camp_like = ($base_roster->activity_type === 'Camp' || (!empty($base_roster->camp_terms) && $base_roster->camp_terms !== 'N/A'));
-    $is_girls_only = (bool) $base_roster->girls_only;
+        if ($season) {
+            $where_clauses[] = "r.season = %s";
+            $query_params[] = $season;
+        }
 
-    // Fetch available destination rosters for migration
-    // NOTE: This initial query respects gender type to show safe default options
-    // JavaScript will reload with cross-gender option if checkbox is enabled
-    $available_rosters_query = $wpdb->prepare("
+        if (empty($where_clauses)) {
+            error_log('InterSoccer: No valid parameters provided for roster details');
+            echo '<div class="wrap"><h1>' . esc_html__('Roster Details', 'intersoccer-reports-rosters') . '</h1>';
+            echo '<p>' . esc_html__('Invalid parameters provided.', 'intersoccer-reports-rosters') . '</p></div>';
+            return;
+        }
+
+        $query .= " WHERE " . implode(' AND ', $where_clauses);
+
+        $order_by_map = [
+            'order_date' => 'p.post_date',
+            'player_name' => 'r.first_name',
+            'last_name' => 'r.last_name',
+            'gender' => 'r.gender',
+            'age' => 'CAST(r.age AS UNSIGNED)',
+            'age_group' => 'r.age_group'
+        ];
+
+        $order_field = $order_by_map[$sort_by] ?? 'p.post_date';
+        $query .= " ORDER BY {$order_field} {$sort_order}, r.first_name ASC, r.last_name ASC";
+
+        $rosters = $wpdb->get_results($wpdb->prepare($query, $query_params), OBJECT);
+
+        error_log('InterSoccer: Roster details query: ' . $wpdb->last_query);
+        error_log('InterSoccer: Roster details results count: ' . count($rosters));
+
+        if (!$rosters) {
+            echo '<div class="wrap"><h1>' . esc_html__('Roster Details', 'intersoccer-reports-rosters') . '</h1>';
+            echo '<p>' . esc_html__('No rosters found for the provided parameters.', 'intersoccer-reports-rosters') . '</p></div>';
+            return;
+        }
+
+        $base_roster = $rosters[0];
+        $base_roster_girls_only = (int) ($base_roster->girls_only ?? 0);
+
+        $available_rosters_query = $wpdb->prepare("
         SELECT DISTINCT 
             r.product_id,
             r.variation_id,
@@ -234,12 +288,11 @@ function intersoccer_render_roster_details_page() {
         AND r.variation_id != %d
         GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season, r.girls_only
         ORDER BY r.product_name, r.venue, r.age_group
-    ", $base_roster->activity_type, $is_girls_only ? 1 : 0, $variation_id);
-    
-    $available_rosters = $wpdb->get_results($available_rosters_query, OBJECT);
-    
-    // Also fetch cross-gender rosters (for when checkbox is enabled)
-    $cross_gender_rosters_query = $wpdb->prepare("
+    ", $base_roster->activity_type, $base_roster_girls_only, $variation_id);
+
+        $available_rosters = $wpdb->get_results($available_rosters_query, OBJECT);
+
+        $cross_gender_rosters_query = $wpdb->prepare("
         SELECT DISTINCT 
             r.product_id,
             r.variation_id,
@@ -261,17 +314,25 @@ function intersoccer_render_roster_details_page() {
         AND r.variation_id != %d
         GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season, r.girls_only
         ORDER BY r.product_name, r.venue, r.age_group
-    ", $base_roster->activity_type, $is_girls_only ? 1 : 0, $variation_id);
-    
-    $cross_gender_rosters = $wpdb->get_results($cross_gender_rosters_query, OBJECT);
+    ", $base_roster->activity_type, $base_roster_girls_only, $variation_id);
 
-    // Count Unknown Attendees
-    $unknown_count = count(array_filter($rosters, fn($row) => $row->player_name === 'Unknown Attendee'));
+        $cross_gender_rosters = $wpdb->get_results($cross_gender_rosters_query, OBJECT);
+
+        $unknown_count = count(array_filter($rosters, fn($row) => $row->player_name === 'Unknown Attendee'));
+    }
+
+    // Get base roster for event attributes
+    $base_roster = $base_roster ?? $rosters[0];
+
+    // Determine if the event is camp-like - SIMPLIFIED
+    $is_camp_like = ($base_roster->activity_type === 'Camp' || (!empty($base_roster->camp_terms) && $base_roster->camp_terms !== 'N/A'));
+    $is_girls_only = (bool) $base_roster->girls_only;
 
     // Render the page
     echo '<div class="wrap">';
     $title_suffix = $is_girls_only ? ' (Girls Only)' : '';
-    echo '<h1>' . esc_html__('Roster Details for ', 'intersoccer-reports-rosters') . esc_html($base_roster->course_day ?: $base_roster->camp_terms) . ' - ' . esc_html($base_roster->venue) . ' (' . esc_html($age_group) . ')' . $title_suffix . '</h1>';
+    $event_label = $base_roster->product_name ?: ($base_roster->course_day ?: ($base_roster->camp_terms ?: __('Unknown Event', 'intersoccer-reports-rosters')));
+    echo '<h1>' . esc_html__('Roster Details for ', 'intersoccer-reports-rosters') . esc_html($event_label) . ' - ' . esc_html($base_roster->venue) . ' (' . esc_html($age_group) . ')' . $title_suffix . '</h1>';
     
     if ($unknown_count > 0) {
         echo '<p style="color: red;">' . esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)) . '</p>';

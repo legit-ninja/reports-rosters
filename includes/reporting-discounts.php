@@ -544,6 +544,15 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
  */
 function intersoccer_get_financial_booking_report($start_date = '', $end_date = '', $year = '', $region = '') {
     error_log("=== InterSoccer Financial Report: Called with start_date=$start_date, end_date=$end_date, year=$year, region=$region ===");
+
+    if (function_exists('intersoccer_oop_get_financial_report_service')) {
+        try {
+            return intersoccer_oop_get_financial_report_service()->getFinancialBookingReport($start_date, $end_date, $year, $region);
+        } catch (\Exception $e) {
+            error_log('InterSoccer Financial Report (OOP): Fallback to legacy due to exception - ' . $e->getMessage());
+        }
+    }
+
     global $wpdb;
 
     // Build date filter

@@ -121,7 +121,7 @@ add_action('admin_head', function () {
         
         .roster-header h1 {
             margin: 0;
-            color: #ffffffff;
+            color:rgb(0, 0, 0);
             font-size: 28px;
         }
         
@@ -520,143 +520,160 @@ function intersoccer_render_camps_page() {
         $coach_accessible_venues = InterSoccer_Admin_Coach_Assignments::get_coach_accessible_venues($current_user->ID);
     }
 
-    global $wpdb;
-    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-    $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
-
-    // Clear all caches
-    wp_cache_flush();
-    delete_transient('intersoccer_rosters_cache');
-
-    // Fetch camp data with season extraction from camp_terms and city from order item metadata
-    $base_query = "SELECT COALESCE(r.camp_terms, 'N/A') as camp_terms,
-                      COALESCE(r.venue, 'N/A') as venue,
-                      COALESCE(oim.meta_value, 'N/A') as city,
-                      r.age_group,
-                      r.times,
-                      COUNT(DISTINCT r.order_item_id) as total_players,
-                      GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids,
-                      r.event_signature,
-                      GROUP_CONCAT(DISTINCT r.player_name) as player_names,
-                      GROUP_CONCAT(DISTINCT r.start_date) as start_dates,
-                      GROUP_CONCAT(DISTINCT r.end_date) as end_dates,
-                      GROUP_CONCAT(DISTINCT r.product_name) as product_names
-               FROM $rosters_table r
-               LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
-               WHERE r.activity_type IN ('Camp', 'Camp, Girls Only', 'Camp, Girls\' only')
-               AND r.girls_only = 0" . intersoccer_roster_placeholder_where();  // EXCLUDE Girls Only events and placeholders
-
-    // Add coach venue filtering if user is a coach
-    if ($is_coach && !empty($coach_accessible_venues)) {
-        $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
-        $base_query .= $wpdb->prepare(" AND r.venue IN ($placeholders)", $coach_accessible_venues);
-    } elseif ($is_coach && empty($coach_accessible_venues)) {
-        // Coach has no venue assignments, show no results
-        $base_query .= " AND 1=0";
-    }
-
-    $base_query .= " GROUP BY r.event_signature
-                     ORDER BY r.camp_terms, r.venue, r.age_group";    $start_time = microtime(true);
-    $groups = $wpdb->get_results($base_query, ARRAY_A);
-    $query_time = microtime(true) - $start_time;
-    $filter = intersoccer_roster_placeholder_where();
-    $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0{$filter} AND venue IS NOT NULL ORDER BY venue");
-    $all_camp_terms = $wpdb->get_col("SELECT DISTINCT camp_terms FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0{$filter} AND camp_terms IS NOT NULL ORDER BY camp_terms");
-    $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0{$filter} AND age_group IS NOT NULL ORDER BY age_group");
-    $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.activity_type = 'Camp' AND r.girls_only = 0" . str_replace('is_placeholder', 'r.is_placeholder', $filter) . " AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
-
-    error_log("InterSoccer: Camps query results: " . print_r($groups, true));
-    error_log("InterSoccer: Camps query execution time: " . $query_time . " seconds");
-
-    // Log unique city values
-    $cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $order_itemmeta_table oim WHERE oim.meta_key = 'City' AND oim.meta_value IS NOT NULL");
-    error_log("InterSoccer: Unique cities from order item metadata for Camps: " . json_encode($cities));
-
-    // Parse groups with date calculations
-    $all_groups = [];
-    $all_seasons = [];
-    foreach ($groups as $group) {
-        $variation_ids = isset($group['variation_ids']) && !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
-        if (empty($variation_ids)) {
-            error_log("InterSoccer: No valid variation_ids for camp group - Raw: " . print_r(isset($group['variation_ids']) ? $group['variation_ids'] : 'KEY_NOT_SET', true));
-            $variation_ids = [0];
-        }
-        $group['variation_ids'] = $variation_ids;
-        $variation_id = $variation_ids[0];
-        $variation = $variation_id ? wc_get_product($variation_id) : false;
-        $parent_product = $variation ? wc_get_product($variation->get_parent_id()) : false;
-
-        // Log variation access
-        error_log("InterSoccer: Camp variation $variation_id - Loaded: " . ($variation ? 'Yes' : 'No') . ", Meta start: " . ($variation ? $variation->get_meta('_course_start_date') : 'N/A'));
-
-        // Extract season from camp_terms
-        $season = 'N/A';
-        if ($group['camp_terms'] && $group['camp_terms'] !== 'N/A') {
-            $parts = explode('-', $group['camp_terms']);
-            $season = !empty($parts[0]) ? ucfirst($parts[0]) : 'N/A';
-        }
-        $group['season'] = intersoccer_normalize_season_for_display($season);
-
-        // Fetch meta
-        $start = $variation ? $variation->get_meta('_course_start_date') : ($parent_product ? $parent_product->get_meta('_course_start_date') : '1970-01-01');
-        $end = $variation ? $variation->get_meta('_course_end_date') : ($parent_product ? $parent_product->get_meta('_course_end_date') : '1970-01-01');
-
-        // Validate and format dates
-        $group['corrected_start_date'] = date('Y-m-d', strtotime($start)) ?: '1970-01-01';
-        $group['corrected_end_date'] = date('Y-m-d', strtotime($end)) ?: '1970-01-01';
-
-        // Collect unique seasons
-        if ($season && $season !== 'N/A') {
-            $all_seasons[$season] = $season;
-        }
-
-        $all_groups[] = $group;
-    }
-
-    // Get filter options
     $selected_season = isset($_GET['season']) ? sanitize_text_field($_GET['season']) : '';
     $selected_venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
     $selected_camp_terms = isset($_GET['camp_terms']) ? sanitize_text_field($_GET['camp_terms']) : '';
     $selected_age_group = isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '';
     $selected_city = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
-    $display_groups = $all_groups;
 
-    // Filter by season
-    if ($selected_season) {
-        $display_groups = array_filter($display_groups, function($group) use ($selected_season) {
-            return $group['season'] === $selected_season;
-        });
-    }
-    if ($selected_venue) {
-        $display_groups = array_filter($display_groups, function($group) use ($selected_venue) {
-            return $group['venue'] === $selected_venue;
-        });
-    }
-    if ($selected_camp_terms) {
-        $display_groups = array_filter($display_groups, function($group) use ($selected_camp_terms) {
-            return $group['camp_terms'] === $selected_camp_terms;
-        });
-    }
-    if ($selected_age_group) {
-        $display_groups = array_filter($display_groups, function($group) use ($selected_age_group) {
-            return $group['age_group'] === $selected_age_group;
-        });
-    }
-    if ($selected_city) {
-        $display_groups = array_filter($display_groups, function($group) use ($selected_city) {
-            return $group['city'] === $selected_city;
-        });
-    }
+    $use_oop_rosters = defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('rosters');
 
-    error_log("InterSoccer: Filtered Camps: " . print_r($display_groups, true));
+    if ($use_oop_rosters) {
+        $service = intersoccer_oop_get_roster_listing_service();
+        $result = $service->getCampListings(
+            [
+                'season' => $selected_season,
+                'venue' => $selected_venue,
+                'camp_terms' => $selected_camp_terms,
+                'age_group' => $selected_age_group,
+                'city' => $selected_city,
+            ],
+            [
+                'is_coach' => $is_coach,
+                'accessible_venues' => $coach_accessible_venues,
+            ],
+            false
+        );
 
-    // Group by season
-    $grouped = [];
-    foreach ($display_groups as $group) {
-        $season = $group['season'] ?: 'N/A';
-        $grouped[$season][] = $group;
+        $query_time = $result['query_time'];
+        $all_groups = $result['all_groups'];
+        $display_groups = $result['display_groups'];
+        $grouped = $result['grouped'];
+        $all_seasons = $result['filters']['seasons'];
+        $all_venues = $result['filters']['venues'];
+        $all_camp_terms = $result['filters']['camp_terms'];
+        $all_age_groups = $result['filters']['age_groups'];
+        $all_cities = $result['filters']['cities'];
+
+        error_log('InterSoccer OOP: Camps aggregation time ' . $query_time . ' seconds');
+        error_log('InterSoccer OOP: Camps filtered groups ' . print_r($display_groups, true));
+    } else {
+        global $wpdb;
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
+
+        wp_cache_flush();
+        delete_transient('intersoccer_rosters_cache');
+
+        $base_query = "SELECT COALESCE(r.camp_terms, 'N/A') as camp_terms,
+                          COALESCE(r.venue, 'N/A') as venue,
+                          COALESCE(oim.meta_value, 'N/A') as city,
+                          r.age_group,
+                          r.times,
+                          COUNT(DISTINCT r.order_item_id) as total_players,
+                          GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids,
+                          GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids,
+                          r.event_signature,
+                          GROUP_CONCAT(DISTINCT r.start_date) as start_dates,
+                          GROUP_CONCAT(DISTINCT r.end_date) as end_dates,
+                          GROUP_CONCAT(DISTINCT r.product_name) as product_names
+                   FROM $rosters_table r
+                   LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
+                   WHERE r.activity_type IN ('Camp', 'Camp, Girls Only', 'Camp, Girls\' only')
+                   AND r.girls_only = 0" . intersoccer_roster_placeholder_where();
+
+        if ($is_coach && !empty($coach_accessible_venues)) {
+            $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
+            $base_query .= $wpdb->prepare(" AND r.venue IN ($placeholders)", $coach_accessible_venues);
+        } elseif ($is_coach && empty($coach_accessible_venues)) {
+            $base_query .= " AND 1=0";
+        }
+
+        $base_query .= " GROUP BY r.event_signature
+                         ORDER BY r.camp_terms, r.venue, r.age_group";
+
+        $start_time = microtime(true);
+        $groups = $wpdb->get_results($base_query, ARRAY_A);
+        $query_time = microtime(true) - $start_time;
+        $filter = intersoccer_roster_placeholder_where();
+        $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0{$filter} AND venue IS NOT NULL ORDER BY venue");
+        $all_camp_terms = $wpdb->get_col("SELECT DISTINCT camp_terms FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0{$filter} AND camp_terms IS NOT NULL ORDER BY camp_terms");
+        $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0{$filter} AND age_group IS NOT NULL ORDER BY age_group");
+        $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.activity_type = 'Camp' AND r.girls_only = 0" . str_replace('is_placeholder', 'r.is_placeholder', $filter) . " AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
+
+        error_log("InterSoccer: Camps query results: " . print_r($groups, true));
+        error_log("InterSoccer: Camps query execution time: " . $query_time . " seconds");
+
+        $all_groups = [];
+        $all_seasons = [];
+        foreach ($groups as $group) {
+            $variation_ids = isset($group['variation_ids']) && !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
+            if (empty($variation_ids)) {
+                error_log("InterSoccer: No valid variation_ids for camp group - Raw: " . print_r(isset($group['variation_ids']) ? $group['variation_ids'] : 'KEY_NOT_SET', true));
+                $variation_ids = [0];
+            }
+            $group['variation_ids'] = $variation_ids;
+            $variation_id = $variation_ids[0];
+            $variation = $variation_id ? wc_get_product($variation_id) : false;
+            $parent_product = $variation ? wc_get_product($variation->get_parent_id()) : false;
+
+            $season = 'N/A';
+            if ($group['camp_terms'] && $group['camp_terms'] !== 'N/A') {
+                $parts = explode('-', $group['camp_terms']);
+                $season = !empty($parts[0]) ? ucfirst($parts[0]) : 'N/A';
+            }
+            $group['season'] = intersoccer_normalize_season_for_display($season);
+
+            $start = $variation ? $variation->get_meta('_course_start_date') : ($parent_product ? $parent_product->get_meta('_course_start_date') : '1970-01-01');
+            $end = $variation ? $variation->get_meta('_course_end_date') : ($parent_product ? $parent_product->get_meta('_course_end_date') : '1970-01-01');
+
+            $group['corrected_start_date'] = date('Y-m-d', strtotime($start)) ?: '1970-01-01';
+            $group['corrected_end_date'] = date('Y-m-d', strtotime($end)) ?: '1970-01-01';
+
+            if ($season && $season !== 'N/A') {
+                $all_seasons[$season] = $season;
+            }
+
+            $all_groups[] = $group;
+        }
+
+        $display_groups = $all_groups;
+
+        if ($selected_season) {
+            $display_groups = array_filter($display_groups, function($group) use ($selected_season) {
+                return $group['season'] === $selected_season;
+            });
+        }
+        if ($selected_venue) {
+            $display_groups = array_filter($display_groups, function($group) use ($selected_venue) {
+                return $group['venue'] === $selected_venue;
+            });
+        }
+        if ($selected_camp_terms) {
+            $display_groups = array_filter($display_groups, function($group) use ($selected_camp_terms) {
+                return $group['camp_terms'] === $selected_camp_terms;
+            });
+        }
+        if ($selected_age_group) {
+            $display_groups = array_filter($display_groups, function($group) use ($selected_age_group) {
+                return $group['age_group'] === $selected_age_group;
+            });
+        }
+        if ($selected_city) {
+            $display_groups = array_filter($display_groups, function($group) use ($selected_city) {
+                return $group['city'] === $selected_city;
+            });
+        }
+
+        error_log("InterSoccer: Filtered Camps: " . print_r($display_groups, true));
+
+        $grouped = [];
+        foreach ($display_groups as $group) {
+            $season = $group['season'] ?: 'N/A';
+            $grouped[$season][] = $group;
+        }
+        krsort($grouped);
     }
-    krsort($grouped); // Latest seasons first
 
     // Render the page
     ?>
@@ -850,155 +867,170 @@ function intersoccer_render_courses_page() {
         $coach_accessible_venues = InterSoccer_Admin_Coach_Assignments::get_coach_accessible_venues($current_user->ID);
     }
 
-    global $wpdb;
-    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-    $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
+    $use_oop_rosters = defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('rosters');
 
-    // Clear all caches
-    wp_cache_flush();
-    delete_transient('intersoccer_rosters_cache');
+    if ($use_oop_rosters) {
+        $service = intersoccer_oop_get_roster_listing_service();
+        $result = $service->getCourseListings(
+            [
+                'season' => isset($_GET['season']) ? sanitize_text_field($_GET['season']) : '',
+                'venue' => isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '',
+                'course_day' => isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '',
+                'age_group' => isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '',
+                'city' => isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '',
+            ],
+            [
+                'is_coach' => $is_coach,
+                'accessible_venues' => $coach_accessible_venues,
+            ],
+            false
+        );
 
-    // Fetch course data with season and city from order item metadata
-    $base_query = "SELECT COALESCE(r.season, 'N/A') as season,
-                      COALESCE(r.venue, 'N/A') as venue,
-                      COALESCE(oim.meta_value, 'N/A') as city,
-                      r.age_group,
-                      r.times,
-                      r.course_day,
-                      COUNT(DISTINCT r.order_item_id) as total_players,
-                      GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids,
-                      r.event_signature,
-                      GROUP_CONCAT(DISTINCT r.player_name) as player_names,
-                      GROUP_CONCAT(DISTINCT r.start_date) as start_dates,
-                      GROUP_CONCAT(DISTINCT r.end_date) as end_dates,
-                      GROUP_CONCAT(DISTINCT r.product_name) as product_names
+        $query_time = $result['query_time'];
+        $all_groups = $result['all_groups'];
+        $display_groups = $result['display_groups'];
+        $grouped = $result['grouped'];
+        $all_seasons = $result['filters']['seasons'];
+        $all_venues = $result['filters']['venues'];
+        $all_course_days = $result['filters']['course_days'];
+        $all_age_groups = $result['filters']['age_groups'];
+        $all_cities = $result['filters']['cities'];
+
+        error_log('InterSoccer OOP: Courses aggregation time ' . $query_time . ' seconds');
+        error_log('InterSoccer OOP: Courses filtered groups ' . print_r($display_groups, true));
+    } else {
+        global $wpdb;
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
+
+        wp_cache_flush();
+        delete_transient('intersoccer_rosters_cache');
+
+        $base_query = "SELECT COALESCE(r.season, 'N/A') as season,
+                          COALESCE(r.venue, 'N/A') as venue,
+                          COALESCE(oim.meta_value, 'N/A') as city,
+                          r.age_group,
+                          r.times,
+                          r.course_day,
+                          COUNT(DISTINCT r.order_item_id) as total_players,
+                          GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids,
+                          r.event_signature,
+                          GROUP_CONCAT(DISTINCT r.player_name) as player_names,
+                          GROUP_CONCAT(DISTINCT r.start_date) as start_dates,
+                          GROUP_CONCAT(DISTINCT r.end_date) as end_dates,
+                          GROUP_CONCAT(DISTINCT r.product_name) as product_names,
+                          GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids
                FROM $rosters_table r
                LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                WHERE r.activity_type IN ('Course', 'Course, Girls Only', 'Course, Girls\' only')
-               AND r.girls_only = 0" . intersoccer_roster_placeholder_where();  // EXCLUDE Girls Only events and placeholders
+               AND r.girls_only = 0" . intersoccer_roster_placeholder_where();
 
-    // Add coach venue filtering if user is a coach
-    if ($is_coach && !empty($coach_accessible_venues)) {
-        $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
-        $base_query .= $wpdb->prepare(" AND r.venue IN ($placeholders)", $coach_accessible_venues);
-    } elseif ($is_coach && empty($coach_accessible_venues)) {
-        // Coach has no venue assignments, show no results
-        $base_query .= " AND 1=0";
-    }
-
-    $base_query .= " GROUP BY r.event_signature
-                     ORDER BY r.season, r.venue, r.age_group";
-
-    $start_time = microtime(true);
-    $groups = $wpdb->get_results($base_query, ARRAY_A);
-    $query_time = microtime(true) - $start_time;
-    $filter = intersoccer_roster_placeholder_where();
-    $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND venue IS NOT NULL ORDER BY venue");
-    $all_course_days = $wpdb->get_col("SELECT DISTINCT course_day FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND course_day IS NOT NULL ORDER BY course_day");
-    $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND age_group IS NOT NULL ORDER BY age_group");
-    $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.activity_type = 'Course' AND r.girls_only = 0" . str_replace('is_placeholder', 'r.is_placeholder', $filter) . " AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
-    error_log("InterSoccer: Courses query results: " . print_r($groups, true));
-    error_log("InterSoccer: Courses query execution time: " . $query_time . " seconds");
-
-    // Log unique city values
-    $cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $order_itemmeta_table oim WHERE oim.meta_key = 'City' AND oim.meta_value IS NOT NULL");
-    error_log("InterSoccer: Unique cities from order item metadata for Courses: " . json_encode($cities));
-
-    // Parse groups with date calculations
-    $all_groups = [];
-    $all_seasons = [];
-    foreach ($groups as $group) {
-        $variation_ids = isset($group['variation_ids']) && !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
-        if (empty($variation_ids)) {
-            error_log("InterSoccer: No valid variation_ids for course group - Raw: " . print_r(isset($group['variation_ids']) ? $group['variation_ids'] : 'KEY_NOT_SET', true));
-            $variation_ids = [0];
-        }
-        $group['variation_ids'] = $variation_ids;
-        $variation_id = $variation_ids[0];
-        $variation = $variation_id ? wc_get_product($variation_id) : false;
-        $parent_product = $variation ? wc_get_product($variation->get_parent_id()) : false;
-
-        // Log variation access
-        error_log("InterSoccer: Course variation $variation_id - Loaded: " . ($variation ? 'Yes' : 'No') . ", Meta start: " . ($variation ? $variation->get_meta('_course_start_date') : 'N/A'));
-
-        // Fetch meta
-        $start = $variation ? $variation->get_meta('_course_start_date') : ($parent_product ? $parent_product->get_meta('_course_start_date') : '1970-01-01');
-        $total_weeks = $variation ? (int) $variation->get_meta('_course_total_weeks') : ($parent_product ? (int) $parent_product->get_meta('_course_total_weeks') : 0);
-        $holidays = $variation ? ($variation->get_meta('_course_holiday_dates') ?: []) : ($parent_product ? ($parent_product->get_meta('_course_holiday_dates') ?: []) : []);
-        $days = $parent_product ? (wc_get_product_terms($parent_product->get_id(), 'pa_course-day', ['fields' => 'names']) ?: wc_get_product_terms($parent_product->get_id(), 'pa_days-of-week', ['fields' => 'names']) ?: ['Monday']) : ['Monday'];
-
-        // Calculate end date
-        $end = '1970-01-01';
-        if ($start !== '1970-01-01' && $total_weeks > 0) {
-            $end = calculate_course_end_date($variation_id, $start, $total_weeks, $holidays, $days);
-            error_log("InterSoccer: Calculated course dates for variation $variation_id - Start: $start, End: $end");
-        } else {
-            error_log("InterSoccer: No valid meta for variation $variation_id - Using stored dates");
-            $start = !empty($group['start_dates']) && is_string($group['start_dates']) ? explode(',', $group['start_dates'])[0] : '1970-01-01';
-            $end = !empty($group['end_dates']) && is_string($group['end_dates']) ? explode(',', $group['end_dates'])[0] : '1970-01-01';
+        if ($is_coach && !empty($coach_accessible_venues)) {
+            $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
+            $base_query .= $wpdb->prepare(" AND r.venue IN ($placeholders)", $coach_accessible_venues);
+        } elseif ($is_coach && empty($coach_accessible_venues)) {
+            $base_query .= " AND 1=0";
         }
 
-        // Validate and format dates
-        $group['corrected_start_date'] = date('Y-m-d', strtotime($start)) ?: '1970-01-01';
-        $group['corrected_end_date'] = date('Y-m-d', strtotime($end)) ?: '1970-01-01';
+        $base_query .= " GROUP BY r.event_signature
+                         ORDER BY r.season, r.venue, r.age_group";
 
-        // Normalize season for display
-        $group['season'] = intersoccer_normalize_season_for_display($group['season']);
+        $start_time = microtime(true);
+        $groups = $wpdb->get_results($base_query, ARRAY_A);
+        $query_time = microtime(true) - $start_time;
+        $filter = intersoccer_roster_placeholder_where();
+        $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND venue IS NOT NULL ORDER BY venue");
+        $all_course_days = $wpdb->get_col("SELECT DISTINCT course_day FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND course_day IS NOT NULL ORDER BY course_day");
+        $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND age_group IS NOT NULL ORDER BY age_group");
+        $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.activity_type = 'Course' AND r.girls_only = 0" . str_replace('is_placeholder', 'r.is_placeholder', $filter) . " AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
+        error_log("InterSoccer: Courses query results: " . print_r($groups, true));
+        error_log("InterSoccer: Courses query execution time: " . $query_time . " seconds");
 
-        // Collect unique seasons
-        if ($group['season'] && $group['season'] !== 'N/A') {
-            $all_seasons[$group['season']] = $group['season'];
+        $all_groups = [];
+        $all_seasons = [];
+        foreach ($groups as $group) {
+            $variation_ids = isset($group['variation_ids']) && !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
+            if (empty($variation_ids)) {
+                error_log("InterSoccer: No valid variation_ids for course group - Raw: " . print_r(isset($group['variation_ids']) ? $group['variation_ids'] : 'KEY_NOT_SET', true));
+                $variation_ids = [0];
+            }
+            $group['variation_ids'] = $variation_ids;
+            $variation_id = $variation_ids[0];
+            $variation = $variation_id ? wc_get_product($variation_id) : false;
+            $parent_product = $variation ? wc_get_product($variation->get_parent_id()) : false;
+
+            error_log("InterSoccer: Course variation $variation_id - Loaded: " . ($variation ? 'Yes' : 'No') . ", Meta start: " . ($variation ? $variation->get_meta('_course_start_date') : 'N/A'));
+
+            $start = $variation ? $variation->get_meta('_course_start_date') : ($parent_product ? $parent_product->get_meta('_course_start_date') : '1970-01-01');
+            $total_weeks = $variation ? (int) $variation->get_meta('_course_total_weeks') : ($parent_product ? (int) $parent_product->get_meta('_course_total_weeks') : 0);
+            $holidays = $variation ? ($variation->get_meta('_course_holiday_dates') ?: []) : ($parent_product ? ($parent_product->get_meta('_course_holiday_dates') ?: []) : []);
+            $days = $parent_product ? (wc_get_product_terms($parent_product->get_id(), 'pa_course-day', ['fields' => 'names']) ?: wc_get_product_terms($parent_product->get_id(), 'pa_days-of-week', ['fields' => 'names']) ?: ['Monday']) : ['Monday'];
+
+            $end = '1970-01-01';
+            if ($start !== '1970-01-01' && $total_weeks > 0) {
+                $end = calculate_course_end_date($variation_id, $start, $total_weeks, $holidays, $days);
+            } else {
+                $start = !empty($group['start_dates']) && is_string($group['start_dates']) ? explode(',', $group['start_dates'])[0] : '1970-01-01';
+                $end = !empty($group['end_dates']) && is_string($group['end_dates']) ? explode(',', $group['end_dates'])[0] : '1970-01-01';
+            }
+
+            $group['corrected_start_date'] = date('Y-m-d', strtotime($start)) ?: '1970-01-01';
+            $group['corrected_end_date'] = date('Y-m-d', strtotime($end)) ?: '1970-01-01';
+            $group['season'] = intersoccer_normalize_season_for_display($group['season']);
+
+            if ($group['season'] && $group['season'] !== 'N/A') {
+                $all_seasons[$group['season']] = $group['season'];
+            }
+
+            $all_groups[] = $group;
         }
 
-        $all_groups[] = $group;
-    }
+        $selected_season = isset($_GET['season']) ? sanitize_text_field($_GET['season']) : '';
+        $selected_venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
+        $selected_course_day = isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '';
+        $selected_age_group = isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '';
+        $selected_city = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
 
-    // Get filter options
-    $selected_season = isset($_GET['season']) ? sanitize_text_field($_GET['season']) : '';
-    $selected_venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
-    $selected_course_day = isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '';
-    $selected_age_group = isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '';
-    $selected_city = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
+        $display_groups = $all_groups;
+        if ($selected_season) {
+            $display_groups = array_filter($display_groups, function($group) use ($selected_season) {
+                return $group['season'] === $selected_season;
+            });
+        }
+        if ($selected_venue) {
+            $display_groups = array_filter($display_groups, function($group) use ($selected_venue) {
+                return $group['venue'] === $selected_venue;
+            });
+        }
+        if ($selected_course_day) {
+            $display_groups = array_filter($display_groups, function($group) use ($selected_course_day) {
+                return $group['course_day'] === $selected_course_day;
+            });
+        }
+        if ($selected_age_group) {
+            $display_groups = array_filter($display_groups, function($group) use ($selected_age_group) {
+                return $group['age_group'] === $selected_age_group;
+            });
+        }
+        if ($selected_city) {
+            $display_groups = array_filter($display_groups, function($group) use ($selected_city) {
+                return $group['city'] === $selected_city;
+            });
+        }
 
-    $display_groups = $all_groups;
+        error_log("InterSoccer: Filtered Courses: " . print_r($display_groups, true));
 
-    // Filter by season
-    if ($selected_season) {
-        $display_groups = array_filter($display_groups, function($group) use ($selected_season) {
-            return $group['season'] === $selected_season;
-        });
+        $grouped = [];
+        foreach ($display_groups as $group) {
+            $season = $group['season'] ?: 'N/A';
+            $course_day = $group['course_day'] ?: 'N/A';
+            $grouped[$season][$course_day][] = $group;
+        }
+        krsort($grouped);
+        foreach ($grouped as &$day_groups) {
+            ksort($day_groups);
+        }
     }
-    if ($selected_venue) {
-        $display_groups = array_filter($display_groups, function($group) use ($selected_venue) {
-            return $group['venue'] === $selected_venue;
-        });
-    }
-    if ($selected_course_day) {
-        $display_groups = array_filter($display_groups, function($group) use ($selected_course_day) {
-            return $group['course_day'] === $selected_course_day;
-        });
-    }
-    if ($selected_age_group) {
-        $display_groups = array_filter($display_groups, function($group) use ($selected_age_group) {
-            return $group['age_group'] === $selected_age_group;
-        });
-    }
-    if ($selected_city) {
-        $display_groups = array_filter($display_groups, function($group) use ($selected_city) {
-            return $group['city'] === $selected_city;
-        });
-    }
-
-    error_log("InterSoccer: Filtered Courses: " . print_r($display_groups, true));
-
-    // Group by season then course_day
-    $grouped = [];
-    foreach ($display_groups as $group) {
-        $season = $group['season'] ?: 'N/A';
-        $course_day = $group['course_day'] ?: 'N/A';
-        $grouped[$season][$course_day][] = $group;
-    }
-    krsort($grouped); // Latest seasons first
 
     // Render the page
     ?>
@@ -1526,7 +1558,7 @@ function intersoccer_render_girls_only_page() {
                                     <div class="camp-card">
                                         <div class="camp-header">
                                             <h3 class="camp-venue">
-                                                📍 <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($course['venue'], 'pa_intersoccer-venues') : ($course['venue'] ?: 'Unknown Venue')); ?>
+                                                📍 <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['venue'], 'pa_intersoccer-venues') : ($camp['venue'] ?: 'Unknown Venue')); ?>
                                             </h3>
                                         </div>
                                         <div class="camp-details">
@@ -1536,7 +1568,7 @@ function intersoccer_render_girls_only_page() {
                                         </div>
                                             <div class="detail-row">
                                                 <span class="detail-label">👶 Age Group</span>
-                                                <span class="detail-value"><?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($course['age_group'], 'pa_age-group') : $course['age_group']); ?></span>
+                                                <span class="detail-value"><?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['age_group'], 'pa_age-group') : $camp['age_group']); ?></span>
                                             </div>
                                              <div class="detail-row">
                                                 <span class="detail-label">🌆 City</span>
@@ -1657,6 +1689,402 @@ function intersoccer_render_girls_only_page() {
                         </div>
                     <?php endforeach; ?>
                 <?php endif; ?>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php
+}
+
+/**
+ * Render Tournament rosters page
+ */
+function intersoccer_render_tournaments_page() {
+    if (!current_user_can('manage_options') && !current_user_can('coach')) {
+        wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
+    }
+
+    $current_user = wp_get_current_user();
+    $is_coach = in_array('coach', $current_user->roles);
+    $coach_accessible_venues = [];
+
+    if ($is_coach) {
+        if (!class_exists('InterSoccer_Admin_Coach_Assignments')) {
+            require_once WP_PLUGIN_DIR . '/customer-referral-system/includes/class-admin-coach-assignments.php';
+        }
+        $coach_accessible_venues = InterSoccer_Admin_Coach_Assignments::get_coach_accessible_venues($current_user->ID);
+    }
+
+    $selected_season = isset($_GET['season']) ? sanitize_text_field($_GET['season']) : '';
+    $selected_venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
+    $selected_age_group = isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '';
+    $selected_city = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
+    $selected_time = isset($_GET['times']) ? sanitize_text_field($_GET['times']) : '';
+
+    $use_oop_rosters = defined('INTERSOCCER_OOP_ACTIVE')
+        && INTERSOCCER_OOP_ACTIVE
+        && function_exists('intersoccer_use_oop_for')
+        && intersoccer_use_oop_for('rosters')
+        && function_exists('intersoccer_oop_get_tournament_listings');
+
+    if ($use_oop_rosters) {
+        $result = intersoccer_oop_get_tournament_listings(
+            [
+                'season' => $selected_season,
+                'venue' => $selected_venue,
+                'age_group' => $selected_age_group,
+                'city' => $selected_city,
+                'times' => $selected_time,
+            ],
+            [
+                'is_coach' => $is_coach,
+                'accessible_venues' => $coach_accessible_venues,
+            ]
+        );
+    } else {
+        global $wpdb;
+
+        $start_time = microtime(true);
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        $activity_types = ['Tournament', 'Tournament, Girls Only', "Tournament, Girls' only"];
+        $type_placeholders = implode(',', array_fill(0, count($activity_types), '%s'));
+        $conditions = ["is_placeholder = 0", "activity_type IN ($type_placeholders)"];
+        $params = $activity_types;
+
+        $rows = [];
+        if ($is_coach) {
+            if (empty($coach_accessible_venues)) {
+                $rows = [];
+            } else {
+                $venue_placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
+                $conditions[] = "venue IN ($venue_placeholders)";
+                $params = array_merge($params, $coach_accessible_venues);
+            }
+        }
+
+        if ($rows === []) {
+            $sql = "SELECT event_signature, season, venue, city, age_group, times, product_name, order_item_id, variation_id, start_date, end_date
+                    FROM {$rosters_table}
+                    WHERE " . implode(' AND ', $conditions);
+            $rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+        }
+
+        $query_time = microtime(true) - $start_time;
+
+        $groups = [];
+        $filter_sets = [
+            'seasons' => [],
+            'venues' => [],
+            'age_groups' => [],
+            'cities' => [],
+            'times' => [],
+        ];
+
+        foreach ($rows as $row) {
+            $season_raw = isset($row['season']) && $row['season'] !== '' ? $row['season'] : 'N/A';
+            $season_display = intersoccer_normalize_season_for_display($season_raw);
+            $venue = isset($row['venue']) && $row['venue'] !== '' ? $row['venue'] : 'N/A';
+            $city = isset($row['city']) && $row['city'] !== '' ? $row['city'] : 'N/A';
+            $age_group = isset($row['age_group']) && $row['age_group'] !== '' ? $row['age_group'] : 'N/A';
+            $times = isset($row['times']) && $row['times'] !== '' ? $row['times'] : 'N/A';
+            $product_name = isset($row['product_name']) && $row['product_name'] !== '' ? $row['product_name'] : __('Tournament', 'intersoccer-reports-rosters');
+
+            $signature = !empty($row['event_signature'])
+                ? $row['event_signature']
+                : md5($product_name . '|' . $venue . '|' . $times . '|' . ($row['start_date'] ?? ''));
+
+            if (!isset($groups[$signature])) {
+                $groups[$signature] = [
+                    'event_signature' => !empty($row['event_signature']) ? $row['event_signature'] : $signature,
+                    'season' => $season_display,
+                    'season_raw' => $season_raw,
+                    'venue' => $venue,
+                    'city' => $city,
+                    'age_group' => $age_group,
+                    'times' => $times,
+                    'product_name' => $product_name,
+                    'variation_ids' => [],
+                    'order_item_ids' => [],
+                    'start_dates' => [],
+                    'end_dates' => [],
+                    'total_players' => 0,
+                ];
+            }
+
+            if (!empty($row['variation_id'])) {
+                $groups[$signature]['variation_ids'][$row['variation_id']] = $row['variation_id'];
+            }
+            if (!empty($row['order_item_id'])) {
+                $groups[$signature]['order_item_ids'][$row['order_item_id']] = true;
+            }
+            if (!empty($row['start_date'])) {
+                $groups[$signature]['start_dates'][] = $row['start_date'];
+            }
+            if (!empty($row['end_date'])) {
+                $groups[$signature]['end_dates'][] = $row['end_date'];
+            }
+
+            if ($season_display !== 'N/A') {
+                $filter_sets['seasons'][$season_display] = $season_display;
+            }
+            if ($venue !== 'N/A') {
+                $filter_sets['venues'][$venue] = $venue;
+            }
+            if ($age_group !== 'N/A') {
+                $filter_sets['age_groups'][$age_group] = $age_group;
+            }
+            if ($city !== 'N/A') {
+                $filter_sets['cities'][$city] = $city;
+            }
+            if ($times !== 'N/A') {
+                $filter_sets['times'][$times] = $times;
+            }
+        }
+
+        foreach ($groups as &$group) {
+            $group['variation_ids'] = array_values($group['variation_ids']);
+            $group['order_item_ids'] = array_keys($group['order_item_ids']);
+            $group['total_players'] = count($group['order_item_ids']);
+
+            $start_timestamps = array_filter(array_map('strtotime', $group['start_dates']));
+            $group['corrected_start_date'] = !empty($start_timestamps) ? date('Y-m-d', min($start_timestamps)) : '1970-01-01';
+
+            $end_timestamps = array_filter(array_map('strtotime', $group['end_dates']));
+            $group['corrected_end_date'] = !empty($end_timestamps) ? date('Y-m-d', max($end_timestamps)) : '1970-01-01';
+
+            unset($group['start_dates'], $group['end_dates']);
+        }
+        unset($group);
+
+        foreach ($filter_sets as $key => $values) {
+            $unique = array_values(array_unique($values));
+            sort($unique, SORT_NATURAL | SORT_FLAG_CASE);
+            $filter_sets[$key] = $unique;
+        }
+
+        $all_groups = array_values($groups);
+
+        $display_groups = array_values(array_filter($all_groups, function ($group) use ($selected_season, $selected_venue, $selected_age_group, $selected_city, $selected_time) {
+            if ($selected_season && $group['season'] !== $selected_season && $group['season_raw'] !== $selected_season) {
+                return false;
+            }
+            if ($selected_venue && $group['venue'] !== $selected_venue) {
+                return false;
+            }
+            if ($selected_age_group && $group['age_group'] !== $selected_age_group) {
+                return false;
+            }
+            if ($selected_city && $group['city'] !== $selected_city) {
+                return false;
+            }
+            if ($selected_time && $group['times'] !== $selected_time) {
+                return false;
+            }
+            return true;
+        }));
+
+        $grouped = [];
+        foreach ($display_groups as $group) {
+            $season_key = $group['season'] ?: 'N/A';
+            if (!isset($grouped[$season_key])) {
+                $grouped[$season_key] = [];
+            }
+            $grouped[$season_key][] = $group;
+        }
+        if (!empty($grouped)) {
+            krsort($grouped, SORT_NATURAL);
+        }
+
+        $result = [
+            'query_time' => $query_time,
+            'all_groups' => $all_groups,
+            'display_groups' => $display_groups,
+            'grouped' => $grouped,
+            'filters' => [
+                'seasons' => $filter_sets['seasons'],
+                'venues' => $filter_sets['venues'],
+                'age_groups' => $filter_sets['age_groups'],
+                'cities' => $filter_sets['cities'],
+                'times' => $filter_sets['times'],
+            ],
+        ];
+
+        error_log('InterSoccer Legacy: Tournament aggregation time ' . $result['query_time'] . ' seconds');
+    }
+
+    $query_time = $result['query_time'];
+    $grouped = $result['grouped'];
+    $all_seasons = $result['filters']['seasons'];
+    $all_venues = $result['filters']['venues'];
+    $all_age_groups = $result['filters']['age_groups'];
+    $all_cities = $result['filters']['cities'];
+    $all_times = $result['filters']['times'];
+
+    error_log('InterSoccer OOP: Tournament aggregation time ' . $query_time . ' seconds');
+
+    ?>
+    <div class="wrap intersoccer-rosters-page">
+        <div class="roster-header">
+            <h1>🏆 <?php _e('Tournaments', 'intersoccer-reports-rosters'); ?></h1>
+            <div class="header-actions">
+                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-tournaments&action=reconcile'), 'intersoccer_reconcile')); ?>"
+                   class="button button-secondary">
+                    ↻ <?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?>
+                </a>
+            </div>
+        </div>
+
+        <div class="roster-filters">
+            <form method="get" class="filter-form">
+                <input type="hidden" name="page" value="intersoccer-tournaments">
+                <div class="filter-group">
+                    <label><?php _e('Season', 'intersoccer-reports-rosters'); ?></label>
+                    <select name="season" onchange="this.form.submit()">
+                        <option value=""><?php _e('All Seasons', 'intersoccer-reports-rosters'); ?></option>
+                        <?php foreach ($all_seasons as $season): ?>
+                            <option value="<?php echo esc_attr($season); ?>" <?php selected($selected_season, $season); ?>>
+                                <?php echo esc_html(intersoccer_normalize_season_for_display($season)); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label><?php _e('Venue', 'intersoccer-reports-rosters'); ?></label>
+                    <select name="venue" onchange="this.form.submit()">
+                        <option value=""><?php _e('All Venues', 'intersoccer-reports-rosters'); ?></option>
+                        <?php foreach ($all_venues as $venue): ?>
+                            <option value="<?php echo esc_attr($venue); ?>" <?php selected($selected_venue, $venue); ?>>
+                                <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($venue, 'pa_intersoccer-venues') : $venue); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label><?php _e('Age Group', 'intersoccer-reports-rosters'); ?></label>
+                    <select name="age_group" onchange="this.form.submit()">
+                        <option value=""><?php _e('All Age Groups', 'intersoccer-reports-rosters'); ?></option>
+                        <?php foreach ($all_age_groups as $age_group): ?>
+                            <option value="<?php echo esc_attr($age_group); ?>" <?php selected($selected_age_group, $age_group); ?>>
+                                <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($age_group, 'pa_age-group') : $age_group); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label><?php _e('Time', 'intersoccer-reports-rosters'); ?></label>
+                    <select name="times" onchange="this.form.submit()">
+                        <option value=""><?php _e('All Times', 'intersoccer-reports-rosters'); ?></option>
+                        <?php foreach ($all_times as $time): ?>
+                            <option value="<?php echo esc_attr($time); ?>" <?php selected($selected_time, $time); ?>>
+                                <?php echo esc_html($time); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label><?php _e('City', 'intersoccer-reports-rosters'); ?></label>
+                    <select name="city" onchange="this.form.submit()">
+                        <option value=""><?php _e('All Cities', 'intersoccer-reports-rosters'); ?></option>
+                        <?php foreach ($all_cities as $city): ?>
+                            <option value="<?php echo esc_attr($city); ?>" <?php selected($selected_city, $city); ?>>
+                                <?php echo esc_html($city); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <?php if ($selected_season || $selected_venue || $selected_age_group || $selected_city || $selected_time): ?>
+                    <div class="filter-group">
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-tournaments')); ?>" class="button button-secondary">
+                            ↻ <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
+                        </a>
+                    </div>
+                <?php endif; ?>
+            </form>
+        </div>
+
+        <div class="sports-rosters">
+            <?php if (empty($grouped)): ?>
+                <div class="no-rosters">
+                    <div class="no-rosters-icon">🏟️</div>
+                    <h3><?php _e('No tournaments found', 'intersoccer-reports-rosters'); ?></h3>
+                    <p><?php _e('Try adjusting your filters or sync rosters to see available tournaments.', 'intersoccer-reports-rosters'); ?></p>
+                </div>
+            <?php else: ?>
+                <?php foreach ($grouped as $season => $events): ?>
+                    <div class="roster-season">
+                        <div class="season-header">
+                            <h2 class="season-title">
+                                <?php echo esc_html(intersoccer_normalize_season_for_display($season) . ' - ' . __('Tournaments', 'intersoccer-reports-rosters')); ?>
+                            </h2>
+                            <div class="season-stats">
+                                <?php 
+                                $player_total = array_sum(array_column($events, 'total_players'));
+                                $event_count = count($events);
+                                ?>
+                                <span class="stat-item">
+                                    <?php echo esc_html($player_total); ?> <?php _e('players', 'intersoccer-reports-rosters'); ?>
+                                </span>
+                                <span class="stat-item">
+                                    <?php echo esc_html($event_count); ?> <?php _e('events', 'intersoccer-reports-rosters'); ?>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="camps-grid">
+                            <?php foreach ($events as $tournament): ?>
+                                <div class="camp-card">
+                                    <div class="camp-header">
+                                        <h3 class="camp-venue">
+                                            🏟️ <?php echo esc_html($tournament['product_name'] ?: __('Tournament', 'intersoccer-reports-rosters')); ?>
+                                        </h3>
+                                    </div>
+                                    <div class="camp-details">
+                                        <div class="detail-row">
+                                            <span class="detail-label">📍 <?php _e('Venue', 'intersoccer-reports-rosters'); ?></span>
+                                            <span class="detail-value"><?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($tournament['venue'], 'pa_intersoccer-venues') : ($tournament['venue'] ?: 'N/A')); ?></span>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">👶 <?php _e('Age Group', 'intersoccer-reports-rosters'); ?></span>
+                                            <span class="detail-value"><?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($tournament['age_group'], 'pa_age-group') : $tournament['age_group']); ?></span>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">⏰ <?php _e('Time', 'intersoccer-reports-rosters'); ?></span>
+                                            <span class="detail-value"><?php echo esc_html($tournament['times'] ?: 'TBD'); ?></span>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">📅 <?php _e('Dates', 'intersoccer-reports-rosters'); ?></span>
+                                            <span class="detail-value">
+                                                <?php
+                                                if ($tournament['corrected_start_date'] !== '1970-01-01' && $tournament['corrected_end_date'] !== '1970-01-01') {
+                                                    echo esc_html(date_i18n('M j', strtotime($tournament['corrected_start_date'])) . ' - ' . date_i18n('M j, Y', strtotime($tournament['corrected_end_date'])));
+                                                } else {
+                                                    echo esc_html__('TBD', 'intersoccer-reports-rosters');
+                                                }
+                                                ?>
+                                            </span>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">🌆 <?php _e('City', 'intersoccer-reports-rosters'); ?></span>
+                                            <span class="detail-value"><?php echo esc_html($tournament['city'] ?: 'N/A'); ?></span>
+                                        </div>
+                                    </div>
+                                    <div class="camp-footer">
+                                        <div class="player-count">
+                                            <span class="count-number <?php echo intersoccer_get_count_class($tournament['total_players']); ?>"><?php echo esc_html($tournament['total_players']); ?></span>
+                                            <span class="count-label"><?php _e('players', 'intersoccer-reports-rosters'); ?></span>
+                                        </div>
+                                        <div class="camp-actions">
+                                            <?php
+                                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=tournaments&event_signature=' . urlencode($tournament['event_signature']) . '&venue=' . urlencode($tournament['venue']) . '&age_group=' . urlencode($tournament['age_group']) . '&times=' . urlencode($tournament['times']) . '&season=' . urlencode($tournament['season']));
+                                            ?>
+                                            <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
+                                                <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
             <?php endif; ?>
         </div>
     </div>

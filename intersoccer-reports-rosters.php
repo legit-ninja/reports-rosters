@@ -23,6 +23,59 @@ define('INTERSOCCER_REPORTS_ROSTERS_LOADED', true);
 
 add_filter('deprecated_function_trigger_error', '__return_false', 10, 2);
 
+// ============================================================================
+// OOP INITIALIZATION - Load Composer autoloader & enable feature flag scaffolding
+// ============================================================================
+
+$autoloader = __DIR__ . '/vendor/autoload.php';
+if (file_exists($autoloader)) {
+    require_once $autoloader;
+    error_log('InterSoccer: Composer autoloader loaded from ' . $autoloader);
+} else {
+    error_log('InterSoccer: Composer autoloader not found at ' . $autoloader);
+    error_log('InterSoccer: Run "composer install" to enable OOP bootstrap');
+}
+
+if (!defined('INTERSOCCER_OOP_ENABLED')) {
+    // Default to legacy mode; can be overridden via wp-config or filters.
+    define('INTERSOCCER_OOP_ENABLED', false);
+}
+
+if (!function_exists('intersoccer_reports_rosters_can_bootstrap_oop')) {
+    /**
+     * Determine whether the OOP plugin bootstrap should run.
+     *
+     * @return bool
+     */
+    function intersoccer_reports_rosters_can_bootstrap_oop() {
+        $default = defined('INTERSOCCER_OOP_ENABLED') && INTERSOCCER_OOP_ENABLED;
+        /**
+         * Filter to enable/disable the OOP bootstrap at runtime.
+         *
+         * @param bool $enabled Current enabled state.
+         */
+        return (bool) apply_filters('intersoccer_reports_rosters_enable_oop', $default);
+    }
+}
+
+if (intersoccer_reports_rosters_can_bootstrap_oop() && class_exists('InterSoccer\\ReportsRosters\\Core\\Plugin')) {
+    try {
+        InterSoccer\ReportsRosters\Core\Plugin::get_instance(__FILE__);
+        define('INTERSOCCER_OOP_ACTIVE', true);
+        error_log('InterSoccer: OOP plugin bootstrap completed');
+    } catch (\Throwable $e) {
+        error_log('InterSoccer: OOP bootstrap failed - ' . $e->getMessage());
+        if (!defined('INTERSOCCER_OOP_ACTIVE')) {
+            define('INTERSOCCER_OOP_ACTIVE', false);
+        }
+    }
+} else {
+    if (!defined('INTERSOCCER_OOP_ACTIVE')) {
+        define('INTERSOCCER_OOP_ACTIVE', false);
+    }
+    error_log('InterSoccer: OOP bootstrap skipped (flag disabled or plugin class missing).');
+}
+
 // Activation hook
 function intersoccer_report_roster_plugin_activation() {
     error_log('InterSoccer: Plugin activation started.');
@@ -68,6 +121,17 @@ function intersoccer_missing_dependencies_notice() {
         <p><?php printf(__('InterSoccer Reports & Rosters requires the following plugins to be active: %s. Plugin deactivated.', 'intersoccer-reports-rosters'), implode(', ', $missing)); ?></p>
     </div>
     <?php
+}
+
+// Load OOP adapter layer (bridges legacy to OOP) only when the OOP runtime is active.
+if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE) {
+    $intersoccer_oop_adapter = plugin_dir_path(__FILE__) . 'includes/oop-adapter.php';
+    if (file_exists($intersoccer_oop_adapter)) {
+        require_once $intersoccer_oop_adapter;
+        error_log('InterSoccer: OOP adapter loaded');
+    } else {
+        error_log('InterSoccer: OOP adapter missing at ' . $intersoccer_oop_adapter);
+    }
 }
 
 $included_files = [];
@@ -248,7 +312,11 @@ add_action('admin_enqueue_scripts', function ($hook) {
                     'completed' => __('Database rebuild completed!', 'intersoccer'),
                     'error' => __('An error occurred during the rebuild process.', 'intersoccer'),
                     'processing' => __('Processing batch', 'intersoccer'),
-                    'of' => __('of', 'intersoccer')
+                    'of' => __('of', 'intersoccer'),
+                    'upgrading' => __('Upgrading database...', 'intersoccer'),
+                    'upgrade_success' => __('Database upgrade completed successfully.', 'intersoccer'),
+                    'upgrade_failed' => __('Database upgrade failed.', 'intersoccer'),
+                    'upgrade_failed_network' => __('Database upgrade failed due to a network error.', 'intersoccer')
                 )
             ]);        }
     }
@@ -264,14 +332,16 @@ add_action('admin_menu', function () {
     add_submenu_page('intersoccer-reports-rosters', __('Camps', 'intersoccer-reports-rosters'), __('Camps', 'intersoccer-reports-rosters'), 'read', 'intersoccer-camps', 'intersoccer_render_camps_page');
     add_submenu_page('intersoccer-reports-rosters', __('Courses', 'intersoccer-reports-rosters'), __('Courses', 'intersoccer-reports-rosters'), 'read', 'intersoccer-courses', 'intersoccer_render_courses_page');
     add_submenu_page('intersoccer-reports-rosters', __('Girls Only', 'intersoccer-reports-rosters'), __('Girls Only', 'intersoccer-reports-rosters'), 'read', 'intersoccer-girls-only', 'intersoccer_render_girls_only_page');
+    add_submenu_page('intersoccer-reports-rosters', __('Tournaments', 'intersoccer-reports-rosters'), __('Tournaments', 'intersoccer-reports-rosters'), 'read', 'intersoccer-tournaments', 'intersoccer_render_tournaments_page');
     add_submenu_page('intersoccer-reports-rosters', __('Other Events', 'intersoccer-reports-rosters'), __('Other Events', 'intersoccer-reports-rosters'), 'read', 'intersoccer-other-events', 'intersoccer_render_other_events_page');
-    add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Advanced', 'intersoccer-reports-rosters'), __('Advanced', 'intersoccer-reports-rosters'), 'read', 'intersoccer-advanced', 'intersoccer_render_advanced_page');
+    add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Settings', 'intersoccer-reports-rosters'), __('Settings', 'intersoccer-reports-rosters'), 'read', 'intersoccer-advanced', 'intersoccer_render_advanced_page');
     add_submenu_page(null, '', '', 'read', 'intersoccer-roster-details', 'intersoccer_render_roster_details_page');
 });
 
-add_action('wp_ajax_intersoccer_upgrade_database', 'intersoccer_upgrade_database');
-add_action('wp_ajax_intersoccer_rebuild_rosters_and_reports', 'intersoccer_rebuild_rosters_and_reports');
-add_action('wp_ajax_intersoccer_rebuild_event_signatures', 'intersoccer_rebuild_event_signatures_ajax');
+if (!(defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('ajax'))) {
+    add_action('wp_ajax_intersoccer_rebuild_rosters_and_reports', 'intersoccer_rebuild_rosters_and_reports');
+    add_action('wp_ajax_intersoccer_rebuild_event_signatures', 'intersoccer_rebuild_event_signatures_ajax');
+}
 
 // Enqueue script for WooCommerce Orders page to add the Process Orders button
 function intersoccer_enqueue_orders_page_scripts($hook) {
