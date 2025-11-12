@@ -93,6 +93,52 @@ class RosterBuilder {
      * @var array
      */
     private $build_stats = [];
+
+    /**
+     * Canonical mapping between order item metadata keys and roster fields.
+     *
+     * @var array<string,string>
+     */
+    private $order_meta_field_map = [
+        'InterSoccer Venues' => 'venue',
+        'Age Group' => 'age_group',
+        'Camp Terms' => 'event_type',
+        'Camp Times' => 'camp_times',
+        'Course Day' => 'course_day',
+        'Course Times' => 'course_times',
+        'Booking Type' => 'booking_type',
+        'Assigned Attendee' => 'assigned_attendee',
+        'Player Index' => 'player_index',
+        'Days Selected' => 'selected_days',
+        'Season' => 'season',
+        'Canton / Region' => 'region',
+        'City' => 'city',
+        'Activity Type' => 'activity_type',
+        'Start Date' => 'start_date',
+        'End Date' => 'end_date',
+        'Holidays' => 'holidays',
+        'Discount' => 'discount_applied',
+        'Discount Amount' => 'discount_amount',
+        'Base Price' => 'base_price',
+        'Remaining Sessions' => 'remaining_sessions',
+        'Late Pickup Type' => 'late_pickup_type',
+        'Late Pickup Days' => 'late_pickup_days',
+        'Late Pickup Cost' => 'late_pickup_cost',
+    ];
+
+    /**
+     * Cached lookup table of localized metadata key variants.
+     *
+     * @var array<string,array<int,string>>|null
+     */
+    private $order_meta_key_variants = null;
+
+    /**
+     * Cache for previously normalized metadata keys.
+     *
+     * @var array<string,string>
+     */
+    private $order_meta_key_cache = [];
     
     /**
      * Constructor
@@ -629,32 +675,30 @@ class RosterBuilder {
         // Extract metadata from order item
         $meta_data = $item->get_meta_data();
         foreach ($meta_data as $meta) {
-            $key = $meta->get_data()['key'];
-            $value = $meta->get_data()['value'];
-            
-            // Map metadata keys to roster fields
-            $field_mapping = [
-                'InterSoccer Venues' => 'venue',
-                'Age Group' => 'age_group',
-                'Camp Terms' => 'event_type',
-                'Camp Times' => 'camp_times',
-                'Course Day' => 'course_day',
-                'Course Times' => 'course_times',
-                'Booking Type' => 'booking_type',
-                'Assigned Attendee' => 'assigned_attendee',
-                'Days Selected' => 'selected_days',
-                'Season' => 'season',
-                'Canton / Region' => 'region',
-                'City' => 'city',
-                'Activity Type' => 'activity_type',
-                'Start Date' => 'start_date',
-                'End Date' => 'end_date',
-                'Discount' => 'discount_applied',
-                'assigned_player' => 'player_index'
-            ];
-            
-            if (isset($field_mapping[$key])) {
-                $order_data[$field_mapping[$key]] = $value;
+            $data = $meta->get_data();
+            $raw_key = isset($data['key']) ? (string) $data['key'] : '';
+            $value = $data['value'] ?? '';
+
+            if ($raw_key === '') {
+                continue;
+            }
+
+            $canonical_key = $this->normalizeOrderMetaKey($raw_key);
+
+            if (isset($this->order_meta_field_map[$canonical_key])) {
+                $field = $this->order_meta_field_map[$canonical_key];
+
+                if ($field === 'activity_type') {
+                    $order_data[$field] = $this->normalizeActivityTypeValue($value);
+                } else {
+                    $order_data[$field] = $value;
+                }
+                continue;
+            }
+
+            // Legacy support for keys stored using raw attribute slugs.
+            if ($canonical_key === 'assigned_player' || $raw_key === 'assigned_player') {
+                $order_data['player_index'] = $value;
             }
         }
         
@@ -676,6 +720,252 @@ class RosterBuilder {
         $order_data = $this->parseDates($order_data);
         
         return $order_data;
+    }
+
+    /**
+     * Normalize localized order metadata keys to their canonical English equivalents.
+     *
+     * @param string $raw_key Metadata key as stored on the order item.
+     * @return string Canonical English key if detected, otherwise the original key.
+     */
+    private function normalizeOrderMetaKey(string $raw_key): string {
+        if ($raw_key === '') {
+            return $raw_key;
+        }
+
+        if (isset($this->order_meta_key_cache[$raw_key])) {
+            return $this->order_meta_key_cache[$raw_key];
+        }
+
+        $comparison_value = $this->normalizeComparisonString($raw_key);
+
+        foreach ($this->getOrderMetaKeyVariants() as $canonical => $variants) {
+            if (in_array($comparison_value, $variants, true)) {
+                $this->order_meta_key_cache[$raw_key] = $canonical;
+                return $canonical;
+            }
+        }
+
+        $this->order_meta_key_cache[$raw_key] = $raw_key;
+        return $raw_key;
+    }
+
+    /**
+     * Build and cache the list of known metadata key variants across languages.
+     *
+     * @return array<string,array<int,string>>
+     */
+    private function getOrderMetaKeyVariants(): array {
+        if ($this->order_meta_key_variants !== null) {
+            return $this->order_meta_key_variants;
+        }
+
+        $variants = [];
+        foreach (array_keys($this->order_meta_field_map) as $canonical) {
+            $variants[$canonical] = [$this->normalizeComparisonString($canonical)];
+        }
+
+        // Manual aliases for known translations / wording variations.
+        $manual_aliases = [
+            'InterSoccer Venues' => [
+                'lieux intersoccer',
+                'lieu intersoccer',
+                'intersoccer-standorte',
+            ],
+            'Age Group' => [
+                'groupe dage',
+                'groupe d age',
+                'groupe d\'âge',
+                'altersgruppe',
+            ],
+            'Camp Terms' => [
+                'conditions de camp',
+                'camp begriffe',
+            ],
+            'Camp Times' => [
+                'horaires du camp',
+                'camp zeiten',
+            ],
+            'Course Day' => [
+                'jour de cours',
+                'kurstag',
+            ],
+            'Course Times' => [
+                'horaires du cours',
+                'kurszeiten',
+            ],
+            'Booking Type' => [
+                'type de réservation',
+                'buchungstyp',
+            ],
+            'Assigned Attendee' => [
+                'participant assigné',
+                'zugewiesener teilnehmer',
+            ],
+            'Days Selected' => [
+                'jours sélectionnés',
+                'ausgewählte tage',
+            ],
+            'Season' => [
+                'saison',
+                'saison (programm)',
+                'jahreszeit',
+            ],
+            'Canton / Region' => [
+                'canton region',
+                'canton / région',
+                'kanton region',
+            ],
+            'City' => [
+                'ville',
+                'stadt',
+            ],
+            'Activity Type' => [
+                'type d activite',
+                'type d\'activite',
+                'type d’activité',
+                'type d\'activité',
+                'aktivitätstyp',
+            ],
+            'Start Date' => [
+                'date de début',
+                'startdatum',
+            ],
+            'End Date' => [
+                'date de fin',
+                'enddatum',
+            ],
+            'Holidays' => [
+                'vacances',
+                'ferien',
+            ],
+            'Discount' => [
+                'remise',
+                'rabatt',
+            ],
+            'Discount Amount' => [
+                'montant de la remise',
+                'rabattbetrag',
+            ],
+            'Base Price' => [
+                'prix de base',
+                'grundpreis',
+            ],
+            'Remaining Sessions' => [
+                'séances restantes',
+                'verbleibende termine',
+            ],
+            'Late Pickup Type' => [
+                'type de ramassage tardif',
+                'späte abholung typ',
+            ],
+            'Late Pickup Days' => [
+                'jours de ramassage tardif',
+                'tage für späte abholung',
+            ],
+            'Late Pickup Cost' => [
+                'coût ramassage tardif',
+                'kosten späte abholung',
+            ],
+            'Variation ID' => [
+                'id de variation',
+                'varianten id',
+            ],
+        ];
+
+        foreach ($manual_aliases as $canonical => $aliases) {
+            foreach ($aliases as $alias) {
+                $variants[$canonical][] = $this->normalizeComparisonString($alias);
+            }
+        }
+
+        // Include dynamic WPML translations when available.
+        $can_switch_language = function_exists('wpml_get_active_languages') && function_exists('wpml_get_current_language') && function_exists('icl_t');
+
+        if ($can_switch_language) {
+            $active_languages = wpml_get_active_languages();
+            $original_language = wpml_get_current_language();
+
+            if (!empty($active_languages)) {
+                foreach (array_keys($active_languages) as $language_code) {
+                    do_action('wpml_switch_language', $language_code);
+
+                    foreach (array_keys($this->order_meta_field_map) as $canonical) {
+                        $translated = icl_t('intersoccer-product-variations', $canonical, $canonical);
+                        if (!empty($translated)) {
+                            $variants[$canonical][] = $this->normalizeComparisonString($translated);
+                        }
+                    }
+                }
+
+                // Restore the original language context
+                if (!empty($original_language)) {
+                    do_action('wpml_switch_language', $original_language);
+                }
+            }
+        }
+
+        foreach ($variants as &$variant_list) {
+            $variant_list = array_values(array_unique(array_filter($variant_list)));
+        }
+
+        return $this->order_meta_key_variants = $variants;
+    }
+
+    /**
+     * Normalize a string for reliable comparisons (lowercase, accent-free).
+     *
+     * @param string $value Input string.
+     * @return string
+     */
+    private function normalizeComparisonString(string $value): string {
+        $normalized = strtolower(trim($value));
+
+        if (function_exists('remove_accents')) {
+            $normalized = remove_accents($normalized);
+        }
+
+        // Remove punctuation (keep slashes for compound keys like "Canton / Region")
+        $normalized = preg_replace('/[^a-z0-9\/ ]+/u', '', $normalized);
+
+        // Normalize whitespace
+        $normalized = preg_replace('/\s+/', ' ', $normalized);
+
+        return trim($normalized);
+    }
+
+    /**
+     * Normalize activity type values across languages.
+     *
+     * @param mixed $value Raw value from order meta.
+     * @return string Canonical activity type.
+     */
+    private function normalizeActivityTypeValue($value): string {
+        if (!is_string($value) || $value === '') {
+            return (string) $value;
+        }
+
+        $normalized = $this->normalizeComparisonString($value);
+
+        $map = [
+            'camp' => 'Camp',
+            'cours' => 'Course',
+            'course' => 'Course',
+            'stage' => 'Course',
+            'training' => 'Course',
+            'anniversaire' => 'Birthday Party',
+            'birthday' => 'Birthday Party',
+            'birthday party' => 'Birthday Party',
+        ];
+
+        foreach ($map as $needle => $canonical) {
+            if (strpos($normalized, $needle) !== false) {
+                return $canonical;
+            }
+        }
+
+        // Default to original human readable value to preserve context.
+        return ucwords(trim($value));
     }
     
     /**
