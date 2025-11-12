@@ -57,10 +57,59 @@ class RosterBuilderTest extends TestCase {
             $this->eventMatcher,
             $this->playerMatcher
         );
+
+        // Provide default implementations for common WordPress helpers.
+        Functions\when('remove_accents')->alias(function($string) {
+            if (!is_string($string)) {
+                return $string;
+            }
+            if (!class_exists('\Normalizer')) {
+                return $string;
+            }
+            $normalized = \Normalizer::isNormalized($string, \Normalizer::FORM_D)
+                ? $string
+                : \Normalizer::normalize($string, \Normalizer::FORM_D);
+
+            if ($normalized === false) {
+                return $string;
+            }
+
+            $without_accents = preg_replace('/\p{Mn}+/u', '', $normalized);
+            return $without_accents === null ? $string : $without_accents;
+        });
     }
     
     public function test_roster_builder_initialization() {
         $this->assertInstanceOf(RosterBuilder::class, $this->rosterBuilder);
+    }
+
+    public function test_extract_order_item_data_handles_translated_meta_keys() {
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(42);
+        $order->shouldReceive('get_customer_id')->andReturn(7);
+        $order->shouldReceive('get_status')->andReturn('processing');
+
+        $item = Mockery::mock('WC_Order_Item_Product');
+        $item->shouldReceive('get_product')->andReturn(null);
+        $item->shouldReceive('get_variation_id')->andReturn(0);
+        $item->shouldReceive('get_product_id')->andReturn(101);
+        $item->shouldReceive('get_meta_data')->andReturn([
+            $this->createOrderItemMeta('Type d’activité', 'Cours'),
+            $this->createOrderItemMeta('Saison', 'Printemps 2025'),
+            $this->createOrderItemMeta('Groupe d’âge', 'U10'),
+            $this->createOrderItemMeta('Assigned Attendee', 'Theo Kuhn'),
+        ]);
+
+        $reflection = new \ReflectionClass($this->rosterBuilder);
+        $method = $reflection->getMethod('extractOrderItemData');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($this->rosterBuilder, $order, 555, $item);
+
+        $this->assertSame('Course', $result['activity_type']);
+        $this->assertSame('Printemps 2025', $result['season']);
+        $this->assertSame('U10', $result['age_group']);
+        $this->assertSame('Theo Kuhn', $result['assigned_attendee']);
     }
     
     public function test_build_rosters_with_empty_options() {
@@ -368,6 +417,23 @@ class RosterBuilderTest extends TestCase {
         $this->assertIsArray($result);
         $this->assertArrayHasKey('errors', $result);
         $this->assertNotEmpty($result['errors']);
+    }
+    /**
+     * Helper to create a lightweight meta data object for order item meta lists.
+     *
+     * @param string $key
+     * @param mixed  $value
+     * @return \Mockery\MockInterface
+     */
+    private function createOrderItemMeta($key, $value) {
+        $meta = Mockery::mock();
+        $meta->shouldReceive('get_data')
+            ->andReturn([
+                'key' => $key,
+                'value' => $value,
+            ]);
+
+        return $meta;
     }
 }
 
