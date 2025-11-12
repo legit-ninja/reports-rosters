@@ -8,7 +8,15 @@ deploy.local.sh
 
 # Development
 node_modules/
-vendor/
+vendor/*
+!vendor/autoload.php
+!vendor/composer/**
+!vendor/ezyang/**
+!vendor/maennchen/**
+!vendor/myclabs/**
+!vendor/phpoffice/**
+!vendor/psr/**
+!vendor/symfony/polyfill-mbstring/**
 todo.list
 .phpunit.result.cache
 .DS_Store
