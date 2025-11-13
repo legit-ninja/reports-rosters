@@ -282,7 +282,7 @@ function intersoccer_render_roster_details_page() {
             COUNT(DISTINCT r.order_item_id) as current_players
         FROM $rosters_table r
         JOIN {$wpdb->posts} p ON r.order_id = p.ID
-        WHERE p.post_status = 'wc-completed'
+        WHERE p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
         AND r.activity_type = %s
         AND r.girls_only = %d
         AND r.variation_id != %d
@@ -308,7 +308,7 @@ function intersoccer_render_roster_details_page() {
             COUNT(DISTINCT r.order_item_id) as current_players
         FROM $rosters_table r
         JOIN {$wpdb->posts} p ON r.order_id = p.ID
-        WHERE p.post_status = 'wc-completed'
+        WHERE p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
         AND r.activity_type = %s
         AND r.girls_only != %d
         AND r.variation_id != %d
