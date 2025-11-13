@@ -14,6 +14,8 @@ use InterSoccer\ReportsRosters\Tests\TestCase;
 use InterSoccer\ReportsRosters\WooCommerce\OrderProcessor;
 
 class OrderProcessorTest extends TestCase {
+    private static $reloadedOrders = [];
+    private static $scheduledOrders = [];
     private $processor;
     private $logger;
     private $rosterRepository;
@@ -32,6 +34,28 @@ class OrderProcessorTest extends TestCase {
             $this->rosterBuilder
         );
     }
+
+    protected function tearDown(): void {
+        self::$reloadedOrders = [];
+        self::$scheduledOrders = [];
+        parent::tearDown();
+    }
+
+    public static function setReloadedOrder($orderId, $order) {
+        self::$reloadedOrders[$orderId] = $order;
+    }
+
+    public static function getReloadedOrder($orderId) {
+        return self::$reloadedOrders[$orderId] ?? null;
+    }
+
+    public static function recordScheduledOrder($orderId, $delay) {
+        self::$scheduledOrders[] = ['order_id' => $orderId, 'delay' => $delay];
+    }
+
+    public static function getScheduledOrders() {
+        return self::$scheduledOrders;
+    }
     
     public function test_processor_initialization() {
         $this->assertInstanceOf(OrderProcessor::class, $this->processor);
@@ -40,10 +64,15 @@ class OrderProcessorTest extends TestCase {
     public function test_process_processing_order_marks_complete_and_records_rosters() {
         $order = Mockery::mock('WC_Order');
         $order->shouldReceive('get_id')->andReturn(123);
-        $order->shouldReceive('get_status')->twice()->andReturn('processing', 'processing');
+        $order->shouldReceive('get_status')->andReturn('processing', 'processing', 'completed');
         $order->shouldReceive('update_status')
             ->once()
             ->with('completed', Mockery::type('string'));
+        $order->shouldReceive('save')->once();
+
+        $reloaded = Mockery::mock('WC_Order');
+        $reloaded->shouldReceive('get_status')->andReturn('completed');
+        self::setReloadedOrder(123, $reloaded);
         
         $rosters = Mockery::mock(RostersCollection::class);
         $rosters->shouldReceive('count')->andReturn(2);
@@ -60,6 +89,7 @@ class OrderProcessorTest extends TestCase {
         $this->assertTrue($this->processor->wasLastOrderCompleted(), 'Order should be marked as completed');
         $this->assertSame($rosters, $this->processor->getLastProcessedRosters(), 'Last rosters should match builder output');
         $this->assertSame(2, $this->processor->getLastProcessedRosters()->count(), 'Roster count should be persisted');
+        $this->assertSame([], self::getScheduledOrders(), 'No fallback scheduling expected for successful completion');
     }
     
     public function test_process_completed_order_does_not_recomplete() {
@@ -100,10 +130,15 @@ class OrderProcessorTest extends TestCase {
     public function test_process_batch_returns_summary_with_failures() {
         $orderSuccess = Mockery::mock('WC_Order');
         $orderSuccess->shouldReceive('get_id')->andReturn(10);
-        $orderSuccess->shouldReceive('get_status')->twice()->andReturn('processing', 'processing');
+        $orderSuccess->shouldReceive('get_status')->andReturn('processing', 'processing', 'completed');
         $orderSuccess->shouldReceive('update_status')
             ->once()
             ->with('completed', Mockery::type('string'));
+        $orderSuccess->shouldReceive('save')->once();
+
+        $reloaded = Mockery::mock('WC_Order');
+        $reloaded->shouldReceive('get_status')->andReturn('completed');
+        self::setReloadedOrder(10, $reloaded);
         
         $rosters = Mockery::mock(RostersCollection::class);
         $rosters->shouldReceive('count')->andReturn(3);
@@ -128,6 +163,37 @@ class OrderProcessorTest extends TestCase {
         $this->assertSame([20], $summary['failed_orders']);
         $this->assertNotEmpty($summary['message']);
     }
+
+    public function test_process_order_schedules_fallback_when_status_not_persisted() {
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(999);
+        $order->shouldReceive('get_status')->andReturn('processing', 'processing', 'processing');
+        $order->shouldReceive('update_status')
+            ->once()
+            ->with('completed', Mockery::type('string'));
+        $order->shouldReceive('save')->once();
+
+        $reloaded = Mockery::mock('WC_Order');
+        $reloaded->shouldReceive('get_status')->andReturn('processing');
+        self::setReloadedOrder(999, $reloaded);
+
+        $rosters = Mockery::mock(RostersCollection::class);
+        $rosters->shouldReceive('count')->andReturn(1);
+
+        $this->rosterBuilder
+            ->shouldReceive('buildRosterFromOrder')
+            ->once()
+            ->with(999, Mockery::type('array'))
+            ->andReturn($rosters);
+
+        $result = $this->processor->processOrder($order);
+
+        $this->assertTrue($result, 'Order processing should still return true when status fails to persist');
+        $this->assertFalse($this->processor->wasLastOrderCompleted(), 'Status mismatch should not mark order as completed');
+        $this->assertCount(1, self::getScheduledOrders(), 'Fallback scheduling should be triggered');
+        $scheduled = self::getScheduledOrders()[0];
+        $this->assertSame(999, $scheduled['order_id']);
+    }
     
     public function test_should_process_processing_status() {
         $order = Mockery::mock('WC_Order');
@@ -143,6 +209,16 @@ class OrderProcessorTest extends TestCase {
         $result = $this->processor->shouldProcess($order);
         
         $this->assertFalse($result);
+    }
+}
+
+namespace {
+    function wc_get_order($order_id) {
+        return \InterSoccer\ReportsRosters\Tests\WooCommerce\OrderProcessorTest::getReloadedOrder($order_id);
+    }
+
+    function intersoccer_schedule_order_completion_check($order_id, $delay = null) {
+        \InterSoccer\ReportsRosters\Tests\WooCommerce\OrderProcessorTest::recordScheduledOrder($order_id, $delay);
     }
 }
 
