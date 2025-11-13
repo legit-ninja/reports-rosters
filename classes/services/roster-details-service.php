@@ -299,7 +299,7 @@ class RosterDetailsService {
             }
 
             $status = get_post_status($model->order_id);
-            if ($status !== 'wc-completed') {
+            if (!$status || !in_array($status, $this->allowed_statuses, true)) {
                 continue;
             }
 
