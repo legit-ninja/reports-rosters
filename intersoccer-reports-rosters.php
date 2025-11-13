@@ -41,6 +41,18 @@ if (!defined('INTERSOCCER_OOP_ENABLED')) {
     define('INTERSOCCER_OOP_ENABLED', false);
 }
 
+if (!defined('INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK')) {
+    define('INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK', 'intersoccer_auto_complete_orders');
+}
+
+if (!defined('INTERSOCCER_ORDER_AUTO_COMPLETE_SINGLE_HOOK')) {
+    define('INTERSOCCER_ORDER_AUTO_COMPLETE_SINGLE_HOOK', 'intersoccer_auto_complete_order_single');
+}
+
+if (!defined('INTERSOCCER_ORDER_AUTO_COMPLETE_RECURRENCE')) {
+    define('INTERSOCCER_ORDER_AUTO_COMPLETE_RECURRENCE', 'intersoccer_auto_complete_orders_interval');
+}
+
 if (!function_exists('intersoccer_reports_rosters_can_bootstrap_oop')) {
     /**
      * Determine whether the OOP plugin bootstrap should run.
@@ -107,9 +119,63 @@ function intersoccer_report_roster_plugin_activation() {
     intersoccer_create_rosters_table(); // Create if missing
     intersoccer_validate_rosters_table(); // Validate schema
 
+    // Ensure cron events are scheduled
+    if (function_exists('wp_schedule_event')) {
+        intersoccer_reports_rosters_schedule_auto_complete_event(true);
+    }
+
     error_log('InterSoccer: Plugin activation completed.');
 }
 register_activation_hook(__FILE__, 'intersoccer_report_roster_plugin_activation');
+
+function intersoccer_report_roster_plugin_deactivation() {
+    error_log('InterSoccer: Plugin deactivation triggered.');
+
+    if (function_exists('wp_clear_scheduled_hook')) {
+        wp_clear_scheduled_hook(INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK);
+        wp_clear_scheduled_hook(INTERSOCCER_ORDER_AUTO_COMPLETE_SINGLE_HOOK);
+    }
+}
+register_deactivation_hook(__FILE__, 'intersoccer_report_roster_plugin_deactivation');
+
+add_filter('cron_schedules', 'intersoccer_reports_rosters_register_cron_schedule');
+function intersoccer_reports_rosters_register_cron_schedule($schedules) {
+    $interval = (int) apply_filters('intersoccer_auto_complete_orders_interval_seconds', 300);
+    if ($interval < 60) {
+        $interval = 60;
+    }
+
+    $schedules[INTERSOCCER_ORDER_AUTO_COMPLETE_RECURRENCE] = [
+        'interval' => $interval,
+        'display'  => sprintf(__('InterSoccer auto-complete orders every %d seconds', 'intersoccer-reports-rosters'), $interval),
+    ];
+
+    return $schedules;
+}
+
+add_action('init', 'intersoccer_reports_rosters_schedule_auto_complete_event');
+function intersoccer_reports_rosters_schedule_auto_complete_event($force = false) {
+    if (!function_exists('wp_next_scheduled') || !function_exists('wp_schedule_event')) {
+        return;
+    }
+
+    $scheduled = wp_next_scheduled(INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK);
+
+    if ($force && $scheduled) {
+        wp_unschedule_event($scheduled, INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK);
+        $scheduled = false;
+    }
+
+    if (!$scheduled) {
+        $interval = (int) apply_filters('intersoccer_auto_complete_orders_interval_seconds', 300);
+        if ($interval < 60) {
+            $interval = 60;
+        }
+
+        wp_schedule_event(time() + $interval, INTERSOCCER_ORDER_AUTO_COMPLETE_RECURRENCE, INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK);
+        error_log('InterSoccer: Scheduled auto-complete orders cron (interval ' . $interval . ' seconds)');
+    }
+}
 
 /**
  * Admin notice for missing dependencies.
