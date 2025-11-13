@@ -102,13 +102,66 @@ class OrderProcessor {
 
             if ($roster_count > 0) {
                 $current_status = $wc_order->get_status();
+                $this->logger->debug('OrderProcessor: Checking order completion', [
+                    'order_id' => $wc_order->get_id(),
+                    'current_status' => $current_status,
+                    'roster_count' => $roster_count,
+                ]);
+
                 if (!in_array($current_status, ['completed', 'refunded', 'cancelled'], true)) {
-                    $wc_order->update_status(
-                        'completed',
-                        \__('Completed via OOP OrderProcessor (rosters populated).', 'intersoccer-reports-rosters')
-                    );
-                    $completed = true;
+                    try {
+                        $this->logger->info('OrderProcessor: Attempting to complete order', [
+                            'order_id' => $wc_order->get_id(),
+                            'from_status' => $current_status,
+                        ]);
+
+                        $wc_order->update_status(
+                            'completed',
+                            \__('Completed via OOP OrderProcessor (rosters populated).', 'intersoccer-reports-rosters')
+                        );
+
+                        // Explicitly save the order to ensure status is persisted
+                        $wc_order->save();
+
+                        // Reload the order from database to verify the status was actually updated
+                        $order_id = $wc_order->get_id();
+                        $reloaded_order = \function_exists('wc_get_order') ? wc_get_order($order_id) : null;
+                        $updated_status = $reloaded_order ? $reloaded_order->get_status() : $wc_order->get_status();
+
+                        if ($updated_status === 'completed') {
+                            $completed = true;
+                            $this->logger->info('OrderProcessor: Order successfully completed', [
+                                'order_id' => $order_id,
+                            ]);
+                        } else {
+                            $this->logger->warning('OrderProcessor: Order status update may have failed', [
+                                'order_id' => $order_id,
+                                'expected_status' => 'completed',
+                                'actual_status' => $updated_status,
+                                'in_memory_status' => $wc_order->get_status(),
+                            ]);
+                        }
+                    } catch (\Throwable $e) {
+                        $this->logger->error('OrderProcessor: Exception while completing order', [
+                            'order_id' => $wc_order->get_id(),
+                            'exception' => $e->getMessage(),
+                            'trace' => $e->getTraceAsString(),
+                        ]);
+                    }
+                } else {
+                    $this->logger->debug('OrderProcessor: Order already in final state, skipping completion', [
+                        'order_id' => $wc_order->get_id(),
+                        'status' => $current_status,
+                    ]);
                 }
+
+                if (!$completed && \function_exists('intersoccer_schedule_order_completion_check')) {
+                    \intersoccer_schedule_order_completion_check($wc_order->get_id());
+                }
+            } else {
+                $this->logger->debug('OrderProcessor: No rosters created, skipping order completion', [
+                    'order_id' => $wc_order->get_id(),
+                ]);
             }
 
             $this->last_order_completed = $completed;
@@ -125,6 +178,13 @@ class OrderProcessor {
                 'order'   => is_object($order) && method_exists($order, 'get_id') ? $order->get_id() : $order,
                 'message' => $e->getMessage(),
             ]);
+
+            if (\function_exists('intersoccer_schedule_order_completion_check')) {
+                $order_id = is_object($order) && method_exists($order, 'get_id') ? $order->get_id() : $order;
+                if (is_numeric($order_id)) {
+                    \intersoccer_schedule_order_completion_check((int) $order_id);
+                }
+            }
 
             $this->resetLastState();
             return false;
@@ -233,7 +293,10 @@ class OrderProcessor {
         }
 
         if (is_numeric($order)) {
-            return wc_get_order((int) $order);
+            if (\function_exists('wc_get_order')) {
+                return wc_get_order((int) $order);
+            }
+            return null;
         }
 
         return null;

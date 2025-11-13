@@ -207,10 +207,25 @@ function intersoccer_oop_validate_rosters_table() {
  */
 function intersoccer_oop_process_order($order_id) {
     try {
+        error_log('InterSoccer OOP: Processing order ' . $order_id . ' via OOP adapter');
         $processor = intersoccer_oop_get_order_processor();
-        return $processor->processOrder($order_id);
+        $result = $processor->processOrder($order_id);
+        
+        if ($result) {
+            $was_completed = $processor->wasLastOrderCompleted();
+            error_log('InterSoccer OOP: Order ' . $order_id . ' processed. Completed: ' . ($was_completed ? 'yes' : 'no'));
+        } else {
+            error_log('InterSoccer OOP: Order ' . $order_id . ' processing returned false');
+        }
+        
+        return $result;
     } catch (\Exception $e) {
-        error_log('InterSoccer OOP: Error processing order - ' . $e->getMessage());
+        error_log('InterSoccer OOP: Exception processing order ' . $order_id . ' - ' . $e->getMessage());
+        error_log('InterSoccer OOP: Stack trace: ' . $e->getTraceAsString());
+        return false;
+    } catch (\Throwable $e) {
+        error_log('InterSoccer OOP: Throwable processing order ' . $order_id . ' - ' . $e->getMessage());
+        error_log('InterSoccer OOP: Stack trace: ' . $e->getTraceAsString());
         return false;
     }
 }
