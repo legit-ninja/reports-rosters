@@ -623,7 +623,7 @@ if (!function_exists('intersoccer_migration_detect_existing_human_meta')) {
      * @param array<string,string> $lookup
      * @return array<string,string>
      */
-    function intersoccer_migration_detect_existing_human_meta(\WC_Order_Item_Product $item, array $alias_map, array $lookup) {
+    function intersoccer_migration_detect_existing_human_meta($item, array $alias_map, array $lookup) {
         $existing = [];
         foreach ($item->get_meta_data() as $meta) {
             $normalized = intersoccer_migration_normalize_meta_key($meta->key);
@@ -636,6 +636,20 @@ if (!function_exists('intersoccer_migration_detect_existing_human_meta')) {
             }
         }
         return $existing;
+    }
+}
+
+if (!function_exists('intersoccer_migration_remove_human_meta')) {
+    /**
+     * Remove all human-readable metadata aliases for the provided item.
+     */
+    function intersoccer_migration_remove_human_meta($item, array $alias_map) {
+        foreach ($alias_map as $canonical => $aliases) {
+            $keys = array_unique(array_merge([$canonical], $aliases));
+            foreach ($keys as $key) {
+                $item->delete_meta_data($key);
+            }
+        }
     }
 }
 
@@ -664,6 +678,116 @@ if (!function_exists('intersoccer_migration_cleanup_item_meta')) {
             }
             $seen[$canonical] = $meta->key;
         }
+    }
+}
+
+if (!function_exists('intersoccer_migration_prune_meta_rows')) {
+    /**
+     * Ensure only one row per canonical field remains at the database level.
+     */
+    function intersoccer_migration_prune_meta_rows($item_id, array $alias_map, array $lookup) {
+        global $wpdb;
+
+        $canonical_to_keys = array();
+        foreach ($alias_map as $canonical => $aliases) {
+            $canonical_to_keys[$canonical] = array_unique(array_merge(array($canonical), $aliases));
+        }
+
+        $table = $wpdb->prefix . 'woocommerce_order_itemmeta';
+        foreach ($canonical_to_keys as $canonical => $keys) {
+            $placeholders = implode(',', array_fill(0, count($keys), '%s'));
+            $params = array_merge(array($item_id), $keys);
+
+            $rows = $wpdb->get_results($wpdb->prepare(
+                "SELECT meta_id, meta_key, meta_value FROM {$table} WHERE order_item_id = %d AND meta_key IN ($placeholders) ORDER BY meta_id ASC",
+                $params
+            )) ?: array();
+
+            $chosen_meta_id = null;
+            foreach ($rows as $row) {
+                $normalized = intersoccer_migration_normalize_meta_key($row->meta_key);
+                if ($normalized !== $canonical && (!isset($lookup[$normalized]) || $lookup[$normalized] !== $canonical)) {
+                    continue;
+                }
+
+                if ($chosen_meta_id === null) {
+                    $chosen_meta_id = (int) $row->meta_id;
+                    $chosen_value = $row->meta_value;
+                    $chosen_key = $row->meta_key;
+                } else {
+                    $wpdb->delete($table, array('meta_id' => (int) $row->meta_id), array('%d'));
+                }
+            }
+
+            if ($chosen_meta_id !== null) {
+                $wpdb->update(
+                    $table,
+                    array('meta_key' => $chosen_key, 'meta_value' => $chosen_value),
+                    array('meta_id' => $chosen_meta_id),
+                    array('%s', '%s'),
+                    array('%d')
+                );
+            }
+        }
+    }
+}
+
+if (!function_exists('intersoccer_migration_restore_canonical_meta')) {
+    /**
+     * Reapply canonical checkout metadata after WooCommerce finishes its own replay.
+     *
+     * @param int   $item_id
+     * @param array $human_alias_map
+     * @param array $human_lookup
+     * @param array $human_meta
+     * @param array $other_meta
+     */
+    function intersoccer_migration_restore_canonical_meta(
+        $item_id,
+        array $human_alias_map,
+        array $human_lookup,
+        array $human_meta,
+        array $other_meta
+    ) {
+        $item = new WC_Order_Item_Product($item_id);
+
+        foreach ($human_meta as $canonical => $meta_value) {
+            $normalized_value = is_array($meta_value)
+                ? implode(', ', array_map('trim', $meta_value))
+                : trim((string) $meta_value);
+
+            if ($normalized_value === '') {
+                continue;
+            }
+
+            $aliases = $human_alias_map[$canonical] ?? [$canonical];
+            foreach ($aliases as $alias_key) {
+                $item->delete_meta_data($alias_key);
+            }
+
+            $item->add_meta_data($aliases[0], $normalized_value, true);
+        }
+
+        foreach ($other_meta as $meta_key => $meta_value) {
+            $normalized_value = is_array($meta_value)
+                ? implode(', ', array_map('trim', $meta_value))
+                : trim((string) $meta_value);
+
+            $item->delete_meta_data($meta_key);
+            if ($normalized_value === '') {
+                continue;
+            }
+
+            $item->add_meta_data($meta_key, $normalized_value, true);
+        }
+
+        $item->save();
+
+        // Final dedupe to ensure WooCommerce (or other hooks) didn’t introduce duplicates
+        intersoccer_migration_cleanup_item_meta($item_id, $human_alias_map, $human_lookup);
+        intersoccer_migration_prune_meta_rows($item_id, $human_alias_map, $human_lookup);
+
+        error_log('InterSoccer Migration: Restored canonical metadata for item ' . $item_id);
     }
 }
 
@@ -885,12 +1009,16 @@ function intersoccer_move_players_ajax() {
             $slug_meta      = $meta_payload['slug_meta'];
             $human_meta     = $meta_payload['human_meta'];
             $other_meta     = $meta_payload['other_meta'];
-            $expected_slugs = $meta_payload['slugs'];
-            $new_product_type = $meta_payload['product_type'];
             $human_alias_map = intersoccer_migration_human_alias_map();
             $human_lookup    = intersoccer_migration_build_lookup($human_alias_map);
-            $human_alias_map = intersoccer_migration_human_alias_map();
-            $human_lookup = intersoccer_migration_build_lookup($human_alias_map);
+            
+            // Get product type for metadata repopulation
+            if (function_exists('intersoccer_get_product_type')) {
+                $new_product_type = intersoccer_get_product_type($new_product_id);
+            } else {
+                $new_product_type = '';
+            }
+            
             error_log('InterSoccer Migration: Target variation details:');
             error_log('  - New product ID: ' . $new_product_id);
             error_log('  - New product type: ' . ($new_product_type ?: 'unknown'));
@@ -915,65 +1043,44 @@ function intersoccer_move_players_ajax() {
                 $migration_success = false;
             }
 
-            // Step 2: Update variation attributes in order item metadata
+            // Step 2: Clear metadata except attendee fields; we'll rebuild after WooCommerce save
+            $pending_restore = false;
             if ($migration_success) {
                 try {
-                    $existing_human_keys = intersoccer_migration_detect_existing_human_meta($item, $human_alias_map, $human_lookup);
-
-                    foreach ($slug_meta as $meta_key => $meta_value) {
-                        $item->delete_meta_data($meta_key);
-                        if ($meta_value === '' || $meta_value === null) {
-                            continue;
+                    // Delete all existing metadata except Assigned Attendee
+                    $all_meta = $item->get_meta_data();
+                    foreach ($all_meta as $meta) {
+                        $key = $meta->get_data()['key'];
+                        // Keep Assigned Attendee and related player fields; remove everything else
+                        if (!in_array($key, ['Assigned Attendee', 'assigned_player', 'Player Index'])) {
+                            $item->delete_meta_data($key);
                         }
-                        $item->add_meta_data($meta_key, $meta_value, true);
-                        error_log('InterSoccer Migration: Set slug meta ' . $meta_key . ' = ' . $meta_value);
                     }
-
-                    foreach ($human_meta as $canonical => $meta_value) {
-                        $normalized_value = is_array($meta_value)
-                            ? implode(', ', array_map('trim', $meta_value))
-                            : trim((string) $meta_value);
-
-                        $aliases = $human_alias_map[$canonical] ?? [$canonical];
-                        foreach ($aliases as $alias_key) {
-                            $item->delete_meta_data($alias_key);
-                        }
-
-                        if ($normalized_value === '') {
-                            continue;
-                        }
-
-                        $target_key = $existing_human_keys[$canonical] ?? $aliases[0];
-                        $item->add_meta_data($target_key, $normalized_value, true);
-                        $existing_human_keys[$canonical] = $target_key;
-                        error_log('InterSoccer Migration: Set human meta ' . $target_key . ' = ' . $normalized_value);
-                    }
-
-                    foreach ($other_meta as $meta_key => $meta_value) {
-                        $normalized_value = is_array($meta_value)
-                            ? implode(', ', array_map('trim', $meta_value))
-                            : trim((string) $meta_value);
-
-                        $item->delete_meta_data($meta_key);
-                        if ($normalized_value === '') {
-                            continue;
-                        }
-
-                        $item->add_meta_data($meta_key, $normalized_value, true);
-                        error_log('InterSoccer Migration: Set meta ' . $meta_key . ' = ' . $normalized_value);
-                    }
+                    error_log('InterSoccer Migration: Cleared all metadata except Assigned Attendee');
 
                     if (!empty($assigned_attendee)) {
                         $item->update_meta_data('Assigned Attendee', $assigned_attendee);
                         error_log('InterSoccer Migration: Preserved Assigned Attendee: ' . $assigned_attendee);
                     }
+
+                    $pending_restore = true;
+                    $GLOBALS['intersoccer_migrated_items'][$item_id] = [
+                        'human_alias_map' => $human_alias_map,
+                        'human_lookup'    => $human_lookup,
+                        'canonical_meta'  => [
+                            'slug_meta'  => $slug_meta,
+                            'human_meta' => $human_meta,
+                            'other_meta' => $other_meta,
+                        ],
+                        'restoring'       => false,
+                    ];
                 } catch (Exception $e) {
-                    error_log('InterSoccer Migration: Failed to stage metadata: ' . $e->getMessage());
+                    error_log('InterSoccer Migration: Failed to clear metadata: ' . $e->getMessage());
                     $migration_success = false;
                 }
             }
 
-            // Step 3: Save the order item and order
+            // Step 3: Save the order item (WooCommerce will automatically add variation attributes)
             if ($migration_success) {
                 try {
                     $item->save();
@@ -981,18 +1088,17 @@ function intersoccer_move_players_ajax() {
                     // Minimal order recalculation to preserve pricing
                     $order->calculate_taxes();
                     $order->save();
-                    
-                    intersoccer_migration_cleanup_item_meta($item_id, $human_alias_map, $human_lookup);
-                    $final_item_snapshot = new WC_Order_Item_Product($item_id);
-                    $summary_meta = [];
-                    foreach ($final_item_snapshot->get_meta_data() as $meta_entry) {
-                        $normalized = intersoccer_migration_normalize_meta_key($meta_entry->key);
-                        if (isset($human_lookup[$normalized])) {
-                            $summary_meta[$meta_entry->key][] = $meta_entry->value;
-                        }
-                    }
-                    error_log('InterSoccer Migration: Final human meta snapshot for item ' . $item_id . ' => ' . print_r($summary_meta, true));
 
+                    if ($pending_restore) {
+                        intersoccer_migration_restore_canonical_meta(
+                            $item_id,
+                            $human_alias_map,
+                            $human_lookup,
+                            $human_meta,
+                            $other_meta
+                        );
+                    }
+                    
                     error_log('InterSoccer Migration: Saved order item and order');
                 } catch (Exception $e) {
                     error_log('InterSoccer Migration: Failed to save order: ' . $e->getMessage());
@@ -1012,6 +1118,22 @@ function intersoccer_move_players_ajax() {
                         intersoccer_manual_update_roster_entry($order_id, $item_id, $target_variation_id);
                         error_log('InterSoccer Migration: Updated roster entry via manual method');
                     }
+
+                    if (function_exists('intersoccer_rebuild_event_signature_for_order_item')) {
+                        $signature_updated = intersoccer_rebuild_event_signature_for_order_item($item_id);
+                        error_log(
+                            'InterSoccer Migration: Event signature rebuild for item ' . $item_id . ': ' .
+                            ($signature_updated ? 'success' : 'failed')
+                        );
+
+                        if ($signature_updated && function_exists('intersoccer_align_event_signature_for_variation')) {
+                            $aligned = intersoccer_align_event_signature_for_variation($target_variation_id, $item_id);
+                            error_log(
+                                'InterSoccer Migration: Event signature alignment for item ' . $item_id . ': ' .
+                                ($aligned ? 'matched existing roster' : 'no matching roster found')
+                            );
+                        }
+                    }
                 } catch (Exception $e) {
                     error_log('InterSoccer Migration: Failed to update roster: ' . $e->getMessage());
                     $migration_success = false;
@@ -1025,20 +1147,10 @@ function intersoccer_move_players_ajax() {
                 $new_variation_id = $updated_item->get_variation_id();
                 $preserved_subtotal = $updated_item->get_subtotal();
                 $preserved_total = $updated_item->get_total();
-
-                $venue_slug_mismatch = false;
-                if (isset($expected_slugs['pa_intersoccer-venues'])) {
-                    $stored_slug = wc_get_order_item_meta($item_id, 'pa_intersoccer-venues', true);
-                    if ($stored_slug !== $expected_slugs['pa_intersoccer-venues']) {
-                        $venue_slug_mismatch = true;
-                        error_log('InterSoccer Migration: Venue slug mismatch for item ' . $item_id . ' (expected ' . $expected_slugs['pa_intersoccer-venues'] . ', got ' . $stored_slug . ')');
-                    }
-                }
                 
                 if ($new_variation_id == $target_variation_id && 
                     $preserved_subtotal == $original_subtotal && 
-                    $preserved_total == $original_total &&
-                    !$venue_slug_mismatch) {
+                    $preserved_total == $original_total) {
                     
                     $moved_count++;
                     error_log('InterSoccer Migration: Successfully migrated item ' . $item_id);
@@ -1049,9 +1161,6 @@ function intersoccer_move_players_ajax() {
                     error_log('  - Expected variation: ' . $target_variation_id . ', got: ' . $new_variation_id);
                     error_log('  - Expected subtotal: ' . $original_subtotal . ', got: ' . $preserved_subtotal);
                     error_log('  - Expected total: ' . $original_total . ', got: ' . $preserved_total);
-                    if ($venue_slug_mismatch) {
-                        error_log('  - Venue meta mismatch detected.');
-                    }
                     $errors[] = $error;
                 }
             } else {
@@ -1830,4 +1939,5 @@ function intersoccer_render_placeholder_management_section() {
     </div>
     <?php
 }
+
 ?>
