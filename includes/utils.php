@@ -411,6 +411,125 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     }
 }
 
+if (!function_exists('intersoccer_rebuild_event_signature_for_order_item')) {
+    /**
+     * Recalculate the event signature for a specific roster entry identified by order item ID.
+     *
+     * @param int $order_item_id
+     * @return bool
+     */
+    function intersoccer_rebuild_event_signature_for_order_item($order_item_id) {
+        global $wpdb;
+
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        $record = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, activity_type, venue, age_group, camp_terms, course_day, times, season, girls_only, product_id 
+                 FROM {$rosters_table} 
+                 WHERE order_item_id = %d 
+                 LIMIT 1",
+                $order_item_id
+            ),
+            ARRAY_A
+        );
+
+        if (!$record) {
+            error_log('InterSoccer: No roster entry found for order item ' . $order_item_id . ' when rebuilding event signature.');
+            return false;
+        }
+
+        $normalized_data = intersoccer_normalize_event_data_for_signature([
+            'activity_type' => $record['activity_type'],
+            'venue'         => $record['venue'],
+            'age_group'     => $record['age_group'],
+            'camp_terms'    => $record['camp_terms'],
+            'course_day'    => $record['course_day'],
+            'times'         => $record['times'],
+            'season'        => $record['season'],
+            'girls_only'    => (bool) $record['girls_only'],
+            'product_id'    => $record['product_id'],
+        ]);
+
+        $signature = intersoccer_generate_event_signature($normalized_data);
+
+        $updated = $wpdb->update(
+            $rosters_table,
+            ['event_signature' => $signature],
+            ['id' => $record['id']],
+            ['%s'],
+            ['%d']
+        );
+
+        if ($updated !== false) {
+            error_log('InterSoccer: Rebuilt event signature ' . $signature . ' for order item ' . $order_item_id . '.');
+            return true;
+        }
+
+        error_log('InterSoccer: Failed to rebuild event signature for order item ' . $order_item_id . ' - DB error: ' . $wpdb->last_error);
+        return false;
+    }
+}
+
+if (!function_exists('intersoccer_align_event_signature_for_variation')) {
+    /**
+     * Align a roster entry's event signature with existing entries for the same variation.
+     *
+     * @param int $variation_id
+     * @param int $order_item_id
+     * @return bool True if aligned with an existing signature, false otherwise.
+     */
+    function intersoccer_align_event_signature_for_variation($variation_id, $order_item_id) {
+        global $wpdb;
+
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        $existing_signature = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT event_signature 
+                 FROM {$rosters_table} 
+                 WHERE variation_id = %d 
+                   AND order_item_id != %d
+                   AND event_signature != ''
+                 ORDER BY updated_at DESC, id DESC
+                 LIMIT 1",
+                $variation_id,
+                $order_item_id
+            )
+        );
+
+        if (empty($existing_signature)) {
+            return false;
+        }
+
+        $updated = $wpdb->update(
+            $rosters_table,
+            ['event_signature' => $existing_signature],
+            ['order_item_id' => $order_item_id],
+            ['%s'],
+            ['%d']
+        );
+
+        if ($updated !== false) {
+            error_log(
+                sprintf(
+                    'InterSoccer: Aligned event signature for order item %d to existing signature %s.',
+                    $order_item_id,
+                    $existing_signature
+                )
+            );
+            return true;
+        }
+
+        error_log(
+            sprintf(
+                'InterSoccer: Failed to align event signature for order item %d - DB error: %s',
+                $order_item_id,
+                $wpdb->last_error
+            )
+        );
+        return false;
+    }
+}
+
 /**
  * Check for required InterSoccer Product Variations plugin dependency
  * This plugin requires intersoccer_get_product_type() and other core functions
