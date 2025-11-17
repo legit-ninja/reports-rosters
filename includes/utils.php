@@ -1040,28 +1040,33 @@ function intersoccer_get_term_by_translated_name($translated_name, $taxonomy) {
 
 /**
  * Normalize activity type string to English
+ * 
+ * Note: This function may already be defined in the intersoccer-product-variations plugin.
+ * If so, that version will be used (it's more comprehensive).
  */
-function intersoccer_normalize_activity_type($activity_type) {
-    // Convert to lowercase and remove extra spaces
-    $normalized = strtolower(trim($activity_type));
+if (!function_exists('intersoccer_normalize_activity_type')) {
+    function intersoccer_normalize_activity_type($activity_type) {
+        // Convert to lowercase and remove extra spaces
+        $normalized = strtolower(trim($activity_type));
 
-    // Handle common translations
-    $translations = [
-        'camp' => 'camp',
-        'cours' => 'course', // French for course
-        'camp de vacances' => 'camp',
-        'stage' => 'course',
-        'anniversaire' => 'birthday',
-    ];
+        // Handle common translations
+        $translations = [
+            'camp' => 'camp',
+            'cours' => 'course', // French for course
+            'camp de vacances' => 'camp',
+            'stage' => 'course',
+            'anniversaire' => 'birthday',
+        ];
 
-    foreach ($translations as $english => $pattern) {
-        if (strpos($normalized, $pattern) !== false) {
-            return $english;
+        foreach ($translations as $english => $pattern) {
+            if (strpos($normalized, $pattern) !== false) {
+                return $english;
+            }
         }
-    }
 
-    // If no match found, return as-is but normalized
-    return $normalized;
+        // If no match found, return as-is but normalized
+        return $normalized;
+    }
 }
 
 /**
