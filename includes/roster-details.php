@@ -525,8 +525,9 @@ function intersoccer_render_roster_details_page() {
     echo '    </div>';
     echo '</div>';
     
-    // Export form - UPDATED to include girls_only parameter
-    echo '<form method="post" action="' . esc_url(admin_url('admin-ajax.php')) . '" class="export-form" style="margin-top: 20px;">';
+    // Export form - UPDATED to include girls_only parameter and AJAX handling
+    echo '<div id="roster-export-notice" style="margin-top: 20px;"></div>';
+    echo '<form method="post" action="' . esc_url(admin_url('admin-ajax.php')) . '" class="export-form" id="roster-export-form" style="margin-top: 20px;">';
     echo '<input type="hidden" name="action" value="intersoccer_export_roster">';
     echo '<input type="hidden" name="use_fields" value="1">';
     if ($event_signature) {
@@ -545,7 +546,7 @@ function intersoccer_render_roster_details_page() {
     echo '<input type="hidden" name="times" value="' . esc_attr($times) . '">';
     echo '<input type="hidden" name="girls_only" value="' . ($is_girls_only ? '1' : '0') . '">';
     echo '<input type="hidden" name="nonce" value="' . esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')) . '">';
-    echo '<input type="submit" name="export_roster" class="button button-primary" value="' . esc_attr__('Export Roster', 'intersoccer-reports-rosters') . '">';
+    echo '<input type="submit" name="export_roster" id="roster-export-button" class="button button-primary" value="' . esc_attr__('Export Roster', 'intersoccer-reports-rosters') . '">';
     echo '</form>';
     
     echo '<p><strong>' . esc_html__('Event Details') . ':</strong></p>';
@@ -787,6 +788,113 @@ function intersoccer_render_roster_details_page() {
                 bulkActionSelect.val('');
                 moveOptions.hide();
             }
+        });
+
+        // Export form AJAX handling with notification banners
+        $('#roster-export-form').on('submit', function(e) {
+            e.preventDefault();
+            
+            var $form = $(this);
+            var $button = $('#roster-export-button');
+            var $noticeContainer = $('#roster-export-notice');
+            var originalButtonText = $button.val();
+            
+            // Helper function to show WordPress-style notification
+            function showExportNotice(message, type) {
+                type = type || 'info'; // success, error, warning, info
+                var noticeClass = 'notice notice-' + type + ' is-dismissible';
+                var notice = $('<div class="' + noticeClass + '"><p><strong>' + message + '</strong></p><button type="button" class="notice-dismiss"><span class="screen-reader-text">Dismiss this notice.</span></button></div>');
+                
+                $noticeContainer.html(notice);
+                
+                // Auto-dismiss after 5 seconds for success, 10 seconds for errors
+                var dismissDelay = (type === 'success') ? 5000 : 10000;
+                setTimeout(function() {
+                    notice.fadeOut(function() {
+                        $(this).remove();
+                    });
+                }, dismissDelay);
+                
+                // Handle manual dismiss
+                notice.find('.notice-dismiss').on('click', function() {
+                    notice.fadeOut(function() {
+                        $(this).remove();
+                    });
+                });
+                
+                // Scroll to notice
+                $('html, body').animate({
+                    scrollTop: $noticeContainer.offset().top - 50
+                }, 300);
+            }
+            
+            // Show "Exporting..." notice
+            showExportNotice('<?php echo esc_js(__('Exporting roster...', 'intersoccer-reports-rosters')); ?>', 'info');
+            $button.prop('disabled', true).val('<?php echo esc_js(__('Exporting...', 'intersoccer-reports-rosters')); ?>');
+            
+            // Submit via AJAX
+            $.ajax({
+                url: typeof ajaxurl !== 'undefined' ? ajaxurl : '<?php echo esc_js(admin_url('admin-ajax.php')); ?>',
+                type: 'POST',
+                data: $form.serialize(),
+                timeout: 120000, // 2 minutes timeout for large exports
+                success: function(response) {
+                    if (response.success && response.data && response.data.content && response.data.filename) {
+                        // Create and trigger download
+                        try {
+                            var binary = atob(response.data.content);
+                            var array = new Uint8Array(binary.length);
+                            for (var i = 0; i < binary.length; i++) {
+                                array[i] = binary.charCodeAt(i);
+                            }
+                            var blob = new Blob([array], {
+                                type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            });
+                            var link = document.createElement("a");
+                            link.href = window.URL.createObjectURL(blob);
+                            link.download = response.data.filename;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            window.URL.revokeObjectURL(link.href);
+                            
+                            // Show success notice
+                            showExportNotice('<?php echo esc_js(__('Export completed successfully!', 'intersoccer-reports-rosters')); ?>', 'success');
+                        } catch (err) {
+                            console.error('Export download error:', err);
+                            showExportNotice('<?php echo esc_js(__('Export generated but download failed. Please try again.', 'intersoccer-reports-rosters')); ?>', 'error');
+                        }
+                    } else {
+                        var errorMsg = response.data && response.data.message 
+                            ? response.data.message 
+                            : '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>';
+                        showExportNotice('<?php echo esc_js(__('Export failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
+                    }
+                    $button.prop('disabled', false).val(originalButtonText);
+                },
+                error: function(xhr, status, error) {
+                    var errorMsg = '<?php echo esc_js(__('Export failed: Connection error', 'intersoccer-reports-rosters')); ?>';
+                    
+                    if (status === 'timeout') {
+                        errorMsg = '<?php echo esc_js(__('Export timeout. The roster may be too large. Please try again or contact support.', 'intersoccer-reports-rosters')); ?>';
+                    } else if (xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) {
+                        errorMsg = '<?php echo esc_js(__('Export failed: ', 'intersoccer-reports-rosters')); ?>' + xhr.responseJSON.data.message;
+                    } else if (xhr.responseText) {
+                        try {
+                            var errorResponse = JSON.parse(xhr.responseText);
+                            if (errorResponse.data && errorResponse.data.message) {
+                                errorMsg = '<?php echo esc_js(__('Export failed: ', 'intersoccer-reports-rosters')); ?>' + errorResponse.data.message;
+                            }
+                        } catch (e) {
+                            // Not JSON, use generic error
+                        }
+                    }
+                    
+                    showExportNotice(errorMsg, 'error');
+                    $button.prop('disabled', false).val(originalButtonText);
+                    console.error('Export AJAX error:', status, error, xhr.responseText);
+                }
+            });
         });
     });
     </script>
