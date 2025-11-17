@@ -227,10 +227,24 @@ function intersoccer_export_roster() {
     if ($using_oop_export) {
         try {
             $rosters = intersoccer_oop_get_roster_export_service()->getExportRows($export_filters);
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer Export (OOP): Retrieved ' . count($rosters) . ' rows for export.');
+                if (empty($rosters)) {
+                    error_log('InterSoccer Export (OOP): Empty result, falling back to legacy code.');
+                }
+            }
         } catch (\Exception $e) {
-            error_log('InterSoccer Export (OOP): Failed to generate export dataset - ' . $e->getMessage());
+            error_log('InterSoccer Export (OOP): Failed to generate export dataset - ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
             $rosters = [];
         }
+    }
+
+    // Fallback to legacy code if OOP export failed or returned empty
+    if (empty($rosters) && $using_oop_export) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer Export: OOP export returned empty, falling back to legacy implementation.');
+        }
+        $using_oop_export = false; // Force legacy code path
     }
 
     if (!$using_oop_export) {
