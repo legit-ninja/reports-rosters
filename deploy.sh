@@ -247,8 +247,11 @@ deploy_to_server() {
     RSYNC_CMD="$RSYNC_CMD --include='README.md'"
     
     # Exclude files/directories
+    # Note: We include composer.json and composer.lock so server can run composer install
     RSYNC_CMD="$RSYNC_CMD \
         --include='scripts/patch-phpspreadsheet-zipstream.php' \
+        --include='composer.json' \
+        --include='composer.lock' \
         --exclude='.git' \
         --exclude='.gitignore' \
         --exclude='node_modules' \
@@ -256,8 +259,6 @@ deploy_to_server() {
         --exclude='tests' \
         --exclude='docs' \
         --exclude='.phpunit.result.cache' \
-        --exclude='composer.json' \
-        --exclude='composer.lock' \
         --exclude='package.json' \
         --exclude='package-lock.json' \
         --exclude='phpunit.xml' \
@@ -282,6 +283,13 @@ deploy_to_server() {
         if [ "$DRY_RUN" = false ]; then
             echo ""
             echo -e "${GREEN}✓ Files uploaded successfully${NC}"
+            
+            # Ensure composer dependencies are installed correctly (ZipStream 2.x)
+            echo ""
+            echo -e "${BLUE}Installing/updating Composer dependencies on server...${NC}"
+            ssh -p ${SSH_PORT} -i ${SSH_KEY} ${SERVER_USER}@${SERVER_HOST} "cd ${SERVER_PATH} && composer install --no-dev --no-interaction 2>&1" || {
+                echo -e "${YELLOW}⚠ Warning: Composer install failed on server${NC}"
+            }
             
             # Run patch script on server if it exists
             echo ""

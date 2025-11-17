@@ -19,8 +19,8 @@ if (!file_exists($zipStream3File)) {
 // Patch ZipStream3.php
 $zipStream3Content = file_get_contents($zipStream3File);
 
-// Check if already patched
-if (strpos($zipStream3Content, '// Check if ZipStream 3.x supports named parameters') !== false) {
+// Check if already patched (check for our specific patch marker)
+if (strpos($zipStream3Content, 'ZipStream 3.x is installed but is incompatible') !== false) {
     echo "ZipStream3.php already patched. Skipping.\n";
 } else {
     // Remove the problematic Archive import and add fallback logic
@@ -38,31 +38,18 @@ class ZipStream3
     public static function newZipStream($fileHandle): ZipStream
     {
         // Check if ZipStream 2.x is installed (has Archive class)
-        // If so, use ZipStream2 instead
+        // If so, use ZipStream2 instead - this is the preferred path
         if (class_exists(\'ZipStream\Option\Archive\')) {
             return ZipStream2::newZipStream($fileHandle);
         }
         
-        // Try to use ZipStream 3.x with named parameters
-        // If this fails, it means ZipStream 3.x doesn\'t support these parameters
-        try {
-            return new ZipStream(
-                enableZip64: false,
-                outputStream: $fileHandle,
-                sendHttpHeaders: false,
-                defaultEnableZeroHeader: false,
-            );
-        } catch (\Error $e) {
-            // If named parameters fail, try with minimal parameters (older ZipStream 3.x)
-            if (strpos($e->getMessage(), \'Unknown named parameter\') !== false) {
-                // Try alternative constructor for older ZipStream 3.x versions
-                return new ZipStream(
-                    outputStream: $fileHandle,
-                    sendHttpHeaders: false
-                );
-            }
-            throw $e;
-        }
+        // ZipStream 3.x is installed but doesn\'t support named parameters
+        // The best solution is to ensure ZipStream 2.x is installed
+        // For now, throw a helpful error message
+        throw new \RuntimeException(
+            \'ZipStream 3.x is installed but is incompatible with PhpSpreadsheet. \' .
+            \'Please run "composer install --no-dev" to install ZipStream 2.x which is compatible.\'
+        );
     }
 }
 ';
