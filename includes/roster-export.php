@@ -661,5 +661,4 @@ function intersoccer_export_roster() {
                 )
             ]);
         }
-    }
 }
