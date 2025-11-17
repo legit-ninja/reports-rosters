@@ -10,7 +10,7 @@
 defined('ABSPATH') or die('Restricted access');
 
 /**
- * Render the Advanced Features page.
+ * Render the Advanced Features page with tabs.
  */
 function intersoccer_render_advanced_page() {
     if (!current_user_can('manage_options')) {
@@ -20,184 +20,346 @@ function intersoccer_render_advanced_page() {
     $current_version = get_option('intersoccer_db_version', '1.0.0');
     $oop_enabled = defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database');
     $engine_label = $oop_enabled ? __('OOP Migrator', 'intersoccer-reports-rosters') : __('Legacy Migrator', 'intersoccer-reports-rosters');
+    
+    // Get active tab from URL or default to 'general'
+    $active_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'general';
     ?>
     <div class="wrap intersoccer-reports-rosters-settings">
         <h1><?php _e('InterSoccer Settings', 'intersoccer-reports-rosters'); ?></h1>
-        <p class="description">
-            <?php
-                printf(
-                    /* translators: 1: current schema version, 2: migration engine */
-                    esc_html__('Current schema version: %1$s (Engine: %2$s)', 'intersoccer-reports-rosters'),
-                    esc_html($current_version),
-                    esc_html($engine_label)
-                );
-            ?>
-        </p>
-        <div id="intersoccer-rebuild-status" style="display:none;"></div>
-        <div class="advanced-options settings-section">
-            <h2><?php _e('Database Management', 'intersoccer-reports-rosters'); ?></h2>
-            <p><?php _e('Perform database upgrades or maintenance tasks.', 'intersoccer-reports-rosters'); ?></p>
-            <form id="intersoccer-upgrade-form" method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="upgrade-form">
-                <input type="hidden" name="action" value="intersoccer_upgrade_database">
-                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
-                <input type="submit" name="upgrade_database" class="button button-primary" value="<?php _e('Upgrade Database', 'intersoccer-reports-rosters'); ?>" onclick="return confirm('<?php echo esc_js(__('This will modify the database structure and backfill data. Are you sure?', 'intersoccer-reports-rosters')); ?>');">
-            </form>
-            <p><?php _e('Note: This action adds new columns (e.g., financial fields, girls_only) and backfills data. Use with caution.', 'intersoccer-reports-rosters'); ?></p>
-        </div>
-        <div class="rebuild-options">
-            <h2><?php _e('Roster Management', 'intersoccer-reports-rosters'); ?></h2>
-            <form id="intersoccer-process-processing-form" method="post" action="">
-                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
-                <input type="hidden" name="action" value="intersoccer_process_existing_orders">
-                <button type="submit" class="button button-secondary" id="intersoccer-process-processing-button"><?php _e('Process Orders', 'intersoccer-reports-rosters'); ?></button>
-            </form>
-            <p><?php _e('Note: This will populate missing rosters for existing orders (e.g., processing or on-hold) and complete them if fully populated.', 'intersoccer-reports-rosters'); ?></p>
-            <form id="intersoccer-reconcile-form" method="post" action="">
-                <?php wp_nonce_field('intersoccer_reports_rosters_nonce', 'nonce'); ?>
-                <input type="hidden" name="action" value="intersoccer_reconcile_rosters">
-                <button type="submit" class="button button-secondary" id="intersoccer-reconcile-button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></button>
-            </form>
-            <p><?php _e('Note: This syncs the rosters table with orders, adding missing entries, updating incomplete data, and removing obsolete ones. No order statuses are changed.', 'intersoccer-reports-rosters'); ?></p>
-            <form id="intersoccer-rebuild-signatures-form" method="post" action="">
-                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
-                <input type="hidden" name="action" value="intersoccer_rebuild_event_signatures">
-                <button type="submit" class="button button-secondary" id="intersoccer-rebuild-signatures-button"><?php _e('Rebuild Event Signatures', 'intersoccer-reports-rosters'); ?></button>
-            </form>
-            <p><?php _e('Note: This will regenerate event signatures for all existing rosters to ensure proper grouping across languages.', 'intersoccer-reports-rosters'); ?></p>
-            <form id="intersoccer-rebuild-form" method="post" action="">
-                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
-                <input type="hidden" name="action" value="intersoccer_rebuild_rosters_and_reports">
-                <button type="submit" class="button button-primary" id="intersoccer-rebuild-button"><?php _e('Rebuild Rosters', 'intersoccer-reports-rosters'); ?></button>
-            </form>
-            <p><?php _e('Note: This will recreate the rosters table and repopulate it with current order data.', 'intersoccer-reports-rosters'); ?></p>
-        </div>
-        <div class="export-options">
-            <h2><?php _e('Export Options', 'intersoccer-reports-rosters'); ?></h2>
-            <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
-                <input type="hidden" name="action" value="intersoccer_export_all_rosters">
-                <input type="hidden" name="export_type" value="all">
-                <input type="hidden" name="format" value="csv">
-                <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_export_nonce')); ?>">
-                <input type="hidden" name="debug_user" value="<?php echo esc_attr(get_current_user_id()); ?>">
-                <input type="submit" name="export_all_csv" class="button button-primary" value="<?php _e('Export All Rosters (CSV)', 'intersoccer-reports-rosters'); ?>">
-            </form>
-        </div>
+        
+        <!-- Tab Navigation -->
+        <nav class="nav-tab-wrapper">
+            <a href="?page=intersoccer-advanced&tab=general" class="nav-tab <?php echo $active_tab === 'general' ? 'nav-tab-active' : ''; ?>">
+                <?php _e('General', 'intersoccer-reports-rosters'); ?>
+            </a>
+            <a href="?page=intersoccer-advanced&tab=advanced" class="nav-tab <?php echo $active_tab === 'advanced' ? 'nav-tab-active' : ''; ?>">
+                <?php _e('Advanced', 'intersoccer-reports-rosters'); ?>
+            </a>
+            <a href="?page=intersoccer-advanced&tab=tools" class="nav-tab <?php echo $active_tab === 'tools' ? 'nav-tab-active' : ''; ?>">
+                <?php _e('Tools', 'intersoccer-reports-rosters'); ?>
+            </a>
+        </nav>
 
-        <?php intersoccer_render_placeholder_management_section(); ?>
+        <!-- Status Messages Container -->
+        <div id="intersoccer-operation-status" style="margin: 20px 0 0 0;"></div>
+        
+        <style>
+            .tab-content {
+                margin-top: 20px;
+            }
+            .tab-content h2 {
+                margin-top: 0;
+            }
+            .settings-section {
+                background: #fff;
+                padding: 20px;
+                margin: 20px 0;
+                border: 1px solid #ccd0d4;
+                border-radius: 4px;
+            }
+            .settings-section h2 {
+                margin-top: 0;
+                padding-bottom: 10px;
+                border-bottom: 1px solid #e5e5e5;
+            }
+            .settings-section form {
+                margin: 15px 0;
+            }
+            .settings-section p.description {
+                color: #646970;
+                font-style: italic;
+            }
+        </style>
 
-        <?php intersoccer_render_signature_verifier_section(); ?>
+        <!-- General Tab -->
+        <?php if ($active_tab === 'general') : ?>
+            <div class="tab-content tab-general">
+                <h2><?php _e('General Settings', 'intersoccer-reports-rosters'); ?></h2>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row"><?php _e('Schema Version', 'intersoccer-reports-rosters'); ?></th>
+                        <td>
+                            <code><?php echo esc_html($current_version); ?></code>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php _e('Migration Engine', 'intersoccer-reports-rosters'); ?></th>
+                        <td>
+                            <code><?php echo esc_html($engine_label); ?></code>
+                        </td>
+                    </tr>
+                </table>
+                <p class="description">
+                    <?php _e('Database operations and advanced tools are available in the Advanced and Tools tabs.', 'intersoccer-reports-rosters'); ?>
+                </p>
+            </div>
+        <?php endif; ?>
+
+        <!-- Advanced Tab -->
+        <?php if ($active_tab === 'advanced') : ?>
+            <div class="tab-content tab-advanced">
+                <div class="advanced-options settings-section">
+                    <h2><?php _e('Database Management', 'intersoccer-reports-rosters'); ?></h2>
+                    <p><?php _e('Perform database upgrades or maintenance tasks.', 'intersoccer-reports-rosters'); ?></p>
+                    <form id="intersoccer-upgrade-form" method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="upgrade-form">
+                        <input type="hidden" name="action" value="intersoccer_upgrade_database">
+                        <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
+                        <input type="submit" name="upgrade_database" class="button button-primary" value="<?php _e('Upgrade Database', 'intersoccer-reports-rosters'); ?>" onclick="return confirm('<?php echo esc_js(__('This will modify the database structure and backfill data. Are you sure?', 'intersoccer-reports-rosters')); ?>');">
+                    </form>
+                    <p><?php _e('Note: This action adds new columns (e.g., financial fields, girls_only) and backfills data. Use with caution.', 'intersoccer-reports-rosters'); ?></p>
+                </div>
+                <div class="rebuild-options">
+                    <h2><?php _e('Roster Management', 'intersoccer-reports-rosters'); ?></h2>
+                    <form id="intersoccer-process-processing-form" method="post" action="">
+                        <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
+                        <input type="hidden" name="action" value="intersoccer_process_existing_orders">
+                        <button type="submit" class="button button-secondary" id="intersoccer-process-processing-button"><?php _e('Process Orders', 'intersoccer-reports-rosters'); ?></button>
+                    </form>
+                    <p><?php _e('Note: This will populate missing rosters for existing orders (e.g., processing or on-hold) and complete them if fully populated.', 'intersoccer-reports-rosters'); ?></p>
+                    <form id="intersoccer-reconcile-form" method="post" action="">
+                        <?php wp_nonce_field('intersoccer_reports_rosters_nonce', 'nonce'); ?>
+                        <input type="hidden" name="action" value="intersoccer_reconcile_rosters">
+                        <button type="submit" class="button button-secondary" id="intersoccer-reconcile-button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></button>
+                    </form>
+                    <p><?php _e('Note: This syncs the rosters table with orders, adding missing entries, updating incomplete data, and removing obsolete ones. No order statuses are changed.', 'intersoccer-reports-rosters'); ?></p>
+                    <form id="intersoccer-rebuild-signatures-form" method="post" action="">
+                        <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
+                        <input type="hidden" name="action" value="intersoccer_rebuild_event_signatures">
+                        <button type="submit" class="button button-secondary" id="intersoccer-rebuild-signatures-button"><?php _e('Rebuild Event Signatures', 'intersoccer-reports-rosters'); ?></button>
+                    </form>
+                    <p><?php _e('Note: This will regenerate event signatures for all existing rosters to ensure proper grouping across languages.', 'intersoccer-reports-rosters'); ?></p>
+                    <form id="intersoccer-rebuild-form" method="post" action="">
+                        <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
+                        <input type="hidden" name="action" value="intersoccer_rebuild_rosters_and_reports">
+                        <button type="submit" class="button button-primary" id="intersoccer-rebuild-button"><?php _e('Rebuild Rosters', 'intersoccer-reports-rosters'); ?></button>
+                    </form>
+                    <p><?php _e('Note: This will recreate the rosters table and repopulate it with current order data.', 'intersoccer-reports-rosters'); ?></p>
+                </div>
+                <div class="export-options">
+                    <h2><?php _e('Export Options', 'intersoccer-reports-rosters'); ?></h2>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
+                        <input type="hidden" name="action" value="intersoccer_export_all_rosters">
+                        <input type="hidden" name="export_type" value="all">
+                        <input type="hidden" name="format" value="csv">
+                        <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_export_nonce')); ?>">
+                        <input type="hidden" name="debug_user" value="<?php echo esc_attr(get_current_user_id()); ?>">
+                        <input type="submit" name="export_all_csv" class="button button-primary" value="<?php _e('Export All Rosters (CSV)', 'intersoccer-reports-rosters'); ?>">
+                    </form>
+                </div>
+
+                <?php intersoccer_render_placeholder_management_section(); ?>
+            </div>
+        <?php endif; ?>
+
+        <!-- Tools Tab -->
+        <?php if ($active_tab === 'tools') : ?>
+            <div class="tab-content tab-tools">
+                <?php intersoccer_render_signature_verifier_section(); ?>
+            </div>
+        <?php endif; ?>
 
         <script type="text/javascript">
+            // Helper function to show WordPress admin notices (global scope)
+            function showAdminNotice(message, type) {
+                var $ = jQuery;
+                type = type || 'info'; // success, error, warning, info
+                var noticeClass = 'notice notice-' + type + ' is-dismissible';
+                var notice = $('<div class="' + noticeClass + '"><p><strong>' + message + '</strong></p><button type="button" class="notice-dismiss"><span class="screen-reader-text">Dismiss this notice.</span></button></div>');
+                
+                $('#intersoccer-operation-status').html(notice);
+                
+                // Auto-dismiss after 10 seconds for success/info, 15 seconds for warnings/errors
+                var dismissDelay = (type === 'success' || type === 'info') ? 10000 : 15000;
+                setTimeout(function() {
+                    notice.fadeOut(function() {
+                        $(this).remove();
+                    });
+                }, dismissDelay);
+                
+                // Handle manual dismiss
+                notice.find('.notice-dismiss').on('click', function() {
+                    notice.fadeOut(function() {
+                        $(this).remove();
+                    });
+                });
+                
+                // Scroll to notice
+                $('html, body').animate({
+                    scrollTop: $('#intersoccer-operation-status').offset().top - 50
+                }, 300);
+            }
+            
             jQuery(document).ready(function($) {
                 console.log('InterSoccer: Advanced page JS loaded');
+                
+                // Rebuild Rosters
                 $('#intersoccer-rebuild-form').on('submit', function(e) {
                     e.preventDefault();
-                    console.log('InterSoccer: Rebuild form submit triggered');
-                    if (!confirm("Are you sure you want to rebuild the rosters table? This will delete all existing data in the table, recreate it from current WooCommerce orders. This is a last resort action and may cause temporary data inconsistencies until completed.")) {
-                        console.log('InterSoccer: Rebuild cancelled by user');
+                    var $form = $(this);
+                    var $button = $form.find('button[type="submit"]');
+                    
+                    if (!confirm("<?php echo esc_js(__('Are you sure you want to rebuild the rosters table? This will delete all existing data in the table, recreate it from current WooCommerce orders. This is a last resort action and may cause temporary data inconsistencies until completed.', 'intersoccer-reports-rosters')); ?>")) {
                         return false;
                     }
-                    console.log('InterSoccer: Rebuild confirmed, proceeding with AJAX');
+                    
+                    showAdminNotice('<?php echo esc_js(__('Starting: Rebuilding rosters...', 'intersoccer-reports-rosters')); ?>', 'info');
+                    $button.prop('disabled', true).text('<?php echo esc_js(__('Running...', 'intersoccer-reports-rosters')); ?>');
+                    
                     $.ajax({
                         url: ajaxurl,
                         type: 'POST',
-                        data: $(this).serialize(),
-                        beforeSend: function() {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuilding... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
-                        },
+                        data: $form.serialize(),
                         success: function(response) {
-                            $('#intersoccer-rebuild-status').html('<p>' + response.data.message + '</p>');
-                            console.log('Rebuild response: ', response);
+                            if (response.success) {
+                                showAdminNotice('<?php echo esc_js(__('Finished: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Rosters rebuilt successfully.', 'intersoccer-reports-rosters')); ?>'), 'success');
+                            } else {
+                                showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>'), 'error');
+                            }
+                            $button.prop('disabled', false).text('<?php echo esc_js(__('Rebuild Rosters', 'intersoccer-reports-rosters')); ?>');
                         },
                         error: function(xhr, status, error) {
-                            console.error('AJAX Raw Response: ', xhr.responseText);
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuild failed: ', 'intersoccer-reports-rosters'); ?>' + (xhr.responseJSON ? xhr.responseJSON.message : (xhr.responseText || error)) + '</p>');
+                            var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
+                                ? xhr.responseJSON.data.message 
+                                : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                            showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
+                            $button.prop('disabled', false).text('<?php echo esc_js(__('Rebuild Rosters', 'intersoccer-reports-rosters')); ?>');
                             console.error('AJAX Error: ', status, error, xhr.responseText);
                         }
                     });
                 });
+                
+                // Reconcile Rosters
                 $('#intersoccer-reconcile-form').on('submit', function(e) {
                     e.preventDefault();
-                    console.log('InterSoccer: Reconcile form submit triggered');
-                    if (!confirm("Are you sure you want to reconcile rosters? This will sync data from orders, potentially updating existing entries.")) {
+                    var $form = $(this);
+                    var $button = $form.find('button[type="submit"]');
+                    
+                    if (!confirm("<?php echo esc_js(__('Are you sure you want to reconcile rosters? This will sync data from orders, potentially updating existing entries.', 'intersoccer-reports-rosters')); ?>")) {
                         return false;
                     }
+                    
+                    showAdminNotice('<?php echo esc_js(__('Starting: Reconciling rosters...', 'intersoccer-reports-rosters')); ?>', 'info');
+                    $button.prop('disabled', true).text('<?php echo esc_js(__('Running...', 'intersoccer-reports-rosters')); ?>');
+                    
                     $.ajax({
                         url: ajaxurl,
                         type: 'POST',
-                        data: $(this).serialize(),
-                        beforeSend: function() {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Reconciling... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
-                        },
+                        data: $form.serialize(),
                         success: function(response) {
-                            $('#intersoccer-rebuild-status').html('<p>' + response.data.message + '</p>');
-                            console.log('Reconcile response: ', response);
+                            if (response.success) {
+                                showAdminNotice('<?php echo esc_js(__('Finished: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Rosters reconciled successfully.', 'intersoccer-reports-rosters')); ?>'), 'success');
+                            } else {
+                                showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>'), 'error');
+                            }
+                            $button.prop('disabled', false).text('<?php echo esc_js(__('Reconcile Rosters', 'intersoccer-reports-rosters')); ?>');
                         },
                         error: function(xhr, status, error) {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Reconcile failed: ', 'intersoccer-reports-rosters'); ?>' + (xhr.responseJSON ? xhr.responseJSON.message : error) + '</p>');
+                            var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
+                                ? xhr.responseJSON.data.message 
+                                : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                            showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
+                            $button.prop('disabled', false).text('<?php echo esc_js(__('Reconcile Rosters', 'intersoccer-reports-rosters')); ?>');
                             console.error('AJAX Error: ', status, error, xhr.responseText);
                         }
                     });
                 });
+                
+                // Rebuild Event Signatures
                 $('#intersoccer-rebuild-signatures-form').on('submit', function(e) {
                     e.preventDefault();
-                    console.log('InterSoccer: Rebuild signatures form submit triggered');
-                    if (!confirm("Are you sure you want to rebuild event signatures? This will regenerate signatures for all roster records to ensure proper grouping.")) {
+                    var $form = $(this);
+                    var $button = $form.find('button[type="submit"]');
+                    
+                    if (!confirm("<?php echo esc_js(__('Are you sure you want to rebuild event signatures? This will regenerate signatures for all roster records to ensure proper grouping.', 'intersoccer-reports-rosters')); ?>")) {
                         return false;
                     }
+                    
+                    showAdminNotice('<?php echo esc_js(__('Starting: Rebuilding event signatures...', 'intersoccer-reports-rosters')); ?>', 'info');
+                    $button.prop('disabled', true).text('<?php echo esc_js(__('Running...', 'intersoccer-reports-rosters')); ?>');
+                    
                     $.ajax({
                         url: ajaxurl,
                         type: 'POST',
-                        data: $(this).serialize(),
-                        beforeSend: function() {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuilding event signatures... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
-                        },
+                        data: $form.serialize(),
                         success: function(response) {
-                            $('#intersoccer-rebuild-status').html('<p>' + response.data.message + '</p>');
-                            console.log('Rebuild signatures response: ', response);
+                            if (response.success) {
+                                showAdminNotice('<?php echo esc_js(__('Finished: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Event signatures rebuilt successfully.', 'intersoccer-reports-rosters')); ?>'), 'success');
+                            } else {
+                                showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>'), 'error');
+                            }
+                            $button.prop('disabled', false).text('<?php echo esc_js(__('Rebuild Event Signatures', 'intersoccer-reports-rosters')); ?>');
                         },
                         error: function(xhr, status, error) {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Rebuild signatures failed: ', 'intersoccer-reports-rosters'); ?>' + (xhr.responseJSON ? xhr.responseJSON.message : error) + '</p>');
+                            var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
+                                ? xhr.responseJSON.data.message 
+                                : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                            showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
+                            $button.prop('disabled', false).text('<?php echo esc_js(__('Rebuild Event Signatures', 'intersoccer-reports-rosters')); ?>');
                             console.error('AJAX Error: ', status, error, xhr.responseText);
                         }
                     });
                 });
+                
+                // Process Orders
                 $('#intersoccer-process-processing-form').on('submit', function(e) {
                     e.preventDefault();
-                    console.log('InterSoccer: Process form submit triggered');
+                    var $form = $(this);
+                    var $button = $form.find('button[type="submit"]');
+                    
+                    showAdminNotice('<?php echo esc_js(__('Starting: Processing orders...', 'intersoccer-reports-rosters')); ?>', 'info');
+                    $button.prop('disabled', true).text('<?php echo esc_js(__('Running...', 'intersoccer-reports-rosters')); ?>');
+                    
                     $.ajax({
                         url: ajaxurl,
                         type: 'POST',
-                        data: $(this).serialize(),
-                        beforeSend: function() {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Processing orders... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
-                        },
+                        data: $form.serialize(),
                         success: function(response) {
-                            $('#intersoccer-rebuild-status').html('<p>' + (response.data.message || '<?php _e('Orders processed. Check debug.log for details.', 'intersoccer-reports-rosters'); ?>') + '</p>');
-                            console.log('Process response: ', response);
+                            if (response.success) {
+                                showAdminNotice('<?php echo esc_js(__('Finished: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Orders processed successfully.', 'intersoccer-reports-rosters')); ?>'), 'success');
+                            } else {
+                                showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>'), 'error');
+                            }
+                            $button.prop('disabled', false).text('<?php echo esc_js(__('Process Orders', 'intersoccer-reports-rosters')); ?>');
                         },
                         error: function(xhr, status, error) {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Processing failed: ', 'intersoccer-reports-rosters'); ?>' + (xhr.responseJSON ? xhr.responseJSON.message : error) + '</p>');
+                            var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
+                                ? xhr.responseJSON.data.message 
+                                : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                            showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
+                            $button.prop('disabled', false).text('<?php echo esc_js(__('Process Orders', 'intersoccer-reports-rosters')); ?>');
                             console.error('AJAX Error: ', status, error, xhr.responseText);
                         }
                     });
                 });
+                
+                // Upgrade Database
                 $('#intersoccer-upgrade-form').on('submit', function(e) {
                     e.preventDefault();
+                    var $form = $(this);
+                    var $button = $form.find('input[type="submit"]');
+                    
+                    showAdminNotice('<?php echo esc_js(__('Starting: Upgrading database...', 'intersoccer-reports-rosters')); ?>', 'info');
+                    $button.prop('disabled', true).val('<?php echo esc_js(__('Running...', 'intersoccer-reports-rosters')); ?>');
+                    
                     $.ajax({
                         url: ajaxurl,
                         type: 'POST',
-                        data: $(this).serialize(),
-                        beforeSend: function() {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Upgrading database... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
-                        },
+                        data: $form.serialize(),
                         success: function(response) {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Database upgrade completed. Check debug.log for details.', 'intersoccer-reports-rosters'); ?></p>');
-                            console.log('Upgrade response: ', response);
+                            if (response.success) {
+                                showAdminNotice('<?php echo esc_js(__('Finished: Database upgrade completed successfully.', 'intersoccer-reports-rosters')); ?>', 'success');
+                            } else {
+                                showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>'), 'error');
+                            }
+                            $button.prop('disabled', false).val('<?php echo esc_js(__('Upgrade Database', 'intersoccer-reports-rosters')); ?>');
                         },
                         error: function(xhr, status, error) {
-                            $('#intersoccer-rebuild-status').html('<p><?php _e('Database upgrade failed: ', 'intersoccer-reports-rosters'); ?>' + error + '</p>');
-                            console.error('AJAX Error: ', status, error);
+                            var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
+                                ? xhr.responseJSON.data.message 
+                                : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                            showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
+                            $button.prop('disabled', false).val('<?php echo esc_js(__('Upgrade Database', 'intersoccer-reports-rosters')); ?>');
+                            console.error('AJAX Error: ', status, error, xhr.responseText);
                         }
                     });
                 });
@@ -318,7 +480,7 @@ function intersoccer_process_existing_orders() {
                 }
                 
                 // Only count items that should have roster entries
-                if (in_array($product_type, ['camp', 'course', 'birthday'])) {
+                if (in_array($product_type, ['camp', 'course', 'birthday', 'tournament'])) {
                     $assigned_attendee = wc_get_order_item_meta($item_id, 'Assigned Attendee', true);
                     if (!empty($assigned_attendee)) {
                         $items_needing_rosters++;
@@ -1859,8 +2021,6 @@ function intersoccer_render_placeholder_management_section() {
             <?php _e('This will create or update placeholder rosters for all published product variations. Placeholders allow admins to migrate players to events before the first order is placed.', 'intersoccer-reports-rosters'); ?>
         </p>
         
-        <div id="intersoccer-placeholder-sync-status"></div>
-        
         <style>
             .placeholder-management-section {
                 background: #fff;
@@ -1899,38 +2059,57 @@ function intersoccer_render_placeholder_management_section() {
             jQuery(document).ready(function($) {
                 $('#intersoccer-sync-placeholders-form').on('submit', function(e) {
                     e.preventDefault();
-                    console.log('InterSoccer: Sync placeholders form submit triggered');
+                    var $form = $(this);
+                    var $button = $form.find('button[type="submit"]');
                     
                     if (!confirm("<?php echo esc_js(__('This will create or update placeholder rosters for all published product variations. Continue?', 'intersoccer-reports-rosters')); ?>")) {
                         return false;
                     }
                     
+                    // Use the main notice system
+                    if (typeof showAdminNotice === 'function') {
+                        showAdminNotice('<?php echo esc_js(__('Starting: Syncing placeholders...', 'intersoccer-reports-rosters')); ?>', 'info');
+                    } else {
+                        $('#intersoccer-operation-status').html('<div class="notice notice-info"><p><strong><?php echo esc_js(__('Starting: Syncing placeholders...', 'intersoccer-reports-rosters')); ?></strong></p></div>');
+                    }
+                    $button.prop('disabled', true).text('<?php echo esc_js(__('Running...', 'intersoccer-reports-rosters')); ?>');
+                    
                     $.ajax({
                         url: ajaxurl,
                         type: 'POST',
-                        data: $(this).serialize(),
-                        beforeSend: function() {
-                            $('#intersoccer-placeholder-sync-status').html('<p><?php _e('Syncing placeholders... Please wait.', 'intersoccer-reports-rosters'); ?></p>');
-                            $('#intersoccer-sync-placeholders-button').prop('disabled', true);
-                        },
+                        data: $form.serialize(),
                         success: function(response) {
                             console.log('Sync placeholders response:', response);
                             if (response.success) {
-                                $('#intersoccer-placeholder-sync-status').html('<div class="notice notice-success"><p>' + response.data.message + '</p></div>');
-                                // Reload page to update stats
+                                if (typeof showAdminNotice === 'function') {
+                                    showAdminNotice('<?php echo esc_js(__('Finished: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Placeholders synced successfully.', 'intersoccer-reports-rosters')); ?>'), 'success');
+                                } else {
+                                    $('#intersoccer-operation-status').html('<div class="notice notice-success"><p><strong><?php echo esc_js(__('Finished: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Placeholders synced successfully.', 'intersoccer-reports-rosters')); ?>') + '</strong></p></div>');
+                                }
+                                // Reload page to update stats after a delay
                                 setTimeout(function() {
                                     location.reload();
                                 }, 2000);
                             } else {
-                                $('#intersoccer-placeholder-sync-status').html('<div class="notice notice-error"><p>' + (response.data.message || '<?php _e('Sync failed', 'intersoccer-reports-rosters'); ?>') + '</p></div>');
+                                if (typeof showAdminNotice === 'function') {
+                                    showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Sync failed.', 'intersoccer-reports-rosters')); ?>'), 'error');
+                                } else {
+                                    $('#intersoccer-operation-status').html('<div class="notice notice-error"><p><strong><?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Sync failed.', 'intersoccer-reports-rosters')); ?>') + '</strong></p></div>');
+                                }
+                                $button.prop('disabled', false).text('<?php echo esc_js(__('Sync All Placeholders', 'intersoccer-reports-rosters')); ?>');
                             }
                         },
                         error: function(xhr, status, error) {
                             console.error('AJAX Error:', status, error, xhr.responseText);
-                            $('#intersoccer-placeholder-sync-status').html('<div class="notice notice-error"><p><?php _e('Sync failed: ', 'intersoccer-reports-rosters'); ?>' + (xhr.responseJSON ? xhr.responseJSON.message : error) + '</p></div>');
-                        },
-                        complete: function() {
-                            $('#intersoccer-sync-placeholders-button').prop('disabled', false);
+                            var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
+                                ? xhr.responseJSON.data.message 
+                                : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                            if (typeof showAdminNotice === 'function') {
+                                showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
+                            } else {
+                                $('#intersoccer-operation-status').html('<div class="notice notice-error"><p><strong><?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg + '</strong></p></div>');
+                            }
+                            $button.prop('disabled', false).text('<?php echo esc_js(__('Sync All Placeholders', 'intersoccer-reports-rosters')); ?>');
                         }
                     });
                 });
