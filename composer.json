@@ -41,6 +41,12 @@
         "test": "phpunit",
         "test:coverage": "phpunit --coverage-html coverage",
         "test:unit": "phpunit --testsuite=Unit",
-        "test:integration": "phpunit --testsuite=Integration"
+        "test:integration": "phpunit --testsuite=Integration",
+        "post-install-cmd": [
+            "@php scripts/patch-phpspreadsheet-zipstream.php"
+        ],
+        "post-update-cmd": [
+            "@php scripts/patch-phpspreadsheet-zipstream.php"
+        ]
     }
 }

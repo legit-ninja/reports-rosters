@@ -218,6 +218,16 @@ deploy_to_server() {
         echo ""
     fi
     
+    # Apply PhpSpreadsheet ZipStream compatibility patch
+    if [ -f "scripts/patch-phpspreadsheet-zipstream.php" ]; then
+        echo -e "${BLUE}Applying PhpSpreadsheet ZipStream compatibility patch...${NC}"
+        php scripts/patch-phpspreadsheet-zipstream.php
+        if [ $? -ne 0 ]; then
+            echo -e "${YELLOW}⚠ Warning: Patch script failed, but continuing deployment${NC}"
+        fi
+        echo ""
+    fi
+    
     # Build rsync command WITHOUT --delete flag
     # Using --delete is dangerous - could delete other plugins if path is wrong!
     RSYNC_CMD="rsync -avz"
@@ -238,6 +248,7 @@ deploy_to_server() {
     
     # Exclude files/directories
     RSYNC_CMD="$RSYNC_CMD \
+        --include='scripts/patch-phpspreadsheet-zipstream.php' \
         --exclude='.git' \
         --exclude='.gitignore' \
         --exclude='node_modules' \
@@ -254,7 +265,7 @@ deploy_to_server() {
         --exclude='debug.log' \
         --exclude='debug_*.php' \
         --exclude='temp_*.php' \
-        --exclude='*.sh' \
+        --exclude='scripts/*.sh' \
         --exclude='*.md' \
         --exclude='.DS_Store' \
         --exclude='*.swp' \
@@ -271,6 +282,13 @@ deploy_to_server() {
         if [ "$DRY_RUN" = false ]; then
             echo ""
             echo -e "${GREEN}✓ Files uploaded successfully${NC}"
+            
+            # Run patch script on server if it exists
+            echo ""
+            echo -e "${BLUE}Applying PhpSpreadsheet ZipStream compatibility patch on server...${NC}"
+            ssh -p ${SSH_PORT} -i ${SSH_KEY} ${SERVER_USER}@${SERVER_HOST} "cd ${SERVER_PATH} && php scripts/patch-phpspreadsheet-zipstream.php 2>&1" || {
+                echo -e "${YELLOW}⚠ Warning: Patch script failed on server, but continuing${NC}"
+            }
         fi
     else
         echo -e "${RED}✗ Upload failed${NC}"

@@ -3,7 +3,7 @@
         'name' => 'underdog/reports-rosters',
         'pretty_version' => 'dev-master',
         'version' => 'dev-master',
-        'reference' => 'b76c5a1dc0e0019c76d1d9da5b071eaad4f555e6',
+        'reference' => 'cbef86d6168807d151e6c909000e42d5ca97cec7',
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -112,7 +112,7 @@
         'underdog/reports-rosters' => array(
             'pretty_version' => 'dev-master',
             'version' => 'dev-master',
-            'reference' => 'b76c5a1dc0e0019c76d1d9da5b071eaad4f555e6',
+            'reference' => 'cbef86d6168807d151e6c909000e42d5ca97cec7',
             'type' => 'library',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
