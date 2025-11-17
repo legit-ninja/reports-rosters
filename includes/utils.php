@@ -75,7 +75,7 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     $product_type = intersoccer_get_product_type_safe($product_id, $variation_id);
     error_log('InterSoccer: Item ' . $item_id . ' product_type: ' . $product_type . ' (using ID: ' . $type_id . ', parent: ' . $product_id . ', variation: ' . $variation_id . ')');
 
-    if (!in_array($product_type, ['camp', 'course', 'birthday'])) {
+    if (!in_array($product_type, ['camp', 'course', 'birthday', 'tournament'])) {
         error_log('InterSoccer: Skipping item ' . $item_id . ' in order ' . $order_id . ' - Reason: Non-event product type (' . $product_type . ')');
         return false;
     }
