@@ -161,10 +161,21 @@ class RosterExportService {
         }
 
         $rows = $this->wpdb->get_results($sql, ARRAY_A);
+        
+        // Log SQL errors if any
+        if ($this->wpdb->last_error) {
+            $this->logger->error('RosterExportService: SQL error in fetchUsingFieldFilters', [
+                'error' => $this->wpdb->last_error,
+                'query' => $sql,
+                'params' => $params,
+            ]);
+        }
 
         $this->logger->debug('RosterExportService: Fetched rows via field filters', [
             'count' => is_array($rows) ? count($rows) : 0,
             'filters' => $filters,
+            'sql' => $sql,
+            'last_error' => $this->wpdb->last_error,
         ]);
 
         return is_array($rows) ? $rows : [];
@@ -219,10 +230,21 @@ class RosterExportService {
         }
 
         $rows = $this->wpdb->get_results($sql, ARRAY_A);
+        
+        // Log SQL errors if any
+        if ($this->wpdb->last_error) {
+            $this->logger->error('RosterExportService: SQL error in fetchUsingVariations', [
+                'error' => $this->wpdb->last_error,
+                'query' => $sql,
+                'params' => $params,
+            ]);
+        }
 
         $this->logger->debug('RosterExportService: Fetched rows via variation filters', [
             'count' => is_array($rows) ? count($rows) : 0,
             'filters' => $filters,
+            'sql' => $sql,
+            'last_error' => $this->wpdb->last_error,
         ]);
 
         return is_array($rows) ? $rows : [];
