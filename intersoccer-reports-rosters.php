@@ -29,11 +29,99 @@ add_filter('deprecated_function_trigger_error', '__return_false', 10, 2);
 
 $autoloader = __DIR__ . '/vendor/autoload.php';
 if (file_exists($autoloader)) {
-    require_once $autoloader;
-    error_log('InterSoccer: Composer autoloader loaded from ' . $autoloader);
+    // Check if dev dependencies are missing (common in production)
+    // If autoloader was generated with dev dependencies but they're not present, skip loading
+    // Dev dependencies that might be referenced: deep-copy, phpunit, mockery, brain/monkey
+    $dev_deps = [
+        'myclabs/deep-copy' => __DIR__ . '/vendor/myclabs/deep-copy/src/DeepCopy/deep_copy.php',
+        'phpunit/phpunit' => __DIR__ . '/vendor/phpunit/phpunit/phpunit',
+        'mockery/mockery' => __DIR__ . '/vendor/mockery/mockery/library/Mockery.php',
+        'brain/monkey' => __DIR__ . '/vendor/brain/monkey/inc/api.php',
+    ];
+    
+    $autoload_real = __DIR__ . '/vendor/composer/autoload_real.php';
+    $autoload_static = __DIR__ . '/vendor/composer/autoload_static.php';
+    
+    // Check if autoloader references dev dependencies that are missing
+    $skip_autoloader = false;
+    $missing_dev_deps = [];
+    
+    foreach ($dev_deps as $dep_name => $dep_file) {
+        if (!file_exists($dep_file)) {
+            $missing_dev_deps[] = $dep_name;
+        }
+    }
+    
+    if (!empty($missing_dev_deps)) {
+        // Check autoloader files for references to missing dev dependencies
+        $has_dev_dep_ref = false;
+        $referenced_deps = [];
+        
+        foreach ($missing_dev_deps as $dep_name) {
+            // Check for various formats: myclabs/deep-copy, myclabs-deep-copy, myclabs\deep-copy
+            $search_terms = [
+                $dep_name, // Original: myclabs/deep-copy
+                str_replace('/', '-', $dep_name), // myclabs-deep-copy
+                str_replace('/', '\\', $dep_name), // myclabs\deep-copy
+                basename($dep_name), // Just the package name: deep-copy
+            ];
+            
+            $found_ref = false;
+            if (file_exists($autoload_real)) {
+                $autoload_real_content = @file_get_contents($autoload_real);
+                if ($autoload_real_content) {
+                    foreach ($search_terms as $term) {
+                        if (strpos($autoload_real_content, $term) !== false) {
+                            $found_ref = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!$found_ref && file_exists($autoload_static)) {
+                $autoload_static_content = @file_get_contents($autoload_static);
+                if ($autoload_static_content) {
+                    foreach ($search_terms as $term) {
+                        if (strpos($autoload_static_content, $term) !== false) {
+                            $found_ref = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if ($found_ref) {
+                $has_dev_dep_ref = true;
+                $referenced_deps[] = $dep_name;
+            }
+        }
+        
+        if ($has_dev_dep_ref) {
+            $skip_autoloader = true;
+            error_log('InterSoccer: Warning - Autoloader references dev dependencies that are missing: ' . implode(', ', array_unique($referenced_deps)));
+            error_log('InterSoccer: This is normal in production. To fix, run "composer install --no-dev" on the server to regenerate autoloader without dev dependencies.');
+            error_log('InterSoccer: Plugin will continue in legacy mode without OOP features.');
+        }
+    }
+    
+    if (!$skip_autoloader) {
+        try {
+            require_once $autoloader;
+            error_log('InterSoccer: Composer autoloader loaded from ' . $autoloader);
+        } catch (\Throwable $e) {
+            // Catch any errors during autoloader load
+            if (strpos($e->getMessage(), 'deep-copy') !== false || strpos($e->getFile(), 'deep-copy') !== false) {
+                error_log('InterSoccer: Error loading autoloader - dev dependency missing: ' . $e->getMessage());
+                error_log('InterSoccer: Run "composer install --no-dev" on the server to fix. Plugin will continue in legacy mode.');
+            } else {
+                error_log('InterSoccer: Error loading autoloader - ' . $e->getMessage());
+                // Don't throw - allow plugin to continue in legacy mode
+            }
+        }
+    }
 } else {
     error_log('InterSoccer: Composer autoloader not found at ' . $autoloader);
-    error_log('InterSoccer: Run "composer install" to enable OOP bootstrap');
+    error_log('InterSoccer: Run "composer install --no-dev" to enable OOP bootstrap');
 }
 
 if (!defined('INTERSOCCER_OOP_ENABLED')) {
