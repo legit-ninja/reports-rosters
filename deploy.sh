@@ -287,9 +287,30 @@ deploy_to_server() {
             # Ensure composer dependencies are installed correctly (ZipStream 2.x)
             echo ""
             echo -e "${BLUE}Installing/updating Composer dependencies on server...${NC}"
-            ssh -p ${SSH_PORT} -i ${SSH_KEY} ${SERVER_USER}@${SERVER_HOST} "cd ${SERVER_PATH} && composer install --no-dev --no-interaction 2>&1" || {
-                echo -e "${YELLOW}⚠ Warning: Composer install failed on server${NC}"
-            }
+            COMPOSER_OUTPUT=$(ssh -p ${SSH_PORT} -i ${SSH_KEY} ${SERVER_USER}@${SERVER_HOST} "cd ${SERVER_PATH} && composer install --no-dev --no-interaction 2>&1")
+            COMPOSER_EXIT_CODE=$?
+            echo "$COMPOSER_OUTPUT"
+            if [ $COMPOSER_EXIT_CODE -ne 0 ]; then
+                echo -e "${RED}❌ Composer install failed on server!${NC}"
+                echo -e "${YELLOW}⚠ This may cause ZipStream compatibility issues.${NC}"
+                echo -e "${YELLOW}⚠ Please manually run 'composer install --no-dev' on the server.${NC}"
+            else
+                echo -e "${GREEN}✓ Composer dependencies installed successfully${NC}"
+                # Verify ZipStream version is 2.x
+                echo -e "${BLUE}Verifying ZipStream version...${NC}"
+                ZIPSTREAM_CHECK=$(ssh -p ${SSH_PORT} -i ${SSH_KEY} ${SERVER_USER}@${SERVER_HOST} "cd ${SERVER_PATH} && php -r \"require 'vendor/autoload.php'; if (class_exists('ZipStream\\\\Option\\\\Archive')) { echo 'ZipStream 2.x detected'; } else { echo 'ZipStream 3.x detected - INCOMPATIBLE'; }\" 2>&1")
+                echo "$ZIPSTREAM_CHECK"
+                if echo "$ZIPSTREAM_CHECK" | grep -q "ZipStream 3.x detected"; then
+                    echo -e "${RED}❌ ZipStream 3.x is still installed!${NC}"
+                    echo -e "${YELLOW}⚠ Attempting to force install ZipStream 2.x...${NC}"
+                    ssh -p ${SSH_PORT} -i ${SSH_KEY} ${SERVER_USER}@${SERVER_HOST} "cd ${SERVER_PATH} && composer require maennchen/zipstream-php:^2.1.0 --no-dev --no-interaction 2>&1" || {
+                        echo -e "${RED}❌ Failed to install ZipStream 2.x${NC}"
+                        echo -e "${YELLOW}⚠ Please manually run 'composer require maennchen/zipstream-php:^2.1.0 --no-dev' on the server.${NC}"
+                    }
+                else
+                    echo -e "${GREEN}✓ ZipStream 2.x is correctly installed${NC}"
+                fi
+            fi
             
             # Run patch script on server if it exists
             echo ""
