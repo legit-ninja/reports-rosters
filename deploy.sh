@@ -10,7 +10,7 @@
 #   ./deploy.sh                 # Deploy to dev server (runs PHPUnit tests)
 #   ./deploy.sh --test          # Run PHPUnit + Cypress tests before deploying
 #   ./deploy.sh --no-cache      # Deploy and clear server caches
-#   ./deploy.sh --dry-run       # Show what would be uploaded
+#   ./deploy.sh --dry-run       # Show what would be uploaded (skips tests)
 #
 ###############################################################################
 
@@ -67,12 +67,12 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --dry-run        Show what would be uploaded without uploading"
+            echo "  --dry-run        Show what would be uploaded without uploading (skips tests)"
             echo "  --test           Run both PHPUnit AND Cypress tests before deploying"
             echo "  --clear-cache    Clear server caches after deployment"
             echo "  --help           Show this help message"
             echo ""
-            echo "Note: PHPUnit tests always run before deployment."
+            echo "Note: PHPUnit tests always run before deployment (unless --dry-run is used)."
             echo "      Use --test flag to also run Cypress/E2E tests."
             exit 0
             ;;
@@ -354,76 +354,85 @@ echo "  Path: ${SERVER_PATH}"
 echo "  SSH Port: ${SSH_PORT}"
 echo ""
 
-# Run PHP lint checks before tests
-run_php_lint
+# Run PHP lint checks before tests (skip in dry-run)
+if [ "$DRY_RUN" = false ]; then
+    run_php_lint
+fi
 
-# ALWAYS run PHPUnit tests before deployment
-# Temporarily disable exit-on-error to handle test results ourselves
-set +e
-run_phpunit_tests
-PHPUNIT_RESULT=$?
-set -e
+# ALWAYS run PHPUnit tests before deployment UNLESS --dry-run is used
+if [ "$DRY_RUN" = false ]; then
+    # Temporarily disable exit-on-error to handle test results ourselves
+    set +e
+    run_phpunit_tests
+    PHPUNIT_RESULT=$?
+    set -e
 
-# Exit code 0 = all tests passed, proceed
-if [ $PHPUNIT_RESULT -eq 0 ]; then
-    echo ""
-    echo -e "${GREEN}✓ All tests passed successfully${NC}"
-    echo ""
-# Exit code 2 = errors/failures but some tests passed
-elif [ $PHPUNIT_RESULT -eq 2 ]; then
-    echo ""
-    echo -e "${YELLOW}⚠ Some tests have issues (exit code: $PHPUNIT_RESULT)${NC}"
-    echo ""
-    
-    # Count passing tests from the Production suite we just ran
-    PASSING_COUNT=$(./vendor/bin/phpunit --testsuite=Production --testdox 2>&1 | grep -c "✔" || echo "0")
-    
-    echo -e "${BLUE}Production Test Suite Status:${NC}"
-    echo "  Tests passing: $PASSING_COUNT/180"
-    echo "  Coverage: $(awk "BEGIN {printf \"%.0f\", ($PASSING_COUNT/180)*100}")%"
-    echo ""
-    
-    # Require at least 100 tests passing (55% coverage minimum)
-    if [ "$PASSING_COUNT" -ge 100 ]; then
-        echo -e "${GREEN}✓ Sufficient test coverage ($PASSING_COUNT tests passing)${NC}"
-        echo -e "${YELLOW}  Proceeding with deployment${NC}"
+    # Exit code 0 = all tests passed, proceed
+    if [ $PHPUNIT_RESULT -eq 0 ]; then
         echo ""
-        echo "Note: Remaining test failures are primarily test infrastructure issues."
-        echo "Run './vendor/bin/phpunit --testsuite=Production' for details."
+        echo -e "${GREEN}✓ All tests passed successfully${NC}"
         echo ""
+    # Exit code 2 = errors/failures but some tests passed
+    elif [ $PHPUNIT_RESULT -eq 2 ]; then
+        echo ""
+        echo -e "${YELLOW}⚠ Some tests have issues (exit code: $PHPUNIT_RESULT)${NC}"
+        echo ""
+        
+        # Count passing tests from the Production suite we just ran
+        PASSING_COUNT=$(./vendor/bin/phpunit --testsuite=Production --testdox 2>&1 | grep -c "✔" || echo "0")
+        
+        echo -e "${BLUE}Production Test Suite Status:${NC}"
+        echo "  Tests passing: $PASSING_COUNT/180"
+        echo "  Coverage: $(awk "BEGIN {printf \"%.0f\", ($PASSING_COUNT/180)*100}")%"
+        echo ""
+        
+        # Require at least 100 tests passing (55% coverage minimum)
+        if [ "$PASSING_COUNT" -ge 100 ]; then
+            echo -e "${GREEN}✓ Sufficient test coverage ($PASSING_COUNT tests passing)${NC}"
+            echo -e "${YELLOW}  Proceeding with deployment${NC}"
+            echo ""
+            echo "Note: Remaining test failures are primarily test infrastructure issues."
+            echo "Run './vendor/bin/phpunit --testsuite=Production' for details."
+            echo ""
+        else
+            echo -e "${RED}✗ Insufficient test coverage${NC}"
+            echo "  Current: $PASSING_COUNT/180 tests passing"
+            echo "  Required: 100/180 minimum (55%)"
+            echo ""
+            echo "Fix tests or run 'composer install' to refresh dependencies."
+            exit 1
+        fi
+    # Exit code 1 or other = critical failure
     else
-        echo -e "${RED}✗ Insufficient test coverage${NC}"
-        echo "  Current: $PASSING_COUNT/180 tests passing"
-        echo "  Required: 100/180 minimum (55%)"
         echo ""
-        echo "Fix tests or run 'composer install' to refresh dependencies."
+        echo -e "${RED}✗ Test suite failed with exit code: $PHPUNIT_RESULT${NC}"
+        echo ""
+        echo "This usually means a critical error occurred."
+        echo "Check: ./vendor/bin/phpunit --testsuite=Production"
         exit 1
     fi
-# Exit code 1 or other = critical failure
+
+    # Run Cypress tests if --test flag was passed
+    if [ "$RUN_TESTS" = true ]; then
+        echo ""
+        run_cypress_tests
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}✗ Cypress tests failed. Aborting deployment.${NC}"
+            echo ""
+            echo "Fix the failing tests before deploying."
+            exit 1
+        fi
+    fi
+
+    echo ""
+    echo -e "${GREEN}✓ All tests passed${NC}"
+    echo ""
 else
     echo ""
-    echo -e "${RED}✗ Test suite failed with exit code: $PHPUNIT_RESULT${NC}"
+    echo -e "${YELLOW}⚠ DRY RUN MODE - Skipping tests${NC}"
+    echo "  Tests will run during actual deployment"
     echo ""
-    echo "This usually means a critical error occurred."
-    echo "Check: ./vendor/bin/phpunit --testsuite=Production"
-    exit 1
 fi
-
-# Run Cypress tests if --test flag was passed
-if [ "$RUN_TESTS" = true ]; then
-    echo ""
-    run_cypress_tests
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}✗ Cypress tests failed. Aborting deployment.${NC}"
-        echo ""
-        echo "Fix the failing tests before deploying."
-        exit 1
-    fi
-fi
-
-echo ""
-echo -e "${GREEN}✓ All tests passed${NC}"
-echo ""
 
 # Deploy to server
 deploy_to_server
