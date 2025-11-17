@@ -8,6 +8,7 @@ deploy.local.sh
 
 # Development
 node_modules/
+# Include production dependencies in repo (exclude dev dependencies)
 vendor/*
 !vendor/autoload.php
 !vendor/composer/**
@@ -17,6 +18,11 @@ vendor/*
 !vendor/phpoffice/**
 !vendor/psr/**
 !vendor/symfony/polyfill-mbstring/**
+# Exclude dev dependencies
+vendor/phpunit/**
+vendor/yoast/**
+vendor/mockery/**
+vendor/brain/**
 todo.list
 .phpunit.result.cache
 .DS_Store
