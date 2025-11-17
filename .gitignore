@@ -13,7 +13,7 @@ vendor/*
 !vendor/composer/**
 !vendor/ezyang/**
 !vendor/maennchen/**
-!vendor/myclabs/**
+!vendor/myclabs/php-enum/**
 !vendor/phpoffice/**
 !vendor/psr/**
 !vendor/symfony/polyfill-mbstring/**
