@@ -1747,7 +1747,14 @@ function intersoccer_render_tournaments_page() {
         $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
         $activity_types = ['Tournament', 'Tournament, Girls Only', "Tournament, Girls' only"];
         $type_placeholders = implode(',', array_fill(0, count($activity_types), '%s'));
-        $conditions = ["is_placeholder = 0", "activity_type IN ($type_placeholders)"];
+        
+        // Use helper function to check if is_placeholder column exists
+        $placeholder_filter = intersoccer_roster_placeholder_where();
+        $conditions = ["activity_type IN ($type_placeholders)"];
+        if ($placeholder_filter) {
+            // Remove the " AND " prefix and add as a condition
+            $conditions[] = ltrim($placeholder_filter, ' AND ');
+        }
         $params = $activity_types;
 
         $rows = [];
@@ -1762,8 +1769,13 @@ function intersoccer_render_tournaments_page() {
         }
 
         if ($rows === []) {
-            $sql = "SELECT event_signature, season, venue, city, age_group, times, product_name, order_item_id, variation_id, start_date, end_date
-                    FROM {$rosters_table}
+            $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
+            $sql = "SELECT r.event_signature, r.season, r.venue, 
+                           COALESCE(oim.meta_value, 'N/A') as city, 
+                           r.age_group, r.times, r.product_name, 
+                           r.order_item_id, r.variation_id, r.start_date, r.end_date
+                    FROM {$rosters_table} r
+                    LEFT JOIN {$order_itemmeta_table} oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                     WHERE " . implode(' AND ', $conditions);
             $rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
         }
