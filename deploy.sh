@@ -254,10 +254,11 @@ deploy_to_server() {
         --include='vendor/composer/**' \
         --include='vendor/ezyang/**' \
         --include='vendor/maennchen/**' \
+        --include='vendor/markbaker/**' \
         --include='vendor/myclabs/php-enum/**' \
         --include='vendor/phpoffice/**' \
         --include='vendor/psr/**' \
-        --include='vendor/symfony/polyfill-mbstring/**' \
+        --include='vendor/symfony/**' \
         --exclude='vendor/phpunit/**' \
         --exclude='vendor/yoast/**' \
         --exclude='vendor/mockery/**' \
