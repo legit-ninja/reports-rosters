@@ -9,9 +9,6 @@
 
 defined('ABSPATH') or die('Restricted access');
 
-// Start output buffering early
-ob_start();
-
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -154,8 +151,9 @@ function intersoccer_export_roster() {
     check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
 
     if (!current_user_can('manage_options') && !current_user_can('coach')) {
-        ob_end_clean();
-        wp_send_json_error(__('You do not have permission to export rosters.', 'intersoccer-reports-rosters'));
+        wp_send_json_error([
+            'message' => __('You do not have permission to export rosters.', 'intersoccer-reports-rosters')
+        ]);
     }
     // Only log if debugging
     if (defined('WP_DEBUG') && WP_DEBUG) {
@@ -177,14 +175,16 @@ function intersoccer_export_roster() {
     $activity_types = $activity_types_str ? array_map('trim', explode(',', $activity_types_str)) : ['Camp', 'Course', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only'];
 
     if (!$use_fields && empty($variation_ids) && empty($event_signature)) {
-        ob_end_clean();
-        wp_send_json_error(__('No variation IDs, event signature, or fields provided for export.', 'intersoccer-reports-rosters'));
+        wp_send_json_error([
+            'message' => __('No variation IDs, event signature, or fields provided for export.', 'intersoccer-reports-rosters')
+        ]);
     }
     
     // Additional validation for use_fields mode
     if ($use_fields && $variation_id <= 0 && empty($variation_ids) && empty($activity_types)) {
-        ob_end_clean();
-        wp_send_json_error(__('No variation ID, variation IDs, or activity types provided for field-based export.', 'intersoccer-reports-rosters'));
+        wp_send_json_error([
+            'message' => __('No variation ID, variation IDs, or activity types provided for field-based export.', 'intersoccer-reports-rosters')
+        ]);
     }
     // Only log if debugging
     if (defined('WP_DEBUG') && WP_DEBUG) {
@@ -417,8 +417,9 @@ function intersoccer_export_roster() {
     }
 
     if (empty($rosters)) {
-        ob_end_clean();
-        wp_send_json_error(__('No roster data found for export.', 'intersoccer-reports-rosters'));
+        wp_send_json_error([
+            'message' => __('No roster data found for export.', 'intersoccer-reports-rosters')
+        ]);
     }
 
     // Prepare base roster and headers for both CSV and Excel exports
@@ -626,40 +627,42 @@ function intersoccer_export_roster() {
         $sheet->setCellValue('A' . ($row + 4), 'Event: ' . ($base_roster['course_day'] ?: ($base_roster['camp_terms'] ?? 'N/A')));
         $sheet->setCellValue('A' . ($row + 5), 'Total Players: ' . count($rosters));
 
-        // Clear all output buffers
-        while (ob_get_level()) {
-            ob_end_clean();
-        }
+        // Generate file content to buffer (for AJAX response)
         ob_start();
-
-        // Only log if debugging
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('InterSoccer: Before Excel save. Memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
-        }
-        error_log('InterSoccer: Sending headers for roster export with dates of birth');
-        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=UTF-8');
-        header('Content-Disposition: attachment; filename="' . $filename . '"');
-        header('Content-Transfer-Encoding: binary');
-        header('Cache-Control: max-age=0');
-        header('Expires: 0');
-        header('Pragma: public');
-
         $writer = new Xlsx($spreadsheet);
-        error_log('InterSoccer: Before Excel save. Memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
         $writer->save('php://output');
-        intersoccer_log_audit('export_roster_excel', 'Exported for variation_ids: ' . implode(',', $variation_ids));
-        ob_end_flush();
-        exit;
-    } catch (Exception $e) {
-        error_log('InterSoccer: Excel export error: ' . $e->getMessage() . ' on line ' . $e->getLine() . '. Memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
-        // Fallback to CSV export
-        try {
-            error_log('InterSoccer: Attempting CSV export as fallback');
-            $filename_csv = 'roster_' . sanitize_title($base_roster['product_name'] . '_' . ($base_roster['camp_terms'] ?: $base_roster['course_day']) . '_' . $base_roster['venue']) . '_' . date('Y-m-d_H-i-s') . '.csv';
-            header('Content-Type: text/csv; charset=UTF-8');
-            header('Content-Disposition: attachment; filename="' . $filename_csv . '"');
-            header('Pragma: no-cache');
-            header('Expires: 0');
+        $content = ob_get_clean();
+        
+        // Log audit trail (only if not in production to avoid performance issues)
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            intersoccer_log_audit('export_roster_excel', 'Exported for variation_ids: ' . implode(',', $variation_ids));
+        }
+        
+        // Send JSON response with base64-encoded content (like booking reports)
+        wp_send_json_success([
+            'content' => base64_encode($content),
+            'filename' => $filename
+        ]);
+        } catch (Exception $e) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer: Excel export error: ' . $e->getMessage() . ' on line ' . $e->getLine() . '. Memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
+            }
+            // Fallback to CSV export
+            try {
+                // Clear all output buffers before CSV fallback
+                while (ob_get_level()) {
+                    ob_end_clean();
+                }
+                ob_start();
+                
+                $filename_csv = 'roster_' . sanitize_title($base_roster['product_name'] . '_' . ($base_roster['camp_terms'] ?: $base_roster['course_day']) . '_' . $base_roster['venue']) . '_' . date('Y-m-d_H-i-s') . '.csv';
+                
+                if (!headers_sent()) {
+                    header('Content-Type: text/csv; charset=UTF-8');
+                    header('Content-Disposition: attachment; filename="' . $filename_csv . '"');
+                    header('Pragma: no-cache');
+                    header('Expires: 0');
+                }
 
             $output = fopen('php://output', 'w');
             // Output BOM for UTF-8
@@ -766,12 +769,20 @@ function intersoccer_export_roster() {
             }
 
             fclose($output);
-            ob_end_flush();
-            exit;
+            $csv_content = ob_get_clean();
+            
+            // Send JSON response with base64-encoded CSV content
+            wp_send_json_success([
+                'content' => base64_encode($csv_content),
+                'filename' => $filename_csv
+            ]);
         } catch (Exception $e) {
-            error_log('InterSoccer: CSV export error: ' . $e->getMessage());
-            ob_end_clean();
-            wp_send_json_error(__('Error generating export file.', 'intersoccer-reports-rosters'));
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer: CSV export error: ' . $e->getMessage());
+            }
+            wp_send_json_error([
+                'message' => __('Error generating export file.', 'intersoccer-reports-rosters')
+            ]);
         }
     }
 }
