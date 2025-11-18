@@ -707,13 +707,13 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             } else {
                 error_log("InterSoccer: Regex failed to match camp_terms $camp_terms for order $order_id, item $order_item_id");
             }
-        } elseif ($activity_type === 'Course' && !empty($order_item_meta['Start Date']) && !empty($order_item_meta['End Date'])) {
+        } elseif (($activity_type === 'Course' || $activity_type === 'Tournament') && !empty($order_item_meta['Start Date']) && !empty($order_item_meta['End Date'])) {
             // Log raw date values for debugging
             error_log("InterSoccer: Raw Start Date for order $order_id, item $order_item_id: " . print_r($order_item_meta['Start Date'], true));
             error_log("InterSoccer: Raw End Date for order $order_id, item $order_item_id: " . print_r($order_item_meta['End Date'], true));
 
-            // Try multiple date formats
-            $possible_formats = ['m/d/Y', 'd/m/Y', 'Y-m-d', 'j F Y'];
+            // Try multiple date formats (including 'F j, Y' for "December 14, 2025")
+            $possible_formats = ['F j, Y', 'm/d/Y', 'd/m/Y', 'Y-m-d', 'j F Y', 'M j, Y'];
             $start_date = null;
             $end_date = null;
             foreach ($possible_formats as $format) {
@@ -743,7 +743,9 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                 $event_dates = "$start_date to $end_date";
             }
         } else {
-            error_log("InterSoccer: Missing or invalid Start Date/End Date for Course in order $order_id, item $order_item_id. Using defaults.");
+            if ($activity_type === 'Course' || $activity_type === 'Tournament') {
+                error_log("InterSoccer: Missing or invalid Start Date/End Date for $activity_type in order $order_id, item $order_item_id. Using defaults.");
+            }
             $start_date = '1970-01-01';
             $end_date = '1970-01-01';
             $event_dates = 'N/A';

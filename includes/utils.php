@@ -258,8 +258,8 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     // Parse dates
     if ($product_type === 'camp' && !empty($camp_terms) && $camp_terms !== 'N/A') {
         list($start_date, $end_date, $event_dates) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
-    } elseif ($product_type === 'course' && !empty($start_date) && !empty($end_date)) {
-        error_log('InterSoccer: Processing course dates for item ' . $item_id . ' in order ' . $order_id . ' - start_date: ' . var_export($start_date, true) . ', end_date: ' . var_export($end_date, true));
+    } elseif (($product_type === 'course' || $product_type === 'tournament') && !empty($start_date) && !empty($end_date)) {
+        error_log('InterSoccer: Processing ' . $product_type . ' dates for item ' . $item_id . ' in order ' . $order_id . ' - start_date: ' . var_export($start_date, true) . ', end_date: ' . var_export($end_date, true));
         $start_date_obj = DateTime::createFromFormat('F j, Y', $start_date);
         $end_date_obj = DateTime::createFromFormat('F j, Y', $end_date);
         if ($start_date_obj && $end_date_obj) {
@@ -274,7 +274,7 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
                 $end_date = $end_date_obj->format('Y-m-d');
                 $event_dates = "$start_date to $end_date";
             } else {
-                error_log('InterSoccer: Invalid course date format for item ' . $item_id . ' in order ' . $order_id . ' - Using defaults');
+                error_log('InterSoccer: Invalid ' . $product_type . ' date format for item ' . $item_id . ' in order ' . $order_id . ' - Using defaults');
                 $start_date = '1970-01-01';
                 $end_date = '1970-01-01';
                 $event_dates = 'N/A';

@@ -9,6 +9,7 @@
 # Usage:
 #   ./deploy.sh                 # Deploy to dev server (runs PHPUnit tests)
 #   ./deploy.sh --test          # Run PHPUnit + Cypress tests before deploying
+#   ./deploy.sh --no-tests      # Skip PHPUnit tests (deploy prod-ready code)
 #   ./deploy.sh --no-cache      # Deploy and clear server caches
 #   ./deploy.sh --dry-run       # Show what would be uploaded (skips tests)
 #
@@ -47,6 +48,7 @@ fi
 # Parse command line arguments
 DRY_RUN=false
 RUN_TESTS=false
+SKIP_TESTS=false
 CLEAR_CACHE=false
 
 while [[ $# -gt 0 ]]; do
@@ -59,6 +61,10 @@ while [[ $# -gt 0 ]]; do
             RUN_TESTS=true
             shift
             ;;
+        --no-tests)
+            SKIP_TESTS=true
+            shift
+            ;;
         --no-cache|--clear-cache)
             CLEAR_CACHE=true
             shift
@@ -69,11 +75,13 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --dry-run        Show what would be uploaded without uploading (skips tests)"
             echo "  --test           Run both PHPUnit AND Cypress tests before deploying"
+            echo "  --no-tests       Skip PHPUnit tests (deploy prod-ready code without test dependencies)"
             echo "  --clear-cache    Clear server caches after deployment"
             echo "  --help           Show this help message"
             echo ""
-            echo "Note: PHPUnit tests always run before deployment (unless --dry-run is used)."
+            echo "Note: PHPUnit tests run by default before deployment (unless --dry-run or --no-tests is used)."
             echo "      Use --test flag to also run Cypress/E2E tests."
+            echo "      Use --no-tests to skip tests and deploy production-ready code."
             exit 0
             ;;
         *)
@@ -401,8 +409,8 @@ if [ "$DRY_RUN" = false ]; then
     run_php_lint
 fi
 
-# ALWAYS run PHPUnit tests before deployment UNLESS --dry-run is used
-if [ "$DRY_RUN" = false ]; then
+# ALWAYS run PHPUnit tests before deployment UNLESS --dry-run or --no-tests is used
+if [ "$DRY_RUN" = false ] && [ "$SKIP_TESTS" = false ]; then
     # Temporarily disable exit-on-error to handle test results ourselves
     set +e
     run_phpunit_tests
@@ -471,8 +479,13 @@ if [ "$DRY_RUN" = false ]; then
     echo ""
 else
     echo ""
-    echo -e "${YELLOW}⚠ DRY RUN MODE - Skipping tests${NC}"
-    echo "  Tests will run during actual deployment"
+    if [ "$DRY_RUN" = true ]; then
+        echo -e "${YELLOW}⚠ DRY RUN MODE - Skipping tests${NC}"
+        echo "  Tests will run during actual deployment"
+    elif [ "$SKIP_TESTS" = true ]; then
+        echo -e "${YELLOW}⚠ NO-TESTS MODE - Skipping PHPUnit tests${NC}"
+        echo "  Deploying production-ready code without running tests"
+    fi
     echo ""
 fi
 
