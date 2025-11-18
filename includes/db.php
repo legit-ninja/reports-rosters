@@ -650,24 +650,32 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             }
         }
         $age_group = $order_item_meta['pa_age-group'] ?? ($variation ? $variation->get_attribute('pa_age-group') : ($parent_product ? $parent_product->get_attribute('pa_age-group') : 'N/A'));
-        $course_day = ($activity_type === 'Course') ? ($order_item_meta['pa_course-day'] ?? ($variation ? $variation->get_attribute('pa_course-day') : ($parent_product ? $parent_product->get_attribute('pa_course-day') : 'N/A'))) : 'N/A';
+        // Extract course_day for Courses, tournament_day for Tournaments
+        if ($activity_type === 'Course') {
+            $course_day = $order_item_meta['pa_course-day'] ?? ($variation ? $variation->get_attribute('pa_course-day') : ($parent_product ? $parent_product->get_attribute('pa_course-day') : 'N/A'));
+        } elseif ($activity_type === 'Tournament') {
+            // For Tournaments, extract Tournament Day from metadata
+            $course_day = $order_item_meta['Tournament Day'] ?? $order_item_meta['pa_tournament-day'] ?? ($variation ? $variation->get_attribute('pa_tournament-day') : ($parent_product ? $parent_product->get_attribute('pa_tournament-day') : 'N/A'));
+        } else {
+            $course_day = 'N/A';
+        }
 
-        // Extract times with postmeta fallback
-        $times = $order_item_meta['Course Times'] ?? $order_item_meta['Camp Times'] ?? null;
+        // Extract times with postmeta fallback (supports Course, Camp, and Tournament)
+        $times = $order_item_meta['Course Times'] ?? $order_item_meta['Camp Times'] ?? $order_item_meta['Tournament Time'] ?? null;
         if (!$times) {
-            $times = $variation ? ($variation->get_attribute('pa_course-times') ?? $variation->get_attribute('pa_camp-times')) : null;
+            $times = $variation ? ($variation->get_attribute('pa_course-times') ?? $variation->get_attribute('pa_camp-times') ?? $variation->get_attribute('pa_tournament-time')) : null;
             if (!$times && $parent_product) {
-                $times = $parent_product->get_attribute('pa_course-times') ?? $parent_product->get_attribute('pa_camp-times');
+                $times = $parent_product->get_attribute('pa_course-times') ?? $parent_product->get_attribute('pa_camp-times') ?? $parent_product->get_attribute('pa_tournament-time');
             }
             if (!$times && $variation_id) {
-                $times = get_post_meta($variation_id, 'attribute_pa_camp-times', true) ?: get_post_meta($variation_id, 'attribute_pa_course-times', true);
+                $times = get_post_meta($variation_id, 'attribute_pa_camp-times', true) ?: get_post_meta($variation_id, 'attribute_pa_course-times', true) ?: get_post_meta($variation_id, 'attribute_pa_tournament-time', true);
             }
             if (!$times && $product_id) {
-                $times = get_post_meta($product_id, 'attribute_pa_camp-times', true) ?: get_post_meta($product_id, 'attribute_pa_course-times', true);
+                $times = get_post_meta($product_id, 'attribute_pa_camp-times', true) ?: get_post_meta($product_id, 'attribute_pa_course-times', true) ?: get_post_meta($product_id, 'attribute_pa_tournament-time', true);
             }
             $times = $times ?: 'N/A';
         }
-        error_log("InterSoccer: Times source for order $order_id, item $order_item_id: Meta - " . ($order_item_meta['Course Times'] ?? $order_item_meta['Camp Times'] ?? 'N/A') . ', Variation attr - ' . ($variation ? ($variation->get_attribute('pa_course-times') ?? $variation->get_attribute('pa_camp-times') ?? 'N/A') : 'N/A') . ', Parent attr - ' . ($parent_product ? ($parent_product->get_attribute('pa_course-times') ?? $parent_product->get_attribute('pa_camp-times') ?? 'N/A') : 'N/A') . ', Postmeta - ' . (get_post_meta($variation_id ?: $product_id, 'attribute_pa_camp-times', true) ?: get_post_meta($variation_id ?: $product_id, 'attribute_pa_course-times', true) ?: 'N/A') . ', Final: ' . $times);
+        error_log("InterSoccer: Times source for order $order_id, item $order_item_id: Meta - " . ($order_item_meta['Course Times'] ?? $order_item_meta['Camp Times'] ?? $order_item_meta['Tournament Time'] ?? 'N/A') . ', Variation attr - ' . ($variation ? ($variation->get_attribute('pa_course-times') ?? $variation->get_attribute('pa_camp-times') ?? $variation->get_attribute('pa_tournament-time') ?? 'N/A') : 'N/A') . ', Parent attr - ' . ($parent_product ? ($parent_product->get_attribute('pa_course-times') ?? $parent_product->get_attribute('pa_camp-times') ?? $parent_product->get_attribute('pa_tournament-time') ?? 'N/A') : 'N/A') . ', Postmeta - ' . (get_post_meta($variation_id ?: $product_id, 'attribute_pa_camp-times', true) ?: get_post_meta($variation_id ?: $product_id, 'attribute_pa_course-times', true) ?: get_post_meta($variation_id ?: $product_id, 'attribute_pa_tournament-time', true) ?: 'N/A') . ', Final: ' . $times);
 
         $start_date = null;
         $end_date = null;

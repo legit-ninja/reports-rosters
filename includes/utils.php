@@ -168,7 +168,7 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     $venue = $item_meta['pa_intersoccer-venues'] ?? $item_meta['InterSoccer Venues'] ?? '';
     $age_group = $item_meta['pa_age-group'] ?? $item_meta['Age Group'] ?? '';
     $camp_terms = $item_meta['pa_camp-terms'] ?? $item_meta['Camp Terms'] ?? '';
-    $times = $item_meta['pa_camp-times'] ?? $item_meta['pa_course-times'] ?? $item_meta['Camp Times'] ?? $item_meta['Course Times'] ?? '';
+    $times = $item_meta['pa_camp-times'] ?? $item_meta['pa_course-times'] ?? $item_meta['pa_tournament-time'] ?? $item_meta['Camp Times'] ?? $item_meta['Course Times'] ?? $item_meta['Tournament Time'] ?? '';
     $booking_type = $item_meta['pa_booking-type'] ?? $item_meta['Booking Type'] ?? '';
     $selected_days = $item_meta['Days Selected'] ?? '';
     $season = $item_meta['pa_program-season'] ?? $item_meta['Season'] ?? '';
@@ -178,11 +178,29 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     $start_date = $item_meta['Start Date'] ?? null;
     $end_date = $item_meta['End Date'] ?? null;
     $event_dates = 'N/A';
-    $course_day_slug = $item_meta['pa_course-day'] ?? $item_meta['Course Day'] ?? $raw_order_item_meta['Course Day'] ?? null;
+    // Extract course_day for Courses, tournament_day for Tournaments
+    $product_type = intersoccer_get_product_type_safe($product_id, $variation_id);
     $course_day = 'N/A';
-    if ($course_day_slug) {
-        $term = get_term_by('slug', $course_day_slug, 'pa_course-day');
-        $course_day = $term ? $term->name : ucfirst($course_day_slug);
+    if ($product_type === 'tournament') {
+        // For Tournaments, extract Tournament Day from metadata
+        $tournament_day = $item_meta['Tournament Day'] ?? $item_meta['pa_tournament-day'] ?? $raw_order_item_meta['Tournament Day'] ?? null;
+        if ($tournament_day) {
+            // If it's already a readable name (like "Sunday"), use it directly
+            if (preg_match('/^[A-Z][a-z]+$/', $tournament_day)) {
+                $course_day = $tournament_day;
+            } else {
+                // Otherwise try to get term name from slug
+                $term = get_term_by('slug', $tournament_day, 'pa_tournament-day');
+                $course_day = $term ? $term->name : ucfirst($tournament_day);
+            }
+        }
+    } else {
+        // For Courses, extract Course Day
+        $course_day_slug = $item_meta['pa_course-day'] ?? $item_meta['Course Day'] ?? $raw_order_item_meta['Course Day'] ?? null;
+        if ($course_day_slug) {
+            $term = get_term_by('slug', $course_day_slug, 'pa_course-day');
+            $course_day = $term ? $term->name : ucfirst($course_day_slug);
+        }
     }
     $late_pickup = (!empty($item_meta['Late Pickup Type'])) ? 'Yes' : 'No';
     $late_pickup_days = $item_meta['Late Pickup Days'] ?? '';

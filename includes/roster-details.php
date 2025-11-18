@@ -553,9 +553,27 @@ function intersoccer_render_roster_details_page() {
     echo '<p>' . esc_html__('Product Name: ') . esc_html($base_roster->product_name ?? 'N/A') . '</p>';
     echo '<p>' . esc_html__('Venue: ') . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($base_roster->venue, 'pa_intersoccer-venues') : $base_roster->venue ?? 'N/A') . '</p>';
     echo '<p>' . esc_html__('Age Group: ') . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($base_roster->age_group, 'pa_age-group') : $base_roster->age_group ?? 'N/A') . '</p>';
-    echo '<p>' . ($base_roster->course_day ? esc_html__('Course Day: ') . esc_html($base_roster->course_day) : esc_html__('Camp Terms: ') . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($base_roster->camp_terms, 'pa_camp-terms') : $base_roster->camp_terms ?? 'N/A')) . '</p>';
-    $times_label = ($is_camp_like ? __('Camp Times: ', 'intersoccer-reports-rosters') : __('Course Times: ', 'intersoccer-reports-rosters'));
-    echo '<p>' . esc_html($times_label) . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($base_roster->times, 'pa_camp-times') : $base_roster->times ?? 'N/A') . '</p>';
+    // Display day/terms based on activity type
+    if ($base_roster->activity_type === 'Tournament') {
+        echo '<p>' . esc_html__('Tournament Day: ', 'intersoccer-reports-rosters') . esc_html($base_roster->course_day ?? 'N/A') . '</p>';
+    } elseif ($base_roster->course_day && $base_roster->course_day !== 'N/A') {
+        echo '<p>' . esc_html__('Course Day: ', 'intersoccer-reports-rosters') . esc_html($base_roster->course_day) . '</p>';
+    } else {
+        echo '<p>' . esc_html__('Camp Terms: ', 'intersoccer-reports-rosters') . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($base_roster->camp_terms, 'pa_camp-terms') : $base_roster->camp_terms ?? 'N/A') . '</p>';
+    }
+    
+    // Display times label based on activity type
+    if ($base_roster->activity_type === 'Tournament') {
+        $times_label = __('Tournament Time: ', 'intersoccer-reports-rosters');
+        $times_value = $base_roster->times ?? 'N/A';
+    } elseif ($is_camp_like) {
+        $times_label = __('Camp Times: ', 'intersoccer-reports-rosters');
+        $times_value = function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($base_roster->times, 'pa_camp-times') : ($base_roster->times ?? 'N/A');
+    } else {
+        $times_label = __('Course Times: ', 'intersoccer-reports-rosters');
+        $times_value = function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($base_roster->times, 'pa_course-times') : ($base_roster->times ?? 'N/A');
+    }
+    echo '<p>' . esc_html($times_label) . esc_html($times_value) . '</p>';
     echo '<p>' . esc_html__('Girls Only: ') . ($is_girls_only ? 'Yes' : 'No') . '</p>';
     echo '<p><strong>' . esc_html__('Total Players') . ':</strong> ' . esc_html(count($rosters)) . '</p>';
     echo '</div>';
