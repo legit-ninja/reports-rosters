@@ -1146,6 +1146,29 @@ class RosterBuilder {
             }
             
             if ($options['update_existing']) {
+                // Preserve event_completed status if it was set to 1 (closed)
+                // Also check if any roster with the same event_signature is marked as completed
+                $event_signature_completed = false;
+                if (!empty($roster_data['event_signature'])) {
+                    $event_signature_completed = $this->roster_repository->where([
+                        'event_signature' => $roster_data['event_signature'],
+                        'event_completed' => 1
+                    ])->count() > 0;
+                }
+                
+                if ((isset($existing_roster->event_completed) && $existing_roster->event_completed == 1) || $event_signature_completed) {
+                    $roster_data['event_completed'] = 1;
+                    $this->logger->debug('Preserving event_completed=1 for existing roster entry', [
+                        'id' => $existing_roster->id,
+                        'order_id' => $roster_data['order_id'],
+                        'event_signature' => $roster_data['event_signature'] ?? 'N/A',
+                        'reason' => $event_signature_completed ? 'event_signature' : 'existing_entry'
+                    ]);
+                } elseif (!isset($roster_data['event_completed'])) {
+                    // If not explicitly set and existing is not closed, ensure it's 0
+                    $roster_data['event_completed'] = 0;
+                }
+                
                 $updated_roster = $this->roster_repository->update($existing_roster->id, $roster_data);
                 if ($updated_roster) {
                     $this->build_stats['rosters_updated']++;

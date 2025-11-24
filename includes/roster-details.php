@@ -575,13 +575,157 @@ function intersoccer_render_roster_details_page() {
     }
     echo '<p>' . esc_html($times_label) . esc_html($times_value) . '</p>';
     echo '<p>' . esc_html__('Girls Only: ') . ($is_girls_only ? 'Yes' : 'No') . '</p>';
+    
+    // Check if roster is closed
+    $is_closed = !empty($base_roster->event_completed);
+    if ($is_closed) {
+        echo '<p><strong style="color: #d63638;">' . esc_html__('Status: ', 'intersoccer-reports-rosters') . '</strong><span style="color: #d63638;">' . esc_html__('Closed', 'intersoccer-reports-rosters') . '</span></p>';
+    }
+    
     echo '<p><strong>' . esc_html__('Total Players') . ':</strong> ' . esc_html(count($rosters)) . '</p>';
+    
+    // Close Out / Reopen button
+    echo '<div style="margin-top: 20px;">';
+    if ($is_closed) {
+        echo '<button type="button" class="reopen-roster-btn" id="roster-reopen-btn" 
+                data-event-signature="' . esc_attr($base_roster->event_signature ?? '') . '"
+                title="' . esc_attr__('Reopen Roster', 'intersoccer-reports-rosters') . '">';
+        echo esc_html__('Reopen', 'intersoccer-reports-rosters');
+        echo '</button>';
+    } else {
+        echo '<button type="button" class="close-roster-btn" id="roster-close-btn"
+                data-event-signature="' . esc_attr($base_roster->event_signature ?? '') . '"
+                title="' . esc_attr__('Close Out Roster', 'intersoccer-reports-rosters') . '">';
+        echo esc_html__('Close Out', 'intersoccer-reports-rosters');
+        echo '</button>';
+    }
     echo '</div>';
     
-    // JavaScript for bulk actions
+    // Add CSS for icon buttons
+    echo '<style>
+        .close-roster-btn, .reopen-roster-btn {
+            background: #dc3232;
+            color: white;
+            padding: 8px 10px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            transition: all 0.2s ease;
+            width: 32px;
+            height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-indent: -9999px;
+            position: relative;
+        }
+        .close-roster-btn::before {
+            content: "\\00D7";
+            position: absolute;
+            text-indent: 0;
+            font-size: 24px;
+            font-weight: bold;
+            line-height: 1;
+        }
+        .close-roster-btn:hover {
+            background: #a00;
+            transform: translateY(-1px);
+        }
+        .reopen-roster-btn {
+            background: #46b450;
+        }
+        .reopen-roster-btn::before {
+            content: "\\21BB";
+            position: absolute;
+            text-indent: 0;
+            font-size: 18px;
+        }
+        .reopen-roster-btn:hover {
+            background: #2e7d32;
+            transform: translateY(-1px);
+        }
+    </style>';
+    
+    echo '</div>';
+    
+    // JavaScript for bulk actions and close/reopen
     ?>
     <script type="text/javascript">
     jQuery(document).ready(function($) {
+        // Close roster handler (for roster details page)
+        $(document).on('click', '.close-roster-btn, #roster-close-btn', function(e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var eventSignature = $btn.data('event-signature');
+            
+            if (!confirm('<?php echo esc_js(__('Are you sure you want to close out this roster? This will mark the event as completed.', 'intersoccer-reports-rosters')); ?>')) {
+                return;
+            }
+            
+            $btn.prop('disabled', true).text('<?php echo esc_js(__('Closing...', 'intersoccer-reports-rosters')); ?>');
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'intersoccer_close_out_roster',
+                    nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
+                    event_signature: eventSignature
+                },
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.data.message || '<?php echo esc_js(__('Roster closed successfully.', 'intersoccer-reports-rosters')); ?>');
+                        location.reload();
+                    } else {
+                        alert(response.data.message || '<?php echo esc_js(__('Failed to close roster.', 'intersoccer-reports-rosters')); ?>');
+                        $btn.prop('disabled', false);
+                    }
+                },
+                error: function() {
+                    alert('<?php echo esc_js(__('An error occurred. Please try again.', 'intersoccer-reports-rosters')); ?>');
+                    $btn.prop('disabled', false);
+                }
+            });
+        });
+        
+        // Reopen roster handler (for roster details page)
+        $(document).on('click', '.reopen-roster-btn, #roster-reopen-btn', function(e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var eventSignature = $btn.data('event-signature');
+            
+            if (!confirm('<?php echo esc_js(__('Are you sure you want to reopen this roster?', 'intersoccer-reports-rosters')); ?>')) {
+                return;
+            }
+            
+            $btn.prop('disabled', true).text('<?php echo esc_js(__('Reopening...', 'intersoccer-reports-rosters')); ?>');
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'intersoccer_reopen_roster',
+                    nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
+                    event_signature: eventSignature
+                },
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.data.message || '<?php echo esc_js(__('Roster reopened successfully.', 'intersoccer-reports-rosters')); ?>');
+                        location.reload();
+                    } else {
+                        alert(response.data.message || '<?php echo esc_js(__('Failed to reopen roster.', 'intersoccer-reports-rosters')); ?>');
+                        $btn.prop('disabled', false);
+                    }
+                },
+                error: function() {
+                    alert('<?php echo esc_js(__('An error occurred. Please try again.', 'intersoccer-reports-rosters')); ?>');
+                    $btn.prop('disabled', false);
+                }
+            });
+        });
+        
         const selectAll = $('#selectAll');
         const playerSelects = $('.player-select');
         const bulkActionSelect = $('#bulkActionSelect');

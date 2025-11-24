@@ -63,6 +63,15 @@ class RosterListingService {
             'is_placeholder' => 0,
         ];
 
+        // Add event_completed filter based on status
+        if (isset($filters['status']) && $filters['status'] === 'closed') {
+            $criteria['event_completed'] = 1;
+        } elseif (!isset($filters['status']) || $filters['status'] !== 'all') {
+            // Default: exclude closed rosters
+            $criteria['event_completed'] = 0;
+        }
+        // If status is 'all', don't filter by event_completed
+
         if (!empty($context['accessible_venues'])) {
             $criteria['venue'] = $context['accessible_venues'];
         }
@@ -106,6 +115,7 @@ class RosterListingService {
             'camp_terms' => isset($filters['camp_terms']) ? sanitize_text_field($filters['camp_terms']) : '',
             'age_group' => isset($filters['age_group']) ? sanitize_text_field($filters['age_group']) : '',
             'city' => isset($filters['city']) ? sanitize_text_field($filters['city']) : '',
+            'status' => isset($filters['status']) ? sanitize_text_field($filters['status']) : '',
         ];
     }
 
@@ -177,6 +187,15 @@ class RosterListingService {
             'is_placeholder' => 0,
         ];
 
+        // Add event_completed filter based on status
+        if (isset($filters['status']) && $filters['status'] === 'closed') {
+            $criteria['event_completed'] = 1;
+        } elseif (!isset($filters['status']) || $filters['status'] !== 'all') {
+            // Default: exclude closed rosters
+            $criteria['event_completed'] = 0;
+        }
+        // If status is 'all', don't filter by event_completed
+
         if (!empty($context['accessible_venues'])) {
             $criteria['venue'] = $context['accessible_venues'];
         }
@@ -220,6 +239,7 @@ class RosterListingService {
             'course_day' => isset($filters['course_day']) ? sanitize_text_field($filters['course_day']) : '',
             'age_group' => isset($filters['age_group']) ? sanitize_text_field($filters['age_group']) : '',
             'city' => isset($filters['city']) ? sanitize_text_field($filters['city']) : '',
+            'status' => isset($filters['status']) ? sanitize_text_field($filters['status']) : '',
         ];
     }
 

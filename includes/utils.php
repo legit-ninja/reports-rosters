@@ -415,6 +415,32 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         intersoccer_delete_placeholder_by_signature($data['event_signature']);
     }
 
+    // Check if roster entry already exists and preserve event_completed status
+    // First check by order_item_id, then by event_signature (in case event_signature is already generated)
+    $existing_entry = $wpdb->get_row($wpdb->prepare(
+        "SELECT id, event_completed FROM {$table_name} WHERE order_item_id = %d LIMIT 1",
+        $item_id
+    ));
+    
+    // Also check if any roster with the same event_signature is marked as completed
+    $event_signature_completed = false;
+    if (!empty($data['event_signature'])) {
+        $event_signature_completed = $wpdb->get_var($wpdb->prepare(
+            "SELECT MAX(event_completed) FROM {$table_name} WHERE event_signature = %s",
+            $data['event_signature']
+        ));
+        $event_signature_completed = ($event_signature_completed == 1);
+    }
+    
+    // If entry exists and is marked as completed, or if any roster with same event_signature is completed, preserve that status
+    if (($existing_entry && isset($existing_entry->event_completed) && $existing_entry->event_completed == 1) || $event_signature_completed) {
+        $data['event_completed'] = 1;
+        error_log('InterSoccer: Preserving event_completed=1 for roster entry (order_item_id: ' . $item_id . ', event_signature: ' . $data['event_signature'] . ')');
+    } else {
+        // For new entries or entries that aren't completed, ensure event_completed is set to 0
+        $data['event_completed'] = 0;
+    }
+
     // Insert or update
     $result = $wpdb->replace($table_name, $data);
     $insert_id = $wpdb->insert_id;
