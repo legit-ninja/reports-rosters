@@ -25,6 +25,41 @@ function intersoccer_roster_placeholder_where() {
 }
 
 /**
+ * Helper: Get closed roster filter for WHERE clause
+ * @param string|bool $status 'closed' to show only closed, 'all' to show all, false/default to exclude closed
+ * @return string SQL WHERE clause fragment
+ */
+function intersoccer_roster_closed_where($status = false) {
+    global $wpdb;
+    static $has_column = null;
+    
+    if ($has_column === null) {
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        try {
+            $columns = $wpdb->get_col("DESCRIBE $rosters_table", 0);
+            $has_column = is_array($columns) && in_array('event_completed', $columns);
+        } catch (Exception $e) {
+            // If DESCRIBE fails, assume column doesn't exist
+            error_log('InterSoccer: Error checking for event_completed column: ' . $e->getMessage());
+            $has_column = false;
+        }
+    }
+    
+    if (!$has_column) {
+        return "";
+    }
+    
+    // If showing all or closed only, don't filter by closed status
+    if ($status === 'all' || $status === 'closed') {
+        // For 'closed', we'll filter in the query itself
+        return "";
+    }
+    
+    // Otherwise, exclude closed rosters by default
+    return " AND (event_completed = 0 OR event_completed IS NULL)";
+}
+
+/**
  * Add improved inline CSS for better layout
  */
 add_action('admin_head', function () {
@@ -373,6 +408,102 @@ add_action('admin_head', function () {
             color: white;
             text-decoration: none;
             transform: translateY(-1px);
+            margin-right: 8px;
+        }
+        
+        .close-roster-btn, .reopen-roster-btn {
+            background: #dc3232;
+            color: white;
+            padding: 8px 10px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            transition: all 0.2s ease;
+            width: 32px;
+            height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-indent: -9999px;
+            position: relative;
+        }
+        
+        .close-roster-btn::before {
+            content: "\\00D7";
+            position: absolute;
+            text-indent: 0;
+            font-size: 24px;
+            font-weight: bold;
+            line-height: 1;
+        }
+        
+        .close-roster-btn:hover {
+            background: #a00;
+            transform: translateY(-1px);
+        }
+        
+        .reopen-roster-btn {
+            background: #46b450;
+        }
+        
+        .reopen-roster-btn::before {
+            content: "\\21BB";
+            position: absolute;
+            text-indent: 0;
+            font-size: 18px;
+        }
+        
+        .reopen-roster-btn:hover {
+            background: #2e7d32;
+            transform: translateY(-1px);
+        }
+        
+        .camp-actions, .course-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        /* Bulk actions */
+        .bulk-actions-bar {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            align-items: center;
+            gap: 15px;
+            border: 1px solid #ddd;
+        }
+        
+        .bulk-actions-bar.active {
+            display: flex;
+        }
+        
+        .bulk-actions-bar .selected-count {
+            font-weight: 600;
+            color: #0073aa;
+        }
+        
+        .roster-checkbox {
+            margin-right: 8px;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        
+        .camp-card, .course-card {
+            position: relative;
+        }
+        
+        .camp-card .roster-checkbox,
+        .course-card .roster-checkbox {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 10;
         }
         
         /* No rosters state */
@@ -525,6 +656,8 @@ function intersoccer_render_camps_page() {
     $selected_camp_terms = isset($_GET['camp_terms']) ? sanitize_text_field($_GET['camp_terms']) : '';
     $selected_age_group = isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '';
     $selected_city = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
+    $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : '';
+    $show_closed = ($status_filter === 'closed' || $status_filter === 'all') ? $status_filter : false;
 
     $use_oop_rosters = defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('rosters');
 
@@ -576,11 +709,19 @@ function intersoccer_render_camps_page() {
                           r.event_signature,
                           GROUP_CONCAT(DISTINCT r.start_date) as start_dates,
                           GROUP_CONCAT(DISTINCT r.end_date) as end_dates,
-                          GROUP_CONCAT(DISTINCT r.product_name) as product_names
+                          GROUP_CONCAT(DISTINCT r.product_name) as product_names,
+                          MAX(r.event_completed) as event_completed
                    FROM $rosters_table r
                    LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                    WHERE r.activity_type IN ('Camp', 'Camp, Girls Only', 'Camp, Girls\' only')
                    AND r.girls_only = 0" . intersoccer_roster_placeholder_where();
+        
+        // Add closed filter based on status
+        if ($show_closed === 'closed') {
+            $base_query .= " AND (r.event_completed = 1)";
+        } elseif ($show_closed !== 'all') {
+            $base_query .= intersoccer_roster_closed_where($show_closed);
+        }
 
         if ($is_coach && !empty($coach_accessible_venues)) {
             $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
@@ -595,7 +736,7 @@ function intersoccer_render_camps_page() {
         $start_time = microtime(true);
         $groups = $wpdb->get_results($base_query, ARRAY_A);
         $query_time = microtime(true) - $start_time;
-        $filter = intersoccer_roster_placeholder_where();
+        $filter = intersoccer_roster_placeholder_where() . intersoccer_roster_closed_where($show_closed);
         $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0{$filter} AND venue IS NOT NULL ORDER BY venue");
         $all_camp_terms = $wpdb->get_col("SELECT DISTINCT camp_terms FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0{$filter} AND camp_terms IS NOT NULL ORDER BY camp_terms");
         $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE activity_type = 'Camp' AND girls_only = 0{$filter} AND age_group IS NOT NULL ORDER BY age_group");
@@ -756,7 +897,15 @@ function intersoccer_render_camps_page() {
                 <?php endforeach; ?>
             </select>
         </div>
-        <?php if ($selected_season || $selected_venue || $selected_camp_terms || $selected_age_group || $selected_city): ?>
+        <div class="filter-group">
+            <label>Status</label>
+            <select name="status" onchange="this.form.submit()">
+                <option value="">Active Only</option>
+                <option value="closed" <?php selected($status_filter, 'closed'); ?>>Closed Only</option>
+                <option value="all" <?php selected($status_filter, 'all'); ?>>All</option>
+            </select>
+        </div>
+        <?php if ($selected_season || $selected_venue || $selected_camp_terms || $selected_age_group || $selected_city || $status_filter): ?>
                 <div class="filter-group">
                     <a href="<?php echo admin_url('admin.php?page=intersoccer-camps'); ?>" class="button button-secondary">
                         ↻ <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
@@ -784,6 +933,7 @@ function intersoccer_render_camps_page() {
                                 <?php 
                                 $season_total = array_sum(array_column($camps, 'total_players'));
                                 $camp_count = count($camps);
+                                $active_count = count(array_filter($camps, function($camp) { return empty($camp['event_completed']); }));
                                 ?>
                                 <span class="stat-item">
                                     Players: <?php echo $season_total; ?> <?php _e('players', 'intersoccer-reports-rosters'); ?>
@@ -792,10 +942,23 @@ function intersoccer_render_camps_page() {
                                     Camps: <?php echo $camp_count; ?> <?php _e('camps', 'intersoccer-reports-rosters'); ?>
                                 </span>
                             </div>
+                            <div class="season-actions">
+                                <?php if ($active_count > 0): ?>
+                                    <button type="button" class="close-season-btn" 
+                                            data-season="<?php echo esc_attr($season); ?>"
+                                            data-page="camps"
+                                            title="<?php esc_attr_e('Close all active rosters in this season', 'intersoccer-reports-rosters'); ?>">
+                                        <?php _e('Close All in Season', 'intersoccer-reports-rosters'); ?>
+                                    </button>
+                                <?php endif; ?>
+                            </div>
                         </div>
                         <div class="camps-grid">
                             <?php foreach ($camps as $camp): ?>
                                 <div class="camp-card">
+                                    <input type="checkbox" class="roster-checkbox" 
+                                           data-event-signature="<?php echo esc_attr($camp['event_signature']); ?>"
+                                           data-is-closed="<?php echo !empty($camp['event_completed']) ? '1' : '0'; ?>">
                                     <div class="camp-header">
                                         <h3 class="camp-venue">
                                             📍 <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['venue'], 'pa_intersoccer-venues') : ($camp['venue'] ?: 'Unknown Venue')); ?>
@@ -829,10 +992,24 @@ function intersoccer_render_camps_page() {
                                         <div class="camp-actions">
                                             <?php 
                                             $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=camps&event_signature=' . urlencode($camp['event_signature']) . '&camp_terms=' . urlencode($camp['camp_terms'] ?: 'N/A') . '&venue=' . urlencode($camp['venue']) . '&age_group=' . urlencode($camp['age_group']) . '&times=' . urlencode($camp['times']));
+                                            $is_closed = !empty($camp['event_completed']);
                                             ?>
                                             <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
                                             </a>
+                                            <?php if ($is_closed): ?>
+                                                <button type="button" class="reopen-roster-btn" 
+                                                        data-event-signature="<?php echo esc_attr($camp['event_signature']); ?>"
+                                                        title="<?php esc_attr_e('Reopen Roster', 'intersoccer-reports-rosters'); ?>">
+                                                    <?php _e('Reopen', 'intersoccer-reports-rosters'); ?>
+                                                </button>
+                                            <?php else: ?>
+                                                <button type="button" class="close-roster-btn" 
+                                                        data-event-signature="<?php echo esc_attr($camp['event_signature']); ?>"
+                                                        title="<?php esc_attr_e('Close Out Roster', 'intersoccer-reports-rosters'); ?>">
+                                                    <?php _e('Close Out', 'intersoccer-reports-rosters'); ?>
+                                                </button>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                 </div>
@@ -843,6 +1020,250 @@ function intersoccer_render_camps_page() {
             <?php endif; ?>
         </div>
     </div>
+    
+    <script type="text/javascript">
+    jQuery(document).ready(function($) {
+        // Close roster handler
+        $(document).on('click', '.close-roster-btn', function(e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var eventSignature = $btn.data('event-signature');
+            
+            if (!confirm('<?php echo esc_js(__('Are you sure you want to close out this roster? This will mark the event as completed.', 'intersoccer-reports-rosters')); ?>')) {
+                return;
+            }
+            
+            $btn.prop('disabled', true);
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'intersoccer_close_out_roster',
+                    nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
+                    event_signature: eventSignature
+                },
+                success: function(response) {
+                    if (response.success) {
+                        $btn.removeClass('close-roster-btn').addClass('reopen-roster-btn')
+                            .attr('title', '<?php echo esc_js(__('Reopen Roster', 'intersoccer-reports-rosters')); ?>')
+                            .prop('disabled', false);
+                        location.reload();
+                    } else {
+                        alert(response.data.message || '<?php echo esc_js(__('Failed to close roster.', 'intersoccer-reports-rosters')); ?>');
+                        $btn.prop('disabled', false);
+                    }
+                },
+                error: function() {
+                    alert('<?php echo esc_js(__('An error occurred. Please try again.', 'intersoccer-reports-rosters')); ?>');
+                    $btn.prop('disabled', false);
+                }
+            });
+        });
+        
+        // Reopen roster handler
+        $(document).on('click', '.reopen-roster-btn', function(e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var eventSignature = $btn.data('event-signature');
+            
+            if (!confirm('<?php echo esc_js(__('Are you sure you want to reopen this roster?', 'intersoccer-reports-rosters')); ?>')) {
+                return;
+            }
+            
+            $btn.prop('disabled', true).text('<?php echo esc_js(__('Reopening...', 'intersoccer-reports-rosters')); ?>');
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'intersoccer_reopen_roster',
+                    nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
+                    event_signature: eventSignature
+                },
+                success: function(response) {
+                    if (response.success) {
+                        $btn.removeClass('reopen-roster-btn').addClass('close-roster-btn')
+                            .text('<?php echo esc_js(__('Close Out', 'intersoccer-reports-rosters')); ?>')
+                            .prop('disabled', false);
+                        location.reload();
+                    } else {
+                        alert(response.data.message || '<?php echo esc_js(__('Failed to reopen roster.', 'intersoccer-reports-rosters')); ?>');
+                        $btn.prop('disabled', false).text('<?php echo esc_js(__('Reopen', 'intersoccer-reports-rosters')); ?>');
+                    }
+                },
+                error: function() {
+                    alert('<?php echo esc_js(__('An error occurred. Please try again.', 'intersoccer-reports-rosters')); ?>');
+                    $btn.prop('disabled', false).text('<?php echo esc_js(__('Reopen', 'intersoccer-reports-rosters')); ?>');
+                }
+            });
+        });
+        
+        // Bulk actions
+        var $bulkBar = $('#bulk-actions-bar');
+        var $checkboxes = $('.roster-checkbox');
+        var $selectedCount = $('#selected-count');
+        var $bulkCloseBtn = $('#bulk-close-btn');
+        var $bulkReopenBtn = $('#bulk-reopen-btn');
+        var $clearSelectionBtn = $('#clear-selection-btn');
+        
+        function updateBulkBar() {
+            var selected = $checkboxes.filter(':checked');
+            var count = selected.length;
+            
+            if (count > 0) {
+                $bulkBar.addClass('active');
+                $selectedCount.text(count + ' <?php echo esc_js(__('selected', 'intersoccer-reports-rosters')); ?>');
+                
+                // Enable/disable buttons based on selection
+                var hasClosed = selected.filter(function() {
+                    return $(this).data('is-closed') == '1';
+                }).length > 0;
+                var hasOpen = selected.filter(function() {
+                    return $(this).data('is-closed') == '0';
+                }).length > 0;
+                
+                $bulkCloseBtn.prop('disabled', !hasOpen);
+                $bulkReopenBtn.prop('disabled', !hasClosed);
+            } else {
+                $bulkBar.removeClass('active');
+            }
+        }
+        
+        $checkboxes.on('change', updateBulkBar);
+        
+        $clearSelectionBtn.on('click', function() {
+            $checkboxes.prop('checked', false);
+            updateBulkBar();
+        });
+        
+        $bulkCloseBtn.on('click', function() {
+            var selected = $checkboxes.filter(':checked').filter(function() {
+                return $(this).data('is-closed') == '0';
+            });
+            
+            if (selected.length === 0) {
+                alert('<?php echo esc_js(__('Please select at least one open roster to close.', 'intersoccer-reports-rosters')); ?>');
+                return;
+            }
+            
+            if (!confirm('<?php echo esc_js(__('Are you sure you want to close', 'intersoccer-reports-rosters')); ?> ' + selected.length + ' <?php echo esc_js(__('roster(s)?', 'intersoccer-reports-rosters')); ?>')) {
+                return;
+            }
+            
+            var eventSignatures = selected.map(function() {
+                return $(this).data('event-signature');
+            }).get();
+            
+            $bulkCloseBtn.prop('disabled', true).text('<?php echo esc_js(__('Closing...', 'intersoccer-reports-rosters')); ?>');
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'intersoccer_bulk_close_rosters',
+                    nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
+                    event_signatures: eventSignatures
+                },
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.data.message || '<?php echo esc_js(__('Rosters closed successfully.', 'intersoccer-reports-rosters')); ?>');
+                        location.reload();
+                    } else {
+                        alert(response.data.message || '<?php echo esc_js(__('Failed to close rosters.', 'intersoccer-reports-rosters')); ?>');
+                        $bulkCloseBtn.prop('disabled', false).text('<?php echo esc_js(__('Close Selected Rosters', 'intersoccer-reports-rosters')); ?>');
+                    }
+                },
+                error: function() {
+                    alert('<?php echo esc_js(__('An error occurred. Please try again.', 'intersoccer-reports-rosters')); ?>');
+                    $bulkCloseBtn.prop('disabled', false).text('<?php echo esc_js(__('Close Selected Rosters', 'intersoccer-reports-rosters')); ?>');
+                }
+            });
+        });
+        
+        $bulkReopenBtn.on('click', function() {
+            var selected = $checkboxes.filter(':checked').filter(function() {
+                return $(this).data('is-closed') == '1';
+            });
+            
+            if (selected.length === 0) {
+                alert('<?php echo esc_js(__('Please select at least one closed roster to reopen.', 'intersoccer-reports-rosters')); ?>');
+                return;
+            }
+            
+            if (!confirm('<?php echo esc_js(__('Are you sure you want to reopen', 'intersoccer-reports-rosters')); ?> ' + selected.length + ' <?php echo esc_js(__('roster(s)?', 'intersoccer-reports-rosters')); ?>')) {
+                return;
+            }
+            
+            var eventSignatures = selected.map(function() {
+                return $(this).data('event-signature');
+            }).get();
+            
+            $bulkReopenBtn.prop('disabled', true).text('<?php echo esc_js(__('Reopening...', 'intersoccer-reports-rosters')); ?>');
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'intersoccer_bulk_reopen_rosters',
+                    nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
+                    event_signatures: eventSignatures
+                },
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.data.message || '<?php echo esc_js(__('Rosters reopened successfully.', 'intersoccer-reports-rosters')); ?>');
+                        location.reload();
+                    } else {
+                        alert(response.data.message || '<?php echo esc_js(__('Failed to reopen rosters.', 'intersoccer-reports-rosters')); ?>');
+                        $bulkReopenBtn.prop('disabled', false).text('<?php echo esc_js(__('Reopen Selected Rosters', 'intersoccer-reports-rosters')); ?>');
+                    }
+                },
+                error: function() {
+                    alert('<?php echo esc_js(__('An error occurred. Please try again.', 'intersoccer-reports-rosters')); ?>');
+                    $bulkReopenBtn.prop('disabled', false).text('<?php echo esc_js(__('Reopen Selected Rosters', 'intersoccer-reports-rosters')); ?>');
+                }
+            });
+        });
+        
+        // Close all rosters in season
+        $(document).on('click', '.close-season-btn', function(e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var season = $btn.data('season');
+            var page = $btn.data('page') || 'camps';
+            
+            if (!confirm('<?php echo esc_js(__('Are you sure you want to close ALL active rosters in this season? This action cannot be undone.', 'intersoccer-reports-rosters')); ?>')) {
+                return;
+            }
+            
+            $btn.prop('disabled', true).text('<?php echo esc_js(__('Closing...', 'intersoccer-reports-rosters')); ?>');
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'intersoccer_close_season_rosters',
+                    nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
+                    season: season,
+                    page: page
+                },
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.data.message || '<?php echo esc_js(__('All rosters in season closed successfully.', 'intersoccer-reports-rosters')); ?>');
+                        location.reload();
+                    } else {
+                        alert(response.data.message || '<?php echo esc_js(__('Failed to close rosters in season.', 'intersoccer-reports-rosters')); ?>');
+                        $btn.prop('disabled', false).text('<?php echo esc_js(__('Close All in Season', 'intersoccer-reports-rosters')); ?>');
+                    }
+                },
+                error: function() {
+                    alert('<?php echo esc_js(__('An error occurred. Please try again.', 'intersoccer-reports-rosters')); ?>');
+                    $btn.prop('disabled', false).text('<?php echo esc_js(__('Close All in Season', 'intersoccer-reports-rosters')); ?>');
+                }
+            });
+        });
+    });
+    </script>
     <?php
 }
 
@@ -867,6 +1288,8 @@ function intersoccer_render_courses_page() {
         $coach_accessible_venues = InterSoccer_Admin_Coach_Assignments::get_coach_accessible_venues($current_user->ID);
     }
 
+    $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : '';
+
     $use_oop_rosters = defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('rosters');
 
     if ($use_oop_rosters) {
@@ -878,6 +1301,7 @@ function intersoccer_render_courses_page() {
                 'course_day' => isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '',
                 'age_group' => isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '',
                 'city' => isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '',
+                'status' => $status_filter,
             ],
             [
                 'is_coach' => $is_coach,
@@ -919,11 +1343,22 @@ function intersoccer_render_courses_page() {
                           GROUP_CONCAT(DISTINCT r.start_date) as start_dates,
                           GROUP_CONCAT(DISTINCT r.end_date) as end_dates,
                           GROUP_CONCAT(DISTINCT r.product_name) as product_names,
-                          GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids
+                          GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids,
+                          MAX(r.event_completed) as event_completed
                FROM $rosters_table r
                LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                WHERE r.activity_type IN ('Course', 'Course, Girls Only', 'Course, Girls\' only')
                AND r.girls_only = 0" . intersoccer_roster_placeholder_where();
+        
+        // Add closed filter based on status
+        if (!isset($status_filter)) {
+            $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : '';
+        }
+        if ($status_filter === 'closed') {
+            $base_query .= " AND (r.event_completed = 1)";
+        } elseif ($status_filter !== 'all') {
+            $base_query .= intersoccer_roster_closed_where($status_filter);
+        }
 
         if ($is_coach && !empty($coach_accessible_venues)) {
             $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
@@ -938,11 +1373,30 @@ function intersoccer_render_courses_page() {
         $start_time = microtime(true);
         $groups = $wpdb->get_results($base_query, ARRAY_A);
         $query_time = microtime(true) - $start_time;
-        $filter = intersoccer_roster_placeholder_where();
-        $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND venue IS NOT NULL ORDER BY venue");
-        $all_course_days = $wpdb->get_col("SELECT DISTINCT course_day FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND course_day IS NOT NULL ORDER BY course_day");
-        $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND age_group IS NOT NULL ORDER BY age_group");
-        $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.activity_type = 'Course' AND r.girls_only = 0" . str_replace('is_placeholder', 'r.is_placeholder', $filter) . " AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
+        
+        if ($wpdb->last_error) {
+            error_log("InterSoccer: Courses query error: " . $wpdb->last_error);
+            error_log("InterSoccer: Courses query: " . $base_query);
+        }
+        
+        $filter = intersoccer_roster_placeholder_where() . intersoccer_roster_closed_where($status_filter);
+        
+        // Execute filter queries with error handling
+        $all_venues = [];
+        $all_course_days = [];
+        $all_age_groups = [];
+        $all_cities = [];
+        
+        try {
+            $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND venue IS NOT NULL ORDER BY venue");
+            $all_course_days = $wpdb->get_col("SELECT DISTINCT course_day FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND course_day IS NOT NULL ORDER BY course_day");
+            $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND age_group IS NOT NULL ORDER BY age_group");
+            $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.activity_type = 'Course' AND r.girls_only = 0" . str_replace('is_placeholder', 'r.is_placeholder', $filter) . " AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
+        } catch (Exception $e) {
+            error_log("InterSoccer: Error fetching filter options: " . $e->getMessage());
+        }
+        
+        // Only log query time, not full results (to avoid memory issues)
         error_log("InterSoccer: Courses query execution time: " . $query_time . " seconds, Results: " . count($groups) . " groups");
 
         // Use stored dates directly from the rosters table
@@ -1108,7 +1562,15 @@ function intersoccer_render_courses_page() {
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <?php if ($selected_season): ?>
+                <div class="filter-group">
+                    <label>Status</label>
+                    <select name="status" onchange="this.form.submit()">
+                        <option value="">Active Only</option>
+                        <option value="closed" <?php selected($status_filter, 'closed'); ?>>Closed Only</option>
+                        <option value="all" <?php selected($status_filter, 'all'); ?>>All</option>
+                    </select>
+                </div>
+                <?php if ($selected_season || $status_filter): ?>
                 <div class="filter-group">
                     <a href="<?php echo admin_url('admin.php?page=intersoccer-courses'); ?>" class="button button-secondary">
                         ↻ <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
@@ -1116,6 +1578,20 @@ function intersoccer_render_courses_page() {
                 </div>
                 <?php endif; ?>
             </form>
+        </div>
+
+        <!-- Bulk Actions Bar -->
+        <div class="bulk-actions-bar" id="bulk-actions-bar">
+            <span class="selected-count" id="selected-count">0 selected</span>
+            <button type="button" class="button button-primary" id="bulk-close-btn">
+                <?php _e('Close Selected Rosters', 'intersoccer-reports-rosters'); ?>
+            </button>
+            <button type="button" class="button button-secondary" id="bulk-reopen-btn">
+                <?php _e('Reopen Selected Rosters', 'intersoccer-reports-rosters'); ?>
+            </button>
+            <button type="button" class="button button-secondary" id="clear-selection-btn">
+                <?php _e('Clear Selection', 'intersoccer-reports-rosters'); ?>
+            </button>
         </div>
 
         <div class="sports-rosters">
@@ -1136,9 +1612,11 @@ function intersoccer_render_courses_page() {
                                 <?php 
                                 $season_total = 0;
                                 $event_count = 0;
+                                $active_count = 0;
                                 foreach ($day_groups as $day => $courses) {
                                     $season_total += array_sum(array_column($courses, 'total_players'));
                                     $event_count += count($courses);
+                                    $active_count += count(array_filter($courses, function($course) { return empty($course['event_completed']); }));
                                 }
                                 ?>
                                 <span class="stat-item">
@@ -1147,6 +1625,16 @@ function intersoccer_render_courses_page() {
                                 <span class="stat-item">
                                     Camps: <?php echo $event_count; ?> <?php _e('courses', 'intersoccer-reports-rosters'); ?>
                                 </span>
+                            </div>
+                            <div class="season-actions">
+                                <?php if ($active_count > 0): ?>
+                                    <button type="button" class="close-season-btn" 
+                                            data-season="<?php echo esc_attr($season); ?>"
+                                            data-page="courses"
+                                            title="<?php esc_attr_e('Close all active rosters in this season', 'intersoccer-reports-rosters'); ?>">
+                                        <?php _e('Close All in Season', 'intersoccer-reports-rosters'); ?>
+                                    </button>
+                                <?php endif; ?>
                             </div>
                         </div>
                         <?php foreach ($day_groups as $day => $courses): ?>
@@ -1157,6 +1645,9 @@ function intersoccer_render_courses_page() {
                                 <div class="courses-grid">
                                     <?php foreach ($courses as $course): ?>
                                         <div class="course-card">
+                                            <input type="checkbox" class="roster-checkbox" 
+                                                   data-event-signature="<?php echo esc_attr($course['event_signature']); ?>"
+                                                   data-is-closed="<?php echo !empty($course['event_completed']) ? '1' : '0'; ?>">
                                             <div class="course-header">
                                                 <h3 class="course-venue">
                                                     📍 <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($course['venue'], 'pa_intersoccer-venues') : ($course['venue'] ?: 'Unknown Venue')); ?>
@@ -1196,10 +1687,24 @@ function intersoccer_render_courses_page() {
                                                 <div class="course-actions">
                                                     <?php
                                                     $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=courses&event_signature=' . urlencode($course['event_signature']) . '&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']));
+                                                    $is_closed = !empty($course['event_completed']);
                                                     ?>
                                                     <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                         <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
                                                     </a>
+                                                    <?php if ($is_closed): ?>
+                                                        <button type="button" class="reopen-roster-btn" 
+                                                                data-event-signature="<?php echo esc_attr($course['event_signature']); ?>"
+                                                                title="<?php esc_attr_e('Reopen Roster', 'intersoccer-reports-rosters'); ?>">
+                                                            <?php _e('Reopen', 'intersoccer-reports-rosters'); ?>
+                                                        </button>
+                                                    <?php else: ?>
+                                                        <button type="button" class="close-roster-btn" 
+                                                                data-event-signature="<?php echo esc_attr($course['event_signature']); ?>"
+                                                                title="<?php esc_attr_e('Close Out Roster', 'intersoccer-reports-rosters'); ?>">
+                                                            <?php _e('Close Out', 'intersoccer-reports-rosters'); ?>
+                                                        </button>
+                                                    <?php endif; ?>
                                                 </div>
                                             </div>
                                         </div>
@@ -1244,6 +1749,8 @@ function intersoccer_render_girls_only_page() {
     wp_cache_flush();
     delete_transient('intersoccer_rosters_cache');
 
+    $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : '';
+
     // Simplified query using the new girls_only boolean column
     $base_query = "SELECT COALESCE(r.season, 'N/A') as season,
                           COALESCE(r.venue, 'N/A') as venue,
@@ -1259,10 +1766,18 @@ function intersoccer_render_girls_only_page() {
                           GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids,
                           r.event_signature,
                           GROUP_CONCAT(DISTINCT r.player_name) as player_names,
-                          GROUP_CONCAT(DISTINCT r.product_name) as product_names
+                          GROUP_CONCAT(DISTINCT r.product_name) as product_names,
+                          MAX(r.event_completed) as event_completed
                    FROM $rosters_table r
                    LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
                    WHERE r.girls_only = 1" . intersoccer_roster_placeholder_where();
+    
+    // Add closed filter based on status
+    if ($status_filter === 'closed') {
+        $base_query .= " AND (r.event_completed = 1)";
+    } elseif ($status_filter !== 'all') {
+        $base_query .= intersoccer_roster_closed_where($status_filter);
+    }
 
     // Add coach venue filtering if user is a coach
     if ($is_coach && !empty($coach_accessible_venues)) {
@@ -1279,7 +1794,7 @@ function intersoccer_render_girls_only_page() {
     $start_time = microtime(true);
     $groups = $wpdb->get_results($base_query, ARRAY_A);
     $query_time = microtime(true) - $start_time;
-    $filter = intersoccer_roster_placeholder_where();
+    $filter = intersoccer_roster_placeholder_where() . intersoccer_roster_closed_where($status_filter);
     $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE girls_only = 1{$filter} AND venue IS NOT NULL ORDER BY venue");
     $all_camp_terms = $wpdb->get_col("SELECT DISTINCT camp_terms FROM $rosters_table WHERE girls_only = 1{$filter} AND camp_terms IS NOT NULL ORDER BY camp_terms");
     $all_course_days = $wpdb->get_col("SELECT DISTINCT course_day FROM $rosters_table WHERE girls_only = 1{$filter} AND course_day IS NOT NULL ORDER BY course_day");
@@ -1508,7 +2023,15 @@ function intersoccer_render_girls_only_page() {
                 <?php endforeach; ?>
             </select>
         </div>
-        <?php if ($selected_season || $selected_type || $selected_venue || $selected_camp_terms || $selected_course_day || $selected_age_group || $selected_city): ?>
+        <div class="filter-group">
+            <label>Status</label>
+            <select name="status" onchange="this.form.submit()">
+                <option value="">Active Only</option>
+                <option value="closed" <?php selected($status_filter, 'closed'); ?>>Closed Only</option>
+                <option value="all" <?php selected($status_filter, 'all'); ?>>All</option>
+            </select>
+        </div>
+        <?php if ($selected_season || $selected_type || $selected_venue || $selected_camp_terms || $selected_course_day || $selected_age_group || $selected_city || $status_filter): ?>
                 <div class="filter-group">
                     <a href="<?php echo admin_url('admin.php?page=intersoccer-girls-only'); ?>" class="button button-secondary">
                         Clear Filters
@@ -1516,6 +2039,20 @@ function intersoccer_render_girls_only_page() {
                 </div>
                 <?php endif; ?>
             </form>
+        </div>
+
+        <!-- Bulk Actions Bar -->
+        <div class="bulk-actions-bar" id="bulk-actions-bar">
+            <span class="selected-count" id="selected-count">0 selected</span>
+            <button type="button" class="button button-primary" id="bulk-close-btn">
+                <?php _e('Close Selected Rosters', 'intersoccer-reports-rosters'); ?>
+            </button>
+            <button type="button" class="button button-secondary" id="bulk-reopen-btn">
+                <?php _e('Reopen Selected Rosters', 'intersoccer-reports-rosters'); ?>
+            </button>
+            <button type="button" class="button button-secondary" id="clear-selection-btn">
+                <?php _e('Clear Selection', 'intersoccer-reports-rosters'); ?>
+            </button>
         </div>
 
         <div class="sports-rosters">
