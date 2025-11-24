@@ -260,6 +260,8 @@ deploy_to_server() {
         --include='scripts/patch-phpspreadsheet-zipstream.php' \
         --include='vendor/autoload.php' \
         --include='vendor/composer/**' \
+        --exclude='vendor/composer/installed.json' \
+        --exclude='vendor/composer/installed.php' \
         --include='vendor/ezyang/**' \
         --include='vendor/maennchen/**' \
         --include='vendor/markbaker/**' \

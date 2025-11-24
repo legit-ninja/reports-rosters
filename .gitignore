@@ -12,6 +12,9 @@ node_modules/
 vendor/*
 !vendor/autoload.php
 !vendor/composer/**
+# Exclude Composer-generated metadata files (not needed in production)
+vendor/composer/installed.json
+vendor/composer/installed.php
 !vendor/ezyang/**
 !vendor/maennchen/**
 !vendor/myclabs/php-enum/**
