@@ -943,35 +943,30 @@ function intersoccer_render_courses_page() {
         $all_course_days = $wpdb->get_col("SELECT DISTINCT course_day FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND course_day IS NOT NULL ORDER BY course_day");
         $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND age_group IS NOT NULL ORDER BY age_group");
         $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.activity_type = 'Course' AND r.girls_only = 0" . str_replace('is_placeholder', 'r.is_placeholder', $filter) . " AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
-        error_log("InterSoccer: Courses query results: " . print_r($groups, true));
-        error_log("InterSoccer: Courses query execution time: " . $query_time . " seconds");
+        error_log("InterSoccer: Courses query execution time: " . $query_time . " seconds, Results: " . count($groups) . " groups");
 
+        // Use stored dates directly from the rosters table
+        // The end date is already calculated and stored in the database from order item metadata
         $all_groups = [];
         $all_seasons = [];
         foreach ($groups as $group) {
             $variation_ids = isset($group['variation_ids']) && !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
             if (empty($variation_ids)) {
-                error_log("InterSoccer: No valid variation_ids for course group - Raw: " . print_r(isset($group['variation_ids']) ? $group['variation_ids'] : 'KEY_NOT_SET', true));
                 $variation_ids = [0];
             }
             $group['variation_ids'] = $variation_ids;
-            $variation_id = $variation_ids[0];
-            $variation = $variation_id ? wc_get_product($variation_id) : false;
-            $parent_product = $variation ? wc_get_product($variation->get_parent_id()) : false;
-
-            error_log("InterSoccer: Course variation $variation_id - Loaded: " . ($variation ? 'Yes' : 'No') . ", Meta start: " . ($variation ? $variation->get_meta('_course_start_date') : 'N/A'));
-
-            $start = $variation ? $variation->get_meta('_course_start_date') : ($parent_product ? $parent_product->get_meta('_course_start_date') : '1970-01-01');
-            $total_weeks = $variation ? (int) $variation->get_meta('_course_total_weeks') : ($parent_product ? (int) $parent_product->get_meta('_course_total_weeks') : 0);
-            $holidays = $variation ? ($variation->get_meta('_course_holiday_dates') ?: []) : ($parent_product ? ($parent_product->get_meta('_course_holiday_dates') ?: []) : []);
-            $days = $parent_product ? (wc_get_product_terms($parent_product->get_id(), 'pa_course-day', ['fields' => 'names']) ?: wc_get_product_terms($parent_product->get_id(), 'pa_days-of-week', ['fields' => 'names']) ?: ['Monday']) : ['Monday'];
-
+            
+            // Get dates directly from the database (already calculated and stored)
+            $start = '1970-01-01';
             $end = '1970-01-01';
-            if ($start !== '1970-01-01' && $total_weeks > 0) {
-                $end = calculate_course_end_date($variation_id, $start, $total_weeks, $holidays, $days);
-            } else {
-                $start = !empty($group['start_dates']) && is_string($group['start_dates']) ? explode(',', $group['start_dates'])[0] : '1970-01-01';
-                $end = !empty($group['end_dates']) && is_string($group['end_dates']) ? explode(',', $group['end_dates'])[0] : '1970-01-01';
+            
+            if (!empty($group['start_dates']) && is_string($group['start_dates'])) {
+                $start_dates_array = explode(',', $group['start_dates']);
+                $start = !empty($start_dates_array[0]) ? trim($start_dates_array[0]) : '1970-01-01';
+            }
+            if (!empty($group['end_dates']) && is_string($group['end_dates'])) {
+                $end_dates_array = explode(',', $group['end_dates']);
+                $end = !empty($end_dates_array[0]) ? trim($end_dates_array[0]) : '1970-01-01';
             }
 
             $group['corrected_start_date'] = date('Y-m-d', strtotime($start)) ?: '1970-01-01';
@@ -2210,43 +2205,32 @@ function intersoccer_render_other_events_page() {
                      ORDER BY season DESC, product_name, age_group";
 
     $groups = $wpdb->get_results($base_query, ARRAY_A);
-    error_log("InterSoccer: Other Events query results: " . print_r($groups, true));
 
-    // Parse data with proper date handling
+    // Use stored dates directly from the rosters table
+    // The end date is already calculated and stored in the database from order item metadata
     $all_events = [];
     $all_seasons = [];
     $all_product_names = [];
 
     foreach ($groups as $group) {
-        // Get variation for meta access
+        // Get variation IDs for reference (not needed for date calculation)
         $variation_ids = isset($group['variation_ids']) && !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
         if (empty($variation_ids)) {
-            error_log("InterSoccer: No valid variation_ids for event group - Raw: " . print_r($group['variation_ids'], true));
             $variation_ids = [0];
         }
         $group['variation_ids'] = $variation_ids;
-        $variation_id = $variation_ids[0];
-        $variation = $variation_id ? wc_get_product($variation_id) : false;
-        $parent_product = $variation ? wc_get_product($variation->get_parent_id()) : false;
-
-        // Log variation access
-        error_log("InterSoccer: Other Events variation $variation_id - Loaded: " . ($variation ? 'Yes' : 'No') . ", Meta start: " . ($variation ? $variation->get_meta('_course_start_date') : 'N/A'));
-
-        // Fetch event-specific meta
-        $event_start = $variation ? $variation->get_meta('_course_start_date') : ($parent_product ? $parent_product->get_meta('_course_start_date') : '1970-01-01');
-        $total_weeks = $variation ? (int) $variation->get_meta('_course_total_weeks') : ($parent_product ? (int) $parent_product->get_meta('_course_total_weeks') : 0);
-        $holidays = $variation ? ($variation->get_meta('_course_holiday_dates') ?: []) : ($parent_product ? ($parent_product->get_meta('_course_holiday_dates') ?: []) : []);
-        $event_days = $parent_product ? (wc_get_product_terms($parent_product->get_id(), 'pa_course-day', ['fields' => 'names']) ?: wc_get_product_terms($parent_product->get_id(), 'pa_days-of-week', ['fields' => 'names']) ?: ['Monday']) : ['Monday'];
-
-        // Calculate end date if meta is available
+        
+        // Get dates directly from the database (already calculated and stored)
+        $event_start = '1970-01-01';
         $event_end = '1970-01-01';
-        if ($event_start !== '1970-01-01' && $total_weeks > 0) {
-            $event_end = calculate_course_end_date($variation_id, $event_start, $total_weeks, $holidays, $event_days);
-            error_log("InterSoccer: Calculated Other Events dates for variation $variation_id - Start: $event_start, End: $event_end");
-        } else {
-            error_log("InterSoccer: No valid meta for variation $variation_id - Using stored dates");
-            $event_start = !empty($group['start_dates']) && is_string($group['start_dates']) ? explode(',', $group['start_dates'])[0] : '1970-01-01';
-            $event_end = !empty($group['end_dates']) && is_string($group['end_dates']) ? explode(',', $group['end_dates'])[0] : '1970-01-01';
+        
+        if (!empty($group['start_dates']) && is_string($group['start_dates'])) {
+            $start_dates_array = explode(',', $group['start_dates']);
+            $event_start = !empty($start_dates_array[0]) ? trim($start_dates_array[0]) : '1970-01-01';
+        }
+        if (!empty($group['end_dates']) && is_string($group['end_dates'])) {
+            $end_dates_array = explode(',', $group['end_dates']);
+            $event_end = !empty($end_dates_array[0]) ? trim($end_dates_array[0]) : '1970-01-01';
         }
 
         // Validate and format dates
