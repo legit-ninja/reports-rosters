@@ -720,26 +720,10 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             error_log("InterSoccer: Raw Start Date for order $order_id, item $order_item_id: " . print_r($order_item_meta['Start Date'], true));
             error_log("InterSoccer: Raw End Date for order $order_id, item $order_item_id: " . print_r($order_item_meta['End Date'], true));
 
-            // Try multiple date formats (including 'F j, Y' for "December 14, 2025")
-            $possible_formats = ['F j, Y', 'm/d/Y', 'd/m/Y', 'Y-m-d', 'j F Y', 'M j, Y'];
-            $start_date = null;
-            $end_date = null;
-            foreach ($possible_formats as $format) {
-                $start_date_obj = DateTime::createFromFormat($format, $order_item_meta['Start Date']);
-                if ($start_date_obj !== false) {
-                    $start_date = $start_date_obj->format('Y-m-d');
-                    error_log("InterSoccer: Parsed Start Date for order $order_id, item $order_item_id with format $format: $start_date");
-                    break;
-                }
-            }
-            foreach ($possible_formats as $format) {
-                $end_date_obj = DateTime::createFromFormat($format, $order_item_meta['End Date']);
-                if ($end_date_obj !== false) {
-                    $end_date = $end_date_obj->format('Y-m-d');
-                    error_log("InterSoccer: Parsed End Date for order $order_id, item $order_item_id with format $format: $end_date");
-                    break;
-                }
-            }
+            // Use unified date parser
+            $context = "order $order_id, item $order_item_id";
+            $start_date = intersoccer_parse_date_unified($order_item_meta['Start Date'], $context . ' (start)');
+            $end_date = intersoccer_parse_date_unified($order_item_meta['End Date'], $context . ' (end)');
 
             // Fallback if parsing fails
             if (!$start_date || !$end_date) {

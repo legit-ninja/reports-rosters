@@ -46,6 +46,141 @@ function intersoccer_get_term_name($value, $taxonomy) {
 }
 
 /**
+ * Unified date parser that handles all date formats found in order item metadata.
+ * 
+ * This function is the single source of truth for date parsing across the plugin.
+ * It handles:
+ * - F j, Y format (e.g., "August 17, 2025") - most common
+ * - M j, Y format (e.g., "Aug 17, 2025") - abbreviated month
+ * - Y-m-d format (e.g., "2025-08-17") - ISO format
+ * - d/m/Y format (e.g., "17/08/2025") - European format
+ * - m/d/Y format (e.g., "08/17/2025") - American format
+ * - d/m/y format (e.g., "17/08/25") - European 2-digit year
+ * - m/d/y format (e.g., "08/17/25") - American 2-digit year
+ * - strtotime() fallback for other formats
+ * 
+ * @param string $date_string The date string to parse
+ * @param string $context Optional context for logging (e.g., "order 12345, item 678")
+ * @return string|null Parsed date in Y-m-d format, or null if parsing fails
+ */
+function intersoccer_parse_date_unified($date_string, $context = '') {
+    if (empty($date_string) || $date_string === 'N/A' || trim($date_string) === '') {
+        return null;
+    }
+    
+    $date_string = trim($date_string);
+    
+    // Format priority order (most specific/unambiguous first)
+    // 1. F j, Y - "August 17, 2025" (most common, unambiguous)
+    // 2. M j, Y - "Aug 17, 2025" (abbreviated month)
+    // 3. Y-m-d - "2025-08-17" (ISO format, unambiguous)
+    // 4. d/m/Y - "17/08/2025" (European format, try before m/d/Y to avoid ambiguity)
+    // 5. m/d/Y - "08/17/2025" (American format)
+    // 6. d/m/y - "17/08/25" (European 2-digit year - CRITICAL for fixing malformed dates)
+    // 7. m/d/y - "08/17/25" (American 2-digit year)
+    // 8. j F Y - "17 August 2025" (alternative format)
+    // 9. d-m-Y - "17-08-2025" (European with dashes)
+    // 10. m-d-Y - "08-17-2025" (American with dashes)
+    
+    $formats = [
+        'F j, Y',      // "August 17, 2025" - most common
+        'M j, Y',      // "Aug 17, 2025" - abbreviated month
+        'Y-m-d',       // "2025-08-17" - ISO format
+        'd/m/Y',       // "17/08/2025" - European (try before m/d/Y)
+        'm/d/Y',       // "08/17/2025" - American
+        'd/m/y',       // "17/08/25" - European 2-digit year (CRITICAL)
+        'm/d/y',       // "08/17/25" - American 2-digit year
+        'j F Y',       // "17 August 2025" - alternative format
+        'd-m-Y',       // "17-08-2025" - European with dashes
+        'm-d-Y',       // "08-17-2025" - American with dashes
+        'Y/m/d',       // "2025/08/17" - ISO with slashes
+    ];
+    
+    foreach ($formats as $format) {
+        $date = DateTime::createFromFormat($format, $date_string);
+        
+        // Validate that the parsed date matches the input format exactly
+        // This prevents false positives (e.g., "09/08/25" matching m/d/Y incorrectly)
+        if ($date !== false) {
+            $formatted = $date->format($format);
+            $parsed_year = (int)$date->format('Y');
+            
+            // For formats with 2-digit years, we need special handling
+            $is_2digit_year = (strpos($format, '/y') !== false || strpos($format, '-y') !== false);
+            
+            if ($is_2digit_year) {
+                // For 2-digit year formats, check if the formatted date matches
+                // and handle the year correctly
+                if ($formatted === $date_string) {
+                    // Check if year was parsed as 2-digit (e.g., 25 → 2025, but might be 0025)
+                    if ($parsed_year < 100) {
+                        // Year was parsed as 2-digit, assume 20XX
+                        $corrected_year = $parsed_year + 2000;
+                        // Validate the corrected year is reasonable
+                        if ($corrected_year >= 2000 && $corrected_year <= 2099) {
+                            $date->setDate($corrected_year, (int)$date->format('m'), (int)$date->format('d'));
+                            $parsed_date = $date->format('Y-m-d');
+                            if (!empty($context)) {
+                                error_log("InterSoccer: Parsed date '$date_string' with format '$format' (2-digit year) to '$parsed_date' ($context)");
+                            }
+                            return $parsed_date;
+                        }
+                    } elseif ($parsed_year >= 1900 && $parsed_year <= 2100) {
+                        // Year was already parsed correctly as 4-digit
+                        $parsed_date = $date->format('Y-m-d');
+                        if (!empty($context)) {
+                            error_log("InterSoccer: Parsed date '$date_string' with format '$format' to '$parsed_date' ($context)");
+                        }
+                        return $parsed_date;
+                    }
+                }
+            } else {
+                // For 4-digit year formats, strict match
+                if ($formatted === $date_string) {
+                    // Validate year is reasonable
+                    if ($parsed_year >= 1900 && $parsed_year <= 2100) {
+                        $parsed_date = $date->format('Y-m-d');
+                        if (!empty($context)) {
+                            error_log("InterSoccer: Parsed date '$date_string' with format '$format' to '$parsed_date' ($context)");
+                        }
+                        return $parsed_date;
+                    } else {
+                        if (!empty($context)) {
+                            error_log("InterSoccer: Parsed date '$date_string' has invalid year $parsed_year ($context)");
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Fallback to strtotime() for formats we don't explicitly handle
+    $timestamp = strtotime($date_string);
+    if ($timestamp !== false) {
+        $parsed_date = date('Y-m-d', $timestamp);
+        $year = (int)date('Y', $timestamp);
+        
+        // Validate year is reasonable
+        if ($year >= 1900 && $year <= 2100) {
+            if (!empty($context)) {
+                error_log("InterSoccer: Parsed date '$date_string' with strtotime() to '$parsed_date' ($context)");
+            }
+            return $parsed_date;
+        } else {
+            if (!empty($context)) {
+                error_log("InterSoccer: strtotime() parsed date '$date_string' has invalid year $year ($context)");
+            }
+        }
+    }
+    
+    // All parsing attempts failed
+    if (!empty($context)) {
+        error_log("InterSoccer: Failed to parse date '$date_string' ($context)");
+    }
+    return null;
+}
+
+/**
  * Shared function to insert or update a roster entry from an order item.
  * Ensures consistent data extraction and insertion across all population points.
  *
@@ -273,30 +408,25 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     $activity_type = $product_type === 'camp' ? 'Camp' : ($product_type === 'course' ? 'Course' : ucfirst($product_type));
     error_log('InterSoccer: Set activity_type to ' . $activity_type . ' for order ' . $order_id . ', item ' . $item_id);
 
-    // Parse dates
+    // Parse dates using unified parser
     if ($product_type === 'camp' && !empty($camp_terms) && $camp_terms !== 'N/A') {
         list($start_date, $end_date, $event_dates) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
     } elseif (($product_type === 'course' || $product_type === 'tournament') && !empty($start_date) && !empty($end_date)) {
         error_log('InterSoccer: Processing ' . $product_type . ' dates for item ' . $item_id . ' in order ' . $order_id . ' - start_date: ' . var_export($start_date, true) . ', end_date: ' . var_export($end_date, true));
-        $start_date_obj = DateTime::createFromFormat('F j, Y', $start_date);
-        $end_date_obj = DateTime::createFromFormat('F j, Y', $end_date);
-        if ($start_date_obj && $end_date_obj) {
-            $start_date = $start_date_obj->format('Y-m-d');
-            $end_date = $end_date_obj->format('Y-m-d');
+        
+        $context = "order $order_id, item $item_id";
+        $parsed_start = intersoccer_parse_date_unified($start_date, $context . ' (start)');
+        $parsed_end = intersoccer_parse_date_unified($end_date, $context . ' (end)');
+        
+        if ($parsed_start && $parsed_end) {
+            $start_date = $parsed_start;
+            $end_date = $parsed_end;
             $event_dates = "$start_date to $end_date";
         } else {
-            $start_date_obj = DateTime::createFromFormat('m/d/Y', $start_date);
-            $end_date_obj = DateTime::createFromFormat('m/d/Y', $end_date);
-            if ($start_date_obj && $end_date_obj) {
-                $start_date = $start_date_obj->format('Y-m-d');
-                $end_date = $end_date_obj->format('Y-m-d');
-                $event_dates = "$start_date to $end_date";
-            } else {
-                error_log('InterSoccer: Invalid ' . $product_type . ' date format for item ' . $item_id . ' in order ' . $order_id . ' - Using defaults');
-                $start_date = '1970-01-01';
-                $end_date = '1970-01-01';
-                $event_dates = 'N/A';
-            }
+            error_log('InterSoccer: Invalid ' . $product_type . ' date format for item ' . $item_id . ' in order ' . $order_id . ' - Using defaults');
+            $start_date = '1970-01-01';
+            $end_date = '1970-01-01';
+            $event_dates = 'N/A';
         }
     }
 

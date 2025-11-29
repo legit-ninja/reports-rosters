@@ -1093,10 +1093,18 @@ class RosterBuilder {
     /**
      * Parse date string into Y-m-d format
      * 
+     * Uses the unified date parser function for consistency across the plugin.
+     * 
      * @param string $date_string Date string
      * @return string|null Parsed date or null
      */
     private function parseDate($date_string) {
+        // Use the unified date parser function
+        if (function_exists('intersoccer_parse_date_unified')) {
+            return intersoccer_parse_date_unified($date_string, 'RosterBuilder');
+        }
+        
+        // Fallback to basic parsing if function not available (shouldn't happen)
         $formats = [
             'Y-m-d',
             'd/m/Y',
