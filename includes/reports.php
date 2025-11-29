@@ -22,6 +22,7 @@ require_once dirname(__DIR__) . '/vendor/autoload.php';
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 
 /**
  * Enqueue jQuery UI Datepicker and AJAX for auto-apply filters.
@@ -52,6 +53,17 @@ function intersoccer_enqueue_datepicker() {
                         validateDateRange();
                         intersoccerUpdateReport();
                     }
+                });
+                
+                // Also trigger update on manual input changes (for when users type dates)
+                var dateUpdateTimeout;
+                $("#start_date, #end_date").on("change blur", function() {
+                    clearTimeout(dateUpdateTimeout);
+                    dateUpdateTimeout = setTimeout(function() {
+                        if (validateDateRange()) {
+                            intersoccerUpdateReport();
+                        }
+                    }, 500); // Debounce manual input
                 });
                 
                 // Auto-filter on input changes with debouncing
@@ -161,9 +173,10 @@ function intersoccer_enqueue_datepicker() {
                                 $tableContainer.html(response.data.table).removeClass("loading");
                                 $totalsContainer.html(response.data.totals);
                                 
-                                // Update record count
-                                var recordCount = $(response.data.table).find("tbody tr").length;
+                                // Update record count (use provided count or count rows as fallback)
+                                var recordCount = response.data.record_count || $(response.data.table).find("tbody tr").length;
                                 $("#record-count").text(recordCount + " records found");
+                                console.log("InterSoccer: Updated record count to " + recordCount);
                                 
                                 // Store current filters for export
                                 window.intersoccerCurrentFilters = formData;
@@ -401,7 +414,7 @@ function intersoccer_render_booking_report_tab() {
     $year = isset($_GET['year']) ? sanitize_text_field($_GET['year']) : date('Y');
     
     // Default visible columns - focused view for finance team
-    $default_columns = ['ref', 'booked', 'base_price', 'discount_amount', 'stripe_fee', 'final_price', 
+    $default_columns = ['ref', 'booked', 'base_price', 'discount_amount', 'discounts_applied', 'stripe_fee', 'final_price', 
                        'class_name', 'venue', 'booker_email'];
     $visible_columns = isset($_GET['columns']) ? array_map('sanitize_text_field', (array)$_GET['columns']) : $default_columns;
 
@@ -411,6 +424,7 @@ function intersoccer_render_booking_report_tab() {
         'booked' => __('Booking Date', 'intersoccer-reports-rosters'),
         'base_price' => __('Base Price (CHF)', 'intersoccer-reports-rosters'),
         'discount_amount' => __('Discount (CHF)', 'intersoccer-reports-rosters'),
+        'discounts_applied' => __('Discounts Applied', 'intersoccer-reports-rosters'),
         'reimbursement' => __('Reimbursement (CHF)', 'intersoccer-reports-rosters'),
         'stripe_fee' => __('Stripe Fee (CHF)', 'intersoccer-reports-rosters'),
         'final_price' => __('Final Price (CHF)', 'intersoccer-reports-rosters'),
@@ -558,7 +572,42 @@ function intersoccer_export_booking_report_callback() {
             $date_range = $year;
         }
         $sheet_title = 'Enhanced Bookings ' . $date_range;
-        $sheet->setTitle(substr($sheet_title, 0, 31)); // Excel limit
+        
+        // Sanitize sheet title for Excel (remove invalid characters)
+        // Excel sheet names cannot contain: : \ / ? * [ ]
+        // Also remove spaces and dashes which cause issues in cell references (like "Sheet Name!A1")
+        // Replace spaces and dashes with underscores for safety
+        $sheet_title = str_replace([':', '\\', '/', '?', '*', '[', ']', "'", '"', ' ', '-'], '_', $sheet_title);
+        // Remove multiple consecutive underscores
+        $sheet_title = preg_replace('/_+/', '_', $sheet_title);
+        // Remove leading/trailing underscores
+        $sheet_title = trim($sheet_title, "_ \t\n\r\0\x0B");
+        // Limit to 31 characters (Excel limit) - do this after sanitization
+        $sheet_title = substr($sheet_title, 0, 31);
+        // Final trim to ensure no leading/trailing underscores
+        $sheet_title = trim($sheet_title, '_');
+        // Ensure it's not empty
+        if (empty($sheet_title)) {
+            $sheet_title = 'Enhanced_Bookings';
+        }
+        // Ensure it doesn't start with a number (Excel doesn't allow this)
+        if (preg_match('/^\d/', $sheet_title)) {
+            $sheet_title = 'Bookings_' . $sheet_title;
+            $sheet_title = substr($sheet_title, 0, 31);
+        }
+        
+        try {
+            $sheet->setTitle($sheet_title);
+            error_log('InterSoccer ENHANCED: Set sheet title to: ' . $sheet_title);
+        } catch (\Exception $e) {
+            // Fallback to safe default if title setting fails
+            error_log('InterSoccer ENHANCED: Failed to set sheet title "' . $sheet_title . '": ' . $e->getMessage());
+            try {
+                $sheet->setTitle('Enhanced Bookings');
+            } catch (\Exception $e2) {
+                error_log('InterSoccer ENHANCED: Failed to set fallback sheet title: ' . $e2->getMessage());
+            }
+        }
         
         // Define column headers with enhanced discount information
         $all_columns = [
@@ -567,6 +616,7 @@ function intersoccer_export_booking_report_callback() {
             'booked' => __('Booking Date', 'intersoccer-reports-rosters'),
             'base_price' => __('Base Price (CHF)', 'intersoccer-reports-rosters'),
             'discount_amount' => __('Total Discount (CHF)', 'intersoccer-reports-rosters'),
+            'discounts_applied' => __('Discounts Applied', 'intersoccer-reports-rosters'),
             'reimbursement' => __('Reimbursement (CHF)', 'intersoccer-reports-rosters'),
             'stripe_fee' => __('Stripe Fee (CHF)', 'intersoccer-reports-rosters'),
             'final_price' => __('Final Price (CHF)', 'intersoccer-reports-rosters'),
@@ -628,44 +678,94 @@ function intersoccer_export_booking_report_callback() {
         // ENHANCED: Add comprehensive financial summary for finance team
         $totals_start = $row_index + 2;
         
-        // Title row
-        $sheet->setCellValue('A' . $totals_start, '=== FINANCIAL SUMMARY ===');
-        $sheet->getStyle('A' . $totals_start)->getFont()->setBold(true)->setSize(14)->getColor()->setARGB('FF0073AA');
-        $sheet->mergeCells('A' . $totals_start . ':D' . $totals_start);
+        // Title row with error handling
+        // Skip mergeCells to avoid PhpSpreadsheet internal reference issues
+        // Just set the value in column A - it will display fine without merging
+        try {
+            // Use setCellValueExplicit to force text
+            $title_text = 'FINANCIAL SUMMARY';
+            $cell_ref = 'A' . $totals_start;
+            $sheet->setCellValueExplicit($cell_ref, $title_text, DataType::TYPE_STRING);
+            
+            // Apply styling with individual try-catch for each operation
+            try {
+                $style = $sheet->getStyle($cell_ref);
+                $style->getFont()->setBold(true)->setSize(14);
+                $style->getFont()->getColor()->setARGB('FF0073AA');
+            } catch (\Exception $e) {
+                error_log('InterSoccer ENHANCED: Failed to style title row at ' . $cell_ref . ': ' . $e->getMessage());
+            }
+            
+            // Skip mergeCells - it's causing issues with PhpSpreadsheet's internal reference handling
+            // The text will display in column A, which is acceptable
+        } catch (\Exception $e) {
+            error_log('InterSoccer ENHANCED: Error setting title row at ' . $totals_start . ': ' . $e->getMessage());
+            // Skip title row if it fails, but continue with summary
+            $totals_start++;
+        }
         
         // Enhanced summary with discount breakdowns
-        $net_revenue = $report_data['totals']['final_price'] - $report_data['totals']['reimbursement'];
-        $avg_order_value = $report_data['totals']['bookings'] > 0 ? $report_data['totals']['final_price'] / $report_data['totals']['bookings'] : 0;
-        $discount_rate = $report_data['totals']['base_price'] > 0 ? ($report_data['totals']['discount_amount'] / $report_data['totals']['base_price']) * 100 : 0;
-        $refund_rate = $report_data['totals']['final_price'] > 0 ? ($report_data['totals']['reimbursement'] / $report_data['totals']['final_price']) * 100 : 0;
+        // Safely calculate values with error handling
+        $net_revenue = (float)$report_data['totals']['final_price'] - (float)$report_data['totals']['reimbursement'];
+        $avg_order_value = $report_data['totals']['bookings'] > 0 ? (float)$report_data['totals']['final_price'] / (float)$report_data['totals']['bookings'] : 0;
+        $discount_rate = $report_data['totals']['base_price'] > 0 ? ((float)$report_data['totals']['discount_amount'] / (float)$report_data['totals']['base_price']) * 100 : 0;
+        $refund_rate = $report_data['totals']['final_price'] > 0 ? ((float)$report_data['totals']['reimbursement'] / (float)$report_data['totals']['final_price']) * 100 : 0;
+        
+        // Ensure all calculated values are finite numbers
+        $net_revenue = is_finite($net_revenue) ? $net_revenue : 0;
+        $avg_order_value = is_finite($avg_order_value) ? $avg_order_value : 0;
+        $discount_rate = is_finite($discount_rate) ? $discount_rate : 0;
+        $refund_rate = is_finite($refund_rate) ? $refund_rate : 0;
         
         // Calculate discount type breakdowns
         $discount_type_totals = intersoccer_calculate_discount_type_breakdown($report_data['data']);
         
+        // Safely calculate discount effectiveness
+        $discount_effectiveness = 0;
+        if ($report_data['totals']['discount_amount'] > 0) {
+            $discount_effectiveness = ((float)$discount_type_totals['sibling'] / (float)$report_data['totals']['discount_amount']) * 100;
+            $discount_effectiveness = is_finite($discount_effectiveness) ? $discount_effectiveness : 0;
+        }
+        
         $summary_data = [
             ['Metric', 'Value', 'Notes'],
-            ['Total Bookings:', $report_data['totals']['bookings'], 'Individual line items processed'],
-            ['Gross Revenue:', $report_data['totals']['base_price'], 'Before any discounts applied'],
-            ['Total Discounts:', $report_data['totals']['discount_amount'], 'All discount types combined'],
-            ['- Sibling Discounts:', $discount_type_totals['sibling'], 'Multi-child camp/course discounts'],
-            ['- Same Season Discounts:', $discount_type_totals['same_season'], '50% second course same season'],
-            ['- Coupon Discounts:', $discount_type_totals['coupon'], 'Promotional codes used'],
-            ['- Other Discounts:', $discount_type_totals['other'], 'Legacy and other discount types'],
-            ['Final Revenue:', $report_data['totals']['final_price'], 'After all discounts applied'],
-            ['Reimbursements:', $report_data['totals']['reimbursement'], 'Refunds processed'],
+            ['Total Bookings:', (int)$report_data['totals']['bookings'], 'Individual line items processed'],
+            ['Gross Revenue:', (float)$report_data['totals']['base_price'], 'Before any discounts applied'],
+            ['Total Discounts:', (float)$report_data['totals']['discount_amount'], 'All discount types combined'],
+            ['- Sibling Discounts:', (float)$discount_type_totals['sibling'], 'Multi-child camp/course discounts'],
+            ['- Same Season Discounts:', (float)$discount_type_totals['same_season'], '50% second course same season'],
+            ['- Coupon Discounts:', (float)$discount_type_totals['coupon'], 'Promotional codes used'],
+            ['- Other Discounts:', (float)$discount_type_totals['other'], 'Legacy and other discount types'],
+            ['Final Revenue:', (float)$report_data['totals']['final_price'], 'After all discounts applied'],
+            ['Reimbursements:', (float)$report_data['totals']['reimbursement'], 'Refunds processed'],
             ['NET REVENUE:', $net_revenue, 'Final revenue minus refunds'],
             ['', '', ''], // Spacer
             ['Average Order Value:', $avg_order_value, 'Final revenue per booking'],
             ['Discount Rate:', $discount_rate, 'Percentage of gross revenue discounted'],
             ['Refund Rate:', $refund_rate, 'Percentage of final revenue refunded'],
-            ['Discount Effectiveness:', $discount_type_totals['sibling'] / max($report_data['totals']['discount_amount'], 1) * 100, 'Percentage of discounts from sibling policy']
+            ['Discount Effectiveness:', $discount_effectiveness, 'Percentage of discounts from sibling policy']
         ];
         
         $current_row = $totals_start + 1;
         foreach ($summary_data as $index => $summary_row) {
-            $sheet->setCellValue('A' . $current_row, $summary_row[0]);
-            $sheet->setCellValue('B' . $current_row, $summary_row[1]);
-            $sheet->setCellValue('C' . $current_row, $summary_row[2]);
+            try {
+                // Safely set cell values with error handling
+                $sheet->setCellValue('A' . $current_row, $summary_row[0]);
+                
+                // For numeric values, ensure they're valid before setting
+                $cell_b_value = $summary_row[1];
+                if (is_numeric($cell_b_value) && !is_finite($cell_b_value)) {
+                    $cell_b_value = 0; // Replace NaN/Infinity with 0
+                }
+                $sheet->setCellValue('B' . $current_row, $cell_b_value);
+                
+                $sheet->setCellValue('C' . $current_row, $summary_row[2]);
+            } catch (\Exception $e) {
+                error_log('InterSoccer ENHANCED: Error setting cell values at row ' . $current_row . ': ' . $e->getMessage());
+                // Continue with next row even if this one fails
+                $current_row++;
+                continue;
+            }
             
             // Format the header row
             if ($index === 0) {
@@ -689,46 +789,96 @@ function intersoccer_export_booking_report_callback() {
             }
             
             // Format currency values
-            if (is_numeric($summary_row[1]) && $summary_row[1] > 0 && !strpos($summary_row[0], 'Rate') && !strpos($summary_row[0], 'Bookings') && !strpos($summary_row[0], 'Average') && !strpos($summary_row[0], 'Effectiveness')) {
-                $sheet->getStyle('B' . $current_row)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
-            }
-            // Format percentage values
-            elseif (strpos($summary_row[0], 'Rate') !== false || strpos($summary_row[0], 'Effectiveness') !== false) {
-                $sheet->getStyle('B' . $current_row)->getNumberFormat()->setFormatCode('0.0"%"');
-                $sheet->setCellValue('B' . $current_row, $summary_row[1] / 100); // Convert to decimal for Excel
-            }
-            // Format average order value
-            elseif (strpos($summary_row[0], 'Average') !== false) {
-                $sheet->getStyle('B' . $current_row)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
+            try {
+                if (is_numeric($summary_row[1]) && $summary_row[1] > 0 && !strpos($summary_row[0], 'Rate') && !strpos($summary_row[0], 'Bookings') && !strpos($summary_row[0], 'Average') && !strpos($summary_row[0], 'Effectiveness')) {
+                    $sheet->getStyle('B' . $current_row)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
+                }
+                // Format percentage values
+                elseif (strpos($summary_row[0], 'Rate') !== false || strpos($summary_row[0], 'Effectiveness') !== false) {
+                    $sheet->getStyle('B' . $current_row)->getNumberFormat()->setFormatCode('0.0"%"');
+                    // Safely convert percentage - ensure it's numeric and valid
+                    $percentage_value = is_numeric($summary_row[1]) ? ($summary_row[1] / 100) : 0;
+                    if (is_finite($percentage_value)) {
+                        $sheet->setCellValue('B' . $current_row, $percentage_value); // Convert to decimal for Excel
+                    } else {
+                        $sheet->setCellValue('B' . $current_row, 0); // Fallback for invalid values
+                    }
+                }
+                // Format average order value
+                elseif (strpos($summary_row[0], 'Average') !== false) {
+                    $sheet->getStyle('B' . $current_row)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
+                }
+            } catch (\Exception $e) {
+                error_log('InterSoccer ENHANCED: Error formatting cell B' . $current_row . ': ' . $e->getMessage());
+                // Continue even if formatting fails
             }
             
             $current_row++;
         }
         
         // Add generation info at the bottom
-        $info_row = $current_row + 1;
-        $generation_info = 'Enhanced Report Generated: ' . date('Y-m-d H:i:s') . ' | ';
-        if ($start_date && $end_date) {
-            $generation_info .= "Period: {$start_date} to {$end_date} | ";
-        } else {
-            $generation_info .= "Year: {$year} | ";
+        try {
+            $info_row = $current_row + 1;
+            $generation_info = 'Enhanced Report Generated: ' . date('Y-m-d H:i:s') . ' | ';
+            if ($start_date && $end_date) {
+                $generation_info .= "Period: {$start_date} to {$end_date} | ";
+            } else {
+                $generation_info .= "Year: {$year} | ";
+            }
+            $generation_info .= 'Records: ' . count($report_data['data']) . ' | Discount System: Enhanced';
+            
+            // Use setCellValueExplicit to ensure it's treated as text, not formula
+            $cell_ref = 'A' . $info_row;
+            $sheet->setCellValueExplicit($cell_ref, $generation_info, DataType::TYPE_STRING);
+            
+            // Apply styling with error handling
+            try {
+                $style = $sheet->getStyle($cell_ref);
+                $style->getFont()->setItalic(true)->setSize(10);
+            } catch (\Exception $e) {
+                error_log('InterSoccer ENHANCED: Failed to style generation info at ' . $cell_ref . ': ' . $e->getMessage());
+            }
+            
+            // Skip mergeCells - it's causing issues with PhpSpreadsheet's internal reference handling
+            // The text will display in column A, which is acceptable
+        } catch (\Exception $e) {
+            error_log('InterSoccer ENHANCED: Error adding generation info: ' . $e->getMessage());
+            // Continue even if this fails
         }
-        $generation_info .= 'Records: ' . count($report_data['data']) . ' | Discount System: Enhanced';
-        
-        $sheet->setCellValue('A' . $info_row, $generation_info);
-        $sheet->getStyle('A' . $info_row)->getFont()->setItalic(true)->setSize(10);
-        $sheet->mergeCells('A' . $info_row . ':D' . $info_row);
 
-        // Auto-size columns
-        foreach (range('A', chr(64 + max(count($header_row), 4))) as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
+        // Auto-size columns (with error handling)
+        try {
+            $max_cols = max(count($header_row), 4);
+            // Ensure we don't exceed Excel's column limit (XFD = column 16384)
+            $max_cols = min($max_cols, 26); // Limit to Z for safety
+            foreach (range('A', chr(64 + $max_cols)) as $col) {
+                try {
+                    $sheet->getColumnDimension($col)->setAutoSize(true);
+                } catch (\Exception $e) {
+                    // Log but continue if auto-size fails for a column
+                    error_log('InterSoccer ENHANCED: Failed to auto-size column ' . $col . ': ' . $e->getMessage());
+                }
+            }
+        } catch (\Exception $e) {
+            // Log but continue if auto-size fails entirely
+            error_log('InterSoccer ENHANCED: Failed to auto-size columns: ' . $e->getMessage());
         }
 
         // Generate and send file
-        $writer = new Xlsx($spreadsheet);
-        ob_start();
-        $writer->save('php://output');
-        $content = ob_get_clean();
+        try {
+            $writer = new Xlsx($spreadsheet);
+            ob_start();
+            $writer->save('php://output');
+            $content = ob_get_clean();
+            
+            if (empty($content)) {
+                throw new \Exception('Failed to generate Excel file content');
+            }
+        } catch (\Throwable $e) {
+            ob_end_clean(); // Clean up output buffer
+            error_log('InterSoccer ENHANCED: Excel generation error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            throw $e; // Re-throw to be caught by outer try-catch
+        }
 
         // Create descriptive filename
         $filename_parts = ['enhanced_booking_report'];
@@ -772,24 +922,64 @@ function intersoccer_calculate_discount_type_breakdown($report_data) {
 
     foreach ($report_data as $row) {
         $discount_amount = floatval(str_replace([',', ' CHF'], '', $row['discount_amount'] ?? '0'));
-        $discount_codes = strtolower($row['discount_codes'] ?? '');
 
         // Skip if no discount
         if ($discount_amount <= 0) {
             continue;
         }
 
-        // Categorize discount types based on discount codes
-        if (strpos($discount_codes, 'sibling') !== false || strpos($discount_codes, 'multi-child') !== false) {
-            $totals['sibling'] += $discount_amount;
-        } elseif (strpos($discount_codes, 'same-season') !== false || strpos($discount_codes, 'second-course') !== false) {
-            $totals['same_season'] += $discount_amount;
-        } elseif (!empty($discount_codes) && $discount_codes !== 'none') {
-            // Check if it's a coupon code (not empty and not 'none')
-            $totals['coupon'] += $discount_amount;
-        } else {
-            // Any other discount type
-            $totals['other'] += $discount_amount;
+        // PRIORITY 1: Use discount breakdown from metadata if available (most accurate)
+        if (isset($row['discount_breakdown']) && is_array($row['discount_breakdown']) && !empty($row['discount_breakdown'])) {
+            // Sum up discounts by type from the breakdown
+            foreach ($row['discount_breakdown'] as $disc) {
+                if (!isset($disc['type']) || !isset($disc['amount'])) {
+                    continue;
+                }
+                
+                $disc_type = strtolower($disc['type']);
+                $disc_amt = floatval($disc['amount']);
+                
+                // Map discount types to our categories
+                if (in_array($disc_type, ['sibling', 'multi-child', 'camp_sibling', 'course_multi_child'])) {
+                    $totals['sibling'] += $disc_amt;
+                } elseif (in_array($disc_type, ['same_season', 'same-season', 'second_course', 'second-course'])) {
+                    $totals['same_season'] += $disc_amt;
+                } elseif (in_array($disc_type, ['coupon', 'promo', 'promotional'])) {
+                    $totals['coupon'] += $disc_amt;
+                } else {
+                    $totals['other'] += $disc_amt;
+                }
+            }
+        }
+        // PRIORITY 2: Use discount_type field if available
+        elseif (isset($row['discount_type']) && !empty($row['discount_type'])) {
+            $disc_type = strtolower($row['discount_type']);
+            if (in_array($disc_type, ['sibling', 'multi-child', 'camp_sibling', 'course_multi_child'])) {
+                $totals['sibling'] += $discount_amount;
+            } elseif (in_array($disc_type, ['same_season', 'same-season', 'second_course', 'second-course'])) {
+                $totals['same_season'] += $discount_amount;
+            } elseif (in_array($disc_type, ['coupon', 'promo', 'promotional'])) {
+                $totals['coupon'] += $discount_amount;
+            } else {
+                $totals['other'] += $discount_amount;
+            }
+        }
+        // PRIORITY 3: Fallback to discount codes (least accurate)
+        else {
+            $discount_codes = strtolower($row['discount_codes'] ?? '');
+            
+            // Categorize discount types based on discount codes
+            if (strpos($discount_codes, 'sibling') !== false || strpos($discount_codes, 'multi-child') !== false) {
+                $totals['sibling'] += $discount_amount;
+            } elseif (strpos($discount_codes, 'same-season') !== false || strpos($discount_codes, 'second-course') !== false) {
+                $totals['same_season'] += $discount_amount;
+            } elseif (!empty($discount_codes) && $discount_codes !== 'none') {
+                // Check if it's a coupon code (not empty and not 'none')
+                $totals['coupon'] += $discount_amount;
+            } else {
+                // Any other discount type
+                $totals['other'] += $discount_amount;
+            }
         }
     }
 

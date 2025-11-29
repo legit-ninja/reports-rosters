@@ -25,7 +25,7 @@ function intersoccer_filter_report_callback() {
     error_log("InterSoccer AJAX: Called with start_date=$start_date, end_date=$end_date, year=$year, region=$region");
 
     $visible_columns = isset($_POST['columns']) ? array_map('sanitize_text_field', (array)$_POST['columns']) : [
-        'ref', 'booked', 'base_price', 'discount_amount', 'stripe_fee', 'final_price',
+        'ref', 'booked', 'base_price', 'discount_amount', 'discounts_applied', 'stripe_fee', 'final_price',
         'class_name', 'venue', 'booker_email'
     ];
 
@@ -78,8 +78,10 @@ function intersoccer_filter_report_callback() {
                             'booked' => __('Booked', 'intersoccer-reports-rosters'),
                             'base_price' => __('Base Price', 'intersoccer-reports-rosters'),
                             'discount_amount' => __('Discount', 'intersoccer-reports-rosters'),
+                            'discounts_applied' => __('Discounts Applied', 'intersoccer-reports-rosters'),
                             'stripe_fee' => __('Stripe Fee', 'intersoccer-reports-rosters'),
                             'final_price' => __('Final Price', 'intersoccer-reports-rosters'),
+                            'discount_codes' => __('Discount Codes', 'intersoccer-reports-rosters'),
                             'class_name' => __('Event', 'intersoccer-reports-rosters'),
                             'venue' => __('Venue', 'intersoccer-reports-rosters'),
                             'booker_email' => __('Email', 'intersoccer-reports-rosters'),
@@ -95,11 +97,19 @@ function intersoccer_filter_report_callback() {
                             <?php foreach ($visible_columns as $key): ?>
                                 <td>
                                     <?php
-                                    // Enhanced display for discount codes
-                                    if ($key === 'discount_codes') {
-                                        echo '<span title="' . esc_attr($row[$key]) . '">' . esc_html($row[$key]) . '</span>';
+                                    // Check if key exists in row data
+                                    if (isset($row[$key])) {
+                                        $value = $row[$key];
+                                        // Enhanced display for discount-related columns
+                                        if ($key === 'discounts_applied' || $key === 'discount_codes') {
+                                            // Show full text on hover for long discount strings
+                                            echo '<span title="' . esc_attr($value) . '">' . esc_html($value) . '</span>';
+                                        } else {
+                                            echo esc_html($value);
+                                        }
                                     } else {
-                                        echo esc_html($row[$key]);
+                                        // Key doesn't exist in row data
+                                        echo '—';
                                     }
                                     ?>
                                 </td>
@@ -126,7 +136,15 @@ function intersoccer_filter_report_callback() {
     error_log("InterSoccer AJAX: table_html length: " . strlen($table_html));
     error_log("InterSoccer AJAX: totals_html length: " . strlen($totals_html));
     
-    wp_send_json_success(['table' => $table_html, 'totals' => $totals_html]);
+    // Calculate record count
+    $record_count = isset($report_data['data']) ? count($report_data['data']) : 0;
+    error_log("InterSoccer AJAX: Record count: " . $record_count);
+    
+    wp_send_json_success([
+        'table' => $table_html, 
+        'totals' => $totals_html,
+        'record_count' => $record_count
+    ]);
 }
 
 /**
