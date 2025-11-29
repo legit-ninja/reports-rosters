@@ -10,6 +10,47 @@ if (!defined('ABSPATH')) {
 }
 
 /**
+ * Determine discount type from discount name (for legacy format)
+ * 
+ * @param string $discount_name The discount name/description
+ * @return string The discount type (sibling, same_season, coupon, other)
+ */
+function intersoccer_determine_discount_type_from_name($discount_name) {
+    if (empty($discount_name)) {
+        return 'other';
+    }
+    
+    $name_lower = strtolower($discount_name);
+    
+    // Check for sibling discounts
+    if (strpos($name_lower, 'sibling') !== false || 
+        strpos($name_lower, 'multi-child') !== false ||
+        strpos($name_lower, '2nd child') !== false ||
+        strpos($name_lower, '3rd child') !== false ||
+        strpos($name_lower, '2nd+ child') !== false) {
+        return 'sibling';
+    }
+    
+    // Check for same season discounts
+    if (strpos($name_lower, 'same season') !== false || 
+        strpos($name_lower, 'même saison') !== false ||
+        strpos($name_lower, 'second course') !== false ||
+        strpos($name_lower, '50%') !== false && strpos($name_lower, 'season') !== false) {
+        return 'same_season';
+    }
+    
+    // Check for coupon/promotional discounts
+    if (strpos($name_lower, 'coupon') !== false || 
+        strpos($name_lower, 'promo') !== false ||
+        strpos($name_lower, 'promotional') !== false) {
+        return 'coupon';
+    }
+    
+    // Default to other
+    return 'other';
+}
+
+/**
  * CRITICAL: Store discount information when orders are placed
  * This hooks into WooCommerce order processing to capture discount data for reporting
  */
@@ -348,9 +389,13 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
         COALESCE(CAST(subtotal.meta_value AS DECIMAL(10,2)), 0) AS base_price,
         COALESCE(CAST(total.meta_value AS DECIMAL(10,2)), 0) AS final_price,
         
-        -- Discount data
-        COALESCE(CAST(intersoccer_discount.meta_value AS DECIMAL(10,2)), 0) AS intersoccer_discount_amount,
-        intersoccer_breakdown.meta_value AS intersoccer_discount_breakdown,
+        -- Discount data (ITEM-LEVEL - most accurate)
+        COALESCE(CAST(item_discount_total.meta_value AS DECIMAL(10,2)), 0) AS intersoccer_item_discount_amount,
+        item_discount_breakdown.meta_value AS intersoccer_item_discount_breakdown,
+        
+        -- Order-level discount data (fallback)
+        COALESCE(CAST(intersoccer_discount.meta_value AS DECIMAL(10,2)), 0) AS intersoccer_order_discount_amount,
+        intersoccer_breakdown.meta_value AS intersoccer_order_discount_breakdown,
         
         -- Refund data
         COALESCE(ABS(CAST(refunded.refunded_total AS DECIMAL(10,2))), 0) AS reimbursement
@@ -406,7 +451,13 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
     LEFT JOIN $postmeta_table billing_phone ON p.ID = billing_phone.post_id 
         AND billing_phone.meta_key = '_billing_phone'
     
-    -- Discount data
+    -- Discount data (ITEM-LEVEL - most accurate)
+    LEFT JOIN $order_itemmeta_table item_discount_total ON oi.order_item_id = item_discount_total.order_item_id
+        AND item_discount_total.meta_key = '_intersoccer_total_item_discount'
+    LEFT JOIN $order_itemmeta_table item_discount_breakdown ON oi.order_item_id = item_discount_breakdown.order_item_id
+        AND item_discount_breakdown.meta_key = '_intersoccer_item_discounts'
+    
+    -- Order-level discount data (fallback)
     LEFT JOIN $postmeta_table intersoccer_discount ON p.ID = intersoccer_discount.post_id 
         AND intersoccer_discount.meta_key = '_intersoccer_total_discounts'
     LEFT JOIN $postmeta_table intersoccer_breakdown ON p.ID = intersoccer_breakdown.post_id 
@@ -485,7 +536,19 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
     foreach ($results as $row) {
         $totals['base_price'] += floatval($row['base_price']);
         $totals['final_price'] += floatval($row['final_price']);
-        $totals['discount_amount'] += floatval($row['intersoccer_discount_amount']);
+        
+        // Use item-level discount if available, otherwise order-level, otherwise calculate
+        $discount_amt = 0;
+        if (!empty($row['intersoccer_item_discount_amount']) && floatval($row['intersoccer_item_discount_amount']) > 0) {
+            $discount_amt = floatval($row['intersoccer_item_discount_amount']);
+        } elseif (!empty($row['intersoccer_order_discount_amount']) && floatval($row['intersoccer_order_discount_amount']) > 0) {
+            // Order-level discount - would need proportional allocation, use price difference for now
+            $discount_amt = floatval($row['base_price']) - floatval($row['final_price']);
+        } else {
+            $discount_amt = floatval($row['base_price']) - floatval($row['final_price']);
+        }
+        
+        $totals['discount_amount'] += $discount_amt;
         $totals['reimbursement'] += floatval($row['reimbursement']);
     }
 
@@ -502,11 +565,43 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
             $attendee_name = trim($row['player_first_name'] . ' ' . $row['player_last_name']);
         }
 
-        // Calculate discount as difference between base and final price
-        $total_discount = floatval($row['base_price']) - floatval($row['final_price']);
+        // PRIORITY 1: Use item-level discount metadata if available (most accurate)
+        $total_discount = 0;
+        $item_discount_breakdown = [];
+        
+        if (!empty($row['intersoccer_item_discount_amount']) && floatval($row['intersoccer_item_discount_amount']) > 0) {
+            $total_discount = floatval($row['intersoccer_item_discount_amount']);
+            
+            // Get detailed breakdown if available
+            if (!empty($row['intersoccer_item_discount_breakdown'])) {
+                $item_discount_breakdown = maybe_unserialize($row['intersoccer_item_discount_breakdown']);
+                if (!is_array($item_discount_breakdown)) {
+                    $item_discount_breakdown = [];
+                }
+            }
+        }
+        // PRIORITY 2: Fallback to order-level discount (proportional allocation)
+        elseif (!empty($row['intersoccer_order_discount_amount']) && floatval($row['intersoccer_order_discount_amount']) > 0) {
+            // This is order-level, so we'd need to allocate proportionally
+            // For now, use price difference as fallback
+            $total_discount = floatval($row['base_price']) - floatval($row['final_price']);
+        }
+        // PRIORITY 3: Calculate from price difference (least accurate)
+        else {
+            $total_discount = floatval($row['base_price']) - floatval($row['final_price']);
+            
+            // Log when using fallback for debugging
+            if ($total_discount > 0.01) {
+                error_log("InterSoccer Enhanced Report: Order {$row['order_id']}, Item {$row['order_item_id']} - Using fallback discount calculation. Calculated: {$total_discount} CHF");
+            }
+        }
         
         // Build discount codes string
         $discount_codes = 'None'; // Simplified for now
+        if (!empty($item_discount_breakdown)) {
+            $discount_names = array_column($item_discount_breakdown, 'name');
+            $discount_codes = implode(', ', array_filter($discount_names));
+        }
         
         // Format dates
         $booked_date = '';
@@ -584,7 +679,7 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
             oim_total.meta_value as line_total,
             oim_subtotal.meta_value as line_subtotal
         FROM {$wpdb->posts} p
-        INNER JOIN {$wpdb->prefix}woocommerce_order_items oi ON p.ID = oi.order_id
+        INNER JOIN {$wpdb->prefix}woocommerce_order_items oi ON p.ID = oi.order_id AND oi.order_item_type = 'line_item'
         LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim_product ON oi.order_item_id = oim_product.order_item_id AND oim_product.meta_key = '_product_id'
         LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim_variation ON oi.order_item_id = oim_variation.order_item_id AND oim_variation.meta_key = '_variation_id'
         LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim_qty ON oi.order_item_id = oim_qty.order_item_id AND oim_qty.meta_key = '_qty'
@@ -601,7 +696,7 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
 
     $data = [];
     $totals = [
-        'bookings' => 0,
+        'bookings' => 0, // Will be set to count($data) at the end
         'base_price' => 0,
         'discount_amount' => 0,
         'final_price' => 0,
@@ -609,6 +704,11 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
     ];
 
     foreach ($results as $row) {
+        // Skip if no product_id (this would be a coupon or other non-product item)
+        if (empty($row->product_id)) {
+            continue;
+        }
+
         // Skip if this is a BuyClub order (check order meta)
         $buyclub_check = $wpdb->get_var($wpdb->prepare(
             "SELECT meta_value FROM {$wpdb->postmeta} WHERE post_id = %d AND meta_key = '_billing_company'",
@@ -670,7 +770,75 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
         // Calculate pricing
         $base_price = floatval($row->line_subtotal);
         $final_price = floatval($row->line_total);
-        $discount_amount = $base_price - $final_price;
+        
+        // PRIORITY 1: Use stored discount metadata if available (most accurate)
+        // The Product Variations plugin stores discounts in multiple formats:
+        // - New format: _intersoccer_item_discounts (array) and _intersoccer_total_item_discount (amount)
+        // - Legacy format: "Discount" (name) and "Discount Amount" (HTML formatted amount)
+        $discount_amount = 0;
+        $item_discount_breakdown = [];
+        
+        // Check for new format first (_intersoccer_item_discounts)
+        if (isset($meta_data['_intersoccer_total_item_discount']) && !empty($meta_data['_intersoccer_total_item_discount'])) {
+            // Use the stored total discount amount (most accurate)
+            $discount_amount = floatval($meta_data['_intersoccer_total_item_discount']);
+            
+            // Get the detailed breakdown if available
+            if (isset($meta_data['_intersoccer_item_discounts']) && !empty($meta_data['_intersoccer_item_discounts'])) {
+                // WooCommerce automatically serializes arrays, so we need to unserialize
+                $raw_breakdown = $meta_data['_intersoccer_item_discounts'];
+                
+                // Try to unserialize (WooCommerce stores arrays as serialized strings)
+                if (is_string($raw_breakdown)) {
+                    $item_discount_breakdown = maybe_unserialize($raw_breakdown);
+                } else {
+                    $item_discount_breakdown = $raw_breakdown;
+                }
+                
+                // Ensure it's an array
+                if (!is_array($item_discount_breakdown)) {
+                    error_log("InterSoccer Financial Report: Order {$row->order_id}, Item {$row->order_item_id} - Discount breakdown is not an array. Type: " . gettype($item_discount_breakdown) . ", Value: " . print_r($raw_breakdown, true));
+                    $item_discount_breakdown = [];
+                }
+            }
+        }
+        // PRIORITY 2: Check for legacy format ("Discount" and "Discount Amount" keys)
+        elseif (isset($meta_data['Discount Amount']) && !empty($meta_data['Discount Amount'])) {
+            // Extract numeric value from HTML formatted amount
+            // Format: <span class="woocommerce-Price-amount amount"><bdi><span class="woocommerce-Price-currencySymbol">&#67;&#72;&#70;</span>54.00</bdi></span>
+            $discount_amount_html = $meta_data['Discount Amount'];
+            
+            // Extract numeric value using regex
+            if (preg_match('/(\d+\.?\d*)/', $discount_amount_html, $matches)) {
+                $discount_amount = floatval($matches[1]);
+            } else {
+                // Fallback: try to strip HTML and convert
+                $discount_amount = floatval(strip_tags($discount_amount_html));
+            }
+            
+            // Get discount name from "Discount" key
+            if (isset($meta_data['Discount']) && !empty($meta_data['Discount'])) {
+                $discount_name = trim($meta_data['Discount']);
+                
+                // Create breakdown array from legacy format
+                $item_discount_breakdown = [
+                    [
+                        'name' => $discount_name,
+                        'type' => intersoccer_determine_discount_type_from_name($discount_name),
+                        'amount' => $discount_amount
+                    ]
+                ];
+            }
+        }
+        // PRIORITY 3: FALLBACK - Calculate from price difference
+        else {
+            $discount_amount = $base_price - $final_price;
+            
+            // Log when we're using fallback calculation for debugging
+            if ($discount_amount > 0.01) {
+                error_log("InterSoccer Financial Report: Order {$row->order_id}, Item {$row->order_item_id} - Using fallback discount calculation (no discount metadata found). Calculated: {$discount_amount} CHF");
+            }
+        }
 
         // Get discount codes used (from order coupons)
         $coupons = $wpdb->get_col($wpdb->prepare(
@@ -679,6 +847,77 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
             $row->order_id
         ));
         $discount_codes = implode(', ', $coupons);
+        
+        // Format discounts applied for display (combines InterSoccer discounts + coupon codes)
+        $discounts_applied = [];
+        
+        // Add InterSoccer discounts from breakdown (new format)
+        if (!empty($item_discount_breakdown) && is_array($item_discount_breakdown)) {
+            foreach ($item_discount_breakdown as $disc) {
+                // Handle both array format and object format
+                $disc_array = is_array($disc) ? $disc : (array) $disc;
+                
+                if (isset($disc_array['name']) && !empty($disc_array['name'])) {
+                    $discount_name = trim($disc_array['name']);
+                    
+                    // Add amount if available
+                    if (isset($disc_array['amount']) && floatval($disc_array['amount']) > 0) {
+                        $discount_amount_formatted = number_format(floatval($disc_array['amount']), 2);
+                        $discount_name .= ' (' . $discount_amount_formatted . ' CHF)';
+                    }
+                    
+                    // Only add if we have a valid discount name
+                    if (!empty($discount_name)) {
+                        $discounts_applied[] = $discount_name;
+                    }
+                }
+            }
+        }
+        // If no breakdown but we have discount amount, check for legacy "Discount" key
+        elseif ($discount_amount > 0.01 && isset($meta_data['Discount']) && !empty($meta_data['Discount'])) {
+            $discount_name = trim($meta_data['Discount']);
+            $discount_name .= ' (' . number_format($discount_amount, 2) . ' CHF)';
+            $discounts_applied[] = $discount_name;
+        }
+        
+        // Add WooCommerce coupon codes (these are order-level, not item-level)
+        if (!empty($coupons)) {
+            foreach ($coupons as $coupon_code) {
+                if (!empty($coupon_code) && trim($coupon_code) !== '') {
+                    $discounts_applied[] = 'Coupon: ' . trim($coupon_code);
+                }
+            }
+        }
+        
+        // Format as string for display
+        $discounts_applied_str = !empty($discounts_applied) ? implode('; ', $discounts_applied) : 'None';
+        
+        // Debug logging for discount detection
+        if (defined('WP_DEBUG') && WP_DEBUG && $discount_amount > 0.01) {
+            error_log("InterSoccer Financial Report: Order {$row->order_id}, Item {$row->order_item_id} - Discounts detected: " . $discounts_applied_str . " (Total: {$discount_amount} CHF)");
+        }
+        
+        // Store discount breakdown for enhanced reporting
+        $discount_type = 'other';
+        if (!empty($item_discount_breakdown)) {
+            // Determine discount type from breakdown
+            foreach ($item_discount_breakdown as $disc) {
+                if (isset($disc['type'])) {
+                    $discount_type = $disc['type'];
+                    break; // Use first discount type found
+                }
+            }
+        } elseif (!empty($discount_codes)) {
+            // Fallback: try to determine from coupon codes
+            $discount_codes_lower = strtolower($discount_codes);
+            if (strpos($discount_codes_lower, 'sibling') !== false || strpos($discount_codes_lower, 'multi-child') !== false) {
+                $discount_type = 'sibling';
+            } elseif (strpos($discount_codes_lower, 'same-season') !== false || strpos($discount_codes_lower, 'second-course') !== false) {
+                $discount_type = 'same_season';
+            } elseif (!empty($discount_codes)) {
+                $discount_type = 'coupon';
+            }
+        }
 
         // Calculate Stripe fee (approximate 2.9% + 0.30 CHF)
         $stripe_fee = $final_price > 0 ? ($final_price * 0.029) + 0.30 : 0;
@@ -691,6 +930,9 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
             'stripe_fee' => number_format($stripe_fee, 2),
             'final_price' => number_format($final_price, 2),
             'discount_codes' => $discount_codes,
+            'discounts_applied' => $discounts_applied_str, // New column: formatted discount information
+            'discount_type' => $discount_type, // Store discount type for breakdown
+            'discount_breakdown' => $item_discount_breakdown, // Store detailed breakdown
             'class_name' => $row->order_item_name,
             'venue' => $venue,
             'booker_email' => get_post_meta($row->order_id, '_billing_email', true),
@@ -704,11 +946,16 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
         ];
 
         // Update totals
-        $totals['bookings'] += intval($row->quantity);
+        // Note: Each order item represents one booking/participant
+        // We don't sum quantities here - bookings = count of order items
         $totals['base_price'] += $base_price;
         $totals['discount_amount'] += $discount_amount;
         $totals['final_price'] += $final_price;
     }
+
+    // Set bookings to the count of records (each order item = 1 booking)
+    // This ensures "Total Bookings" matches "records found"
+    $totals['bookings'] = count($data);
 
     error_log("=== InterSoccer Financial Report: Returning " . count($data) . " records with totals: " . json_encode($totals) . " ===");
     return ['data' => $data, 'totals' => $totals];
