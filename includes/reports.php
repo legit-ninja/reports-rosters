@@ -71,6 +71,14 @@ function intersoccer_enqueue_datepicker() {
                     intersoccerUpdateReport();
                 });
                 
+                // Toggle columns panel visibility
+                $("#toggle-columns").on("click", function(e) {
+                    e.preventDefault();
+                    $("#columns-panel").slideToggle(200);
+                    var buttonText = $("#columns-panel").is(":visible") ? "Hide Columns" : "Show/Hide Columns";
+                    $(this).text(buttonText);
+                });
+                
                 // Debounced column checkbox changes
                 $("input[name=\'columns[]\']").on("change", function() {
                     clearTimeout(updateTimeout);
@@ -415,7 +423,7 @@ function intersoccer_render_booking_report_tab() {
     
     // Default visible columns - focused view for finance team
     $default_columns = ['ref', 'booked', 'base_price', 'discount_amount', 'discounts_applied', 'stripe_fee', 'final_price', 
-                       'class_name', 'venue', 'booker_email'];
+                       'class_name', 'venue', 'booker_email', 'booker_phone'];
     $visible_columns = isset($_GET['columns']) ? array_map('sanitize_text_field', (array)$_GET['columns']) : $default_columns;
 
     // Define all possible columns
@@ -433,6 +441,7 @@ function intersoccer_render_booking_report_tab() {
         'start_date' => __('Event Start Date', 'intersoccer-reports-rosters'),
         'venue' => __('Venue', 'intersoccer-reports-rosters'),
         'booker_email' => __('Booker Email', 'intersoccer-reports-rosters'),
+        'booker_phone' => __('Customer Phone', 'intersoccer-reports-rosters'),
         'attendee_name' => __('Child/Attendee Name', 'intersoccer-reports-rosters'),
         'attendee_age' => __('Attendee Age', 'intersoccer-reports-rosters'),
         'attendee_gender' => __('Attendee Gender', 'intersoccer-reports-rosters'),
@@ -625,6 +634,7 @@ function intersoccer_export_booking_report_callback() {
             'start_date' => __('Event Start Date', 'intersoccer-reports-rosters'),
             'venue' => __('Venue', 'intersoccer-reports-rosters'),
             'booker_email' => __('Booker Email', 'intersoccer-reports-rosters'),
+            'booker_phone' => __('Customer Phone', 'intersoccer-reports-rosters'),
             'attendee_name' => __('Attendee Name', 'intersoccer-reports-rosters'),
             'attendee_age' => __('Age', 'intersoccer-reports-rosters'),
             'attendee_gender' => __('Gender', 'intersoccer-reports-rosters'),

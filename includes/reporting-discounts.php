@@ -936,6 +936,7 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
             'class_name' => $row->order_item_name,
             'venue' => $venue,
             'booker_email' => get_post_meta($row->order_id, '_billing_email', true),
+            'booker_phone' => get_post_meta($row->order_id, '_billing_phone', true) ?: 'N/A',
             'attendee_name' => $attendee_name,
             'attendee_age' => $attendee_age,
             'attendee_gender' => $attendee_gender,

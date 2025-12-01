@@ -287,6 +287,7 @@ class FinancialReportService {
                 'class_name' => $row->order_item_name,
                 'venue' => $venue ?: 'N/A',
                 'booker_email' => get_post_meta($order_id, '_billing_email', true) ?: 'N/A',
+                'booker_phone' => get_post_meta($order_id, '_billing_phone', true) ?: 'N/A',
                 'attendee_name' => $attendee_name ?: 'N/A',
                 'attendee_age' => $attendee_age ?: 'N/A',
                 'attendee_gender' => $attendee_gender ?: 'N/A',

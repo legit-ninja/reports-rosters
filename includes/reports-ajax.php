@@ -26,7 +26,7 @@ function intersoccer_filter_report_callback() {
 
     $visible_columns = isset($_POST['columns']) ? array_map('sanitize_text_field', (array)$_POST['columns']) : [
         'ref', 'booked', 'base_price', 'discount_amount', 'discounts_applied', 'stripe_fee', 'final_price',
-        'class_name', 'venue', 'booker_email'
+        'class_name', 'venue', 'booker_email', 'booker_phone'
     ];
 
     // Use the simplified financial reporting function
@@ -85,6 +85,7 @@ function intersoccer_filter_report_callback() {
                             'class_name' => __('Event', 'intersoccer-reports-rosters'),
                             'venue' => __('Venue', 'intersoccer-reports-rosters'),
                             'booker_email' => __('Email', 'intersoccer-reports-rosters'),
+                            'booker_phone' => __('Customer Phone', 'intersoccer-reports-rosters'),
                         ];
                         foreach ($visible_columns as $key): ?>
                             <th><?php echo esc_html($all_columns[$key]); ?></th>
