@@ -2,6 +2,10 @@
 *.log
 debug_*.php
 temp_*.php
+troubleshoot*.sql
+investigate*.sql
+*.csv
+plan
 
 # Deployment
 deploy.local.sh

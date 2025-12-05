@@ -199,8 +199,8 @@ function intersoccer_rebuild_event_signatures() {
 
     error_log('InterSoccer: Starting event signature rebuild for all records');
 
-    // Get all records that need signature updates
-    $records = $wpdb->get_results("SELECT id, activity_type, venue, age_group, camp_terms, course_day, times, season, girls_only, product_id FROM $rosters_table", ARRAY_A);
+    // Get all records that need signature updates (including city and canton_region for tournaments)
+    $records = $wpdb->get_results("SELECT id, activity_type, venue, age_group, camp_terms, course_day, times, season, girls_only, city, canton_region, product_id FROM $rosters_table", ARRAY_A);
 
     $updated = 0;
     foreach ($records as $record) {
@@ -213,6 +213,8 @@ function intersoccer_rebuild_event_signatures() {
             'times' => $record['times'],
             'season' => $record['season'],
             'girls_only' => $record['girls_only'],
+            'city' => $record['city'] ?? '',
+            'canton_region' => $record['canton_region'] ?? '',
             'product_id' => $record['product_id'],
         ]);
 

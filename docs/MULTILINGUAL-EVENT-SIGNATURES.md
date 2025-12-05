@@ -210,6 +210,8 @@ All of these are translatable via WPML and must be normalized:
 | **Camp Times** | `pa_camp-times` | 9:00am-4:00pm | 9h00-16h00 | 9:00-16:00 |
 | **Course Times** | `pa_course-times` | 9:00am-4:00pm | 9h00-16h00 | 9:00-16:00 |
 | **Season** | `pa_program-season` | Summer 2025 | Été 2025 | Sommer 2025 |
+| **City** | `pa_city` | Geneva | Genève | Genf |
+| **Canton/Region** | `pa_canton-region` | Geneva | Genève | Genf |
 
 ### Non-Taxonomy Fields
 

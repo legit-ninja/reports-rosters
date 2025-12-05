@@ -64,6 +64,8 @@ class EventSignatureGenerator {
                 'times' => $normalized['times'] ?? '',
                 'season' => $normalized['season'] ?? '',
                 'girls_only' => $normalized['girls_only'] ?? 0,
+                'city' => $normalized['city'] ?? '',
+                'canton_region' => $normalized['canton_region'] ?? '',
                 'product_id' => $normalized['product_id'] ?? 0,
             ];
             
@@ -135,6 +137,16 @@ class EventSignatureGenerator {
             // Normalize season (translate to English)
             if (!empty($event_data['season'])) {
                 $normalized['season'] = $this->normalizeSeason($event_data['season']);
+            }
+            
+            // Normalize city (taxonomy term -> slug) - important for tournaments
+            if (!empty($event_data['city'])) {
+                $normalized['city'] = $this->getTermSlug($event_data['city'], 'pa_city');
+            }
+            
+            // Normalize canton_region (taxonomy term -> slug) - important for tournaments
+            if (!empty($event_data['canton_region'])) {
+                $normalized['canton_region'] = $this->getTermSlug($event_data['canton_region'], 'pa_canton-region');
             }
             
             // Normalize girls_only to boolean

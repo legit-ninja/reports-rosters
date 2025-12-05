@@ -524,6 +524,8 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         'times' => $times,
         'season' => $season,
         'girls_only' => $girls_only,
+        'city' => $city,
+        'canton_region' => $canton_region,
         'product_id' => $product_id,
     ];
     
@@ -1145,6 +1147,22 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
             $normalized['season'] = ucfirst(strtolower($normalized['season']));
         }
 
+        // Normalize city (taxonomy term name) - important for tournaments
+        if (!empty($event_data['city'])) {
+            $term = intersoccer_get_term_by_translated_name($event_data['city'], 'pa_city');
+            if ($term) {
+                $normalized['city'] = $term->name;
+            }
+        }
+
+        // Normalize canton_region (taxonomy term name) - important for tournaments
+        if (!empty($event_data['canton_region'])) {
+            $term = intersoccer_get_term_by_translated_name($event_data['canton_region'], 'pa_canton-region');
+            if ($term) {
+                $normalized['canton_region'] = $term->name;
+            }
+        }
+
         // Normalize activity_type - this might be a direct value, not a taxonomy term
         if (!empty($event_data['activity_type'])) {
             // Check if it's a taxonomy term first
@@ -1261,6 +1279,8 @@ function intersoccer_generate_event_signature($event_data) {
         'times' => $event_data['times'] ?? '',
         'season' => intersoccer_get_term_slug_by_name($event_data['season'] ?? '', 'pa_program-season'),
         'girls_only' => $event_data['girls_only'] ? '1' : '0',
+        'city' => intersoccer_get_term_slug_by_name($event_data['city'] ?? '', 'pa_city'),
+        'canton_region' => intersoccer_get_term_slug_by_name($event_data['canton_region'] ?? '', 'pa_canton-region'),
         'product_id' => $event_data['product_id'] ?? '',
     ];
 
