@@ -2605,11 +2605,16 @@ function intersoccer_render_tournaments_page() {
                                             <span class="detail-value"><?php echo esc_html($tournament['times'] ?: 'TBD'); ?></span>
                                         </div>
                                         <div class="detail-row">
-                                            <span class="detail-label">📅 <?php _e('Dates', 'intersoccer-reports-rosters'); ?></span>
+                                            <span class="detail-label">📅 <?php _e('Date', 'intersoccer-reports-rosters'); ?></span>
                                             <span class="detail-value">
                                                 <?php
                                                 if ($tournament['corrected_start_date'] !== '1970-01-01' && $tournament['corrected_end_date'] !== '1970-01-01') {
-                                                    echo esc_html(date_i18n('M j', strtotime($tournament['corrected_start_date'])) . ' - ' . date_i18n('M j, Y', strtotime($tournament['corrected_end_date'])));
+                                                    // Tournaments typically last one day, so show single date if start and end are the same
+                                                    if ($tournament['corrected_start_date'] === $tournament['corrected_end_date']) {
+                                                        echo esc_html(date_i18n('M j, Y', strtotime($tournament['corrected_start_date'])));
+                                                    } else {
+                                                        echo esc_html(date_i18n('M j', strtotime($tournament['corrected_start_date'])) . ' - ' . date_i18n('M j, Y', strtotime($tournament['corrected_end_date'])));
+                                                    }
                                                 } else {
                                                     echo esc_html__('TBD', 'intersoccer-reports-rosters');
                                                 }

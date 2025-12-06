@@ -79,6 +79,7 @@ function intersoccer_render_roster_details_page() {
     $is_from_camps_page = $from_page === 'camps' || strpos($referer, 'page=intersoccer-camps') !== false;
     $is_from_courses_page = $from_page === 'courses' || strpos($referer, 'page=intersoccer-courses') !== false;
     $is_from_girls_only_page = $from_page === 'girls-only' || strpos($referer, 'page=intersoccer-girls-only') !== false || $girls_only;
+    $is_from_tournaments_page = $from_page === 'tournaments' || strpos($referer, 'page=intersoccer-tournaments') !== false;
 
     error_log('InterSoccer: Roster details parameters - girls_only: ' . ($girls_only ? 'yes' : 'no') . ', from_page: ' . ($from_page ?: 'N/A'));
 
@@ -108,6 +109,7 @@ function intersoccer_render_roster_details_page() {
                 'is_from_camps_page' => $is_from_camps_page,
                 'is_from_courses_page' => $is_from_courses_page,
                 'is_from_girls_only_page' => $is_from_girls_only_page,
+                'is_from_tournaments_page' => $is_from_tournaments_page,
                 'sort_by' => $sort_by,
                 'sort_order' => $sort_order,
             ]
@@ -167,6 +169,8 @@ function intersoccer_render_roster_details_page() {
             $where_clauses[] = "r.activity_type = 'Camp' AND r.girls_only = 0";
         } elseif ($is_from_courses_page) {
             $where_clauses[] = "r.activity_type = 'Course' AND r.girls_only = 0";
+        } elseif ($is_from_tournaments_page) {
+            $where_clauses[] = "r.activity_type = 'Tournament' AND r.girls_only = 0";
         }
 
         if ($product_id > 0) {

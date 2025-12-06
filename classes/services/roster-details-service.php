@@ -119,6 +119,7 @@ class RosterDetailsService {
         $context['is_from_camps_page'] = !empty($context['is_from_camps_page']);
         $context['is_from_courses_page'] = !empty($context['is_from_courses_page']);
         $context['is_from_girls_only_page'] = !empty($context['is_from_girls_only_page']);
+        $context['is_from_tournaments_page'] = !empty($context['is_from_tournaments_page']);
 
         $sortBy = isset($context['sort_by']) ? $context['sort_by'] : 'order_date';
         $allowedSortFields = ['order_date', 'player_name', 'last_name', 'gender', 'age', 'age_group'];
@@ -161,6 +162,9 @@ class RosterDetailsService {
             $criteria['girls_only'] = 0;
         } elseif ($context['is_from_courses_page']) {
             $criteria['activity_type'] = 'Course';
+            $criteria['girls_only'] = 0;
+        } elseif ($context['is_from_tournaments_page']) {
+            $criteria['activity_type'] = 'Tournament';
             $criteria['girls_only'] = 0;
         }
 
