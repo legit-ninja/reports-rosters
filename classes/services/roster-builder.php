@@ -1480,6 +1480,113 @@ class RosterBuilder {
     }
     
     /**
+     * Rebuild event signatures for all roster entries
+     * 
+     * This regenerates event signatures for all existing rosters to ensure
+     * proper grouping across languages and includes new signature components
+     * like city and canton_region for tournaments.
+     * 
+     * @return array Results ['updated' => int, 'errors' => int, 'message' => string]
+     */
+    public function rebuildSignatures() {
+        try {
+            $this->logger->info('Starting event signature rebuild for all rosters');
+            
+            $results = [
+                'updated' => 0,
+                'errors' => 0,
+                'message' => ''
+            ];
+            
+            // Get all roster entries
+            $rosters = $this->roster_repository->all();
+            $total = $rosters->count();
+            
+            $this->logger->info('Found rosters to rebuild signatures', ['count' => $total]);
+            
+            if ($total === 0) {
+                $results['message'] = __('No rosters found to rebuild signatures.', 'intersoccer-reports-rosters');
+                return $results;
+            }
+            
+            // Process each roster entry
+            foreach ($rosters as $roster) {
+                try {
+                    // Prepare event data for signature generation
+                    $event_data = [
+                        'activity_type' => $roster->activity_type ?? '',
+                        'venue' => $roster->venue ?? '',
+                        'age_group' => $roster->age_group ?? '',
+                        'camp_terms' => $roster->camp_terms ?? '',
+                        'course_day' => $roster->course_day ?? '',
+                        'times' => $roster->times ?? '',
+                        'season' => $roster->season ?? '',
+                        'girls_only' => $roster->girls_only ?? 0,
+                        'city' => $roster->city ?? '',
+                        'canton_region' => $roster->canton_region ?? '',
+                        'product_id' => $roster->product_id ?? 0,
+                    ];
+                    
+                    // Generate new signature using the signature generator
+                    $new_signature = $this->signature_generator->generate($event_data);
+                    
+                    if (empty($new_signature)) {
+                        $results['errors']++;
+                        $this->logger->warning('Generated empty signature for roster', [
+                            'roster_id' => $roster->id,
+                            'event_data' => $event_data
+                        ]);
+                        continue;
+                    }
+                    
+                    // Update the roster with new signature
+                    $update_result = $this->roster_repository->update($roster->id, [
+                        'event_signature' => $new_signature
+                    ]);
+                    
+                    if ($update_result) {
+                        $results['updated']++;
+                    } else {
+                        $results['errors']++;
+                        $this->logger->warning('Failed to update roster signature', [
+                            'roster_id' => $roster->id
+                        ]);
+                    }
+                    
+                } catch (\Exception $e) {
+                    $results['errors']++;
+                    $this->logger->error('Failed to rebuild signature for roster', [
+                        'roster_id' => $roster->id ?? 'unknown',
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+            
+            $results['message'] = sprintf(
+                __('Event signatures rebuilt. Updated: %d, Errors: %d', 'intersoccer-reports-rosters'),
+                $results['updated'],
+                $results['errors']
+            );
+            
+            $this->logger->info('Event signature rebuild completed', $results);
+            
+            return $results;
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Event signature rebuild failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return [
+                'updated' => 0,
+                'errors' => 1,
+                'message' => __('Event signature rebuild failed: ', 'intersoccer-reports-rosters') . $e->getMessage()
+            ];
+        }
+    }
+    
+    /**
      * Clean up orphaned roster entries
      * 
      * @return array Cleanup results
