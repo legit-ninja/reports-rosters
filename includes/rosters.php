@@ -765,8 +765,19 @@ function intersoccer_render_camps_page() {
             }
             $group['season'] = intersoccer_normalize_season_for_display($season);
 
-            $start = $variation ? $variation->get_meta('_course_start_date') : ($parent_product ? $parent_product->get_meta('_course_start_date') : '1970-01-01');
-            $end = $variation ? $variation->get_meta('_course_end_date') : ($parent_product ? $parent_product->get_meta('_course_end_date') : '1970-01-01');
+            // Get dates directly from the database (already calculated and stored in rosters table)
+            // Camps don't have _course_start_date metadata like courses do
+            $start = '1970-01-01';
+            $end = '1970-01-01';
+            
+            if (!empty($group['start_dates']) && is_string($group['start_dates'])) {
+                $start_dates_array = explode(',', $group['start_dates']);
+                $start = !empty($start_dates_array[0]) ? trim($start_dates_array[0]) : '1970-01-01';
+            }
+            if (!empty($group['end_dates']) && is_string($group['end_dates'])) {
+                $end_dates_array = explode(',', $group['end_dates']);
+                $end = !empty($end_dates_array[0]) ? trim($end_dates_array[0]) : '1970-01-01';
+            }
 
             $group['corrected_start_date'] = date('Y-m-d', strtotime($start)) ?: '1970-01-01';
             $group['corrected_end_date'] = date('Y-m-d', strtotime($end)) ?: '1970-01-01';
