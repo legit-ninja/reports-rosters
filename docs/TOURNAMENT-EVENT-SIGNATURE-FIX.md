@@ -194,3 +194,4 @@ This will regenerate all event_signatures with the new city/canton_region compon
 - Empty values will be normalized to empty strings, so they won't break existing signatures for non-tournament activities
 - The fix is backward-compatible because existing signatures will be regenerated during the rebuild
 
+

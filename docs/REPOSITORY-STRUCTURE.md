@@ -238,3 +238,4 @@ For questions about repository structure or organization, see:
 - `docs/QUICK-START.md` - Getting started guide
 - `README.md` - Plugin overview
 
+
