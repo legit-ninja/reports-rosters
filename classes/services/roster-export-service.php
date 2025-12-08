@@ -148,7 +148,7 @@ class RosterExportService {
             }
         }
 
-        $sql = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number FROM {$table}";
+        $sql = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, day_presence, age_group, activity_type, product_name, product_id, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number FROM {$table}";
 
         if (!empty($where)) {
             $sql .= ' WHERE ' . implode(' AND ', $where);
@@ -192,7 +192,7 @@ class RosterExportService {
         $product_id     = isset($filters['product_id']) ? (int) $filters['product_id'] : 0;
         $age_group      = $filters['age_group'] ?? '';
 
-        $sql = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number FROM {$table}";
+        $sql = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, day_presence, age_group, activity_type, product_name, product_id, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number FROM {$table}";
         $params = [];
         $where = [];
 

@@ -250,7 +250,7 @@ function intersoccer_export_roster() {
     if (!$using_oop_export) {
         global $wpdb;
         $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-        $query = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
+        $query = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, day_presence, age_group, activity_type, product_name, product_id, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
                 FROM $rosters_table";
         $where_clauses = [];
         $query_params = [];
@@ -369,7 +369,7 @@ function intersoccer_export_roster() {
         }
     } else {
         $query = $wpdb->prepare(
-            "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, day_presence, age_group, activity_type, product_name, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
+            "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, day_presence, age_group, activity_type, product_name, product_id, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
              FROM $rosters_table
              WHERE variation_id IN (" . implode(',', array_fill(0, count($variation_ids), '%d')) . ")",
             $variation_ids
@@ -424,6 +424,13 @@ function intersoccer_export_roster() {
 
     // Prepare base roster and headers for Excel export
     $base_roster = $rosters[0];
+    
+    // Normalize product name to English for display
+    $base_product_name = $base_roster['product_name'] ?? 'N/A';
+    $base_product_id = isset($base_roster['product_id']) ? (int)$base_roster['product_id'] : 0;
+    $english_product_name = function_exists('intersoccer_get_english_product_name') 
+        ? intersoccer_get_english_product_name($base_product_name, $base_product_id)
+        : $base_product_name;
     
     // Build headers based on activity type
     $base_headers = [
@@ -482,7 +489,7 @@ function intersoccer_export_roster() {
     }
 
     // Prepare Excel data
-    $filename = 'roster_' . sanitize_title($base_roster['product_name'] . '_' . ($base_roster['camp_terms'] ?: $base_roster['course_day']) . '_' . $base_roster['venue']) . '_' . date('Y-m-d_H-i-s') . '.xlsx';
+    $filename = 'roster_' . sanitize_title($english_product_name . '_' . ($base_roster['camp_terms'] ?: $base_roster['course_day']) . '_' . $base_roster['venue']) . '_' . date('Y-m-d_H-i-s') . '.xlsx';
     
     try {
         // Only log if debugging
@@ -492,7 +499,7 @@ function intersoccer_export_roster() {
         
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
-        $sheet_title = substr(preg_replace('/[^A-Za-z0-9\-\s]/', '', $base_roster['product_name'] . ' - ' . $base_roster['venue']), 0, 31);
+        $sheet_title = substr(preg_replace('/[^A-Za-z0-9\-\s]/', '', $english_product_name . ' - ' . $base_roster['venue']), 0, 31);
         $sheet->setTitle($sheet_title);
 
         $sheet->fromArray($headers, NULL, 'A1');
@@ -566,10 +573,17 @@ function intersoccer_export_roster() {
                 ]);
             }
             
+            // Normalize product name to English for this player
+            $player_product_name = $player['product_name'] ?? 'N/A';
+            $player_product_id = isset($player['product_id']) ? (int)$player['product_id'] : 0;
+            $player_english_product_name = function_exists('intersoccer_get_english_product_name') 
+                ? intersoccer_get_english_product_name($player_product_name, $player_product_id)
+                : $player_product_name;
+            
             // Add common remaining data
             $data = array_merge($data, [
                 $player['age_group'] ?? 'N/A', // Age Group
-                $player['product_name'] ?? 'N/A', // Product Name
+                $player_english_product_name, // Product Name (English)
                 $player['venue'] ?? 'N/A', // Venue
             ]);
             
@@ -621,7 +635,7 @@ function intersoccer_export_roster() {
 
         // Add event details
         $sheet->setCellValue('A' . $row, 'Event Details:');
-        $sheet->setCellValue('A' . ($row + 1), 'Product Name: ' . ($base_roster['product_name'] ?? 'N/A'));
+        $sheet->setCellValue('A' . ($row + 1), 'Product Name: ' . $english_product_name);
         $sheet->setCellValue('A' . ($row + 2), 'Venue: ' . ($base_roster['venue'] ?? 'N/A'));
         $sheet->setCellValue('A' . ($row + 3), 'Age Group: ' . ($base_roster['age_group'] ?? 'N/A'));
         $sheet->setCellValue('A' . ($row + 4), 'Event: ' . ($base_roster['course_day'] ?: ($base_roster['camp_terms'] ?? 'N/A')));
