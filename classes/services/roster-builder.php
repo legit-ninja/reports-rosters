@@ -1012,6 +1012,52 @@ class RosterBuilder {
             'emergency_phone' => $player->emergency_phone ?: $customer_data['emergency_phone'],
         ]);
         
+        // Normalize event data to English for consistent storage
+        // This ensures all roster entries are stored in English regardless of order language
+        if (!empty($roster_data['activity_type'])) {
+            $event_data_to_normalize = [
+                'activity_type' => $roster_data['activity_type'] ?? '',
+                'venue' => $roster_data['venue'] ?? '',
+                'age_group' => $roster_data['age_group'] ?? '',
+                'camp_terms' => $roster_data['camp_terms'] ?? '',
+                'course_day' => $roster_data['course_day'] ?? '',
+                'times' => $roster_data['times'] ?? '',
+                'season' => $roster_data['season'] ?? '',
+                'girls_only' => $roster_data['girls_only'] ?? 0,
+                'city' => $roster_data['city'] ?? '',
+                'canton_region' => $roster_data['canton_region'] ?? '',
+                'product_id' => $roster_data['product_id'] ?? 0,
+                'start_date' => $roster_data['start_date'] ?? '', // Include date for tournament signature generation
+            ];
+            
+            // Use legacy normalization function to get English term names (not slugs)
+            // This matches the behavior of the legacy code path
+            if (function_exists('intersoccer_normalize_event_data_for_signature')) {
+                $normalized_event_data = intersoccer_normalize_event_data_for_signature($event_data_to_normalize);
+            } else {
+                // Fallback to OOP normalization if legacy function not available
+                $normalized_event_data = $this->signature_generator->normalize($event_data_to_normalize);
+            }
+            
+            // Add start_date back to normalized data for signature generation (normalization doesn't modify dates)
+            $normalized_event_data['start_date'] = $roster_data['start_date'] ?? '';
+            
+            // Use normalized values for storage
+            $roster_data['venue'] = $normalized_event_data['venue'] ?? $roster_data['venue'] ?? '';
+            $roster_data['age_group'] = $normalized_event_data['age_group'] ?? $roster_data['age_group'] ?? '';
+            $roster_data['camp_terms'] = $normalized_event_data['camp_terms'] ?? $roster_data['camp_terms'] ?? '';
+            $roster_data['course_day'] = $normalized_event_data['course_day'] ?? $roster_data['course_day'] ?? '';
+            $roster_data['times'] = $normalized_event_data['times'] ?? $roster_data['times'] ?? '';
+            $roster_data['season'] = $normalized_event_data['season'] ?? $roster_data['season'] ?? '';
+            $roster_data['city'] = $normalized_event_data['city'] ?? $roster_data['city'] ?? '';
+            $roster_data['canton_region'] = $normalized_event_data['canton_region'] ?? $roster_data['canton_region'] ?? '';
+            $roster_data['activity_type'] = $normalized_event_data['activity_type'] ?? $roster_data['activity_type'] ?? '';
+            
+            // Generate event signature using normalized values (same as stored values)
+            // Use the signature generator which expects normalized data
+            $roster_data['event_signature'] = $this->signature_generator->generate($normalized_event_data);
+        }
+        
         // Parse event details from various sources
         $roster_data['event_details'] = $this->buildEventDetails($roster_data);
         
@@ -1072,6 +1118,41 @@ class RosterBuilder {
      * @return array Data with parsed dates
      */
     private function parseDates(array $data) {
+        // For tournaments, check for date attribute (pa_date or Date)
+        if (!empty($data['activity_type']) && strtolower($data['activity_type']) === 'tournament') {
+            $tournament_date = null;
+            
+            // Check for date attribute (could be 'date' after pa_ prefix removal, or 'Date')
+            $tournament_date = $data['date'] ?? $data['Date'] ?? null;
+            
+            // If not found in extracted attributes, try to get from product directly
+            if (!$tournament_date && !empty($data['variation_id'])) {
+                $variation = wc_get_product($data['variation_id']);
+                if ($variation) {
+                    $tournament_date = $variation->get_attribute('pa_date') ?: $variation->get_attribute('Date');
+                }
+            }
+            if (!$tournament_date && !empty($data['product_id'])) {
+                $product = wc_get_product($data['product_id']);
+                if ($product) {
+                    $tournament_date = $product->get_attribute('pa_date') ?: $product->get_attribute('Date');
+                }
+            }
+            
+            if ($tournament_date) {
+                $parsed_date = $this->parseDate($tournament_date);
+                if ($parsed_date) {
+                    // Tournaments are typically one day, so use same date for start and end
+                    $data['start_date'] = $parsed_date;
+                    $data['end_date'] = $parsed_date;
+                    $this->logger->debug('Extracted tournament date from attribute', [
+                        'date_attribute' => $tournament_date,
+                        'parsed_date' => $parsed_date
+                    ]);
+                }
+            }
+        }
+        
         $date_fields = ['start_date', 'end_date'];
         
         foreach ($date_fields as $field) {
@@ -1525,9 +1606,11 @@ class RosterBuilder {
                         'city' => $roster->city ?? '',
                         'canton_region' => $roster->canton_region ?? '',
                         'product_id' => $roster->product_id ?? 0,
+                        'start_date' => $roster->start_date ?? '', // Include for tournament signature generation
                     ];
                     
                     // Generate new signature using the signature generator
+                    // The signature generator will normalize product_id for WPML translations
                     $new_signature = $this->signature_generator->generate($event_data);
                     
                     if (empty($new_signature)) {
