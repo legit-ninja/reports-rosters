@@ -992,7 +992,7 @@ function intersoccer_render_camps_page() {
                                         </div>
                                         <div class="detail-row">
                                             <span class="detail-label">🌆 City</span>
-                                            <span class="detail-value"><?php echo esc_html($camp['city'] ?: 'N/A'); ?></span>
+                                            <span class="detail-value"><?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['city'], 'pa_city') : ($camp['city'] ?: 'N/A')); ?></span>
                                         </div>
                                     </div>
                                     <div class="camp-footer">
@@ -1002,7 +1002,7 @@ function intersoccer_render_camps_page() {
                                         </div>
                                         <div class="camp-actions">
                                             <?php 
-                                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=camps&event_signature=' . urlencode($camp['event_signature']) . '&camp_terms=' . urlencode($camp['camp_terms'] ?: 'N/A') . '&venue=' . urlencode($camp['venue']) . '&age_group=' . urlencode($camp['age_group']) . '&times=' . urlencode($camp['times']));
+                                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=camps&event_signature=' . urlencode($camp['event_signature']));
                                             $is_closed = !empty($camp['event_completed']);
                                             ?>
                                             <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
@@ -1687,7 +1687,7 @@ function intersoccer_render_courses_page() {
                                                 </div>
                                                 <div class="detail-row">
                                                     <span class="detail-label">🌆 City</span>
-                                                    <span class="detail-value"><?php echo esc_html($course['city'] ?: 'N/A'); ?></span>
+                                                    <span class="detail-value"><?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($course['city'], 'pa_city') : ($course['city'] ?: 'N/A')); ?></span>
                                                 </div>
                                             </div>
                                             <div class="course-footer">
@@ -1697,7 +1697,7 @@ function intersoccer_render_courses_page() {
                                                 </div>
                                                 <div class="course-actions">
                                                     <?php
-                                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=courses&event_signature=' . urlencode($course['event_signature']) . '&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']));
+                                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=courses&event_signature=' . urlencode($course['event_signature']));
                                                     $is_closed = !empty($course['event_completed']);
                                                     ?>
                                                     <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
@@ -2115,7 +2115,7 @@ function intersoccer_render_girls_only_page() {
                                             </div>
                                              <div class="detail-row">
                                                 <span class="detail-label">🌆 City</span>
-                                                <span class="detail-value"><?php echo esc_html($camp['city'] ?: 'N/A'); ?></span>
+                                                <span class="detail-value"><?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['city'], 'pa_city') : ($camp['city'] ?: 'N/A')); ?></span>
                                             </div>
                                             <?php if ($camp['times']): ?>
                                             <div class="detail-row">
@@ -2131,7 +2131,7 @@ function intersoccer_render_girls_only_page() {
                                             </div>
                                             <div class="camp-actions">
                                                 <?php 
-                                                $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=girls-only&event_signature=' . urlencode($camp['event_signature']) . '&camp_terms=' . urlencode($camp['camp_terms'] ?: 'N/A') . '&venue=' . urlencode($camp['venue']) . '&age_group=' . urlencode($camp['age_group']) . '&times=' . urlencode($camp['times']) . '&girls_only=1');
+                                                $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=girls-only&event_signature=' . urlencode($camp['event_signature']) . '&girls_only=1');
                                                 ?>
                                                 <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                     View Roster
@@ -2207,7 +2207,7 @@ function intersoccer_render_girls_only_page() {
                                                     </div>
                                                     <div class="detail-row">
                                                         <span class="detail-label">🌆 City</span>
-                                                        <span class="detail-value"><?php echo esc_html($course['city'] ?: 'N/A'); ?></span>
+                                                        <span class="detail-value"><?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($course['city'], 'pa_city') : ($course['city'] ?: 'N/A')); ?></span>
                                                     </div>
                                                 </div>
                                                 <div class="course-footer">
@@ -2217,7 +2217,7 @@ function intersoccer_render_girls_only_page() {
                                                     </div>
                                                     <div class="course-actions">
                                                         <?php
-                                                        $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=girls-only&event_signature=' . urlencode($course['event_signature']) . '&course_day=' . urlencode($course['course_day'] ?: 'N/A') . '&venue=' . urlencode($course['venue']) . '&age_group=' . urlencode($course['age_group']) . '&times=' . urlencode($course['times']) . '&girls_only=1');
+                                                        $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=girls-only&event_signature=' . urlencode($course['event_signature']) . '&girls_only=1');
                                                         ?>
                                                         <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                             <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
@@ -2315,7 +2315,7 @@ function intersoccer_render_tournaments_page() {
             $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
             $sql = "SELECT r.event_signature, r.season, r.venue, 
                            COALESCE(oim.meta_value, 'N/A') as city, 
-                           r.age_group, r.times, r.product_name, 
+                           r.age_group, r.times, r.product_name, r.product_id,
                            r.order_item_id, r.variation_id, r.start_date, r.end_date
                     FROM {$rosters_table} r
                     LEFT JOIN {$order_itemmeta_table} oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
@@ -2342,6 +2342,12 @@ function intersoccer_render_tournaments_page() {
             $age_group = isset($row['age_group']) && $row['age_group'] !== '' ? $row['age_group'] : 'N/A';
             $times = isset($row['times']) && $row['times'] !== '' ? $row['times'] : 'N/A';
             $product_name = isset($row['product_name']) && $row['product_name'] !== '' ? $row['product_name'] : __('Tournament', 'intersoccer-reports-rosters');
+            
+            // Normalize product name to English for display (combine French and English versions)
+            $product_id = isset($row['product_id']) ? (int)$row['product_id'] : 0;
+            $english_product_name = function_exists('intersoccer_get_english_product_name') 
+                ? intersoccer_get_english_product_name($product_name, $product_id)
+                : $product_name;
 
             $signature = !empty($row['event_signature'])
                 ? $row['event_signature']
@@ -2356,7 +2362,7 @@ function intersoccer_render_tournaments_page() {
                     'city' => $city,
                     'age_group' => $age_group,
                     'times' => $times,
-                    'product_name' => $product_name,
+                    'product_name' => $english_product_name, // Use English name for display
                     'variation_ids' => [],
                     'order_item_ids' => [],
                     'start_dates' => [],
@@ -2371,10 +2377,11 @@ function intersoccer_render_tournaments_page() {
             if (!empty($row['order_item_id'])) {
                 $groups[$signature]['order_item_ids'][$row['order_item_id']] = true;
             }
-            if (!empty($row['start_date'])) {
+            // Only add dates that are not empty and not the default '1970-01-01'
+            if (!empty($row['start_date']) && $row['start_date'] !== '1970-01-01') {
                 $groups[$signature]['start_dates'][] = $row['start_date'];
             }
-            if (!empty($row['end_date'])) {
+            if (!empty($row['end_date']) && $row['end_date'] !== '1970-01-01') {
                 $groups[$signature]['end_dates'][] = $row['end_date'];
             }
 
@@ -2588,7 +2595,13 @@ function intersoccer_render_tournaments_page() {
                                 <div class="camp-card">
                                     <div class="camp-header">
                                         <h3 class="camp-venue">
-                                            🏟️ <?php echo esc_html($tournament['product_name'] ?: __('Tournament', 'intersoccer-reports-rosters')); ?>
+                                            🏟️ <?php 
+                                            // Ensure product name is in English for display
+                                            $display_product_name = function_exists('intersoccer_get_english_product_name') 
+                                                ? intersoccer_get_english_product_name($tournament['product_name'] ?? '', $tournament['product_id'] ?? 0)
+                                                : ($tournament['product_name'] ?: __('Tournament', 'intersoccer-reports-rosters'));
+                                            echo esc_html($display_product_name); 
+                                            ?>
                                         </h3>
                                     </div>
                                     <div class="camp-details">
@@ -2623,7 +2636,7 @@ function intersoccer_render_tournaments_page() {
                                         </div>
                                         <div class="detail-row">
                                             <span class="detail-label">🌆 <?php _e('City', 'intersoccer-reports-rosters'); ?></span>
-                                            <span class="detail-value"><?php echo esc_html($tournament['city'] ?: 'N/A'); ?></span>
+                                            <span class="detail-value"><?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($tournament['city'], 'pa_city') : ($tournament['city'] ?: 'N/A')); ?></span>
                                         </div>
                                     </div>
                                     <div class="camp-footer">
@@ -2633,7 +2646,7 @@ function intersoccer_render_tournaments_page() {
                                         </div>
                                         <div class="camp-actions">
                                             <?php
-                                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=tournaments&event_signature=' . urlencode($tournament['event_signature']) . '&venue=' . urlencode($tournament['venue']) . '&age_group=' . urlencode($tournament['age_group']) . '&times=' . urlencode($tournament['times']) . '&season=' . urlencode($tournament['season']));
+                                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&from=tournaments&event_signature=' . urlencode($tournament['event_signature']));
                                             ?>
                                             <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                 <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
@@ -2731,11 +2744,15 @@ function intersoccer_render_other_events_page() {
     delete_transient('intersoccer_rosters_cache');
 
     // Fetch Other Events data
-    $base_query = "SELECT COALESCE(season, 'N/A') as season,
-                      COALESCE(venue, 'N/A') as venue,
-                      COALESCE(product_name, 'N/A') as product_name,
-                      age_group,
-                      times,
+    // Group ONLY by event_signature to ensure French and English versions combine
+    // Use MAX() for non-aggregated fields to get a representative value when multiple exist
+    $base_query = "SELECT MAX(COALESCE(season, 'N/A')) as season,
+                      MAX(COALESCE(venue, 'N/A')) as venue,
+                      MAX(COALESCE(product_name, 'N/A')) as product_name,
+                      MAX(product_id) as product_id,
+                      MAX(age_group) as age_group,
+                      MAX(times) as times,
+                      event_signature,
                       COUNT(DISTINCT order_item_id) as total_players,
                       GROUP_CONCAT(DISTINCT variation_id) as variation_ids,
                       GROUP_CONCAT(DISTINCT start_date) as start_dates,
@@ -2754,7 +2771,9 @@ function intersoccer_render_other_events_page() {
         $base_query .= " AND 1=0";
     }
 
-    $base_query .= " GROUP BY season, product_name, age_group, times
+    // Group ONLY by event_signature to ensure French and English versions combine
+    // event_signature already includes all necessary identifying information
+    $base_query .= " GROUP BY event_signature
                      ORDER BY season DESC, product_name, age_group";
 
     $groups = $wpdb->get_results($base_query, ARRAY_A);
@@ -2773,6 +2792,14 @@ function intersoccer_render_other_events_page() {
         }
         $group['variation_ids'] = $variation_ids;
         
+        // Normalize product name to English for display (combine French and English versions)
+        if (!empty($group['product_name']) && $group['product_name'] !== 'N/A') {
+            $product_id = isset($group['product_id']) ? (int)$group['product_id'] : 0;
+            $group['product_name'] = function_exists('intersoccer_get_english_product_name') 
+                ? intersoccer_get_english_product_name($group['product_name'], $product_id)
+                : $group['product_name'];
+        }
+        
         // Get dates directly from the database (already calculated and stored)
         $event_start = '1970-01-01';
         $event_end = '1970-01-01';
@@ -2790,7 +2817,7 @@ function intersoccer_render_other_events_page() {
         $group['corrected_start_date'] = date('Y-m-d', strtotime($event_start)) ?: '1970-01-01';
         $group['corrected_end_date'] = date('Y-m-d', strtotime($event_end)) ?: '1970-01-01';
 
-        // Collect unique seasons and product names for filters
+        // Collect unique seasons and product names for filters (use normalized English names)
         if ($group['season'] && $group['season'] !== 'N/A') {
             $all_seasons[$group['season']] = $group['season'];
         }
@@ -2958,8 +2985,13 @@ function intersoccer_render_other_events_page() {
                                             </div>
                                             <div class="course-actions">
                                                 <?php 
-                                                $variation_ids_str = is_array($event['variation_ids']) ? implode(',', $event['variation_ids']) : (string) $event['variation_ids'];
-                                                $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_ids=' . urlencode($variation_ids_str) . '&product_name=' . urlencode($event['product_name']) . '&age_group=' . urlencode($event['age_group']) . '&times=' . urlencode($event['times']) . '&season=' . urlencode($season));
+                                                // Use event_signature if available, otherwise fall back to variation_ids
+                                                if (!empty($event['event_signature'])) {
+                                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&event_signature=' . urlencode($event['event_signature']));
+                                                } else {
+                                                    $variation_ids_str = is_array($event['variation_ids']) ? implode(',', $event['variation_ids']) : (string) $event['variation_ids'];
+                                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_ids=' . urlencode($variation_ids_str) . '&product_name=' . urlencode($event['product_name']) . '&age_group=' . urlencode($event['age_group']) . '&times=' . urlencode($event['times']) . '&season=' . urlencode($season));
+                                                }
                                                 ?>
                                                 <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                     <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
@@ -3056,7 +3088,9 @@ function intersoccer_render_all_rosters_page() {
             <div class="sports-rosters">
                 <?php
                 foreach ($product_names as $product_name) {
-                    $query = "SELECT variation_id, product_name, venue, age_group, COUNT(DISTINCT order_item_id) as total_players
+                    // Group ONLY by event_signature to ensure French and English versions combine
+                    // Use MAX() for non-aggregated fields to get a representative value when multiple exist
+                    $query = "SELECT MAX(variation_id) as variation_id, MAX(product_name) as product_name, MAX(product_id) as product_id, MAX(venue) as venue, MAX(age_group) as age_group, event_signature, COUNT(DISTINCT order_item_id) as total_players
                               FROM $rosters_table
                               WHERE product_name = %s" . intersoccer_roster_placeholder_where();
 
@@ -3072,7 +3106,9 @@ function intersoccer_render_all_rosters_page() {
                         $query_args = [$product_name];
                     }
 
-                    $query .= " GROUP BY variation_id, product_name, venue, age_group
+                    // Group ONLY by event_signature to ensure French and English versions combine
+                    // event_signature already includes all necessary identifying information
+                    $query .= " GROUP BY event_signature
                                ORDER BY product_name, venue, age_group";
 
                     $groups = $wpdb->get_results(
@@ -3081,9 +3117,14 @@ function intersoccer_render_all_rosters_page() {
                     );
                     
                     if (!empty($groups)) {
+                        // Normalize product name to English for display
+                        $display_product_name = function_exists('intersoccer_get_english_product_name') 
+                            ? intersoccer_get_english_product_name($product_name, 0)
+                            : $product_name;
+                        
                         echo '<div class="roster-season">';
                         echo '<div class="season-header">';
-                        echo '<h2 class="season-title">' . esc_html($product_name) . '</h2>';
+                        echo '<h2 class="season-title">' . esc_html($display_product_name) . '</h2>';
                         echo '<div class="season-stats">';
                         echo '<span class="stat-item">Players: ' . array_sum(array_column($groups, 'total_players')) . ' ' . __('players', 'intersoccer-reports-rosters') . '</span>';
                         echo '<span class="stat-item">Camps: ' . count($groups) . ' ' . __('variations', 'intersoccer-reports-rosters') . '</span>';
@@ -3101,9 +3142,21 @@ function intersoccer_render_all_rosters_page() {
                         echo '</tr></thead><tbody>';
                         
                         foreach ($groups as $group) {
-                            $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . urlencode($group['variation_id']) . '&age_group=' . urlencode($group['age_group']));
+                            // Use event_signature if available, otherwise fall back to variation_id
+                            if (!empty($group['event_signature'])) {
+                                $view_url = admin_url('admin.php?page=intersoccer-roster-details&event_signature=' . urlencode($group['event_signature']));
+                            } else {
+                                $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_id=' . urlencode($group['variation_id']) . '&age_group=' . urlencode($group['age_group']));
+                            }
+                            
+                            // Normalize product name to English for display
+                            $group_product_name = isset($group['product_name']) ? $group['product_name'] : $product_name;
+                            $display_group_product_name = function_exists('intersoccer_get_english_product_name') 
+                                ? intersoccer_get_english_product_name($group_product_name, $group['product_id'] ?? 0)
+                                : $group_product_name;
+                            
                             echo '<tr>';
-                            echo '<td style="padding: 15px;">' . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($group['product_name'], 'product') : $group['product_name']) . '</td>';
+                            echo '<td style="padding: 15px;">' . esc_html($display_group_product_name) . '</td>';
                             echo '<td style="padding: 15px;">' . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($group['venue'] ?: 'N/A', 'pa_intersoccer-venues') : ($group['venue'] ?: 'N/A')) . '</td>';
                             echo '<td style="padding: 15px;">' . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($group['age_group'], 'pa_age-group') : $group['age_group']) . '</td>';
                             echo '<td style="padding: 15px;"><strong>' . esc_html($group['total_players']) . '</strong></td>';

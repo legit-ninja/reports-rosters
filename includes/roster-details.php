@@ -335,8 +335,19 @@ function intersoccer_render_roster_details_page() {
     // Render the page
     echo '<div class="wrap">';
     $title_suffix = $is_girls_only ? ' (Girls Only)' : '';
-    $event_label = $base_roster->product_name ?: ($base_roster->course_day ?: ($base_roster->camp_terms ?: __('Unknown Event', 'intersoccer-reports-rosters')));
-    echo '<h1>' . esc_html__('Roster Details for ', 'intersoccer-reports-rosters') . esc_html($event_label) . ' - ' . esc_html($base_roster->venue) . ' (' . esc_html($age_group) . ')' . $title_suffix . '</h1>';
+    // Normalize product name to English for display
+    $product_name = $base_roster->product_name ?: '';
+    if (!empty($product_name) && function_exists('intersoccer_get_english_product_name')) {
+        $product_name = intersoccer_get_english_product_name($product_name, $base_roster->product_id ?? 0);
+    }
+    $event_label = $product_name ?: ($base_roster->course_day ?: ($base_roster->camp_terms ?: __('Unknown Event', 'intersoccer-reports-rosters')));
+    
+    // Get age group for title - use base_roster if GET parameter is empty
+    $display_age_group = !empty($age_group) ? $age_group : ($base_roster->age_group ?? '');
+    // Only add parentheses if age group is not empty
+    $age_group_suffix = !empty($display_age_group) ? ' (' . esc_html($display_age_group) . ')' : '';
+    
+    echo '<h1>' . esc_html__('Roster Details for ', 'intersoccer-reports-rosters') . esc_html($event_label) . ' - ' . esc_html($base_roster->venue) . $age_group_suffix . $title_suffix . '</h1>';
     
     if ($unknown_count > 0) {
         echo '<p style="color: red;">' . esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)) . '</p>';
@@ -367,6 +378,11 @@ function intersoccer_render_roster_details_page() {
     }
     
     echo '<th style="width: 100px;"><a href="' . esc_url(intersoccer_get_sort_url('age_group', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Age Group') . intersoccer_get_sort_indicator('age_group', $sort_by, $sort_order) . '</a></th>';
+
+    // Add pa_date column for tournaments
+    if ($base_roster->activity_type === 'Tournament') {
+        echo '<th style="width: 120px;">' . esc_html__('Tournament Date (pa_date)', 'intersoccer-reports-rosters') . '</th>';
+    }
 
     if ($is_girls_only) {
         echo '<th style="width: 90px;">' . esc_html__('Shirt Size') . '</th>';
@@ -404,6 +420,24 @@ function intersoccer_render_roster_details_page() {
         }
         
         echo '<td>' . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($row->age_group, 'pa_age-group') : $row->age_group ?? 'N/A') . '</td>';
+        
+        // Display pa_date for tournaments
+        if ($base_roster->activity_type === 'Tournament') {
+            $pa_date = 'N/A';
+            if (!empty($row->variation_id)) {
+                $variation = wc_get_product($row->variation_id);
+                if ($variation) {
+                    $pa_date = $variation->get_attribute('pa_date') ?: $variation->get_attribute('Date') ?: 'N/A';
+                }
+            }
+            if ($pa_date === 'N/A' && !empty($row->product_id)) {
+                $product = wc_get_product($row->product_id);
+                if ($product) {
+                    $pa_date = $product->get_attribute('pa_date') ?: $product->get_attribute('Date') ?: 'N/A';
+                }
+            }
+            echo '<td>' . esc_html($pa_date) . '</td>';
+        }
         
         if ($is_girls_only) {
             echo '<td>' . esc_html($row->shirt_size ?? 'N/A') . '</td>';
