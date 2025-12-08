@@ -35,14 +35,198 @@ if (!function_exists('intersoccer_normalize_attribute')) {
 error_log('InterSoccer: Loaded utils.php');
 
 /**
- * Helper function to safely get term name
+ * Helper function to safely get term name in English for display
+ * 
+ * Gets the human-readable term name, ensuring it's in English (default language)
+ * even if the stored value is a French slug or name.
+ * 
+ * @param string $value Term slug or name (may be in any language)
+ * @param string $taxonomy Taxonomy slug (e.g., 'pa_city', 'pa_intersoccer-venues')
+ * @return string English term name, or original value if not found
  */
 function intersoccer_get_term_name($value, $taxonomy) {
     if (empty($value) || $value === 'N/A') {
         return 'N/A';
     }
+    
+    // If WPML is active, try to get the English version
+    if (function_exists('apply_filters')) {
+        $default_lang = apply_filters('wpml_default_language', null);
+        if (!empty($default_lang)) {
+            // Store current language to restore later
+            $current_lang = apply_filters('wpml_current_language', null);
+            
+            // Switch to default language to get English term name
+            if ($current_lang && $current_lang !== $default_lang) {
+                do_action('wpml_switch_language', $default_lang);
+            }
+            
+            // Try to find the term by slug first
+            $term = get_term_by('slug', $value, $taxonomy);
+            if (!$term || is_wp_error($term)) {
+                // Try by name
+                $term = get_term_by('name', $value, $taxonomy);
+            }
+            
+            // If still not found, try using the robust translation-aware function
+            if ((!$term || is_wp_error($term)) && function_exists('intersoccer_get_term_by_translated_name')) {
+                $term = intersoccer_get_term_by_translated_name($value, $taxonomy);
+            }
+            
+            // Restore original language
+            if ($current_lang && $current_lang !== $default_lang) {
+                do_action('wpml_switch_language', $current_lang);
+            }
+            
+            // If we found a term, return its name (should be in English now)
+            if ($term && !is_wp_error($term)) {
+                return $term->name;
+            }
+        }
+    }
+    
+    // Fallback: try simple lookup without language switching
     $term = get_term_by('slug', $value, $taxonomy);
-    return $term ? $term->name : $value;
+    if (!$term || is_wp_error($term)) {
+        $term = get_term_by('name', $value, $taxonomy);
+    }
+    
+    return ($term && !is_wp_error($term)) ? $term->name : $value;
+}
+
+/**
+ * Get English product name for display
+ * 
+ * Normalizes product names to English for consistent display across roster pages.
+ * Uses WPML to get the default language (English) version of the product name.
+ * 
+ * @param string $product_name Product name (may be in any language)
+ * @param int $product_id Optional product ID to look up if name not found
+ * @return string English product name
+ */
+function intersoccer_get_english_product_name($product_name, $product_id = 0) {
+    if (empty($product_name) || $product_name === 'N/A') {
+        return $product_name ?: 'N/A';
+    }
+    
+    // If WPML is active, try to get the English version
+    if (function_exists('apply_filters')) {
+        $default_lang = apply_filters('wpml_default_language', null);
+        if (empty($default_lang)) {
+            // Fallback: return original name if we can't determine default language
+            return $product_name;
+        }
+        
+        // Try to get product by ID if provided
+        if ($product_id > 0) {
+            // First, normalize product_id to default language version (same logic as event signature generation)
+            $normalized_product_id = $product_id;
+            
+            // Get the product to check if it's a variation
+            $product = wc_get_product($product_id);
+            if ($product && method_exists($product, 'get_parent_id')) {
+                $parent_id = $product->get_parent_id();
+                if ($parent_id > 0) {
+                    // Use parent product ID instead of variation ID
+                    $normalized_product_id = $parent_id;
+                }
+            }
+            
+            // Now normalize the product_id to the default language version
+            // Try with return_original_if_missing = false first for strict translation
+            $original_product_id = apply_filters('wpml_object_id', $normalized_product_id, 'product', false, $default_lang);
+            if (!$original_product_id || $original_product_id == $normalized_product_id) {
+                // If not found or same ID, try with return_original_if_missing = true
+                $original_product_id = apply_filters('wpml_object_id', $normalized_product_id, 'product', true, $default_lang);
+            }
+            
+            // As a last resort, try to find by TRID if direct object_id lookup fails
+            if ($original_product_id == $normalized_product_id && function_exists('wpml_get_element_trid')) {
+                $trid = apply_filters('wpml_get_element_trid', null, $normalized_product_id, 'post_product');
+                if ($trid) {
+                    $translated_id_by_trid = apply_filters('wpml_get_object_id_by_trid', null, $trid, 'post_product', $default_lang);
+                    if ($translated_id_by_trid && $translated_id_by_trid != $normalized_product_id) {
+                        $original_product_id = $translated_id_by_trid;
+                    }
+                }
+            }
+            
+            // If we found a different product ID, get the English product name
+            if ($original_product_id && $original_product_id != $product_id) {
+                // Store current language to restore later
+                $current_lang = apply_filters('wpml_current_language', null);
+                
+                // Switch to default language to get English product name
+                if ($current_lang && $current_lang !== $default_lang) {
+                    do_action('wpml_switch_language', $default_lang);
+                }
+                
+                $english_product = wc_get_product($original_product_id);
+                if ($english_product) {
+                    $english_name = $english_product->get_name();
+                    // Switch back to original language
+                    if ($current_lang && $current_lang !== $default_lang) {
+                        do_action('wpml_switch_language', $current_lang);
+                    }
+                    if (!empty($english_name)) {
+                        return $english_name;
+                    }
+                } else {
+                    // Switch back to original language
+                    if ($current_lang && $current_lang !== $default_lang) {
+                        do_action('wpml_switch_language', $current_lang);
+                    }
+                }
+            } else {
+                // Product is already in default language, but verify the name is correct
+                // Switch to default language context to ensure we get the right name
+                $current_lang = apply_filters('wpml_current_language', null);
+                if ($current_lang && $current_lang !== $default_lang) {
+                    do_action('wpml_switch_language', $default_lang);
+                    $product = wc_get_product($normalized_product_id);
+                    if ($product) {
+                        $english_name = $product->get_name();
+                        do_action('wpml_switch_language', $current_lang);
+                        if (!empty($english_name)) {
+                            return $english_name;
+                        }
+                    } else {
+                        do_action('wpml_switch_language', $current_lang);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Fallback: return original name if we can't normalize it
+    return $product_name;
+}
+
+/**
+ * Get default language variation ID for a given variation ID using WPML
+ * 
+ * @param int $variation_id Variation ID (may be in any language)
+ * @return int|null Default language variation ID, or original if WPML not available or not found
+ */
+function intersoccer_get_default_language_variation_id($variation_id) {
+    if (empty($variation_id) || !function_exists('wpml_get_default_language') || !function_exists('apply_filters')) {
+        return $variation_id;
+    }
+    
+    $default_lang = wpml_get_default_language();
+    if (empty($default_lang)) {
+        return $variation_id;
+    }
+    
+    // Get the default language version of the variation
+    $default_variation_id = apply_filters('wpml_object_id', $variation_id, 'product_variation', true, $default_lang);
+    
+    if ($default_variation_id && $default_variation_id != $variation_id) {
+        error_log('InterSoccer: Found default language variation ID ' . $default_variation_id . ' for variation ' . $variation_id);
+        return $default_variation_id;
+    }
+    
+    return $variation_id;
 }
 
 /**
@@ -154,8 +338,113 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
         }
     }
     
+    // Try French date formats before strtotime() fallback
+    // French month names: janvier, février, mars, avril, mai, juin, juillet, août, septembre, octobre, novembre, décembre
+    $french_months = [
+        'janvier' => 'January', 'février' => 'February', 'mars' => 'March', 'avril' => 'April',
+        'mai' => 'May', 'juin' => 'June', 'juillet' => 'July', 'août' => 'August',
+        'septembre' => 'September', 'octobre' => 'October', 'novembre' => 'November', 'décembre' => 'December'
+    ];
+    
+    // French day names: lundi, mardi, mercredi, jeudi, vendredi, samedi, dimanche
+    $french_days = [
+        'lundi' => 'Monday', 'mardi' => 'Tuesday', 'mercredi' => 'Wednesday', 'jeudi' => 'Thursday',
+        'vendredi' => 'Friday', 'samedi' => 'Saturday', 'dimanche' => 'Sunday'
+    ];
+    
+    // Try to replace French month names and day names with English ones
+    $english_date_string = $date_string;
+    foreach ($french_months as $french => $english) {
+        $english_date_string = str_ireplace($french, $english, $english_date_string);
+    }
+    foreach ($french_days as $french => $english) {
+        // Match whole word to avoid partial replacements
+        $english_date_string = preg_replace('/\b' . preg_quote($french, '/') . '\b/i', $english, $english_date_string);
+    }
+    
+    // If we replaced a French month, try parsing the English version
+    if ($english_date_string !== $date_string) {
+        // Try common formats with the English month name
+        $french_formats = [
+            'l j F Y',      // "Sunday 14 December 2025" (with day name and year)
+            'j F Y',        // "14 December 2025" (without day name, with year)
+            'F j, Y',       // "December 14, 2025" (comma format)
+            'l j F',        // "Sunday 14 December" (with day name, no year - will need year added)
+        ];
+        
+        foreach ($french_formats as $format) {
+            $date = DateTime::createFromFormat($format, $english_date_string);
+            if ($date !== false) {
+                $formatted = $date->format($format);
+                // For formats with day names, we need to be more flexible
+                if (strpos($format, 'l') !== false) {
+                    // Format with day name - check if the date part matches
+                    // Extract just the date part (day number and month) for comparison
+                    $date_part = $date->format('j F');
+                    $input_date_part = preg_replace('/^\w+\s+/', '', $english_date_string);
+                    $input_date_part = preg_replace('/\s+\d{4}$/', '', $input_date_part); // Remove year if present
+                    
+                    // Get parsed year
+                    $parsed_year = (int)$date->format('Y');
+                    // If no year in format, check if year is in the input string
+                    if (strpos($format, 'Y') === false) {
+                        // No year in format, try to extract from input
+                        if (preg_match('/(\d{4})/', $english_date_string, $year_matches)) {
+                            $parsed_year = (int)$year_matches[1];
+                            $date->setDate($parsed_year, (int)$date->format('m'), (int)$date->format('d'));
+                        } else {
+                            // No year found, skip this format
+                            continue;
+                        }
+                    }
+                    
+                    // Check if the date parts match (ignoring day name and year)
+                    // Also check if the formatted date matches the input (allowing for day name variations)
+                    if ($date_part === $input_date_part || $formatted === $english_date_string) {
+                        if ($parsed_year >= 1900 && $parsed_year <= 2100) {
+                            $parsed_date = $date->format('Y-m-d');
+                            if (!empty($context)) {
+                                error_log("InterSoccer: Parsed French date '$date_string' (translated to '$english_date_string') with format '$format' to '$parsed_date' ($context)");
+                            }
+                            return $parsed_date;
+                        }
+                    } else {
+                        // If exact match fails, try a more lenient check - just verify the date is valid
+                        // This handles cases where DateTime parsed it but formatting doesn't match exactly
+                        if ($parsed_year >= 1900 && $parsed_year <= 2100) {
+                            // Verify the day and month match what we expect
+                            $expected_day = (int)preg_replace('/^\w+\s+(\d+).*/', '$1', $english_date_string);
+                            $parsed_day = (int)$date->format('d');
+                            if ($expected_day === $parsed_day) {
+                                $parsed_date = $date->format('Y-m-d');
+                                if (!empty($context)) {
+                                    error_log("InterSoccer: Parsed French date '$date_string' (translated to '$english_date_string') with format '$format' to '$parsed_date' (lenient match) ($context)");
+                                }
+                                return $parsed_date;
+                            }
+                        }
+                    }
+                } else {
+                    // Standard format check
+                    if ($formatted === $english_date_string) {
+                        $parsed_year = (int)$date->format('Y');
+                        if ($parsed_year >= 1900 && $parsed_year <= 2100) {
+                            $parsed_date = $date->format('Y-m-d');
+                            if (!empty($context)) {
+                                error_log("InterSoccer: Parsed French date '$date_string' (translated to '$english_date_string') with format '$format' to '$parsed_date' ($context)");
+                            }
+                            return $parsed_date;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     // Fallback to strtotime() for formats we don't explicitly handle
-    $timestamp = strtotime($date_string);
+    // First try with English month names if we translated them
+    $strtotime_string = $english_date_string !== $date_string ? $english_date_string : $date_string;
+    $timestamp = strtotime($strtotime_string);
     if ($timestamp !== false) {
         $parsed_date = date('Y-m-d', $timestamp);
         $year = (int)date('Y', $timestamp);
@@ -339,7 +628,25 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     }
     $late_pickup = (!empty($item_meta['Late Pickup Type'])) ? 'Yes' : 'No';
     $late_pickup_days = $item_meta['Late Pickup Days'] ?? '';
+    
+    // Get product name and normalize to English if WPML is active
     $product_name = $item->get_name();
+    if (function_exists('wpml_get_default_language') && function_exists('wpml_get_current_language')) {
+        $current_lang = wpml_get_current_language();
+        $default_lang = wpml_get_default_language();
+        
+        if ($current_lang !== $default_lang) {
+            // Switch to default language to get English product name
+            do_action('wpml_switch_language', $default_lang);
+            $product = wc_get_product($product_id);
+            if ($product) {
+                $product_name = $product->get_name();
+            }
+            // Switch back to original language
+            do_action('wpml_switch_language', $current_lang);
+        }
+    }
+    
     $shirt_size = 'N/A';
     $shorts_size = 'N/A';
 
@@ -411,8 +718,132 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     // Parse dates using unified parser
     if ($product_type === 'camp' && !empty($camp_terms) && $camp_terms !== 'N/A') {
         list($start_date, $end_date, $event_dates) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
-    } elseif (($product_type === 'course' || $product_type === 'tournament') && !empty($start_date) && !empty($end_date)) {
-        error_log('InterSoccer: Processing ' . $product_type . ' dates for item ' . $item_id . ' in order ' . $order_id . ' - start_date: ' . var_export($start_date, true) . ', end_date: ' . var_export($end_date, true));
+    } elseif ($product_type === 'tournament') {
+        // For tournaments, get date from product attribute pa_date or Date
+        $variation = $variation_id ? wc_get_product($variation_id) : null;
+        $parent_product = wc_get_product($product_id);
+        
+        $tournament_date = null;
+        
+        // Try to get from variation first, then default language variation, then parent product
+        if ($variation) {
+            $tournament_date = $variation->get_attribute('pa_date') ?: $variation->get_attribute('Date');
+        }
+        // If not found in original variation, try default language variation
+        if (!$tournament_date && $variation_id && function_exists('intersoccer_get_default_language_variation_id')) {
+            $default_variation_id = intersoccer_get_default_language_variation_id($variation_id);
+            if ($default_variation_id != $variation_id) {
+                $default_variation = wc_get_product($default_variation_id);
+                if ($default_variation) {
+                    $tournament_date = $default_variation->get_attribute('pa_date') ?: $default_variation->get_attribute('Date');
+                    if ($tournament_date) {
+                        error_log('InterSoccer: Found tournament date in default language variation ' . $default_variation_id . ' attributes: ' . $tournament_date . ' (order ' . $order_id . ', item ' . $item_id . ')');
+                    }
+                }
+            }
+        }
+        if (!$tournament_date && $parent_product) {
+            $tournament_date = $parent_product->get_attribute('pa_date') ?: $parent_product->get_attribute('Date');
+        }
+        // Also check order item metadata as fallback - try multiple key variations
+        if (!$tournament_date) {
+            $possible_keys = ['Date', 'date', 'pa_date', 'Date (fr)', 'Tournament Date'];
+            foreach ($possible_keys as $key) {
+                if (isset($item_meta[$key]) && !empty($item_meta[$key])) {
+                    $tournament_date = is_array($item_meta[$key]) ? ($item_meta[$key][0] ?? null) : $item_meta[$key];
+                    if (!empty($tournament_date)) {
+                        $tournament_date = trim($tournament_date);
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if ($tournament_date) {
+            error_log('InterSoccer: Found tournament date attribute for order ' . $order_id . ', item ' . $item_id . ': ' . $tournament_date);
+            
+            // Clean up the date string (remove extra whitespace, handle slug format)
+            $tournament_date = trim($tournament_date);
+            
+            // Handle slug format like "dimanche-14-decembre" - convert to readable format
+            if (preg_match('/^([a-z]+)-(\d+)-([a-z]+)$/i', $tournament_date, $slug_matches)) {
+                $day_name = ucfirst($slug_matches[1]);
+                $day_num = $slug_matches[2];
+                $month_name = ucfirst($slug_matches[3]);
+                // Convert French month names to full format
+                $french_months = [
+                    'janvier' => 'janvier', 'février' => 'février', 'mars' => 'mars', 'avril' => 'avril',
+                    'mai' => 'mai', 'juin' => 'juin', 'juillet' => 'juillet', 'août' => 'août',
+                    'septembre' => 'septembre', 'octobre' => 'octobre', 'novembre' => 'novembre', 'décembre' => 'décembre'
+                ];
+                $month_lower = strtolower($month_name);
+                if (isset($french_months[$month_lower])) {
+                    $month_name = $french_months[$month_lower];
+                }
+                $tournament_date = $day_name . ' ' . $day_num . ' ' . $month_name;
+                error_log('InterSoccer: Converted slug format date to readable format: ' . $tournament_date . ' (order ' . $order_id . ', item ' . $item_id . ')');
+            }
+            
+            // If the date doesn't have a year, try to extract it from the season
+            if (!preg_match('/\d{4}/', $tournament_date)) {
+                // No year in date string, try to extract from season
+                // Handle French season names: "Automne 2025", "Printemps 2025", etc.
+                if (preg_match('/(\d{4})/', $season, $matches)) {
+                    $year = $matches[1];
+                    // Try different formats: with day name, without day name
+                    if (preg_match('/^[A-Z][a-z]+\s+\d+\s+[A-Za-zàâäéèêëïîôùûüÿç]+$/', $tournament_date)) {
+                        // Format: "Dimanche 14 décembre" - add year at the end
+                        $tournament_date = $tournament_date . ' ' . $year;
+                    } else {
+                        // Format: "14 décembre" - add year at the end
+                        $tournament_date = $tournament_date . ' ' . $year;
+                    }
+                    error_log('InterSoccer: Adding year ' . $year . ' from season "' . $season . '" to date "' . $tournament_date . '" (order ' . $order_id . ', item ' . $item_id . ')');
+                }
+            }
+            
+            $context = "order $order_id, item $item_id (tournament date)";
+            $parsed_date = intersoccer_parse_date_unified($tournament_date, $context);
+            
+            if ($parsed_date) {
+                // Tournaments are typically one day, so use same date for start and end
+                $start_date = $parsed_date;
+                $end_date = $parsed_date;
+                $event_dates = $start_date;
+                error_log('InterSoccer: Parsed tournament date: ' . $start_date);
+            } else {
+                error_log('InterSoccer: Failed to parse tournament date "' . $tournament_date . '" for order ' . $order_id . ', item ' . $item_id);
+                $start_date = '1970-01-01';
+                $end_date = '1970-01-01';
+                $event_dates = 'N/A';
+            }
+        } else {
+            // Fallback to Start Date/End Date from order item metadata if available
+            if (!empty($start_date) && !empty($end_date)) {
+                error_log('InterSoccer: Tournament date attribute not found, trying Start Date/End Date from metadata for order ' . $order_id . ', item ' . $item_id);
+                $context = "order $order_id, item $item_id";
+                $parsed_start = intersoccer_parse_date_unified($start_date, $context . ' (start)');
+                $parsed_end = intersoccer_parse_date_unified($end_date, $context . ' (end)');
+                
+                if ($parsed_start && $parsed_end) {
+                    $start_date = $parsed_start;
+                    $end_date = $parsed_end;
+                    $event_dates = "$start_date to $end_date";
+                } else {
+                    error_log('InterSoccer: Date parsing failed for order ' . $order_id . ', item ' . $item_id . ' - Using defaults');
+                    $start_date = '1970-01-01';
+                    $end_date = '1970-01-01';
+                    $event_dates = 'N/A';
+                }
+            } else {
+                error_log('InterSoccer: No tournament date found (checked pa_date, Date attribute, and Start Date/End Date metadata) for order ' . $order_id . ', item ' . $item_id . ' - Using defaults');
+                $start_date = '1970-01-01';
+                $end_date = '1970-01-01';
+                $event_dates = 'N/A';
+            }
+        }
+    } elseif ($product_type === 'course' && !empty($start_date) && !empty($end_date)) {
+        error_log('InterSoccer: Processing course dates for item ' . $item_id . ' in order ' . $order_id . ' - start_date: ' . var_export($start_date, true) . ', end_date: ' . var_export($end_date, true));
         
         $context = "order $order_id, item $item_id";
         $parsed_start = intersoccer_parse_date_unified($start_date, $context . ' (start)');
@@ -423,7 +854,7 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
             $end_date = $parsed_end;
             $event_dates = "$start_date to $end_date";
         } else {
-            error_log('InterSoccer: Invalid ' . $product_type . ' date format for item ' . $item_id . ' in order ' . $order_id . ' - Using defaults');
+            error_log('InterSoccer: Invalid course date format for item ' . $item_id . ' in order ' . $order_id . ' - Using defaults');
             $start_date = '1970-01-01';
             $end_date = '1970-01-01';
             $event_dates = 'N/A';
@@ -458,63 +889,8 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     $reimbursement = 0; // TODO: Calculate from meta if needed
     $discount_codes = implode(',', $order->get_coupon_codes());
 
-    $data = [
-        'order_id' => $order_id,
-        'order_item_id' => $item_id,
-        'variation_id' => $variation_id,
-        'player_name' => substr((string)($assigned_attendee ?: 'Unknown Player'), 0, 255),
-        'first_name' => substr((string)($first_name ?: 'Unknown'), 0, 100),
-        'last_name' => substr((string)($last_name ?: 'Unknown'), 0, 100),
-        'age' => $age,
-        'gender' => substr((string)($gender ?: 'N/A'), 0, 20),
-        'booking_type' => substr((string)($booking_type ?: 'Unknown'), 0, 50),
-        'selected_days' => $selected_days,
-        'camp_terms' => substr((string)($camp_terms ?: 'N/A'), 0, 100),
-        'venue' => substr((string)($venue ?: 'Unknown Venue'), 0, 200),
-        'parent_phone' => substr((string)($parent_phone ?: 'N/A'), 0, 20),
-        'parent_email' => substr((string)($parent_email ?: 'N/A'), 0, 100),
-        'medical_conditions' => $medical_conditions,
-        'late_pickup' => $late_pickup,
-        'late_pickup_days' => $late_pickup_days,
-        'day_presence' => json_encode($day_presence),
-        'age_group' => substr((string)($age_group ?: 'N/A'), 0, 50),
-        'start_date' => $start_date ?: '1970-01-01',
-        'end_date' => $end_date ?: '1970-01-01',
-        'event_dates' => substr((string)($event_dates ?: 'N/A'), 0, 100),
-        'product_name' => substr((string)($product_name ?: 'Unknown Product'), 0, 255),
-        'activity_type' => substr((string)($activity_type ?: 'Event'), 0, 50),
-        'shirt_size' => substr((string)($shirt_size ?: 'N/A'), 0, 50),
-        'shorts_size' => substr((string)($shorts_size ?: 'N/A'), 0, 50),
-        'registration_timestamp' => $order_date,
-        'course_day' => substr((string)($course_day ?: 'N/A'), 0, 20),
-        'product_id' => $product_id,
-        'player_first_name' => substr((string)($first_name ?: 'Unknown'), 0, 100),
-        'player_last_name' => substr((string)($last_name ?: 'Unknown'), 0, 100),
-        'player_dob' => $dob ?: '1970-01-01',
-        'player_gender' => substr((string)($gender ?: 'N/A'), 0, 10),
-        'player_medical' => $medical_conditions,
-        'player_dietary' => '',
-        'parent_first_name' => substr((string)($parent_first_name ?: 'Unknown'), 0, 100),
-        'parent_last_name' => substr((string)($parent_last_name ?: 'Unknown'), 0, 100),
-        'emergency_contact' => substr((string)($parent_phone ?: 'N/A'), 0, 20),
-        'term' => substr((string)(($camp_terms ?: $course_day) ?: 'N/A'), 0, 200),
-        'times' => substr((string)($times ?: 'N/A'), 0, 50),
-        'days_selected' => substr((string)($selected_days ?: 'N/A'), 0, 200),
-        'season' => substr((string)($season ?: 'N/A'), 0, 50),
-        'canton_region' => substr((string)($canton_region ?: ''), 0, 100),
-        'city' => substr((string)($city ?: ''), 0, 100),
-        'avs_number' => substr((string)($avs_number ?: 'N/A'), 0, 50),
-        'created_at' => current_time('mysql'),
-        'base_price' => $base_price,
-        'discount_amount' => $discount_amount,
-        'final_price' => $final_price,
-        'reimbursement' => $reimbursement,
-        'discount_codes' => $discount_codes,
-        'girls_only' => $girls_only,
-        'event_signature' => '',
-    ];
-
-    // Generate event signature with normalized (English) values for consistent grouping
+    // Normalize event data to English for consistent storage
+    // This ensures all roster entries are stored in English regardless of order language
     $original_event_data = [
         'activity_type' => $activity_type,
         'venue' => $venue,
@@ -527,16 +903,89 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         'city' => $city,
         'canton_region' => $canton_region,
         'product_id' => $product_id,
+        'start_date' => $start_date, // Include date for tournament signature generation
     ];
     
     // Log original event data before normalization
-    error_log('InterSoccer Signature: Original event data (Order: ' . $order_id . ', Item: ' . $item_id . '): ' . json_encode($original_event_data));
+    error_log('InterSoccer: Original event data (Order: ' . $order_id . ', Item: ' . $item_id . '): ' . json_encode($original_event_data));
     
     $normalized_event_data = intersoccer_normalize_event_data_for_signature($original_event_data);
     
+    // Add start_date back to normalized data for signature generation (normalization doesn't modify dates)
+    $normalized_event_data['start_date'] = $start_date;
+    
     // Log normalized event data after normalization
-    error_log('InterSoccer Signature: Normalized event data (Order: ' . $order_id . ', Item: ' . $item_id . '): ' . json_encode($normalized_event_data));
+    error_log('InterSoccer: Normalized event data (Order: ' . $order_id . ', Item: ' . $item_id . '): ' . json_encode($normalized_event_data));
 
+    // Use normalized values for storage
+    $normalized_venue = $normalized_event_data['venue'] ?? $venue;
+    $normalized_age_group = $normalized_event_data['age_group'] ?? $age_group;
+    $normalized_camp_terms = $normalized_event_data['camp_terms'] ?? $camp_terms;
+    $normalized_course_day = $normalized_event_data['course_day'] ?? $course_day;
+    $normalized_times = $normalized_event_data['times'] ?? $times;
+    $normalized_season = $normalized_event_data['season'] ?? $season;
+    $normalized_city = $normalized_event_data['city'] ?? $city;
+    $normalized_canton_region = $normalized_event_data['canton_region'] ?? $canton_region;
+    $normalized_activity_type = $normalized_event_data['activity_type'] ?? ($activity_type ?: 'Event');
+
+    $data = [
+        'order_id' => $order_id,
+        'order_item_id' => $item_id,
+        'variation_id' => $variation_id,
+        'player_name' => substr((string)($assigned_attendee ?: 'Unknown Player'), 0, 255),
+        'first_name' => substr((string)($first_name ?: 'Unknown'), 0, 100),
+        'last_name' => substr((string)($last_name ?: 'Unknown'), 0, 100),
+        'age' => $age,
+        'gender' => substr((string)($gender ?: 'N/A'), 0, 20),
+        'booking_type' => substr((string)($booking_type ?: 'Unknown'), 0, 50),
+        'selected_days' => $selected_days,
+        'camp_terms' => substr((string)($normalized_camp_terms ?: 'N/A'), 0, 100),
+        'venue' => substr((string)($normalized_venue ?: 'Unknown Venue'), 0, 200),
+        'parent_phone' => substr((string)($parent_phone ?: 'N/A'), 0, 20),
+        'parent_email' => substr((string)($parent_email ?: 'N/A'), 0, 100),
+        'medical_conditions' => $medical_conditions,
+        'late_pickup' => $late_pickup,
+        'late_pickup_days' => $late_pickup_days,
+        'day_presence' => json_encode($day_presence),
+        'age_group' => substr((string)($normalized_age_group ?: 'N/A'), 0, 50),
+        'start_date' => $start_date ?: '1970-01-01',
+        'end_date' => $end_date ?: '1970-01-01',
+        'event_dates' => substr((string)($event_dates ?: 'N/A'), 0, 100),
+        'product_name' => substr((string)($product_name ?: 'Unknown Product'), 0, 255), // Already normalized to English above
+        'activity_type' => substr((string)($normalized_activity_type), 0, 50),
+        'shirt_size' => substr((string)($shirt_size ?: 'N/A'), 0, 50),
+        'shorts_size' => substr((string)($shorts_size ?: 'N/A'), 0, 50),
+        'registration_timestamp' => $order_date,
+        'course_day' => substr((string)($normalized_course_day ?: 'N/A'), 0, 20),
+        'product_id' => $product_id,
+        'player_first_name' => substr((string)($first_name ?: 'Unknown'), 0, 100),
+        'player_last_name' => substr((string)($last_name ?: 'Unknown'), 0, 100),
+        'player_dob' => $dob ?: '1970-01-01',
+        'player_gender' => substr((string)($gender ?: 'N/A'), 0, 10),
+        'player_medical' => $medical_conditions,
+        'player_dietary' => '',
+        'parent_first_name' => substr((string)($parent_first_name ?: 'Unknown'), 0, 100),
+        'parent_last_name' => substr((string)($parent_last_name ?: 'Unknown'), 0, 100),
+        'emergency_contact' => substr((string)($parent_phone ?: 'N/A'), 0, 20),
+        'term' => substr((string)(($normalized_camp_terms ?: $normalized_course_day) ?: 'N/A'), 0, 200),
+        'times' => substr((string)($normalized_times ?: 'N/A'), 0, 50),
+        'days_selected' => substr((string)($selected_days ?: 'N/A'), 0, 200),
+        'season' => substr((string)($normalized_season ?: 'N/A'), 0, 50),
+        'canton_region' => substr((string)($normalized_canton_region ?: ''), 0, 100),
+        'city' => substr((string)($normalized_city ?: ''), 0, 100),
+        'avs_number' => substr((string)($avs_number ?: 'N/A'), 0, 50),
+        'created_at' => current_time('mysql'),
+        'base_price' => $base_price,
+        'discount_amount' => $discount_amount,
+        'final_price' => $final_price,
+        'reimbursement' => $reimbursement,
+        'discount_codes' => $discount_codes,
+        'girls_only' => $girls_only,
+        'event_signature' => '',
+    ];
+
+    // Generate event signature using the normalized values (same as stored values)
+    // This ensures consistency between stored data and event signature
     $data['event_signature'] = intersoccer_generate_event_signature($normalized_event_data);
     
     // Log final signature with key identifying info
@@ -1087,6 +1536,9 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
             $term = intersoccer_get_term_by_translated_name($event_data['venue'], 'pa_intersoccer-venues');
             if ($term) {
                 $normalized['venue'] = $term->name;
+            } else {
+                // Use fallback normalization to ensure consistent signatures
+                $normalized['venue'] = intersoccer_normalize_term_fallback($event_data['venue']);
             }
         }
 
@@ -1095,6 +1547,9 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
             $term = intersoccer_get_term_by_translated_name($event_data['age_group'], 'pa_age-group');
             if ($term) {
                 $normalized['age_group'] = $term->name;
+            } else {
+                // Use fallback normalization to ensure consistent signatures
+                $normalized['age_group'] = intersoccer_normalize_term_fallback($event_data['age_group']);
             }
         }
 
@@ -1103,6 +1558,9 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
             $term = intersoccer_get_term_by_translated_name($event_data['camp_terms'], 'pa_camp-terms');
             if ($term) {
                 $normalized['camp_terms'] = $term->name;
+            } else {
+                // Use fallback normalization to ensure consistent signatures
+                $normalized['camp_terms'] = intersoccer_normalize_term_fallback($event_data['camp_terms']);
             }
         }
 
@@ -1111,6 +1569,9 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
             $term = intersoccer_get_term_by_translated_name($event_data['course_day'], 'pa_course-day');
             if ($term) {
                 $normalized['course_day'] = $term->name;
+            } else {
+                // Use fallback normalization to ensure consistent signatures
+                $normalized['course_day'] = intersoccer_normalize_term_fallback($event_data['course_day']);
             }
         }
 
@@ -1124,6 +1585,9 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
             }
             if ($term) {
                 $normalized['times'] = $term->name;
+            } else {
+                // Use fallback normalization to ensure consistent signatures
+                $normalized['times'] = intersoccer_normalize_term_fallback($event_data['times']);
             }
         }
 
@@ -1133,8 +1597,11 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
             $term = intersoccer_get_term_by_translated_name($event_data['season'], 'pa_program-season');
             if ($term) {
                 $normalized['season'] = $term->name;
+            } else {
+                // Use fallback normalization if term not found
+                $normalized['season'] = intersoccer_normalize_term_fallback($event_data['season']);
             }
-            // Manual normalization as fallback to ensure English
+            // Manual normalization as fallback to ensure English (handles unsynchronized terms)
             $normalized['season'] = str_ireplace('Hiver', 'Winter', $normalized['season']);
             $normalized['season'] = str_ireplace('hiver', 'winter', $normalized['season']);
             $normalized['season'] = str_ireplace('Été', 'Summer', $normalized['season']);
@@ -1152,6 +1619,9 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
             $term = intersoccer_get_term_by_translated_name($event_data['city'], 'pa_city');
             if ($term) {
                 $normalized['city'] = $term->name;
+            } else {
+                // Use fallback normalization to ensure consistent signatures
+                $normalized['city'] = intersoccer_normalize_term_fallback($event_data['city']);
             }
         }
 
@@ -1160,6 +1630,9 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
             $term = intersoccer_get_term_by_translated_name($event_data['canton_region'], 'pa_canton-region');
             if ($term) {
                 $normalized['canton_region'] = $term->name;
+            } else {
+                // Use fallback normalization to ensure consistent signatures
+                $normalized['canton_region'] = intersoccer_normalize_term_fallback($event_data['canton_region']);
             }
         }
 
@@ -1196,67 +1669,183 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
 
 /**
  * Helper function to get term by translated name and return it in default language
+ * 
+ * Enhanced to handle unsynchronized/mistranslated taxonomy terms by:
+ * - Case-insensitive matching
+ * - Checking all WPML translations more thoroughly
+ * - Partial/fuzzy matching when exact match fails
+ * 
+ * @param string $translated_name Term name (may be in any language)
+ * @param string $taxonomy Taxonomy name
+ * @return WP_Term|null Term object in default language, or null if not found
  */
 function intersoccer_get_term_by_translated_name($translated_name, $taxonomy) {
-    // Get all terms in the taxonomy
+    if (empty($translated_name) || empty($taxonomy)) {
+        return null;
+    }
+    
+    // Normalize input for comparison (trim, lowercase)
+    $normalized_input = strtolower(trim($translated_name));
+    
+    // First try to find by slug (in case the stored value is a slug)
+    $term = get_term_by('slug', $translated_name, $taxonomy);
+    if ($term && !is_wp_error($term)) {
+        // We found it by slug, now we need to get the English name
+        // The term object's name will be in the current language context
+        // Since we're already in default language context (called from normalize function),
+        // the name should be in English
+        error_log('InterSoccer: Found term by slug for "' . $translated_name . '" in taxonomy "' . $taxonomy . '"');
+        return $term;
+    }
+    
+    // Try exact name match (case-sensitive first for performance)
+    $term = get_term_by('name', $translated_name, $taxonomy);
+    if ($term && !is_wp_error($term)) {
+        error_log('InterSoccer: Found term by exact name match for "' . $translated_name . '" in taxonomy "' . $taxonomy . '"');
+        return $term;
+    }
+    
+    // Get all terms in the taxonomy to check translations and do case-insensitive matching
     $terms = get_terms([
         'taxonomy' => $taxonomy,
         'hide_empty' => false,
         'lang' => '' // Get all language versions
     ]);
 
-    if (is_wp_error($terms)) {
+    if (is_wp_error($terms) || empty($terms)) {
+        error_log('InterSoccer: No terms found or error getting terms for taxonomy "' . $taxonomy . '"');
         return null;
     }
 
     // Find the term that matches the translated name
     foreach ($terms as $term) {
-        // Check if this term's name in any language matches
+        // Check if this term's name matches exactly
         if ($term->name === $translated_name) {
+            error_log('InterSoccer: Found term by exact name match in all terms for "' . $translated_name . '" in taxonomy "' . $taxonomy . '"');
+            return $term;
+        }
+        
+        // Check case-insensitive match
+        if (strtolower(trim($term->name)) === $normalized_input) {
+            error_log('InterSoccer: Found term by case-insensitive name match for "' . $translated_name . '" (matched "' . $term->name . '") in taxonomy "' . $taxonomy . '"');
+            return $term;
+        }
+        
+        // Check if slug matches
+        if ($term->slug === $translated_name || strtolower($term->slug) === $normalized_input) {
+            error_log('InterSoccer: Found term by slug match for "' . $translated_name . '" in taxonomy "' . $taxonomy . '"');
             return $term;
         }
 
-        // Also check WPML translations if available
+        // Check WPML translations more thoroughly
         if (function_exists('wpml_get_element_translations')) {
             $translations = wpml_get_element_translations($term->term_id, 'tax_' . $taxonomy);
-            foreach ($translations as $translation) {
-                if ($translation->name === $translated_name) {
-                    return $term; // Return the original term
+            if ($translations && is_array($translations)) {
+                foreach ($translations as $lang_code => $translation) {
+                    // Exact match on translation name
+                    if (isset($translation->name) && $translation->name === $translated_name) {
+                        error_log('InterSoccer: Found term by WPML translation exact match for "' . $translated_name . '" (lang: ' . $lang_code . ') in taxonomy "' . $taxonomy . '"');
+                        return $term;
+                    }
+                    
+                    // Case-insensitive match on translation name
+                    if (isset($translation->name) && strtolower(trim($translation->name)) === $normalized_input) {
+                        error_log('InterSoccer: Found term by WPML translation case-insensitive match for "' . $translated_name . '" (matched "' . $translation->name . '", lang: ' . $lang_code . ') in taxonomy "' . $taxonomy . '"');
+                        return $term;
+                    }
+                }
+            }
+        }
+        
+        // Try partial/fuzzy matching as last resort (for unsynchronized terms)
+        // Check if the input is contained in the term name or vice versa (case-insensitive)
+        $term_name_normalized = strtolower(trim($term->name));
+        if (!empty($normalized_input) && !empty($term_name_normalized)) {
+            // If one contains the other (for cases like "Genève" vs "Geneva" or partial matches)
+            if (strpos($term_name_normalized, $normalized_input) !== false || 
+                strpos($normalized_input, $term_name_normalized) !== false) {
+                // Only use partial match if the lengths are similar (to avoid false positives)
+                $length_diff = abs(strlen($term_name_normalized) - strlen($normalized_input));
+                if ($length_diff <= 3) { // Allow up to 3 character difference
+                    error_log('InterSoccer: Found term by partial/fuzzy match for "' . $translated_name . '" (matched "' . $term->name . '") in taxonomy "' . $taxonomy . '"');
+                    return $term;
                 }
             }
         }
     }
 
+    error_log('InterSoccer: WARNING - Could not find term for "' . $translated_name . '" in taxonomy "' . $taxonomy . '" - normalization may fail');
     return null;
+}
+
+/**
+ * Fallback normalization for taxonomy terms that cannot be found
+ * 
+ * When a taxonomy term cannot be found (unsynchronized, mistranslated, or missing),
+ * this function provides a consistent fallback normalization to ensure signatures
+ * remain consistent even when terms are not properly synchronized.
+ * 
+ * @param string $term_name Term name that couldn't be found
+ * @return string Normalized slug format for consistent signatures
+ */
+function intersoccer_normalize_term_fallback($term_name) {
+    if (empty($term_name)) {
+        return '';
+    }
+    
+    // Normalize to consistent format: lowercase, trim, remove special characters
+    $normalized = strtolower(trim($term_name));
+    
+    // Remove common special characters and normalize spaces
+    $normalized = preg_replace('/[^\w\s-]/', '', $normalized);
+    $normalized = preg_replace('/\s+/', '-', $normalized);
+    $normalized = trim($normalized, '-');
+    
+    error_log('InterSoccer: Using fallback normalization for term "' . $term_name . '" -> "' . $normalized . '"');
+    
+    return $normalized;
 }
 
 /**
  * Normalize activity type string to English
  * 
+ * Enhanced to handle Tournament/Tournoi and other variations with case-insensitive matching.
  * Note: This function may already be defined in the intersoccer-product-variations plugin.
  * If so, that version will be used (it's more comprehensive).
  */
 if (!function_exists('intersoccer_normalize_activity_type')) {
     function intersoccer_normalize_activity_type($activity_type) {
+        if (empty($activity_type)) {
+            return '';
+        }
+        
         // Convert to lowercase and remove extra spaces
         $normalized = strtolower(trim($activity_type));
 
-        // Handle common translations
+        // Handle common translations (case-insensitive matching)
+        // Map: pattern to search for => English result
         $translations = [
             'camp' => 'camp',
             'cours' => 'course', // French for course
             'camp de vacances' => 'camp',
             'stage' => 'course',
             'anniversaire' => 'birthday',
+            'birthday' => 'birthday',
+            'tournament' => 'tournament',
+            'tournoi' => 'tournament', // French for tournament
+            'tournois' => 'tournament', // French plural
         ];
 
-        foreach ($translations as $english => $pattern) {
+        // Check each translation pattern
+        foreach ($translations as $pattern => $english) {
             if (strpos($normalized, $pattern) !== false) {
+                error_log('InterSoccer: Normalized activity type "' . $activity_type . '" to "' . $english . '"');
                 return $english;
             }
         }
 
-        // If no match found, return as-is but normalized
+        // If no match found, return as-is but normalized (lowercase, trimmed)
+        error_log('InterSoccer: Activity type "' . $activity_type . '" not matched, using normalized: "' . $normalized . '"');
         return $normalized;
     }
 }
@@ -1269,6 +1858,64 @@ if (!function_exists('intersoccer_normalize_activity_type')) {
  * @return string MD5 hash of the event signature
  */
 function intersoccer_generate_event_signature($event_data) {
+    // Normalize product_id for WPML translations to ensure consistent signatures across languages
+    // This ensures French and English versions of the same product generate the same signature
+    $product_id = $event_data['product_id'] ?? '';
+    if (!empty($product_id) && function_exists('wpml_get_default_language') && function_exists('apply_filters')) {
+        $default_lang = wpml_get_default_language();
+        if ($default_lang) {
+            // First, ensure we have the parent product ID (in case product_id is a variation)
+            $product = wc_get_product($product_id);
+            if ($product && method_exists($product, 'get_parent_id')) {
+                $parent_id = $product->get_parent_id();
+                if ($parent_id > 0) {
+                    // Use parent product ID instead of variation ID
+                    error_log('InterSoccer: Using parent product ID for variation - variation_id: ' . $product_id . ', parent_id: ' . $parent_id);
+                    $product_id = $parent_id;
+                }
+            }
+            
+            // Now normalize the product_id to the default language version
+            // Try with return_original_if_missing = false first to see if translation exists
+            $original_product_id = apply_filters('wpml_object_id', $product_id, 'product', false, $default_lang);
+            if ($original_product_id && $original_product_id != $product_id) {
+                error_log('InterSoccer: Normalizing product_id in signature generation from ' . $product_id . ' to ' . $original_product_id . ' (default_lang: ' . $default_lang . ')');
+                $product_id = $original_product_id;
+            } else {
+                // If no translation found, try with return_original_if_missing = true
+                $original_product_id = apply_filters('wpml_object_id', $product_id, 'product', true, $default_lang);
+                if ($original_product_id && $original_product_id != $product_id) {
+                    error_log('InterSoccer: Normalizing product_id in signature generation from ' . $product_id . ' to ' . $original_product_id . ' (default_lang: ' . $default_lang . ', fallback)');
+                    $product_id = $original_product_id;
+                } else {
+                    // Check if this product might be a translation by checking element type
+                    if (function_exists('wpml_get_element_trid')) {
+                        $trid = wpml_get_element_trid($product_id, 'post_product');
+                        if ($trid) {
+                            $translations = apply_filters('wpml_get_element_translations', null, $trid, 'post_product');
+                            if ($translations && is_array($translations)) {
+                                // Find the default language translation
+                                foreach ($translations as $lang_code => $translation) {
+                                    if ($lang_code === $default_lang && isset($translation->element_id)) {
+                                        $default_product_id = (int)$translation->element_id;
+                                        if ($default_product_id != $product_id) {
+                                            error_log('InterSoccer: Found default language product via TRID lookup: ' . $product_id . ' -> ' . $default_product_id . ' (default_lang: ' . $default_lang . ')');
+                                            $product_id = $default_product_id;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if ($product_id == ($event_data['product_id'] ?? '')) {
+                        error_log('InterSoccer: Product ID ' . $product_id . ' - no translation found or already in default language (' . $default_lang . ')');
+                    }
+                }
+            }
+        }
+    }
+    
     // Normalize translatable term names to slugs for language-agnostic signatures
     $normalized_components = [
         'activity_type' => $event_data['activity_type'] ?? '',
@@ -1281,8 +1928,24 @@ function intersoccer_generate_event_signature($event_data) {
         'girls_only' => $event_data['girls_only'] ? '1' : '0',
         'city' => intersoccer_get_term_slug_by_name($event_data['city'] ?? '', 'pa_city'),
         'canton_region' => intersoccer_get_term_slug_by_name($event_data['canton_region'] ?? '', 'pa_canton-region'),
-        'product_id' => $event_data['product_id'] ?? '',
+        'product_id' => $product_id, // Use normalized product_id
     ];
+    
+    // For tournaments, include the date in the signature to distinguish between different tournament dates
+    // Tournaments are typically one-day events, so we use start_date
+    $activity_type = strtolower($normalized_components['activity_type'] ?? '');
+    if ($activity_type === 'tournament' && !empty($event_data['start_date'])) {
+        // Normalize date to Y-m-d format for consistent signatures
+        $date_value = $event_data['start_date'];
+        // If date is not already in Y-m-d format, try to parse it
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_value) === 0) {
+            $parsed_date = intersoccer_parse_date_unified($date_value, 'event_signature');
+            if ($parsed_date) {
+                $date_value = $parsed_date;
+            }
+        }
+        $normalized_components['start_date'] = $date_value;
+    }
 
     // Create a normalized string from components
     $signature_string = implode('|', array_map(function($key, $value) {
@@ -1299,22 +1962,48 @@ function intersoccer_generate_event_signature($event_data) {
 
 /**
  * Get term slug by name for normalization
+ * 
+ * Uses robust translation-aware lookup to ensure consistent slugs across languages.
+ * This ensures that "Geneva" and "Genève" both return the same slug.
  */
 function intersoccer_get_term_slug_by_name($name, $taxonomy) {
     if (empty($name) || empty($taxonomy)) {
         return $name; // Return as-is if empty
     }
+    
+    // Use robust translation-aware lookup for consistency
+    if (function_exists('intersoccer_get_term_by_translated_name')) {
+        $term = intersoccer_get_term_by_translated_name($name, $taxonomy);
+        if ($term && !is_wp_error($term)) {
+            error_log('InterSoccer: Found term slug via robust normalization for "' . $name . '" in taxonomy "' . $taxonomy . '" -> slug: "' . $term->slug . '"');
+            return $term->slug;
+        }
+    }
+    
+    // Fallback: try direct lookup (for backwards compatibility)
     $term = get_term_by('name', $name, $taxonomy);
     if ($term && !is_wp_error($term)) {
+        error_log('InterSoccer: Found term slug via direct name lookup for "' . $name . '" in taxonomy "' . $taxonomy . '" -> slug: "' . $term->slug . '"');
         return $term->slug;
     }
+    
     // If not found by name, try as slug already
     $term = get_term_by('slug', $name, $taxonomy);
     if ($term && !is_wp_error($term)) {
+        error_log('InterSoccer: Found term slug via direct slug lookup for "' . $name . '" in taxonomy "' . $taxonomy . '" -> slug: "' . $term->slug . '"');
         return $term->slug;
     }
-    // Fallback to original name if term not found
-    return $name;
+    
+    // Fallback: use fallback normalization to ensure consistent signatures
+    if (function_exists('intersoccer_normalize_term_fallback')) {
+        $fallback = intersoccer_normalize_term_fallback($name);
+        error_log('InterSoccer: Using fallback normalization for term "' . $name . '" in taxonomy "' . $taxonomy . '" -> "' . $fallback . '"');
+        return $fallback;
+    }
+    
+    // Last resort: return original name (lowercased for consistency)
+    error_log('InterSoccer: WARNING - Could not find term slug for "' . $name . '" in taxonomy "' . $taxonomy . '", returning as-is');
+    return strtolower($name);
 }
 
 /**

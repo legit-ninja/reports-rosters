@@ -192,19 +192,233 @@ function intersoccer_migrate_rosters_table() {
 /**
  * Rebuild event signatures for all existing roster records
  * This ensures language normalization is applied to all records
+ * Also normalizes stored values (venue, city, canton_region, etc.) to English
  */
 function intersoccer_rebuild_event_signatures() {
     global $wpdb;
-    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+    
+    error_log('InterSoccer: intersoccer_rebuild_event_signatures() function called');
+    
+    try {
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    error_log('InterSoccer: Starting event signature rebuild for all records');
+        error_log('InterSoccer: Starting event signature rebuild and normalization for all records');
 
     // Get all records that need signature updates (including city and canton_region for tournaments)
-    $records = $wpdb->get_results("SELECT id, activity_type, venue, age_group, camp_terms, course_day, times, season, girls_only, city, canton_region, product_id FROM $rosters_table", ARRAY_A);
+    $records = $wpdb->get_results("SELECT id, order_item_id, activity_type, venue, age_group, camp_terms, course_day, times, season, girls_only, city, canton_region, product_id, variation_id, start_date, product_name FROM $rosters_table", ARRAY_A);
+
+    // Store current language if using WPML
+    $current_lang = '';
+    $default_lang = '';
+    if (function_exists('wpml_get_current_language') && function_exists('wpml_get_default_language')) {
+        $current_lang = wpml_get_current_language();
+        $default_lang = wpml_get_default_language();
+    }
 
     $updated = 0;
     foreach ($records as $record) {
-        $normalized_data = intersoccer_normalize_event_data_for_signature([
+        $start_date = $record['start_date'] ?? '';
+        
+        // Normalize product_id for WPML translations BEFORE signature generation
+        // This ensures the signature uses the same product_id regardless of language
+        // This ensures French and English versions of the same product generate the same signature
+        $product_id_to_use = $record['product_id'];
+        $normalized_product_name = $record['product_name'] ?? '';
+        
+        if (!empty($record['product_id']) && function_exists('wpml_get_default_language')) {
+            // First, ensure we have the parent product ID (in case product_id is a variation)
+            $product = wc_get_product($record['product_id']);
+            if ($product && method_exists($product, 'get_parent_id')) {
+                $parent_id = $product->get_parent_id();
+                if ($parent_id > 0) {
+                    // Use parent product ID instead of variation ID
+                    error_log('InterSoccer: Using parent product ID for variation - variation_id: ' . $record['product_id'] . ', parent_id: ' . $parent_id . ' (record id: ' . $record['id'] . ')');
+                    $product_id_to_use = $parent_id;
+                }
+            }
+            
+            // Get the original product_id for WPML translations (normalize to default language)
+            if (function_exists('apply_filters')) {
+                $original_product_id = apply_filters('wpml_object_id', $product_id_to_use, 'product', true, $default_lang);
+                error_log('InterSoccer: WPML lookup for product_id ' . $product_id_to_use . ' returned ' . $original_product_id . ' (default_lang: ' . $default_lang . ', record id: ' . $record['id'] . ')');
+                if ($original_product_id && $original_product_id != $product_id_to_use) {
+                    error_log('InterSoccer: Found WPML translation - normalizing product_id from ' . $product_id_to_use . ' to ' . $original_product_id . ' (record id: ' . $record['id'] . ')');
+                    $product_id_to_use = $original_product_id;
+                } else {
+                    error_log('InterSoccer: Product ID ' . $product_id_to_use . ' already in default language or no translation found (record id: ' . $record['id'] . ')');
+                }
+            }
+            
+            // Switch to default language to get English product name
+            if ($current_lang !== $default_lang) {
+                do_action('wpml_switch_language', $default_lang);
+            }
+            
+            $product = wc_get_product($product_id_to_use);
+            if ($product) {
+                $normalized_product_name = $product->get_name();
+                error_log('InterSoccer: Normalized product_name from "' . $record['product_name'] . '" to "' . $normalized_product_name . '" (record id: ' . $record['id'] . ')');
+            } else {
+                error_log('InterSoccer: Warning - Product not found for product_id ' . $product_id_to_use . ' (record id: ' . $record['id'] . ')');
+            }
+            
+            // Switch back to original language
+            if ($current_lang !== $default_lang && !empty($current_lang)) {
+                do_action('wpml_switch_language', $current_lang);
+            }
+        }
+        
+        // If date is invalid (1970-01-01, NULL, or empty), try to re-extract from order item
+        if (($start_date === '1970-01-01' || empty($start_date)) && !empty($record['order_item_id'])) {
+            $order_item_id = $record['order_item_id'];
+            error_log('InterSoccer: Attempting to re-extract date for invalid entry (id: ' . $record['id'] . ', order_item_id: ' . $order_item_id . ')');
+            
+            // Get order item metadata
+            $item_meta = wc_get_order_item_meta($order_item_id, '', true);
+            if ($item_meta) {
+                $item_meta_flat = array_combine(
+                    array_keys($item_meta),
+                    array_map(function ($value, $key) {
+                        return is_array($value) ? $value[0] ?? implode(', ', array_map('trim', $value)) : trim($value);
+                    }, array_values($item_meta), array_keys($item_meta))
+                );
+                
+                error_log('InterSoccer: Found order item metadata keys: ' . implode(', ', array_keys($item_meta_flat)) . ' (record id: ' . $record['id'] . ')');
+                
+                // Try to get date from product attribute or metadata
+                // Use normalized product_id for attribute lookup
+                $variation_id = $record['variation_id'] ?? null;
+                
+                if ($record['activity_type'] === 'Tournament') {
+                    // For tournaments, try to get date from product attribute
+                    $variation = $variation_id ? wc_get_product($variation_id) : null;
+                    $parent_product = wc_get_product($product_id_to_use);
+                    
+                    $tournament_date = null;
+                    if ($variation) {
+                        $tournament_date = $variation->get_attribute('pa_date') ?: $variation->get_attribute('Date');
+                        if ($tournament_date) {
+                            error_log('InterSoccer: Found tournament date in variation attributes: ' . $tournament_date . ' (record id: ' . $record['id'] . ')');
+                        }
+                    }
+                    // If not found in original variation, try default language variation
+                    if (!$tournament_date && $variation_id && function_exists('intersoccer_get_default_language_variation_id')) {
+                        $default_variation_id = intersoccer_get_default_language_variation_id($variation_id);
+                        if ($default_variation_id != $variation_id) {
+                            $default_variation = wc_get_product($default_variation_id);
+                            if ($default_variation) {
+                                $tournament_date = $default_variation->get_attribute('pa_date') ?: $default_variation->get_attribute('Date');
+                                if ($tournament_date) {
+                                    error_log('InterSoccer: Found tournament date in default language variation ' . $default_variation_id . ' attributes: ' . $tournament_date . ' (record id: ' . $record['id'] . ')');
+                                }
+                            }
+                        }
+                    }
+                    if (!$tournament_date && $parent_product) {
+                        $tournament_date = $parent_product->get_attribute('pa_date') ?: $parent_product->get_attribute('Date');
+                        if ($tournament_date) {
+                            error_log('InterSoccer: Found tournament date in parent product attributes: ' . $tournament_date . ' (record id: ' . $record['id'] . ')');
+                        }
+                    }
+                    if (!$tournament_date) {
+                        // Try multiple possible metadata key variations
+                        $possible_keys = ['Date', 'date', 'pa_date', 'Date (fr)', 'Tournament Date'];
+                        foreach ($possible_keys as $key) {
+                            if (isset($item_meta_flat[$key]) && !empty($item_meta_flat[$key])) {
+                                $tournament_date = $item_meta_flat[$key];
+                                error_log('InterSoccer: Found tournament date in order item metadata using key "' . $key . '": ' . $tournament_date . ' (record id: ' . $record['id'] . ')');
+                                break;
+                            }
+                        }
+                        // Also check raw metadata structure (might be nested)
+                        if (!$tournament_date && isset($item_meta['Date'])) {
+                            $raw_date = is_array($item_meta['Date']) ? ($item_meta['Date'][0] ?? null) : $item_meta['Date'];
+                            if (!empty($raw_date)) {
+                                $tournament_date = trim($raw_date);
+                                error_log('InterSoccer: Found tournament date in raw order item metadata: ' . $tournament_date . ' (record id: ' . $record['id'] . ')');
+                            }
+                        }
+                    }
+                    
+                    if ($tournament_date && function_exists('intersoccer_parse_date_unified')) {
+                        // Clean up the date string (remove extra whitespace, handle slug format)
+                        $tournament_date = trim($tournament_date);
+                        
+                        // Handle slug format like "dimanche-14-decembre" - convert to readable format
+                        if (preg_match('/^([a-z]+)-(\d+)-([a-z]+)$/i', $tournament_date, $slug_matches)) {
+                            $day_name = ucfirst($slug_matches[1]);
+                            $day_num = $slug_matches[2];
+                            $month_name = ucfirst($slug_matches[3]);
+                            // Convert French month names to full format
+                            $french_months = [
+                                'janvier' => 'janvier', 'février' => 'février', 'mars' => 'mars', 'avril' => 'avril',
+                                'mai' => 'mai', 'juin' => 'juin', 'juillet' => 'juillet', 'août' => 'août',
+                                'septembre' => 'septembre', 'octobre' => 'octobre', 'novembre' => 'novembre', 'décembre' => 'décembre'
+                            ];
+                            $month_lower = strtolower($month_name);
+                            if (isset($french_months[$month_lower])) {
+                                $month_name = $french_months[$month_lower];
+                            }
+                            $tournament_date = $day_name . ' ' . $day_num . ' ' . $month_name;
+                            error_log('InterSoccer: Converted slug format date to readable format: ' . $tournament_date . ' (record id: ' . $record['id'] . ')');
+                        }
+                        
+                        // If the date doesn't have a year, try to extract it from the season
+                        $year = null;
+                        if (!preg_match('/\d{4}/', $tournament_date)) {
+                            // No year in date string, try to extract from season
+                            $season = $record['season'] ?? '';
+                            // Handle French season names: "Automne 2025", "Printemps 2025", etc.
+                            if (preg_match('/(\d{4})/', $season, $matches)) {
+                                $year = $matches[1];
+                                // Try different formats: with day name, without day name
+                                if (preg_match('/^[A-Z][a-z]+\s+\d+\s+[A-Za-zàâäéèêëïîôùûüÿç]+$/', $tournament_date)) {
+                                    // Format: "Dimanche 14 décembre" - add year at the end
+                                    $tournament_date_with_year = $tournament_date . ' ' . $year;
+                                } else {
+                                    // Format: "14 décembre" - add year at the end
+                                    $tournament_date_with_year = $tournament_date . ' ' . $year;
+                                }
+                                error_log('InterSoccer: Adding year ' . $year . ' from season "' . $season . '" to date "' . $tournament_date . '" -> "' . $tournament_date_with_year . '" (record id: ' . $record['id'] . ')');
+                                $tournament_date = $tournament_date_with_year;
+                            } else {
+                                error_log('InterSoccer: Could not extract year from season "' . $season . '" for date "' . $tournament_date . '" (record id: ' . $record['id'] . ')');
+                            }
+                        }
+                        
+                        $parsed_date = intersoccer_parse_date_unified($tournament_date, 'rebuild event signatures (record id: ' . $record['id'] . ')');
+                        if ($parsed_date) {
+                            $start_date = $parsed_date;
+                            $end_date = $parsed_date; // Tournaments are typically one day
+                            error_log('InterSoccer: Successfully re-extracted tournament date: ' . $start_date . ' (record id: ' . $record['id'] . ')');
+                        } else {
+                            error_log('InterSoccer: Failed to parse tournament date "' . $tournament_date . '" (record id: ' . $record['id'] . ')');
+                        }
+                    } else {
+                        error_log('InterSoccer: No tournament date found in product attributes or order item metadata (record id: ' . $record['id'] . ')');
+                    }
+                } else {
+                    // For other types, try Start Date/End Date from metadata
+                    $meta_start = $item_meta_flat['Start Date'] ?? null;
+                    if ($meta_start && function_exists('intersoccer_parse_date_unified')) {
+                        $parsed_date = intersoccer_parse_date_unified($meta_start, 'rebuild event signatures (record id: ' . $record['id'] . ')');
+                        if ($parsed_date) {
+                            $start_date = $parsed_date;
+                            error_log('InterSoccer: Successfully re-extracted start date: ' . $start_date . ' (record id: ' . $record['id'] . ')');
+                        } else {
+                            error_log('InterSoccer: Failed to parse start date "' . $meta_start . '" (record id: ' . $record['id'] . ')');
+                        }
+                    } else {
+                        error_log('InterSoccer: No Start Date found in order item metadata (record id: ' . $record['id'] . ')');
+                    }
+                }
+            } else {
+                error_log('InterSoccer: No order item metadata found for order_item_id ' . $order_item_id . ' (record id: ' . $record['id'] . ')');
+            }
+        }
+        
+        // Use normalized product_id in original_data for signature generation
+        $original_data = [
             'activity_type' => $record['activity_type'],
             'venue' => $record['venue'],
             'age_group' => $record['age_group'],
@@ -215,28 +429,108 @@ function intersoccer_rebuild_event_signatures() {
             'girls_only' => $record['girls_only'],
             'city' => $record['city'] ?? '',
             'canton_region' => $record['canton_region'] ?? '',
-            'product_id' => $record['product_id'],
-        ]);
+            'product_id' => $product_id_to_use, // Use normalized product_id
+            'start_date' => $start_date,
+        ];
+        
+        $normalized_data = intersoccer_normalize_event_data_for_signature($original_data);
+        
+        // Add start_date back for signature generation (normalization doesn't modify dates)
+        $normalized_data['start_date'] = $start_date;
+
+        // Log signature components before generation for debugging
+        error_log('InterSoccer: Signature components for record id ' . $record['id'] . ': ' . json_encode([
+            'original_product_id' => $record['product_id'],
+            'normalized_product_id' => $product_id_to_use,
+            'start_date' => $start_date,
+            'activity_type' => $normalized_data['activity_type'] ?? $record['activity_type'],
+            'venue' => $normalized_data['venue'] ?? $record['venue'],
+            'age_group' => $normalized_data['age_group'] ?? $record['age_group'],
+            'course_day' => $normalized_data['course_day'] ?? $record['course_day'],
+            'times' => $normalized_data['times'] ?? $record['times'],
+            'season' => $normalized_data['season'] ?? $record['season'],
+            'city' => $normalized_data['city'] ?? ($record['city'] ?? ''),
+            'canton_region' => $normalized_data['canton_region'] ?? ($record['canton_region'] ?? ''),
+        ]));
 
         $signature = intersoccer_generate_event_signature($normalized_data);
+        
+        error_log('InterSoccer: Generated signature ' . $signature . ' for record id ' . $record['id']);
 
+        // Update both event_signature and normalized stored values
+        $update_data = [
+            'event_signature' => $signature,
+            'venue' => substr((string)($normalized_data['venue'] ?? $record['venue'] ?? ''), 0, 200),
+            'age_group' => substr((string)($normalized_data['age_group'] ?? $record['age_group'] ?? ''), 0, 50),
+            'camp_terms' => substr((string)($normalized_data['camp_terms'] ?? $record['camp_terms'] ?? ''), 0, 100),
+            'course_day' => substr((string)($normalized_data['course_day'] ?? $record['course_day'] ?? ''), 0, 20),
+            'times' => substr((string)($normalized_data['times'] ?? $record['times'] ?? ''), 0, 50),
+            'season' => substr((string)($normalized_data['season'] ?? $record['season'] ?? ''), 0, 50),
+            'city' => substr((string)($normalized_data['city'] ?? $record['city'] ?? ''), 0, 100),
+            'canton_region' => substr((string)($normalized_data['canton_region'] ?? $record['canton_region'] ?? ''), 0, 100),
+            'activity_type' => substr((string)($normalized_data['activity_type'] ?? $record['activity_type'] ?? ''), 0, 50),
+            'product_name' => substr((string)($normalized_product_name ?: $record['product_name'] ?? ''), 0, 255),
+        ];
+        
+        // Update product_id to normalized value if it changed (for WPML translations)
+        if ($product_id_to_use != $record['product_id']) {
+            $update_data['product_id'] = $product_id_to_use;
+            error_log('InterSoccer: Updating stored product_id from ' . $record['product_id'] . ' to ' . $product_id_to_use . ' (record id: ' . $record['id'] . ')');
+        }
+        
+        // If we re-extracted the date, update it
+        if ($start_date !== ($record['start_date'] ?? '')) {
+            $update_data['start_date'] = $start_date;
+            // For tournaments, also update end_date to match start_date
+            if ($record['activity_type'] === 'Tournament') {
+                $update_data['end_date'] = $start_date;
+            }
+        }
+
+        // Build format array - product_id needs %d, everything else is %s
+        $formats = [];
+        foreach ($update_data as $key => $value) {
+            if ($key === 'product_id') {
+                $formats[] = '%d';
+            } else {
+                $formats[] = '%s';
+            }
+        }
+        
         $wpdb->update(
             $rosters_table,
-            ['event_signature' => $signature],
+            $update_data,
             ['id' => $record['id']],
-            ['%s'],
+            $formats,
             ['%d']
         );
 
         $updated++;
     }
 
-    error_log('InterSoccer: Rebuilt event signatures for ' . $updated . ' records');
-    return [
-        'status' => 'success',
-        'updated' => $updated,
-        'message' => __('Rebuilt event signatures for ' . $updated . ' records.', 'intersoccer-reports-rosters')
-    ];
+        error_log('InterSoccer: Rebuilt event signatures and normalized stored values for ' . $updated . ' records');
+        return [
+            'status' => 'success',
+            'updated' => $updated,
+            'message' => __('Rebuilt event signatures and normalized stored values for ' . $updated . ' records.', 'intersoccer-reports-rosters')
+        ];
+    } catch (Exception $e) {
+        error_log('InterSoccer: Exception in rebuild_event_signatures: ' . $e->getMessage());
+        error_log('InterSoccer: Exception trace: ' . $e->getTraceAsString());
+        return [
+            'status' => 'error',
+            'updated' => 0,
+            'message' => __('Rebuild failed: ' . $e->getMessage(), 'intersoccer-reports-rosters')
+        ];
+    } catch (Error $e) {
+        error_log('InterSoccer: Fatal error in rebuild_event_signatures: ' . $e->getMessage());
+        error_log('InterSoccer: Fatal error trace: ' . $e->getTraceAsString());
+        return [
+            'status' => 'error',
+            'updated' => 0,
+            'message' => __('Rebuild failed with fatal error: ' . $e->getMessage(), 'intersoccer-reports-rosters')
+        ];
+    }
 }
 
 /**
@@ -717,7 +1011,180 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             } else {
                 error_log("InterSoccer: Regex failed to match camp_terms $camp_terms for order $order_id, item $order_item_id");
             }
-        } elseif (($activity_type === 'Course' || $activity_type === 'Tournament') && !empty($order_item_meta['Start Date']) && !empty($order_item_meta['End Date'])) {
+        } elseif ($activity_type === 'Tournament') {
+            // For tournaments, get date from product attribute pa_date or Date
+            $tournament_date = null;
+            
+            // Try to get from variation first, then default language variation, then parent product
+            if ($variation) {
+                $tournament_date = $variation->get_attribute('pa_date') ?: $variation->get_attribute('Date');
+            }
+            // If not found in original variation, try default language variation
+            if (!$tournament_date && $variation_id && function_exists('intersoccer_get_default_language_variation_id')) {
+                $default_variation_id = intersoccer_get_default_language_variation_id($variation_id);
+                if ($default_variation_id != $variation_id) {
+                    $default_variation = wc_get_product($default_variation_id);
+                    if ($default_variation) {
+                        $tournament_date = $default_variation->get_attribute('pa_date') ?: $default_variation->get_attribute('Date');
+                        if ($tournament_date) {
+                            error_log("InterSoccer: Found tournament date in default language variation $default_variation_id attributes: $tournament_date (order $order_id, item $order_item_id)");
+                        }
+                    }
+                }
+            }
+            if (!$tournament_date && $parent_product) {
+                $tournament_date = $parent_product->get_attribute('pa_date') ?: $parent_product->get_attribute('Date');
+            }
+            // Also check order item metadata as fallback - try multiple key variations
+            if (!$tournament_date) {
+                // First check the flattened order_item_meta array
+                $possible_keys = ['Date', 'date', 'pa_date', 'Date (fr)', 'Tournament Date'];
+                foreach ($possible_keys as $key) {
+                    if (isset($order_item_meta[$key]) && !empty($order_item_meta[$key])) {
+                        $tournament_date = is_array($order_item_meta[$key]) ? ($order_item_meta[$key][0] ?? null) : $order_item_meta[$key];
+                        if (!empty($tournament_date)) {
+                            $tournament_date = trim($tournament_date);
+                            error_log("InterSoccer: Found tournament date in order_item_meta['$key']: $tournament_date (order $order_id, item $order_item_id)");
+                            break;
+                        }
+                    }
+                }
+                
+                // Also check raw_order_item_meta (before flattening) - might have different structure
+                if (!$tournament_date && isset($raw_order_item_meta)) {
+                    foreach ($possible_keys as $key) {
+                        if (isset($raw_order_item_meta[$key])) {
+                            $raw_value = $raw_order_item_meta[$key];
+                            if (is_array($raw_value)) {
+                                $tournament_date = !empty($raw_value[0]) ? trim($raw_value[0]) : null;
+                            } else {
+                                $tournament_date = !empty($raw_value) ? trim($raw_value) : null;
+                            }
+                            if (!empty($tournament_date)) {
+                                error_log("InterSoccer: Found tournament date in raw_order_item_meta['$key']: $tournament_date (order $order_id, item $order_item_id)");
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // If still not found, try querying database directly - this is the most reliable method
+                if (!$tournament_date) {
+                    global $wpdb;
+                    $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
+                    // First, get all Date-related metadata to see what's actually stored
+                    $all_date_meta = $wpdb->get_results($wpdb->prepare(
+                        "SELECT meta_key, meta_value FROM $order_itemmeta_table 
+                         WHERE order_item_id = %d AND (meta_key LIKE '%%Date%%' OR meta_key LIKE '%%date%%')
+                         AND meta_value IS NOT NULL AND meta_value != ''",
+                        $order_item_id
+                    ), ARRAY_A);
+                    if ($all_date_meta) {
+                        error_log("InterSoccer: Found Date-related metadata in database for order_item_id $order_item_id: " . json_encode($all_date_meta));
+                        // Try each found key - prioritize 'Date' key
+                        $date_keys = [];
+                        foreach ($all_date_meta as $meta_row) {
+                            if (strtolower($meta_row['meta_key']) === 'date') {
+                                array_unshift($date_keys, $meta_row);
+                            } else {
+                                $date_keys[] = $meta_row;
+                            }
+                        }
+                        foreach ($date_keys as $meta_row) {
+                            $tournament_date = trim($meta_row['meta_value']);
+                            if (!empty($tournament_date)) {
+                                error_log("InterSoccer: Using tournament date from database key '{$meta_row['meta_key']}': $tournament_date (order $order_id, item $order_item_id)");
+                                break;
+                            }
+                        }
+                    } else {
+                        error_log("InterSoccer: No Date-related metadata found in database for order_item_id $order_item_id (order $order_id, item $order_item_id)");
+                    }
+                }
+            }
+            
+            if ($tournament_date) {
+                error_log("InterSoccer: Found tournament date attribute for order $order_id, item $order_item_id: " . $tournament_date);
+                
+                // Clean up the date string (remove extra whitespace, handle slug format)
+                $tournament_date = trim($tournament_date);
+                
+                // Handle slug format like "dimanche-14-decembre" - convert to readable format
+                if (preg_match('/^([a-z]+)-(\d+)-([a-z]+)$/i', $tournament_date, $slug_matches)) {
+                    $day_name = ucfirst($slug_matches[1]);
+                    $day_num = $slug_matches[2];
+                    $month_name = ucfirst($slug_matches[3]);
+                    // Convert French month names to full format
+                    $french_months = [
+                        'janvier' => 'janvier', 'février' => 'février', 'mars' => 'mars', 'avril' => 'avril',
+                        'mai' => 'mai', 'juin' => 'juin', 'juillet' => 'juillet', 'août' => 'août',
+                        'septembre' => 'septembre', 'octobre' => 'octobre', 'novembre' => 'novembre', 'décembre' => 'décembre'
+                    ];
+                    $month_lower = strtolower($month_name);
+                    if (isset($french_months[$month_lower])) {
+                        $month_name = $french_months[$month_lower];
+                    }
+                    $tournament_date = $day_name . ' ' . $day_num . ' ' . $month_name;
+                    error_log("InterSoccer: Converted slug format date to readable format: $tournament_date (order $order_id, item $order_item_id)");
+                }
+                
+                // If the date doesn't have a year, try to extract it from the season
+                if (!preg_match('/\d{4}/', $tournament_date)) {
+                    // No year in date string, try to extract from season
+                    // Handle French season names: "Automne 2025", "Printemps 2025", etc.
+                    if (preg_match('/(\d{4})/', $season, $matches)) {
+                        $year = $matches[1];
+                        // Try different formats: with day name, without day name
+                        if (preg_match('/^[A-Z][a-z]+\s+\d+\s+[A-Za-zàâäéèêëïîôùûüÿç]+$/', $tournament_date)) {
+                            // Format: "Dimanche 14 décembre" - add year at the end
+                            $tournament_date = $tournament_date . ' ' . $year;
+                        } else {
+                            // Format: "14 décembre" - add year at the end
+                            $tournament_date = $tournament_date . ' ' . $year;
+                        }
+                        error_log("InterSoccer: Adding year $year from season \"$season\" to date \"$tournament_date\" (order $order_id, item $order_item_id)");
+                    }
+                }
+                
+                $context = "order $order_id, item $order_item_id (tournament date)";
+                $parsed_date = intersoccer_parse_date_unified($tournament_date, $context);
+                
+                if ($parsed_date) {
+                    // Tournaments are typically one day, so use same date for start and end
+                    $start_date = $parsed_date;
+                    $end_date = $parsed_date;
+                    $event_dates = $start_date;
+                    error_log("InterSoccer: Parsed tournament date: $start_date");
+                } else {
+                    error_log("InterSoccer: Failed to parse tournament date '$tournament_date' for order $order_id, item $order_item_id");
+                    $start_date = '1970-01-01';
+                    $end_date = '1970-01-01';
+                    $event_dates = 'N/A';
+                }
+            } else {
+                // Fallback to Start Date/End Date from order item metadata if available
+                if (!empty($order_item_meta['Start Date']) && !empty($order_item_meta['End Date'])) {
+                    error_log("InterSoccer: Tournament date attribute not found, trying Start Date/End Date from metadata for order $order_id, item $order_item_id");
+                    $context = "order $order_id, item $order_item_id";
+                    $start_date = intersoccer_parse_date_unified($order_item_meta['Start Date'], $context . ' (start)');
+                    $end_date = intersoccer_parse_date_unified($order_item_meta['End Date'], $context . ' (end)');
+                    
+                    if ($start_date && $end_date) {
+                        $event_dates = "$start_date to $end_date";
+                    } else {
+                        error_log("InterSoccer: Date parsing failed for order $order_id, item $order_item_id. Using default dates.");
+                        $start_date = '1970-01-01';
+                        $end_date = '1970-01-01';
+                        $event_dates = 'N/A';
+                    }
+                } else {
+                    error_log("InterSoccer: No tournament date found (checked pa_date, Date attribute, and Start Date/End Date metadata) for order $order_id, item $order_item_id. Using defaults.");
+                    $start_date = '1970-01-01';
+                    $end_date = '1970-01-01';
+                    $event_dates = 'N/A';
+                }
+            }
+        } elseif ($activity_type === 'Course' && !empty($order_item_meta['Start Date']) && !empty($order_item_meta['End Date'])) {
             // Log raw date values for debugging
             error_log("InterSoccer: Raw Start Date for order $order_id, item $order_item_id: " . print_r($order_item_meta['Start Date'], true));
             error_log("InterSoccer: Raw End Date for order $order_id, item $order_item_id: " . print_r($order_item_meta['End Date'], true));
@@ -747,7 +1214,24 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
 
         $late_pickup = (!empty($order_item_meta['Late Pickup Type'])) ? 'Yes' : 'No';
         $late_pickup_days = $order_item_meta['Late Pickup Days'] ?? '';
+        
+        // Get product name and normalize to English if WPML is active
         $product_name = $product->get_name();
+        if (function_exists('wpml_get_default_language') && function_exists('wpml_get_current_language')) {
+            $current_lang = wpml_get_current_language();
+            $default_lang = wpml_get_default_language();
+            
+            if ($current_lang !== $default_lang) {
+                // Switch to default language to get English product name
+                do_action('wpml_switch_language', $default_lang);
+                $product_english = wc_get_product($product_id);
+                if ($product_english) {
+                    $product_name = $product_english->get_name();
+                }
+                // Switch back to original language
+                do_action('wpml_switch_language', $current_lang);
+            }
+        }
 
         $day_presence = ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
         if (strtolower($booking_type) === 'single-days') {
@@ -796,6 +1280,39 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             }
         }
 
+        // Normalize event data to English for consistent storage
+        // This ensures all roster entries are stored in English regardless of order language
+        $event_data_to_normalize = [
+            'activity_type' => $activity_type,
+            'venue' => $venue,
+            'age_group' => $age_group,
+            'camp_terms' => $camp_terms,
+            'course_day' => $course_day,
+            'times' => $times,
+            'season' => $season,
+            'girls_only' => $girls_only,
+            'city' => $city,
+            'canton_region' => $canton_region,
+            'product_id' => $product_id,
+            'start_date' => $start_date, // Include date for tournament signature generation
+        ];
+        
+        $normalized_event_data = intersoccer_normalize_event_data_for_signature($event_data_to_normalize);
+        
+        // Add start_date back to normalized data for signature generation (normalization doesn't modify dates)
+        $normalized_event_data['start_date'] = $start_date;
+        
+        // Use normalized values for storage
+        $normalized_venue = $normalized_event_data['venue'] ?? $venue;
+        $normalized_age_group = $normalized_event_data['age_group'] ?? $age_group;
+        $normalized_camp_terms = $normalized_event_data['camp_terms'] ?? $camp_terms;
+        $normalized_course_day = $normalized_event_data['course_day'] ?? $course_day;
+        $normalized_times = $normalized_event_data['times'] ?? $times;
+        $normalized_season = $normalized_event_data['season'] ?? $season;
+        $normalized_city = $normalized_event_data['city'] ?? $city;
+        $normalized_canton_region = $normalized_event_data['canton_region'] ?? $canton_region;
+        $normalized_activity_type = $normalized_event_data['activity_type'] ?? ucfirst($activity_type ?: 'Event');
+
         // Prepare roster_entry for insertion
         $roster_entry = [
             'order_id' => $order_id,
@@ -809,24 +1326,24 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             'gender' => substr((string)($gender ?: 'N/A'), 0, 20),
             'booking_type' => $booking_type,
             'selected_days' => $selected_days,
-            'camp_terms' => $camp_terms,
-            'venue' => $venue,
+            'camp_terms' => substr((string)($normalized_camp_terms ?: 'N/A'), 0, 100),
+            'venue' => substr((string)($normalized_venue ?: 'Unknown Venue'), 0, 200),
             'parent_phone' => substr((string)($order->get_billing_phone() ?: 'N/A'), 0, 20),
             'parent_email' => substr((string)($order->get_billing_email() ?: 'N/A'), 0, 100),
             'medical_conditions' => $medical_conditions,
             'late_pickup' => $late_pickup,
             'late_pickup_days' => $late_pickup_days,
             'day_presence' => json_encode($day_presence),
-            'age_group' => $age_group,
+            'age_group' => substr((string)($normalized_age_group ?: 'N/A'), 0, 50),
             'start_date' => $start_date ?: '1970-01-01',
             'end_date' => $end_date ?: '1970-01-01',
             'event_dates' => substr((string)($event_dates ?: 'N/A'), 0, 100),
             'product_name' => substr((string)($product_name ?: 'Unknown Product'), 0, 255),
-            'activity_type' => substr((string)(ucfirst($activity_type ?: 'Event')), 0, 50),
+            'activity_type' => substr((string)($normalized_activity_type), 0, 50),
             'shirt_size' => substr((string)($shirt_size ?: 'N/A'), 0, 50),
             'shorts_size' => substr((string)($shorts_size ?: 'N/A'), 0, 50),
             'registration_timestamp' => $order_date,
-            'course_day' => substr((string)($course_day ?: 'N/A'), 0, 20),
+            'course_day' => substr((string)($normalized_course_day ?: 'N/A'), 0, 20),
             'product_id' => $product_id,
             'player_first_name' => substr((string)($first_name ?: 'Unknown'), 0, 100),
             'player_last_name' => substr((string)($last_name ?: 'Unknown'), 0, 100),
@@ -837,12 +1354,12 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             'parent_first_name' => substr((string)($order->get_billing_first_name() ?: 'Unknown'), 0, 100),
             'parent_last_name' => substr((string)($order->get_billing_last_name() ?: 'Unknown'), 0, 100),
             'emergency_contact' => substr((string)($order->get_billing_phone() ?: 'N/A'), 0, 20),
-            'term' => substr((string)(($camp_terms ?: $course_day) ?: 'N/A'), 0, 200),
-            'times' => substr((string)($times ?: 'N/A'), 0, 50),
+            'term' => substr((string)(($normalized_camp_terms ?: $normalized_course_day) ?: 'N/A'), 0, 200),
+            'times' => substr((string)($normalized_times ?: 'N/A'), 0, 50),
             'days_selected' => substr((string)($selected_days ?: 'N/A'), 0, 200),
-            'season' => substr((string)($season ?: 'N/A'), 0, 50),
-            'canton_region' => substr((string)($canton_region ?: ''), 0, 100),
-            'city' => substr((string)($city ?: ''), 0, 100),
+            'season' => substr((string)($normalized_season ?: 'N/A'), 0, 50),
+            'canton_region' => substr((string)($normalized_canton_region ?: ''), 0, 100),
+            'city' => substr((string)($normalized_city ?: ''), 0, 100),
             'avs_number' => substr((string)($avs_number ?: 'N/A'), 0, 50),
             'created_at' => current_time('mysql'),
             'base_price' => 0.00,
@@ -854,6 +1371,12 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
         'event_signature' => '',
         'event_completed' => 0,
         ];
+
+        // Generate event signature using the normalized values (same as stored values)
+        // This ensures consistency between stored data and event signature
+        $roster_entry['event_signature'] = intersoccer_generate_event_signature($normalized_event_data);
+        
+        error_log('InterSoccer: Generated event_signature=' . $roster_entry['event_signature'] . ' for Order=' . $order_id . ', Item=' . $order_item_id . ' using normalized values');
 
         // Log to validate $order before insert
         error_log('InterSoccer: Order object type for ' . $order_id . ': ' . (is_object($order) ? get_class($order) : 'Invalid') . ' | Billing last name: ' . $order->get_billing_last_name());
@@ -1046,16 +1569,42 @@ function intersoccer_upgrade_database_ajax() {
 
 add_action('wp_ajax_intersoccer_rebuild_event_signatures', 'intersoccer_rebuild_event_signatures_ajax');
 function intersoccer_rebuild_event_signatures_ajax() {
+    error_log('InterSoccer: AJAX rebuild event signatures handler called');
+    
     ob_start();
-    check_ajax_referer('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field');
-    if (!current_user_can('manage_options')) {
-        ob_clean();
-        wp_send_json_error(['message' => __('You do not have permission to rebuild event signatures.', 'intersoccer-reports-rosters')]);
-    }
-    error_log('InterSoccer: AJAX rebuild event signatures request received');
-
+    
     try {
+        // Check nonce - try both field names (nonce and intersoccer_rebuild_nonce_field)
+        $nonce_check = false;
+        if (isset($_POST['nonce'])) {
+            $nonce_check = check_ajax_referer('intersoccer_rebuild_nonce', 'nonce', false);
+            error_log('InterSoccer: AJAX rebuild - Checking nonce field "nonce": ' . ($nonce_check ? 'valid' : 'invalid'));
+        }
+        if (!$nonce_check && isset($_POST['intersoccer_rebuild_nonce_field'])) {
+            $nonce_check = check_ajax_referer('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field', false);
+            error_log('InterSoccer: AJAX rebuild - Checking nonce field "intersoccer_rebuild_nonce_field": ' . ($nonce_check ? 'valid' : 'invalid'));
+        }
+        
+        if (!$nonce_check) {
+            error_log('InterSoccer: AJAX rebuild - Nonce check failed. POST data keys: ' . implode(', ', array_keys($_POST)));
+            ob_clean();
+            wp_send_json_error(['message' => __('Security check failed. Please refresh the page and try again.', 'intersoccer-reports-rosters')]);
+            return;
+        }
+        
+        if (!current_user_can('manage_options')) {
+            error_log('InterSoccer: AJAX rebuild - Permission check failed');
+            ob_clean();
+            wp_send_json_error(['message' => __('You do not have permission to rebuild event signatures.', 'intersoccer-reports-rosters')]);
+            return;
+        }
+        
+        error_log('InterSoccer: AJAX rebuild event signatures request received - calling rebuild function');
+
         $result = intersoccer_rebuild_event_signatures();
+        
+        error_log('InterSoccer: AJAX rebuild - Function returned: ' . json_encode($result));
+        
         ob_clean();
         if ($result['status'] === 'success') {
             wp_send_json_success(['updated' => $result['updated'], 'message' => __('Event signatures rebuilt for ' . $result['updated'] . ' records.', 'intersoccer-reports-rosters')]);
@@ -1064,8 +1613,14 @@ function intersoccer_rebuild_event_signatures_ajax() {
         }
     } catch (Exception $e) {
         error_log('InterSoccer: Event signature rebuild exception: ' . $e->getMessage());
+        error_log('InterSoccer: Event signature rebuild exception trace: ' . $e->getTraceAsString());
         ob_clean();
         wp_send_json_error(['message' => __('Event signature rebuild failed with exception: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
+    } catch (Error $e) {
+        error_log('InterSoccer: Event signature rebuild fatal error: ' . $e->getMessage());
+        error_log('InterSoccer: Event signature rebuild fatal error trace: ' . $e->getTraceAsString());
+        ob_clean();
+        wp_send_json_error(['message' => __('Event signature rebuild failed with error: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
     }
 }
 
