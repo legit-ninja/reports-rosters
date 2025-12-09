@@ -1343,7 +1343,7 @@ function intersoccer_render_courses_page() {
 
         $base_query = "SELECT COALESCE(r.season, 'N/A') as season,
                           COALESCE(r.venue, 'N/A') as venue,
-                          COALESCE(oim.meta_value, 'N/A') as city,
+                          COALESCE(r.city, oim.meta_value, 'N/A') as city,
                           r.age_group,
                           r.times,
                           r.course_day,
@@ -1351,8 +1351,8 @@ function intersoccer_render_courses_page() {
                           GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids,
                           r.event_signature,
                           GROUP_CONCAT(DISTINCT r.player_name) as player_names,
-                          GROUP_CONCAT(DISTINCT r.start_date) as start_dates,
-                          GROUP_CONCAT(DISTINCT r.end_date) as end_dates,
+                          MIN(r.start_date) as start_date,
+                          MAX(r.end_date) as end_date,
                           GROUP_CONCAT(DISTINCT r.product_name) as product_names,
                           GROUP_CONCAT(DISTINCT r.variation_id) as variation_ids,
                           MAX(r.event_completed) as event_completed
@@ -1402,7 +1402,7 @@ function intersoccer_render_courses_page() {
             $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND venue IS NOT NULL ORDER BY venue");
             $all_course_days = $wpdb->get_col("SELECT DISTINCT course_day FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND course_day IS NOT NULL ORDER BY course_day");
             $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE activity_type = 'Course' AND girls_only = 0{$filter} AND age_group IS NOT NULL ORDER BY age_group");
-            $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.activity_type = 'Course' AND r.girls_only = 0" . str_replace('is_placeholder', 'r.is_placeholder', $filter) . " AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
+            $all_cities = $wpdb->get_col("SELECT DISTINCT COALESCE(r.city, oim.meta_value) FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City' WHERE r.activity_type = 'Course' AND r.girls_only = 0" . str_replace('is_placeholder', 'r.is_placeholder', $filter) . " AND (r.city IS NOT NULL AND r.city != '' OR (oim.meta_key = 'City' AND oim.meta_value IS NOT NULL AND oim.meta_value != '')) ORDER BY COALESCE(r.city, oim.meta_value)");
         } catch (Exception $e) {
             error_log("InterSoccer: Error fetching filter options: " . $e->getMessage());
         }
@@ -1421,21 +1421,31 @@ function intersoccer_render_courses_page() {
             }
             $group['variation_ids'] = $variation_ids;
             
-            // Get dates directly from the database (already calculated and stored)
+            // Get dates directly from the database (MIN/MAX already calculated in SQL)
             $start = '1970-01-01';
             $end = '1970-01-01';
             
-            if (!empty($group['start_dates']) && is_string($group['start_dates'])) {
-                $start_dates_array = explode(',', $group['start_dates']);
-                $start = !empty($start_dates_array[0]) ? trim($start_dates_array[0]) : '1970-01-01';
+            // Use MIN/MAX dates from SQL query (start_date and end_date fields)
+            if (!empty($group['start_date']) && $group['start_date'] !== '1970-01-01' && $group['start_date'] !== '0000-00-00') {
+                $start = trim($group['start_date']);
             }
-            if (!empty($group['end_dates']) && is_string($group['end_dates'])) {
-                $end_dates_array = explode(',', $group['end_dates']);
-                $end = !empty($end_dates_array[0]) ? trim($end_dates_array[0]) : '1970-01-01';
+            if (!empty($group['end_date']) && $group['end_date'] !== '1970-01-01' && $group['end_date'] !== '0000-00-00') {
+                $end = trim($group['end_date']);
+            }
+            
+            // Validate dates and filter out invalid ones
+            $start_timestamp = strtotime($start);
+            $end_timestamp = strtotime($end);
+            
+            if ($start_timestamp === false || $start === '1970-01-01' || $start === '0000-00-00') {
+                $start = '1970-01-01';
+            }
+            if ($end_timestamp === false || $end === '1970-01-01' || $end === '0000-00-00') {
+                $end = '1970-01-01';
             }
 
-            $group['corrected_start_date'] = date('Y-m-d', strtotime($start)) ?: '1970-01-01';
-            $group['corrected_end_date'] = date('Y-m-d', strtotime($end)) ?: '1970-01-01';
+            $group['corrected_start_date'] = ($start !== '1970-01-01' && $start !== '0000-00-00') ? date('Y-m-d', strtotime($start)) : '1970-01-01';
+            $group['corrected_end_date'] = ($end !== '1970-01-01' && $end !== '0000-00-00') ? date('Y-m-d', strtotime($end)) : '1970-01-01';
             $group['season'] = intersoccer_normalize_season_for_display($group['season']);
 
             if ($group['season'] && $group['season'] !== 'N/A') {
@@ -1765,14 +1775,14 @@ function intersoccer_render_girls_only_page() {
     // Simplified query using the new girls_only boolean column
     $base_query = "SELECT COALESCE(r.season, 'N/A') as season,
                           COALESCE(r.venue, 'N/A') as venue,
-                          COALESCE(oim.meta_value, 'N/A') as city,
+                          COALESCE(r.city, oim.meta_value, 'N/A') as city,
                           r.age_group,
                           r.times,
                           r.camp_terms,
                           r.course_day,
                           r.activity_type,
-                          r.start_date,
-                          r.end_date,
+                          MIN(r.start_date) as start_date,
+                          MAX(r.end_date) as end_date,
                           COUNT(DISTINCT r.order_item_id) as total_players,
                           GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids,
                           r.event_signature,
@@ -1810,7 +1820,7 @@ function intersoccer_render_girls_only_page() {
     $all_camp_terms = $wpdb->get_col("SELECT DISTINCT camp_terms FROM $rosters_table WHERE girls_only = 1{$filter} AND camp_terms IS NOT NULL ORDER BY camp_terms");
     $all_course_days = $wpdb->get_col("SELECT DISTINCT course_day FROM $rosters_table WHERE girls_only = 1{$filter} AND course_day IS NOT NULL ORDER BY course_day");
     $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE girls_only = 1{$filter} AND age_group IS NOT NULL ORDER BY age_group");
-    $all_cities = $wpdb->get_col("SELECT DISTINCT oim.meta_value FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id WHERE r.girls_only = 1" . str_replace('is_placeholder', 'r.is_placeholder', $filter) . " AND oim.meta_key = 'City' AND oim.meta_value IS NOT NULL ORDER BY oim.meta_value");
+    $all_cities = $wpdb->get_col("SELECT DISTINCT COALESCE(r.city, oim.meta_value) FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City' WHERE r.girls_only = 1" . str_replace('is_placeholder', 'r.is_placeholder', $filter) . " AND (r.city IS NOT NULL AND r.city != '' OR (oim.meta_key = 'City' AND oim.meta_value IS NOT NULL AND oim.meta_value != '')) ORDER BY COALESCE(r.city, oim.meta_value)");
     error_log("InterSoccer: Girls Only query results: " . print_r($groups, true));
     error_log("InterSoccer: Girls Only query execution time: " . $query_time . " seconds");
 
@@ -1832,6 +1842,24 @@ function intersoccer_render_girls_only_page() {
         
         // Normalize season for display
         $group['season'] = intersoccer_normalize_season_for_display($group['season']);
+        
+        // Validate and normalize dates (MIN/MAX already calculated in SQL)
+        $start = !empty($group['start_date']) ? trim($group['start_date']) : '1970-01-01';
+        $end = !empty($group['end_date']) ? trim($group['end_date']) : '1970-01-01';
+        
+        // Validate dates and filter out invalid ones
+        $start_timestamp = strtotime($start);
+        $end_timestamp = strtotime($end);
+        
+        if ($start_timestamp === false || $start === '1970-01-01' || $start === '0000-00-00') {
+            $start = '1970-01-01';
+        }
+        if ($end_timestamp === false || $end === '1970-01-01' || $end === '0000-00-00') {
+            $end = '1970-01-01';
+        }
+        
+        $group['start_date'] = ($start !== '1970-01-01' && $start !== '0000-00-00') ? date('Y-m-d', strtotime($start)) : '1970-01-01';
+        $group['end_date'] = ($end !== '1970-01-01' && $end !== '0000-00-00') ? date('Y-m-d', strtotime($end)) : '1970-01-01';
 
         // Collect unique seasons
         if ($group['season'] && $group['season'] !== 'N/A') {
