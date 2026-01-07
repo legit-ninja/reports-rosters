@@ -238,7 +238,7 @@ class MenuManager {
         add_action('admin_init', function() use ($key, $config) {
             if (isset($_GET['page']) && $_GET['page'] === $config['menu_slug']) {
                 if (!current_user_can($config['capability'])) {
-                    wp_die(__('You do not have sufficient permissions to access this page.'));
+                    wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
                 }
             }
         });
@@ -363,7 +363,7 @@ class MenuManager {
             // Check user capabilities
             $config = $this->get_page_config($page_key);
             if (!current_user_can($config['capability'])) {
-                wp_die(__('You do not have sufficient permissions to access this page.'));
+                wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
             }
             
             // Render the page

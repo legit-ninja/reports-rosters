@@ -357,27 +357,27 @@ function intersoccer_render_roster_details_page() {
     echo '<thead>';
     echo '<tr>';
     echo '<th style="width: 15px;"><input type="checkbox" id="selectAll"></th>'; // New: Checkbox for select all
-    echo '<th style="width: 120px;"><a href="' . esc_url(intersoccer_get_sort_url('order_date', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Order Date') . intersoccer_get_sort_indicator('order_date', $sort_by, $sort_order) . '</a></th>';
-    echo '<th style="width: 140px;"><a href="' . esc_url(intersoccer_get_sort_url('player_name', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Name') . intersoccer_get_sort_indicator('player_name', $sort_by, $sort_order) . '</a></th>';
-    echo '<th style="width: 140px;"><a href="' . esc_url(intersoccer_get_sort_url('last_name', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Surname') . intersoccer_get_sort_indicator('last_name', $sort_by, $sort_order) . '</a></th>';
-    echo '<th style="width: 80px;"><a href="' . esc_url(intersoccer_get_sort_url('gender', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Gender') . intersoccer_get_sort_indicator('gender', $sort_by, $sort_order) . '</a></th>';
-    echo '<th style="width: 130px;">' . esc_html__('Phone') . '</th>';
-    echo '<th style="width: 200px;">' . esc_html__('Email') . '</th>';
-    echo '<th style="width: 50px;"><a href="' . esc_url(intersoccer_get_sort_url('age', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Age') . intersoccer_get_sort_indicator('age', $sort_by, $sort_order) . '</a></th>';
-    echo '<th style="width: 200px;">' . esc_html__('Medical/Dietary') . '</th>';
+    echo '<th style="width: 120px;"><a href="' . esc_url(intersoccer_get_sort_url('order_date', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Order Date', 'intersoccer-reports-rosters') . intersoccer_get_sort_indicator('order_date', $sort_by, $sort_order) . '</a></th>';
+    echo '<th style="width: 140px;"><a href="' . esc_url(intersoccer_get_sort_url('player_name', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Name', 'intersoccer-reports-rosters') . intersoccer_get_sort_indicator('player_name', $sort_by, $sort_order) . '</a></th>';
+    echo '<th style="width: 140px;"><a href="' . esc_url(intersoccer_get_sort_url('last_name', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Surname', 'intersoccer-reports-rosters') . intersoccer_get_sort_indicator('last_name', $sort_by, $sort_order) . '</a></th>';
+    echo '<th style="width: 80px;"><a href="' . esc_url(intersoccer_get_sort_url('gender', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Gender', 'intersoccer-reports-rosters') . intersoccer_get_sort_indicator('gender', $sort_by, $sort_order) . '</a></th>';
+    echo '<th style="width: 130px;">' . esc_html__('Phone', 'intersoccer-reports-rosters') . '</th>';
+    echo '<th style="width: 200px;">' . esc_html__('Email', 'intersoccer-reports-rosters') . '</th>';
+    echo '<th style="width: 50px;"><a href="' . esc_url(intersoccer_get_sort_url('age', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Age', 'intersoccer-reports-rosters') . intersoccer_get_sort_indicator('age', $sort_by, $sort_order) . '</a></th>';
+    echo '<th style="width: 200px;">' . esc_html__('Medical/Dietary', 'intersoccer-reports-rosters') . '</th>';
     
     if ($is_camp_like) {
-        echo '<th style="width: 100px;">' . esc_html__('Late Pickup') . '</th>';
-        echo '<th style="width: 120px;">' . esc_html__('Late Pickup Days') . '</th>';
-        echo '<th style="width: 120px;">' . esc_html__('Booking Type') . '</th>';
-        echo '<th style="width: 70px;">' . esc_html__('Monday') . '</th>';
-        echo '<th style="width: 70px;">' . esc_html__('Tuesday') . '</th>';
-        echo '<th style="width: 70px;">' . esc_html__('Wednesday') . '</th>';
-        echo '<th style="width: 70px;">' . esc_html__('Thursday') . '</th>';
-        echo '<th style="width: 70px;">' . esc_html__('Friday') . '</th>';
+        echo '<th style="width: 100px;">' . esc_html__('Late Pickup', 'intersoccer-reports-rosters') . '</th>';
+        echo '<th style="width: 120px;">' . esc_html__('Late Pickup Days', 'intersoccer-reports-rosters') . '</th>';
+        echo '<th style="width: 120px;">' . esc_html__('Booking Type', 'intersoccer-reports-rosters') . '</th>';
+        echo '<th style="width: 70px;">' . esc_html__('Monday', 'intersoccer-reports-rosters') . '</th>';
+        echo '<th style="width: 70px;">' . esc_html__('Tuesday', 'intersoccer-reports-rosters') . '</th>';
+        echo '<th style="width: 70px;">' . esc_html__('Wednesday', 'intersoccer-reports-rosters') . '</th>';
+        echo '<th style="width: 70px;">' . esc_html__('Thursday', 'intersoccer-reports-rosters') . '</th>';
+        echo '<th style="width: 70px;">' . esc_html__('Friday', 'intersoccer-reports-rosters') . '</th>';
     }
     
-    echo '<th style="width: 100px;"><a href="' . esc_url(intersoccer_get_sort_url('age_group', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Age Group') . intersoccer_get_sort_indicator('age_group', $sort_by, $sort_order) . '</a></th>';
+    echo '<th style="width: 100px;"><a href="' . esc_url(intersoccer_get_sort_url('age_group', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Age Group', 'intersoccer-reports-rosters') . intersoccer_get_sort_indicator('age_group', $sort_by, $sort_order) . '</a></th>';
 
     // Add pa_date column for tournaments
     if ($base_roster->activity_type === 'Tournament') {
@@ -385,8 +385,8 @@ function intersoccer_render_roster_details_page() {
     }
 
     if ($is_girls_only) {
-        echo '<th style="width: 90px;">' . esc_html__('Shirt Size') . '</th>';
-        echo '<th style="width: 90px;">' . esc_html__('Shorts Size') . '</th>';
+        echo '<th style="width: 90px;">' . esc_html__('Shirt Size', 'intersoccer-reports-rosters') . '</th>';
+        echo '<th style="width: 90px;">' . esc_html__('Shorts Size', 'intersoccer-reports-rosters') . '</th>';
     }
     
     echo '</tr>';
@@ -587,10 +587,10 @@ function intersoccer_render_roster_details_page() {
     echo '<input type="submit" name="export_roster" id="roster-export-button" class="button button-primary" value="' . esc_attr__('Export Roster', 'intersoccer-reports-rosters') . '">';
     echo '</form>';
     
-    echo '<p><strong>' . esc_html__('Event Details') . ':</strong></p>';
-    echo '<p>' . esc_html__('Product Name: ') . esc_html($base_roster->product_name ?? 'N/A') . '</p>';
-    echo '<p>' . esc_html__('Venue: ') . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($base_roster->venue, 'pa_intersoccer-venues') : $base_roster->venue ?? 'N/A') . '</p>';
-    echo '<p>' . esc_html__('Age Group: ') . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($base_roster->age_group, 'pa_age-group') : $base_roster->age_group ?? 'N/A') . '</p>';
+    echo '<p><strong>' . esc_html__('Event Details', 'intersoccer-reports-rosters') . ':</strong></p>';
+    echo '<p>' . esc_html__('Product Name: ', 'intersoccer-reports-rosters') . esc_html($base_roster->product_name ?? 'N/A') . '</p>';
+    echo '<p>' . esc_html__('Venue: ', 'intersoccer-reports-rosters') . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($base_roster->venue, 'pa_intersoccer-venues') : $base_roster->venue ?? 'N/A') . '</p>';
+    echo '<p>' . esc_html__('Age Group: ', 'intersoccer-reports-rosters') . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($base_roster->age_group, 'pa_age-group') : $base_roster->age_group ?? 'N/A') . '</p>';
     // Display day/terms based on activity type
     if ($base_roster->activity_type === 'Tournament') {
         echo '<p>' . esc_html__('Tournament Day: ', 'intersoccer-reports-rosters') . esc_html($base_roster->course_day ?? 'N/A') . '</p>';
@@ -612,7 +612,7 @@ function intersoccer_render_roster_details_page() {
         $times_value = function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($base_roster->times, 'pa_course-times') : ($base_roster->times ?? 'N/A');
     }
     echo '<p>' . esc_html($times_label) . esc_html($times_value) . '</p>';
-    echo '<p>' . esc_html__('Girls Only: ') . ($is_girls_only ? 'Yes' : 'No') . '</p>';
+    echo '<p>' . esc_html__('Girls Only: ', 'intersoccer-reports-rosters') . ($is_girls_only ? 'Yes' : 'No') . '</p>';
     
     // Check if roster is closed
     $is_closed = !empty($base_roster->event_completed);
@@ -620,7 +620,7 @@ function intersoccer_render_roster_details_page() {
         echo '<p><strong style="color: #d63638;">' . esc_html__('Status: ', 'intersoccer-reports-rosters') . '</strong><span style="color: #d63638;">' . esc_html__('Closed', 'intersoccer-reports-rosters') . '</span></p>';
     }
     
-    echo '<p><strong>' . esc_html__('Total Players') . ':</strong> ' . esc_html(count($rosters)) . '</p>';
+    echo '<p><strong>' . esc_html__('Total Players', 'intersoccer-reports-rosters') . ':</strong> ' . esc_html(count($rosters)) . '</p>';
     
     // Close Out / Reopen button
     echo '<div style="margin-top: 20px;">';
