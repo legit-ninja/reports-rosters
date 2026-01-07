@@ -44,7 +44,7 @@ function intersoccer_export_final_reports_callback() {
     if ($activity_type === 'Camp') {
         // Camp Excel headers
         $headers = array(
-            'Week',
+            'Date Range',
             'Canton',
             'Venue',
             'Camp Type',
@@ -102,31 +102,21 @@ function intersoccer_export_final_reports_callback() {
 
         $totals_start++;
         $sheet->setCellValue('A' . $totals_start, 'Category');
-        $sheet->setCellValue('E' . $totals_start, 'Direct Online');
-        $sheet->setCellValue('F' . $totals_start, 'Total');
-        $sheet->getStyle('A' . $totals_start . ':F' . $totals_start)->getFont()->setBold(true);
+        $sheet->setCellValue('E' . $totals_start, 'Total Registrations');
+        $sheet->getStyle('A' . $totals_start . ':E' . $totals_start)->getFont()->setBold(true);
 
         $totals_start++;
         $sheet->setCellValue('A' . $totals_start, 'Full Day Camps');
-        $sheet->fromArray([
-            $totals['full_day']['online'],
-            $totals['full_day']['total']
-        ], null, 'E' . $totals_start);
+        $sheet->setCellValue('E' . $totals_start, isset($totals['full_day']['unique_records']) ? $totals['full_day']['unique_records'] : $totals['full_day']['total']);
 
         $totals_start++;
         $sheet->setCellValue('A' . $totals_start, 'Mini - Half Day Camps');
-        $sheet->fromArray([
-            $totals['mini']['online'],
-            $totals['mini']['total']
-        ], null, 'E' . $totals_start);
+        $sheet->setCellValue('E' . $totals_start, isset($totals['mini']['unique_records']) ? $totals['mini']['unique_records'] : $totals['mini']['total']);
 
         $totals_start++;
         $sheet->setCellValue('A' . $totals_start, 'All Camps');
         $sheet->getStyle('A' . $totals_start)->getFont()->setBold(true);
-        $sheet->fromArray([
-            $totals['all']['online'],
-            $totals['all']['total']
-        ], null, 'E' . $totals_start);
+        $sheet->setCellValue('E' . $totals_start, isset($totals['all']['unique_records']) ? $totals['all']['unique_records'] : $totals['all']['total']);
     } else {
         // Course Excel headers
         $headers = array(
