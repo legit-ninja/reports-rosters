@@ -21,13 +21,21 @@ jQuery(document).ready(function($) {
         
         // Validate data
         if (!eventSignature) {
-            alert('Error: Missing event signature');
+            var errorMsg = (window.intersoccer_ajax && window.intersoccer_ajax.strings && window.intersoccer_ajax.strings.error_missing_signature) 
+                ? window.intersoccer_ajax.strings.error_missing_signature 
+                : 'Error: Missing event signature';
+            alert(errorMsg);
             return;
         }
         
         // Confirmation dialog
-        var confirmMessage = 'Are you sure you want to mark "' + eventName + '" as completed?\n\n' +
-                           'This will mark ALL roster entries for this event as completed and hide them from the active events list.';
+        var confirmPrefix = (window.intersoccer_ajax && window.intersoccer_ajax.strings && window.intersoccer_ajax.strings.confirm_complete_prefix) 
+            ? window.intersoccer_ajax.strings.confirm_complete_prefix 
+            : 'Are you sure you want to mark "';
+        var confirmSuffix = (window.intersoccer_ajax && window.intersoccer_ajax.strings && window.intersoccer_ajax.strings.confirm_complete_suffix) 
+            ? window.intersoccer_ajax.strings.confirm_complete_suffix 
+            : '" as completed?\n\nThis will mark ALL roster entries for this event as completed and hide them from the active events list.';
+        var confirmMessage = confirmPrefix + eventName + confirmSuffix;
         
         if (!confirm(confirmMessage)) {
             return;
@@ -35,7 +43,10 @@ jQuery(document).ready(function($) {
         
         // Disable button and show processing state
         var originalText = $button.text();
-        $button.prop('disabled', true).text('Processing...');
+        var processingText = (window.intersoccer_ajax && window.intersoccer_ajax.strings && window.intersoccer_ajax.strings.processing) 
+            ? window.intersoccer_ajax.strings.processing 
+            : 'Processing...';
+        $button.prop('disabled', true).text(processingText);
         
         // AJAX request
         $.ajax({
@@ -55,7 +66,13 @@ jQuery(document).ready(function($) {
                     window.location.reload();
                 } else {
                     // Show error message
-                    alert('Error: ' + (response.data.message || 'Unknown error occurred'));
+                    var errorPrefix = (window.intersoccer_ajax && window.intersoccer_ajax.strings && window.intersoccer_ajax.strings.error_prefix) 
+                        ? window.intersoccer_ajax.strings.error_prefix 
+                        : 'Error: ';
+                    var unknownError = (window.intersoccer_ajax && window.intersoccer_ajax.strings && window.intersoccer_ajax.strings.unknown_error) 
+                        ? window.intersoccer_ajax.strings.unknown_error 
+                        : 'Unknown error occurred';
+                    alert(errorPrefix + (response.data.message || unknownError));
                     
                     // Re-enable button
                     $button.prop('disabled', false).text(originalText);
@@ -63,7 +80,10 @@ jQuery(document).ready(function($) {
             },
             error: function(xhr, status, error) {
                 // Show error message
-                alert('An error occurred while marking the event as completed. Please try again.');
+                var errorMsg = (window.intersoccer_ajax && window.intersoccer_ajax.strings && window.intersoccer_ajax.strings.complete_error) 
+                    ? window.intersoccer_ajax.strings.complete_error 
+                    : 'An error occurred while marking the event as completed. Please try again.';
+                alert(errorMsg);
                 console.error('AJAX Error:', status, error);
                 
                 // Re-enable button

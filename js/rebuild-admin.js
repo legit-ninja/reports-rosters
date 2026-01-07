@@ -39,7 +39,10 @@ jQuery(document).ready(function($) {
         },
         
         handleStopRebuild: function() {
-            if (confirm('Are you sure you want to stop the rebuild process?')) {
+            var confirmMessage = intersoccerRebuild.strings && intersoccerRebuild.strings.confirm_stop 
+                ? intersoccerRebuild.strings.confirm_stop 
+                : 'Are you sure you want to stop the rebuild process?';
+            if (confirm(confirmMessage)) {
                 this.stopRebuild();
             }
         },

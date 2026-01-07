@@ -11,14 +11,20 @@ jQuery(document).ready(function($) {
     console.log('InterSoccer: Target for button placement: .page-title-action');
 
     // Inject the replicated "Process Orders" link after the "Add new order" link
-    var processLink = $('<a href="#" class="page-title-action" id="intersoccer-process-processing-button-orders">Process Orders</a>');
+    var processText = (window.intersoccer_orders && window.intersoccer_orders.strings && window.intersoccer_orders.strings.process_orders) 
+        ? window.intersoccer_orders.strings.process_orders 
+        : 'Process Orders';
+    var processLink = $('<a href="#" class="page-title-action" id="intersoccer-process-processing-button-orders">' + processText + '</a>');
     addNewOrder.after(processLink);
 
     $('#intersoccer-process-processing-button-orders').on('click', function(e) {
         e.preventDefault(); // Prevent default link behavior
         console.log('InterSoccer: Process Orders link clicked on Orders page');
         
-        if (!confirm('Are you sure you want to process all pending orders? This will populate rosters for processing or on-hold orders and transition them to completed.')) {
+        var confirmMsg = (window.intersoccer_orders && window.intersoccer_orders.strings && window.intersoccer_orders.strings.confirm_process) 
+            ? window.intersoccer_orders.strings.confirm_process 
+            : 'Are you sure you want to process all pending orders? This will populate rosters for processing or on-hold orders and transition them to completed.';
+        if (!confirm(confirmMsg)) {
             console.log('InterSoccer: Process orders cancelled by user on Orders page');
             return false;
         }
@@ -40,15 +46,27 @@ jQuery(document).ready(function($) {
             },
             beforeSend: function() {
                 // Show a temporary processing notice
+                var processingText = (window.intersoccer_orders && window.intersoccer_orders.strings && window.intersoccer_orders.strings.processing) 
+                    ? window.intersoccer_orders.strings.processing 
+                    : 'Processing orders... Please wait.';
+                var dismissText = (window.intersoccer_orders && window.intersoccer_orders.strings && window.intersoccer_orders.strings.dismiss) 
+                    ? window.intersoccer_orders.strings.dismiss 
+                    : 'Dismiss this notice.';
                 $('#intersoccer-process-status').remove();
-                $('<div id="intersoccer-process-status" class="notice notice-info is-dismissible"><p>Processing orders... Please wait.</p><button type="button" class="notice-dismiss"><span class="screen-reader-text">Dismiss this notice.</span></button></div>').insertAfter(processLink);
+                $('<div id="intersoccer-process-status" class="notice notice-info is-dismissible"><p>' + processingText + '</p><button type="button" class="notice-dismiss"><span class="screen-reader-text">' + dismissText + '</span></button></div>').insertAfter(processLink);
             },
             success: function(response) {
                 // Remove processing notice
+                var dismissText = (window.intersoccer_orders && window.intersoccer_orders.strings && window.intersoccer_orders.strings.dismiss) 
+                    ? window.intersoccer_orders.strings.dismiss 
+                    : 'Dismiss this notice.';
+                var successText = (window.intersoccer_orders && window.intersoccer_orders.strings && window.intersoccer_orders.strings.orders_processed) 
+                    ? window.intersoccer_orders.strings.orders_processed 
+                    : 'Orders processed. Check debug.log for details.';
                 $('#intersoccer-process-status').remove();
                 
                 // Add success notice
-                $('<div id="intersoccer-process-status" class="notice notice-success is-dismissible"><p>' + (response.data.message || 'Orders processed. Check debug.log for details.') + '</p><button type="button" class="notice-dismiss"><span class="screen-reader-text">Dismiss this notice.</span></button></div>').insertAfter(processLink);
+                $('<div id="intersoccer-process-status" class="notice notice-success is-dismissible"><p>' + (response.data.message || successText) + '</p><button type="button" class="notice-dismiss"><span class="screen-reader-text">' + dismissText + '</span></button></div>').insertAfter(processLink);
                 console.log('InterSoccer: Process response on Orders page: ', response);
                 
                 // Refresh the page after 2 seconds
@@ -68,7 +86,13 @@ jQuery(document).ready(function($) {
                     responseJSON: xhr.responseJSON
                 });
                 
-                $('<div id="intersoccer-process-status" class="notice notice-error is-dismissible"><p>Processing failed: ' + (xhr.responseJSON ? xhr.responseJSON.message : error) + '</p><button type="button" class="notice-dismiss"><span class="screen-reader-text">Dismiss this notice.</span></button></div>').insertAfter(processLink);
+                var errorPrefix = (window.intersoccer_orders && window.intersoccer_orders.strings && window.intersoccer_orders.strings.processing_failed) 
+                    ? window.intersoccer_orders.strings.processing_failed 
+                    : 'Processing failed: ';
+                var dismissText = (window.intersoccer_orders && window.intersoccer_orders.strings && window.intersoccer_orders.strings.dismiss) 
+                    ? window.intersoccer_orders.strings.dismiss 
+                    : 'Dismiss this notice.';
+                $('<div id="intersoccer-process-status" class="notice notice-error is-dismissible"><p>' + errorPrefix + (xhr.responseJSON ? xhr.responseJSON.message : error) + '</p><button type="button" class="notice-dismiss"><span class="screen-reader-text">' + dismissText + '</span></button></div>').insertAfter(processLink);
             }
         });
     });
