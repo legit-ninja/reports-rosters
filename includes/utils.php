@@ -2039,13 +2039,26 @@ function intersoccer_parse_camp_dates_fixed($camp_terms, $season) {
         return [$start_date, $end_date, $event_dates];
     }
 
+    // Extract year from season if available
+    $year = null;
+    if (!empty($season)) {
+        // Try to extract year from season string (e.g., "Autumn camps 2025" -> 2025)
+        if (preg_match('/\b(19|20)\d{2}\b/', $season, $year_matches)) {
+            $year = intval($year_matches[0]);
+        } elseif (is_numeric($season)) {
+            $year = intval($season);
+        }
+    }
+    if (!$year) {
+        $year = date('Y');
+    }
+
     // Try first regex pattern: month-week-X-month-day-month-day-days
     if (preg_match('/(\w+)-week-\d+-(\w+)-(\d{1,2})-(\w+)-(\d{1,2})-\d+-days/', $camp_terms, $matches)) {
         $start_month = $matches[2];
         $start_day = $matches[3];
         $end_month = $matches[4];
         $end_day = $matches[5];
-        $year = $season && is_numeric($season) ? $season : date('Y');
 
         $start_date_obj = DateTime::createFromFormat('F j Y', "$start_month $start_day $year");
         $end_date_obj = DateTime::createFromFormat('F j Y', "$end_month $end_day $year");
@@ -2061,7 +2074,6 @@ function intersoccer_parse_camp_dates_fixed($camp_terms, $season) {
         $month = $matches[2];
         $start_day = $matches[3];
         $end_day = $matches[4];
-        $year = $season && is_numeric($season) ? $season : date('Y');
 
         $start_date_obj = DateTime::createFromFormat('F j Y', "$month $start_day $year");
         $end_date_obj = DateTime::createFromFormat('F j Y', "$month $end_day $year");
@@ -2070,6 +2082,30 @@ function intersoccer_parse_camp_dates_fixed($camp_terms, $season) {
             $start_date = $start_date_obj->format('Y-m-d');
             $end_date = $end_date_obj->format('Y-m-d');
             $event_dates = "$start_date to $end_date";
+        }
+    }
+    // Try third pattern: Season: Month Day (e.g., "Autumn: September 30", "Winter: December 15")
+    elseif (preg_match('/^\s*\w+\s*:\s*(\w+)\s+(\d{1,2})\s*$/i', $camp_terms, $matches)) {
+        $month = $matches[1];
+        $day = intval($matches[2]);
+
+        $date_obj = DateTime::createFromFormat('F j Y', "$month $day $year");
+        if ($date_obj) {
+            $start_date = $date_obj->format('Y-m-d');
+            $end_date = $start_date; // Single day event
+            $event_dates = $start_date;
+        }
+    }
+    // Try fourth pattern: Just "Month Day" (e.g., "September 30")
+    elseif (preg_match('/^\s*(\w+)\s+(\d{1,2})\s*$/i', $camp_terms, $matches)) {
+        $month = $matches[1];
+        $day = intval($matches[2]);
+
+        $date_obj = DateTime::createFromFormat('F j Y', "$month $day $year");
+        if ($date_obj) {
+            $start_date = $date_obj->format('Y-m-d');
+            $end_date = $start_date; // Single day event
+            $event_dates = $start_date;
         }
     }
 

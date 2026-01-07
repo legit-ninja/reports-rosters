@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 function intersoccer_render_reports_page() {
     // Check user capabilities
     if (!current_user_can('manage_options')) {
-        wp_die(__('You do not have sufficient permissions to access this page.'));
+        wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
     }
 
     // Enqueue necessary scripts and styles
@@ -180,7 +180,7 @@ function intersoccer_render_final_reports_page() {
                     </colgroup>
                     <thead>
                         <tr style="background-color: #f1f1f1;">
-                            <th rowspan="2" style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php _e('Week', 'intersoccer-reports-rosters'); ?></th>
+                            <th rowspan="2" style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php _e('Date Range', 'intersoccer-reports-rosters'); ?></th>
                             <th rowspan="2" style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php _e('Canton', 'intersoccer-reports-rosters'); ?></th>
                             <th rowspan="2" style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
                             <th colspan="7" style="border: 1px solid #ddd; padding: 8px; text-align: center; background-color: #e8f4f8;"><?php _e('Full Day Camps', 'intersoccer-reports-rosters'); ?></th>
@@ -245,9 +245,14 @@ function intersoccer_render_final_reports_page() {
                                 <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['full_day']['individual_days']['Thursday']); ?></td>
                                 <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['full_day']['individual_days']['Friday']); ?></td>
                                 <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php 
-                                    $full_day_counts = array_values($week_totals['full_day']['individual_days']);
-                                    $full_day_min = !empty($full_day_counts) ? min($full_day_counts) : 0;
-                                    $full_day_max = !empty($full_day_counts) ? max($full_day_counts) : 0;
+                                    // Full week bookings count for every day, single day bookings are added on top
+                                    $full_day_daily_totals = [];
+                                    foreach ($week_totals['full_day']['individual_days'] as $day => $count) {
+                                        $full_day_daily_totals[$day] = $week_totals['full_day']['full_week'] + $count;
+                                    }
+                                    $full_day_total_values = array_values($full_day_daily_totals);
+                                    $full_day_min = !empty($full_day_total_values) ? min($full_day_total_values) : ($week_totals['full_day']['full_week'] > 0 ? $week_totals['full_day']['full_week'] : 0);
+                                    $full_day_max = !empty($full_day_total_values) ? max($full_day_total_values) : ($week_totals['full_day']['full_week'] > 0 ? $week_totals['full_day']['full_week'] : 0);
                                     echo esc_html($full_day_min . '-' . $full_day_max);
                                 ?></td>
                                 <!-- Mini Totals -->
@@ -258,9 +263,14 @@ function intersoccer_render_final_reports_page() {
                                 <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['mini']['individual_days']['Thursday']); ?></td>
                                 <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php echo esc_html($week_totals['mini']['individual_days']['Friday']); ?></td>
                                 <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><?php 
-                                    $mini_counts = array_values($week_totals['mini']['individual_days']);
-                                    $mini_min = !empty($mini_counts) ? min($mini_counts) : 0;
-                                    $mini_max = !empty($mini_counts) ? max($mini_counts) : 0;
+                                    // Full week bookings count for every day, single day bookings are added on top
+                                    $mini_daily_totals = [];
+                                    foreach ($week_totals['mini']['individual_days'] as $day => $count) {
+                                        $mini_daily_totals[$day] = $week_totals['mini']['full_week'] + $count;
+                                    }
+                                    $mini_total_values = array_values($mini_daily_totals);
+                                    $mini_min = !empty($mini_total_values) ? min($mini_total_values) : ($week_totals['mini']['full_week'] > 0 ? $week_totals['mini']['full_week'] : 0);
+                                    $mini_max = !empty($mini_total_values) ? max($mini_total_values) : ($week_totals['mini']['full_week'] > 0 ? $week_totals['mini']['full_week'] : 0);
                                     echo esc_html($mini_min . '-' . $mini_max);
                                 ?></td>
                             </tr>
@@ -301,25 +311,21 @@ function intersoccer_render_final_reports_page() {
                         <thead>
                             <tr>
                                 <th><?php _e('Category', 'intersoccer-reports-rosters'); ?></th>
-                                <th><?php _e('Direct Online', 'intersoccer-reports-rosters'); ?></th>
                                 <th><?php _e('Total Registrations', 'intersoccer-reports-rosters'); ?></th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
                                 <td><?php _e('Full Day Camps', 'intersoccer-reports-rosters'); ?></td>
-                                <td><?php echo esc_html($totals['full_day']['online']); ?></td>
-                                <td><?php echo esc_html($totals['full_day']['total']); ?></td>
+                                <td><?php echo esc_html(isset($totals['full_day']['unique_records']) ? $totals['full_day']['unique_records'] : $totals['full_day']['total']); ?></td>
                             </tr>
                             <tr>
                                 <td><?php _e('Mini - Half Day Camps', 'intersoccer-reports-rosters'); ?></td>
-                                <td><?php echo esc_html($totals['mini']['online']); ?></td>
-                                <td><?php echo esc_html($totals['mini']['total']); ?></td>
+                                <td><?php echo esc_html(isset($totals['mini']['unique_records']) ? $totals['mini']['unique_records'] : $totals['mini']['total']); ?></td>
                             </tr>
                             <tr style="font-weight: bold; background: #e9ecef;">
                                 <td><?php _e('All Registrations', 'intersoccer-reports-rosters'); ?></td>
-                                <td><?php echo esc_html($totals['all']['online']); ?></td>
-                                <td><?php echo esc_html($totals['all']['total']); ?></td>
+                                <td><?php echo esc_html(isset($totals['all']['unique_records']) ? $totals['all']['unique_records'] : $totals['all']['total']); ?></td>
                             </tr>
                         </tbody>
                     </table>
@@ -373,7 +379,6 @@ function intersoccer_render_final_reports_page() {
                         <thead>
                             <tr>
                                 <th><?php _e('Category', 'intersoccer-reports-rosters'); ?></th>
-                                <th><?php _e('Online', 'intersoccer-reports-rosters'); ?></th>
                                 <th><?php _e('Total', 'intersoccer-reports-rosters'); ?></th>
                                 <th><?php _e('Final', 'intersoccer-reports-rosters'); ?></th>
                             </tr>
@@ -381,7 +386,6 @@ function intersoccer_render_final_reports_page() {
                         <tbody>
                             <tr style="font-weight: bold; background: #e9ecef;">
                                 <td><?php _e('All Courses', 'intersoccer-reports-rosters'); ?></td>
-                                <td><?php echo esc_html($totals['all']['online']); ?></td>
                                 <td><?php echo esc_html($totals['all']['total']); ?></td>
                                 <td><?php echo esc_html($totals['all']['final']); ?></td>
                             </tr>
