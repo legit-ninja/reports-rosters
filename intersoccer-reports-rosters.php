@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 1.12.8
+ * Version: 2.1.6
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -197,10 +197,24 @@ function intersoccer_report_roster_plugin_activation() {
     }
 
     if (!empty($missing)) {
+        // Store missing dependencies in transient for admin notice
+        set_transient('intersoccer_missing_dependencies', $missing, 30);
         add_action('admin_notices', 'intersoccer_missing_dependencies_notice');
-        deactivate_plugins(plugin_basename(__FILE__)); // Deactivate if critical deps missing
-        error_log('InterSoccer: Plugin deactivated due to missing dependencies: ' . implode(', ', $missing));
-        return; // Skip DB ops
+        
+        // Deactivate plugin - but do it on next request to avoid breaking activation flow
+        // This prevents nonce/redirect issues during activation
+        add_action('admin_init', function() use ($missing) {
+            if (is_plugin_active(plugin_basename(__FILE__))) {
+                deactivate_plugins(plugin_basename(__FILE__));
+                // Show admin notice after deactivation
+                add_action('admin_notices', function() use ($missing) {
+                    echo '<div class="notice notice-error"><p><strong>InterSoccer Reports & Rosters:</strong> Plugin was deactivated due to missing dependencies: ' . esc_html(implode(', ', $missing)) . '</p></div>';
+                });
+            }
+        }, 999);
+        
+        error_log('InterSoccer: Plugin will be deactivated due to missing dependencies: ' . implode(', ', $missing));
+        return; // Skip DB ops - but don't deactivate immediately to avoid breaking activation
     }
 
     // Proceed to DB validation
@@ -300,6 +314,128 @@ foreach ($files_to_include as $file) {
         error_log("InterSoccer: Failed to include includes/$file - File not found at $file_path");
     }
 }
+
+// Register strings for WPML translation on init to ensure WPML is loaded
+add_action('init', function () {
+    if (function_exists('icl_register_string')) {
+        // Day names
+        $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+        foreach ($days as $day) {
+            icl_register_string('intersoccer-reports-rosters', $day, $day);
+        }
+
+        // Common translatable strings
+        $strings = [
+            'InterSoccer Reports & Rosters',
+            'InterSoccer Reports and Rosters - Overview',
+            'InterSoccer Overview',
+            'Booking Reports',
+            'Final Camp Reports',
+            'Final Course Reports',
+            'All Rosters',
+            'Camps',
+            'Courses',
+            'Girls Only',
+            'Tournaments',
+            'Other Events',
+            'InterSoccer Settings',
+            'Settings',
+            'Reports and Rosters',
+            'Booking Report',
+            'Final Numbers',
+            'Current Attendance by Venue',
+            'Attendees by Region',
+            'Age Distribution',
+            'Gender Distribution',
+            'Weekly Attendance Trends',
+            'Roster Details',
+            'Roster Details for ',
+            'Order Date',
+            'Name',
+            'Surname',
+            'Gender',
+            'Phone',
+            'Email',
+            'Age',
+            'Medical/Dietary',
+            'Late Pickup',
+            'Late Pickup Days',
+            'Booking Type',
+            'Age Group',
+            'Shirt Size',
+            'Shorts Size',
+            'Event Details',
+            'Product Name: ',
+            'Venue: ',
+            'Age Group: ',
+            'Tournament Day: ',
+            'Course Day: ',
+            'Camp Terms: ',
+            'Tournament Time: ',
+            'Camp Times: ',
+            'Course Times: ',
+            'Girls Only: ',
+            'Status: ',
+            'Closed',
+            'Total Players',
+            'Permission denied.',
+            'You do not have sufficient permissions to access this page.',
+            'Invalid parameters provided.',
+            'No rosters found for the provided parameters.',
+            '%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.',
+            '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.',
+            'Unknown Event',
+            'Tournament Date (pa_date)',
+            'General',
+            'Advanced',
+            'Tools',
+            'General Settings',
+            'Schema Version',
+            'Migration Engine',
+            'Database operations and advanced tools are available in the Advanced and Tools tabs.',
+            'Database Management',
+            'Perform database upgrades or maintenance tasks.',
+            'Upgrade Database',
+            'This will modify the database structure and backfill data. Are you sure?',
+            'Note: This action adds new columns (e.g., financial fields, girls_only) and backfills data. Use with caution.',
+            'Roster Management',
+            'Process Orders',
+            'Note: This will populate missing rosters for existing orders (e.g., processing or on-hold) and complete them if fully populated.',
+            'Reconcile Rosters',
+            'Note: This syncs the rosters table with orders, adding missing entries, updating incomplete data, and removing obsolete ones. No order statuses are changed.',
+            'Rebuild Event Signatures',
+            'Note: This will regenerate event signatures for all existing rosters to ensure proper grouping across languages.',
+            'Rebuild Rosters',
+            'Note: This will recreate the rosters table and repopulate it with current order data.',
+            'Export Options',
+            'Export All Rosters (CSV)',
+            'Are you sure you want to rebuild the rosters table? This will delete all existing data in the table, recreate it from current WooCommerce orders. This is a last resort action and may cause temporary data inconsistencies until completed.',
+            'Starting: Rebuilding rosters...',
+            'Running...',
+            'Finished: ',
+            'Rosters rebuilt successfully.',
+            'Failed: ',
+            'Unknown error occurred.',
+            'Are you sure you want to reconcile rosters? This will sync data from orders, potentially updating existing entries.',
+            'Starting: Reconciling rosters...',
+            'Rosters reconciled successfully.',
+            'Reconcile Rosters',
+            'Are you sure you want to rebuild event signatures? This will regenerate signatures for all roster records to ensure proper grouping.',
+            'Starting: Rebuilding event signatures...',
+            'Event signatures rebuilt successfully.',
+            'Rebuild Event Signatures',
+            'Starting: Processing orders...',
+            'Orders processed successfully.',
+            'Process Orders',
+            'OOP Migrator',
+            'Legacy Migrator',
+        ];
+
+        foreach ($strings as $string) {
+            icl_register_string('intersoccer-reports-rosters', $string, $string);
+        }
+    }
+}, 20); // Priority 20 to ensure includes are loaded
 
 /**
  * Render the plugin overview page with charts and statistics.
@@ -440,7 +576,16 @@ add_action('admin_enqueue_scripts', function ($hook) {
                 wp_enqueue_script('intersoccer-rosters-tabs', plugin_dir_url(__FILE__) . 'js/rosters-tabs.js', ['jquery'], '1.0.6', true);
                 wp_localize_script('intersoccer-rosters-tabs', 'intersoccer_ajax', [
                     'ajax_url' => admin_url('admin-ajax.php'),
-                    'nonce' => wp_create_nonce('intersoccer_reports_rosters_nonce')
+                    'nonce' => wp_create_nonce('intersoccer_reports_rosters_nonce'),
+                    'strings' => [
+                        'error_missing_signature' => __('Error: Missing event signature', 'intersoccer-reports-rosters'),
+                        'confirm_complete_prefix' => __('Are you sure you want to mark "', 'intersoccer-reports-rosters'),
+                        'confirm_complete_suffix' => __('" as completed?\n\nThis will mark ALL roster entries for this event as completed and hide them from the active events list.', 'intersoccer-reports-rosters'),
+                        'processing' => __('Processing...', 'intersoccer-reports-rosters'),
+                        'error_prefix' => __('Error: ', 'intersoccer-reports-rosters'),
+                        'unknown_error' => __('Unknown error occurred', 'intersoccer-reports-rosters'),
+                        'complete_error' => __('An error occurred while marking the event as completed. Please try again.', 'intersoccer-reports-rosters'),
+                    ]
                 ]);
                 error_log('rosters-tabs.js enqueued successfully for screen ID: ' . $screen->id);
             } else {
@@ -461,16 +606,17 @@ add_action('admin_enqueue_scripts', function ($hook) {
                 'ajax_url' => admin_url('admin-ajax.php'), 
                 'nonce' => wp_create_nonce('intersoccer_rebuild_nonce'),
                 'strings' => array(
-                    'confirm_rebuild' => __('Are you sure you want to rebuild the database? This will clear all existing roster data and rebuild it from WooCommerce orders.', 'intersoccer'),
-                    'rebuilding' => __('Rebuilding database...', 'intersoccer'),
-                    'completed' => __('Database rebuild completed!', 'intersoccer'),
-                    'error' => __('An error occurred during the rebuild process.', 'intersoccer'),
-                    'processing' => __('Processing batch', 'intersoccer'),
-                    'of' => __('of', 'intersoccer'),
-                    'upgrading' => __('Upgrading database...', 'intersoccer'),
-                    'upgrade_success' => __('Database upgrade completed successfully.', 'intersoccer'),
-                    'upgrade_failed' => __('Database upgrade failed.', 'intersoccer'),
-                    'upgrade_failed_network' => __('Database upgrade failed due to a network error.', 'intersoccer')
+                    'confirm_rebuild' => __('Are you sure you want to rebuild the database? This will clear all existing roster data and rebuild it from WooCommerce orders.', 'intersoccer-reports-rosters'),
+                    'confirm_stop' => __('Are you sure you want to stop the rebuild process?', 'intersoccer-reports-rosters'),
+                    'rebuilding' => __('Rebuilding database...', 'intersoccer-reports-rosters'),
+                    'completed' => __('Database rebuild completed!', 'intersoccer-reports-rosters'),
+                    'error' => __('An error occurred during the rebuild process.', 'intersoccer-reports-rosters'),
+                    'processing' => __('Processing batch', 'intersoccer-reports-rosters'),
+                    'of' => __('of', 'intersoccer-reports-rosters'),
+                    'upgrading' => __('Upgrading database...', 'intersoccer-reports-rosters'),
+                    'upgrade_success' => __('Database upgrade completed successfully.', 'intersoccer-reports-rosters'),
+                    'upgrade_failed' => __('Database upgrade failed.', 'intersoccer-reports-rosters'),
+                    'upgrade_failed_network' => __('Database upgrade failed due to a network error.', 'intersoccer-reports-rosters')
                 )
             ]);        }
     }
@@ -535,7 +681,15 @@ function intersoccer_enqueue_orders_page_scripts($hook) {
             'intersoccer_orders',
             [
                 'nonce' => wp_create_nonce('intersoccer_rebuild_nonce'),
-                'ajaxurl' => admin_url('admin-ajax.php')
+                'ajaxurl' => admin_url('admin-ajax.php'),
+                'strings' => [
+                    'process_orders' => __('Process Orders', 'intersoccer-reports-rosters'),
+                    'confirm_process' => __('Are you sure you want to process all pending orders? This will populate rosters for processing or on-hold orders and transition them to completed.', 'intersoccer-reports-rosters'),
+                    'processing' => __('Processing orders... Please wait.', 'intersoccer-reports-rosters'),
+                    'dismiss' => __('Dismiss this notice.', 'intersoccer-reports-rosters'),
+                    'orders_processed' => __('Orders processed. Check debug.log for details.', 'intersoccer-reports-rosters'),
+                    'processing_failed' => __('Processing failed:', 'intersoccer-reports-rosters'),
+                ]
             ]
         );
 
