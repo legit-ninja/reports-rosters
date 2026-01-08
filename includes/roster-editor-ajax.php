@@ -169,8 +169,12 @@ function intersoccer_ajax_load_roster_entries() {
                 </tr>
             <?php else: ?>
                 <?php foreach ($entries as $entry): ?>
-                    <tr data-roster-id="<?php echo esc_attr($entry['id']); ?>">
-                        <td><?php echo esc_html($entry['id']); ?></td>
+                    <?php 
+                    $entry_id = isset($entry['id']) ? intval($entry['id']) : 0;
+                    $order_item_id = isset($entry['order_item_id']) ? intval($entry['order_item_id']) : 0;
+                    ?>
+                    <tr data-roster-id="<?php echo esc_attr($entry_id); ?>">
+                        <td><?php echo esc_html($entry_id); ?></td>
                         <td class="editable-cell" data-field="player_name"><?php echo esc_html($entry['player_name'] ?? '—'); ?></td>
                         <td class="editable-cell" data-field="first_name"><?php echo esc_html($entry['first_name'] ?? '—'); ?></td>
                         <td class="editable-cell" data-field="last_name"><?php echo esc_html($entry['last_name'] ?? '—'); ?></td>
@@ -179,9 +183,14 @@ function intersoccer_ajax_load_roster_entries() {
                         <td class="editable-cell" data-field="venue"><?php echo esc_html($entry['venue'] ?? '—'); ?></td>
                         <td class="editable-cell" data-field="activity_type"><?php echo esc_html($entry['activity_type'] ?? '—'); ?></td>
                         <td class="editable-cell" data-field="start_date"><?php echo esc_html($entry['start_date'] && $entry['start_date'] !== '1970-01-01' ? $entry['start_date'] : '—'); ?></td>
-                        <td><?php echo esc_html($entry['order_id']); ?></td>
+                        <td><?php echo esc_html($entry['order_id'] ?? '—'); ?></td>
                         <td>
-                            <a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-roster-edit&roster_id=' . $entry['id'])); ?>" class="button button-small">
+                            <?php 
+                            // Include both roster_id and order_item_id in URL for reliable lookup
+                            // order_item_id is unique and doesn't change with REPLACE operations
+                            $edit_url = admin_url('admin.php?page=intersoccer-roster-edit&roster_id=' . $entry_id . '&order_item_id=' . $order_item_id);
+                            ?>
+                            <a href="<?php echo esc_url($edit_url); ?>" class="button button-small">
                                 <?php _e('Edit', 'intersoccer-reports-rosters'); ?>
                             </a>
                         </td>

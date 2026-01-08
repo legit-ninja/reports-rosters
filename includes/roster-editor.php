@@ -899,17 +899,29 @@ function intersoccer_render_roster_edit_form() {
     }
 
     $roster_id = isset($_GET['roster_id']) ? intval($_GET['roster_id']) : 0;
+    $order_item_id = isset($_GET['order_item_id']) ? intval($_GET['order_item_id']) : 0;
     
-    if (!$roster_id) {
-        wp_die(__('Invalid roster ID.', 'intersoccer-reports-rosters'));
+    if (!$roster_id && !$order_item_id) {
+        wp_die(__('Invalid roster ID or Order Item ID.', 'intersoccer-reports-rosters'));
     }
 
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-    $roster = $wpdb->get_row($wpdb->prepare("SELECT * FROM $rosters_table WHERE id = %d", $roster_id), ARRAY_A);
+    
+    // Try querying by roster_id first
+    $roster = null;
+    if ($roster_id) {
+        $roster = $wpdb->get_row($wpdb->prepare("SELECT * FROM $rosters_table WHERE id = %d", $roster_id), ARRAY_A);
+    }
+    
+    // If not found by id, try querying by order_item_id (which is unique and doesn't change)
+    // This handles cases where REPLACE INTO operations changed the roster ID
+    if (!$roster && $order_item_id) {
+        $roster = $wpdb->get_row($wpdb->prepare("SELECT * FROM $rosters_table WHERE order_item_id = %d LIMIT 1", $order_item_id), ARRAY_A);
+    }
 
     if (!$roster) {
-        wp_die(__('Roster entry not found.', 'intersoccer-reports-rosters'));
+        wp_die(__('Roster entry not found. The roster may have been updated or deleted. Please refresh the roster list and try again.', 'intersoccer-reports-rosters'));
     }
 
     // Enqueue scripts
