@@ -10,6 +10,9 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Include reports-data.php to access helper functions
+require_once plugin_dir_path(__FILE__) . 'reports-data.php';
+
 /**
  * Render the main reports page
  */
@@ -87,12 +90,66 @@ function intersoccer_render_final_reports_page() {
 
     $year = isset($_GET['year']) ? sanitize_text_field($_GET['year']) : date('Y');
     $activity_type = isset($_GET['activity_type']) ? sanitize_text_field($_GET['activity_type']) : 'Camp';
+    $season_type = isset($_GET['season_type']) ? sanitize_text_field($_GET['season_type']) : '';
+    $region = isset($_GET['region']) ? sanitize_text_field($_GET['region']) : '';
 
     // Determine current page for form action
     $current_page = isset($_GET['page']) ? $_GET['page'] : 'intersoccer-final-reports';
     $show_activity_type_filter = !in_array($current_page, ['intersoccer-final-camp-reports', 'intersoccer-final-course-reports']);
 
-    $report_data = intersoccer_get_final_reports_data($year, $activity_type);
+    // Query unique values for filter dropdowns
+    global $wpdb;
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+    $year_int = intval($year);
+    
+    // Get unique season types for the selected year and activity type
+    $season_types_query = $wpdb->prepare(
+        "SELECT DISTINCT r.season 
+         FROM $rosters_table r
+         JOIN {$wpdb->prefix}woocommerce_order_items oi ON r.order_item_id = oi.order_item_id
+         JOIN {$wpdb->prefix}posts p ON oi.order_id = p.ID
+         WHERE r.activity_type = %s
+         AND r.season LIKE %s
+         AND p.post_type = 'shop_order'
+         AND p.post_status = 'wc-completed'
+         AND r.season IS NOT NULL
+         AND r.season != ''
+         ORDER BY r.season ASC",
+        $activity_type,
+        '%' . $year_int . '%'
+    );
+    $seasons = $wpdb->get_col($season_types_query);
+    
+    // Extract unique season types
+    $unique_season_types = [];
+    foreach ($seasons as $season) {
+        $extracted_type = intersoccer_extract_season_type($season);
+        if ($extracted_type && !in_array($extracted_type, $unique_season_types)) {
+            $unique_season_types[] = $extracted_type;
+        }
+    }
+    sort($unique_season_types);
+    
+    // Get unique regions/cantons for the selected year and activity type
+    $regions_query = $wpdb->prepare(
+        "SELECT DISTINCT r.canton_region 
+         FROM $rosters_table r
+         JOIN {$wpdb->prefix}woocommerce_order_items oi ON r.order_item_id = oi.order_item_id
+         JOIN {$wpdb->prefix}posts p ON oi.order_id = p.ID
+         WHERE r.activity_type = %s
+         AND r.season LIKE %s
+         AND p.post_type = 'shop_order'
+         AND p.post_status = 'wc-completed'
+         AND r.canton_region IS NOT NULL
+         AND r.canton_region != ''
+         ORDER BY r.canton_region ASC",
+        $activity_type,
+        '%' . $year_int . '%'
+    );
+    $regions = $wpdb->get_col($regions_query);
+    sort($regions);
+
+    $report_data = intersoccer_get_final_reports_data($year, $activity_type, $season_type ?: null, $region ?: null);
     $totals = intersoccer_calculate_final_reports_totals($report_data, $activity_type);
 
     ?>
@@ -115,6 +172,22 @@ function intersoccer_render_final_reports_page() {
                 <select name="activity_type" id="activity_type">
                     <option value="Camp" <?php selected($activity_type, 'Camp'); ?>><?php _e('Camp', 'intersoccer-reports-rosters'); ?></option>
                     <option value="Course" <?php selected($activity_type, 'Course'); ?>><?php _e('Course', 'intersoccer-reports-rosters'); ?></option>
+                </select>
+            <?php endif; ?>
+            <?php if ($activity_type === 'Camp'): ?>
+                <label for="season_type"><?php _e('Season Type:', 'intersoccer-reports-rosters'); ?></label>
+                <select name="season_type" id="season_type">
+                    <option value=""><?php _e('All Seasons', 'intersoccer-reports-rosters'); ?></option>
+                    <?php foreach ($unique_season_types as $st): ?>
+                        <option value="<?php echo esc_attr($st); ?>" <?php selected($season_type, $st); ?>><?php echo esc_html($st); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <label for="region"><?php _e('Region:', 'intersoccer-reports-rosters'); ?></label>
+                <select name="region" id="region">
+                    <option value=""><?php _e('All Regions', 'intersoccer-reports-rosters'); ?></option>
+                    <?php foreach ($regions as $reg): ?>
+                        <option value="<?php echo esc_attr($reg); ?>" <?php selected($region, $reg); ?>><?php echo esc_html($reg); ?></option>
+                    <?php endforeach; ?>
                 </select>
             <?php endif; ?>
             <button type="submit" class="button"><?php _e('Filter', 'intersoccer-reports-rosters'); ?></button>
@@ -410,6 +483,8 @@ function intersoccer_render_final_reports_page() {
             // Get current filter values
             var year = $('input[name="year"]').val();
             var activity_type = $('select[name="activity_type"]').val();
+            var season_type = $('select[name="season_type"]').val() || '';
+            var region = $('select[name="region"]').val() || '';
             
             // If no select element (on specific camp/course pages), use the PHP variable
             if (!activity_type) {
@@ -423,7 +498,9 @@ function intersoccer_render_final_reports_page() {
                     action: 'intersoccer_export_final_reports',
                     nonce: intersoccer_reports_ajax.nonce,
                     year: year,
-                    activity_type: activity_type
+                    activity_type: activity_type,
+                    season_type: season_type,
+                    region: region
                 },
                 success: function(response) {
                     if (response.success) {
