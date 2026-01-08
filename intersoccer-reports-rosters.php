@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 2.1.6
+ * Version: 2.1.7
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -303,7 +303,7 @@ if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE) {
 }
 
 $included_files = [];
-$files_to_include = ['event-reports.php', 'reports.php', 'reports-ajax.php', 'utils.php', 'rosters.php', 'roster-data.php', 'roster-details.php', 'roster-export.php', 'advanced.php', 'woocommerce-orders.php', 'db.php', 'placeholder-rosters.php']; 
+$files_to_include = ['event-reports.php', 'reports.php', 'reports-ajax.php', 'utils.php', 'rosters.php', 'roster-data.php', 'roster-details.php', 'roster-export.php', 'roster-editor.php', 'roster-editor-ajax.php', 'advanced.php', 'woocommerce-orders.php', 'db.php', 'placeholder-rosters.php']; 
 foreach ($files_to_include as $file) {
     $file_path = plugin_dir_path(__FILE__) . 'includes/' . $file;
     if (file_exists($file_path)) {
@@ -635,13 +635,20 @@ add_action('admin_menu', function () {
     add_submenu_page('intersoccer-reports-rosters', __('Tournaments', 'intersoccer-reports-rosters'), __('Tournaments', 'intersoccer-reports-rosters'), 'read', 'intersoccer-tournaments', 'intersoccer_render_tournaments_page');
     add_submenu_page('intersoccer-reports-rosters', __('Other Events', 'intersoccer-reports-rosters'), __('Other Events', 'intersoccer-reports-rosters'), 'read', 'intersoccer-other-events', 'intersoccer_render_other_events_page');
     add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Settings', 'intersoccer-reports-rosters'), __('Settings', 'intersoccer-reports-rosters'), 'read', 'intersoccer-advanced', 'intersoccer_render_advanced_page');
+    add_submenu_page('intersoccer-reports-rosters', __('Edit Rosters', 'intersoccer-reports-rosters'), __('Edit Rosters', 'intersoccer-reports-rosters'), 'manage_options', 'intersoccer-edit-rosters', 'intersoccer_render_roster_editor_page');
     add_submenu_page(null, '', '', 'read', 'intersoccer-roster-details', 'intersoccer_render_roster_details_page');
+    add_submenu_page(null, '', '', 'manage_options', 'intersoccer-roster-edit', 'intersoccer_render_roster_edit_form');
 });
 
 if (!(defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('ajax'))) {
     add_action('wp_ajax_intersoccer_rebuild_rosters_and_reports', 'intersoccer_rebuild_rosters_and_reports');
     add_action('wp_ajax_intersoccer_rebuild_event_signatures', 'intersoccer_rebuild_event_signatures_ajax');
 }
+
+// Register AJAX handlers for roster editor
+add_action('wp_ajax_intersoccer_load_roster_entries', 'intersoccer_ajax_load_roster_entries');
+add_action('wp_ajax_intersoccer_update_roster_entry', 'intersoccer_ajax_update_roster_entry');
+add_action('wp_ajax_intersoccer_get_roster_entry', 'intersoccer_ajax_get_roster_entry');
 
 // Enqueue script for WooCommerce Orders page to add the Process Orders button
 function intersoccer_enqueue_orders_page_scripts($hook) {
