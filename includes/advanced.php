@@ -38,6 +38,9 @@ function intersoccer_render_advanced_page() {
             <a href="?page=intersoccer-advanced&tab=tools" class="nav-tab <?php echo $active_tab === 'tools' ? 'nav-tab-active' : ''; ?>">
                 <?php _e('Tools', 'intersoccer-reports-rosters'); ?>
             </a>
+            <a href="?page=intersoccer-advanced&tab=edit-rosters" class="nav-tab <?php echo $active_tab === 'edit-rosters' ? 'nav-tab-active' : ''; ?>">
+                <?php _e('Edit Rosters', 'intersoccer-reports-rosters'); ?>
+            </a>
         </nav>
 
         <!-- Status Messages Container -->
@@ -155,6 +158,13 @@ function intersoccer_render_advanced_page() {
         <?php if ($active_tab === 'tools') : ?>
             <div class="tab-content tab-tools">
                 <?php intersoccer_render_signature_verifier_section(); ?>
+            </div>
+        <?php endif; ?>
+
+        <!-- Edit Rosters Tab -->
+        <?php if ($active_tab === 'edit-rosters') : ?>
+            <div class="tab-content tab-edit-rosters">
+                <?php intersoccer_render_roster_editor_tab(); ?>
             </div>
         <?php endif; ?>
 
