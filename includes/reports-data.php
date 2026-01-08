@@ -131,9 +131,35 @@ function intersoccer_extract_year_from_season($season) {
 }
 
 /**
- * Get final reports data
+ * Extract season type from season string (e.g., "Summer camps 2025" -> "Summer", "Winter 2026" -> "Winter")
+ * @param string $season Season string
+ * @return string|null Season type if found, null otherwise
  */
-function intersoccer_get_final_reports_data($year, $activity_type) {
+function intersoccer_extract_season_type($season) {
+    if (empty($season)) {
+        return null;
+    }
+    // Common season types
+    $season_types = ['Summer', 'Winter', 'Autumn', 'Spring', 'Easter', 'Halloween'];
+    
+    foreach ($season_types as $type) {
+        if (stripos($season, $type) !== false) {
+            return $type;
+        }
+    }
+    
+    return null;
+}
+
+/**
+ * Get final reports data
+ * @param int|string $year Year to filter by
+ * @param string $activity_type Activity type ('Camp' or 'Course')
+ * @param string|null $season_type Optional season type filter (e.g., 'Summer', 'Winter', 'Autumn')
+ * @param string|null $region Optional region/canton filter (e.g., 'Geneva', 'Zurich')
+ * @return array Report data grouped by date range, canton, venue, and camp type
+ */
+function intersoccer_get_final_reports_data($year, $activity_type, $season_type = null, $region = null) {
     global $wpdb;
     $order_items_table = $wpdb->prefix . 'woocommerce_order_items';
     $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
@@ -154,6 +180,34 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
         // First, try to get data from rosters table (has parsed dates)
         // Ensure year is an integer for SQL comparison
         $year_int = intval($year);
+        
+        // Build WHERE conditions dynamically based on filters
+        // Exclude placeholder records (order_item_id = 0)
+        $where_conditions = [
+            "r.activity_type = %s",
+            "r.season LIKE %s",
+            "r.order_item_id > 0",
+            "p.post_type = 'shop_order'",
+            "p.post_status = 'wc-completed'"
+        ];
+        $prepare_values = [
+            $activity_type,
+            '%' . $year_int . '%'
+        ];
+        
+        // Add season type filter if provided
+        if (!empty($season_type)) {
+            $where_conditions[] = "r.season LIKE %s";
+            $prepare_values[] = $season_type . '%';
+        }
+        
+        // Add region filter if provided
+        if (!empty($region)) {
+            $where_conditions[] = "r.canton_region = %s";
+            $prepare_values[] = $region;
+        }
+        
+        $where_clause = implode(' AND ', $where_conditions);
         
         $rosters_query = $wpdb->prepare(
             "SELECT 
@@ -178,12 +232,8 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
              JOIN $posts_table p ON oi.order_id = p.ID
              LEFT JOIN $order_itemmeta_table om_line_subtotal ON oi.order_item_id = om_line_subtotal.order_item_id AND om_line_subtotal.meta_key = '_line_subtotal'
              LEFT JOIN $order_itemmeta_table om_line_total ON oi.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
-             WHERE r.activity_type = %s
-             AND r.season LIKE %s
-             AND p.post_type = 'shop_order'
-             AND p.post_status = 'wc-completed'",
-            $activity_type,
-            '%' . $year_int . '%'
+             WHERE $where_clause",
+            ...$prepare_values
         );
         
         $rosters_from_table = $wpdb->get_results($rosters_query, ARRAY_A);
@@ -236,6 +286,29 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
         // Query orders for camps (with BuyClub data optimization)
         // Note: Final Reports query WooCommerce directly, not the rosters table
         // Placeholder filtering is only needed for roster display pages, not reports
+        
+        // Build WHERE conditions for WooCommerce query
+        $woo_where_conditions = [
+            "p.post_type = 'shop_order'",
+            "p.post_status = 'wc-completed'",
+            "COALESCE(om_activity_type.meta_value, pm_activity_type.meta_value) = %s"
+        ];
+        $woo_prepare_values = [$activity_type];
+        
+        // Add season type filter if provided
+        if (!empty($season_type)) {
+            $woo_where_conditions[] = "COALESCE(om_season.meta_value, om_season_alt.meta_value) LIKE %s";
+            $woo_prepare_values[] = $season_type . '%';
+        }
+        
+        // Add region filter if provided
+        if (!empty($region)) {
+            $woo_where_conditions[] = "om_canton.meta_value = %s";
+            $woo_prepare_values[] = $region;
+        }
+        
+        $woo_where_clause = implode(' AND ', $woo_where_conditions);
+        
         $query = $wpdb->prepare(
             "SELECT
                 oi.order_item_id,
@@ -271,10 +344,8 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
              LEFT JOIN {$wpdb->postmeta} pm_camp_terms_product ON om_product_id.meta_value = pm_camp_terms_product.post_id AND pm_camp_terms_product.meta_key = 'attribute_pa_camp-terms'
              LEFT JOIN $order_itemmeta_table om_line_subtotal ON oi.order_item_id = om_line_subtotal.order_item_id AND om_line_subtotal.meta_key = '_line_subtotal'
              LEFT JOIN $order_itemmeta_table om_line_total ON oi.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
-             WHERE p.post_type = 'shop_order'
-             AND p.post_status = 'wc-completed'
-             AND COALESCE(om_activity_type.meta_value, pm_activity_type.meta_value) = %s",
-            $activity_type
+             WHERE $woo_where_clause",
+            ...$woo_prepare_values
         );
 
             $rosters = $wpdb->get_results($query, ARRAY_A);
@@ -370,6 +441,25 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
                 $season_year = !empty($roster['season']) ? intersoccer_extract_year_from_season($roster['season']) : null;
                 $requested_year_int = intval($year);
                 
+                // Apply season type filter if provided
+                if (!empty($season_type)) {
+                    $roster_season_type = !empty($roster['season']) ? intersoccer_extract_season_type($roster['season']) : null;
+                    if ($roster_season_type !== $season_type) {
+                        $skipped_year_mismatch++;
+                        $skipped_season_mismatch++;
+                        continue;
+                    }
+                }
+                
+                // Apply region filter if provided
+                if (!empty($region)) {
+                    $roster_canton = $roster['canton'] ?? '';
+                    if ($roster_canton !== $region) {
+                        $skipped_year_mismatch++;
+                        continue;
+                    }
+                }
+                
                 // Primary filter: season year must match (like user's query: season LIKE '%year')
                 if ($season_year !== null) {
                     if ($season_year == $requested_year_int) {
@@ -460,6 +550,27 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
                     }
                 } else {
                     $skipped_no_dates++;
+                    continue;
+                }
+            }
+            
+            // Apply season type filter if provided
+            if (!empty($season_type)) {
+                $roster_season_type = !empty($season) ? intersoccer_extract_season_type($season) : null;
+                if ($roster_season_type !== $season_type) {
+                    $skipped_year_mismatch++;
+                    if (isset($skipped_season_mismatch)) {
+                        $skipped_season_mismatch++;
+                    }
+                    continue;
+                }
+            }
+            
+            // Apply region filter if provided
+            if (!empty($region)) {
+                $roster_canton = $roster['canton'] ?? '';
+                if ($roster_canton !== $region) {
+                    $skipped_year_mismatch++;
                     continue;
                 }
             }
@@ -651,18 +762,6 @@ function intersoccer_get_final_reports_data($year, $activity_type) {
                     'min_max' => "$min-$max",
                     'unique_records' => $processed_count, // Track actual number of unique records
                 ];
-            }
-        }
-        
-        // Log summary of report data
-        $total_unique_records = 0;
-        foreach ($report_data as $date_range => $cantons) {
-            foreach ($cantons as $canton => $venues) {
-                foreach ($venues as $venue => $camp_types) {
-                    foreach ($camp_types as $camp_type => $data) {
-                        $total_unique_records += isset($data['unique_records']) ? $data['unique_records'] : 0;
-                    }
-                }
             }
         }
         
