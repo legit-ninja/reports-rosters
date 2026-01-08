@@ -27,14 +27,24 @@ function intersoccer_export_final_reports_callback() {
 
     $year = isset($_POST['year']) ? absint($_POST['year']) : date('Y');
     $activity_type = isset($_POST['activity_type']) ? sanitize_text_field($_POST['activity_type']) : 'Camp';
+    $season_type = isset($_POST['season_type']) ? sanitize_text_field($_POST['season_type']) : null;
+    $region = isset($_POST['region']) ? sanitize_text_field($_POST['region']) : null;
 
     // Include the data processing file
     require_once plugin_dir_path(__FILE__) . 'reports-data.php';
 
-    $report_data = intersoccer_get_final_reports_data($year, $activity_type);
+    $report_data = intersoccer_get_final_reports_data($year, $activity_type, $season_type, $region);
     $totals = intersoccer_calculate_final_reports_totals($report_data, $activity_type);
 
-    $filename = 'final-reports-' . strtolower($activity_type) . '-' . $year . '.xlsx';
+    // Build filename with filters if applied
+    $filename = 'final-reports-' . strtolower($activity_type) . '-' . $year;
+    if (!empty($season_type)) {
+        $filename .= '-' . strtolower($season_type);
+    }
+    if (!empty($region)) {
+        $filename .= '-' . strtolower(str_replace(' ', '-', $region));
+    }
+    $filename .= '.xlsx';
 
     // Create new Spreadsheet object
     $spreadsheet = new Spreadsheet();
