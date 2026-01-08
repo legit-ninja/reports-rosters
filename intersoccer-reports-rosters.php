@@ -635,7 +635,6 @@ add_action('admin_menu', function () {
     add_submenu_page('intersoccer-reports-rosters', __('Tournaments', 'intersoccer-reports-rosters'), __('Tournaments', 'intersoccer-reports-rosters'), 'read', 'intersoccer-tournaments', 'intersoccer_render_tournaments_page');
     add_submenu_page('intersoccer-reports-rosters', __('Other Events', 'intersoccer-reports-rosters'), __('Other Events', 'intersoccer-reports-rosters'), 'read', 'intersoccer-other-events', 'intersoccer_render_other_events_page');
     add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Settings', 'intersoccer-reports-rosters'), __('Settings', 'intersoccer-reports-rosters'), 'read', 'intersoccer-advanced', 'intersoccer_render_advanced_page');
-    add_submenu_page('intersoccer-reports-rosters', __('Edit Rosters', 'intersoccer-reports-rosters'), __('Edit Rosters', 'intersoccer-reports-rosters'), 'manage_options', 'intersoccer-edit-rosters', 'intersoccer_render_roster_editor_page');
     add_submenu_page(null, '', '', 'read', 'intersoccer-roster-details', 'intersoccer_render_roster_details_page');
     add_submenu_page(null, '', '', 'manage_options', 'intersoccer-roster-edit', 'intersoccer_render_roster_edit_form');
 });
