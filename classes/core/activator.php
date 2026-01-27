@@ -53,7 +53,7 @@ class Activator {
      * @var array
      */
     private $default_options = [
-        'intersoccer_plugin_version' => '2.0.0',
+        'intersoccer_plugin_version' => '2.1.27',
         'intersoccer_db_version' => '2.0.0',
         'intersoccer_activation_time' => null,
         'intersoccer_last_roster_rebuild' => null,
