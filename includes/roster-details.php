@@ -623,21 +623,45 @@ function intersoccer_render_roster_details_page() {
     echo '<p><strong>' . esc_html__('Total Players', 'intersoccer-reports-rosters') . ':</strong> ' . esc_html(count($rosters)) . '</p>';
     
     // Close Out / Reopen button
+    $action_event_signature = $event_signature ?: ($base_roster->event_signature ?? '');
     echo '<div style="margin-top: 20px;">';
     if ($is_closed) {
         echo '<button type="button" class="reopen-roster-btn" id="roster-reopen-btn" 
-                data-event-signature="' . esc_attr($base_roster->event_signature ?? '') . '"
+                data-event-signature="' . esc_attr($action_event_signature) . '"
                 title="' . esc_attr__('Reopen Roster', 'intersoccer-reports-rosters') . '">';
         echo esc_html__('Reopen', 'intersoccer-reports-rosters');
         echo '</button>';
     } else {
         echo '<button type="button" class="close-roster-btn" id="roster-close-btn"
-                data-event-signature="' . esc_attr($base_roster->event_signature ?? '') . '"
+                data-event-signature="' . esc_attr($action_event_signature) . '"
                 title="' . esc_attr__('Close Out Roster', 'intersoccer-reports-rosters') . '">';
         echo esc_html__('Close Out', 'intersoccer-reports-rosters');
         echo '</button>';
     }
     echo '</div>';
+
+    // Repair day presence (admin only) - updates only the day_presence JSON for this event_signature.
+    $repair_event_signature = null;
+    if (isset($base_roster)) {
+        if (is_object($base_roster) && !empty($base_roster->event_signature)) {
+            $repair_event_signature = $base_roster->event_signature;
+        } elseif (is_array($base_roster) && !empty($base_roster['event_signature'])) {
+            $repair_event_signature = $base_roster['event_signature'];
+        }
+    }
+    // Fallback to URL parameter (legacy query does not select event_signature into base_roster)
+    if (empty($repair_event_signature) && !empty($event_signature) && $event_signature !== 'N/A') {
+        $repair_event_signature = $event_signature;
+    }
+
+    if (current_user_can('manage_options') && !empty($repair_event_signature)) {
+        echo '<div style="margin-top: 10px;">';
+        echo '<button type="button" class="button button-secondary" id="repair-day-presence-btn" data-event-signature="' . esc_attr($repair_event_signature) . '">';
+        echo esc_html__('Repair Day Presence', 'intersoccer-reports-rosters');
+        echo '</button>';
+        echo '<span id="repair-day-presence-result" style="margin-left: 10px;"></span>';
+        echo '</div>';
+    }
     
     // Add CSS for icon buttons
     echo '<style>
@@ -692,6 +716,47 @@ function intersoccer_render_roster_details_page() {
     ?>
     <script type="text/javascript">
     jQuery(document).ready(function($) {
+        // Repair day presence handler
+        $(document).on('click', '#repair-day-presence-btn', function(e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var eventSignature = $btn.data('event-signature');
+            var $result = $('#repair-day-presence-result');
+
+            if (!eventSignature) {
+                $result.text('Missing event signature.');
+                return;
+            }
+
+            $btn.prop('disabled', true);
+            $result.text('Repairing...');
+
+            $.ajax({
+                url: typeof ajaxurl !== 'undefined' ? ajaxurl : '<?php echo esc_js(admin_url('admin-ajax.php')); ?>',
+                type: 'POST',
+                dataType: 'json',
+                data: {
+                    action: 'intersoccer_repair_day_presence',
+                    event_signature: eventSignature,
+                    nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>'
+                },
+                success: function(resp) {
+                    if (resp && resp.success) {
+                        $result.text(resp.data && resp.data.message ? resp.data.message : 'Repair completed.');
+                    } else {
+                        var msg = (resp && resp.data && resp.data.message) ? resp.data.message : 'Repair failed.';
+                        $result.text(msg);
+                    }
+                },
+                error: function() {
+                    $result.text('Repair failed (network/server error).');
+                },
+                complete: function() {
+                    $btn.prop('disabled', false);
+                }
+            });
+        });
+
         // Close roster handler (for roster details page)
         $(document).on('click', '.close-roster-btn, #roster-close-btn', function(e) {
             e.preventDefault();

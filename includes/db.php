@@ -1235,10 +1235,14 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
 
         $day_presence = ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
         if (strtolower($booking_type) === 'single-days') {
-            $days = array_map('trim', explode(',', $selected_days));
+            $days = array_map('trim', explode(',', (string) $selected_days));
             foreach ($days as $day) {
-                if (array_key_exists($day, $day_presence)) {
-                    $day_presence[$day] = 'Yes';
+                $canonical_day = function_exists('intersoccer_normalize_weekday_token')
+                    ? intersoccer_normalize_weekday_token($day)
+                    : $day;
+
+                if ($canonical_day && array_key_exists($canonical_day, $day_presence)) {
+                    $day_presence[$canonical_day] = 'Yes';
                 }
             }
         } elseif (strtolower($booking_type) === 'full-week') {
@@ -1622,6 +1626,99 @@ function intersoccer_rebuild_event_signatures_ajax() {
         ob_clean();
         wp_send_json_error(['message' => __('Event signature rebuild failed with error: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
     }
+}
+
+add_action('wp_ajax_intersoccer_repair_day_presence', 'intersoccer_repair_day_presence_ajax');
+function intersoccer_repair_day_presence_ajax() {
+    // Use the same nonce used across roster details AJAX actions.
+    $nonce_ok = false;
+    if (isset($_POST['nonce'])) {
+        $nonce_ok = check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce', false);
+    }
+
+    if (!$nonce_ok) {
+        wp_send_json_error(['message' => __('Security check failed. Please refresh the page and try again.', 'intersoccer-reports-rosters')]);
+    }
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => __('You do not have permission to repair day presence.', 'intersoccer-reports-rosters')]);
+    }
+
+    global $wpdb;
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+
+    $event_signature = isset($_POST['event_signature']) ? sanitize_text_field($_POST['event_signature']) : '';
+    if ($event_signature === '') {
+        wp_send_json_error(['message' => __('Missing event signature.', 'intersoccer-reports-rosters')]);
+    }
+
+
+    // Pull only the columns we need; do not touch event_completed.
+    $rows = $wpdb->get_results(
+        $wpdb->prepare(
+            "SELECT id, booking_type, selected_days, day_presence FROM {$rosters_table} WHERE event_signature = %s",
+            $event_signature
+        ),
+        ARRAY_A
+    );
+
+    if (!is_array($rows) || empty($rows)) {
+        wp_send_json_success([
+            'updated' => 0,
+            'skipped' => 0,
+            'total' => 0,
+            'message' => __('No roster entries found for this event.', 'intersoccer-reports-rosters'),
+        ]);
+    }
+
+    $updated = 0;
+    $skipped = 0;
+
+    foreach ($rows as $row) {
+        $id = (int) ($row['id'] ?? 0);
+        if ($id <= 0) {
+            $skipped++;
+            continue;
+        }
+
+        $new_presence = function_exists('intersoccer_compute_day_presence')
+            ? intersoccer_compute_day_presence($row['booking_type'] ?? '', $row['selected_days'] ?? '')
+            : ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
+
+        $new_json = wp_json_encode($new_presence);
+        $old_json = is_string($row['day_presence'] ?? null) ? (string) $row['day_presence'] : '';
+
+        if ($new_json === $old_json) {
+            $skipped++;
+            continue;
+        }
+
+        $result = $wpdb->update(
+            $rosters_table,
+            ['day_presence' => $new_json],
+            ['id' => $id],
+            ['%s'],
+            ['%d']
+        );
+
+        if ($result !== false) {
+            $updated++;
+        } else {
+            $skipped++;
+        }
+    }
+
+    wp_send_json_success([
+        'updated' => $updated,
+        'skipped' => $skipped,
+        'total' => count($rows),
+        'message' => sprintf(
+            /* translators: 1: updated count, 2: total count */
+            __('Repaired day presence for %1$d of %2$d roster entries.', 'intersoccer-reports-rosters'),
+            $updated,
+            count($rows)
+        ),
+    ]);
 }
 
 /**

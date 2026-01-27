@@ -469,6 +469,108 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
     return null;
 }
 
+if (!function_exists('intersoccer_normalize_weekday_token')) {
+    /**
+     * Normalize localized weekday tokens (e.g. "lundi", "Mon.") to canonical English day names.
+     *
+     * @param mixed $token
+     * @return string|null Canonical day (Monday..Sunday) or null if unknown/empty.
+     */
+    function intersoccer_normalize_weekday_token($token) {
+        if (!is_string($token)) {
+            return null;
+        }
+
+        $value = strtolower(trim($token));
+        if ($value === '') {
+            return null;
+        }
+
+        if (function_exists('remove_accents')) {
+            $value = remove_accents($value);
+        }
+
+        // Strip punctuation but keep letters for matching (e.g. "lun." -> "lun")
+        $value = preg_replace('/[^a-z]+/u', '', $value);
+        if ($value === '') {
+            return null;
+        }
+
+        static $map = [
+            // English
+            'monday' => 'Monday', 'mon' => 'Monday',
+            'tuesday' => 'Tuesday', 'tue' => 'Tuesday', 'tues' => 'Tuesday',
+            'wednesday' => 'Wednesday', 'wed' => 'Wednesday',
+            'thursday' => 'Thursday', 'thu' => 'Thursday', 'thur' => 'Thursday', 'thurs' => 'Thursday',
+            'friday' => 'Friday', 'fri' => 'Friday',
+            'saturday' => 'Saturday', 'sat' => 'Saturday',
+            'sunday' => 'Sunday', 'sun' => 'Sunday',
+
+            // French
+            'lundi' => 'Monday', 'lun' => 'Monday',
+            'mardi' => 'Tuesday', 'mar' => 'Tuesday',
+            'mercredi' => 'Wednesday', 'mer' => 'Wednesday',
+            'jeudi' => 'Thursday', 'jeu' => 'Thursday',
+            'vendredi' => 'Friday', 'ven' => 'Friday',
+            'samedi' => 'Saturday', 'sam' => 'Saturday',
+            'dimanche' => 'Sunday', 'dim' => 'Sunday',
+
+            // German (future-proof)
+            'montag' => 'Monday',
+            'dienstag' => 'Tuesday',
+            'mittwoch' => 'Wednesday',
+            'donnerstag' => 'Thursday',
+            'freitag' => 'Friday',
+            'samstag' => 'Saturday',
+            'sonntag' => 'Sunday',
+        ];
+
+        if (isset($map[$value])) {
+            return $map[$value];
+        }
+
+        return null;
+    }
+}
+
+if (!function_exists('intersoccer_compute_day_presence')) {
+    /**
+     * Compute Monday–Friday day_presence array from booking_type + selected_days.
+     *
+     * @param mixed $booking_type
+     * @param mixed $selected_days
+     * @return array<string,string> Map of Monday..Friday => Yes/No
+     */
+    function intersoccer_compute_day_presence($booking_type, $selected_days) {
+        $presence = ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
+
+        $booking_norm = strtolower(trim((string) $booking_type));
+
+        if ($booking_norm === 'full-week' || $booking_norm === 'full week') {
+            return ['Monday' => 'Yes', 'Tuesday' => 'Yes', 'Wednesday' => 'Yes', 'Thursday' => 'Yes', 'Friday' => 'Yes'];
+        }
+
+        $raw = trim((string) $selected_days);
+        if ($raw === '') {
+            return $presence;
+        }
+
+        // Split on common delimiters: comma, semicolon, slash, pipe.
+        $tokens = preg_split('/[,;\/|]+/', $raw) ?: [];
+        $tokens = array_map('trim', $tokens);
+        $tokens = array_values(array_filter($tokens, static function ($v) { return $v !== ''; }));
+
+        foreach ($tokens as $token) {
+            $canonical = intersoccer_normalize_weekday_token($token);
+            if ($canonical && array_key_exists($canonical, $presence)) {
+                $presence[$canonical] = 'Yes';
+            }
+        }
+
+        return $presence;
+    }
+}
+
 /**
  * Shared function to insert or update a roster entry from an order item.
  * Ensures consistent data extraction and insertion across all population points.
@@ -864,10 +966,14 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     // Day presence
     $day_presence = ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
     if (strtolower($booking_type) === 'single-days') {
-        $days = array_map('trim', explode(',', $selected_days));
+        $days = array_map('trim', explode(',', (string) $selected_days));
         foreach ($days as $day) {
-            if (array_key_exists($day, $day_presence)) {
-                $day_presence[$day] = 'Yes';
+            $canonical_day = function_exists('intersoccer_normalize_weekday_token')
+                ? intersoccer_normalize_weekday_token($day)
+                : $day;
+
+            if ($canonical_day && array_key_exists($canonical_day, $day_presence)) {
+                $day_presence[$canonical_day] = 'Yes';
             }
         }
     } elseif (strtolower($booking_type) === 'full-week') {
