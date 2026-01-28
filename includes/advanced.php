@@ -763,7 +763,13 @@ if (!function_exists('intersoccer_migration_normalize_meta_key')) {
      * Normalize a metadata key for comparison (lowercase, remove accents/punctuation).
      */
     function intersoccer_migration_normalize_meta_key($key) {
-        $normalized = strtolower(remove_accents($key));
+        if (function_exists('intersoccer_normalize_meta_key_for_lookup')) {
+            // Shared implementation (keeps migration + OOP ingestion aligned).
+            return intersoccer_normalize_meta_key_for_lookup($key);
+        }
+
+        // Fallback: previous behavior
+        $normalized = strtolower(remove_accents((string) $key));
         $normalized = str_replace(['attribute_', '_'], ['', '-'], $normalized);
         $normalized = preg_replace('/[^a-z0-9\- ]+/u', '', $normalized);
         $normalized = preg_replace('/\s+/', '-', trim($normalized));

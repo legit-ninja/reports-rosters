@@ -291,8 +291,16 @@ class EventSignatureGenerator {
         if (empty($name) || empty($taxonomy)) {
             return $name;
         }
-        
-        // Use the robust normalization function for consistency with legacy code
+
+        // Prefer shared resolver (keeps legacy + OOP term resolution consistent).
+        if (function_exists('intersoccer_get_term_in_default_language')) {
+            $term = intersoccer_get_term_in_default_language($name, $taxonomy);
+            if ($term && !is_wp_error($term) && !empty($term->slug)) {
+                return $term->slug;
+            }
+        }
+
+        // Fallback: Use the robust normalization function for consistency with legacy code
         if (function_exists('intersoccer_get_term_by_translated_name')) {
             $term = intersoccer_get_term_by_translated_name($name, $taxonomy);
             if ($term && !is_wp_error($term)) {

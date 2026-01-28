@@ -38,6 +38,12 @@ function intersoccer_get_placeholder_filter($alias = 'r') {
     return " AND ({$alias}.is_placeholder = 0 OR {$alias}.is_placeholder IS NULL)";
 }
 
+/**
+ * @deprecated Use intersoccer_parse_date_unified() instead (single source of truth for date parsing).
+ *
+ * Legacy helper that parsed a specific “(X days)” date range format.
+ * Kept for backwards compatibility; avoid introducing new callers.
+ */
 function intersoccer_parse_dates($date_string) {
     if (preg_match('/(\w+\s+\d+(?:st|nd|rd|th)?)\s*(?:-|\s+-\s+)(\w+\s+\d+(?:st|nd|rd|th)?)\s*\((\d+)\s+days\)/i', $date_string, $matches)) {
         $start = DateTime::createFromFormat('F j Y', trim($matches[1]) . ' ' . date('Y'));

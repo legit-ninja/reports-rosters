@@ -919,18 +919,18 @@ class RosterBuilder {
      * @return string
      */
     private function normalizeComparisonString(string $value): string {
-        $normalized = strtolower(trim($value));
+        if (function_exists('intersoccer_normalize_comparison_string')) {
+            return intersoccer_normalize_comparison_string($value);
+        }
 
+        // Fallback to local implementation if legacy utils aren't loaded for some reason.
+        $normalized = strtolower(trim($value));
         if (function_exists('remove_accents')) {
             $normalized = remove_accents($normalized);
         }
-
-        // Remove punctuation (keep slashes for compound keys like "Canton / Region")
+        $normalized = str_replace(['_', '-'], ' ', $normalized);
         $normalized = preg_replace('/[^a-z0-9\/ ]+/u', '', $normalized);
-
-        // Normalize whitespace
         $normalized = preg_replace('/\s+/', ' ', $normalized);
-
         return trim($normalized);
     }
 

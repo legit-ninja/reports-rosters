@@ -34,6 +34,111 @@ if (!function_exists('intersoccer_normalize_attribute')) {
 
 error_log('InterSoccer: Loaded utils.php');
 
+if (!function_exists('intersoccer_normalize_comparison_string')) {
+    /**
+     * Normalize a string for reliable comparisons across languages and formatting variants.
+     *
+     * Used as a shared building block for:
+     * - order item meta key normalization
+     * - translated term comparisons
+     *
+     * @param mixed $value
+     * @return string
+     */
+    function intersoccer_normalize_comparison_string($value) {
+        $normalized = strtolower(trim((string) ($value ?? '')));
+        if ($normalized === '') {
+            return '';
+        }
+
+        if (function_exists('remove_accents')) {
+            $normalized = remove_accents($normalized);
+        }
+
+        // Treat common separators as whitespace.
+        $normalized = str_replace(['_', '-'], ' ', $normalized);
+
+        // Remove punctuation (keep slashes for compound labels like "Canton / Region")
+        $normalized = preg_replace('/[^a-z0-9\/ ]+/u', '', $normalized);
+
+        // Normalize whitespace
+        $normalized = preg_replace('/\s+/', ' ', $normalized);
+
+        return trim($normalized);
+    }
+}
+
+if (!function_exists('intersoccer_normalize_meta_key_for_lookup')) {
+    /**
+     * Normalize a metadata key for comparison/lookup.
+     *
+     * @param mixed $key
+     * @return string
+     */
+    function intersoccer_normalize_meta_key_for_lookup($key) {
+        $normalized = intersoccer_normalize_comparison_string($key);
+        if ($normalized === '') {
+            return '';
+        }
+
+        // Drop WooCommerce attribute prefix if present.
+        $normalized = preg_replace('/^attribute\s+/', '', $normalized);
+
+        return $normalized;
+    }
+}
+
+if (!function_exists('intersoccer_get_term_in_default_language')) {
+    /**
+     * Resolve a term from a translated name/slug and return the term object in default language context.
+     *
+     * @param string $value Translated name or slug.
+     * @param string $taxonomy
+     * @return WP_Term|null
+     */
+    function intersoccer_get_term_in_default_language($value, $taxonomy) {
+        if (empty($value) || $value === 'N/A' || empty($taxonomy)) {
+            return null;
+        }
+
+        $value = (string) $value;
+
+        $current_lang = function_exists('wpml_get_current_language') ? wpml_get_current_language() : null;
+        $default_lang = function_exists('wpml_get_default_language') ? wpml_get_default_language() : null;
+
+        if ($current_lang && $default_lang && $current_lang !== $default_lang && function_exists('do_action')) {
+            do_action('wpml_switch_language', $default_lang);
+        }
+
+        try {
+            // Prefer robust translation-aware lookup when available.
+            if (function_exists('intersoccer_get_term_by_translated_name')) {
+                $term = intersoccer_get_term_by_translated_name($value, $taxonomy);
+                if ($term && !is_wp_error($term)) {
+                    return $term;
+                }
+            }
+
+            // Fallback: try slug then name in current (default) language context.
+            $term = get_term_by('slug', $value, $taxonomy);
+            if ($term && !is_wp_error($term)) {
+                return $term;
+            }
+
+            $term = get_term_by('name', $value, $taxonomy);
+            if ($term && !is_wp_error($term)) {
+                return $term;
+            }
+
+            return null;
+        } finally {
+            if ($current_lang && $default_lang && $current_lang !== $default_lang && function_exists('do_action')) {
+                do_action('wpml_switch_language', $current_lang);
+            }
+        }
+    }
+}
+
 /**
  * Helper function to safely get term name in English for display
  * 
@@ -48,49 +153,20 @@ function intersoccer_get_term_name($value, $taxonomy) {
     if (empty($value) || $value === 'N/A') {
         return 'N/A';
     }
-    
-    // If WPML is active, try to get the English version
-    if (function_exists('apply_filters')) {
-        $default_lang = apply_filters('wpml_default_language', null);
-        if (!empty($default_lang)) {
-            // Store current language to restore later
-            $current_lang = apply_filters('wpml_current_language', null);
-            
-            // Switch to default language to get English term name
-            if ($current_lang && $current_lang !== $default_lang) {
-                do_action('wpml_switch_language', $default_lang);
-            }
-            
-            // Try to find the term by slug first
-            $term = get_term_by('slug', $value, $taxonomy);
-            if (!$term || is_wp_error($term)) {
-                // Try by name
-                $term = get_term_by('name', $value, $taxonomy);
-            }
-            
-            // If still not found, try using the robust translation-aware function
-            if ((!$term || is_wp_error($term)) && function_exists('intersoccer_get_term_by_translated_name')) {
-                $term = intersoccer_get_term_by_translated_name($value, $taxonomy);
-            }
-            
-            // Restore original language
-            if ($current_lang && $current_lang !== $default_lang) {
-                do_action('wpml_switch_language', $current_lang);
-            }
-            
-            // If we found a term, return its name (should be in English now)
-            if ($term && !is_wp_error($term)) {
-                return $term->name;
-            }
+
+    if (function_exists('intersoccer_get_term_in_default_language')) {
+        $term = intersoccer_get_term_in_default_language($value, $taxonomy);
+        if ($term && !is_wp_error($term)) {
+            return $term->name;
         }
     }
-    
-    // Fallback: try simple lookup without language switching
+
     $term = get_term_by('slug', $value, $taxonomy);
-    if (!$term || is_wp_error($term)) {
-        $term = get_term_by('name', $value, $taxonomy);
+    if ($term && !is_wp_error($term)) {
+        return $term->name;
     }
-    
+
+    $term = get_term_by('name', $value, $taxonomy);
     return ($term && !is_wp_error($term)) ? $term->name : $value;
 }
 
@@ -1639,8 +1715,11 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
 
         // Normalize venue (taxonomy term name)
         if (!empty($event_data['venue'])) {
-            $term = intersoccer_get_term_by_translated_name($event_data['venue'], 'pa_intersoccer-venues');
-            if ($term) {
+            $term = function_exists('intersoccer_get_term_in_default_language')
+                ? intersoccer_get_term_in_default_language($event_data['venue'], 'pa_intersoccer-venues')
+                : intersoccer_get_term_by_translated_name($event_data['venue'], 'pa_intersoccer-venues');
+
+            if ($term && !is_wp_error($term)) {
                 $normalized['venue'] = $term->name;
             } else {
                 // Use fallback normalization to ensure consistent signatures
@@ -1650,8 +1729,11 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
 
         // Normalize age_group (taxonomy term name)
         if (!empty($event_data['age_group'])) {
-            $term = intersoccer_get_term_by_translated_name($event_data['age_group'], 'pa_age-group');
-            if ($term) {
+            $term = function_exists('intersoccer_get_term_in_default_language')
+                ? intersoccer_get_term_in_default_language($event_data['age_group'], 'pa_age-group')
+                : intersoccer_get_term_by_translated_name($event_data['age_group'], 'pa_age-group');
+
+            if ($term && !is_wp_error($term)) {
                 $normalized['age_group'] = $term->name;
             } else {
                 // Use fallback normalization to ensure consistent signatures
@@ -1661,8 +1743,11 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
 
         // Normalize camp_terms (taxonomy term name)
         if (!empty($event_data['camp_terms'])) {
-            $term = intersoccer_get_term_by_translated_name($event_data['camp_terms'], 'pa_camp-terms');
-            if ($term) {
+            $term = function_exists('intersoccer_get_term_in_default_language')
+                ? intersoccer_get_term_in_default_language($event_data['camp_terms'], 'pa_camp-terms')
+                : intersoccer_get_term_by_translated_name($event_data['camp_terms'], 'pa_camp-terms');
+
+            if ($term && !is_wp_error($term)) {
                 $normalized['camp_terms'] = $term->name;
             } else {
                 // Use fallback normalization to ensure consistent signatures
@@ -1672,8 +1757,11 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
 
         // Normalize course_day (taxonomy term name)
         if (!empty($event_data['course_day'])) {
-            $term = intersoccer_get_term_by_translated_name($event_data['course_day'], 'pa_course-day');
-            if ($term) {
+            $term = function_exists('intersoccer_get_term_in_default_language')
+                ? intersoccer_get_term_in_default_language($event_data['course_day'], 'pa_course-day')
+                : intersoccer_get_term_by_translated_name($event_data['course_day'], 'pa_course-day');
+
+            if ($term && !is_wp_error($term)) {
                 $normalized['course_day'] = $term->name;
             } else {
                 // Use fallback normalization to ensure consistent signatures
@@ -1686,10 +1774,14 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
             $term = null;
             $taxonomies = ['pa_camp-times', 'pa_course-times'];
             foreach ($taxonomies as $taxonomy) {
-                $term = intersoccer_get_term_by_translated_name($event_data['times'], $taxonomy);
-                if ($term) break;
+                $term = function_exists('intersoccer_get_term_in_default_language')
+                    ? intersoccer_get_term_in_default_language($event_data['times'], $taxonomy)
+                    : intersoccer_get_term_by_translated_name($event_data['times'], $taxonomy);
+                if ($term && !is_wp_error($term)) {
+                    break;
+                }
             }
-            if ($term) {
+            if ($term && !is_wp_error($term)) {
                 $normalized['times'] = $term->name;
             } else {
                 // Use fallback normalization to ensure consistent signatures
@@ -1700,8 +1792,10 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
         // Normalize season (taxonomy term name)
         if (!empty($event_data['season'])) {
             $normalized['season'] = $event_data['season'];
-            $term = intersoccer_get_term_by_translated_name($event_data['season'], 'pa_program-season');
-            if ($term) {
+            $term = function_exists('intersoccer_get_term_in_default_language')
+                ? intersoccer_get_term_in_default_language($event_data['season'], 'pa_program-season')
+                : intersoccer_get_term_by_translated_name($event_data['season'], 'pa_program-season');
+            if ($term && !is_wp_error($term)) {
                 $normalized['season'] = $term->name;
             } else {
                 // Use fallback normalization if term not found
@@ -1722,8 +1816,10 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
 
         // Normalize city (taxonomy term name) - important for tournaments
         if (!empty($event_data['city'])) {
-            $term = intersoccer_get_term_by_translated_name($event_data['city'], 'pa_city');
-            if ($term) {
+            $term = function_exists('intersoccer_get_term_in_default_language')
+                ? intersoccer_get_term_in_default_language($event_data['city'], 'pa_city')
+                : intersoccer_get_term_by_translated_name($event_data['city'], 'pa_city');
+            if ($term && !is_wp_error($term)) {
                 $normalized['city'] = $term->name;
             } else {
                 // Use fallback normalization to ensure consistent signatures
@@ -1733,8 +1829,10 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
 
         // Normalize canton_region (taxonomy term name) - important for tournaments
         if (!empty($event_data['canton_region'])) {
-            $term = intersoccer_get_term_by_translated_name($event_data['canton_region'], 'pa_canton-region');
-            if ($term) {
+            $term = function_exists('intersoccer_get_term_in_default_language')
+                ? intersoccer_get_term_in_default_language($event_data['canton_region'], 'pa_canton-region')
+                : intersoccer_get_term_by_translated_name($event_data['canton_region'], 'pa_canton-region');
+            if ($term && !is_wp_error($term)) {
                 $normalized['canton_region'] = $term->name;
             } else {
                 // Use fallback normalization to ensure consistent signatures
@@ -1745,8 +1843,10 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
         // Normalize activity_type - this might be a direct value, not a taxonomy term
         if (!empty($event_data['activity_type'])) {
             // Check if it's a taxonomy term first
-            $term = intersoccer_get_term_by_translated_name($event_data['activity_type'], 'pa_activity-type');
-            if ($term) {
+            $term = function_exists('intersoccer_get_term_in_default_language')
+                ? intersoccer_get_term_in_default_language($event_data['activity_type'], 'pa_activity-type')
+                : intersoccer_get_term_by_translated_name($event_data['activity_type'], 'pa_activity-type');
+            if ($term && !is_wp_error($term)) {
                 $normalized['activity_type'] = $term->name;
             } else {
                 // If not a taxonomy term, normalize the string directly
@@ -2076,39 +2176,32 @@ function intersoccer_get_term_slug_by_name($name, $taxonomy) {
     if (empty($name) || empty($taxonomy)) {
         return $name; // Return as-is if empty
     }
-    
-    // Use robust translation-aware lookup for consistency
-    if (function_exists('intersoccer_get_term_by_translated_name')) {
-        $term = intersoccer_get_term_by_translated_name($name, $taxonomy);
+
+    if (function_exists('intersoccer_get_term_in_default_language')) {
+        $term = intersoccer_get_term_in_default_language($name, $taxonomy);
         if ($term && !is_wp_error($term)) {
-            error_log('InterSoccer: Found term slug via robust normalization for "' . $name . '" in taxonomy "' . $taxonomy . '" -> slug: "' . $term->slug . '"');
             return $term->slug;
         }
     }
-    
+
     // Fallback: try direct lookup (for backwards compatibility)
-    $term = get_term_by('name', $name, $taxonomy);
-    if ($term && !is_wp_error($term)) {
-        error_log('InterSoccer: Found term slug via direct name lookup for "' . $name . '" in taxonomy "' . $taxonomy . '" -> slug: "' . $term->slug . '"');
-        return $term->slug;
-    }
-    
-    // If not found by name, try as slug already
     $term = get_term_by('slug', $name, $taxonomy);
     if ($term && !is_wp_error($term)) {
-        error_log('InterSoccer: Found term slug via direct slug lookup for "' . $name . '" in taxonomy "' . $taxonomy . '" -> slug: "' . $term->slug . '"');
+        return $term->slug;
+    }
+
+    $term = get_term_by('name', $name, $taxonomy);
+    if ($term && !is_wp_error($term)) {
         return $term->slug;
     }
     
     // Fallback: use fallback normalization to ensure consistent signatures
     if (function_exists('intersoccer_normalize_term_fallback')) {
         $fallback = intersoccer_normalize_term_fallback($name);
-        error_log('InterSoccer: Using fallback normalization for term "' . $name . '" in taxonomy "' . $taxonomy . '" -> "' . $fallback . '"');
         return $fallback;
     }
     
     // Last resort: return original name (lowercased for consistency)
-    error_log('InterSoccer: WARNING - Could not find term slug for "' . $name . '" in taxonomy "' . $taxonomy . '", returning as-is');
     return strtolower($name);
 }
 
