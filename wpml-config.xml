@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wpml-config>
+  <!--
+    This plugin is primarily admin UI / reporting.
+    UI strings are handled via gettext + WPML String Translation registration in code.
+    No custom post types/taxonomies or translatable options are declared here.
+  -->
+</wpml-config>
+

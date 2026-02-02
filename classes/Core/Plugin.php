@@ -33,7 +33,7 @@ final class Plugin {
     /**
      * Plugin version
      */
-    const VERSION = '2.0.0';
+    const VERSION = '2.1.27';
     
     /**
      * Plugin text domain
@@ -196,7 +196,10 @@ final class Plugin {
         // WordPress initialization hooks
         add_action('init', [$this, 'init'], 0);
         add_action('plugins_loaded', [$this, 'check_dependencies'], 10);
+        // admin_menu fires BEFORE admin_init - must register menu from init
+        add_action('admin_menu', [$this, 'register_admin_menu'], 5);
         add_action('admin_init', [$this, 'init_admin'], 10);
+        add_action('plugins_loaded', [$this, 'init_woocommerce'], 20);
         
         // Add debugging for hook execution
         add_action('wp_loaded', function() {
@@ -314,8 +317,35 @@ final class Plugin {
     }
     
     /**
+     * Register admin menu (must run on admin_menu hook, which fires before admin_init)
+     *
+     * @return void
+     */
+    public function register_admin_menu(): void {
+        if (!is_admin()) {
+            return;
+        }
+        // Load rosters.php early (before admin_head) when on a roster page so card CSS is registered
+        $roster_pages = ['intersoccer-camps', 'intersoccer-courses', 'intersoccer-girls-only', 'intersoccer-tournaments', 'intersoccer-other-events', 'intersoccer-all-rosters'];
+        $page = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
+        if (in_array($page, $roster_pages, true)) {
+            $rosters_file = $this->plugin_path . 'includes/rosters.php';
+            if (file_exists($rosters_file)) {
+                require_once $rosters_file;
+            }
+        }
+        $services = [
+            'logger' => $this->logger,
+            'database' => $this->database,
+            'cache' => $this->cache,
+        ];
+        $menu_manager = new MenuManager($this->plugin_file, $this->logger, $services);
+        $menu_manager->register_menus();
+    }
+
+    /**
      * Initialize admin area
-     * 
+     *
      * @return void
      */
     public function init_admin() {
@@ -326,13 +356,14 @@ final class Plugin {
         try {
             $this->logger->debug('InterSoccer Plugin: Admin initialization started');
             
-            // Initialize admin components
-            $menu_manager = new MenuManager($this->logger);
-            $menu_manager->init();
+            $roster_export_file = $this->plugin_path . 'includes/roster-export.php';
+            if (file_exists($roster_export_file)) {
+                require_once $roster_export_file;
+            }
             
             $asset_manager = new AssetManager($this->plugin_url, self::VERSION, $this->logger);
             $asset_manager->init();
-            
+
             $ajax_handler = new AjaxHandler($this->logger);
             $ajax_handler->init();
             
@@ -340,6 +371,26 @@ final class Plugin {
             
         } catch (\Exception $e) {
             $this->logger->error('InterSoccer Plugin: Admin initialization failed', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Initialize WooCommerce hooks.
+     *
+     * @return void
+     */
+    public function init_woocommerce() {
+        try {
+            if (!class_exists('WooCommerce')) {
+                return;
+            }
+
+            $hooks_manager = new HooksManager($this->logger);
+            $hooks_manager->init();
+        } catch (\Throwable $e) {
+            $this->logger->error('InterSoccer Plugin: WooCommerce initialization failed', [
+                'error' => $e->getMessage(),
+            ]);
         }
     }
     
@@ -484,5 +535,5 @@ final class Plugin {
     /**
      * Prevent unserialization
      */
-    private function __wakeup() {}
+    public function __wakeup() {}
 }
