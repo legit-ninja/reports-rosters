@@ -62,10 +62,15 @@ function intersoccer_oop_get_tournament_listings($filters = [], $context = []) {
 
 defined('ABSPATH') or die('Restricted access');
 
-// Only load if OOP is enabled
-if (!defined('INTERSOCCER_OOP_ENABLED') || !INTERSOCCER_OOP_ENABLED) {
-    error_log('InterSoccer OOP Adapter: OOP not enabled, skipping adapter layer');
+// OOP-only: adapter always loads when plugin bootstraps (INTERSOCCER_OOP_ACTIVE is set after Plugin::get_instance)
+if (!defined('INTERSOCCER_OOP_ACTIVE') || !INTERSOCCER_OOP_ACTIVE) {
     return;
+}
+
+// Load utils early so RosterListingService and other OOP code can use legacy helpers (e.g. intersoccer_normalize_season_for_display)
+$utils = dirname(__FILE__) . '/utils.php';
+if (file_exists($utils)) {
+    require_once $utils;
 }
 
 use InterSoccer\ReportsRosters\Core\Plugin;
@@ -91,7 +96,6 @@ use InterSoccer\ReportsRosters\Reports\OverviewReport;
 use InterSoccer\ReportsRosters\Export\ExcelExporter;
 use InterSoccer\ReportsRosters\Export\CSVExporter;
 
-error_log('InterSoccer OOP Adapter: Loading adapter layer');
 
 /**
  * Get OOP Plugin instance
@@ -367,31 +371,14 @@ function intersoccer_oop_export_csv($data, $filename = null) {
 // ============================================================================
 
 /**
- * Check if OOP should be used for a specific feature
- * 
+ * Check if OOP should be used for a specific feature.
+ * OOP-only: always returns true when INTERSOCCER_OOP_ACTIVE. Kept for backward compatibility.
+ *
  * @param string $feature Feature name (database, orders, rosters, reports, etc.)
  * @return bool Use OOP for this feature
  */
 function intersoccer_use_oop_for($feature) {
-    if (!defined('INTERSOCCER_OOP_ENABLED') || !INTERSOCCER_OOP_ENABLED) {
-        return false;
-    }
-
-    $defaults = [
-        'database' => true,
-        'ajax' => true,
-        'orders' => true,
-        'rosters' => true,
-        'reports' => true,
-        'export' => true,
-        'admin' => false,
-        'all' => false,
-    ];
-
-    $stored_flags = get_option('intersoccer_oop_features', []);
-    $feature_flags = is_array($stored_flags) ? array_merge($defaults, $stored_flags) : $defaults;
-
-    return isset($feature_flags[$feature]) ? (bool) $feature_flags[$feature] : false;
+    return defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE;
 }
 
 /**
@@ -450,15 +437,8 @@ function intersoccer_oop_enable_defaults(array $features) {
     update_option($version_option, $current_version);
 }
 
-error_log('InterSoccer OOP Adapter: Adapter layer loaded successfully');
-
-// Register AJAX handlers when enabled via feature flag
-if (intersoccer_use_oop_for('ajax') || intersoccer_use_oop_for('database')) {
-    intersoccer_oop_register_roster_ajax_handlers();
-}
-
-// Enable default features now that OOP paths are stable
-intersoccer_oop_enable_defaults(['database', 'ajax', 'orders', 'reports', 'export', 'rosters']);
+// OOP-only: always register AJAX handlers
+intersoccer_oop_register_roster_ajax_handlers();
 
 
 // ============================================================================
@@ -708,7 +688,8 @@ function intersoccer_oop_update_roster_entry($order_id, $item_id) {
         }
         
         $processor = intersoccer_oop_get_order_processor();
-        return $processor->processOrderItem($order, $item, $item_id);
+        $success = $processor->processOrder($order);
+        return ['success' => $success, 'message' => $success ? '' : 'Order processing failed'];
     } catch (\Exception $e) {
         error_log('InterSoccer OOP: Error updating roster entry - ' . $e->getMessage());
         return ['success' => false, 'message' => $e->getMessage()];
@@ -776,4 +757,53 @@ function intersoccer_oop_upgrade_database() {
         error_log('InterSoccer OOP: Error upgrading database - ' . $e->getMessage());
         return false;
     }
+}
+
+// ============================================================================
+// COMPATIBILITY WRAPPERS - Used by OrderProcessor
+// ============================================================================
+
+/**
+ * Schedule a follow-up cron to complete an order once rosters are confirmed.
+ * Compatibility wrapper for OrderProcessor.
+ *
+ * @param int $order_id Order ID
+ * @param int|null $delay Delay in seconds. Defaults to filter-configured value.
+ * @return void
+ */
+function intersoccer_schedule_order_completion_check($order_id, $delay = null) {
+    $order_id = absint($order_id);
+    if ($order_id <= 0 || !function_exists('wp_schedule_single_event') || !defined('INTERSOCCER_ORDER_AUTO_COMPLETE_SINGLE_HOOK')) {
+        return;
+    }
+    if ($delay === null) {
+        $delay = (int) apply_filters('intersoccer_auto_complete_single_delay_seconds', 180, $order_id);
+    }
+    if ($delay < 60) {
+        $delay = 60;
+    }
+    $timestamp = time() + $delay;
+    if (!wp_next_scheduled(INTERSOCCER_ORDER_AUTO_COMPLETE_SINGLE_HOOK, [$order_id])) {
+        wp_schedule_single_event($timestamp, INTERSOCCER_ORDER_AUTO_COMPLETE_SINGLE_HOOK, [$order_id]);
+    }
+}
+
+/**
+ * Check if an order has roster entries in the database.
+ *
+ * @param int $order_id Order ID
+ * @return bool
+ */
+function intersoccer_order_has_confirmed_rosters($order_id) {
+    global $wpdb;
+    $order_id = absint($order_id);
+    if ($order_id <= 0) {
+        return false;
+    }
+    $table = $wpdb->prefix . 'intersoccer_rosters';
+    $count = (int) $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM {$table} WHERE order_id = %d",
+        $order_id
+    ));
+    return $count > 0;
 }

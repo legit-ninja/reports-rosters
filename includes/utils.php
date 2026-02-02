@@ -656,6 +656,12 @@ if (!function_exists('intersoccer_compute_day_presence')) {
  * @return bool True if inserted/updated successfully, false otherwise.
  */
 function intersoccer_update_roster_entry($order_id, $item_id) {
+    // OOP-only: delegate to OrderProcessor
+    if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_oop_update_roster_entry')) {
+        $result = intersoccer_oop_update_roster_entry($order_id, $item_id);
+        return !empty($result['success']);
+    }
+
     global $wpdb;
     $table_name = $wpdb->prefix . 'intersoccer_rosters';
 

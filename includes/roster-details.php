@@ -50,7 +50,9 @@ function intersoccer_render_roster_details_page() {
     $product_id = isset($_GET['product_id']) ? intval($_GET['product_id']) : 0;
     $variation_id = isset($_GET['variation_id']) ? intval($_GET['variation_id']) : 0;
     $variation_ids_str = isset($_GET['variation_ids']) ? sanitize_text_field($_GET['variation_ids']) : '';
-    $variation_ids = $variation_ids_str ? array_map('intval', explode(',', $variation_ids_str)) : [];
+    $variation_ids = $variation_ids_str ? array_filter(array_map('intval', explode(',', $variation_ids_str))) : [];
+    $order_item_ids_str = isset($_GET['order_item_ids']) ? sanitize_text_field($_GET['order_item_ids']) : '';
+    $order_item_ids = $order_item_ids_str ? array_filter(array_map('intval', explode(',', $order_item_ids_str))) : [];
     $event_signature = isset($_GET['event_signature']) ? sanitize_text_field($_GET['event_signature']) : '';
     $camp_terms = isset($_GET['camp_terms']) ? sanitize_text_field($_GET['camp_terms']) : '';
     $course_day = isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '';
@@ -81,8 +83,6 @@ function intersoccer_render_roster_details_page() {
     $is_from_girls_only_page = $from_page === 'girls-only' || strpos($referer, 'page=intersoccer-girls-only') !== false || $girls_only;
     $is_from_tournaments_page = $from_page === 'tournaments' || strpos($referer, 'page=intersoccer-tournaments') !== false;
 
-    error_log('InterSoccer: Roster details parameters - girls_only: ' . ($girls_only ? 'yes' : 'no') . ', from_page: ' . ($from_page ?: 'N/A'));
-
     $use_oop_rosters = defined('INTERSOCCER_OOP_ACTIVE')
         && INTERSOCCER_OOP_ACTIVE
         && function_exists('intersoccer_use_oop_for')
@@ -96,6 +96,7 @@ function intersoccer_render_roster_details_page() {
                 'product_id' => $product_id,
                 'variation_id' => $variation_id,
                 'variation_ids' => $variation_ids,
+                'order_item_ids' => $order_item_ids,
                 'event_signature' => $event_signature,
                 'camp_terms' => $camp_terms,
                 'course_day' => $course_day,
@@ -199,9 +200,7 @@ function intersoccer_render_roster_details_page() {
         }
 
         if ($event_signature && $event_signature !== 'N/A') {
-            $where_clauses[] = "(r.event_signature = %s OR r.event_signature LIKE %s OR (r.event_signature IS NULL AND %s = 'N/A'))";
-            $query_params[] = $event_signature;
-            $query_params[] = '%' . $wpdb->esc_like($event_signature) . '%';
+            $where_clauses[] = "r.event_signature = %s";
             $query_params[] = $event_signature;
         } else {
             if ($camp_terms && $camp_terms !== 'N/A') {
@@ -563,16 +562,30 @@ function intersoccer_render_roster_details_page() {
     echo '    </div>';
     echo '</div>';
     
-    // Export form - UPDATED to include girls_only parameter and AJAX handling
+    // Export form - include order_item_ids from displayed rosters for reliable export (fallback when event_signature has no match)
+    $export_order_item_ids = [];
+    foreach ($rosters as $r) {
+        $oid = is_object($r) ? (isset($r->order_item_id) ? (int) $r->order_item_id : 0) : (isset($r['order_item_id']) ? (int) $r['order_item_id'] : 0);
+        if ($oid > 0) {
+            $export_order_item_ids[$oid] = $oid;
+        }
+    }
+    $export_order_item_ids = array_values($export_order_item_ids);
+
     echo '<div id="roster-export-notice" style="margin-top: 20px;"></div>';
     echo '<form method="post" action="' . esc_url(admin_url('admin-ajax.php')) . '" class="export-form" id="roster-export-form" style="margin-top: 20px;">';
     echo '<input type="hidden" name="action" value="intersoccer_export_roster">';
     echo '<input type="hidden" name="use_fields" value="1">';
+    if (!empty($export_order_item_ids)) {
+        echo '<input type="hidden" name="order_item_ids" value="' . esc_attr(implode(',', $export_order_item_ids)) . '">';
+    }
     if ($event_signature) {
         echo '<input type="hidden" name="event_signature" value="' . esc_attr($event_signature) . '">';
-    } elseif (!empty($variation_ids)) {
-        echo '<input type="hidden" name="variation_ids" value="' . esc_attr(implode(',', $variation_ids)) . '">';
-    } elseif ($variation_id > 0) {
+    }
+    if (!empty($variation_ids)) {
+        echo '<input type="hidden" name="variation_ids" value="' . esc_attr(implode(',', array_map('intval', $variation_ids))) . '">';
+    }
+    if ($variation_id > 0) {
         echo '<input type="hidden" name="variation_id" value="' . esc_attr($variation_id) . '">';
     }
     echo '<input type="hidden" name="product_id" value="' . esc_attr($product_id) . '">';

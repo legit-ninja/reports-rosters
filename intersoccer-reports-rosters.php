@@ -14,8 +14,6 @@
 
 defined('ABSPATH') or die('Restricted access');
 
-error_log('InterSoccer: Loading intersoccer-reports-rosters.php at ' . current_time('mysql'));
-
 if (defined('INTERSOCCER_REPORTS_ROSTERS_LOADED')) {
     return; // Prevent duplicate loading
 }
@@ -24,110 +22,44 @@ define('INTERSOCCER_REPORTS_ROSTERS_LOADED', true);
 add_filter('deprecated_function_trigger_error', '__return_false', 10, 2);
 
 // ============================================================================
-// OOP INITIALIZATION - Load Composer autoloader & enable feature flag scaffolding
+// OOP BOOTSTRAP (OOP-only)
 // ============================================================================
 
 $autoloader = __DIR__ . '/vendor/autoload.php';
-if (file_exists($autoloader)) {
-    // Check if dev dependencies are missing (common in production)
-    // If autoloader was generated with dev dependencies but they're not present, skip loading
-    // Dev dependencies that might be referenced: deep-copy, phpunit, mockery, brain/monkey
-    $dev_deps = [
-        'myclabs/deep-copy' => __DIR__ . '/vendor/myclabs/deep-copy/src/DeepCopy/deep_copy.php',
-        'phpunit/phpunit' => __DIR__ . '/vendor/phpunit/phpunit/phpunit',
-        'mockery/mockery' => __DIR__ . '/vendor/mockery/mockery/library/Mockery.php',
-        'brain/monkey' => __DIR__ . '/vendor/brain/monkey/inc/api.php',
-    ];
-    
-    $autoload_real = __DIR__ . '/vendor/composer/autoload_real.php';
-    $autoload_static = __DIR__ . '/vendor/composer/autoload_static.php';
-    
-    // Check if autoloader references dev dependencies that are missing
-    $skip_autoloader = false;
-    $missing_dev_deps = [];
-    
-    foreach ($dev_deps as $dep_name => $dep_file) {
-        if (!file_exists($dep_file)) {
-            $missing_dev_deps[] = $dep_name;
+if (!file_exists($autoloader)) {
+    add_action('admin_notices', function () use ($autoloader) {
+        if (!current_user_can('activate_plugins')) {
+            return;
         }
-    }
-    
-    if (!empty($missing_dev_deps)) {
-        // Check autoloader files for references to missing dev dependencies
-        $has_dev_dep_ref = false;
-        $referenced_deps = [];
-        
-        foreach ($missing_dev_deps as $dep_name) {
-            // Check for various formats: myclabs/deep-copy, myclabs-deep-copy, myclabs\deep-copy
-            $search_terms = [
-                $dep_name, // Original: myclabs/deep-copy
-                str_replace('/', '-', $dep_name), // myclabs-deep-copy
-                str_replace('/', '\\', $dep_name), // myclabs\deep-copy
-                basename($dep_name), // Just the package name: deep-copy
-            ];
-            
-            $found_ref = false;
-            if (file_exists($autoload_real)) {
-                $autoload_real_content = @file_get_contents($autoload_real);
-                if ($autoload_real_content) {
-                    foreach ($search_terms as $term) {
-                        if (strpos($autoload_real_content, $term) !== false) {
-                            $found_ref = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (!$found_ref && file_exists($autoload_static)) {
-                $autoload_static_content = @file_get_contents($autoload_static);
-                if ($autoload_static_content) {
-                    foreach ($search_terms as $term) {
-                        if (strpos($autoload_static_content, $term) !== false) {
-                            $found_ref = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            if ($found_ref) {
-                $has_dev_dep_ref = true;
-                $referenced_deps[] = $dep_name;
-            }
-        }
-        
-        if ($has_dev_dep_ref) {
-            $skip_autoloader = true;
-            error_log('InterSoccer: Warning - Autoloader references dev dependencies that are missing: ' . implode(', ', array_unique($referenced_deps)));
-            error_log('InterSoccer: This is normal in production. To fix, run "composer install --no-dev" on the server to regenerate autoloader without dev dependencies.');
-            error_log('InterSoccer: Plugin will continue in legacy mode without OOP features.');
-        }
-    }
-    
-    if (!$skip_autoloader) {
-        try {
-            require_once $autoloader;
-            error_log('InterSoccer: Composer autoloader loaded from ' . $autoloader);
-        } catch (\Throwable $e) {
-            // Catch any errors during autoloader load
-            if (strpos($e->getMessage(), 'deep-copy') !== false || strpos($e->getFile(), 'deep-copy') !== false) {
-                error_log('InterSoccer: Error loading autoloader - dev dependency missing: ' . $e->getMessage());
-                error_log('InterSoccer: Run "composer install --no-dev" on the server to fix. Plugin will continue in legacy mode.');
-            } else {
-                error_log('InterSoccer: Error loading autoloader - ' . $e->getMessage());
-                // Don't throw - allow plugin to continue in legacy mode
-            }
-        }
-    }
-} else {
-    error_log('InterSoccer: Composer autoloader not found at ' . $autoloader);
-    error_log('InterSoccer: Run "composer install --no-dev" to enable OOP bootstrap');
+        printf(
+            '<div class="notice notice-error"><p>%s</p></div>',
+            esc_html(sprintf(
+                __('InterSoccer Reports & Rosters is missing its Composer autoloader at %s. Please deploy the plugin with vendor/ included.', 'intersoccer-reports-rosters'),
+                $autoloader
+            ))
+        );
+    });
+    add_action('admin_menu', function () use ($autoloader) {
+        add_menu_page(
+            __('InterSoccer Reports and Rosters', 'intersoccer-reports-rosters'),
+            __('Reports and Rosters', 'intersoccer-reports-rosters'),
+            'read',
+            'intersoccer-reports-rosters',
+            function () use ($autoloader) {
+                echo '<div class="wrap"><h1>' . esc_html__('Reports and Rosters', 'intersoccer-reports-rosters') . '</h1>';
+                echo '<div class="notice notice-error"><p>' . esc_html(sprintf(
+                    __('InterSoccer Reports & Rosters is missing its Composer autoloader at %s. Please deploy the plugin with vendor/ included.', 'intersoccer-reports-rosters'),
+                    $autoloader
+                )) . '</p></div></div>';
+            },
+            'dashicons-chart-bar',
+            30
+        );
+    }, 9);
+    return;
 }
 
-if (!defined('INTERSOCCER_OOP_ENABLED')) {
-    // Default to legacy mode; can be overridden via wp-config or filters.
-    define('INTERSOCCER_OOP_ENABLED', false);
-}
+require_once $autoloader;
 
 if (!defined('INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK')) {
     define('INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK', 'intersoccer_auto_complete_orders');
@@ -141,179 +73,49 @@ if (!defined('INTERSOCCER_ORDER_AUTO_COMPLETE_RECURRENCE')) {
     define('INTERSOCCER_ORDER_AUTO_COMPLETE_RECURRENCE', 'intersoccer_auto_complete_orders_interval');
 }
 
-if (!function_exists('intersoccer_reports_rosters_can_bootstrap_oop')) {
-    /**
-     * Determine whether the OOP plugin bootstrap should run.
-     *
-     * @return bool
-     */
-    function intersoccer_reports_rosters_can_bootstrap_oop() {
-        $default = defined('INTERSOCCER_OOP_ENABLED') && INTERSOCCER_OOP_ENABLED;
-        /**
-         * Filter to enable/disable the OOP bootstrap at runtime.
-         *
-         * @param bool $enabled Current enabled state.
-         */
-        return (bool) apply_filters('intersoccer_reports_rosters_enable_oop', $default);
-    }
+// OOP-only: always active when bootstrap succeeds
+if (!defined('INTERSOCCER_OOP_ENABLED')) {
+    define('INTERSOCCER_OOP_ENABLED', true);
 }
 
-if (intersoccer_reports_rosters_can_bootstrap_oop() && class_exists('InterSoccer\\ReportsRosters\\Core\\Plugin')) {
-    try {
-        InterSoccer\ReportsRosters\Core\Plugin::get_instance(__FILE__);
+try {
+    InterSoccer\ReportsRosters\Core\Plugin::get_instance(__FILE__);
+    if (!defined('INTERSOCCER_OOP_ACTIVE')) {
         define('INTERSOCCER_OOP_ACTIVE', true);
-        error_log('InterSoccer: OOP plugin bootstrap completed');
-    } catch (\Throwable $e) {
-        error_log('InterSoccer: OOP bootstrap failed - ' . $e->getMessage());
-        if (!defined('INTERSOCCER_OOP_ACTIVE')) {
-            define('INTERSOCCER_OOP_ACTIVE', false);
-        }
     }
-} else {
+} catch (\Throwable $e) {
     if (!defined('INTERSOCCER_OOP_ACTIVE')) {
         define('INTERSOCCER_OOP_ACTIVE', false);
     }
-    error_log('InterSoccer: OOP bootstrap skipped (flag disabled or plugin class missing).');
-}
-
-// Activation hook
-function intersoccer_report_roster_plugin_activation() {
-    error_log('InterSoccer: Plugin activation started.');
-
-    // Check dependencies
-    $dependencies = [
-        'woocommerce/woocommerce.php' => 'WooCommerce',
-        'intersoccer-product-variations/intersoccer-product-variations.php' => 'Product Variations',
-        'player-management/player-management.php' => 'Player Management',
-    ];
-    $missing = [];
-    foreach ($dependencies as $plugin => $name) {
-        if (!is_plugin_active($plugin)) {
-            $missing[] = $name;
-            error_log("InterSoccer: Missing dependency - $name ($plugin) not active.");
-        } else {
-            error_log("InterSoccer: Dependency check passed - $name active.");
+    add_action('admin_notices', function () use ($e) {
+        if (!current_user_can('activate_plugins')) {
+            return;
         }
-    }
-
-    if (!empty($missing)) {
-        // Store missing dependencies in transient for admin notice
-        set_transient('intersoccer_missing_dependencies', $missing, 30);
-        add_action('admin_notices', 'intersoccer_missing_dependencies_notice');
-        
-        // Deactivate plugin - but do it on next request to avoid breaking activation flow
-        // This prevents nonce/redirect issues during activation
-        add_action('admin_init', function() use ($missing) {
-            if (is_plugin_active(plugin_basename(__FILE__))) {
-                deactivate_plugins(plugin_basename(__FILE__));
-                // Show admin notice after deactivation
-                add_action('admin_notices', function() use ($missing) {
-                    echo '<div class="notice notice-error"><p><strong>InterSoccer Reports & Rosters:</strong> Plugin was deactivated due to missing dependencies: ' . esc_html(implode(', ', $missing)) . '</p></div>';
-                });
-            }
-        }, 999);
-        
-        error_log('InterSoccer: Plugin will be deactivated due to missing dependencies: ' . implode(', ', $missing));
-        return; // Skip DB ops - but don't deactivate immediately to avoid breaking activation
-    }
-
-    // Proceed to DB validation
-    intersoccer_create_rosters_table(); // Create if missing
-    intersoccer_validate_rosters_table(); // Validate schema
-
-    // Ensure cron events are scheduled
-    if (function_exists('wp_schedule_event')) {
-        intersoccer_reports_rosters_schedule_auto_complete_event(true);
-    }
-
-    error_log('InterSoccer: Plugin activation completed.');
-}
-register_activation_hook(__FILE__, 'intersoccer_report_roster_plugin_activation');
-
-function intersoccer_report_roster_plugin_deactivation() {
-    error_log('InterSoccer: Plugin deactivation triggered.');
-
-    if (function_exists('wp_clear_scheduled_hook')) {
-        wp_clear_scheduled_hook(INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK);
-        wp_clear_scheduled_hook(INTERSOCCER_ORDER_AUTO_COMPLETE_SINGLE_HOOK);
-    }
-}
-register_deactivation_hook(__FILE__, 'intersoccer_report_roster_plugin_deactivation');
-
-add_filter('cron_schedules', 'intersoccer_reports_rosters_register_cron_schedule');
-function intersoccer_reports_rosters_register_cron_schedule($schedules) {
-    $interval = (int) apply_filters('intersoccer_auto_complete_orders_interval_seconds', 300);
-    if ($interval < 60) {
-        $interval = 60;
-    }
-
-    $schedules[INTERSOCCER_ORDER_AUTO_COMPLETE_RECURRENCE] = [
-        'interval' => $interval,
-        'display'  => sprintf(__('InterSoccer auto-complete orders every %d seconds', 'intersoccer-reports-rosters'), $interval),
-    ];
-
-    return $schedules;
+        printf(
+            '<div class="notice notice-error"><p>%s</p></div>',
+            esc_html(sprintf(
+                __('InterSoccer Reports & Rosters failed to bootstrap: %s', 'intersoccer-reports-rosters'),
+                $e->getMessage()
+            ))
+        );
+    });
+    return;
 }
 
-add_action('init', 'intersoccer_reports_rosters_schedule_auto_complete_event');
-function intersoccer_reports_rosters_schedule_auto_complete_event($force = false) {
-    if (!function_exists('wp_next_scheduled') || !function_exists('wp_schedule_event')) {
-        return;
-    }
-
-    $scheduled = wp_next_scheduled(INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK);
-
-    if ($force && $scheduled) {
-        wp_unschedule_event($scheduled, INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK);
-        $scheduled = false;
-    }
-
-    if (!$scheduled) {
-        $interval = (int) apply_filters('intersoccer_auto_complete_orders_interval_seconds', 300);
-        if ($interval < 60) {
-            $interval = 60;
-        }
-
-        wp_schedule_event(time() + $interval, INTERSOCCER_ORDER_AUTO_COMPLETE_RECURRENCE, INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK);
-        error_log('InterSoccer: Scheduled auto-complete orders cron (interval ' . $interval . ' seconds)');
-    }
+// Load OOP adapter/compat layer (kept small and will be further reduced).
+$intersoccer_oop_adapter = plugin_dir_path(__FILE__) . 'includes/oop-adapter.php';
+if (file_exists($intersoccer_oop_adapter)) {
+    require_once $intersoccer_oop_adapter;
 }
 
-/**
- * Admin notice for missing dependencies.
- */
-function intersoccer_missing_dependencies_notice() {
-    global $missing; // Assume set in activation or use transient
-    ?>
-    <div class="notice notice-error">
-        <p><?php printf(__('InterSoccer Reports & Rosters requires the following plugins to be active: %s. Plugin deactivated.', 'intersoccer-reports-rosters'), implode(', ', $missing)); ?></p>
-    </div>
-    <?php
-}
-
-// Load OOP adapter layer (bridges legacy to OOP) only when the OOP runtime is active.
-if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE) {
-    $intersoccer_oop_adapter = plugin_dir_path(__FILE__) . 'includes/oop-adapter.php';
-    if (file_exists($intersoccer_oop_adapter)) {
-        require_once $intersoccer_oop_adapter;
-        error_log('InterSoccer: OOP adapter loaded');
-    } else {
-        error_log('InterSoccer: OOP adapter missing at ' . $intersoccer_oop_adapter);
+// Load reports.php on admin_init so AJAX handler is registered for admin-ajax.php requests.
+// admin_menu does NOT run for admin-ajax, so we must use admin_init which does.
+add_action('admin_init', function () {
+    $reports_file = plugin_dir_path(__FILE__) . 'includes/reports.php';
+    if (file_exists($reports_file)) {
+        require_once $reports_file;
     }
-}
-
-$included_files = [];
-$files_to_include = ['event-reports.php', 'reports.php', 'reports-ajax.php', 'utils.php', 'rosters.php', 'roster-data.php', 'roster-details.php', 'roster-export.php', 'roster-editor.php', 'roster-editor-ajax.php', 'advanced.php', 'woocommerce-orders.php', 'db.php', 'placeholder-rosters.php']; 
-foreach ($files_to_include as $file) {
-    $file_path = plugin_dir_path(__FILE__) . 'includes/' . $file;
-    if (file_exists($file_path)) {
-        require_once $file_path;
-        $included_files[$file] = true;
-        error_log("InterSoccer: Successfully included includes/$file from $file_path");
-    } else {
-        error_log("InterSoccer: Failed to include includes/$file - File not found at $file_path");
-    }
-}
+}, 0);
 
 // Register strings for WPML translation on init to ensure WPML is loaded
 add_action('init', function () {
@@ -550,202 +352,4 @@ function intersoccer_render_plugin_overview_page() {
         </div>
     </div>
     <?php
-    error_log('InterSoccer: Rendered Overview page with charts');
 }
-
-add_action('admin_enqueue_scripts', function ($hook) {
-    $screen = get_current_screen();
-    error_log('Enqueuing scripts for screen ID: ' . ($screen ? $screen->id : 'No screen'));
-    if ($screen) {
-        $roster_pages = [
-            'intersoccer-reports-rosters_page_intersoccer-all-rosters',
-            'intersoccer-reports-rosters_page_intersoccer-camps',
-            'intersoccer-reports-rosters_page_intersoccer-courses',
-            'intersoccer-reports-rosters_page_intersoccer-girls-only',
-            'intersoccer-reports-rosters_page_intersoccer-other-events'
-        ];
-        wp_enqueue_style('intersoccer-reports-rosters-css', plugin_dir_url(__FILE__) . 'css/styles.css', [], '1.0.6');
-        if ($screen->id === 'toplevel_page_intersoccer-reports-rosters') {
-            wp_enqueue_script('chart-js', 'https://cdn.jsdelivr.net/npm/chart.js', [], '3.9.1', true);
-            wp_enqueue_script('intersoccer-overview-charts', plugin_dir_url(__FILE__) . 'js/overview-charts.js', ['chart-js'], '1.0.6', true);
-        }
-        if (in_array($screen->id, $roster_pages)) {
-            $script_path = plugin_dir_path(__FILE__) . 'js/rosters-tabs.js';
-            error_log('Attempting to enqueue rosters-tabs.js from: ' . $script_path);
-            if (file_exists($script_path)) {
-                wp_enqueue_script('intersoccer-rosters-tabs', plugin_dir_url(__FILE__) . 'js/rosters-tabs.js', ['jquery'], '1.0.6', true);
-                wp_localize_script('intersoccer-rosters-tabs', 'intersoccer_ajax', [
-                    'ajax_url' => admin_url('admin-ajax.php'),
-                    'nonce' => wp_create_nonce('intersoccer_reports_rosters_nonce'),
-                    'strings' => [
-                        'error_missing_signature' => __('Error: Missing event signature', 'intersoccer-reports-rosters'),
-                        'confirm_complete_prefix' => __('Are you sure you want to mark "', 'intersoccer-reports-rosters'),
-                        'confirm_complete_suffix' => __('" as completed?\n\nThis will mark ALL roster entries for this event as completed and hide them from the active events list.', 'intersoccer-reports-rosters'),
-                        'processing' => __('Processing...', 'intersoccer-reports-rosters'),
-                        'error_prefix' => __('Error: ', 'intersoccer-reports-rosters'),
-                        'unknown_error' => __('Unknown error occurred', 'intersoccer-reports-rosters'),
-                        'complete_error' => __('An error occurred while marking the event as completed. Please try again.', 'intersoccer-reports-rosters'),
-                    ]
-                ]);
-                error_log('rosters-tabs.js enqueued successfully for screen ID: ' . $screen->id);
-            } else {
-                error_log('rosters-tabs.js not found at: ' . $script_path);
-            }
-        }
-        if ($screen->id === 'intersoccer-reports-rosters_page_intersoccer-advanced') {
-            wp_enqueue_script('intersoccer-advanced-ajax', plugin_dir_url(__FILE__) . 'js/advanced-ajax.js', ['jquery'], '1.0.6', true);
-            wp_localize_script('intersoccer-advanced-ajax', 'intersoccer_ajax', ['ajax_url' => admin_url('admin-ajax.php'), 'nonce' => wp_create_nonce('intersoccer_rebuild_nonce')]);
-        }
-        if ($screen->id === 'intersoccer-reports-rosters_page_intersoccer-export-rosters') {
-            // wp_enqueue_script('intersoccer-export-ajax', plugin_dir_url(__FILE__) . 'js/export-ajax.js', ['jquery'], '1.0.6', true);
-            // wp_localize_script('intersoccer-export-ajax', 'intersoccer_export_ajax', ['ajax_url' => admin_url('admin-ajax.php'), 'nonce' => wp_create_nonce('intersoccer_export_nonce')]);
-        }
-        if ($screen->id === 'intersoccer-reports-rosters_page_intersoccer-advanced') {
-            wp_enqueue_style('intersoccer-reports-rosters-rebuild-admin-css', plugin_dir_url(__FILE__) . 'css/rebuild-admin.css', [], '1.0.6');            wp_enqueue_script('intersoccer-rebuild-admin-ajax', plugin_dir_url(__FILE__) . 'js/rebuild-admin.js', ['jquery'], '1.0.6', true);
-            wp_localize_script('intersoccer-rebuild-admin-ajax', 'intersoccerRebuild', [
-                'ajax_url' => admin_url('admin-ajax.php'), 
-                'nonce' => wp_create_nonce('intersoccer_rebuild_nonce'),
-                'strings' => array(
-                    'confirm_rebuild' => __('Are you sure you want to rebuild the database? This will clear all existing roster data and rebuild it from WooCommerce orders.', 'intersoccer-reports-rosters'),
-                    'confirm_stop' => __('Are you sure you want to stop the rebuild process?', 'intersoccer-reports-rosters'),
-                    'rebuilding' => __('Rebuilding database...', 'intersoccer-reports-rosters'),
-                    'completed' => __('Database rebuild completed!', 'intersoccer-reports-rosters'),
-                    'error' => __('An error occurred during the rebuild process.', 'intersoccer-reports-rosters'),
-                    'processing' => __('Processing batch', 'intersoccer-reports-rosters'),
-                    'of' => __('of', 'intersoccer-reports-rosters'),
-                    'upgrading' => __('Upgrading database...', 'intersoccer-reports-rosters'),
-                    'upgrade_success' => __('Database upgrade completed successfully.', 'intersoccer-reports-rosters'),
-                    'upgrade_failed' => __('Database upgrade failed.', 'intersoccer-reports-rosters'),
-                    'upgrade_failed_network' => __('Database upgrade failed due to a network error.', 'intersoccer-reports-rosters')
-                )
-            ]);        }
-    }
-});
-
-add_action('admin_menu', function () {
-    add_menu_page(__('InterSoccer Reports and Rosters', 'intersoccer-reports-rosters'), __('Reports and Rosters', 'intersoccer-reports-rosters'), 'read', 'intersoccer-reports-rosters', 'intersoccer_render_plugin_overview_page', 'dashicons-chart-bar', 30);
-    add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Overview', 'intersoccer-reports-rosters'), __('Overview', 'intersoccer-reports-rosters'), 'read', 'intersoccer-reports-rosters', 'intersoccer_render_plugin_overview_page');
-    add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Booking Reports', 'intersoccer-reports-rosters'), __('Booking Reports', 'intersoccer-reports-rosters'), 'read', 'intersoccer-reports', 'intersoccer_render_reports_page');
-    add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Final Camp Reports', 'intersoccer-reports-rosters'), __('Final Camp Reports', 'intersoccer-reports-rosters'), 'read', 'intersoccer-final-camp-reports', 'intersoccer_render_final_camp_reports_page');
-    add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Final Course Reports', 'intersoccer-reports-rosters'), __('Final Course Reports', 'intersoccer-reports-rosters'), 'read', 'intersoccer-final-course-reports', 'intersoccer_render_final_course_reports_page');
-    add_submenu_page('intersoccer-reports-rosters', __('All Rosters', 'intersoccer-reports-rosters'), __('All Rosters', 'intersoccer-reports-rosters'), 'read', 'intersoccer-all-rosters', 'intersoccer_render_all_rosters_page');
-    add_submenu_page('intersoccer-reports-rosters', __('Camps', 'intersoccer-reports-rosters'), __('Camps', 'intersoccer-reports-rosters'), 'read', 'intersoccer-camps', 'intersoccer_render_camps_page');
-    add_submenu_page('intersoccer-reports-rosters', __('Courses', 'intersoccer-reports-rosters'), __('Courses', 'intersoccer-reports-rosters'), 'read', 'intersoccer-courses', 'intersoccer_render_courses_page');
-    add_submenu_page('intersoccer-reports-rosters', __('Girls Only', 'intersoccer-reports-rosters'), __('Girls Only', 'intersoccer-reports-rosters'), 'read', 'intersoccer-girls-only', 'intersoccer_render_girls_only_page');
-    add_submenu_page('intersoccer-reports-rosters', __('Tournaments', 'intersoccer-reports-rosters'), __('Tournaments', 'intersoccer-reports-rosters'), 'read', 'intersoccer-tournaments', 'intersoccer_render_tournaments_page');
-    add_submenu_page('intersoccer-reports-rosters', __('Other Events', 'intersoccer-reports-rosters'), __('Other Events', 'intersoccer-reports-rosters'), 'read', 'intersoccer-other-events', 'intersoccer_render_other_events_page');
-    add_submenu_page('intersoccer-reports-rosters', __('InterSoccer Settings', 'intersoccer-reports-rosters'), __('Settings', 'intersoccer-reports-rosters'), 'read', 'intersoccer-advanced', 'intersoccer_render_advanced_page');
-    add_submenu_page(null, '', '', 'read', 'intersoccer-roster-details', 'intersoccer_render_roster_details_page');
-    add_submenu_page(null, '', '', 'manage_options', 'intersoccer-roster-edit', 'intersoccer_render_roster_edit_form');
-});
-
-if (!(defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('ajax'))) {
-    add_action('wp_ajax_intersoccer_rebuild_rosters_and_reports', 'intersoccer_rebuild_rosters_and_reports');
-    add_action('wp_ajax_intersoccer_rebuild_event_signatures', 'intersoccer_rebuild_event_signatures_ajax');
-}
-
-// Register AJAX handlers for roster editor
-add_action('wp_ajax_intersoccer_load_roster_entries', 'intersoccer_ajax_load_roster_entries');
-add_action('wp_ajax_intersoccer_update_roster_entry', 'intersoccer_ajax_update_roster_entry');
-add_action('wp_ajax_intersoccer_get_roster_entry', 'intersoccer_ajax_get_roster_entry');
-
-// Enqueue script for WooCommerce Orders page to add the Process Orders button
-function intersoccer_enqueue_orders_page_scripts($hook) {
-    error_log('InterSoccer: Admin hook called: ' . $hook); // Debug hook
-    $screen = get_current_screen();
-    error_log('InterSoccer: Current screen ID: ' . ($screen ? $screen->id : 'none')); // Debug screen ID
-    if (isset($_GET['post_type'])) {
-        error_log('InterSoccer: post_type query param: ' . $_GET['post_type']);
-    }
-
-    // Correct condition for legacy (edit.php with post_type=shop_order) and HPOS (woocommerce_page_wc-orders)
-    if ( $hook === 'woocommerce_page_wc-orders' || ( $hook === 'edit.php' && isset( $_GET['post_type'] ) && $_GET['post_type'] === 'shop_order' ) ) {
-        error_log('InterSoccer: Entered enqueue condition for Orders page'); // Confirm entry
-
-        $plugin_dir_url = plugin_dir_url(__FILE__);
-        error_log('InterSoccer: Plugin dir URL for JS: ' . $plugin_dir_url . 'js/woo-op.js'); // Log full URL for verification
-
-        wp_enqueue_script(
-            'intersoccer-orders-js',
-            $plugin_dir_url . 'js/woo-op.js',
-            ['jquery'],
-            '1.4.24',
-            true
-        );
-
-        // Enqueue custom stylesheet
-        wp_enqueue_style(
-            'intersoccer-styles',
-            $plugin_dir_url . 'css/styles.css',
-            [],
-            '1.4.24'
-        );
-
-        // Localize script to pass nonce
-        wp_localize_script(
-            'intersoccer-orders-js',
-            'intersoccer_orders',
-            [
-                'nonce' => wp_create_nonce('intersoccer_rebuild_nonce'),
-                'ajaxurl' => admin_url('admin-ajax.php'),
-                'strings' => [
-                    'process_orders' => __('Process Orders', 'intersoccer-reports-rosters'),
-                    'confirm_process' => __('Are you sure you want to process all pending orders? This will populate rosters for processing or on-hold orders and transition them to completed.', 'intersoccer-reports-rosters'),
-                    'processing' => __('Processing orders... Please wait.', 'intersoccer-reports-rosters'),
-                    'dismiss' => __('Dismiss this notice.', 'intersoccer-reports-rosters'),
-                    'orders_processed' => __('Orders processed. Check debug.log for details.', 'intersoccer-reports-rosters'),
-                    'processing_failed' => __('Processing failed:', 'intersoccer-reports-rosters'),
-                ]
-            ]
-        );
-
-        error_log('InterSoccer: Enqueued woo-op.js and styles.css for Orders page');
-    }
-}
-add_action('admin_enqueue_scripts', 'intersoccer_enqueue_orders_page_scripts');
-
-/**
- * AJAX handler for getting rebuild errors
- */
-add_action('wp_ajax_intersoccer_get_rebuild_errors', 'intersoccer_get_rebuild_errors');
-
-function intersoccer_get_rebuild_errors() {
-    if (!current_user_can('manage_options')) {
-        wp_die('Unauthorized');
-    }
-    
-    check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
-    
-    $errors = get_option('intersoccer_rebuild_errors', array());
-    
-    // Limit to last 50 errors to avoid overwhelming the UI
-    $errors = array_slice($errors, -50);
-    
-    wp_send_json_success(array(
-        'errors' => $errors,
-        'count' => count($errors)
-    ));
-}
-
-/**
- * AJAX handler for clearing rebuild data and logs
- */
-add_action('wp_ajax_intersoccer_clear_rebuild_data', 'intersoccer_clear_rebuild_data');
-
-function intersoccer_clear_rebuild_data() {
-    if (!current_user_can('manage_options')) {
-        wp_die('Unauthorized');
-    }
-    
-    check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
-    
-    // Clear progress and error data
-    delete_option('intersoccer_rebuild_progress');
-    delete_option('intersoccer_rebuild_errors');
-    delete_option('intersoccer_rebuild_status');
-    
-    wp_send_json_success(array(
-        'message' => 'Rebuild data cleared successfully'
-    ));
-}
-?>

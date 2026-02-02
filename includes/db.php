@@ -724,9 +724,6 @@ if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exis
         intersoccer_oop_register_roster_ajax_handlers();
     }
 } else {
-    add_action('wp_ajax_intersoccer_rebuild_rosters_and_reports', 'intersoccer_rebuild_rosters_and_reports_ajax');
-    add_action('wp_ajax_intersoccer_reconcile_rosters', 'intersoccer_reconcile_rosters_ajax');
-
     if (!function_exists('intersoccer_rebuild_rosters_and_reports_ajax')) {
         function intersoccer_rebuild_rosters_and_reports_ajax() {
             ob_start();
@@ -1543,7 +1540,6 @@ function intersoccer_upgrade_database() {
 
 
 // AJAX handlers unchanged
-add_action('wp_ajax_intersoccer_upgrade_database', 'intersoccer_upgrade_database_ajax');
 function intersoccer_upgrade_database_ajax() {
     check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
     if (!current_user_can('manage_options')) {
@@ -1571,7 +1567,6 @@ function intersoccer_upgrade_database_ajax() {
     ]);
 }
 
-add_action('wp_ajax_intersoccer_rebuild_event_signatures', 'intersoccer_rebuild_event_signatures_ajax');
 function intersoccer_rebuild_event_signatures_ajax() {
     error_log('InterSoccer: AJAX rebuild event signatures handler called');
     
@@ -1628,7 +1623,6 @@ function intersoccer_rebuild_event_signatures_ajax() {
     }
 }
 
-add_action('wp_ajax_intersoccer_repair_day_presence', 'intersoccer_repair_day_presence_ajax');
 function intersoccer_repair_day_presence_ajax() {
     // Use the same nonce used across roster details AJAX actions.
     $nonce_ok = false;

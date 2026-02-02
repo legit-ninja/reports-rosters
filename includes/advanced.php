@@ -388,21 +388,20 @@ if (!class_exists('WC_Order')) {
 require_once dirname(__FILE__) . '/utils.php';
 
 /**
- * Wrapper to safely call populate function with output buffering
+ * Wrapper to safely populate rosters for an order.
+ * OOP-only: delegates to OrderProcessor.
  */
 function intersoccer_safe_populate_rosters($order_id) {
     ob_start();
     try {
-        include_once dirname(__FILE__) . '/debug-wrapper.php';
-        intersoccer_debug_populate_rosters($order_id);
-        $output = ob_get_clean();
-        if (!empty($output)) {
-            error_log('InterSoccer: Stray output from safe_populate for order ' . $order_id . ': ' . substr($output, 0, 1000));
-        } else {
-            error_log('InterSoccer: No stray output from safe_populate for order ' . $order_id);
+        if (function_exists('intersoccer_oop_process_order')) {
+            $result = intersoccer_oop_process_order($order_id);
+            ob_end_clean();
+            return (bool) $result;
         }
-        return true;
-    } catch (Exception $e) {
+        ob_end_clean();
+        return false;
+    } catch (\Throwable $e) {
         error_log('InterSoccer: Error in safe_populate for order ' . $order_id . ': ' . $e->getMessage());
         ob_end_clean();
         return false;
@@ -572,7 +571,6 @@ function intersoccer_process_existing_orders() {
     }
 }
 
-add_action('wp_ajax_intersoccer_process_existing_orders', 'intersoccer_process_existing_orders_ajax');
 function intersoccer_process_existing_orders_ajax() {
     ob_start();
     error_log('InterSoccer: Process orders AJAX handler started');
@@ -616,13 +614,6 @@ function intersoccer_process_existing_orders_ajax() {
         wp_send_json_error(['message' => $result['message']]);
     }
 }
-
-add_action('wp_ajax_intersoccer_move_players', 'intersoccer_move_players_ajax');
-add_action('wp_ajax_intersoccer_close_out_roster', 'intersoccer_close_out_roster_ajax');
-add_action('wp_ajax_intersoccer_reopen_roster', 'intersoccer_reopen_roster_ajax');
-add_action('wp_ajax_intersoccer_bulk_close_rosters', 'intersoccer_bulk_close_rosters_ajax');
-add_action('wp_ajax_intersoccer_bulk_reopen_rosters', 'intersoccer_bulk_reopen_rosters_ajax');
-add_action('wp_ajax_intersoccer_close_season_rosters', 'intersoccer_close_season_rosters_ajax');
 
 if (!function_exists('intersoccer_migration_format_attribute_value')) {
     /**

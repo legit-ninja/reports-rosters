@@ -40,10 +40,6 @@ function intersoccer_normalize_phone_number($phone) {
 
     // Preserve + prefix and clean spaces, hyphens, dots, and parentheses
     $cleaned = preg_replace('/[\s\-\.\(\)]+/', '', $phone);
-    // Only log cleaning for debugging if WP_DEBUG is enabled
-    if (defined('WP_DEBUG') && WP_DEBUG) {
-        error_log("InterSoccer: Cleaned phone number: {$phone} -> {$cleaned}");
-    }
 
     // Handle invalid numbers first
     $reason = 'unknown';
@@ -155,15 +151,13 @@ function intersoccer_export_roster() {
             'message' => __('You do not have permission to export rosters.', 'intersoccer-reports-rosters')
         ]);
     }
-    // Only log if debugging
-    if (defined('WP_DEBUG') && WP_DEBUG) {
-        error_log('InterSoccer Export: Full POST data - ' . json_encode($_POST));
-    }
     $use_fields = isset($_POST['use_fields']) ? (bool)$_POST['use_fields'] : false;
     $product_id = isset($_POST['product_id']) ? intval($_POST['product_id']) : 0;
     $variation_id = isset($_POST['variation_id']) ? intval($_POST['variation_id']) : 0;
     $variation_ids_str = isset($_POST['variation_ids']) ? sanitize_text_field($_POST['variation_ids']) : '';
-    $variation_ids = $variation_ids_str ? array_map('intval', explode(',', $variation_ids_str)) : [];
+    $variation_ids = $variation_ids_str ? array_filter(array_map('intval', explode(',', $variation_ids_str))) : [];
+    $order_item_ids_str = isset($_POST['order_item_ids']) ? sanitize_text_field($_POST['order_item_ids']) : '';
+    $order_item_ids = $order_item_ids_str ? array_filter(array_map('intval', explode(',', $order_item_ids_str))) : [];
     $event_signature = isset($_POST['event_signature']) ? sanitize_text_field($_POST['event_signature']) : '';
     $camp_terms = isset($_POST['camp_terms']) ? sanitize_text_field($_POST['camp_terms']) : '';
     $course_day = isset($_POST['course_day']) ? sanitize_text_field($_POST['course_day']) : '';
@@ -174,21 +168,17 @@ function intersoccer_export_roster() {
     $activity_types_str = isset($_POST['activity_types']) ? sanitize_text_field($_POST['activity_types']) : '';
     $activity_types = $activity_types_str ? array_map('trim', explode(',', $activity_types_str)) : ['Camp', 'Course', 'Girls Only', 'Camp, Girls Only', 'Camp, Girls\' only'];
 
-    if (!$use_fields && empty($variation_ids) && empty($event_signature)) {
+    if (!$use_fields && empty($variation_ids) && empty($order_item_ids) && empty($event_signature)) {
         wp_send_json_error([
-            'message' => __('No variation IDs, event signature, or fields provided for export.', 'intersoccer-reports-rosters')
+            'message' => __('No variation IDs, order item IDs, event signature, or fields provided for export.', 'intersoccer-reports-rosters')
         ]);
     }
     
     // Additional validation for use_fields mode
-    if ($use_fields && $variation_id <= 0 && empty($variation_ids) && empty($activity_types)) {
+    if ($use_fields && $variation_id <= 0 && empty($variation_ids) && empty($order_item_ids) && empty($activity_types)) {
         wp_send_json_error([
-            'message' => __('No variation ID, variation IDs, or activity types provided for field-based export.', 'intersoccer-reports-rosters')
+            'message' => __('No variation ID, variation IDs, order item IDs, or activity types provided for field-based export.', 'intersoccer-reports-rosters')
         ]);
-    }
-    // Only log if debugging
-    if (defined('WP_DEBUG') && WP_DEBUG) {
-        error_log('InterSoccer Export: Initial filters - activity_types: ' . json_encode($activity_types) . ', age_group: ' . $age_group . ', times: ' . $times);
     }
     // Increase memory limit for exports - use reasonable limits for shared hosting
     $current_limit = ini_get('memory_limit');
@@ -207,6 +197,7 @@ function intersoccer_export_roster() {
         'product_id' => $product_id,
         'variation_id' => $variation_id,
         'variation_ids' => $variation_ids,
+        'order_item_ids' => $order_item_ids,
         'event_signature' => $event_signature,
         'camp_terms' => $camp_terms,
         'course_day' => $course_day,
@@ -224,15 +215,64 @@ function intersoccer_export_roster() {
         && intersoccer_use_oop_for('export')
         && function_exists('intersoccer_oop_get_roster_export_service');
 
-    if ($using_oop_export) {
+    // Prefer RosterDetailsService when we have roster-details params (order_item_ids, event_signature, or variation_ids)
+    // - ensures export matches exactly what the roster details page displays (same fallback logic)
+    $use_roster_details_for_export = $use_fields
+        && (function_exists('intersoccer_oop_get_roster_details_service'))
+        && (!empty($order_item_ids) || !empty($event_signature) || !empty($variation_ids));
+
+    if ($use_roster_details_for_export) {
         try {
-            $rosters = intersoccer_oop_get_roster_export_service()->getExportRows($export_filters);
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('InterSoccer Export (OOP): Retrieved ' . count($rosters) . ' rows for export.');
-                if (empty($rosters)) {
-                    error_log('InterSoccer Export (OOP): Empty result, falling back to legacy code.');
+            $details_service = intersoccer_oop_get_roster_details_service();
+            $result = $details_service->getRosterContext(
+                [
+                    'product_id' => $product_id,
+                    'variation_id' => $variation_id,
+                    'variation_ids' => $variation_ids,
+                    'order_item_ids' => $order_item_ids,
+                    'event_signature' => $event_signature,
+                    'camp_terms' => $camp_terms,
+                    'course_day' => $course_day,
+                    'venue' => $venue,
+                    'age_group' => $age_group,
+                    'times' => $times,
+                    'season' => '',
+                    'girls_only' => $girls_only,
+                ],
+                [
+                    'is_from_camps_page' => true,
+                    'is_from_courses_page' => true,
+                    'is_from_girls_only_page' => (bool) $girls_only,
+                    'is_from_tournaments_page' => false,
+                    'sort_by' => 'order_date',
+                    'sort_order' => 'desc',
+                ]
+            );
+            if ($result['success'] && !empty($result['rosters'])) {
+                foreach ($result['rosters'] as $r) {
+                    $arr = is_object($r) ? (array) $r : $r;
+                    if (isset($arr['dob']) && !isset($arr['player_dob'])) {
+                        $arr['player_dob'] = $arr['dob'];
+                    }
+                    if (empty($arr['player_name']) && (!empty($arr['first_name']) || !empty($arr['last_name']))) {
+                        $arr['player_name'] = trim(($arr['first_name'] ?? '') . ' ' . ($arr['last_name'] ?? ''));
+                    }
+                    if (empty($arr['product_name']) && !empty($arr['product_id'])) {
+                        $arr['product_name'] = 'N/A';
+                    }
+                    $rosters[] = $arr;
                 }
             }
+        } catch (\Exception $e) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer Export: RosterDetailsService fallback failed - ' . $e->getMessage());
+            }
+        }
+    }
+
+    if (empty($rosters) && $using_oop_export) {
+        try {
+            $rosters = intersoccer_oop_get_roster_export_service()->getExportRows($export_filters);
         } catch (\Exception $e) {
             error_log('InterSoccer Export (OOP): Failed to generate export dataset - ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
             $rosters = [];
@@ -256,19 +296,23 @@ function intersoccer_export_roster() {
         $query_params = [];
     
     if ($use_fields) {
-        // Prioritize variation_id filtering if provided (from roster details page)
+        // Prioritize variation_id, then order_item_ids (from displayed rosters), then event_signature, then variation_ids
         if ($variation_id > 0) {
             $where_clauses[] = $wpdb->prepare("variation_id = %d", $variation_id);
             $query_params[] = $variation_id;
-            // Only log if debugging
             if (defined('WP_DEBUG') && WP_DEBUG) {
                 error_log('InterSoccer Export: variation_id filter added: ' . $variation_id);
             }
+        } elseif (!empty($order_item_ids)) {
+            $placeholders = implode(',', array_fill(0, count($order_item_ids), '%d'));
+            $where_clauses[] = "order_item_id IN ($placeholders)";
+            $query_params = array_merge($query_params, $order_item_ids);
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer Export: order_item_ids filter added: ' . implode(',', $order_item_ids));
+            }
         } elseif (!empty($event_signature)) {
-            // Handle event_signature (new method for stable event identification)
             $where_clauses[] = "event_signature = %s";
             $query_params[] = $event_signature;
-            // Only log if debugging
             if (defined('WP_DEBUG') && WP_DEBUG) {
                 error_log('InterSoccer Export: event_signature filter added: ' . $event_signature);
             }
@@ -397,25 +441,6 @@ function intersoccer_export_roster() {
         }
     }
     
-    if ($rosters) {
-        // Log sample data including player_dob
-        $sample_data = array_map(function($row) {
-            $day_presence = !empty($row['day_presence']) ? json_decode($row['day_presence'], true) : [];
-            return [
-                'player_name' => $row['player_name'],
-                'player_dob' => $row['player_dob'] ?? 'NULL',
-                'parent_phone' => $row['parent_phone'],
-                'booking_type' => $row['booking_type'],
-                'activity_type' => $row['activity_type'],
-                'avs_number' => $row['avs_number'] ?? 'N/A'
-            ];
-        }, array_slice($rosters, 0, 1));
-        // Only log if debugging
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('InterSoccer: Export roster data sample with player_dob: ' . json_encode($sample_data));
-        }
-    }
-
     if (empty($rosters)) {
         wp_send_json_error([
             'message' => __('No roster data found for export.', 'intersoccer-reports-rosters')
@@ -489,14 +514,9 @@ function intersoccer_export_roster() {
     }
 
     // Prepare Excel data
-    $filename = 'roster_' . sanitize_title($english_product_name . '_' . ($base_roster['camp_terms'] ?: $base_roster['course_day']) . '_' . $base_roster['venue']) . '_' . date('Y-m-d_H-i-s') . '.xlsx';
+    $filename = 'roster_' . sanitize_title($english_product_name . '_' . (($base_roster['camp_terms'] ?? '') ?: ($base_roster['course_day'] ?? '')) . '_' . ($base_roster['venue'] ?? '')) . '_' . date('Y-m-d_H-i-s') . '.xlsx';
     
     try {
-        // Only log if debugging
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('InterSoccer: Starting Excel creation. Memory usage: ' . memory_get_usage(true) / 1024 / 1024 . ' MB');
-        }
-        
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet_title = substr(preg_replace('/[^A-Za-z0-9\-\s]/', '', $english_product_name . ' - ' . $base_roster['venue']), 0, 31);
@@ -629,7 +649,6 @@ function intersoccer_export_roster() {
                 $col++;
             }
 
-            error_log("InterSoccer: Set cell G{$row} to {$data[6]} (date of birth from player_dob: {$birth_date})");
             $row++;
         }
 
@@ -638,7 +657,7 @@ function intersoccer_export_roster() {
         $sheet->setCellValue('A' . ($row + 1), 'Product Name: ' . $english_product_name);
         $sheet->setCellValue('A' . ($row + 2), 'Venue: ' . ($base_roster['venue'] ?? 'N/A'));
         $sheet->setCellValue('A' . ($row + 3), 'Age Group: ' . ($base_roster['age_group'] ?? 'N/A'));
-        $sheet->setCellValue('A' . ($row + 4), 'Event: ' . ($base_roster['course_day'] ?: ($base_roster['camp_terms'] ?? 'N/A')));
+        $sheet->setCellValue('A' . ($row + 4), 'Event: ' . (($base_roster['course_day'] ?? '') ?: ($base_roster['camp_terms'] ?? 'N/A')));
         $sheet->setCellValue('A' . ($row + 5), 'Total Players: ' . count($rosters));
 
         // Generate file content to buffer (for AJAX response)
@@ -649,7 +668,10 @@ function intersoccer_export_roster() {
         
         // Log audit trail (only if not in production to avoid performance issues)
         if (defined('WP_DEBUG') && WP_DEBUG) {
-            intersoccer_log_audit('export_roster_excel', 'Exported for variation_ids: ' . implode(',', $variation_ids));
+            $audit_detail = !empty($order_item_ids) ? 'order_item_ids: ' . implode(',', $order_item_ids)
+                : (!empty($variation_ids) ? 'variation_ids: ' . implode(',', $variation_ids)
+                : ('event_signature: ' . ($event_signature ?: 'N/A')));
+            intersoccer_log_audit('export_roster_excel', 'Exported for ' . $audit_detail);
         }
         
         // Send JSON response with base64-encoded content (like booking reports)
