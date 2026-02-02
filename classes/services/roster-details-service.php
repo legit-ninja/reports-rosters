@@ -57,15 +57,46 @@ class RosterDetailsService {
         $criteria = $this->buildCriteria($filters, $context, false);
         $this->logger->debug('RosterDetailsService: Primary criteria', $criteria);
 
+        // When event_signature is provided, we must filter by it strictly - no fallback to broader criteria
+        $hasEventSignature = !empty($filters['event_signature']) && $filters['event_signature'] !== 'N/A';
+        if ($hasEventSignature && empty($criteria['event_signature'])) {
+            $criteria['event_signature'] = $filters['event_signature'];
+        }
+
         $collection = $this->repository->where($criteria);
         $rosterModels = $this->filterByValidOrderStatus($collection);
 
-        // Fallback when event signature present but no records found (mimics legacy LIKE behaviour)
-        if (empty($rosterModels) && !empty($filters['event_signature']) && $filters['event_signature'] !== 'N/A') {
-            $fallbackCriteria = $this->buildCriteria($filters, $context, true);
-            $this->logger->warning('RosterDetailsService: Fallback criteria used for roster details', $fallbackCriteria);
-            $collection = $this->repository->where($fallbackCriteria);
-            $rosterModels = $this->filterByValidOrderStatus($collection);
+        // When event_signature returns 0: roster rows may have NULL/empty event_signature; the listing
+        // displays a computed fallback (md5) but DB has empty. Use order_item_ids, variation_ids, or camp_terms+venue as fallback.
+        if (empty($rosterModels) && $hasEventSignature) {
+            $fallbackCriteria = [];
+            if (!empty($filters['order_item_ids'])) {
+                $fallbackCriteria['order_item_id'] = $filters['order_item_ids'];
+            } elseif (!empty($filters['variation_ids'])) {
+                $fallbackCriteria['variation_id'] = $filters['variation_ids'];
+            } elseif (($context['is_from_camps_page'] || $context['is_from_girls_only_page']) && $filters['camp_terms'] && $filters['camp_terms'] !== 'N/A' && $filters['venue']) {
+                $fallbackCriteria['camp_terms'] = $filters['camp_terms'];
+                $fallbackCriteria['venue'] = $filters['venue'];
+            } elseif (($context['is_from_courses_page'] || $context['is_from_girls_only_page']) && $filters['course_day'] && $filters['course_day'] !== 'N/A' && $filters['venue']) {
+                $fallbackCriteria['course_day'] = $filters['course_day'];
+                $fallbackCriteria['venue'] = $filters['venue'];
+            }
+            if (!empty($fallbackCriteria)) {
+                if (empty($fallbackCriteria['order_item_id'])) {
+                    if ($context['is_from_camps_page'] || ($context['is_from_girls_only_page'] && !empty($fallbackCriteria['camp_terms']))) {
+                        $fallbackCriteria['activity_type'] = ['Camp', 'Camp, Girls Only', "Camp, Girls' only"];
+                        $fallbackCriteria['girls_only'] = $context['is_from_girls_only_page'] || $filters['girls_only'] ? 1 : 0;
+                    } elseif ($context['is_from_courses_page'] || ($context['is_from_girls_only_page'] && !empty($fallbackCriteria['course_day']))) {
+                        $fallbackCriteria['activity_type'] = ['Course', 'Course, Girls Only', "Course, Girls' only"];
+                        $fallbackCriteria['girls_only'] = $context['is_from_girls_only_page'] || $filters['girls_only'] ? 1 : 0;
+                    } elseif ($context['is_from_girls_only_page'] || $filters['girls_only']) {
+                        $fallbackCriteria['girls_only'] = 1;
+                    }
+                }
+                $this->logger->debug('RosterDetailsService: Fallback (event_signature had no match)', $fallbackCriteria);
+                $collection = $this->repository->where($fallbackCriteria);
+                $rosterModels = $this->filterByValidOrderStatus($collection);
+            }
         }
 
         if (empty($rosterModels)) {
@@ -103,6 +134,7 @@ class RosterDetailsService {
         $filters['product_id'] = isset($filters['product_id']) ? (int) $filters['product_id'] : 0;
         $filters['variation_id'] = isset($filters['variation_id']) ? (int) $filters['variation_id'] : 0;
         $filters['variation_ids'] = isset($filters['variation_ids']) ? array_filter(array_map('intval', (array) $filters['variation_ids'])) : [];
+        $filters['order_item_ids'] = isset($filters['order_item_ids']) ? array_filter(array_map('intval', (array) $filters['order_item_ids'])) : [];
         $filters['event_signature'] = isset($filters['event_signature']) ? trim($filters['event_signature']) : '';
         $filters['camp_terms'] = isset($filters['camp_terms']) ? trim($filters['camp_terms']) : '';
         $filters['course_day'] = isset($filters['course_day']) ? trim($filters['course_day']) : '';
@@ -151,24 +183,34 @@ class RosterDetailsService {
             $criteria['variation_id'] = $filters['variation_ids'];
         }
 
+        if (!empty($filters['order_item_ids'])) {
+            $criteria['order_item_id'] = $filters['order_item_ids'];
+        }
+
         if (!$ignoreEventSignature && $filters['event_signature'] && $filters['event_signature'] !== 'N/A') {
             $criteria['event_signature'] = $filters['event_signature'];
         }
 
-        if ($context['is_from_girls_only_page'] || $filters['girls_only']) {
-            $criteria['girls_only'] = 1;
-        } elseif ($context['is_from_camps_page']) {
-            $criteria['activity_type'] = 'Camp';
-            $criteria['girls_only'] = 0;
-        } elseif ($context['is_from_courses_page']) {
-            $criteria['activity_type'] = 'Course';
-            $criteria['girls_only'] = 0;
-        } elseif ($context['is_from_tournaments_page']) {
-            $criteria['activity_type'] = 'Tournament';
-            $criteria['girls_only'] = 0;
+        // When order_item_ids or event_signature is present, they uniquely identify the roster group - do NOT add
+        // activity_type or girls_only, as those can exclude valid rows if DB values differ.
+        $useOrderItemIdsOnly = !empty($criteria['order_item_id']);
+        $useEventSignatureOnly = !empty($criteria['event_signature']);
+        if (!$useEventSignatureOnly && !$useOrderItemIdsOnly) {
+            if ($context['is_from_girls_only_page'] || $filters['girls_only']) {
+                $criteria['girls_only'] = 1;
+            } elseif ($context['is_from_camps_page']) {
+                $criteria['activity_type'] = 'Camp';
+                $criteria['girls_only'] = 0;
+            } elseif ($context['is_from_courses_page']) {
+                $criteria['activity_type'] = 'Course';
+                $criteria['girls_only'] = 0;
+            } elseif ($context['is_from_tournaments_page']) {
+                $criteria['activity_type'] = 'Tournament';
+                $criteria['girls_only'] = 0;
+            }
         }
 
-        $useAdditionalFilters = $ignoreEventSignature || empty($criteria['event_signature']);
+        $useAdditionalFilters = ($ignoreEventSignature || empty($criteria['event_signature'])) && empty($criteria['order_item_id']);
 
         if ($useAdditionalFilters) {
             if ($filters['camp_terms'] && $filters['camp_terms'] !== 'N/A') {

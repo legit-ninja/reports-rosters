@@ -67,7 +67,8 @@ class Roster extends AbstractModel {
         'course_times',
         'camp_times',
         'discount_applied',
-        'order_status'
+        'order_status',
+        'event_completed',
     ];
     
     /**

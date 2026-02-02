@@ -65,6 +65,7 @@ class RosterExportService {
 
         $variation_id   = isset($filters['variation_id']) ? (int) $filters['variation_id'] : 0;
         $variation_ids  = isset($filters['variation_ids']) ? array_filter(array_map('intval', (array) $filters['variation_ids'])) : [];
+        $order_item_ids = isset($filters['order_item_ids']) ? array_filter(array_map('intval', (array) $filters['order_item_ids'])) : [];
         $event_signature = $filters['event_signature'] ?? '';
         $product_id     = isset($filters['product_id']) ? (int) $filters['product_id'] : 0;
         $camp_terms     = $filters['camp_terms'] ?? '';
@@ -81,6 +82,10 @@ class RosterExportService {
         if ($variation_id > 0) {
             $where[] = 'variation_id = %d';
             $params[] = $variation_id;
+        } elseif (!empty($order_item_ids)) {
+            $placeholders = implode(',', array_fill(0, count($order_item_ids), '%d'));
+            $where[] = "order_item_id IN ({$placeholders})";
+            $params = array_merge($params, $order_item_ids);
         } elseif (!empty($event_signature)) {
             $where[] = 'event_signature = %s';
             $params[] = $event_signature;
@@ -171,8 +176,9 @@ class RosterExportService {
             ]);
         }
 
+        $row_count = is_array($rows) ? count($rows) : 0;
         $this->logger->debug('RosterExportService: Fetched rows via field filters', [
-            'count' => is_array($rows) ? count($rows) : 0,
+            'count' => $row_count,
             'filters' => $filters,
             'sql' => $sql,
             'last_error' => $this->wpdb->last_error,

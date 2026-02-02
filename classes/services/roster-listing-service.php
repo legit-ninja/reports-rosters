@@ -277,7 +277,7 @@ class RosterListingService {
 
             if (!isset($groups[$signature])) {
                 $season_raw = $row['season'] ?? 'N/A';
-                $season_display = intersoccer_normalize_season_for_display($season_raw);
+                $season_display = \intersoccer_normalize_season_for_display($season_raw);
 
                 $groups[$signature] = [
                     'event_signature' => $row['event_signature'] ?: $signature,
@@ -595,7 +595,7 @@ class RosterListingService {
     }
 
     private function initialGirlsGroup(array $row, string $season_raw, string $term_key): array {
-        $season_display = intersoccer_normalize_season_for_display($season_raw);
+        $season_display = \intersoccer_normalize_season_for_display($season_raw);
 
         return [
             'event_signature' => $row['event_signature'] ?: md5(json_encode($row)),
@@ -760,7 +760,7 @@ class RosterListingService {
 
             if (!isset($groups[$signature])) {
                 $season_raw = $this->deriveSeasonFromCamp($row);
-                $season_display = intersoccer_normalize_season_for_display($season_raw);
+                $season_display = \intersoccer_normalize_season_for_display($season_raw);
 
                 $groups[$signature] = [
                     'event_signature' => $row['event_signature'] ?: $signature,
@@ -773,6 +773,7 @@ class RosterListingService {
                     'girls_only' => $girls_only ? 1 : 0,
                     'season' => $season_display,
                     'season_raw' => $season_raw,
+                    'event_completed' => !empty($row['event_completed']) ? 1 : 0,
                     'variation_ids' => [],
                     'order_item_ids' => [],
                     'start_dates' => [],
@@ -781,6 +782,7 @@ class RosterListingService {
             }
 
             $group =& $groups[$signature];
+            $group['event_completed'] = max((int) ($group['event_completed'] ?? 0), !empty($row['event_completed']) ? 1 : 0);
 
             if (!empty($row['variation_id'])) {
                 $group['variation_ids'][$row['variation_id']] = $row['variation_id'];
