@@ -17,7 +17,8 @@
     "autoload": {
         "psr-4": {
             "InterSoccer\\ReportsRosters\\": "classes/"
-        }
+        },
+        "classmap": ["classes/"]
     },
     "autoload-dev": {
         "psr-4": {

@@ -236,6 +236,18 @@ deploy_to_server() {
         echo ""
     fi
     
+    # Install production-only vendor deps (excludes Mockery, PHPUnit, etc.)
+    # Prevents "Failed opening required .../mockery/.../helpers.php" on server
+    if [ "$DRY_RUN" = false ]; then
+        echo -e "${BLUE}Preparing production vendor (composer install --no-dev)...${NC}"
+        composer install --no-dev --no-interaction
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}❌ composer install --no-dev failed!${NC}"
+            exit 1
+        fi
+        echo ""
+    fi
+    
     # Build rsync command WITHOUT --delete flag
     # Using --delete is dangerous - could delete other plugins if path is wrong!
     RSYNC_CMD="rsync -avz"

@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2.2.0] - 2025-01-XX
+
+### OOP-Only Cutover
+
+OOP bootstrap is now unconditional; legacy procedural runtime paths have been retired.
+
+### Changed
+- **OOP Always Active** - No `INTERSOCCER_OOP_ENABLED` or feature flags required
+- **Removed** `includes/woocommerce-orders.php` - Order hooks and cron handled by `HooksManager` and `OrderProcessor`
+- **Compatibility wrappers** - `intersoccer_schedule_order_completion_check` and `intersoccer_order_has_confirmed_rosters` in `oop-adapter.php` for `OrderProcessor`
+- **`intersoccer_update_roster_entry`** - Delegates to OOP `OrderProcessor` when active
+- **`intersoccer_safe_populate_rosters`** - Delegates to OOP `OrderProcessor`
+- **`intersoccer_use_oop_for`** - Always returns true when OOP active (no per-feature toggles)
+
+### Deprecated
+- `INTERSOCCER_OOP_ENABLED` - Defined as true for backward compat; no longer gates behavior
+- Legacy `intersoccer_*` functions - Use OOP services directly where possible
+
+---
+
 ## [2.0.0] - 2025-11-05
 
 ### 🎉 Major Release - OOP Architecture & Hybrid Mode
