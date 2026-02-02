@@ -14,7 +14,6 @@ if (!defined('ABSPATH')) {
  * Handle AJAX filter request for booking report.
  */
 function intersoccer_filter_report_callback() {
-    error_log("=== InterSoccer AJAX: Handler called at " . current_time('mysql') . " ===");
     check_ajax_referer('intersoccer_reports_filter', 'nonce');
 
     $start_date = isset($_POST['start_date']) ? sanitize_text_field($_POST['start_date']) : '';
@@ -139,8 +138,6 @@ function intersoccer_filter_report_callback() {
     
     // Calculate record count
     $record_count = isset($report_data['data']) ? count($report_data['data']) : 0;
-    error_log("InterSoccer AJAX: Record count: " . $record_count);
-    
     wp_send_json_success([
         'table' => $table_html, 
         'totals' => $totals_html,
