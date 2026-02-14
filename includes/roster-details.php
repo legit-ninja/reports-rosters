@@ -393,7 +393,15 @@ function intersoccer_render_roster_details_page() {
     
     foreach ($rosters as $row) {
         $is_unknown = $row->player_name === 'Unknown Attendee';
-        $day_presence = !empty($row->day_presence) ? json_decode($row->day_presence, true) : [];
+        $day_presence = !empty($row->day_presence) ? (is_string($row->day_presence) ? json_decode($row->day_presence, true) : $row->day_presence) : [];
+        if (empty($day_presence) && function_exists('intersoccer_compute_day_presence')) {
+            $bt = $row->booking_type ?? '';
+            $sd = $row->selected_days ?? '';
+            if (is_array($sd)) {
+                $sd = implode(', ', $sd);
+            }
+            $day_presence = intersoccer_compute_day_presence($bt, $sd);
+        }
         
         echo '<tr data-order-item-id="' . esc_attr($row->order_item_id) . '">';
         echo '<td><input type="checkbox" class="player-select"></td>'; // New: Checkbox for selection

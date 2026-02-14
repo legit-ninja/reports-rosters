@@ -60,6 +60,7 @@ class Roster extends AbstractModel {
         'event_details',
         'booking_type',
         'selected_days',
+        'day_presence',
         'season',
         'region',
         'city',
