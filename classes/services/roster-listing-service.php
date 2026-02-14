@@ -740,6 +740,147 @@ class RosterListingService {
         ];
     }
 
+    private function aggregateTournamentGroups(array $rosters): array {
+        $groups = [];
+        $filters = [
+            'seasons' => [],
+            'venues' => [],
+            'age_groups' => [],
+            'cities' => [],
+            'times' => [],
+        ];
+
+        foreach ($rosters as $row) {
+            $season_raw = isset($row['season']) && $row['season'] !== '' ? $row['season'] : 'N/A';
+            $season_display = \intersoccer_normalize_season_for_display($season_raw);
+            $venue = isset($row['venue']) && $row['venue'] !== '' ? $row['venue'] : 'N/A';
+            $city = isset($row['city']) && $row['city'] !== '' ? $row['city'] : 'N/A';
+            $age_group = isset($row['age_group']) && $row['age_group'] !== '' ? $row['age_group'] : 'N/A';
+            $times = isset($row['times']) && $row['times'] !== '' ? $row['times'] : 'N/A';
+            $product_name = isset($row['product_name']) && $row['product_name'] !== '' ? $row['product_name'] : __('Tournament', 'intersoccer-reports-rosters');
+
+            $product_id = isset($row['product_id']) ? (int) $row['product_id'] : 0;
+            if (function_exists('intersoccer_get_english_product_name')) {
+                $product_name = intersoccer_get_english_product_name($product_name, $product_id);
+            }
+
+            $signature = !empty($row['event_signature'])
+                ? $row['event_signature']
+                : md5($product_name . '|' . $venue . '|' . $times . '|' . ($row['start_date'] ?? ''));
+
+            if (!isset($groups[$signature])) {
+                $groups[$signature] = [
+                    'event_signature' => !empty($row['event_signature']) ? $row['event_signature'] : $signature,
+                    'season' => $season_display,
+                    'season_raw' => $season_raw,
+                    'venue' => $venue,
+                    'city' => $city,
+                    'age_group' => $age_group,
+                    'times' => $times,
+                    'product_name' => $product_name,
+                    'variation_ids' => [],
+                    'order_item_ids' => [],
+                    'start_dates' => [],
+                    'end_dates' => [],
+                    'total_players' => 0,
+                ];
+            }
+
+            $group =& $groups[$signature];
+            if (!empty($row['variation_id'])) {
+                $group['variation_ids'][$row['variation_id']] = $row['variation_id'];
+            }
+            if (!empty($row['order_item_id'])) {
+                $group['order_item_ids'][$row['order_item_id']] = true;
+            }
+            if (!empty($row['start_date']) && $row['start_date'] !== '1970-01-01') {
+                $group['start_dates'][] = $row['start_date'];
+            }
+            if (!empty($row['end_date']) && $row['end_date'] !== '1970-01-01') {
+                $group['end_dates'][] = $row['end_date'];
+            }
+
+            if ($season_display !== 'N/A') {
+                $filters['seasons'][$season_display] = $season_display;
+            }
+            if ($venue !== 'N/A') {
+                $filters['venues'][$venue] = $venue;
+            }
+            if ($age_group !== 'N/A') {
+                $filters['age_groups'][$age_group] = $age_group;
+            }
+            if ($city !== 'N/A') {
+                $filters['cities'][$city] = $city;
+            }
+            if ($times !== 'N/A') {
+                $filters['times'][$times] = $times;
+            }
+        }
+
+        foreach ($groups as &$group) {
+            $group['variation_ids'] = array_values($group['variation_ids']);
+            $group['order_item_ids'] = array_keys($group['order_item_ids']);
+            $group['total_players'] = count($group['order_item_ids']);
+            $group['corrected_start_date'] = $this->getEarliestDate($group['start_dates']);
+            $group['corrected_end_date'] = $this->getLatestDate($group['end_dates']);
+            unset($group['start_dates'], $group['end_dates']);
+        }
+        unset($group);
+
+        foreach ($filters as $key => $values) {
+            $filters[$key] = array_values(array_unique($values));
+            sort($filters[$key], SORT_NATURAL | SORT_FLAG_CASE);
+        }
+
+        return [
+            'groups' => $groups,
+            'filters' => $filters,
+        ];
+    }
+
+    private function applyTournamentFilters(array $groups, array $filters): array {
+        return array_values(array_filter($groups, function ($group) use ($filters) {
+            if ($filters['season'] && $group['season'] !== $filters['season'] && ($group['season_raw'] ?? '') !== $filters['season']) {
+                return false;
+            }
+            if ($filters['venue'] && $group['venue'] !== $filters['venue']) {
+                return false;
+            }
+            if ($filters['age_group'] && $group['age_group'] !== $filters['age_group']) {
+                return false;
+            }
+            if ($filters['city'] && $group['city'] !== $filters['city']) {
+                return false;
+            }
+            if ($filters['times'] && $group['times'] !== $filters['times']) {
+                return false;
+            }
+            return true;
+        }));
+    }
+
+    private function groupTournamentsBySeason(array $groups): array {
+        usort($groups, function ($a, $b) {
+            return strcmp($a['venue'], $b['venue'])
+                ?: strcmp($a['age_group'], $b['age_group'])
+                ?: strcmp($a['times'], $b['times']);
+        });
+
+        $grouped = [];
+        foreach ($groups as $group) {
+            $season = $group['season'] ?: 'N/A';
+            if (!isset($grouped[$season])) {
+                $grouped[$season] = [];
+            }
+            $grouped[$season][] = $group;
+        }
+
+        if (!empty($grouped)) {
+            krsort($grouped, SORT_NATURAL);
+        }
+
+        return $grouped;
+    }
 
     private function aggregateCampGroups(array $rosters, bool $girls_only): array {
         $groups = [];
