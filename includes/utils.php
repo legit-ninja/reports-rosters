@@ -1505,22 +1505,24 @@ function intersoccer_test_process_orders() {
     error_log('InterSoccer: Test completed');
 }
 
-// Add this action to run the test (remove after testing)
-add_action('admin_init', 'intersoccer_test_process_orders');
+// Disabled: was running on every admin load and can cause 500s / performance issues.
+// Re-enable only for local debugging by defining INTERSOCCER_RUN_TEST_PROCESS_ORDERS.
+if (defined('INTERSOCCER_RUN_TEST_PROCESS_ORDERS') && INTERSOCCER_RUN_TEST_PROCESS_ORDERS) {
+    add_action('admin_init', 'intersoccer_test_process_orders');
+}
 
 function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
-    error_log('InterSoccer: get_product_type_safe called with product_id: ' . $product_id . ', variation_id: ' . $variation_id);
-    
     // Check if the Product Variations plugin function exists
     if (!function_exists('intersoccer_get_product_type')) {
-        error_log('InterSoccer: CRITICAL - intersoccer_get_product_type function not found from Product Variations plugin');
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer: CRITICAL - intersoccer_get_product_type function not found from Product Variations plugin');
+        }
         return 'unknown';
     }
     
     // Try variation ID first if provided
     if ($variation_id && $variation_id > 0) {
         $type = intersoccer_get_product_type($variation_id);
-        error_log('InterSoccer: Product type for variation ' . $variation_id . ': ' . var_export($type, true));
         if (!empty($type)) {
             return $type;
         }
@@ -1528,13 +1530,11 @@ function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
     
     // Try parent product ID
     $type = intersoccer_get_product_type($product_id);
-    error_log('InterSoccer: Product type for parent ' . $product_id . ': ' . var_export($type, true));
     if (!empty($type)) {
         return $type;
     }
     
     // Manual fallback if the function fails
-    error_log('InterSoccer: Manual fallback for product type detection');
     return intersoccer_manual_product_type_detection($product_id, $variation_id);
 }
 

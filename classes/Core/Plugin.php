@@ -201,10 +201,12 @@ final class Plugin {
         add_action('admin_init', [$this, 'init_admin'], 10);
         add_action('plugins_loaded', [$this, 'init_woocommerce'], 20);
         
-        // Add debugging for hook execution
-        add_action('wp_loaded', function() {
-            $this->logger->debug('InterSoccer Plugin: WordPress loaded, plugin hooks initialized');
-        });
+        // Debug log only when explicitly enabled to avoid overhead on every request
+        if (defined('INTERSOCCER_DEBUG_LOAD') && INTERSOCCER_DEBUG_LOAD) {
+            add_action('wp_loaded', function() {
+                $this->logger->debug('InterSoccer Plugin: WordPress loaded, plugin hooks initialized');
+            });
+        }
     }
     
     /**

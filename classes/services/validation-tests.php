@@ -531,10 +531,9 @@ function run_services_validation_tests() {
     }
 }
 
-// Run tests if this file is accessed directly with proper WordPress context
-if (function_exists('wp_loaded') || defined('WP_DEBUG')) {
+// Do NOT auto-run on every request. These tests are heavy (pricing, cache, usleep).
+// Run only when explicitly requested: define INTERSOCCER_RUN_VALIDATION_TESTS before loading this file
+// (e.g. in wp-config.php for one request, or via a dedicated admin/CLI entry point).
+if (defined('INTERSOCCER_RUN_VALIDATION_TESTS') && INTERSOCCER_RUN_VALIDATION_TESTS) {
     run_services_validation_tests();
-} else {
-    echo "This test script must be run within a WordPress environment.\n";
-    echo "Include this file in a WordPress page or run via WP-CLI.\n";
 }
