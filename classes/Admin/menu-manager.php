@@ -291,6 +291,7 @@ class MenuManager {
     }
 
     public function render_advanced(): void {
+        $this->require_include('roster-editor.php');
         $this->require_include('advanced.php');
         if (function_exists('intersoccer_render_advanced_page')) {
             intersoccer_render_advanced_page();
