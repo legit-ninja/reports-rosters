@@ -285,7 +285,8 @@ class Dependencies {
         $missing_plugins = [];
         
         foreach ($this->required_plugins as $plugin_path => $plugin_info) {
-            $is_active = $this->is_plugin_active($plugin_path);
+            $resolved_path = $this->resolve_plugin_path($plugin_path);
+            $is_active = $this->is_plugin_active($resolved_path);
             
             if (!$is_active) {
                 $all_active = false;
@@ -297,8 +298,8 @@ class Dependencies {
                     'critical' => $plugin_info['critical']
                 ]);
             } else {
-                // Check version if plugin is active
-                $version_ok = $this->check_plugin_version($plugin_path, $plugin_info);
+                // Check version if plugin is active (use resolved path for versioned dirs)
+                $version_ok = $this->check_plugin_version($resolved_path, $plugin_info);
                 if (!$version_ok) {
                     $all_active = false;
                 }
@@ -315,9 +316,34 @@ class Dependencies {
     }
     
     /**
+     * Resolve plugin path to the actual active path when directory name differs (e.g. versioned folders).
+     * WordPress uses the folder name as part of the path (e.g. intersoccer-product-variations-1.12.8/...).
+     * Returns the path from active_plugins that has the same main file, or the given path if no match.
+     *
+     * @param string $plugin_path Canonical path e.g. intersoccer-product-variations/intersoccer-product-variations.php
+     * @return string Resolved path for use with is_plugin_active / get_plugin_data
+     */
+    private function resolve_plugin_path($plugin_path) {
+        if (!function_exists('is_plugin_active')) {
+            require_once(ABSPATH . 'wp-admin/includes/plugin.php');
+        }
+        if (is_plugin_active($plugin_path)) {
+            return $plugin_path;
+        }
+        $main_file = basename($plugin_path);
+        $active = (array) get_option('active_plugins', []);
+        foreach ($active as $path) {
+            if ($main_file === basename($path)) {
+                return $path;
+            }
+        }
+        return $plugin_path;
+    }
+
+    /**
      * Check if plugin is active
      * 
-     * @param string $plugin_path Plugin path
+     * @param string $plugin_path Plugin path (canonical or actual; use resolve_plugin_path for versioned dirs)
      * @return bool Plugin is active
      */
     private function is_plugin_active($plugin_path) {
@@ -453,13 +479,14 @@ class Dependencies {
                 ]);
             }
             
-            // Check database permissions
+            // Check database permissions (CREATE TEMPORARY TABLE etc.). Log only; do not block activation,
+            // as many hosts restrict this and the plugin does not require temp tables for core functionality.
             $permissions_ok = $this->check_database_permissions();
             
             // Check character set support
             $charset_ok = $this->check_database_charset();
             
-            $all_ok = $version_adequate && $permissions_ok && $charset_ok;
+            $all_ok = $version_adequate && $charset_ok;
             
             $this->logger->debug('Database requirements check', [
                 'version' => $db_version,
@@ -586,9 +613,10 @@ class Dependencies {
         
         $missing = [];
         
-        // Check required plugins
+        // Check required plugins (resolve path so versioned dirs e.g. plugin-1.12.8 are recognized)
         foreach ($this->required_plugins as $plugin_path => $plugin_info) {
-            if (!$this->is_plugin_active($plugin_path)) {
+            $resolved_path = $this->resolve_plugin_path($plugin_path);
+            if (!$this->is_plugin_active($resolved_path)) {
                 $missing[] = $plugin_info['name'];
             }
         }
