@@ -22,6 +22,7 @@ use InterSoccer\ReportsRosters\Data\Repositories\PlayerRepository;
 use InterSoccer\ReportsRosters\Data\Repositories\RosterRepository;
 use InterSoccer\ReportsRosters\Services\DataValidator;
 use InterSoccer\ReportsRosters\Services\EventMatcher;
+use InterSoccer\ReportsRosters\Services\EventSignatureGenerator;
 use InterSoccer\ReportsRosters\Services\PlayerMatcher;
 use InterSoccer\ReportsRosters\Exceptions\ValidationException;
 use InterSoccer\ReportsRosters\Exceptions\DatabaseException;
@@ -86,6 +87,13 @@ class RosterBuilder {
      * @var PlayerMatcher
      */
     private $player_matcher;
+
+    /**
+     * Event signature generator
+     *
+     * @var EventSignatureGenerator
+     */
+    private $signature_generator;
     
     /**
      * Build statistics
@@ -167,7 +175,8 @@ class RosterBuilder {
         $this->validator = $validator ?: new DataValidator($this->logger);
         $this->event_matcher = $event_matcher ?: new EventMatcher($this->logger);
         $this->player_matcher = $player_matcher ?: new PlayerMatcher($this->logger);
-        
+        $this->signature_generator = new EventSignatureGenerator();
+
         $this->init_build_stats();
     }
     
@@ -255,8 +264,14 @@ class RosterBuilder {
             'validate_data' => true,
             'skip_duplicates' => false,
             'update_existing' => true,
+            'date_from' => '',
+            'date_to' => '',
         ];
         $options = array_merge($defaults, $options);
+        // When a date range is set, do not delete obsolete (only sync orders in range)
+        if (!empty($options['date_from']) || !empty($options['date_to'])) {
+            $options['delete_obsolete'] = false;
+        }
 
         $results = [
             'synced' => 0,
@@ -282,15 +297,35 @@ class RosterBuilder {
                 }
             }
 
-            $orders = wc_get_orders([
+            $order_args = [
                 'limit' => -1,
                 'status' => $options['status'],
                 'return' => 'objects',
-            ]);
+            ];
+            $date_from = isset($options['date_from']) ? trim((string) $options['date_from']) : '';
+            $date_to = isset($options['date_to']) ? trim((string) $options['date_to']) : '';
+            if ($date_from !== '' || $date_to !== '') {
+                $from = $date_from !== '' ? date('Y-m-d', strtotime($date_from)) : '';
+                $to = $date_to !== '' ? date('Y-m-d', strtotime($date_to)) : '';
+                if ($from !== '' && $to !== '') {
+                    $order_args['date_created'] = $from . '...' . $to;
+                } elseif ($from !== '') {
+                    $order_args['date_created'] = '>=' . $from;
+                } else {
+                    $order_args['date_created'] = '<=' . $to;
+                }
+            }
+            $orders = wc_get_orders($order_args);
 
-            $this->logger->info('Orders fetched for reconciliation', ['count' => count($orders)]);
+            $this->logger->info('Orders fetched for reconciliation', ['count' => count($orders), 'date_from' => $date_from ?: null, 'date_to' => $date_to ?: null]);
 
             foreach ($orders as $order) {
+                // Skip refunds and other non-order types that don't support get_customer_id()
+                if (!method_exists($order, 'get_customer_id')) {
+                    $this->logger->debug('Skipping non-order object in reconciliation', ['order_id' => $order->get_id()]);
+                    continue;
+                }
+
                 $order_id = $order->get_id();
 
                 try {
@@ -421,7 +456,8 @@ class RosterBuilder {
                 return new RostersCollection();
             }
             
-            return $this->processOrderItems($order, $options);
+            $rosters = $this->processOrderItems($order, $options);
+            return $rosters;
             
         } catch (\Exception $e) {
             $this->logger->error('Failed to build roster from order', [
@@ -531,11 +567,12 @@ class RosterBuilder {
         $rosters = new RostersCollection();
         $order_id = $order->get_id();
         $customer_id = $order->get_customer_id();
-        
+
+        $item_count = count($order->get_items());
         $this->logger->debug('Processing order items', [
             'order_id' => $order_id,
             'customer_id' => $customer_id,
-            'item_count' => count($order->get_items())
+            'item_count' => $item_count
         ]);
         
         if (!$customer_id) {
@@ -605,9 +642,9 @@ class RosterBuilder {
             throw new ValidationException("Order item missing activity type");
         }
         
-        // Get assigned players for this item
-        $assigned_players = $this->player_matcher->getAssignedPlayers($item, $customer_players);
-        
+        // Get assigned players for this item (skip age/gender validation so explicit customer assignment is honoured on roster)
+        $assigned_players = $this->player_matcher->getAssignedPlayers($item, $customer_players, ['skip_age_gender_validation' => true]);
+        $assigned_count = $assigned_players->count();
         if ($assigned_players->isEmpty()) {
             $this->build_stats['warnings'][] = "Order {$order->get_id()}, Item {$item_id}: No assigned players found";
             $this->logger->warning('Order item has no assigned players', [
@@ -629,7 +666,6 @@ class RosterBuilder {
                 
                 // Create or update roster entry
                 $roster = $this->createOrUpdateRoster($roster_data, $options);
-                
                 if ($roster) {
                     $rosters->add($roster);
                     $this->build_stats['players_processed']++;
@@ -667,9 +703,10 @@ class RosterBuilder {
             'order_id' => $order->get_id(),
             'order_item_id' => $item_id,
             'product_id' => $item->get_product_id(),
-            'variation_id' => $variation_id ?: null,
+            'variation_id' => $variation_id ?: 0,
             'customer_id' => $order->get_customer_id(),
-            'order_status' => $order->get_status()
+            'order_status' => $order->get_status(),
+            'product_name' => $product ? $product->get_name() : '',
         ];
         
         // Extract metadata from order item
@@ -690,6 +727,8 @@ class RosterBuilder {
 
                 if ($field === 'activity_type') {
                     $order_data[$field] = $this->normalizeActivityTypeValue($value);
+                } elseif ($field === 'booking_type') {
+                    $order_data[$field] = $this->normalizeBookingTypeValue($value);
                 } else {
                     $order_data[$field] = $value;
                 }
@@ -716,8 +755,35 @@ class RosterBuilder {
             }
         }
         
+        // Venue fallback: if venue was not set from meta (e.g. different locale key), use variation attribute
+        if (empty($order_data['venue']) && !empty($order_data['intersoccer-venues'])) {
+            $order_data['venue'] = $order_data['intersoccer-venues'];
+        }
+        
         // Parse and validate dates
         $order_data = $this->parseDates($order_data);
+        
+        // Strip HTML from price meta and ensure numeric values for roster table
+        foreach (['base_price', 'discount_amount'] as $price_key) {
+            if (isset($order_data[$price_key]) && $order_data[$price_key] !== '' && $order_data[$price_key] !== null) {
+                $val = $order_data[$price_key];
+                if (!is_numeric($val)) {
+                    $val = preg_replace('/[^0-9.]/', '', wp_strip_all_tags((string) $val));
+                }
+                $order_data[$price_key] = $val !== '' ? (float) $val : 0.0;
+            }
+        }
+        if (!isset($order_data['final_price']) || $order_data['final_price'] === '') {
+            $base = (float) ($order_data['base_price'] ?? 0);
+            $disc = (float) ($order_data['discount_amount'] ?? 0);
+            $order_data['final_price'] = max(0, $base - $disc);
+        } else {
+            $val = $order_data['final_price'];
+            if (!is_numeric($val)) {
+                $val = preg_replace('/[^0-9.]/', '', wp_strip_all_tags((string) $val));
+            }
+            $order_data['final_price'] = $val !== '' ? (float) $val : 0.0;
+        }
         
         return $order_data;
     }
@@ -771,6 +837,7 @@ class RosterBuilder {
                 'lieux intersoccer',
                 'lieu intersoccer',
                 'intersoccer-standorte',
+                'sites intersoccer',  // e.g. "Sites InterSoccer" (FR/display)
             ],
             'Age Group' => [
                 'groupe dage',
@@ -969,6 +1036,39 @@ class RosterBuilder {
     }
     
     /**
+     * Normalize booking type to English for roster storage.
+     *
+     * @param mixed $value Raw value from order meta (e.g. "Journée complète", "Buchungstyp").
+     * @return string Canonical English: "Full Week", "Single Day(s)", or "Full Term".
+     */
+    private function normalizeBookingTypeValue($value): string {
+        if (!is_string($value) || $value === '') {
+            return (string) $value;
+        }
+        $normalized = $this->normalizeComparisonString($value);
+        // Full Week: EN, FR (journée complète), DE (ganze woche)
+        if (strpos($normalized, 'full week') !== false || strpos($normalized, 'journee complete') !== false
+            || strpos($normalized, 'ganze woche') !== false) {
+            return 'Full Week';
+        }
+        // Single Day(s): EN, FR (jour(s) sélectionné(s)), DE (einzelne tage, ausgewählte tage)
+        if (strpos($normalized, 'single day') !== false || strpos($normalized, 'jours selectionnes') !== false
+            || strpos($normalized, 'ausgewahlte tage') !== false || strpos($normalized, 'einzeltag') !== false) {
+            return 'Single Day(s)';
+        }
+        // Full Term: EN, FR (trimestre), DE (voller Begriff / full term)
+        if (strpos($normalized, 'full term') !== false || strpos($normalized, 'trimestre') !== false
+            || strpos($normalized, 'voller begriff') !== false) {
+            return 'Full Term';
+        }
+        // Already English or unknown
+        if (in_array(trim($value), ['Full Week', 'Single Day(s)', 'Full Term'], true)) {
+            return trim($value);
+        }
+        return trim($value);
+    }
+    
+    /**
      * Extract customer contact data
      * 
      * @param \WC_Order $order WooCommerce order
@@ -1005,11 +1105,18 @@ class RosterBuilder {
             'medical_conditions' => $player->medical_conditions,
             'dietary_needs' => $player->dietary_needs,
             
-            // Customer contact data
+            // Customer contact data (parent = billing contact)
             'parent_email' => $customer_data['email'],
             'parent_phone' => $customer_data['phone'],
+            'parent_first_name' => $customer_data['first_name'] ?? '',
+            'parent_last_name' => $customer_data['last_name'] ?? '',
             'emergency_contact' => $player->emergency_contact ?: $customer_data['emergency_contact'],
             'emergency_phone' => $player->emergency_phone ?: $customer_data['emergency_phone'],
+            
+            // Times/term/days for DB columns
+            'times' => $order_data['camp_times'] ?? $order_data['course_times'] ?? '',
+            'term' => $order_data['course_day'] ?? $order_data['camp_terms'] ?? '',
+            'days_selected' => isset($order_data['selected_days']) ? (is_array($order_data['selected_days']) ? implode(', ', $order_data['selected_days']) : $order_data['selected_days']) : '',
         ]);
         
         // Normalize event data to English for consistent storage
@@ -1042,15 +1149,16 @@ class RosterBuilder {
             // Add start_date back to normalized data for signature generation (normalization doesn't modify dates)
             $normalized_event_data['start_date'] = $roster_data['start_date'] ?? '';
             
-            // Use normalized values for storage
-            $roster_data['venue'] = $normalized_event_data['venue'] ?? $roster_data['venue'] ?? '';
-            $roster_data['age_group'] = $normalized_event_data['age_group'] ?? $roster_data['age_group'] ?? '';
-            $roster_data['camp_terms'] = $normalized_event_data['camp_terms'] ?? $roster_data['camp_terms'] ?? '';
-            $roster_data['course_day'] = $normalized_event_data['course_day'] ?? $roster_data['course_day'] ?? '';
-            $roster_data['times'] = $normalized_event_data['times'] ?? $roster_data['times'] ?? '';
+            // Use normalized values for storage (may be slugs from OOP normalizer)
+            // Resolve to English (default-language) term names for consistent roster display
+            $roster_data['venue'] = $this->termNameForStorage($normalized_event_data['venue'] ?? $roster_data['venue'] ?? '', 'pa_intersoccer-venues');
+            $roster_data['age_group'] = $this->termNameForStorage($normalized_event_data['age_group'] ?? $roster_data['age_group'] ?? '', 'pa_age-group');
+            $roster_data['camp_terms'] = $this->termNameForStorage($normalized_event_data['camp_terms'] ?? $roster_data['camp_terms'] ?? '', 'pa_camp-terms');
+            $roster_data['course_day'] = $this->termNameForStorage($normalized_event_data['course_day'] ?? $roster_data['course_day'] ?? '', 'pa_course-day');
+            $roster_data['times'] = $this->termNameForStorage($normalized_event_data['times'] ?? $roster_data['times'] ?? '', 'pa_camp-times', 'pa_course-times');
             $roster_data['season'] = $normalized_event_data['season'] ?? $roster_data['season'] ?? '';
-            $roster_data['city'] = $normalized_event_data['city'] ?? $roster_data['city'] ?? '';
-            $roster_data['canton_region'] = $normalized_event_data['canton_region'] ?? $roster_data['canton_region'] ?? '';
+            $roster_data['city'] = $this->termNameForStorage($normalized_event_data['city'] ?? $roster_data['city'] ?? '', 'pa_city');
+            $roster_data['canton_region'] = $this->termNameForStorage($normalized_event_data['canton_region'] ?? $roster_data['canton_region'] ?? '', 'pa_canton-region');
             $roster_data['activity_type'] = $normalized_event_data['activity_type'] ?? $roster_data['activity_type'] ?? '';
             
             // Generate event signature using normalized values (same as stored values)
@@ -1062,6 +1170,34 @@ class RosterBuilder {
         $roster_data['event_details'] = $this->buildEventDetails($roster_data);
         
         return $roster_data;
+    }
+    
+    /**
+     * Get English (default-language) term name for roster storage.
+     * Ensures all roster fields are stored in English regardless of order language.
+     *
+     * @param string $value Term slug or name (any language)
+     * @param string $taxonomy Primary taxonomy (e.g. pa_intersoccer-venues)
+     * @param string|null $alt_taxonomy Optional second taxonomy to try (e.g. pa_course-times for times)
+     * @return string English term name or original value if not resolved
+     */
+    private function termNameForStorage($value, $taxonomy, $alt_taxonomy = null) {
+        if ($value === '' || $value === null) {
+            return '';
+        }
+        if (function_exists('intersoccer_get_term_name')) {
+            $name = intersoccer_get_term_name($value, $taxonomy);
+            if ($name !== 'N/A') {
+                return $name;
+            }
+            if ($alt_taxonomy !== null) {
+                $name = intersoccer_get_term_name($value, $alt_taxonomy);
+                if ($name !== 'N/A') {
+                    return $name;
+                }
+            }
+        }
+        return (string) $value;
     }
     
     /**
@@ -1235,6 +1371,26 @@ class RosterBuilder {
             }
             
             if ($options['update_existing']) {
+                // Do not update closed or past events (avoids re-opening rosters for staff reconciliation)
+                $is_closed = isset($existing_roster->event_completed) && (int) $existing_roster->event_completed === 1;
+                $end_date = isset($existing_roster->end_date) ? $existing_roster->end_date : null;
+                if ($end_date instanceof \DateTimeInterface) {
+                    $end_date = $end_date->format('Y-m-d');
+                } elseif (is_object($end_date) && method_exists($end_date, 'format')) {
+                    $end_date = $end_date->format('Y-m-d');
+                } elseif ($end_date !== null && $end_date !== '') {
+                    $end_date = (string) $end_date;
+                }
+                $is_past = $end_date !== null && $end_date !== '' && $end_date < date('Y-m-d');
+                if ($is_closed || $is_past) {
+                    $this->logger->debug('Skipping update for closed or past event roster', [
+                        'existing_id' => $existing_roster->id,
+                        'order_id' => $roster_data['order_id'],
+                        'event_completed' => $existing_roster->event_completed ?? null,
+                        'end_date' => $end_date
+                    ]);
+                    return $existing_roster;
+                }
                 // Preserve event_completed status if it was set to 1 (closed)
                 // Also check if any roster with the same event_signature is marked as completed
                 $event_signature_completed = false;
@@ -1859,7 +2015,7 @@ class RosterBuilder {
                     
                     foreach ($order->get_items() as $item_id => $item) {
                         $order_data = $this->extractOrderItemData($order, $item_id, $item);
-                        $assigned_players = $this->player_matcher->getAssignedPlayers($item, $customer_players);
+                        $assigned_players = $this->player_matcher->getAssignedPlayers($item, $customer_players, ['skip_age_gender_validation' => true]);
                         
                         if (!empty($order_data['activity_type'])) {
                             $preview_results['activity_breakdown'][$order_data['activity_type']] = 
