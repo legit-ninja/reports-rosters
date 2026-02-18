@@ -128,11 +128,11 @@ class DataValidator {
      * @return true|string True if valid, error message if invalid
      */
     private function apply_validation_rule($field_name, $value, $rule_name, array $params = []) {
-        // Handle nullable fields
-        if ($rule_name === 'nullable' && ($value === null || $value === '')) {
+        // Nullable: field is allowed to be null/empty; rule is always satisfied
+        if ($rule_name === 'nullable') {
             return true;
         }
-        
+
         // Skip validation for null/empty values unless required
         if (($value === null || $value === '') && $rule_name !== 'required') {
             return true;

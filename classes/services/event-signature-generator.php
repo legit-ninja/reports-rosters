@@ -92,7 +92,7 @@ class EventSignatureGenerator {
             
             // Generate MD5 hash
             $signature = md5($signature_string);
-            
+
             $this->logger->debug('Generated event signature', [
                 'components' => $components,
                 'signature' => $signature
