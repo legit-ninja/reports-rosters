@@ -13,7 +13,7 @@
 namespace InterSoccer\ReportsRosters\Data\Models;
 
 use InterSoccer\ReportsRosters\Core\Logger;
-use InterSoccer\ReportsRosters\Utils\ValidationHelper;
+use InterSoccer\ReportsRosters\Services\DataValidator;
 use InterSoccer\ReportsRosters\Exceptions\ValidationException;
 
 // Prevent direct access
@@ -269,7 +269,7 @@ abstract class AbstractModel {
             return true;
         }
         
-        $validator = new ValidationHelper();
+        $validator = new DataValidator(new Logger());
         $errors = [];
         
         foreach ($this->validation_rules as $field => $rules) {
@@ -282,7 +282,7 @@ abstract class AbstractModel {
         }
         
         if (!empty($errors)) {
-            throw new ValidationException('Model validation failed', $errors);
+            throw new ValidationException('Model validation failed', 0, null, $errors);
         }
         
         return true;
@@ -311,7 +311,7 @@ abstract class AbstractModel {
             $this->validate();
             return [];
         } catch (ValidationException $e) {
-            return $e->getErrors();
+            return $e->getValidationErrors();
         }
     }
     
