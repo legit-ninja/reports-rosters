@@ -303,18 +303,34 @@ class Database {
                 
                 $this->logger->debug('Creating/updating table: ' . $full_table_name);
                 
-                // Execute table creation
-                $result = dbDelta($sql);
-                
-                if (empty($result)) {
-                    $this->logger->error('Failed to create/update table: ' . $full_table_name);
-                    $success = false;
-                    continue;
+                if (!$this->table_exists($table_name)) {
+                    // Table does not exist: create it directly. dbDelta() only alters existing tables
+                    // (it DESCRIBEs first and skips when the table is missing in some code paths).
+                    $created = $this->wpdb->query($sql);
+                    if ($created === false) {
+                        $this->logger->error('Failed to create table: ' . $full_table_name, [
+                            'db_error' => $this->wpdb->last_error,
+                        ]);
+                        $success = false;
+                        continue;
+                    }
+                } else {
+                    // Table exists: use dbDelta to apply schema updates
+                    $result = dbDelta($sql);
+                    if (!empty($this->wpdb->last_error)) {
+                        $this->logger->error('dbDelta error for table: ' . $full_table_name, [
+                            'db_error' => $this->wpdb->last_error,
+                        ]);
+                        $success = false;
+                        continue;
+                    }
                 }
                 
-                // Verify table was created
+                // Verify table exists
                 if (!$this->table_exists($table_name)) {
-                    $this->logger->error('Table creation verification failed: ' . $full_table_name);
+                    $this->logger->error('Table creation verification failed: ' . $full_table_name, [
+                        'db_error' => $this->wpdb->last_error,
+                    ]);
                     $success = false;
                     continue;
                 }
@@ -777,7 +793,7 @@ class Database {
     private function sanitize_roster_data(array $data) {
         $sanitized = [];
         
-        // Define field types for sanitization
+        // Define field types for sanitization (all table columns so inserts are complete)
         $field_types = [
             'order_id' => 'int',
             'order_item_id' => 'int',
@@ -795,6 +811,8 @@ class Database {
             'emergency_phone' => 'text',
             'parent_email' => 'email',
             'parent_phone' => 'text',
+            'parent_first_name' => 'text',
+            'parent_last_name' => 'text',
             'event_type' => 'text',
             'activity_type' => 'text',
             'venue' => 'text',
@@ -810,8 +828,29 @@ class Database {
             'course_day' => 'text',
             'course_times' => 'text',
             'camp_times' => 'text',
+            'camp_terms' => 'text',
+            'times' => 'text',
+            'term' => 'text',
+            'days_selected' => 'text',
+            'canton_region' => 'text',
             'discount_applied' => 'text',
-            'order_status' => 'text'
+            'order_status' => 'text',
+            'event_signature' => 'text',
+            'product_name' => 'text',
+            'player_name' => 'text',
+            'player_first_name' => 'text',
+            'player_last_name' => 'text',
+            'player_dob' => 'date',
+            'player_gender' => 'text',
+            'player_medical' => 'textarea',
+            'player_dietary' => 'textarea',
+            'age' => 'int',
+            'base_price' => 'decimal',
+            'discount_amount' => 'decimal',
+            'final_price' => 'decimal',
+            'reimbursement' => 'decimal',
+            'discount_codes' => 'text',
+            'registration_timestamp' => 'datetime',
         ];
         
         foreach ($data as $key => $value) {
@@ -855,6 +894,24 @@ class Database {
                 
             case 'json':
                 return is_string($value) ? $value : json_encode($value);
+                
+            case 'decimal':
+                if (is_numeric($value)) {
+                    return (float) $value;
+                }
+                if (is_string($value)) {
+                    $stripped = wp_strip_all_tags($value);
+                    $numeric = preg_replace('/[^0-9.]/', '', $stripped);
+                    return $numeric !== '' ? (float) $numeric : 0.0;
+                }
+                return 0.0;
+                
+            case 'datetime':
+                if (empty($value)) {
+                    return null;
+                }
+                $ts = is_numeric($value) ? (int) $value : strtotime($value);
+                return $ts ? gmdate('Y-m-d H:i:s', $ts) : null;
                 
             default:
                 return sanitize_text_field($value);
