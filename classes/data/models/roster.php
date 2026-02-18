@@ -51,6 +51,8 @@ class Roster extends AbstractModel {
         'emergency_phone',
         'parent_email',
         'parent_phone',
+        'parent_first_name',
+        'parent_last_name',
         'event_type',
         'activity_type',
         'venue',
@@ -66,10 +68,21 @@ class Roster extends AbstractModel {
         'city',
         'course_day',
         'course_times',
+        'camp_terms',
         'camp_times',
+        'times',
+        'term',
+        'days_selected',
+        'canton_region',
         'discount_applied',
         'order_status',
         'event_completed',
+        'event_signature',
+        'product_name',
+        'base_price',
+        'discount_amount',
+        'final_price',
+        'discount_codes',
     ];
     
     /**
@@ -88,8 +101,8 @@ class Roster extends AbstractModel {
         'dob' => ['required', 'date', 'before:today'],
         'gender' => ['required', 'in:male,female,other'],
         'activity_type' => ['required', 'in:Camp,Course,Birthday Party'],
-        'venue' => ['required', 'string', 'max:200'],
-        'start_date' => ['required', 'date'],
+        'venue' => ['string', 'max:200'],
+        'start_date' => ['nullable', 'date'],
         'order_status' => ['required', 'in:pending,processing,on-hold,completed,cancelled,refunded,failed']
     ];
     
@@ -117,10 +130,7 @@ class Roster extends AbstractModel {
      * 
      * @var array
      */
-    protected $hidden = [
-        'variation_id',
-        'product_id'
-    ];
+    protected $hidden = [];
     
     /**
      * Activity type constants
@@ -375,7 +385,7 @@ class Roster extends AbstractModel {
      * @return bool Has medical conditions
      */
     public function hasMedicalConditions() {
-        return !empty(trim($this->medical_conditions));
+        return is_string($this->medical_conditions) && trim($this->medical_conditions) !== '';
     }
     
     /**
@@ -384,7 +394,7 @@ class Roster extends AbstractModel {
      * @return bool Has dietary needs
      */
     public function hasDietaryNeeds() {
-        return !empty(trim($this->dietary_needs));
+        return is_string($this->dietary_needs) && trim($this->dietary_needs) !== '';
     }
     
     /**
@@ -824,9 +834,9 @@ class Roster extends AbstractModel {
      */
     private function validateDates() {
         if (empty($this->start_date)) {
-            throw new ValidationException('Start date is required');
+            return;
         }
-        
+
         $start_date = new \DateTime($this->start_date);
         $today = new \DateTime();
         
@@ -863,10 +873,10 @@ class Roster extends AbstractModel {
      * @return void
      */
     private function validateAgeGroup() {
-        if (empty($this->age_group) || empty($this->dob)) {
-            return; // Skip if missing required data
+        if (empty($this->age_group) || empty($this->dob) || empty($this->start_date)) {
+            return; // Skip if missing required data; age-at-event needs start_date
         }
-        
+
         $player = $this->getPlayer();
         
         if (!$player->isEligibleForAgeGroup($this->age_group, $this->start_date)) {
@@ -990,7 +1000,46 @@ class Roster extends AbstractModel {
     public function toArray() {
         $array = parent::toArray();
         
-        // Add computed fields
+        // DB column names (table expects these; computed from model attributes)
+        $array['player_name'] = $this->getFullName();
+        $array['player_first_name'] = isset($this->first_name) ? (string) $this->first_name : '';
+        $array['player_last_name'] = isset($this->last_name) ? (string) $this->last_name : '';
+        $dob = $this->dob;
+        if ($dob instanceof \DateTimeInterface) {
+            $array['player_dob'] = $dob->format('Y-m-d');
+        } elseif (is_string($dob) && $dob !== '') {
+            $array['player_dob'] = $dob;
+        } else {
+            $array['player_dob'] = null;
+        }
+        $array['player_gender'] = isset($this->gender) ? (string) $this->gender : '';
+        $array['player_medical'] = isset($this->medical_conditions) ? (string) $this->medical_conditions : null;
+        $array['player_dietary'] = isset($this->dietary_needs) ? (string) $this->dietary_needs : null;
+        $array['age'] = $array['age'] ?? $this->getAgeAtEvent();
+        $ec = $this->emergency_contact;
+        if (is_array($ec)) {
+            $array['emergency_contact'] = isset($ec['name']) ? (string) $ec['name'] : (isset($ec['phone']) ? (string) $ec['phone'] : '');
+        } elseif (is_string($ec) && $ec !== '') {
+            $array['emergency_contact'] = $ec;
+        }
+        if (empty($array['emergency_contact']) || is_array($array['emergency_contact'])) {
+            $contact = $this->getEmergencyContact();
+            $array['emergency_contact'] = is_array($contact) ? (string) ($contact['name'] ?? $contact['phone'] ?? '') : (string) $contact;
+        }
+        if (!isset($array['times']) || $array['times'] === '') {
+            $array['times'] = (string) ($this->camp_times ?: $this->course_times ?: '');
+        }
+        if (!isset($array['term']) || $array['term'] === '') {
+            $array['term'] = (string) ($this->course_day ?: $this->camp_terms ?: '');
+        }
+        if (!isset($array['days_selected']) || $array['days_selected'] === '') {
+            $array['days_selected'] = is_array($this->selected_days) ? implode(', ', $this->selected_days) : (string) ($this->selected_days ?? '');
+        }
+        if (!isset($array['canton_region']) || $array['canton_region'] === '') {
+            $array['canton_region'] = isset($this->canton_region) ? (string) $this->canton_region : (isset($this->region) ? (string) $this->region : '');
+        }
+        
+        // Add computed fields (for API/logging)
         $array['full_name'] = $this->getFullName();
         $array['age_at_event'] = $this->getAgeAtEvent();
         $array['event_status'] = $this->getEventStatus();
@@ -1004,7 +1053,6 @@ class Roster extends AbstractModel {
         $array['is_active'] = $this->isActive();
         $array['is_future_event'] = $this->isFutureEvent();
         $array['is_past_event'] = $this->isPastEvent();
-        $array['emergency_contact'] = $this->getEmergencyContact();
         $array['order_admin_url'] = $this->getOrderAdminUrl();
         $array['priority'] = $this->getPriority();
         
