@@ -802,10 +802,13 @@ class Player extends AbstractModel {
      * @return string|null Sanitized medical conditions
      */
     public function setMedicalConditionsAttribute($value) {
-        if (empty(trim($value)) || strtolower(trim($value)) === 'none') {
+        if ($value === null || $value === '') {
             return null;
         }
-        
+        $value = (string) $value;
+        if (trim($value) === '' || strtolower(trim($value)) === 'none') {
+            return null;
+        }
         return sanitize_textarea_field($value);
     }
     
@@ -816,10 +819,13 @@ class Player extends AbstractModel {
      * @return string|null Sanitized dietary needs
      */
     public function setDietaryNeedsAttribute($value) {
-        if (empty(trim($value)) || strtolower(trim($value)) === 'none') {
+        if ($value === null || $value === '') {
             return null;
         }
-        
+        $value = (string) $value;
+        if (trim($value) === '' || strtolower(trim($value)) === 'none') {
+            return null;
+        }
         return sanitize_textarea_field($value);
     }
     
