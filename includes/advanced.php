@@ -122,9 +122,16 @@ function intersoccer_render_advanced_page() {
                     <form id="intersoccer-reconcile-form" method="post" action="">
                         <?php wp_nonce_field('intersoccer_reports_rosters_nonce', 'nonce'); ?>
                         <input type="hidden" name="action" value="intersoccer_reconcile_rosters">
+                        <p>
+                            <label for="intersoccer-reconcile-date-from"><?php _e('Order date from (optional)', 'intersoccer-reports-rosters'); ?></label>
+                            <input type="date" id="intersoccer-reconcile-date-from" name="date_from" value="" />
+                            <label for="intersoccer-reconcile-date-to"><?php _e('to (optional)', 'intersoccer-reports-rosters'); ?></label>
+                            <input type="date" id="intersoccer-reconcile-date-to" name="date_to" value="" />
+                        </p>
+                        <p class="description"><?php _e('Leave both empty to reconcile all orders. Use a date range to only sync orders created in that period and avoid re-opening closed rosters for past events.', 'intersoccer-reports-rosters'); ?></p>
                         <button type="submit" class="button button-secondary" id="intersoccer-reconcile-button"><?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?></button>
                     </form>
-                    <p><?php _e('Note: This syncs the rosters table with orders, adding missing entries, updating incomplete data, and removing obsolete ones. No order statuses are changed.', 'intersoccer-reports-rosters'); ?></p>
+                    <p><?php _e('Note: This syncs the rosters table with orders, adding missing entries, updating incomplete data, and removing obsolete ones. Closed or past-event rosters are not re-opened. No order statuses are changed.', 'intersoccer-reports-rosters'); ?></p>
                     <form id="intersoccer-rebuild-signatures-form" method="post" action="">
                         <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
                         <input type="hidden" name="action" value="intersoccer_rebuild_event_signatures">

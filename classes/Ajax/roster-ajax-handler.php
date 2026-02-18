@@ -185,10 +185,19 @@ class RosterAjaxHandler {
             
             $this->logger->info('AJAX: Reconcile rosters request started');
             
+            $options = ['delete_obsolete' => true];
+            if (!empty($_POST['date_from'])) {
+                $options['date_from'] = sanitize_text_field($_POST['date_from']);
+            }
+            if (!empty($_POST['date_to'])) {
+                $options['date_to'] = sanitize_text_field($_POST['date_to']);
+            }
+            if (!empty($options['date_from']) || !empty($options['date_to'])) {
+                $options['delete_obsolete'] = false;
+            }
+            
             // Run reconcile
-            $results = $this->roster_builder->reconcile([
-                'delete_obsolete' => true
-            ]);
+            $results = $this->roster_builder->reconcile($options);
             
             wp_send_json_success([
                 'message' => sprintf(

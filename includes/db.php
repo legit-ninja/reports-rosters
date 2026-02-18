@@ -623,14 +623,23 @@ function intersoccer_rebuild_rosters_and_reports() {
     ];
 }
 
-function intersoccer_reconcile_rosters() {
+function intersoccer_reconcile_rosters($options = []) {
     if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database')) {
         error_log('InterSoccer: Routing roster reconciliation through OOP RosterBuilder');
 
+        $oop_options = array_merge(['delete_obsolete' => true], is_array($options) ? $options : []);
+        if (!empty($_POST['date_from'])) {
+            $oop_options['date_from'] = sanitize_text_field($_POST['date_from']);
+        }
+        if (!empty($_POST['date_to'])) {
+            $oop_options['date_to'] = sanitize_text_field($_POST['date_to']);
+        }
+        if (!empty($oop_options['date_from']) || !empty($oop_options['date_to'])) {
+            $oop_options['delete_obsolete'] = false;
+        }
+
         try {
-            $result = intersoccer_oop_reconcile_rosters([
-                'delete_obsolete' => true,
-            ]);
+            $result = intersoccer_oop_reconcile_rosters($oop_options);
 
             $message = sprintf(
                 __('Reconciled rosters via OOP engine: Synced %1$d entries, deleted %2$d obsolete ones.', 'intersoccer-reports-rosters'),
