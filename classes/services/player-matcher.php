@@ -69,11 +69,12 @@ class PlayerMatcher {
      * 
      * @param \WC_Order_Item_Product $item Order item
      * @param PlayersCollection $customer_players Available customer players
+     * @param array $options Optional. 'skip_age_gender_validation' => true to skip age/gender checks when building rosters.
      * @return PlayersCollection Assigned players
      */
-    public function getAssignedPlayers(\WC_Order_Item_Product $item, PlayersCollection $customer_players) {
+    public function getAssignedPlayers(\WC_Order_Item_Product $item, PlayersCollection $customer_players, array $options = []) {
         try {
-            $cache_key = $this->buildCacheKey($item, $customer_players);
+            $cache_key = $this->buildCacheKey($item, $customer_players, $options);
             
             if (isset($this->assignment_cache[$cache_key])) {
                 $this->logger->debug('Retrieved player assignment from cache', [
@@ -106,8 +107,8 @@ class PlayerMatcher {
                 }
             }
             
-            // Validate player assignments
-            $validated_players = $this->validatePlayerAssignments($assigned_players, $item);
+            // Validate player assignments (age/gender can be skipped for roster build)
+            $validated_players = $this->validatePlayerAssignments($assigned_players, $item, $options);
             
             // Cache the result
             $this->assignment_cache[$cache_key] = $validated_players;
@@ -205,9 +206,59 @@ class PlayerMatcher {
      * @param PlayersCollection $customer_players Available players
      * @return PlayersCollection Assigned players
      */
+    /**
+     * Resolve assigned attendee name from order item meta, supporting localized meta keys
+     * (e.g. "Participant assigné", "Zugewiesener Teilnehmer") so roster build works in any language.
+     *
+     * @param \WC_Order_Item_Product $item Order item
+     * @return string Attendee name or empty string
+     */
+    private function getAssignedAttendeeValue(\WC_Order_Item_Product $item) {
+        $value = $item->get_meta('Assigned Attendee');
+        if ($value !== '' && $value !== null) {
+            return (string) $value;
+        }
+        $normalized_variants = [
+            $this->normalizeMetaKeyForComparison('Assigned Attendee'),
+            $this->normalizeMetaKeyForComparison('Participant assigné'),
+            $this->normalizeMetaKeyForComparison('Zugewiesener Teilnehmer'),
+        ];
+        foreach ($item->get_meta_data() as $meta) {
+            $data = $meta->get_data();
+            $key = isset($data['key']) ? (string) $data['key'] : '';
+            if ($key === '') {
+                continue;
+            }
+            $normalized = $this->normalizeMetaKeyForComparison($key);
+            if (in_array($normalized, $normalized_variants, true)) {
+                $val = $data['value'] ?? '';
+                return $val !== null ? (string) $val : '';
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Normalize a meta key for comparison (language-agnostic).
+     *
+     * @param string $key Meta key
+     * @return string Normalized key
+     */
+    private function normalizeMetaKeyForComparison(string $key): string {
+        if (function_exists('intersoccer_normalize_comparison_string')) {
+            return intersoccer_normalize_comparison_string($key);
+        }
+        $n = strtolower(trim($key));
+        if (function_exists('remove_accents')) {
+            $n = remove_accents($n);
+        }
+        $n = preg_replace('/[^a-z0-9\s]/u', '', $n);
+        $n = preg_replace('/\s+/', ' ', $n);
+        return trim($n);
+    }
+
     private function assignByAttendeeName(\WC_Order_Item_Product $item, PlayersCollection $customer_players) {
-        $assigned_attendee = $item->get_meta('Assigned Attendee');
-        
+        $assigned_attendee = $this->getAssignedAttendeeValue($item);
         if (!empty($assigned_attendee)) {
             // Try exact match first
             $exact_match = $customer_players->first(function(Player $player) use ($assigned_attendee) {
@@ -420,19 +471,18 @@ class PlayerMatcher {
      * @param \WC_Order_Item_Product $item Order item
      * @return PlayersCollection Validated players
      */
-    private function validatePlayerAssignments(PlayersCollection $assigned_players, \WC_Order_Item_Product $item) {
+    private function validatePlayerAssignments(PlayersCollection $assigned_players, \WC_Order_Item_Product $item, array $options = []) {
         if ($assigned_players->isEmpty()) {
             return $assigned_players;
         }
         
         $validated_players = new PlayersCollection();
-        
+        $skip_age_gender = !empty($options['skip_age_gender_validation']);
+
         foreach ($assigned_players as $player) {
             try {
-                // Basic player validation
-                $this->validatePlayerForItem($player, $item);
+                $this->validatePlayerForItem($player, $item, $skip_age_gender);
                 $validated_players->add($player);
-                
             } catch (ValidationException $e) {
                 $this->logger->warning('Player failed validation for item', [
                     'player_id' => $player->getUniqueId(),
@@ -440,36 +490,36 @@ class PlayerMatcher {
                     'item_id' => $item->get_id(),
                     'error' => $e->getMessage()
                 ]);
-                
-                // Don't add invalid player to collection
             }
         }
-        
+
         return $validated_players;
     }
     
     /**
-     * Validate individual player for order item
-     * 
+     * Validate individual player for order item.
+     *
      * @param Player $player Player to validate
      * @param \WC_Order_Item_Product $item Order item
+     * @param bool $skip_age_gender_validation If true, skip age and gender checks (e.g. when building rosters so explicit customer assignment is honoured).
      * @return void
      * @throws ValidationException If validation fails
      */
-    private function validatePlayerForItem(Player $player, \WC_Order_Item_Product $item) {
-        // Check if player data is complete
+    private function validatePlayerForItem(Player $player, \WC_Order_Item_Product $item, $skip_age_gender_validation = false) {
         if (!$player->isComplete()) {
             $missing = $player->getMissingInformation();
             throw new ValidationException('Player has incomplete information: ' . implode(', ', $missing));
         }
-        
-        // Age validation for event
+
+        if ($skip_age_gender_validation) {
+            return;
+        }
+
         $age_group = $item->get_meta('Age Group');
         $start_date = $item->get_meta('Start Date');
-        
+
         if (!empty($age_group)) {
             $event_date = !empty($start_date) ? $start_date : null;
-            
             if (!$player->isEligibleForAgeGroup($age_group, $event_date)) {
                 $age = $event_date ? $player->getAgeAt($event_date) : $player->getAge();
                 throw new ValidationException(
@@ -477,11 +527,8 @@ class PlayerMatcher {
                 );
             }
         }
-        
-        // Gender restrictions (for girls-only camps)
-        $activity_type = $item->get_meta('Activity Type');
+
         $event_type = $item->get_meta('Camp Terms') ?: $item->get_meta('Event Type');
-        
         if (!empty($event_type) && stripos($event_type, 'girls') !== false) {
             if (strtolower($player->gender) !== 'female') {
                 throw new ValidationException('Player gender not eligible for girls-only event');
@@ -491,20 +538,21 @@ class PlayerMatcher {
     
     /**
      * Build cache key for player assignment
-     * 
+     *
      * @param \WC_Order_Item_Product $item Order item
      * @param PlayersCollection $customer_players Available players
+     * @param array $options Options that affect result (e.g. skip_age_gender_validation)
      * @return string Cache key
      */
-    private function buildCacheKey(\WC_Order_Item_Product $item, PlayersCollection $customer_players) {
+    private function buildCacheKey(\WC_Order_Item_Product $item, PlayersCollection $customer_players, array $options = []) {
         $key_parts = [
             $item->get_id(),
             $item->get_product_id(),
             $item->get_variation_id(),
             $customer_players->count(),
-            md5(serialize($customer_players->pluck('player_index')->sort()->values()))
+            md5(serialize($customer_players->pluck('player_index')->sort()->values())),
+            !empty($options['skip_age_gender_validation']) ? '1' : '0',
         ];
-        
         return implode('_', array_filter($key_parts));
     }
     
