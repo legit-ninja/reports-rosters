@@ -300,7 +300,19 @@ abstract class AbstractCollection implements \Iterator, \Countable, \ArrayAccess
     public function sortByDesc($callback, $sort_flags = SORT_REGULAR) {
         return $this->sortBy($callback, $sort_flags, true);
     }
-    
+
+    /**
+     * Sort the collection by natural value order (for scalar items, e.g. after pluck).
+     *
+     * @param int $sort_flags Sort flags (e.g. SORT_REGULAR, SORT_NATURAL)
+     * @return static New sorted collection
+     */
+    public function sort($sort_flags = SORT_REGULAR) {
+        $items = $this->items;
+        sort($items, $sort_flags);
+        return new static($items);
+    }
+
     /**
      * Reverse the order of items
      * 
