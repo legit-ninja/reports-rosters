@@ -59,7 +59,6 @@ class HooksManager {
         if ($order_id <= 0) {
             return;
         }
-
         $this->order_processor->processOrder($order_id);
     }
 
