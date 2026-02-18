@@ -676,16 +676,19 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             $start_date_obj = new DateTime($entry['event_start_date']);
             $end_date_obj = !empty($entry['event_end_date']) ? new DateTime($entry['event_end_date']) : $start_date_obj;
             
-            // Format as "Month Day - Month Day, Year" (e.g., "January 1 - January 7, 2026")
+            // Format as "Month Day - Month Day, Year" using the requested filter year so that
+            // the same camp week does not split into separate rows (e.g. "2025" vs "2026")
+            // when stored dates differ by year but the user has already filtered by year.
+            $requested_year = (string) intval($year);
             $start_formatted = $start_date_obj->format('F j');
-            $end_formatted = $end_date_obj->format('F j, Y');
+            $end_formatted = $end_date_obj->format('F j') . ', ' . $requested_year;
             $date_range_key = $start_formatted . ' - ' . $end_formatted;
             
             // If start and end are same day, just show one date
             if ($start_date_obj->format('Y-m-d') === $end_date_obj->format('Y-m-d')) {
-                $date_range_key = $start_date_obj->format('F j, Y');
+                $date_range_key = $start_date_obj->format('F j') . ', ' . $requested_year;
             }
-            
+
             if (!isset($date_groups[$date_range_key])) {
                 $date_groups[$date_range_key] = [
                     'start_date' => $entry['event_start_date'],
