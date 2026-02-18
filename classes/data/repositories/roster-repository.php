@@ -119,7 +119,11 @@ class RosterRepository implements RepositoryInterface {
                 return null;
             }
             
-            $roster = new Roster($roster_data[0]);
+            $data = $roster_data[0];
+            $roster = new Roster($data);
+            if (isset($data['id'])) {
+                $roster->setKey($data['id']);
+            }
             $roster->setExists(true);
             
             // Cache the result
@@ -367,6 +371,10 @@ class RosterRepository implements RepositoryInterface {
             
             foreach ($roster_data as $data) {
                 $roster = new Roster($data);
+                // Primary key is not in fillable; set it when loading from DB so update() can find the row
+                if (isset($data['id'])) {
+                    $roster->setKey($data['id']);
+                }
                 $roster->setExists(true);
                 $rosters->add($roster);
             }
