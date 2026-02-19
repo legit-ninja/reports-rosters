@@ -204,6 +204,17 @@ function intersoccer_oop_validate_rosters_table() {
 // ============================================================================
 
 /**
+ * Whether verbose OOP adapter logging is enabled (WP_DEBUG or INTERSOCCER_REPORTS_DEBUG_LOG).
+ * When false, only a short failure line is logged on exceptions.
+ *
+ * @return bool
+ */
+function intersoccer_oop_verbose_log() {
+    return (defined('WP_DEBUG') && WP_DEBUG)
+        || (defined('INTERSOCCER_REPORTS_DEBUG_LOG') && INTERSOCCER_REPORTS_DEBUG_LOG);
+}
+
+/**
  * Adapter: Process order using OOP
  * 
  * @param int $order_id Order ID
@@ -211,25 +222,37 @@ function intersoccer_oop_validate_rosters_table() {
  */
 function intersoccer_oop_process_order($order_id) {
     try {
-        error_log('InterSoccer OOP: Processing order ' . $order_id . ' via OOP adapter');
+        if (intersoccer_oop_verbose_log()) {
+            error_log('InterSoccer OOP: Processing order ' . $order_id . ' via OOP adapter');
+        }
         $processor = intersoccer_oop_get_order_processor();
         $result = $processor->processOrder($order_id);
         
-        if ($result) {
-            $was_completed = $processor->wasLastOrderCompleted();
-            error_log('InterSoccer OOP: Order ' . $order_id . ' processed. Completed: ' . ($was_completed ? 'yes' : 'no'));
-        } else {
-            error_log('InterSoccer OOP: Order ' . $order_id . ' processing returned false');
+        if (intersoccer_oop_verbose_log()) {
+            if ($result) {
+                $was_completed = $processor->wasLastOrderCompleted();
+                error_log('InterSoccer OOP: Order ' . $order_id . ' processed. Completed: ' . ($was_completed ? 'yes' : 'no'));
+            } else {
+                error_log('InterSoccer OOP: Order ' . $order_id . ' processing returned false');
+            }
         }
         
         return $result;
     } catch (\Exception $e) {
-        error_log('InterSoccer OOP: Exception processing order ' . $order_id . ' - ' . $e->getMessage());
-        error_log('InterSoccer OOP: Stack trace: ' . $e->getTraceAsString());
+        if (intersoccer_oop_verbose_log()) {
+            error_log('InterSoccer OOP: Exception processing order ' . $order_id . ' - ' . $e->getMessage());
+            error_log('InterSoccer OOP: Stack trace: ' . $e->getTraceAsString());
+        } else {
+            error_log('InterSoccer OOP: Order ' . $order_id . ' failed: ' . $e->getMessage());
+        }
         return false;
     } catch (\Throwable $e) {
-        error_log('InterSoccer OOP: Throwable processing order ' . $order_id . ' - ' . $e->getMessage());
-        error_log('InterSoccer OOP: Stack trace: ' . $e->getTraceAsString());
+        if (intersoccer_oop_verbose_log()) {
+            error_log('InterSoccer OOP: Throwable processing order ' . $order_id . ' - ' . $e->getMessage());
+            error_log('InterSoccer OOP: Stack trace: ' . $e->getTraceAsString());
+        } else {
+            error_log('InterSoccer OOP: Order ' . $order_id . ' failed: ' . $e->getMessage());
+        }
         return false;
     }
 }
@@ -245,7 +268,9 @@ function intersoccer_oop_process_orders_batch($order_ids) {
         $processor = intersoccer_oop_get_order_processor();
         return $processor->process_batch($order_ids);
     } catch (\Exception $e) {
-        error_log('InterSoccer OOP: Error processing orders batch - ' . $e->getMessage());
+        if (intersoccer_oop_verbose_log()) {
+            error_log('InterSoccer OOP: Error processing orders batch - ' . $e->getMessage());
+        }
         return ['success' => false, 'error' => $e->getMessage()];
     }
 }
