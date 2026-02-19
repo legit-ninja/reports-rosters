@@ -37,9 +37,12 @@ class HooksManager {
     }
 
     public function init(): void {
-        // Order status hooks
-        add_action('woocommerce_order_status_processing', [$this, 'handle_order_status'], 10, 1);
+        // Order status hooks: process once when order is completed (reduces duplicate runs).
+        // Filter to re-enable processing on 'processing' status: add_filter('intersoccer_process_order_on_processing_status', '__return_true');
         add_action('woocommerce_order_status_completed', [$this, 'handle_order_status'], 10, 1);
+        if (apply_filters('intersoccer_process_order_on_processing_status', false)) {
+            add_action('woocommerce_order_status_processing', [$this, 'handle_order_status'], 10, 1);
+        }
 
         // Cron schedule + recurring job
         add_filter('cron_schedules', [$this, 'register_cron_schedule']);
