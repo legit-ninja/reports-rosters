@@ -81,11 +81,23 @@ class OrderProcessor {
             }
 
             if (!$this->shouldProcess($wc_order)) {
-                $this->logger->debug('OrderProcessor: Order skipped due to status', [
-                    'order_id' => $wc_order->get_id(),
-                    'status'   => $wc_order->get_status(),
-                ]);
+                if ($this->isVerboseLogging()) {
+                    $this->logger->debug('OrderProcessor: Order skipped due to status', [
+                        'order_id' => $wc_order->get_id(),
+                        'status'   => $wc_order->get_status(),
+                    ]);
+                }
                 return false;
+            }
+
+            // Skip heavy build when order is already completed and rosters exist (e.g. from cron or duplicate hook).
+            if ($wc_order->get_status() === 'completed') {
+                $existing_count = $this->roster_repository->count(['order_id' => $wc_order->get_id()]);
+                if ($existing_count > 0) {
+                    $this->last_rosters = $this->roster_repository->where(['order_id' => $wc_order->get_id()]);
+                    $this->last_order_completed = true;
+                    return true;
+                }
             }
 
             $this->last_rosters = $this->roster_builder->buildRosterFromOrder(
@@ -102,18 +114,22 @@ class OrderProcessor {
 
             if ($roster_count > 0) {
                 $current_status = $wc_order->get_status();
-                $this->logger->debug('OrderProcessor: Checking order completion', [
-                    'order_id' => $wc_order->get_id(),
-                    'current_status' => $current_status,
-                    'roster_count' => $roster_count,
-                ]);
+                if ($this->isVerboseLogging()) {
+                    $this->logger->debug('OrderProcessor: Checking order completion', [
+                        'order_id' => $wc_order->get_id(),
+                        'current_status' => $current_status,
+                        'roster_count' => $roster_count,
+                    ]);
+                }
 
                 if (!in_array($current_status, ['completed', 'refunded', 'cancelled'], true)) {
                     try {
-                        $this->logger->info('OrderProcessor: Attempting to complete order', [
-                            'order_id' => $wc_order->get_id(),
-                            'from_status' => $current_status,
-                        ]);
+                        if ($this->isVerboseLogging()) {
+                            $this->logger->info('OrderProcessor: Attempting to complete order', [
+                                'order_id' => $wc_order->get_id(),
+                                'from_status' => $current_status,
+                            ]);
+                        }
 
                         $wc_order->update_status(
                             'completed',
@@ -130,9 +146,11 @@ class OrderProcessor {
 
                         if ($updated_status === 'completed') {
                             $completed = true;
-                            $this->logger->info('OrderProcessor: Order successfully completed', [
-                                'order_id' => $order_id,
-                            ]);
+                            if ($this->isVerboseLogging()) {
+                                $this->logger->info('OrderProcessor: Order successfully completed', [
+                                    'order_id' => $order_id,
+                                ]);
+                            }
                         } else {
                             $this->logger->warning('OrderProcessor: Order status update may have failed', [
                                 'order_id' => $order_id,
@@ -149,28 +167,34 @@ class OrderProcessor {
                         ]);
                     }
                 } else {
-                    $this->logger->debug('OrderProcessor: Order already in final state, skipping completion', [
-                        'order_id' => $wc_order->get_id(),
-                        'status' => $current_status,
-                    ]);
+                    if ($this->isVerboseLogging()) {
+                        $this->logger->debug('OrderProcessor: Order already in final state, skipping completion', [
+                            'order_id' => $wc_order->get_id(),
+                            'status' => $current_status,
+                        ]);
+                    }
                 }
 
                 if (!$completed && \function_exists('intersoccer_schedule_order_completion_check')) {
                     \intersoccer_schedule_order_completion_check($wc_order->get_id());
                 }
             } else {
-                $this->logger->debug('OrderProcessor: No rosters created, skipping order completion', [
-                    'order_id' => $wc_order->get_id(),
-                ]);
+                if ($this->isVerboseLogging()) {
+                    $this->logger->debug('OrderProcessor: No rosters created, skipping order completion', [
+                        'order_id' => $wc_order->get_id(),
+                    ]);
+                }
             }
 
             $this->last_order_completed = $completed;
 
-            $this->logger->info('OrderProcessor: Order processed', [
-                'order_id'        => $wc_order->get_id(),
-                'rosters_created' => $roster_count,
-                'completed'       => $completed,
-            ]);
+            if ($this->isVerboseLogging()) {
+                $this->logger->info('OrderProcessor: Order processed', [
+                    'order_id'        => $wc_order->get_id(),
+                    'rosters_created' => $roster_count,
+                    'completed'       => $completed,
+                ]);
+            }
 
             return true;
         } catch (\Throwable $e) {
@@ -310,5 +334,16 @@ class OrderProcessor {
     private function resetLastState(): void {
         $this->last_rosters = new RostersCollection();
         $this->last_order_completed = false;
+    }
+
+    /**
+     * Whether verbose (debug/info) logging is enabled for order processing.
+     * Reduces log volume in production when WP_DEBUG and INTERSOCCER_REPORTS_DEBUG_LOG are off.
+     *
+     * @return bool
+     */
+    private function isVerboseLogging(): bool {
+        return (defined('WP_DEBUG') && WP_DEBUG)
+            || (defined('INTERSOCCER_REPORTS_DEBUG_LOG') && INTERSOCCER_REPORTS_DEBUG_LOG);
     }
 }
