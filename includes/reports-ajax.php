@@ -16,12 +16,15 @@ if (!defined('ABSPATH')) {
 function intersoccer_filter_report_callback() {
     check_ajax_referer('intersoccer_reports_filter', 'nonce');
 
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => __('You do not have sufficient permissions to access this report.', 'intersoccer-reports-rosters')]);
+        return;
+    }
+
     $start_date = isset($_POST['start_date']) ? sanitize_text_field($_POST['start_date']) : '';
     $end_date = isset($_POST['end_date']) ? sanitize_text_field($_POST['end_date']) : '';
     $year = isset($_POST['year']) ? sanitize_text_field($_POST['year']) : date('Y');
     $region = isset($_POST['region']) ? sanitize_text_field($_POST['region']) : '';
-    
-    error_log("InterSoccer AJAX: Called with start_date=$start_date, end_date=$end_date, year=$year, region=$region");
 
     $visible_columns = isset($_POST['columns']) ? array_map('sanitize_text_field', (array)$_POST['columns']) : [
         'ref', 'booked', 'base_price', 'discount_amount', 'discounts_applied', 'stripe_fee', 'final_price',
@@ -30,16 +33,6 @@ function intersoccer_filter_report_callback() {
 
     // Use the simplified financial reporting function
     $report_data = intersoccer_get_financial_booking_report($start_date, $end_date, $year, $region);
-    
-    error_log("InterSoccer AJAX: report_data returned: " . print_r($report_data, true));
-    error_log("InterSoccer AJAX: report_data type: " . gettype($report_data));
-    if (is_array($report_data)) {
-        error_log("InterSoccer AJAX: report_data has data key: " . (isset($report_data['data']) ? 'yes' : 'no'));
-        error_log("InterSoccer AJAX: report_data has totals key: " . (isset($report_data['totals']) ? 'yes' : 'no'));
-        if (isset($report_data['data'])) {
-            error_log("InterSoccer AJAX: data count: " . count($report_data['data']));
-        }
-    }
 
     ob_start();
     ?>
@@ -131,10 +124,6 @@ function intersoccer_filter_report_callback() {
     
     // Remove totals from table output since they're handled separately
     $table_html = preg_replace('/<div id="intersoccer-report-totals"[^>]*>.*?<\/div>/s', '', $output);
-    
-    error_log("InterSoccer AJAX: About to send JSON response");
-    error_log("InterSoccer AJAX: table_html length: " . strlen($table_html));
-    error_log("InterSoccer AJAX: totals_html length: " . strlen($totals_html));
     
     // Calculate record count
     $record_count = isset($report_data['data']) ? count($report_data['data']) : 0;

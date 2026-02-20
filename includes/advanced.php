@@ -604,41 +604,30 @@ function intersoccer_process_existing_orders() {
 
 function intersoccer_process_existing_orders_ajax() {
     ob_start();
-    error_log('InterSoccer: Process orders AJAX handler started');
-    
-    // DEBUG: Log all POST data to see what's being sent
-    error_log('InterSoccer: AJAX POST data: ' . print_r($_POST, true));
-    
+
     // Check nonce - try multiple possible nonce field names
     $nonce_valid = false;
     if (isset($_POST['intersoccer_rebuild_nonce_field'])) {
-        $nonce_valid = wp_verify_nonce($_POST['intersoccer_rebuild_nonce_field'], 'intersoccer_rebuild_nonce');
-        error_log('InterSoccer: Nonce check with intersoccer_rebuild_nonce_field: ' . ($nonce_valid ? 'valid' : 'invalid'));
+        $nonce_valid = wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['intersoccer_rebuild_nonce_field'])), 'intersoccer_rebuild_nonce');
     } elseif (isset($_POST['nonce'])) {
-        $nonce_valid = wp_verify_nonce($_POST['nonce'], 'intersoccer_rebuild_nonce');
-        error_log('InterSoccer: Nonce check with nonce: ' . ($nonce_valid ? 'valid' : 'invalid'));
+        $nonce_valid = wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'intersoccer_rebuild_nonce');
     }
-    
+
     if (!$nonce_valid) {
-        error_log('InterSoccer: Nonce verification failed');
         ob_clean();
         wp_send_json_error(['message' => __('Security check failed. Please refresh the page and try again.', 'intersoccer-reports-rosters')]);
         return;
     }
-    
+
     if (!current_user_can('manage_options')) {
-        error_log('InterSoccer: User permission check failed');
         ob_clean();
         wp_send_json_error(['message' => __('You do not have permission to process orders.', 'intersoccer-reports-rosters')]);
         return;
     }
-    
-    error_log('InterSoccer: All checks passed, proceeding with order processing');
-    
+
     $result = intersoccer_process_existing_orders();
-    error_log('InterSoccer: Final buffer before JSON send: ' . ob_get_contents());
     ob_clean();
-    
+
     if ($result['status'] === 'success') {
         wp_send_json_success($result);
     } else {

@@ -792,19 +792,29 @@ class RosterRepository implements RepositoryInterface {
      */
     public function getByDateRange($start_date, $end_date, array $additional_criteria = []) {
         global $wpdb;
-        
+
         $table_name = $wpdb->prefix . $this->table;
-        
+
+        // Allowlist of columns that can be used in additional_criteria to prevent SQL injection
+        $allowed_columns = [
+            'order_status', 'activity_type', 'venue', 'season', 'age_group', 'gender',
+            'product_id', 'variation_id', 'customer_id', 'is_placeholder', 'event_completed',
+            'girls_only', 'booking_type', 'canton_region',
+        ];
+
         // Build custom query for date range
         $sql = "SELECT * FROM {$table_name} WHERE start_date >= %s AND start_date <= %s";
         $params = [$start_date, $end_date];
-        
-        // Add additional criteria
+
+        // Add additional criteria (column names validated against allowlist)
         foreach ($additional_criteria as $field => $value) {
+            if (!in_array($field, $allowed_columns, true)) {
+                continue; // Skip disallowed column names
+            }
             $sql .= " AND {$field} = %s";
             $params[] = $value;
         }
-        
+
         $sql .= " ORDER BY start_date ASC, venue ASC";
         
         $results = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);

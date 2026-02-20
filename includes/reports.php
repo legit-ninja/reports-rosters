@@ -918,6 +918,11 @@ function intersoccer_office365_build_booking_report_xlsx($report_data, $start_da
 function intersoccer_export_booking_report_callback() {
     check_ajax_referer('intersoccer_reports_filter', 'nonce');
 
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => __('You do not have sufficient permissions to export this report.', 'intersoccer-reports-rosters')]);
+        return;
+    }
+
     $start_date = isset($_POST['start_date']) ? sanitize_text_field($_POST['start_date']) : '';
     $end_date = isset($_POST['end_date']) ? sanitize_text_field($_POST['end_date']) : '';
     $year = isset($_POST['year']) ? absint($_POST['year']) : date('Y');
