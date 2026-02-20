@@ -127,7 +127,7 @@ function intersoccer_pe_get_camp_report_data($region = '', $week = '', $camp_typ
  */
 function intersoccer_render_event_report_page() {
     try {
-        if (!current_user_can('manage_options') || !current_user_can('coach') || !current_user_can('event_organizer')) {
+        if (!current_user_can('manage_options') && !current_user_can('coach') && !current_user_can('event_organizer')) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
         }
 

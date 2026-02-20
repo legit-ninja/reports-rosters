@@ -267,62 +267,61 @@ function intersoccer_ajax_update_roster_entry() {
         wp_send_json_error(['message' => __('Roster entry not found.', 'intersoccer-reports-rosters')]);
     }
 
+    // Allowlist of editable roster fields
+    $editable_fields = [
+        'player_name', 'first_name', 'last_name', 'player_index', 'age', 'gender',
+        'venue', 'activity_type', 'booking_type', 'selected_days', 'day_presence',
+        'age_group', 'season', 'start_date', 'end_date', 'camp_terms', 'course_day',
+        'times', 'shirt_size', 'shorts_size', 'late_pickup', 'late_pickup_days',
+        'medical_conditions', 'dietary_needs', 'player_medical', 'player_dietary',
+        'parent_email', 'parent_phone', 'emergency_contact', 'emergency_phone',
+        'avs_number', 'player_dob', 'product_name', 'canton_region',
+        'registration_timestamp', 'girls_only',
+    ];
+
     // Determine update mode: single field update or full update
     if (isset($_POST['field']) && isset($_POST['value'])) {
         // Single field update (inline editing)
         $field = sanitize_text_field($_POST['field']);
         $value = $_POST['value'];
-        
-        // Validate and sanitize the field
-        $sanitized_value = intersoccer_sanitize_roster_field($field, $value);
-        
-        if ($sanitized_value === false) {
-            wp_send_json_error(['message' => __('Invalid field or value.', 'intersoccer-reports-rosters')]);
+
+        // Validate field against allowlist
+        if (!in_array($field, $editable_fields, true)) {
+            wp_send_json_error(['message' => __('This field cannot be edited.', 'intersoccer-reports-rosters')]);
         }
 
-        // Check if field is editable (not a protected field)
-        if (in_array($field, ['id', 'order_id', 'order_item_id', 'created_at', 'updated_at'])) {
-            wp_send_json_error(['message' => __('This field cannot be edited.', 'intersoccer-reports-rosters')]);
+        // Validate and sanitize the value
+        $sanitized_value = intersoccer_sanitize_roster_field($field, $value);
+
+        if ($sanitized_value === false) {
+            wp_send_json_error(['message' => __('Invalid field or value.', 'intersoccer-reports-rosters')]);
         }
 
         // Update single field
         $update_data = [$field => $sanitized_value];
         $where = ['id' => $roster_id];
-        
+
         $result = $wpdb->update($rosters_table, $update_data, $where);
-        
+
         if ($result === false) {
-            wp_send_json_error(['message' => __('Update failed: ', 'intersoccer-reports-rosters') . $wpdb->last_error]);
+            wp_send_json_error(['message' => __('Update failed.', 'intersoccer-reports-rosters')]);
         }
-        
+
         wp_send_json_success(['message' => __('Field updated successfully.', 'intersoccer-reports-rosters')]);
-        
+
     } else {
         // Full form update
         $update_data = [];
-        $protected_fields = ['id', 'order_id', 'order_item_id', 'created_at', 'updated_at'];
-        
-        // Get all editable fields from POST data
-        foreach ($_POST as $key => $value) {
-            // Skip non-field keys
-            if (in_array($key, ['action', 'nonce', 'roster_id', 'roster_edit_nonce'])) {
+
+        // Only process keys present in the editable allowlist
+        foreach ($editable_fields as $field) {
+            if (!array_key_exists($field, $_POST)) {
                 continue;
             }
-            
-            // Skip protected fields
-            if (in_array($key, $protected_fields)) {
-                continue;
-            }
-            
-            // Validate field name (should be a valid column name)
-            if (!preg_match('/^[a-z_][a-z0-9_]*$/', $key)) {
-                continue; // Skip invalid field names
-            }
-            
-            // Sanitize the value
-            $sanitized_value = intersoccer_sanitize_roster_field($key, $value);
+
+            $sanitized_value = intersoccer_sanitize_roster_field($field, $_POST[$field]);
             if ($sanitized_value !== false) {
-                $update_data[$key] = $sanitized_value;
+                $update_data[$field] = $sanitized_value;
             }
         }
 
@@ -331,11 +330,11 @@ function intersoccer_ajax_update_roster_entry() {
         }
 
         $where = ['id' => $roster_id];
-        
+
         $result = $wpdb->update($rosters_table, $update_data, $where);
-        
+
         if ($result === false) {
-            wp_send_json_error(['message' => __('Update failed: ', 'intersoccer-reports-rosters') . $wpdb->last_error]);
+            wp_send_json_error(['message' => __('Update failed.', 'intersoccer-reports-rosters')]);
         }
 
         wp_send_json_success([

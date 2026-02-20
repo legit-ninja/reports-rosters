@@ -290,16 +290,16 @@ function intersoccer_render_plugin_overview_page() {
         }
     }
 
-    $current_venue_labels = json_encode(array_column($current_venue_data, 'venue'));
-    $current_venue_values = json_encode(array_column($current_venue_data, 'count'));
-    $region_labels = json_encode(array_column($region_data, 'venue'));
-    $region_values = json_encode(array_column($region_data, 'count'));
-    $age_labels = json_encode(array_column($age_data, 'age_group'));
-    $age_values = json_encode(array_column($age_data, 'count'));
-    $gender_labels = json_encode($ordered_gender_labels);
-    $gender_values = json_encode($ordered_gender_values);
-    $weekly_labels = json_encode(array_column($weekly_trends, 'week_start'));
-    $weekly_values = json_encode(array_column($weekly_trends, 'count'));
+    $current_venue_labels = wp_json_encode(array_column($current_venue_data, 'venue'));
+    $current_venue_values = wp_json_encode(array_column($current_venue_data, 'count'));
+    $region_labels = wp_json_encode(array_column($region_data, 'venue'));
+    $region_values = wp_json_encode(array_column($region_data, 'count'));
+    $age_labels = wp_json_encode(array_column($age_data, 'age_group'));
+    $age_values = wp_json_encode(array_column($age_data, 'count'));
+    $gender_labels = wp_json_encode($ordered_gender_labels);
+    $gender_values = wp_json_encode($ordered_gender_values);
+    $weekly_labels = wp_json_encode(array_column($weekly_trends, 'week_start'));
+    $weekly_values = wp_json_encode(array_column($weekly_trends, 'count'));
 
     ?>
     <div class="wrap">
