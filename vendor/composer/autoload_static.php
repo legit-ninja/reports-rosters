@@ -126,6 +126,7 @@ class ComposerStaticInit524cfbad5fc29d5511275e827678d85a
         'InterSoccer\\ReportsRosters\\Export\\CsvExporter' => __DIR__ . '/../..' . '/classes/export/csv-exporter.php',
         'InterSoccer\\ReportsRosters\\Export\\ExcelExporter' => __DIR__ . '/../..' . '/classes/export/excel-exporter.php',
         'InterSoccer\\ReportsRosters\\Export\\ExporterInterface' => __DIR__ . '/../..' . '/classes/export/export-interface.php',
+        'InterSoccer\\ReportsRosters\\Office365\\SyncService' => __DIR__ . '/../..' . '/classes/Office365/SyncService.php',
         'InterSoccer\\ReportsRosters\\Reports\\AbstractReport' => __DIR__ . '/../..' . '/classes/reports/abstract-report.php',
         'InterSoccer\\ReportsRosters\\Reports\\CampReport' => __DIR__ . '/../..' . '/classes/reports/camp-report.php',
         'InterSoccer\\ReportsRosters\\Reports\\OverviewReport' => __DIR__ . '/../..' . '/classes/reports/overview-report.php',

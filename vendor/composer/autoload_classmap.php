@@ -39,6 +39,7 @@ return array(
     'InterSoccer\\ReportsRosters\\Export\\CsvExporter' => $baseDir . '/classes/export/csv-exporter.php',
     'InterSoccer\\ReportsRosters\\Export\\ExcelExporter' => $baseDir . '/classes/export/excel-exporter.php',
     'InterSoccer\\ReportsRosters\\Export\\ExporterInterface' => $baseDir . '/classes/export/export-interface.php',
+    'InterSoccer\\ReportsRosters\\Office365\\SyncService' => $baseDir . '/classes/Office365/SyncService.php',
     'InterSoccer\\ReportsRosters\\Reports\\AbstractReport' => $baseDir . '/classes/reports/abstract-report.php',
     'InterSoccer\\ReportsRosters\\Reports\\CampReport' => $baseDir . '/classes/reports/camp-report.php',
     'InterSoccer\\ReportsRosters\\Reports\\OverviewReport' => $baseDir . '/classes/reports/overview-report.php',

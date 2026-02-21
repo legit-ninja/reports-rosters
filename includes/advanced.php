@@ -23,6 +23,15 @@ function intersoccer_render_advanced_page() {
     
     // Get active tab from URL or default to 'general'
     $active_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'general';
+
+    // Office 365 tab: handle save and redirect to avoid double-submit
+    if ($active_tab === 'office365') {
+        require_once dirname(__FILE__) . '/office365-settings.php';
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && intersoccer_office365_maybe_save_settings()) {
+            wp_safe_redirect(admin_url('admin.php?page=intersoccer-advanced&tab=office365&saved=1'));
+            exit;
+        }
+    }
     ?>
     <div class="wrap intersoccer-reports-rosters-settings">
         <h1><?php _e('InterSoccer Settings', 'intersoccer-reports-rosters'); ?></h1>
@@ -41,7 +50,14 @@ function intersoccer_render_advanced_page() {
             <a href="?page=intersoccer-advanced&tab=edit-rosters" class="nav-tab <?php echo $active_tab === 'edit-rosters' ? 'nav-tab-active' : ''; ?>">
                 <?php _e('Edit Rosters', 'intersoccer-reports-rosters'); ?>
             </a>
+            <a href="?page=intersoccer-advanced&tab=office365" class="nav-tab <?php echo $active_tab === 'office365' ? 'nav-tab-active' : ''; ?>">
+                <?php _e('Office 365 Sync', 'intersoccer-reports-rosters'); ?>
+            </a>
         </nav>
+
+        <?php if ($active_tab === 'office365' && isset($_GET['saved']) && (int) $_GET['saved'] === 1) : ?>
+            <div class="notice notice-success is-dismissible"><p><?php _e('Office 365 settings saved.', 'intersoccer-reports-rosters'); ?></p></div>
+        <?php endif; ?>
 
         <!-- Status Messages Container -->
         <div id="intersoccer-operation-status" style="margin: 20px 0 0 0;"></div>
@@ -172,6 +188,14 @@ function intersoccer_render_advanced_page() {
         <?php if ($active_tab === 'edit-rosters') : ?>
             <div class="tab-content tab-edit-rosters">
                 <?php intersoccer_render_roster_editor_tab(); ?>
+            </div>
+        <?php endif; ?>
+
+        <!-- Office 365 Sync Tab -->
+        <?php if ($active_tab === 'office365') : ?>
+            <div class="tab-content tab-office365 settings-section">
+                <h2><?php _e('Office 365 Sync', 'intersoccer-reports-rosters'); ?></h2>
+                <?php intersoccer_render_office365_settings_tab_content(admin_url('admin.php?page=intersoccer-advanced&tab=office365')); ?>
             </div>
         <?php endif; ?>
 

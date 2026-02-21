@@ -108,12 +108,23 @@ if (file_exists($intersoccer_oop_adapter)) {
     require_once $intersoccer_oop_adapter;
 }
 
+// Load Office 365 cron runner on init so the cron hook is registered (cron runs without admin).
+$office365_cron_file = plugin_dir_path(__FILE__) . 'includes/office365-cron.php';
+if (file_exists($office365_cron_file)) {
+    require_once $office365_cron_file;
+    add_action(INTERSOCCER_OFFICE365_CRON_HOOK, 'intersoccer_office365_run_scheduled_sync');
+}
+
 // Load reports.php on admin_init so AJAX handler is registered for admin-ajax.php requests.
 // admin_menu does NOT run for admin-ajax, so we must use admin_init which does.
 add_action('admin_init', function () {
     $reports_file = plugin_dir_path(__FILE__) . 'includes/reports.php';
     if (file_exists($reports_file)) {
         require_once $reports_file;
+    }
+    $office365_file = plugin_dir_path(__FILE__) . 'includes/office365-settings.php';
+    if (file_exists($office365_file)) {
+        require_once $office365_file;
     }
 }, 0);
 
