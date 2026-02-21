@@ -605,6 +605,7 @@ function intersoccer_render_roster_details_page() {
     echo '<input type="hidden" name="times" value="' . esc_attr($times) . '">';
     echo '<input type="hidden" name="girls_only" value="' . ($is_girls_only ? '1' : '0') . '">';
     echo '<input type="hidden" name="nonce" value="' . esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')) . '">';
+    echo '<label style="margin-right:12px;"><input type="checkbox" name="sync_to_office365" id="roster-sync-office365" value="1" /> ' . esc_html__('Also sync to Office 365', 'intersoccer-reports-rosters') . '</label>';
     echo '<input type="submit" name="export_roster" id="roster-export-button" class="button button-primary" value="' . esc_attr__('Export Roster', 'intersoccer-reports-rosters') . '">';
     echo '</form>';
     
@@ -1144,8 +1145,14 @@ function intersoccer_render_roster_details_page() {
                             document.body.removeChild(link);
                             window.URL.revokeObjectURL(link.href);
                             
-                            // Show success notice
-                            showExportNotice('<?php echo esc_js(__('Export completed successfully!', 'intersoccer-reports-rosters')); ?>', 'success');
+                            // Show success notice; include Office 365 sync status if present
+                            var successMsg = '<?php echo esc_js(__('Export completed successfully!', 'intersoccer-reports-rosters')); ?>';
+                            if (response.data.synced === true) {
+                                successMsg = '<?php echo esc_js(__('Export completed and synced to Office 365.', 'intersoccer-reports-rosters')); ?>';
+                            } else if (response.data.synced === false && response.data.sync_error) {
+                                successMsg = '<?php echo esc_js(__('Export completed. Sync to Office 365 failed:', 'intersoccer-reports-rosters')); ?> ' + response.data.sync_error;
+                            }
+                            showExportNotice(successMsg, response.data.synced === false && response.data.sync_error ? 'warning' : 'success');
                         } catch (err) {
                             console.error('Export download error:', err);
                             showExportNotice('<?php echo esc_js(__('Export generated but download failed. Please try again.', 'intersoccer-reports-rosters')); ?>', 'error');

@@ -194,6 +194,7 @@ function intersoccer_render_final_reports_page() {
         </form>
 
         <div class="export-section" style="margin-bottom: 20px;">
+            <label style="margin-right:12px;"><input type="checkbox" id="final-reports-sync-office365" value="1" /> <?php _e('Also sync to Office 365', 'intersoccer-reports-rosters'); ?></label>
             <button type="button" id="export-final-reports" class="button button-primary"><?php _e('Export to Excel', 'intersoccer-reports-rosters'); ?></button>
         </div>
 
@@ -500,7 +501,8 @@ function intersoccer_render_final_reports_page() {
                     year: year,
                     activity_type: activity_type,
                     season_type: season_type,
-                    region: region
+                    region: region,
+                    sync_to_office365: $('#final-reports-sync-office365').is(':checked') ? 1 : 0
                 },
                 success: function(response) {
                     if (response.success) {
@@ -520,8 +522,14 @@ function intersoccer_render_final_reports_page() {
                         link.click();
                         document.body.removeChild(link);
                         
-                        // Show success notification (same as booking reports)
-                        showNotification("<?php _e('Export completed successfully!', 'intersoccer-reports-rosters'); ?>", "success");
+                        // Show success notification; include Office 365 sync status if present
+                        var msg = "<?php echo esc_js(__('Export completed successfully!', 'intersoccer-reports-rosters')); ?>";
+                        if (response.data.synced === true) {
+                            msg = "<?php echo esc_js(__('Export completed and synced to Office 365.', 'intersoccer-reports-rosters')); ?>";
+                        } else if (response.data.synced === false && response.data.sync_error) {
+                            msg = "<?php echo esc_js(__('Export completed. Sync to Office 365 failed:', 'intersoccer-reports-rosters')); ?> " + response.data.sync_error;
+                        }
+                        showNotification(msg, response.data.synced === false && response.data.sync_error ? "warning" : "success");
                     } else {
                         showNotification("<?php _e('Export failed:', 'intersoccer-reports-rosters'); ?> " + (response.data.message || "<?php _e('Unknown error', 'intersoccer-reports-rosters'); ?>"), "error");
                         console.error("Export error:", response.data.message);
