@@ -230,6 +230,7 @@ function intersoccer_enqueue_datepicker() {
                     
                     exportData.action = "intersoccer_export_booking_report";
                     exportData.nonce = intersoccer_reports_ajax.nonce;
+                    exportData.sync_to_office365 = $("#sync-to-office365").is(":checked") ? 1 : 0;
                     
                     $.ajax({
                         url: intersoccer_reports_ajax.ajaxurl,
@@ -254,8 +255,14 @@ function intersoccer_enqueue_datepicker() {
                                 link.click();
                                 document.body.removeChild(link);
                                 
-                                // Show success message
-                                showNotification("Export completed successfully!", "success");
+                                // Show success message; include Office 365 sync status if present
+                                var msg = "Export completed successfully!";
+                                if (response.data.synced === true) {
+                                    msg = "Export completed and synced to Office 365.";
+                                } else if (response.data.synced === false && response.data.sync_error) {
+                                    msg = "Export completed. Sync to Office 365 failed: " + response.data.sync_error;
+                                }
+                                showNotification(msg, response.data.synced === false && response.data.sync_error ? "warning" : "success");
                             } else {
                                 showNotification("Export failed: " + (response.data.message || "Unknown error"), "error");
                                 console.error("Export error:", response.data.message);
@@ -523,6 +530,7 @@ function intersoccer_render_booking_report_tab() {
                 <button id="export-booking-report" class="button button-primary">
                     ↓ <?php _e('Export to Excel', 'intersoccer-reports-rosters'); ?>
                 </button>
+                <label style="margin-left:10px;"><input type="checkbox" id="sync-to-office365" name="sync_to_office365" value="1" /> <?php _e('Also sync to Office 365', 'intersoccer-reports-rosters'); ?></label>
             </div>
         </div>
         
@@ -534,44 +542,45 @@ function intersoccer_render_booking_report_tab() {
 }
 
 /**
- * Handle AJAX export request for booking report.
+ * Generate booking report Excel for given date range (for AJAX and scheduled sync).
+ *
+ * @param string      $start_date Start date Y-m-d.
+ * @param string      $end_date   End date Y-m-d.
+ * @param int         $year       Year.
+ * @return array{filename: string, content: string}|null Null if no data.
  */
-function intersoccer_export_booking_report_callback() {
-    check_ajax_referer('intersoccer_reports_filter', 'nonce');
-
-    // Get and validate the same filters used in the display
-    $start_date = isset($_POST['start_date']) ? sanitize_text_field($_POST['start_date']) : '';
-    $end_date = isset($_POST['end_date']) ? sanitize_text_field($_POST['end_date']) : '';
-    $year = isset($_POST['year']) ? absint($_POST['year']) : date('Y');
-    $visible_columns = isset($_POST['columns']) ? array_map('sanitize_text_field', (array)$_POST['columns']) : [
+function intersoccer_office365_generate_booking_report_xlsx($start_date, $end_date, $year) {
+    $report_data = intersoccer_get_financial_booking_report($start_date, $end_date, $year, '');
+    if (empty($report_data['data'])) {
+        return null;
+    }
+    $default_columns = [
         'ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'stripe_fee', 'final_price', 'discount_codes',
         'class_name', 'start_date', 'venue', 'booker_email', 'attendee_name', 'attendee_age', 'attendee_gender', 'parent_phone'
     ];
+    return intersoccer_office365_build_booking_report_xlsx($report_data, $start_date, $end_date, $year, $default_columns);
+}
 
-    // Validate inputs
-    if ($start_date && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date)) {
-        wp_send_json_error(['message' => 'Invalid start date format. Use YYYY-MM-DD.']);
+/**
+ * Build booking report Excel from report data (shared by AJAX and cron).
+ *
+ * @param array       $report_data    From intersoccer_get_financial_booking_report.
+ * @param string      $start_date     Start date.
+ * @param string      $end_date       End date.
+ * @param int         $year           Year.
+ * @param array|null  $visible_columns Column keys; default if null.
+ * @return array{filename: string, content: string}
+ */
+function intersoccer_office365_build_booking_report_xlsx($report_data, $start_date, $end_date, $year, $visible_columns = null) {
+    if ($visible_columns === null) {
+        $visible_columns = [
+            'ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'stripe_fee', 'final_price', 'discount_codes',
+            'class_name', 'start_date', 'venue', 'booker_email', 'attendee_name', 'attendee_age', 'attendee_gender', 'parent_phone'
+        ];
     }
-    if ($end_date && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) {
-        wp_send_json_error(['message' => 'Invalid end date format. Use YYYY-MM-DD.']);
-    }
-    if ($start_date && $end_date && strtotime($start_date) > strtotime($end_date)) {
-        wp_send_json_error(['message' => 'Start date must be before or equal to end date.']);
-    }
 
-    try {
-        // Get the EXACT same data that was displayed to the user using simplified financial reporting
-        $report_data = intersoccer_get_financial_booking_report($start_date, $end_date, $year, '');
-        
-        if (empty($report_data['data'])) {
-            wp_send_json_error(['message' => __('No data available for export with current filters.', 'intersoccer-reports-rosters')]);
-        }
-
-        // Log export parameters for debugging
-        error_log('InterSoccer ENHANCED: Exporting ' . count($report_data['data']) . ' records with enhanced discount data');
-
-        $spreadsheet = new Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
+    $spreadsheet = new Spreadsheet();
+    $sheet = $spreadsheet->getActiveSheet();
         
         // Create descriptive sheet title
         $date_range = '';
@@ -900,16 +909,58 @@ function intersoccer_export_booking_report_callback() {
         $filename_parts[] = date('Y-m-d_H-i-s');
         $filename = implode('_', $filename_parts) . '.xlsx';
 
-        error_log('InterSoccer ENHANCED: Export completed with enhanced discount tracking. File: ' . $filename . ', Records: ' . count($report_data['data']));
-        
-        wp_send_json_success([
+    return ['content' => $content, 'filename' => $filename];
+}
+
+/**
+ * Handle AJAX export request for booking report.
+ */
+function intersoccer_export_booking_report_callback() {
+    check_ajax_referer('intersoccer_reports_filter', 'nonce');
+
+    $start_date = isset($_POST['start_date']) ? sanitize_text_field($_POST['start_date']) : '';
+    $end_date = isset($_POST['end_date']) ? sanitize_text_field($_POST['end_date']) : '';
+    $year = isset($_POST['year']) ? absint($_POST['year']) : date('Y');
+    $visible_columns = isset($_POST['columns']) ? array_map('sanitize_text_field', (array)$_POST['columns']) : [
+        'ref', 'booked', 'base_price', 'discount_amount', 'reimbursement', 'stripe_fee', 'final_price', 'discount_codes',
+        'class_name', 'start_date', 'venue', 'booker_email', 'attendee_name', 'attendee_age', 'attendee_gender', 'parent_phone'
+    ];
+
+    if ($start_date && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date)) {
+        wp_send_json_error(['message' => 'Invalid start date format. Use YYYY-MM-DD.']);
+    }
+    if ($end_date && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) {
+        wp_send_json_error(['message' => 'Invalid end date format. Use YYYY-MM-DD.']);
+    }
+    if ($start_date && $end_date && strtotime($start_date) > strtotime($end_date)) {
+        wp_send_json_error(['message' => 'Start date must be before or equal to end date.']);
+    }
+
+    try {
+        $report_data = intersoccer_get_financial_booking_report($start_date, $end_date, $year, '');
+        if (empty($report_data['data'])) {
+            wp_send_json_error(['message' => __('No data available for export with current filters.', 'intersoccer-reports-rosters')]);
+        }
+        $result = intersoccer_office365_build_booking_report_xlsx($report_data, $start_date, $end_date, $year, $visible_columns);
+        $content = $result['content'];
+        $filename = $result['filename'];
+
+        $payload = [
             'content' => base64_encode($content),
             'filename' => $filename,
             'record_count' => count($report_data['data']),
             'file_size' => strlen($content),
-            'enhancement' => 'Enhanced discount tracking enabled'
-        ]);
-
+            'enhancement' => 'Enhanced discount tracking enabled',
+        ];
+        if (!empty($_POST['sync_to_office365']) && class_exists('InterSoccer\ReportsRosters\Office365\SyncService')) {
+            $service = new \InterSoccer\ReportsRosters\Office365\SyncService();
+            if ($service->isEnabled()) {
+                $upload = $service->uploadFile($filename, $content);
+                $payload['synced'] = $upload['success'];
+                $payload['sync_error'] = isset($upload['error']) ? $upload['error'] : null;
+            }
+        }
+        wp_send_json_success($payload);
     } catch (\Throwable $e) {
         error_log('InterSoccer ENHANCED: Export error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
         wp_send_json_error([

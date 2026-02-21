@@ -673,12 +673,22 @@ function intersoccer_export_roster() {
                 : ('event_signature: ' . ($event_signature ?: 'N/A')));
             intersoccer_log_audit('export_roster_excel', 'Exported for ' . $audit_detail);
         }
+
+        $payload = [
+            'content' => base64_encode($content),
+            'filename' => $filename,
+        ];
+        if (!empty($_POST['sync_to_office365']) && class_exists('InterSoccer\ReportsRosters\Office365\SyncService')) {
+            $service = new \InterSoccer\ReportsRosters\Office365\SyncService();
+            if ($service->isEnabled()) {
+                $result = $service->uploadFile($filename, $content);
+                $payload['synced'] = $result['success'];
+                $payload['sync_error'] = isset($result['error']) ? $result['error'] : null;
+            }
+        }
         
         // Send JSON response with base64-encoded content (like booking reports)
-        wp_send_json_success([
-            'content' => base64_encode($content),
-            'filename' => $filename
-        ]);
+        wp_send_json_success($payload);
         } catch (\Exception $e) {
             // Clear any output buffers
             while (ob_get_level()) {

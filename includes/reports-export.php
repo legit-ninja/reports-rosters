@@ -15,28 +15,19 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 /**
- * Export final reports Excel (AJAX handler)
+ * Generate final reports Excel file (for AJAX and scheduled sync).
+ *
+ * @param int         $year         Year.
+ * @param string      $activity_type Camp or Course.
+ * @param string|null $season_type   Optional season type.
+ * @param string|null $region        Optional region.
+ * @return array{filename: string, content: string}|null Null on failure.
  */
-add_action('wp_ajax_intersoccer_export_final_reports', 'intersoccer_export_final_reports_callback');
-function intersoccer_export_final_reports_callback() {
-    check_ajax_referer('intersoccer_reports_nonce', 'nonce');
-
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error(__('You do not have sufficient permissions to export reports.', 'intersoccer-reports-rosters'));
-    }
-
-    $year = isset($_POST['year']) ? absint($_POST['year']) : date('Y');
-    $activity_type = isset($_POST['activity_type']) ? sanitize_text_field($_POST['activity_type']) : 'Camp';
-    $season_type = isset($_POST['season_type']) ? sanitize_text_field($_POST['season_type']) : null;
-    $region = isset($_POST['region']) ? sanitize_text_field($_POST['region']) : null;
-
-    // Include the data processing file
+function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type = 'Camp', $season_type = null, $region = null) {
     require_once plugin_dir_path(__FILE__) . 'reports-data.php';
-
     $report_data = intersoccer_get_final_reports_data($year, $activity_type, $season_type, $region);
     $totals = intersoccer_calculate_final_reports_totals($report_data, $activity_type);
 
-    // Build filename with filters if applied
     $filename = 'final-reports-' . strtolower($activity_type) . '-' . $year;
     if (!empty($season_type)) {
         $filename .= '-' . strtolower($season_type);
@@ -46,7 +37,6 @@ function intersoccer_export_final_reports_callback() {
     }
     $filename .= '.xlsx';
 
-    // Create new Spreadsheet object
     $spreadsheet = new Spreadsheet();
     $sheet = $spreadsheet->getActiveSheet();
     $sheet->setTitle(substr('Final ' . $activity_type . ' Reports ' . $year, 0, 31));
@@ -183,14 +173,46 @@ function intersoccer_export_final_reports_callback() {
         $sheet->getColumnDimension($column)->setAutoSize(true);
     }
 
-    // Generate and send file content directly
     $writer = new Xlsx($spreadsheet);
     ob_start();
     $writer->save('php://output');
     $content = ob_get_clean();
+    return ['filename' => $filename, 'content' => $content];
+}
 
-    wp_send_json_success([
-        'content' => base64_encode($content),
-        'filename' => $filename
-    ]);
+/**
+ * Export final reports Excel (AJAX handler)
+ */
+add_action('wp_ajax_intersoccer_export_final_reports', 'intersoccer_export_final_reports_callback');
+function intersoccer_export_final_reports_callback() {
+    check_ajax_referer('intersoccer_reports_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(__('You do not have sufficient permissions to export reports.', 'intersoccer-reports-rosters'));
+    }
+
+    $year = isset($_POST['year']) ? absint($_POST['year']) : date('Y');
+    $activity_type = isset($_POST['activity_type']) ? sanitize_text_field($_POST['activity_type']) : 'Camp';
+    $season_type = isset($_POST['season_type']) ? sanitize_text_field($_POST['season_type']) : null;
+    $region = isset($_POST['region']) ? sanitize_text_field($_POST['region']) : null;
+
+    $result = intersoccer_office365_generate_final_reports_xlsx($year, $activity_type, $season_type, $region);
+    if (!$result) {
+        wp_send_json_error(__('Failed to generate report.', 'intersoccer-reports-rosters'));
+    }
+
+    $payload = [
+        'content' => base64_encode($result['content']),
+        'filename' => $result['filename'],
+    ];
+    if (!empty($_POST['sync_to_office365']) && class_exists('InterSoccer\ReportsRosters\Office365\SyncService')) {
+        $service = new \InterSoccer\ReportsRosters\Office365\SyncService();
+        if ($service->isEnabled()) {
+            $upload = $service->uploadFile($result['filename'], $result['content']);
+            $payload['synced'] = $upload['success'];
+            $payload['sync_error'] = isset($upload['error']) ? $upload['error'] : null;
+        }
+    }
+
+    wp_send_json_success($payload);
 }
