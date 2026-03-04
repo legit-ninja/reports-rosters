@@ -233,6 +233,11 @@ class RosterRepository implements RepositoryInterface {
             
             foreach ($roster_data as $data) {
                 $roster = new Roster($data);
+                // Ensure primary key is populated for models loaded via all()
+                // so downstream update() calls (e.g. signature rebuild) can find the row.
+                if (isset($data['id'])) {
+                    $roster->setKey($data['id']);
+                }
                 $roster->setExists(true);
                 $rosters->add($roster);
             }
@@ -619,6 +624,53 @@ class RosterRepository implements RepositoryInterface {
                 'error' => $e->getMessage()
             ]);
             throw $e;
+        }
+    }
+    
+    /**
+     * Update only the event_signature field for a roster entry.
+     *
+     * This bypasses full model validation and is intended for use by the
+     * signature rebuild process, which recomputes signatures from existing
+     * normalized event data.
+     *
+     * @param int $id Roster ID
+     * @param string $signature New event signature
+     * @return bool Success status
+     */
+    public function updateEventSignature($id, string $signature) {
+        try {
+            $this->logger->debug('Updating roster event_signature only', [
+                'id' => $id,
+                'event_signature' => $signature,
+            ]);
+
+            $success = $this->database->update_roster_entry([
+                'id' => $id,
+                'event_signature' => $signature,
+            ]);
+
+            if (!$success) {
+                throw new DatabaseException('Failed to update roster event_signature');
+            }
+
+            // Invalidate caches for this roster and related aggregates.
+            $cache_key = self::CACHE_PREFIX . $id;
+            $this->cache->forget($cache_key);
+            $this->clearRelatedCaches();
+
+            $this->logger->info('Roster event_signature updated successfully', [
+                'id' => $id,
+            ]);
+
+            return true;
+        } catch (\Exception $e) {
+            $this->logger->error('Failed to update roster event_signature', [
+                'id' => $id,
+                'event_signature' => $signature,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
         }
     }
     

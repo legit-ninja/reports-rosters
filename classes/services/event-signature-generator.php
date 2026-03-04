@@ -54,9 +54,9 @@ class EventSignatureGenerator {
             // Normalize data to language-agnostic format
             $normalized = $this->normalize($event_data);
             
-            // Build signature components in consistent order
+            // Build signature components in consistent order (canonicalize activity_type for language-agnostic grouping)
             $components = [
-                'activity_type' => $normalized['activity_type'] ?? '',
+                'activity_type' => strtolower(trim($normalized['activity_type'] ?? '')),
                 'venue' => $normalized['venue'] ?? '',
                 'age_group' => $normalized['age_group'] ?? '',
                 'camp_terms' => $normalized['camp_terms'] ?? '',

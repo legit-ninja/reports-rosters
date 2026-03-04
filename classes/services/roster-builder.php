@@ -759,6 +759,19 @@ class RosterBuilder {
         if (empty($order_data['venue']) && !empty($order_data['intersoccer-venues'])) {
             $order_data['venue'] = $order_data['intersoccer-venues'];
         }
+        // Course/camp fallbacks: variation attributes use hyphenated keys (e.g. course-day); ensure canonical keys are set so mixed-language orders get the same signature
+        if (empty($order_data['course_day']) && !empty($order_data['course-day'])) {
+            $order_data['course_day'] = $order_data['course-day'];
+        }
+        if (empty($order_data['course_times']) && !empty($order_data['course-times'])) {
+            $order_data['course_times'] = $order_data['course-times'];
+        }
+        if (empty($order_data['camp_times']) && !empty($order_data['camp-times'])) {
+            $order_data['camp_times'] = $order_data['camp-times'];
+        }
+        if (empty($order_data['event_type']) && !empty($order_data['camp-terms'])) {
+            $order_data['event_type'] = $order_data['camp-terms'];
+        }
         
         // Parse and validate dates
         $order_data = $this->parseDates($order_data);
@@ -1126,7 +1139,7 @@ class RosterBuilder {
                 'activity_type' => $roster_data['activity_type'] ?? '',
                 'venue' => $roster_data['venue'] ?? '',
                 'age_group' => $roster_data['age_group'] ?? '',
-                'camp_terms' => $roster_data['camp_terms'] ?? '',
+                'camp_terms' => $roster_data['camp_terms'] ?? $roster_data['event_type'] ?? '',
                 'course_day' => $roster_data['course_day'] ?? '',
                 'times' => $roster_data['times'] ?? '',
                 'season' => $roster_data['season'] ?? '',
@@ -1778,10 +1791,8 @@ class RosterBuilder {
                         continue;
                     }
                     
-                    // Update the roster with new signature
-                    $update_result = $this->roster_repository->update($roster->id, [
-                        'event_signature' => $new_signature
-                    ]);
+                    // Update the roster with new signature (event_signature only, skip full validation)
+                    $update_result = $this->roster_repository->updateEventSignature($roster->id, $new_signature);
                     
                     if ($update_result) {
                         $results['updated']++;
