@@ -92,19 +92,14 @@ class RosterListingService {
 
         $display_groups = $this->applyCampFilters($all_groups, $filters);
         $grouped_by_season = $this->groupCampsBySeason($display_groups);
+        $available_filters = $this->getAvailableCampFilterOptions($all_groups, $filters);
 
         return [
             'query_time' => $query_time,
             'all_groups' => $all_groups,
             'display_groups' => $display_groups,
             'grouped' => $grouped_by_season,
-            'filters' => [
-                'seasons' => $filter_sets['seasons'],
-                'venues' => $filter_sets['venues'],
-                'camp_terms' => $filter_sets['camp_terms'],
-                'age_groups' => $filter_sets['age_groups'],
-                'cities' => $filter_sets['cities'],
-            ],
+            'filters' => $available_filters,
         ];
     }
 
@@ -216,19 +211,14 @@ class RosterListingService {
 
         $display_groups = $this->applyCourseFilters($all_groups, $filters);
         $grouped = $this->groupCoursesBySeasonDay($display_groups);
+        $available_filters = $this->getAvailableCourseFilterOptions($all_groups, $filters);
 
         return [
             'query_time' => $query_time,
             'all_groups' => $all_groups,
             'display_groups' => $display_groups,
             'grouped' => $grouped,
-            'filters' => [
-                'seasons' => $filter_sets['seasons'],
-                'venues' => $filter_sets['venues'],
-                'course_days' => $filter_sets['course_days'],
-                'age_groups' => $filter_sets['age_groups'],
-                'cities' => $filter_sets['cities'],
-            ],
+            'filters' => $available_filters,
         ];
     }
 
@@ -373,6 +363,57 @@ class RosterListingService {
             }
             return true;
         }));
+    }
+
+    /**
+     * Filter groups by all course dimensions except one; used to derive cascading option lists.
+     */
+    private function filterCourseGroupsExcept(array $groups, array $filters, string $omit_dimension): array {
+        return array_values(array_filter($groups, function ($group) use ($filters, $omit_dimension) {
+            if ($omit_dimension !== 'season' && $filters['season'] && $group['season'] !== $filters['season'] && $group['season_raw'] !== $filters['season']) {
+                return false;
+            }
+            if ($omit_dimension !== 'venue' && $filters['venue'] && $group['venue'] !== $filters['venue']) {
+                return false;
+            }
+            if ($omit_dimension !== 'course_day' && $filters['course_day'] && $group['course_day'] !== $filters['course_day']) {
+                return false;
+            }
+            if ($omit_dimension !== 'age_group' && $filters['age_group'] && $group['age_group'] !== $filters['age_group']) {
+                return false;
+            }
+            if ($omit_dimension !== 'city' && $filters['city'] && $group['city'] !== $filters['city']) {
+                return false;
+            }
+            return true;
+        }));
+    }
+
+    /**
+     * Return cascading filter option lists for Courses: each dimension lists only values still valid given other selections.
+     */
+    private function getAvailableCourseFilterOptions(array $all_groups, array $filters): array {
+        $dimensions = [
+            'seasons' => 'season',
+            'venues' => 'venue',
+            'course_days' => 'course_day',
+            'age_groups' => 'age_group',
+            'cities' => 'city',
+        ];
+        $result = [];
+        foreach ($dimensions as $key => $field) {
+            $filtered = $this->filterCourseGroupsExcept($all_groups, $filters, $field);
+            $values = [];
+            foreach ($filtered as $group) {
+                $v = $group[$field] ?? '';
+                if ($v !== '' && $v !== 'N/A') {
+                    $values[$v] = true;
+                }
+            }
+            $result[$key] = array_keys($values);
+            sort($result[$key], SORT_NATURAL | SORT_FLAG_CASE);
+        }
+        return $result;
     }
 
     private function groupCoursesBySeasonDay(array $groups): array {
@@ -1013,6 +1054,57 @@ class RosterListingService {
             }
             return true;
         }));
+    }
+
+    /**
+     * Filter groups by all camp dimensions except one; used to derive cascading option lists.
+     */
+    private function filterCampGroupsExcept(array $groups, array $filters, string $omit_dimension): array {
+        return array_values(array_filter($groups, function ($group) use ($filters, $omit_dimension) {
+            if ($omit_dimension !== 'season' && $filters['season'] && $group['season'] !== $filters['season'] && $group['season_raw'] !== $filters['season']) {
+                return false;
+            }
+            if ($omit_dimension !== 'venue' && $filters['venue'] && $group['venue'] !== $filters['venue']) {
+                return false;
+            }
+            if ($omit_dimension !== 'camp_terms' && $filters['camp_terms'] && $group['camp_terms'] !== $filters['camp_terms']) {
+                return false;
+            }
+            if ($omit_dimension !== 'age_group' && $filters['age_group'] && $group['age_group'] !== $filters['age_group']) {
+                return false;
+            }
+            if ($omit_dimension !== 'city' && $filters['city'] && $group['city'] !== $filters['city']) {
+                return false;
+            }
+            return true;
+        }));
+    }
+
+    /**
+     * Return cascading filter option lists for Camps: each dimension lists only values still valid given other selections.
+     */
+    private function getAvailableCampFilterOptions(array $all_groups, array $filters): array {
+        $dimensions = [
+            'seasons' => 'season',
+            'venues' => 'venue',
+            'camp_terms' => 'camp_terms',
+            'age_groups' => 'age_group',
+            'cities' => 'city',
+        ];
+        $result = [];
+        foreach ($dimensions as $key => $field) {
+            $filtered = $this->filterCampGroupsExcept($all_groups, $filters, $field);
+            $values = [];
+            foreach ($filtered as $group) {
+                $v = $group[$field] ?? '';
+                if ($v !== '' && $v !== 'N/A') {
+                    $values[$v] = true;
+                }
+            }
+            $result[$key] = array_keys($values);
+            sort($result[$key], SORT_NATURAL | SORT_FLAG_CASE);
+        }
+        return $result;
     }
 
     private function groupCampsBySeason(array $groups): array {
