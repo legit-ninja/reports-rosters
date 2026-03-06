@@ -893,22 +893,6 @@ function intersoccer_render_camps_page() {
                                         <div class="camp-actions">
                                             <?php 
                                             $view_params = ['page' => 'intersoccer-roster-details', 'from' => 'camps', 'event_signature' => $camp['event_signature']];
-                                            $oids = isset($camp['order_item_ids']) ? (is_array($camp['order_item_ids']) ? $camp['order_item_ids'] : array_filter(explode(',', (string)$camp['order_item_ids']))) : [];
-                                            if (!empty($oids)) {
-                                                $view_params['order_item_ids'] = implode(',', array_map('intval', $oids));
-                                            }
-                                            if (!empty($camp['variation_ids']) && is_array($camp['variation_ids'])) {
-                                                $vids = array_filter(array_map('intval', $camp['variation_ids']));
-                                                if (!empty($vids)) {
-                                                    $view_params['variation_ids'] = implode(',', $vids);
-                                                }
-                                            }
-                                            if (!empty($camp['camp_terms']) && $camp['camp_terms'] !== 'N/A') {
-                                                $view_params['camp_terms'] = $camp['camp_terms'];
-                                            }
-                                            if (!empty($camp['venue']) && $camp['venue'] !== 'N/A') {
-                                                $view_params['venue'] = $camp['venue'];
-                                            }
                                             $view_url = add_query_arg($view_params, admin_url('admin.php'));
                                             $is_closed = !empty($camp['event_completed']);
                                             ?>
@@ -1478,22 +1462,6 @@ function intersoccer_render_courses_page() {
                                                 <div class="course-actions">
                                                     <?php
                                                     $view_params = ['page' => 'intersoccer-roster-details', 'from' => 'courses', 'event_signature' => $course['event_signature']];
-                                                    $oids = isset($course['order_item_ids']) ? (is_array($course['order_item_ids']) ? $course['order_item_ids'] : array_filter(explode(',', (string)$course['order_item_ids']))) : [];
-                                                    if (!empty($oids)) {
-                                                        $view_params['order_item_ids'] = implode(',', array_map('intval', $oids));
-                                                    }
-                                                    if (!empty($course['variation_ids']) && is_array($course['variation_ids'])) {
-                                                        $vids = array_filter(array_map('intval', $course['variation_ids']));
-                                                        if (!empty($vids)) {
-                                                            $view_params['variation_ids'] = implode(',', $vids);
-                                                        }
-                                                    }
-                                                    if (!empty($course['course_day']) && $course['course_day'] !== 'N/A') {
-                                                        $view_params['course_day'] = $course['course_day'];
-                                                    }
-                                                    if (!empty($course['venue']) && $course['venue'] !== 'N/A') {
-                                                        $view_params['venue'] = $course['venue'];
-                                                    }
                                                     $view_url = add_query_arg($view_params, admin_url('admin.php'));
                                                     $is_closed = !empty($course['event_completed']);
                                                     ?>
@@ -1947,22 +1915,6 @@ function intersoccer_render_girls_only_page() {
                                             <div class="camp-actions">
                                                 <?php 
                                                 $view_params = ['page' => 'intersoccer-roster-details', 'from' => 'girls-only', 'event_signature' => $camp['event_signature'], 'girls_only' => '1'];
-                                                $oids = isset($camp['order_item_ids']) ? (is_array($camp['order_item_ids']) ? $camp['order_item_ids'] : array_filter(explode(',', (string)$camp['order_item_ids']))) : [];
-                                                if (!empty($oids)) {
-                                                    $view_params['order_item_ids'] = implode(',', array_map('intval', $oids));
-                                                }
-                                                if (!empty($camp['variation_ids']) && is_array($camp['variation_ids'])) {
-                                                    $vids = array_filter(array_map('intval', $camp['variation_ids']));
-                                                    if (!empty($vids)) {
-                                                        $view_params['variation_ids'] = implode(',', $vids);
-                                                    }
-                                                }
-                                                if (!empty($camp['camp_terms']) && $camp['camp_terms'] !== 'N/A') {
-                                                    $view_params['camp_terms'] = $camp['camp_terms'];
-                                                }
-                                                if (!empty($camp['venue']) && $camp['venue'] !== 'N/A') {
-                                                    $view_params['venue'] = $camp['venue'];
-                                                }
                                                 $view_url = add_query_arg($view_params, admin_url('admin.php'));
                                                 ?>
                                                 <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
@@ -2050,22 +2002,6 @@ function intersoccer_render_girls_only_page() {
                                                     <div class="course-actions">
                                                         <?php
                                                         $view_params = ['page' => 'intersoccer-roster-details', 'from' => 'girls-only', 'event_signature' => $course['event_signature'], 'girls_only' => '1'];
-                                                        $oids = isset($course['order_item_ids']) ? (is_array($course['order_item_ids']) ? $course['order_item_ids'] : array_filter(explode(',', (string)$course['order_item_ids']))) : [];
-                                                        if (!empty($oids)) {
-                                                            $view_params['order_item_ids'] = implode(',', array_map('intval', $oids));
-                                                        }
-                                                        if (!empty($course['variation_ids']) && is_array($course['variation_ids'])) {
-                                                            $vids = array_filter(array_map('intval', $course['variation_ids']));
-                                                            if (!empty($vids)) {
-                                                                $view_params['variation_ids'] = implode(',', $vids);
-                                                            }
-                                                        }
-                                                        if (!empty($course['course_day']) && $course['course_day'] !== 'N/A') {
-                                                            $view_params['course_day'] = $course['course_day'];
-                                                        }
-                                                        if (!empty($course['venue']) && $course['venue'] !== 'N/A') {
-                                                            $view_params['venue'] = $course['venue'];
-                                                        }
                                                         $view_url = add_query_arg($view_params, admin_url('admin.php'));
                                                         ?>
                                                         <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
