@@ -268,12 +268,44 @@ class RosterDetailsService {
             $post = get_post($model->order_id);
             $data['order_date'] = $post ? $post->post_date : null;
             $data['girls_only'] = isset($data['girls_only']) ? (int) $data['girls_only'] : 0;
+            // When age is missing or zero but DOB exists, compute age for display (e.g. from intersoccer_players)
+            if (isset($data['age']) && (int) $data['age'] > 0) {
+                // already set
+            } else {
+                $dob = isset($data['dob']) && $data['dob'] && $data['dob'] !== '1970-01-01'
+                    ? $data['dob']
+                    : (isset($data['player_dob']) && $data['player_dob'] && $data['player_dob'] !== '1970-01-01' ? $data['player_dob'] : null);
+                if ($dob) {
+                    $refDate = isset($data['start_date']) && $data['start_date'] && $data['start_date'] !== '1970-01-01'
+                        ? $data['start_date']
+                        : date('Y-m-d');
+                    $data['age'] = $this->computeAgeFromDob($dob, $refDate);
+                }
+            }
             $rosters[] = (object) $data;
         }
 
         $this->sortRosters($rosters, $sortBy, $sortOrder);
 
         return array_values($rosters);
+    }
+
+    /**
+     * Compute age in years from date of birth and a reference date.
+     *
+     * @param string $dob Date of birth (Y-m-d)
+     * @param string $refDate Reference date (Y-m-d), e.g. event start or today
+     * @return int Age in years
+     */
+    private function computeAgeFromDob(string $dob, string $refDate): int {
+        try {
+            $birth = new \DateTime($dob);
+            $ref = new \DateTime($refDate);
+            $interval = $birth->diff($ref);
+            return max(0, (int) $interval->y);
+        } catch (\Exception $e) {
+            return 0;
+        }
     }
 
     private function sortRosters(array &$rosters, string $sortBy, string $sortOrder): void {

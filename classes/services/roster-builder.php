@@ -1117,7 +1117,7 @@ class RosterBuilder {
             'gender' => $player->gender,
             'medical_conditions' => $player->medical_conditions,
             'dietary_needs' => $player->dietary_needs,
-            
+
             // Customer contact data (parent = billing contact)
             'parent_email' => $customer_data['email'],
             'parent_phone' => $customer_data['phone'],
@@ -1131,7 +1131,15 @@ class RosterBuilder {
             'term' => $order_data['course_day'] ?? $order_data['camp_terms'] ?? '',
             'days_selected' => isset($order_data['selected_days']) ? (is_array($order_data['selected_days']) ? implode(', ', $order_data['selected_days']) : $order_data['selected_days']) : '',
         ]);
-        
+
+        // Set age from DOB when available (so roster table and details page show correct age)
+        if (!empty($roster_data['dob']) && $roster_data['dob'] !== '1970-01-01') {
+            $refDate = !empty($roster_data['start_date']) && $roster_data['start_date'] !== '1970-01-01'
+                ? $roster_data['start_date']
+                : date('Y-m-d');
+            $roster_data['age'] = $this->computeAgeFromDob($roster_data['dob'], $refDate);
+        }
+
         // Normalize event data to English for consistent storage
         // This ensures all roster entries are stored in English regardless of order language
         if (!empty($roster_data['activity_type'])) {
@@ -1212,7 +1220,28 @@ class RosterBuilder {
         }
         return (string) $value;
     }
-    
+
+    /**
+     * Compute age in years from date of birth and a reference date.
+     *
+     * @param string $dob Date of birth (Y-m-d)
+     * @param string $refDate Reference date (Y-m-d), e.g. event start or today
+     * @return int Age in years
+     */
+    private function computeAgeFromDob($dob, $refDate) {
+        if (empty($dob) || empty($refDate)) {
+            return 0;
+        }
+        try {
+            $birth = new \DateTime($dob);
+            $ref = new \DateTime($refDate);
+            $interval = $birth->diff($ref);
+            return max(0, (int) $interval->y);
+        } catch (\Exception $e) {
+            return 0;
+        }
+    }
+
     /**
      * Build event details JSON from roster data
      * 

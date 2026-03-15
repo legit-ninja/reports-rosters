@@ -44,6 +44,7 @@ class Roster extends AbstractModel {
         'first_name',
         'last_name',
         'dob',
+        'age',
         'gender',
         'medical_conditions',
         'dietary_needs',
