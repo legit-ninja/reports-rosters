@@ -74,7 +74,7 @@ function intersoccer_office365_run_scheduled_sync() {
             }
             $year = (int) date('Y');
             foreach (['Camp', 'Course'] as $activity_type) {
-                $result = intersoccer_office365_generate_final_reports_xlsx($year, $activity_type, null, null);
+                $result = intersoccer_office365_generate_final_reports_xlsx($year, $activity_type, null, null, false);
                 if ($result) {
                     $filename = preg_replace('/\.xlsx$/', '_' . date('Y-m-d') . '.xlsx', $result['filename']);
                     $upload = $service->uploadFile($filename, $result['content']);

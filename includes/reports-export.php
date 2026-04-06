@@ -21,11 +21,12 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
  * @param string      $activity_type Camp or Course.
  * @param string|null $season_type   Optional season type.
  * @param string|null $region        Optional region.
+ * @param bool        $exclude_buyclub Omit BuyClub / matching coupon rows when true.
  * @return array{filename: string, content: string}|null Null on failure.
  */
-function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type = 'Camp', $season_type = null, $region = null) {
+function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type = 'Camp', $season_type = null, $region = null, $exclude_buyclub = false) {
     require_once plugin_dir_path(__FILE__) . 'reports-data.php';
-    $report_data = intersoccer_get_final_reports_data($year, $activity_type, $season_type, $region);
+    $report_data = intersoccer_get_final_reports_data($year, $activity_type, $season_type, $region, $exclude_buyclub);
     $totals = intersoccer_calculate_final_reports_totals($report_data, $activity_type);
 
     $filename = 'final-reports-' . strtolower($activity_type) . '-' . $year;
@@ -121,10 +122,12 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
         // Course Excel headers
         $headers = array(
             'Region',
+            'Venue',
             'Course Name',
             'Course Day',
             'Direct Online',
-            'Total'
+            'Total',
+            'Final'
         );
         $sheet->fromArray($headers, null, 'A1');
 
@@ -138,18 +141,22 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
 
         // Course Excel data
         $row_index = 2;
-        foreach ($report_data as $region => $courses) {
-            foreach ($courses as $course_name => $course_days) {
-                foreach ($course_days as $course_day => $course_data) {
-                    $excel_row = array(
-                        $region,
-                        $course_name,
-                        $course_day,
-                        $course_data['online'],
-                        $course_data['total']
-                    );
-                    $sheet->fromArray($excel_row, null, 'A' . $row_index);
-                    $row_index++;
+        foreach ($report_data as $region => $venues) {
+            foreach ($venues as $venue => $courses) {
+                foreach ($courses as $course_name => $course_days) {
+                    foreach ($course_days as $course_day => $course_data) {
+                        $excel_row = array(
+                            $region,
+                            $venue,
+                            $course_name,
+                            $course_day,
+                            $course_data['online'],
+                            $course_data['total'],
+                            $course_data['final']
+                        );
+                        $sheet->fromArray($excel_row, null, 'A' . $row_index);
+                        $row_index++;
+                    }
                 }
             }
         }
@@ -158,13 +165,14 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
         $totals_start = $row_index + 2;
         $sheet->setCellValue('A' . $totals_start, 'TOTALS');
         $sheet->getStyle('A' . $totals_start)->getFont()->setBold(true)->setSize(14)->getColor()->setARGB('FF0073AA');
-        $sheet->mergeCells('A' . $totals_start . ':C' . $totals_start);
+        $sheet->mergeCells('A' . $totals_start . ':D' . $totals_start);
 
         $totals_start++;
         $sheet->setCellValue('A' . $totals_start, 'Category');
-        $sheet->setCellValue('D' . $totals_start, 'Online');
-        $sheet->setCellValue('E' . $totals_start, 'Total');
-        $sheet->getStyle('A' . $totals_start . ':E' . $totals_start)->getFont()->setBold(true);
+        $sheet->setCellValue('E' . $totals_start, 'Online');
+        $sheet->setCellValue('F' . $totals_start, 'Total');
+        $sheet->setCellValue('G' . $totals_start, 'Final');
+        $sheet->getStyle('A' . $totals_start . ':G' . $totals_start)->getFont()->setBold(true);
 
     }
 
@@ -195,8 +203,9 @@ function intersoccer_export_final_reports_callback() {
     $activity_type = isset($_POST['activity_type']) ? sanitize_text_field($_POST['activity_type']) : 'Camp';
     $season_type = isset($_POST['season_type']) ? sanitize_text_field($_POST['season_type']) : null;
     $region = isset($_POST['region']) ? sanitize_text_field($_POST['region']) : null;
+    $exclude_buyclub = !empty($_POST['exclude_buyclub']);
 
-    $result = intersoccer_office365_generate_final_reports_xlsx($year, $activity_type, $season_type, $region);
+    $result = intersoccer_office365_generate_final_reports_xlsx($year, $activity_type, $season_type, $region, $exclude_buyclub);
     if (!$result) {
         wp_send_json_error(__('Failed to generate report.', 'intersoccer-reports-rosters'));
     }

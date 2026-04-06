@@ -92,6 +92,7 @@ function intersoccer_render_final_reports_page() {
     $activity_type = isset($_GET['activity_type']) ? sanitize_text_field($_GET['activity_type']) : 'Camp';
     $season_type = isset($_GET['season_type']) ? sanitize_text_field($_GET['season_type']) : '';
     $region = isset($_GET['region']) ? sanitize_text_field($_GET['region']) : '';
+    $exclude_buyclub = !empty($_GET['exclude_buyclub']);
 
     // Determine current page for form action
     $current_page = isset($_GET['page']) ? $_GET['page'] : 'intersoccer-final-reports';
@@ -149,7 +150,7 @@ function intersoccer_render_final_reports_page() {
     $regions = $wpdb->get_col($regions_query);
     sort($regions);
 
-    $report_data = intersoccer_get_final_reports_data($year, $activity_type, $season_type ?: null, $region ?: null);
+    $report_data = intersoccer_get_final_reports_data($year, $activity_type, $season_type ?: null, $region ?: null, $exclude_buyclub);
     $totals = intersoccer_calculate_final_reports_totals($report_data, $activity_type);
 
     ?>
@@ -190,6 +191,10 @@ function intersoccer_render_final_reports_page() {
                     <?php endforeach; ?>
                 </select>
             <?php endif; ?>
+            <label style="margin-left:8px;">
+                <input type="checkbox" name="exclude_buyclub" value="1" <?php checked($exclude_buyclub); ?> />
+                <?php _e('Exclude BuyClub / partner discount registrations', 'intersoccer-reports-rosters'); ?>
+            </label>
             <button type="submit" class="button"><?php _e('Filter', 'intersoccer-reports-rosters'); ?></button>
         </form>
 
@@ -410,6 +415,7 @@ function intersoccer_render_final_reports_page() {
                     <thead>
                         <tr>
                             <th><?php _e('Region', 'intersoccer-reports-rosters'); ?></th>
+                            <th><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Course Name', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Course Day', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Direct Online', 'intersoccer-reports-rosters'); ?></th>
@@ -421,25 +427,28 @@ function intersoccer_render_final_reports_page() {
                         <?php
                         $current_region = '';
                         $current_course = '';
-                        foreach ($report_data as $region => $courses): ?>
+                        foreach ($report_data as $region => $venues): ?>
                             <?php $region_total = $totals['regions'][$region] ?? ['bo' => 0, 'pitch_side' => 0, 'buyclub' => 0, 'total' => 0, 'final' => 0]; ?>
                             <tr style="background-color: #f0f0f0; font-weight: bold;">
-                                <td colspan="2"><?php echo esc_html($region); ?> - TOTAL</td>
+                                <td colspan="3"><?php echo esc_html($region); ?> - TOTAL</td>
                                 <td></td>
                                 <td><?php echo esc_html($region_total['online']); ?></td>
                                 <td><?php echo esc_html($region_total['total']); ?></td>
                                 <td><?php echo esc_html($region_total['final']); ?></td>
                             </tr>
-                            <?php foreach ($courses as $course_name => $data): ?>
-                                <?php foreach ($data as $course_day => $course_data): ?>
+                            <?php foreach ($venues as $venue => $courses): ?>
+                                <?php foreach ($courses as $course_name => $data): ?>
+                                    <?php foreach ($data as $course_day => $course_data): ?>
                                     <tr>
                                         <td></td>
+                                        <td><?php echo esc_html($venue); ?></td>
                                         <td><?php echo esc_html($course_name); ?></td>
                                         <td><?php echo esc_html($course_day); ?></td>
                                         <td><?php echo esc_html($course_data['online']); ?></td>
                                         <td><?php echo esc_html($course_data['total']); ?></td>
                                         <td><?php echo esc_html($course_data['final']); ?></td>
                                     </tr>
+                                    <?php endforeach; ?>
                                 <?php endforeach; ?>
                             <?php endforeach; ?>
                         <?php endforeach; ?>
@@ -486,6 +495,7 @@ function intersoccer_render_final_reports_page() {
             var activity_type = $('select[name="activity_type"]').val();
             var season_type = $('select[name="season_type"]').val() || '';
             var region = $('select[name="region"]').val() || '';
+            var exclude_buyclub = $('input[name="exclude_buyclub"]').is(':checked') ? 1 : 0;
             
             // If no select element (on specific camp/course pages), use the PHP variable
             if (!activity_type) {
@@ -502,6 +512,7 @@ function intersoccer_render_final_reports_page() {
                     activity_type: activity_type,
                     season_type: season_type,
                     region: region,
+                    exclude_buyclub: exclude_buyclub,
                     sync_to_office365: $('#final-reports-sync-office365').is(':checked') ? 1 : 0
                 },
                 success: function(response) {

@@ -10,6 +10,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+require_once dirname(__FILE__) . '/utils.php';
+
 /**
  * Display booking report with filters
  */
@@ -157,9 +159,10 @@ function intersoccer_extract_season_type($season) {
  * @param string $activity_type Activity type ('Camp' or 'Course')
  * @param string|null $season_type Optional season type filter (e.g., 'Summer', 'Winter', 'Autumn')
  * @param string|null $region Optional region/canton filter (e.g., 'Geneva', 'Zurich')
+ * @param bool        $exclude_buyclub When true, omit BuyClub (zero-net lines and matching coupon codes).
  * @return array Report data grouped by date range, canton, venue, and camp type
  */
-function intersoccer_get_final_reports_data($year, $activity_type, $season_type = null, $region = null) {
+function intersoccer_get_final_reports_data($year, $activity_type, $season_type = null, $region = null, $exclude_buyclub = false) {
     global $wpdb;
     $order_items_table = $wpdb->prefix . 'woocommerce_order_items';
     $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
@@ -201,11 +204,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             $prepare_values[] = $season_type . '%';
         }
         
-        // Add region filter if provided
-        if (!empty($region)) {
-            $where_conditions[] = "r.canton_region = %s";
-            $prepare_values[] = $region;
-        }
+        // Region filter applied in PHP after canton enrichment (order meta may be empty; product attribute fills in).
         
         $where_clause = implode(' AND ', $where_conditions);
         
@@ -213,6 +212,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             "SELECT 
                 r.order_item_id,
                 r.canton_region AS canton,
+                r.region AS region,
                 r.venue,
                 r.camp_terms,
                 r.season,
@@ -301,17 +301,14 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             $woo_prepare_values[] = $season_type . '%';
         }
         
-        // Add region filter if provided
-        if (!empty($region)) {
-            $woo_where_conditions[] = "om_canton.meta_value = %s";
-            $woo_prepare_values[] = $region;
-        }
+        // Region filter applied in PHP after canton enrichment.
         
         $woo_where_clause = implode(' AND ', $woo_where_conditions);
         
         $query = $wpdb->prepare(
             "SELECT
                 oi.order_item_id,
+                p.ID AS order_id,
                 om_canton.meta_value AS canton,
                 t.name AS venue,
                 COALESCE(om_camp_terms.meta_value, om_camp_terms_alt.meta_value, pm_camp_terms_variation.meta_value, pm_camp_terms_product.meta_value) AS camp_terms,
@@ -363,6 +360,13 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         $skipped_no_dates = 0;
         $skipped_year_mismatch = 0;
         foreach ($rosters as $idx => &$roster) {
+            if (function_exists('intersoccer_reports_enrich_camp_canton_from_product')) {
+                intersoccer_reports_enrich_camp_canton_from_product($roster);
+            }
+            $canton_disp = isset($roster['canton']) ? trim((string) $roster['canton']) : '';
+            if (($canton_disp === '' || strcasecmp($canton_disp, 'Unknown') === 0) && !empty($roster['region'])) {
+                $roster['canton'] = trim((string) $roster['region']);
+            }
             // If we already have dates from rosters table, verify year before skipping parsing
             if (!empty($roster['from_rosters_table'])) {
                 // Check if dates are invalid - if so, try multiple methods to extract dates
@@ -415,18 +419,8 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                         }
                     }
                     
-                    // Method 4: Check if it's a single-day event based on selected_days
-                    if (empty($event_start_date) && !empty($roster['selected_days'])) {
-                        // For single-day events, we might need to infer the date from the season and selected day
-                        // This is a fallback - we'll use the first day of the season's year as a placeholder
-                        $season_year = !empty($season) ? intersoccer_extract_year_from_season($season) : null;
-                        if ($season_year && $season_year == intval($year)) {
-                            // Use first day of year as placeholder - better than 1970
-                            $event_start_date = $season_year . '-01-01';
-                            $event_end_date = $season_year . '-01-01';
-                        }
-                    }
-                    
+                    // Do not fabricate placeholder dates (e.g. Jan 1); skip rows until real dates exist.
+
                     if (!empty($event_start_date) && $event_start_date !== '1970-01-01') {
                         $roster['event_start_date'] = $event_start_date;
                         $roster['event_end_date'] = $event_end_date ?: $event_start_date;
@@ -451,10 +445,10 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                     }
                 }
                 
-                // Apply region filter if provided
-                if (!empty($region)) {
+                // Apply region filter if provided (after canton enrichment)
+                if (!empty($region) && function_exists('intersoccer_reports_region_matches_filter')) {
                     $roster_canton = $roster['canton'] ?? '';
-                    if ($roster_canton !== $region) {
+                    if (!intersoccer_reports_region_matches_filter($roster_canton, $region)) {
                         $skipped_year_mismatch++;
                         continue;
                     }
@@ -567,9 +561,9 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             }
             
             // Apply region filter if provided
-            if (!empty($region)) {
+            if (!empty($region) && function_exists('intersoccer_reports_region_matches_filter')) {
                 $roster_canton = $roster['canton'] ?? '';
-                if ($roster_canton !== $region) {
+                if (!intersoccer_reports_region_matches_filter($roster_canton, $region)) {
                     $skipped_year_mismatch++;
                     continue;
                 }
@@ -727,19 +721,44 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 $processed_count = 0;
                 $skipped_buyclub = 0;
                 $total_in_group = count($group);
+                $counted_order_items = [];
 
                 foreach ($group as $entry) {
-                    // Include all records in Final Numbers Report (including BuyClub)
-                    // BuyClub participants still count towards attendance numbers
+                    if (function_exists('intersoccer_reports_row_should_exclude_for_buyclub_option') && intersoccer_reports_row_should_exclude_for_buyclub_option($entry, $exclude_buyclub)) {
+                        continue;
+                    }
+                    $oid = isset($entry['order_item_id']) ? (int) $entry['order_item_id'] : 0;
+                    if ($oid > 0 && isset($counted_order_items[$oid])) {
+                        continue;
+                    }
+                    if ($oid > 0) {
+                        $counted_order_items[$oid] = true;
+                    }
+                    // Include all records unless admin excluded BuyClub/partner discount rows
                     $processed_count++;
-                    $booking_type = strtolower($entry['booking_type'] ?? '');
-                    if ($booking_type === 'full-week') {
+                    $slug = function_exists('intersoccer_normalize_booking_type_slug_for_reports')
+                        ? intersoccer_normalize_booking_type_slug_for_reports($entry['booking_type'] ?? '')
+                        : 'other';
+                    if ($slug === 'full-week') {
                         $full_week++;
-                    } elseif ($booking_type === 'single-days' && !empty($entry['selected_days'])) {
-                        $days = array_map('trim', explode(',', $entry['selected_days']));
-                        foreach ($days as $day) {
-                            if (isset($individual_days[$day])) {
-                                $individual_days[$day]++;
+                    } elseif ($slug === 'single-days') {
+                        $sd = $entry['selected_days'] ?? '';
+                        if (is_array($sd)) {
+                            $sd = implode(', ', $sd);
+                        }
+                        $sd = (string) $sd;
+                        if ($sd !== '') {
+                            $days = array_map('trim', explode(',', $sd));
+                            foreach ($days as $day) {
+                                if ($day === '') {
+                                    continue;
+                                }
+                                $canon = function_exists('intersoccer_normalize_weekday_token')
+                                    ? intersoccer_normalize_weekday_token($day)
+                                    : null;
+                                if ($canon !== null && isset($individual_days[$canon])) {
+                                    $individual_days[$canon]++;
+                                }
                             }
                         }
                     }
@@ -777,13 +796,20 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         $query = $wpdb->prepare(
             "SELECT
                 oi.order_item_id,
+                oi.order_item_name AS order_item_name,
+                p.ID AS order_id,
                 om_canton.meta_value AS canton,
                 t.name AS venue,
+                om_variation_id.meta_value AS variation_id,
                 om_product_id.meta_value AS product_id,
                 om_booking_type.meta_value AS booking_type,
                 om_discount_codes.meta_value AS discount_codes,
                 om_gender.meta_value AS gender,
-                om_course_day.meta_value AS course_day,
+                COALESCE(
+                    t_cd.name,
+                    NULLIF(om_course_day.meta_value, ''),
+                    om_course_day_attr.meta_value
+                ) AS course_day,
                 om_start_date.meta_value AS start_date,
                 om_end_date.meta_value AS end_date,
                 p.post_date,
@@ -793,13 +819,29 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
              JOIN $order_items_table oi ON p.ID = oi.order_id AND oi.order_item_type = 'line_item'
              LEFT JOIN $order_itemmeta_table om_canton ON oi.order_item_id = om_canton.order_item_id AND om_canton.meta_key = 'Canton / Region'
              LEFT JOIN $order_itemmeta_table om_venue ON oi.order_item_id = om_venue.order_item_id AND om_venue.meta_key = 'pa_intersoccer-venues'
-             LEFT JOIN $terms_table t ON om_venue.meta_value = t.slug
+             LEFT JOIN $order_itemmeta_table om_venue_attr ON oi.order_item_id = om_venue_attr.order_item_id AND om_venue_attr.meta_key = 'attribute_pa_intersoccer-venues'
+             LEFT JOIN $terms_table t ON (
+                t.slug = NULLIF(TRIM(COALESCE(NULLIF(om_venue.meta_value, ''), om_venue_attr.meta_value)), '')
+                OR (
+                    TRIM(COALESCE(om_venue.meta_value, om_venue_attr.meta_value)) REGEXP '^[0-9]+$'
+                    AND t.term_id = CAST(TRIM(COALESCE(om_venue.meta_value, om_venue_attr.meta_value)) AS UNSIGNED)
+                )
+            )
+             LEFT JOIN $order_itemmeta_table om_variation_id ON oi.order_item_id = om_variation_id.order_item_id AND om_variation_id.meta_key = '_variation_id'
              LEFT JOIN $order_itemmeta_table om_product_id ON oi.order_item_id = om_product_id.order_item_id AND om_product_id.meta_key = '_product_id'
              LEFT JOIN $order_itemmeta_table om_booking_type ON oi.order_item_id = om_booking_type.order_item_id AND om_booking_type.meta_key = 'booking_type'
              LEFT JOIN $order_itemmeta_table om_discount_codes ON oi.order_item_id = om_discount_codes.order_item_id AND om_discount_codes.meta_key = '_applied_discounts'
              LEFT JOIN $order_itemmeta_table om_gender ON oi.order_item_id = om_gender.order_item_id AND om_gender.meta_key = 'gender'
              LEFT JOIN $order_itemmeta_table om_activity_type ON oi.order_item_id = om_activity_type.order_item_id AND om_activity_type.meta_key = 'Activity Type'
              LEFT JOIN $order_itemmeta_table om_course_day ON oi.order_item_id = om_course_day.order_item_id AND om_course_day.meta_key = 'pa_course-day'
+             LEFT JOIN $order_itemmeta_table om_course_day_attr ON oi.order_item_id = om_course_day_attr.order_item_id AND om_course_day_attr.meta_key = 'attribute_pa_course-day'
+             LEFT JOIN $terms_table t_cd ON (
+                t_cd.slug = NULLIF(TRIM(COALESCE(NULLIF(om_course_day.meta_value, ''), om_course_day_attr.meta_value)), '')
+                OR (
+                    TRIM(COALESCE(om_course_day.meta_value, om_course_day_attr.meta_value)) REGEXP '^[0-9]+$'
+                    AND t_cd.term_id = CAST(TRIM(COALESCE(om_course_day.meta_value, om_course_day_attr.meta_value)) AS UNSIGNED)
+                )
+            )
              LEFT JOIN $order_itemmeta_table om_start_date ON oi.order_item_id = om_start_date.order_item_id AND om_start_date.meta_key = 'Start Date'
              LEFT JOIN $order_itemmeta_table om_end_date ON oi.order_item_id = om_end_date.order_item_id AND om_end_date.meta_key = 'End Date'
              LEFT JOIN {$wpdb->postmeta} pm_activity_type ON om_product_id.meta_value = pm_activity_type.post_id AND pm_activity_type.meta_key = 'pa_activity-type'
@@ -861,47 +903,75 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
 
         // Determine categories for courses (using data from main query - no additional queries needed)
         foreach ($rosters as &$roster) {
+            if (function_exists('intersoccer_reports_enrich_course_venue_and_day')) {
+                intersoccer_reports_enrich_course_venue_and_day($roster);
+            }
             // BuyClub: orders with original price > 0 and final price = 0
             // Now using data from main query (line_subtotal and line_total already fetched)
             $line_subtotal = floatval($roster['line_subtotal'] ?? 0);
             $line_total = floatval($roster['line_total'] ?? 0);
             $roster['is_buyclub'] = $line_subtotal > 0 && $line_total === 0.0;
 
-            // Course Day: from pa_course-day attribute
-            $roster['course_day'] = $roster['course_day'] ?? 'Unknown';
+            // Course Day: from pa_course-day attribute (empty string is not null — do not use ?? alone).
+            $cd_row = isset($roster['course_day']) ? trim((string) $roster['course_day']) : '';
+            $roster['course_day'] = ($cd_row === '') ? 'Unknown' : $cd_row;
         }
         unset($roster);
 
-        // Group by region, course name, course day
+        if (!empty($region) && function_exists('intersoccer_reports_region_matches_filter')) {
+            $rosters = array_values(array_filter($rosters, static function ($row) use ($region) {
+                return intersoccer_reports_region_matches_filter($row['canton'] ?? '', $region);
+            }));
+        }
+
+        // Group by region, venue, course name, course day
         $report_data = [];
+        $seen_course_order_items = [];
         foreach ($rosters as $entry) {
-            // Skip BuyClub orders entirely
-            if ($entry['is_buyclub']) {
+            if (function_exists('intersoccer_reports_row_should_exclude_for_buyclub_option') && intersoccer_reports_row_should_exclude_for_buyclub_option($entry, $exclude_buyclub)) {
                 continue;
             }
 
+            $coi = isset($entry['order_item_id']) ? (int) $entry['order_item_id'] : 0;
+            if ($coi > 0) {
+                if (isset($seen_course_order_items[$coi])) {
+                    continue;
+                }
+                $seen_course_order_items[$coi] = true;
+            }
+
             $region = $entry['canton'] ?? 'Unknown';
-            $product_id = $entry['product_id'];
-            $course_name = $product_id ? get_the_title($product_id) : 'Unknown';
-            $course_day = $entry['course_day'] ?? 'Unknown';
+            $venue_raw = isset($entry['venue']) ? trim((string) $entry['venue']) : '';
+            $venue = $venue_raw !== '' ? $venue_raw : 'Unknown';
+            $product_id = isset($entry['product_id']) ? (int) $entry['product_id'] : 0;
+            $variation_id = isset($entry['variation_id']) ? (int) $entry['variation_id'] : 0;
+            $order_item_name = isset($entry['order_item_name']) ? (string) $entry['order_item_name'] : '';
+            $course_name = function_exists('intersoccer_reports_final_course_display_name')
+                ? intersoccer_reports_final_course_display_name($product_id, $variation_id, $order_item_name)
+                : ($product_id ? (string) get_the_title($product_id) : 'Unknown');
+            $cd_disp = isset($entry['course_day']) ? trim((string) $entry['course_day']) : '';
+            $course_day = ($cd_disp === '') ? 'Unknown' : $cd_disp;
 
             if (!isset($report_data[$region])) {
                 $report_data[$region] = [];
             }
-            if (!isset($report_data[$region][$course_name])) {
-                $report_data[$region][$course_name] = [];
+            if (!isset($report_data[$region][$venue])) {
+                $report_data[$region][$venue] = [];
             }
-            if (!isset($report_data[$region][$course_name][$course_day])) {
-                $report_data[$region][$course_name][$course_day] = [
+            if (!isset($report_data[$region][$venue][$course_name])) {
+                $report_data[$region][$venue][$course_name] = [];
+            }
+            if (!isset($report_data[$region][$venue][$course_name][$course_day])) {
+                $report_data[$region][$venue][$course_name][$course_day] = [
                     'online' => 0,
                     'total' => 0,
                     'final' => 0,
                 ];
             }
 
-            $report_data[$region][$course_name][$course_day]['online']++;
-            $report_data[$region][$course_name][$course_day]['total']++;
-            $report_data[$region][$course_name][$course_day]['final']++;
+            $report_data[$region][$venue][$course_name][$course_day]['online']++;
+            $report_data[$region][$venue][$course_name][$course_day]['total']++;
+            $report_data[$region][$venue][$course_name][$course_day]['final']++;
         }
 
         return $report_data;
@@ -969,7 +1039,7 @@ function intersoccer_calculate_final_reports_totals($report_data, $activity_type
             ]
         ];
 
-        foreach ($report_data as $region => $courses) {
+        foreach ($report_data as $region => $venues) {
             $totals['regions'][$region] = [
                 'online' => 0,
                 'total' => 0,
@@ -977,15 +1047,17 @@ function intersoccer_calculate_final_reports_totals($report_data, $activity_type
                 'prev_year' => 0, // Placeholder for previous year data
             ];
 
-            foreach ($courses as $course_name => $course_days) {
-                foreach ($course_days as $course_day => $data) {
-                    $totals['regions'][$region]['online'] += $data['online'];
-                    $totals['regions'][$region]['total'] += $data['total'];
-                    $totals['regions'][$region]['final'] += $data['final'];
+            foreach ($venues as $venue => $courses) {
+                foreach ($courses as $course_name => $course_days) {
+                    foreach ($course_days as $course_day => $data) {
+                        $totals['regions'][$region]['online'] += $data['online'];
+                        $totals['regions'][$region]['total'] += $data['total'];
+                        $totals['regions'][$region]['final'] += $data['final'];
 
-                    $totals['all']['online'] += $data['online'];
-                    $totals['all']['total'] += $data['total'];
-                    $totals['all']['final'] += $data['final'];
+                        $totals['all']['online'] += $data['online'];
+                        $totals['all']['total'] += $data['total'];
+                        $totals['all']['final'] += $data['final'];
+                    }
                 }
             }
         }

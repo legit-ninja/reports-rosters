@@ -22,6 +22,7 @@ class UtilsTest extends TestCase {
         Functions\when('do_action')->justReturn();
         Functions\when('get_terms')->justReturn([]);
         Functions\when('get_term_by')->justReturn(false);
+        Functions\when('is_wp_error')->justReturn(false);
     }
     
     public function test_utility_functions_loaded() {
@@ -76,6 +77,58 @@ class UtilsTest extends TestCase {
         $this->assertArrayHasKey('venue', $normalized);
         $this->assertArrayHasKey('city', $normalized);
         $this->assertArrayHasKey('canton_region', $normalized);
+    }
+
+    public function test_compute_day_presence_maps_french_weekday_tokens() {
+        if (!function_exists('intersoccer_compute_day_presence')) {
+            $this->markTestSkipped('intersoccer_compute_day_presence not loaded');
+        }
+        $p = intersoccer_compute_day_presence('single-days', 'lundi, mercredi');
+        $this->assertSame('Yes', $p['Monday']);
+        $this->assertSame('Yes', $p['Wednesday']);
+        $this->assertSame('No', $p['Tuesday']);
+    }
+
+    public function test_normalize_booking_type_slug_for_reports_handles_labels() {
+        if (!function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
+            $this->markTestSkipped('intersoccer_normalize_booking_type_slug_for_reports not loaded');
+        }
+        $this->assertSame('full-week', intersoccer_normalize_booking_type_slug_for_reports('Full Week'));
+        $this->assertSame('single-days', intersoccer_normalize_booking_type_slug_for_reports('Single Days'));
+        $this->assertSame('full-week', intersoccer_normalize_booking_type_slug_for_reports('full-week'));
+    }
+
+    public function test_consolidated_roster_group_key_stable_per_facets() {
+        if (!function_exists('intersoccer_consolidated_roster_group_key')) {
+            $this->markTestSkipped('intersoccer_consolidated_roster_group_key not loaded');
+        }
+        $row = [
+            'product_id' => 42,
+            'season' => 'Summer 2026',
+            'venue' => 'zurich',
+            'age_group' => 'u10',
+            'times' => 'morning',
+            'camp_terms' => 'week1',
+            'girls_only' => 0,
+        ];
+        $k1 = intersoccer_consolidated_roster_group_key($row, 'camp');
+        $k2 = intersoccer_consolidated_roster_group_key($row, 'camp');
+        $this->assertSame($k1, $k2);
+        $row['venue'] = 'geneva';
+        $this->assertNotSame($k1, intersoccer_consolidated_roster_group_key($row, 'camp'));
+
+        $course = [
+            'product_id' => 99,
+            'season' => '2026',
+            'venue' => 'basel',
+            'age_group' => 'u8',
+            'times' => '17:00',
+            'course_day' => 'monday',
+        ];
+        $this->assertSame(
+            intersoccer_consolidated_roster_group_key($course, 'course'),
+            intersoccer_consolidated_roster_group_key($course, 'course')
+        );
     }
 }
 
