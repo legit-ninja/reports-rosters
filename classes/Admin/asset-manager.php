@@ -46,7 +46,8 @@ class AssetManager {
 
         $is_intersoccer_admin_screen =
             $screen_id === 'toplevel_page_intersoccer-reports-rosters'
-            || (strpos($screen_id, 'intersoccer-reports-rosters_page_') === 0);
+            || (strpos($screen_id, 'intersoccer-reports-rosters_page_') === 0)
+            || (strpos($screen_id, 'reports-and-rosters_page_') === 0);
 
         if ($is_intersoccer_admin_screen) {
             wp_enqueue_style(
@@ -103,12 +104,23 @@ class AssetManager {
         }
 
         // Advanced page AJAX helpers
-        if ($screen_id === 'intersoccer-reports-rosters_page_intersoccer-advanced') {
+        $is_advanced_screen =
+            $screen_id === 'intersoccer-reports-rosters_page_intersoccer-advanced'
+            || $screen_id === 'reports-and-rosters_page_intersoccer-advanced'
+            || $hook === 'intersoccer-reports-rosters_page_intersoccer-advanced'
+            || $hook === 'reports-and-rosters_page_intersoccer-advanced';
+
+        if ($is_advanced_screen) {
+            $advanced_js_path = dirname(__DIR__, 2) . '/js/advanced-ajax.js';
+            $advanced_js_ver = $this->version;
+            if (is_readable($advanced_js_path)) {
+                $advanced_js_ver = $this->version . '.' . (string) filemtime($advanced_js_path);
+            }
             wp_enqueue_script(
                 'intersoccer-advanced-ajax',
                 $this->plugin_url . 'js/advanced-ajax.js',
                 ['jquery'],
-                $this->version,
+                $advanced_js_ver,
                 true
             );
 
@@ -119,7 +131,7 @@ class AssetManager {
         }
 
         // Reports & Rosters - Advanced page (rebuild UI)
-        if ($screen_id === 'intersoccer-reports-rosters_page_intersoccer-advanced') {
+        if ($is_advanced_screen) {
             wp_enqueue_style(
                 'intersoccer-reports-rosters-rebuild-admin-css',
                 $this->plugin_url . 'css/rebuild-admin.css',

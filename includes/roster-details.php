@@ -36,6 +36,37 @@ function intersoccer_get_sort_indicator($field, $current_sort, $current_order) {
 }
 
 /**
+ * Effective camp selected-days string for display: prefer selected_days, then days_selected, then event_details JSON.
+ *
+ * @param object $row Roster row (stdClass).
+ * @return string
+ */
+function intersoccer_roster_effective_selected_days_string($row) {
+    $to_str = static function ($v) {
+        if (is_array($v)) {
+            return implode(', ', $v);
+        }
+        return trim((string) $v);
+    };
+
+    $sd = isset($row->selected_days) ? $to_str($row->selected_days) : '';
+    if ($sd === '' && isset($row->days_selected)) {
+        $sd = $to_str($row->days_selected);
+    }
+    if ($sd === '' && !empty($row->event_details)) {
+        $ed = $row->event_details;
+        if (is_string($ed)) {
+            $ed = json_decode($ed, true);
+        }
+        if (is_array($ed) && !empty($ed['selected_days'])) {
+            $sd = $to_str($ed['selected_days']);
+        }
+    }
+
+    return $sd;
+}
+
+/**
  * Render the roster details page
  */
 function intersoccer_render_roster_details_page() {
@@ -155,7 +186,7 @@ function intersoccer_render_roster_details_page() {
             $season = $base_roster->season;
         }
     } else {
-        $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.late_pickup_days, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.day_presence, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only, p.post_date as order_date";
+        $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.late_pickup_days, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.day_presence, r.selected_days, r.days_selected, r.event_details, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only, p.post_date as order_date";
         $query .= " FROM $rosters_table r";
         $query .= " JOIN {$wpdb->posts} p ON r.order_id = p.ID";
 
@@ -394,13 +425,34 @@ function intersoccer_render_roster_details_page() {
     foreach ($rosters as $row) {
         $is_unknown = $row->player_name === 'Unknown Attendee';
         $day_presence = !empty($row->day_presence) ? (is_string($row->day_presence) ? json_decode($row->day_presence, true) : $row->day_presence) : [];
-        if (empty($day_presence) && function_exists('intersoccer_compute_day_presence')) {
-            $bt = $row->booking_type ?? '';
-            $sd = $row->selected_days ?? '';
-            if (is_array($sd)) {
-                $sd = implode(', ', $sd);
+        if (!is_array($day_presence)) {
+            $day_presence = [];
+        }
+        $bt = $row->booking_type ?? '';
+        $sd = function_exists('intersoccer_roster_effective_selected_days_string')
+            ? intersoccer_roster_effective_selected_days_string($row)
+            : (string) ($row->selected_days ?? '');
+        if (function_exists('intersoccer_compute_day_presence')) {
+            $computed = intersoccer_compute_day_presence($bt, $sd);
+            $english_keys_ok = isset($day_presence['Monday'], $day_presence['Tuesday'], $day_presence['Wednesday'], $day_presence['Thursday'], $day_presence['Friday']);
+            $any_yes = false;
+            foreach (['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as $dk) {
+                if (($day_presence[$dk] ?? '') === 'Yes') {
+                    $any_yes = true;
+                    break;
+                }
             }
-            $day_presence = intersoccer_compute_day_presence($bt, $sd);
+            // Use computed map when stored JSON is empty, non-English keys, or no day marked Yes when single-day booking implies there should be.
+            if (empty($day_presence) || !$english_keys_ok || (!$any_yes && $sd !== '' && strpos(strtolower((string) $bt), 'single') !== false)) {
+                $day_presence = $computed;
+            } else {
+                // Merge: English canonical keys win from computed when stored value is No but computed says Yes
+                foreach ($computed as $dk => $yesno) {
+                    if ($yesno === 'Yes') {
+                        $day_presence[$dk] = 'Yes';
+                    }
+                }
+            }
         }
         
         echo '<tr data-order-item-id="' . esc_attr($row->order_item_id) . '">';

@@ -47,9 +47,10 @@ class RosterListingService {
      * @param array $filters Selected filter values (season, venue, camp_terms, age_group, city)
      * @param array $context Context data (is_coach, accessible_venues)
      * @param bool  $girls_only Whether to fetch girls-only camps
+     * @param bool  $consolidated When true, group by canonical product + facets (all languages). Default true.
      * @return array Structured data for the page
      */
-    public function getCampListings(array $filters = [], array $context = [], bool $girls_only = false): array {
+    public function getCampListings(array $filters = [], array $context = [], bool $girls_only = false, bool $consolidated = true): array {
         $filters = $this->normaliseCampFilters($filters);
         $context = $this->normaliseContext($context);
 
@@ -85,7 +86,7 @@ class RosterListingService {
             return $this->emptyCampResponse($query_time);
         }
 
-        $aggregation = $this->aggregateCampGroups($rosters, $girls_only);
+        $aggregation = $this->aggregateCampGroups($rosters, $girls_only, $consolidated);
 
         $all_groups = array_values($aggregation['groups']);
         $filter_sets = $aggregation['filters'];
@@ -167,8 +168,10 @@ class RosterListingService {
 
     /**
      * Aggregate roster data for the Courses page.
+     *
+     * @param bool $consolidated When true, group by canonical product + facets (all languages). Default true.
      */
-    public function getCourseListings(array $filters = [], array $context = [], bool $girls_only = false): array {
+    public function getCourseListings(array $filters = [], array $context = [], bool $girls_only = false, bool $consolidated = true): array {
         $filters = $this->normaliseCourseFilters($filters);
         $context = $this->normaliseContext($context);
 
@@ -204,7 +207,7 @@ class RosterListingService {
             return $this->emptyCourseResponse($query_time);
         }
 
-        $aggregation = $this->aggregateCourseGroups($rosters, $girls_only);
+        $aggregation = $this->aggregateCourseGroups($rosters, $girls_only, $consolidated);
 
         $all_groups = array_values($aggregation['groups']);
         $filter_sets = $aggregation['filters'];
@@ -249,7 +252,7 @@ class RosterListingService {
         ];
     }
 
-    private function aggregateCourseGroups(array $rosters, bool $girls_only): array {
+    private function aggregateCourseGroups(array $rosters, bool $girls_only, bool $consolidated = true): array {
         $groups = [];
         $filters = [
             'seasons' => [],
@@ -260,9 +263,13 @@ class RosterListingService {
         ];
 
         foreach ($rosters as $row) {
-            $signature = $row['event_signature'];
-            if (empty($signature)) {
-                $signature = md5(($row['product_id'] ?? 0) . '|' . ($row['course_day'] ?? '') . '|' . ($row['venue'] ?? '') . '|' . ($row['times'] ?? ''));
+            if ($consolidated && function_exists('intersoccer_consolidated_roster_group_key')) {
+                $signature = intersoccer_consolidated_roster_group_key($row, 'course');
+            } else {
+                $signature = $row['event_signature'];
+                if (empty($signature)) {
+                    $signature = md5(($row['product_id'] ?? 0) . '|' . ($row['course_day'] ?? '') . '|' . ($row['venue'] ?? '') . '|' . ($row['times'] ?? ''));
+                }
             }
 
             if (!isset($groups[$signature])) {
@@ -282,12 +289,17 @@ class RosterListingService {
                     'girls_only' => $girls_only ? 1 : 0,
                     'variation_ids' => [],
                     'order_item_ids' => [],
+                    'merged_event_signatures' => [],
                     'start_dates' => [],
                     'end_dates' => [],
                 ];
             }
 
             $group =& $groups[$signature];
+
+            if (!empty($row['event_signature'])) {
+                $group['merged_event_signatures'][$row['event_signature']] = true;
+            }
 
             if (!empty($row['variation_id'])) {
                 $group['variation_ids'][$row['variation_id']] = $row['variation_id'];
@@ -313,6 +325,8 @@ class RosterListingService {
         foreach ($groups as &$group) {
             $group['variation_ids'] = array_values($group['variation_ids']);
             $group['order_item_ids'] = array_keys($group['order_item_ids']);
+            $group['merged_event_signatures'] = array_keys($group['merged_event_signatures'] ?? []);
+            $group['consolidated_listing'] = $consolidated;
             $group['total_players'] = count($group['order_item_ids']);
 
             $group['corrected_start_date'] = $this->getEarliestDate($group['start_dates']);
@@ -923,7 +937,7 @@ class RosterListingService {
         return $grouped;
     }
 
-    private function aggregateCampGroups(array $rosters, bool $girls_only): array {
+    private function aggregateCampGroups(array $rosters, bool $girls_only, bool $consolidated = true): array {
         $groups = [];
 
         $filters = [
@@ -935,9 +949,13 @@ class RosterListingService {
         ];
 
         foreach ($rosters as $row) {
-            $signature = $row['event_signature'];
-            if (empty($signature)) {
-                $signature = md5(($row['product_id'] ?? 0) . '|' . ($row['start_date'] ?? '') . '|' . ($row['venue'] ?? '') . '|' . ($row['camp_terms'] ?? ''));
+            if ($consolidated && function_exists('intersoccer_consolidated_roster_group_key')) {
+                $signature = intersoccer_consolidated_roster_group_key($row, 'camp');
+            } else {
+                $signature = $row['event_signature'];
+                if (empty($signature)) {
+                    $signature = md5(($row['product_id'] ?? 0) . '|' . ($row['start_date'] ?? '') . '|' . ($row['venue'] ?? '') . '|' . ($row['camp_terms'] ?? ''));
+                }
             }
 
             if (!isset($groups[$signature])) {
@@ -958,6 +976,7 @@ class RosterListingService {
                     'event_completed' => !empty($row['event_completed']) ? 1 : 0,
                     'variation_ids' => [],
                     'order_item_ids' => [],
+                    'merged_event_signatures' => [],
                     'start_dates' => [],
                     'end_dates' => [],
                 ];
@@ -965,6 +984,10 @@ class RosterListingService {
 
             $group =& $groups[$signature];
             $group['event_completed'] = max((int) ($group['event_completed'] ?? 0), !empty($row['event_completed']) ? 1 : 0);
+
+            if (!empty($row['event_signature'])) {
+                $group['merged_event_signatures'][$row['event_signature']] = true;
+            }
 
             if (!empty($row['variation_id'])) {
                 $group['variation_ids'][$row['variation_id']] = $row['variation_id'];
@@ -990,6 +1013,8 @@ class RosterListingService {
         foreach ($groups as &$group) {
             $group['variation_ids'] = array_values($group['variation_ids']);
             $group['order_item_ids'] = array_keys($group['order_item_ids']);
+            $group['merged_event_signatures'] = array_keys($group['merged_event_signatures'] ?? []);
+            $group['consolidated_listing'] = $consolidated;
             $group['total_players'] = count($group['order_item_ids']);
 
             $group['corrected_start_date'] = $this->getEarliestDate($group['start_dates']);

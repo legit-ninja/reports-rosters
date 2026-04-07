@@ -181,6 +181,7 @@ function intersoccer_render_advanced_page() {
         <?php if ($active_tab === 'tools') : ?>
             <div class="tab-content tab-tools">
                 <?php intersoccer_render_signature_verifier_section(); ?>
+                <?php intersoccer_render_reports_rosters_diagnostics_section(); ?>
             </div>
         <?php endif; ?>
 
@@ -1482,6 +1483,93 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
     }
     
     error_log('InterSoccer Migration: Updated roster entry with new data: ' . print_r($new_roster_data, true));
+}
+
+/**
+ * Render Reports/Rosters diagnostics section.
+ *
+ * Read-only reconciliation tools for validating report inputs against roster rows.
+ */
+function intersoccer_render_reports_rosters_diagnostics_section() {
+    ?>
+    <div class="reports-rosters-diagnostics-section" style="margin-top:30px;">
+        <h2><?php _e('Reports/Rosters Diagnostics', 'intersoccer-reports-rosters'); ?></h2>
+        <p class="description">
+            <?php _e('Validate Final Reports inputs against Woo line-item metadata and roster rows. This tool is read-only.', 'intersoccer-reports-rosters'); ?>
+        </p>
+
+        <div style="background:#fff; border:1px solid #ccd0d4; padding:16px; margin:12px 0;">
+            <h3 style="margin-top:0;"><?php _e('Run Diagnostics', 'intersoccer-reports-rosters'); ?></h3>
+            <form id="intersoccer-reports-rosters-diagnostics-form">
+                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
+                <table class="form-table" role="presentation">
+                    <tr>
+                        <th scope="row"><label for="diag-year"><?php _e('Year', 'intersoccer-reports-rosters'); ?></label></th>
+                        <td><input type="number" id="diag-year" name="year" value="<?php echo esc_attr(date('Y')); ?>" min="2020" max="2100" class="small-text" /></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="diag-activity-type"><?php _e('Activity Type', 'intersoccer-reports-rosters'); ?></label></th>
+                        <td>
+                            <select id="diag-activity-type" name="activity_type">
+                                <option value="Course"><?php _e('Course', 'intersoccer-reports-rosters'); ?></option>
+                                <option value="Camp"><?php _e('Camp', 'intersoccer-reports-rosters'); ?></option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="diag-season-type"><?php _e('Season Type', 'intersoccer-reports-rosters'); ?></label></th>
+                        <td><input type="text" id="diag-season-type" name="season_type" placeholder="<?php esc_attr_e('Optional (e.g. Summer)', 'intersoccer-reports-rosters'); ?>" class="regular-text" /></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="diag-region"><?php _e('Region', 'intersoccer-reports-rosters'); ?></label></th>
+                        <td><input type="text" id="diag-region" name="region" placeholder="<?php esc_attr_e('Optional canton/region', 'intersoccer-reports-rosters'); ?>" class="regular-text" /></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php _e('Exclude BuyClub', 'intersoccer-reports-rosters'); ?></th>
+                        <td><label><input type="checkbox" id="diag-exclude-buyclub" name="exclude_buyclub" value="1" /> <?php _e('Exclude zero-net BuyClub lines', 'intersoccer-reports-rosters'); ?></label></td>
+                    </tr>
+                </table>
+                <p class="submit" style="margin-top:8px;">
+                    <button type="submit" class="button button-primary"><?php _e('Run Diagnostics', 'intersoccer-reports-rosters'); ?></button>
+                </p>
+            </form>
+            <div id="intersoccer-diagnostics-summary"></div>
+            <div id="intersoccer-diagnostics-mismatches" style="margin-top:10px;"></div>
+        </div>
+
+        <div style="background:#fff; border:1px solid #ccd0d4; padding:16px; margin:12px 0;">
+            <h3 style="margin-top:0;"><?php _e('Safe Fix Issues (Woo Source of Truth)', 'intersoccer-reports-rosters'); ?></h3>
+            <p class="description">
+                <?php _e('Runs non-destructive fixes only. It can insert missing roster rows, backfill missing Woo course-day metadata, and quarantine orphan roster rows for manual review. It excludes products that do not use the activity_type attribute (e.g. Birthday Parties).', 'intersoccer-reports-rosters'); ?>
+            </p>
+            <p class="submit" style="margin-top:8px;">
+                <button type="button" id="intersoccer-fix-issues-safe" class="button button-primary"><?php _e('Fix Issues (Safe)', 'intersoccer-reports-rosters'); ?></button>
+            </p>
+            <div id="intersoccer-diagnostics-fix-results" style="min-height:24px; margin-top:10px;"></div>
+        </div>
+
+        <div style="background:#fff; border:1px solid #ccd0d4; padding:16px; margin:12px 0;">
+            <h3 style="margin-top:0;"><?php _e('Trace One Order/Item', 'intersoccer-reports-rosters'); ?></h3>
+            <form id="intersoccer-reports-rosters-trace-form">
+                <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
+                <table class="form-table" role="presentation">
+                    <tr>
+                        <th scope="row"><label for="trace-order-id"><?php _e('Order ID', 'intersoccer-reports-rosters'); ?></label></th>
+                        <td><input type="number" id="trace-order-id" name="order_id" class="regular-text" placeholder="<?php esc_attr_e('Optional if order item ID set', 'intersoccer-reports-rosters'); ?>" /></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="trace-order-item-id"><?php _e('Order Item ID', 'intersoccer-reports-rosters'); ?></label></th>
+                        <td><input type="number" id="trace-order-item-id" name="order_item_id" class="regular-text" placeholder="<?php esc_attr_e('Optional if order ID set', 'intersoccer-reports-rosters'); ?>" /></td>
+                    </tr>
+                </table>
+                <p class="submit" style="margin-top:8px;">
+                    <button type="submit" class="button button-secondary"><?php _e('Trace Item', 'intersoccer-reports-rosters'); ?></button>
+                </p>
+            </form>
+            <pre id="intersoccer-diagnostics-trace" style="white-space:pre-wrap; max-height:360px; overflow:auto; background:#f6f7f7; border:1px solid #dcdcde; padding:10px;"></pre>
+        </div>
+    </div>
+    <?php
 }
 
 /**

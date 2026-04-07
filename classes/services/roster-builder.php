@@ -1186,6 +1186,34 @@ class RosterBuilder {
             // Use the signature generator which expects normalized data
             $roster_data['event_signature'] = $this->signature_generator->generate($normalized_event_data);
         }
+
+        // Camps: English weekday list + day_presence JSON (canonical storage for roster UI and reports).
+        $activity_lower = strtolower(trim((string) ($roster_data['activity_type'] ?? '')));
+        if ($activity_lower === 'camp') {
+            $sel_raw = trim((string) ($roster_data['selected_days'] ?? ''));
+            if ($sel_raw === '' && !empty($roster_data['days_selected'])) {
+                $ds = $roster_data['days_selected'];
+                $roster_data['selected_days'] = is_array($ds) ? implode(', ', $ds) : trim((string) $ds);
+            }
+            if (trim((string) ($roster_data['selected_days'] ?? '')) === '' && !empty($roster_data['event_details'])) {
+                $ed = $roster_data['event_details'];
+                if (is_string($ed)) {
+                    $ed = json_decode($ed, true);
+                }
+                if (is_array($ed) && !empty($ed['selected_days'])) {
+                    $v = $ed['selected_days'];
+                    $roster_data['selected_days'] = is_array($v) ? implode(', ', $v) : trim((string) $v);
+                }
+            }
+            $roster_data['selected_days'] = $this->normalizeSelectedDaysToEnglish($roster_data['selected_days'] ?? '');
+            $roster_data['days_selected'] = $roster_data['selected_days'];
+            if (function_exists('intersoccer_compute_day_presence')) {
+                $roster_data['day_presence'] = wp_json_encode(intersoccer_compute_day_presence(
+                    $roster_data['booking_type'] ?? '',
+                    $roster_data['selected_days'] ?? ''
+                ));
+            }
+        }
         
         // Parse event details from various sources
         $roster_data['event_details'] = $this->buildEventDetails($roster_data);
@@ -1202,6 +1230,36 @@ class RosterBuilder {
      * @param string|null $alt_taxonomy Optional second taxonomy to try (e.g. pa_course-times for times)
      * @return string English term name or original value if not resolved
      */
+    /**
+     * Normalize selected camp days to English weekday names (comma-separated) for storage.
+     *
+     * @param array|string|null $value Raw meta (array or string).
+     * @return string
+     */
+    private function normalizeSelectedDaysToEnglish($value) {
+        if ($value === null || $value === '') {
+            return '';
+        }
+        if (is_array($value)) {
+            $parts = $value;
+        } else {
+            $parts = preg_split('/[,;\/|]+/', (string) $value) ?: [];
+        }
+        $out = [];
+        foreach ($parts as $p) {
+            $p = trim((string) $p);
+            if ($p === '') {
+                continue;
+            }
+            $c = function_exists('intersoccer_normalize_weekday_token') ? intersoccer_normalize_weekday_token($p) : null;
+            if ($c) {
+                $out[] = $c;
+            }
+        }
+        $out = array_unique($out);
+        return implode(', ', $out);
+    }
+
     private function termNameForStorage($value, $taxonomy, $alt_taxonomy = null) {
         if ($value === '' || $value === null) {
             return '';
@@ -1251,10 +1309,11 @@ class RosterBuilder {
     private function buildEventDetails(array $roster_data) {
         $details = [];
         
-        // Add relevant details based on activity type
+        // Add relevant details based on activity type (normalized activity is lowercase).
         if (!empty($roster_data['activity_type'])) {
-            switch ($roster_data['activity_type']) {
-                case 'Camp':
+            $at = strtolower(trim((string) $roster_data['activity_type']));
+            switch ($at) {
+                case 'camp':
                     $details = [
                         'camp_terms' => $roster_data['event_type'] ?? null,
                         'camp_times' => $roster_data['camp_times'] ?? null,
@@ -1263,7 +1322,7 @@ class RosterBuilder {
                     ];
                     break;
                     
-                case 'Course':
+                case 'course':
                     $details = [
                         'course_day' => $roster_data['course_day'] ?? null,
                         'course_times' => $roster_data['course_times'] ?? null,
@@ -1271,7 +1330,8 @@ class RosterBuilder {
                     ];
                     break;
                     
-                case 'Birthday Party':
+                case 'birthday':
+                case 'birthday party':
                     $details = [
                         'party_date' => $roster_data['start_date'] ?? null,
                         'party_time' => $roster_data['camp_times'] ?? $roster_data['course_times'] ?? null

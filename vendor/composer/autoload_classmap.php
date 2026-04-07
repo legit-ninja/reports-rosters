@@ -52,6 +52,7 @@ return array(
     'InterSoccer\\ReportsRosters\\Services\\PlaceholderManager' => $baseDir . '/classes/services/placeholder-manager.php',
     'InterSoccer\\ReportsRosters\\Services\\PlayerMatcher' => $baseDir . '/classes/services/player-matcher.php',
     'InterSoccer\\ReportsRosters\\Services\\PricingCalculator' => $baseDir . '/classes/services/price-calculator.php',
+    'InterSoccer\\ReportsRosters\\Services\\ReportsRostersDiagnosticsService' => $baseDir . '/classes/services/reports-rosters-diagnostics-service.php',
     'InterSoccer\\ReportsRosters\\Services\\RosterBuilder' => $baseDir . '/classes/services/roster-builder.php',
     'InterSoccer\\ReportsRosters\\Services\\RosterDetailsService' => $baseDir . '/classes/services/roster-details-service.php',
     'InterSoccer\\ReportsRosters\\Services\\RosterExportService' => $baseDir . '/classes/services/roster-export-service.php',

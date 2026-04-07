@@ -139,6 +139,7 @@ class ComposerStaticInit524cfbad5fc29d5511275e827678d85a
         'InterSoccer\\ReportsRosters\\Services\\PlaceholderManager' => __DIR__ . '/../..' . '/classes/services/placeholder-manager.php',
         'InterSoccer\\ReportsRosters\\Services\\PlayerMatcher' => __DIR__ . '/../..' . '/classes/services/player-matcher.php',
         'InterSoccer\\ReportsRosters\\Services\\PricingCalculator' => __DIR__ . '/../..' . '/classes/services/price-calculator.php',
+        'InterSoccer\\ReportsRosters\\Services\\ReportsRostersDiagnosticsService' => __DIR__ . '/../..' . '/classes/services/reports-rosters-diagnostics-service.php',
         'InterSoccer\\ReportsRosters\\Services\\RosterBuilder' => __DIR__ . '/../..' . '/classes/services/roster-builder.php',
         'InterSoccer\\ReportsRosters\\Services\\RosterDetailsService' => __DIR__ . '/../..' . '/classes/services/roster-details-service.php',
         'InterSoccer\\ReportsRosters\\Services\\RosterExportService' => __DIR__ . '/../..' . '/classes/services/roster-export-service.php',

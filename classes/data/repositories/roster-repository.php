@@ -449,16 +449,19 @@ class RosterRepository implements RepositoryInterface {
             // Validate roster data
             $roster->validate();
             
-            // Check for duplicate entry
+            // Upsert: same order line + player index must update in place (signature/attributes may change).
             $existing = $this->findExistingEntry($roster);
             if ($existing) {
-                $this->logger->warning('Duplicate roster entry detected', [
+                $this->logger->info('Duplicate roster key — updating existing row', [
                     'existing_id' => $existing->id,
                     'order_id' => $roster->order_id,
-                    'player' => $roster->getFullName()
+                    'order_item_id' => $roster->order_item_id,
+                    'player_index' => $roster->player_index,
                 ]);
-                
-                // Return existing entry instead of creating duplicate
+                $updated = $this->update($existing->id, $data);
+                if ($updated) {
+                    return $updated;
+                }
                 return $existing;
             }
             

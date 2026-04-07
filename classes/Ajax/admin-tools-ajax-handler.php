@@ -13,6 +13,7 @@
 namespace InterSoccer\ReportsRosters\Ajax;
 
 use InterSoccer\ReportsRosters\Core\Logger;
+use InterSoccer\ReportsRosters\Services\ReportsRostersDiagnosticsService;
 use InterSoccer\ReportsRosters\WooCommerce\OrderProcessor;
 
 defined('ABSPATH') or die('Restricted access');
@@ -53,6 +54,9 @@ class AdminToolsAjaxHandler {
 
         // "Repair Day Presence" tool
         add_action('wp_ajax_intersoccer_repair_day_presence', [$this, 'repairDayPresence']);
+        add_action('wp_ajax_intersoccer_run_reports_rosters_diagnostics', [$this, 'runReportsRostersDiagnostics']);
+        add_action('wp_ajax_intersoccer_trace_reports_rosters_item', [$this, 'traceReportsRostersItem']);
+        add_action('wp_ajax_intersoccer_fix_reports_rosters_issues_safe', [$this, 'fixReportsRostersIssuesSafe']);
 
         // Complex migration endpoint: keep legacy implementation for now.
         add_action('wp_ajax_intersoccer_move_players', [$this, 'delegateMovePlayersLegacy']);
@@ -348,6 +352,90 @@ class AdminToolsAjaxHandler {
             'message' => sprintf(__('Repaired day presence for %d roster entries.', 'intersoccer-reports-rosters'), $updated),
             'updated' => $updated,
         ]);
+    }
+
+    public function runReportsRostersDiagnostics(): void {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
+        }
+        check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
+
+        try {
+            $service = new ReportsRostersDiagnosticsService();
+            $result = $service->runDiagnostics([
+                'year' => isset($_POST['year']) ? sanitize_text_field($_POST['year']) : date('Y'),
+                'activity_type' => isset($_POST['activity_type']) ? sanitize_text_field($_POST['activity_type']) : 'Course',
+                'season_type' => isset($_POST['season_type']) ? sanitize_text_field($_POST['season_type']) : '',
+                'region' => isset($_POST['region']) ? sanitize_text_field($_POST['region']) : '',
+                'exclude_buyclub' => !empty($_POST['exclude_buyclub']),
+                'limit' => isset($_POST['limit']) ? (int) $_POST['limit'] : 200,
+                'offset' => isset($_POST['offset']) ? (int) $_POST['offset'] : 0,
+            ]);
+            wp_send_json_success($result);
+        } catch (\Throwable $e) {
+            $this->logger->error('Reports/Rosters diagnostics failed', [
+                'error' => $e->getMessage(),
+            ]);
+            wp_send_json_error([
+                'message' => __('Diagnostics failed: ', 'intersoccer-reports-rosters') . $e->getMessage(),
+            ]);
+        }
+    }
+
+    public function traceReportsRostersItem(): void {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
+        }
+        check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
+
+        try {
+            $service = new ReportsRostersDiagnosticsService();
+            $result = $service->traceItem([
+                'year' => isset($_POST['year']) ? sanitize_text_field($_POST['year']) : date('Y'),
+                'activity_type' => isset($_POST['activity_type']) ? sanitize_text_field($_POST['activity_type']) : 'Course',
+                'order_id' => isset($_POST['order_id']) ? (int) $_POST['order_id'] : 0,
+                'order_item_id' => isset($_POST['order_item_id']) ? (int) $_POST['order_item_id'] : 0,
+            ]);
+            if (!empty($result['error'])) {
+                wp_send_json_error(['message' => (string) $result['error']]);
+            }
+            wp_send_json_success($result);
+        } catch (\Throwable $e) {
+            $this->logger->error('Reports/Rosters trace failed', [
+                'error' => $e->getMessage(),
+            ]);
+            wp_send_json_error([
+                'message' => __('Trace failed: ', 'intersoccer-reports-rosters') . $e->getMessage(),
+            ]);
+        }
+    }
+
+    public function fixReportsRostersIssuesSafe(): void {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
+        }
+        check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
+
+        try {
+            $service = new ReportsRostersDiagnosticsService();
+            $result = $service->runSafeFix([
+                'year' => isset($_POST['year']) ? sanitize_text_field($_POST['year']) : date('Y'),
+                'activity_type' => isset($_POST['activity_type']) ? sanitize_text_field($_POST['activity_type']) : 'Course',
+                'season_type' => isset($_POST['season_type']) ? sanitize_text_field($_POST['season_type']) : '',
+                'region' => isset($_POST['region']) ? sanitize_text_field($_POST['region']) : '',
+                'exclude_buyclub' => !empty($_POST['exclude_buyclub']),
+                'limit' => isset($_POST['limit']) ? (int) $_POST['limit'] : 200,
+                'offset' => isset($_POST['offset']) ? (int) $_POST['offset'] : 0,
+            ]);
+            wp_send_json_success($result);
+        } catch (\Throwable $e) {
+            $this->logger->error('Reports/Rosters safe fix failed', [
+                'error' => $e->getMessage(),
+            ]);
+            wp_send_json_error([
+                'message' => __('Safe fix failed: ', 'intersoccer-reports-rosters') . $e->getMessage(),
+            ]);
+        }
     }
 
     private function computeDayPresence(string $booking_type, string $selected_days): array {
