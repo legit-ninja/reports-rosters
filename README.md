@@ -4,8 +4,8 @@
 The InterSoccer Reports and Rosters plugin is a comprehensive WordPress extension that integrates with WooCommerce to provide advanced event roster management, analytics, and reporting capabilities for InterSoccer Switzerland's sports programs. It automatically generates and maintains rosters from completed orders, provides detailed analytics dashboards, and offers sophisticated export functionality for administrators, coaches, and organizers.
 
 ## Version
-- **Current Version:** 1.10.9
-- **Release Date:** October 9, 2025
+- **Current Version:** 2.4.7
+- **Release Date:** April 7, 2026
 
 ## Core Features
 
