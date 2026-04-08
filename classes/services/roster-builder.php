@@ -797,7 +797,7 @@ class RosterBuilder {
             }
             $order_data['final_price'] = $val !== '' ? (float) $val : 0.0;
         }
-        
+
         return $order_data;
     }
 

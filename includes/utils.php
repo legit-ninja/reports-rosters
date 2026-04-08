@@ -683,10 +683,18 @@ if (!function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
         $normalized = strtolower(trim($booking_type));
         $normalized = str_replace('_', '-', $normalized);
         $normalized = preg_replace('/\s+/', ' ', $normalized);
+        $normalized_ascii = function_exists('remove_accents')
+            ? strtolower(remove_accents($normalized))
+            : $normalized;
+
+        // Attribute slugs use hyphens (e.g. semaine-complete); heuristics below use space-separated phrases.
+        $ascii_for_heuristic = trim(preg_replace('/\s+/', ' ', str_replace('-', ' ', $normalized_ascii)));
 
         static $direct = [
             'full-week' => 'full-week',
             'full week' => 'full-week',
+            'semaine-complete' => 'full-week',
+            'journee-complete' => 'full-week',
             'single-days' => 'single-days',
             'single day(s)' => 'single-days',
             'single days' => 'single-days',
@@ -696,18 +704,27 @@ if (!function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
         if (isset($direct[$normalized])) {
             return $direct[$normalized];
         }
+        if (isset($direct[$normalized_ascii])) {
+            return $direct[$normalized_ascii];
+        }
 
         // Align with RosterBuilder::normalizeBookingTypeValue (FR/DE/EN).
-        if (strpos($normalized, 'full week') !== false || strpos($normalized, 'journee complete') !== false
-            || strpos($normalized, 'ganze woche') !== false) {
+        if (
+            strpos($ascii_for_heuristic, 'full week') !== false
+            || strpos($ascii_for_heuristic, 'journee complete') !== false
+            || strpos($ascii_for_heuristic, 'semaine complete') !== false
+            || strpos($ascii_for_heuristic, 'ganze woche') !== false
+            || strpos($ascii_for_heuristic, 'komplette woche') !== false
+            || strpos($ascii_for_heuristic, 'woche komplett') !== false
+        ) {
             return 'full-week';
         }
-        if (strpos($normalized, 'single day') !== false || strpos($normalized, 'jours selectionnes') !== false
-            || strpos($normalized, 'ausgewahlte tage') !== false || strpos($normalized, 'einzeltag') !== false) {
+        if (strpos($ascii_for_heuristic, 'single day') !== false || strpos($ascii_for_heuristic, 'jours selectionnes') !== false
+            || strpos($ascii_for_heuristic, 'ausgewahlte tage') !== false || strpos($ascii_for_heuristic, 'einzeltag') !== false) {
             return 'single-days';
         }
-        if (strpos($normalized, 'full term') !== false || strpos($normalized, 'trimestre') !== false
-            || strpos($normalized, 'voller begriff') !== false) {
+        if (strpos($ascii_for_heuristic, 'full term') !== false || strpos($ascii_for_heuristic, 'trimestre') !== false
+            || strpos($ascii_for_heuristic, 'voller begriff') !== false) {
             return 'full-term';
         }
 
@@ -788,7 +805,8 @@ if (!function_exists('intersoccer_compute_day_presence')) {
     function intersoccer_compute_day_presence($booking_type, $selected_days) {
         $presence = ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
 
-        if (intersoccer_normalize_booking_type_slug_for_reports($booking_type) === 'full-week') {
+        $booking_slug = intersoccer_normalize_booking_type_slug_for_reports($booking_type);
+        if ($booking_slug === 'full-week') {
             return ['Monday' => 'Yes', 'Tuesday' => 'Yes', 'Wednesday' => 'Yes', 'Thursday' => 'Yes', 'Friday' => 'Yes'];
         }
 
@@ -1789,7 +1807,11 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
 
     // Day presence
     $day_presence = ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
-    if (strtolower($booking_type) === 'single-days') {
+    $normalized_booking_type_slug = function_exists('intersoccer_normalize_booking_type_slug_for_reports')
+        ? intersoccer_normalize_booking_type_slug_for_reports($booking_type)
+        : strtolower((string) $booking_type);
+
+    if ($normalized_booking_type_slug === 'single-days') {
         $days = array_map('trim', explode(',', (string) $selected_days));
         foreach ($days as $day) {
             $canonical_day = function_exists('intersoccer_normalize_weekday_token')
@@ -1800,7 +1822,7 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
                 $day_presence[$canonical_day] = 'Yes';
             }
         }
-    } elseif (strtolower($booking_type) === 'full-week') {
+    } elseif ($normalized_booking_type_slug === 'full-week') {
         $day_presence = ['Monday' => 'Yes', 'Tuesday' => 'Yes', 'Wednesday' => 'Yes', 'Thursday' => 'Yes', 'Friday' => 'Yes'];
     }
 

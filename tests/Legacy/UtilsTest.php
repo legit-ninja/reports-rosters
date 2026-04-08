@@ -96,6 +96,19 @@ class UtilsTest extends TestCase {
         $this->assertSame('full-week', intersoccer_normalize_booking_type_slug_for_reports('Full Week'));
         $this->assertSame('single-days', intersoccer_normalize_booking_type_slug_for_reports('Single Days'));
         $this->assertSame('full-week', intersoccer_normalize_booking_type_slug_for_reports('full-week'));
+        // WooCommerce attribute slugs (hyphens) must map like translated labels.
+        $this->assertSame('full-week', intersoccer_normalize_booking_type_slug_for_reports('semaine-complete'));
+        $this->assertSame('full-week', intersoccer_normalize_booking_type_slug_for_reports('journee-complete'));
+    }
+
+    public function test_compute_day_presence_full_week_from_hyphenated_semaine_slug() {
+        if (!function_exists('intersoccer_compute_day_presence')) {
+            $this->markTestSkipped('intersoccer_compute_day_presence not loaded');
+        }
+        $p = intersoccer_compute_day_presence('semaine-complete', '');
+        foreach (['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as $d) {
+            $this->assertSame('Yes', $p[$d], $d);
+        }
     }
 
     public function test_consolidated_roster_group_key_stable_per_facets() {
