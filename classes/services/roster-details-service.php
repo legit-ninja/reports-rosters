@@ -435,10 +435,27 @@ class RosterDetailsService {
             }
         }
 
-        return array_values(array_map(function ($summary) {
+        $summaryValues = array_values(array_map(function ($summary) {
             unset($summary->_order_item_ids);
             return $summary;
         }, $summaries));
+        usort($summaryValues, static function ($a, $b) {
+            $productCompare = strnatcasecmp((string) ($a->product_name ?? ''), (string) ($b->product_name ?? ''));
+            if ($productCompare !== 0) {
+                return $productCompare;
+            }
+            $venueCompare = strnatcasecmp((string) ($a->venue ?? ''), (string) ($b->venue ?? ''));
+            if ($venueCompare !== 0) {
+                return $venueCompare;
+            }
+            return strnatcasecmp((string) ($a->age_group ?? ''), (string) ($b->age_group ?? ''));
+        });
+
+        $labels = array_map(function ($summary) {
+            return trim(((string) ($summary->product_name ?? '')) . ' | ' . ((string) ($summary->venue ?? '')) . ' | ' . ((string) ($summary->age_group ?? '')));
+        }, $summaryValues);
+
+        return $summaryValues;
     }
 
     private function countUnknownAttendees(array $rosters): int {

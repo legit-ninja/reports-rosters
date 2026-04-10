@@ -53,6 +53,11 @@ if (!function_exists('intersoccer_normalize_comparison_string')) {
 
         if (function_exists('remove_accents')) {
             $normalized = remove_accents($normalized);
+        } elseif (function_exists('iconv')) {
+            $trans = @iconv('UTF-8', 'ASCII//TRANSLIT', $normalized);
+            if ($trans !== false) {
+                $normalized = $trans;
+            }
         }
 
         // Treat common separators as whitespace.
@@ -698,6 +703,9 @@ if (!function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
             'single-days' => 'single-days',
             'single day(s)' => 'single-days',
             'single days' => 'single-days',
+            'a-la-journee' => 'single-days',
+            'a la journee' => 'single-days',
+            'la journee' => 'single-days',
             'full-term' => 'full-term',
             'full term' => 'full-term',
         ];
@@ -720,6 +728,7 @@ if (!function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
             return 'full-week';
         }
         if (strpos($ascii_for_heuristic, 'single day') !== false || strpos($ascii_for_heuristic, 'jours selectionnes') !== false
+            || strpos($ascii_for_heuristic, 'a la journee') !== false || strpos($ascii_for_heuristic, 'la journee') !== false
             || strpos($ascii_for_heuristic, 'ausgewahlte tage') !== false || strpos($ascii_for_heuristic, 'einzeltag') !== false) {
             return 'single-days';
         }
@@ -3080,3 +3089,5 @@ function intersoccer_parse_camp_dates_fixed($camp_terms, $season) {
 
     return [$start_date, $end_date, $event_dates];
 }
+
+require_once __DIR__ . '/order-meta-keys.php';

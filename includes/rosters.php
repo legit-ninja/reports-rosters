@@ -946,6 +946,53 @@ function intersoccer_roster_admin_consolidated_view_from_request() {
 }
 
 /**
+ * Human-readable roster status filter (matches Camps/Courses Status dropdown).
+ *
+ * @param string $status_filter Raw query value: '', 'closed', or 'all'.
+ */
+function intersoccer_rosters_admin_status_filter_label($status_filter) {
+    switch ($status_filter) {
+        case 'closed':
+            return __('Closed Only', 'intersoccer-reports-rosters');
+        case 'all':
+            return __('All', 'intersoccer-reports-rosters');
+        default:
+            return __('Active Only', 'intersoccer-reports-rosters');
+    }
+}
+
+/**
+ * Admin notice when roster list filters hide some aggregated event groups (runtime: fewer rows than loaded groups).
+ *
+ * @param string $page_slug Admin page query value (e.g. intersoccer-camps).
+ * @param int    $shown     Count of groups after UI filters.
+ * @param int    $total     Count of groups before UI filters (same roster load).
+ * @param array  $active_filter_labels Human-readable active filter lines (non-empty only).
+ */
+function intersoccer_rosters_admin_narrowing_notice($page_slug, $shown, $total, array $active_filter_labels) {
+    if ($shown >= $total || $total < 1) {
+        return;
+    }
+    $clear_url = admin_url('admin.php?page=' . rawurlencode($page_slug));
+    echo '<div class="notice notice-info inline"><p>';
+    echo esc_html(
+        sprintf(
+            /* translators: 1: number of table rows, 2: total event groups for this load */
+            __('Showing %1$d event row(s) out of %2$d for the current camp/course load. Some rows are hidden by the filters below.', 'intersoccer-reports-rosters'),
+            $shown,
+            $total
+        )
+    );
+    if ($active_filter_labels) {
+        echo ' <strong>' . esc_html__('Active filters:', 'intersoccer-reports-rosters') . '</strong> ';
+        echo esc_html(implode('; ', $active_filter_labels));
+    }
+    echo ' ';
+    echo '<a href="' . esc_url($clear_url) . '">' . esc_html__('Clear all filters', 'intersoccer-reports-rosters') . '</a>';
+    echo '</p></div>';
+}
+
+/**
  * Updated Camps page with improved formatting, no booking_type split, and City display
  */
 function intersoccer_render_camps_page() {
@@ -1006,6 +1053,38 @@ function intersoccer_render_camps_page() {
     error_log('InterSoccer OOP: Camps aggregation time ' . $query_time . ' seconds');
     error_log('InterSoccer OOP: Camps filtered groups ' . print_r($display_groups, true));
 
+    $camp_group_total = count($all_groups);
+    $camp_group_shown = count($display_groups);
+    $camp_active_filter_labels = [];
+    if ($selected_season !== '') {
+        $camp_active_filter_labels[] = sprintf(
+            /* translators: %s: season slug */
+            __('Season: %s', 'intersoccer-reports-rosters'),
+            intersoccer_normalize_season_for_display($selected_season)
+        );
+    }
+    if ($selected_venue !== '') {
+        $vn = function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($selected_venue, 'pa_intersoccer-venues') : $selected_venue;
+        $camp_active_filter_labels[] = sprintf(__('Venue: %s', 'intersoccer-reports-rosters'), $vn);
+    }
+    if ($selected_camp_terms !== '') {
+        $tn = function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($selected_camp_terms, 'pa_camp-terms') : $selected_camp_terms;
+        $camp_active_filter_labels[] = sprintf(__('Camp term: %s', 'intersoccer-reports-rosters'), $tn);
+    }
+    if ($selected_age_group !== '') {
+        $an = function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($selected_age_group, 'pa_age-group') : $selected_age_group;
+        $camp_active_filter_labels[] = sprintf(__('Age group: %s', 'intersoccer-reports-rosters'), $an);
+    }
+    if ($selected_city !== '') {
+        $camp_active_filter_labels[] = sprintf(__('City: %s', 'intersoccer-reports-rosters'), $selected_city);
+    }
+    if ($status_filter !== '') {
+        $camp_active_filter_labels[] = sprintf(
+            __('Status: %s', 'intersoccer-reports-rosters'),
+            intersoccer_rosters_admin_status_filter_label($status_filter)
+        );
+    }
+
     // Render the page
     ?>
     <div class="wrap intersoccer-rosters-page">
@@ -1018,6 +1097,7 @@ function intersoccer_render_camps_page() {
                 </a>
             </div>
         </div>
+        <?php intersoccer_rosters_admin_narrowing_notice('intersoccer-camps', $camp_group_shown, $camp_group_total, $camp_active_filter_labels); ?>
 
         <div class="export-buttons">
             <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" target="_blank">
@@ -1324,6 +1404,36 @@ function intersoccer_render_courses_page() {
     error_log('InterSoccer OOP: Courses aggregation time ' . $query_time . ' seconds');
     error_log('InterSoccer OOP: Courses filtered groups ' . print_r($display_groups, true));
 
+    $course_group_total = count($all_groups);
+    $course_group_shown = count($display_groups);
+    $course_active_filter_labels = [];
+    if ($selected_season !== '') {
+        $course_active_filter_labels[] = sprintf(
+            __('Season: %s', 'intersoccer-reports-rosters'),
+            intersoccer_normalize_season_for_display($selected_season)
+        );
+    }
+    if ($selected_venue !== '') {
+        $cvn = function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($selected_venue, 'pa_intersoccer-venues') : $selected_venue;
+        $course_active_filter_labels[] = sprintf(__('Venue: %s', 'intersoccer-reports-rosters'), $cvn);
+    }
+    if ($selected_course_day !== '') {
+        $course_active_filter_labels[] = sprintf(__('Course day: %s', 'intersoccer-reports-rosters'), ucfirst($selected_course_day));
+    }
+    if ($selected_age_group !== '') {
+        $cag = function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($selected_age_group, 'pa_age-group') : $selected_age_group;
+        $course_active_filter_labels[] = sprintf(__('Age group: %s', 'intersoccer-reports-rosters'), $cag);
+    }
+    if ($selected_city !== '') {
+        $course_active_filter_labels[] = sprintf(__('City: %s', 'intersoccer-reports-rosters'), $selected_city);
+    }
+    if ($status_filter !== '') {
+        $course_active_filter_labels[] = sprintf(
+            __('Status: %s', 'intersoccer-reports-rosters'),
+            intersoccer_rosters_admin_status_filter_label($status_filter)
+        );
+    }
+
     // Render the page
     ?>
     <div class="wrap intersoccer-rosters-page">
@@ -1336,6 +1446,7 @@ function intersoccer_render_courses_page() {
                 </a>
             </div>
         </div>
+        <?php intersoccer_rosters_admin_narrowing_notice('intersoccer-courses', $course_group_shown, $course_group_total, $course_active_filter_labels); ?>
 
         <div class="export-buttons">
             <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" target="_blank">

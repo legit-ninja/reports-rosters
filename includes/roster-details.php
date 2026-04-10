@@ -76,7 +76,6 @@ function intersoccer_render_roster_details_page() {
 
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-
     // Get query parameters
     $product_id = isset($_GET['product_id']) ? intval($_GET['product_id']) : 0;
     $variation_id = isset($_GET['variation_id']) ? intval($_GET['variation_id']) : 0;
@@ -119,7 +118,6 @@ function intersoccer_render_roster_details_page() {
         && function_exists('intersoccer_use_oop_for')
         && intersoccer_use_oop_for('rosters')
         && function_exists('intersoccer_oop_get_roster_details_service');
-
     if ($use_oop_rosters) {
         $service = intersoccer_oop_get_roster_details_service();
         $result = $service->getRosterContext(
@@ -581,7 +579,6 @@ function intersoccer_render_roster_details_page() {
         
         return $roster_label;
     };
-    
     // Same-gender rosters (always shown)
     if (!empty($available_rosters)) {
         echo '                <optgroup label="' . esc_attr__('Same Gender Type', 'intersoccer-reports-rosters') . ' (' . count($available_rosters) . ')">';
@@ -924,7 +921,7 @@ function intersoccer_render_roster_details_page() {
             console.log('InterSoccer Migration: Bulk action changed to:', this.value, 'Show move options:', isMove);
             moveOptions.toggle(isMove);
             $('#crossGenderOption').toggle(isMove);
-            
+                        
             // Reset target roster selection when switching away from move
             if (!isMove) {
                 targetRosterSelect.val('');

@@ -105,34 +105,39 @@ class RosterBuilder {
     /**
      * Canonical mapping between order item metadata keys and roster fields.
      *
-     * @var array<string,string>
+     * @return array<string,string>
      */
-    private $order_meta_field_map = [
-        'InterSoccer Venues' => 'venue',
-        'Age Group' => 'age_group',
-        'Camp Terms' => 'event_type',
-        'Camp Times' => 'camp_times',
-        'Course Day' => 'course_day',
-        'Course Times' => 'course_times',
-        'Booking Type' => 'booking_type',
-        'Assigned Attendee' => 'assigned_attendee',
-        'Player Index' => 'player_index',
-        'Days Selected' => 'selected_days',
-        'Season' => 'season',
-        'Canton / Region' => 'region',
-        'City' => 'city',
-        'Activity Type' => 'activity_type',
-        'Start Date' => 'start_date',
-        'End Date' => 'end_date',
-        'Holidays' => 'holidays',
-        'Discount' => 'discount_applied',
-        'Discount Amount' => 'discount_amount',
-        'Base Price' => 'base_price',
-        'Remaining Sessions' => 'remaining_sessions',
-        'Late Pickup Type' => 'late_pickup_type',
-        'Late Pickup Days' => 'late_pickup_days',
-        'Late Pickup Cost' => 'late_pickup_cost',
-    ];
+    private function getOrderMetaFieldMap() {
+        if (function_exists('intersoccer_get_order_meta_field_map')) {
+            return intersoccer_get_order_meta_field_map();
+        }
+        return [
+            'InterSoccer Venues' => 'venue',
+            'Age Group' => 'age_group',
+            'Camp Terms' => 'event_type',
+            'Camp Times' => 'camp_times',
+            'Course Day' => 'course_day',
+            'Course Times' => 'course_times',
+            'Booking Type' => 'booking_type',
+            'Assigned Attendee' => 'assigned_attendee',
+            'Player Index' => 'player_index',
+            'Days Selected' => 'selected_days',
+            'Season' => 'season',
+            'Canton / Region' => 'region',
+            'City' => 'city',
+            'Activity Type' => 'activity_type',
+            'Start Date' => 'start_date',
+            'End Date' => 'end_date',
+            'Holidays' => 'holidays',
+            'Discount' => 'discount_applied',
+            'Discount Amount' => 'discount_amount',
+            'Base Price' => 'base_price',
+            'Remaining Sessions' => 'remaining_sessions',
+            'Late Pickup Type' => 'late_pickup_type',
+            'Late Pickup Days' => 'late_pickup_days',
+            'Late Pickup Cost' => 'late_pickup_cost',
+        ];
+    }
 
     /**
      * Cached lookup table of localized metadata key variants.
@@ -636,7 +641,7 @@ class RosterBuilder {
         
         // Extract order item data
         $order_data = $this->extractOrderItemData($order, $item_id, $item);
-        
+
         // Validate order item has required activity type
         if (empty($order_data['activity_type'])) {
             throw new ValidationException("Order item missing activity type");
@@ -658,7 +663,7 @@ class RosterBuilder {
         foreach ($assigned_players as $player) {
             try {
                 $roster_data = $this->buildRosterData($order_data, $player, $customer_data);
-                
+
                 // Validate roster data
                 if ($options['validate_data']) {
                     $this->validator->validateRosterData($roster_data);
@@ -674,7 +679,7 @@ class RosterBuilder {
             } catch (\Exception $e) {
                 $this->build_stats['validation_errors']++;
                 $this->build_stats['errors'][] = "Player {$player->getFullName()}: " . $e->getMessage();
-                
+
                 $this->logger->error('Failed to create roster for player', [
                     'order_id' => $order->get_id(),
                     'player' => $player->getLogSummary(),
@@ -682,7 +687,7 @@ class RosterBuilder {
                 ]);
             }
         }
-        
+
         return $rosters;
     }
     
@@ -708,7 +713,53 @@ class RosterBuilder {
             'order_status' => $order->get_status(),
             'product_name' => $product ? $product->get_name() : '',
         ];
-        
+        // Recover missing product/variation ids from line-item meta for legacy/deleted product cases.
+        if ((int) ($order_data['product_id'] ?? 0) <= 0) {
+            $meta_product_id = (int) $item->get_meta('_product_id', true);
+            if ($meta_product_id > 0) {
+                $order_data['product_id'] = $meta_product_id;
+            }
+        }
+        if ((int) ($order_data['variation_id'] ?? 0) <= 0) {
+            $meta_variation_id = (int) $item->get_meta('_variation_id', true);
+            if ($meta_variation_id > 0) {
+                $order_data['variation_id'] = $meta_variation_id;
+            }
+            if ((int) ($order_data['variation_id'] ?? 0) <= 0) {
+                $meta_variation_id_alt = (int) $item->get_meta('Variation ID', true);
+                if ($meta_variation_id_alt > 0) {
+                    $order_data['variation_id'] = $meta_variation_id_alt;
+                }
+            }
+            if ((int) ($order_data['variation_id'] ?? 0) <= 0) {
+                $meta_variation_id_slug = (int) $item->get_meta('variation_id', true);
+                if ($meta_variation_id_slug > 0) {
+                    $order_data['variation_id'] = $meta_variation_id_slug;
+                }
+            }
+        }
+        if ((int) ($order_data['product_id'] ?? 0) <= 0 && (int) ($order_data['variation_id'] ?? 0) > 0) {
+            $variation_product = wc_get_product((int) $order_data['variation_id']);
+            if ($variation_product && method_exists($variation_product, 'get_parent_id')) {
+                $parent_product_id = (int) $variation_product->get_parent_id();
+                if ($parent_product_id > 0) {
+                    $order_data['product_id'] = $parent_product_id;
+                }
+            }
+            if ((int) ($order_data['product_id'] ?? 0) <= 0) {
+                $wpdb = $this->database->get_wpdb();
+                if ($wpdb) {
+                    $variation_post_row = $wpdb->get_row($wpdb->prepare(
+                        "SELECT ID, post_parent, post_type, post_status FROM {$wpdb->posts} WHERE ID = %d LIMIT 1",
+                        (int) $order_data['variation_id']
+                    ));
+                    $parent_from_posts = (int) ($variation_post_row->post_parent ?? 0);
+                    if ($parent_from_posts > 0) {
+                        $order_data['product_id'] = $parent_from_posts;
+                    }
+                }
+            }
+        }
         // Extract metadata from order item
         $meta_data = $item->get_meta_data();
         foreach ($meta_data as $meta) {
@@ -721,9 +772,9 @@ class RosterBuilder {
             }
 
             $canonical_key = $this->normalizeOrderMetaKey($raw_key);
-
-            if (isset($this->order_meta_field_map[$canonical_key])) {
-                $field = $this->order_meta_field_map[$canonical_key];
+            $field_map = $this->getOrderMetaFieldMap();
+            if (isset($field_map[$canonical_key])) {
+                $field = $field_map[$canonical_key];
 
                 if ($field === 'activity_type') {
                     $order_data[$field] = $this->normalizeActivityTypeValue($value);
@@ -740,7 +791,6 @@ class RosterBuilder {
                 $order_data['player_index'] = $value;
             }
         }
-        
         // Extract additional data from product attributes
         if ($product && $variation_id) {
             $variation = wc_get_product($variation_id);
@@ -838,157 +888,30 @@ class RosterBuilder {
         if ($this->order_meta_key_variants !== null) {
             return $this->order_meta_key_variants;
         }
+        if (!function_exists('intersoccer_order_meta_build_variants_array')) {
+            $omk = dirname(__DIR__, 2) . '/includes/order-meta-keys.php';
+            if (is_readable($omk)) {
+                require_once $omk;
+            }
+        }
+        if (function_exists('intersoccer_order_meta_build_variants_array')) {
+            return $this->order_meta_key_variants = intersoccer_order_meta_build_variants_array();
+        }
 
         $variants = [];
-        foreach (array_keys($this->order_meta_field_map) as $canonical) {
+        foreach (array_keys($this->getOrderMetaFieldMap()) as $canonical) {
             $variants[$canonical] = [$this->normalizeComparisonString($canonical)];
         }
-
-        // Manual aliases for known translations / wording variations.
-        $manual_aliases = [
-            'InterSoccer Venues' => [
-                'lieux intersoccer',
-                'lieu intersoccer',
-                'intersoccer-standorte',
-                'sites intersoccer',  // e.g. "Sites InterSoccer" (FR/display)
-            ],
-            'Age Group' => [
-                'groupe dage',
-                'groupe d age',
-                'groupe d\'âge',
-                'altersgruppe',
-            ],
-            'Camp Terms' => [
-                'conditions de camp',
-                'camp begriffe',
-            ],
-            'Camp Times' => [
-                'horaires du camp',
-                'camp zeiten',
-            ],
-            'Course Day' => [
-                'jour de cours',
-                'kurstag',
-            ],
-            'Course Times' => [
-                'horaires du cours',
-                'kurszeiten',
-            ],
-            'Booking Type' => [
-                'type de réservation',
-                'buchungstyp',
-            ],
-            'Assigned Attendee' => [
-                'participant assigné',
-                'zugewiesener teilnehmer',
-            ],
-            'Days Selected' => [
-                'jours sélectionnés',
-                'ausgewählte tage',
-            ],
-            'Season' => [
-                'saison',
-                'saison (programm)',
-                'jahreszeit',
-            ],
-            'Canton / Region' => [
-                'canton region',
-                'canton / région',
-                'kanton region',
-            ],
-            'City' => [
-                'ville',
-                'stadt',
-            ],
-            'Activity Type' => [
-                'type d activite',
-                'type d\'activite',
-                'type d’activité',
-                'type d\'activité',
-                'aktivitätstyp',
-            ],
-            'Start Date' => [
-                'date de début',
-                'startdatum',
-            ],
-            'End Date' => [
-                'date de fin',
-                'enddatum',
-            ],
-            'Holidays' => [
-                'vacances',
-                'ferien',
-            ],
-            'Discount' => [
-                'remise',
-                'rabatt',
-            ],
-            'Discount Amount' => [
-                'montant de la remise',
-                'rabattbetrag',
-            ],
-            'Base Price' => [
-                'prix de base',
-                'grundpreis',
-            ],
-            'Remaining Sessions' => [
-                'séances restantes',
-                'verbleibende termine',
-            ],
-            'Late Pickup Type' => [
-                'type de ramassage tardif',
-                'späte abholung typ',
-            ],
-            'Late Pickup Days' => [
-                'jours de ramassage tardif',
-                'tage für späte abholung',
-            ],
-            'Late Pickup Cost' => [
-                'coût ramassage tardif',
-                'kosten späte abholung',
-            ],
-            'Variation ID' => [
-                'id de variation',
-                'varianten id',
-            ],
-        ];
-
-        foreach ($manual_aliases as $canonical => $aliases) {
-            foreach ($aliases as $alias) {
-                $variants[$canonical][] = $this->normalizeComparisonString($alias);
-            }
-        }
-
-        // Include dynamic WPML translations when available.
-        $can_switch_language = function_exists('wpml_get_active_languages') && function_exists('wpml_get_current_language') && function_exists('icl_t');
-
-        if ($can_switch_language) {
-            $active_languages = wpml_get_active_languages();
-            $original_language = wpml_get_current_language();
-
-            if (!empty($active_languages)) {
-                foreach (array_keys($active_languages) as $language_code) {
-                    do_action('wpml_switch_language', $language_code);
-
-                    foreach (array_keys($this->order_meta_field_map) as $canonical) {
-                        $translated = icl_t('intersoccer-product-variations', $canonical, $canonical);
-                        if (!empty($translated)) {
-                            $variants[$canonical][] = $this->normalizeComparisonString($translated);
-                        }
-                    }
-                }
-
-                // Restore the original language context
-                if (!empty($original_language)) {
-                    do_action('wpml_switch_language', $original_language);
+        if (function_exists('intersoccer_get_order_meta_manual_aliases')) {
+            foreach (intersoccer_get_order_meta_manual_aliases() as $canonical => $aliases) {
+                foreach ($aliases as $alias) {
+                    $variants[$canonical][] = $this->normalizeComparisonString($alias);
                 }
             }
         }
-
         foreach ($variants as &$variant_list) {
             $variant_list = array_values(array_unique(array_filter($variant_list)));
         }
-
         return $this->order_meta_key_variants = $variants;
     }
 
@@ -1059,13 +982,18 @@ class RosterBuilder {
             return (string) $value;
         }
         $normalized = $this->normalizeComparisonString($value);
-        // Full Week: EN, FR (journée complète), DE (ganze woche)
-        if (strpos($normalized, 'full week') !== false || strpos($normalized, 'journee complete') !== false
-            || strpos($normalized, 'ganze woche') !== false) {
+        // Full Week: EN, FR (journée/semaine complète), DE (ganze/komplette woche)
+        if (strpos($normalized, 'full week') !== false
+            || strpos($normalized, 'journee complete') !== false
+            || strpos($normalized, 'semaine complete') !== false
+            || strpos($normalized, 'ganze woche') !== false
+            || strpos($normalized, 'komplette woche') !== false
+            || strpos($normalized, 'woche komplett') !== false) {
             return 'Full Week';
         }
         // Single Day(s): EN, FR (jour(s) sélectionné(s)), DE (einzelne tage, ausgewählte tage)
         if (strpos($normalized, 'single day') !== false || strpos($normalized, 'jours selectionnes') !== false
+            || strpos($normalized, 'a la journee') !== false || strpos($normalized, 'la journee') !== false
             || strpos($normalized, 'ausgewahlte tage') !== false || strpos($normalized, 'einzeltag') !== false) {
             return 'Single Day(s)';
         }
@@ -1208,10 +1136,11 @@ class RosterBuilder {
             $roster_data['selected_days'] = $this->normalizeSelectedDaysToEnglish($roster_data['selected_days'] ?? '');
             $roster_data['days_selected'] = $roster_data['selected_days'];
             if (function_exists('intersoccer_compute_day_presence')) {
-                $roster_data['day_presence'] = wp_json_encode(intersoccer_compute_day_presence(
+                $computed_day_presence = intersoccer_compute_day_presence(
                     $roster_data['booking_type'] ?? '',
                     $roster_data['selected_days'] ?? ''
-                ));
+                );
+                $roster_data['day_presence'] = wp_json_encode($computed_day_presence);
             }
         }
         
@@ -1257,7 +1186,8 @@ class RosterBuilder {
             }
         }
         $out = array_unique($out);
-        return implode(', ', $out);
+        $normalized_days = implode(', ', $out);
+        return $normalized_days;
     }
 
     private function termNameForStorage($value, $taxonomy, $alt_taxonomy = null) {

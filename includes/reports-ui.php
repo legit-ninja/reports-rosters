@@ -151,6 +151,16 @@ function intersoccer_render_final_reports_page() {
     sort($regions);
 
     $report_data = intersoccer_get_final_reports_data($year, $activity_type, $season_type ?: null, $region ?: null, $exclude_buyclub);
+    $camp_player_registration_totals = null;
+    $course_player_registration_totals = null;
+    if ($activity_type === 'Camp' && isset($report_data['__player_registration_totals__'])) {
+        $camp_player_registration_totals = $report_data['__player_registration_totals__'];
+        unset($report_data['__player_registration_totals__']);
+    }
+    if ($activity_type === 'Course' && isset($report_data['__player_registration_totals__'])) {
+        $course_player_registration_totals = $report_data['__player_registration_totals__'];
+        unset($report_data['__player_registration_totals__']);
+    }
     $totals = intersoccer_calculate_final_reports_totals($report_data, $activity_type);
 
     ?>
@@ -288,6 +298,11 @@ function intersoccer_render_final_reports_page() {
                         $previous_canton = null;
                         ?>
                         <?php foreach ($report_data as $week => $cantons): ?>
+                            <?php
+                            if ($week === '__player_registration_totals__' || !is_array($cantons)) {
+                                continue;
+                            }
+                            ?>
                             <?php 
                             // Calculate week totals
                             $week_totals = [
@@ -386,6 +401,7 @@ function intersoccer_render_final_reports_page() {
                 <!-- Camp Totals -->
                 <div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
                     <h3><?php _e('Totals', 'intersoccer-reports-rosters'); ?></h3>
+                    <p class="description" style="margin-top:0;"><?php _e('These totals count one registration per roster row (per player) for completed shop orders—the same basis as the Camps Rosters list. Grid columns above use booking-slot style counts (full week / per day).', 'intersoccer-reports-rosters'); ?></p>
                     <table class="widefat fixed" style="margin-top: 10px;">
                         <thead>
                             <tr>
@@ -396,15 +412,30 @@ function intersoccer_render_final_reports_page() {
                         <tbody>
                             <tr>
                                 <td><?php _e('Full Day Camps', 'intersoccer-reports-rosters'); ?></td>
-                                <td><?php echo esc_html(isset($totals['full_day']['unique_records']) ? $totals['full_day']['unique_records'] : $totals['full_day']['total']); ?></td>
+                                <td><?php
+                                    $fd_disp = $camp_player_registration_totals !== null
+                                        ? (int) $camp_player_registration_totals['full_day']
+                                        : (isset($totals['full_day']['unique_records']) ? $totals['full_day']['unique_records'] : $totals['full_day']['total']);
+                                    echo esc_html($fd_disp);
+                                ?></td>
                             </tr>
                             <tr>
                                 <td><?php _e('Mini - Half Day Camps', 'intersoccer-reports-rosters'); ?></td>
-                                <td><?php echo esc_html(isset($totals['mini']['unique_records']) ? $totals['mini']['unique_records'] : $totals['mini']['total']); ?></td>
+                                <td><?php
+                                    $mini_disp = $camp_player_registration_totals !== null
+                                        ? (int) $camp_player_registration_totals['mini']
+                                        : (isset($totals['mini']['unique_records']) ? $totals['mini']['unique_records'] : $totals['mini']['total']);
+                                    echo esc_html($mini_disp);
+                                ?></td>
                             </tr>
                             <tr style="font-weight: bold; background: #e9ecef;">
                                 <td><?php _e('All Registrations', 'intersoccer-reports-rosters'); ?></td>
-                                <td><?php echo esc_html(isset($totals['all']['unique_records']) ? $totals['all']['unique_records'] : $totals['all']['total']); ?></td>
+                                <td><?php
+                                    $all_disp = $camp_player_registration_totals !== null
+                                        ? (int) $camp_player_registration_totals['all']
+                                        : (isset($totals['all']['unique_records']) ? $totals['all']['unique_records'] : $totals['all']['total']);
+                                    echo esc_html($all_disp);
+                                ?></td>
                             </tr>
                         </tbody>
                     </table>
@@ -418,6 +449,7 @@ function intersoccer_render_final_reports_page() {
                             <th><?php _e('Venue', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Course Name', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Course Day', 'intersoccer-reports-rosters'); ?></th>
+                            <th><?php _e('Times', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Direct Online', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Total', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Final', 'intersoccer-reports-rosters'); ?></th>
@@ -428,27 +460,28 @@ function intersoccer_render_final_reports_page() {
                         $current_region = '';
                         $current_course = '';
                         foreach ($report_data as $region => $venues): ?>
+                            <?php if ($region === '__player_registration_totals__') { continue; } ?>
                             <?php $region_total = $totals['regions'][$region] ?? ['bo' => 0, 'pitch_side' => 0, 'buyclub' => 0, 'total' => 0, 'final' => 0]; ?>
                             <tr style="background-color: #f0f0f0; font-weight: bold;">
                                 <td colspan="3"><?php echo esc_html($region); ?> - TOTAL</td>
+                                <td></td>
                                 <td></td>
                                 <td><?php echo esc_html($region_total['online']); ?></td>
                                 <td><?php echo esc_html($region_total['total']); ?></td>
                                 <td><?php echo esc_html($region_total['final']); ?></td>
                             </tr>
-                            <?php foreach ($venues as $venue => $courses): ?>
-                                <?php foreach ($courses as $course_name => $data): ?>
-                                    <?php foreach ($data as $course_day => $course_data): ?>
+                            <?php foreach ($venues as $venue => $course_rows): ?>
+                                <?php foreach ($course_rows as $course_data): ?>
                                     <tr>
                                         <td></td>
                                         <td><?php echo esc_html($venue); ?></td>
-                                        <td><?php echo esc_html($course_name); ?></td>
-                                        <td><?php echo esc_html($course_day); ?></td>
+                                        <td><?php echo esc_html($course_data['course_name'] ?? 'Unknown'); ?></td>
+                                        <td><?php echo esc_html($course_data['course_day'] ?? 'Unknown'); ?></td>
+                                        <td><?php echo esc_html($course_data['times'] ?? '-'); ?></td>
                                         <td><?php echo esc_html($course_data['online']); ?></td>
                                         <td><?php echo esc_html($course_data['total']); ?></td>
                                         <td><?php echo esc_html($course_data['final']); ?></td>
                                     </tr>
-                                    <?php endforeach; ?>
                                 <?php endforeach; ?>
                             <?php endforeach; ?>
                         <?php endforeach; ?>
@@ -458,6 +491,7 @@ function intersoccer_render_final_reports_page() {
                 <!-- Course Overall Totals -->
                 <div style="margin-top: 30px; padding: 20px; background: #f9f9fa; border-radius: 8px;">
                     <h3><?php _e('Overall Totals', 'intersoccer-reports-rosters'); ?></h3>
+                    <p class="description" style="margin-top:0;"><?php _e('The table above uses order-line counts after event-date filtering. The figures below count one registration per roster row for the selected year (same basis as Courses Rosters), including rows where order dates were missing or did not parse.', 'intersoccer-reports-rosters'); ?></p>
                     <table class="widefat fixed" style="margin-top: 10px;">
                         <thead>
                             <tr>
@@ -469,8 +503,18 @@ function intersoccer_render_final_reports_page() {
                         <tbody>
                             <tr style="font-weight: bold; background: #e9ecef;">
                                 <td><?php _e('All Courses', 'intersoccer-reports-rosters'); ?></td>
-                                <td><?php echo esc_html($totals['all']['total']); ?></td>
-                                <td><?php echo esc_html($totals['all']['final']); ?></td>
+                                <td><?php
+                                    $course_all_disp = $course_player_registration_totals !== null
+                                        ? (int) $course_player_registration_totals['all']
+                                        : (int) $totals['all']['total'];
+                                    echo esc_html($course_all_disp);
+                                ?></td>
+                                <td><?php
+                                    $course_final_disp = $course_player_registration_totals !== null
+                                        ? (int) $course_player_registration_totals['all']
+                                        : (int) $totals['all']['final'];
+                                    echo esc_html($course_final_disp);
+                                ?></td>
                             </tr>
                         </tbody>
                     </table>

@@ -653,11 +653,14 @@ class CampsPage extends AbstractPage {
         <div class="camps-table-section">
             <div class="table-header">
                 <div class="table-info">
-                    <?php printf(
-                        __('Showing %d camps with %d total attendees', 'intersoccer-reports-rosters'),
-                        count($camps),
-                        array_sum(array_column($camps, 'attendee_count'))
-                    ); ?>
+                    <?php
+                    $row_count = count($camps);
+                    printf(
+                        /* translators: %d: number of camp roster rows (completed orders only; matches Final Numbers basis). */
+                        __('Showing %d player registrations (completed orders, same basis as Final Numbers)', 'intersoccer-reports-rosters'),
+                        $row_count
+                    );
+                    ?>
                 </div>
                 <div class="table-actions">
                     <form method="post" style="display: inline;">
@@ -783,69 +786,78 @@ class CampsPage extends AbstractPage {
         
         try {
             $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-            
-            // Build WHERE clause
-            $where_conditions = ["event_type = 'camp'"];
+            $order_items_table = $wpdb->prefix . 'woocommerce_order_items';
+            $posts_table = $wpdb->prefix . 'posts';
+
+            // Align with Final Numbers (includes/reports-data.php): join order via line item id, not roster.order_id.
+            $where_conditions = [
+                "r.activity_type = 'Camp'",
+                "r.order_item_id > 0",
+                "p.post_type = 'shop_order'",
+                "p.post_status = 'wc-completed'",
+            ];
             $where_values = [];
-            
+
             if (!empty($filters['season'])) {
-                $where_conditions[] = "season = %s";
+                $where_conditions[] = 'r.season = %s';
                 $where_values[] = $filters['season'];
             }
-            
+
             if (!empty($filters['venue'])) {
-                $where_conditions[] = "venue = %s";
+                $where_conditions[] = 'r.venue = %s';
                 $where_values[] = $filters['venue'];
             }
-            
+
             if (!empty($filters['age_group'])) {
-                $where_conditions[] = "age_group = %s";
+                $where_conditions[] = 'r.age_group = %s';
                 $where_values[] = $filters['age_group'];
             }
-            
+
             if (!empty($filters['booking_type'])) {
-                $where_conditions[] = "booking_type = %s";
+                $where_conditions[] = 'r.booking_type = %s';
                 $where_values[] = $filters['booking_type'];
             }
-            
+
             if (!empty($filters['gender'])) {
-                $where_conditions[] = "gender = %s";
+                $where_conditions[] = 'r.gender = %s';
                 $where_values[] = $filters['gender'];
             }
-            
+
             if (!empty($filters['search'])) {
-                $where_conditions[] = "(first_name LIKE %s OR last_name LIKE %s OR parent_email LIKE %s)";
+                $where_conditions[] = '(r.first_name LIKE %s OR r.last_name LIKE %s OR r.parent_email LIKE %s)';
                 $search_term = '%' . $wpdb->esc_like($filters['search']) . '%';
                 $where_values[] = $search_term;
                 $where_values[] = $search_term;
                 $where_values[] = $search_term;
             }
-            
+
             if (!empty($filters['date_from'])) {
-                $where_conditions[] = "start_date >= %s";
+                $where_conditions[] = 'r.start_date >= %s';
                 $where_values[] = $filters['date_from'];
             }
-            
+
             if (!empty($filters['date_to'])) {
-                $where_conditions[] = "end_date <= %s";
+                $where_conditions[] = 'r.end_date <= %s';
                 $where_values[] = $filters['date_to'];
             }
-            
+
             if (!empty($filters['medical_only'])) {
-                $where_conditions[] = "medical_conditions != '' AND medical_conditions != 'None' AND medical_conditions IS NOT NULL";
+                $where_conditions[] = "r.medical_conditions != '' AND r.medical_conditions != 'None' AND r.medical_conditions IS NOT NULL";
             }
-            
+
             $where_clause = implode(' AND ', $where_conditions);
-            
-            // Get camps data
-            $query = "SELECT * FROM {$rosters_table} WHERE {$where_clause} ORDER BY start_date DESC, venue ASC, last_name ASC";
+
+            $query = "SELECT r.* FROM {$rosters_table} r
+                INNER JOIN {$order_items_table} oi ON r.order_item_id = oi.order_item_id
+                INNER JOIN {$posts_table} p ON oi.order_id = p.ID
+                WHERE {$where_clause} ORDER BY r.start_date DESC, r.venue ASC, r.last_name ASC";
             
             if (!empty($where_values)) {
                 $query = $wpdb->prepare($query, $where_values);
             }
             
             $camps = $wpdb->get_results($query, ARRAY_A);
-            
+
             // Calculate statistics
             $stats = [
                 'total_camps' => count(array_unique(array_column($camps, 'product_variation_id'))),

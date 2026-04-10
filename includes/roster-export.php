@@ -290,7 +290,7 @@ function intersoccer_export_roster() {
     if (!$using_oop_export) {
         global $wpdb;
         $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-        $query = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, day_presence, age_group, activity_type, product_name, product_id, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
+        $query = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, selected_days, day_presence, age_group, activity_type, product_name, product_id, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
                 FROM $rosters_table";
         $where_clauses = [];
         $query_params = [];
@@ -413,7 +413,7 @@ function intersoccer_export_roster() {
         }
     } else {
         $query = $wpdb->prepare(
-            "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, day_presence, age_group, activity_type, product_name, product_id, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
+            "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, selected_days, day_presence, age_group, activity_type, product_name, product_id, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
              FROM $rosters_table
              WHERE variation_id IN (" . implode(',', array_fill(0, count($variation_ids), '%d')) . ")",
             $variation_ids
@@ -541,6 +541,25 @@ function intersoccer_export_roster() {
         $row = 2;
         foreach ($rosters as $player) {
             $day_presence = !empty($player['day_presence']) ? json_decode($player['day_presence'], true) : [];
+            if (empty($player['selected_days']) && !empty($player['days_selected'])) {
+                $player['selected_days'] = (string) $player['days_selected'];
+            }
+            if (empty($player['selected_days']) && !empty($player['event_details'])) {
+                $event_details_for_days = is_string($player['event_details'])
+                    ? json_decode($player['event_details'], true)
+                    : $player['event_details'];
+                if (is_array($event_details_for_days) && !empty($event_details_for_days['selected_days'])) {
+                    $player['selected_days'] = is_array($event_details_for_days['selected_days'])
+                        ? implode(', ', $event_details_for_days['selected_days'])
+                        : (string) $event_details_for_days['selected_days'];
+                }
+            }
+            if (empty($day_presence) && function_exists('intersoccer_compute_day_presence')) {
+                $day_presence = intersoccer_compute_day_presence(
+                    (string) ($player['booking_type'] ?? ''),
+                    (string) ($player['selected_days'] ?? '')
+                );
+            }
             $monday = isset($day_presence['Monday']) ? $day_presence['Monday'] : 'No';
             $tuesday = isset($day_presence['Tuesday']) ? $day_presence['Tuesday'] : 'No';
             $wednesday = isset($day_presence['Wednesday']) ? $day_presence['Wednesday'] : 'No';

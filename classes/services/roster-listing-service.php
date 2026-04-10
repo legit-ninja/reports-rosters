@@ -147,7 +147,10 @@ class RosterListingService {
             }
 
             $status = get_post_status($model->order_id);
-            if (!$status || !in_array($status, $this->allowed_statuses, true)) {
+            if (!$status) {
+                continue;
+            }
+            if (!in_array($status, $this->allowed_statuses, true)) {
                 continue;
             }
 

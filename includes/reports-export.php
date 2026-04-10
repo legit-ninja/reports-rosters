@@ -27,6 +27,16 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type = 'Camp', $season_type = null, $region = null, $exclude_buyclub = false) {
     require_once plugin_dir_path(__FILE__) . 'reports-data.php';
     $report_data = intersoccer_get_final_reports_data($year, $activity_type, $season_type, $region, $exclude_buyclub);
+    $camp_player_registration_totals = null;
+    $course_player_registration_totals = null;
+    if ($activity_type === 'Camp' && isset($report_data['__player_registration_totals__'])) {
+        $camp_player_registration_totals = $report_data['__player_registration_totals__'];
+        unset($report_data['__player_registration_totals__']);
+    }
+    if ($activity_type === 'Course' && isset($report_data['__player_registration_totals__'])) {
+        $course_player_registration_totals = $report_data['__player_registration_totals__'];
+        unset($report_data['__player_registration_totals__']);
+    }
     $totals = intersoccer_calculate_final_reports_totals($report_data, $activity_type);
 
     $filename = 'final-reports-' . strtolower($activity_type) . '-' . $year;
@@ -71,6 +81,9 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
         // Camp Excel data
         $row_index = 2;
         foreach ($report_data as $week_name => $cantons) {
+            if ($week_name === '__player_registration_totals__' || !is_array($cantons)) {
+                continue;
+            }
             foreach ($cantons as $canton => $venues) {
                 foreach ($venues as $venue => $camp_types) {
                     foreach ($camp_types as $camp_type => $data) {
@@ -108,16 +121,22 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
 
         $totals_start++;
         $sheet->setCellValue('A' . $totals_start, 'Full Day Camps');
-        $sheet->setCellValue('E' . $totals_start, isset($totals['full_day']['unique_records']) ? $totals['full_day']['unique_records'] : $totals['full_day']['total']);
+        $sheet->setCellValue('E' . $totals_start, $camp_player_registration_totals !== null
+            ? (int) $camp_player_registration_totals['full_day']
+            : (isset($totals['full_day']['unique_records']) ? $totals['full_day']['unique_records'] : $totals['full_day']['total']));
 
         $totals_start++;
         $sheet->setCellValue('A' . $totals_start, 'Mini - Half Day Camps');
-        $sheet->setCellValue('E' . $totals_start, isset($totals['mini']['unique_records']) ? $totals['mini']['unique_records'] : $totals['mini']['total']);
+        $sheet->setCellValue('E' . $totals_start, $camp_player_registration_totals !== null
+            ? (int) $camp_player_registration_totals['mini']
+            : (isset($totals['mini']['unique_records']) ? $totals['mini']['unique_records'] : $totals['mini']['total']));
 
         $totals_start++;
         $sheet->setCellValue('A' . $totals_start, 'All Camps');
         $sheet->getStyle('A' . $totals_start)->getFont()->setBold(true);
-        $sheet->setCellValue('E' . $totals_start, isset($totals['all']['unique_records']) ? $totals['all']['unique_records'] : $totals['all']['total']);
+        $sheet->setCellValue('E' . $totals_start, $camp_player_registration_totals !== null
+            ? (int) $camp_player_registration_totals['all']
+            : (isset($totals['all']['unique_records']) ? $totals['all']['unique_records'] : $totals['all']['total']));
     } else {
         // Course Excel headers
         $headers = array(
@@ -125,6 +144,7 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
             'Venue',
             'Course Name',
             'Course Day',
+            'Times',
             'Direct Online',
             'Total',
             'Final'
@@ -142,21 +162,23 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
         // Course Excel data
         $row_index = 2;
         foreach ($report_data as $region => $venues) {
-            foreach ($venues as $venue => $courses) {
-                foreach ($courses as $course_name => $course_days) {
-                    foreach ($course_days as $course_day => $course_data) {
-                        $excel_row = array(
-                            $region,
-                            $venue,
-                            $course_name,
-                            $course_day,
-                            $course_data['online'],
-                            $course_data['total'],
-                            $course_data['final']
-                        );
-                        $sheet->fromArray($excel_row, null, 'A' . $row_index);
-                        $row_index++;
-                    }
+            if ($region === '__player_registration_totals__') {
+                continue;
+            }
+            foreach ($venues as $venue => $course_rows) {
+                foreach ($course_rows as $course_data) {
+                    $excel_row = array(
+                        $region,
+                        $venue,
+                        $course_data['course_name'] ?? 'Unknown',
+                        $course_data['course_day'] ?? 'Unknown',
+                        $course_data['times'] ?? '-',
+                        $course_data['online'],
+                        $course_data['total'],
+                        $course_data['final']
+                    );
+                    $sheet->fromArray($excel_row, null, 'A' . $row_index);
+                    $row_index++;
                 }
             }
         }
@@ -173,6 +195,15 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
         $sheet->setCellValue('F' . $totals_start, 'Total');
         $sheet->setCellValue('G' . $totals_start, 'Final');
         $sheet->getStyle('A' . $totals_start . ':G' . $totals_start)->getFont()->setBold(true);
+
+        $totals_start++;
+        $course_all_export = $course_player_registration_totals !== null
+            ? (int) $course_player_registration_totals['all']
+            : (int) ($totals['all']['final'] ?? 0);
+        $sheet->setCellValue('A' . $totals_start, __('All Courses (roster registrations)', 'intersoccer-reports-rosters'));
+        $sheet->setCellValue('E' . $totals_start, $course_all_export);
+        $sheet->setCellValue('F' . $totals_start, $course_all_export);
+        $sheet->setCellValue('G' . $totals_start, $course_all_export);
 
     }
 
