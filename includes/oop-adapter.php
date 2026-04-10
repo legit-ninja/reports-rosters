@@ -711,7 +711,6 @@ function intersoccer_oop_update_roster_entry($order_id, $item_id) {
         if (!$item) {
             return ['success' => false, 'message' => 'Invalid item ID'];
         }
-        
         $processor = intersoccer_oop_get_order_processor();
         $success = $processor->processOrder($order);
         return ['success' => $success, 'message' => $success ? '' : 'Order processing failed'];

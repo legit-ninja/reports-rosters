@@ -1114,7 +1114,6 @@ function intersoccer_move_players_ajax() {
     $target_variation_id = intval($_POST['target_variation_id']);
     $order_item_ids = array_map('intval', (array) $_POST['order_item_ids']);
     $allow_cross_gender = isset($_POST['allow_cross_gender']) && $_POST['allow_cross_gender'] === '1';
-
     error_log('InterSoccer Migration: Target variation: ' . $target_variation_id);
     error_log('InterSoccer Migration: Order item IDs: ' . implode(', ', $order_item_ids));
     error_log('InterSoccer Migration: Allow cross-gender: ' . ($allow_cross_gender ? 'YES' : 'NO'));
@@ -1196,7 +1195,6 @@ function intersoccer_move_players_ajax() {
             error_log('  - Original subtotal: ' . $original_subtotal);
             error_log('  - Original total: ' . $original_total);
             error_log('  - Assigned attendee: ' . $assigned_attendee);
-
             // Get target product information
             $new_product_id = $variation->get_parent_id();
             $new_attributes = $variation->get_variation_attributes();
@@ -1304,16 +1302,10 @@ function intersoccer_move_players_ajax() {
             // Step 4: Update roster entry
             if ($migration_success) {
                 try {
-                    // Check if roster update function exists
-                    if (function_exists('intersoccer_update_roster_entry')) {
-                        intersoccer_update_roster_entry($order_id, $item_id);
-                        error_log('InterSoccer Migration: Updated roster entry via intersoccer_update_roster_entry');
-                    } else {
-                        // Fallback: manual roster update
-                        intersoccer_manual_update_roster_entry($order_id, $item_id, $target_variation_id);
-                        error_log('InterSoccer Migration: Updated roster entry via manual method');
-                    }
-
+                    // Always apply explicit target-variation roster update for migration reliability.
+                    // Runtime evidence showed OOP upsert can observe stale variation IDs during this step.
+                    intersoccer_manual_update_roster_entry($order_id, $item_id, $target_variation_id);
+                    error_log('InterSoccer Migration: Updated roster entry via manual method (target variation source-of-truth)');
                     if (function_exists('intersoccer_rebuild_event_signature_for_order_item')) {
                         $signature_updated = intersoccer_rebuild_event_signature_for_order_item($item_id);
                         error_log(
@@ -1361,7 +1353,6 @@ function intersoccer_move_players_ajax() {
             } else {
                 $errors[] = 'Migration failed for item ' . $item_id;
             }
-
         } catch (Exception $e) {
             $error = 'Exception during migration of item ' . $item_id . ': ' . $e->getMessage();
             error_log('InterSoccer Migration: ' . $error);
@@ -1374,7 +1365,6 @@ function intersoccer_move_players_ajax() {
     if (!empty($errors)) {
         error_log('InterSoccer Migration: Errors encountered: ' . implode('; ', $errors));
     }
-
     if ($moved_count > 0) {
         $message = sprintf(__('Successfully moved %d players.', 'intersoccer-reports-rosters'), $moved_count);
         if (!empty($errors)) {
