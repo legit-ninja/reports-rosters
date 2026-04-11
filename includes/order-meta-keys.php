@@ -94,9 +94,11 @@ function intersoccer_get_order_meta_manual_aliases() {
         'Days Selected' => [
             'jours sélectionnés',
             'ausgewählte tage',
-            'days of week',
-            'pa days of week',
-            'attribute pa days of week',
+            // Do not map variation attribute "Days of week" / pa_days-of-week here: that is usually Mon–Fri for
+            // the product, not the customer's checkout selection (would overwrite real "Days Selected").
+            // WooCommerce often stores snake_case key "selected_days" → normalized "selected days"
+            'selected days',
+            'days selected',
         ],
         'Season' => [
             'saison',
@@ -316,7 +318,7 @@ function intersoccer_normalize_selected_days_string_for_reports($value) {
     if (is_array($value)) {
         $parts = $value;
     } else {
-        $parts = preg_split('/[,;\/|]+/', (string) $value) ?: [];
+        $parts = preg_split('/[,;\/|\s]+/u', (string) $value) ?: [];
     }
     $out = [];
     foreach ($parts as $p) {
@@ -331,6 +333,72 @@ function intersoccer_normalize_selected_days_string_for_reports($value) {
     }
     $out = array_unique($out);
     return implode(', ', $out);
+}
+
+if (!function_exists('intersoccer_roster_effective_selected_days_string')) {
+    /**
+     * Effective camp selected-days string for roster UI and Excel export (object row: stdClass from DB/OOP).
+     *
+     * When event_details lists fewer canonical weekdays than the roster column, prefer event_details (column is often
+     * denormalized to all five days; checkout JSON usually matches Single Day(s) choices).
+     *
+     * @param object $row Roster row with optional selected_days, days_selected, event_details.
+     * @return string
+     */
+    function intersoccer_roster_effective_selected_days_string($row) {
+        $to_str = static function ($v) {
+            if (is_array($v)) {
+                return implode(', ', $v);
+            }
+            return trim((string) $v);
+        };
+
+        $canonical_day_count = static function ($s) {
+            if ($s === '' || !function_exists('intersoccer_normalize_selected_days_string_for_reports')) {
+                return 0;
+            }
+            $n = trim(intersoccer_normalize_selected_days_string_for_reports($s));
+            if ($n === '') {
+                return 0;
+            }
+            return count(array_filter(array_map('trim', explode(',', $n))));
+        };
+
+        $from_ed = '';
+        if (!empty($row->event_details)) {
+            $ed = $row->event_details;
+            if (is_string($ed)) {
+                $ed = json_decode($ed, true);
+            }
+            if (is_array($ed) && !empty($ed['selected_days'])) {
+                $from_ed = $to_str($ed['selected_days']);
+            }
+        }
+
+        $sd_col = isset($row->selected_days) ? $to_str($row->selected_days) : '';
+        $ds = isset($row->days_selected) ? $to_str($row->days_selected) : '';
+
+        $result = '';
+        if ($from_ed !== '' && $sd_col !== '') {
+            $ce = $canonical_day_count($from_ed);
+            $cs = $canonical_day_count($sd_col);
+            if ($ce > 0 && $ce < $cs) {
+                $result = $from_ed;
+            }
+        }
+
+        if ($result === '' && $sd_col !== '') {
+            $result = $sd_col;
+        }
+        if ($result === '' && $ds !== '') {
+            $result = $ds;
+        }
+        if ($result === '' && $from_ed !== '') {
+            $result = $from_ed;
+        }
+
+        return $result;
+    }
 }
 
 /**
@@ -441,4 +509,217 @@ function intersoccer_reports_enrich_and_normalize_final_report_rows(array &$rows
         intersoccer_normalize_final_reports_row_booking_and_days($row);
     }
     unset($row);
+}
+
+/**
+ * Fill empty booking_type / selected_days on a roster row from WooCommerce order line meta (FR/DE/EN keys).
+ *
+ * @param object|array $row Roster row (stdClass from DB or export array). Mutated in place.
+ */
+function intersoccer_roster_enrich_camp_fields_from_order_item(&$row) {
+    $item_id = 0;
+    if (is_object($row)) {
+        $item_id = (int) ($row->order_item_id ?? 0);
+    } elseif (is_array($row)) {
+        $item_id = (int) ($row['order_item_id'] ?? 0);
+    }
+    if ($item_id <= 0 || !class_exists('\WC_Order_Factory')) {
+        return;
+    }
+
+    $item = \WC_Order_Factory::get_order_item($item_id);
+    if (!$item || !($item instanceof \WC_Order_Item_Product)) {
+        return;
+    }
+
+    $key_map = intersoccer_get_order_meta_canonical_to_final_report_row_keys();
+    $field_map = intersoccer_get_order_meta_field_map();
+
+    $get = static function ($r, $k) {
+        if (is_object($r)) {
+            return isset($r->$k) ? trim((string) $r->$k) : '';
+        }
+        return isset($r[$k]) ? trim((string) $r[$k]) : '';
+    };
+    $set = static function (&$r, $k, $v) {
+        if (is_object($r)) {
+            $r->$k = $v;
+        } else {
+            $r[$k] = $v;
+        }
+    };
+
+    foreach ($item->get_meta_data() as $meta) {
+        $data = $meta->get_data();
+        $raw_key = isset($data['key']) ? (string) $data['key'] : '';
+        if ($raw_key === '') {
+            continue;
+        }
+        $value = $data['value'] ?? '';
+        if (is_array($value)) {
+            $value = implode(', ', array_map('strval', $value));
+        } else {
+            $value = (string) $value;
+        }
+
+        $canonical = intersoccer_normalize_order_item_meta_key($raw_key);
+        $row_key = $key_map[$canonical] ?? null;
+        if ($row_key === null && isset($field_map[$canonical])) {
+            $internal = $field_map[$canonical];
+            if ($internal === 'selected_days') {
+                $row_key = 'selected_days';
+            } elseif ($internal === 'booking_type') {
+                $row_key = 'booking_type';
+            }
+        }
+        if ($row_key !== 'selected_days' && $row_key !== 'booking_type') {
+            continue;
+        }
+        if (trim($value) === '') {
+            continue;
+        }
+        // WooCommerce line meta is source of truth for days and booking type; roster rows can be stale.
+        if ($row_key === 'selected_days') {
+            $set($row, 'selected_days', $value);
+            continue;
+        }
+        if ($row_key === 'booking_type') {
+            $set($row, 'booking_type', $value);
+            continue;
+        }
+    }
+
+    if ($get($row, 'selected_days') === '' && function_exists('wc_get_order_item_meta')) {
+        foreach (['selected_days', 'Days Selected', 'days_selected'] as $meta_key) {
+            $v = wc_get_order_item_meta($item_id, $meta_key, true);
+            if ($v === null || $v === '') {
+                continue;
+            }
+            if (is_array($v)) {
+                $v = implode(', ', array_map('strval', $v));
+            }
+            $v = trim((string) $v);
+            if ($v !== '') {
+                $set($row, 'selected_days', $v);
+                break;
+            }
+        }
+    }
+
+    if ($get($row, 'booking_type') === '' && function_exists('wc_get_order_item_meta')) {
+        foreach (['Booking Type', 'booking_type', 'pa_booking-type'] as $meta_key) {
+            $v = wc_get_order_item_meta($item_id, $meta_key, true);
+            if ($v === null || $v === '') {
+                continue;
+            }
+            if (is_array($v)) {
+                $v = implode(', ', array_map('strval', $v));
+            }
+            $v = trim((string) $v);
+            if ($v !== '') {
+                $set($row, 'booking_type', $v);
+                break;
+            }
+        }
+    }
+
+    if ($get($row, 'selected_days') !== '' && function_exists('intersoccer_normalize_selected_days_string_for_reports')) {
+        $set($row, 'selected_days', intersoccer_normalize_selected_days_string_for_reports($get($row, 'selected_days')));
+    }
+    if ($get($row, 'booking_type') !== '' && function_exists('intersoccer_normalize_booking_type_label_for_reports')) {
+        $set($row, 'booking_type', intersoccer_normalize_booking_type_label_for_reports($get($row, 'booking_type')));
+    }
+
+    $repair_applied = false;
+    if ($get($row, 'selected_days') !== '' && $get($row, 'booking_type') !== ''
+        && function_exists('intersoccer_normalize_booking_type_slug_for_reports')
+        && function_exists('intersoccer_normalize_selected_days_string_for_reports')
+        && function_exists('wc_get_order_item_meta')) {
+        $bt_s = intersoccer_normalize_booking_type_slug_for_reports($get($row, 'booking_type'));
+        if ($bt_s === 'single-days') {
+            $norm_sd = intersoccer_normalize_selected_days_string_for_reports($get($row, 'selected_days'));
+            $cnt = $norm_sd === '' ? 0 : count(array_filter(array_map('trim', explode(',', $norm_sd))));
+            if ($cnt >= 5) {
+                $best_v = '';
+                $best_n = 99;
+                foreach (['Days Selected', 'selected_days', 'days_selected', 'Jours sélectionnés', 'Ausgewählte Tage'] as $mk) {
+                    $v = wc_get_order_item_meta($item_id, $mk, true);
+                    if ($v === null || $v === '') {
+                        continue;
+                    }
+                    if (is_array($v)) {
+                        $v = implode(', ', array_map('strval', $v));
+                    }
+                    $v = trim((string) $v);
+                    if ($v === '') {
+                        continue;
+                    }
+                    $norm_v = intersoccer_normalize_selected_days_string_for_reports($v);
+                    $n = $norm_v === '' ? 0 : count(array_filter(array_map('trim', explode(',', $norm_v))));
+                    if ($n > 0 && $n < $best_n) {
+                        $best_n = $n;
+                        $best_v = $v;
+                    }
+                }
+                if ($best_v !== '' && $best_n > 0 && $best_n < $cnt) {
+                    $set($row, 'selected_days', intersoccer_normalize_selected_days_string_for_reports($best_v));
+                    $repair_applied = true;
+                }
+            }
+        }
+    }
+
+    // Second repair: if every explicit key still yields five weekdays, scan non-excluded meta for any value that
+    // normalizes to 1–4 weekdays (e.g. alternate locale key not in wc_get_order_item_meta list).
+    if (!$repair_applied && $get($row, 'booking_type') !== ''
+        && function_exists('intersoccer_normalize_booking_type_slug_for_reports')
+        && function_exists('intersoccer_normalize_selected_days_string_for_reports')) {
+        $bt_s2 = intersoccer_normalize_booking_type_slug_for_reports($get($row, 'booking_type'));
+        if ($bt_s2 === 'single-days' && $get($row, 'selected_days') !== '') {
+            $norm_sd2 = intersoccer_normalize_selected_days_string_for_reports($get($row, 'selected_days'));
+            $cnt2 = $norm_sd2 === '' ? 0 : count(array_filter(array_map('trim', explode(',', $norm_sd2))));
+            if ($cnt2 >= 5) {
+                $best_v2 = '';
+                $best_n2 = 99;
+                $meta_key_exclude_broad = static function ($k) {
+                    $k = strtolower((string) $k);
+                    if ($k === '') {
+                        return true;
+                    }
+                    if (preg_match('/late\s*pickup|ramassage|abholung|booking\s*type|buchungstyp|type\s+de\s+r/i', $k)) {
+                        return true;
+                    }
+                    if (preg_match('/assigned|attendee|player\s*index|discount|price|cost|season|venue|camp\s*terms|course|activity|start\s*date|end\s*date|email|phone|description|content|note$/i', $k)) {
+                        return true;
+                    }
+                    return false;
+                };
+                foreach ($item->get_meta_data() as $meta) {
+                    $data = $meta->get_data();
+                    $raw_key = (string) ($data['key'] ?? '');
+                    if ($meta_key_exclude_broad($raw_key)) {
+                        continue;
+                    }
+                    $value = $data['value'] ?? '';
+                    if (is_array($value)) {
+                        $value = implode(', ', array_map('strval', $value));
+                    }
+                    $value = trim((string) $value);
+                    if ($value === '') {
+                        continue;
+                    }
+                    $norm_v = intersoccer_normalize_selected_days_string_for_reports($value);
+                    $n = $norm_v === '' ? 0 : count(array_filter(array_map('trim', explode(',', $norm_v))));
+                    if ($n >= 1 && $n < 5 && $n < $best_n2) {
+                        $best_n2 = $n;
+                        $best_v2 = $value;
+                    }
+                }
+                if ($best_v2 !== '' && $best_n2 > 0 && $best_n2 < $cnt2) {
+                    $set($row, 'selected_days', intersoccer_normalize_selected_days_string_for_reports($best_v2));
+                    $repair_applied = true;
+                }
+            }
+        }
+    }
 }
