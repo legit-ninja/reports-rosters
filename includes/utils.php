@@ -737,7 +737,45 @@ if (!function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
             return 'full-term';
         }
 
+        // Odd spacing, hyphens, or storefront strings that still mean single-days / full-week (WPML, imports, theme labels).
+        if (preg_match('/\bsingle\s*[-_]?\s*days?\b/i', $ascii_for_heuristic)) {
+            return 'single-days';
+        }
+        if (preg_match('/\bfull\s*[-_]?\s*week\b|\bwhole\s*week\b/i', $ascii_for_heuristic)) {
+            return 'full-week';
+        }
+
         return 'other';
+    }
+}
+
+if (!function_exists('intersoccer_roster_compute_camp_day_presence_for_display')) {
+    /**
+     * Monday–Friday Yes/No map for roster details and Excel export.
+     *
+     * If selected_days is non-empty, only that list drives the map (same token rules as single-days). This prevents a
+     * mis-stored "Full Week" booking_type from forcing all Yes when the line item lists only some weekdays.
+     * If selected_days is empty, booking_type drives full-week vs none (via intersoccer_compute_day_presence).
+     *
+     * @param mixed  $booking_type
+     * @param string $selected_days_effective Comma-separated weekdays (any supported language tokens).
+     * @return array<string,string>
+     */
+    function intersoccer_roster_compute_camp_day_presence_for_display($booking_type, $selected_days_effective) {
+        if (!function_exists('intersoccer_compute_day_presence')) {
+            return [
+                'Monday' => 'No',
+                'Tuesday' => 'No',
+                'Wednesday' => 'No',
+                'Thursday' => 'No',
+                'Friday' => 'No',
+            ];
+        }
+        $sd = trim((string) $selected_days_effective);
+        if ($sd !== '') {
+            return intersoccer_compute_day_presence('single-days', $sd);
+        }
+        return intersoccer_compute_day_presence($booking_type, '');
     }
 }
 
@@ -824,8 +862,8 @@ if (!function_exists('intersoccer_compute_day_presence')) {
             return $presence;
         }
 
-        // Split on common delimiters: comma, semicolon, slash, pipe.
-        $tokens = preg_split('/[,;\/|]+/', $raw) ?: [];
+        // Split on comma, semicolon, slash, pipe, and whitespace (handles "Monday Wednesday" / newlines).
+        $tokens = preg_split('/[,;\/|\s]+/u', $raw) ?: [];
         $tokens = array_map('trim', $tokens);
         $tokens = array_values(array_filter($tokens, static function ($v) { return $v !== ''; }));
 

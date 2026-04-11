@@ -89,6 +89,17 @@ class UtilsTest extends TestCase {
         $this->assertSame('No', $p['Tuesday']);
     }
 
+    public function test_compute_day_presence_splits_space_separated_weekdays() {
+        if (!function_exists('intersoccer_compute_day_presence')) {
+            $this->markTestSkipped('intersoccer_compute_day_presence not loaded');
+        }
+        $p = intersoccer_compute_day_presence('single-days', "Monday  Wednesday\nFriday");
+        $this->assertSame('Yes', $p['Monday']);
+        $this->assertSame('Yes', $p['Wednesday']);
+        $this->assertSame('Yes', $p['Friday']);
+        $this->assertSame('No', $p['Tuesday']);
+    }
+
     public function test_normalize_booking_type_slug_for_reports_handles_labels() {
         if (!function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
             $this->markTestSkipped('intersoccer_normalize_booking_type_slug_for_reports not loaded');
@@ -99,6 +110,23 @@ class UtilsTest extends TestCase {
         // WooCommerce attribute slugs (hyphens) must map like translated labels.
         $this->assertSame('full-week', intersoccer_normalize_booking_type_slug_for_reports('semaine-complete'));
         $this->assertSame('full-week', intersoccer_normalize_booking_type_slug_for_reports('journee-complete'));
+        // Odd spacing / hyphens from storefront or imports (regex fallback before "other").
+        $this->assertSame('single-days', intersoccer_normalize_booking_type_slug_for_reports('Camp — single days'));
+        $this->assertSame('full-week', intersoccer_normalize_booking_type_slug_for_reports('full_week'));
+    }
+
+    public function test_roster_compute_camp_day_presence_prefers_selected_days_over_misstored_full_week() {
+        if (!function_exists('intersoccer_roster_compute_camp_day_presence_for_display')) {
+            $this->markTestSkipped('intersoccer_roster_compute_camp_day_presence_for_display not loaded');
+        }
+        $p = intersoccer_roster_compute_camp_day_presence_for_display('Full Week', 'Monday, Wednesday');
+        $this->assertSame('Yes', $p['Monday']);
+        $this->assertSame('Yes', $p['Wednesday']);
+        $this->assertSame('No', $p['Tuesday']);
+        $p2 = intersoccer_roster_compute_camp_day_presence_for_display('Full Week', '');
+        foreach (['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as $d) {
+            $this->assertSame('Yes', $p2[$d], $d);
+        }
     }
 
     public function test_compute_day_presence_full_week_from_hyphenated_semaine_slug() {
