@@ -9,6 +9,14 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+// utils.php pulls in order-meta-keys (roster effective selected-days, enrich helpers) for AJAX export without roster-details.php.
+if (!function_exists('intersoccer_roster_effective_selected_days_string')) {
+    $intersoccer_utils_export = dirname(__FILE__) . '/utils.php';
+    if (is_readable($intersoccer_utils_export)) {
+        require_once $intersoccer_utils_export;
+    }
+}
+
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -540,25 +548,26 @@ function intersoccer_export_roster() {
 
         $row = 2;
         foreach ($rosters as $player) {
-            $day_presence = !empty($player['day_presence']) ? json_decode($player['day_presence'], true) : [];
-            if (empty($player['selected_days']) && !empty($player['days_selected'])) {
-                $player['selected_days'] = (string) $player['days_selected'];
-            }
-            if (empty($player['selected_days']) && !empty($player['event_details'])) {
-                $event_details_for_days = is_string($player['event_details'])
-                    ? json_decode($player['event_details'], true)
-                    : $player['event_details'];
-                if (is_array($event_details_for_days) && !empty($event_details_for_days['selected_days'])) {
-                    $player['selected_days'] = is_array($event_details_for_days['selected_days'])
-                        ? implode(', ', $event_details_for_days['selected_days'])
-                        : (string) $event_details_for_days['selected_days'];
+            $is_camp_row = in_array($player['activity_type'] ?? '', ['Camp', 'Girls Only', 'Camp, Girls Only', "Camp, Girls' only"], true);
+            if ($is_camp_row) {
+                if (empty($player['selected_days']) && !empty($player['days_selected'])) {
+                    $player['selected_days'] = (string) $player['days_selected'];
                 }
+                if (function_exists('intersoccer_roster_enrich_camp_fields_from_order_item')) {
+                    intersoccer_roster_enrich_camp_fields_from_order_item($player);
+                }
+                $bt_export = (string) ($player['booking_type'] ?? '');
+                $sd_export = function_exists('intersoccer_roster_effective_selected_days_string')
+                    ? intersoccer_roster_effective_selected_days_string((object) $player)
+                    : (string) ($player['selected_days'] ?? '');
+                $day_presence = function_exists('intersoccer_roster_compute_camp_day_presence_for_display')
+                    ? intersoccer_roster_compute_camp_day_presence_for_display($bt_export, $sd_export)
+                    : (!empty($player['day_presence']) ? json_decode($player['day_presence'], true) : []);
+            } else {
+                $day_presence = !empty($player['day_presence']) ? json_decode($player['day_presence'], true) : [];
             }
-            if (empty($day_presence) && function_exists('intersoccer_compute_day_presence')) {
-                $day_presence = intersoccer_compute_day_presence(
-                    (string) ($player['booking_type'] ?? ''),
-                    (string) ($player['selected_days'] ?? '')
-                );
+            if (!is_array($day_presence)) {
+                $day_presence = [];
             }
             $monday = isset($day_presence['Monday']) ? $day_presence['Monday'] : 'No';
             $tuesday = isset($day_presence['Tuesday']) ? $day_presence['Tuesday'] : 'No';

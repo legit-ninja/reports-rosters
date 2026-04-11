@@ -36,37 +36,6 @@ function intersoccer_get_sort_indicator($field, $current_sort, $current_order) {
 }
 
 /**
- * Effective camp selected-days string for display: prefer selected_days, then days_selected, then event_details JSON.
- *
- * @param object $row Roster row (stdClass).
- * @return string
- */
-function intersoccer_roster_effective_selected_days_string($row) {
-    $to_str = static function ($v) {
-        if (is_array($v)) {
-            return implode(', ', $v);
-        }
-        return trim((string) $v);
-    };
-
-    $sd = isset($row->selected_days) ? $to_str($row->selected_days) : '';
-    if ($sd === '' && isset($row->days_selected)) {
-        $sd = $to_str($row->days_selected);
-    }
-    if ($sd === '' && !empty($row->event_details)) {
-        $ed = $row->event_details;
-        if (is_string($ed)) {
-            $ed = json_decode($ed, true);
-        }
-        if (is_array($ed) && !empty($ed['selected_days'])) {
-            $sd = $to_str($ed['selected_days']);
-        }
-    }
-
-    return $sd;
-}
-
-/**
  * Render the roster details page
  */
 function intersoccer_render_roster_details_page() {
@@ -422,37 +391,26 @@ function intersoccer_render_roster_details_page() {
     
     foreach ($rosters as $row) {
         $is_unknown = $row->player_name === 'Unknown Attendee';
-        $day_presence = !empty($row->day_presence) ? (is_string($row->day_presence) ? json_decode($row->day_presence, true) : $row->day_presence) : [];
-        if (!is_array($day_presence)) {
-            $day_presence = [];
-        }
-        $bt = $row->booking_type ?? '';
-        $sd = function_exists('intersoccer_roster_effective_selected_days_string')
-            ? intersoccer_roster_effective_selected_days_string($row)
-            : (string) ($row->selected_days ?? '');
-        if (function_exists('intersoccer_compute_day_presence')) {
-            $computed = intersoccer_compute_day_presence($bt, $sd);
-            $english_keys_ok = isset($day_presence['Monday'], $day_presence['Tuesday'], $day_presence['Wednesday'], $day_presence['Thursday'], $day_presence['Friday']);
-            $any_yes = false;
-            foreach (['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as $dk) {
-                if (($day_presence[$dk] ?? '') === 'Yes') {
-                    $any_yes = true;
-                    break;
-                }
+        $day_presence = [
+            'Monday' => 'No',
+            'Tuesday' => 'No',
+            'Wednesday' => 'No',
+            'Thursday' => 'No',
+            'Friday' => 'No',
+        ];
+        if ($is_camp_like) {
+            if (function_exists('intersoccer_roster_enrich_camp_fields_from_order_item')) {
+                intersoccer_roster_enrich_camp_fields_from_order_item($row);
             }
-            // Use computed map when stored JSON is empty, non-English keys, or no day marked Yes when single-day booking implies there should be.
-            if (empty($day_presence) || !$english_keys_ok || (!$any_yes && $sd !== '' && strpos(strtolower((string) $bt), 'single') !== false)) {
-                $day_presence = $computed;
-            } else {
-                // Merge: English canonical keys win from computed when stored value is No but computed says Yes
-                foreach ($computed as $dk => $yesno) {
-                    if ($yesno === 'Yes') {
-                        $day_presence[$dk] = 'Yes';
-                    }
-                }
+            $bt = $row->booking_type ?? '';
+            $sd = function_exists('intersoccer_roster_effective_selected_days_string')
+                ? intersoccer_roster_effective_selected_days_string($row)
+                : (string) ($row->selected_days ?? '');
+            if (function_exists('intersoccer_roster_compute_camp_day_presence_for_display')) {
+                $day_presence = intersoccer_roster_compute_camp_day_presence_for_display($bt, $sd);
             }
         }
-        
+
         echo '<tr data-order-item-id="' . esc_attr($row->order_item_id) . '">';
         echo '<td><input type="checkbox" class="player-select"></td>'; // New: Checkbox for selection
         echo '<td>' . esc_html($row->order_date ? date_i18n('Y-m-d H:i', strtotime($row->order_date)) : 'N/A') . '</td>';
