@@ -1172,7 +1172,7 @@ class RosterBuilder {
         if (is_array($value)) {
             $parts = $value;
         } else {
-            $parts = preg_split('/[,;\/|]+/', (string) $value) ?: [];
+            $parts = preg_split('/[,;\/|\s]+/u', (string) $value) ?: [];
         }
         $out = [];
         foreach ($parts as $p) {
