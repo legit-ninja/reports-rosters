@@ -753,9 +753,9 @@ if (!function_exists('intersoccer_roster_compute_camp_day_presence_for_display')
     /**
      * Monday–Friday Yes/No map for roster details and Excel export.
      *
-     * If selected_days is non-empty, only that list drives the map (same token rules as single-days). This prevents a
-     * mis-stored "Full Week" booking_type from forcing all Yes when the line item lists only some weekdays.
-     * If selected_days is empty, booking_type drives full-week vs none (via intersoccer_compute_day_presence).
+     * Canonical booking type wins first: full-week always maps to all weekdays Yes, even when selected_days still
+     * lists partial days (legacy denormalized data). Otherwise non-empty selected_days drives single-day parsing; empty
+     * falls back to booking_type via intersoccer_compute_day_presence.
      *
      * @param mixed  $booking_type
      * @param string $selected_days_effective Comma-separated weekdays (any supported language tokens).
@@ -770,6 +770,12 @@ if (!function_exists('intersoccer_roster_compute_camp_day_presence_for_display')
                 'Thursday' => 'No',
                 'Friday' => 'No',
             ];
+        }
+        $slug = function_exists('intersoccer_normalize_booking_type_slug_for_reports')
+            ? intersoccer_normalize_booking_type_slug_for_reports((string) $booking_type)
+            : 'other';
+        if ($slug === 'full-week') {
+            return intersoccer_compute_day_presence('full-week', '');
         }
         $sd = trim((string) $selected_days_effective);
         if ($sd !== '') {
@@ -2953,7 +2959,20 @@ function intersoccer_generate_event_signature($event_data) {
         'canton_region' => intersoccer_get_term_slug_by_name($event_data['canton_region'] ?? '', 'pa_canton-region'),
         'product_id' => $product_id, // Use normalized product_id
     ];
-    
+    // Canonicalize components by activity type so unrelated nullable fields cannot split one event into
+    // different signatures (e.g., Camp rows with NULL/na course_day or canton_region drift).
+    $activity_kind = strtolower(trim((string) ($normalized_components['activity_type'] ?? '')));
+    if ($activity_kind === 'camp') {
+        $normalized_components['course_day'] = '';
+        $normalized_components['canton_region'] = '';
+    } elseif ($activity_kind === 'course') {
+        $normalized_components['camp_terms'] = '';
+        $normalized_components['canton_region'] = '';
+    } elseif ($activity_kind === 'tournament') {
+        $normalized_components['course_day'] = '';
+        $normalized_components['camp_terms'] = '';
+    }
+
     // For tournaments, include the date in the signature to distinguish between different tournament dates
     // Tournaments are typically one-day events, so we use start_date
     $activity_type = strtolower($normalized_components['activity_type'] ?? '');

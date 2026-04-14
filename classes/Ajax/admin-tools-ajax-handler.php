@@ -325,7 +325,7 @@ class AdminToolsAjaxHandler {
         $table = $wpdb->prefix . 'intersoccer_rosters';
 
         $rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT id, booking_type, selected_days FROM {$table} WHERE event_signature = %s",
+            "SELECT id, order_item_id, booking_type, selected_days, days_selected FROM {$table} WHERE event_signature = %s",
             $event_signature
         ), ARRAY_A);
 
@@ -335,12 +335,24 @@ class AdminToolsAjaxHandler {
 
         $updated = 0;
         foreach ($rows as $row) {
-            $presence = $this->computeDayPresence((string) ($row['booking_type'] ?? ''), (string) ($row['selected_days'] ?? ''));
+            $effective_days = $this->resolveSelectedDaysForRepair($row);
+            $presence = $this->computeDayPresence((string) ($row['booking_type'] ?? ''), $effective_days);
+
+            $update_data = ['day_presence' => wp_json_encode($presence)];
+            $formats = ['%s'];
+            $orig_sel = trim((string) ($row['selected_days'] ?? ''));
+            if ($effective_days !== '' && $effective_days !== $orig_sel) {
+                $update_data['selected_days'] = $effective_days;
+                $update_data['days_selected'] = $effective_days;
+                $formats[] = '%s';
+                $formats[] = '%s';
+            }
+
             $ok = $wpdb->update(
                 $table,
-                ['day_presence' => wp_json_encode($presence)],
+                $update_data,
                 ['id' => (int) $row['id']],
-                ['%s'],
+                $formats,
                 ['%d']
             );
             if ($ok !== false) {
@@ -438,11 +450,46 @@ class AdminToolsAjaxHandler {
         }
     }
 
+    /**
+     * Match roster-builder / camp pipeline: use selected_days, then days_selected, then WC order line "Days Selected".
+     */
+    private function resolveSelectedDaysForRepair(array $row): string {
+        $sel = trim((string) ($row['selected_days'] ?? ''));
+        if ($sel === '' && !empty($row['days_selected'])) {
+            $ds = $row['days_selected'];
+            $sel = is_array($ds) ? implode(', ', $ds) : trim((string) $ds);
+        }
+        if ($sel === '' && !empty($row['order_item_id']) && function_exists('wc_get_order_item_meta')) {
+            $oid = (int) $row['order_item_id'];
+            if ($oid > 0) {
+                $from_order = wc_get_order_item_meta($oid, 'Days Selected', true);
+                if (!is_string($from_order) || trim((string) $from_order) === '') {
+                    $from_order = wc_get_order_item_meta($oid, 'days selected', true);
+                }
+                if (is_string($from_order)) {
+                    $t = trim($from_order);
+                    if ($t !== '' && strcasecmp($t, 'N/A') !== 0) {
+                        $sel = $t;
+                    }
+                }
+            }
+        }
+        if ($sel !== '' && function_exists('intersoccer_normalize_selected_days_string_for_reports')) {
+            $sel = intersoccer_normalize_selected_days_string_for_reports($sel);
+        }
+
+        return trim((string) $sel);
+    }
+
     private function computeDayPresence(string $booking_type, string $selected_days): array {
         $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
         $presence = array_fill_keys($days, 'No');
-        $booking_type = strtolower(trim($booking_type));
+        $booking_type_raw = trim($booking_type);
+        $booking_type = $booking_type_raw;
+        if (function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
+            $booking_type = intersoccer_normalize_booking_type_slug_for_reports($booking_type_raw);
+        }
 
         if ($booking_type === 'full-week') {
             foreach ($days as $day) {
@@ -452,7 +499,8 @@ class AdminToolsAjaxHandler {
         }
 
         // single-days: normalize tokens and mark those present
-        $tokens = array_filter(array_map('trim', explode(',', (string) $selected_days)));
+        $tokens = preg_split('/[,;\/|\s]+/u', (string) $selected_days) ?: [];
+        $tokens = array_filter(array_map('trim', $tokens));
         foreach ($tokens as $token) {
             $normalized = $this->normalizeWeekdayToken($token);
             if ($normalized && isset($presence[$normalized])) {

@@ -115,14 +115,14 @@ class UtilsTest extends TestCase {
         $this->assertSame('full-week', intersoccer_normalize_booking_type_slug_for_reports('full_week'));
     }
 
-    public function test_roster_compute_camp_day_presence_prefers_selected_days_over_misstored_full_week() {
+    public function test_roster_compute_camp_day_presence_full_week_wins_over_partial_selected_days_string() {
         if (!function_exists('intersoccer_roster_compute_camp_day_presence_for_display')) {
             $this->markTestSkipped('intersoccer_roster_compute_camp_day_presence_for_display not loaded');
         }
         $p = intersoccer_roster_compute_camp_day_presence_for_display('Full Week', 'Monday, Wednesday');
-        $this->assertSame('Yes', $p['Monday']);
-        $this->assertSame('Yes', $p['Wednesday']);
-        $this->assertSame('No', $p['Tuesday']);
+        foreach (['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as $d) {
+            $this->assertSame('Yes', $p[$d], $d);
+        }
         $p2 = intersoccer_roster_compute_camp_day_presence_for_display('Full Week', '');
         foreach (['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as $d) {
             $this->assertSame('Yes', $p2[$d], $d);

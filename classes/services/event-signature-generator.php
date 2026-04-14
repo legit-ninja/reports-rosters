@@ -68,10 +68,22 @@ class EventSignatureGenerator {
                 'canton_region' => $normalized['canton_region'] ?? '',
                 'product_id' => $normalized['product_id'] ?? 0,
             ];
+            // Canonicalize by activity type to prevent null/legacy drift in unrelated fields from
+            // splitting the same event into multiple signatures.
+            $activity_type = strtolower((string) ($components['activity_type'] ?? ''));
+            if ($activity_type === 'camp') {
+                $components['course_day'] = '';
+                $components['canton_region'] = '';
+            } elseif ($activity_type === 'course') {
+                $components['camp_terms'] = '';
+                $components['canton_region'] = '';
+            } elseif ($activity_type === 'tournament') {
+                $components['course_day'] = '';
+                $components['camp_terms'] = '';
+            }
             
             // For tournaments, include the date in the signature to distinguish between different tournament dates
             // Tournaments are typically one-day events, so we use start_date
-            $activity_type = strtolower($components['activity_type'] ?? '');
             if ($activity_type === 'tournament' && !empty($event_data['start_date'])) {
                 // Normalize date to Y-m-d format for consistent signatures
                 $date_value = $event_data['start_date'];

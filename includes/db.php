@@ -454,7 +454,7 @@ function intersoccer_rebuild_event_signatures() {
         ]));
 
         $signature = intersoccer_generate_event_signature($normalized_data);
-        
+
         error_log('InterSoccer: Generated signature ' . $signature . ' for record id ' . $record['id']);
 
         // Update both event_signature and normalized stored values
