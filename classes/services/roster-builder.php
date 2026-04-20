@@ -822,6 +822,46 @@ class RosterBuilder {
         if (empty($order_data['event_type']) && !empty($order_data['camp-terms'])) {
             $order_data['event_type'] = $order_data['camp-terms'];
         }
+
+        // Fallback: some orders miss explicit Activity Type meta; derive from product type so event
+        // items (camp/course/tournament/birthday) are not dropped before roster creation.
+        $derived_type = '';
+        if (empty($order_data['activity_type']) && function_exists('intersoccer_get_product_type_safe')) {
+            $derived_type = (string) intersoccer_get_product_type_safe(
+                (int) ($order_data['product_id'] ?? 0),
+                (int) ($order_data['variation_id'] ?? 0)
+            );
+            if (is_string($derived_type) && $derived_type !== '') {
+                $derived_map = [
+                    'camp' => 'Camp',
+                    'course' => 'Course',
+                    'tournament' => 'Tournament',
+                    'birthday' => 'Birthday Party',
+                ];
+                if (isset($derived_map[$derived_type])) {
+                    $order_data['activity_type'] = $derived_map[$derived_type];
+                }
+            }
+        }
+        if (empty($order_data['activity_type'])) {
+            $has_course_shape = !empty($order_data['course_day'])
+                || !empty($order_data['course_times'])
+                || !empty($order_data['course-day'])
+                || !empty($order_data['course-times'])
+                || !empty($order_data['pa_course-day'])
+                || !empty($order_data['pa_course-times']);
+            $has_camp_shape = !empty($order_data['camp_times'])
+                || !empty($order_data['camp-times'])
+                || !empty($order_data['pa_camp-times'])
+                || !empty($order_data['event_type'])
+                || !empty($order_data['camp-terms'])
+                || !empty($order_data['pa_camp-terms']);
+            if ($has_course_shape && !$has_camp_shape) {
+                $order_data['activity_type'] = 'Course';
+            } elseif ($has_camp_shape && !$has_course_shape) {
+                $order_data['activity_type'] = 'Camp';
+            }
+        }
         
         // Parse and validate dates
         $order_data = $this->parseDates($order_data);
@@ -2105,4 +2145,5 @@ class RosterBuilder {
             ];
         }
     }
+
 }
