@@ -1083,45 +1083,56 @@ function intersoccer_render_roster_edit_form() {
             var $button = $(this);
             var originalText = $button.text();
             $button.prop('disabled', true).text('<?php echo esc_js(__('Saving...', 'intersoccer-reports-rosters')); ?>');
+            try {
+                var ajaxNonce = (typeof intersoccer_roster_editor !== 'undefined' && intersoccer_roster_editor && intersoccer_roster_editor.nonce)
+                    ? intersoccer_roster_editor.nonce
+                    : ($('input[name="roster_edit_nonce"]').val() || '');
+                var ajaxUrl = (typeof intersoccer_roster_editor !== 'undefined' && intersoccer_roster_editor && intersoccer_roster_editor.ajaxurl)
+                    ? intersoccer_roster_editor.ajaxurl
+                    : (window.ajaxurl || '');
 
-            // Collect all form data
-            var formData = {
-                action: 'intersoccer_update_roster_entry',
-                nonce: intersoccer_roster_editor.nonce,
-                roster_id: $('input[name="roster_id"]').val()
-            };
+                // Collect all form data
+                var formData = {
+                    action: 'intersoccer_update_roster_entry',
+                    nonce: ajaxNonce,
+                    roster_id: $('input[name="roster_id"]').val()
+                };
 
-            // Get all form fields
-            $('#roster-edit-form input, #roster-edit-form select, #roster-edit-form textarea').each(function() {
-                var $field = $(this);
-                var name = $field.attr('name');
-                if (name && name !== 'roster_id' && name !== 'action' && name !== 'roster_edit_nonce') {
-                    var value = $field.val();
-                    if ($field.attr('type') === 'checkbox') {
-                        value = $field.is(':checked') ? 1 : 0;
+                // Get all form fields
+                $('#roster-edit-form input, #roster-edit-form select, #roster-edit-form textarea').each(function() {
+                    var $field = $(this);
+                    var name = $field.attr('name');
+                    if (name && name !== 'roster_id' && name !== 'action' && name !== 'roster_edit_nonce') {
+                        var value = $field.val();
+                        if ($field.attr('type') === 'checkbox') {
+                            value = $field.is(':checked') ? 1 : 0;
+                        }
+                        formData[name] = value;
                     }
-                    formData[name] = value;
-                }
-            });
+                });
 
-            $.ajax({
-                url: intersoccer_roster_editor.ajaxurl,
-                type: 'POST',
-                data: formData,
-                success: function(response) {
-                    $button.prop('disabled', false).text(originalText);
-                    if (response.success) {
-                        alert('<?php echo esc_js(__('Roster entry updated successfully!', 'intersoccer-reports-rosters')); ?>');
-                        window.location.href = '<?php echo esc_js(admin_url('admin.php?page=intersoccer-advanced&tab=edit-rosters')); ?>';
-                    } else {
-                        alert('<?php echo esc_js(__('Update failed:', 'intersoccer-reports-rosters')); ?> ' + (response.data.message || '<?php echo esc_js(__('Unknown error', 'intersoccer-reports-rosters')); ?>'));
+                $.ajax({
+                    url: ajaxUrl,
+                    type: 'POST',
+                    data: formData,
+                    success: function(response) {
+                        $button.prop('disabled', false).text(originalText);
+                        if (response.success) {
+                            alert('<?php echo esc_js(__('Roster entry updated successfully!', 'intersoccer-reports-rosters')); ?>');
+                            window.location.href = '<?php echo esc_js(admin_url('admin.php?page=intersoccer-advanced&tab=edit-rosters')); ?>';
+                        } else {
+                            alert('<?php echo esc_js(__('Update failed:', 'intersoccer-reports-rosters')); ?> ' + (response.data.message || '<?php echo esc_js(__('Unknown error', 'intersoccer-reports-rosters')); ?>'));
+                        }
+                    },
+                    error: function() {
+                        $button.prop('disabled', false).text(originalText);
+                        alert('<?php echo esc_js(__('Connection error. Please try again.', 'intersoccer-reports-rosters')); ?>');
                     }
-                },
-                error: function() {
-                    $button.prop('disabled', false).text(originalText);
-                    alert('<?php echo esc_js(__('Connection error. Please try again.', 'intersoccer-reports-rosters')); ?>');
-                }
-            });
+                });
+            } catch (err) {
+                $button.prop('disabled', false).text(originalText);
+                alert('<?php echo esc_js(__('Unexpected error while preparing save request.', 'intersoccer-reports-rosters')); ?>');
+            }
         });
     });
     </script>
