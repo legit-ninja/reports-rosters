@@ -54,6 +54,7 @@ class Roster extends AbstractModel {
         'parent_phone',
         'parent_first_name',
         'parent_last_name',
+        'avs_number',
         'event_type',
         'activity_type',
         'venue',

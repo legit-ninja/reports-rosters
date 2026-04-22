@@ -601,6 +601,7 @@ function intersoccer_export_roster() {
             }
 
             // Build data array based on activity type
+            $avs_export_value = isset($player['avs_number']) ? (string) $player['avs_number'] : 'N/A';
             $data = [
                 $player['first_name'] ?? 'N/A', // First Name
                 $player['last_name'] ?? 'N/A', // Surname
@@ -610,7 +611,7 @@ function intersoccer_export_roster() {
                 $player['age'] ?? 'N/A', // Age
                 $formatted_birth_date, // Birth Date
                 $player['medical_conditions'] ?? 'N/A', // Medical/Dietary Conditions
-                $player['avs_number'] ?? 'N/A', // AVS Number
+                $avs_export_value, // AVS Number
             ];
             
             // Add camp-specific data for camps only
