@@ -745,6 +745,7 @@ function intersoccer_render_roster_details_page() {
     ?>
     <script type="text/javascript">
     jQuery(document).ready(function($) {
+        var intersoccerAjaxUrl = (typeof ajaxurl !== 'undefined' && ajaxurl) ? ajaxurl : '<?php echo esc_js(admin_url('admin-ajax.php')); ?>';
         // Repair day presence handler
         $(document).on('click', '#repair-day-presence-btn', function(e) {
             e.preventDefault();
@@ -799,12 +800,13 @@ function intersoccer_render_roster_details_page() {
             $btn.prop('disabled', true).text('<?php echo esc_js(__('Closing...', 'intersoccer-reports-rosters')); ?>');
             
             $.ajax({
-                url: ajaxurl,
+                url: intersoccerAjaxUrl,
                 type: 'POST',
                 data: {
                     action: 'intersoccer_close_out_roster',
                     nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
-                    event_signature: eventSignature
+                    event_signature: eventSignature,
+                    source_page: 'girls-only-details'
                 },
                 success: function(response) {
                     if (response.success) {
@@ -835,12 +837,13 @@ function intersoccer_render_roster_details_page() {
             $btn.prop('disabled', true).text('<?php echo esc_js(__('Reopening...', 'intersoccer-reports-rosters')); ?>');
             
             $.ajax({
-                url: ajaxurl,
+                url: intersoccerAjaxUrl,
                 type: 'POST',
                 data: {
                     action: 'intersoccer_reopen_roster',
                     nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
-                    event_signature: eventSignature
+                    event_signature: eventSignature,
+                    source_page: 'girls-only-details'
                 },
                 success: function(response) {
                     if (response.success) {

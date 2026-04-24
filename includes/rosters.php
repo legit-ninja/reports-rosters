@@ -637,6 +637,7 @@ function intersoccer_roster_listing_page_scripts() {
     ?>
     <script type="text/javascript">
     jQuery(document).ready(function($) {
+        var intersoccerAjaxUrl = (typeof ajaxurl !== 'undefined' && ajaxurl) ? ajaxurl : '<?php echo esc_js(admin_url('admin-ajax.php')); ?>';
         function intersoccerSignaturesFromData($el) {
             var raw = $el.attr('data-event-signatures');
             var out = [];
@@ -647,7 +648,7 @@ function intersoccer_roster_listing_page_scripts() {
                 });
             }
             if (!out.length) {
-                var one = $el.data('event-signature');
+                var one = $el.attr('data-event-signature') || $el.data('event-signature') || $el.data('eventSignature');
                 if (one) { out.push(one); }
             }
             return out;
@@ -673,12 +674,13 @@ function intersoccer_roster_listing_page_scripts() {
             }
             if (sigs.length === 1) {
                 $.ajax({
-                    url: ajaxurl,
+                    url: intersoccerAjaxUrl,
                     type: 'POST',
                     data: {
                         action: 'intersoccer_close_out_roster',
                         nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
-                        event_signature: sigs[0]
+                        event_signature: sigs[0],
+                        source_page: 'girls-only-list'
                     },
                     success: function(response) {
                         if (response.success) { onCloseSuccess(); }
@@ -694,12 +696,13 @@ function intersoccer_roster_listing_page_scripts() {
                 });
             } else {
                 $.ajax({
-                    url: ajaxurl,
+                    url: intersoccerAjaxUrl,
                     type: 'POST',
                     data: {
                         action: 'intersoccer_bulk_close_rosters',
                         nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
-                        event_signatures: sigs
+                        event_signatures: sigs,
+                        source_page: 'girls-only-list'
                     },
                     success: function(response) {
                         if (response.success) { onCloseSuccess(); }
@@ -736,12 +739,13 @@ function intersoccer_roster_listing_page_scripts() {
             }
             if (sigs.length === 1) {
                 $.ajax({
-                    url: ajaxurl,
+                    url: intersoccerAjaxUrl,
                     type: 'POST',
                     data: {
                         action: 'intersoccer_reopen_roster',
                         nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
-                        event_signature: sigs[0]
+                        event_signature: sigs[0],
+                        source_page: 'girls-only-list'
                     },
                     success: function(response) {
                         if (response.success) { onReopenSuccess(); }
@@ -757,12 +761,13 @@ function intersoccer_roster_listing_page_scripts() {
                 });
             } else {
                 $.ajax({
-                    url: ajaxurl,
+                    url: intersoccerAjaxUrl,
                     type: 'POST',
                     data: {
                         action: 'intersoccer_bulk_reopen_rosters',
                         nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
-                        event_signatures: sigs
+                        event_signatures: sigs,
+                        source_page: 'girls-only-list'
                     },
                     success: function(response) {
                         if (response.success) { onReopenSuccess(); }
@@ -777,6 +782,80 @@ function intersoccer_roster_listing_page_scripts() {
                     }
                 });
             }
+        });
+
+        // Girls-only fallback handlers: mirror roster-details single-signature behavior.
+        // These run on dedicated classes to avoid ambiguity with multi-signature listing logic.
+        $(document).on('click', '.girls-only-close-btn', function(e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var eventSignature = $btn.attr('data-event-signature') || $btn.data('event-signature');
+            if (!eventSignature) {
+                alert('<?php echo esc_js(__('Error: Missing event signature', 'intersoccer-reports-rosters')); ?>');
+                return;
+            }
+            if (!confirm('<?php echo esc_js(__('Are you sure you want to close out this roster? This will mark the event as completed.', 'intersoccer-reports-rosters')); ?>')) {
+                return;
+            }
+            $btn.prop('disabled', true).text('<?php echo esc_js(__('Closing...', 'intersoccer-reports-rosters')); ?>');
+            $.ajax({
+                url: intersoccerAjaxUrl,
+                type: 'POST',
+                data: {
+                    action: 'intersoccer_close_out_roster',
+                    nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
+                    event_signature: eventSignature,
+                    source_page: 'girls-only-list-fallback'
+                },
+                success: function(response) {
+                    if (response && response.success) {
+                        location.reload();
+                    } else {
+                        alert((response && response.data && response.data.message) ? response.data.message : '<?php echo esc_js(__('Failed to close roster.', 'intersoccer-reports-rosters')); ?>');
+                        $btn.prop('disabled', false).text('<?php echo esc_js(__('Close Out', 'intersoccer-reports-rosters')); ?>');
+                    }
+                },
+                error: function() {
+                    alert('<?php echo esc_js(__('An error occurred. Please try again.', 'intersoccer-reports-rosters')); ?>');
+                    $btn.prop('disabled', false).text('<?php echo esc_js(__('Close Out', 'intersoccer-reports-rosters')); ?>');
+                }
+            });
+        });
+
+        $(document).on('click', '.girls-only-reopen-btn', function(e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var eventSignature = $btn.attr('data-event-signature') || $btn.data('event-signature');
+            if (!eventSignature) {
+                alert('<?php echo esc_js(__('Error: Missing event signature', 'intersoccer-reports-rosters')); ?>');
+                return;
+            }
+            if (!confirm('<?php echo esc_js(__('Are you sure you want to reopen this roster?', 'intersoccer-reports-rosters')); ?>')) {
+                return;
+            }
+            $btn.prop('disabled', true).text('<?php echo esc_js(__('Reopening...', 'intersoccer-reports-rosters')); ?>');
+            $.ajax({
+                url: intersoccerAjaxUrl,
+                type: 'POST',
+                data: {
+                    action: 'intersoccer_reopen_roster',
+                    nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
+                    event_signature: eventSignature,
+                    source_page: 'girls-only-list-fallback'
+                },
+                success: function(response) {
+                    if (response && response.success) {
+                        location.reload();
+                    } else {
+                        alert((response && response.data && response.data.message) ? response.data.message : '<?php echo esc_js(__('Failed to reopen roster.', 'intersoccer-reports-rosters')); ?>');
+                        $btn.prop('disabled', false).text('<?php echo esc_js(__('Reopen', 'intersoccer-reports-rosters')); ?>');
+                    }
+                },
+                error: function() {
+                    alert('<?php echo esc_js(__('An error occurred. Please try again.', 'intersoccer-reports-rosters')); ?>');
+                    $btn.prop('disabled', false).text('<?php echo esc_js(__('Reopen', 'intersoccer-reports-rosters')); ?>');
+                }
+            });
         });
         // Bulk actions
         var $bulkBar = $('#bulk-actions-bar');
@@ -1749,11 +1828,36 @@ function intersoccer_render_girls_only_page() {
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
     $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
 
+    $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : '';
+
+    $girls_action = isset($_GET['girls_roster_action']) ? sanitize_key($_GET['girls_roster_action']) : '';
+    $girls_signature = isset($_GET['event_signature']) ? sanitize_text_field($_GET['event_signature']) : '';
+    if (in_array($girls_action, ['close', 'reopen'], true) && $girls_signature !== '') {
+        if (current_user_can('manage_options') && isset($_GET['_wpnonce']) && wp_verify_nonce(sanitize_text_field((string) $_GET['_wpnonce']), 'intersoccer_girls_roster_action_' . $girls_signature)) {
+            global $wpdb;
+            $table = $wpdb->prefix . 'intersoccer_rosters';
+            $flag = $girls_action === 'close' ? 1 : 0;
+            $updated = $wpdb->update(
+                $table,
+                ['event_completed' => $flag],
+                ['event_signature' => $girls_signature],
+                ['%d'],
+                ['%s']
+            );
+            if ($updated !== false) {
+                wp_cache_flush();
+                delete_transient('intersoccer_rosters_cache');
+                $redirect = remove_query_arg(['girls_roster_action', 'event_signature', '_wpnonce'], wp_unslash($_SERVER['REQUEST_URI']));
+                $redirect = add_query_arg('girls_action_result', $girls_action === 'close' ? 'closed' : 'reopened', $redirect);
+                wp_safe_redirect($redirect);
+                exit;
+            }
+        }
+    }
+
     // Clear all caches
     wp_cache_flush();
     delete_transient('intersoccer_rosters_cache');
-
-    $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : '';
 
     // Simplified query using the new girls_only boolean column
     $base_query = "SELECT COALESCE(r.season, 'N/A') as season,
@@ -2142,12 +2246,54 @@ function intersoccer_render_girls_only_page() {
                                             </div>
                                             <div class="camp-actions">
                                                 <?php 
-                                                $view_params = ['page' => 'intersoccer-roster-details', 'from' => 'girls-only', 'event_signature' => $camp['event_signature'], 'girls_only' => '1'];
+                                                if (!empty($camp['order_item_ids'])) {
+                                                    $view_params = [
+                                                        'page' => 'intersoccer-roster-details',
+                                                        'from' => 'girls-only',
+                                                        'order_item_ids' => $camp['order_item_ids'],
+                                                        'girls_only' => '1'
+                                                    ];
+                                                } else {
+                                                    $view_params = [
+                                                        'page' => 'intersoccer-roster-details',
+                                                        'from' => 'girls-only',
+                                                        'event_signature' => $camp['event_signature'],
+                                                        'girls_only' => '1'
+                                                    ];
+                                                }
                                                 $view_url = add_query_arg($view_params, admin_url('admin.php'));
                                                 ?>
                                                 <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                     View Roster
                                                 </a>
+                                                <?php if (!empty($camp['event_signature'])): ?>
+                                                    <?php $is_closed = !empty($camp['event_completed']); ?>
+                                                    <?php
+                                                    $girls_action_url = wp_nonce_url(
+                                                        add_query_arg(
+                                                            [
+                                                                'page' => 'intersoccer-girls-only',
+                                                                'girls_roster_action' => $is_closed ? 'reopen' : 'close',
+                                                                'event_signature' => $camp['event_signature'],
+                                                                'status' => $status_filter,
+                                                            ],
+                                                            admin_url('admin.php')
+                                                        ),
+                                                        'intersoccer_girls_roster_action_' . $camp['event_signature']
+                                                    );
+                                                    ?>
+                                                    <?php if ($is_closed): ?>
+                                                        <a href="<?php echo esc_url($girls_action_url); ?>" class="reopen-roster-btn girls-only-reopen-btn"
+                                                                data-event-signature="<?php echo esc_attr($camp['event_signature']); ?>">
+                                                            Reopen
+                                                        </a>
+                                                    <?php else: ?>
+                                                        <a href="<?php echo esc_url($girls_action_url); ?>" class="close-roster-btn girls-only-close-btn"
+                                                                data-event-signature="<?php echo esc_attr($camp['event_signature']); ?>">
+                                                            Close Out
+                                                        </a>
+                                                    <?php endif; ?>
+                                                <?php endif; ?>
                                             </div>
                                         </div>
                                     </div>
@@ -2229,12 +2375,54 @@ function intersoccer_render_girls_only_page() {
                                                     </div>
                                                     <div class="course-actions">
                                                         <?php
-                                                        $view_params = ['page' => 'intersoccer-roster-details', 'from' => 'girls-only', 'event_signature' => $course['event_signature'], 'girls_only' => '1'];
+                                                        if (!empty($course['order_item_ids'])) {
+                                                            $view_params = [
+                                                                'page' => 'intersoccer-roster-details',
+                                                                'from' => 'girls-only',
+                                                                'order_item_ids' => $course['order_item_ids'],
+                                                                'girls_only' => '1'
+                                                            ];
+                                                        } else {
+                                                            $view_params = [
+                                                                'page' => 'intersoccer-roster-details',
+                                                                'from' => 'girls-only',
+                                                                'event_signature' => $course['event_signature'],
+                                                                'girls_only' => '1'
+                                                            ];
+                                                        }
                                                         $view_url = add_query_arg($view_params, admin_url('admin.php'));
                                                         ?>
                                                         <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                             <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
                                                         </a>
+                                                        <?php if (!empty($course['event_signature'])): ?>
+                                                            <?php $is_closed = !empty($course['event_completed']); ?>
+                                                            <?php
+                                                            $girls_action_url = wp_nonce_url(
+                                                                add_query_arg(
+                                                                    [
+                                                                        'page' => 'intersoccer-girls-only',
+                                                                        'girls_roster_action' => $is_closed ? 'reopen' : 'close',
+                                                                        'event_signature' => $course['event_signature'],
+                                                                        'status' => $status_filter,
+                                                                    ],
+                                                                    admin_url('admin.php')
+                                                                ),
+                                                                'intersoccer_girls_roster_action_' . $course['event_signature']
+                                                            );
+                                                            ?>
+                                                            <?php if ($is_closed): ?>
+                                                                <a href="<?php echo esc_url($girls_action_url); ?>" class="reopen-roster-btn girls-only-reopen-btn"
+                                                                        data-event-signature="<?php echo esc_attr($course['event_signature']); ?>">
+                                                                    Reopen
+                                                                </a>
+                                                            <?php else: ?>
+                                                                <a href="<?php echo esc_url($girls_action_url); ?>" class="close-roster-btn girls-only-close-btn"
+                                                                        data-event-signature="<?php echo esc_attr($course['event_signature']); ?>">
+                                                                    Close Out
+                                                                </a>
+                                                            <?php endif; ?>
+                                                        <?php endif; ?>
                                                     </div>
                                                 </div>
                                             </div>
