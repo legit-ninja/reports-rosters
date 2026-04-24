@@ -64,7 +64,8 @@ class RosterDetailsService {
         }
 
         $collection = $this->repository->where($criteria);
-        $rosterModels = $this->filterByValidOrderStatus($collection);
+        $allow_missing_status = !empty($filters['order_item_ids']);
+        $rosterModels = $this->filterByValidOrderStatus($collection, $allow_missing_status);
 
         // When event_signature returns 0: roster rows may have NULL/empty event_signature; the listing
         // displays a computed fallback (md5) but DB has empty. Use order_item_ids, variation_ids, or camp_terms+venue as fallback.
@@ -237,7 +238,7 @@ class RosterDetailsService {
         return $criteria;
     }
 
-    private function filterByValidOrderStatus($collection): array {
+    private function filterByValidOrderStatus($collection, bool $allow_missing_status = false): array {
         $filtered = [];
 
         foreach ($collection as $model) {
@@ -246,7 +247,11 @@ class RosterDetailsService {
             }
 
             $status = get_post_status($model->order_id);
-            if (!$status || !in_array($status, $this->allowed_statuses, true)) {
+            if (!$status) {
+                if (!$allow_missing_status) {
+                    continue;
+                }
+            } elseif (!in_array($status, $this->allowed_statuses, true)) {
                 continue;
             }
 
