@@ -158,6 +158,24 @@ class MenuManager {
 
         add_submenu_page(
             'intersoccer-reports-rosters',
+            __('Birthdays', 'intersoccer-reports-rosters'),
+            __('Birthdays', 'intersoccer-reports-rosters'),
+            'read',
+            'intersoccer-birthdays',
+            [$this, 'render_birthdays']
+        );
+
+        add_submenu_page(
+            'intersoccer-reports-rosters',
+            __('Signature drift', 'intersoccer-reports-rosters'),
+            __('Signature drift', 'intersoccer-reports-rosters'),
+            'manage_options',
+            'intersoccer-signature-drift',
+            [$this, 'render_signature_drift']
+        );
+
+        add_submenu_page(
+            'intersoccer-reports-rosters',
             __('InterSoccer Settings', 'intersoccer-reports-rosters'),
             __('Settings', 'intersoccer-reports-rosters'),
             'read',
@@ -290,6 +308,15 @@ class MenuManager {
         wp_die(__('Other Events page is not available.', 'intersoccer-reports-rosters'));
     }
 
+    public function render_birthdays(): void {
+        $this->require_include('birthdays.php');
+        if (function_exists('intersoccer_render_birthdays_page')) {
+            intersoccer_render_birthdays_page();
+            return;
+        }
+        wp_die(__('Birthdays page is not available.', 'intersoccer-reports-rosters'));
+    }
+
     public function render_advanced(): void {
         $this->require_include('roster-editor.php');
         $this->require_include('advanced.php');
@@ -298,6 +325,15 @@ class MenuManager {
             return;
         }
         wp_die(__('Advanced page is not available.', 'intersoccer-reports-rosters'));
+    }
+
+    public function render_signature_drift(): void {
+        $this->require_include('signature-drift-report.php');
+        if (function_exists('intersoccer_render_signature_drift_report_page')) {
+            intersoccer_render_signature_drift_report_page();
+            return;
+        }
+        wp_die(__('Signature drift report is not available.', 'intersoccer-reports-rosters'));
     }
 
     public function render_roster_details(): void {

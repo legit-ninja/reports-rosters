@@ -1,0 +1,82 @@
+.isrr-birthdays-page .isrr-birthdays-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.isrr-birthdays-page .isrr-birthdays-title h2 {
+    margin: 0;
+}
+
+.isrr-birthdays-month-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.isrr-birthdays-weekday {
+    font-weight: 600;
+    text-align: center;
+    padding: 8px 4px;
+    background: #f6f7f7;
+    border: 1px solid #dcdcde;
+}
+
+.isrr-birthdays-day {
+    min-height: 110px;
+    border: 1px solid #dcdcde;
+    background: #fff;
+    padding: 6px;
+}
+
+.isrr-birthdays-day--empty {
+    background: #f6f7f7;
+}
+
+.isrr-birthdays-day-number {
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.isrr-birthdays-list {
+    margin: 0;
+    padding-left: 16px;
+}
+
+.isrr-birthdays-item {
+    margin-bottom: 4px;
+    line-height: 1.3;
+}
+
+.isrr-birthdays-year-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+}
+
+.isrr-birthdays-year-card {
+    background: #fff;
+    border: 1px solid #dcdcde;
+    padding: 12px;
+}
+
+.isrr-birthdays-year-card h3 {
+    margin-top: 0;
+}
+
+.isrr-birthdays-year-list {
+    margin: 0;
+    padding-left: 18px;
+}
+
+.isrr-birthdays-year-list li {
+    margin-bottom: 6px;
+}
+
+.isrr-birthdays-empty-month {
+    color: #50575e;
+    margin-bottom: 0;
+}

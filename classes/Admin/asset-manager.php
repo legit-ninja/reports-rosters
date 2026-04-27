@@ -77,6 +77,7 @@ class AssetManager {
             'intersoccer-reports-rosters_page_intersoccer-courses',
             'intersoccer-reports-rosters_page_intersoccer-girls-only',
             'intersoccer-reports-rosters_page_intersoccer-other-events',
+            'intersoccer-reports-rosters_page_intersoccer-birthdays',
         ];
 
         if (in_array($screen_id, $roster_pages, true)) {
@@ -101,6 +102,29 @@ class AssetManager {
                     'complete_error' => __('An error occurred while marking the event as completed. Please try again.', 'intersoccer-reports-rosters'),
                 ],
             ]);
+        }
+
+        $is_birthdays_screen =
+            $screen_id === 'intersoccer-reports-rosters_page_intersoccer-birthdays'
+            || $screen_id === 'reports-and-rosters_page_intersoccer-birthdays'
+            || $hook === 'intersoccer-reports-rosters_page_intersoccer-birthdays'
+            || $hook === 'reports-and-rosters_page_intersoccer-birthdays';
+
+        if ($is_birthdays_screen) {
+            wp_enqueue_style(
+                'intersoccer-birthdays-calendar-css',
+                $this->plugin_url . 'css/birthdays-calendar.css',
+                ['intersoccer-reports-rosters-css'],
+                $this->version
+            );
+
+            wp_enqueue_script(
+                'intersoccer-birthdays-calendar-js',
+                $this->plugin_url . 'js/birthdays-calendar.js',
+                ['jquery'],
+                $this->version,
+                true
+            );
         }
 
         // Advanced page AJAX helpers
@@ -167,9 +191,32 @@ class AssetManager {
         }
 
         // WooCommerce Orders screen integration
+        $is_classic_order_edit =
+            $hook === 'post.php'
+            && isset($_GET['post'])
+            && get_post_type((int) $_GET['post']) === 'shop_order';
+        $is_hpos_order_edit =
+            $hook === 'woocommerce_page_wc-orders'
+            && isset($_GET['action'])
+            && sanitize_text_field((string) $_GET['action']) === 'edit';
         $is_orders_screen =
             $hook === 'woocommerce_page_wc-orders'
-            || ($hook === 'edit.php' && isset($_GET['post_type']) && $_GET['post_type'] === 'shop_order');
+            || ($hook === 'edit.php' && isset($_GET['post_type']) && $_GET['post_type'] === 'shop_order')
+            || $is_classic_order_edit
+            || $is_hpos_order_edit;
+
+        // #region agent log
+        error_log(
+            'DEBUG21E376 H2 asset_manager_orders_screen_eval ' .
+            wp_json_encode([
+                'hook' => $hook,
+                'screen_id' => $screen_id,
+                'is_orders_screen' => $is_orders_screen,
+                'is_classic_order_edit' => $is_classic_order_edit,
+                'is_hpos_order_edit' => $is_hpos_order_edit,
+            ])
+        );
+        // #endregion
 
         if ($is_orders_screen) {
             wp_enqueue_script(
@@ -197,6 +244,36 @@ class AssetManager {
                     'dismiss' => __('Dismiss this notice.', 'intersoccer-reports-rosters'),
                     'orders_processed' => __('Orders processed.', 'intersoccer-reports-rosters'),
                     'processing_failed' => __('Processing failed:', 'intersoccer-reports-rosters'),
+                ],
+            ]);
+
+            wp_enqueue_script(
+                'intersoccer-order-item-sync-controls',
+                $this->plugin_url . 'js/order-item-sync-controls.js',
+                ['jquery'],
+                $this->version,
+                true
+            );
+
+            wp_localize_script('intersoccer-order-item-sync-controls', 'intersoccer_order_item_sync', [
+                'nonce' => wp_create_nonce('intersoccer_rebuild_nonce'),
+                'ajaxurl' => admin_url('admin-ajax.php'),
+                'strings' => [
+                    'checking' => __('Checking sync...', 'intersoccer-reports-rosters'),
+                    'fixing' => __('Fixing sync...', 'intersoccer-reports-rosters'),
+                    'check_failed' => __('Sync check failed.', 'intersoccer-reports-rosters'),
+                    'fix_failed' => __('Sync fix failed.', 'intersoccer-reports-rosters'),
+                    'fix_confirm' => __('Run safe sync fix for this order item?', 'intersoccer-reports-rosters'),
+                    'in_sync' => __('In sync.', 'intersoccer-reports-rosters'),
+                    'out_of_sync' => __('Out of sync.', 'intersoccer-reports-rosters'),
+                    'fixed' => __('Fix applied.', 'intersoccer-reports-rosters'),
+                    'no_action' => __('No changes were needed.', 'intersoccer-reports-rosters'),
+                    'badge_checking' => __('Checking...', 'intersoccer-reports-rosters'),
+                    'badge_fixing' => __('Fixing...', 'intersoccer-reports-rosters'),
+                    'badge_in_sync' => __('In sync', 'intersoccer-reports-rosters'),
+                    'badge_out_of_sync' => __('Out of sync', 'intersoccer-reports-rosters'),
+                    'badge_fixed' => __('Fixed', 'intersoccer-reports-rosters'),
+                    'badge_error' => __('Error', 'intersoccer-reports-rosters'),
                 ],
             ]);
         }
