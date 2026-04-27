@@ -33,7 +33,7 @@ final class Plugin {
     /**
      * Plugin version
      */
-    const VERSION = '2.4.24';
+    const VERSION = '2.4.27';
     
     /**
      * Plugin text domain
@@ -200,6 +200,13 @@ final class Plugin {
         add_action('admin_menu', [$this, 'register_admin_menu'], 5);
         add_action('admin_init', [$this, 'init_admin'], 10);
         add_action('plugins_loaded', [$this, 'init_woocommerce'], 20);
+
+        if (defined('WP_CLI') && WP_CLI) {
+            $cli = $this->plugin_path . 'includes/wp-cli/roster-cli-commands.php';
+            if (file_exists($cli)) {
+                require_once $cli;
+            }
+        }
         
         // Debug log only when explicitly enabled to avoid overhead on every request
         if (defined('INTERSOCCER_DEBUG_LOAD') && INTERSOCCER_DEBUG_LOAD) {
@@ -328,12 +335,18 @@ final class Plugin {
             return;
         }
         // Load rosters.php early (before admin_head) when on a roster page so card CSS is registered
-        $roster_pages = ['intersoccer-camps', 'intersoccer-courses', 'intersoccer-girls-only', 'intersoccer-tournaments', 'intersoccer-other-events', 'intersoccer-all-rosters'];
+        $roster_pages = ['intersoccer-camps', 'intersoccer-courses', 'intersoccer-girls-only', 'intersoccer-tournaments', 'intersoccer-other-events', 'intersoccer-all-rosters', 'intersoccer-birthdays'];
         $page = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
         if (in_array($page, $roster_pages, true)) {
-            $rosters_file = $this->plugin_path . 'includes/rosters.php';
-            if (file_exists($rosters_file)) {
-                require_once $rosters_file;
+            $includes_to_load = [$this->plugin_path . 'includes/rosters.php'];
+            if ($page === 'intersoccer-birthdays') {
+                $includes_to_load[] = $this->plugin_path . 'includes/birthdays.php';
+            }
+
+            foreach ($includes_to_load as $include_file) {
+                if (file_exists($include_file)) {
+                    require_once $include_file;
+                }
             }
         }
         $services = [
@@ -358,6 +371,11 @@ final class Plugin {
         try {
             $this->logger->debug('InterSoccer Plugin: Admin initialization started');
             
+            $persist_file = $this->plugin_path . 'includes/roster-list-filter-persistence.php';
+            if (file_exists($persist_file)) {
+                require_once $persist_file;
+            }
+
             $roster_export_file = $this->plugin_path . 'includes/roster-export.php';
             if (file_exists($roster_export_file)) {
                 require_once $roster_export_file;
