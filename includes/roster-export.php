@@ -17,6 +17,11 @@ if (!function_exists('intersoccer_roster_effective_selected_days_string')) {
     }
 }
 
+$intersoccer_export_all_handler = dirname(__FILE__) . '/roster-export-all-handler.php';
+if (is_readable($intersoccer_export_all_handler)) {
+    require_once $intersoccer_export_all_handler;
+}
+
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;

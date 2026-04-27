@@ -55,6 +55,9 @@ class HooksManager {
         if (defined('INTERSOCCER_ORDER_AUTO_COMPLETE_SINGLE_HOOK')) {
             add_action(INTERSOCCER_ORDER_AUTO_COMPLETE_SINGLE_HOOK, [$this, 'auto_complete_single_order'], 10, 1);
         }
+
+        // Woo order edit screen: per-line-item roster sync controls.
+        add_action('woocommerce_after_order_itemmeta', [$this, 'render_order_item_sync_controls'], 20, 3);
     }
 
     public function handle_order_status($order_id): void {
@@ -139,6 +142,67 @@ class HooksManager {
         }
 
         $this->order_processor->processOrder($order_id);
+    }
+
+    /**
+     * Render native-looking sync controls under each line item in Woo order admin.
+     *
+     * @param int   $item_id
+     * @param mixed $item
+     * @param mixed $product
+     */
+    public function render_order_item_sync_controls($item_id, $item, $product): void {
+        if (!is_admin() || !current_user_can('manage_options')) {
+            return;
+        }
+
+        $item_id = (int) $item_id;
+        if ($item_id <= 0) {
+            return;
+        }
+
+        $item_type = '';
+        if (is_object($item) && method_exists($item, 'get_type')) {
+            $item_type = (string) $item->get_type();
+        } elseif (is_object($item) && isset($item->order_item_type)) {
+            $item_type = (string) $item->order_item_type;
+        } elseif (is_array($item) && isset($item['order_item_type'])) {
+            $item_type = (string) $item['order_item_type'];
+        }
+
+        if ($item_type !== '' && $item_type !== 'line_item') {
+            return;
+        }
+
+        global $wpdb;
+        $rosters_count = 0;
+        if (isset($wpdb) && is_object($wpdb) && isset($wpdb->prefix)) {
+            $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+            $rosters_count = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$rosters_table} WHERE order_item_id = %d",
+                $item_id
+            ));
+        }
+
+        // #region agent log
+        error_log(
+            'DEBUG21E376 H1 render_order_item_sync_controls ' .
+            wp_json_encode([
+                'order_item_id' => $item_id,
+                'item_type' => $item_type,
+                'default_badge' => 'Unchecked',
+                'rosters_count' => $rosters_count,
+            ])
+        );
+        // #endregion
+
+        echo '<div class="intersoccer-order-item-sync-controls" data-order-item-id="' . esc_attr((string) $item_id) . '" style="margin-top:8px;">';
+        echo '  <span class="intersoccer-sync-badge intersoccer-sync-badge-unchecked">' . esc_html__('Unchecked', 'intersoccer-reports-rosters') . '</span>';
+        echo '  <button type="button" class="button button-small intersoccer-check-sync">' . esc_html__('Check Sync', 'intersoccer-reports-rosters') . '</button> ';
+        echo '  <button type="button" class="button button-small intersoccer-fix-sync" style="margin-left:6px;">' . esc_html__('Fix Sync', 'intersoccer-reports-rosters') . '</button>';
+        echo '  <span class="spinner intersoccer-sync-spinner" style="float:none; margin:0 0 0 8px;"></span>';
+        echo '  <div class="intersoccer-order-item-sync-result" style="margin-top:8px;"></div>';
+        echo '</div>';
     }
 
     /**

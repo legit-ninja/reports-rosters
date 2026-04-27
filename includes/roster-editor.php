@@ -1176,19 +1176,25 @@ function intersoccer_render_form_field($roster, $field_name, $label, $type = 'te
  * Helper function to render a select field
  */
 function intersoccer_render_form_field_select($roster, $field_name, $label, $options) {
-    $value = isset($roster[$field_name]) ? esc_attr($roster[$field_name]) : '';
+    $raw_value = isset($roster[$field_name]) ? (string) $roster[$field_name] : '';
+    $value = esc_attr($raw_value);
+    $normalized_value = strtolower(trim($raw_value));
     
     echo '<tr>';
     echo '<th><label for="' . esc_attr($field_name) . '">' . esc_html($label) . '</label></th>';
     echo '<td>';
     echo '<select name="' . esc_attr($field_name) . '" id="' . esc_attr($field_name) . '" class="regular-text">';
     foreach ($options as $option) {
-        $selected = ($value === $option) ? ' selected' : '';
+        $normalized_option = strtolower(trim((string) $option));
+        $is_selected = ($value === $option)
+            || ($normalized_value !== '' && $normalized_value === $normalized_option);
+        $selected = $is_selected ? ' selected' : '';
         echo '<option value="' . esc_attr($option) . '"' . $selected . '>' . esc_html($option) . '</option>';
     }
     echo '</select>';
     echo '</td>';
     echo '</tr>';
+
 }
 
 /**

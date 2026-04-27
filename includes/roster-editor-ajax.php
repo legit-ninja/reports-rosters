@@ -454,9 +454,16 @@ function intersoccer_sanitize_roster_field($field_name, $value) {
 
     // Gender fields - validate against allowed values
     if ($field_name === 'gender' || $field_name === 'player_gender') {
-        $allowed = ['N/A', 'Male', 'Female', 'Other', ''];
-        $value = sanitize_text_field($value);
-        return in_array($value, $allowed) ? $value : 'N/A';
+        $normalized = strtolower(trim(sanitize_text_field((string) $value)));
+        $map = [
+            '' => '',
+            'n/a' => 'N/A',
+            'na' => 'N/A',
+            'male' => 'Male',
+            'female' => 'Female',
+            'other' => 'Other',
+        ];
+        return array_key_exists($normalized, $map) ? $map[$normalized] : 'N/A';
     }
 
     // Late pickup

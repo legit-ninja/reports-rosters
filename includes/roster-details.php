@@ -466,7 +466,6 @@ function intersoccer_render_roster_details_page() {
     
     // Bulk actions section - New: Added for player migration
     echo '<div class="bulk-actions">';
-    echo '    <h3 style="margin: 0 0 15px 0; color: #2c3338;">Player Management</h3>';
     echo '    <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">';
     echo '        <div>';
     echo '            <label for="bulkActionSelect" style="font-weight: 500; margin-right: 8px;">Action:</label>';

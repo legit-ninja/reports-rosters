@@ -73,5 +73,14 @@ class ReportsRostersDiagnosticsServiceTest extends TestCase {
         $this->assertFalse(ReportsRostersDiagnosticsService::isRosterActivityTypeScopedRow($roster_course, 'Camp'));
         $this->assertFalse(ReportsRostersDiagnosticsService::isRosterActivityTypeScopedRow($roster_empty, 'Course'));
     }
+
+    public function test_run_safe_fix_for_order_item_rejects_invalid_id(): void {
+        $service = new ReportsRostersDiagnosticsService();
+        $result = $service->runSafeFixForOrderItem(0);
+
+        $this->assertSame('error', $result['status']);
+        $this->assertSame(0, $result['order_item_id']);
+        $this->assertNotEmpty($result['message']);
+    }
 }
 

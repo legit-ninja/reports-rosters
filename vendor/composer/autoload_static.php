@@ -144,6 +144,7 @@ class ComposerStaticInit524cfbad5fc29d5511275e827678d85a
         'InterSoccer\\ReportsRosters\\Services\\RosterDetailsService' => __DIR__ . '/../..' . '/classes/services/roster-details-service.php',
         'InterSoccer\\ReportsRosters\\Services\\RosterExportService' => __DIR__ . '/../..' . '/classes/services/roster-export-service.php',
         'InterSoccer\\ReportsRosters\\Services\\RosterListingService' => __DIR__ . '/../..' . '/classes/services/roster-listing-service.php',
+        'InterSoccer\\ReportsRosters\\Services\\SignatureDriftService' => __DIR__ . '/../..' . '/classes/services/signature-drift-service.php',
         'InterSoccer\\ReportsRosters\\UI\\Components\\ChartsComponent' => __DIR__ . '/../..' . '/classes/ui/components/charts-component.php',
         'InterSoccer\\ReportsRosters\\UI\\Components\\ExportComponent' => __DIR__ . '/../..' . '/classes/ui/components/export-component.php',
         'InterSoccer\\ReportsRosters\\UI\\Components\\TabsComponent' => __DIR__ . '/../..' . '/classes/ui/components/tabs-component.php',

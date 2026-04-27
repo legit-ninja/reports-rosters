@@ -2262,8 +2262,6 @@ function intersoccer_close_out_roster_ajax() {
         wp_send_json_error(['message' => __('Failed to close roster.', 'intersoccer-reports-rosters')]);
     }
     
-    // Clear cache
-    wp_cache_flush();
     delete_transient('intersoccer_rosters_cache');
     
     wp_send_json_success([
@@ -2305,8 +2303,6 @@ function intersoccer_reopen_roster_ajax() {
         wp_send_json_error(['message' => __('Failed to reopen roster.', 'intersoccer-reports-rosters')]);
     }
     
-    // Clear cache
-    wp_cache_flush();
     delete_transient('intersoccer_rosters_cache');
     
     wp_send_json_success([
@@ -2355,8 +2351,6 @@ function intersoccer_bulk_close_rosters_ajax() {
         intersoccer_log_audit('Roster Closed (Bulk)', "Event Signature: $signature");
     }
     
-    // Clear cache
-    wp_cache_flush();
     delete_transient('intersoccer_rosters_cache');
     
     wp_send_json_success([
@@ -2405,8 +2399,6 @@ function intersoccer_bulk_reopen_rosters_ajax() {
         intersoccer_log_audit('Roster Reopened (Bulk)', "Event Signature: $signature");
     }
     
-    // Clear cache
-    wp_cache_flush();
     delete_transient('intersoccer_rosters_cache');
     
     wp_send_json_success([
@@ -2498,8 +2490,6 @@ function intersoccer_close_season_rosters_ajax() {
     // Log audit trail
     intersoccer_log_audit('Season Rosters Closed', "Season: $season, Page: $page, Rosters: $roster_count, Entries: $updated");
     
-    // Clear cache
-    wp_cache_flush();
     delete_transient('intersoccer_rosters_cache');
     
     wp_send_json_success([

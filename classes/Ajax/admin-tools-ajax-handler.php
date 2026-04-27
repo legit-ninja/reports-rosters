@@ -57,9 +57,13 @@ class AdminToolsAjaxHandler {
         add_action('wp_ajax_intersoccer_run_reports_rosters_diagnostics', [$this, 'runReportsRostersDiagnostics']);
         add_action('wp_ajax_intersoccer_trace_reports_rosters_item', [$this, 'traceReportsRostersItem']);
         add_action('wp_ajax_intersoccer_fix_reports_rosters_issues_safe', [$this, 'fixReportsRostersIssuesSafe']);
+        add_action('wp_ajax_intersoccer_fix_reports_rosters_item_safe', [$this, 'fixReportsRostersItemSafe']);
 
         // Complex migration endpoint: keep legacy implementation for now.
         add_action('wp_ajax_intersoccer_move_players', [$this, 'delegateMovePlayersLegacy']);
+
+        add_action('wp_ajax_intersoccer_merge_roster_signatures_preview', [$this, 'mergeRosterSignaturesPreview']);
+        add_action('wp_ajax_intersoccer_merge_roster_signatures_apply', [$this, 'mergeRosterSignaturesApply']);
     }
 
     public function getRebuildErrors(): void {
@@ -183,12 +187,22 @@ class AdminToolsAjaxHandler {
             wp_send_json_error(['message' => __('Operation failed.', 'intersoccer-reports-rosters')]);
         }
 
-        wp_cache_flush();
         delete_transient('intersoccer_rosters_cache');
 
         $message = $flag === 1
             ? sprintf(__('Roster closed successfully. %d entries updated.', 'intersoccer-reports-rosters'), $updated)
             : sprintf(__('Roster reopened successfully. %d entries updated.', 'intersoccer-reports-rosters'), $updated);
+
+        $log_path = dirname(__DIR__, 2) . '/includes/roster-admin-log.php';
+        if (file_exists($log_path)) {
+            require_once $log_path;
+            if (function_exists('intersoccer_roster_admin_log_insert')) {
+                intersoccer_roster_admin_log_insert($flag === 1 ? 'close_roster' : 'reopen_roster', $event_signature, ['rows' => (int) $updated]);
+            }
+        }
+        if (function_exists('intersoccer_rosters_flash_admin_notice')) {
+            intersoccer_rosters_flash_admin_notice($message);
+        }
 
         wp_send_json_success([
             'message' => $message,
@@ -231,12 +245,15 @@ class AdminToolsAjaxHandler {
             wp_send_json_error(['message' => __('Operation failed.', 'intersoccer-reports-rosters')]);
         }
 
-        wp_cache_flush();
         delete_transient('intersoccer_rosters_cache');
 
         $message = $flag === 1
             ? sprintf(__('%d roster(s) closed successfully. %d entries updated.', 'intersoccer-reports-rosters'), count($event_signatures), $updated)
             : sprintf(__('%d roster(s) reopened successfully. %d entries updated.', 'intersoccer-reports-rosters'), count($event_signatures), $updated);
+
+        if (function_exists('intersoccer_rosters_flash_admin_notice')) {
+            intersoccer_rosters_flash_admin_notice($message);
+        }
 
         wp_send_json_success([
             'message' => $message,
@@ -291,11 +308,15 @@ class AdminToolsAjaxHandler {
             wp_send_json_error(['message' => __('Failed to close rosters in season.', 'intersoccer-reports-rosters')]);
         }
 
-        wp_cache_flush();
         delete_transient('intersoccer_rosters_cache');
 
+        $season_msg = sprintf(__('Successfully closed %d roster(s) in season "%s". %d entries updated.', 'intersoccer-reports-rosters'), $roster_count, esc_html($season), $updated);
+        if (function_exists('intersoccer_rosters_flash_admin_notice')) {
+            intersoccer_rosters_flash_admin_notice($season_msg);
+        }
+
         wp_send_json_success([
-            'message' => sprintf(__('Successfully closed %d roster(s) in season "%s". %d entries updated.', 'intersoccer-reports-rosters'), $roster_count, esc_html($season), $updated),
+            'message' => $season_msg,
             'updated' => $updated,
             'roster_count' => $roster_count,
             'season' => $season,
@@ -450,6 +471,38 @@ class AdminToolsAjaxHandler {
         }
     }
 
+    public function fixReportsRostersItemSafe(): void {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
+        }
+        check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
+
+        $order_item_id = isset($_POST['order_item_id']) ? (int) $_POST['order_item_id'] : 0;
+        if ($order_item_id <= 0) {
+            wp_send_json_error(['message' => __('Order item ID is required.', 'intersoccer-reports-rosters')]);
+        }
+
+        try {
+            $service = new ReportsRostersDiagnosticsService();
+            $result = $service->runSafeFixForOrderItem($order_item_id);
+            if (($result['status'] ?? '') === 'error') {
+                wp_send_json_error([
+                    'message' => (string) ($result['message'] ?? __('Item sync fix failed.', 'intersoccer-reports-rosters')),
+                    'result' => $result,
+                ]);
+            }
+            wp_send_json_success($result);
+        } catch (\Throwable $e) {
+            $this->logger->error('Reports/Rosters per-item safe fix failed', [
+                'order_item_id' => $order_item_id,
+                'error' => $e->getMessage(),
+            ]);
+            wp_send_json_error([
+                'message' => __('Safe fix failed: ', 'intersoccer-reports-rosters') . $e->getMessage(),
+            ]);
+        }
+    }
+
     /**
      * Match roster-builder / camp pipeline: use selected_days, then days_selected, then WC order line "Days Selected".
      */
@@ -568,6 +621,71 @@ class AdminToolsAjaxHandler {
         }
 
         intersoccer_move_players_ajax();
+    }
+
+    public function mergeRosterSignaturesPreview(): void {
+        check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
+        }
+        $source = isset($_POST['source_signature']) ? sanitize_text_field((string) $_POST['source_signature']) : '';
+        $target = isset($_POST['target_signature']) ? sanitize_text_field((string) $_POST['target_signature']) : '';
+        if ($source === '' || $target === '' || $source === $target) {
+            wp_send_json_error(['message' => __('Source and target signatures must differ and be non-empty.', 'intersoccer-reports-rosters')]);
+        }
+        global $wpdb;
+        $table = $wpdb->prefix . 'intersoccer_rosters';
+        $count = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table} WHERE event_signature = %s",
+            $source
+        ));
+        wp_send_json_success([
+            'message' => sprintf(__('Rows with source signature: %d', 'intersoccer-reports-rosters'), $count),
+            'count' => $count,
+            'source_signature' => $source,
+            'target_signature' => $target,
+        ]);
+    }
+
+    public function mergeRosterSignaturesApply(): void {
+        check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
+        }
+        $source = isset($_POST['source_signature']) ? sanitize_text_field((string) $_POST['source_signature']) : '';
+        $target = isset($_POST['target_signature']) ? sanitize_text_field((string) $_POST['target_signature']) : '';
+        if ($source === '' || $target === '' || $source === $target) {
+            wp_send_json_error(['message' => __('Source and target signatures must differ and be non-empty.', 'intersoccer-reports-rosters')]);
+        }
+        global $wpdb;
+        $table = $wpdb->prefix . 'intersoccer_rosters';
+        $updated = $wpdb->query($wpdb->prepare(
+            "UPDATE {$table} SET event_signature = %s WHERE event_signature = %s",
+            $target,
+            $source
+        ));
+        if ($updated === false) {
+            wp_send_json_error(['message' => __('Database update failed.', 'intersoccer-reports-rosters')]);
+        }
+        delete_transient('intersoccer_rosters_cache');
+        $log_file = dirname(__DIR__, 2) . '/includes/roster-admin-log.php';
+        if (file_exists($log_file)) {
+            require_once $log_file;
+            if (function_exists('intersoccer_roster_admin_log_insert')) {
+                intersoccer_roster_admin_log_insert('merge_event_signature', $target, [
+                    'source_signature' => $source,
+                    'rows_updated' => (int) $updated,
+                ]);
+            }
+        }
+        $merge_msg = sprintf(__('Updated %d roster row(s).', 'intersoccer-reports-rosters'), (int) $updated);
+        if (function_exists('intersoccer_rosters_flash_admin_notice')) {
+            intersoccer_rosters_flash_admin_notice($merge_msg);
+        }
+        wp_send_json_success([
+            'message' => $merge_msg,
+            'updated' => (int) $updated,
+        ]);
     }
 }
 

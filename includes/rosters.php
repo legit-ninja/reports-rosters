@@ -7,6 +7,11 @@
  * @author Jeremy Lee
  */
 
+$persist_roster_filters = dirname(__FILE__) . '/roster-list-filter-persistence.php';
+if (is_readable($persist_roster_filters)) {
+    require_once $persist_roster_filters;
+}
+
 /**
  * Helper: Get placeholder filter for WHERE clause
  */
@@ -1052,7 +1057,7 @@ function intersoccer_rosters_admin_narrowing_notice($page_slug, $shown, $total, 
     if ($shown >= $total || $total < 1) {
         return;
     }
-    $clear_url = admin_url('admin.php?page=' . rawurlencode($page_slug));
+    $clear_url = admin_url('admin.php?page=' . rawurlencode($page_slug) . '&clear_isrr_filters=1');
     echo '<div class="notice notice-info inline"><p>';
     echo esc_html(
         sprintf(
@@ -1077,6 +1082,10 @@ function intersoccer_rosters_admin_narrowing_notice($page_slug, $shown, $total, 
 function intersoccer_render_camps_page() {
     if (!current_user_can('manage_options') && !current_user_can('coach')) {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
+    }
+
+    if (function_exists('intersoccer_rosters_bootstrap_saved_list_filters')) {
+        intersoccer_rosters_bootstrap_saved_list_filters('camps', ['season', 'venue', 'camp_terms', 'age_group', 'city', 'status'], true);
     }
 
     // Check if user is a coach and filter venues accordingly
@@ -1183,6 +1192,19 @@ function intersoccer_render_camps_page() {
                 <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                 <input type="hidden" name="export_type" value="camps">
                 <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
+                <?php
+                if (function_exists('intersoccer_rosters_print_export_filter_hidden_fields')) {
+                    intersoccer_rosters_print_export_filter_hidden_fields([
+                        'season' => $selected_season,
+                        'venue' => $selected_venue,
+                        'camp_terms' => $selected_camp_terms,
+                        'age_group' => $selected_age_group,
+                        'city' => $selected_city,
+                        'status' => $status_filter,
+                        'consolidated' => $consolidated_view ? '1' : '0',
+                    ]);
+                }
+                ?>
                 <input type="submit" name="export_camps" class="button button-primary" 
                     value="<?php _e('↓ Export All Camps', 'intersoccer-reports-rosters'); ?>">
             </form>
@@ -1430,6 +1452,10 @@ function intersoccer_render_courses_page() {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 
+    if (function_exists('intersoccer_rosters_bootstrap_saved_list_filters')) {
+        intersoccer_rosters_bootstrap_saved_list_filters('courses', ['season', 'venue', 'course_day', 'age_group', 'city', 'status'], true);
+    }
+
     // Check if user is a coach and filter venues accordingly
     $current_user = wp_get_current_user();
     $is_coach = in_array('coach', $current_user->roles);
@@ -1532,6 +1558,19 @@ function intersoccer_render_courses_page() {
                 <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                 <input type="hidden" name="export_type" value="courses">
                 <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
+                <?php
+                if (function_exists('intersoccer_rosters_print_export_filter_hidden_fields')) {
+                    intersoccer_rosters_print_export_filter_hidden_fields([
+                        'season' => $selected_season,
+                        'venue' => $selected_venue,
+                        'course_day' => $selected_course_day,
+                        'age_group' => $selected_age_group,
+                        'city' => $selected_city,
+                        'status' => $status_filter,
+                        'consolidated' => $consolidated_view ? '1' : '0',
+                    ]);
+                }
+                ?>
                 <input type="submit" name="export_courses" class="button button-primary" 
                     value="<?php _e('↓ Export All Courses', 'intersoccer-reports-rosters'); ?>">
             </form>
@@ -1811,6 +1850,10 @@ function intersoccer_render_girls_only_page() {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 
+    if (function_exists('intersoccer_rosters_bootstrap_saved_list_filters')) {
+        intersoccer_rosters_bootstrap_saved_list_filters('girls_only', ['season', 'type', 'venue', 'camp_terms', 'course_day', 'age_group', 'city', 'status'], false);
+    }
+
     // Check if user is a coach and filter venues accordingly
     $current_user = wp_get_current_user();
     $is_coach = in_array('coach', $current_user->roles);
@@ -1845,7 +1888,6 @@ function intersoccer_render_girls_only_page() {
                 ['%s']
             );
             if ($updated !== false) {
-                wp_cache_flush();
                 delete_transient('intersoccer_rosters_cache');
                 $redirect = remove_query_arg(['girls_roster_action', 'event_signature', '_wpnonce'], wp_unslash($_SERVER['REQUEST_URI']));
                 $redirect = add_query_arg('girls_action_result', $girls_action === 'close' ? 'closed' : 'reopened', $redirect);
@@ -1855,8 +1897,6 @@ function intersoccer_render_girls_only_page() {
         }
     }
 
-    // Clear all caches
-    wp_cache_flush();
     delete_transient('intersoccer_rosters_cache');
 
     // Simplified query using the new girls_only boolean column
@@ -2063,6 +2103,20 @@ function intersoccer_render_girls_only_page() {
                 <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                 <input type="hidden" name="export_type" value="girls_only">
                 <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
+                <?php
+                if (function_exists('intersoccer_rosters_print_export_filter_hidden_fields')) {
+                    intersoccer_rosters_print_export_filter_hidden_fields([
+                        'season' => $selected_season,
+                        'type' => $selected_type,
+                        'venue' => $selected_venue,
+                        'camp_terms' => $selected_camp_terms,
+                        'course_day' => $selected_course_day,
+                        'age_group' => $selected_age_group,
+                        'city' => $selected_city,
+                        'status' => $status_filter,
+                    ]);
+                }
+                ?>
                 <input type="submit" name="export_girls_only" class="button button-primary" 
                     value="<?php _e('Export Girls Only', 'intersoccer-reports-rosters'); ?>">
             </form>
@@ -2159,7 +2213,7 @@ function intersoccer_render_girls_only_page() {
         </div>
         <?php if ($selected_season || $selected_type || $selected_venue || $selected_camp_terms || $selected_course_day || $selected_age_group || $selected_city || $status_filter): ?>
                 <div class="filter-group">
-                    <a href="<?php echo admin_url('admin.php?page=intersoccer-girls-only'); ?>" class="button button-secondary">
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-girls-only&clear_isrr_filters=1')); ?>" class="button button-secondary">
                         Clear Filters
                     </a>
                 </div>
@@ -2447,6 +2501,10 @@ function intersoccer_render_tournaments_page() {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 
+    if (function_exists('intersoccer_rosters_bootstrap_saved_list_filters')) {
+        intersoccer_rosters_bootstrap_saved_list_filters('tournaments', ['season', 'venue', 'age_group', 'city', 'times'], false);
+    }
+
     $current_user = wp_get_current_user();
     $is_coach = in_array('coach', $current_user->roles);
     $coach_accessible_venues = [];
@@ -2498,6 +2556,26 @@ function intersoccer_render_tournaments_page() {
                     ↻ <?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?>
                 </a>
             </div>
+        </div>
+
+        <div class="export-buttons">
+            <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" target="_blank">
+                <input type="hidden" name="action" value="intersoccer_export_all_rosters">
+                <input type="hidden" name="export_type" value="tournaments">
+                <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
+                <?php
+                if (function_exists('intersoccer_rosters_print_export_filter_hidden_fields')) {
+                    intersoccer_rosters_print_export_filter_hidden_fields([
+                        'season' => $selected_season,
+                        'venue' => $selected_venue,
+                        'age_group' => $selected_age_group,
+                        'city' => $selected_city,
+                        'times' => $selected_time,
+                    ]);
+                }
+                ?>
+                <input type="submit" name="export_tournaments" class="button button-primary" value="<?php echo esc_attr__('↓ Export Tournaments (CSV)', 'intersoccer-reports-rosters'); ?>">
+            </form>
         </div>
 
         <div class="roster-filters">
@@ -2560,7 +2638,7 @@ function intersoccer_render_tournaments_page() {
                 </div>
                 <?php if ($selected_season || $selected_venue || $selected_age_group || $selected_city || $selected_time): ?>
                     <div class="filter-group">
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-tournaments')); ?>" class="button button-secondary">
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-tournaments&clear_isrr_filters=1')); ?>" class="button button-secondary">
                             ↻ <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
                         </a>
                     </div>
@@ -2728,6 +2806,10 @@ function intersoccer_render_other_events_page() {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 
+    if (function_exists('intersoccer_rosters_bootstrap_saved_list_filters')) {
+        intersoccer_rosters_bootstrap_saved_list_filters('other_events', ['season', 'product_name'], false);
+    }
+
     // Check if user is a coach and filter venues accordingly
     $current_user = wp_get_current_user();
     $is_coach = in_array('coach', $current_user->roles);
@@ -2744,8 +2826,6 @@ function intersoccer_render_other_events_page() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    // Clear all caches
-    wp_cache_flush();
     delete_transient('intersoccer_rosters_cache');
 
     // Fetch Other Events data
@@ -2881,6 +2961,14 @@ function intersoccer_render_other_events_page() {
                 <input type="hidden" name="action" value="intersoccer_export_all_rosters">
                 <input type="hidden" name="export_type" value="other">
                 <input type="hidden" name="nonce" value="<?php echo esc_attr(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>">
+                <?php
+                if (function_exists('intersoccer_rosters_print_export_filter_hidden_fields')) {
+                    intersoccer_rosters_print_export_filter_hidden_fields([
+                        'season' => $selected_season,
+                        'product_name' => $selected_product_name,
+                    ]);
+                }
+                ?>
                 <input type="submit" name="export_other_events" class="button button-primary" 
                     value="<?php _e('↓ Export Other Events', 'intersoccer-reports-rosters'); ?>">
             </form>
@@ -2913,7 +3001,7 @@ function intersoccer_render_other_events_page() {
                 </div>
                 <?php if ($selected_season || $selected_product_name): ?>
                 <div class="filter-group">
-                    <a href="<?php echo admin_url('admin.php?page=intersoccer-other-events'); ?>" class="button button-secondary">
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-other-events&clear_isrr_filters=1')); ?>" class="button button-secondary">
                         ↻ <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
                     </a>
                 </div>
@@ -3041,8 +3129,6 @@ function intersoccer_render_all_rosters_page() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    // Clear all caches
-    wp_cache_flush();
     delete_transient('intersoccer_rosters_cache');
 
     $product_names_query = "SELECT DISTINCT product_name FROM $rosters_table WHERE product_name IS NOT NULL" . intersoccer_roster_placeholder_where();

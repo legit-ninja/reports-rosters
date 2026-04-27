@@ -149,7 +149,24 @@ class Database {
                 'unique_indexes' => [
                     'unique_cache_key' => ['cache_key']
                 ]
-            ]
+            ],
+            'intersoccer_roster_admin_log' => [
+                'columns' => [
+                    'id' => 'bigint(20) unsigned NOT NULL AUTO_INCREMENT',
+                    'user_id' => 'bigint(20) unsigned NOT NULL DEFAULT 0',
+                    'action' => 'varchar(80) NOT NULL',
+                    'event_signature' => 'varchar(64) NOT NULL DEFAULT ""',
+                    'payload' => 'longtext NULL',
+                    'created_at' => 'datetime DEFAULT CURRENT_TIMESTAMP',
+                ],
+                'primary_key' => 'id',
+                'indexes' => [
+                    'action_created_idx' => ['action', 'created_at'],
+                    'sig_created_idx' => ['event_signature', 'created_at'],
+                    'user_created_idx' => ['user_id', 'created_at'],
+                ],
+                'unique_indexes' => []
+            ],
         ];
     }
     

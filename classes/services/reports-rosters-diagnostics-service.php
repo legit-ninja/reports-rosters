@@ -294,6 +294,114 @@ class ReportsRostersDiagnosticsService {
     }
 
     /**
+     * Run safe fixes for a single Woo line item.
+     *
+     * @param int $order_item_id
+     * @return array
+     */
+    public function runSafeFixForOrderItem(int $order_item_id): array {
+        $order_item_id = (int) $order_item_id;
+        if ($order_item_id <= 0) {
+            return [
+                'status' => 'error',
+                'message' => __('Invalid order item ID.', 'intersoccer-reports-rosters'),
+                'order_item_id' => $order_item_id,
+            ];
+        }
+
+        $started = microtime(true);
+        $run_id = 'itemfix_' . gmdate('Ymd_His') . '_' . wp_generate_password(6, false, false);
+        $trace_before = $this->traceItem(['order_item_id' => $order_item_id]);
+        $woo = $this->fetchWooRowByOrderItemId($order_item_id);
+        $roster_rows = isset($trace_before['roster_rows']) && is_array($trace_before['roster_rows']) ? $trace_before['roster_rows'] : [];
+        $roster = null;
+        foreach ($roster_rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if ($roster === null || $this->rowCompletenessRank($row) > $this->rowCompletenessRank($roster)) {
+                $roster = $row;
+            }
+        }
+
+        $reasons_before = self::classifyMismatchReasons($woo, $roster);
+        $results = [
+            'fixed_missing_in_rosters' => 0,
+            'fixed_missing_in_woo_meta' => 0,
+            'quarantined_missing_in_woo' => 0,
+            'errors' => [],
+        ];
+
+        if (in_array('missing_in_rosters', $reasons_before, true) && $woo !== null) {
+            if ($this->insertRosterPlaceholderFromWooRow($woo)) {
+                $results['fixed_missing_in_rosters']++;
+            } else {
+                $results['errors'][] = sprintf('Failed inserting roster for order_item_id=%d', $order_item_id);
+            }
+        }
+
+        if ($woo !== null && $roster !== null && in_array('missing_in_woo_meta', $reasons_before, true)) {
+            $backfill_value = trim((string) ($roster['course_day'] ?? ''));
+            if ($backfill_value !== '' && self::normalizeComparableValue($backfill_value) !== '') {
+                $ok_a = $this->upsertOrderItemMeta($order_item_id, 'pa_course-day', $backfill_value);
+                $ok_b = $this->upsertOrderItemMeta($order_item_id, 'attribute_pa_course-day', $backfill_value);
+                if ($ok_a || $ok_b) {
+                    $results['fixed_missing_in_woo_meta']++;
+                } else {
+                    $results['errors'][] = sprintf('Failed backfilling course day meta for order_item_id=%d', $order_item_id);
+                }
+            }
+        }
+
+        if (in_array('missing_in_woo', $reasons_before, true) && $roster !== null) {
+            if ($this->quarantineRosterOrderItem($order_item_id, $run_id)) {
+                $results['quarantined_missing_in_woo']++;
+            } else {
+                $results['errors'][] = sprintf('Failed quarantining orphan roster for order_item_id=%d', $order_item_id);
+            }
+        }
+
+        $trace_after = $this->traceItem(['order_item_id' => $order_item_id]);
+        $woo_after = $this->fetchWooRowByOrderItemId($order_item_id);
+        $roster_rows_after = isset($trace_after['roster_rows']) && is_array($trace_after['roster_rows']) ? $trace_after['roster_rows'] : [];
+        $roster_after = null;
+        foreach ($roster_rows_after as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if ($roster_after === null || $this->rowCompletenessRank($row) > $this->rowCompletenessRank($roster_after)) {
+                $roster_after = $row;
+            }
+        }
+        $reasons_after = self::classifyMismatchReasons($woo_after, $roster_after);
+
+        $action_count = $results['fixed_missing_in_rosters'] + $results['fixed_missing_in_woo_meta'] + $results['quarantined_missing_in_woo'];
+        $status = 'no_action';
+        if (empty($reasons_after)) {
+            $status = $action_count > 0 ? 'fixed' : 'in_sync';
+        } elseif ($action_count > 0) {
+            $status = 'fixed_partial';
+        } elseif (!empty($results['errors'])) {
+            $status = 'error';
+        }
+
+        return [
+            'status' => $status,
+            'message' => $status === 'in_sync'
+                ? __('Order item is already in sync.', 'intersoccer-reports-rosters')
+                : __('Per-item sync action completed.', 'intersoccer-reports-rosters'),
+            'run_id' => $run_id,
+            'order_item_id' => $order_item_id,
+            'reasons_before' => $reasons_before,
+            'reasons_after' => $reasons_after,
+            'trace_before' => $trace_before,
+            'trace_after' => $trace_after,
+            'fix_results' => $results,
+            'elapsed_ms' => (int) round((microtime(true) - $started) * 1000),
+        ];
+    }
+
+    /**
      * Generate mismatch reasons for a Woo-vs-roster pair.
      *
      * @param array|null $woo
@@ -827,6 +935,67 @@ class ReportsRostersDiagnosticsService {
         }
 
         return $filtered;
+    }
+
+    /**
+     * Fetch normalized Woo diagnostics row for one order item.
+     *
+     * @param int $order_item_id
+     * @return array<string,mixed>|null
+     */
+    private function fetchWooRowByOrderItemId(int $order_item_id): ?array {
+        global $wpdb;
+        $order_item_id = (int) $order_item_id;
+        if ($order_item_id <= 0) {
+            return null;
+        }
+
+        $posts_table = $wpdb->prefix . 'posts';
+        $order_items_table = $wpdb->prefix . 'woocommerce_order_items';
+        $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
+
+        $sql = "SELECT
+                    oi.order_item_id,
+                    oi.order_id,
+                    oi.order_item_name,
+                    om_product_id.meta_value AS product_id,
+                    om_variation_id.meta_value AS variation_id,
+                    COALESCE(NULLIF(om_venue.meta_value, ''), om_venue_attr.meta_value, om_venue_us.meta_value, om_venue_us_attr.meta_value) AS venue_value,
+                    COALESCE(NULLIF(om_course_day.meta_value, ''), om_course_day_attr.meta_value, om_course_day_us.meta_value, om_course_day_us_attr.meta_value) AS course_day_value,
+                    COALESCE(om_activity_type.meta_value, pm_activity_type.meta_value) AS activity_type,
+                    pm_activity_type.meta_value AS product_activity_type_attr
+                FROM {$order_items_table} oi
+                LEFT JOIN {$posts_table} p ON p.ID = oi.order_id
+                LEFT JOIN {$order_itemmeta_table} om_product_id
+                    ON oi.order_item_id = om_product_id.order_item_id AND om_product_id.meta_key = '_product_id'
+                LEFT JOIN {$order_itemmeta_table} om_variation_id
+                    ON oi.order_item_id = om_variation_id.order_item_id AND om_variation_id.meta_key = '_variation_id'
+                LEFT JOIN {$order_itemmeta_table} om_venue
+                    ON oi.order_item_id = om_venue.order_item_id AND om_venue.meta_key = 'pa_intersoccer-venues'
+                LEFT JOIN {$order_itemmeta_table} om_venue_attr
+                    ON oi.order_item_id = om_venue_attr.order_item_id AND om_venue_attr.meta_key = 'attribute_pa_intersoccer-venues'
+                LEFT JOIN {$order_itemmeta_table} om_venue_us
+                    ON oi.order_item_id = om_venue_us.order_item_id AND om_venue_us.meta_key = 'pa_intersoccer_venues'
+                LEFT JOIN {$order_itemmeta_table} om_venue_us_attr
+                    ON oi.order_item_id = om_venue_us_attr.order_item_id AND om_venue_us_attr.meta_key = 'attribute_pa_intersoccer_venues'
+                LEFT JOIN {$order_itemmeta_table} om_course_day
+                    ON oi.order_item_id = om_course_day.order_item_id AND om_course_day.meta_key = 'pa_course-day'
+                LEFT JOIN {$order_itemmeta_table} om_course_day_attr
+                    ON oi.order_item_id = om_course_day_attr.order_item_id AND om_course_day_attr.meta_key = 'attribute_pa_course-day'
+                LEFT JOIN {$order_itemmeta_table} om_course_day_us
+                    ON oi.order_item_id = om_course_day_us.order_item_id AND om_course_day_us.meta_key = 'pa_course_day'
+                LEFT JOIN {$order_itemmeta_table} om_course_day_us_attr
+                    ON oi.order_item_id = om_course_day_us_attr.order_item_id AND om_course_day_us_attr.meta_key = 'attribute_pa_course_day'
+                LEFT JOIN {$order_itemmeta_table} om_activity_type
+                    ON oi.order_item_id = om_activity_type.order_item_id AND om_activity_type.meta_key = 'Activity Type'
+                LEFT JOIN {$wpdb->postmeta} pm_activity_type
+                    ON om_product_id.meta_value = pm_activity_type.post_id AND pm_activity_type.meta_key = 'pa_activity-type'
+                WHERE oi.order_item_type = 'line_item'
+                  AND oi.order_item_id = %d
+                LIMIT 1";
+
+        $row = $wpdb->get_row($wpdb->prepare($sql, $order_item_id), ARRAY_A);
+        return is_array($row) ? $row : null;
     }
 
     /**

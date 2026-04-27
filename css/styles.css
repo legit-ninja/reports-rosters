@@ -351,3 +351,38 @@
         display: none !important;
     }
 }
+
+/* Woo order item sync badges */
+.intersoccer-order-item-sync-controls .intersoccer-sync-badge {
+    display: inline-block;
+    margin-right: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid #c3c4c7;
+    background: #f6f7f7;
+    color: #1d2327;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.8;
+    vertical-align: middle;
+}
+
+.intersoccer-order-item-sync-controls .intersoccer-sync-badge-info {
+    background: #e5f5fa;
+    border-color: #72aee6;
+}
+
+.intersoccer-order-item-sync-controls .intersoccer-sync-badge-success {
+    background: #edfaef;
+    border-color: #00a32a;
+}
+
+.intersoccer-order-item-sync-controls .intersoccer-sync-badge-warning {
+    background: #fcf9e8;
+    border-color: #dba617;
+}
+
+.intersoccer-order-item-sync-controls .intersoccer-sync-badge-error {
+    background: #fcf0f1;
+    border-color: #d63638;
+}

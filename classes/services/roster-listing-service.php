@@ -570,6 +570,7 @@ class RosterListingService {
             'course_day' => isset($filters['course_day']) ? sanitize_text_field($filters['course_day']) : '',
             'age_group' => isset($filters['age_group']) ? sanitize_text_field($filters['age_group']) : '',
             'city' => isset($filters['city']) ? sanitize_text_field($filters['city']) : '',
+            'type' => isset($filters['type']) ? sanitize_key($filters['type']) : '',
         ];
     }
 
@@ -715,6 +716,17 @@ class RosterListingService {
             }
             if ($filters['venue'] && $group['venue'] !== $filters['venue']) {
                 return false;
+            }
+            if ($filters['type'] === 'camps') {
+                $is_camp = !empty($group['camp_terms']) && $group['camp_terms'] !== 'N/A';
+                if (!$is_camp) {
+                    return false;
+                }
+            } elseif ($filters['type'] === 'courses') {
+                $is_camp = !empty($group['camp_terms']) && $group['camp_terms'] !== 'N/A';
+                if ($is_camp) {
+                    return false;
+                }
             }
             if ($filters['camp_terms'] && (!isset($group['camp_terms']) || $group['camp_terms'] !== $filters['camp_terms'])) {
                 return false;

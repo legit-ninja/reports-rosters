@@ -367,7 +367,8 @@ class Activator {
             
             $tables_to_validate = [
                 'intersoccer_rosters',
-                'intersoccer_roster_cache'
+                'intersoccer_roster_cache',
+                'intersoccer_roster_admin_log',
             ];
             
             $validation_results = [];
