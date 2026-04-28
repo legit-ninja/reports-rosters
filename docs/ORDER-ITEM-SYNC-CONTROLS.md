@@ -47,3 +47,27 @@ The AJAX endpoint requires:
 - `js/order-item-sync-controls.js`
 - `classes/Ajax/admin-tools-ajax-handler.php`
 - `classes/services/reports-rosters-diagnostics-service.php`
+
+## Woo Order Price Range Filters
+
+The WooCommerce Orders list now supports two optional query params:
+
+- `isrr_min_total`
+- `isrr_max_total`
+
+These render as `Min Total` and `Max Total` inputs on both:
+
+- HPOS Orders list (`admin.php?page=wc-orders`)
+- Classic Orders list (`edit.php?post_type=shop_order`)
+
+Behavior:
+
+- Min only: show orders with totals greater than or equal to Min.
+- Max only: show orders with totals less than or equal to Max.
+- Min + Max: show orders within range.
+- If Min is greater than Max, values are auto-normalized (swapped) before query constraints are applied.
+
+Implementation notes:
+
+- Filter UI + query handlers are in `classes/woocommerce/hooks-manager.php`.
+- Query constraints are additive and preserve existing Woo status/date/search filters.

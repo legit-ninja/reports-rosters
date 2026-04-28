@@ -58,6 +58,12 @@ class HooksManager {
 
         // Woo order edit screen: per-line-item roster sync controls.
         add_action('woocommerce_after_order_itemmeta', [$this, 'render_order_item_sync_controls'], 20, 3);
+
+        // Woo order list screen: filter by order total price range.
+        add_action('woocommerce_order_list_table_restrict_manage_orders', [$this, 'render_hpos_order_total_range_filters'], 20, 1);
+        add_action('restrict_manage_posts', [$this, 'render_classic_order_total_range_filters'], 20, 1);
+        add_filter('woocommerce_order_query_args', [$this, 'apply_hpos_order_total_range_filters'], 20, 1);
+        add_action('pre_get_posts', [$this, 'apply_classic_order_total_range_filters'], 20, 1);
     }
 
     public function handle_order_status($order_id): void {
@@ -203,6 +209,183 @@ class HooksManager {
         echo '  <span class="spinner intersoccer-sync-spinner" style="float:none; margin:0 0 0 8px;"></span>';
         echo '  <div class="intersoccer-order-item-sync-result" style="margin-top:8px;"></div>';
         echo '</div>';
+    }
+
+    /**
+     * Render price range controls on HPOS orders list.
+     *
+     * @param string $order_type
+     */
+    public function render_hpos_order_total_range_filters(string $order_type): void {
+        if ($order_type !== 'shop_order') {
+            return;
+        }
+
+        $this->render_order_total_range_filter_controls();
+    }
+
+    /**
+     * Render price range controls on classic orders list.
+     *
+     * @param string $post_type
+     */
+    public function render_classic_order_total_range_filters(string $post_type): void {
+        if ($post_type !== 'shop_order') {
+            return;
+        }
+
+        $this->render_order_total_range_filter_controls();
+    }
+
+    /**
+     * Apply price range constraints to HPOS order list queries.
+     *
+     * @param array<string,mixed> $query_args
+     * @return array<string,mixed>
+     */
+    public function apply_hpos_order_total_range_filters(array $query_args): array {
+        if (!is_admin()) {
+            return $query_args;
+        }
+
+        $range = $this->get_order_total_range_from_request();
+        if ($range['min'] === null && $range['max'] === null) {
+            return $query_args;
+        }
+
+        $meta_query = isset($query_args['meta_query']) && is_array($query_args['meta_query'])
+            ? $query_args['meta_query']
+            : [];
+
+        if ($range['min'] !== null) {
+            $meta_query[] = [
+                'key' => '_order_total',
+                'value' => $range['min'],
+                'compare' => '>=',
+                'type' => 'DECIMAL(20,6)',
+            ];
+        }
+
+        if ($range['max'] !== null) {
+            $meta_query[] = [
+                'key' => '_order_total',
+                'value' => $range['max'],
+                'compare' => '<=',
+                'type' => 'DECIMAL(20,6)',
+            ];
+        }
+
+        $query_args['meta_query'] = $meta_query;
+        return $query_args;
+    }
+
+    /**
+     * Apply price range constraints to classic order list queries.
+     *
+     * @param \WP_Query $query
+     */
+    public function apply_classic_order_total_range_filters($query): void {
+        if (!is_admin() || !($query instanceof \WP_Query) || !$query->is_main_query()) {
+            return;
+        }
+
+        global $pagenow;
+        if ($pagenow !== 'edit.php') {
+            return;
+        }
+
+        $post_type = (string) $query->get('post_type');
+        if ($post_type !== 'shop_order') {
+            return;
+        }
+
+        $range = $this->get_order_total_range_from_request();
+        if ($range['min'] === null && $range['max'] === null) {
+            return;
+        }
+
+        $meta_query = $query->get('meta_query');
+        if (!is_array($meta_query)) {
+            $meta_query = [];
+        }
+
+        if ($range['min'] !== null) {
+            $meta_query[] = [
+                'key' => '_order_total',
+                'value' => $range['min'],
+                'compare' => '>=',
+                'type' => 'DECIMAL(20,6)',
+            ];
+        }
+
+        if ($range['max'] !== null) {
+            $meta_query[] = [
+                'key' => '_order_total',
+                'value' => $range['max'],
+                'compare' => '<=',
+                'type' => 'DECIMAL(20,6)',
+            ];
+        }
+
+        $query->set('meta_query', $meta_query);
+    }
+
+    /**
+     * Render min/max order total fields used by both classic and HPOS list screens.
+     */
+    private function render_order_total_range_filter_controls(): void {
+        $range = $this->get_order_total_range_from_request();
+        $min = $range['min'] !== null ? number_format((float) $range['min'], 2, '.', '') : '';
+        $max = $range['max'] !== null ? number_format((float) $range['max'], 2, '.', '') : '';
+
+        echo '<input type="number" step="0.01" min="0" name="isrr_min_total" placeholder="' . esc_attr__('Min Total', 'intersoccer-reports-rosters') . '" value="' . esc_attr($min) . '" style="width:110px;margin-right:6px;" />';
+        echo '<input type="number" step="0.01" min="0" name="isrr_max_total" placeholder="' . esc_attr__('Max Total', 'intersoccer-reports-rosters') . '" value="' . esc_attr($max) . '" style="width:110px;" />';
+    }
+
+    /**
+     * Parse and normalize order total range values from request.
+     *
+     * @return array{min:?float,max:?float}
+     */
+    private function get_order_total_range_from_request(): array {
+        $min = $this->normalize_decimal_request_value($_GET['isrr_min_total'] ?? null);
+        $max = $this->normalize_decimal_request_value($_GET['isrr_max_total'] ?? null);
+
+        if ($min !== null && $max !== null && $min > $max) {
+            $tmp = $min;
+            $min = $max;
+            $max = $tmp;
+        }
+
+        return [
+            'min' => $min,
+            'max' => $max,
+        ];
+    }
+
+    /**
+     * Normalize decimal input from request values.
+     *
+     * @param mixed $raw
+     * @return float|null
+     */
+    private function normalize_decimal_request_value($raw): ?float {
+        if ($raw === null) {
+            return null;
+        }
+
+        $value = sanitize_text_field((string) $raw);
+        $value = str_replace(',', '.', trim($value));
+        if ($value === '' || !is_numeric($value)) {
+            return null;
+        }
+
+        $float_value = (float) $value;
+        if ($float_value < 0) {
+            return null;
+        }
+
+        return round($float_value, 6);
     }
 
     /**
