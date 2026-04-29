@@ -38,7 +38,7 @@ function intersoccer_birthdays_display_name(array $row): string {
 }
 
 /**
- * Query and dedupe birthdays from roster data.
+ * Query and dedupe birthdays from roster data, enriched with birthday-party flag and user ID.
  *
  * @return array<int,array<string,mixed>>
  */
@@ -52,6 +52,7 @@ function intersoccer_birthdays_get_entries(): array {
 
     $current_user = wp_get_current_user();
     $is_coach = in_array('coach', (array) $current_user->roles, true);
+    $coach_accessible_venues = [];
 
     if ($is_coach) {
         if (!class_exists('InterSoccer_Admin_Coach_Assignments')) {
@@ -68,7 +69,7 @@ function intersoccer_birthdays_get_entries(): array {
         }
     }
 
-    $sql = "SELECT first_name, last_name, player_name, dob, venue, age_group
+    $sql = "SELECT first_name, last_name, player_name, dob, venue, age_group, parent_email
             FROM {$rosters_table}
             {$where}";
 
@@ -97,15 +98,215 @@ function intersoccer_birthdays_get_entries(): array {
 
         $deduped[$dedupe_key] = [
             'display_name' => $display_name,
-            'dob' => gmdate('Y-m-d', $timestamp),
-            'month' => (int) gmdate('n', $timestamp),
-            'day' => (int) gmdate('j', $timestamp),
-            'venue' => (string) ($row['venue'] ?? ''),
-            'age_group' => (string) ($row['age_group'] ?? ''),
+            'dob'          => gmdate('Y-m-d', $timestamp),
+            'month'        => (int) gmdate('n', $timestamp),
+            'day'          => (int) gmdate('j', $timestamp),
+            'venue'        => (string) ($row['venue'] ?? ''),
+            'age_group'    => (string) ($row['age_group'] ?? ''),
+            'parent_email' => (string) ($row['parent_email'] ?? ''),
+            'first_name'   => trim((string) ($row['first_name'] ?? '')),
+            'last_name'    => trim((string) ($row['last_name'] ?? '')),
         ];
     }
 
-    return array_values($deduped);
+    $entries = array_values($deduped);
+
+    // Check which players have a Birthday Party booking this year.
+    $current_year = (int) gmdate('Y');
+
+    if ($is_coach && !empty($coach_accessible_venues)) {
+        $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
+        $bp_sql = $wpdb->prepare(
+            "SELECT DISTINCT first_name, last_name FROM {$rosters_table}
+             WHERE activity_type = 'Birthday Party' AND YEAR(start_date) = %d
+             AND venue IN ($placeholders)",
+            array_merge([$current_year], array_values($coach_accessible_venues))
+        );
+    } else {
+        $bp_sql = $wpdb->prepare(
+            "SELECT DISTINCT first_name, last_name FROM {$rosters_table}
+             WHERE activity_type = 'Birthday Party' AND YEAR(start_date) = %d",
+            $current_year
+        );
+    }
+
+    $bp_rows = $wpdb->get_results($bp_sql, ARRAY_A);
+    $birthday_party_lookup = [];
+    foreach ((array) $bp_rows as $bp_row) {
+        $key = strtolower(trim((string) ($bp_row['first_name'] ?? '')) . '|' . trim((string) ($bp_row['last_name'] ?? '')));
+        $birthday_party_lookup[$key] = true;
+    }
+
+    // Batch-lookup WordPress user IDs by parent billing email.
+    $emails = array_unique(array_filter(array_column($entries, 'parent_email')));
+    $user_id_map = [];
+    if (!empty($emails)) {
+        $placeholders = implode(',', array_fill(0, count($emails), '%s'));
+        $user_rows = $wpdb->get_results(
+            $wpdb->prepare("SELECT ID, user_email FROM {$wpdb->users} WHERE user_email IN ($placeholders)", $emails),
+            ARRAY_A
+        );
+        foreach ((array) $user_rows as $ur) {
+            $user_id_map[strtolower((string) $ur['user_email'])] = (int) $ur['ID'];
+        }
+    }
+
+    // Enrich entries with birthday-party flag and user ID.
+    foreach ($entries as &$entry) {
+        $first = $entry['first_name'];
+        $last  = $entry['last_name'];
+        if ($first !== '' || $last !== '') {
+            $name_key = strtolower($first . '|' . $last);
+            $entry['has_birthday_party'] = isset($birthday_party_lookup[$name_key]);
+        } else {
+            $entry['has_birthday_party'] = false;
+        }
+        $entry['user_id'] = $user_id_map[strtolower($entry['parent_email'])] ?? 0;
+    }
+    unset($entry);
+
+    return $entries;
+}
+
+/**
+ * Export handler called via admin_post_intersoccer_birthdays_export.
+ */
+function intersoccer_birthdays_export_handler(): void {
+    if (!check_admin_referer('intersoccer_birthdays_export_nonce', '_nonce_birthdays_export')) {
+        wp_die(__('Security check failed.', 'intersoccer-reports-rosters'));
+    }
+
+    if (!current_user_can('manage_options') && !current_user_can('coach')) {
+        wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
+    }
+
+    $view = isset($_POST['view']) ? sanitize_key((string) wp_unslash($_POST['view'])) : 'month';
+    if (!in_array($view, ['month', 'year'], true)) {
+        $view = 'month';
+    }
+
+    $current_year  = (int) gmdate('Y');
+    $current_month = (int) gmdate('n');
+
+    $year = isset($_POST['year']) ? (int) $_POST['year'] : $current_year;
+    if ($year < 2000 || $year > 2100) {
+        $year = $current_year;
+    }
+
+    $month = isset($_POST['month']) ? (int) $_POST['month'] : $current_month;
+    if ($month < 1 || $month > 12) {
+        $month = $current_month;
+    }
+
+    $entries = intersoccer_birthdays_get_entries();
+
+    // Filter to selected month when in month view.
+    if ($view === 'month') {
+        $entries = array_values(array_filter($entries, function ($e) use ($month) {
+            return (int) $e['month'] === $month;
+        }));
+    }
+
+    // Sort by month then day.
+    usort($entries, function ($a, $b) {
+        if ($a['month'] !== $b['month']) {
+            return $a['month'] - $b['month'];
+        }
+        return $a['day'] - $b['day'];
+    });
+
+    $autoloader = dirname(__DIR__) . '/vendor/autoload.php';
+    if (!file_exists($autoloader)) {
+        wp_die(__('Composer autoloader not found. Cannot generate Excel file.', 'intersoccer-reports-rosters'));
+    }
+    require_once $autoloader;
+
+    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet       = $spreadsheet->getActiveSheet();
+
+    $title = $view === 'month'
+        ? date_i18n('F Y', mktime(0, 0, 0, $month, 1, $year))
+        : (string) $year;
+    $sheet->setTitle(mb_substr($title, 0, 31));
+
+    $headers = [
+        __('Name', 'intersoccer-reports-rosters'),
+        __('Birthday', 'intersoccer-reports-rosters'),
+        __('Venue', 'intersoccer-reports-rosters'),
+        __('Age Group', 'intersoccer-reports-rosters'),
+        __('Birthday Party Booked This Year', 'intersoccer-reports-rosters'),
+    ];
+
+    $col = 1;
+    foreach ($headers as $header) {
+        $sheet->setCellValueByColumnAndRow($col, 1, $header);
+        $col++;
+    }
+
+    // Style header row bold with grey background.
+    $last_col     = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers));
+    $header_style = $sheet->getStyle('A1:' . $last_col . '1');
+    $header_style->getFont()->setBold(true);
+    $header_style->getFill()
+        ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+        ->getStartColor()->setARGB('FFE0E0E0');
+
+    $row_num = 2;
+    foreach ($entries as $entry) {
+        $birthday  = date_i18n('F j', mktime(0, 0, 0, (int) $entry['month'], (int) $entry['day']));
+        $has_party = !empty($entry['has_birthday_party']);
+
+        $sheet->setCellValueByColumnAndRow(1, $row_num, (string) $entry['display_name']);
+        $sheet->setCellValueByColumnAndRow(2, $row_num, $birthday);
+        $sheet->setCellValueByColumnAndRow(3, $row_num, (string) $entry['venue']);
+        $sheet->setCellValueByColumnAndRow(4, $row_num, (string) $entry['age_group']);
+        $sheet->setCellValueByColumnAndRow(5, $row_num, $has_party ? __('Yes', 'intersoccer-reports-rosters') : __('No', 'intersoccer-reports-rosters'));
+
+        // Light green for booked, light red for not booked.
+        $bg_argb = $has_party ? 'FFD4EDDA' : 'FFFDE8E8';
+        $sheet->getStyle('A' . $row_num . ':E' . $row_num)
+            ->getFill()
+            ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->getStartColor()->setARGB($bg_argb);
+
+        $row_num++;
+    }
+
+    // Auto-size columns.
+    for ($i = 1; $i <= count($headers); $i++) {
+        $col_letter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i);
+        $sheet->getColumnDimension($col_letter)->setAutoSize(true);
+    }
+
+    $view_slug = $view === 'month'
+        ? gmdate('Y-m', mktime(0, 0, 0, $month, 1, $year))
+        : (string) $year;
+    $filename = 'birthdays-' . $view_slug . '.xlsx';
+
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: max-age=0');
+
+    $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+    $writer->save('php://output');
+    exit;
+}
+
+/**
+ * Return HTML for a birthday name entry: colour-coded span with optional profile link.
+ */
+function intersoccer_birthdays_name_html(array $entry): string {
+    $name      = esc_html((string) $entry['display_name']);
+    $has_party = !empty($entry['has_birthday_party']);
+    $css_class = $has_party ? 'isrr-birthdays-name--has-party' : 'isrr-birthdays-name--no-party';
+    $user_id   = (int) ($entry['user_id'] ?? 0);
+
+    if ($user_id > 0) {
+        $url = get_edit_user_link($user_id);
+        return '<span class="' . esc_attr($css_class) . '"><a href="' . esc_url($url) . '">' . $name . '</a></span>';
+    }
+
+    return '<span class="' . esc_attr($css_class) . '">' . $name . '</span>';
 }
 
 /**
@@ -114,7 +315,7 @@ function intersoccer_birthdays_get_entries(): array {
  * @param array<int,array<string,mixed>> $entries
  */
 function intersoccer_render_birthdays_month_grid(array $entries, int $year, int $month): void {
-    $first_day_ts = mktime(0, 0, 0, $month, 1, $year);
+    $first_day_ts  = mktime(0, 0, 0, $month, 1, $year);
     $days_in_month = (int) date('t', $first_day_ts);
     $start_weekday = (int) date('N', $first_day_ts); // 1 = Monday
 
@@ -155,7 +356,7 @@ function intersoccer_render_birthdays_month_grid(array $entries, int $year, int 
                 <?php if (!empty($days_index[$day])): ?>
                     <ul class="isrr-birthdays-list">
                         <?php foreach ($days_index[$day] as $entry): ?>
-                            <li class="isrr-birthdays-item"><?php echo esc_html((string) $entry['display_name']); ?></li>
+                            <li class="isrr-birthdays-item"><?php echo intersoccer_birthdays_name_html($entry); ?></li>
                         <?php endforeach; ?>
                     </ul>
                 <?php endif; ?>
@@ -178,11 +379,11 @@ function intersoccer_render_birthdays_year_grid(array $entries): void {
 
     foreach ($entries as $entry) {
         $month = (int) $entry['month'];
-        $day = (int) $entry['day'];
+        $day   = (int) $entry['day'];
         if (!isset($months[$month][$day])) {
             $months[$month][$day] = [];
         }
-        $months[$month][$day][] = $entry['display_name'];
+        $months[$month][$day][] = $entry;
     }
     ?>
     <div class="isrr-birthdays-year-grid">
@@ -193,10 +394,17 @@ function intersoccer_render_birthdays_year_grid(array $entries): void {
                     <p class="isrr-birthdays-empty-month"><?php esc_html_e('No birthdays', 'intersoccer-reports-rosters'); ?></p>
                 <?php else: ?>
                     <ul class="isrr-birthdays-year-list">
-                        <?php foreach ($months[$month] as $day => $names): ?>
+                        <?php foreach ($months[$month] as $day => $day_entries): ?>
                             <li>
                                 <strong><?php echo esc_html((string) $day); ?></strong>
-                                <span><?php echo esc_html(implode(', ', (array) $names)); ?></span>
+                                <?php
+                                $name_parts = [];
+                                foreach ($day_entries as $day_entry) {
+                                    $name_parts[] = intersoccer_birthdays_name_html($day_entry);
+                                }
+                                // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- already escaped inside name_html
+                                echo '<span>' . implode(', ', $name_parts) . '</span>';
+                                ?>
                             </li>
                         <?php endforeach; ?>
                     </ul>
@@ -239,9 +447,9 @@ function intersoccer_render_birthdays_page(): void {
 
     $entries = intersoccer_birthdays_get_entries();
 
-    $prev_year = $year;
+    $prev_year  = $year;
     $prev_month = $month;
-    $next_year = $year;
+    $next_year  = $year;
     $next_month = $month;
 
     if ($view === 'month') {
@@ -261,42 +469,30 @@ function intersoccer_render_birthdays_page(): void {
         $next_year = $year + 1;
     }
 
-    $base_params = [
-        'page' => 'intersoccer-birthdays',
-        'view' => $view,
-    ];
-    $prev_url_params = $base_params;
-    $next_url_params = $base_params;
+    $base_params      = ['page' => 'intersoccer-birthdays', 'view' => $view];
+    $prev_url_params  = $base_params;
+    $next_url_params  = $base_params;
     $current_url_params = $base_params;
 
     if ($view === 'month') {
-        $prev_url_params['year'] = $prev_year;
-        $prev_url_params['month'] = $prev_month;
-        $next_url_params['year'] = $next_year;
-        $next_url_params['month'] = $next_month;
+        $prev_url_params['year']    = $prev_year;
+        $prev_url_params['month']   = $prev_month;
+        $next_url_params['year']    = $next_year;
+        $next_url_params['month']   = $next_month;
         $current_url_params['year'] = $current_year;
         $current_url_params['month'] = $current_month;
     } else {
-        $prev_url_params['year'] = $prev_year;
-        $next_url_params['year'] = $next_year;
+        $prev_url_params['year']    = $prev_year;
+        $next_url_params['year']    = $next_year;
         $current_url_params['year'] = $current_year;
     }
 
     $month_view_url = add_query_arg(
-        [
-            'page' => 'intersoccer-birthdays',
-            'view' => 'month',
-            'year' => $year,
-            'month' => $month,
-        ],
+        ['page' => 'intersoccer-birthdays', 'view' => 'month', 'year' => $year, 'month' => $month],
         admin_url('admin.php')
     );
     $year_view_url = add_query_arg(
-        [
-            'page' => 'intersoccer-birthdays',
-            'view' => 'year',
-            'year' => $year,
-        ],
+        ['page' => 'intersoccer-birthdays', 'view' => 'year', 'year' => $year],
         admin_url('admin.php')
     );
     ?>
@@ -304,6 +500,17 @@ function intersoccer_render_birthdays_page(): void {
         <div class="roster-header">
             <h1>🎂 <?php esc_html_e('Birthdays Calendar', 'intersoccer-reports-rosters'); ?></h1>
             <div class="header-actions">
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;">
+                    <input type="hidden" name="action" value="intersoccer_birthdays_export">
+                    <input type="hidden" name="view" value="<?php echo esc_attr($view); ?>">
+                    <input type="hidden" name="year" value="<?php echo esc_attr((string) $year); ?>">
+                    <input type="hidden" name="month" value="<?php echo esc_attr((string) $month); ?>">
+                    <?php wp_nonce_field('intersoccer_birthdays_export_nonce', '_nonce_birthdays_export'); ?>
+                    <button type="submit" class="button button-secondary isrr-birthdays-export-btn">
+                        <span class="dashicons dashicons-download" aria-hidden="true"></span>
+                        <?php esc_html_e('Export to Excel', 'intersoccer-reports-rosters'); ?>
+                    </button>
+                </form>
                 <a href="<?php echo esc_url(add_query_arg($prev_url_params, admin_url('admin.php'))); ?>" class="button button-secondary">
                     <?php esc_html_e('Previous', 'intersoccer-reports-rosters'); ?>
                 </a>
@@ -332,6 +539,14 @@ function intersoccer_render_birthdays_page(): void {
                     <h2><?php echo esc_html((string) $year); ?></h2>
                 <?php endif; ?>
             </div>
+            <div class="isrr-birthdays-legend">
+                <span class="isrr-birthdays-legend-item isrr-birthdays-legend-item--has-party">
+                    <?php esc_html_e('Party booked', 'intersoccer-reports-rosters'); ?>
+                </span>
+                <span class="isrr-birthdays-legend-item isrr-birthdays-legend-item--no-party">
+                    <?php esc_html_e('No party booked', 'intersoccer-reports-rosters'); ?>
+                </span>
+            </div>
         </div>
 
         <?php if (empty($entries)): ?>
@@ -348,4 +563,3 @@ function intersoccer_render_birthdays_page(): void {
     </div>
     <?php
 }
-

@@ -11,6 +11,8 @@
     margin: 0;
 }
 
+/* ---- Month grid ---- */
+
 .isrr-birthdays-month-grid {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -51,6 +53,8 @@
     line-height: 1.3;
 }
 
+/* ---- Year grid ---- */
+
 .isrr-birthdays-year-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -79,4 +83,64 @@
 .isrr-birthdays-empty-month {
     color: #50575e;
     margin-bottom: 0;
+}
+
+/* ---- Name colour indicators ---- */
+
+.isrr-birthdays-name--has-party {
+    color: #155724;
+    font-weight: 600;
+}
+
+.isrr-birthdays-name--no-party {
+    color: #721c24;
+}
+
+.isrr-birthdays-name--has-party a,
+.isrr-birthdays-name--no-party a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.isrr-birthdays-name--has-party a:hover,
+.isrr-birthdays-name--no-party a:hover {
+    text-decoration: underline;
+}
+
+/* ---- Legend ---- */
+
+.isrr-birthdays-legend {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.isrr-birthdays-legend-item {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 3px;
+}
+
+.isrr-birthdays-legend-item--has-party {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.isrr-birthdays-legend-item--no-party {
+    background: #fde8e8;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+/* ---- Export button ---- */
+
+.isrr-birthdays-export-btn .dashicons {
+    vertical-align: middle;
+    margin-top: -2px;
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
 }

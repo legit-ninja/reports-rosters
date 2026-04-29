@@ -129,6 +129,18 @@ add_action('admin_init', function () {
     }
 }, 0);
 
+// Birthday calendar Excel export – fires on admin-post.php before any HTML is output.
+add_action('admin_post_intersoccer_birthdays_export', function () {
+    $birthdays_file = plugin_dir_path(__FILE__) . 'includes/birthdays.php';
+    if (file_exists($birthdays_file)) {
+        require_once $birthdays_file;
+    }
+    if (function_exists('intersoccer_birthdays_export_handler')) {
+        intersoccer_birthdays_export_handler();
+    }
+    wp_die(__('Export failed.', 'intersoccer-reports-rosters'));
+});
+
 // Register strings for WPML translation on init to ensure WPML is loaded
 add_action('init', function () {
     if (function_exists('icl_register_string')) {
