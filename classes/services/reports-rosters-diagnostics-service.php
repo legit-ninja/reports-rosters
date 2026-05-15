@@ -325,12 +325,48 @@ class ReportsRostersDiagnosticsService {
         }
 
         $reasons_before = self::classifyMismatchReasons($woo, $roster);
+        $needs_name_repair = false;
+        foreach ($roster_rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (function_exists('intersoccer_roster_row_names_incomplete')
+                && intersoccer_roster_row_names_incomplete($row)) {
+                $needs_name_repair = true;
+                break;
+            }
+        }
+
+        $will_rebuild = $needs_name_repair && function_exists('intersoccer_oop_get_roster_builder');
+
         $results = [
             'fixed_missing_in_rosters' => 0,
             'fixed_missing_in_woo_meta' => 0,
             'quarantined_missing_in_woo' => 0,
+            'rebuilt_player_names' => 0,
+            'backfilled_player_names' => 0,
             'errors' => [],
         ];
+
+        if ($will_rebuild) {
+            $rebuilt = $this->rebuildRosterNamesForOrderItem($order_item_id);
+            if ($rebuilt) {
+                $results['rebuilt_player_names']++;
+            } else {
+                $results['errors'][] = sprintf('Failed rebuilding roster names for order_item_id=%d', $order_item_id);
+            }
+        } elseif ($needs_name_repair) {
+            foreach ($roster_rows as $row) {
+                if (!is_array($row) || !function_exists('intersoccer_roster_backfill_player_name_fields')) {
+                    continue;
+                }
+                $filled = intersoccer_roster_backfill_player_name_fields($row);
+                if (function_exists('intersoccer_roster_persist_player_name_fields')
+                    && intersoccer_roster_persist_player_name_fields($filled)) {
+                    $results['backfilled_player_names']++;
+                }
+            }
+        }
 
         if (in_array('missing_in_rosters', $reasons_before, true) && $woo !== null) {
             if ($this->insertRosterPlaceholderFromWooRow($woo)) {
@@ -362,6 +398,7 @@ class ReportsRostersDiagnosticsService {
         }
 
         $trace_after = $this->traceItem(['order_item_id' => $order_item_id]);
+
         $woo_after = $this->fetchWooRowByOrderItemId($order_item_id);
         $roster_rows_after = isset($trace_after['roster_rows']) && is_array($trace_after['roster_rows']) ? $trace_after['roster_rows'] : [];
         $roster_after = null;
@@ -375,7 +412,8 @@ class ReportsRostersDiagnosticsService {
         }
         $reasons_after = self::classifyMismatchReasons($woo_after, $roster_after);
 
-        $action_count = $results['fixed_missing_in_rosters'] + $results['fixed_missing_in_woo_meta'] + $results['quarantined_missing_in_woo'];
+        $action_count = $results['fixed_missing_in_rosters'] + $results['fixed_missing_in_woo_meta']
+            + $results['quarantined_missing_in_woo'] + $results['rebuilt_player_names'] + $results['backfilled_player_names'];
         $status = 'no_action';
         if (empty($reasons_after)) {
             $status = $action_count > 0 ? 'fixed' : 'in_sync';
@@ -1032,7 +1070,44 @@ class ReportsRostersDiagnosticsService {
         if ($day !== '') {
             $score += 1;
         }
+        if (function_exists('intersoccer_roster_row_names_incomplete') && !intersoccer_roster_row_names_incomplete($row)) {
+            $score += 2;
+        }
         return $score;
+    }
+
+    /**
+     * Rebuild roster row(s) for an order line via OOP builder (updates player names from Woo meta).
+     *
+     * @param int $order_item_id
+     * @return bool
+     */
+    private function rebuildRosterNamesForOrderItem(int $order_item_id): bool {
+        global $wpdb;
+        $order_item_id = (int) $order_item_id;
+        if ($order_item_id <= 0 || !function_exists('intersoccer_oop_get_roster_builder')) {
+            return false;
+        }
+
+        $order_id = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT order_id FROM {$wpdb->prefix}woocommerce_order_items WHERE order_item_id = %d LIMIT 1",
+            $order_item_id
+        ));
+        if ($order_id <= 0) {
+            return false;
+        }
+
+        try {
+            $builder = intersoccer_oop_get_roster_builder();
+            $collection = $builder->buildRosterFromOrder($order_id, [
+                'validate_data' => true,
+                'skip_duplicates' => false,
+                'update_existing' => true,
+            ]);
+            return $collection !== null;
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 }
 
