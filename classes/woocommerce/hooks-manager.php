@@ -162,6 +162,13 @@ class HooksManager {
             return;
         }
 
+        if (!function_exists('intersoccer_get_roster_details_url_for_order_item')) {
+            $details_file = dirname(__DIR__, 2) . '/includes/roster-details.php';
+            if (is_readable($details_file)) {
+                require_once $details_file;
+            }
+        }
+
         $item_id = (int) $item_id;
         if ($item_id <= 0) {
             return;
@@ -190,22 +197,21 @@ class HooksManager {
             ));
         }
 
-        // #region agent log
-        error_log(
-            'DEBUG21E376 H1 render_order_item_sync_controls ' .
-            wp_json_encode([
-                'order_item_id' => $item_id,
-                'item_type' => $item_type,
-                'default_badge' => 'Unchecked',
-                'rosters_count' => $rosters_count,
-            ])
-        );
-        // #endregion
-
         echo '<div class="intersoccer-order-item-sync-controls" data-order-item-id="' . esc_attr((string) $item_id) . '" style="margin-top:8px;">';
         echo '  <span class="intersoccer-sync-badge intersoccer-sync-badge-unchecked">' . esc_html__('Unchecked', 'intersoccer-reports-rosters') . '</span>';
         echo '  <button type="button" class="button button-small intersoccer-check-sync">' . esc_html__('Check Sync', 'intersoccer-reports-rosters') . '</button> ';
-        echo '  <button type="button" class="button button-small intersoccer-fix-sync" style="margin-left:6px;">' . esc_html__('Fix Sync', 'intersoccer-reports-rosters') . '</button>';
+        echo '  <button type="button" class="button button-small intersoccer-fix-sync" style="margin-left:6px;">' . esc_html__('Fix Sync', 'intersoccer-reports-rosters') . '</button> ';
+
+        if ($rosters_count > 0 && function_exists('intersoccer_get_roster_details_url_for_order_item')) {
+            $roster_url = intersoccer_get_roster_details_url_for_order_item($item_id);
+            if ($roster_url !== null && $roster_url !== '') {
+                echo '<a href="' . esc_url($roster_url) . '" class="button button-small" style="margin-left:6px;">'
+                    . esc_html__('View Roster', 'intersoccer-reports-rosters') . '</a>';
+            }
+        } elseif ($rosters_count === 0) {
+            echo '<span class="description" style="margin-left:6px;">' . esc_html__('No roster yet', 'intersoccer-reports-rosters') . '</span>';
+        }
+
         echo '  <span class="spinner intersoccer-sync-spinner" style="float:none; margin:0 0 0 8px;"></span>';
         echo '  <div class="intersoccer-order-item-sync-result" style="margin-top:8px;"></div>';
         echo '</div>';

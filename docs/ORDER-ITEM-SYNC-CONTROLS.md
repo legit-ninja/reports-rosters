@@ -11,8 +11,23 @@ Controls shown per line item:
 
 - `Check Sync`
 - `Fix Sync`
+- `View Roster` (link, when a roster row exists for the line item)
 
-Both controls use standard WordPress/WooCommerce button and notice classes.
+Both sync controls use standard WordPress/WooCommerce button and notice classes. When no roster row exists yet, a muted **No roster yet** label is shown instead of the link.
+
+## View Roster link
+
+`View Roster` opens the admin **Roster Details** page for the **consolidated event group** that includes the line item—the same grouping used by **View Roster** on Courses/Camps listings (all `order_item_id` values sharing the consolidated roster key).
+
+URL resolution (`intersoccer_get_roster_details_url_for_order_item()` in `includes/roster-details.php`):
+
+1. Load roster row(s) for the `order_item_id`.
+2. Find sibling roster rows (narrow DB query by variation/venue/course day or camp terms).
+3. Filter siblings with `intersoccer_consolidated_roster_group_key()` so FR/DE/EN rows group together.
+4. Build `admin.php?page=intersoccer-roster-details&from=...&order_item_ids=...`.
+5. Tournaments use `event_signature` when set; single-row fallback uses `event_signature` or one `order_item_id`.
+
+The link opens in the same tab (same as listing **View Roster** buttons).
 
 ## What "Check Sync" Does
 
@@ -43,6 +58,7 @@ The AJAX endpoint requires:
 ## Related Implementation Files
 
 - `classes/woocommerce/hooks-manager.php`
+- `includes/roster-details.php` (URL resolver: `intersoccer_get_roster_details_url_for_order_item()`)
 - `classes/Admin/asset-manager.php`
 - `js/order-item-sync-controls.js`
 - `classes/Ajax/admin-tools-ajax-handler.php`
