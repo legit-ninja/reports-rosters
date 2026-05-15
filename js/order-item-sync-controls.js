@@ -3,10 +3,6 @@ jQuery(function ($) {
         return;
     }
 
-    // #region agent log
-    fetch('http://127.0.0.1:7535/ingest/7427afce-080a-4607-92da-13d96f476bb6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'21e376'},body:JSON.stringify({sessionId:'21e376',runId:'run1',hypothesisId:'H3',location:'js/order-item-sync-controls.js:init',message:'Sync controls JS initialized',data:{controlsCount:$('.intersoccer-order-item-sync-controls').length,initialBadges:$('.intersoccer-order-item-sync-controls').map(function(){return {orderItemId:$(this).data('order-item-id'),badgeText:$(this).find('.intersoccer-sync-badge').text().trim()};}).get().slice(0,20)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-
     function escHtml(value) {
         return $('<div>').text(value == null ? '' : String(value)).html();
     }
@@ -67,10 +63,6 @@ jQuery(function ($) {
             .removeClass('intersoccer-sync-badge-unchecked intersoccer-sync-badge-info intersoccer-sync-badge-success intersoccer-sync-badge-warning intersoccer-sync-badge-error')
             .addClass('intersoccer-sync-badge-' + state)
             .text(label);
-
-        // #region agent log
-        fetch('http://127.0.0.1:7535/ingest/7427afce-080a-4607-92da-13d96f476bb6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'21e376'},body:JSON.stringify({sessionId:'21e376',runId:'run1',hypothesisId:'H4',location:'js/order-item-sync-controls.js:setBadge',message:'Badge updated',data:{orderItemId:$wrap.data('order-item-id')||null,state:state,label:label},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
     }
 
     function request(action, payload) {
@@ -138,9 +130,6 @@ jQuery(function ($) {
                     return;
                 }
                 var summary = summarizeTrace(resp.data);
-                // #region agent log
-                fetch('http://127.0.0.1:7535/ingest/7427afce-080a-4607-92da-13d96f476bb6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'21e376'},body:JSON.stringify({sessionId:'21e376',runId:'run1',hypothesisId:'H2',location:'js/order-item-sync-controls.js:checkSyncDone',message:'Trace response summarized',data:{orderItemId:orderItemId,rosterRows:Array.isArray(resp.data.roster_rows)?resp.data.roster_rows.length:-1,inSync:summary.inSync},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
                 setBadge($wrap, summary.inSync ? 'success' : 'warning', summary.inSync ? strings('badge_in_sync', 'In sync') : strings('badge_out_of_sync', 'Out of sync'));
                 renderNotice($result, summary.type, summary.message, summary.details);
             })
@@ -182,9 +171,6 @@ jQuery(function ($) {
                 }
 
                 var data = resp.data;
-                // #region agent log
-                fetch('http://127.0.0.1:7535/ingest/7427afce-080a-4607-92da-13d96f476bb6',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'21e376'},body:JSON.stringify({sessionId:'21e376',runId:'run1',hypothesisId:'H2',location:'js/order-item-sync-controls.js:fixSyncDone',message:'Fix response received',data:{orderItemId:orderItemId,status:data.status||null,reasonsAfter:data.reasons_after||[],fixResults:data.fix_results||{}},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
                 var status = data.status || 'no_action';
                 var type = 'info';
                 var message = data.message || strings('no_action', 'No changes were needed.');

@@ -205,19 +205,6 @@ class AssetManager {
             || $is_classic_order_edit
             || $is_hpos_order_edit;
 
-        // #region agent log
-        error_log(
-            'DEBUG21E376 H2 asset_manager_orders_screen_eval ' .
-            wp_json_encode([
-                'hook' => $hook,
-                'screen_id' => $screen_id,
-                'is_orders_screen' => $is_orders_screen,
-                'is_classic_order_edit' => $is_classic_order_edit,
-                'is_hpos_order_edit' => $is_hpos_order_edit,
-            ])
-        );
-        // #endregion
-
         if ($is_orders_screen) {
             wp_enqueue_script(
                 'intersoccer-orders-js',
