@@ -41,6 +41,7 @@ class Roster extends AbstractModel {
         'product_id',
         'customer_id',
         'player_index',
+        'player_name',
         'first_name',
         'last_name',
         'dob',
@@ -181,7 +182,27 @@ class Roster extends AbstractModel {
      * @return string Full name
      */
     public function getFullName() {
-        return trim($this->first_name . ' ' . $this->last_name);
+        $full = trim((string) $this->first_name . ' ' . (string) $this->last_name);
+        if ($full !== '') {
+            return $full;
+        }
+        $stored = trim((string) ($this->player_name ?? ''));
+        if ($stored !== '' && (!function_exists('intersoccer_roster_is_placeholder_player_name')
+                || !intersoccer_roster_is_placeholder_player_name($stored))) {
+            return $stored;
+        }
+        return '';
+    }
+
+    /**
+     * @param array $attributes
+     * @return self
+     */
+    public function fill(array $attributes) {
+        if (function_exists('intersoccer_roster_backfill_player_name_fields')) {
+            $attributes = intersoccer_roster_backfill_player_name_fields($attributes);
+        }
+        return parent::fill($attributes);
     }
     
     /**

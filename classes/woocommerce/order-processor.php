@@ -94,9 +94,20 @@ class OrderProcessor {
             if ($wc_order->get_status() === 'completed') {
                 $existing_count = $this->roster_repository->count(['order_id' => $wc_order->get_id()]);
                 if ($existing_count > 0) {
-                    $this->last_rosters = $this->roster_repository->where(['order_id' => $wc_order->get_id()]);
-                    $this->last_order_completed = true;
-                    return true;
+                    $existing = $this->roster_repository->where(['order_id' => $wc_order->get_id()]);
+                    $rows_with_incomplete_names = 0;
+                    foreach ($existing as $row) {
+                        $row_data = method_exists($row, 'toArray') ? $row->toArray() : (array) $row;
+                        if (function_exists('intersoccer_roster_row_names_incomplete')
+                            && intersoccer_roster_row_names_incomplete($row_data)) {
+                            $rows_with_incomplete_names++;
+                        }
+                    }
+                    if ($rows_with_incomplete_names === 0) {
+                        $this->last_rosters = $existing;
+                        $this->last_order_completed = true;
+                        return true;
+                    }
                 }
             }
 

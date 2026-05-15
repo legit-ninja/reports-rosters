@@ -600,7 +600,7 @@ class RosterBuilder {
                     $customer_data, 
                     $options
                 );
-                
+
                 $rosters = $rosters->merge($item_rosters);
                 
             } catch (\Exception $e) {
@@ -791,6 +791,11 @@ class RosterBuilder {
                 $order_data['player_index'] = $value;
             }
         }
+
+        if (function_exists('intersoccer_apply_order_item_attribute_meta_to_data')) {
+            $order_data = intersoccer_apply_order_item_attribute_meta_to_data($order_data, $item);
+        }
+
         // Extract additional data from product attributes
         if ($product && $variation_id) {
             $variation = wc_get_product($variation_id);
@@ -1007,7 +1012,10 @@ class RosterBuilder {
             }
         }
 
-        // Default to original human readable value to preserve context.
+        if (function_exists('intersoccer_canonical_activity_type_for_roster')) {
+            return intersoccer_canonical_activity_type_for_roster($value);
+        }
+
         return ucwords(trim($value));
     }
     
@@ -1075,12 +1083,22 @@ class RosterBuilder {
      * @return array Complete roster data
      */
     private function buildRosterData(array $order_data, Player $player, array $customer_data) {
+        $player_first = trim((string) $player->first_name);
+        $player_last = trim((string) $player->last_name);
+        if ($player_first === '' && $player_last === '' && !empty($order_data['assigned_attendee'])) {
+            if (function_exists('intersoccer_roster_parse_attendee_display_name')) {
+                $parsed = intersoccer_roster_parse_attendee_display_name((string) $order_data['assigned_attendee']);
+                $player_first = $parsed['first_name'];
+                $player_last = $parsed['last_name'];
+            }
+        }
+
         // Merge all data sources
         $roster_data = array_merge($order_data, [
             // Player data
             'player_index' => $player->player_index,
-            'first_name' => $player->first_name,
-            'last_name' => $player->last_name,
+            'first_name' => $player_first,
+            'last_name' => $player_last,
             'dob' => $player->dob,
             'gender' => $player->gender,
             'medical_conditions' => $player->medical_conditions,
@@ -1106,6 +1124,19 @@ class RosterBuilder {
                 ? $roster_data['start_date']
                 : date('Y-m-d');
             $roster_data['age'] = $this->computeAgeFromDob($roster_data['dob'], $refDate);
+        }
+
+        if (function_exists('intersoccer_roster_sync_product_ids_from_order_line')) {
+            $roster_data = intersoccer_roster_sync_product_ids_from_order_line($roster_data);
+        }
+        if (function_exists('intersoccer_roster_canonicalize_row_product_ids')) {
+            $roster_data = intersoccer_roster_canonicalize_row_product_ids($roster_data);
+        }
+        if (function_exists('intersoccer_roster_backfill_facets_from_variation')) {
+            $roster_data = intersoccer_roster_backfill_facets_from_variation($roster_data);
+        }
+        if (function_exists('intersoccer_roster_backfill_facets_from_order_item_meta')) {
+            $roster_data = intersoccer_roster_backfill_facets_from_order_item_meta($roster_data);
         }
 
         // Normalize event data to English for consistent storage
@@ -1148,8 +1179,11 @@ class RosterBuilder {
             $roster_data['season'] = $normalized_event_data['season'] ?? $roster_data['season'] ?? '';
             $roster_data['city'] = $this->termNameForStorage($normalized_event_data['city'] ?? $roster_data['city'] ?? '', 'pa_city');
             $roster_data['canton_region'] = $this->termNameForStorage($normalized_event_data['canton_region'] ?? $roster_data['canton_region'] ?? '', 'pa_canton-region');
-            $roster_data['activity_type'] = $normalized_event_data['activity_type'] ?? $roster_data['activity_type'] ?? '';
-            
+            $raw_activity = $normalized_event_data['activity_type'] ?? $roster_data['activity_type'] ?? '';
+            $roster_data['activity_type'] = function_exists('intersoccer_canonical_activity_type_for_roster')
+                ? intersoccer_canonical_activity_type_for_roster($raw_activity)
+                : $raw_activity;
+
             // Generate event signature using normalized values (same as stored values)
             // Use the signature generator which expects normalized data
             $roster_data['event_signature'] = $this->signature_generator->generate($normalized_event_data);
@@ -1186,7 +1220,11 @@ class RosterBuilder {
         
         // Parse event details from various sources
         $roster_data['event_details'] = $this->buildEventDetails($roster_data);
-        
+
+        if (function_exists('intersoccer_roster_backfill_player_name_fields')) {
+            $roster_data = intersoccer_roster_backfill_player_name_fields($roster_data);
+        }
+
         return $roster_data;
     }
     

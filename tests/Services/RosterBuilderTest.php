@@ -111,6 +111,36 @@ class RosterBuilderTest extends TestCase {
         $this->assertSame('U10', $result['age_group']);
         $this->assertSame('Theo Kuhn', $result['assigned_attendee']);
     }
+
+    public function test_extract_order_item_data_maps_pa_attribute_meta_keys() {
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(42);
+        $order->shouldReceive('get_customer_id')->andReturn(7);
+        $order->shouldReceive('get_status')->andReturn('processing');
+
+        $item = Mockery::mock('WC_Order_Item_Product');
+        $item->shouldReceive('get_product')->andReturn(null);
+        $item->shouldReceive('get_variation_id')->andReturn(37638);
+        $item->shouldReceive('get_product_id')->andReturn(37635);
+        $item->shouldReceive('get_meta')->andReturn('');
+        $item->shouldReceive('get_meta_data')->andReturn([
+            $this->createOrderItemMeta('pa_program-season', 'spring-summer-2026'),
+            $this->createOrderItemMeta('attribute_pa_course-day', 'dimanche'),
+            $this->createOrderItemMeta('pa_intersoccer-venues', 'lausanne-centre-sportif-dorigny-unil-fr'),
+            $this->createOrderItemMeta('Type d’activité', 'Cours'),
+        ]);
+
+        $reflection = new \ReflectionClass($this->rosterBuilder);
+        $method = $reflection->getMethod('extractOrderItemData');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($this->rosterBuilder, $order, 4760, $item);
+
+        $this->assertSame('spring-summer-2026', $result['season']);
+        $this->assertSame('dimanche', $result['course_day']);
+        $this->assertSame('lausanne-centre-sportif-dorigny-unil-fr', $result['venue']);
+        $this->assertSame('Course', $result['activity_type']);
+    }
     
     public function test_build_rosters_with_empty_options() {
         $this->database->shouldReceive('transaction')

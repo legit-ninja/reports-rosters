@@ -91,6 +91,7 @@ class PlayerMatcher {
             ]);
             
             $assigned_players = new PlayersCollection();
+            $winning_strategy = '';
             
             // Try each assignment strategy in order
             foreach ($this->assignment_strategies as $strategy) {
@@ -98,6 +99,7 @@ class PlayerMatcher {
                 
                 if ($strategy_players->isNotEmpty()) {
                     $assigned_players = $strategy_players;
+                    $winning_strategy = $strategy;
                     $this->logger->debug('Successfully assigned players using strategy', [
                         'strategy' => $strategy,
                         'assigned_count' => $assigned_players->count(),
@@ -106,7 +108,7 @@ class PlayerMatcher {
                     break;
                 }
             }
-            
+
             // Validate player assignments (age/gender can be skipped for roster build)
             $validated_players = $this->validatePlayerAssignments($assigned_players, $item, $options);
             
@@ -180,9 +182,18 @@ class PlayerMatcher {
             $assigned_player = $customer_players->firstWhere('player_index', $player_index);
             
             if ($assigned_player) {
+                $full_name = trim($assigned_player->getFullName());
+                if ($full_name === '') {
+                    $this->logger->debug('Metadata index matched player with empty name; trying next strategy', [
+                        'player_index' => $player_index,
+                        'item_id' => $item->get_id(),
+                    ]);
+                    return new PlayersCollection();
+                }
+
                 $this->logger->debug('Found player by metadata index', [
                     'player_index' => $player_index,
-                    'player_name' => $assigned_player->getFullName()
+                    'player_name' => $full_name,
                 ]);
                 
                 $collection = new PlayersCollection();
