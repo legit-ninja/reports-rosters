@@ -276,6 +276,62 @@ function intersoccer_normalize_order_item_meta_key($raw_key) {
 }
 
 /**
+ * Resolve assigned attendee label from order item meta (EN/FR/DE keys).
+ *
+ * @param int $order_item_id
+ * @return string
+ */
+function intersoccer_resolve_assigned_attendee_from_order_item($order_item_id) {
+    $order_item_id = (int) $order_item_id;
+    if ($order_item_id <= 0 || !function_exists('wc_get_order_item_meta')) {
+        return '';
+    }
+
+    $direct = trim((string) wc_get_order_item_meta($order_item_id, 'Assigned Attendee', true));
+    if ($direct !== '') {
+        return $direct;
+    }
+
+    $canonical = 'Assigned Attendee';
+    $variants = intersoccer_order_meta_build_variants_array();
+    $normalized_targets = isset($variants[$canonical]) ? $variants[$canonical] : [
+        intersoccer_order_meta_normalize_comparison_string($canonical),
+    ];
+
+    global $wpdb;
+    if (!isset($wpdb) || !is_object($wpdb)) {
+        return '';
+    }
+
+    $table = $wpdb->prefix . 'woocommerce_order_itemmeta';
+    $rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT meta_key, meta_value FROM {$table} WHERE order_item_id = %d",
+        $order_item_id
+    ), ARRAY_A);
+
+    if (!is_array($rows)) {
+        return '';
+    }
+
+    foreach ($rows as $row) {
+        $key = isset($row['meta_key']) ? (string) $row['meta_key'] : '';
+        if ($key === '') {
+            continue;
+        }
+        $normalized = intersoccer_order_meta_normalize_comparison_string($key);
+        if (!in_array($normalized, $normalized_targets, true)) {
+            continue;
+        }
+        $value = trim((string) ($row['meta_value'] ?? ''));
+        if ($value !== '') {
+            return $value;
+        }
+    }
+
+    return '';
+}
+
+/**
  * Canonical booking type labels for roster/Final Reports (aligned with RosterBuilder::normalizeBookingTypeValue).
  *
  * @param mixed $value
@@ -333,6 +389,113 @@ function intersoccer_normalize_selected_days_string_for_reports($value) {
     }
     $out = array_unique($out);
     return implode(', ', $out);
+}
+
+if (!function_exists('intersoccer_get_wc_order_item_attribute_meta_field_map')) {
+    /**
+     * WooCommerce order line meta keys (attribute slugs) => roster field names.
+     *
+     * @return array<string,string>
+     */
+    function intersoccer_get_wc_order_item_attribute_meta_field_map() {
+        return [
+            'pa_program-season' => 'season',
+            'attribute_pa_program-season' => 'season',
+            'pa_intersoccer-venues' => 'venue',
+            'attribute_pa_intersoccer-venues' => 'venue',
+            'pa_intersoccer_venues' => 'venue',
+            'attribute_pa_intersoccer_venues' => 'venue',
+            'pa_age-group' => 'age_group',
+            'attribute_pa_age-group' => 'age_group',
+            'pa_course-day' => 'course_day',
+            'attribute_pa_course-day' => 'course_day',
+            'pa_course_day' => 'course_day',
+            'attribute_pa_course_day' => 'course_day',
+            'pa_course-times' => 'course_times',
+            'attribute_pa_course-times' => 'course_times',
+            'pa_camp-times' => 'camp_times',
+            'attribute_pa_camp-times' => 'camp_times',
+            'pa_camp-terms' => 'event_type',
+            'attribute_pa_camp-terms' => 'event_type',
+            'pa_activity-type' => 'activity_type',
+            'attribute_pa_activity-type' => 'activity_type',
+            'pa_booking-type' => 'booking_type',
+            'attribute_pa_booking-type' => 'booking_type',
+            'pa_canton-region' => 'region',
+            'attribute_pa_canton-region' => 'region',
+            'pa_city' => 'city',
+            'attribute_pa_city' => 'city',
+        ];
+    }
+}
+
+if (!function_exists('intersoccer_apply_order_item_attribute_meta_to_data')) {
+    /**
+     * Copy Woo attribute meta (pa_* / attribute_pa_*) into roster/order_data fields when still empty.
+     *
+     * @param array      $data
+     * @param int|object $item_or_item_id
+     * @return array
+     */
+    function intersoccer_apply_order_item_attribute_meta_to_data(array $data, $item_or_item_id) {
+        $raw = [];
+        if (is_object($item_or_item_id) && method_exists($item_or_item_id, 'get_meta_data')) {
+            foreach ($item_or_item_id->get_meta_data() as $meta) {
+                $meta_data = $meta->get_data();
+                $key = isset($meta_data['key']) ? (string) $meta_data['key'] : '';
+                if ($key !== '') {
+                    $raw[$key] = $meta_data['value'] ?? '';
+                }
+            }
+        } elseif (is_numeric($item_or_item_id) && (int) $item_or_item_id > 0 && function_exists('wc_get_order_item_meta')) {
+            $raw = wc_get_order_item_meta((int) $item_or_item_id, '', false);
+            if (!is_array($raw)) {
+                $raw = [];
+            }
+        }
+
+        if (empty($raw)) {
+            return $data;
+        }
+
+        $is_empty = static function ($value) {
+            $value = trim((string) ($value ?? ''));
+            return $value === '' || strcasecmp($value, 'N/A') === 0;
+        };
+
+        foreach (intersoccer_get_wc_order_item_attribute_meta_field_map() as $meta_key => $field) {
+            if (!array_key_exists($meta_key, $raw) || !$is_empty($data[$field] ?? '')) {
+                continue;
+            }
+            $val = $raw[$meta_key];
+            if (is_array($val)) {
+                $val = $val[0] ?? implode(', ', array_map('trim', $val));
+            }
+            $val = trim((string) $val);
+            if ($val === '') {
+                continue;
+            }
+            $data[$field] = $val;
+        }
+
+        return $data;
+    }
+}
+
+if (!function_exists('intersoccer_roster_backfill_facets_from_order_item_meta')) {
+    /**
+     * Backfill empty roster facets from Woo order line attribute meta (pa_* keys).
+     *
+     * @param array $row
+     * @return array
+     */
+    function intersoccer_roster_backfill_facets_from_order_item_meta(array $row) {
+        $order_item_id = (int) ($row['order_item_id'] ?? 0);
+        if ($order_item_id <= 0) {
+            return $row;
+        }
+        return intersoccer_apply_order_item_attribute_meta_to_data($row, $order_item_id);
+    }
 }
 
 if (!function_exists('intersoccer_roster_effective_selected_days_string')) {
