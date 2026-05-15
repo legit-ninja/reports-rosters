@@ -36,6 +36,272 @@ function intersoccer_get_sort_indicator($field, $current_sort, $current_order) {
 }
 
 /**
+ * Consolidated listing kind for a roster row ("course" or "camp").
+ *
+ * @param array<string,mixed> $row
+ * @return string
+ */
+function intersoccer_roster_consolidated_kind_for_row(array $row) {
+    $activity = strtolower((string) ($row['activity_type'] ?? ''));
+    return strpos($activity, 'course') !== false ? 'course' : 'camp';
+}
+
+/**
+ * Roster Details "from" query param for back-navigation context.
+ *
+ * @param array<string,mixed> $row
+ * @return string
+ */
+function intersoccer_roster_details_from_page_for_row(array $row) {
+    $girls_only = !empty($row['girls_only']);
+    $activity = (string) ($row['activity_type'] ?? '');
+
+    if (stripos($activity, 'Tournament') !== false) {
+        return 'tournaments';
+    }
+    if (stripos($activity, 'Course') !== false) {
+        return $girls_only ? 'girls-only' : 'courses';
+    }
+    if (stripos($activity, 'Camp') !== false) {
+        return $girls_only ? 'girls-only' : 'camps';
+    }
+
+    return '';
+}
+
+/**
+ * Collect order_item_ids sharing the same consolidated roster group key as $anchor.
+ *
+ * @param array<string,mixed>   $anchor
+ * @param array<int,array<string,mixed>> $candidates
+ * @param string $kind "course" or "camp"
+ * @return int[]
+ */
+function intersoccer_collect_consolidated_order_item_ids_for_roster_row(array $anchor, array $candidates, $kind) {
+    $anchor_id = (int) ($anchor['order_item_id'] ?? 0);
+    if (!function_exists('intersoccer_consolidated_roster_group_key')) {
+        return $anchor_id > 0 ? [$anchor_id] : [];
+    }
+
+    $kind = strtolower((string) $kind) === 'course' ? 'course' : 'camp';
+    $target_key = intersoccer_consolidated_roster_group_key($anchor, $kind);
+    $ids = [];
+
+    foreach ($candidates as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        if (intersoccer_consolidated_roster_group_key($row, $kind) !== $target_key) {
+            continue;
+        }
+        $oid = (int) ($row['order_item_id'] ?? 0);
+        if ($oid > 0) {
+            $ids[$oid] = $oid;
+        }
+    }
+
+    if ($anchor_id > 0) {
+        $ids[$anchor_id] = $anchor_id;
+    }
+
+    $result = array_values($ids);
+    sort($result, SORT_NUMERIC);
+
+    return $result;
+}
+
+/**
+ * Pick the best roster row when multiple exist for one order_item_id.
+ *
+ * @param array<int,array<string,mixed>> $rows
+ * @return array<string,mixed>|null
+ */
+function intersoccer_pick_best_roster_row_for_order_item(array $rows) {
+    if (empty($rows)) {
+        return null;
+    }
+
+    $best = null;
+    $best_score = -1;
+    $best_id = 0;
+
+    foreach ($rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $score = 0;
+        $venue = trim((string) ($row['venue'] ?? ''));
+        $day = trim((string) ($row['course_day'] ?? ''));
+        if ($venue !== '' && strcasecmp($venue, 'N/A') !== 0) {
+            $score++;
+        }
+        if ($day !== '' && strcasecmp($day, 'N/A') !== 0) {
+            $score++;
+        }
+        if (function_exists('intersoccer_roster_row_names_incomplete') && !intersoccer_roster_row_names_incomplete($row)) {
+            $score += 2;
+        }
+        $id = (int) ($row['id'] ?? 0);
+        if ($best === null || $score > $best_score || ($score === $best_score && $id > $best_id)) {
+            $best = $row;
+            $best_score = $score;
+            $best_id = $id;
+        }
+    }
+
+    return $best;
+}
+
+/**
+ * Admin URL for consolidated Roster Details for a WooCommerce order line item.
+ *
+ * @param int $order_item_id
+ * @return string|null Null when no roster row exists for the line item.
+ */
+function intersoccer_get_roster_details_url_for_order_item($order_item_id) {
+    global $wpdb;
+
+    $order_item_id = (int) $order_item_id;
+    if ($order_item_id <= 0 || !isset($wpdb) || !is_object($wpdb)) {
+        return null;
+    }
+
+    $table = $wpdb->prefix . 'intersoccer_rosters';
+    $rows = $wpdb->get_results(
+        $wpdb->prepare("SELECT * FROM {$table} WHERE order_item_id = %d ORDER BY id DESC", $order_item_id),
+        ARRAY_A
+    );
+
+    if (empty($rows) || !is_array($rows)) {
+        return null;
+    }
+
+    $anchor = intersoccer_pick_best_roster_row_for_order_item($rows);
+    if ($anchor === null) {
+        return null;
+    }
+
+    $from = intersoccer_roster_details_from_page_for_row($anchor);
+    $activity = (string) ($anchor['activity_type'] ?? '');
+
+    if (stripos($activity, 'Tournament') !== false) {
+        $event_signature = trim((string) ($anchor['event_signature'] ?? ''));
+        $params = ['page' => 'intersoccer-roster-details', 'from' => 'tournaments'];
+        if ($event_signature !== '' && strcasecmp($event_signature, 'N/A') !== 0) {
+            $params['event_signature'] = $event_signature;
+        } else {
+            $params['order_item_ids'] = (string) $order_item_id;
+        }
+        return add_query_arg($params, admin_url('admin.php'));
+    }
+
+    $kind = intersoccer_roster_consolidated_kind_for_row($anchor);
+    $candidates = intersoccer_fetch_roster_sibling_candidates_for_consolidation($anchor, $kind, 500);
+    $order_item_ids = intersoccer_collect_consolidated_order_item_ids_for_roster_row($anchor, $candidates, $kind);
+
+    if (count($order_item_ids) <= 1) {
+        $event_signature = trim((string) ($anchor['event_signature'] ?? ''));
+        if ($event_signature !== '' && strcasecmp($event_signature, 'N/A') !== 0) {
+            $params = [
+                'page' => 'intersoccer-roster-details',
+                'event_signature' => $event_signature,
+            ];
+            if ($from !== '') {
+                $params['from'] = $from;
+            }
+            return add_query_arg($params, admin_url('admin.php'));
+        }
+        if (empty($order_item_ids)) {
+            $order_item_ids = [$order_item_id];
+        }
+    }
+
+    $params = [
+        'page' => 'intersoccer-roster-details',
+        'order_item_ids' => implode(',', $order_item_ids),
+    ];
+    if ($from !== '') {
+        $params['from'] = $from;
+    }
+
+    return add_query_arg($params, admin_url('admin.php'));
+}
+
+/**
+ * Narrow roster rows that may belong to the same consolidated listing group as $anchor.
+ *
+ * @param array<string,mixed> $anchor
+ * @param string              $kind
+ * @param int                 $limit
+ * @return array<int,array<string,mixed>>
+ */
+function intersoccer_fetch_roster_sibling_candidates_for_consolidation(array $anchor, $kind, $limit = 500) {
+    global $wpdb;
+
+    $limit = max(1, min(500, (int) $limit));
+    if (!isset($wpdb) || !is_object($wpdb)) {
+        return [$anchor];
+    }
+
+    $table = $wpdb->prefix . 'intersoccer_rosters';
+    $variation_id = (int) ($anchor['variation_id'] ?? 0);
+    $venue = trim((string) ($anchor['venue'] ?? ''));
+    $kind = strtolower((string) $kind) === 'course' ? 'course' : 'camp';
+
+    $where = [];
+    $values = [];
+
+    if ($variation_id > 0) {
+        $where[] = 'variation_id = %d';
+        $values[] = $variation_id;
+    } elseif ((int) ($anchor['product_id'] ?? 0) > 0) {
+        $where[] = 'product_id = %d';
+        $values[] = (int) $anchor['product_id'];
+    }
+
+    if ($venue !== '' && strcasecmp($venue, 'N/A') !== 0) {
+        $where[] = 'venue = %s';
+        $values[] = $venue;
+    }
+
+    if ($kind === 'course') {
+        $course_day = trim((string) ($anchor['course_day'] ?? ''));
+        if ($course_day !== '' && strcasecmp($course_day, 'N/A') !== 0) {
+            $where[] = 'course_day = %s';
+            $values[] = $course_day;
+        }
+        $where[] = "(activity_type LIKE %s OR activity_type LIKE %s)";
+        $values[] = '%Course%';
+        $values[] = '%course%';
+    } else {
+        $camp_terms = trim((string) ($anchor['camp_terms'] ?? ''));
+        if ($camp_terms !== '' && strcasecmp($camp_terms, 'N/A') !== 0) {
+            $where[] = 'camp_terms = %s';
+            $values[] = $camp_terms;
+        }
+        $where[] = "(activity_type LIKE %s OR activity_type LIKE %s)";
+        $values[] = '%Camp%';
+        $values[] = '%camp%';
+    }
+
+    if (empty($where)) {
+        return [$anchor];
+    }
+
+    $sql = "SELECT * FROM {$table} WHERE " . implode(' AND ', $where) . ' ORDER BY id DESC LIMIT %d';
+    $values[] = $limit;
+
+    $prepared = $wpdb->prepare($sql, $values);
+    $results = $wpdb->get_results($prepared, ARRAY_A);
+
+    if (empty($results) || !is_array($results)) {
+        return [$anchor];
+    }
+
+    return $results;
+}
+
+/**
  * Render the roster details page
  */
 function intersoccer_render_roster_details_page() {
@@ -390,6 +656,17 @@ function intersoccer_render_roster_details_page() {
     echo '</thead><tbody>';
     
     foreach ($rosters as $row) {
+        if (function_exists('intersoccer_roster_backfill_player_name_fields')) {
+            $row_array = intersoccer_roster_backfill_player_name_fields((array) $row);
+            foreach (['first_name', 'last_name', 'player_name', 'player_first_name', 'player_last_name'] as $name_field) {
+                if (isset($row_array[$name_field])) {
+                    $row->{$name_field} = $row_array[$name_field];
+                }
+            }
+            if (!empty($row_array['id']) && function_exists('intersoccer_roster_persist_player_name_fields')) {
+                intersoccer_roster_persist_player_name_fields($row_array);
+            }
+        }
         $is_unknown = $row->player_name === 'Unknown Attendee';
         $day_presence = [
             'Monday' => 'No',
@@ -414,8 +691,14 @@ function intersoccer_render_roster_details_page() {
         echo '<tr data-order-item-id="' . esc_attr($row->order_item_id) . '">';
         echo '<td><input type="checkbox" class="player-select"></td>'; // New: Checkbox for selection
         echo '<td>' . esc_html($row->order_date ? date_i18n('Y-m-d H:i', strtotime($row->order_date)) : 'N/A') . '</td>';
-        echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($row->first_name ?? 'N/A') . '</td>';
-        echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($row->last_name ?? 'N/A') . '</td>';
+        $display_first = function_exists('intersoccer_roster_display_first_name')
+            ? intersoccer_roster_display_first_name($row)
+            : ($row->first_name ?? 'N/A');
+        $display_last = function_exists('intersoccer_roster_display_last_name')
+            ? intersoccer_roster_display_last_name($row)
+            : ($row->last_name ?? 'N/A');
+        echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($display_first) . '</td>';
+        echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($display_last) . '</td>';
         echo '<td>' . esc_html($row->gender ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->parent_phone ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->parent_email ?? 'N/A') . '</td>';
