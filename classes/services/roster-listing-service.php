@@ -59,7 +59,9 @@ class RosterListingService {
         }
 
         $criteria = [
-            'activity_type' => [Roster::ACTIVITY_CAMP, 'Camp, Girls Only', "Camp, Girls' only"],
+            'activity_type' => function_exists('intersoccer_roster_listing_activity_types')
+                ? intersoccer_roster_listing_activity_types('camp')
+                : [Roster::ACTIVITY_CAMP, 'Camp, Girls Only', "Camp, Girls' only"],
             'girls_only' => $girls_only ? 1 : 0,
             'is_placeholder' => 0,
         ];
@@ -155,6 +157,9 @@ class RosterListingService {
             }
 
             $data = $model->toArray();
+            if (function_exists('intersoccer_roster_normalize_row_facets_for_display')) {
+                $data = intersoccer_roster_normalize_row_facets_for_display($data);
+            }
             $data['girls_only'] = isset($data['girls_only']) ? (int) $data['girls_only'] : 0;
             $data['order_status'] = $status;
             $data['event_signature'] = $data['event_signature'] ?? '';
@@ -183,7 +188,9 @@ class RosterListingService {
         }
 
         $criteria = [
-            'activity_type' => [Roster::ACTIVITY_COURSE, 'Course, Girls Only', "Course, Girls' only"],
+            'activity_type' => function_exists('intersoccer_roster_listing_activity_types')
+                ? intersoccer_roster_listing_activity_types('course')
+                : [Roster::ACTIVITY_COURSE, 'Course, Girls Only', "Course, Girls' only"],
             'girls_only' => $girls_only ? 1 : 0,
             'is_placeholder' => 0,
         ];
@@ -323,6 +330,10 @@ class RosterListingService {
             if (empty($group['product_name']) || $group['product_name'] === 'N/A') {
                 $group['product_name'] = $row['product_name'] ?? 'N/A';
             }
+        }
+
+        if (function_exists('intersoccer_roster_merge_course_groups_with_empty_season')) {
+            $groups = intersoccer_roster_merge_course_groups_with_empty_season($groups);
         }
 
         foreach ($groups as &$group) {

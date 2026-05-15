@@ -58,6 +58,24 @@ class UtilsTest extends TestCase {
         }
     }
     
+    public function test_canonical_activity_type_maps_french_cours_to_course() {
+        if (!function_exists('intersoccer_canonical_activity_type_for_roster')) {
+            $this->markTestSkipped('intersoccer_canonical_activity_type_for_roster not loaded');
+        }
+        $this->assertSame('Course', intersoccer_canonical_activity_type_for_roster('cours'));
+        $this->assertSame('Course', intersoccer_canonical_activity_type_for_roster('Cours'));
+        $this->assertSame('Camp', intersoccer_canonical_activity_type_for_roster('camp de vacances'));
+    }
+
+    public function test_roster_listing_activity_types_includes_legacy_french_course() {
+        if (!function_exists('intersoccer_roster_listing_activity_types')) {
+            $this->markTestSkipped('intersoccer_roster_listing_activity_types not loaded');
+        }
+        $types = intersoccer_roster_listing_activity_types('course');
+        $this->assertContains('Course', $types);
+        $this->assertContains('cours', $types);
+    }
+
     public function test_normalize_event_data_handles_french_values() {
         if (!function_exists('intersoccer_normalize_event_data_for_signature')) {
             $this->markTestSkipped('intersoccer_normalize_event_data_for_signature function not found');
@@ -139,6 +157,25 @@ class UtilsTest extends TestCase {
         }
     }
 
+    public function test_consolidated_group_key_matches_french_and_english_course_day() {
+        if (!function_exists('intersoccer_consolidated_roster_group_key')) {
+            $this->markTestSkipped('intersoccer_consolidated_roster_group_key not loaded');
+        }
+        $base = [
+            'product_id' => 37940,
+            'season' => 'summer 2026',
+            'venue' => 'lausanne-centre-sportif-dorigny-unil-fr',
+            'age_group' => 'u10',
+            'times' => 'morning',
+        ];
+        $fr = $base + ['course_day' => 'dimanche'];
+        $en = $base + ['course_day' => 'Sunday'];
+        $this->assertSame(
+            intersoccer_consolidated_roster_group_key($fr, 'course'),
+            intersoccer_consolidated_roster_group_key($en, 'course')
+        );
+    }
+
     public function test_consolidated_roster_group_key_stable_per_facets() {
         if (!function_exists('intersoccer_consolidated_roster_group_key')) {
             $this->markTestSkipped('intersoccer_consolidated_roster_group_key not loaded');
@@ -170,6 +207,75 @@ class UtilsTest extends TestCase {
             intersoccer_consolidated_roster_group_key($course, 'course'),
             intersoccer_consolidated_roster_group_key($course, 'course')
         );
+    }
+
+    public function test_merge_course_groups_with_empty_season_combines_matching_facets() {
+        if (!function_exists('intersoccer_roster_merge_course_groups_with_empty_season')) {
+            $this->markTestSkipped('intersoccer_roster_merge_course_groups_with_empty_season not loaded');
+        }
+        $facets = [
+            'venue' => 'Lausanne',
+            'course_day' => 'Sunday',
+            'age_group' => '3-12y',
+            'times' => '1000-1130',
+            'variation_ids' => [37638 => 37638],
+        ];
+        $emptySeason = $facets + [
+            'season' => '',
+            'season_raw' => '',
+            'order_item_ids' => [4760 => true],
+            'merged_event_signatures' => [],
+            'start_dates' => [],
+            'end_dates' => [],
+        ];
+        $withSeason = $facets + [
+            'season' => 'Spring/Summer 2026',
+            'season_raw' => 'Spring/Summer 2026',
+            'order_item_ids' => [100 => true, 101 => true],
+            'merged_event_signatures' => [],
+            'start_dates' => [],
+            'end_dates' => [],
+        ];
+        $merged = intersoccer_roster_merge_course_groups_with_empty_season([
+            'sig_empty' => $emptySeason,
+            'sig_full' => $withSeason,
+        ]);
+        $this->assertCount(1, $merged);
+        $group = reset($merged);
+        $this->assertSame('Spring/Summer 2026', $group['season']);
+        $this->assertArrayHasKey(4760, $group['order_item_ids']);
+        $this->assertArrayHasKey(100, $group['order_item_ids']);
+        $this->assertArrayHasKey(101, $group['order_item_ids']);
+    }
+
+    public function test_backfill_player_name_fields_from_player_name_column() {
+        if (!function_exists('intersoccer_roster_backfill_player_name_fields')) {
+            $this->markTestSkipped('intersoccer_roster_backfill_player_name_fields not loaded');
+        }
+        $row = [
+            'player_name' => 'Theo Kuhn',
+            'first_name' => '',
+            'last_name' => '',
+        ];
+        $filled = intersoccer_roster_backfill_player_name_fields($row);
+        $this->assertSame('Theo', $filled['first_name']);
+        $this->assertSame('Kuhn', $filled['last_name']);
+    }
+
+    public function test_backfill_player_name_fields_from_player_first_name_columns() {
+        if (!function_exists('intersoccer_roster_backfill_player_name_fields')) {
+            $this->markTestSkipped('intersoccer_roster_backfill_player_name_fields not loaded');
+        }
+        $row = [
+            'player_first_name' => 'Marie',
+            'player_last_name' => 'Dupont',
+            'first_name' => '',
+            'last_name' => '',
+        ];
+        $filled = intersoccer_roster_backfill_player_name_fields($row);
+        $this->assertSame('Marie', $filled['first_name']);
+        $this->assertSame('Dupont', $filled['last_name']);
+        $this->assertSame('Marie Dupont', $filled['player_name']);
     }
 }
 

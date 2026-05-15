@@ -753,9 +753,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 $entries_without_dates++;
                 continue;
             }
-            if ($eed === '' || $eed === '1970-01-01' || $eed === '0000-00-00') {
-                $eed = isset($entry['event_end_date']) ? trim((string) $entry['event_end_date']) : '';
-            }
+            $eed = isset($entry['event_end_date']) ? trim((string) $entry['event_end_date']) : '';
             if ($eed === '' || $eed === '1970-01-01' || $eed === '0000-00-00') {
                 $eed = isset($entry['end_date']) ? trim((string) $entry['end_date']) : '';
             }

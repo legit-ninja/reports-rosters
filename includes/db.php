@@ -1321,7 +1321,9 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
         $normalized_season = $normalized_event_data['season'] ?? $season;
         $normalized_city = $normalized_event_data['city'] ?? $city;
         $normalized_canton_region = $normalized_event_data['canton_region'] ?? $canton_region;
-        $normalized_activity_type = $normalized_event_data['activity_type'] ?? ucfirst($activity_type ?: 'Event');
+        $normalized_activity_type = function_exists('intersoccer_canonical_activity_type_for_roster')
+            ? intersoccer_canonical_activity_type_for_roster($normalized_event_data['activity_type'] ?? $activity_type ?: 'Event')
+            : ($normalized_event_data['activity_type'] ?? ucfirst($activity_type ?: 'Event'));
 
         // Prepare roster_entry for insertion
         $roster_entry = [
