@@ -63,9 +63,11 @@ class RosterDetailsService {
             $criteria['event_signature'] = $filters['event_signature'];
         }
 
-        $collection = $this->repository->where($criteria);
+        $this->repository->clearQueryCache();
+        $collection = $this->repository->where($criteria, ['skip_cache' => true]);
         $allow_missing_status = !empty($filters['order_item_ids']);
         $rosterModels = $this->filterByValidOrderStatus($collection, $allow_missing_status);
+        $loadCriteria = $criteria;
 
         // When event_signature returns 0: roster rows may have NULL/empty event_signature; the listing
         // displays a computed fallback (md5) but DB has empty. Use order_item_ids, variation_ids, or camp_terms+venue as fallback.
@@ -95,8 +97,9 @@ class RosterDetailsService {
                     }
                 }
                 $this->logger->debug('RosterDetailsService: Fallback (event_signature had no match)', $fallbackCriteria);
-                $collection = $this->repository->where($fallbackCriteria);
+                $collection = $this->repository->where($fallbackCriteria, ['skip_cache' => true]);
                 $rosterModels = $this->filterByValidOrderStatus($collection);
+                $loadCriteria = $fallbackCriteria;
             }
         }
 
@@ -106,6 +109,13 @@ class RosterDetailsService {
                 'error' => __('No rosters found for the provided parameters.', 'intersoccer-reports-rosters'),
             ];
         }
+
+        $this->repairPlayerNamesOnModels($rosterModels);
+
+        // Reload from DB after repairs/rebuilds (use same criteria as initial load, including fallback).
+        $this->repository->clearQueryCache();
+        $collection = $this->repository->where($loadCriteria, ['skip_cache' => true]);
+        $rosterModels = $this->filterByValidOrderStatus($collection, $allow_missing_status);
 
         $rosters = $this->hydrateAndSortRosters($rosterModels, $context['sort_by'], $context['sort_order']);
         $baseRoster = $rosters[0] ?? null;
@@ -265,11 +275,86 @@ class RosterDetailsService {
         return $filtered;
     }
 
+    /**
+     * Backfill and persist player name columns for all roster models on the details page.
+     *
+     * @param array<int,\InterSoccer\ReportsRosters\Data\Models\Roster> $models
+     */
+    private function repairPlayerNamesOnModels(array $models): void {
+        if (!function_exists('intersoccer_roster_backfill_player_name_fields')
+            || !function_exists('intersoccer_roster_row_names_incomplete')) {
+            return;
+        }
+
+        $repaired = 0;
+        $rebuilt_orders = 0;
+        $order_ids_to_rebuild = [];
+
+        foreach ($models as $model) {
+            if (!is_object($model) || !method_exists($model, 'getAttribute')) {
+                continue;
+            }
+            $id = (int) $model->getAttribute('id');
+            if ($id <= 0) {
+                continue;
+            }
+            $rows = $this->database->get_roster_entries(['id' => $id], ['limit' => 1]);
+            if (empty($rows[0]) || !is_array($rows[0])) {
+                continue;
+            }
+            $raw = $rows[0];
+            if (!intersoccer_roster_row_names_incomplete($raw)) {
+                continue;
+            }
+            $filled = intersoccer_roster_backfill_player_name_fields($raw);
+            if (!intersoccer_roster_row_names_incomplete($filled)) {
+                if (function_exists('intersoccer_roster_persist_player_name_fields')
+                    && intersoccer_roster_persist_player_name_fields($filled)) {
+                    $repaired++;
+                    if (method_exists($model, 'fill')) {
+                        $model->fill($filled);
+                    }
+                }
+                continue;
+            }
+            $oid = (int) ($raw['order_id'] ?? 0);
+            if ($oid > 0) {
+                $order_ids_to_rebuild[$oid] = true;
+            }
+        }
+
+        if (!empty($order_ids_to_rebuild) && function_exists('intersoccer_oop_get_roster_builder')) {
+            $builder = intersoccer_oop_get_roster_builder();
+            foreach (array_keys($order_ids_to_rebuild) as $order_id) {
+                try {
+                    $builder->buildRosterFromOrder((int) $order_id, [
+                        'validate_data' => true,
+                        'skip_duplicates' => false,
+                        'update_existing' => true,
+                    ]);
+                    $rebuilt_orders++;
+                } catch (\Throwable $e) {
+                    $this->logger->warning('RosterDetailsService: order rebuild for names failed', [
+                        'order_id' => $order_id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+            $this->repository->clearQueryCache();
+        }
+    }
+
     private function hydrateAndSortRosters(array $models, string $sortBy, string $sortOrder): array {
         $rosters = [];
 
         foreach ($models as $model) {
             $data = $model->toArray();
+            if (function_exists('intersoccer_roster_normalize_row_facets_for_display')) {
+                $data = intersoccer_roster_normalize_row_facets_for_display($data);
+            }
+            if (function_exists('intersoccer_roster_persist_player_name_fields') && !empty($data['id'])) {
+                intersoccer_roster_persist_player_name_fields($data);
+            }
             $post = get_post($model->order_id);
             $data['order_date'] = $post ? $post->post_date : null;
             $data['girls_only'] = isset($data['girls_only']) ? (int) $data['girls_only'] : 0;
@@ -474,6 +559,7 @@ class RosterDetailsService {
 
         return $count;
     }
+
 }
 
 

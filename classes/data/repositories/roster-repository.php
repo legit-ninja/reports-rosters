@@ -362,8 +362,9 @@ class RosterRepository implements RepositoryInterface {
             // Build cache key for complex queries
             $cache_key = 'roster_query_' . md5(serialize(['criteria' => $criteria, 'options' => $options]));
             
-            // Try cache for complex queries (only if no limit/offset)
-            if (empty($options['limit']) && empty($options['offset'])) {
+            // Try cache for complex queries (only if no limit/offset and not skipped)
+            $skip_cache = !empty($options['skip_cache']);
+            if (!$skip_cache && empty($options['limit']) && empty($options['offset'])) {
                 $cached_result = $this->cache->get($cache_key);
                 if ($cached_result !== null) {
                     $this->logger->debug('Retrieved roster query from cache');
@@ -385,7 +386,7 @@ class RosterRepository implements RepositoryInterface {
             }
             
             // Cache result if it's a reasonable size
-            if ($rosters->count() < 1000 && empty($options['limit']) && empty($options['offset'])) {
+            if (!$skip_cache && $rosters->count() < 1000 && empty($options['limit']) && empty($options['offset'])) {
                 $this->cache->set($cache_key, $rosters, self::CACHE_EXPIRY);
             }
             
@@ -811,6 +812,13 @@ class RosterRepository implements RepositoryInterface {
         // Clear pattern-based caches
         $this->cache->forgetPattern('roster_query_*');
         $this->cache->forgetPattern('roster_stats_*');
+    }
+
+    /**
+     * Clear cached roster query results (e.g. after name/facet repairs).
+     */
+    public function clearQueryCache(): void {
+        $this->clearRelatedCaches();
     }
     
     /**
