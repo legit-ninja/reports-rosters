@@ -822,8 +822,29 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             // Group by canton, venue, camp_type
             $location_groups = [];
             foreach ($group_entries as $entry) {
-                $canton = $entry['canton'] ?? 'Unknown';
-                $venue = $entry['venue'] ?? 'Unknown';
+                $canton_raw = $entry['canton'] ?? 'Unknown';
+                $venue_raw = $entry['venue'] ?? 'Unknown';
+                $canton = $canton_raw;
+                $venue = $venue_raw;
+                if (function_exists('intersoccer_roster_facet_for_grouping')) {
+                    $canton_group = intersoccer_roster_facet_for_grouping($canton_raw, 'pa_canton-region');
+                    if ($canton_group !== '') {
+                        $canton = $canton_group;
+                    }
+                    $venue_group = intersoccer_roster_facet_for_grouping($venue_raw, 'pa_intersoccer-venues');
+                    if ($venue_group !== '') {
+                        $venue = $venue_group;
+                    }
+                } elseif (function_exists('intersoccer_get_term_name')) {
+                    $canton_name = intersoccer_get_term_name($canton_raw, 'pa_canton-region');
+                    if ($canton_name !== '' && $canton_name !== 'N/A') {
+                        $canton = $canton_name;
+                    }
+                    $venue_name = intersoccer_get_term_name($venue_raw, 'pa_intersoccer-venues');
+                    if ($venue_name !== '' && $venue_name !== 'N/A') {
+                        $venue = $venue_name;
+                    }
+                }
                 $age_g = $entry['age_group'] ?? '';
                 $camp_type = $entry['camp_type'] ?? (
                     (!empty($age_g) && (stripos($age_g, '3-5y') !== false || stripos($age_g, 'half-day') !== false))
@@ -1172,9 +1193,32 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 }
             }
 
-            $entry_region = $entry['canton'] ?? 'Unknown';
+            $entry_region_raw = $entry['canton'] ?? 'Unknown';
+            $entry_region = $entry_region_raw;
+            if (function_exists('intersoccer_roster_facet_for_grouping')) {
+                $region_group = intersoccer_roster_facet_for_grouping($entry_region_raw, 'pa_canton-region');
+                if ($region_group !== '') {
+                    $entry_region = $region_group;
+                }
+            } elseif (function_exists('intersoccer_get_term_name')) {
+                $region_name = intersoccer_get_term_name($entry_region_raw, 'pa_canton-region');
+                if ($region_name !== '' && $region_name !== 'N/A') {
+                    $entry_region = $region_name;
+                }
+            }
             $venue_raw = isset($entry['venue']) ? trim((string) $entry['venue']) : '';
             $venue = $venue_raw !== '' ? $venue_raw : 'Unknown';
+            if (function_exists('intersoccer_roster_facet_for_grouping')) {
+                $venue_group = intersoccer_roster_facet_for_grouping($venue_raw, 'pa_intersoccer-venues');
+                if ($venue_group !== '') {
+                    $venue = $venue_group;
+                }
+            } elseif (function_exists('intersoccer_get_term_name')) {
+                $venue_name = intersoccer_get_term_name($venue_raw, 'pa_intersoccer-venues');
+                if ($venue_name !== '' && $venue_name !== 'N/A') {
+                    $venue = $venue_name;
+                }
+            }
             $product_id = isset($entry['product_id']) ? (int) $entry['product_id'] : 0;
             $variation_id = isset($entry['variation_id']) ? (int) $entry['variation_id'] : 0;
             $order_item_name = isset($entry['order_item_name']) ? (string) $entry['order_item_name'] : '';
@@ -1183,6 +1227,17 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 : ($product_id ? (string) get_the_title($product_id) : 'Unknown');
             $cd_disp = isset($entry['course_day']) ? trim((string) $entry['course_day']) : '';
             $course_day = ($cd_disp === '') ? 'Unknown' : $cd_disp;
+            if ($cd_disp !== '' && function_exists('intersoccer_roster_facet_for_grouping')) {
+                $day_group = intersoccer_roster_facet_for_grouping($cd_disp, 'pa_course-day');
+                if ($day_group !== '') {
+                    $course_day = $day_group;
+                }
+            } elseif ($cd_disp !== '' && function_exists('intersoccer_get_term_name')) {
+                $day_name = intersoccer_get_term_name($cd_disp, 'pa_course-day');
+                if ($day_name !== '' && $day_name !== 'N/A') {
+                    $course_day = $day_name;
+                }
+            }
 
             if (!isset($report_data[$entry_region])) {
                 $report_data[$entry_region] = [];
@@ -1206,7 +1261,25 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
 
             $times_disp = isset($entry['times']) ? trim((string) $entry['times']) : '';
             if ($times_disp !== '') {
-                $report_data[$entry_region][$venue][$row_key]['times'][$times_disp] = true;
+                $times_key = $times_disp;
+                if (function_exists('intersoccer_roster_facet_for_grouping')) {
+                    foreach (['pa_camp-times', 'pa_course-times'] as $times_tax) {
+                        $times_group = intersoccer_roster_facet_for_grouping($times_disp, $times_tax);
+                        if ($times_group !== '') {
+                            $times_key = $times_group;
+                            break;
+                        }
+                    }
+                } elseif (function_exists('intersoccer_get_term_name')) {
+                    $times_name = intersoccer_get_term_name($times_disp, 'pa_camp-times');
+                    if ($times_name === 'N/A') {
+                        $times_name = intersoccer_get_term_name($times_disp, 'pa_course-times');
+                    }
+                    if ($times_name !== '' && $times_name !== 'N/A') {
+                        $times_key = $times_name;
+                    }
+                }
+                $report_data[$entry_region][$venue][$row_key]['times'][$times_key] = true;
             }
 
             $report_data[$entry_region][$venue][$row_key]['online']++;

@@ -245,8 +245,38 @@ function intersoccer_fetch_roster_sibling_candidates_for_consolidation(array $an
 
     $table = $wpdb->prefix . 'intersoccer_rosters';
     $variation_id = (int) ($anchor['variation_id'] ?? 0);
-    $venue = trim((string) ($anchor['venue'] ?? ''));
+    $venue_raw = trim((string) ($anchor['venue'] ?? ''));
     $kind = strtolower((string) $kind) === 'course' ? 'course' : 'camp';
+
+    $facet = static function ($value, $taxonomy) {
+        if (function_exists('intersoccer_roster_facet_for_grouping')) {
+            return intersoccer_roster_facet_for_grouping($value, $taxonomy);
+        }
+        if ($taxonomy !== '' && function_exists('intersoccer_get_term_name')) {
+            $name = intersoccer_get_term_name($value, $taxonomy);
+            if ($name !== '' && $name !== 'N/A') {
+                return strtolower(trim($name));
+            }
+        }
+        return strtolower(trim((string) $value));
+    };
+
+    $venue_canon = ($venue_raw !== '' && strcasecmp($venue_raw, 'N/A') !== 0)
+        ? $facet($venue_raw, 'pa_intersoccer-venues')
+        : '';
+    $course_day_canon = '';
+    $camp_terms_canon = '';
+    if ($kind === 'course') {
+        $course_day_raw = trim((string) ($anchor['course_day'] ?? ''));
+        if ($course_day_raw !== '' && strcasecmp($course_day_raw, 'N/A') !== 0) {
+            $course_day_canon = $facet($course_day_raw, 'pa_course-day');
+        }
+    } else {
+        $camp_terms_raw = trim((string) ($anchor['camp_terms'] ?? ''));
+        if ($camp_terms_raw !== '' && strcasecmp($camp_terms_raw, 'N/A') !== 0) {
+            $camp_terms_canon = $facet($camp_terms_raw, 'pa_camp-terms');
+        }
+    }
 
     $where = [];
     $values = [];
@@ -259,26 +289,11 @@ function intersoccer_fetch_roster_sibling_candidates_for_consolidation(array $an
         $values[] = (int) $anchor['product_id'];
     }
 
-    if ($venue !== '' && strcasecmp($venue, 'N/A') !== 0) {
-        $where[] = 'venue = %s';
-        $values[] = $venue;
-    }
-
     if ($kind === 'course') {
-        $course_day = trim((string) ($anchor['course_day'] ?? ''));
-        if ($course_day !== '' && strcasecmp($course_day, 'N/A') !== 0) {
-            $where[] = 'course_day = %s';
-            $values[] = $course_day;
-        }
         $where[] = "(activity_type LIKE %s OR activity_type LIKE %s)";
         $values[] = '%Course%';
         $values[] = '%course%';
     } else {
-        $camp_terms = trim((string) ($anchor['camp_terms'] ?? ''));
-        if ($camp_terms !== '' && strcasecmp($camp_terms, 'N/A') !== 0) {
-            $where[] = 'camp_terms = %s';
-            $values[] = $camp_terms;
-        }
         $where[] = "(activity_type LIKE %s OR activity_type LIKE %s)";
         $values[] = '%Camp%';
         $values[] = '%camp%';
@@ -295,6 +310,34 @@ function intersoccer_fetch_roster_sibling_candidates_for_consolidation(array $an
     $results = $wpdb->get_results($prepared, ARRAY_A);
 
     if (empty($results) || !is_array($results)) {
+        return [$anchor];
+    }
+
+    if ($venue_canon !== '' || $course_day_canon !== '' || $camp_terms_canon !== '') {
+        $results = array_values(array_filter($results, static function ($row) use ($venue_canon, $course_day_canon, $camp_terms_canon, $facet) {
+            if ($venue_canon !== '') {
+                $row_venue = $facet($row['venue'] ?? '', 'pa_intersoccer-venues');
+                if ($row_venue !== $venue_canon) {
+                    return false;
+                }
+            }
+            if ($course_day_canon !== '') {
+                $row_day = $facet($row['course_day'] ?? '', 'pa_course-day');
+                if ($row_day !== $course_day_canon) {
+                    return false;
+                }
+            }
+            if ($camp_terms_canon !== '') {
+                $row_terms = $facet($row['camp_terms'] ?? '', 'pa_camp-terms');
+                if ($row_terms !== $camp_terms_canon) {
+                    return false;
+                }
+            }
+            return true;
+        }));
+    }
+
+    if (empty($results)) {
         return [$anchor];
     }
 
@@ -319,6 +362,8 @@ function intersoccer_render_roster_details_page() {
     $order_item_ids_str = isset($_GET['order_item_ids']) ? sanitize_text_field($_GET['order_item_ids']) : '';
     $order_item_ids = $order_item_ids_str ? array_filter(array_map('intval', explode(',', $order_item_ids_str))) : [];
     $event_signature = isset($_GET['event_signature']) ? sanitize_text_field($_GET['event_signature']) : '';
+    $event_signatures_str = isset($_GET['event_signatures']) ? sanitize_text_field($_GET['event_signatures']) : '';
+    $event_signatures = $event_signatures_str ? array_values(array_filter(array_map('trim', explode(',', $event_signatures_str)))) : [];
     $camp_terms = isset($_GET['camp_terms']) ? sanitize_text_field($_GET['camp_terms']) : '';
     $course_day = isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '';
     $venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
@@ -362,6 +407,7 @@ function intersoccer_render_roster_details_page() {
                 'variation_ids' => $variation_ids,
                 'order_item_ids' => $order_item_ids,
                 'event_signature' => $event_signature,
+                'event_signatures' => $event_signatures,
                 'camp_terms' => $camp_terms,
                 'course_day' => $course_day,
                 'venue' => $venue,
@@ -463,7 +509,11 @@ function intersoccer_render_roster_details_page() {
             $query_params = array_merge($query_params, $variation_ids);
         }
 
-        if ($event_signature && $event_signature !== 'N/A') {
+        if (!empty($event_signatures)) {
+            $placeholders = implode(',', array_fill(0, count($event_signatures), '%s'));
+            $where_clauses[] = "r.event_signature IN ($placeholders)";
+            $query_params = array_merge($query_params, $event_signatures);
+        } elseif ($event_signature && $event_signature !== 'N/A') {
             $where_clauses[] = "r.event_signature = %s";
             $query_params[] = $event_signature;
         } else {
@@ -607,10 +657,19 @@ function intersoccer_render_roster_details_page() {
     
     // Get age group for title - use base_roster if GET parameter is empty
     $display_age_group = !empty($age_group) ? $age_group : ($base_roster->age_group ?? '');
+    if (function_exists('intersoccer_get_term_name')) {
+        $display_age_group = intersoccer_get_term_name($display_age_group, 'pa_age-group');
+    }
+    $display_venue = $base_roster->venue ?? '';
+    if (function_exists('intersoccer_get_term_name')) {
+        $display_venue = intersoccer_get_term_name($display_venue, 'pa_intersoccer-venues');
+    }
     // Only add parentheses if age group is not empty
-    $age_group_suffix = !empty($display_age_group) ? ' (' . esc_html($display_age_group) . ')' : '';
+    $age_group_suffix = !empty($display_age_group) && $display_age_group !== 'N/A'
+        ? ' (' . esc_html($display_age_group) . ')'
+        : '';
     
-    echo '<h1>' . esc_html__('Roster Details for ', 'intersoccer-reports-rosters') . esc_html($event_label) . ' - ' . esc_html($base_roster->venue) . $age_group_suffix . $title_suffix . '</h1>';
+    echo '<h1>' . esc_html__('Roster Details for ', 'intersoccer-reports-rosters') . esc_html($event_label) . ' - ' . esc_html($display_venue) . $age_group_suffix . $title_suffix . '</h1>';
     
     if ($unknown_count > 0) {
         echo '<p style="color: red;">' . esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)) . '</p>';
