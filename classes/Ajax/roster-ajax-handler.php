@@ -113,6 +113,7 @@ class RosterAjaxHandler {
         
         // Event signature operations
         add_action('wp_ajax_intersoccer_rebuild_event_signatures', [$this, 'handleRebuildEventSignatures']);
+        add_action('wp_ajax_intersoccer_renormalize_roster_language', [$this, 'handleRenormalizeRosterLanguage']);
         
         // Database operations
         add_action('wp_ajax_intersoccer_upgrade_database', [$this, 'handleUpgradeDatabase']);
@@ -293,6 +294,72 @@ class RosterAjaxHandler {
      * 
      * @return void
      */
+    public function handleRenormalizeRosterLanguage() {
+        try {
+            check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
+
+            if (!current_user_can('manage_options')) {
+                wp_send_json_error(['message' => __('Unauthorized', 'intersoccer-reports-rosters')]);
+            }
+
+            if (!function_exists('intersoccer_renormalize_roster_language_batch')) {
+                wp_send_json_error(['message' => __('Language normalization is not available.', 'intersoccer-reports-rosters')]);
+            }
+
+            $offset = isset($_POST['offset']) ? max(0, (int) $_POST['offset']) : 0;
+            $limit = isset($_POST['limit']) ? max(1, min(100, (int) $_POST['limit'])) : 40;
+            $phase = isset($_POST['phase']) ? sanitize_key(wp_unslash($_POST['phase'])) : 'orders';
+            if (!in_array($phase, ['orders', 'placeholders'], true)) {
+                $phase = 'orders';
+            }
+
+            $this->logger->info('AJAX: Renormalize roster language batch', [
+                'offset' => $offset,
+                'limit'  => $limit,
+                'phase'  => $phase,
+            ]);
+
+            $batch = intersoccer_renormalize_roster_language_batch($offset, $limit, $phase);
+
+            $processed_so_far = (int) ($batch['next_offset'] ?? 0);
+            $total = (int) ($batch['total'] ?? 0);
+            $progress_message = $batch['done']
+                ? sprintf(
+                    __('Batch complete (%1$s phase).', 'intersoccer-reports-rosters'),
+                    $phase
+                )
+                : sprintf(
+                    __('Processing %1$s phase: %2$d / %3$d rows…', 'intersoccer-reports-rosters'),
+                    $phase,
+                    min($processed_so_far, $total),
+                    $total
+                );
+
+            wp_send_json_success([
+                'message' => $progress_message,
+                'stats'   => [
+                    'updated'      => (int) ($batch['updated'] ?? 0),
+                    'meta_updated' => (int) ($batch['meta_updated'] ?? 0),
+                    'errors'       => (int) ($batch['errors'] ?? 0),
+                    'processed'    => (int) ($batch['processed'] ?? 0),
+                ],
+                'offset'      => $offset,
+                'next_offset' => (int) ($batch['next_offset'] ?? 0),
+                'total'       => $total,
+                'done'        => !empty($batch['done']),
+                'phase'       => $phase,
+                'next_phase'  => (string) ($batch['next_phase'] ?? 'complete'),
+            ]);
+        } catch (\Exception $e) {
+            $this->logger->error('AJAX: Renormalize roster language failed', [
+                'error' => $e->getMessage(),
+            ]);
+            wp_send_json_error([
+                'message' => __('Language normalization failed: ', 'intersoccer-reports-rosters') . $e->getMessage(),
+            ]);
+        }
+    }
+
     public function handleRebuildEventSignatures() {
         try {
             // Verify nonce
