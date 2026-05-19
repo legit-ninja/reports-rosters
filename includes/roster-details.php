@@ -199,20 +199,44 @@ function intersoccer_get_roster_details_url_for_order_item($order_item_id) {
     $candidates = intersoccer_fetch_roster_sibling_candidates_for_consolidation($anchor, $kind, 500);
     $order_item_ids = intersoccer_collect_consolidated_order_item_ids_for_roster_row($anchor, $candidates, $kind);
 
-    if (count($order_item_ids) <= 1) {
-        $event_signature = trim((string) ($anchor['event_signature'] ?? ''));
-        if ($event_signature !== '' && strcasecmp($event_signature, 'N/A') !== 0) {
-            $params = [
-                'page' => 'intersoccer-roster-details',
-                'event_signature' => $event_signature,
-            ];
-            if ($from !== '') {
-                $params['from'] = $from;
-            }
-            return add_query_arg($params, admin_url('admin.php'));
+    if (empty($order_item_ids)) {
+        $order_item_ids = [$order_item_id];
+    }
+
+    $merged_signatures = [];
+    $target_key = function_exists('intersoccer_consolidated_roster_group_key')
+        ? intersoccer_consolidated_roster_group_key($anchor, $kind)
+        : null;
+
+    $collect_signature = static function (array $row) use (&$merged_signatures) {
+        $sig = trim((string) ($row['event_signature'] ?? ''));
+        if ($sig !== '' && strcasecmp($sig, 'N/A') !== 0) {
+            $merged_signatures[$sig] = $sig;
         }
-        if (empty($order_item_ids)) {
-            $order_item_ids = [$order_item_id];
+    };
+
+    $collect_signature($anchor);
+    foreach ($candidates as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        if ($target_key !== null
+            && intersoccer_consolidated_roster_group_key($row, $kind) !== $target_key) {
+            continue;
+        }
+        $collect_signature($row);
+    }
+
+    $group = [
+        'event_signature' => trim((string) ($anchor['event_signature'] ?? '')),
+        'merged_event_signatures' => array_values($merged_signatures),
+        'order_item_ids' => $order_item_ids,
+    ];
+
+    if (function_exists('intersoccer_get_roster_details_url_for_listing_group')) {
+        $url = intersoccer_get_roster_details_url_for_listing_group($group, $from);
+        if ($url !== '') {
+            return $url;
         }
     }
 

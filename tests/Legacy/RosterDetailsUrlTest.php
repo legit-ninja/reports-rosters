@@ -136,6 +136,8 @@ class RosterDetailsUrlTest extends TestCase {
             $this->markTestSkipped('intersoccer_get_roster_details_url_for_order_item not loaded');
         }
 
+        $shared_signature = 'abc123def456789012345678901234ab';
+
         $anchor = [
             'id' => 1,
             'order_item_id' => 4760,
@@ -148,6 +150,7 @@ class RosterDetailsUrlTest extends TestCase {
             'times' => '17:00',
             'season' => 'Spring/Summer 2026',
             'girls_only' => 0,
+            'event_signature' => $shared_signature,
             'first_name' => 'Ezra',
             'last_name' => 'Test',
         ];
@@ -185,6 +188,64 @@ class RosterDetailsUrlTest extends TestCase {
         $this->assertIsString($url);
         $this->assertStringContainsString('page=intersoccer-roster-details', $url);
         $this->assertStringContainsString('from=courses', $url);
+        $this->assertStringContainsString('event_signature=' . rawurlencode($shared_signature), $url);
+        $this->assertStringNotContainsString('order_item_ids=', $url);
+    }
+
+    public function test_get_roster_details_url_for_order_item_falls_back_to_order_item_ids_without_signature() {
+        if (!function_exists('intersoccer_get_roster_details_url_for_order_item')) {
+            $this->markTestSkipped('intersoccer_get_roster_details_url_for_order_item not loaded');
+        }
+
+        $anchor = [
+            'id' => 1,
+            'order_item_id' => 4760,
+            'product_id' => 25232,
+            'variation_id' => 35888,
+            'activity_type' => 'Course',
+            'venue' => 'Geneva',
+            'course_day' => 'Tuesday',
+            'age_group' => '5-6y',
+            'times' => '17:00',
+            'season' => 'Spring/Summer 2026',
+            'girls_only' => 0,
+            'event_signature' => '',
+            'first_name' => 'Ezra',
+            'last_name' => 'Test',
+        ];
+        $sibling = $anchor;
+        $sibling['id'] = 2;
+        $sibling['order_item_id'] = 5127;
+
+        global $wpdb;
+        $wpdb = new class($anchor, $sibling) {
+            public $prefix = 'wp_';
+            private $anchor;
+            private $sibling;
+            private $call = 0;
+
+            public function __construct($anchor, $sibling) {
+                $this->anchor = $anchor;
+                $this->sibling = $sibling;
+            }
+
+            public function prepare($query, ...$args) {
+                return $query;
+            }
+
+            public function get_results($query, $output = OBJECT) {
+                $this->call++;
+                if ($this->call === 1) {
+                    return [$this->anchor];
+                }
+                return [$this->anchor, $this->sibling];
+            }
+        };
+
+        $url = intersoccer_get_roster_details_url_for_order_item(4760);
+
+        $this->assertIsString($url);
         $this->assertStringContainsString('order_item_ids=4760%2C5127', $url);
+        $this->assertStringNotContainsString('event_signature=', $url);
     }
 }
