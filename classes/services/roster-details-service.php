@@ -58,14 +58,19 @@ class RosterDetailsService {
         $this->logger->debug('RosterDetailsService: Primary criteria', $criteria);
 
         // When event_signature is provided, we must filter by it strictly - no fallback to broader criteria
-        $hasEventSignature = !empty($filters['event_signature']) && $filters['event_signature'] !== 'N/A';
+        $hasEventSignature = !empty($filters['event_signatures'])
+            || (!empty($filters['event_signature']) && $filters['event_signature'] !== 'N/A');
         if ($hasEventSignature && empty($criteria['event_signature'])) {
-            $criteria['event_signature'] = $filters['event_signature'];
+            if (!empty($filters['event_signatures'])) {
+                $criteria['event_signature'] = $filters['event_signatures'];
+            } else {
+                $criteria['event_signature'] = $filters['event_signature'];
+            }
         }
 
         $this->repository->clearQueryCache();
         $collection = $this->repository->where($criteria, ['skip_cache' => true]);
-        $allow_missing_status = !empty($filters['order_item_ids']);
+        $allow_missing_status = !empty($filters['order_item_ids']) || $hasEventSignature;
         $rosterModels = $this->filterByValidOrderStatus($collection, $allow_missing_status);
         $loadCriteria = $criteria;
 
@@ -147,6 +152,9 @@ class RosterDetailsService {
         $filters['variation_ids'] = isset($filters['variation_ids']) ? array_filter(array_map('intval', (array) $filters['variation_ids'])) : [];
         $filters['order_item_ids'] = isset($filters['order_item_ids']) ? array_filter(array_map('intval', (array) $filters['order_item_ids'])) : [];
         $filters['event_signature'] = isset($filters['event_signature']) ? trim($filters['event_signature']) : '';
+        $filters['event_signatures'] = isset($filters['event_signatures'])
+            ? array_values(array_filter(array_map('trim', (array) $filters['event_signatures'])))
+            : [];
         $filters['camp_terms'] = isset($filters['camp_terms']) ? trim($filters['camp_terms']) : '';
         $filters['course_day'] = isset($filters['course_day']) ? trim($filters['course_day']) : '';
         $filters['venue'] = isset($filters['venue']) ? trim($filters['venue']) : '';
@@ -198,7 +206,9 @@ class RosterDetailsService {
             $criteria['order_item_id'] = $filters['order_item_ids'];
         }
 
-        if (!$ignoreEventSignature && $filters['event_signature'] && $filters['event_signature'] !== 'N/A') {
+        if (!$ignoreEventSignature && !empty($filters['event_signatures'])) {
+            $criteria['event_signature'] = $filters['event_signatures'];
+        } elseif (!$ignoreEventSignature && $filters['event_signature'] && $filters['event_signature'] !== 'N/A') {
             $criteria['event_signature'] = $filters['event_signature'];
         }
 

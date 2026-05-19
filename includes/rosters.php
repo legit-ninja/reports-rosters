@@ -1404,12 +1404,12 @@ function intersoccer_render_camps_page() {
                                         </div>
                                         <div class="camp-actions">
                                             <?php
-                                            if (!empty($camp['consolidated_listing']) && !empty($camp['order_item_ids'])) {
-                                                $view_params = ['page' => 'intersoccer-roster-details', 'from' => 'camps', 'order_item_ids' => implode(',', $camp['order_item_ids'])];
-                                            } else {
-                                                $view_params = ['page' => 'intersoccer-roster-details', 'from' => 'camps', 'event_signature' => $camp['event_signature']];
-                                            }
-                                            $view_url = add_query_arg($view_params, admin_url('admin.php'));
+                                            $view_url = function_exists('intersoccer_get_roster_details_url_for_listing_group')
+                                                ? intersoccer_get_roster_details_url_for_listing_group($camp, 'camps')
+                                                : add_query_arg(
+                                                    ['page' => 'intersoccer-roster-details', 'from' => 'camps', 'event_signature' => $camp['event_signature'] ?? ''],
+                                                    admin_url('admin.php')
+                                                );
                                             $is_closed = !empty($camp['event_completed']);
                                             ?>
                                             <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
@@ -1800,12 +1800,12 @@ function intersoccer_render_courses_page() {
                                                 </div>
                                                 <div class="course-actions">
                                                     <?php
-                                                    if (!empty($course['consolidated_listing']) && !empty($course['order_item_ids'])) {
-                                                        $view_params = ['page' => 'intersoccer-roster-details', 'from' => 'courses', 'order_item_ids' => implode(',', $course['order_item_ids'])];
-                                                    } else {
-                                                        $view_params = ['page' => 'intersoccer-roster-details', 'from' => 'courses', 'event_signature' => $course['event_signature']];
-                                                    }
-                                                    $view_url = add_query_arg($view_params, admin_url('admin.php'));
+                                                    $view_url = function_exists('intersoccer_get_roster_details_url_for_listing_group')
+                                                        ? intersoccer_get_roster_details_url_for_listing_group($course, 'courses')
+                                                        : add_query_arg(
+                                                            ['page' => 'intersoccer-roster-details', 'from' => 'courses', 'event_signature' => $course['event_signature'] ?? ''],
+                                                            admin_url('admin.php')
+                                                        );
                                                     $is_closed = !empty($course['event_completed']);
                                                     ?>
                                                     <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
@@ -2299,23 +2299,21 @@ function intersoccer_render_girls_only_page() {
                                                 <span class="count-label"><?php _e('players', 'intersoccer-reports-rosters'); ?></span>
                                             </div>
                                             <div class="camp-actions">
-                                                <?php 
-                                                if (!empty($camp['order_item_ids'])) {
-                                                    $view_params = [
-                                                        'page' => 'intersoccer-roster-details',
-                                                        'from' => 'girls-only',
-                                                        'order_item_ids' => $camp['order_item_ids'],
-                                                        'girls_only' => '1'
-                                                    ];
+                                                <?php
+                                                $view_url = function_exists('intersoccer_get_roster_details_url_for_listing_group')
+                                                    ? intersoccer_get_roster_details_url_for_listing_group($camp, 'girls-only')
+                                                    : '';
+                                                if ($view_url !== '') {
+                                                    $view_url = add_query_arg('girls_only', '1', $view_url);
                                                 } else {
                                                     $view_params = [
                                                         'page' => 'intersoccer-roster-details',
                                                         'from' => 'girls-only',
-                                                        'event_signature' => $camp['event_signature'],
-                                                        'girls_only' => '1'
+                                                        'event_signature' => $camp['event_signature'] ?? '',
+                                                        'girls_only' => '1',
                                                     ];
+                                                    $view_url = add_query_arg($view_params, admin_url('admin.php'));
                                                 }
-                                                $view_url = add_query_arg($view_params, admin_url('admin.php'));
                                                 ?>
                                                 <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                     View Roster
@@ -2429,22 +2427,20 @@ function intersoccer_render_girls_only_page() {
                                                     </div>
                                                     <div class="course-actions">
                                                         <?php
-                                                        if (!empty($course['order_item_ids'])) {
-                                                            $view_params = [
-                                                                'page' => 'intersoccer-roster-details',
-                                                                'from' => 'girls-only',
-                                                                'order_item_ids' => $course['order_item_ids'],
-                                                                'girls_only' => '1'
-                                                            ];
+                                                        $view_url = function_exists('intersoccer_get_roster_details_url_for_listing_group')
+                                                            ? intersoccer_get_roster_details_url_for_listing_group($course, 'girls-only')
+                                                            : '';
+                                                        if ($view_url !== '') {
+                                                            $view_url = add_query_arg('girls_only', '1', $view_url);
                                                         } else {
                                                             $view_params = [
                                                                 'page' => 'intersoccer-roster-details',
                                                                 'from' => 'girls-only',
-                                                                'event_signature' => $course['event_signature'],
-                                                                'girls_only' => '1'
+                                                                'event_signature' => $course['event_signature'] ?? '',
+                                                                'girls_only' => '1',
                                                             ];
+                                                            $view_url = add_query_arg($view_params, admin_url('admin.php'));
                                                         }
-                                                        $view_url = add_query_arg($view_params, admin_url('admin.php'));
                                                         ?>
                                                         <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
                                                             <?php _e('View Roster', 'intersoccer-reports-rosters'); ?>
