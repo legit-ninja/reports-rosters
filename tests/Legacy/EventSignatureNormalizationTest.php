@@ -158,5 +158,79 @@ class EventSignatureNormalizationTest extends TestCase {
         $this->assertArrayHasKey('status', $result);
         $this->assertArrayHasKey('updated', $result);
     }
+
+    public function test_rebuild_event_signature_for_order_item_persists_normalized_facets() {
+        if (!function_exists('intersoccer_rebuild_event_signature_for_order_item')) {
+            $this->markTestSkipped('intersoccer_rebuild_event_signature_for_order_item not found');
+        }
+
+        global $wpdb;
+        $wpdb = \Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+
+        $mock_record = [
+            'id' => 5,
+            'activity_type' => 'Camp',
+            'venue' => 'Genève Centre',
+            'age_group' => "5-13a (Journée complète)",
+            'camp_terms' => 'Été Semaine 1',
+            'course_day' => '',
+            'times' => '9:00-16:00',
+            'season' => 'Été 2025',
+            'girls_only' => 0,
+            'city' => '',
+            'canton_region' => '',
+            'product_id' => 100,
+            'product_name' => 'Camp FR',
+            'start_date' => '2025-07-07',
+        ];
+
+        $wpdb->shouldReceive('get_row')->once()->andReturn($mock_record);
+
+        $captured_update = null;
+        $wpdb->shouldReceive('update')
+            ->once()
+            ->withArgs(function ($table, $data) use (&$captured_update) {
+                $captured_update = $data;
+                return is_array($data)
+                    && isset($data['event_signature'])
+                    && isset($data['venue'])
+                    && isset($data['season']);
+            })
+            ->andReturn(1);
+
+        \Brain\Monkey\Functions\expect('intersoccer_normalize_roster_facets_for_storage')
+            ->once()
+            ->andReturn([
+                'venue' => 'Geneva Centre',
+                'age_group' => '5-13y (Full Day)',
+                'camp_terms' => 'Summer Week 1',
+                'course_day' => '',
+                'times' => '9:00am-4:00pm',
+                'season' => 'Summer 2025',
+                'activity_type' => 'Camp',
+                'city' => '',
+                'canton_region' => '',
+                'girls_only' => 0,
+                'product_id' => 100,
+                'start_date' => '2025-07-07',
+            ]);
+
+        \Brain\Monkey\Functions\expect('intersoccer_build_roster_facet_db_update')
+            ->once()
+            ->andReturn([
+                'event_signature' => 'sig123',
+                'venue' => 'Geneva Centre',
+                'season' => 'Summer 2025',
+                'product_name' => 'Summer Camp EN',
+            ]);
+
+        \Brain\Monkey\Functions\when('intersoccer_get_english_product_name')->justReturn('Summer Camp EN');
+
+        $ok = intersoccer_rebuild_event_signature_for_order_item(42);
+        $this->assertTrue($ok);
+        $this->assertSame('Geneva Centre', $captured_update['venue']);
+        $this->assertSame('Summer 2025', $captured_update['season']);
+    }
 }
 

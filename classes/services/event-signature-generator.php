@@ -50,6 +50,10 @@ class EventSignatureGenerator {
      * @return string MD5 signature
      */
     public function generate(array $event_data) {
+        if (function_exists('intersoccer_event_signature_from_event_data')) {
+            return intersoccer_event_signature_from_event_data($event_data);
+        }
+
         try {
             // Normalize data to language-agnostic format
             $normalized = $this->normalize($event_data);
@@ -133,6 +137,14 @@ class EventSignatureGenerator {
      * @return array Normalized event data
      */
     public function normalize(array $event_data) {
+        if (function_exists('intersoccer_normalize_event_data_for_signature')) {
+            $normalized = intersoccer_normalize_event_data_for_signature($event_data);
+            if (array_key_exists('start_date', $event_data)) {
+                $normalized['start_date'] = $event_data['start_date'];
+            }
+            return $normalized;
+        }
+
         $normalized = $event_data;
         
         // Store and switch language context if WPML is active

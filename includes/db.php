@@ -126,7 +126,7 @@ function intersoccer_migrate_rosters_table() {
         $existing_records = $wpdb->get_results("SELECT id, activity_type, venue, age_group, camp_terms, course_day, times, season, girls_only, product_id FROM $rosters_table WHERE event_signature = '' OR event_signature IS NULL", ARRAY_A);
 
         foreach ($existing_records as $record) {
-            $normalized_data = intersoccer_normalize_event_data_for_signature([
+            $signature = intersoccer_event_signature_from_event_data([
                 'activity_type' => $record['activity_type'],
                 'venue' => $record['venue'],
                 'age_group' => $record['age_group'],
@@ -137,8 +137,6 @@ function intersoccer_migrate_rosters_table() {
                 'girls_only' => $record['girls_only'],
                 'product_id' => $record['product_id'],
             ]);
-
-            $signature = intersoccer_generate_event_signature($normalized_data);
 
             $wpdb->update(
                 $rosters_table,
@@ -433,12 +431,12 @@ function intersoccer_rebuild_event_signatures() {
             'start_date' => $start_date,
         ];
         
-        $normalized_data = intersoccer_normalize_event_data_for_signature($original_data);
-        
-        // Add start_date back for signature generation (normalization doesn't modify dates)
+        $normalized_data = function_exists('intersoccer_normalize_roster_facets_for_storage')
+            ? intersoccer_normalize_roster_facets_for_storage($original_data)
+            : intersoccer_normalize_event_data_for_signature($original_data);
+
         $normalized_data['start_date'] = $start_date;
 
-        // Log signature components before generation for debugging
         error_log('InterSoccer: Signature components for record id ' . $record['id'] . ': ' . json_encode([
             'original_product_id' => $record['product_id'],
             'normalized_product_id' => $product_id_to_use,
@@ -453,24 +451,27 @@ function intersoccer_rebuild_event_signatures() {
             'canton_region' => $normalized_data['canton_region'] ?? ($record['canton_region'] ?? ''),
         ]));
 
-        $signature = intersoccer_generate_event_signature($normalized_data);
+        $update_data = function_exists('intersoccer_build_roster_facet_db_update')
+            ? intersoccer_build_roster_facet_db_update(
+                $normalized_data,
+                $record,
+                (string) ($normalized_product_name ?: $record['product_name'] ?? '')
+            )
+            : [
+                'event_signature' => intersoccer_event_signature_from_event_data($original_data),
+                'venue' => substr((string) ($normalized_data['venue'] ?? $record['venue'] ?? ''), 0, 200),
+                'age_group' => substr((string) ($normalized_data['age_group'] ?? $record['age_group'] ?? ''), 0, 50),
+                'camp_terms' => substr((string) ($normalized_data['camp_terms'] ?? $record['camp_terms'] ?? ''), 0, 100),
+                'course_day' => substr((string) ($normalized_data['course_day'] ?? $record['course_day'] ?? ''), 0, 20),
+                'times' => substr((string) ($normalized_data['times'] ?? $record['times'] ?? ''), 0, 50),
+                'season' => substr((string) ($normalized_data['season'] ?? $record['season'] ?? ''), 0, 50),
+                'city' => substr((string) ($normalized_data['city'] ?? $record['city'] ?? ''), 0, 100),
+                'canton_region' => substr((string) ($normalized_data['canton_region'] ?? $record['canton_region'] ?? ''), 0, 100),
+                'activity_type' => substr((string) ($normalized_data['activity_type'] ?? $record['activity_type'] ?? ''), 0, 50),
+                'product_name' => substr((string) ($normalized_product_name ?: $record['product_name'] ?? ''), 0, 255),
+            ];
 
-        error_log('InterSoccer: Generated signature ' . $signature . ' for record id ' . $record['id']);
-
-        // Update both event_signature and normalized stored values
-        $update_data = [
-            'event_signature' => $signature,
-            'venue' => substr((string)($normalized_data['venue'] ?? $record['venue'] ?? ''), 0, 200),
-            'age_group' => substr((string)($normalized_data['age_group'] ?? $record['age_group'] ?? ''), 0, 50),
-            'camp_terms' => substr((string)($normalized_data['camp_terms'] ?? $record['camp_terms'] ?? ''), 0, 100),
-            'course_day' => substr((string)($normalized_data['course_day'] ?? $record['course_day'] ?? ''), 0, 20),
-            'times' => substr((string)($normalized_data['times'] ?? $record['times'] ?? ''), 0, 50),
-            'season' => substr((string)($normalized_data['season'] ?? $record['season'] ?? ''), 0, 50),
-            'city' => substr((string)($normalized_data['city'] ?? $record['city'] ?? ''), 0, 100),
-            'canton_region' => substr((string)($normalized_data['canton_region'] ?? $record['canton_region'] ?? ''), 0, 100),
-            'activity_type' => substr((string)($normalized_data['activity_type'] ?? $record['activity_type'] ?? ''), 0, 50),
-            'product_name' => substr((string)($normalized_product_name ?: $record['product_name'] ?? ''), 0, 255),
-        ];
+        error_log('InterSoccer: Generated signature ' . ($update_data['event_signature'] ?? '') . ' for record id ' . $record['id']);
         
         // Update product_id to normalized value if it changed (for WPML translations)
         if ($product_id_to_use != $record['product_id']) {
@@ -1386,7 +1387,7 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
 
         // Generate event signature using the normalized values (same as stored values)
         // This ensures consistency between stored data and event signature
-        $roster_entry['event_signature'] = intersoccer_generate_event_signature($normalized_event_data);
+        $roster_entry['event_signature'] = intersoccer_event_signature_from_event_data($event_data_to_normalize);
         
         error_log('InterSoccer: Generated event_signature=' . $roster_entry['event_signature'] . ' for Order=' . $order_id . ', Item=' . $order_item_id . ' using normalized values');
 

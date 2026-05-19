@@ -1184,9 +1184,10 @@ class RosterBuilder {
                 ? intersoccer_canonical_activity_type_for_roster($raw_activity)
                 : $raw_activity;
 
-            // Generate event signature using normalized values (same as stored values)
-            // Use the signature generator which expects normalized data
-            $roster_data['event_signature'] = $this->signature_generator->generate($normalized_event_data);
+            // Generate event signature from original facet payload (wrapper normalizes internally).
+            $roster_data['event_signature'] = function_exists('intersoccer_event_signature_from_event_data')
+                ? intersoccer_event_signature_from_event_data($event_data_to_normalize)
+                : $this->signature_generator->generate($event_data_to_normalize);
         }
 
         // Camps: English weekday list + day_presence JSON (canonical storage for roster UI and reports).
@@ -1875,9 +1876,9 @@ class RosterBuilder {
                         'start_date' => $roster->start_date ?? '', // Include for tournament signature generation
                     ];
                     
-                    // Generate new signature using the signature generator
-                    // The signature generator will normalize product_id for WPML translations
-                    $new_signature = $this->signature_generator->generate($event_data);
+                    $new_signature = function_exists('intersoccer_event_signature_from_event_data')
+                        ? intersoccer_event_signature_from_event_data($event_data)
+                        : $this->signature_generator->generate($event_data);
                     
                     if (empty($new_signature)) {
                         $results['errors']++;

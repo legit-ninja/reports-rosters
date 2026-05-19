@@ -118,8 +118,7 @@ function intersoccer_create_placeholder_from_variation($variation_id, $product_i
     }
 
     // Generate event signature
-    $normalized_data = intersoccer_normalize_event_data_for_signature($event_data);
-    $event_signature = intersoccer_generate_event_signature($normalized_data);
+    $event_signature = intersoccer_event_signature_from_event_data($event_data);
 
     // Check if placeholder already exists for this event_signature
     $existing = $wpdb->get_row($wpdb->prepare(
