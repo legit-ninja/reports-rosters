@@ -24,8 +24,8 @@ URL resolution (`intersoccer_get_roster_details_url_for_order_item()` in `includ
 1. Load roster row(s) for the `order_item_id`.
 2. Find sibling roster rows (narrow DB query by variation/venue/course day or camp terms).
 3. Filter siblings with `intersoccer_consolidated_roster_group_key()` so FR/DE/EN rows group together.
-4. Build `admin.php?page=intersoccer-roster-details&from=...&order_item_ids=...`.
-5. Tournaments use `event_signature` when set; single-row fallback uses `event_signature` or one `order_item_id`.
+4. Prefer `event_signature` (stored or computed from roster facets) via `intersoccer_get_roster_details_url_for_listing_group()`.
+5. Fall back to `order_item_ids` only when no signature can be resolved.
 
 The link opens in the same tab (same as listing **View Roster** buttons).
 
@@ -42,7 +42,8 @@ Typical outcomes:
 
 `Fix Sync` calls `intersoccer_fix_reports_rosters_item_safe` and runs safe, item-scoped repairs:
 
-- insert missing roster placeholder row when Woo row exists
+- **full roster rebuild** from WooCommerce when the line item is missing, has placeholder rows (`Unknown Player` without `event_signature`), or incomplete player data
+- insert minimal placeholder row only when rebuild still cannot produce a roster row
 - backfill missing course-day item meta when roster row has the value
 - quarantine orphan roster rows (missing in Woo)
 
