@@ -120,9 +120,14 @@ class AdminToolsAjaxHandler {
         }
 
         try {
+            $statuses = ['processing', 'on-hold'];
+            if (!empty($_POST['include_completed']) && $_POST['include_completed'] === '1') {
+                $statuses[] = 'completed';
+            }
+
             $order_ids = wc_get_orders([
                 'limit' => -1,
-                'status' => ['processing', 'on-hold', 'completed'],
+                'status' => $statuses,
                 'return' => 'ids',
             ]);
 

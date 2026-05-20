@@ -95,15 +95,20 @@ class OrderProcessor {
                 $existing_count = $this->roster_repository->count(['order_id' => $wc_order->get_id()]);
                 if ($existing_count > 0) {
                     $existing = $this->roster_repository->where(['order_id' => $wc_order->get_id()]);
-                    $rows_with_incomplete_names = 0;
+                    $rows_needing_resync = 0;
                     foreach ($existing as $row) {
                         $row_data = method_exists($row, 'toArray') ? $row->toArray() : (array) $row;
+                        if (function_exists('intersoccer_roster_row_needs_order_resync')
+                            && intersoccer_roster_row_needs_order_resync($row_data)) {
+                            $rows_needing_resync++;
+                            continue;
+                        }
                         if (function_exists('intersoccer_roster_row_names_incomplete')
                             && intersoccer_roster_row_names_incomplete($row_data)) {
-                            $rows_with_incomplete_names++;
+                            $rows_needing_resync++;
                         }
                     }
-                    if ($rows_with_incomplete_names === 0) {
+                    if ($rows_needing_resync === 0) {
                         $this->last_rosters = $existing;
                         $this->last_order_completed = true;
                         return true;
@@ -253,12 +258,13 @@ class OrderProcessor {
                 $summary['failed_orders'][] = (is_object($order_id) && (method_exists($order_id, 'get_id') || is_callable([$order_id, 'get_id'])))
                     ? $order_id->get_id()
                     : $order_id;
-                $summary['success'] = false;
             }
         }
 
         if ($summary['processed_orders'] === 0) {
             $summary['success'] = false;
+        } elseif (!empty($summary['failed_orders'])) {
+            $summary['success'] = true;
         }
 
         $summary['message'] = sprintf(
@@ -295,7 +301,7 @@ class OrderProcessor {
             return false;
         }
 
-        return in_array($wc_order->get_status(), ['completed', 'processing'], true);
+        return in_array($wc_order->get_status(), ['completed', 'processing', 'on-hold'], true);
     }
 
     /**
