@@ -1477,6 +1477,124 @@ if (!function_exists('intersoccer_roster_row_names_incomplete')) {
     }
 }
 
+if (!function_exists('intersoccer_roster_row_is_sync_placeholder')) {
+    /**
+     * True for minimal rows inserted by diagnostics "Fix Sync" (not a full roster build).
+     *
+     * @param array<string,mixed> $row
+     * @return bool
+     */
+    function intersoccer_roster_row_is_sync_placeholder(array $row) {
+        $pn = trim((string) ($row['player_name'] ?? ''));
+        if (function_exists('intersoccer_roster_is_placeholder_player_name')
+            && !intersoccer_roster_is_placeholder_player_name($pn)) {
+            return false;
+        }
+        $sig = trim((string) ($row['event_signature'] ?? ''));
+        return $sig === '' || strcasecmp($sig, 'N/A') === 0;
+    }
+}
+
+if (!function_exists('intersoccer_roster_row_needs_order_resync')) {
+    /**
+     * True when a roster row should be rebuilt from WooCommerce (not left as-is).
+     *
+     * @param array<string,mixed> $row
+     * @return bool
+     */
+    function intersoccer_roster_row_needs_order_resync(array $row) {
+        if (function_exists('intersoccer_roster_row_is_sync_placeholder') && intersoccer_roster_row_is_sync_placeholder($row)) {
+            return true;
+        }
+        $sig = trim((string) ($row['event_signature'] ?? ''));
+        if ($sig === '' || strcasecmp($sig, 'N/A') === 0) {
+            return true;
+        }
+        return function_exists('intersoccer_roster_row_names_incomplete') && intersoccer_roster_row_names_incomplete($row);
+    }
+}
+
+if (!function_exists('intersoccer_roster_row_resolve_event_signature_for_url')) {
+    /**
+     * Resolve event_signature for roster details URLs (stored value or computed from facets).
+     *
+     * @param array<string,mixed> $row
+     * @return string
+     */
+    function intersoccer_roster_row_resolve_event_signature_for_url(array $row) {
+        $sig = trim((string) ($row['event_signature'] ?? ''));
+        if ($sig !== '' && strcasecmp($sig, 'N/A') !== 0) {
+            return $sig;
+        }
+        if (!function_exists('intersoccer_event_signature_from_event_data')) {
+            return '';
+        }
+        $payload = [
+            'activity_type' => $row['activity_type'] ?? '',
+            'venue' => $row['venue'] ?? '',
+            'course_day' => $row['course_day'] ?? '',
+            'camp_terms' => $row['camp_terms'] ?? '',
+            'age_group' => $row['age_group'] ?? '',
+            'times' => $row['times'] ?? ($row['course_times'] ?? ($row['camp_times'] ?? '')),
+            'season' => $row['season'] ?? '',
+            'product_id' => $row['product_id'] ?? 0,
+            'variation_id' => $row['variation_id'] ?? 0,
+            'girls_only' => $row['girls_only'] ?? 0,
+            'start_date' => $row['start_date'] ?? '',
+        ];
+        $computed = intersoccer_event_signature_from_event_data($payload);
+        return is_string($computed) ? trim($computed) : '';
+    }
+}
+
+if (!function_exists('intersoccer_attempt_roster_build_for_order_item_ids')) {
+    /**
+     * Build roster rows from WooCommerce orders for the given line item IDs.
+     *
+     * @param int[] $order_item_ids
+     * @return int Number of distinct orders processed
+     */
+    function intersoccer_attempt_roster_build_for_order_item_ids(array $order_item_ids) {
+        $order_item_ids = array_values(array_filter(array_map('intval', $order_item_ids)));
+        if ($order_item_ids === []) {
+            return 0;
+        }
+
+        $order_ids = [];
+        foreach ($order_item_ids as $order_item_id) {
+            $order_id = function_exists('wc_get_order_id_by_order_item_id')
+                ? (int) wc_get_order_id_by_order_item_id($order_item_id)
+                : 0;
+            if ($order_id > 0) {
+                $order_ids[$order_id] = $order_id;
+            }
+        }
+
+        if ($order_ids === []) {
+            return 0;
+        }
+
+        $processed = 0;
+        foreach ($order_ids as $order_id) {
+            try {
+                if (function_exists('intersoccer_oop_process_order')) {
+                    if (intersoccer_oop_process_order($order_id)) {
+                        $processed++;
+                    }
+                } elseif (function_exists('intersoccer_safe_populate_rosters')) {
+                    if (intersoccer_safe_populate_rosters($order_id)) {
+                        $processed++;
+                    }
+                }
+            } catch (\Throwable $e) {
+                error_log('InterSoccer: attempt_roster_build failed for order ' . $order_id . ': ' . $e->getMessage());
+            }
+        }
+
+        return $processed;
+    }
+}
+
 if (!function_exists('intersoccer_roster_display_first_name')) {
     /**
      * @param array|object $row
@@ -1745,7 +1863,27 @@ if (!function_exists('intersoccer_get_roster_details_url_for_listing_group')) {
             $params['event_signature'] = $sigs[0];
         } elseif (count($sigs) > 1) {
             $params['event_signatures'] = implode(',', $sigs);
-        } elseif (!empty($group['order_item_ids'])) {
+        }
+
+        if (!empty($params['event_signature']) || !empty($params['event_signatures'])) {
+            $venue = trim((string) ($group['venue'] ?? ''));
+            if ($venue !== '' && strcasecmp($venue, 'N/A') !== 0) {
+                $params['venue'] = $venue;
+            }
+            if ($from === 'courses' || $from === 'girls-only') {
+                $course_day = trim((string) ($group['course_day'] ?? ''));
+                if ($course_day !== '' && strcasecmp($course_day, 'N/A') !== 0) {
+                    $params['course_day'] = $course_day;
+                }
+            } elseif ($from === 'camps') {
+                $camp_terms = trim((string) ($group['camp_terms'] ?? ''));
+                if ($camp_terms !== '' && strcasecmp($camp_terms, 'N/A') !== 0) {
+                    $params['camp_terms'] = $camp_terms;
+                }
+            }
+        }
+
+        if (empty($params['event_signature']) && empty($params['event_signatures']) && !empty($group['order_item_ids'])) {
             $ids = is_array($group['order_item_ids'])
                 ? $group['order_item_ids']
                 : array_filter(array_map('intval', explode(',', (string) $group['order_item_ids'])));
@@ -4674,6 +4812,253 @@ if (!function_exists('intersoccer_roster_listing_activity_types')) {
     }
 }
 
+if (!function_exists('intersoccer_roster_row_camp_facets_indicate_camp')) {
+    /**
+     * True when roster facets look like a camp event (not a course), regardless of activity_type label.
+     *
+     * @param array<string,mixed> $row
+     * @return bool
+     */
+    function intersoccer_roster_row_camp_facets_indicate_camp(array $row) {
+        $camp_terms = trim((string) ($row['camp_terms'] ?? ''));
+        $course_day = trim((string) ($row['course_day'] ?? ''));
+        $has_camp_terms = $camp_terms !== '' && $camp_terms !== 'N/A';
+        $has_course_day = $course_day !== '' && $course_day !== 'N/A';
+
+        if ($has_camp_terms && !$has_course_day) {
+            return true;
+        }
+
+        $raw = trim((string) ($row['activity_type'] ?? ''));
+        if ($has_course_day) {
+            return false;
+        }
+
+        if ($raw === '') {
+            return false;
+        }
+
+        $canonical = function_exists('intersoccer_canonical_activity_type_for_roster')
+            ? intersoccer_canonical_activity_type_for_roster($raw)
+            : $raw;
+        $camp_canonical = ['Camp', 'Camp, Girls Only', "Camp, Girls' only"];
+        if (in_array($canonical, $camp_canonical, true)) {
+            return true;
+        }
+
+        $norm = function_exists('intersoccer_normalize_comparison_string')
+            ? intersoccer_normalize_comparison_string($canonical)
+            : strtolower($canonical);
+
+        return $norm !== ''
+            && strpos($norm, 'camp') !== false
+            && strpos($norm, 'course') === false
+            && strpos($norm, 'cours') === false
+            && strpos($norm, 'kurs') === false;
+    }
+}
+
+if (!function_exists('intersoccer_roster_row_matches_listing_kind')) {
+    /**
+     * Whether a roster row belongs on the Camps or Courses admin listing.
+     *
+     * Guards against mis-labeled rows (e.g. birthday parties stored as Camp when camp-shaped
+     * order meta is present but Activity Type is missing).
+     *
+     * @param array  $row  Prepared roster row.
+     * @param string $kind "camp" or "course".
+     * @return bool
+     */
+    function intersoccer_roster_row_matches_listing_kind(array $row, $kind) {
+        $kind = strtolower((string) $kind) === 'course' ? 'course' : 'camp';
+
+        if (function_exists('intersoccer_get_product_type_safe')) {
+            $product_id = (int) ($row['product_id'] ?? 0);
+            $variation_id = (int) ($row['variation_id'] ?? 0);
+            if ($product_id > 0) {
+                $ptype = strtolower((string) intersoccer_get_product_type_safe(
+                    $product_id,
+                    $variation_id > 0 ? $variation_id : null
+                ));
+                if ($ptype === 'birthday') {
+                    return false;
+                }
+                if ($kind === 'course' && $ptype === 'course') {
+                    if (function_exists('intersoccer_roster_row_camp_facets_indicate_camp')
+                        && intersoccer_roster_row_camp_facets_indicate_camp($row)) {
+                        return false;
+                    }
+                    return true;
+                }
+                if ($kind === 'camp' && $ptype === 'camp') {
+                    return true;
+                }
+                if ($kind === 'camp' && in_array($ptype, ['course', 'tournament'], true)) {
+                    return false;
+                }
+                if ($kind === 'course' && in_array($ptype, ['camp', 'tournament', 'birthday'], true)) {
+                    return false;
+                }
+            }
+        }
+
+        if ($kind === 'course' && function_exists('intersoccer_roster_row_camp_facets_indicate_camp')
+            && intersoccer_roster_row_camp_facets_indicate_camp($row)) {
+            return false;
+        }
+
+        $raw = trim((string) ($row['activity_type'] ?? ''));
+        $canonical = ($raw !== '' && function_exists('intersoccer_canonical_activity_type_for_roster'))
+            ? intersoccer_canonical_activity_type_for_roster($raw)
+            : $raw;
+
+        $norm = function_exists('intersoccer_normalize_comparison_string')
+            ? intersoccer_normalize_comparison_string($canonical !== '' ? $canonical : $raw)
+            : strtolower($canonical !== '' ? $canonical : $raw);
+
+        if ($norm !== '' && (strpos($norm, 'birthday') !== false || strpos($norm, 'anniversaire') !== false)) {
+            return false;
+        }
+        if ($kind === 'camp' && $norm !== '' && strpos($norm, 'tournament') !== false) {
+            return false;
+        }
+        if ($kind === 'camp' && $norm !== '' && strpos($norm, 'camp') === false
+            && (strpos($norm, 'course') !== false || strpos($norm, 'cours') !== false || strpos($norm, 'kurs') !== false)) {
+            return false;
+        }
+        if ($kind === 'course' && $norm !== '' && strpos($norm, 'camp') !== false
+            && strpos($norm, 'course') === false && strpos($norm, 'cours') === false && strpos($norm, 'kurs') === false) {
+            return false;
+        }
+
+        $allowed = function_exists('intersoccer_roster_listing_activity_types')
+            ? intersoccer_roster_listing_activity_types($kind)
+            : ($kind === 'course'
+                ? ['Course', 'Course, Girls Only', "Course, Girls' only"]
+                : ['Camp', 'Camp, Girls Only', "Camp, Girls' only"]);
+
+        if ($raw !== '' && in_array($raw, $allowed, true)) {
+            return true;
+        }
+
+        $camp_canonical = ['Camp', 'Camp, Girls Only', "Camp, Girls' only"];
+        $course_canonical = ['Course', 'Course, Girls Only', "Course, Girls' only"];
+
+        if ($kind === 'camp') {
+            if (in_array($canonical, $camp_canonical, true)) {
+                return true;
+            }
+            return $norm !== '' && strpos($norm, 'camp') !== false && strpos($norm, 'course') === false;
+        }
+
+        if (in_array($canonical, $course_canonical, true)) {
+            return true;
+        }
+
+        return $norm !== '' && (strpos($norm, 'course') !== false || strpos($norm, 'cours') !== false || strpos($norm, 'kurs') !== false);
+    }
+}
+
+if (!function_exists('intersoccer_roster_row_matches_girls_only_listing')) {
+    /**
+     * Whether a roster row belongs on the Girls Only admin listing (camps, courses, tournaments only).
+     *
+     * @param array<string,mixed> $row Prepared roster row.
+     * @return bool
+     */
+    function intersoccer_roster_row_matches_girls_only_listing(array $row) {
+        if ((int) ($row['girls_only'] ?? 0) !== 1) {
+            return false;
+        }
+
+        if (function_exists('intersoccer_roster_row_matches_listing_kind')) {
+            if (intersoccer_roster_row_matches_listing_kind($row, 'camp')
+                || intersoccer_roster_row_matches_listing_kind($row, 'course')) {
+                return true;
+            }
+        }
+
+        if (function_exists('intersoccer_get_product_type_safe')) {
+            $product_id = (int) ($row['product_id'] ?? 0);
+            $variation_id = (int) ($row['variation_id'] ?? 0);
+            if ($product_id > 0) {
+                $ptype = strtolower((string) intersoccer_get_product_type_safe(
+                    $product_id,
+                    $variation_id > 0 ? $variation_id : null
+                ));
+                if ($ptype === 'birthday') {
+                    return false;
+                }
+                if (in_array($ptype, ['camp', 'course', 'tournament'], true)) {
+                    return true;
+                }
+            }
+        }
+
+        $raw = trim((string) ($row['activity_type'] ?? ''));
+        $canonical = ($raw !== '' && function_exists('intersoccer_canonical_activity_type_for_roster'))
+            ? intersoccer_canonical_activity_type_for_roster($raw)
+            : $raw;
+        $norm = function_exists('intersoccer_normalize_comparison_string')
+            ? intersoccer_normalize_comparison_string($canonical !== '' ? $canonical : $raw)
+            : strtolower($canonical !== '' ? $canonical : $raw);
+
+        if ($norm !== '' && (strpos($norm, 'birthday') !== false || strpos($norm, 'anniversaire') !== false)) {
+            return false;
+        }
+
+        return $norm !== '' && (strpos($norm, 'tournament') !== false || strpos($norm, 'tournoi') !== false);
+    }
+}
+
+if (!function_exists('intersoccer_roster_girls_only_listing_bucket')) {
+    /**
+     * Grouping bucket for Girls Only listings: camp, course, or tournament.
+     *
+     * @param array<string,mixed> $row
+     * @return string Empty when the row should not appear on the page.
+     */
+    function intersoccer_roster_girls_only_listing_bucket(array $row) {
+        if (!function_exists('intersoccer_roster_row_matches_girls_only_listing')
+            || !intersoccer_roster_row_matches_girls_only_listing($row)) {
+            return '';
+        }
+
+        if (function_exists('intersoccer_roster_row_matches_listing_kind')
+            && intersoccer_roster_row_matches_listing_kind($row, 'course')) {
+            return 'course';
+        }
+
+        if (function_exists('intersoccer_roster_row_matches_listing_kind')
+            && intersoccer_roster_row_matches_listing_kind($row, 'camp')) {
+            return 'camp';
+        }
+
+        return 'tournament';
+    }
+}
+
+if (!function_exists('intersoccer_reports_final_report_order_statuses')) {
+    /**
+     * WooCommerce order statuses counted in Final Numbers (aligned with roster listing pages).
+     *
+     * @return string[]
+     */
+    function intersoccer_reports_final_report_order_statuses() {
+        return ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'];
+    }
+}
+
+if (!function_exists('intersoccer_reports_sql_in_placeholders')) {
+    /**
+     * @param string[] $values
+     * @return string e.g. '%s,%s,%s'
+     */
+    function intersoccer_reports_sql_in_placeholders(array $values) {
+        return implode(',', array_fill(0, count($values), '%s'));
+    }
+}
+
 /**
  * Generates a stable event signature for roster grouping that doesn't rely on variation_id.
  * This ensures rosters remain properly grouped even when product variations are deleted.
@@ -4852,6 +5237,175 @@ function intersoccer_normalize_season_for_display($season) {
     $normalized = str_ireplace('automne', 'autumn', $normalized);
 
     return $normalized;
+}
+
+/**
+ * Whether a roster row/group belongs on the Courses listing (for season label correction).
+ *
+ * @param array<string,mixed> $row
+ * @return bool
+ */
+function intersoccer_roster_row_is_course_listing_context(array $row) {
+    if (!empty($row['course_day']) && $row['course_day'] !== 'N/A') {
+        return true;
+    }
+
+    $product_name = strtolower((string) ($row['product_name'] ?? ''));
+    if ($product_name !== '' && $product_name !== 'n/a') {
+        if (strpos($product_name, 'course') !== false || strpos($product_name, 'cours') !== false) {
+            return true;
+        }
+    }
+
+    $activity = strtolower((string) ($row['activity_type'] ?? ''));
+    if ($activity !== '' && (strpos($activity, 'course') !== false || strpos($activity, 'cours') !== false)) {
+        return true;
+    }
+
+    if (!empty($row['product_id']) && function_exists('intersoccer_get_product_type_safe')) {
+        return intersoccer_get_product_type_safe((int) $row['product_id']) === 'course';
+    }
+
+    return false;
+}
+
+/**
+ * Resolve a season value to the canonical WooCommerce program-season label (English term name).
+ *
+ * @param string $season_raw Slug, translated name, or legacy label.
+ * @return string
+ */
+function intersoccer_roster_resolve_season_taxonomy_label($season_raw) {
+    $season_raw = trim((string) $season_raw);
+    if ($season_raw === '' || strcasecmp($season_raw, 'N/A') === 0) {
+        return $season_raw;
+    }
+
+    if (function_exists('intersoccer_get_term_name')) {
+        $resolved = trim((string) intersoccer_get_term_name($season_raw, 'pa_program-season'));
+        if ($resolved !== '' && strcasecmp($resolved, 'N/A') !== 0 && $resolved !== $season_raw) {
+            return $resolved;
+        }
+    }
+
+    // Fallback when taxonomy lookup fails: humanize attribute slugs (e.g. summer-courses-2026).
+    if (preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)+$/i', $season_raw)) {
+        $parts = preg_split('/-+/', strtolower($season_raw)) ?: [];
+        $parts = array_values(array_filter($parts, static function ($part) {
+            return $part !== '';
+        }));
+        if (!empty($parts)) {
+            return implode(' ', array_map('ucfirst', $parts));
+        }
+    }
+
+    return $season_raw;
+}
+
+/**
+ * Normalize season label for the Courses roster page (canonical term name + camp→course correction).
+ *
+ * @param string              $season_raw
+ * @param array<string,mixed> $row
+ * @return string
+ */
+function intersoccer_roster_normalize_course_listing_season($season_raw, array $row = []) {
+    $season_raw = trim((string) $season_raw);
+    if ($season_raw === '' || strcasecmp($season_raw, 'N/A') === 0) {
+        return $season_raw;
+    }
+
+    $display = intersoccer_roster_resolve_season_taxonomy_label($season_raw);
+    $display = intersoccer_normalize_season_for_display($display);
+
+    if (!intersoccer_roster_row_is_course_listing_context($row)) {
+        return $display;
+    }
+
+    $needs_camp_fix = (stripos($season_raw, 'camp') !== false || stripos($display, 'camp') !== false);
+    if (!$needs_camp_fix) {
+        return $display;
+    }
+
+    $corrected = preg_replace('/\bcamps\b/i', 'Courses', $display);
+    $corrected = preg_replace('/\bcamp\b/i', 'Course', (string) $corrected);
+    $corrected = preg_replace('/-camps-/i', '-courses-', (string) $corrected);
+    $corrected = preg_replace('/-camp-/i', '-course-', (string) $corrected);
+
+    return trim((string) $corrected);
+}
+
+/**
+ * Map a persisted/raw season filter value to a dropdown option on the Courses page.
+ *
+ * @param string              $selected
+ * @param array<int,string>   $available_seasons
+ * @return string
+ */
+function intersoccer_roster_resolve_course_season_for_filter_ui(string $selected, array $available_seasons): string {
+    if ($selected === '') {
+        return '';
+    }
+    if (in_array($selected, $available_seasons, true)) {
+        return $selected;
+    }
+    foreach ($available_seasons as $season) {
+        if (!function_exists('intersoccer_roster_course_season_filter_matches')) {
+            break;
+        }
+        if (intersoccer_roster_course_season_filter_matches(
+            ['season' => $season, 'season_raw' => $selected],
+            $selected
+        )) {
+            return $season;
+        }
+    }
+    return $selected;
+}
+
+/**
+ * Whether a course listing group matches the selected season filter (display + raw + legacy camp labels).
+ *
+ * @param array<string,mixed> $group
+ * @param string              $filter_season
+ * @return bool
+ */
+function intersoccer_roster_course_season_filter_matches(array $group, string $filter_season): bool {
+    if ($filter_season === '') {
+        return true;
+    }
+
+    $group_season = (string) ($group['season'] ?? '');
+    $group_raw = (string) ($group['season_raw'] ?? '');
+
+    if ($filter_season === $group_season || $filter_season === $group_raw) {
+        return true;
+    }
+
+    if (function_exists('intersoccer_roster_normalize_course_listing_season')) {
+        $row_context = [
+            'product_name' => $group['product_name'] ?? '',
+            'course_day' => $group['course_day'] ?? '',
+            'activity_type' => 'Course',
+        ];
+        $normalized_filter = intersoccer_roster_normalize_course_listing_season($filter_season, $row_context);
+        $normalized_group = intersoccer_roster_normalize_course_listing_season($group_season, $row_context);
+        $normalized_raw = intersoccer_roster_normalize_course_listing_season($group_raw, $row_context);
+        if ($normalized_filter !== '' && $normalized_filter === $normalized_group) {
+            return true;
+        }
+        if ($normalized_filter !== '' && $normalized_filter === $normalized_raw) {
+            return true;
+        }
+        if ($filter_season === $normalized_filter || $filter_season === $normalized_raw) {
+            return true;
+        }
+        if ($group_season === $normalized_filter) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**
