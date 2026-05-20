@@ -955,6 +955,20 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         if ($course_has_placeholder_column) {
             $course_placeholder_clause_r = " AND (r.is_placeholder = 0 OR r.is_placeholder IS NULL)";
         }
+
+        $course_activity_types = function_exists('intersoccer_roster_listing_activity_types')
+            ? intersoccer_roster_listing_activity_types('course')
+            : ['Course'];
+        $course_statuses = function_exists('intersoccer_reports_final_report_order_statuses')
+            ? intersoccer_reports_final_report_order_statuses()
+            : ['wc-completed'];
+        $course_status_sql = function_exists('intersoccer_reports_sql_in_placeholders')
+            ? intersoccer_reports_sql_in_placeholders($course_statuses)
+            : '%s';
+        $course_activity_sql = function_exists('intersoccer_reports_sql_in_placeholders')
+            ? intersoccer_reports_sql_in_placeholders($course_activity_types)
+            : '%s';
+
         $query = $wpdb->prepare(
             "SELECT
                 oi.order_item_id,
@@ -984,6 +998,10 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 ) AS times,
                 om_start_date.meta_value AS start_date,
                 om_end_date.meta_value AS end_date,
+                rr.start_date AS roster_start_date,
+                rr.end_date AS roster_end_date,
+                rr.season AS roster_season,
+                rr.activity_type AS roster_activity_type,
                 p.post_date,
                 rr.id AS roster_row_id,
                 om_line_subtotal.meta_value AS line_subtotal,
@@ -1027,10 +1045,13 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
              LEFT JOIN $order_itemmeta_table om_line_subtotal ON oi.order_item_id = om_line_subtotal.order_item_id AND om_line_subtotal.meta_key = '_line_subtotal'
              LEFT JOIN $order_itemmeta_table om_line_total ON oi.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
              WHERE p.post_type = 'shop_order'
-             AND p.post_status = 'wc-completed'
-             AND COALESCE(om_activity_type.meta_value, pm_activity_type.meta_value) = %s
+             AND p.post_status IN ({$course_status_sql})
+             AND (
+                COALESCE(om_activity_type.meta_value, pm_activity_type.meta_value) IN ({$course_activity_sql})
+                OR rr.activity_type IN ({$course_activity_sql})
+             )
              {$course_placeholder_clause}",
-            $activity_type
+            array_merge($course_activity_types, $course_activity_types, $course_statuses)
         );
 
             $rosters = $wpdb->get_results($query, ARRAY_A);
@@ -1048,20 +1069,27 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             SELECT r.id,
                    p.ID AS order_id,
                    r.canton_region AS canton_region,
+                   r.activity_type,
+                   r.product_id,
+                   r.variation_id,
                    (SELECT meta_value FROM {$course_oim} WHERE order_item_id = r.order_item_id AND meta_key = '_line_subtotal' LIMIT 1) AS line_subtotal,
                    (SELECT meta_value FROM {$course_oim} WHERE order_item_id = r.order_item_id AND meta_key = '_line_total' LIMIT 1) AS line_total
             FROM {$course_rosters_table} r
             INNER JOIN {$wpdb->prefix}woocommerce_order_items oi ON r.order_item_id = oi.order_item_id
             INNER JOIN {$wpdb->prefix}posts p ON oi.order_id = p.ID
-            WHERE r.activity_type = %s
+            WHERE r.activity_type IN ({$course_activity_sql})
               AND r.order_item_id > 0
               AND p.post_type = 'shop_order'
-              AND p.post_status = 'wc-completed'
+              AND p.post_status IN ({$course_status_sql})
               AND r.season LIKE %s
+              AND (r.girls_only = 0 OR r.girls_only IS NULL)
               {$course_placeholder_clause_r}
         ";
         $course_direct_rows = $wpdb->get_results(
-            $wpdb->prepare($course_direct_total_sql, 'Course', $course_year_like),
+            $wpdb->prepare(
+                $course_direct_total_sql,
+                array_merge($course_activity_types, $course_statuses, [$course_year_like])
+            ),
             ARRAY_A
         );
         $course_player_registration_totals = ['all' => 0];
@@ -1073,6 +1101,10 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                     continue;
                 }
                 $course_direct_seen_id[$cdr_id] = true;
+                if (function_exists('intersoccer_roster_row_matches_listing_kind')
+                    && !intersoccer_roster_row_matches_listing_kind($cdr, 'course')) {
+                    continue;
+                }
                 if (!empty($region) && function_exists('intersoccer_reports_region_matches_filter')) {
                     if (!intersoccer_reports_region_matches_filter($cdr['canton_region'] ?? '', $region)) {
                         continue;
@@ -1095,42 +1127,65 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         $filtered_rosters = [];
         $skipped_no_dates = 0;
         foreach ($rosters as $roster) {
-            $start_date_str = $roster['start_date'] ?? '';
-            $end_date_str = $roster['end_date'] ?? '';
-            
-            // Parse event dates from order metadata
-            if (empty($start_date_str) || $start_date_str === 'N/A') {
-                $skipped_no_dates++;
+            if (function_exists('intersoccer_roster_row_matches_listing_kind')
+                && !intersoccer_roster_row_matches_listing_kind($roster, 'course')) {
                 continue;
             }
-            
+
+            $start_date_str = isset($roster['start_date']) ? trim((string) $roster['start_date']) : '';
+            $end_date_str = isset($roster['end_date']) ? trim((string) $roster['end_date']) : '';
+            if ($start_date_str === '' || $start_date_str === 'N/A') {
+                $start_date_str = isset($roster['roster_start_date']) ? trim((string) $roster['roster_start_date']) : '';
+            }
+            if ($end_date_str === '' || $end_date_str === 'N/A') {
+                $end_date_str = isset($roster['roster_end_date']) ? trim((string) $roster['roster_end_date']) : '';
+            }
+
             $context = 'Final Reports Course (order_item_id: ' . ($roster['order_item_id'] ?? 'unknown') . ')';
-            $parsed_start_date = intersoccer_parse_date_unified($start_date_str, $context . ' (start)');
-            
-            if (empty($parsed_start_date)) {
-                $skipped_no_dates++;
-                continue;
-            }
-            
-            // Parse end date if available
+            $parsed_start_date = null;
             $parsed_end_date = null;
-            if (!empty($end_date_str) && $end_date_str !== 'N/A') {
+
+            if ($start_date_str !== '' && $start_date_str !== 'N/A'
+                && $start_date_str !== '1970-01-01' && $start_date_str !== '0000-00-00') {
+                $parsed_start_date = intersoccer_parse_date_unified($start_date_str, $context . ' (start)');
+            }
+
+            if (!empty($end_date_str) && $end_date_str !== 'N/A'
+                && $end_date_str !== '1970-01-01' && $end_date_str !== '0000-00-00') {
                 $parsed_end_date = intersoccer_parse_date_unified($end_date_str, $context . ' (end)');
             }
-            
-            // Filter by event year - include if start or end date falls in the requested year
+
+            if (empty($parsed_start_date) || $parsed_start_date === '1970-01-01') {
+                $season_for_year = $roster['roster_season'] ?? '';
+                $season_year = !empty($season_for_year) ? intersoccer_extract_year_from_season($season_for_year) : null;
+                $requested_year_int = intval($year);
+                if ($season_year !== null && $season_year == $requested_year_int) {
+                    $post_date = isset($roster['post_date']) ? trim((string) $roster['post_date']) : '';
+                    $parsed_start_date = ($post_date !== '' && strtotime($post_date))
+                        ? date('Y-m-d', strtotime($post_date))
+                        : ($requested_year_int . '-12-31');
+                    $parsed_end_date = $parsed_start_date;
+                } else {
+                    $skipped_no_dates++;
+                    continue;
+                }
+            }
+
             $start_year = date('Y', strtotime($parsed_start_date));
             $end_year = $parsed_end_date ? date('Y', strtotime($parsed_end_date)) : $start_year;
-            
+
             if ($start_year != $year && $end_year != $year) {
-                if (!isset($skipped_year_mismatch)) {
-                    $skipped_year_mismatch = 0;
+                $season_for_year = $roster['roster_season'] ?? '';
+                $season_year = !empty($season_for_year) ? intersoccer_extract_year_from_season($season_for_year) : null;
+                if ($season_year === null || $season_year != intval($year)) {
+                    if (!isset($skipped_year_mismatch)) {
+                        $skipped_year_mismatch = 0;
+                    }
+                    $skipped_year_mismatch++;
+                    continue;
                 }
-                $skipped_year_mismatch++;
-                continue; // Skip entries that don't match the requested year
             }
-            
-            // Add parsed dates to roster entry
+
             $roster['event_start_date'] = $parsed_start_date;
             $roster['event_end_date'] = $parsed_end_date ?: $parsed_start_date;
             $filtered_rosters[] = $roster;
