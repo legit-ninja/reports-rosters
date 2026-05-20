@@ -326,29 +326,42 @@ class ReportsRostersDiagnosticsService {
 
         $reasons_before = self::classifyMismatchReasons($woo, $roster);
         $needs_name_repair = false;
+        $needs_full_rebuild = in_array('missing_in_rosters', $reasons_before, true);
         foreach ($roster_rows as $row) {
             if (!is_array($row)) {
                 continue;
             }
+            if (function_exists('intersoccer_roster_row_needs_order_resync')
+                && intersoccer_roster_row_needs_order_resync($row)) {
+                $needs_full_rebuild = true;
+            }
             if (function_exists('intersoccer_roster_row_names_incomplete')
                 && intersoccer_roster_row_names_incomplete($row)) {
                 $needs_name_repair = true;
-                break;
             }
         }
-
-        $will_rebuild = $needs_name_repair && function_exists('intersoccer_oop_get_roster_builder');
 
         $results = [
             'fixed_missing_in_rosters' => 0,
             'fixed_missing_in_woo_meta' => 0,
             'quarantined_missing_in_woo' => 0,
             'rebuilt_player_names' => 0,
+            'rebuilt_from_order' => 0,
+            'deleted_incomplete_rows' => 0,
             'backfilled_player_names' => 0,
             'errors' => [],
         ];
 
-        if ($will_rebuild) {
+        if ($needs_full_rebuild && function_exists('intersoccer_oop_get_roster_builder')) {
+            $results['deleted_incomplete_rows'] = $this->deleteIncompleteRosterRowsForOrderItem($order_item_id);
+            $rebuilt = $this->rebuildRosterNamesForOrderItem($order_item_id);
+            if ($rebuilt) {
+                $results['rebuilt_from_order'] = 1;
+                $results['rebuilt_player_names']++;
+            } else {
+                $results['errors'][] = sprintf('Failed full roster rebuild for order_item_id=%d', $order_item_id);
+            }
+        } elseif ($needs_name_repair && function_exists('intersoccer_oop_get_roster_builder')) {
             $rebuilt = $this->rebuildRosterNamesForOrderItem($order_item_id);
             if ($rebuilt) {
                 $results['rebuilt_player_names']++;
@@ -368,8 +381,26 @@ class ReportsRostersDiagnosticsService {
             }
         }
 
-        if (in_array('missing_in_rosters', $reasons_before, true) && $woo !== null) {
-            if ($this->insertRosterPlaceholderFromWooRow($woo)) {
+        $trace_mid = $this->traceItem(['order_item_id' => $order_item_id]);
+        $roster_rows_mid = isset($trace_mid['roster_rows']) && is_array($trace_mid['roster_rows']) ? $trace_mid['roster_rows'] : [];
+        $roster_mid = null;
+        foreach ($roster_rows_mid as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if ($roster_mid === null || $this->rowCompletenessRank($row) > $this->rowCompletenessRank($roster_mid)) {
+                $roster_mid = $row;
+            }
+        }
+        $reasons_mid = self::classifyMismatchReasons($woo, $roster_mid);
+
+        if (in_array('missing_in_rosters', $reasons_mid, true) && $woo !== null) {
+            if (!empty($results['rebuilt_from_order'])) {
+                $results['errors'][] = sprintf(
+                    'Roster rebuild ran but no player could be assigned for order_item_id=%d. Check Assigned Attendee on the line item and intersoccer_players on the customer account.',
+                    $order_item_id
+                );
+            } elseif ($this->insertRosterPlaceholderFromWooRow($woo)) {
                 $results['fixed_missing_in_rosters']++;
             } else {
                 $results['errors'][] = sprintf('Failed inserting roster for order_item_id=%d', $order_item_id);
@@ -413,7 +444,8 @@ class ReportsRostersDiagnosticsService {
         $reasons_after = self::classifyMismatchReasons($woo_after, $roster_after);
 
         $action_count = $results['fixed_missing_in_rosters'] + $results['fixed_missing_in_woo_meta']
-            + $results['quarantined_missing_in_woo'] + $results['rebuilt_player_names'] + $results['backfilled_player_names'];
+            + $results['quarantined_missing_in_woo'] + $results['rebuilt_player_names'] + $results['rebuilt_from_order']
+            + $results['backfilled_player_names'];
         $status = 'no_action';
         if (empty($reasons_after)) {
             $status = $action_count > 0 ? 'fixed' : 'in_sync';
@@ -727,6 +759,48 @@ class ReportsRostersDiagnosticsService {
     }
 
     /**
+     * Remove incomplete / diagnostics placeholder rows before a full rebuild.
+     *
+     * @param int $order_item_id
+     * @return int Rows deleted.
+     */
+    private function deleteIncompleteRosterRowsForOrderItem(int $order_item_id): int {
+        global $wpdb;
+        $order_item_id = (int) $order_item_id;
+        if ($order_item_id <= 0) {
+            return 0;
+        }
+
+        $table = $wpdb->prefix . 'intersoccer_rosters';
+        $rows = $wpdb->get_results(
+            $wpdb->prepare("SELECT * FROM {$table} WHERE order_item_id = %d", $order_item_id),
+            ARRAY_A
+        );
+        if (!is_array($rows) || $rows === []) {
+            return 0;
+        }
+
+        $deleted = 0;
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $needs_delete = function_exists('intersoccer_roster_row_needs_order_resync')
+                ? intersoccer_roster_row_needs_order_resync($row)
+                : (function_exists('intersoccer_roster_row_is_sync_placeholder') && intersoccer_roster_row_is_sync_placeholder($row));
+            if (!$needs_delete) {
+                continue;
+            }
+            $id = (int) ($row['id'] ?? 0);
+            if ($id > 0 && $wpdb->delete($table, ['id' => $id], ['%d'])) {
+                $deleted++;
+            }
+        }
+
+        return $deleted;
+    }
+
+    /**
      * Insert minimal roster row for missing line item.
      *
      * @param array<string,mixed> $woo_row
@@ -748,6 +822,18 @@ class ReportsRostersDiagnosticsService {
             return true;
         }
 
+        $event_signature = '';
+        if (function_exists('intersoccer_roster_row_resolve_event_signature_for_url')) {
+            $event_signature = intersoccer_roster_row_resolve_event_signature_for_url([
+                'activity_type' => (string) ($woo_row['activity_type'] ?? ''),
+                'venue' => (string) ($woo_row['venue_value'] ?? ''),
+                'course_day' => (string) ($woo_row['course_day_value'] ?? ''),
+                'product_id' => (int) ($woo_row['product_id'] ?? 0),
+                'variation_id' => (int) ($woo_row['variation_id'] ?? 0),
+                'product_name' => (string) ($woo_row['order_item_name'] ?? ''),
+            ]);
+        }
+
         $inserted = $wpdb->insert(
             $table,
             [
@@ -763,6 +849,7 @@ class ReportsRostersDiagnosticsService {
                 'activity_type' => (string) ($woo_row['activity_type'] ?? ''),
                 'venue' => (string) ($woo_row['venue_value'] ?? ''),
                 'course_day' => (string) ($woo_row['course_day_value'] ?? ''),
+                'event_signature' => $event_signature,
                 'player_first_name' => 'Unknown',
                 'player_last_name' => 'Unknown',
                 'parent_first_name' => 'Unknown',
@@ -771,7 +858,7 @@ class ReportsRostersDiagnosticsService {
             ],
             [
                 '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s',
-                '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',
+                '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',
             ]
         );
 
