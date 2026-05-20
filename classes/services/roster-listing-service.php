@@ -81,7 +81,7 @@ class RosterListingService {
 
         $start_time = microtime(true);
         $collection = $this->repository->where($criteria);
-        $rosters = $this->prepareRosterArray($collection);
+        $rosters = $this->filterListingRows($this->prepareRosterArray($collection), 'camp');
         $query_time = microtime(true) - $start_time;
 
         if (empty($rosters)) {
@@ -175,6 +175,64 @@ class RosterListingService {
     }
 
     /**
+     * Drop rows that do not belong on a Camps/Courses listing (mis-labeled birthdays, etc.).
+     *
+     * @param array  $rosters Prepared roster rows.
+     * @param string $kind    "camp" or "course".
+     * @return array
+     */
+    private function filterListingRows(array $rosters, string $kind): array {
+        if (!function_exists('intersoccer_roster_row_matches_listing_kind')) {
+            return $rosters;
+        }
+
+        return array_values(array_filter($rosters, function ($row) use ($kind) {
+            return intersoccer_roster_row_matches_listing_kind($row, $kind);
+        }));
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $primary
+     * @param array<int,array<string,mixed>> $extra
+     * @return array<int,array<string,mixed>>
+     */
+    private function mergeListingRowsByOrderItemId(array $primary, array $extra): array {
+        $seen = [];
+        foreach ($primary as $row) {
+            $oid = (int) ($row['order_item_id'] ?? 0);
+            if ($oid > 0) {
+                $seen[$oid] = true;
+            }
+        }
+        foreach ($extra as $row) {
+            $oid = (int) ($row['order_item_id'] ?? 0);
+            if ($oid > 0 && isset($seen[$oid])) {
+                continue;
+            }
+            if ($oid > 0) {
+                $seen[$oid] = true;
+            }
+            $primary[] = $row;
+        }
+
+        return $primary;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rosters
+     * @return array<int,array<string,mixed>>
+     */
+    private function filterGirlsOnlyListingRows(array $rosters): array {
+        if (!function_exists('intersoccer_roster_row_matches_girls_only_listing')) {
+            return $rosters;
+        }
+
+        return array_values(array_filter($rosters, function ($row) {
+            return intersoccer_roster_row_matches_girls_only_listing($row);
+        }));
+    }
+
+    /**
      * Aggregate roster data for the Courses page.
      *
      * @param bool $consolidated When true, group by canonical product + facets (all languages). Default true.
@@ -210,7 +268,19 @@ class RosterListingService {
 
         $start_time = microtime(true);
         $collection = $this->repository->where($criteria);
-        $rosters = $this->prepareRosterArray($collection);
+        $rosters = $this->filterListingRows($this->prepareRosterArray($collection), 'course');
+
+        // Recover course products stored under camp-shaped activity_type (mis-labeled only; camp facets excluded in filter).
+        if (!$girls_only) {
+            $mislabel_criteria = $criteria;
+            $mislabel_criteria['activity_type'] = function_exists('intersoccer_roster_listing_activity_types')
+                ? intersoccer_roster_listing_activity_types('camp')
+                : [Roster::ACTIVITY_CAMP, 'Camp, Girls Only', "Camp, Girls' only"];
+            $mislabel_collection = $this->repository->where($mislabel_criteria);
+            $recovered = $this->filterListingRows($this->prepareRosterArray($mislabel_collection), 'course');
+            $rosters = $this->mergeListingRowsByOrderItemId($rosters, $recovered);
+        }
+
         $query_time = microtime(true) - $start_time;
 
         if (empty($rosters)) {
@@ -284,7 +354,9 @@ class RosterListingService {
 
             if (!isset($groups[$signature])) {
                 $season_raw = $row['season'] ?? 'N/A';
-                $season_display = \intersoccer_normalize_season_for_display($season_raw);
+                $season_display = function_exists('intersoccer_roster_normalize_course_listing_season')
+                    ? \intersoccer_roster_normalize_course_listing_season($season_raw, $row)
+                    : \intersoccer_normalize_season_for_display($season_raw);
 
                 $groups[$signature] = [
                     'event_signature' => $row['event_signature'] ?: $signature,
@@ -333,6 +405,13 @@ class RosterListingService {
         }
 
         if (function_exists('intersoccer_roster_merge_course_groups_with_empty_season')) {
+            $before_merge_keys = array_map(function ($g) {
+                return [
+                    'season' => $g['season'] ?? '',
+                    'season_raw' => $g['season_raw'] ?? '',
+                    'product_name' => $g['product_name'] ?? '',
+                ];
+            }, $groups);
             $groups = intersoccer_roster_merge_course_groups_with_empty_season($groups);
         }
 
@@ -345,6 +424,17 @@ class RosterListingService {
 
             $group['corrected_start_date'] = $this->getEarliestDate($group['start_dates']);
             $group['corrected_end_date'] = $this->getLatestDate($group['end_dates']);
+
+            if (function_exists('intersoccer_roster_normalize_course_listing_season')) {
+                $group['season'] = \intersoccer_roster_normalize_course_listing_season(
+                    $group['season_raw'] ?? $group['season'],
+                    [
+                        'product_name' => $group['product_name'] ?? '',
+                        'course_day' => $group['course_day'] ?? '',
+                        'activity_type' => 'Course',
+                    ]
+                );
+            }
 
             $filters['seasons'][$group['season']] = $group['season'];
             $filters['venues'][$group['venue']] = $group['venue'];
@@ -374,7 +464,11 @@ class RosterListingService {
 
     private function applyCourseFilters(array $groups, array $filters): array {
         return array_values(array_filter($groups, function ($group) use ($filters) {
-            if ($filters['season'] && $group['season'] !== $filters['season'] && $group['season_raw'] !== $filters['season']) {
+            if ($filters['season'] && function_exists('intersoccer_roster_course_season_filter_matches')) {
+                if (!intersoccer_roster_course_season_filter_matches($group, $filters['season'])) {
+                    return false;
+                }
+            } elseif ($filters['season'] && $group['season'] !== $filters['season'] && $group['season_raw'] !== $filters['season']) {
                 return false;
             }
             if ($filters['venue'] && $group['venue'] !== $filters['venue']) {
@@ -398,8 +492,14 @@ class RosterListingService {
      */
     private function filterCourseGroupsExcept(array $groups, array $filters, string $omit_dimension): array {
         return array_values(array_filter($groups, function ($group) use ($filters, $omit_dimension) {
-            if ($omit_dimension !== 'season' && $filters['season'] && $group['season'] !== $filters['season'] && $group['season_raw'] !== $filters['season']) {
-                return false;
+            if ($omit_dimension !== 'season' && $filters['season']) {
+                if (function_exists('intersoccer_roster_course_season_filter_matches')) {
+                    if (!intersoccer_roster_course_season_filter_matches($group, $filters['season'])) {
+                        return false;
+                    }
+                } elseif ($group['season'] !== $filters['season'] && $group['season_raw'] !== $filters['season']) {
+                    return false;
+                }
             }
             if ($omit_dimension !== 'venue' && $filters['venue'] && $group['venue'] !== $filters['venue']) {
                 return false;
@@ -491,7 +591,7 @@ class RosterListingService {
 
         $start_time = microtime(true);
         $collection = $this->repository->where($criteria);
-        $rosters = $this->prepareRosterArray($collection);
+        $rosters = $this->filterGirlsOnlyListingRows($this->prepareRosterArray($collection));
         $query_time = microtime(true) - $start_time;
 
         if (empty($rosters)) {
@@ -616,25 +716,38 @@ class RosterListingService {
         ];
 
         foreach ($rosters as $row) {
-            $isCamp = ($row['activity_type'] ?? '') === Roster::ACTIVITY_CAMP || stripos((string)$row['activity_type'], 'camp') !== false;
+            $bucket = function_exists('intersoccer_roster_girls_only_listing_bucket')
+                ? intersoccer_roster_girls_only_listing_bucket($row)
+                : '';
+            if ($bucket === '') {
+                continue;
+            }
+
             $signature = $row['event_signature'];
             if (empty($signature)) {
                 $signature = md5(($row['product_id'] ?? 0) . '|' . ($row['activity_type'] ?? '') . '|' . ($row['venue'] ?? '') . '|' . ($row['times'] ?? ''));
             }
 
-            if ($isCamp) {
+            if ($bucket === 'camp') {
                 if (!isset($camps[$signature])) {
                     $season_raw = $this->deriveSeasonFromCamp($row);
                     $camps[$signature] = $this->initialGirlsGroup($row, $season_raw, 'camp_terms');
                 }
                 $group =& $camps[$signature];
-            } else {
+            } elseif ($bucket === 'course') {
                 if (!isset($courses[$signature])) {
                     $season_raw = $row['season'] ?? 'N/A';
                     $courses[$signature] = $this->initialGirlsGroup($row, $season_raw, 'course_day');
                     $courses[$signature]['course_day'] = $row['course_day'] ?? 'N/A';
                 }
                 $group =& $courses[$signature];
+            } else {
+                if (!isset($camps[$signature])) {
+                    $season_raw = $row['season'] ?? 'N/A';
+                    $camps[$signature] = $this->initialGirlsGroup($row, $season_raw, 'camp_terms');
+                    $camps[$signature]['camp_terms'] = $row['product_name'] ?? __('Tournament', 'intersoccer-reports-rosters');
+                }
+                $group =& $camps[$signature];
             }
 
             if (!empty($row['variation_id'])) {
@@ -763,8 +876,9 @@ class RosterListingService {
 
         foreach ($groups as $group) {
             $season = $group['season'] ?: 'N/A';
-            $isCamp = !empty($group['camp_terms']) && $group['camp_terms'] !== 'N/A';
-            $bucketKey = $isCamp ? 'camps' : 'courses';
+            $has_course_day = !empty($group['course_day']) && $group['course_day'] !== 'N/A';
+            $has_camp_terms = !empty($group['camp_terms']) && $group['camp_terms'] !== 'N/A';
+            $bucketKey = $has_course_day && !$has_camp_terms ? 'courses' : 'camps';
 
             if (!isset($buckets[$bucketKey][$season])) {
                 $buckets[$bucketKey][$season] = [];

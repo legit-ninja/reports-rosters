@@ -1057,7 +1057,9 @@ function intersoccer_rosters_admin_narrowing_notice($page_slug, $shown, $total, 
     if ($shown >= $total || $total < 1) {
         return;
     }
-    $clear_url = admin_url('admin.php?page=' . rawurlencode($page_slug) . '&clear_isrr_filters=1');
+    $clear_url = function_exists('intersoccer_rosters_clear_filters_url')
+        ? intersoccer_rosters_clear_filters_url($page_slug)
+        : admin_url('admin.php?page=' . rawurlencode($page_slug) . '&clear_isrr_filters=1');
     echo '<div class="notice notice-info inline"><p>';
     echo esc_html(
         sprintf(
@@ -1313,7 +1315,7 @@ function intersoccer_render_camps_page() {
         </div>
         <?php if ($selected_season || $selected_venue || $selected_camp_terms || $selected_age_group || $selected_city || $status_filter): ?>
                 <div class="filter-group">
-                    <a href="<?php echo admin_url('admin.php?page=intersoccer-camps'); ?>" class="button button-secondary">
+                    <a href="<?php echo esc_url(function_exists('intersoccer_rosters_clear_filters_url') ? intersoccer_rosters_clear_filters_url('intersoccer-camps') : admin_url('admin.php?page=intersoccer-camps&clear_isrr_filters=1')); ?>" class="button button-secondary">
                         ↻ <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
                     </a>
                 </div>
@@ -1511,6 +1513,9 @@ function intersoccer_render_courses_page() {
 
     $course_group_total = count($all_groups);
     $course_group_shown = count($display_groups);
+    $selected_season_ui = function_exists('intersoccer_roster_resolve_course_season_for_filter_ui')
+        ? intersoccer_roster_resolve_course_season_for_filter_ui($selected_season, (array) $all_seasons)
+        : $selected_season;
     $course_active_filter_labels = [];
     if ($selected_season !== '') {
         $course_active_filter_labels[] = sprintf(
@@ -1580,9 +1585,9 @@ function intersoccer_render_courses_page() {
             <form method="get" class="filter-form" action="<?php echo esc_url(admin_url('admin.php')); ?>">
                 <input type="hidden" name="page" value="intersoccer-courses">
                 <?php
-                // Ensure selected values appear in option lists so dropdowns persist (and support combining filters)
-                if ($selected_season !== '' && !in_array($selected_season, (array) $all_seasons, true)) {
-                    $all_seasons = array_merge([$selected_season], (array) $all_seasons);
+                // Ensure selected values appear in option lists (use display season, not legacy raw DB labels).
+                if ($selected_season_ui !== '' && !in_array($selected_season_ui, (array) $all_seasons, true)) {
+                    $all_seasons = array_merge([$selected_season_ui], (array) $all_seasons);
                     $all_seasons = array_unique($all_seasons);
                     sort($all_seasons, SORT_NATURAL | SORT_FLAG_CASE);
                 }
@@ -1612,7 +1617,7 @@ function intersoccer_render_courses_page() {
                     <select name="season" onchange="this.form.submit()">
                         <option value="">All Seasons</option>
                         <?php foreach ($all_seasons as $season): ?>
-                            <option value="<?php echo esc_attr($season); ?>" <?php selected($selected_season, $season); ?>>
+                            <option value="<?php echo esc_attr($season); ?>" <?php selected($selected_season_ui, $season); ?>>
                                 <?php echo esc_html(intersoccer_normalize_season_for_display($season)); ?>
                             </option>
                         <?php endforeach; ?>
@@ -1679,7 +1684,7 @@ function intersoccer_render_courses_page() {
                 </div>
                 <?php if ($selected_season || $selected_venue || $selected_course_day || $selected_age_group || $selected_city || $status_filter): ?>
                 <div class="filter-group">
-                    <a href="<?php echo admin_url('admin.php?page=intersoccer-courses'); ?>" class="button button-secondary">
+                    <a href="<?php echo esc_url(function_exists('intersoccer_rosters_clear_filters_url') ? intersoccer_rosters_clear_filters_url('intersoccer-courses') : admin_url('admin.php?page=intersoccer-courses&clear_isrr_filters=1')); ?>" class="button button-secondary">
                         ↻ <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
                     </a>
                 </div>
@@ -1957,15 +1962,27 @@ function intersoccer_render_girls_only_page() {
     $all_seasons = [];
 
     foreach ($groups as $group) {
+        $group['girls_only'] = 1;
+        if (function_exists('intersoccer_roster_row_matches_girls_only_listing')
+            && !intersoccer_roster_row_matches_girls_only_listing($group)) {
+            continue;
+        }
+
         $variation_ids = isset($group['variation_ids']) && !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
         if (empty($variation_ids)) {
             error_log("InterSoccer: No valid variation_ids for girls-only group - Raw: " . print_r(isset($group['variation_ids']) ? $group['variation_ids'] : 'KEY_NOT_SET', true));
             $variation_ids = [0];
         }
         $group['variation_ids'] = $variation_ids;
-        
-        // Determine if this is a camp or course based on activity_type
-        $is_camp = (strtolower($group['activity_type']) === 'camp' || !empty($group['camp_terms']));
+
+        $bucket = function_exists('intersoccer_roster_girls_only_listing_bucket')
+            ? intersoccer_roster_girls_only_listing_bucket($group)
+            : '';
+        if ($bucket === '') {
+            continue;
+        }
+
+        $is_camp = ($bucket === 'camp' || $bucket === 'tournament');
         
         // Normalize season for display
         $group['season'] = intersoccer_normalize_season_for_display($group['season']);
