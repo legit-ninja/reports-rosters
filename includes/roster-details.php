@@ -181,6 +181,26 @@ function intersoccer_get_roster_details_url_for_order_item($order_item_id) {
         return null;
     }
 
+    if (function_exists('intersoccer_roster_row_resolve_event_signature_for_url')) {
+        $resolved_sig = intersoccer_roster_row_resolve_event_signature_for_url($anchor);
+        if ($resolved_sig !== '') {
+            $anchor['event_signature'] = $resolved_sig;
+            $anchor_id = (int) ($anchor['id'] ?? 0);
+            if ($anchor_id > 0 && empty(trim((string) ($rows[0]['event_signature'] ?? '')))) {
+                global $wpdb;
+                if (isset($wpdb) && is_object($wpdb)) {
+                    $wpdb->update(
+                        $table,
+                        ['event_signature' => $resolved_sig],
+                        ['id' => $anchor_id],
+                        ['%s'],
+                        ['%d']
+                    );
+                }
+            }
+        }
+    }
+
     $from = intersoccer_roster_details_from_page_for_row($anchor);
     $activity = (string) ($anchor['activity_type'] ?? '');
 
@@ -231,6 +251,9 @@ function intersoccer_get_roster_details_url_for_order_item($order_item_id) {
         'event_signature' => trim((string) ($anchor['event_signature'] ?? '')),
         'merged_event_signatures' => array_values($merged_signatures),
         'order_item_ids' => $order_item_ids,
+        'venue' => $anchor['venue'] ?? '',
+        'course_day' => $anchor['course_day'] ?? '',
+        'camp_terms' => $anchor['camp_terms'] ?? '',
     ];
 
     if (function_exists('intersoccer_get_roster_details_url_for_listing_group')) {
@@ -540,6 +563,10 @@ function intersoccer_render_roster_details_page() {
         } elseif ($event_signature && $event_signature !== 'N/A') {
             $where_clauses[] = "r.event_signature = %s";
             $query_params[] = $event_signature;
+        } elseif (!empty($order_item_ids)) {
+            $placeholders = implode(',', array_fill(0, count($order_item_ids), '%d'));
+            $where_clauses[] = "r.order_item_id IN ($placeholders)";
+            $query_params = array_merge($query_params, $order_item_ids);
         } else {
             if ($camp_terms && $camp_terms !== 'N/A') {
                 $where_clauses[] = "r.camp_terms = %s";

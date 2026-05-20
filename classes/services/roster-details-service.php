@@ -57,10 +57,9 @@ class RosterDetailsService {
         $criteria = $this->buildCriteria($filters, $context, false);
         $this->logger->debug('RosterDetailsService: Primary criteria', $criteria);
 
-        // When event_signature is provided, we must filter by it strictly - no fallback to broader criteria
         $hasEventSignature = !empty($filters['event_signatures'])
             || (!empty($filters['event_signature']) && $filters['event_signature'] !== 'N/A');
-        if ($hasEventSignature && empty($criteria['event_signature'])) {
+        if ($hasEventSignature && empty($filters['order_item_ids']) && empty($criteria['event_signature'])) {
             if (!empty($filters['event_signatures'])) {
                 $criteria['event_signature'] = $filters['event_signatures'];
             } else {
@@ -106,6 +105,15 @@ class RosterDetailsService {
                 $rosterModels = $this->filterByValidOrderStatus($collection);
                 $loadCriteria = $fallbackCriteria;
             }
+        }
+
+        if (empty($rosterModels) && !empty($filters['order_item_ids']) && function_exists('intersoccer_attempt_roster_build_for_order_item_ids')) {
+            intersoccer_attempt_roster_build_for_order_item_ids($filters['order_item_ids']);
+            $this->repository->clearQueryCache();
+            $retry_criteria = ['order_item_id' => $filters['order_item_ids']];
+            $collection = $this->repository->where($retry_criteria, ['skip_cache' => true]);
+            $rosterModels = $this->filterByValidOrderStatus($collection, $allow_missing_status);
+            $loadCriteria = $retry_criteria;
         }
 
         if (empty($rosterModels)) {
@@ -202,14 +210,17 @@ class RosterDetailsService {
             $criteria['variation_id'] = $filters['variation_ids'];
         }
 
-        if (!empty($filters['order_item_ids'])) {
-            $criteria['order_item_id'] = $filters['order_item_ids'];
-        }
+        $has_event_signature_filter = !$ignoreEventSignature && (
+            !empty($filters['event_signatures'])
+            || ($filters['event_signature'] !== '' && $filters['event_signature'] !== 'N/A')
+        );
 
-        if (!$ignoreEventSignature && !empty($filters['event_signatures'])) {
+        if ($has_event_signature_filter && !empty($filters['event_signatures'])) {
             $criteria['event_signature'] = $filters['event_signatures'];
-        } elseif (!$ignoreEventSignature && $filters['event_signature'] && $filters['event_signature'] !== 'N/A') {
+        } elseif ($has_event_signature_filter) {
             $criteria['event_signature'] = $filters['event_signature'];
+        } elseif (!empty($filters['order_item_ids'])) {
+            $criteria['order_item_id'] = $filters['order_item_ids'];
         }
 
         // When order_item_ids or event_signature is present, they uniquely identify the roster group - do NOT add
