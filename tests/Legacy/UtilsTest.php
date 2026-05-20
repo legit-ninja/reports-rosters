@@ -76,6 +76,65 @@ class UtilsTest extends TestCase {
         $this->assertContains('cours', $types);
     }
 
+    public function test_roster_row_matches_listing_kind_excludes_birthday_from_camps() {
+        if (!function_exists('intersoccer_roster_row_matches_listing_kind')) {
+            $this->markTestSkipped('intersoccer_roster_row_matches_listing_kind not loaded');
+        }
+
+        $this->assertFalse(intersoccer_roster_row_matches_listing_kind(['activity_type' => 'Birthday Party'], 'camp'));
+        $this->assertFalse(intersoccer_roster_row_matches_listing_kind(['activity_type' => 'Birthday'], 'camp'));
+        $this->assertFalse(intersoccer_roster_row_matches_listing_kind(['activity_type' => 'anniversaire'], 'camp'));
+        $this->assertTrue(intersoccer_roster_row_matches_listing_kind(['activity_type' => 'Camp'], 'camp'));
+        $this->assertTrue(intersoccer_roster_row_matches_listing_kind(['activity_type' => 'camp'], 'camp'));
+        $this->assertFalse(intersoccer_roster_row_matches_listing_kind(['activity_type' => 'Course'], 'camp'));
+        $this->assertTrue(intersoccer_roster_row_matches_listing_kind(['activity_type' => 'Course'], 'course'));
+        $this->assertTrue(intersoccer_roster_row_matches_listing_kind(['activity_type' => 'cours'], 'course'));
+        $this->assertFalse(intersoccer_roster_row_matches_listing_kind(['activity_type' => 'Camp'], 'course'));
+    }
+
+    public function test_roster_row_matches_course_listing_rejects_camp_facets_even_when_product_type_course() {
+        if (!function_exists('intersoccer_roster_row_matches_listing_kind')
+            || !function_exists('intersoccer_roster_row_camp_facets_indicate_camp')) {
+            $this->markTestSkipped('listing kind helpers not loaded');
+        }
+
+        $this->assertTrue(intersoccer_roster_row_camp_facets_indicate_camp([
+            'activity_type' => 'Camp',
+            'camp_terms' => 'summer-week-1-july-1-july-5-5-days',
+            'course_day' => '',
+        ]));
+
+        $this->assertFalse(intersoccer_roster_row_matches_listing_kind([
+            'activity_type' => 'Camp',
+            'camp_terms' => 'summer-week-1-july-1-july-5-5-days',
+            'course_day' => '',
+        ], 'course'));
+
+        $this->assertTrue(intersoccer_roster_row_matches_listing_kind([
+            'activity_type' => 'cours',
+            'course_day' => 'monday',
+        ], 'course'));
+    }
+
+    public function test_girls_only_listing_excludes_birthday_and_includes_tournament() {
+        if (!function_exists('intersoccer_roster_row_matches_girls_only_listing')) {
+            $this->markTestSkipped('intersoccer_roster_row_matches_girls_only_listing not loaded');
+        }
+
+        $this->assertFalse(intersoccer_roster_row_matches_girls_only_listing([
+            'girls_only' => 1,
+            'activity_type' => 'Birthday Party',
+        ]));
+        $this->assertTrue(intersoccer_roster_row_matches_girls_only_listing([
+            'girls_only' => 1,
+            'activity_type' => 'Course, Girls Only',
+        ]));
+        $this->assertTrue(intersoccer_roster_row_matches_girls_only_listing([
+            'girls_only' => 1,
+            'activity_type' => 'Tournament, Girls Only',
+        ]));
+    }
+
     public function test_normalize_event_data_handles_french_values() {
         if (!function_exists('intersoccer_normalize_event_data_for_signature')) {
             $this->markTestSkipped('intersoccer_normalize_event_data_for_signature function not found');
@@ -206,6 +265,97 @@ class UtilsTest extends TestCase {
         $this->assertSame(
             intersoccer_consolidated_roster_group_key($course, 'course'),
             intersoccer_consolidated_roster_group_key($course, 'course')
+        );
+    }
+
+    public function test_roster_row_is_sync_placeholder_detects_unknown_player_without_signature() {
+        if (!function_exists('intersoccer_roster_row_is_sync_placeholder')) {
+            $this->markTestSkipped('intersoccer_roster_row_is_sync_placeholder not loaded');
+        }
+        $this->assertTrue(intersoccer_roster_row_is_sync_placeholder([
+            'player_name' => 'Unknown Player',
+            'first_name' => 'Unknown',
+            'event_signature' => '',
+            'activity_type' => 'Course',
+        ]));
+        $this->assertFalse(intersoccer_roster_row_is_sync_placeholder([
+            'player_name' => 'Anna Test',
+            'first_name' => 'Anna',
+            'event_signature' => 'abc123',
+        ]));
+    }
+
+    public function test_resolve_course_season_for_filter_ui_maps_legacy_raw_to_display() {
+        if (!function_exists('intersoccer_roster_resolve_course_season_for_filter_ui')) {
+            $this->markTestSkipped('intersoccer_roster_resolve_course_season_for_filter_ui not loaded');
+        }
+        $available = ['Spring/Summer 2026', 'Summer Courses 2026', 'Winter 2026'];
+        $this->assertSame(
+            'Summer Courses 2026',
+            intersoccer_roster_resolve_course_season_for_filter_ui('Summer Camps 2026', $available)
+        );
+        $this->assertSame('', intersoccer_roster_resolve_course_season_for_filter_ui('', $available));
+    }
+
+    public function test_course_season_filter_matches_display_and_legacy_raw_labels() {
+        if (!function_exists('intersoccer_roster_course_season_filter_matches')) {
+            $this->markTestSkipped('intersoccer_roster_course_season_filter_matches not loaded');
+        }
+        $group = [
+            'season' => 'Summer Courses 2026',
+            'season_raw' => 'Summer Camps 2026',
+            'product_name' => 'Geneva Spring/Summer Football Courses 2026',
+            'course_day' => 'Sunday',
+        ];
+        $this->assertTrue(intersoccer_roster_course_season_filter_matches($group, 'Summer Camps 2026'));
+        $this->assertTrue(intersoccer_roster_course_season_filter_matches($group, 'Summer Courses 2026'));
+        $this->assertFalse(intersoccer_roster_course_season_filter_matches($group, 'Winter 2026'));
+    }
+
+    public function test_resolve_season_taxonomy_label_humanizes_slug_when_term_missing() {
+        if (!function_exists('intersoccer_roster_resolve_season_taxonomy_label')) {
+            $this->markTestSkipped('intersoccer_roster_resolve_season_taxonomy_label not loaded');
+        }
+        $this->assertSame(
+            'Summer Courses 2026',
+            intersoccer_roster_resolve_season_taxonomy_label('summer-courses-2026')
+        );
+    }
+
+    public function test_normalize_course_listing_season_canonicalizes_slug_for_course_rows() {
+        if (!function_exists('intersoccer_roster_normalize_course_listing_season')) {
+            $this->markTestSkipped('intersoccer_roster_normalize_course_listing_season not loaded');
+        }
+        $row = [
+            'activity_type' => 'Course',
+            'course_day' => 'Sunday',
+            'product_name' => 'Geneva Spring/Summer Football Courses 2026',
+        ];
+        $display = intersoccer_roster_normalize_course_listing_season('summer-courses-2026', $row);
+        $this->assertStringNotContainsString('summer-courses-2026', strtolower($display));
+        $this->assertStringContainsString('Summer', $display);
+        $this->assertStringContainsString('2026', $display);
+    }
+
+    public function test_normalize_course_listing_season_rewrites_camps_label_for_course_rows() {
+        if (!function_exists('intersoccer_roster_normalize_course_listing_season')) {
+            $this->markTestSkipped('intersoccer_roster_normalize_course_listing_season not loaded');
+        }
+        $row = [
+            'activity_type' => 'Course',
+            'course_day' => 'Sunday',
+            'product_name' => 'Geneva Spring/Summer Football Courses 2026',
+        ];
+        $this->assertSame(
+            'Summer Courses 2026',
+            intersoccer_roster_normalize_course_listing_season('Summer Camps 2026', $row)
+        );
+        $this->assertSame(
+            'Summer Camps 2026',
+            intersoccer_roster_normalize_course_listing_season('Summer Camps 2026', [
+                'activity_type' => 'Camp',
+                'camp_terms' => 'july-week-1',
+            ])
         );
     }
 
