@@ -15,6 +15,15 @@ function intersoccer_rosters_filter_meta_key(string $list_slug): string {
 }
 
 /**
+ * URL that clears persisted roster list filters for a screen.
+ *
+ * @param string $page_slug Admin page query value (e.g. intersoccer-courses).
+ */
+function intersoccer_rosters_clear_filters_url(string $page_slug): string {
+    return admin_url('admin.php?page=' . rawurlencode($page_slug) . '&clear_isrr_filters=1');
+}
+
+/**
  * Restore saved GET filters when the request has no filter params (except page), or save when filters are present.
  * Call with the roster list slug and the GET keys used on that screen. Pass $include_consolidated for camps/courses.
  *
@@ -29,21 +38,32 @@ function intersoccer_rosters_bootstrap_saved_list_filters(string $list_slug, arr
 
     if (!empty($_GET['clear_isrr_filters'])) {
         delete_user_meta($uid, $meta_key);
+        $page = isset($_GET['page']) ? sanitize_key(wp_unslash((string) $_GET['page'])) : '';
+        if ($page !== '' && !headers_sent()) {
+            wp_safe_redirect(admin_url('admin.php?page=' . rawurlencode($page)));
+            exit;
+        }
         return;
     }
 
     $incoming = [];
+    $form_touched = false;
     foreach ($get_keys as $k) {
-        if (isset($_GET[$k]) && (string) wp_unslash($_GET[$k]) !== '') {
-            $incoming[$k] = sanitize_text_field(wp_unslash((string) $_GET[$k]));
+        if (!array_key_exists($k, $_GET)) {
+            continue;
+        }
+        $form_touched = true;
+        $val = sanitize_text_field(wp_unslash((string) $_GET[$k]));
+        if ($val !== '') {
+            $incoming[$k] = $val;
         }
     }
     if ($include_consolidated && array_key_exists('consolidated', $_GET)) {
+        $form_touched = true;
         $incoming['consolidated'] = sanitize_text_field(wp_unslash((string) $_GET['consolidated']));
     }
 
-    $has_filter_payload = $incoming !== [];
-    if ($has_filter_payload) {
+    if ($form_touched) {
         update_user_meta($uid, $meta_key, $incoming);
 
         return;
@@ -123,3 +143,64 @@ function intersoccer_rosters_register_flash_notice_hook(): void {
 }
 
 intersoccer_rosters_register_flash_notice_hook();
+
+/**
+ * Roster admin pages that expose the GET ?action=reconcile link.
+ *
+ * @return string[]
+ */
+function intersoccer_rosters_reconcile_page_slugs(): array {
+    return [
+        'intersoccer-camps',
+        'intersoccer-courses',
+        'intersoccer-girls-only',
+        'intersoccer-tournaments',
+        'intersoccer-other-events',
+        'intersoccer-all-rosters',
+    ];
+}
+
+/**
+ * Run full roster reconciliation from listing-page "Reconcile Rosters" links.
+ */
+function intersoccer_rosters_maybe_run_page_reconcile_action(): void {
+    if (!is_admin() || !current_user_can('manage_options')) {
+        return;
+    }
+
+    $action = isset($_GET['action']) ? sanitize_key(wp_unslash((string) $_GET['action'])) : '';
+    if ($action !== 'reconcile') {
+        return;
+    }
+
+    $page = isset($_GET['page']) ? sanitize_key(wp_unslash((string) $_GET['page'])) : '';
+    if ($page === '' || !in_array($page, intersoccer_rosters_reconcile_page_slugs(), true)) {
+        return;
+    }
+
+    if (!isset($_GET['_wpnonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash((string) $_GET['_wpnonce'])), 'intersoccer_reconcile')) {
+        wp_die(esc_html__('Security check failed.', 'intersoccer-reports-rosters'));
+    }
+
+    $db_file = dirname(__FILE__) . '/db.php';
+    if (is_readable($db_file)) {
+        require_once $db_file;
+    }
+
+    if (!function_exists('intersoccer_reconcile_rosters')) {
+        wp_die(esc_html__('Reconcile is unavailable.', 'intersoccer-reports-rosters'));
+    }
+
+    $result = intersoccer_reconcile_rosters(['delete_obsolete' => true]);
+    $message = isset($result['message']) ? (string) $result['message'] : __('Rosters reconciled.', 'intersoccer-reports-rosters');
+    if (function_exists('intersoccer_rosters_flash_admin_notice')) {
+        intersoccer_rosters_flash_admin_notice($message);
+    }
+
+    if (!headers_sent()) {
+        wp_safe_redirect(admin_url('admin.php?page=' . rawurlencode($page)));
+        exit;
+    }
+}
+
+add_action('admin_init', 'intersoccer_rosters_maybe_run_page_reconcile_action', 5);
