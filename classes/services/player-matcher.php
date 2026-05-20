@@ -306,9 +306,111 @@ class PlayerMatcher {
                 'assigned_attendee' => $assigned_attendee,
                 'available_players' => $customer_players->pluck('full_name')->values()
             ]);
+
+            $synthetic = $this->createPlayerFromOrderItemAttendee($item, $assigned_attendee);
+            if ($synthetic !== null) {
+                $this->logger->info('Built synthetic player from order item attendee meta', [
+                    'item_id' => $item->get_id(),
+                    'player_name' => $synthetic->getFullName(),
+                ]);
+                $collection = new PlayersCollection();
+                $collection->add($synthetic);
+                return $collection;
+            }
         }
         
         return new PlayersCollection();
+    }
+
+    /**
+     * Build a Player from Assigned Attendee + line-item meta when customer_players is empty.
+     *
+     * @param \WC_Order_Item_Product $item
+     * @param string               $assigned_attendee
+     * @return Player|null
+     */
+    private function createPlayerFromOrderItemAttendee(\WC_Order_Item_Product $item, string $assigned_attendee) {
+        $assigned_attendee = preg_replace('/^\d+\s*/', '', trim($assigned_attendee));
+        if ($assigned_attendee === '') {
+            return null;
+        }
+
+        if (function_exists('intersoccer_roster_is_placeholder_player_name')
+            && intersoccer_roster_is_placeholder_player_name($assigned_attendee)) {
+            return null;
+        }
+
+        $order = $item->get_order();
+        $customer_id = $order ? (int) $order->get_customer_id() : 0;
+        if ($customer_id <= 0) {
+            return null;
+        }
+
+        if (function_exists('intersoccer_roster_parse_attendee_display_name')) {
+            $parts = intersoccer_roster_parse_attendee_display_name($assigned_attendee);
+            $first_name = trim((string) ($parts['first_name'] ?? ''));
+            $last_name = trim((string) ($parts['last_name'] ?? ''));
+        } else {
+            $name_parts = explode(' ', $assigned_attendee, 2);
+            $first_name = trim($name_parts[0] ?? '');
+            $last_name = trim($name_parts[1] ?? '');
+        }
+
+        if ($first_name === '') {
+            return null;
+        }
+        if ($last_name === '') {
+            $last_name = $first_name;
+        }
+
+        $gender_raw = strtolower(trim((string) $item->get_meta('Player Gender')));
+        if ($gender_raw === '') {
+            $gender_raw = strtolower(trim((string) $item->get_meta('pa_gender')));
+        }
+        $gender = 'other';
+        if ($gender_raw !== '') {
+            if (preg_match('/\b(f|female|girl|filles?)\b/u', $gender_raw)) {
+                $gender = 'female';
+            } elseif (preg_match('/\b(m|male|boy|garcons?)\b/u', $gender_raw)) {
+                $gender = 'male';
+            }
+        }
+
+        $age = (int) $item->get_meta('Player Age');
+        if ($age <= 0) {
+            $age = (int) $item->get_meta('Player age');
+        }
+        $dob = null;
+        if ($age > 0 && $age < 30) {
+            try {
+                $dob = (new \DateTime('today'))->modify('-' . $age . ' years')->format('Y-m-d');
+            } catch (\Exception $e) {
+                $dob = null;
+            }
+        }
+        if ($dob === null || $dob === '') {
+            $dob = '2015-06-01';
+        }
+
+        $player_index = $item->get_meta('assigned_player');
+        $player_index = ($player_index !== '' && $player_index !== null) ? (int) $player_index : 0;
+
+        try {
+            return Player::fromUserMetadata($customer_id, $player_index, [
+                'first_name' => $first_name,
+                'last_name' => $last_name,
+                'dob' => $dob,
+                'gender' => $gender,
+                'medical_conditions' => trim((string) $item->get_meta('Medical Conditions')) ?: null,
+                'dietary_needs' => trim((string) $item->get_meta('Dietary Needs')) ?: null,
+            ]);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Could not create synthetic player from order item', [
+                'item_id' => $item->get_id(),
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
     }
     
     /**
