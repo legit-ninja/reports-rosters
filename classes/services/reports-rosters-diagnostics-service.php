@@ -284,13 +284,16 @@ class ReportsRostersDiagnosticsService {
             ), ARRAY_A);
         }
 
-        return [
+        $trace = [
             'order_id' => $order_id,
             'order_item_id' => $order_item_id,
             'line_item' => $line_item,
             'item_meta' => $meta_rows,
             'roster_rows' => $roster_rows,
+            'sync_health' => self::rosterItemSyncHealth(is_array($roster_rows) ? $roster_rows : []),
         ];
+
+        return $trace;
     }
 
     /**
@@ -349,11 +352,15 @@ class ReportsRostersDiagnosticsService {
             'rebuilt_from_order' => 0,
             'deleted_incomplete_rows' => 0,
             'backfilled_player_names' => 0,
+            'aligned_event_signature' => '',
             'errors' => [],
         ];
 
+        if ($needs_name_repair) {
+            $results['backfilled_player_names'] += $this->backfillPlayerNamesForOrderItemRows($roster_rows);
+        }
+
         if ($needs_full_rebuild && function_exists('intersoccer_oop_get_roster_builder')) {
-            $results['deleted_incomplete_rows'] = $this->deleteIncompleteRosterRowsForOrderItem($order_item_id);
             $rebuilt = $this->rebuildRosterNamesForOrderItem($order_item_id);
             if ($rebuilt) {
                 $results['rebuilt_from_order'] = 1;
@@ -361,6 +368,7 @@ class ReportsRostersDiagnosticsService {
             } else {
                 $results['errors'][] = sprintf('Failed full roster rebuild for order_item_id=%d', $order_item_id);
             }
+            $results['deleted_incomplete_rows'] = $this->deleteIncompleteRosterRowsForOrderItem($order_item_id);
         } elseif ($needs_name_repair && function_exists('intersoccer_oop_get_roster_builder')) {
             $rebuilt = $this->rebuildRosterNamesForOrderItem($order_item_id);
             if ($rebuilt) {
@@ -368,21 +376,11 @@ class ReportsRostersDiagnosticsService {
             } else {
                 $results['errors'][] = sprintf('Failed rebuilding roster names for order_item_id=%d', $order_item_id);
             }
-        } elseif ($needs_name_repair) {
-            foreach ($roster_rows as $row) {
-                if (!is_array($row) || !function_exists('intersoccer_roster_backfill_player_name_fields')) {
-                    continue;
-                }
-                $filled = intersoccer_roster_backfill_player_name_fields($row);
-                if (function_exists('intersoccer_roster_persist_player_name_fields')
-                    && intersoccer_roster_persist_player_name_fields($filled)) {
-                    $results['backfilled_player_names']++;
-                }
-            }
         }
 
         $trace_mid = $this->traceItem(['order_item_id' => $order_item_id]);
         $roster_rows_mid = isset($trace_mid['roster_rows']) && is_array($trace_mid['roster_rows']) ? $trace_mid['roster_rows'] : [];
+        $results['backfilled_player_names'] += $this->backfillPlayerNamesForOrderItemRows($roster_rows_mid);
         $roster_mid = null;
         foreach ($roster_rows_mid as $row) {
             if (!is_array($row)) {
@@ -395,17 +393,32 @@ class ReportsRostersDiagnosticsService {
         $reasons_mid = self::classifyMismatchReasons($woo, $roster_mid);
 
         if (in_array('missing_in_rosters', $reasons_mid, true) && $woo !== null) {
-            if (!empty($results['rebuilt_from_order'])) {
-                $results['errors'][] = sprintf(
-                    'Roster rebuild ran but no player could be assigned for order_item_id=%d. Check Assigned Attendee on the line item and intersoccer_players on the customer account.',
-                    $order_item_id
-                );
-            } elseif ($this->insertRosterPlaceholderFromWooRow($woo)) {
+            if ($this->insertRosterPlaceholderFromWooRow($woo)) {
                 $results['fixed_missing_in_rosters']++;
             } else {
                 $results['errors'][] = sprintf('Failed inserting roster for order_item_id=%d', $order_item_id);
             }
         }
+
+        if ($woo !== null && function_exists('intersoccer_oop_get_roster_builder')) {
+            $rebuilt_retry = $this->rebuildRosterNamesForOrderItem($order_item_id);
+            if ($rebuilt_retry) {
+                $results['rebuilt_from_order'] = 1;
+                if ($results['rebuilt_player_names'] < 1) {
+                    $results['rebuilt_player_names'] = 1;
+                }
+            }
+        }
+
+        $alignment = $this->alignOrderItemRosterToConsolidatedGroup($order_item_id);
+        if (is_array($alignment)) {
+            $results['aligned_event_signature'] = (string) ($alignment['event_signature'] ?? '');
+        }
+
+        $trace_pre_final = $this->traceItem(['order_item_id' => $order_item_id]);
+        $rows_pre_final = isset($trace_pre_final['roster_rows']) && is_array($trace_pre_final['roster_rows'])
+            ? $trace_pre_final['roster_rows'] : [];
+        $results['backfilled_player_names'] += $this->backfillPlayerNamesForOrderItemRows($rows_pre_final);
 
         if ($woo !== null && $roster !== null && in_array('missing_in_woo_meta', $reasons_before, true)) {
             $backfill_value = trim((string) ($roster['course_day'] ?? ''));
@@ -490,6 +503,14 @@ class ReportsRostersDiagnosticsService {
         }
         if (!$woo || !$roster) {
             return $reasons;
+        }
+
+        if (function_exists('intersoccer_roster_row_names_incomplete')
+            && intersoccer_roster_row_names_incomplete($roster)) {
+            $reasons[] = 'incomplete_player_data';
+        } elseif (function_exists('intersoccer_roster_row_needs_order_resync')
+            && intersoccer_roster_row_needs_order_resync($roster)) {
+            $reasons[] = 'incomplete_player_data';
         }
 
         $woo_venue = self::normalizeVenueComparableValue($woo['venue_value'] ?? '');
@@ -780,7 +801,8 @@ class ReportsRostersDiagnosticsService {
             return 0;
         }
 
-        $deleted = 0;
+        $complete_row_ids = [];
+        $incomplete_row_ids = [];
         foreach ($rows as $row) {
             if (!is_array($row)) {
                 continue;
@@ -788,11 +810,29 @@ class ReportsRostersDiagnosticsService {
             $needs_delete = function_exists('intersoccer_roster_row_needs_order_resync')
                 ? intersoccer_roster_row_needs_order_resync($row)
                 : (function_exists('intersoccer_roster_row_is_sync_placeholder') && intersoccer_roster_row_is_sync_placeholder($row));
-            if (!$needs_delete) {
+            $id = (int) ($row['id'] ?? 0);
+            if ($id <= 0) {
                 continue;
             }
-            $id = (int) ($row['id'] ?? 0);
-            if ($id > 0 && $wpdb->delete($table, ['id' => $id], ['%d'])) {
+            if ($needs_delete) {
+                $incomplete_row_ids[] = $id;
+            } else {
+                $complete_row_ids[] = $id;
+            }
+        }
+
+        if ($incomplete_row_ids === []) {
+            return 0;
+        }
+
+        // Never remove the only roster row for this line item (avoids dropping event participant counts).
+        if ($complete_row_ids === []) {
+            return 0;
+        }
+
+        $deleted = 0;
+        foreach ($incomplete_row_ids as $id) {
+            if ($wpdb->delete($table, ['id' => $id], ['%d'])) {
                 $deleted++;
             }
         }
@@ -834,6 +874,21 @@ class ReportsRostersDiagnosticsService {
             ]);
         }
 
+        $first_name = 'Unknown';
+        $last_name = 'Unknown';
+        $player_name = 'Unknown Player';
+        if (function_exists('intersoccer_resolve_assigned_attendee_from_order_item')) {
+            $attendee = intersoccer_resolve_assigned_attendee_from_order_item($order_item_id);
+            if ($attendee !== '' && function_exists('intersoccer_roster_parse_attendee_display_name')) {
+                $parsed = intersoccer_roster_parse_attendee_display_name($attendee);
+                if (trim((string) ($parsed['first_name'] ?? '')) !== '') {
+                    $first_name = $parsed['first_name'];
+                    $last_name = $parsed['last_name'] !== '' ? $parsed['last_name'] : $first_name;
+                    $player_name = $parsed['player_name'] !== '' ? $parsed['player_name'] : trim($first_name . ' ' . $last_name);
+                }
+            }
+        }
+
         $inserted = $wpdb->insert(
             $table,
             [
@@ -841,17 +896,17 @@ class ReportsRostersDiagnosticsService {
                 'order_item_id' => $order_item_id,
                 'variation_id' => (int) ($woo_row['variation_id'] ?? 0),
                 'product_id' => (int) ($woo_row['product_id'] ?? 0),
-                'player_name' => 'Unknown Player',
-                'first_name' => 'Unknown',
-                'last_name' => 'Unknown',
+                'player_name' => $player_name,
+                'first_name' => $first_name,
+                'last_name' => $last_name,
                 'booking_type' => 'single-day',
                 'product_name' => (string) ($woo_row['order_item_name'] ?? 'Unknown Product'),
                 'activity_type' => (string) ($woo_row['activity_type'] ?? ''),
                 'venue' => (string) ($woo_row['venue_value'] ?? ''),
                 'course_day' => (string) ($woo_row['course_day_value'] ?? ''),
                 'event_signature' => $event_signature,
-                'player_first_name' => 'Unknown',
-                'player_last_name' => 'Unknown',
+                'player_first_name' => $first_name,
+                'player_last_name' => $last_name,
                 'parent_first_name' => 'Unknown',
                 'parent_last_name' => 'Unknown',
                 'created_at' => current_time('mysql'),
@@ -1164,6 +1219,184 @@ class ReportsRostersDiagnosticsService {
     }
 
     /**
+     * Align a line item's roster row to the dominant event_signature used by its consolidated listing group.
+     *
+     * @param int $order_item_id
+     * @return array<string,mixed>|null
+     */
+    /**
+     * Load roster-details.php helpers required for consolidated group alignment.
+     */
+    private function ensureRosterDetailsHelpersLoaded(): void {
+        if (function_exists('intersoccer_fetch_roster_sibling_candidates_for_consolidation')) {
+            return;
+        }
+        $details_file = dirname(__DIR__, 2) . '/includes/roster-details.php';
+        if (is_readable($details_file)) {
+            require_once $details_file;
+        }
+    }
+
+    private function alignOrderItemRosterToConsolidatedGroup(int $order_item_id): ?array {
+        global $wpdb;
+
+        $order_item_id = (int) $order_item_id;
+        if ($order_item_id <= 0) {
+            return null;
+        }
+
+        $this->ensureRosterDetailsHelpersLoaded();
+
+        if (!function_exists('intersoccer_consolidated_roster_group_key')) {
+            return null;
+        }
+
+        $table = $wpdb->prefix . 'intersoccer_rosters';
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$table} WHERE order_item_id = %d ORDER BY id DESC LIMIT 1",
+                $order_item_id
+            ),
+            ARRAY_A
+        );
+        if (!is_array($row) || empty($row['id'])) {
+            return null;
+        }
+
+        $kind = function_exists('intersoccer_roster_consolidated_kind_for_row')
+            ? intersoccer_roster_consolidated_kind_for_row($row)
+            : (stripos((string) ($row['activity_type'] ?? ''), 'course') !== false ? 'course' : 'camp');
+        $target_key = intersoccer_consolidated_roster_group_key($row, $kind);
+        $candidates = function_exists('intersoccer_fetch_roster_sibling_candidates_for_consolidation')
+            ? intersoccer_fetch_roster_sibling_candidates_for_consolidation($row, $kind, 500)
+            : [];
+
+        $signature_counts = [];
+        foreach ($candidates as $candidate) {
+            if (!is_array($candidate)) {
+                continue;
+            }
+            if (intersoccer_consolidated_roster_group_key($candidate, $kind) !== $target_key) {
+                continue;
+            }
+            $sig = trim((string) ($candidate['event_signature'] ?? ''));
+            if ($sig === '' || strcasecmp($sig, 'N/A') === 0) {
+                continue;
+            }
+            if (!isset($signature_counts[$sig])) {
+                $signature_counts[$sig] = 0;
+            }
+            $signature_counts[$sig]++;
+        }
+
+        if ($signature_counts === []) {
+            $signature_counts = $this->resolveDominantEventSignatureCountsForRow($row);
+        }
+
+        $dominant_signature = '';
+        $dominant_count = 0;
+        foreach ($signature_counts as $sig => $count) {
+            if ($count > $dominant_count) {
+                $dominant_count = $count;
+                $dominant_signature = $sig;
+            }
+        }
+
+        $current_signature = trim((string) ($row['event_signature'] ?? ''));
+        $updates = ['is_placeholder' => 0];
+        $changed_signature = false;
+
+        if ($dominant_signature !== '' && $dominant_signature !== $current_signature) {
+            $updates['event_signature'] = $dominant_signature;
+            $changed_signature = true;
+        }
+
+        $needs_placeholder_clear = (int) ($row['is_placeholder'] ?? 0) === 1;
+        if ($changed_signature || $needs_placeholder_clear) {
+            $wpdb->update(
+                $table,
+                $updates,
+                ['id' => (int) $row['id']],
+                $changed_signature ? ['%d', '%s'] : ['%d'],
+                ['%d']
+            );
+        }
+
+        return [
+            'roster_id' => (int) $row['id'],
+            'consolidated_group_key' => $target_key,
+            'previous_event_signature' => $current_signature,
+            'event_signature' => $dominant_signature !== '' ? $dominant_signature : $current_signature,
+            'signature_changed' => $changed_signature,
+            'dominant_signature_count' => $dominant_count,
+            'known_group_signatures' => array_keys($signature_counts),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return array<string,int>
+     */
+    private function resolveDominantEventSignatureCountsForRow(array $row): array {
+        global $wpdb;
+
+        $variation_id = (int) ($row['variation_id'] ?? 0);
+        $order_item_id = (int) ($row['order_item_id'] ?? 0);
+        if ($variation_id <= 0) {
+            return [];
+        }
+
+        $table = $wpdb->prefix . 'intersoccer_rosters';
+        $activity_like = stripos((string) ($row['activity_type'] ?? ''), 'camp') !== false ? 'camp' : 'course';
+        $sql = "SELECT event_signature, COUNT(*) AS sig_count
+                FROM {$table}
+                WHERE variation_id = %d
+                  AND order_item_id != %d
+                  AND event_signature IS NOT NULL
+                  AND event_signature != ''
+                  AND event_signature != 'N/A'
+                  AND (activity_type LIKE %s OR activity_type LIKE %s)";
+        $params = [
+            $variation_id,
+            $order_item_id,
+            '%' . $activity_like . '%',
+            '%' . ucfirst($activity_like) . '%',
+        ];
+
+        $venue = trim((string) ($row['venue'] ?? ''));
+        if ($venue !== '' && strcasecmp($venue, 'N/A') !== 0) {
+            $sql .= ' AND venue = %s';
+            $params[] = $venue;
+        }
+
+        $course_day = trim((string) ($row['course_day'] ?? ''));
+        if ($activity_like === 'course' && $course_day !== '' && strcasecmp($course_day, 'N/A') !== 0) {
+            $sql .= ' AND course_day = %s';
+            $params[] = $course_day;
+        }
+
+        $sql .= ' GROUP BY event_signature ORDER BY sig_count DESC LIMIT 5';
+        $rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $counts = [];
+        foreach ($rows as $sig_row) {
+            if (!is_array($sig_row)) {
+                continue;
+            }
+            $sig = trim((string) ($sig_row['event_signature'] ?? ''));
+            if ($sig === '') {
+                continue;
+            }
+            $counts[$sig] = (int) ($sig_row['sig_count'] ?? 0);
+        }
+
+        return $counts;
+    }
+
+    /**
      * Rebuild roster row(s) for an order line via OOP builder (updates player names from Woo meta).
      *
      * @param int $order_item_id
@@ -1186,15 +1419,78 @@ class ReportsRostersDiagnosticsService {
 
         try {
             $builder = intersoccer_oop_get_roster_builder();
-            $collection = $builder->buildRosterFromOrder($order_id, [
-                'validate_data' => true,
+            $builder->buildRosterFromOrder($order_id, [
+                'validate_data' => false,
                 'skip_duplicates' => false,
                 'update_existing' => true,
+                'skip_age_group_validation' => true,
             ]);
-            return $collection !== null;
+            return $this->countRosterRowsForOrderItem($order_item_id) > 0;
         } catch (\Throwable $e) {
             return false;
         }
+    }
+
+    /**
+     * Whether the order line has at least one roster row with real player names.
+     *
+     * @param array<int,array<string,mixed>> $roster_rows
+     */
+    public static function rosterItemSyncHealth(array $roster_rows): array {
+        $count = count($roster_rows);
+        $has_incomplete = false;
+        $needs_resync = false;
+        foreach ($roster_rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (function_exists('intersoccer_roster_row_names_incomplete')
+                && intersoccer_roster_row_names_incomplete($row)) {
+                $has_incomplete = true;
+            }
+            if (function_exists('intersoccer_roster_row_needs_order_resync')
+                && intersoccer_roster_row_needs_order_resync($row)) {
+                $needs_resync = true;
+            }
+        }
+
+        return [
+            'roster_row_count' => $count,
+            'in_sync' => $count === 1 && !$has_incomplete && !$needs_resync,
+            'has_incomplete_player' => $has_incomplete,
+            'needs_resync' => $needs_resync,
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $roster_rows
+     */
+    private function backfillPlayerNamesForOrderItemRows(array $roster_rows): int {
+        $updated = 0;
+        foreach ($roster_rows as $row) {
+            if (!is_array($row) || !function_exists('intersoccer_roster_backfill_player_name_fields')) {
+                continue;
+            }
+            $filled = intersoccer_roster_backfill_player_name_fields($row);
+            if (function_exists('intersoccer_roster_persist_player_name_fields')
+                && intersoccer_roster_persist_player_name_fields($filled)) {
+                $updated++;
+            }
+        }
+        return $updated;
+    }
+
+    private function countRosterRowsForOrderItem(int $order_item_id): int {
+        global $wpdb;
+        $order_item_id = (int) $order_item_id;
+        if ($order_item_id <= 0) {
+            return 0;
+        }
+        $table = $wpdb->prefix . 'intersoccer_rosters';
+        return (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table} WHERE order_item_id = %d",
+            $order_item_id
+        ));
     }
 }
 

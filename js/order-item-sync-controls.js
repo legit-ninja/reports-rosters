@@ -23,6 +23,33 @@ jQuery(function ($) {
 
     function summarizeTrace(trace) {
         var rosterRows = Array.isArray(trace.roster_rows) ? trace.roster_rows : [];
+        var health = trace.sync_health && typeof trace.sync_health === 'object' ? trace.sync_health : null;
+
+        if (health && typeof health.in_sync === 'boolean') {
+            if (health.in_sync) {
+                return {
+                    inSync: true,
+                    type: 'success',
+                    message: strings('in_sync', 'In sync.'),
+                    details: '<p><strong>Roster rows:</strong> ' + escHtml(health.roster_row_count || rosterRows.length) + '</p>'
+                };
+            }
+            var detailMsg = strings('out_of_sync', 'Out of sync.');
+            if (health.roster_row_count === 0) {
+                detailMsg += ' Missing roster row.';
+            } else if (health.roster_row_count > 1) {
+                detailMsg += ' Multiple roster rows found.';
+            } else if (health.has_incomplete_player || health.needs_resync) {
+                detailMsg += ' Roster row exists but player data is incomplete.';
+            }
+            return {
+                inSync: false,
+                type: 'warning',
+                message: detailMsg,
+                details: '<p><strong>Roster rows:</strong> ' + escHtml(health.roster_row_count || rosterRows.length) + '</p>'
+            };
+        }
+
         if (!rosterRows.length) {
             return {
                 inSync: false,
