@@ -73,6 +73,16 @@ class RosterDetailsService {
         $rosterModels = $this->filterByValidOrderStatus($collection, $allow_missing_status);
         $loadCriteria = $criteria;
 
+        if ($hasEventSignature && !empty($rosterModels)) {
+            $supplement = $this->fetchRosterModelsWithAlternateSignaturesInGroup($filters, $context, $rosterModels);
+            if (!empty($supplement)) {
+                $this->logger->debug('RosterDetailsService: Merged roster rows with alternate event_signature in same event group', [
+                    'added' => count($supplement),
+                ]);
+                $rosterModels = array_merge($rosterModels, $supplement);
+            }
+        }
+
         // When event_signature returns 0: roster rows may have NULL/empty event_signature; the listing
         // displays a computed fallback (md5) but DB has empty. Use order_item_ids, variation_ids, or camp_terms+venue as fallback.
         if (empty($rosterModels) && $hasEventSignature) {
@@ -579,6 +589,91 @@ class RosterDetailsService {
         }
 
         return $count;
+    }
+
+    /**
+     * Include roster rows in the same consolidated event (venue/course day/variation) but a different event_signature.
+     *
+     * @param array<string,mixed> $filters
+     * @param array<string,mixed> $context
+     * @param array<int,\InterSoccer\ReportsRosters\Data\Models\Roster> $loaded
+     * @return array<int,\InterSoccer\ReportsRosters\Data\Models\Roster>
+     */
+    private function fetchRosterModelsWithAlternateSignaturesInGroup(array $filters, array $context, array $loaded): array {
+        $venue = trim((string) ($filters['venue'] ?? ''));
+        if ($venue === '' || strcasecmp($venue, 'N/A') === 0) {
+            return [];
+        }
+
+        $criteria = ['venue' => $venue];
+        if (!empty($filters['variation_ids'])) {
+            $criteria['variation_id'] = $filters['variation_ids'];
+        } elseif (!empty($filters['variation_id'])) {
+            $criteria['variation_id'] = (int) $filters['variation_id'];
+        }
+
+        if ($context['is_from_courses_page'] || $context['is_from_girls_only_page']) {
+            $course_day = trim((string) ($filters['course_day'] ?? ''));
+            if ($course_day !== '' && strcasecmp($course_day, 'N/A') !== 0) {
+                $criteria['course_day'] = $course_day;
+            }
+            $criteria['activity_type'] = ['Course', 'Course, Girls Only', "Course, Girls' only"];
+        } elseif ($context['is_from_camps_page']) {
+            $camp_terms = trim((string) ($filters['camp_terms'] ?? ''));
+            if ($camp_terms !== '' && strcasecmp($camp_terms, 'N/A') !== 0) {
+                $criteria['camp_terms'] = $camp_terms;
+            }
+            $criteria['activity_type'] = ['Camp', 'Camp, Girls Only', "Camp, Girls' only"];
+        }
+
+        if (empty($criteria['variation_id']) && empty($criteria['course_day']) && empty($criteria['camp_terms'])) {
+            return [];
+        }
+
+        $this->repository->clearQueryCache();
+        $collection = $this->repository->where($criteria, ['skip_cache' => true]);
+        $candidates = $this->filterByValidOrderStatus($collection, true);
+
+        $loaded_ids = [];
+        foreach ($loaded as $model) {
+            if (is_object($model) && isset($model->id)) {
+                $loaded_ids[(int) $model->id] = true;
+            }
+        }
+
+        $requested_signatures = [];
+        if (!empty($filters['event_signatures'])) {
+            foreach ((array) $filters['event_signatures'] as $sig) {
+                $sig = trim((string) $sig);
+                if ($sig !== '' && strcasecmp($sig, 'N/A') !== 0) {
+                    $requested_signatures[$sig] = true;
+                }
+            }
+        } elseif (!empty($filters['event_signature']) && strcasecmp((string) $filters['event_signature'], 'N/A') !== 0) {
+            $requested_signatures[trim((string) $filters['event_signature'])] = true;
+        }
+
+        $added = [];
+        foreach ($candidates as $model) {
+            if (!is_object($model) || !isset($model->id)) {
+                continue;
+            }
+            $id = (int) $model->id;
+            if (isset($loaded_ids[$id])) {
+                continue;
+            }
+            $sig = trim((string) ($model->event_signature ?? ''));
+            if ($sig === '' || strcasecmp($sig, 'N/A') === 0) {
+                continue;
+            }
+            if (!empty($requested_signatures) && isset($requested_signatures[$sig])) {
+                continue;
+            }
+            $loaded_ids[$id] = true;
+            $added[] = $model;
+        }
+
+        return $added;
     }
 
 }
