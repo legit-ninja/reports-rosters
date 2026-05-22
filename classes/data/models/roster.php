@@ -28,7 +28,13 @@ if (!defined('ABSPATH')) {
  * Manages roster entries with comprehensive validation and utility methods
  */
 class Roster extends AbstractModel {
-    
+    /**
+     * When true, age-group eligibility is not enforced (repair/sync from completed orders).
+     *
+     * @var bool
+     */
+    protected $skip_age_group_validation = false;
+
     /**
      * Fillable attributes
      * 
@@ -837,6 +843,10 @@ class Roster extends AbstractModel {
      * @throws ValidationException If validation fails
      * @return bool Validation passed
      */
+    public function setSkipAgeGroupValidation(bool $skip = true): void {
+        $this->skip_age_group_validation = $skip;
+    }
+
     public function validate() {
         // Run parent validation first
         parent::validate();
@@ -896,6 +906,10 @@ class Roster extends AbstractModel {
      * @return void
      */
     private function validateAgeGroup() {
+        if ($this->skip_age_group_validation) {
+            return;
+        }
+
         if (empty($this->age_group) || empty($this->dob) || empty($this->start_date)) {
             return; // Skip if missing required data; age-at-event needs start_date
         }

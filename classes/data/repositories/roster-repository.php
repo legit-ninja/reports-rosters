@@ -442,10 +442,16 @@ class RosterRepository implements RepositoryInterface {
      */
     public function create(array $data) {
         try {
+            $skip_age_group_validation = !empty($data['_skip_age_group_validation']);
+            unset($data['_skip_age_group_validation']);
+
             $this->logger->debug('Creating new roster entry', $data);
             
             // Create roster model
             $roster = new Roster($data);
+            if ($skip_age_group_validation) {
+                $roster->setSkipAgeGroupValidation(true);
+            }
             
             // Validate roster data
             $roster->validate();
@@ -550,9 +556,15 @@ class RosterRepository implements RepositoryInterface {
                 return null;
             }
             
+            $skip_age_group_validation = !empty($data['_skip_age_group_validation']);
+            unset($data['_skip_age_group_validation']);
+
             // Update roster data
             $roster->fill($data);
             $roster->setAttribute('updated_at', current_time('mysql'));
+            if ($skip_age_group_validation) {
+                $roster->setSkipAgeGroupValidation(true);
+            }
             
             // Validate updated data
             $roster->validate();

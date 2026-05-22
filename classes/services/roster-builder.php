@@ -1525,6 +1525,9 @@ class RosterBuilder {
                     $roster_data['event_completed'] = 0;
                 }
                 
+                if (!empty($options['skip_age_group_validation'])) {
+                    $roster_data['_skip_age_group_validation'] = true;
+                }
                 $updated_roster = $this->roster_repository->update($existing_roster->id, $roster_data);
                 if ($updated_roster) {
                     $this->build_stats['rosters_updated']++;
@@ -1538,6 +1541,9 @@ class RosterBuilder {
         }
         
         // Create new roster
+        if (!empty($options['skip_age_group_validation'])) {
+            $roster_data['_skip_age_group_validation'] = true;
+        }
         $roster = $this->roster_repository->create($roster_data);
         if ($roster) {
             $this->build_stats['rosters_created']++;
