@@ -1138,6 +1138,9 @@ function intersoccer_render_roster_details_page() {
     <script type="text/javascript">
     jQuery(document).ready(function($) {
         var intersoccerAjaxUrl = (typeof ajaxurl !== 'undefined' && ajaxurl) ? ajaxurl : '<?php echo esc_js(admin_url('admin-ajax.php')); ?>';
+        var rosterDetailsBaseUrl = '<?php echo esc_js(admin_url('admin.php?page=intersoccer-roster-details')); ?>';
+        var rosterDetailsFromPage = '<?php echo esc_js($from_page); ?>';
+        
         // Repair day presence handler
         $(document).on('click', '#repair-day-presence-btn', function(e) {
             e.preventDefault();
@@ -1377,6 +1380,13 @@ function intersoccer_render_roster_details_page() {
                 return;
             }
 
+            const targetRosterUrl = new URL(rosterDetailsBaseUrl, window.location.origin);
+            targetRosterUrl.searchParams.set('variation_id', String(parseInt(targetVar, 10)));
+            if (rosterDetailsFromPage) {
+                targetRosterUrl.searchParams.set('from', rosterDetailsFromPage);
+            }
+            
+
             console.log('InterSoccer Migration: Starting AJAX request with allow_cross_gender=' + allowCrossGender);
 
             // Enhanced AJAX call with better error handling
@@ -1407,6 +1417,10 @@ function intersoccer_render_roster_details_page() {
                     
                     if (response.success) {
                         alert('Success: ' + response.data.message);
+                        const shouldOpenTargetRoster = confirm('Open destination roster in a new tab to verify migrated player data?');
+                        if (shouldOpenTargetRoster) {
+                            const openedTab = window.open(targetRosterUrl.toString(), '_blank');
+                        }
                         
                         // Clear selections and reset form
                         playerSelects.prop('checked', false);
