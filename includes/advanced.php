@@ -1024,6 +1024,7 @@ function intersoccer_move_players_ajax() {
         $target_variation_id,
         $order_item_ids,
         $allow_cross_gender,
+        $variation,
         &$moved_count,
         &$errors,
         $wpdb
