@@ -1076,6 +1076,9 @@ function intersoccer_move_players_ajax() {
             $original_subtotal = $item->get_subtotal();
             $original_total = $item->get_total();
             $assigned_attendee = wc_get_order_item_meta($item_id, 'Assigned Attendee', true);
+            $booking_before = function_exists('intersoccer_read_order_item_booking_fields')
+                ? intersoccer_read_order_item_booking_fields($item_id)
+                : ['booking_type' => '', 'selected_days' => '', 'late_pickup_days' => ''];
             
             error_log('InterSoccer Migration: Item ' . $item_id . ' original state:');
             error_log('  - Original variation: ' . $original_variation_id);
@@ -1177,6 +1180,30 @@ function intersoccer_move_players_ajax() {
                             $human_lookup,
                             $human_meta,
                             $other_meta
+                        );
+                    }
+                    $booking_after_restore = function_exists('intersoccer_read_order_item_booking_fields')
+                        ? intersoccer_read_order_item_booking_fields($item_id)
+                        : ['booking_type' => '', 'selected_days' => '', 'late_pickup_days' => ''];
+
+                    // Repair booking meta when canonical restore clears full-week/single-days metadata.
+                    if (!empty($booking_before['booking_type']) && empty($booking_after_restore['booking_type'])) {
+                        $booking_repair = function_exists('intersoccer_normalize_roster_booking_columns')
+                            ? intersoccer_normalize_roster_booking_columns([], $booking_before)
+                            : $booking_before;
+
+                        if (function_exists('intersoccer_renormalize_order_item_booking_meta')) {
+                            intersoccer_renormalize_order_item_booking_meta($item_id, $booking_repair);
+                        }
+
+                        $booking_after_repair = function_exists('intersoccer_read_order_item_booking_fields')
+                            ? intersoccer_read_order_item_booking_fields($item_id)
+                            : ['booking_type' => '', 'selected_days' => '', 'late_pickup_days' => ''];
+                        error_log(
+                            'InterSoccer Migration: Repaired booking meta after restore wipe for item ' . $item_id .
+                            ' (before=' . ($booking_before['booking_type'] ?? '') .
+                            ', after_restore=' . ($booking_after_restore['booking_type'] ?? '') .
+                            ', after_repair=' . ($booking_after_repair['booking_type'] ?? '') . ')'
                         );
                     }
                     
@@ -1381,6 +1408,9 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
         ),
         ARRAY_A
     ) ?: [];
+    $booking_from_item_meta = function_exists('intersoccer_read_order_item_booking_fields')
+        ? intersoccer_read_order_item_booking_fields($item_id)
+        : ['booking_type' => '', 'selected_days' => '', 'late_pickup_days' => ''];
 
     $facet_update = function_exists('intersoccer_build_roster_facet_db_update')
         ? intersoccer_build_roster_facet_db_update($normalized, $record, $product_name)
