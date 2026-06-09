@@ -168,11 +168,23 @@ class RosterDetailsService {
         $filters['product_id'] = isset($filters['product_id']) ? (int) $filters['product_id'] : 0;
         $filters['variation_id'] = isset($filters['variation_id']) ? (int) $filters['variation_id'] : 0;
         $filters['variation_ids'] = isset($filters['variation_ids']) ? array_filter(array_map('intval', (array) $filters['variation_ids'])) : [];
+        $filters['variation_ids'] = array_values(array_unique($filters['variation_ids']));
+        sort($filters['variation_ids'], SORT_NUMERIC);
         $filters['order_item_ids'] = isset($filters['order_item_ids']) ? array_filter(array_map('intval', (array) $filters['order_item_ids'])) : [];
+        $filters['order_item_ids'] = array_values(array_unique($filters['order_item_ids']));
+        sort($filters['order_item_ids'], SORT_NUMERIC);
         $filters['event_signature'] = isset($filters['event_signature']) ? trim($filters['event_signature']) : '';
         $filters['event_signatures'] = isset($filters['event_signatures'])
             ? array_values(array_filter(array_map('trim', (array) $filters['event_signatures'])))
             : [];
+        $filters['event_signatures'] = array_values(array_filter($filters['event_signatures'], function ($sig) {
+            return strcasecmp((string) $sig, 'N/A') !== 0;
+        }));
+        $filters['event_signatures'] = array_values(array_unique($filters['event_signatures']));
+        sort($filters['event_signatures'], SORT_STRING);
+        if (strcasecmp($filters['event_signature'], 'N/A') === 0) {
+            $filters['event_signature'] = '';
+        }
         $filters['camp_terms'] = isset($filters['camp_terms']) ? trim($filters['camp_terms']) : '';
         $filters['course_day'] = isset($filters['course_day']) ? trim($filters['course_day']) : '';
         $filters['venue'] = isset($filters['venue']) ? trim($filters['venue']) : '';
@@ -198,7 +210,7 @@ class RosterDetailsService {
 
         $sortOrder = strtolower(isset($context['sort_order']) ? $context['sort_order'] : 'desc');
         if (!in_array($sortOrder, ['asc', 'desc'], true)) {
-            $sortOrder = 'asc';
+            $sortOrder = 'desc';
         }
 
         $context['sort_by'] = $sortBy;

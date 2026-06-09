@@ -1836,7 +1836,9 @@ if (!function_exists('intersoccer_resolve_listing_group_event_signatures')) {
             $sigs[$primary] = $primary;
         }
 
-        return array_values($sigs);
+        $sigs = array_values($sigs);
+        sort($sigs, SORT_STRING);
+        return $sigs;
     }
 }
 
@@ -1869,6 +1871,10 @@ if (!function_exists('intersoccer_get_roster_details_url_for_listing_group')) {
             $venue = trim((string) ($group['venue'] ?? ''));
             if ($venue !== '' && strcasecmp($venue, 'N/A') !== 0) {
                 $params['venue'] = $venue;
+            }
+            $season = trim((string) ($group['season'] ?? ''));
+            if ($season !== '' && strcasecmp($season, 'N/A') !== 0) {
+                $params['season'] = $season;
             }
             if ($from === 'courses' || $from === 'girls-only') {
                 $course_day = trim((string) ($group['course_day'] ?? ''));
@@ -5378,31 +5384,38 @@ function intersoccer_roster_course_season_filter_matches(array $group, string $f
     $group_season = (string) ($group['season'] ?? '');
     $group_raw = (string) ($group['season_raw'] ?? '');
 
-    if ($filter_season === $group_season || $filter_season === $group_raw) {
+    if ($filter_season === $group_season) {
         return true;
     }
 
-    if (function_exists('intersoccer_roster_normalize_course_listing_season')) {
-        $row_context = [
-            'product_name' => $group['product_name'] ?? '',
-            'course_day' => $group['course_day'] ?? '',
-            'activity_type' => 'Course',
-        ];
-        $normalized_filter = intersoccer_roster_normalize_course_listing_season($filter_season, $row_context);
-        $normalized_group = intersoccer_roster_normalize_course_listing_season($group_season, $row_context);
-        $normalized_raw = intersoccer_roster_normalize_course_listing_season($group_raw, $row_context);
-        if ($normalized_filter !== '' && $normalized_filter === $normalized_group) {
-            return true;
-        }
-        if ($normalized_filter !== '' && $normalized_filter === $normalized_raw) {
-            return true;
-        }
-        if ($filter_season === $normalized_filter || $filter_season === $normalized_raw) {
-            return true;
-        }
-        if ($group_season === $normalized_filter) {
-            return true;
-        }
+    if (!function_exists('intersoccer_roster_normalize_course_listing_season')) {
+        return $filter_season === $group_raw && $group_raw === $group_season;
+    }
+
+    $row_context = [
+        'product_name' => $group['product_name'] ?? '',
+        'course_day' => $group['course_day'] ?? '',
+        'activity_type' => 'Course',
+    ];
+    $normalized_filter = intersoccer_roster_normalize_course_listing_season($filter_season, $row_context);
+    $normalized_group = intersoccer_roster_normalize_course_listing_season(
+        $group_season !== '' ? $group_season : $group_raw,
+        $row_context
+    );
+    $normalized_raw = intersoccer_roster_normalize_course_listing_season($group_raw, $row_context);
+
+    if ($normalized_filter !== '' && $normalized_filter === $normalized_group) {
+        return true;
+    }
+
+    // Legacy camp→course labels: filter may match persisted raw while display season was corrected.
+    if (
+        $filter_season === $group_raw
+        && $normalized_filter !== ''
+        && $normalized_filter === $normalized_raw
+        && $normalized_filter === $normalized_group
+    ) {
+        return true;
     }
 
     return false;

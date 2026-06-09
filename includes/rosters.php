@@ -1516,6 +1516,7 @@ function intersoccer_render_courses_page() {
     $selected_season_ui = function_exists('intersoccer_roster_resolve_course_season_for_filter_ui')
         ? intersoccer_roster_resolve_course_season_for_filter_ui($selected_season, (array) $all_seasons)
         : $selected_season;
+
     $course_active_filter_labels = [];
     if ($selected_season !== '') {
         $course_active_filter_labels[] = sprintf(

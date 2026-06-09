@@ -36,6 +36,49 @@ function intersoccer_get_sort_indicator($field, $current_sort, $current_order) {
 }
 
 /**
+ * Parse comma-separated integer IDs from request values.
+ *
+ * @param string $raw
+ * @return int[]
+ */
+function intersoccer_roster_parse_csv_int_ids($raw) {
+    $ids = array_map('intval', explode(',', (string) $raw));
+    $ids = array_values(array_unique(array_filter($ids, static function ($value) {
+        return $value > 0;
+    })));
+    sort($ids, SORT_NUMERIC);
+    return $ids;
+}
+
+/**
+ * Parse comma-separated tokens from request values with de-duplication.
+ *
+ * @param string $raw
+ * @return string[]
+ */
+function intersoccer_roster_parse_csv_string_tokens($raw) {
+    $tokens = array_map('trim', explode(',', (string) $raw));
+    $tokens = array_values(array_filter($tokens, static function ($token) {
+        return $token !== '' && strcasecmp($token, 'N/A') !== 0;
+    }));
+    $tokens = array_values(array_unique($tokens));
+    sort($tokens, SORT_STRING);
+    return $tokens;
+}
+
+/**
+ * Case-insensitive referer page check.
+ *
+ * @param string $referer
+ * @param string $needle
+ * @return bool
+ */
+function intersoccer_roster_referer_has_page($referer, $needle) {
+    $referer = (string) $referer;
+    return $referer !== '' && stripos($referer, (string) $needle) !== false;
+}
+
+/**
  * Consolidated listing kind for a roster row ("course" or "camp").
  *
  * @param array<string,mixed> $row
@@ -405,12 +448,12 @@ function intersoccer_render_roster_details_page() {
     $product_id = isset($_GET['product_id']) ? intval($_GET['product_id']) : 0;
     $variation_id = isset($_GET['variation_id']) ? intval($_GET['variation_id']) : 0;
     $variation_ids_str = isset($_GET['variation_ids']) ? sanitize_text_field($_GET['variation_ids']) : '';
-    $variation_ids = $variation_ids_str ? array_filter(array_map('intval', explode(',', $variation_ids_str))) : [];
+    $variation_ids = $variation_ids_str ? intersoccer_roster_parse_csv_int_ids($variation_ids_str) : [];
     $order_item_ids_str = isset($_GET['order_item_ids']) ? sanitize_text_field($_GET['order_item_ids']) : '';
-    $order_item_ids = $order_item_ids_str ? array_filter(array_map('intval', explode(',', $order_item_ids_str))) : [];
+    $order_item_ids = $order_item_ids_str ? intersoccer_roster_parse_csv_int_ids($order_item_ids_str) : [];
     $event_signature = isset($_GET['event_signature']) ? sanitize_text_field($_GET['event_signature']) : '';
     $event_signatures_str = isset($_GET['event_signatures']) ? sanitize_text_field($_GET['event_signatures']) : '';
-    $event_signatures = $event_signatures_str ? array_values(array_filter(array_map('trim', explode(',', $event_signatures_str)))) : [];
+    $event_signatures = $event_signatures_str ? intersoccer_roster_parse_csv_string_tokens($event_signatures_str) : [];
     $camp_terms = isset($_GET['camp_terms']) ? sanitize_text_field($_GET['camp_terms']) : '';
     $course_day = isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '';
     $venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
@@ -429,16 +472,16 @@ function intersoccer_render_roster_details_page() {
     if (!in_array($sort_by, $allowed_sort_fields)) {
         $sort_by = 'order_date';
     }
-    if (!in_array($sort_order, ['asc', 'desc'])) {
-        $sort_order = 'asc';
+    if (!in_array($sort_order, ['asc', 'desc'], true)) {
+        $sort_order = 'desc';
     }
 
     // Check referer and from param
     $referer = wp_get_referer();
-    $is_from_camps_page = $from_page === 'camps' || strpos($referer, 'page=intersoccer-camps') !== false;
-    $is_from_courses_page = $from_page === 'courses' || strpos($referer, 'page=intersoccer-courses') !== false;
-    $is_from_girls_only_page = $from_page === 'girls-only' || strpos($referer, 'page=intersoccer-girls-only') !== false || $girls_only;
-    $is_from_tournaments_page = $from_page === 'tournaments' || strpos($referer, 'page=intersoccer-tournaments') !== false;
+    $is_from_camps_page = $from_page === 'camps' || intersoccer_roster_referer_has_page($referer, 'page=intersoccer-camps');
+    $is_from_courses_page = $from_page === 'courses' || intersoccer_roster_referer_has_page($referer, 'page=intersoccer-courses');
+    $is_from_girls_only_page = $from_page === 'girls-only' || intersoccer_roster_referer_has_page($referer, 'page=intersoccer-girls-only') || $girls_only;
+    $is_from_tournaments_page = $from_page === 'tournaments' || intersoccer_roster_referer_has_page($referer, 'page=intersoccer-tournaments');
 
     $use_oop_rosters = defined('INTERSOCCER_OOP_ACTIVE')
         && INTERSOCCER_OOP_ACTIVE
@@ -524,11 +567,14 @@ function intersoccer_render_roster_details_page() {
         if ($is_from_girls_only_page || $girls_only) {
             $where_clauses[] = "r.girls_only = 1";
         } elseif ($is_from_camps_page) {
-            $where_clauses[] = "r.activity_type = 'Camp' AND r.girls_only = 0";
+            $where_clauses[] = "r.activity_type = %s AND r.girls_only = 0";
+            $query_params[] = 'Camp';
         } elseif ($is_from_courses_page) {
-            $where_clauses[] = "r.activity_type = 'Course' AND r.girls_only = 0";
+            $where_clauses[] = "r.activity_type = %s AND r.girls_only = 0";
+            $query_params[] = 'Course';
         } elseif ($is_from_tournaments_page) {
-            $where_clauses[] = "r.activity_type = 'Tournament' AND r.girls_only = 0";
+            $where_clauses[] = "r.activity_type = %s AND r.girls_only = 0";
+            $query_params[] = 'Tournament';
         }
 
         if ($product_id > 0) {
@@ -594,7 +640,7 @@ function intersoccer_render_roster_details_page() {
             }
         }
 
-        if ($season) {
+        if ($season && strcasecmp($season, 'N/A') !== 0) {
             $where_clauses[] = "r.season = %s";
             $query_params[] = $season;
         }
@@ -882,90 +928,192 @@ function intersoccer_render_roster_details_page() {
     echo '    </div>';
             
     echo '    <div id="moveOptions" style="display: none; margin-top: 10px;">';
-    echo '        <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">';
+    echo '        <div style="display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;">';
     echo '            <div>';
-    echo '                <label for="targetRosterSelect" style="font-weight: 500; margin-right: 8px;">Destination Roster:</label>';
-    echo '                <select id="targetRosterSelect" style="min-width: 400px;">';
-    echo '                    <option value="">Select a destination roster...</option>';
+    echo '                <label for="targetSeasonSelect" style="font-weight: 500; margin-right: 8px;">' . esc_html__('Season', 'intersoccer-reports-rosters') . ':</label>';
+    echo '                <select id="targetSeasonSelect" style="min-width: 170px;">';
+    echo '                    <option value="">' . esc_html__('Select season...', 'intersoccer-reports-rosters') . '</option>';
+    echo '                </select>';
+    echo '            </div>';
+    echo '            <div>';
+    echo '                <label for="targetScheduleSelect" style="font-weight: 500; margin-right: 8px;">' . esc_html__('Day / Term', 'intersoccer-reports-rosters') . ':</label>';
+    echo '                <select id="targetScheduleSelect" style="min-width: 170px;" disabled>';
+    echo '                    <option value="">' . esc_html__('Select season first...', 'intersoccer-reports-rosters') . '</option>';
+    echo '                </select>';
+    echo '            </div>';
+    echo '            <div>';
+    echo '                <label for="targetVenueSelect" style="font-weight: 500; margin-right: 8px;">' . esc_html__('Venue', 'intersoccer-reports-rosters') . ':</label>';
+    echo '                <select id="targetVenueSelect" style="min-width: 170px;" disabled>';
+    echo '                    <option value="">' . esc_html__('Select day or term first...', 'intersoccer-reports-rosters') . '</option>';
+    echo '                </select>';
+    echo '            </div>';
+    echo '            <div>';
+    echo '                <label for="targetAgeGroupSelect" style="font-weight: 500; margin-right: 8px;">' . esc_html__('Age Group', 'intersoccer-reports-rosters') . ':</label>';
+    echo '                <select id="targetAgeGroupSelect" style="min-width: 170px;" disabled>';
+    echo '                    <option value="">' . esc_html__('Select venue first...', 'intersoccer-reports-rosters') . '</option>';
+    echo '                </select>';
+    echo '            </div>';
+    echo '            <div>';
+    echo '                <label for="targetTimeSelect" style="font-weight: 500; margin-right: 8px;">' . esc_html__('Time', 'intersoccer-reports-rosters') . ':</label>';
+    echo '                <select id="targetTimeSelect" style="min-width: 170px;" disabled>';
+    echo '                    <option value="">' . esc_html__('Select age group first...', 'intersoccer-reports-rosters') . '</option>';
+    echo '                </select>';
+    echo '            </div>';
+    echo '            <div>';
+    echo '                <label for="targetRosterSelect" style="font-weight: 500; margin-right: 8px;">' . esc_html__('Destination Roster', 'intersoccer-reports-rosters') . ':</label>';
+    echo '                <select id="targetRosterSelect" style="min-width: 400px;" disabled>';
+    echo '                    <option value="">' . esc_html__('Select time first...', 'intersoccer-reports-rosters') . '</option>';
+    echo '                </select>';
+    echo '            </div>';
+    echo '            <div>';
+    echo '                <button id="applyBulk" class="button button-primary">' . esc_html__('Apply', 'intersoccer-reports-rosters') . '</button>';
+    echo '            </div>';
+    echo '        </div>';
+    echo '        <div style="margin-top: 8px; font-size: 12px; color: #666;">' . esc_html__('Use each filter in order to narrow destination rosters.', 'intersoccer-reports-rosters') . '</div>';
+    echo '        <select id="targetRosterOptionsSource" style="display: none;" aria-hidden="true" tabindex="-1">';
+    echo '            <option value="">' . esc_html__('Select a destination roster...', 'intersoccer-reports-rosters') . '</option>';
     
-    // Helper function to generate roster label
-    $generate_roster_label = function($roster, $is_cross_gender = false) use ($is_girls_only) {
-        // Activity icon
-        $icon = $roster->activity_type === 'Course' ? '🏐' : ($roster->activity_type === 'Camp' ? '⛺' : '🎂');
-        
-        // Build label with enhanced information
-        $roster_label = sprintf(
-            '%s %s - %s (%s)',
-            $icon,
-            $roster->product_name,
-            $roster->venue ?: 'No Venue',
-            $roster->age_group ?: 'No Age Group'
-        );
-        
-        // Add camp terms or course day
-        if ($roster->camp_terms && $roster->camp_terms !== 'N/A') {
-            $roster_label .= ' - ' . substr($roster->camp_terms, 0, 50);
-        } elseif ($roster->course_day && $roster->course_day !== 'N/A') {
-            $roster_label .= ' - ' . $roster->course_day;
+    // Cache taxonomy label lookups once per unique value to keep rendering lightweight.
+    $term_label_cache = [];
+    $resolve_term_label = static function($value, $taxonomy) use (&$term_label_cache) {
+        $raw = trim((string) $value);
+        if ($raw === '' || strcasecmp($raw, 'N/A') === 0) {
+            return '';
         }
-        
-        // Add time if available
-        if (!empty($roster->times)) {
-            $roster_label .= ' | ' . $roster->times;
+        $cache_key = $taxonomy . '|' . strtolower($raw);
+        if (!array_key_exists($cache_key, $term_label_cache)) {
+            $resolved = function_exists('intersoccer_get_term_name')
+                ? intersoccer_get_term_name($raw, $taxonomy)
+                : $raw;
+            $term_label_cache[$cache_key] = ($resolved && strcasecmp((string) $resolved, 'N/A') !== 0)
+                ? (string) $resolved
+                : $raw;
         }
-        
-        // Add player count
-        $roster_label .= sprintf(' | 👥 %d players', intval($roster->current_players));
-        
-        // Add girls-only badge
-        if ($roster->girls_only) {
-            $roster_label .= ' | 🚺 Girls Only';
-        }
-        
-        // Warning if different gender from source
-        if ($is_girls_only !== (bool)$roster->girls_only) {
-            $roster_label .= ' | ⚠️ Different Gender';
-        }
-        
-        return $roster_label;
+        return $term_label_cache[$cache_key];
     };
+    $normalize_sortable = static function($value) {
+        return strtolower(trim((string) $value));
+    };
+    $build_roster_label = static function($roster) use ($resolve_term_label) {
+        $product = trim((string) ($roster->product_name ?? ''));
+        $venue = $resolve_term_label($roster->venue ?? '', 'pa_intersoccer-venues');
+        $age_group = $resolve_term_label($roster->age_group ?? '', 'pa_age-group');
+        $season = trim((string) ($roster->season ?? ''));
+        $course_day = $resolve_term_label($roster->course_day ?? '', 'pa_course-day');
+        $camp_terms = $resolve_term_label($roster->camp_terms ?? '', 'pa_camp-terms');
+        $times = trim((string) ($roster->times ?? ''));
+        $players = (int) ($roster->current_players ?? 0);
+
+        $schedule_label = '';
+        if ($course_day !== '') {
+            $schedule_label = 'Day: ' . $course_day;
+        } elseif ($camp_terms !== '') {
+            $schedule_label = 'Term: ' . $camp_terms;
+        } elseif ($season !== '') {
+            $schedule_label = 'Season: ' . $season;
+        }
+
+        $parts = [];
+        $parts[] = $product !== '' ? $product : __('Untitled roster', 'intersoccer-reports-rosters');
+        if ($season !== '') {
+            $parts[] = $season;
+        }
+        if ($schedule_label !== '') {
+            $parts[] = $schedule_label;
+        }
+        if ($venue !== '') {
+            $parts[] = $venue;
+        }
+        if ($age_group !== '') {
+            $parts[] = $age_group;
+        }
+        if ($times !== '' && strcasecmp($times, 'N/A') !== 0) {
+            $parts[] = $times;
+        }
+        $parts[] = sprintf(_n('%d player', '%d players', $players, 'intersoccer-reports-rosters'), $players);
+
+        return implode(' | ', $parts);
+    };
+
+    $render_roster_options = static function(array $rosters, $cross_gender) use ($normalize_sortable, $resolve_term_label, $build_roster_label) {
+        if (empty($rosters)) {
+            return;
+        }
+        usort($rosters, static function($a, $b) use ($normalize_sortable) {
+            $a_season = $normalize_sortable($a->season ?? '');
+            $b_season = $normalize_sortable($b->season ?? '');
+            if ($a_season !== $b_season) {
+                return strcmp($a_season, $b_season);
+            }
+            $a_schedule = $normalize_sortable(($a->course_day ?? '') ?: ($a->camp_terms ?? ''));
+            $b_schedule = $normalize_sortable(($b->course_day ?? '') ?: ($b->camp_terms ?? ''));
+            if ($a_schedule !== $b_schedule) {
+                return strcmp($a_schedule, $b_schedule);
+            }
+            $a_venue = $normalize_sortable($a->venue ?? '');
+            $b_venue = $normalize_sortable($b->venue ?? '');
+            if ($a_venue !== $b_venue) {
+                return strcmp($a_venue, $b_venue);
+            }
+            $a_age = $normalize_sortable($a->age_group ?? '');
+            $b_age = $normalize_sortable($b->age_group ?? '');
+            if ($a_age !== $b_age) {
+                return strcmp($a_age, $b_age);
+            }
+            return strcmp($normalize_sortable($a->times ?? ''), $normalize_sortable($b->times ?? ''));
+        });
+
+        foreach ($rosters as $roster) {
+            $season = trim((string) ($roster->season ?? ''));
+            $season = ($season !== '' && strcasecmp($season, 'N/A') !== 0) ? $season : __('Not set', 'intersoccer-reports-rosters');
+            $schedule = $resolve_term_label($roster->course_day ?? '', 'pa_course-day');
+            if ($schedule === '') {
+                $schedule = $resolve_term_label($roster->camp_terms ?? '', 'pa_camp-terms');
+            }
+            if ($schedule === '') {
+                $schedule = __('Not set', 'intersoccer-reports-rosters');
+            }
+            $venue = $resolve_term_label($roster->venue ?? '', 'pa_intersoccer-venues');
+            if ($venue === '') {
+                $venue = __('Not set', 'intersoccer-reports-rosters');
+            }
+            $age_group = $resolve_term_label($roster->age_group ?? '', 'pa_age-group');
+            if ($age_group === '') {
+                $age_group = __('Not set', 'intersoccer-reports-rosters');
+            }
+            $time = trim((string) ($roster->times ?? ''));
+            if ($time === '' || strcasecmp($time, 'N/A') === 0) {
+                $time = __('Not set', 'intersoccer-reports-rosters');
+            }
+            $roster_label = $build_roster_label($roster);
+            echo '            <option value="' . esc_attr($roster->variation_id) . '" data-season="' . esc_attr($season) . '" data-schedule="' . esc_attr($schedule) . '" data-venue="' . esc_attr($venue) . '" data-age-group="' . esc_attr($age_group) . '" data-time="' . esc_attr($time) . '" data-girls-only="' . esc_attr($roster->girls_only ? '1' : '0') . '" data-cross-gender="' . esc_attr($cross_gender ? '1' : '0') . '">' . esc_html($roster_label) . '</option>';
+        }
+    };
+
     // Same-gender rosters (always shown)
     if (!empty($available_rosters)) {
-        echo '                <optgroup label="' . esc_attr__('Same Gender Type', 'intersoccer-reports-rosters') . ' (' . count($available_rosters) . ')">';
-        foreach ($available_rosters as $roster) {
-            $roster_label = $generate_roster_label($roster, false);
-            echo '                    <option value="' . esc_attr($roster->variation_id) . '" data-girls-only="' . esc_attr($roster->girls_only ? '1' : '0') . '" data-cross-gender="0">' . esc_html($roster_label) . '</option>';
-        }
-        echo '                </optgroup>';
+        $render_roster_options($available_rosters, false);
     }
-    
+
     // Cross-gender rosters (hidden by default, shown when checkbox enabled)
     if (!empty($cross_gender_rosters)) {
-        echo '                <optgroup label="' . esc_attr__('⚠️ Different Gender Type (Enable checkbox above)', 'intersoccer-reports-rosters') . ' (' . count($cross_gender_rosters) . ')" id="crossGenderRosterGroup" style="display: none;">';
-        foreach ($cross_gender_rosters as $roster) {
-            $roster_label = $generate_roster_label($roster, true);
-            echo '                    <option value="' . esc_attr($roster->variation_id) . '" data-girls-only="' . esc_attr($roster->girls_only ? '1' : '0') . '" data-cross-gender="1" class="cross-gender-option" style="display: none;">' . esc_html($roster_label) . '</option>';
-        }
-        echo '                </optgroup>';
+        $render_roster_options($cross_gender_rosters, true);
     }
     
     if (empty($available_rosters) && empty($cross_gender_rosters)) {
-        echo '                <option value="" disabled>No other rosters available</option>';
+        echo '            <option value="" disabled>' . esc_html__('No other rosters available', 'intersoccer-reports-rosters') . '</option>';
     }
-    echo '            </select>';
-    echo '        </div>';
-            
-    echo '        <button id="applyBulk" class="button button-primary">Apply</button>';
+    echo '        </select>';
     echo '    </div>';
         
     echo '    <div style="margin-top: 10px; font-size: 13px; color: #666;">';
-    echo '        <strong>Instructions:</strong> ';
-    echo '        1) Select players using checkboxes ';
-    echo '        2) Choose "Move to Another Roster" ';
-    echo '        3) Select the destination roster from the dropdown (shows event name, venue, age group, and current player count) ';
-    echo '        4) Click Apply';
+    echo '        <strong>' . esc_html__('Instructions:', 'intersoccer-reports-rosters') . '</strong> ';
+    echo '        ' . esc_html__('1) Select players using checkboxes', 'intersoccer-reports-rosters') . ' ';
+    echo '        ' . esc_html__('2) Choose "Move to Another Roster"', 'intersoccer-reports-rosters') . ' ';
+    echo '        ' . esc_html__('3) Choose season, day/term, venue, age group, and time to reveal destination roster options', 'intersoccer-reports-rosters') . ' ';
+    echo '        ' . esc_html__('4) Select destination roster and click Apply', 'intersoccer-reports-rosters');
     echo '        <br>';
-    echo '        <strong>Note:</strong> This will update order items and preserve original pricing. Changes cannot be undone.';
+    echo '        <strong>' . esc_html__('Note:', 'intersoccer-reports-rosters') . '</strong> ' . esc_html__('This will update order items and preserve original pricing. Changes cannot be undone.', 'intersoccer-reports-rosters');
     echo '    </div>';
     echo '</div>';
     
@@ -1262,10 +1410,155 @@ function intersoccer_render_roster_details_page() {
         const moveOptions = $('#moveOptions');
         const applyBulk = $('#applyBulk');
         const targetRosterSelect = $('#targetRosterSelect');
+        const targetSeasonSelect = $('#targetSeasonSelect');
+        const targetScheduleSelect = $('#targetScheduleSelect');
+        const targetVenueSelect = $('#targetVenueSelect');
+        const targetAgeGroupSelect = $('#targetAgeGroupSelect');
+        const targetTimeSelect = $('#targetTimeSelect');
+        const targetRosterOptionsSource = $('#targetRosterOptionsSource');
+        const filterSelects = [
+            targetSeasonSelect,
+            targetScheduleSelect,
+            targetVenueSelect,
+            targetAgeGroupSelect,
+            targetTimeSelect
+        ];
+        const allDestinationOptions = targetRosterOptionsSource.find('option[value!=""]').map(function() {
+            return {
+                value: $(this).val(),
+                text: $(this).text(),
+                season: String($(this).data('season') || ''),
+                schedule: String($(this).data('schedule') || ''),
+                venue: String($(this).data('venue') || ''),
+                ageGroup: String($(this).data('age-group') || ''),
+                time: String($(this).data('time') || ''),
+                girlsOnly: String($(this).data('girls-only') || '0'),
+                crossGender: String($(this).data('cross-gender') || '0')
+            };
+        }).get();
 
         // Enhanced logging for debugging
         console.log('InterSoccer Migration: JavaScript initialized');
         console.log('InterSoccer Migration: Found elements - selectAll:', selectAll.length, 'playerSelects:', playerSelects.length);
+        console.log('InterSoccer Migration: Found destination options:', allDestinationOptions.length);
+
+        const migrationTexts = {
+            chooseDestination: '<?php echo esc_js(__('Select a destination roster...', 'intersoccer-reports-rosters')); ?>',
+            chooseSeasonFirst: '<?php echo esc_js(__('Select season first...', 'intersoccer-reports-rosters')); ?>',
+            chooseScheduleFirst: '<?php echo esc_js(__('Select day or term first...', 'intersoccer-reports-rosters')); ?>',
+            chooseVenueFirst: '<?php echo esc_js(__('Select venue first...', 'intersoccer-reports-rosters')); ?>',
+            chooseAgeFirst: '<?php echo esc_js(__('Select age group first...', 'intersoccer-reports-rosters')); ?>',
+            chooseTimeFirst: '<?php echo esc_js(__('Select time first...', 'intersoccer-reports-rosters')); ?>',
+            noMatchingRosters: '<?php echo esc_js(__('No destination rosters match current filters', 'intersoccer-reports-rosters')); ?>'
+        };
+
+        function resetSelectOptions($select, placeholderText, disabledState) {
+            $select.empty().append($('<option>', { value: '', text: placeholderText }));
+            $select.prop('disabled', !!disabledState);
+            $select.val('');
+        }
+
+        function uniqueSortedValues(options, key) {
+            return [...new Set(options.map((option) => option[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+        }
+
+        function currentCrossGenderSetting() {
+            return $('#allowCrossGender').is(':checked');
+        }
+
+        function getEligibleDestinationOptions() {
+            const includeCrossGender = currentCrossGenderSetting();
+            return allDestinationOptions.filter((option) => includeCrossGender || option.crossGender !== '1');
+        }
+
+        function applyOptionsToSelect($select, values, placeholderText) {
+            resetSelectOptions($select, placeholderText, false);
+            values.forEach((value) => {
+                $select.append($('<option>', { value: value, text: value }));
+            });
+            if (!values.length) {
+                $select.prop('disabled', true);
+            }
+        }
+
+        function rebuildDestinationFilters() {
+            const eligible = getEligibleDestinationOptions();
+            const seasonValue = targetSeasonSelect.val();
+            const scheduleValue = targetScheduleSelect.val();
+            const venueValue = targetVenueSelect.val();
+            const ageGroupValue = targetAgeGroupSelect.val();
+            const timeValue = targetTimeSelect.val();
+
+            const seasonValues = uniqueSortedValues(eligible, 'season');
+            applyOptionsToSelect(targetSeasonSelect, seasonValues, '<?php echo esc_js(__('Select season...', 'intersoccer-reports-rosters')); ?>');
+            if (seasonValues.includes(seasonValue)) {
+                targetSeasonSelect.val(seasonValue);
+            }
+
+            const bySeason = targetSeasonSelect.val() ? eligible.filter((option) => option.season === targetSeasonSelect.val()) : [];
+            const scheduleValues = uniqueSortedValues(bySeason, 'schedule');
+            applyOptionsToSelect(targetScheduleSelect, scheduleValues, migrationTexts.chooseSeasonFirst);
+            targetScheduleSelect.prop('disabled', !targetSeasonSelect.val() || !scheduleValues.length);
+            if (scheduleValues.includes(scheduleValue)) {
+                targetScheduleSelect.val(scheduleValue);
+            }
+
+            const bySchedule = targetScheduleSelect.val() ? bySeason.filter((option) => option.schedule === targetScheduleSelect.val()) : [];
+            const venueValues = uniqueSortedValues(bySchedule, 'venue');
+            applyOptionsToSelect(targetVenueSelect, venueValues, migrationTexts.chooseScheduleFirst);
+            targetVenueSelect.prop('disabled', !targetScheduleSelect.val() || !venueValues.length);
+            if (venueValues.includes(venueValue)) {
+                targetVenueSelect.val(venueValue);
+            }
+
+            const byVenue = targetVenueSelect.val() ? bySchedule.filter((option) => option.venue === targetVenueSelect.val()) : [];
+            const ageGroupValues = uniqueSortedValues(byVenue, 'ageGroup');
+            applyOptionsToSelect(targetAgeGroupSelect, ageGroupValues, migrationTexts.chooseVenueFirst);
+            targetAgeGroupSelect.prop('disabled', !targetVenueSelect.val() || !ageGroupValues.length);
+            if (ageGroupValues.includes(ageGroupValue)) {
+                targetAgeGroupSelect.val(ageGroupValue);
+            }
+
+            const byAgeGroup = targetAgeGroupSelect.val() ? byVenue.filter((option) => option.ageGroup === targetAgeGroupSelect.val()) : [];
+            const timeValues = uniqueSortedValues(byAgeGroup, 'time');
+            applyOptionsToSelect(targetTimeSelect, timeValues, migrationTexts.chooseAgeFirst);
+            targetTimeSelect.prop('disabled', !targetAgeGroupSelect.val() || !timeValues.length);
+            if (timeValues.includes(timeValue)) {
+                targetTimeSelect.val(timeValue);
+            }
+
+            const finalMatches = targetTimeSelect.val() ? byAgeGroup.filter((option) => option.time === targetTimeSelect.val()) : [];
+            resetSelectOptions(targetRosterSelect, migrationTexts.chooseTimeFirst, !targetTimeSelect.val());
+            finalMatches.forEach((option) => {
+                targetRosterSelect.append(
+                    $('<option>', {
+                        value: option.value,
+                        text: option.text,
+                        'data-girls-only': option.girlsOnly,
+                        'data-cross-gender': option.crossGender
+                    })
+                );
+            });
+
+            if (targetTimeSelect.val()) {
+                targetRosterSelect.prop('disabled', !finalMatches.length);
+                if (!finalMatches.length) {
+                    resetSelectOptions(targetRosterSelect, migrationTexts.noMatchingRosters, true);
+                } else if (finalMatches.length === 1) {
+                    targetRosterSelect.val(finalMatches[0].value);
+                }
+            }
+        }
+
+        function resetDestinationFilters() {
+            resetSelectOptions(targetSeasonSelect, '<?php echo esc_js(__('Select season...', 'intersoccer-reports-rosters')); ?>', false);
+            resetSelectOptions(targetScheduleSelect, migrationTexts.chooseSeasonFirst, true);
+            resetSelectOptions(targetVenueSelect, migrationTexts.chooseScheduleFirst, true);
+            resetSelectOptions(targetAgeGroupSelect, migrationTexts.chooseVenueFirst, true);
+            resetSelectOptions(targetTimeSelect, migrationTexts.chooseAgeFirst, true);
+            resetSelectOptions(targetRosterSelect, migrationTexts.chooseTimeFirst, true);
+            rebuildDestinationFilters();
+        }
 
         selectAll.on('change', function() {
             console.log('InterSoccer Migration: Select all toggled:', this.checked);
@@ -1282,37 +1575,32 @@ function intersoccer_render_roster_details_page() {
             if (!isMove) {
                 targetRosterSelect.val('');
                 $('#allowCrossGender').prop('checked', false);
+                resetDestinationFilters();
+            } else {
+                rebuildDestinationFilters();
             }
         });
 
-        // Add validation for target roster selection
+        filterSelects.forEach(($select) => {
+            $select.on('change', function() {
+                rebuildDestinationFilters();
+                console.log('InterSoccer Migration: Filter changed:', this.id, $(this).val());
+            });
+        });
+
         targetRosterSelect.on('change', function() {
             const value = $(this).val().trim();
-            console.log('InterSoccer Migration: Target roster selected:', value);
+            console.log('InterSoccer Migration: Destination roster selected:', value);
         });
         
         // Handle cross-gender checkbox toggle
         $('#allowCrossGender').on('change', function() {
             const isChecked = $(this).is(':checked');
             console.log('InterSoccer Migration: Cross-gender checkbox toggled:', isChecked);
-            
-            if (isChecked) {
-                // Show cross-gender options
-                $('#crossGenderRosterGroup').show();
-                $('.cross-gender-option').show();
-                console.log('InterSoccer Migration: Showing cross-gender roster options');
-            } else {
-                // Hide cross-gender options and reset selection if it was a cross-gender roster
-                const currentSelection = targetRosterSelect.find('option:selected');
-                if (currentSelection.data('cross-gender') === 1 || currentSelection.hasClass('cross-gender-option')) {
-                    targetRosterSelect.val('');
-                    console.log('InterSoccer Migration: Cleared cross-gender selection');
-                }
-                $('#crossGenderRosterGroup').hide();
-                $('.cross-gender-option').hide();
-                console.log('InterSoccer Migration: Hiding cross-gender roster options');
-            }
+            rebuildDestinationFilters();
         });
+
+        resetDestinationFilters();
 
         applyBulk.on('click', function() {
             console.log('InterSoccer Migration: Apply bulk action clicked');
@@ -1325,7 +1613,7 @@ function intersoccer_render_roster_details_page() {
 
             const targetVar = targetRosterSelect.val().trim();
             if (!targetVar) {
-                alert('Please select a destination roster.');
+                alert('<?php echo esc_js(__('Please select a destination roster.', 'intersoccer-reports-rosters')); ?>');
                 targetRosterSelect.focus();
                 return;
             }
@@ -1417,16 +1705,16 @@ function intersoccer_render_roster_details_page() {
                     
                     if (response.success) {
                         alert('Success: ' + response.data.message);
-                        const shouldOpenTargetRoster = confirm('Open destination roster in a new tab to verify migrated player data?');
+                        const shouldOpenTargetRoster = confirm('<?php echo esc_js(__('Open destination roster in a new tab to verify migrated player data?', 'intersoccer-reports-rosters')); ?>');
                         if (shouldOpenTargetRoster) {
-                            const openedTab = window.open(targetRosterUrl.toString(), '_blank');
+                            window.open(targetRosterUrl.toString(), '_blank');
                         }
                         
                         // Clear selections and reset form
                         playerSelects.prop('checked', false);
                         selectAll.prop('checked', false);
                         bulkActionSelect.val('');
-                        targetRosterSelect.val('');
+                        resetDestinationFilters();
                         moveOptions.hide();
                         
                         // Reload page to show updated data
@@ -1489,6 +1777,7 @@ function intersoccer_render_roster_details_page() {
                 playerSelects.prop('checked', false);
                 selectAll.prop('checked', false);
                 bulkActionSelect.val('');
+                resetDestinationFilters();
                 moveOptions.hide();
             }
         });

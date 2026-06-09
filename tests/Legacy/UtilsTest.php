@@ -312,6 +312,20 @@ class UtilsTest extends TestCase {
         $this->assertFalse(intersoccer_roster_course_season_filter_matches($group, 'Winter 2026'));
     }
 
+    public function test_course_season_filter_rejects_mismatched_display_when_raw_matches_filter() {
+        if (!function_exists('intersoccer_roster_course_season_filter_matches')) {
+            $this->markTestSkipped('intersoccer_roster_course_season_filter_matches not loaded');
+        }
+        $group = [
+            'season' => 'Winter 2026',
+            'season_raw' => 'Spring/Summer 2026',
+            'product_name' => 'Geneva Winter Football Courses 2026',
+            'course_day' => 'Sunday',
+        ];
+        $this->assertFalse(intersoccer_roster_course_season_filter_matches($group, 'Spring/Summer 2026'));
+        $this->assertTrue(intersoccer_roster_course_season_filter_matches($group, 'Winter 2026'));
+    }
+
     public function test_resolve_season_taxonomy_label_humanizes_slug_when_term_missing() {
         if (!function_exists('intersoccer_roster_resolve_season_taxonomy_label')) {
             $this->markTestSkipped('intersoccer_roster_resolve_season_taxonomy_label not loaded');
