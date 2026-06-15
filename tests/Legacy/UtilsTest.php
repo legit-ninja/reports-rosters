@@ -412,6 +412,42 @@ class UtilsTest extends TestCase {
         $this->assertArrayHasKey(101, $group['order_item_ids']);
     }
 
+    public function test_merge_course_groups_by_shared_facets_combines_different_season_labels() {
+        if (!function_exists('intersoccer_roster_merge_course_groups_by_shared_facets')) {
+            $this->markTestSkipped('intersoccer_roster_merge_course_groups_by_shared_facets not loaded');
+        }
+        $facets = [
+            'venue' => 'Basel - Sportanlagen Bachgraben, Allschwil',
+            'course_day' => 'Saturday',
+            'age_group' => '3-12y',
+            'times' => '0900-1030',
+            'variation_ids' => [37436 => 37436],
+            'merged_event_signatures' => [],
+            'start_dates' => [],
+            'end_dates' => [],
+        ];
+        $springSummer = $facets + [
+            'season' => 'Spring/Summer 2026',
+            'season_raw' => 'Spring/Summer 2026',
+            'order_item_ids' => [3043 => true, 3144 => true],
+        ];
+        $summerCourses = $facets + [
+            'season' => 'Summer Courses 2026',
+            'season_raw' => 'Summer-courses-2026',
+            'order_item_ids' => [5214 => true],
+        ];
+        $merged = intersoccer_roster_merge_course_groups_by_shared_facets([
+            'sig_spring' => $springSummer,
+            'sig_summer' => $summerCourses,
+        ]);
+        $this->assertCount(1, $merged);
+        $group = reset($merged);
+        $this->assertSame('Spring/Summer 2026', $group['season']);
+        $this->assertArrayHasKey(5214, $group['order_item_ids']);
+        $this->assertArrayHasKey(3043, $group['order_item_ids']);
+        $this->assertArrayHasKey(3144, $group['order_item_ids']);
+    }
+
     public function test_backfill_player_name_fields_from_player_name_column() {
         if (!function_exists('intersoccer_roster_backfill_player_name_fields')) {
             $this->markTestSkipped('intersoccer_roster_backfill_player_name_fields not loaded');

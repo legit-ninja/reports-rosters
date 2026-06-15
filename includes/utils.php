@@ -1390,6 +1390,80 @@ if (!function_exists('intersoccer_roster_merge_two_course_groups')) {
     }
 }
 
+if (!function_exists('intersoccer_roster_course_group_facet_key')) {
+    /**
+     * Stable key for course listing facets (venue/day/age/times/variation), excluding season.
+     *
+     * @param array<string,mixed> $group
+     * @return string
+     */
+    function intersoccer_roster_course_group_facet_key(array $group) {
+        $norm = static function ($v) {
+            return strtolower(trim((string) $v));
+        };
+        $vars = array_values(array_unique(array_map('intval', (array) ($group['variation_ids'] ?? []))));
+        sort($vars, SORT_NUMERIC);
+        if (empty($vars)) {
+            return '';
+        }
+        return md5(implode('|', [
+            $norm($group['venue'] ?? ''),
+            $norm($group['course_day'] ?? ''),
+            $norm($group['age_group'] ?? ''),
+            $norm($group['times'] ?? ''),
+            implode(',', $vars),
+        ]));
+    }
+}
+
+if (!function_exists('intersoccer_roster_merge_course_groups_by_shared_facets')) {
+    /**
+     * Merge course listing groups that share venue/day/age/times/variation but differ in season label.
+     *
+     * @param array<string,array> $groups
+     * @return array<string,array>
+     */
+    function intersoccer_roster_merge_course_groups_by_shared_facets(array $groups) {
+        $buckets = [];
+        foreach ($groups as $sig => $group) {
+            $facet_key = intersoccer_roster_course_group_facet_key($group);
+            if ($facet_key === '') {
+                $buckets['_solo_' . $sig] = [$sig => $group];
+                continue;
+            }
+            if (!isset($buckets[$facet_key])) {
+                $buckets[$facet_key] = [];
+            }
+            $buckets[$facet_key][$sig] = $group;
+        }
+
+        $merged = [];
+        foreach ($buckets as $bucket) {
+            if (count($bucket) === 1) {
+                $merged += $bucket;
+                continue;
+            }
+
+            uasort($bucket, static function ($a, $b) {
+                $ca = count((array) ($a['order_item_ids'] ?? []));
+                $cb = count((array) ($b['order_item_ids'] ?? []));
+                return $cb <=> $ca;
+            });
+
+            $sigs = array_keys($bucket);
+            $primary_sig = $sigs[0];
+            $primary = $bucket[$primary_sig];
+            for ($i = 1, $n = count($sigs); $i < $n; $i++) {
+                $primary = intersoccer_roster_merge_two_course_groups($primary, $bucket[$sigs[$i]]);
+            }
+
+            $merged[$primary_sig] = $primary;
+        }
+
+        return $merged;
+    }
+}
+
 if (!function_exists('intersoccer_roster_merge_course_groups_with_empty_season')) {
     /**
      * Merge consolidated course groups that match on venue/day/age/times/variation but have empty season on one side.
@@ -1846,7 +1920,7 @@ if (!function_exists('intersoccer_get_roster_details_url_for_listing_group')) {
     /**
      * Admin URL for roster details from a listing card (camps/courses/girls-only).
      *
-     * Prefers event_signature when unified; falls back to order_item_ids only when no signatures exist.
+     * Prefers order_item_ids from the listing group when available; includes event_signature(s) for context.
      *
      * @param array<string,mixed> $group
      * @param string              $from camps|courses|girls-only
@@ -1881,6 +1955,14 @@ if (!function_exists('intersoccer_get_roster_details_url_for_listing_group')) {
                 if ($course_day !== '' && strcasecmp($course_day, 'N/A') !== 0) {
                     $params['course_day'] = $course_day;
                 }
+                $age_group = trim((string) ($group['age_group'] ?? ''));
+                if ($age_group !== '' && strcasecmp($age_group, 'N/A') !== 0) {
+                    $params['age_group'] = $age_group;
+                }
+                $times = trim((string) ($group['times'] ?? ''));
+                if ($times !== '' && strcasecmp($times, 'N/A') !== 0) {
+                    $params['times'] = $times;
+                }
             } elseif ($from === 'camps') {
                 $camp_terms = trim((string) ($group['camp_terms'] ?? ''));
                 if ($camp_terms !== '' && strcasecmp($camp_terms, 'N/A') !== 0) {
@@ -1889,7 +1971,7 @@ if (!function_exists('intersoccer_get_roster_details_url_for_listing_group')) {
             }
         }
 
-        if (empty($params['event_signature']) && empty($params['event_signatures']) && !empty($group['order_item_ids'])) {
+        if (!empty($group['order_item_ids'])) {
             $ids = is_array($group['order_item_ids'])
                 ? $group['order_item_ids']
                 : array_filter(array_map('intval', explode(',', (string) $group['order_item_ids'])));

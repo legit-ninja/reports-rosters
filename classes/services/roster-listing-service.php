@@ -405,14 +405,10 @@ class RosterListingService {
         }
 
         if (function_exists('intersoccer_roster_merge_course_groups_with_empty_season')) {
-            $before_merge_keys = array_map(function ($g) {
-                return [
-                    'season' => $g['season'] ?? '',
-                    'season_raw' => $g['season_raw'] ?? '',
-                    'product_name' => $g['product_name'] ?? '',
-                ];
-            }, $groups);
             $groups = intersoccer_roster_merge_course_groups_with_empty_season($groups);
+        }
+        if (function_exists('intersoccer_roster_merge_course_groups_by_shared_facets')) {
+            $groups = intersoccer_roster_merge_course_groups_by_shared_facets($groups);
         }
 
         foreach ($groups as &$group) {
@@ -450,6 +446,7 @@ class RosterListingService {
 
             unset($group['start_dates'], $group['end_dates']);
         }
+        unset($group);
 
         foreach ($filters as $key => $values) {
             $filters[$key] = array_values($values);
