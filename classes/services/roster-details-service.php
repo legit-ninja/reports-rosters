@@ -72,14 +72,26 @@ class RosterDetailsService {
         $allow_missing_status = !empty($filters['order_item_ids']) || $hasEventSignature;
         $rosterModels = $this->filterByValidOrderStatus($collection, $allow_missing_status);
         $loadCriteria = $criteria;
+        $supplementMerged = false;
 
-        if ($hasEventSignature && !empty($rosterModels)) {
-            $supplement = $this->fetchRosterModelsWithAlternateSignaturesInGroup($filters, $context, $rosterModels);
+        if (!empty($rosterModels)) {
+            $primaryModels = $rosterModels;
+            $supplement = $this->fetchRosterModelsInConsolidatedGroup($filters, $context, $primaryModels);
             if (!empty($supplement)) {
-                $this->logger->debug('RosterDetailsService: Merged roster rows with alternate event_signature in same event group', [
+                $supplementMerged = true;
+                $this->logger->debug('RosterDetailsService: Merged roster rows in same consolidated event group', [
                     'added' => count($supplement),
                 ]);
-                $rosterModels = array_merge($rosterModels, $supplement);
+                // Season filter applies to listing-primary rows only; facet-scoped supplement rows
+                // may use a different persisted season label (e.g. Summer-courses-2026 vs Spring/Summer 2026).
+                if (!empty($filters['season'])) {
+                    $primaryModels = $this->filterModelsByListingSeason($primaryModels, $filters['season'], $context);
+                    $rosterModels = array_merge($primaryModels, $supplement);
+                } else {
+                    $rosterModels = array_merge($primaryModels, $supplement);
+                }
+            } elseif (!empty($filters['season'])) {
+                $rosterModels = $this->filterModelsByListingSeason($rosterModels, $filters['season'], $context);
             }
         }
 
@@ -97,6 +109,12 @@ class RosterDetailsService {
             } elseif (($context['is_from_courses_page'] || $context['is_from_girls_only_page']) && $filters['course_day'] && $filters['course_day'] !== 'N/A' && $filters['venue']) {
                 $fallbackCriteria['course_day'] = $filters['course_day'];
                 $fallbackCriteria['venue'] = $filters['venue'];
+                if ($filters['age_group'] && $filters['age_group'] !== 'N/A') {
+                    $fallbackCriteria['age_group'] = $filters['age_group'];
+                }
+                if ($filters['times'] && $filters['times'] !== 'N/A') {
+                    $fallbackCriteria['times'] = $filters['times'];
+                }
             }
             if (!empty($fallbackCriteria)) {
                 if (empty($fallbackCriteria['order_item_id'])) {
@@ -113,7 +131,14 @@ class RosterDetailsService {
                 $this->logger->debug('RosterDetailsService: Fallback (event_signature had no match)', $fallbackCriteria);
                 $collection = $this->repository->where($fallbackCriteria, ['skip_cache' => true]);
                 $rosterModels = $this->filterByValidOrderStatus($collection);
+                if (!empty($filters['season'])) {
+                    $rosterModels = $this->filterModelsByListingSeason($rosterModels, $filters['season'], $context);
+                }
                 $loadCriteria = $fallbackCriteria;
+                $filteredOrderItemIds = $this->extractOrderItemIdsFromModels($rosterModels);
+                if (!empty($filteredOrderItemIds)) {
+                    $loadCriteria = ['order_item_id' => $filteredOrderItemIds];
+                }
             }
         }
 
@@ -131,6 +156,16 @@ class RosterDetailsService {
                 'success' => false,
                 'error' => __('No rosters found for the provided parameters.', 'intersoccer-reports-rosters'),
             ];
+        }
+
+        $resolvedOrderItemIds = $this->extractOrderItemIdsFromModels($rosterModels);
+        if (!empty($resolvedOrderItemIds)) {
+            $loadCriteria = ['order_item_id' => $resolvedOrderItemIds];
+        } elseif ($supplementMerged || count($rosterModels) > 1) {
+            $rosterIds = $this->extractRosterIdsFromModels($rosterModels);
+            if (!empty($rosterIds)) {
+                $loadCriteria = ['id' => $rosterIds];
+            }
         }
 
         $this->repairPlayerNamesOnModels($rosterModels);
@@ -237,12 +272,12 @@ class RosterDetailsService {
             || ($filters['event_signature'] !== '' && $filters['event_signature'] !== 'N/A')
         );
 
-        if ($has_event_signature_filter && !empty($filters['event_signatures'])) {
+        if (!empty($filters['order_item_ids'])) {
+            $criteria['order_item_id'] = $filters['order_item_ids'];
+        } elseif ($has_event_signature_filter && !empty($filters['event_signatures'])) {
             $criteria['event_signature'] = $filters['event_signatures'];
         } elseif ($has_event_signature_filter) {
             $criteria['event_signature'] = $filters['event_signature'];
-        } elseif (!empty($filters['order_item_ids'])) {
-            $criteria['order_item_id'] = $filters['order_item_ids'];
         }
 
         // When order_item_ids or event_signature is present, they uniquely identify the roster group - do NOT add
@@ -284,11 +319,127 @@ class RosterDetailsService {
             }
         }
 
-        if ($filters['season']) {
+        if ($filters['season'] && !$has_event_signature_filter && empty($criteria['order_item_id'])) {
             $criteria['season'] = $filters['season'];
         }
 
         return $criteria;
+    }
+
+    /**
+     * Narrow fallback roster models to the listing season (display label may differ from DB season).
+     *
+     * @param array<int,\InterSoccer\ReportsRosters\Data\Models\Roster> $models
+     * @return array<int,\InterSoccer\ReportsRosters\Data\Models\Roster>
+     */
+    private function filterModelsByListingSeason(array $models, string $filterSeason, array $context): array {
+        if ($filterSeason === '' || empty($models)) {
+            return $models;
+        }
+
+        $is_course_context = $context['is_from_courses_page']
+            || ($context['is_from_girls_only_page'] && function_exists('intersoccer_roster_course_season_filter_matches'));
+
+        if ($is_course_context && function_exists('intersoccer_roster_course_season_filter_matches')) {
+            return array_values(array_filter($models, function ($model) use ($filterSeason) {
+                if (!is_object($model) || !method_exists($model, 'getAttribute')) {
+                    return false;
+                }
+                $group = [
+                    'season' => (string) $model->getAttribute('season'),
+                    'season_raw' => (string) $model->getAttribute('season'),
+                    'product_name' => (string) $model->getAttribute('product_name'),
+                    'course_day' => (string) $model->getAttribute('course_day'),
+                ];
+                return intersoccer_roster_course_season_filter_matches($group, $filterSeason);
+            }));
+        }
+
+        return array_values(array_filter($models, function ($model) use ($filterSeason) {
+            if (!is_object($model) || !method_exists($model, 'getAttribute')) {
+                return false;
+            }
+            $season = trim((string) $model->getAttribute('season'));
+            return strcasecmp($season, $filterSeason) === 0;
+        }));
+    }
+
+    /**
+     * @param array<int,\InterSoccer\ReportsRosters\Data\Models\Roster> $models
+     * @return array<int,int>
+     */
+    private function extractOrderItemIdsFromModels(array $models): array {
+        $ids = [];
+        foreach ($models as $model) {
+            if (!is_object($model)) {
+                continue;
+            }
+            $oid = 0;
+            if (method_exists($model, 'getAttribute')) {
+                $oid = (int) $model->getAttribute('order_item_id');
+            }
+            if ($oid <= 0 && isset($model->order_item_id)) {
+                $oid = (int) $model->order_item_id;
+            }
+            if ($oid > 0) {
+                $ids[$oid] = $oid;
+            }
+        }
+        return array_values($ids);
+    }
+
+    /**
+     * @param array<int,\InterSoccer\ReportsRosters\Data\Models\Roster> $models
+     * @return array<int,int>
+     */
+    private function extractRosterIdsFromModels(array $models): array {
+        $ids = [];
+        foreach ($models as $model) {
+            if (!is_object($model)) {
+                continue;
+            }
+            $rid = 0;
+            if (method_exists($model, 'getAttribute')) {
+                $rid = (int) $model->getAttribute('id');
+            }
+            if ($rid <= 0 && isset($model->id)) {
+                $rid = (int) $model->id;
+            }
+            if ($rid > 0) {
+                $ids[$rid] = $rid;
+            }
+        }
+        return array_values($ids);
+    }
+
+    /**
+     * Keep only roster models in the same consolidated listing group as the anchor row.
+     *
+     * @param array<int,\InterSoccer\ReportsRosters\Data\Models\Roster> $models
+     * @return array<int,\InterSoccer\ReportsRosters\Data\Models\Roster>
+     */
+    private function filterModelsByConsolidatedGroupKey(array $models, array $context): array {
+        if (count($models) <= 1 || !function_exists('intersoccer_consolidated_roster_group_key')) {
+            return $models;
+        }
+
+        $anchor = $models[0];
+        if (!is_object($anchor) || !method_exists($anchor, 'toArray')) {
+            return $models;
+        }
+
+        $kind = ($context['is_from_courses_page'] || $context['is_from_girls_only_page']) ? 'course' : 'camp';
+        $anchorKey = intersoccer_consolidated_roster_group_key($anchor->toArray(), $kind);
+        if ($anchorKey === '') {
+            return [$anchor];
+        }
+
+        return array_values(array_filter($models, function ($model) use ($anchorKey, $kind) {
+            if (!is_object($model) || !method_exists($model, 'toArray')) {
+                return false;
+            }
+            return intersoccer_consolidated_roster_group_key($model->toArray(), $kind) === $anchorKey;
+        }));
     }
 
     private function filterByValidOrderStatus($collection, bool $allow_missing_status = false): array {
@@ -604,15 +755,23 @@ class RosterDetailsService {
     }
 
     /**
-     * Include roster rows in the same consolidated event (venue/course day/variation) but a different event_signature.
+     * Include roster rows in the same consolidated listing group as the anchor (any event_signature, including empty).
      *
      * @param array<string,mixed> $filters
      * @param array<string,mixed> $context
      * @param array<int,\InterSoccer\ReportsRosters\Data\Models\Roster> $loaded
      * @return array<int,\InterSoccer\ReportsRosters\Data\Models\Roster>
      */
-    private function fetchRosterModelsWithAlternateSignaturesInGroup(array $filters, array $context, array $loaded): array {
-        $venue = trim((string) ($filters['venue'] ?? ''));
+    private function fetchRosterModelsInConsolidatedGroup(array $filters, array $context, array $loaded): array {
+        $anchor = $loaded[0] ?? null;
+        if (!$anchor || !is_object($anchor) || !method_exists($anchor, 'toArray')) {
+            return [];
+        }
+
+        $anchorRow = $anchor->toArray();
+        $kind = ($context['is_from_courses_page'] || $context['is_from_girls_only_page']) ? 'course' : 'camp';
+
+        $venue = trim((string) ($filters['venue'] ?? $anchorRow['venue'] ?? ''));
         if ($venue === '' || strcasecmp($venue, 'N/A') === 0) {
             return [];
         }
@@ -622,16 +781,26 @@ class RosterDetailsService {
             $criteria['variation_id'] = $filters['variation_ids'];
         } elseif (!empty($filters['variation_id'])) {
             $criteria['variation_id'] = (int) $filters['variation_id'];
+        } elseif (!empty($anchorRow['variation_id'])) {
+            $criteria['variation_id'] = (int) $anchorRow['variation_id'];
         }
 
         if ($context['is_from_courses_page'] || $context['is_from_girls_only_page']) {
-            $course_day = trim((string) ($filters['course_day'] ?? ''));
+            $course_day = trim((string) ($filters['course_day'] ?? $anchorRow['course_day'] ?? ''));
             if ($course_day !== '' && strcasecmp($course_day, 'N/A') !== 0) {
                 $criteria['course_day'] = $course_day;
             }
+            $age_group = trim((string) ($filters['age_group'] ?? $anchorRow['age_group'] ?? ''));
+            if ($age_group !== '' && strcasecmp($age_group, 'N/A') !== 0) {
+                $criteria['age_group'] = $age_group;
+            }
+            $times = trim((string) ($filters['times'] ?? $anchorRow['times'] ?? ''));
+            if ($times !== '' && strcasecmp($times, 'N/A') !== 0) {
+                $criteria['times'] = $times;
+            }
             $criteria['activity_type'] = ['Course', 'Course, Girls Only', "Course, Girls' only"];
         } elseif ($context['is_from_camps_page']) {
-            $camp_terms = trim((string) ($filters['camp_terms'] ?? ''));
+            $camp_terms = trim((string) ($filters['camp_terms'] ?? $anchorRow['camp_terms'] ?? ''));
             if ($camp_terms !== '' && strcasecmp($camp_terms, 'N/A') !== 0) {
                 $criteria['camp_terms'] = $camp_terms;
             }
@@ -647,22 +816,20 @@ class RosterDetailsService {
         $candidates = $this->filterByValidOrderStatus($collection, true);
 
         $loaded_ids = [];
+        $loaded_order_item_ids = [];
         foreach ($loaded as $model) {
-            if (is_object($model) && isset($model->id)) {
+            if (!is_object($model)) {
+                continue;
+            }
+            if (isset($model->id)) {
                 $loaded_ids[(int) $model->id] = true;
             }
-        }
-
-        $requested_signatures = [];
-        if (!empty($filters['event_signatures'])) {
-            foreach ((array) $filters['event_signatures'] as $sig) {
-                $sig = trim((string) $sig);
-                if ($sig !== '' && strcasecmp($sig, 'N/A') !== 0) {
-                    $requested_signatures[$sig] = true;
-                }
+            $order_item_id = method_exists($model, 'getAttribute')
+                ? (int) $model->getAttribute('order_item_id')
+                : (int) ($model->order_item_id ?? 0);
+            if ($order_item_id > 0) {
+                $loaded_order_item_ids[$order_item_id] = true;
             }
-        } elseif (!empty($filters['event_signature']) && strcasecmp((string) $filters['event_signature'], 'N/A') !== 0) {
-            $requested_signatures[trim((string) $filters['event_signature'])] = true;
         }
 
         $added = [];
@@ -674,14 +841,18 @@ class RosterDetailsService {
             if (isset($loaded_ids[$id])) {
                 continue;
             }
-            $sig = trim((string) ($model->event_signature ?? ''));
-            if ($sig === '' || strcasecmp($sig, 'N/A') === 0) {
+            if (!method_exists($model, 'toArray')) {
                 continue;
             }
-            if (!empty($requested_signatures) && isset($requested_signatures[$sig])) {
+            $row = $model->toArray();
+            $order_item_id = (int) ($row['order_item_id'] ?? 0);
+            if ($order_item_id > 0 && isset($loaded_order_item_ids[$order_item_id])) {
                 continue;
             }
             $loaded_ids[$id] = true;
+            if ($order_item_id > 0) {
+                $loaded_order_item_ids[$order_item_id] = true;
+            }
             $added[] = $model;
         }
 
