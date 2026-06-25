@@ -68,7 +68,7 @@ function intersoccer_birthdays_get_entries(): array {
         }
     }
 
-    $sql = "SELECT first_name, last_name, player_name, dob, venue, age_group
+    $sql = "SELECT first_name, last_name, player_name, dob, venue, age_group, customer_id
             FROM {$rosters_table}
             {$where}";
 
@@ -95,6 +95,15 @@ function intersoccer_birthdays_get_entries(): array {
             continue;
         }
 
+        $customer_id = isset($row['customer_id']) ? (int) $row['customer_id'] : 0;
+        $profile_url = '';
+        if ($customer_id > 0) {
+            $profile_url = add_query_arg(
+                ['user_id' => $customer_id],
+                admin_url('user-edit.php')
+            );
+        }
+
         $deduped[$dedupe_key] = [
             'display_name' => $display_name,
             'dob' => gmdate('Y-m-d', $timestamp),
@@ -102,6 +111,7 @@ function intersoccer_birthdays_get_entries(): array {
             'day' => (int) gmdate('j', $timestamp),
             'venue' => (string) ($row['venue'] ?? ''),
             'age_group' => (string) ($row['age_group'] ?? ''),
+            'profile_url' => $profile_url,
         ];
     }
 
@@ -155,7 +165,13 @@ function intersoccer_render_birthdays_month_grid(array $entries, int $year, int 
                 <?php if (!empty($days_index[$day])): ?>
                     <ul class="isrr-birthdays-list">
                         <?php foreach ($days_index[$day] as $entry): ?>
-                            <li class="isrr-birthdays-item"><?php echo esc_html((string) $entry['display_name']); ?></li>
+                            <li class="isrr-birthdays-item">
+                                <?php if (!empty($entry['profile_url'])): ?>
+                                    <a href="<?php echo esc_url((string) $entry['profile_url']); ?>"><?php echo esc_html((string) $entry['display_name']); ?></a>
+                                <?php else: ?>
+                                    <?php echo esc_html((string) $entry['display_name']); ?>
+                                <?php endif; ?>
+                            </li>
                         <?php endforeach; ?>
                     </ul>
                 <?php endif; ?>
@@ -182,7 +198,10 @@ function intersoccer_render_birthdays_year_grid(array $entries): void {
         if (!isset($months[$month][$day])) {
             $months[$month][$day] = [];
         }
-        $months[$month][$day][] = $entry['display_name'];
+        $months[$month][$day][] = [
+            'display_name' => (string) ($entry['display_name'] ?? ''),
+            'profile_url' => (string) ($entry['profile_url'] ?? ''),
+        ];
     }
     ?>
     <div class="isrr-birthdays-year-grid">
@@ -193,10 +212,19 @@ function intersoccer_render_birthdays_year_grid(array $entries): void {
                     <p class="isrr-birthdays-empty-month"><?php esc_html_e('No birthdays', 'intersoccer-reports-rosters'); ?></p>
                 <?php else: ?>
                     <ul class="isrr-birthdays-year-list">
-                        <?php foreach ($months[$month] as $day => $names): ?>
+                        <?php foreach ($months[$month] as $day => $day_entries): ?>
                             <li>
                                 <strong><?php echo esc_html((string) $day); ?></strong>
-                                <span><?php echo esc_html(implode(', ', (array) $names)); ?></span>
+                                <span>
+                                    <?php foreach ((array) $day_entries as $index => $day_entry): ?>
+                                        <?php if ($index > 0): ?>, <?php endif; ?>
+                                        <?php if (!empty($day_entry['profile_url'])): ?>
+                                            <a href="<?php echo esc_url((string) $day_entry['profile_url']); ?>"><?php echo esc_html((string) $day_entry['display_name']); ?></a>
+                                        <?php else: ?>
+                                            <?php echo esc_html((string) $day_entry['display_name']); ?>
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                </span>
                             </li>
                         <?php endforeach; ?>
                     </ul>
