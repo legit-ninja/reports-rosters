@@ -73,6 +73,11 @@ if (file_exists($utils)) {
     require_once $utils;
 }
 
+$financial_helpers = dirname(__FILE__) . '/financial-attribution-helpers.php';
+if (file_exists($financial_helpers)) {
+    require_once $financial_helpers;
+}
+
 use InterSoccer\ReportsRosters\Core\Plugin;
 use InterSoccer\ReportsRosters\Core\Database;
 use InterSoccer\ReportsRosters\Core\DatabaseMigrator;
@@ -86,6 +91,7 @@ use InterSoccer\ReportsRosters\Services\EventSignatureGenerator;
 use InterSoccer\ReportsRosters\Services\PlaceholderManager;
 use InterSoccer\ReportsRosters\Services\RosterExportService;
 use InterSoccer\ReportsRosters\Services\FinancialReportService;
+use InterSoccer\ReportsRosters\Services\OrderFinancialAttributionService;
 use InterSoccer\ReportsRosters\Services\RosterDetailsService;
 use InterSoccer\ReportsRosters\Services\RosterListingService;
 use InterSoccer\ReportsRosters\WooCommerce\OrderProcessor;
@@ -571,6 +577,92 @@ function intersoccer_oop_get_financial_report_service() {
     }
     return $service;
 }
+
+/**
+ * Get OOP OrderFinancialAttributionService instance
+ */
+function intersoccer_oop_get_order_financial_attribution_service() {
+    static $service = null;
+    if ($service === null) {
+        $service = new OrderFinancialAttributionService(
+            intersoccer_oop_get_plugin()->get_logger()
+        );
+    }
+    return $service;
+}
+
+/**
+ * Attribute order discounts to line items after checkout.
+ */
+function intersoccer_oop_attribute_order_financials($order_id) {
+    if (!function_exists('wc_get_order')) {
+        return;
+    }
+
+    $order = wc_get_order($order_id);
+    if (!$order) {
+        return;
+    }
+
+    try {
+        intersoccer_oop_get_order_financial_attribution_service()->attributeOrderDiscounts($order);
+    } catch (\Throwable $e) {
+        error_log('InterSoccer OOP: Financial attribution failed for order ' . $order_id . ' - ' . $e->getMessage());
+    }
+}
+
+/**
+ * Attribute a refund to original line items.
+ */
+function intersoccer_oop_attribute_order_refund($order_id, $refund_id) {
+    if (!function_exists('wc_get_order')) {
+        return;
+    }
+
+    $order = wc_get_order($order_id);
+    $refund = wc_get_order($refund_id);
+    if (!$order || !$refund) {
+        return;
+    }
+
+    try {
+        intersoccer_oop_get_order_financial_attribution_service()->attributeOrderRefunds($order, $refund);
+    } catch (\Throwable $e) {
+        error_log('InterSoccer OOP: Refund attribution failed for order ' . $order_id . ' - ' . $e->getMessage());
+    }
+}
+
+/**
+ * AJAX: Backfill financial attribution for historical orders.
+ */
+function intersoccer_oop_backfill_financial_attribution_ajax() {
+    check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
+    }
+
+    $start_date = isset($_POST['start_date']) ? sanitize_text_field(wp_unslash($_POST['start_date'])) : '2024-01-01';
+    $batch_size = isset($_POST['batch_size']) ? (int) $_POST['batch_size'] : 100;
+
+    try {
+        $result = intersoccer_oop_get_order_financial_attribution_service()->backfillBatch($start_date, $batch_size);
+        wp_send_json_success([
+            'message' => sprintf(
+                __('Backfilled %1$d orders. %2$d remaining.', 'intersoccer-reports-rosters'),
+                (int) $result['migrated_count'],
+                (int) $result['remaining_count']
+            ),
+            'result' => $result,
+        ]);
+    } catch (\Throwable $e) {
+        wp_send_json_error(['message' => $e->getMessage()]);
+    }
+}
+
+add_action('woocommerce_checkout_order_processed', 'intersoccer_oop_attribute_order_financials', 25, 1);
+add_action('woocommerce_order_refunded', 'intersoccer_oop_attribute_order_refund', 10, 2);
+add_action('wp_ajax_intersoccer_backfill_financial_attribution', 'intersoccer_oop_backfill_financial_attribution_ajax');
 
 /**
  * Get OOP RosterDetailsService instance

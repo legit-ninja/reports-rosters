@@ -1,5 +1,8 @@
 <?php
 /**
+ * DEPRECATED: Superseded by OrderFinancialAttributionService (classes/services/order-financial-attribution-service.php).
+ * Do not require this file — it registers duplicate checkout hooks.
+ *
  * Clean Discount Reporting Fix for InterSoccer Finance Team
  * Integrates with existing advanced.php - No syntax errors
  */
