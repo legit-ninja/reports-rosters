@@ -186,6 +186,22 @@ function intersoccer_render_advanced_page() {
         <!-- Tools Tab -->
         <?php if ($active_tab === 'tools') : ?>
             <div class="tab-content tab-tools">
+                <div class="settings-section" style="margin-bottom: 24px;">
+                    <h2><?php _e('Financial Attribution Backfill', 'intersoccer-reports-rosters'); ?></h2>
+                    <p><?php _e('Allocate order-level discounts (referral codes, points, coupons, combo fees) and refunds to individual booking line items for accurate financial reports.', 'intersoccer-reports-rosters'); ?></p>
+                    <form id="intersoccer-backfill-financial-form" method="post" action="">
+                        <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
+                        <input type="hidden" name="action" value="intersoccer_backfill_financial_attribution">
+                        <p>
+                            <label for="intersoccer-backfill-start-date"><?php _e('Start date', 'intersoccer-reports-rosters'); ?></label>
+                            <input type="date" id="intersoccer-backfill-start-date" name="start_date" value="2024-01-01" />
+                            <label for="intersoccer-backfill-batch-size" style="margin-left: 12px;"><?php _e('Batch size', 'intersoccer-reports-rosters'); ?></label>
+                            <input type="number" id="intersoccer-backfill-batch-size" name="batch_size" value="100" min="1" max="500" style="width: 80px;" />
+                        </p>
+                        <button type="submit" class="button button-secondary" id="intersoccer-backfill-financial-button"><?php _e('Backfill Financial Attribution', 'intersoccer-reports-rosters'); ?></button>
+                    </form>
+                    <p class="description"><?php _e('Processes orders missing attribution metadata in batches. Safe to run multiple times until remaining count reaches zero.', 'intersoccer-reports-rosters'); ?></p>
+                </div>
                 <?php intersoccer_render_signature_verifier_section(); ?>
                 <?php intersoccer_render_reports_rosters_diagnostics_section(); ?>
             </div>
@@ -310,6 +326,55 @@ function intersoccer_render_advanced_page() {
                             console.error('AJAX Error: ', status, error, xhr.responseText);
                         }
                     });
+                });
+
+                // Backfill financial attribution
+                $('#intersoccer-backfill-financial-form').on('submit', function(e) {
+                    e.preventDefault();
+                    var $form = $(this);
+                    var $button = $form.find('button[type="submit"]');
+
+                    if (!confirm("<?php echo esc_js(__('Backfill financial attribution for historical orders? This may take several batches.', 'intersoccer-reports-rosters')); ?>")) {
+                        return false;
+                    }
+
+                    function runBackfillBatch() {
+                        showAdminNotice('<?php echo esc_js(__('Backfilling financial attribution...', 'intersoccer-reports-rosters')); ?>', 'info');
+                        $button.prop('disabled', true).text('<?php echo esc_js(__('Running...', 'intersoccer-reports-rosters')); ?>');
+
+                        $.ajax({
+                            url: ajaxurl,
+                            type: 'POST',
+                            data: $form.serialize(),
+                            success: function(response) {
+                                if (!response.success) {
+                                    showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + (response.data && response.data.message ? response.data.message : ''), 'error');
+                                    $button.prop('disabled', false).text('<?php echo esc_js(__('Backfill Financial Attribution', 'intersoccer-reports-rosters')); ?>');
+                                    return;
+                                }
+
+                                var message = response.data.message || '';
+                                var moreRemaining = response.data.result && response.data.result.more_remaining;
+                                showAdminNotice(message, moreRemaining ? 'info' : 'success');
+
+                                if (moreRemaining) {
+                                    runBackfillBatch();
+                                    return;
+                                }
+
+                                $button.prop('disabled', false).text('<?php echo esc_js(__('Backfill Financial Attribution', 'intersoccer-reports-rosters')); ?>');
+                            },
+                            error: function(xhr, status, error) {
+                                var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message
+                                    ? xhr.responseJSON.data.message
+                                    : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                                showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
+                                $button.prop('disabled', false).text('<?php echo esc_js(__('Backfill Financial Attribution', 'intersoccer-reports-rosters')); ?>');
+                            }
+                        });
+                    }
+
+                    runBackfillBatch();
                 });
                 
                 // Normalize roster language to English (batched to avoid PHP timeout)

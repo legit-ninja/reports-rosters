@@ -9,46 +9,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-/**
- * Determine discount type from discount name (for legacy format)
- * 
- * @param string $discount_name The discount name/description
- * @return string The discount type (sibling, same_season, coupon, other)
- */
-function intersoccer_determine_discount_type_from_name($discount_name) {
-    if (empty($discount_name)) {
-        return 'other';
-    }
-    
-    $name_lower = strtolower($discount_name);
-    
-    // Check for sibling discounts
-    if (strpos($name_lower, 'sibling') !== false || 
-        strpos($name_lower, 'multi-child') !== false ||
-        strpos($name_lower, '2nd child') !== false ||
-        strpos($name_lower, '3rd child') !== false ||
-        strpos($name_lower, '2nd+ child') !== false) {
-        return 'sibling';
-    }
-    
-    // Check for same season discounts
-    if (strpos($name_lower, 'same season') !== false || 
-        strpos($name_lower, 'même saison') !== false ||
-        strpos($name_lower, 'second course') !== false ||
-        strpos($name_lower, '50%') !== false && strpos($name_lower, 'season') !== false) {
-        return 'same_season';
-    }
-    
-    // Check for coupon/promotional discounts
-    if (strpos($name_lower, 'coupon') !== false || 
-        strpos($name_lower, 'promo') !== false ||
-        strpos($name_lower, 'promotional') !== false) {
-        return 'coupon';
-    }
-    
-    // Default to other
-    return 'other';
-}
+require_once dirname(__FILE__) . '/financial-attribution-helpers.php';
 
 /**
  * CRITICAL: Store discount information when orders are placed
@@ -397,8 +358,8 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
         COALESCE(CAST(intersoccer_discount.meta_value AS DECIMAL(10,2)), 0) AS intersoccer_order_discount_amount,
         intersoccer_breakdown.meta_value AS intersoccer_order_discount_breakdown,
         
-        -- Refund data
-        COALESCE(ABS(CAST(refunded.refunded_total AS DECIMAL(10,2))), 0) AS reimbursement
+        -- Refund data (item-level attribution)
+        COALESCE(CAST(item_refund.meta_value AS DECIMAL(10,2)), 0) AS reimbursement
         
     FROM $posts_table p
     LEFT JOIN $order_items_table oi ON p.ID = oi.order_id AND oi.order_item_type = 'line_item'
@@ -456,26 +417,14 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
         AND item_discount_total.meta_key = '_intersoccer_total_item_discount'
     LEFT JOIN $order_itemmeta_table item_discount_breakdown ON oi.order_item_id = item_discount_breakdown.order_item_id
         AND item_discount_breakdown.meta_key = '_intersoccer_item_discounts'
+    LEFT JOIN $order_itemmeta_table item_refund ON oi.order_item_id = item_refund.order_item_id
+        AND item_refund.meta_key = '_intersoccer_item_refund'
     
     -- Order-level discount data (fallback)
     LEFT JOIN $postmeta_table intersoccer_discount ON p.ID = intersoccer_discount.post_id 
         AND intersoccer_discount.meta_key = '_intersoccer_total_discounts'
     LEFT JOIN $postmeta_table intersoccer_breakdown ON p.ID = intersoccer_breakdown.post_id 
         AND intersoccer_breakdown.meta_key = '_intersoccer_all_discounts'
-        
-    -- Refund data
-    LEFT JOIN (
-        SELECT 
-            parent.ID AS order_id, 
-            SUM(CAST(refmeta.meta_value AS DECIMAL(10,2))) as refunded_total
-        FROM $posts_table parent
-        INNER JOIN $posts_table refund ON parent.ID = refund.post_parent 
-            AND refund.post_type = 'shop_order_refund' 
-            AND refund.post_status = 'wc-refunded'
-        INNER JOIN $postmeta_table refmeta ON refund.ID = refmeta.post_id 
-            AND refmeta.meta_key = '_order_total'
-        GROUP BY parent.ID
-    ) refunded ON p.ID = refunded.order_id
     
     WHERE p.post_type = 'shop_order' 
         AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold', 'wc-refunded')
@@ -534,8 +483,9 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
     );
 
     foreach ($results as $row) {
-        $totals['base_price'] += floatval($row['base_price']);
-        $totals['final_price'] += floatval($row['final_price']);
+        $base_price = floatval($row['base_price']);
+        $reimbursement = floatval($row['reimbursement']);
+        $totals['base_price'] += $base_price;
         
         // Use item-level discount if available, otherwise order-level, otherwise calculate
         $discount_amt = 0;
@@ -549,7 +499,8 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
         }
         
         $totals['discount_amount'] += $discount_amt;
-        $totals['reimbursement'] += floatval($row['reimbursement']);
+        $totals['reimbursement'] += $reimbursement;
+        $totals['final_price'] += max(0.0, $base_price - $discount_amt - $reimbursement);
     }
 
     error_log("InterSoccer WooCommerce Fallback: Found " . count($results) . " bookings");
@@ -609,15 +560,19 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
             $booked_date = date_i18n('Y-m-d H:i', strtotime($row['order_date']));
         }
 
+        $base_price = floatval($row['base_price']);
+        $reimbursement = floatval($row['reimbursement']);
+        $net_final_price = max(0.0, $base_price - $total_discount - $reimbursement);
+
         $data[] = array(
             'ref' => 'ORD-' . $row['order_id'] . '-' . $row['order_item_id'],
             'order_id' => $row['order_id'],
             'booked' => $booked_date,
-            'base_price' => number_format($row['base_price'], 2),
+            'base_price' => number_format($base_price, 2),
             'discount_amount' => number_format($total_discount, 2),
-            'reimbursement' => number_format($row['reimbursement'], 2),
+            'reimbursement' => number_format($reimbursement, 2),
             'stripe_fee' => number_format(0, 2), // Not calculated
-            'final_price' => number_format($row['final_price'], 2),
+            'final_price' => number_format($net_final_price, 2),
             'discount_codes' => $discount_codes,
             'class_name' => $row['product_name'] ?: 'N/A',
             'start_date' => 'N/A', // Not available in direct query
@@ -919,6 +874,13 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
             }
         }
 
+        $reimbursement = 0.0;
+        if (isset($meta_data['_intersoccer_item_refund']) && $meta_data['_intersoccer_item_refund'] !== '') {
+            $reimbursement = floatval($meta_data['_intersoccer_item_refund']);
+        }
+
+        $final_price = max(0.0, $base_price - $discount_amount - $reimbursement);
+
         // Calculate Stripe fee (approximate 2.9% + 0.30 CHF)
         $stripe_fee = $final_price > 0 ? ($final_price * 0.029) + 0.30 : 0;
 
@@ -927,6 +889,7 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
             'booked' => date('Y-m-d', strtotime($row->order_date)),
             'base_price' => number_format($base_price, 2),
             'discount_amount' => number_format($discount_amount, 2),
+            'reimbursement' => number_format($reimbursement, 2),
             'stripe_fee' => number_format($stripe_fee, 2),
             'final_price' => number_format($final_price, 2),
             'discount_codes' => $discount_codes,
@@ -952,6 +915,7 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
         $totals['base_price'] += $base_price;
         $totals['discount_amount'] += $discount_amount;
         $totals['final_price'] += $final_price;
+        $totals['reimbursement'] += $reimbursement;
     }
 
     // Set bookings to the count of records (each order item = 1 booking)

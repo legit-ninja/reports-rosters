@@ -59,7 +59,6 @@ class FinancialReportService {
             $date_where = $this->wpdb->prepare('AND YEAR(p.post_date) = %d', $year);
         }
 
-        // Placeholder for region filtering if needed in future
         $region_where = '';
         if (!empty($region) && $region !== 'all') {
             $this->logger->debug('FinancialReportService: Region filtering requested, but not yet implemented.', [
@@ -87,7 +86,7 @@ class FinancialReportService {
             LEFT JOIN {$this->wpdb->prefix}woocommerce_order_itemmeta oim_total ON oi.order_item_id = oim_total.order_item_id AND oim_total.meta_key = '_line_total'
             LEFT JOIN {$this->wpdb->prefix}woocommerce_order_itemmeta oim_subtotal ON oi.order_item_id = oim_subtotal.order_item_id AND oim_subtotal.meta_key = '_line_subtotal'
             WHERE p.post_type = 'shop_order'
-            AND p.post_status IN ('wc-completed', 'wc-processing')
+            AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold', 'wc-refunded')
             {$date_where}
             {$region_where}
             ORDER BY p.post_date DESC, p.ID DESC
@@ -95,7 +94,13 @@ class FinancialReportService {
 
         $order_rows = $this->wpdb->get_results($query);
 
+        $this->ensureOrdersAttributed((array) $order_rows);
+
+        $accuracy_debug = function_exists('intersoccer_booking_report_accuracy_debug_enabled')
+            && intersoccer_booking_report_accuracy_debug_enabled();
+
         $data = [];
+        $validation_rows = [];
         $totals = [
             'bookings' => 0,
             'base_price' => 0.0,
@@ -107,12 +112,10 @@ class FinancialReportService {
         foreach ((array) $order_rows as $row) {
             $order_id = (int) $row->order_id;
 
-            // Skip if no product_id (this would be a coupon or other non-product item)
             if (empty($row->product_id)) {
                 continue;
             }
 
-            // Skip BuyClub orders (billing company contains buyclub)
             $billing_company = get_post_meta($order_id, '_billing_company', true);
             if (!empty($billing_company) && stripos($billing_company, 'buyclub') !== false) {
                 continue;
@@ -153,125 +156,41 @@ class FinancialReportService {
             $venue = $this->extractMetaValue($meta_map, ['pa_intersoccer-venues', 'InterSoccer Venues']);
 
             $base_price = (float) $row->line_subtotal;
-            $final_price = (float) $row->line_total;
-            
-            // PRIORITY 1: Use stored discount metadata if available (most accurate)
-            // The Product Variations plugin stores discounts in multiple formats:
-            // - New format: _intersoccer_item_discounts (array) and _intersoccer_total_item_discount (amount)
-            // - Legacy format: "Discount" (name) and "Discount Amount" (HTML formatted amount)
-            $discount_amount = 0;
-            $item_discount_breakdown = [];
-            
-            // Check for new format first (_intersoccer_item_discounts)
-            if (isset($meta_map['_intersoccer_total_item_discount']) && !empty($meta_map['_intersoccer_total_item_discount'])) {
-                // Use the stored total discount amount (most accurate)
-                $discount_amount = (float) $meta_map['_intersoccer_total_item_discount'];
-                
-                // Get the detailed breakdown if available
-                if (isset($meta_map['_intersoccer_item_discounts']) && !empty($meta_map['_intersoccer_item_discounts'])) {
-                    // WooCommerce automatically serializes arrays, so we need to unserialize
-                    $raw_breakdown = $meta_map['_intersoccer_item_discounts'];
-                    
-                    // Try to unserialize (WooCommerce stores arrays as serialized strings)
-                    if (is_string($raw_breakdown)) {
-                        $item_discount_breakdown = maybe_unserialize($raw_breakdown);
-                    } else {
-                        $item_discount_breakdown = $raw_breakdown;
-                    }
-                    
-                    // Ensure it's an array
-                    if (!is_array($item_discount_breakdown)) {
-                        $this->logger->warning('FinancialReportService: Discount breakdown is not an array', [
-                            'order_id' => $order_id,
-                            'item_id' => $row->order_item_id,
-                            'type' => gettype($item_discount_breakdown),
-                        ]);
-                        $item_discount_breakdown = [];
-                    }
-                }
+            $line_total = (float) $row->line_total;
+            $discount_data = $this->resolveItemDiscountData($meta_map, $base_price, $line_total, $order_id, (int) $row->order_item_id);
+            $discount_amount = $discount_data['amount'];
+            $item_discount_breakdown = $discount_data['breakdown'];
+
+            $reimbursement = 0.0;
+            if (isset($meta_map[OrderFinancialAttributionService::META_ITEM_REFUND]) && $meta_map[OrderFinancialAttributionService::META_ITEM_REFUND] !== '') {
+                $reimbursement = (float) $meta_map[OrderFinancialAttributionService::META_ITEM_REFUND];
             }
-            // PRIORITY 2: Check for legacy format ("Discount" and "Discount Amount" keys)
-            elseif (isset($meta_map['Discount Amount']) && !empty($meta_map['Discount Amount'])) {
-                // Extract numeric value from HTML formatted amount
-                // Format: <span class="woocommerce-Price-amount amount"><bdi><span class="woocommerce-Price-currencySymbol">&#67;&#72;&#70;</span>54.00</bdi></span>
-                $discount_amount_html = $meta_map['Discount Amount'];
-                
-                // Extract numeric value using regex
-                if (preg_match('/(\d+\.?\d*)/', $discount_amount_html, $matches)) {
-                    $discount_amount = (float) $matches[1];
-                } else {
-                    // Fallback: try to strip HTML and convert
-                    $discount_amount = (float) strip_tags($discount_amount_html);
-                }
-                
-                // Get discount name from "Discount" key
-                if (isset($meta_map['Discount']) && !empty($meta_map['Discount'])) {
-                    $discount_name = trim($meta_map['Discount']);
-                    
-                    // Create breakdown array from legacy format
-                    $item_discount_breakdown = [
-                        [
-                            'name' => $discount_name,
-                            'type' => $this->determineDiscountTypeFromName($discount_name),
-                            'amount' => $discount_amount
-                        ]
-                    ];
-                }
-            }
-            // PRIORITY 3: FALLBACK - Calculate from price difference
-            else {
-                $discount_amount = $base_price - $final_price;
-            }
+
+            $final_price = max(0.0, $base_price - $discount_amount - $reimbursement);
 
             $coupons = $this->wpdb->get_col($this->wpdb->prepare(
                 "SELECT order_item_name FROM {$this->wpdb->prefix}woocommerce_order_items
                  WHERE order_id = %d AND order_item_type = 'coupon'",
                 $order_id
             ));
-            
-            // Format discounts applied for display (combines InterSoccer discounts + coupon codes)
-            $discounts_applied = [];
-            
-            // Add InterSoccer discounts from breakdown (new format)
-            if (!empty($item_discount_breakdown) && is_array($item_discount_breakdown)) {
-                foreach ($item_discount_breakdown as $disc) {
-                    // Handle both array format and object format
-                    $disc_array = is_array($disc) ? $disc : (array) $disc;
-                    
-                    if (isset($disc_array['name']) && !empty($disc_array['name'])) {
-                        $discount_name = trim($disc_array['name']);
-                        
-                        // Add amount if available
-                        if (isset($disc_array['amount']) && floatval($disc_array['amount']) > 0) {
-                            $discount_amount_formatted = number_format(floatval($disc_array['amount']), 2);
-                            $discount_name .= ' (' . $discount_amount_formatted . ' CHF)';
-                        }
-                        
-                        // Only add if we have a valid discount name
-                        if (!empty($discount_name)) {
-                            $discounts_applied[] = $discount_name;
-                        }
-                    }
-                }
+
+            $discounts_applied = $this->formatDiscountsApplied($item_discount_breakdown, $discount_amount, $meta_map, $coupons);
+            $discount_type = $this->resolvePrimaryDiscountType($item_discount_breakdown, $meta_map, $coupons);
+
+            if ($accuracy_debug) {
+                $validation_rows[] = [
+                    'order_id' => $order_id,
+                    'order_item_id' => (int) $row->order_item_id,
+                    'base_price' => $base_price,
+                    'discount_amount' => $discount_amount,
+                    'reimbursement' => $reimbursement,
+                    'final_price' => $final_price,
+                    'discount_source' => $discount_data['source'],
+                    'has_attribution_meta' => $discount_data['has_attribution_meta'],
+                    'discount_type' => $discount_type,
+                    'discount_breakdown' => $item_discount_breakdown,
+                ];
             }
-            // If no breakdown but we have discount amount, check for legacy "Discount" key
-            elseif ($discount_amount > 0.01 && isset($meta_map['Discount']) && !empty($meta_map['Discount'])) {
-                $discount_name = trim($meta_map['Discount']);
-                $discount_name .= ' (' . number_format($discount_amount, 2) . ' CHF)';
-                $discounts_applied[] = $discount_name;
-            }
-            
-            // Add WooCommerce coupon codes (these are order-level, not item-level)
-            if (!empty($coupons)) {
-                foreach ($coupons as $coupon_code) {
-                    if (!empty($coupon_code) && trim($coupon_code) !== '') {
-                        $discounts_applied[] = 'Coupon: ' . trim($coupon_code);
-                    }
-                }
-            }
-            
-            // Format as string for display
-            $discounts_applied_str = !empty($discounts_applied) ? implode('; ', $discounts_applied) : 'None';
 
             $stripe_fee = $final_price > 0 ? ($final_price * 0.029) + 0.30 : 0.0;
 
@@ -280,7 +199,10 @@ class FinancialReportService {
                 'booked' => date('Y-m-d', strtotime($row->order_date)),
                 'base_price' => number_format($base_price, 2),
                 'discount_amount' => number_format($discount_amount, 2),
-                'discounts_applied' => $discounts_applied_str, // New column: formatted discount information
+                'discounts_applied' => $discounts_applied,
+                'discount_type' => $discount_type,
+                'discount_breakdown' => $item_discount_breakdown,
+                'reimbursement' => number_format($reimbursement, 2),
                 'stripe_fee' => number_format($stripe_fee, 2),
                 'final_price' => number_format($final_price, 2),
                 'discount_codes' => implode(', ', $coupons),
@@ -297,64 +219,151 @@ class FinancialReportService {
                 'activity_type' => $activity_type ?: 'N/A',
             ];
 
-            // Note: Each order item represents one booking/participant
-            // We don't sum quantities here - bookings = count of order items
             $totals['base_price'] += $base_price;
             $totals['discount_amount'] += $discount_amount;
             $totals['final_price'] += $final_price;
+            $totals['reimbursement'] += $reimbursement;
         }
 
-        // Set bookings to the count of records (each order item = 1 booking)
-        // This ensures "Total Bookings" matches "records found"
         $totals['bookings'] = count($data);
 
-        return [
+        $result = [
             'data' => $data,
             'totals' => $totals,
+        ];
+
+        if ($accuracy_debug) {
+            $result['accuracy_validation'] = (new BookingReportAccuracyValidator())->validate(
+                $validation_rows,
+                $totals,
+                [
+                    'start_date' => $start_date,
+                    'end_date' => $end_date,
+                    'year' => $year,
+                    'region' => $region,
+                ]
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array{amount:float,breakdown:array<int,array<string,mixed>>,source:string,has_attribution_meta:bool}
+     */
+    private function resolveItemDiscountData(array $meta_map, float $base_price, float $line_total, int $order_id, int $item_id): array {
+        $discount_amount = 0.0;
+        $item_discount_breakdown = [];
+        $source = 'none';
+        $has_attribution_meta = false;
+
+        if (isset($meta_map[OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL])
+            && $meta_map[OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL] !== ''
+        ) {
+            $has_attribution_meta = true;
+            $source = 'attributed';
+            $discount_amount = (float) $meta_map[OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL];
+
+            if (isset($meta_map[OrderFinancialAttributionService::META_ITEM_DISCOUNTS])
+                && $meta_map[OrderFinancialAttributionService::META_ITEM_DISCOUNTS] !== ''
+            ) {
+                $raw_breakdown = $meta_map[OrderFinancialAttributionService::META_ITEM_DISCOUNTS];
+                $item_discount_breakdown = is_string($raw_breakdown) ? maybe_unserialize($raw_breakdown) : $raw_breakdown;
+                if (!is_array($item_discount_breakdown)) {
+                    $item_discount_breakdown = [];
+                }
+            }
+        } elseif (isset($meta_map['Discount Amount']) && $meta_map['Discount Amount'] !== '') {
+            $source = 'legacy';
+            $discount_amount = intersoccer_parse_legacy_discount_amount($meta_map['Discount Amount']);
+
+            if (isset($meta_map['Discount']) && $meta_map['Discount'] !== '') {
+                $discount_name = trim((string) $meta_map['Discount']);
+                $item_discount_breakdown = [[
+                    'name' => $discount_name,
+                    'type' => intersoccer_determine_discount_type_from_name($discount_name),
+                    'amount' => $discount_amount,
+                ]];
+            }
+        } else {
+            $discount_amount = max(0.0, $base_price - $line_total);
+            if ($discount_amount > 0.01) {
+                $source = 'fallback';
+                $this->logger->debug('FinancialReportService: Using fallback discount calculation', [
+                    'order_id' => $order_id,
+                    'item_id' => $item_id,
+                    'discount_amount' => $discount_amount,
+                ]);
+            }
+        }
+
+        return [
+            'amount' => $discount_amount,
+            'breakdown' => $item_discount_breakdown,
+            'source' => $source,
+            'has_attribution_meta' => $has_attribution_meta,
         ];
     }
 
     /**
-     * Determine discount type from discount name (for legacy format)
-     * 
-     * @param string $discount_name The discount name/description
-     * @return string The discount type (sibling, same_season, coupon, other)
+     * @param array<int,array<string,mixed>> $item_discount_breakdown
+     * @param array<int,string>              $coupons
      */
-    private function determineDiscountTypeFromName(string $discount_name): string {
-        if (empty($discount_name)) {
-            return 'other';
+    private function formatDiscountsApplied(array $item_discount_breakdown, float $discount_amount, array $meta_map, array $coupons): string {
+        $discounts_applied = [];
+
+        if (!empty($item_discount_breakdown)) {
+            foreach ($item_discount_breakdown as $disc) {
+                $disc_array = is_array($disc) ? $disc : (array) $disc;
+                if (empty($disc_array['name'])) {
+                    continue;
+                }
+
+                $discount_name = trim((string) $disc_array['name']);
+                if (isset($disc_array['amount']) && (float) $disc_array['amount'] > 0) {
+                    $discount_name .= ' (' . number_format((float) $disc_array['amount'], 2) . ' CHF)';
+                }
+                $discounts_applied[] = $discount_name;
+            }
+        } elseif ($discount_amount > 0.01 && isset($meta_map['Discount']) && $meta_map['Discount'] !== '') {
+            $discount_name = trim((string) $meta_map['Discount']);
+            $discount_name .= ' (' . number_format($discount_amount, 2) . ' CHF)';
+            $discounts_applied[] = $discount_name;
         }
-        
-        $name_lower = strtolower($discount_name);
-        
-        // Check for sibling discounts
-        if (strpos($name_lower, 'sibling') !== false || 
-            strpos($name_lower, 'multi-child') !== false ||
-            strpos($name_lower, '2nd child') !== false ||
-            strpos($name_lower, '3rd child') !== false ||
-            strpos($name_lower, '2nd+ child') !== false) {
-            return 'sibling';
+
+        foreach ($coupons as $coupon_code) {
+            if (!empty($coupon_code) && trim($coupon_code) !== '') {
+                $discounts_applied[] = 'Coupon: ' . trim($coupon_code);
+            }
         }
-        
-        // Check for same season discounts
-        if (strpos($name_lower, 'same season') !== false || 
-            strpos($name_lower, 'même saison') !== false ||
-            strpos($name_lower, 'second course') !== false ||
-            (strpos($name_lower, '50%') !== false && strpos($name_lower, 'season') !== false)) {
-            return 'same_season';
+
+        return !empty($discounts_applied) ? implode('; ', $discounts_applied) : 'None';
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $item_discount_breakdown
+     * @param array<int,string>              $coupons
+     */
+    private function resolvePrimaryDiscountType(array $item_discount_breakdown, array $meta_map, array $coupons): string {
+        if (!empty($item_discount_breakdown)) {
+            foreach ($item_discount_breakdown as $disc) {
+                if (is_array($disc) && !empty($disc['type'])) {
+                    return (string) $disc['type'];
+                }
+            }
         }
-        
-        // Check for coupon/promotional discounts
-        if (strpos($name_lower, 'coupon') !== false || 
-            strpos($name_lower, 'promo') !== false ||
-            strpos($name_lower, 'promotional') !== false) {
+
+        if (!empty($meta_map['Discount'])) {
+            return intersoccer_determine_discount_type_from_name((string) $meta_map['Discount']);
+        }
+
+        if (!empty($coupons)) {
             return 'coupon';
         }
-        
-        // Default to other
+
         return 'other';
     }
-    
+
     /**
      * Helper to extract the first available meta value from a list of keys.
      */
@@ -367,6 +376,50 @@ class FinancialReportService {
 
         return '';
     }
+
+    /**
+     * Attribute discounts/refunds for orders in the report that predate the attribution hook.
+     *
+     * @param array<int,object> $order_rows
+     */
+    private function ensureOrdersAttributed(array $order_rows): void {
+        if (!function_exists('intersoccer_oop_get_order_financial_attribution_service') || !function_exists('wc_get_order')) {
+            return;
+        }
+
+        $service = intersoccer_oop_get_order_financial_attribution_service();
+        $seen = [];
+
+        foreach ($order_rows as $row) {
+            $order_id = (int) ($row->order_id ?? 0);
+            if ($order_id <= 0 || isset($seen[$order_id])) {
+                continue;
+            }
+            $seen[$order_id] = true;
+
+            $order = wc_get_order($order_id);
+            if (!$order) {
+                continue;
+            }
+
+            if ($order->get_meta(OrderFinancialAttributionService::META_ORDER_ATTRIBUTION_AT, true)) {
+                continue;
+            }
+
+            $had_refunds = (float) $order->get_total_refunded() > 0.01;
+            try {
+                if ($had_refunds) {
+                    $service->reattributeFullOrder($order);
+                } else {
+                    $service->attributeOrderDiscounts($order);
+                }
+            } catch (\Throwable $e) {
+                $this->logger->error('FinancialReportService: Lazy attribution failed', [
+                    'order_id' => $order_id,
+                    'message' => $e->getMessage(),
+                ]);
+                continue;
+            }
+        }
+    }
 }
-
-

@@ -754,6 +754,8 @@ function intersoccer_office365_build_booking_report_xlsx($report_data, $start_da
             ['- Sibling Discounts:', (float)$discount_type_totals['sibling'], 'Multi-child camp/course discounts'],
             ['- Same Season Discounts:', (float)$discount_type_totals['same_season'], '50% second course same season'],
             ['- Coupon Discounts:', (float)$discount_type_totals['coupon'], 'Promotional codes used'],
+            ['- Referral Code Discounts:', (float)$discount_type_totals['referral_first_order'], 'First-order referral code discounts'],
+            ['- Points Redemption:', (float)$discount_type_totals['referral_points'], 'Loyalty points redeemed at checkout'],
             ['- Other Discounts:', (float)$discount_type_totals['other'], 'Legacy and other discount types'],
             ['Final Revenue:', (float)$report_data['totals']['final_price'], 'After all discounts applied'],
             ['Reimbursements:', (float)$report_data['totals']['reimbursement'], 'Refunds processed'],
@@ -974,80 +976,3 @@ function intersoccer_export_booking_report_callback() {
     }
 }
 add_action('wp_ajax_intersoccer_export_booking_report', 'intersoccer_export_booking_report_callback');
-
-/**
- * Calculate discount type breakdown from booking report data
- */
-function intersoccer_calculate_discount_type_breakdown($report_data) {
-    $totals = [
-        'sibling' => 0,
-        'same_season' => 0,
-        'coupon' => 0,
-        'other' => 0
-    ];
-
-    foreach ($report_data as $row) {
-        $discount_amount = floatval(str_replace([',', ' CHF'], '', $row['discount_amount'] ?? '0'));
-
-        // Skip if no discount
-        if ($discount_amount <= 0) {
-            continue;
-        }
-
-        // PRIORITY 1: Use discount breakdown from metadata if available (most accurate)
-        if (isset($row['discount_breakdown']) && is_array($row['discount_breakdown']) && !empty($row['discount_breakdown'])) {
-            // Sum up discounts by type from the breakdown
-            foreach ($row['discount_breakdown'] as $disc) {
-                if (!isset($disc['type']) || !isset($disc['amount'])) {
-                    continue;
-                }
-                
-                $disc_type = strtolower($disc['type']);
-                $disc_amt = floatval($disc['amount']);
-                
-                // Map discount types to our categories
-                if (in_array($disc_type, ['sibling', 'multi-child', 'camp_sibling', 'course_multi_child'])) {
-                    $totals['sibling'] += $disc_amt;
-                } elseif (in_array($disc_type, ['same_season', 'same-season', 'second_course', 'second-course'])) {
-                    $totals['same_season'] += $disc_amt;
-                } elseif (in_array($disc_type, ['coupon', 'promo', 'promotional'])) {
-                    $totals['coupon'] += $disc_amt;
-                } else {
-                    $totals['other'] += $disc_amt;
-                }
-            }
-        }
-        // PRIORITY 2: Use discount_type field if available
-        elseif (isset($row['discount_type']) && !empty($row['discount_type'])) {
-            $disc_type = strtolower($row['discount_type']);
-            if (in_array($disc_type, ['sibling', 'multi-child', 'camp_sibling', 'course_multi_child'])) {
-                $totals['sibling'] += $discount_amount;
-            } elseif (in_array($disc_type, ['same_season', 'same-season', 'second_course', 'second-course'])) {
-                $totals['same_season'] += $discount_amount;
-            } elseif (in_array($disc_type, ['coupon', 'promo', 'promotional'])) {
-                $totals['coupon'] += $discount_amount;
-            } else {
-                $totals['other'] += $discount_amount;
-            }
-        }
-        // PRIORITY 3: Fallback to discount codes (least accurate)
-        else {
-            $discount_codes = strtolower($row['discount_codes'] ?? '');
-            
-            // Categorize discount types based on discount codes
-            if (strpos($discount_codes, 'sibling') !== false || strpos($discount_codes, 'multi-child') !== false) {
-                $totals['sibling'] += $discount_amount;
-            } elseif (strpos($discount_codes, 'same-season') !== false || strpos($discount_codes, 'second-course') !== false) {
-                $totals['same_season'] += $discount_amount;
-            } elseif (!empty($discount_codes) && $discount_codes !== 'none') {
-                // Check if it's a coupon code (not empty and not 'none')
-                $totals['coupon'] += $discount_amount;
-            } else {
-                // Any other discount type
-                $totals['other'] += $discount_amount;
-            }
-        }
-    }
-
-    return $totals;
-}

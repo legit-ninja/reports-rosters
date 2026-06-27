@@ -37,7 +37,7 @@ function intersoccer_filter_report_callback() {
     ob_start();
     ?>
     <div id="intersoccer-report-totals" class="report-totals" style="margin-bottom: 20px;">
-        <?php intersoccer_render_enhanced_booking_totals($report_data['totals']); ?>
+        <?php intersoccer_render_enhanced_booking_totals($report_data['totals'], $report_data['data']); ?>
     </div>
     <div id="intersoccer-report-table">
         <?php if (empty($report_data['data'])): ?>
@@ -137,9 +137,10 @@ function intersoccer_filter_report_callback() {
 /**
  * Render enhanced booking report totals.
  *
- * @param array $totals The totals data.
+ * @param array      $totals      Aggregated totals.
+ * @param array|null $report_data Optional row data for discount-type breakdown.
  */
-function intersoccer_render_enhanced_booking_totals($totals) {
+function intersoccer_render_enhanced_booking_totals($totals, $report_data = null) {
     if (empty($totals)) {
         echo '<p>No totals available.</p>';
         return;
@@ -147,6 +148,11 @@ function intersoccer_render_enhanced_booking_totals($totals) {
     
     $net_revenue = $totals['final_price'] - $totals['reimbursement'];
     $avg_order_value = $totals['bookings'] > 0 ? $totals['final_price'] / $totals['bookings'] : 0;
+    $discount_type_totals = [];
+
+    if (is_array($report_data) && !empty($report_data) && function_exists('intersoccer_calculate_discount_type_breakdown')) {
+        $discount_type_totals = intersoccer_calculate_discount_type_breakdown($report_data);
+    }
     
     ?>
     <div class="report-summary" style="background: #f8f9fa; padding: 15px; margin-bottom: 20px; border-radius: 5px;">
@@ -161,6 +167,26 @@ function intersoccer_render_enhanced_booking_totals($totals) {
             <div class="summary-item">
                 <strong>Total Discounts:</strong> CHF <?php echo number_format($totals['discount_amount'], 2); ?>
             </div>
+            <?php if (!empty($discount_type_totals)) : ?>
+                <div class="summary-item">
+                    <strong>Sibling Discounts:</strong> CHF <?php echo number_format($discount_type_totals['sibling'], 2); ?>
+                </div>
+                <div class="summary-item">
+                    <strong>Same Season Discounts:</strong> CHF <?php echo number_format($discount_type_totals['same_season'], 2); ?>
+                </div>
+                <div class="summary-item">
+                    <strong>Coupon Discounts:</strong> CHF <?php echo number_format($discount_type_totals['coupon'], 2); ?>
+                </div>
+                <div class="summary-item">
+                    <strong>Referral Code Discounts:</strong> CHF <?php echo number_format($discount_type_totals['referral_first_order'], 2); ?>
+                </div>
+                <div class="summary-item">
+                    <strong>Points Redemption:</strong> CHF <?php echo number_format($discount_type_totals['referral_points'], 2); ?>
+                </div>
+                <div class="summary-item">
+                    <strong>Other Discounts:</strong> CHF <?php echo number_format($discount_type_totals['other'], 2); ?>
+                </div>
+            <?php endif; ?>
             <div class="summary-item">
                 <strong>Final Revenue:</strong> CHF <?php echo number_format($totals['final_price'], 2); ?>
             </div>
