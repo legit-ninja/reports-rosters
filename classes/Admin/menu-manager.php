@@ -183,6 +183,15 @@ class MenuManager {
             [$this, 'render_advanced']
         );
 
+        add_submenu_page(
+            'intersoccer-reports-rosters',
+            __('Roster Sync Queue', 'intersoccer-reports-rosters'),
+            __('Roster Sync Queue', 'intersoccer-reports-rosters'),
+            'manage_options',
+            'intersoccer-roster-sync-queue',
+            [$this, 'render_roster_sync_queue']
+        );
+
         // Hidden detail/edit pages
         add_submenu_page(
             null,
@@ -325,6 +334,15 @@ class MenuManager {
             return;
         }
         wp_die(__('Advanced page is not available.', 'intersoccer-reports-rosters'));
+    }
+
+    public function render_roster_sync_queue(): void {
+        $this->require_include('advanced.php');
+        if (function_exists('intersoccer_render_roster_sync_queue_admin_page')) {
+            intersoccer_render_roster_sync_queue_admin_page();
+            return;
+        }
+        wp_die(__('Roster Sync Queue page is not available.', 'intersoccer-reports-rosters'));
     }
 
     public function render_signature_drift(): void {

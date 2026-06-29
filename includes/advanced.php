@@ -10,6 +10,19 @@
 defined('ABSPATH') or die('Restricted access');
 
 /**
+ * Default reconcile order statuses for sync queue UI.
+ *
+ * @return array<int,string>
+ */
+function intersoccer_sync_queue_default_order_statuses(): array {
+    if (class_exists(\InterSoccer\ReportsRosters\Services\ReportsRostersDiagnosticsService::class)) {
+        return \InterSoccer\ReportsRosters\Services\ReportsRostersDiagnosticsService::defaultOrderStatuses();
+    }
+
+    return ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'];
+}
+
+/**
  * Render the Advanced Features page with tabs.
  */
 function intersoccer_render_advanced_page() {
@@ -43,6 +56,9 @@ function intersoccer_render_advanced_page() {
             </a>
             <a href="?page=intersoccer-advanced&tab=advanced" class="nav-tab <?php echo $active_tab === 'advanced' ? 'nav-tab-active' : ''; ?>">
                 <?php _e('Advanced', 'intersoccer-reports-rosters'); ?>
+            </a>
+            <a href="?page=intersoccer-advanced&tab=roster-sync" class="nav-tab <?php echo $active_tab === 'roster-sync' ? 'nav-tab-active' : ''; ?>">
+                <?php _e('Roster Sync Queue', 'intersoccer-reports-rosters'); ?>
             </a>
             <a href="?page=intersoccer-advanced&tab=tools" class="nav-tab <?php echo $active_tab === 'tools' ? 'nav-tab-active' : ''; ?>">
                 <?php _e('Tools', 'intersoccer-reports-rosters'); ?>
@@ -109,7 +125,7 @@ function intersoccer_render_advanced_page() {
                     </tr>
                 </table>
                 <p class="description">
-                    <?php _e('Database operations and advanced tools are available in the Advanced and Tools tabs.', 'intersoccer-reports-rosters'); ?>
+                    <?php _e('Database operations are in the Advanced tab. The Roster Sync Queue for out-of-sync orders is in its own tab.', 'intersoccer-reports-rosters'); ?>
                 </p>
             </div>
         <?php endif; ?>
@@ -183,9 +199,28 @@ function intersoccer_render_advanced_page() {
             </div>
         <?php endif; ?>
 
+        <!-- Roster Sync Queue Tab -->
+        <?php if ($active_tab === 'roster-sync') : ?>
+            <div class="tab-content tab-roster-sync">
+                <?php intersoccer_render_roster_sync_queue_page_content(); ?>
+            </div>
+        <?php endif; ?>
+
         <!-- Tools Tab -->
         <?php if ($active_tab === 'tools') : ?>
             <div class="tab-content tab-tools">
+                <div class="settings-section" style="margin-bottom: 24px;">
+                    <h2><?php _e('Roster Sync Queue', 'intersoccer-reports-rosters'); ?></h2>
+                    <p>
+                        <?php
+                        printf(
+                            /* translators: %s: admin URL to Roster Sync Queue tab */
+                            __('Out-of-sync participant review has moved to the <a href="%s">Roster Sync Queue</a> tab.', 'intersoccer-reports-rosters'),
+                            esc_url(admin_url('admin.php?page=intersoccer-advanced&tab=roster-sync'))
+                        );
+                        ?>
+                    </p>
+                </div>
                 <div class="settings-section" style="margin-bottom: 24px;">
                     <h2><?php _e('Financial Attribution Backfill', 'intersoccer-reports-rosters'); ?></h2>
                     <p><?php _e('Allocate order-level discounts (referral codes, points, coupons, combo fees) and refunds to individual booking line items for accurate financial reports.', 'intersoccer-reports-rosters'); ?></p>
@@ -203,7 +238,6 @@ function intersoccer_render_advanced_page() {
                     <p class="description"><?php _e('Processes orders missing attribution metadata in batches. Safe to run multiple times until remaining count reaches zero.', 'intersoccer-reports-rosters'); ?></p>
                 </div>
                 <?php intersoccer_render_signature_verifier_section(); ?>
-                <?php intersoccer_render_reports_rosters_diagnostics_section(); ?>
             </div>
         <?php endif; ?>
 
@@ -1522,20 +1556,57 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
 }
 
 /**
+ * Render roster sync queue page body (shared by Settings tab and submenu).
+ */
+function intersoccer_render_roster_sync_queue_page_content(): void {
+    if (!class_exists(\InterSoccer\ReportsRosters\Services\ReportsRostersDiagnosticsService::class)) {
+        echo '<div class="notice notice-error"><p>';
+        esc_html_e(
+            'Roster Sync Queue requires the latest plugin files (ReportsRostersDiagnosticsService). Deploy the full intersoccer-reports-rosters plugin update, including vendor/autoload, then reload this page.',
+            'intersoccer-reports-rosters'
+        );
+        echo '</p></div>';
+        return;
+    }
+
+    intersoccer_render_reports_rosters_diagnostics_section();
+}
+
+/**
+ * Standalone admin page for Roster Sync Queue (Reports and Rosters submenu).
+ */
+function intersoccer_render_roster_sync_queue_admin_page(): void {
+    if (!current_user_can('manage_options')) {
+        wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
+    }
+
+    ?>
+    <div class="wrap intersoccer-roster-sync-queue-page">
+        <h1><?php _e('Roster Sync Queue', 'intersoccer-reports-rosters'); ?></h1>
+        <p class="description">
+            <?php _e('Review WooCommerce line items that are out of sync with intersoccer_rosters.', 'intersoccer-reports-rosters'); ?>
+        </p>
+        <?php intersoccer_render_roster_sync_queue_page_content(); ?>
+    </div>
+    <?php
+}
+
+/**
  * Render Reports/Rosters diagnostics section.
  *
  * Read-only reconciliation tools for validating report inputs against roster rows.
  */
 function intersoccer_render_reports_rosters_diagnostics_section() {
+    $default_statuses = intersoccer_sync_queue_default_order_statuses();
     ?>
     <div class="reports-rosters-diagnostics-section" style="margin-top:30px;">
-        <h2><?php _e('Reports/Rosters Diagnostics', 'intersoccer-reports-rosters'); ?></h2>
+        <h2><?php _e('Roster Sync Queue', 'intersoccer-reports-rosters'); ?></h2>
         <p class="description">
-            <?php _e('Validate Final Reports inputs against Woo line-item metadata and roster rows. This tool is read-only.', 'intersoccer-reports-rosters'); ?>
+            <?php _e('Review WooCommerce line items that are out of sync with intersoccer_rosters. Filter by reason, fix items individually, or run bulk safe fixes below.', 'intersoccer-reports-rosters'); ?>
         </p>
 
         <div style="background:#fff; border:1px solid #ccd0d4; padding:16px; margin:12px 0;">
-            <h3 style="margin-top:0;"><?php _e('Run Diagnostics', 'intersoccer-reports-rosters'); ?></h3>
+            <h3 style="margin-top:0;"><?php _e('Run Sync Scan', 'intersoccer-reports-rosters'); ?></h3>
             <form id="intersoccer-reports-rosters-diagnostics-form">
                 <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
                 <table class="form-table" role="presentation">
@@ -1547,8 +1618,62 @@ function intersoccer_render_reports_rosters_diagnostics_section() {
                         <th scope="row"><label for="diag-activity-type"><?php _e('Activity Type', 'intersoccer-reports-rosters'); ?></label></th>
                         <td>
                             <select id="diag-activity-type" name="activity_type">
+                                <option value="All" selected><?php _e('All', 'intersoccer-reports-rosters'); ?></option>
                                 <option value="Course"><?php _e('Course', 'intersoccer-reports-rosters'); ?></option>
                                 <option value="Camp"><?php _e('Camp', 'intersoccer-reports-rosters'); ?></option>
+                                <option value="Tournament"><?php _e('Tournament', 'intersoccer-reports-rosters'); ?></option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php _e('Order Statuses', 'intersoccer-reports-rosters'); ?></th>
+                        <td>
+                            <?php
+                            $status_labels = [
+                                'wc-completed' => __('Completed', 'intersoccer-reports-rosters'),
+                                'wc-processing' => __('Processing', 'intersoccer-reports-rosters'),
+                                'wc-pending' => __('Pending', 'intersoccer-reports-rosters'),
+                                'wc-on-hold' => __('On hold', 'intersoccer-reports-rosters'),
+                            ];
+                            foreach ($status_labels as $status_value => $status_label) :
+                                ?>
+                                <label style="margin-right:12px;">
+                                    <input type="checkbox" class="diag-order-status" name="order_statuses[]" value="<?php echo esc_attr($status_value); ?>" <?php checked(in_array($status_value, $default_statuses, true)); ?> />
+                                    <?php echo esc_html($status_label); ?>
+                                </label>
+                            <?php endforeach; ?>
+                            <p class="description"><?php _e('Defaults match Reconcile Rosters (completed, processing, pending, on-hold).', 'intersoccer-reports-rosters'); ?></p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="diag-reason-filter"><?php _e('Sync Reason', 'intersoccer-reports-rosters'); ?></label></th>
+                        <td>
+                            <select id="diag-reason-filter" name="reason_filter">
+                                <option value=""><?php _e('All reasons', 'intersoccer-reports-rosters'); ?></option>
+                                <option value="missing_in_rosters"><?php _e('missing_in_rosters', 'intersoccer-reports-rosters'); ?></option>
+                                <option value="missing_in_woo"><?php _e('missing_in_woo', 'intersoccer-reports-rosters'); ?></option>
+                                <option value="incomplete_player_data"><?php _e('incomplete_player_data', 'intersoccer-reports-rosters'); ?></option>
+                                <option value="fragmented_roster"><?php _e('fragmented_roster', 'intersoccer-reports-rosters'); ?></option>
+                                <option value="venue_mismatch"><?php _e('venue_mismatch', 'intersoccer-reports-rosters'); ?></option>
+                                <option value="course_day_mismatch"><?php _e('course_day_mismatch', 'intersoccer-reports-rosters'); ?></option>
+                                <option value="missing_in_woo_meta"><?php _e('missing_in_woo_meta', 'intersoccer-reports-rosters'); ?></option>
+                                <option value="missing_in_roster_venue"><?php _e('missing_in_roster_venue', 'intersoccer-reports-rosters'); ?></option>
+                                <option value="unknown_placeholder_persisted"><?php _e('unknown_placeholder_persisted', 'intersoccer-reports-rosters'); ?></option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="diag-order-id"><?php _e('Order ID', 'intersoccer-reports-rosters'); ?></label></th>
+                        <td><input type="number" id="diag-order-id" name="order_id" class="small-text" placeholder="<?php esc_attr_e('Optional', 'intersoccer-reports-rosters'); ?>" /></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="diag-page-size"><?php _e('Page Size', 'intersoccer-reports-rosters'); ?></label></th>
+                        <td>
+                            <select id="diag-page-size" name="limit">
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                                <option value="200" selected>200</option>
+                                <option value="500">500</option>
                             </select>
                         </td>
                     </tr>
@@ -1566,11 +1691,12 @@ function intersoccer_render_reports_rosters_diagnostics_section() {
                     </tr>
                 </table>
                 <p class="submit" style="margin-top:8px;">
-                    <button type="submit" class="button button-primary"><?php _e('Run Diagnostics', 'intersoccer-reports-rosters'); ?></button>
+                    <button type="submit" class="button button-primary"><?php _e('Run Sync Scan', 'intersoccer-reports-rosters'); ?></button>
                 </p>
             </form>
             <div id="intersoccer-diagnostics-summary"></div>
             <div id="intersoccer-diagnostics-mismatches" style="margin-top:10px;"></div>
+            <div id="intersoccer-diagnostics-pagination" style="margin-top:10px;"></div>
         </div>
 
         <div style="background:#fff; border:1px solid #ccd0d4; padding:16px; margin:12px 0;">

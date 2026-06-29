@@ -2,6 +2,8 @@
 
 This feature adds native WooCommerce admin controls to each line item on the order edit screen so admins can quickly check and repair roster sync issues.
 
+For bulk review of out-of-sync participants, use **Reports and Rosters → Roster Sync Queue** in the admin menu (or **Settings → Roster Sync Queue** tab). Direct URL: `admin.php?page=intersoccer-roster-sync-queue`.
+
 ## Where It Appears
 
 - WooCommerce order edit screen (classic order editor and HPOS order editor)

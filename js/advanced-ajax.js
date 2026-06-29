@@ -70,15 +70,53 @@ jQuery(document).ready(function($) {
         return $('<div>').text(value == null ? '' : String(value)).html();
     }
 
+    var diagnosticsState = {
+        offset: 0
+    };
+
+    function collectDiagnosticsPayload() {
+        var orderStatuses = [];
+        $('.diag-order-status:checked').each(function() {
+            orderStatuses.push($(this).val());
+        });
+
+        return {
+            action: 'intersoccer_run_reports_rosters_diagnostics',
+            nonce: intersoccer_ajax.nonce,
+            year: $('#diag-year').val(),
+            activity_type: $('#diag-activity-type').val(),
+            season_type: $('#diag-season-type').val(),
+            region: $('#diag-region').val(),
+            exclude_buyclub: $('#diag-exclude-buyclub').is(':checked') ? 1 : 0,
+            order_id: $('#diag-order-id').val(),
+            reason_filter: $('#diag-reason-filter').val(),
+            order_statuses: orderStatuses,
+            limit: $('#diag-page-size').val() || 200,
+            offset: diagnosticsState.offset || 0
+        };
+    }
+
+    function collectSafeFixPayload() {
+        var payload = collectDiagnosticsPayload();
+        payload.action = 'intersoccer_fix_reports_rosters_issues_safe';
+        return payload;
+    }
+
     function renderDiagnosticsSummary(data) {
         var summary = data.summary || {};
         var reasonCounts = data.reason_counts || {};
         var reasonHtml = '';
         Object.keys(reasonCounts).sort().forEach(function(key) {
-            reasonHtml += '<li><code>' + esc(key) + '</code>: <strong>' + esc(reasonCounts[key]) + '</strong></li>';
+            reasonHtml += '<li><button type="button" class="button-link intersoccer-diag-reason-filter" data-reason="' + esc(key) + '"><code>' + esc(key) + '</code></button>: <strong>' + esc(reasonCounts[key]) + '</strong></li>';
         });
         if (!reasonHtml) {
             reasonHtml = '<li>No mismatches detected.</li>';
+        }
+
+        var filteredNote = '';
+        if (summary.filtered_mismatch_rows != null && summary.mismatch_rows != null
+            && summary.filtered_mismatch_rows !== summary.mismatch_rows) {
+            filteredNote = ' | <strong>Filtered:</strong> ' + esc(summary.filtered_mismatch_rows);
         }
 
         var html = '' +
@@ -88,41 +126,101 @@ jQuery(document).ready(function($) {
             ' | <strong>Intersection:</strong> ' + esc(summary.intersection || 0) +
             ' | <strong>Only Woo:</strong> ' + esc(summary.only_woo || 0) +
             ' | <strong>Only Rosters:</strong> ' + esc(summary.only_rosters || 0) +
-            ' | <strong>Mismatches:</strong> ' + esc(summary.mismatch_rows || 0) +
+            ' | <strong>Mismatches:</strong> ' + esc(summary.mismatch_rows || 0) + filteredNote +
             ' | <strong>Elapsed:</strong> ' + esc(summary.elapsed_ms || 0) + 'ms</p>' +
-            '<p><strong>Reason counts</strong></p><ul style="margin-left:18px;">' + reasonHtml + '</ul>' +
+            '<p><strong>Reason counts</strong> (click to filter)</p><ul style="margin-left:18px;">' + reasonHtml + '</ul>' +
             '</div>';
         $('#intersoccer-diagnostics-summary').html(html);
+    }
+
+    function renderDiagnosticsPagination(data) {
+        var pagination = data.pagination || {};
+        var total = pagination.total || 0;
+        var limit = pagination.limit || 200;
+        var offset = pagination.offset || 0;
+        var returned = pagination.returned || 0;
+
+        if (total <= 0) {
+            $('#intersoccer-diagnostics-pagination').empty();
+            return;
+        }
+
+        var start = total === 0 ? 0 : offset + 1;
+        var end = offset + returned;
+        var prevDisabled = offset <= 0 ? ' disabled' : '';
+        var nextDisabled = (offset + limit) >= total ? ' disabled' : '';
+
+        var html = '<p class="intersoccer-diagnostics-pagination-bar">' +
+            '<button type="button" class="button" id="intersoccer-diag-prev"' + prevDisabled + '>Previous</button> ' +
+            '<button type="button" class="button" id="intersoccer-diag-next"' + nextDisabled + '>Next</button> ' +
+            '<span style="margin-left:8px;">Showing ' + esc(start) + '–' + esc(end) + ' of ' + esc(total) + '</span>' +
+            '</p>';
+        $('#intersoccer-diagnostics-pagination').html(html);
     }
 
     function renderDiagnosticsMismatches(data) {
         var rows = data.mismatches || [];
         if (!rows.length) {
-            $('#intersoccer-diagnostics-mismatches').html('<p>No mismatch rows returned.</p>');
+            $('#intersoccer-diagnostics-mismatches').html('<p>No mismatch rows returned for the current filters.</p>');
             return;
         }
 
         var html = '' +
-            '<table class="widefat striped" style="margin-top:8px;">' +
+            '<table class="widefat striped intersoccer-sync-queue-table" style="margin-top:8px;">' +
             '<thead><tr>' +
-            '<th>Order Item</th><th>Order</th><th>Woo Venue</th><th>Roster Venue</th>' +
-            '<th>Woo Course Day</th><th>Roster Course Day</th><th>Reasons</th>' +
+            '<th>Participant</th><th>Product</th><th>Activity</th><th>Order</th><th>Status</th><th>Date</th><th>Reasons</th><th>Actions</th>' +
             '</tr></thead><tbody>';
 
         rows.forEach(function(row) {
-            html += '<tr>' +
-                '<td>' + esc(row.order_item_id) + '</td>' +
-                '<td>' + esc(row.order_id) + '</td>' +
-                '<td>' + esc(row.woo_venue) + '</td>' +
-                '<td>' + esc(row.roster_venue) + '</td>' +
-                '<td>' + esc(row.woo_course_day) + '</td>' +
-                '<td>' + esc(row.roster_course_day) + '</td>' +
-                '<td>' + esc((row.reasons || []).join(', ')) + '</td>' +
+            var orderLink = row.edit_order_url
+                ? '<a href="' + esc(row.edit_order_url) + '">#' + esc(row.order_id) + '</a>'
+                : esc(row.order_id);
+            var participant = row.participant_name || row.roster_player_name || '—';
+            var orderDate = row.order_date ? String(row.order_date).substring(0, 10) : '—';
+
+            html += '<tr data-order-item-id="' + esc(row.order_item_id) + '">' +
+                '<td>' + esc(participant) + '<br><span class="description">Item ' + esc(row.order_item_id) + '</span></td>' +
+                '<td>' + esc(row.product_name || '—') + '</td>' +
+                '<td>' + esc(row.activity_type || '—') + '</td>' +
+                '<td>' + orderLink + '</td>' +
+                '<td>' + esc(row.order_status || '—') + '</td>' +
+                '<td>' + esc(orderDate) + '</td>' +
+                '<td><code>' + esc((row.reasons || []).join(', ')) + '</code></td>' +
+                '<td>' +
+                '<button type="button" class="button button-secondary intersoccer-queue-fix-sync" data-order-item-id="' + esc(row.order_item_id) + '">Fix Sync</button>' +
+                '</td>' +
                 '</tr>';
         });
 
         html += '</tbody></table>';
         $('#intersoccer-diagnostics-mismatches').html(html);
+    }
+
+    function runDiagnosticsRequest() {
+        var payload = collectDiagnosticsPayload();
+        $('#intersoccer-diagnostics-summary').html('<p>Running sync scan...</p>');
+        $('#intersoccer-diagnostics-mismatches').empty();
+        $('#intersoccer-diagnostics-pagination').empty();
+
+        return $.ajax({
+            url: intersoccer_ajax.ajax_url,
+            type: 'POST',
+            data: payload
+        });
+    }
+
+    function handleDiagnosticsResponse(response) {
+        if (!response || !response.success) {
+            var msg = response && response.data && response.data.message ? response.data.message : 'Sync scan failed.';
+            $('#intersoccer-diagnostics-summary').html('<div class="notice notice-error"><p>' + esc(msg) + '</p></div>');
+            return;
+        }
+        renderDiagnosticsSummary(response.data || {});
+        renderDiagnosticsMismatches(response.data || {});
+        renderDiagnosticsPagination(response.data || {});
+        if (response.data && response.data.pagination) {
+            diagnosticsState.offset = response.data.pagination.offset || 0;
+        }
     }
 
     function renderSafeFixResults(data) {
@@ -204,36 +302,77 @@ jQuery(document).ready(function($) {
 
     $('#intersoccer-reports-rosters-diagnostics-form').on('submit', function(e) {
         e.preventDefault();
-        var payload = {
-            action: 'intersoccer_run_reports_rosters_diagnostics',
-            nonce: intersoccer_ajax.nonce,
-            year: $('#diag-year').val(),
-            activity_type: $('#diag-activity-type').val(),
-            season_type: $('#diag-season-type').val(),
-            region: $('#diag-region').val(),
-            exclude_buyclub: $('#diag-exclude-buyclub').is(':checked') ? 1 : 0,
-            limit: 200,
-            offset: 0
-        };
-        $('#intersoccer-diagnostics-summary').html('<p>Running diagnostics...</p>');
-        $('#intersoccer-diagnostics-mismatches').empty();
+        diagnosticsState.offset = 0;
+        runDiagnosticsRequest()
+            .done(handleDiagnosticsResponse)
+            .fail(function(xhr) {
+                var text = (xhr && xhr.responseText) ? xhr.responseText : 'Network error.';
+                $('#intersoccer-diagnostics-summary').html('<div class="notice notice-error"><p>' + esc(text) + '</p></div>');
+            });
+    });
 
+    $(document).on('click', '.intersoccer-diag-reason-filter', function(e) {
+        e.preventDefault();
+        var reason = $(this).data('reason') || '';
+        $('#diag-reason-filter').val(reason);
+        diagnosticsState.offset = 0;
+        runDiagnosticsRequest()
+            .done(handleDiagnosticsResponse)
+            .fail(function(xhr) {
+                var text = (xhr && xhr.responseText) ? xhr.responseText : 'Network error.';
+                $('#intersoccer-diagnostics-summary').html('<div class="notice notice-error"><p>' + esc(text) + '</p></div>');
+            });
+    });
+
+    $(document).on('click', '#intersoccer-diag-prev', function(e) {
+        e.preventDefault();
+        var limit = parseInt($('#diag-page-size').val(), 10) || 200;
+        diagnosticsState.offset = Math.max(0, (diagnosticsState.offset || 0) - limit);
+        runDiagnosticsRequest().done(handleDiagnosticsResponse);
+    });
+
+    $(document).on('click', '#intersoccer-diag-next', function(e) {
+        e.preventDefault();
+        var limit = parseInt($('#diag-page-size').val(), 10) || 200;
+        diagnosticsState.offset = (diagnosticsState.offset || 0) + limit;
+        runDiagnosticsRequest().done(handleDiagnosticsResponse);
+    });
+
+    $(document).on('click', '.intersoccer-queue-fix-sync', function(e) {
+        e.preventDefault();
+        var $btn = $(this);
+        var orderItemId = parseInt($btn.data('order-item-id'), 10) || 0;
+        if (orderItemId <= 0) {
+            return;
+        }
+        if (!window.confirm('Run safe sync fix for order item ' + orderItemId + '?')) {
+            return;
+        }
+
+        $btn.prop('disabled', true).text('Fixing...');
         $.ajax({
             url: intersoccer_ajax.ajax_url,
             type: 'POST',
-            data: payload,
+            data: {
+                action: 'intersoccer_fix_reports_rosters_item_safe',
+                nonce: intersoccer_ajax.nonce,
+                order_item_id: orderItemId
+            },
             success: function(response) {
                 if (!response || !response.success) {
-                    var msg = response && response.data && response.data.message ? response.data.message : 'Diagnostics failed.';
-                    $('#intersoccer-diagnostics-summary').html('<div class="notice notice-error"><p>' + esc(msg) + '</p></div>');
+                    var msg = response && response.data && response.data.message ? response.data.message : 'Fix Sync failed.';
+                    alert(msg);
+                    $btn.prop('disabled', false).text('Fix Sync');
                     return;
                 }
-                renderDiagnosticsSummary(response.data || {});
-                renderDiagnosticsMismatches(response.data || {});
+                runDiagnosticsRequest().done(function(refreshResponse) {
+                    handleDiagnosticsResponse(refreshResponse);
+                    $btn.prop('disabled', false).text('Fix Sync');
+                });
             },
-            error: function(xhr) {
-                var text = (xhr && xhr.responseText) ? xhr.responseText : 'Network error.';
-                $('#intersoccer-diagnostics-summary').html('<div class="notice notice-error"><p>' + esc(text) + '</p></div>');
+            error: function() {
+                alert('Fix Sync failed due to a network error.');
+                $btn.prop('disabled', false).text('Fix Sync');
             }
         });
     });
@@ -269,17 +408,7 @@ jQuery(document).ready(function($) {
 
     $('#intersoccer-fix-issues-safe').on('click', function(e) {
         e.preventDefault();
-        var payload = {
-            action: 'intersoccer_fix_reports_rosters_issues_safe',
-            nonce: intersoccer_ajax.nonce,
-            year: $('#diag-year').val(),
-            activity_type: $('#diag-activity-type').val(),
-            season_type: $('#diag-season-type').val(),
-            region: $('#diag-region').val(),
-            exclude_buyclub: $('#diag-exclude-buyclub').is(':checked') ? 1 : 0,
-            limit: 200,
-            offset: 0
-        };
+        var payload = collectSafeFixPayload();
 
         $('#intersoccer-diagnostics-fix-results').html('<p>Running safe fixes...</p>');
         $('#intersoccer-fix-issues-safe').prop('disabled', true);

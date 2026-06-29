@@ -65,6 +65,16 @@ class ReportsRostersDiagnosticsServiceTest extends TestCase {
         $this->assertFalse(ReportsRostersDiagnosticsService::isActivityTypeScopedRow($eligible_course, 'Camp'));
     }
 
+    public function test_is_activity_type_scoped_row_supports_all_and_tournament(): void {
+        $tournament = [
+            'activity_type' => 'Tournament',
+            'product_activity_type_attr' => 'tournament',
+        ];
+        $this->assertTrue(ReportsRostersDiagnosticsService::isActivityTypeScopedRow($tournament, 'All'));
+        $this->assertTrue(ReportsRostersDiagnosticsService::isActivityTypeScopedRow($tournament, 'Tournament'));
+        $this->assertFalse(ReportsRostersDiagnosticsService::isActivityTypeScopedRow($tournament, 'Course'));
+    }
+
     public function test_is_roster_activity_type_scoped_row_uses_requested_activity(): void {
         $roster_course = ['activity_type' => 'Course'];
         $roster_empty = ['activity_type' => ''];
@@ -123,6 +133,35 @@ class ReportsRostersDiagnosticsServiceTest extends TestCase {
         ]);
         $this->assertTrue($health['in_sync']);
         $this->assertFalse($health['has_incomplete_player']);
+    }
+
+    public function test_append_fragmented_roster_reason_for_duplicate_rows(): void {
+        $health = ReportsRostersDiagnosticsService::rosterItemSyncHealth([
+            ['first_name' => 'Alex', 'last_name' => 'Smith', 'player_name' => 'Alex Smith', 'event_signature' => 'sig-1'],
+            ['first_name' => 'Alex', 'last_name' => 'Smith', 'player_name' => 'Alex Smith', 'event_signature' => 'sig-2'],
+        ]);
+        $reasons = ReportsRostersDiagnosticsService::appendFragmentedRosterReason(['venue_mismatch'], $health);
+        $this->assertContains('fragmented_roster', $reasons);
+        $this->assertContains('venue_mismatch', $reasons);
+    }
+
+    public function test_filter_mismatches_by_reason(): void {
+        $rows = [
+            ['order_item_id' => 1, 'reasons' => ['missing_in_rosters']],
+            ['order_item_id' => 2, 'reasons' => ['venue_mismatch']],
+        ];
+        $filtered = ReportsRostersDiagnosticsService::filterMismatchesByReason($rows, 'missing_in_rosters');
+        $this->assertCount(1, $filtered);
+        $this->assertSame(1, $filtered[0]['order_item_id']);
+    }
+
+    public function test_sanitize_filters_defaults_order_statuses_and_activity_all(): void {
+        $service = new ReportsRostersDiagnosticsService();
+        $filters = $service->getSanitizedFilters([]);
+
+        $this->assertSame('All', $filters['activity_type']);
+        $this->assertSame(ReportsRostersDiagnosticsService::defaultOrderStatuses(), $filters['order_statuses']);
+        $this->assertSame('', $filters['reason_filter']);
     }
 }
 

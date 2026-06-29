@@ -18,6 +18,36 @@ class ReportsRostersDiagnosticsService {
     private const MAX_LIMIT = 500;
 
     /**
+     * Order statuses aligned with RosterBuilder::reconcile().
+     */
+    private const DEFAULT_ORDER_STATUSES = [
+        'wc-completed',
+        'wc-processing',
+        'wc-pending',
+        'wc-on-hold',
+    ];
+
+    /**
+     * Product types that should appear in roster sync tooling.
+     */
+    private const ROSTER_ELIGIBLE_PRODUCT_TYPES = ['camp', 'course', 'tournament'];
+
+    /**
+     * Known mismatch reason keys for filtering.
+     */
+    private const KNOWN_MISMATCH_REASONS = [
+        'missing_in_rosters',
+        'missing_in_woo',
+        'incomplete_player_data',
+        'unknown_placeholder_persisted',
+        'missing_in_woo_meta',
+        'missing_in_roster_venue',
+        'venue_mismatch',
+        'course_day_mismatch',
+        'fragmented_roster',
+    ];
+
+    /**
      * Run reconciliation diagnostics for a filter set.
      *
      * @param array $filters Request filters.
@@ -39,11 +69,16 @@ class ReportsRostersDiagnosticsService {
         }
 
         $roster_map = [];
+        $roster_rows_by_item = [];
         foreach ($roster_rows as $row) {
             $oid = (int) ($row['order_item_id'] ?? 0);
             if ($oid <= 0) {
                 continue;
             }
+            if (!isset($roster_rows_by_item[$oid])) {
+                $roster_rows_by_item[$oid] = [];
+            }
+            $roster_rows_by_item[$oid][] = $row;
             if (!isset($roster_map[$oid])) {
                 $roster_map[$oid] = $row;
                 continue;
@@ -65,7 +100,10 @@ class ReportsRostersDiagnosticsService {
         foreach ($all_ids as $order_item_id) {
             $woo = $woo_map[$order_item_id] ?? null;
             $roster = $roster_map[$order_item_id] ?? null;
+            $all_item_roster_rows = $roster_rows_by_item[$order_item_id] ?? [];
+            $sync_health = self::rosterItemSyncHealth($all_item_roster_rows);
             $reasons = self::classifyMismatchReasons($woo, $roster);
+            $reasons = self::appendFragmentedRosterReason($reasons, $sync_health);
 
             if (empty($reasons)) {
                 continue;
@@ -78,21 +116,18 @@ class ReportsRostersDiagnosticsService {
                 $reason_counts[$reason]++;
             }
 
-            $mismatches_all[] = [
-                'order_item_id' => $order_item_id,
-                'order_id' => (int) (($woo['order_id'] ?? 0) ?: ($roster['order_id'] ?? 0)),
-                'product_id' => (int) (($woo['product_id'] ?? 0) ?: ($roster['product_id'] ?? 0)),
-                'variation_id' => (int) (($woo['variation_id'] ?? 0) ?: ($roster['variation_id'] ?? 0)),
-                'woo_venue' => $woo['venue_value'] ?? '',
-                'roster_venue' => $roster['venue'] ?? '',
-                'woo_course_day' => $woo['course_day_value'] ?? '',
-                'roster_course_day' => $roster['course_day'] ?? '',
-                'reasons' => $reasons,
-            ];
+            $mismatches_all[] = $this->buildMismatchRow(
+                $order_item_id,
+                $woo,
+                $roster,
+                $reasons,
+                $sync_health
+            );
         }
 
-        $total_mismatches = count($mismatches_all);
-        $paged = array_slice($mismatches_all, $filters['offset'], $filters['limit']);
+        $filtered_mismatches = self::filterMismatchesByReason($mismatches_all, (string) $filters['reason_filter']);
+        $total_mismatches = count($filtered_mismatches);
+        $paged = array_slice($filtered_mismatches, $filters['offset'], $filters['limit']);
 
         return [
             'filters' => $filters,
@@ -102,7 +137,8 @@ class ReportsRostersDiagnosticsService {
                 'intersection' => count(array_intersect(array_keys($woo_map), array_keys($roster_map))),
                 'only_woo' => count(array_diff(array_keys($woo_map), array_keys($roster_map))),
                 'only_rosters' => count(array_diff(array_keys($roster_map), array_keys($woo_map))),
-                'mismatch_rows' => $total_mismatches,
+                'mismatch_rows' => count($mismatches_all),
+                'filtered_mismatch_rows' => $total_mismatches,
                 'elapsed_ms' => (int) round((microtime(true) - $started) * 1000),
             ],
             'reason_counts' => $reason_counts,
@@ -111,6 +147,7 @@ class ReportsRostersDiagnosticsService {
                 'offset' => $filters['offset'],
                 'returned' => count($paged),
                 'total' => $total_mismatches,
+                'total_unfiltered' => count($mismatches_all),
             ],
             'mismatches' => $paged,
         ];
@@ -140,9 +177,14 @@ class ReportsRostersDiagnosticsService {
         }
 
         $roster_map = [];
+        $roster_rows_by_item = [];
         foreach ($roster_rows as $row) {
             $oid = (int) ($row['order_item_id'] ?? 0);
             if ($oid > 0) {
+                if (!isset($roster_rows_by_item[$oid])) {
+                    $roster_rows_by_item[$oid] = [];
+                }
+                $roster_rows_by_item[$oid][] = $row;
                 $roster_map[$oid] = $row;
             }
         }
@@ -163,8 +205,16 @@ class ReportsRostersDiagnosticsService {
         foreach ($all_ids as $order_item_id) {
             $woo = $woo_map[$order_item_id] ?? null;
             $roster = $roster_map[$order_item_id] ?? null;
+            $all_item_roster_rows = $roster_rows_by_item[$order_item_id] ?? [];
+            $sync_health = self::rosterItemSyncHealth($all_item_roster_rows);
             $reasons = self::classifyMismatchReasons($woo, $roster);
+            $reasons = self::appendFragmentedRosterReason($reasons, $sync_health);
             if (empty($reasons)) {
+                continue;
+            }
+
+            if (!empty($filters['reason_filter'])
+                && !in_array((string) $filters['reason_filter'], $reasons, true)) {
                 continue;
             }
 
@@ -570,6 +620,11 @@ class ReportsRostersDiagnosticsService {
      * @return bool
      */
     public static function isActivityTypeScopedRow(array $woo_row, string $requested_activity): bool {
+        $requested = strtolower(trim($requested_activity));
+        if ($requested === 'all' || $requested === '') {
+            return true;
+        }
+
         $product_attr = self::normalizeComparableValue($woo_row['product_activity_type_attr'] ?? '');
         $line_attr = self::normalizeComparableValue($woo_row['activity_type'] ?? '');
 
@@ -577,10 +632,10 @@ class ReportsRostersDiagnosticsService {
             return false;
         }
 
-        $requested = strtolower(trim($requested_activity)) === 'camp' ? 'camp' : 'course';
+        $needle = self::activityTypeNeedle($requested);
         $candidate = $line_attr !== '' ? $line_attr : $product_attr;
 
-        return strpos($candidate, $requested) !== false;
+        return strpos($candidate, $needle) !== false;
     }
 
     /**
@@ -591,12 +646,88 @@ class ReportsRostersDiagnosticsService {
      * @return bool
      */
     public static function isRosterActivityTypeScopedRow(array $roster_row, string $requested_activity): bool {
-        $requested = strtolower(trim($requested_activity)) === 'camp' ? 'camp' : 'course';
+        $requested = strtolower(trim($requested_activity));
+        if ($requested === 'all' || $requested === '') {
+            return true;
+        }
+
+        $needle = self::activityTypeNeedle($requested);
         $atype = self::normalizeComparableValue($roster_row['activity_type'] ?? '');
         if ($atype === '') {
             return false;
         }
-        return strpos($atype, $requested) !== false;
+        return strpos($atype, $needle) !== false;
+    }
+
+    /**
+     * Default reconcile-aligned order statuses.
+     *
+     * @return array<int,string>
+     */
+    public static function defaultOrderStatuses(): array {
+        return self::DEFAULT_ORDER_STATUSES;
+    }
+
+    /**
+     * Append fragmented_roster when roster rows are duplicated or need resync.
+     *
+     * @param array<int,string> $reasons
+     * @param array<string,mixed> $sync_health
+     * @return array<int,string>
+     */
+    public static function appendFragmentedRosterReason(array $reasons, array $sync_health): array {
+        $count = (int) ($sync_health['roster_row_count'] ?? 0);
+        $needs_resync = !empty($sync_health['needs_resync']);
+        if ($count > 1 || ($count > 0 && $needs_resync)) {
+            $reasons[] = 'fragmented_roster';
+        }
+        return array_values(array_unique($reasons));
+    }
+
+    /**
+     * Filter mismatch rows by a single reason key.
+     *
+     * @param array<int,array<string,mixed>> $mismatches
+     * @param string $reason_filter
+     * @return array<int,array<string,mixed>>
+     */
+    public static function filterMismatchesByReason(array $mismatches, string $reason_filter): array {
+        $reason_filter = sanitize_text_field($reason_filter);
+        if ($reason_filter === '' || !in_array($reason_filter, self::KNOWN_MISMATCH_REASONS, true)) {
+            return $mismatches;
+        }
+
+        return array_values(array_filter($mismatches, static function (array $row) use ($reason_filter): bool {
+            $reasons = isset($row['reasons']) && is_array($row['reasons']) ? $row['reasons'] : [];
+            return in_array($reason_filter, $reasons, true);
+        }));
+    }
+
+    /**
+     * Expose sanitized filters for tests and tooling.
+     *
+     * @param array $filters
+     * @return array
+     */
+    public function getSanitizedFilters(array $filters): array {
+        return $this->sanitizeFilters($filters);
+    }
+
+    /**
+     * Map UI activity labels to comparable substrings.
+     *
+     * @param string $requested_activity
+     * @return string
+     */
+    private static function activityTypeNeedle(string $requested_activity): string {
+        $requested = strtolower(trim($requested_activity));
+        if ($requested === 'camp') {
+            return 'camp';
+        }
+        if ($requested === 'tournament') {
+            return 'tournament';
+        }
+        return 'course';
     }
 
     /**
@@ -646,8 +777,17 @@ class ReportsRostersDiagnosticsService {
             $year = (int) date('Y');
         }
 
-        $activity_type = isset($filters['activity_type']) ? sanitize_text_field((string) $filters['activity_type']) : 'Course';
-        $activity_type = strtolower($activity_type) === 'camp' ? 'Camp' : 'Course';
+        $activity_raw = isset($filters['activity_type']) ? sanitize_text_field((string) $filters['activity_type']) : 'All';
+        $activity_lower = strtolower($activity_raw);
+        if ($activity_lower === 'camp') {
+            $activity_type = 'Camp';
+        } elseif ($activity_lower === 'tournament') {
+            $activity_type = 'Tournament';
+        } elseif ($activity_lower === 'course') {
+            $activity_type = 'Course';
+        } else {
+            $activity_type = 'All';
+        }
 
         $limit = isset($filters['limit']) ? (int) $filters['limit'] : 200;
         if ($limit <= 0) {
@@ -660,6 +800,11 @@ class ReportsRostersDiagnosticsService {
             $offset = 0;
         }
 
+        $reason_filter = isset($filters['reason_filter']) ? sanitize_text_field((string) $filters['reason_filter']) : '';
+        if ($reason_filter !== '' && !in_array($reason_filter, self::KNOWN_MISMATCH_REASONS, true)) {
+            $reason_filter = '';
+        }
+
         return [
             'year' => $year,
             'activity_type' => $activity_type,
@@ -670,7 +815,57 @@ class ReportsRostersDiagnosticsService {
             'offset' => $offset,
             'order_id' => isset($filters['order_id']) ? (int) $filters['order_id'] : 0,
             'order_item_id' => isset($filters['order_item_id']) ? (int) $filters['order_item_id'] : 0,
+            'order_statuses' => $this->sanitizeOrderStatuses($filters['order_statuses'] ?? null),
+            'reason_filter' => $reason_filter,
         ];
+    }
+
+    /**
+     * @param mixed $statuses
+     * @return array<int,string>
+     */
+    private function sanitizeOrderStatuses($statuses): array {
+        if ($statuses === null || $statuses === '') {
+            return self::DEFAULT_ORDER_STATUSES;
+        }
+
+        if (is_string($statuses)) {
+            $statuses = array_map('trim', explode(',', $statuses));
+        }
+        if (!is_array($statuses)) {
+            return self::DEFAULT_ORDER_STATUSES;
+        }
+
+        $allowed = [
+            'wc-completed',
+            'wc-processing',
+            'wc-pending',
+            'wc-on-hold',
+            'wc-cancelled',
+            'wc-refunded',
+            'wc-failed',
+            'completed',
+            'processing',
+            'pending',
+            'on-hold',
+            'cancelled',
+            'refunded',
+            'failed',
+        ];
+
+        $out = [];
+        foreach ($statuses as $status) {
+            $status = sanitize_text_field((string) $status);
+            if ($status === '' || !in_array($status, $allowed, true)) {
+                continue;
+            }
+            if (strpos($status, 'wc-') !== 0) {
+                $status = 'wc-' . $status;
+            }
+            $out[] = $status;
+        }
+
+        return $out !== [] ? array_values(array_unique($out)) : self::DEFAULT_ORDER_STATUSES;
     }
 
     /**
@@ -681,82 +876,48 @@ class ReportsRostersDiagnosticsService {
      */
     private function fetchWooRows(array $filters): array {
         global $wpdb;
-        $posts_table = $wpdb->prefix . 'posts';
-        $order_items_table = $wpdb->prefix . 'woocommerce_order_items';
-        $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
 
-        $activity_like = strtolower($filters['activity_type']) === 'camp' ? 'camp' : 'course';
-        $year = (int) $filters['year'];
-
-        $sql = "SELECT
-                    oi.order_item_id,
-                    oi.order_id,
-                    oi.order_item_name,
-                    om_product_id.meta_value AS product_id,
-                    om_variation_id.meta_value AS variation_id,
-                    COALESCE(NULLIF(om_venue.meta_value, ''), om_venue_attr.meta_value, om_venue_us.meta_value, om_venue_us_attr.meta_value) AS venue_value,
-                    COALESCE(NULLIF(om_course_day.meta_value, ''), om_course_day_attr.meta_value, om_course_day_us.meta_value, om_course_day_us_attr.meta_value) AS course_day_value,
-                    COALESCE(om_activity_type.meta_value, pm_activity_type.meta_value) AS activity_type,
-                    pm_activity_type.meta_value AS product_activity_type_attr,
-                    COALESCE(om_season.meta_value, om_season_alt.meta_value, '') AS season,
-                    COALESCE(om_canton.meta_value, '') AS canton,
-                    om_line_subtotal.meta_value AS line_subtotal,
-                    om_line_total.meta_value AS line_total
-                FROM {$posts_table} p
-                INNER JOIN {$order_items_table} oi
-                    ON p.ID = oi.order_id AND oi.order_item_type = 'line_item'
-                LEFT JOIN {$order_itemmeta_table} om_product_id
-                    ON oi.order_item_id = om_product_id.order_item_id AND om_product_id.meta_key = '_product_id'
-                LEFT JOIN {$order_itemmeta_table} om_variation_id
-                    ON oi.order_item_id = om_variation_id.order_item_id AND om_variation_id.meta_key = '_variation_id'
-                LEFT JOIN {$order_itemmeta_table} om_venue
-                    ON oi.order_item_id = om_venue.order_item_id AND om_venue.meta_key = 'pa_intersoccer-venues'
-                LEFT JOIN {$order_itemmeta_table} om_venue_attr
-                    ON oi.order_item_id = om_venue_attr.order_item_id AND om_venue_attr.meta_key = 'attribute_pa_intersoccer-venues'
-                LEFT JOIN {$order_itemmeta_table} om_venue_us
-                    ON oi.order_item_id = om_venue_us.order_item_id AND om_venue_us.meta_key = 'pa_intersoccer_venues'
-                LEFT JOIN {$order_itemmeta_table} om_venue_us_attr
-                    ON oi.order_item_id = om_venue_us_attr.order_item_id AND om_venue_us_attr.meta_key = 'attribute_pa_intersoccer_venues'
-                LEFT JOIN {$order_itemmeta_table} om_course_day
-                    ON oi.order_item_id = om_course_day.order_item_id AND om_course_day.meta_key = 'pa_course-day'
-                LEFT JOIN {$order_itemmeta_table} om_course_day_attr
-                    ON oi.order_item_id = om_course_day_attr.order_item_id AND om_course_day_attr.meta_key = 'attribute_pa_course-day'
-                LEFT JOIN {$order_itemmeta_table} om_course_day_us
-                    ON oi.order_item_id = om_course_day_us.order_item_id AND om_course_day_us.meta_key = 'pa_course_day'
-                LEFT JOIN {$order_itemmeta_table} om_course_day_us_attr
-                    ON oi.order_item_id = om_course_day_us_attr.order_item_id AND om_course_day_us_attr.meta_key = 'attribute_pa_course_day'
-                LEFT JOIN {$order_itemmeta_table} om_activity_type
-                    ON oi.order_item_id = om_activity_type.order_item_id AND om_activity_type.meta_key = 'Activity Type'
-                LEFT JOIN {$order_itemmeta_table} om_season
-                    ON oi.order_item_id = om_season.order_item_id AND om_season.meta_key = 'Season'
-                LEFT JOIN {$order_itemmeta_table} om_season_alt
-                    ON oi.order_item_id = om_season_alt.order_item_id AND om_season_alt.meta_key = 'pa_program-season'
-                LEFT JOIN {$order_itemmeta_table} om_canton
-                    ON oi.order_item_id = om_canton.order_item_id AND om_canton.meta_key = 'Canton / Region'
-                LEFT JOIN {$order_itemmeta_table} om_line_subtotal
-                    ON oi.order_item_id = om_line_subtotal.order_item_id AND om_line_subtotal.meta_key = '_line_subtotal'
-                LEFT JOIN {$order_itemmeta_table} om_line_total
-                    ON oi.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
-                LEFT JOIN {$wpdb->postmeta} pm_activity_type
-                    ON om_product_id.meta_value = pm_activity_type.post_id AND pm_activity_type.meta_key = 'pa_activity-type'
-                WHERE p.post_type = 'shop_order'
-                    AND p.post_status = 'wc-completed'
-                    AND (
-                        YEAR(p.post_date) = %d
-                        OR COALESCE(om_season.meta_value, om_season_alt.meta_value, '') LIKE %s
-                    )";
-
-        $rows = $wpdb->get_results($wpdb->prepare($sql, $year, '%' . $year . '%'), ARRAY_A);
-        if (!is_array($rows)) {
+        $order_ids = $this->resolveOrderIdsForFilters($filters);
+        if ($order_ids === []) {
             return [];
         }
 
+        $rows = $this->fetchWooLineItemRowsForOrderIds($order_ids);
+        if ($rows === []) {
+            return [];
+        }
+
+        $order_meta = $this->loadOrderMetaForIds($order_ids);
         $out = [];
+
         foreach ($rows as $row) {
-            $atype = strtolower(trim((string) ($row['activity_type'] ?? '')));
-            if ($atype !== '' && strpos($atype, $activity_like) === false) {
+            $order_id = (int) ($row['order_id'] ?? 0);
+            if ($order_id <= 0) {
                 continue;
             }
+
+            if (!empty($filters['order_id']) && $order_id !== (int) $filters['order_id']) {
+                continue;
+            }
+
+            $product_id = (int) ($row['product_id'] ?? 0);
+            $variation_id = (int) ($row['variation_id'] ?? 0);
+            if (!$this->isRowRosterEligible($product_id, $variation_id, $row)) {
+                continue;
+            }
+
+            if (!$this->matchesActivityTypeFilter($row, (string) $filters['activity_type'])) {
+                continue;
+            }
+
+            $meta = $order_meta[$order_id] ?? ['status' => '', 'date' => ''];
+            $row['order_status'] = (string) ($meta['status'] ?? '');
+            $row['order_date'] = (string) ($meta['date'] ?? '');
+
+            if (!$this->wooRowMatchesYear($row, (int) $filters['year'], $meta['date'] ?? '')) {
+                continue;
+            }
+
             if (!empty($filters['season_type']) && function_exists('intersoccer_extract_season_type')) {
                 $stype = intersoccer_extract_season_type((string) ($row['season'] ?? ''));
                 if ((string) $stype !== (string) $filters['season_type']) {
@@ -774,9 +935,366 @@ class ReportsRostersDiagnosticsService {
                     continue;
                 }
             }
+
             $out[] = $row;
         }
+
         return $out;
+    }
+
+    /**
+     * @param array $filters
+     * @return array<int,int>
+     */
+    private function resolveOrderIdsForFilters(array $filters): array {
+        $order_id = (int) ($filters['order_id'] ?? 0);
+        if ($order_id > 0) {
+            return [$order_id];
+        }
+
+        $year = (int) $filters['year'];
+        $statuses = is_array($filters['order_statuses'] ?? null) ? $filters['order_statuses'] : self::DEFAULT_ORDER_STATUSES;
+        $order_ids = [];
+
+        if (function_exists('wc_get_orders')) {
+            $by_date = wc_get_orders([
+                'limit' => -1,
+                'status' => $statuses,
+                'date_created' => $year . '-01-01...' . $year . '-12-31',
+                'return' => 'ids',
+            ]);
+            if (is_array($by_date)) {
+                foreach ($by_date as $id) {
+                    $order_ids[] = (int) $id;
+                }
+            }
+        }
+
+        $season_order_ids = $this->resolveOrderIdsBySeasonYear($year, $statuses);
+        $order_ids = array_values(array_unique(array_merge($order_ids, $season_order_ids)));
+
+        if ($order_ids === []) {
+            $order_ids = $this->resolveOrderIdsFromPosts($year, $statuses);
+        }
+
+        return array_values(array_filter(array_map('intval', $order_ids), static function (int $id): bool {
+            return $id > 0;
+        }));
+    }
+
+    /**
+     * @param int $year
+     * @param array<int,string> $statuses
+     * @return array<int,int>
+     */
+    private function resolveOrderIdsBySeasonYear(int $year, array $statuses): array {
+        global $wpdb;
+
+        $order_items_table = $wpdb->prefix . 'woocommerce_order_items';
+        $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
+        $like = '%' . $wpdb->esc_like((string) $year) . '%';
+
+        $sql = "SELECT DISTINCT oi.order_id
+                FROM {$order_items_table} oi
+                INNER JOIN {$order_itemmeta_table} om
+                    ON oi.order_item_id = om.order_item_id
+                WHERE oi.order_item_type = 'line_item'
+                  AND om.meta_key IN ('Season', 'pa_program-season')
+                  AND om.meta_value LIKE %s";
+
+        $ids = $wpdb->get_col($wpdb->prepare($sql, $like));
+        if (!is_array($ids) || $ids === []) {
+            return [];
+        }
+
+        if (!function_exists('wc_get_order')) {
+            return array_map('intval', $ids);
+        }
+
+        $status_lookup = [];
+        foreach ($statuses as $status) {
+            $status_lookup[$status] = true;
+            $status_lookup[str_replace('wc-', '', $status)] = true;
+        }
+
+        $filtered = [];
+        foreach ($ids as $id) {
+            $order = wc_get_order((int) $id);
+            if (!$order) {
+                continue;
+            }
+            $order_status = (string) $order->get_status();
+            $prefixed = strpos($order_status, 'wc-') === 0 ? $order_status : 'wc-' . $order_status;
+            if (isset($status_lookup[$order_status]) || isset($status_lookup[$prefixed])) {
+                $filtered[] = (int) $id;
+            }
+        }
+
+        return $filtered;
+    }
+
+    /**
+     * Legacy posts-table fallback when wc_get_orders is unavailable.
+     *
+     * @param int $year
+     * @param array<int,string> $statuses
+     * @return array<int,int>
+     */
+    private function resolveOrderIdsFromPosts(int $year, array $statuses): array {
+        global $wpdb;
+
+        if ($statuses === []) {
+            return [];
+        }
+
+        $posts_table = $wpdb->prefix . 'posts';
+        $placeholders = implode(',', array_fill(0, count($statuses), '%s'));
+        $params = array_merge($statuses, [$year]);
+        $sql = "SELECT ID FROM {$posts_table}
+                WHERE post_type = 'shop_order'
+                  AND post_status IN ({$placeholders})
+                  AND YEAR(post_date) = %d";
+
+        $ids = $wpdb->get_col($wpdb->prepare($sql, $params));
+        return is_array($ids) ? array_map('intval', $ids) : [];
+    }
+
+    /**
+     * @param array<int,int> $order_ids
+     * @return array<int,array<string,mixed>>
+     */
+    private function fetchWooLineItemRowsForOrderIds(array $order_ids): array {
+        global $wpdb;
+
+        $order_ids = array_values(array_filter(array_map('intval', $order_ids), static function (int $id): bool {
+            return $id > 0;
+        }));
+        if ($order_ids === []) {
+            return [];
+        }
+
+        $order_items_table = $wpdb->prefix . 'woocommerce_order_items';
+        $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
+        $all_rows = [];
+
+        foreach (array_chunk($order_ids, 500) as $chunk) {
+            $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+            $sql = "SELECT
+                        oi.order_item_id,
+                        oi.order_id,
+                        oi.order_item_name,
+                        om_product_id.meta_value AS product_id,
+                        om_variation_id.meta_value AS variation_id,
+                        COALESCE(NULLIF(om_venue.meta_value, ''), om_venue_attr.meta_value, om_venue_us.meta_value, om_venue_us_attr.meta_value) AS venue_value,
+                        COALESCE(NULLIF(om_course_day.meta_value, ''), om_course_day_attr.meta_value, om_course_day_us.meta_value, om_course_day_us_attr.meta_value) AS course_day_value,
+                        COALESCE(om_activity_type.meta_value, pm_activity_type.meta_value) AS activity_type,
+                        pm_activity_type.meta_value AS product_activity_type_attr,
+                        COALESCE(om_season.meta_value, om_season_alt.meta_value, '') AS season,
+                        COALESCE(om_canton.meta_value, '') AS canton,
+                        om_line_subtotal.meta_value AS line_subtotal,
+                        om_line_total.meta_value AS line_total
+                    FROM {$order_items_table} oi
+                    LEFT JOIN {$order_itemmeta_table} om_product_id
+                        ON oi.order_item_id = om_product_id.order_item_id AND om_product_id.meta_key = '_product_id'
+                    LEFT JOIN {$order_itemmeta_table} om_variation_id
+                        ON oi.order_item_id = om_variation_id.order_item_id AND om_variation_id.meta_key = '_variation_id'
+                    LEFT JOIN {$order_itemmeta_table} om_venue
+                        ON oi.order_item_id = om_venue.order_item_id AND om_venue.meta_key = 'pa_intersoccer-venues'
+                    LEFT JOIN {$order_itemmeta_table} om_venue_attr
+                        ON oi.order_item_id = om_venue_attr.order_item_id AND om_venue_attr.meta_key = 'attribute_pa_intersoccer-venues'
+                    LEFT JOIN {$order_itemmeta_table} om_venue_us
+                        ON oi.order_item_id = om_venue_us.order_item_id AND om_venue_us.meta_key = 'pa_intersoccer_venues'
+                    LEFT JOIN {$order_itemmeta_table} om_venue_us_attr
+                        ON oi.order_item_id = om_venue_us_attr.order_item_id AND om_venue_us_attr.meta_key = 'attribute_pa_intersoccer_venues'
+                    LEFT JOIN {$order_itemmeta_table} om_course_day
+                        ON oi.order_item_id = om_course_day.order_item_id AND om_course_day.meta_key = 'pa_course-day'
+                    LEFT JOIN {$order_itemmeta_table} om_course_day_attr
+                        ON oi.order_item_id = om_course_day_attr.order_item_id AND om_course_day_attr.meta_key = 'attribute_pa_course-day'
+                    LEFT JOIN {$order_itemmeta_table} om_course_day_us
+                        ON oi.order_item_id = om_course_day_us.order_item_id AND om_course_day_us.meta_key = 'pa_course_day'
+                    LEFT JOIN {$order_itemmeta_table} om_course_day_us_attr
+                        ON oi.order_item_id = om_course_day_us_attr.order_item_id AND om_course_day_us_attr.meta_key = 'attribute_pa_course_day'
+                    LEFT JOIN {$order_itemmeta_table} om_activity_type
+                        ON oi.order_item_id = om_activity_type.order_item_id AND om_activity_type.meta_key = 'Activity Type'
+                    LEFT JOIN {$order_itemmeta_table} om_season
+                        ON oi.order_item_id = om_season.order_item_id AND om_season.meta_key = 'Season'
+                    LEFT JOIN {$order_itemmeta_table} om_season_alt
+                        ON oi.order_item_id = om_season_alt.order_item_id AND om_season_alt.meta_key = 'pa_program-season'
+                    LEFT JOIN {$order_itemmeta_table} om_canton
+                        ON oi.order_item_id = om_canton.order_item_id AND om_canton.meta_key = 'Canton / Region'
+                    LEFT JOIN {$order_itemmeta_table} om_line_subtotal
+                        ON oi.order_item_id = om_line_subtotal.order_item_id AND om_line_subtotal.meta_key = '_line_subtotal'
+                    LEFT JOIN {$order_itemmeta_table} om_line_total
+                        ON oi.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
+                    LEFT JOIN {$wpdb->postmeta} pm_activity_type
+                        ON om_product_id.meta_value = pm_activity_type.post_id AND pm_activity_type.meta_key = 'pa_activity-type'
+                    WHERE oi.order_item_type = 'line_item'
+                      AND oi.order_id IN ({$placeholders})";
+
+            $chunk_rows = $wpdb->get_results($wpdb->prepare($sql, ...$chunk), ARRAY_A);
+            if (is_array($chunk_rows)) {
+                $all_rows = array_merge($all_rows, $chunk_rows);
+            }
+        }
+
+        return $all_rows;
+    }
+
+    /**
+     * @param array<int,int> $order_ids
+     * @return array<int,array{status:string,date:string}>
+     */
+    private function loadOrderMetaForIds(array $order_ids): array {
+        $meta = [];
+        foreach ($order_ids as $order_id) {
+            $order_id = (int) $order_id;
+            if ($order_id <= 0) {
+                continue;
+            }
+            if (function_exists('wc_get_order')) {
+                $order = wc_get_order($order_id);
+                if ($order) {
+                    $created = $order->get_date_created();
+                    $meta[$order_id] = [
+                        'status' => (string) $order->get_status(),
+                        'date' => $created ? $created->date('Y-m-d H:i:s') : '',
+                    ];
+                    continue;
+                }
+            }
+            $meta[$order_id] = ['status' => '', 'date' => ''];
+        }
+        return $meta;
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @param int $year
+     * @param string $order_date
+     * @return bool
+     */
+    private function wooRowMatchesYear(array $row, int $year, string $order_date): bool {
+        $season = (string) ($row['season'] ?? '');
+        if ($season !== '' && strpos($season, (string) $year) !== false) {
+            return true;
+        }
+        if ($order_date !== '') {
+            $parsed = strtotime($order_date);
+            if ($parsed !== false && (int) date('Y', $parsed) === $year) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param int $product_id
+     * @param int $variation_id
+     * @param array<string,mixed> $row
+     * @return bool
+     */
+    private function isRowRosterEligible(int $product_id, int $variation_id, array $row): bool {
+        if (function_exists('intersoccer_get_product_type_safe')) {
+            $ptype = strtolower((string) intersoccer_get_product_type_safe($product_id, $variation_id ?: null));
+            if ($ptype !== '' && in_array($ptype, self::ROSTER_ELIGIBLE_PRODUCT_TYPES, true)) {
+                return true;
+            }
+            if ($ptype !== '' && !in_array($ptype, self::ROSTER_ELIGIBLE_PRODUCT_TYPES, true)) {
+                return false;
+            }
+        }
+
+        $atype = strtolower(trim((string) ($row['activity_type'] ?? '')));
+        $product_attr = strtolower(trim((string) ($row['product_activity_type_attr'] ?? '')));
+        $candidate = $atype !== '' ? $atype : $product_attr;
+        if ($candidate === '') {
+            return false;
+        }
+
+        foreach (self::ROSTER_ELIGIBLE_PRODUCT_TYPES as $eligible) {
+            if (strpos($candidate, $eligible) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @param string $activity_type
+     * @return bool
+     */
+    private function matchesActivityTypeFilter(array $row, string $activity_type): bool {
+        return self::isActivityTypeScopedRow($row, $activity_type);
+    }
+
+    /**
+     * @param int $order_item_id
+     * @param array<string,mixed>|null $woo
+     * @param array<string,mixed>|null $roster
+     * @param array<int,string> $reasons
+     * @param array<string,mixed> $sync_health
+     * @return array<string,mixed>
+     */
+    private function buildMismatchRow(
+        int $order_item_id,
+        ?array $woo,
+        ?array $roster,
+        array $reasons,
+        array $sync_health
+    ): array {
+        $order_id = (int) (($woo['order_id'] ?? 0) ?: ($roster['order_id'] ?? 0));
+        $participant_name = '';
+        if ($order_item_id > 0 && function_exists('intersoccer_resolve_assigned_attendee_from_order_item')) {
+            $participant_name = intersoccer_resolve_assigned_attendee_from_order_item($order_item_id);
+        }
+
+        $roster_player_name = '';
+        if (is_array($roster)) {
+            $roster_player_name = trim((string) ($roster['player_name'] ?? ''));
+            if ($roster_player_name === '') {
+                $roster_player_name = trim(
+                    (string) ($roster['player_first_name'] ?? $roster['first_name'] ?? '') . ' '
+                    . (string) ($roster['player_last_name'] ?? $roster['last_name'] ?? '')
+                );
+            }
+        }
+
+        return [
+            'order_item_id' => $order_item_id,
+            'order_id' => $order_id,
+            'product_id' => (int) (($woo['product_id'] ?? 0) ?: ($roster['product_id'] ?? 0)),
+            'variation_id' => (int) (($woo['variation_id'] ?? 0) ?: ($roster['variation_id'] ?? 0)),
+            'participant_name' => $participant_name,
+            'product_name' => (string) (($woo['order_item_name'] ?? '') ?: ($roster['product_name'] ?? '')),
+            'activity_type' => (string) (($woo['activity_type'] ?? '') ?: ($roster['activity_type'] ?? '')),
+            'order_status' => (string) ($woo['order_status'] ?? ''),
+            'order_date' => (string) ($woo['order_date'] ?? ''),
+            'roster_player_name' => $roster_player_name,
+            'roster_row_count' => (int) ($sync_health['roster_row_count'] ?? 0),
+            'sync_health' => $sync_health,
+            'edit_order_url' => $this->buildOrderAdminUrl($order_id),
+            'woo_venue' => $woo['venue_value'] ?? '',
+            'roster_venue' => $roster['venue'] ?? '',
+            'woo_course_day' => $woo['course_day_value'] ?? '',
+            'roster_course_day' => $roster['course_day'] ?? '',
+            'reasons' => $reasons,
+        ];
+    }
+
+    /**
+     * @param int $order_id
+     * @return string
+     */
+    private function buildOrderAdminUrl(int $order_id): string {
+        if ($order_id <= 0) {
+            return '';
+        }
+        if (class_exists('Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore')) {
+            return admin_url('admin.php?page=wc-orders&action=edit&id=' . $order_id);
+        }
+        return admin_url('post.php?post=' . $order_id . '&action=edit');
     }
 
     /**
@@ -1077,10 +1595,9 @@ class ReportsRostersDiagnosticsService {
         global $wpdb;
         $table = $wpdb->prefix . 'intersoccer_rosters';
 
-        $activity = strtolower($filters['activity_type']) === 'camp' ? 'camp' : 'course';
-
         $sql = "SELECT id, order_item_id, order_id, product_id, variation_id, activity_type,
-                       venue, course_day, season, canton_region, start_date, end_date
+                       venue, course_day, season, canton_region, start_date, end_date,
+                       player_name, player_first_name, player_last_name, first_name, last_name, product_name
                 FROM {$table}
                 WHERE order_item_id > 0";
 
@@ -1093,8 +1610,7 @@ class ReportsRostersDiagnosticsService {
         $filtered = [];
 
         foreach ($rows as $row) {
-            $atype = strtolower(trim((string) ($row['activity_type'] ?? '')));
-            if ($atype !== '' && strpos($atype, $activity) === false) {
+            if (!$this->matchesRosterActivityTypeFilter($row, (string) $filters['activity_type'])) {
                 continue;
             }
             if (!$this->rosterMatchesYear($row, $year)) {
@@ -1115,6 +1631,15 @@ class ReportsRostersDiagnosticsService {
         }
 
         return $filtered;
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @param string $activity_type
+     * @return bool
+     */
+    private function matchesRosterActivityTypeFilter(array $row, string $activity_type): bool {
+        return self::isRosterActivityTypeScopedRow($row, $activity_type);
     }
 
     /**

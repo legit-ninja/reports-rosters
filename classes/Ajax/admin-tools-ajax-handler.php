@@ -400,15 +400,7 @@ class AdminToolsAjaxHandler {
 
         try {
             $service = new ReportsRostersDiagnosticsService();
-            $result = $service->runDiagnostics([
-                'year' => isset($_POST['year']) ? sanitize_text_field($_POST['year']) : date('Y'),
-                'activity_type' => isset($_POST['activity_type']) ? sanitize_text_field($_POST['activity_type']) : 'Course',
-                'season_type' => isset($_POST['season_type']) ? sanitize_text_field($_POST['season_type']) : '',
-                'region' => isset($_POST['region']) ? sanitize_text_field($_POST['region']) : '',
-                'exclude_buyclub' => !empty($_POST['exclude_buyclub']),
-                'limit' => isset($_POST['limit']) ? (int) $_POST['limit'] : 200,
-                'offset' => isset($_POST['offset']) ? (int) $_POST['offset'] : 0,
-            ]);
+            $result = $service->runDiagnostics($this->parseDiagnosticsFiltersFromRequest());
             wp_send_json_success($result);
         } catch (\Throwable $e) {
             $this->logger->error('Reports/Rosters diagnostics failed', [
@@ -456,15 +448,7 @@ class AdminToolsAjaxHandler {
 
         try {
             $service = new ReportsRostersDiagnosticsService();
-            $result = $service->runSafeFix([
-                'year' => isset($_POST['year']) ? sanitize_text_field($_POST['year']) : date('Y'),
-                'activity_type' => isset($_POST['activity_type']) ? sanitize_text_field($_POST['activity_type']) : 'Course',
-                'season_type' => isset($_POST['season_type']) ? sanitize_text_field($_POST['season_type']) : '',
-                'region' => isset($_POST['region']) ? sanitize_text_field($_POST['region']) : '',
-                'exclude_buyclub' => !empty($_POST['exclude_buyclub']),
-                'limit' => isset($_POST['limit']) ? (int) $_POST['limit'] : 200,
-                'offset' => isset($_POST['offset']) ? (int) $_POST['offset'] : 0,
-            ]);
+            $result = $service->runSafeFix($this->parseDiagnosticsFiltersFromRequest());
             wp_send_json_success($result);
         } catch (\Throwable $e) {
             $this->logger->error('Reports/Rosters safe fix failed', [
@@ -474,6 +458,31 @@ class AdminToolsAjaxHandler {
                 'message' => __('Safe fix failed: ', 'intersoccer-reports-rosters') . $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function parseDiagnosticsFiltersFromRequest(): array {
+        $order_statuses = [];
+        if (isset($_POST['order_statuses']) && is_array($_POST['order_statuses'])) {
+            $order_statuses = array_map('sanitize_text_field', wp_unslash($_POST['order_statuses']));
+        } elseif (!empty($_POST['order_statuses'])) {
+            $order_statuses = sanitize_text_field(wp_unslash((string) $_POST['order_statuses']));
+        }
+
+        return [
+            'year' => isset($_POST['year']) ? sanitize_text_field(wp_unslash((string) $_POST['year'])) : date('Y'),
+            'activity_type' => isset($_POST['activity_type']) ? sanitize_text_field(wp_unslash((string) $_POST['activity_type'])) : 'All',
+            'season_type' => isset($_POST['season_type']) ? sanitize_text_field(wp_unslash((string) $_POST['season_type'])) : '',
+            'region' => isset($_POST['region']) ? sanitize_text_field(wp_unslash((string) $_POST['region'])) : '',
+            'exclude_buyclub' => !empty($_POST['exclude_buyclub']),
+            'limit' => isset($_POST['limit']) ? (int) $_POST['limit'] : 200,
+            'offset' => isset($_POST['offset']) ? (int) $_POST['offset'] : 0,
+            'order_id' => isset($_POST['order_id']) ? (int) $_POST['order_id'] : 0,
+            'reason_filter' => isset($_POST['reason_filter']) ? sanitize_text_field(wp_unslash((string) $_POST['reason_filter'])) : '',
+            'order_statuses' => $order_statuses,
+        ];
     }
 
     public function fixReportsRostersItemSafe(): void {

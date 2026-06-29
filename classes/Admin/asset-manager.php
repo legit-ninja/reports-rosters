@@ -134,7 +134,13 @@ class AssetManager {
             || $hook === 'intersoccer-reports-rosters_page_intersoccer-advanced'
             || $hook === 'reports-and-rosters_page_intersoccer-advanced';
 
-        if ($is_advanced_screen) {
+        $is_roster_sync_screen =
+            $screen_id === 'intersoccer-reports-rosters_page_intersoccer-roster-sync-queue'
+            || $screen_id === 'reports-and-rosters_page_intersoccer-roster-sync-queue'
+            || $hook === 'intersoccer-reports-rosters_page_intersoccer-roster-sync-queue'
+            || $hook === 'reports-and-rosters_page_intersoccer-roster-sync-queue';
+
+        if ($is_advanced_screen || $is_roster_sync_screen) {
             $advanced_js_path = dirname(__DIR__, 2) . '/js/advanced-ajax.js';
             $advanced_js_ver = $this->version;
             if (is_readable($advanced_js_path)) {
@@ -155,7 +161,7 @@ class AssetManager {
         }
 
         // Reports & Rosters - Advanced page (rebuild UI)
-        if ($is_advanced_screen) {
+        if ($is_advanced_screen || $is_roster_sync_screen) {
             wp_enqueue_style(
                 'intersoccer-reports-rosters-rebuild-admin-css',
                 $this->plugin_url . 'css/rebuild-admin.css',
