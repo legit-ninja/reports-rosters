@@ -96,11 +96,7 @@ class FinancialReportService {
 
         $this->ensureOrdersAttributed((array) $order_rows);
 
-        $accuracy_debug = function_exists('intersoccer_booking_report_accuracy_debug_enabled')
-            && intersoccer_booking_report_accuracy_debug_enabled();
-
         $data = [];
-        $validation_rows = [];
         $totals = [
             'bookings' => 0,
             'base_price' => 0.0,
@@ -177,21 +173,6 @@ class FinancialReportService {
             $discounts_applied = $this->formatDiscountsApplied($item_discount_breakdown, $discount_amount, $meta_map, $coupons);
             $discount_type = $this->resolvePrimaryDiscountType($item_discount_breakdown, $meta_map, $coupons);
 
-            if ($accuracy_debug) {
-                $validation_rows[] = [
-                    'order_id' => $order_id,
-                    'order_item_id' => (int) $row->order_item_id,
-                    'base_price' => $base_price,
-                    'discount_amount' => $discount_amount,
-                    'reimbursement' => $reimbursement,
-                    'final_price' => $final_price,
-                    'discount_source' => $discount_data['source'],
-                    'has_attribution_meta' => $discount_data['has_attribution_meta'],
-                    'discount_type' => $discount_type,
-                    'discount_breakdown' => $item_discount_breakdown,
-                ];
-            }
-
             $stripe_fee = $final_price > 0 ? ($final_price * 0.029) + 0.30 : 0.0;
 
             $data[] = [
@@ -227,41 +208,22 @@ class FinancialReportService {
 
         $totals['bookings'] = count($data);
 
-        $result = [
+        return [
             'data' => $data,
             'totals' => $totals,
         ];
-
-        if ($accuracy_debug) {
-            $result['accuracy_validation'] = (new BookingReportAccuracyValidator())->validate(
-                $validation_rows,
-                $totals,
-                [
-                    'start_date' => $start_date,
-                    'end_date' => $end_date,
-                    'year' => $year,
-                    'region' => $region,
-                ]
-            );
-        }
-
-        return $result;
     }
 
     /**
-     * @return array{amount:float,breakdown:array<int,array<string,mixed>>,source:string,has_attribution_meta:bool}
+     * @return array{amount:float,breakdown:array<int,array<string,mixed>>}
      */
     private function resolveItemDiscountData(array $meta_map, float $base_price, float $line_total, int $order_id, int $item_id): array {
         $discount_amount = 0.0;
         $item_discount_breakdown = [];
-        $source = 'none';
-        $has_attribution_meta = false;
 
         if (isset($meta_map[OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL])
             && $meta_map[OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL] !== ''
         ) {
-            $has_attribution_meta = true;
-            $source = 'attributed';
             $discount_amount = (float) $meta_map[OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL];
 
             if (isset($meta_map[OrderFinancialAttributionService::META_ITEM_DISCOUNTS])
@@ -274,7 +236,6 @@ class FinancialReportService {
                 }
             }
         } elseif (isset($meta_map['Discount Amount']) && $meta_map['Discount Amount'] !== '') {
-            $source = 'legacy';
             $discount_amount = intersoccer_parse_legacy_discount_amount($meta_map['Discount Amount']);
 
             if (isset($meta_map['Discount']) && $meta_map['Discount'] !== '') {
@@ -288,7 +249,6 @@ class FinancialReportService {
         } else {
             $discount_amount = max(0.0, $base_price - $line_total);
             if ($discount_amount > 0.01) {
-                $source = 'fallback';
                 $this->logger->debug('FinancialReportService: Using fallback discount calculation', [
                     'order_id' => $order_id,
                     'item_id' => $item_id,
@@ -300,8 +260,6 @@ class FinancialReportService {
         return [
             'amount' => $discount_amount,
             'breakdown' => $item_discount_breakdown,
-            'source' => $source,
-            'has_attribution_meta' => $has_attribution_meta,
         ];
     }
 

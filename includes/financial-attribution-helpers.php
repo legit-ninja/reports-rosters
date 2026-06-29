@@ -8,37 +8,6 @@
 defined('ABSPATH') or die('Restricted access');
 
 /**
- * Whether booking report accuracy debug instrumentation is active.
- */
-function intersoccer_booking_report_accuracy_debug_enabled(): bool {
-    return defined('WP_DEBUG') && WP_DEBUG;
-}
-
-/**
- * Write structured booking report accuracy output to WordPress debug.log.
- *
- * Active when WP_DEBUG is true. Grep for INTERSOCCER_BOOKING_REPORT_ACCURACY in debug.log.
- *
- * @param array<string,mixed> $payload
- */
-function intersoccer_booking_report_accuracy_debug_log(array $payload): void {
-    if (!intersoccer_booking_report_accuracy_debug_enabled()) {
-        return;
-    }
-
-    $entry = array_merge([
-        'timestamp' => (int) round(microtime(true) * 1000),
-    ], $payload);
-
-    $line = wp_json_encode($entry);
-    if (!$line) {
-        return;
-    }
-
-    error_log('[INTERSOCCER_BOOKING_REPORT_ACCURACY] ' . $line);
-}
-
-/**
  * Current item-level financial attribution schema version.
  */
 function intersoccer_financial_attribution_version(): string {
