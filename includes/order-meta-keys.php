@@ -276,6 +276,38 @@ function intersoccer_normalize_order_item_meta_key($raw_key) {
 }
 
 /**
+ * Whether order item meta is internal plugin storage (not a display/report field).
+ */
+function intersoccer_order_item_meta_key_is_internal($raw_key): bool {
+    return is_string($raw_key) && strpos($raw_key, '_intersoccer_') === 0;
+}
+
+/**
+ * Convert order item meta value to a scalar string for report/roster enrichment.
+ *
+ * Nested arrays (e.g. attributed discount breakdowns) are skipped to avoid warnings.
+ *
+ * @param mixed $value
+ */
+function intersoccer_scalarize_order_item_meta_value($value, string $raw_key = ''): string {
+    if (!is_array($value)) {
+        return is_scalar($value) || $value === null ? (string) $value : '';
+    }
+
+    $parts = [];
+    foreach ($value as $item) {
+        if (is_array($item)) {
+            continue;
+        }
+        if (is_scalar($item) || $item === null) {
+            $parts[] = (string) $item;
+        }
+    }
+
+    return implode(', ', $parts);
+}
+
+/**
  * Resolve assigned attendee label from order item meta (EN/FR/DE keys).
  *
  * @param int $order_item_id
@@ -604,15 +636,10 @@ function intersoccer_reports_enrich_final_report_row_from_order_item(array &$row
     foreach ($item->get_meta_data() as $meta) {
         $data = $meta->get_data();
         $raw_key = isset($data['key']) ? (string) $data['key'] : '';
-        if ($raw_key === '') {
+        if ($raw_key === '' || intersoccer_order_item_meta_key_is_internal($raw_key)) {
             continue;
         }
-        $value = $data['value'] ?? '';
-        if (is_array($value)) {
-            $value = implode(', ', array_map('strval', $value));
-        } else {
-            $value = (string) $value;
-        }
+        $value = intersoccer_scalarize_order_item_meta_value($data['value'] ?? '', $raw_key);
 
         $canonical = intersoccer_normalize_order_item_meta_key($raw_key);
         $row_key = $key_map[$canonical] ?? null;
@@ -715,15 +742,10 @@ function intersoccer_roster_enrich_camp_fields_from_order_item(&$row) {
     foreach ($item->get_meta_data() as $meta) {
         $data = $meta->get_data();
         $raw_key = isset($data['key']) ? (string) $data['key'] : '';
-        if ($raw_key === '') {
+        if ($raw_key === '' || intersoccer_order_item_meta_key_is_internal($raw_key)) {
             continue;
         }
-        $value = $data['value'] ?? '';
-        if (is_array($value)) {
-            $value = implode(', ', array_map('strval', $value));
-        } else {
-            $value = (string) $value;
-        }
+        $value = intersoccer_scalarize_order_item_meta_value($data['value'] ?? '', $raw_key);
 
         $canonical = intersoccer_normalize_order_item_meta_key($raw_key);
         $row_key = $key_map[$canonical] ?? null;
@@ -758,9 +780,7 @@ function intersoccer_roster_enrich_camp_fields_from_order_item(&$row) {
             if ($v === null || $v === '') {
                 continue;
             }
-            if (is_array($v)) {
-                $v = implode(', ', array_map('strval', $v));
-            }
+            $v = intersoccer_scalarize_order_item_meta_value($v, $meta_key);
             $v = trim((string) $v);
             if ($v !== '') {
                 $set($row, 'selected_days', $v);
@@ -775,9 +795,7 @@ function intersoccer_roster_enrich_camp_fields_from_order_item(&$row) {
             if ($v === null || $v === '') {
                 continue;
             }
-            if (is_array($v)) {
-                $v = implode(', ', array_map('strval', $v));
-            }
+            $v = intersoccer_scalarize_order_item_meta_value($v, $meta_key);
             $v = trim((string) $v);
             if ($v !== '') {
                 $set($row, 'booking_type', $v);
@@ -811,7 +829,7 @@ function intersoccer_roster_enrich_camp_fields_from_order_item(&$row) {
                         continue;
                     }
                     if (is_array($v)) {
-                        $v = implode(', ', array_map('strval', $v));
+                        $v = intersoccer_scalarize_order_item_meta_value($v, $mk);
                     }
                     $v = trim((string) $v);
                     if ($v === '') {
@@ -860,14 +878,10 @@ function intersoccer_roster_enrich_camp_fields_from_order_item(&$row) {
                 foreach ($item->get_meta_data() as $meta) {
                     $data = $meta->get_data();
                     $raw_key = (string) ($data['key'] ?? '');
-                    if ($meta_key_exclude_broad($raw_key)) {
+                    if ($meta_key_exclude_broad($raw_key) || intersoccer_order_item_meta_key_is_internal($raw_key)) {
                         continue;
                     }
-                    $value = $data['value'] ?? '';
-                    if (is_array($value)) {
-                        $value = implode(', ', array_map('strval', $value));
-                    }
-                    $value = trim((string) $value);
+                    $value = trim(intersoccer_scalarize_order_item_meta_value($data['value'] ?? '', $raw_key));
                     if ($value === '') {
                         continue;
                     }

@@ -68,4 +68,30 @@ class FinalReportsMetaTest extends TestCase {
         $this->assertStringContainsString('Monday', $row['selected_days']);
         $this->assertStringContainsString('Tuesday', $row['selected_days']);
     }
+
+    public function test_scalarize_order_item_meta_value_handles_nested_discount_breakdown(): void {
+        if (!function_exists('intersoccer_scalarize_order_item_meta_value')) {
+            $this->markTestSkipped();
+        }
+
+        $nested = [
+            [
+                'name' => 'Referral Discount',
+                'type' => 'referral_first_order',
+                'amount' => 50.0,
+            ],
+        ];
+
+        $this->assertSame('', intersoccer_scalarize_order_item_meta_value($nested, '_intersoccer_item_discounts'));
+        $this->assertSame('Mon, Tue', intersoccer_scalarize_order_item_meta_value(['Mon', 'Tue'], 'Days Selected'));
+    }
+
+    public function test_order_item_meta_key_is_internal_for_attribution_keys(): void {
+        if (!function_exists('intersoccer_order_item_meta_key_is_internal')) {
+            $this->markTestSkipped();
+        }
+
+        $this->assertTrue(intersoccer_order_item_meta_key_is_internal('_intersoccer_item_discounts'));
+        $this->assertFalse(intersoccer_order_item_meta_key_is_internal('Days Selected'));
+    }
 }
