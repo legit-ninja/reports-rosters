@@ -92,6 +92,8 @@ class Roster extends AbstractModel {
         'discount_amount',
         'final_price',
         'discount_codes',
+        'late_pickup',
+        'late_pickup_days',
     ];
     
     /**

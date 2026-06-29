@@ -1226,6 +1226,10 @@ class RosterBuilder {
             $roster_data = intersoccer_roster_backfill_player_name_fields($roster_data);
         }
 
+        if (function_exists('intersoccer_apply_late_pickup_to_roster_data')) {
+            $roster_data = intersoccer_apply_late_pickup_to_roster_data($roster_data);
+        }
+
         return $roster_data;
     }
     

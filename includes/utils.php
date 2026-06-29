@@ -2766,6 +2766,15 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     }
     $late_pickup = (!empty($item_meta['Late Pickup Type'])) ? 'Yes' : 'No';
     $late_pickup_days = $item_meta['Late Pickup Days'] ?? '';
+    if (function_exists('intersoccer_resolve_late_pickup_for_roster')) {
+        $resolved_late = intersoccer_resolve_late_pickup_for_roster(array_merge($item_meta, [
+            'late_pickup_type' => $item_meta['Late Pickup Type'] ?? '',
+            'late_pickup_days' => $item_meta['Late Pickup Days'] ?? '',
+            'late_pickup_cost' => $item_meta['Late Pickup Cost'] ?? '',
+        ]));
+        $late_pickup = $resolved_late['late_pickup'];
+        $late_pickup_days = $resolved_late['late_pickup_days'];
+    }
     
     // Get product name and normalize to English if WPML is active
     $product_name = $item->get_name();

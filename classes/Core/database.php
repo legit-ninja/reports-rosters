@@ -867,6 +867,9 @@ class Database {
             'final_price' => 'decimal',
             'reimbursement' => 'decimal',
             'discount_codes' => 'text',
+            'late_pickup' => 'text',
+            'late_pickup_days' => 'text',
+            'day_presence' => 'text',
             'registration_timestamp' => 'datetime',
         ];
         

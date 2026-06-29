@@ -1219,9 +1219,17 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             $event_dates = 'N/A';
         }
 
-        $late_pickup = (!empty($order_item_meta['Late Pickup Type'])) ? 'Yes' : 'No';
-        $late_pickup_days = $order_item_meta['Late Pickup Days'] ?? '';
-        
+        $late_pickup = 'No';
+        $late_pickup_days = '';
+        if (function_exists('intersoccer_resolve_late_pickup_for_roster')) {
+            $resolved_late = intersoccer_resolve_late_pickup_for_roster($order_item_meta);
+            $late_pickup = $resolved_late['late_pickup'];
+            $late_pickup_days = $resolved_late['late_pickup_days'];
+        } else {
+            $late_pickup = (!empty($order_item_meta['Late Pickup Type'])) ? 'Yes' : 'No';
+            $late_pickup_days = $order_item_meta['Late Pickup Days'] ?? '';
+        }
+
         // Get product name and normalize to English if WPML is active
         $product_name = $product->get_name();
         if (function_exists('wpml_get_default_language') && function_exists('wpml_get_current_language')) {
@@ -1475,16 +1483,24 @@ function intersoccer_upgrade_database() {
             $activity_type = ucfirst($product_type);
         }
 
-        // Extract late pickup data
-        $late_pickup = (!empty($item_meta['Late Pickup Type'])) ? 'Yes' : 'No';
-        $late_pickup_days = $item_meta['Late Pickup Days'] ?? '';
-
-        // Check order item metadata for girls_only
+        // Check order item metadata for girls_only and late pickup
         $item_meta = [];
         foreach ($item->get_meta_data() as $meta) {
             $data = $meta->get_data();
             $item_meta[$data['key']] = $data['value'];
         }
+
+        $late_pickup = 'No';
+        $late_pickup_days = '';
+        if (function_exists('intersoccer_resolve_late_pickup_for_roster')) {
+            $resolved_late = intersoccer_resolve_late_pickup_for_roster($item_meta);
+            $late_pickup = $resolved_late['late_pickup'];
+            $late_pickup_days = $resolved_late['late_pickup_days'];
+        } else {
+            $late_pickup = (!empty($item_meta['Late Pickup Type'])) ? 'Yes' : 'No';
+            $late_pickup_days = $item_meta['Late Pickup Days'] ?? '';
+        }
+
         $raw_order_item_meta = wc_get_order_item_meta($row->order_item_id, '', true);
         $meta_activity_type = $item_meta['pa_activity-type'] ?? $item_meta['Activity Type'] ?? $raw_order_item_meta['Activity Type'][0] ?? '';
         if ($meta_activity_type) {

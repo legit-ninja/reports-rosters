@@ -900,3 +900,113 @@ function intersoccer_roster_enrich_camp_fields_from_order_item(&$row) {
         }
     }
 }
+
+if (!function_exists('intersoccer_resolve_late_pickup_for_roster')) {
+    /**
+     * Resolve roster late_pickup (Yes/No) and late_pickup_days from order line meta.
+     *
+     * @param array<string,mixed> $sources Flat meta map and/or pre-extracted builder fields.
+     * @return array{late_pickup:string,late_pickup_days:string}
+     */
+    function intersoccer_resolve_late_pickup_for_roster(array $sources) {
+        $read_meta = static function (array $keys) use ($sources) {
+            foreach ($keys as $key) {
+                if (!array_key_exists($key, $sources)) {
+                    continue;
+                }
+                $value = $sources[$key];
+                if (is_array($value)) {
+                    $value = $value[0] ?? implode(', ', array_map('trim', $value));
+                }
+                $value = trim((string) $value);
+                if ($value !== '') {
+                    return $value;
+                }
+            }
+            return '';
+        };
+
+        $type = trim((string) ($sources['late_pickup_type'] ?? ''));
+        if ($type === '') {
+            $type = $read_meta(['Late Pickup Type', 'Type de récupération tardive', 'Späte Abholung Typ']);
+        }
+        if ($type === '' && function_exists('intersoccer_normalize_order_item_meta_key')) {
+            foreach ($sources as $raw_key => $raw_value) {
+                if (!is_string($raw_key) || intersoccer_order_item_meta_key_is_internal($raw_key)) {
+                    continue;
+                }
+                if (intersoccer_normalize_order_item_meta_key($raw_key) !== 'Late Pickup Type') {
+                    continue;
+                }
+                if (is_array($raw_value)) {
+                    $raw_value = $raw_value[0] ?? implode(', ', array_map('trim', $raw_value));
+                }
+                $type = trim((string) $raw_value);
+                if ($type !== '') {
+                    break;
+                }
+            }
+        }
+
+        $days = trim((string) ($sources['late_pickup_days'] ?? ''));
+        if ($days === '') {
+            $days = $read_meta(['Late Pickup Days', 'Jours de garde prolongée', 'Jours de récupération tardive']);
+        }
+        if ($days === '' && function_exists('intersoccer_normalize_order_item_meta_key')) {
+            foreach ($sources as $raw_key => $raw_value) {
+                if (!is_string($raw_key) || intersoccer_order_item_meta_key_is_internal($raw_key)) {
+                    continue;
+                }
+                if (intersoccer_normalize_order_item_meta_key($raw_key) !== 'Late Pickup Days') {
+                    continue;
+                }
+                if (is_array($raw_value)) {
+                    $raw_value = $raw_value[0] ?? implode(', ', array_map('trim', $raw_value));
+                }
+                $days = trim((string) $raw_value);
+                if ($days !== '') {
+                    break;
+                }
+            }
+        }
+
+        $cost_raw = $sources['late_pickup_cost'] ?? $read_meta(['Late Pickup Cost', 'Coût de récupération tardive']);
+        $has_cost = false;
+        if ($cost_raw !== null && $cost_raw !== '') {
+            if (is_numeric($cost_raw)) {
+                $has_cost = (float) $cost_raw > 0;
+            } else {
+                $stripped = preg_replace('/[^0-9.]/', '', wp_strip_all_tags((string) $cost_raw));
+                $has_cost = $stripped !== '' && (float) $stripped > 0;
+            }
+        }
+
+        $type_lower = strtolower($type);
+        $has_type = $type !== '' && !in_array($type_lower, ['none', 'no', 'n/a'], true);
+        $late_pickup = ($has_type || $days !== '' || $has_cost) ? 'Yes' : 'No';
+
+        if ($days !== '' && function_exists('intersoccer_normalize_selected_days_for_storage')) {
+            $days = intersoccer_normalize_selected_days_for_storage($days);
+        }
+
+        return [
+            'late_pickup' => $late_pickup,
+            'late_pickup_days' => $days,
+        ];
+    }
+}
+
+if (!function_exists('intersoccer_apply_late_pickup_to_roster_data')) {
+    /**
+     * Set late_pickup and late_pickup_days on a roster payload from order meta fields.
+     *
+     * @param array<string,mixed> $roster_data
+     * @return array<string,mixed>
+     */
+    function intersoccer_apply_late_pickup_to_roster_data(array $roster_data) {
+        $resolved = intersoccer_resolve_late_pickup_for_roster($roster_data);
+        $roster_data['late_pickup'] = $resolved['late_pickup'];
+        $roster_data['late_pickup_days'] = $resolved['late_pickup_days'];
+        return $roster_data;
+    }
+}
