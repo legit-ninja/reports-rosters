@@ -31,7 +31,7 @@ function intersoccer_enqueue_datepicker() {
     if (isset($_GET['page']) && $_GET['page'] === 'intersoccer-reports') {
         wp_enqueue_script('jquery-ui-datepicker');
         wp_enqueue_style('jquery-ui-css', '//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
-        wp_enqueue_script('intersoccer-reports', plugin_dir_url(__FILE__) . '../js/reports.js', ['jquery'], '1.3.99', true);
+        wp_enqueue_script('intersoccer-reports', plugin_dir_url(__FILE__) . '../js/reports.js', ['jquery'], '1.4.0', true);
         wp_localize_script('intersoccer-reports', 'intersoccer_reports_ajax', [
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('intersoccer_reports_filter'),
@@ -329,6 +329,19 @@ function intersoccer_enqueue_datepicker() {
                 font-weight: 600;
                 font-size: 13px;
             }
+            .intersoccer-filters .filter-row {
+                align-items: flex-end;
+            }
+            .intersoccer-filters .filter-row > .filter-group {
+                flex: 0 0 auto;
+                min-width: 150px;
+            }
+            .intersoccer-filters .filter-group input[type="text"],
+            .intersoccer-filters .filter-group input[type="number"] {
+                box-sizing: border-box;
+                width: 100%;
+                max-width: 100%;
+            }
             .quick-dates {
                 display: flex;
                 gap: 10px;
@@ -468,17 +481,17 @@ function intersoccer_render_booking_report_tab() {
                 <div class="filter-group">
                     <label for="start_date"><?php _e('Start Date:', 'intersoccer-reports-rosters'); ?></label>
                     <input type="text" name="start_date" id="start_date" value="<?php echo esc_attr($start_date); ?>" 
-                           placeholder="YYYY-MM-DD" style="width: 140px;" />
+                           placeholder="YYYY-MM-DD" />
                 </div>
                 <div class="filter-group">
                     <label for="end_date"><?php _e('End Date:', 'intersoccer-reports-rosters'); ?></label>
                     <input type="text" name="end_date" id="end_date" value="<?php echo esc_attr($end_date); ?>" 
-                           placeholder="YYYY-MM-DD" style="width: 140px;" />
+                           placeholder="YYYY-MM-DD" />
                 </div>
                 <div class="filter-group">
                     <label for="year"><?php _e('Year (if no dates):', 'intersoccer-reports-rosters'); ?></label>
                     <input type="number" name="year" id="year" value="<?php echo esc_attr($year); ?>" 
-                           min="2020" max="<?php echo date('Y') + 2; ?>" style="width: 100px;" />
+                           min="2020" max="<?php echo date('Y') + 2; ?>" />
                 </div>
             </div>
             
