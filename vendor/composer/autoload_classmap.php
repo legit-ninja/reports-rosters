@@ -297,7 +297,6 @@ return array(
     'InterSoccer\\ReportsRosters\\Reports\\CampReport' => $baseDir . '/classes/reports/camp-report.php',
     'InterSoccer\\ReportsRosters\\Reports\\OverviewReport' => $baseDir . '/classes/reports/overview-report.php',
     'InterSoccer\\ReportsRosters\\Reports\\ReportInterface' => $baseDir . '/classes/reports/report-interface.php',
-    'InterSoccer\\ReportsRosters\\Services\\BookingReportAccuracyValidator' => $baseDir . '/classes/services/booking-report-accuracy-validator.php',
     'InterSoccer\\ReportsRosters\\Services\\CacheManager' => $baseDir . '/classes/services/cache-manager-service.php',
     'InterSoccer\\ReportsRosters\\Services\\DataValidator' => $baseDir . '/classes/services/data-validator.php',
     'InterSoccer\\ReportsRosters\\Services\\EventMatcher' => $baseDir . '/classes/services/event-matcher.php',

@@ -384,7 +384,6 @@ class ComposerStaticInit524cfbad5fc29d5511275e827678d85a
         'InterSoccer\\ReportsRosters\\Reports\\CampReport' => __DIR__ . '/../..' . '/classes/reports/camp-report.php',
         'InterSoccer\\ReportsRosters\\Reports\\OverviewReport' => __DIR__ . '/../..' . '/classes/reports/overview-report.php',
         'InterSoccer\\ReportsRosters\\Reports\\ReportInterface' => __DIR__ . '/../..' . '/classes/reports/report-interface.php',
-        'InterSoccer\\ReportsRosters\\Services\\BookingReportAccuracyValidator' => __DIR__ . '/../..' . '/classes/services/booking-report-accuracy-validator.php',
         'InterSoccer\\ReportsRosters\\Services\\CacheManager' => __DIR__ . '/../..' . '/classes/services/cache-manager-service.php',
         'InterSoccer\\ReportsRosters\\Services\\DataValidator' => __DIR__ . '/../..' . '/classes/services/data-validator.php',
         'InterSoccer\\ReportsRosters\\Services\\EventMatcher' => __DIR__ . '/../..' . '/classes/services/event-matcher.php',
