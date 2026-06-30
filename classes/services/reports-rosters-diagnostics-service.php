@@ -93,8 +93,7 @@ class ReportsRostersDiagnosticsService {
             }
         }
 
-        $bulk_woo_count = count($woo_map);
-        $this->supplementDiagnosticsMaps($woo_map, $roster_map, $roster_rows_by_item, $filters, $bulk_woo_count);
+        $this->supplementDiagnosticsMaps($woo_map, $roster_map, $roster_rows_by_item, $filters);
 
         $all_ids = array_values(array_unique(array_merge(array_keys($woo_map), array_keys($roster_map))));
         sort($all_ids, SORT_NUMERIC);
@@ -133,24 +132,6 @@ class ReportsRostersDiagnosticsService {
         $paged = array_slice($filtered_mismatches, $filters['offset'], $filters['limit']);
 
         $bucket_analysis = $this->analyzeMismatchBuckets($mismatches_all, $filters);
-        $this->logFullDiscrepancyTrace($mismatches_all, $filters, $woo_map, $roster_map);
-        // #region agent log
-        error_log('[intersoccer-332b44] mismatch bucket analysis: ' . wp_json_encode([
-            'runId' => 'post-fix-unknown-type',
-            'woo_map_bulk' => $bulk_woo_count,
-            'woo_map_final' => count($woo_map),
-            'roster_map' => count($roster_map),
-            'intersection' => count(array_intersect(array_keys($woo_map), array_keys($roster_map))),
-            'year' => $filters['year'] ?? '',
-            'order_statuses' => $filters['order_statuses'] ?? [],
-            'summary' => $bucket_analysis['summary'] ?? [],
-            'missing_in_woo_causes' => $bucket_analysis['missing_in_woo_causes'] ?? [],
-            'missing_in_woo_samples' => $bucket_analysis['missing_in_woo_samples'] ?? [],
-            'missing_in_rosters_items' => $bucket_analysis['missing_in_rosters_items'] ?? [],
-            'missing_in_woo_meta_samples' => $bucket_analysis['missing_in_woo_meta_samples'] ?? [],
-            'course_day_mismatch_samples' => $bucket_analysis['course_day_mismatch_samples'] ?? [],
-        ]));
-        // #endregion
 
         return [
             'filters' => $filters,
@@ -213,8 +194,7 @@ class ReportsRostersDiagnosticsService {
             }
         }
 
-        $bulk_woo_count = count($woo_map);
-        $this->supplementDiagnosticsMaps($woo_map, $roster_map, $roster_rows_by_item, $filters, $bulk_woo_count);
+        $this->supplementDiagnosticsMaps($woo_map, $roster_map, $roster_rows_by_item, $filters);
 
         $all_ids = array_values(array_unique(array_merge(array_keys($woo_map), array_keys($roster_map))));
         sort($all_ids, SORT_NUMERIC);
@@ -2432,16 +2412,8 @@ class ReportsRostersDiagnosticsService {
         array &$woo_map,
         array &$roster_map,
         array &$roster_rows_by_item,
-        array $filters,
-        int $bulk_woo_count = 0
+        array $filters
     ): void {
-        $stats = [
-            'bulk_woo_count' => $bulk_woo_count,
-            'woo_added' => 0,
-            'roster_added' => 0,
-            'woo_pair_failures' => [],
-        ];
-
         foreach (array_keys($roster_map) as $order_item_id) {
             $order_item_id = (int) $order_item_id;
             if ($order_item_id <= 0 || isset($woo_map[$order_item_id])) {
@@ -2451,13 +2423,6 @@ class ReportsRostersDiagnosticsService {
             $pair = $this->fetchWooRowForDiagnosticsPairing($order_item_id, $filters, is_array($roster_row) ? $roster_row : null);
             if ($pair !== null) {
                 $woo_map[$order_item_id] = $this->enrichWooRowFromRoster($pair, is_array($roster_row) ? $roster_row : null);
-                $stats['woo_added']++;
-            } else {
-                $reason = (string) ($this->classifyWooPairingFailure($order_item_id, $filters, is_array($roster_row) ? $roster_row : null)['cause'] ?? 'unknown');
-                if (!isset($stats['woo_pair_failures'][$reason])) {
-                    $stats['woo_pair_failures'][$reason] = 0;
-                }
-                $stats['woo_pair_failures'][$reason]++;
             }
         }
 
@@ -2479,16 +2444,7 @@ class ReportsRostersDiagnosticsService {
             }
             $roster_rows_by_item[$order_item_id][] = $row;
             $roster_map[$order_item_id] = $row;
-            $stats['roster_added']++;
         }
-
-        $stats['woo_final_count'] = count($woo_map);
-        // #region agent log
-        error_log('[intersoccer-332b44] supplement diagnostics maps: ' . wp_json_encode([
-            'runId' => 'post-fix-unknown-type',
-            'stats' => $stats,
-        ]));
-        // #endregion
     }
 
     /**
@@ -2564,55 +2520,6 @@ class ReportsRostersDiagnosticsService {
         }
 
         return $woo;
-    }
-
-    /**
-     * @param int $order_item_id
-     * @param array<string,mixed> $filters
-     * @param array<string,mixed>|null $roster_row
-     * @return array<string,mixed>
-     */
-    private function classifyWooPairingFailure(int $order_item_id, array $filters, ?array $roster_row = null): array {
-        if (!$this->woocommerceLineItemExists($order_item_id)) {
-            return ['cause' => 'line_item_deleted', 'hypothesisId' => 'H1'];
-        }
-
-        $woo = $this->fetchWooRowByOrderItemId($order_item_id);
-        if ($woo === null) {
-            return ['cause' => 'line_item_unfetchable', 'hypothesisId' => 'H1'];
-        }
-
-        $order_id = (int) ($woo['order_id'] ?? 0);
-        $allowed_statuses = is_array($filters['order_statuses'] ?? null)
-            ? $filters['order_statuses']
-            : self::DEFAULT_ORDER_STATUSES;
-        $order_meta = $this->loadOrderMetaForIds([$order_id]);
-        $order_status = (string) ($order_meta[$order_id]['status'] ?? '');
-        if (!$this->orderStatusAllowed($order_status, $allowed_statuses)) {
-            return ['cause' => 'order_status_excluded', 'order_status' => $order_status, 'hypothesisId' => 'H2'];
-        }
-
-        $order_date = (string) ($order_meta[$order_id]['date'] ?? '');
-        $year = (int) ($filters['year'] ?? (int) date('Y'));
-        if (is_array($roster_row) && !empty($roster_row['season'])) {
-            $woo['season'] = (string) $roster_row['season'];
-        }
-        $year_ok = $this->wooRowMatchesYear($woo, $year, $order_date);
-        if (!$year_ok && is_array($roster_row) && $this->rosterMatchesYear($roster_row, $year)) {
-            $year_ok = true;
-        }
-        if (!$year_ok) {
-            return ['cause' => 'woo_year_scope_miss', 'hypothesisId' => 'H3'];
-        }
-
-        $activity = (string) ($filters['activity_type'] ?? 'All');
-        if (!$this->matchesActivityTypeFilter($woo, $activity)) {
-            if (!is_array($roster_row) || !$this->matchesRosterActivityTypeFilter($roster_row, $activity)) {
-                return ['cause' => 'activity_type_filter', 'hypothesisId' => 'H4'];
-            }
-        }
-
-        return ['cause' => 'unknown_pair_failure', 'hypothesisId' => 'H6'];
     }
 
     /**
@@ -2872,12 +2779,12 @@ class ReportsRostersDiagnosticsService {
             $order_item_id
         ));
         if ($line_exists === 0) {
-            return ['cause' => 'line_item_deleted', 'hypothesisId' => 'H1'];
+            return ['cause' => 'line_item_deleted'];
         }
 
         $woo_row = $this->fetchWooRowByOrderItemId($order_item_id);
         if ($woo_row === null) {
-            return ['cause' => 'line_item_unfetchable', 'hypothesisId' => 'H1'];
+            return ['cause' => 'line_item_unfetchable'];
         }
 
         $order_id = (int) ($woo_row['order_id'] ?? 0);
@@ -2890,18 +2797,17 @@ class ReportsRostersDiagnosticsService {
             return [
                 'cause' => 'order_status_excluded',
                 'order_status' => $order_status,
-                'hypothesisId' => 'H2',
             ];
         }
 
         $product_id = (int) ($woo_row['product_id'] ?? 0);
         $variation_id = (int) ($woo_row['variation_id'] ?? 0);
         if (!$this->isRowRosterEligible($product_id, $variation_id, $woo_row)) {
-            return ['cause' => 'not_roster_eligible', 'hypothesisId' => 'H4'];
+            return ['cause' => 'not_roster_eligible'];
         }
 
         if (!$this->matchesActivityTypeFilter($woo_row, (string) ($filters['activity_type'] ?? 'All'))) {
-            return ['cause' => 'activity_type_filter', 'hypothesisId' => 'H4'];
+            return ['cause' => 'activity_type_filter'];
         }
 
         $order_date = (string) ($order_meta[$order_id]['date'] ?? '');
@@ -2910,18 +2816,17 @@ class ReportsRostersDiagnosticsService {
                 'cause' => 'woo_year_scope_miss',
                 'order_date' => $order_date,
                 'season' => (string) ($woo_row['season'] ?? ''),
-                'hypothesisId' => 'H3',
             ];
         }
 
         if (!empty($filters['exclude_buyclub'])) {
             $is_buyclub = ((float) ($woo_row['line_subtotal'] ?? 0) > 0.0) && ((float) ($woo_row['line_total'] ?? 0) === 0.0);
             if ($is_buyclub) {
-                return ['cause' => 'buyclub_excluded', 'hypothesisId' => 'H4'];
+                return ['cause' => 'buyclub_excluded'];
             }
         }
 
-        return ['cause' => 'unknown_scope_miss', 'hypothesisId' => 'H6'];
+        return ['cause' => 'unknown_scope_miss'];
     }
 
     /**
@@ -2942,109 +2847,6 @@ class ReportsRostersDiagnosticsService {
             $counts[$cause]++;
         }
         return $counts;
-    }
-
-    /**
-     * Write one NDJSON debug trace line for sync investigations.
-     *
-     * @param array<string,mixed> $payload
-     */
-    private function writeAgentDebugLog(array $payload): void {
-        // #region agent log
-        $path = '/home/jeremy-lee/projects/underdog/intersoccer/players-and-events/.cursor/debug-332b44.log';
-        $payload['sessionId'] = '332b44';
-        $payload['timestamp'] = (int) round(microtime(true) * 1000);
-        @file_put_contents($path, wp_json_encode($payload) . "\n", FILE_APPEND | LOCK_EX);
-        // #endregion
-    }
-
-    /**
-     * Emit a per-row trace for every mismatch so each discrepancy can be audited.
-     *
-     * @param array<int,array<string,mixed>> $mismatches
-     * @param array<string,mixed> $filters
-     * @param array<int,array<string,mixed>> $woo_map
-     * @param array<int,array<string,mixed>> $roster_map
-     */
-    private function logFullDiscrepancyTrace(
-        array $mismatches,
-        array $filters,
-        array $woo_map,
-        array $roster_map
-    ): void {
-        $by_reason = [];
-        foreach ($mismatches as $row) {
-            if (!is_array($row)) {
-                continue;
-            }
-            $reasons = isset($row['reasons']) && is_array($row['reasons']) ? $row['reasons'] : [];
-            foreach ($reasons as $reason) {
-                if (!isset($by_reason[$reason])) {
-                    $by_reason[$reason] = 0;
-                }
-                $by_reason[$reason]++;
-            }
-        }
-
-        $this->writeAgentDebugLog([
-            'runId' => 'full-discrepancy-trace',
-            'location' => 'runDiagnostics',
-            'message' => 'discrepancy trace summary',
-            'hypothesisId' => 'TRACE',
-            'data' => [
-                'year' => $filters['year'] ?? '',
-                'order_statuses' => $filters['order_statuses'] ?? [],
-                'woo_map_count' => count($woo_map),
-                'roster_map_count' => count($roster_map),
-                'intersection' => count(array_intersect(array_keys($woo_map), array_keys($roster_map))),
-                'only_woo' => count(array_diff(array_keys($woo_map), array_keys($roster_map))),
-                'only_roster' => count(array_diff(array_keys($roster_map), array_keys($woo_map))),
-                'mismatch_row_count' => count($mismatches),
-                'reason_totals' => $by_reason,
-            ],
-        ]);
-
-        foreach ($mismatches as $row) {
-            if (!is_array($row)) {
-                continue;
-            }
-            $order_item_id = (int) ($row['order_item_id'] ?? 0);
-            $reasons = isset($row['reasons']) && is_array($row['reasons']) ? $row['reasons'] : [];
-            if ($order_item_id <= 0 || $reasons === []) {
-                continue;
-            }
-
-            $detail = [
-                'order_item_id' => $order_item_id,
-                'order_id' => (int) ($row['order_id'] ?? 0),
-                'reasons' => $reasons,
-                'product_name' => (string) ($row['product_name'] ?? ''),
-                'activity_type' => (string) ($row['activity_type'] ?? ''),
-                'participant_name' => (string) ($row['participant_name'] ?? ''),
-                'woo_venue' => (string) ($row['woo_venue'] ?? ''),
-                'roster_venue' => (string) ($row['roster_venue'] ?? ''),
-                'woo_course_day' => (string) ($row['woo_course_day'] ?? ''),
-                'roster_course_day' => (string) ($row['roster_course_day'] ?? ''),
-            ];
-
-            if (in_array('missing_in_rosters', $reasons, true)) {
-                $detail['missing_in_rosters'] = $this->classifyMissingInRostersCause($order_item_id, $filters);
-            }
-            if (in_array('missing_in_woo_meta', $reasons, true)) {
-                $detail['missing_in_woo_meta'] = $this->classifyMissingInWooMetaCause($order_item_id, $row);
-            }
-            if (in_array('missing_in_woo', $reasons, true)) {
-                $detail['missing_in_woo'] = $this->classifyMissingInWooCause($order_item_id, $filters);
-            }
-
-            $this->writeAgentDebugLog([
-                'runId' => 'full-discrepancy-trace',
-                'location' => 'runDiagnostics:row',
-                'message' => 'mismatch row detail',
-                'hypothesisId' => 'TRACE',
-                'data' => $detail,
-            ]);
-        }
     }
 
     /**
@@ -3115,7 +2917,6 @@ class ReportsRostersDiagnosticsService {
             'roster_row_count' => $roster_count,
             'likely_cause' => $likely_cause,
             'safe_fix' => 'runSafeFixForOrderItem or Reconcile',
-            'hypothesisId' => 'H7',
         ];
     }
 
@@ -3144,7 +2945,6 @@ class ReportsRostersDiagnosticsService {
             'backfillable_from_roster' => $roster_norm !== '',
             'likely_cause' => $woo_norm === '' && $roster_norm !== '' ? 'woo_venue_meta_empty' : 'venue_normalization_mismatch',
             'safe_fix' => 'backfillMissingWooMetaFromRoster',
-            'hypothesisId' => 'H8',
         ];
     }
 
