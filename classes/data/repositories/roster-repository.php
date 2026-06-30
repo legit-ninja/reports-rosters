@@ -803,13 +803,12 @@ class RosterRepository implements RepositoryInterface {
      * @return Roster|null Existing roster or null
      */
     private function findExistingEntry(Roster $roster) {
-        $criteria = [
-            'order_id' => $roster->order_id,
-            'order_item_id' => $roster->order_item_id,
-            'player_index' => $roster->player_index
-        ];
-        
-        return $this->first($criteria);
+        $order_item_id = (int) ($roster->order_item_id ?? 0);
+        if ($order_item_id <= 0) {
+            return null;
+        }
+
+        return $this->first(['order_item_id' => $order_item_id]);
     }
     
     /**

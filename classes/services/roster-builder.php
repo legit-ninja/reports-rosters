@@ -266,9 +266,10 @@ class RosterBuilder {
         $defaults = [
             'status' => ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'],
             'delete_obsolete' => true,
-            'validate_data' => true,
-            'skip_duplicates' => false,
+            'validate_data' => false,
+            'skip_duplicates' => true,
             'update_existing' => true,
+            'skip_age_group_validation' => true,
             'date_from' => '',
             'date_to' => '',
         ];
@@ -286,6 +287,7 @@ class RosterBuilder {
             'start_time' => current_time('mysql'),
             'end_time' => null,
             'duration' => 0,
+            'newly_created_item_ids' => [],
         ];
 
         $this->logger->info('Starting roster reconciliation', $options);
@@ -324,6 +326,16 @@ class RosterBuilder {
 
             $this->logger->info('Orders fetched for reconciliation', ['count' => count($orders), 'date_from' => $date_from ?: null, 'date_to' => $date_to ?: null]);
 
+            $active_order_item_ids = [];
+            foreach ($orders as $order) {
+                if (!method_exists($order, 'get_items')) {
+                    continue;
+                }
+                foreach ($order->get_items() as $item_id => $item) {
+                    $active_order_item_ids[(int) $item_id] = true;
+                }
+            }
+
             foreach ($orders as $order) {
                 // Skip refunds and other non-order types that don't support get_customer_id()
                 if (!method_exists($order, 'get_customer_id')) {
@@ -344,6 +356,11 @@ class RosterBuilder {
 
                     foreach ($order->get_items() as $item_id => $item) {
                         try {
+                            $rows_before = (int) $wpdb->get_var($wpdb->prepare(
+                                "SELECT COUNT(*) FROM {$table} WHERE order_item_id = %d",
+                                (int) $item_id
+                            ));
+
                             $item_rosters = $this->processOrderItem(
                                 $order,
                                 $item_id,
@@ -352,12 +369,21 @@ class RosterBuilder {
                                 $customer_data,
                                 [
                                     'validate_data' => $options['validate_data'],
-                                    'skip_duplicates' => false,
-                                    'update_existing' => true,
+                                    'skip_duplicates' => $options['skip_duplicates'],
+                                    'update_existing' => $options['update_existing'],
+                                    'update_past_events' => true,
+                                    'skip_age_group_validation' => !empty($options['skip_age_group_validation']),
                                 ]
                             );
 
                             if ($item_rosters->count() > 0) {
+                                $rows_after = (int) $wpdb->get_var($wpdb->prepare(
+                                    "SELECT COUNT(*) FROM {$table} WHERE order_item_id = %d",
+                                    (int) $item_id
+                                ));
+                                if ($rows_before === 0 && $rows_after > 0) {
+                                    $results['newly_created_item_ids'][] = (int) $item_id;
+                                }
                                 $results['synced'] += $item_rosters->count();
                                 unset($existing_item_map[$item_id]);
                             }
@@ -386,6 +412,10 @@ class RosterBuilder {
 
             if ($options['delete_obsolete'] && !empty($existing_item_map)) {
                 foreach (array_keys($existing_item_map) as $obsolete_item_id) {
+                    // Only remove rows for line items that no longer exist on any fetched order.
+                    if (isset($active_order_item_ids[$obsolete_item_id])) {
+                        continue;
+                    }
                     try {
                         $deleted_count = $this->roster_repository->deleteWhere(['order_item_id' => $obsolete_item_id]);
                         $results['deleted'] += $deleted_count;
@@ -674,6 +704,8 @@ class RosterBuilder {
                 if ($roster) {
                     $rosters->add($roster);
                     $this->build_stats['players_processed']++;
+                    // One roster row per order line item (uniq_order_item_id).
+                    break;
                 }
                 
             } catch (\Exception $e) {
@@ -836,7 +868,7 @@ class RosterBuilder {
                 (int) ($order_data['product_id'] ?? 0),
                 (int) ($order_data['variation_id'] ?? 0)
             );
-            if (is_string($derived_type) && $derived_type !== '') {
+            if (is_string($derived_type) && $derived_type !== '' && $derived_type !== 'unknown') {
                 $derived_map = [
                     'camp' => 'Camp',
                     'course' => 'Course',
@@ -867,7 +899,19 @@ class RosterBuilder {
                 $order_data['activity_type'] = 'Camp';
             }
         }
-        
+        if (empty($order_data['activity_type'])) {
+            $name = strtolower(trim((string) ($order_data['product_name'] ?? '')));
+            if ($name !== '') {
+                if (strpos($name, 'camp') !== false) {
+                    $order_data['activity_type'] = 'Camp';
+                } elseif (strpos($name, 'course') !== false) {
+                    $order_data['activity_type'] = 'Course';
+                } elseif (strpos($name, 'tournament') !== false) {
+                    $order_data['activity_type'] = 'Tournament';
+                }
+            }
+        }
+
         // Parse and validate dates
         $order_data = $this->parseDates($order_data);
         
@@ -1470,6 +1514,8 @@ class RosterBuilder {
      * @return Roster|null Created or updated roster
      */
     private function createOrUpdateRoster(array $roster_data, array $options) {
+        $roster_data = $this->ensureRosterProductIds($roster_data);
+
         // Check for existing roster
         $existing_roster = null;
         if ($options['skip_duplicates'] || $options['update_existing']) {
@@ -1486,6 +1532,8 @@ class RosterBuilder {
             }
             
             if ($options['update_existing']) {
+                $roster_data = $this->preserveExistingRosterFields($existing_roster, $roster_data);
+                $roster_data = $this->ensureRosterProductIds($roster_data);
                 // Do not update closed or past events (avoids re-opening rosters for staff reconciliation)
                 $is_closed = isset($existing_roster->event_completed) && (int) $existing_roster->event_completed === 1;
                 $end_date = isset($existing_roster->end_date) ? $existing_roster->end_date : null;
@@ -1497,7 +1545,8 @@ class RosterBuilder {
                     $end_date = (string) $end_date;
                 }
                 $is_past = $end_date !== null && $end_date !== '' && $end_date < date('Y-m-d');
-                if ($is_closed || $is_past) {
+                $update_past_events = !empty($options['update_past_events']);
+                if ($is_closed || (!$update_past_events && $is_past)) {
                     $this->logger->debug('Skipping update for closed or past event roster', [
                         'existing_id' => $existing_roster->id,
                         'order_id' => $roster_data['order_id'],
@@ -1545,10 +1594,28 @@ class RosterBuilder {
         }
         
         // Create new roster
+        $roster_data = $this->ensureRosterProductIds($roster_data);
         if (!empty($options['skip_age_group_validation'])) {
             $roster_data['_skip_age_group_validation'] = true;
         }
         $roster = $this->roster_repository->create($roster_data);
+        if (!$roster && !empty($options['update_existing'])) {
+            $existing_on_conflict = $this->findExistingRoster($roster_data);
+            if ($existing_on_conflict) {
+                if (!empty($options['skip_age_group_validation'])) {
+                    $roster_data['_skip_age_group_validation'] = true;
+                }
+                $roster = $this->roster_repository->update($existing_on_conflict->id, $roster_data);
+                if ($roster) {
+                    $this->build_stats['rosters_updated']++;
+                    $this->logger->debug('Updated roster after insert conflict on order_item_id', [
+                        'id' => $existing_on_conflict->id,
+                        'order_item_id' => $roster_data['order_item_id'] ?? null,
+                    ]);
+                }
+                return $roster;
+            }
+        }
         if ($roster) {
             $this->build_stats['rosters_created']++;
             $this->logger->debug('Created new roster entry', [
@@ -1567,13 +1634,81 @@ class RosterBuilder {
      * @return Roster|null Existing roster or null
      */
     private function findExistingRoster(array $roster_data) {
-        $criteria = [
-            'order_id' => $roster_data['order_id'],
-            'order_item_id' => $roster_data['order_item_id'],
-            'player_index' => $roster_data['player_index'] ?? 0
-        ];
-        
-        return $this->roster_repository->first($criteria);
+        $order_item_id = (int) ($roster_data['order_item_id'] ?? 0);
+        if ($order_item_id <= 0) {
+            return null;
+        }
+
+        // Schema enforces one row per Woo line item (uniq_order_item_id).
+        return $this->roster_repository->first(['order_item_id' => $order_item_id]);
+    }
+
+    /**
+     * Keep stable identifiers on update when reconcile rebuild omits them.
+     *
+     * @param Roster $existing_roster
+     * @param array $roster_data
+     * @return array
+     */
+    private function preserveExistingRosterFields(Roster $existing_roster, array $roster_data): array {
+        if (empty($roster_data['product_id']) && !empty($existing_roster->product_id)) {
+            $roster_data['product_id'] = (int) $existing_roster->product_id;
+        }
+        if (empty($roster_data['product_name']) && !empty($existing_roster->product_name)) {
+            $roster_data['product_name'] = (string) $existing_roster->product_name;
+        }
+        if (empty($roster_data['days_selected']) && !empty($existing_roster->days_selected)) {
+            $roster_data['days_selected'] = (string) $existing_roster->days_selected;
+        }
+        return $roster_data;
+    }
+
+    /**
+     * Recover product identifiers when Woo product records were deleted.
+     *
+     * @param array $roster_data
+     * @return array
+     */
+    private function ensureRosterProductIds(array $roster_data): array {
+        $product_id = (int) ($roster_data['product_id'] ?? 0);
+        $variation_id = (int) ($roster_data['variation_id'] ?? 0);
+
+        if ($product_id <= 0 && $variation_id > 0 && function_exists('wc_get_product')) {
+            $variation = wc_get_product($variation_id);
+            if ($variation && method_exists($variation, 'get_parent_id')) {
+                $parent_id = (int) $variation->get_parent_id();
+                if ($parent_id > 0) {
+                    $roster_data['product_id'] = $parent_id;
+                    $product_id = $parent_id;
+                }
+            }
+        }
+
+        if ($product_id <= 0 && $variation_id > 0) {
+            $wpdb = $this->database->get_wpdb();
+            if ($wpdb) {
+                $parent_id = (int) $wpdb->get_var($wpdb->prepare(
+                    "SELECT post_parent FROM {$wpdb->posts} WHERE ID = %d LIMIT 1",
+                    $variation_id
+                ));
+                if ($parent_id > 0) {
+                    $roster_data['product_id'] = $parent_id;
+                    $product_id = $parent_id;
+                }
+            }
+        }
+
+        if (trim((string) ($roster_data['product_name'] ?? '')) === '' && $product_id > 0 && function_exists('wc_get_product')) {
+            $product = wc_get_product($product_id);
+            if ($product && method_exists($product, 'get_name')) {
+                $name = trim((string) $product->get_name());
+                if ($name !== '') {
+                    $roster_data['product_name'] = $name;
+                }
+            }
+        }
+
+        return $roster_data;
     }
     
     /**
