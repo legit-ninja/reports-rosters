@@ -18,19 +18,21 @@ class ReportsRostersDiagnosticsService {
     private const MAX_LIMIT = 500;
 
     /**
-     * Order statuses aligned with RosterBuilder::reconcile().
+     * Sync queue compares only completed orders by default (matches roster build scope).
      */
     private const DEFAULT_ORDER_STATUSES = [
         'wc-completed',
-        'wc-processing',
-        'wc-pending',
-        'wc-on-hold',
     ];
 
     /**
      * Product types that should appear in roster sync tooling.
      */
     private const ROSTER_ELIGIBLE_PRODUCT_TYPES = ['camp', 'course', 'tournament'];
+
+    /**
+     * Product types that are definitively excluded from roster sync (not inconclusive).
+     */
+    private const ROSTER_INELIGIBLE_PRODUCT_TYPES = ['birthday', 'gift', 'merchandise', 'fee', 'donation'];
 
     /**
      * Known mismatch reason keys for filtering.
@@ -91,6 +93,9 @@ class ReportsRostersDiagnosticsService {
             }
         }
 
+        $bulk_woo_count = count($woo_map);
+        $this->supplementDiagnosticsMaps($woo_map, $roster_map, $roster_rows_by_item, $filters, $bulk_woo_count);
+
         $all_ids = array_values(array_unique(array_merge(array_keys($woo_map), array_keys($roster_map))));
         sort($all_ids, SORT_NUMERIC);
 
@@ -101,9 +106,7 @@ class ReportsRostersDiagnosticsService {
             $woo = $woo_map[$order_item_id] ?? null;
             $roster = $roster_map[$order_item_id] ?? null;
             $all_item_roster_rows = $roster_rows_by_item[$order_item_id] ?? [];
-            $sync_health = self::rosterItemSyncHealth($all_item_roster_rows);
-            $reasons = self::classifyMismatchReasons($woo, $roster);
-            $reasons = self::appendFragmentedRosterReason($reasons, $sync_health);
+            $reasons = self::computeItemMismatchReasons($woo, $roster, $all_item_roster_rows);
 
             if (empty($reasons)) {
                 continue;
@@ -121,13 +124,33 @@ class ReportsRostersDiagnosticsService {
                 $woo,
                 $roster,
                 $reasons,
-                $sync_health
+                self::rosterItemSyncHealth($all_item_roster_rows)
             );
         }
 
         $filtered_mismatches = self::filterMismatchesByReason($mismatches_all, (string) $filters['reason_filter']);
         $total_mismatches = count($filtered_mismatches);
         $paged = array_slice($filtered_mismatches, $filters['offset'], $filters['limit']);
+
+        $bucket_analysis = $this->analyzeMismatchBuckets($mismatches_all, $filters);
+        $this->logFullDiscrepancyTrace($mismatches_all, $filters, $woo_map, $roster_map);
+        // #region agent log
+        error_log('[intersoccer-332b44] mismatch bucket analysis: ' . wp_json_encode([
+            'runId' => 'post-fix-unknown-type',
+            'woo_map_bulk' => $bulk_woo_count,
+            'woo_map_final' => count($woo_map),
+            'roster_map' => count($roster_map),
+            'intersection' => count(array_intersect(array_keys($woo_map), array_keys($roster_map))),
+            'year' => $filters['year'] ?? '',
+            'order_statuses' => $filters['order_statuses'] ?? [],
+            'summary' => $bucket_analysis['summary'] ?? [],
+            'missing_in_woo_causes' => $bucket_analysis['missing_in_woo_causes'] ?? [],
+            'missing_in_woo_samples' => $bucket_analysis['missing_in_woo_samples'] ?? [],
+            'missing_in_rosters_items' => $bucket_analysis['missing_in_rosters_items'] ?? [],
+            'missing_in_woo_meta_samples' => $bucket_analysis['missing_in_woo_meta_samples'] ?? [],
+            'course_day_mismatch_samples' => $bucket_analysis['course_day_mismatch_samples'] ?? [],
+        ]));
+        // #endregion
 
         return [
             'filters' => $filters,
@@ -140,6 +163,7 @@ class ReportsRostersDiagnosticsService {
                 'mismatch_rows' => count($mismatches_all),
                 'filtered_mismatch_rows' => $total_mismatches,
                 'elapsed_ms' => (int) round((microtime(true) - $started) * 1000),
+                'bucket_analysis' => $bucket_analysis['summary'] ?? [],
             ],
             'reason_counts' => $reason_counts,
             'pagination' => [
@@ -189,6 +213,9 @@ class ReportsRostersDiagnosticsService {
             }
         }
 
+        $bulk_woo_count = count($woo_map);
+        $this->supplementDiagnosticsMaps($woo_map, $roster_map, $roster_rows_by_item, $filters, $bulk_woo_count);
+
         $all_ids = array_values(array_unique(array_merge(array_keys($woo_map), array_keys($roster_map))));
         sort($all_ids, SORT_NUMERIC);
 
@@ -206,9 +233,7 @@ class ReportsRostersDiagnosticsService {
             $woo = $woo_map[$order_item_id] ?? null;
             $roster = $roster_map[$order_item_id] ?? null;
             $all_item_roster_rows = $roster_rows_by_item[$order_item_id] ?? [];
-            $sync_health = self::rosterItemSyncHealth($all_item_roster_rows);
-            $reasons = self::classifyMismatchReasons($woo, $roster);
-            $reasons = self::appendFragmentedRosterReason($reasons, $sync_health);
+            $reasons = self::computeItemMismatchReasons($woo, $roster, $all_item_roster_rows);
             if (empty($reasons)) {
                 continue;
             }
@@ -236,23 +261,20 @@ class ReportsRostersDiagnosticsService {
             }
 
             if ($woo !== null && $roster !== null && in_array('missing_in_woo_meta', $reasons, true)) {
-                $backfill_value = trim((string) ($roster['course_day'] ?? ''));
-                if ($backfill_value !== '' && self::normalizeComparableValue($backfill_value) !== '') {
-                    $ok_a = $this->upsertOrderItemMeta((int) $order_item_id, 'pa_course-day', $backfill_value);
-                    $ok_b = $this->upsertOrderItemMeta((int) $order_item_id, 'attribute_pa_course-day', $backfill_value);
-                    if ($ok_a || $ok_b) {
-                        $results['fixed_missing_in_woo_meta']++;
-                    } else {
-                        $results['errors'][] = sprintf('Failed backfilling course day meta for order_item_id=%d', $order_item_id);
-                    }
+                if ($this->backfillMissingWooMetaFromRoster((int) $order_item_id, $roster)) {
+                    $results['fixed_missing_in_woo_meta']++;
+                } else {
+                    $results['errors'][] = sprintf('Failed backfilling Woo meta for order_item_id=%d', $order_item_id);
                 }
             }
 
             if (in_array('missing_in_woo', $reasons, true) && $roster !== null) {
-                if ($this->quarantineRosterOrderItem((int) $order_item_id, $run_id)) {
-                    $results['quarantined_missing_in_woo']++;
-                } else {
-                    $results['errors'][] = sprintf('Failed quarantining orphan roster for order_item_id=%d', $order_item_id);
+                if (!$this->woocommerceLineItemExists((int) $order_item_id)) {
+                    if ($this->quarantineRosterOrderItem((int) $order_item_id, $run_id)) {
+                        $results['quarantined_missing_in_woo']++;
+                    } else {
+                        $results['errors'][] = sprintf('Failed quarantining orphan roster for order_item_id=%d', $order_item_id);
+                    }
                 }
             }
         }
@@ -377,7 +399,7 @@ class ReportsRostersDiagnosticsService {
             }
         }
 
-        $reasons_before = self::classifyMismatchReasons($woo, $roster);
+        $reasons_before = self::computeItemMismatchReasons($woo, $roster, $roster_rows);
         $needs_name_repair = false;
         $needs_full_rebuild = in_array('missing_in_rosters', $reasons_before, true);
         foreach ($roster_rows as $row) {
@@ -470,24 +492,31 @@ class ReportsRostersDiagnosticsService {
             ? $trace_pre_final['roster_rows'] : [];
         $results['backfilled_player_names'] += $this->backfillPlayerNamesForOrderItemRows($rows_pre_final);
 
-        if ($woo !== null && $roster !== null && in_array('missing_in_woo_meta', $reasons_before, true)) {
-            $backfill_value = trim((string) ($roster['course_day'] ?? ''));
-            if ($backfill_value !== '' && self::normalizeComparableValue($backfill_value) !== '') {
-                $ok_a = $this->upsertOrderItemMeta($order_item_id, 'pa_course-day', $backfill_value);
-                $ok_b = $this->upsertOrderItemMeta($order_item_id, 'attribute_pa_course-day', $backfill_value);
-                if ($ok_a || $ok_b) {
-                    $results['fixed_missing_in_woo_meta']++;
-                } else {
-                    $results['errors'][] = sprintf('Failed backfilling course day meta for order_item_id=%d', $order_item_id);
-                }
+        $roster_for_meta = $roster;
+        foreach ($rows_pre_final as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if ($roster_for_meta === null || $this->rowCompletenessRank($row) > $this->rowCompletenessRank($roster_for_meta)) {
+                $roster_for_meta = $row;
+            }
+        }
+
+        if ($woo !== null && $roster_for_meta !== null && in_array('missing_in_woo_meta', $reasons_before, true)) {
+            if ($this->backfillMissingWooMetaFromRoster($order_item_id, $roster_for_meta)) {
+                $results['fixed_missing_in_woo_meta']++;
+            } else {
+                $results['errors'][] = sprintf('Failed backfilling Woo meta for order_item_id=%d', $order_item_id);
             }
         }
 
         if (in_array('missing_in_woo', $reasons_before, true) && $roster !== null) {
-            if ($this->quarantineRosterOrderItem($order_item_id, $run_id)) {
-                $results['quarantined_missing_in_woo']++;
-            } else {
-                $results['errors'][] = sprintf('Failed quarantining orphan roster for order_item_id=%d', $order_item_id);
+            if (!$this->woocommerceLineItemExists($order_item_id)) {
+                if ($this->quarantineRosterOrderItem($order_item_id, $run_id)) {
+                    $results['quarantined_missing_in_woo']++;
+                } else {
+                    $results['errors'][] = sprintf('Failed quarantining orphan roster for order_item_id=%d', $order_item_id);
+                }
             }
         }
 
@@ -504,7 +533,7 @@ class ReportsRostersDiagnosticsService {
                 $roster_after = $row;
             }
         }
-        $reasons_after = self::classifyMismatchReasons($woo_after, $roster_after);
+        $reasons_after = self::computeItemMismatchReasons($woo_after, $roster_after, $roster_rows_after);
 
         $action_count = $results['fixed_missing_in_rosters'] + $results['fixed_missing_in_woo_meta']
             + $results['quarantined_missing_in_woo'] + $results['rebuilt_player_names'] + $results['rebuilt_from_order']
@@ -565,8 +594,8 @@ class ReportsRostersDiagnosticsService {
 
         $woo_venue = self::normalizeVenueComparableValue($woo['venue_value'] ?? '');
         $roster_venue = self::normalizeVenueComparableValue($roster['venue'] ?? '');
-        $woo_day = self::normalizeComparableValue($woo['course_day_value'] ?? '');
-        $roster_day = self::normalizeComparableValue($roster['course_day'] ?? '');
+        $woo_day = self::normalizeCourseDayComparableValue($woo['course_day_value'] ?? '');
+        $roster_day = self::normalizeCourseDayComparableValue($roster['course_day'] ?? '');
 
         if (($woo_venue === '' && ($woo['venue_value'] ?? '') !== '') || ($roster_venue === '' && ($roster['venue'] ?? '') !== '')) {
             $reasons[] = 'unknown_placeholder_persisted';
@@ -574,9 +603,7 @@ class ReportsRostersDiagnosticsService {
         if (($woo_day === '' && ($woo['course_day_value'] ?? '') !== '') || ($roster_day === '' && ($roster['course_day'] ?? '') !== '')) {
             $reasons[] = 'unknown_placeholder_persisted';
         }
-        if ($woo_venue === '' && $roster_venue === '') {
-            $reasons[] = 'missing_in_woo_meta';
-        } elseif ($woo_venue === '' && $roster_venue !== '') {
+        if ($woo_venue === '' && $roster_venue !== '') {
             $reasons[] = 'missing_in_woo_meta';
         } elseif ($woo_venue !== '' && $roster_venue === '') {
             $reasons[] = 'missing_in_roster_venue';
@@ -660,7 +687,7 @@ class ReportsRostersDiagnosticsService {
     }
 
     /**
-     * Default reconcile-aligned order statuses.
+     * Default sync-queue order statuses (completed only).
      *
      * @return array<int,string>
      */
@@ -682,6 +709,20 @@ class ReportsRostersDiagnosticsService {
             $reasons[] = 'fragmented_roster';
         }
         return array_values(array_unique($reasons));
+    }
+
+    /**
+     * Match runDiagnostics mismatch detection for a single order line item.
+     *
+     * @param array|null $woo
+     * @param array|null $roster
+     * @param array<int,array<string,mixed>> $all_roster_rows
+     * @return array<int,string>
+     */
+    public static function computeItemMismatchReasons(?array $woo, ?array $roster, array $all_roster_rows): array {
+        $sync_health = self::rosterItemSyncHealth($all_roster_rows);
+        $reasons = self::classifyMismatchReasons($woo, $roster);
+        return self::appendFragmentedRosterReason($reasons, $sync_health);
     }
 
     /**
@@ -762,6 +803,68 @@ class ReportsRostersDiagnosticsService {
 
         if (function_exists('sanitize_title')) {
             return strtolower((string) sanitize_title($raw));
+        }
+
+        return $basic;
+    }
+
+    /**
+     * Normalize course-day labels across EN/FR/DE for sync comparisons.
+     *
+     * @param mixed $value
+     * @return string English lowercase day name or empty string
+     */
+    public static function normalizeCourseDayComparableValue($value): string {
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return '';
+        }
+
+        $basic = self::normalizeComparableValue($raw);
+        if ($basic === '') {
+            return '';
+        }
+
+        static $day_map = [
+            'monday' => 'monday',
+            'mon' => 'monday',
+            'lundi' => 'monday',
+            'montag' => 'monday',
+            'tuesday' => 'tuesday',
+            'tue' => 'tuesday',
+            'mardi' => 'tuesday',
+            'dienstag' => 'tuesday',
+            'wednesday' => 'wednesday',
+            'wed' => 'wednesday',
+            'mercredi' => 'wednesday',
+            'mittwoch' => 'wednesday',
+            'thursday' => 'thursday',
+            'thu' => 'thursday',
+            'jeudi' => 'thursday',
+            'donnerstag' => 'thursday',
+            'friday' => 'friday',
+            'fri' => 'friday',
+            'vendredi' => 'friday',
+            'freitag' => 'friday',
+            'saturday' => 'saturday',
+            'sat' => 'saturday',
+            'samedi' => 'saturday',
+            'samstag' => 'saturday',
+            'sunday' => 'sunday',
+            'sun' => 'sunday',
+            'dimanche' => 'sunday',
+            'sonntag' => 'sunday',
+        ];
+
+        if (isset($day_map[$basic])) {
+            return $day_map[$basic];
+        }
+
+        if (function_exists('sanitize_title')) {
+            $slug = strtolower((string) sanitize_title($raw));
+            if (isset($day_map[$slug])) {
+                return $day_map[$slug];
+            }
         }
 
         return $basic;
@@ -1199,7 +1302,7 @@ class ReportsRostersDiagnosticsService {
             if ($ptype !== '' && in_array($ptype, self::ROSTER_ELIGIBLE_PRODUCT_TYPES, true)) {
                 return true;
             }
-            if ($ptype !== '' && !in_array($ptype, self::ROSTER_ELIGIBLE_PRODUCT_TYPES, true)) {
+            if ($ptype !== '' && in_array($ptype, self::ROSTER_INELIGIBLE_PRODUCT_TYPES, true)) {
                 return false;
             }
         }
@@ -1208,12 +1311,22 @@ class ReportsRostersDiagnosticsService {
         $product_attr = strtolower(trim((string) ($row['product_activity_type_attr'] ?? '')));
         $candidate = $atype !== '' ? $atype : $product_attr;
         if ($candidate === '') {
-            return false;
+            $candidate = $this->resolveActivityTypeCandidateFromProduct($product_id, $variation_id);
+        }
+        if ($candidate !== '') {
+            foreach (self::ROSTER_ELIGIBLE_PRODUCT_TYPES as $eligible) {
+                if (strpos($candidate, $eligible) !== false) {
+                    return true;
+                }
+            }
         }
 
-        foreach (self::ROSTER_ELIGIBLE_PRODUCT_TYPES as $eligible) {
-            if (strpos($candidate, $eligible) !== false) {
-                return true;
+        $name = strtolower(trim((string) ($row['order_item_name'] ?? '')));
+        if ($name !== '') {
+            foreach (self::ROSTER_ELIGIBLE_PRODUCT_TYPES as $eligible) {
+                if (strpos($name, $eligible) !== false) {
+                    return true;
+                }
             }
         }
 
@@ -1407,6 +1520,18 @@ class ReportsRostersDiagnosticsService {
             }
         }
 
+        $activity_type = trim((string) ($woo_row['activity_type'] ?? ''));
+        if ($activity_type === '') {
+            $name = strtolower(trim((string) ($woo_row['order_item_name'] ?? '')));
+            if (strpos($name, 'camp') !== false) {
+                $activity_type = 'Camp';
+            } elseif (strpos($name, 'course') !== false) {
+                $activity_type = 'Course';
+            } elseif (strpos($name, 'tournament') !== false) {
+                $activity_type = 'Tournament';
+            }
+        }
+
         $inserted = $wpdb->insert(
             $table,
             [
@@ -1419,7 +1544,7 @@ class ReportsRostersDiagnosticsService {
                 'last_name' => $last_name,
                 'booking_type' => 'single-day',
                 'product_name' => (string) ($woo_row['order_item_name'] ?? 'Unknown Product'),
-                'activity_type' => (string) ($woo_row['activity_type'] ?? ''),
+                'activity_type' => $activity_type,
                 'venue' => (string) ($woo_row['venue_value'] ?? ''),
                 'course_day' => (string) ($woo_row['course_day_value'] ?? ''),
                 'event_signature' => $event_signature,
@@ -1597,7 +1722,8 @@ class ReportsRostersDiagnosticsService {
 
         $sql = "SELECT id, order_item_id, order_id, product_id, variation_id, activity_type,
                        venue, course_day, season, canton_region, start_date, end_date,
-                       player_name, player_first_name, player_last_name, first_name, last_name, product_name
+                       player_name, player_first_name, player_last_name, first_name, last_name, product_name,
+                       event_signature, is_placeholder
                 FROM {$table}
                 WHERE order_item_id > 0";
 
@@ -1607,9 +1733,32 @@ class ReportsRostersDiagnosticsService {
         }
 
         $year = (int) $filters['year'];
+        $allowed_statuses = is_array($filters['order_statuses'] ?? null)
+            ? $filters['order_statuses']
+            : self::DEFAULT_ORDER_STATUSES;
+        $order_ids = [];
+        foreach ($rows as $row) {
+            $order_id = (int) ($row['order_id'] ?? 0);
+            if ($order_id > 0) {
+                $order_ids[$order_id] = $order_id;
+            }
+        }
+        $order_meta = $this->loadOrderMetaForIds(array_values($order_ids));
+
         $filtered = [];
 
         foreach ($rows as $row) {
+            if ((int) ($row['is_placeholder'] ?? 0) === 1) {
+                continue;
+            }
+            $order_id = (int) ($row['order_id'] ?? 0);
+            if ($order_id <= 0) {
+                continue;
+            }
+            $order_status = (string) ($order_meta[$order_id]['status'] ?? '');
+            if (!$this->orderStatusAllowed($order_status, $allowed_statuses)) {
+                continue;
+            }
             if (!$this->matchesRosterActivityTypeFilter($row, (string) $filters['activity_type'])) {
                 continue;
             }
@@ -1701,6 +1850,37 @@ class ReportsRostersDiagnosticsService {
 
         $row = $wpdb->get_row($wpdb->prepare($sql, $order_item_id), ARRAY_A);
         return is_array($row) ? $row : null;
+    }
+
+    /**
+     * @param string $status Woo order status slug (with or without wc- prefix).
+     * @param array<int,string> $allowed_statuses
+     */
+    private function orderStatusAllowed(string $status, array $allowed_statuses): bool {
+        $normalized = $this->normalizeOrderStatusSlug($status);
+        if ($normalized === '') {
+            return false;
+        }
+
+        foreach ($allowed_statuses as $allowed) {
+            if ($this->normalizeOrderStatusSlug((string) $allowed) === $normalized) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param string $status
+     */
+    private function normalizeOrderStatusSlug(string $status): string {
+        $status = sanitize_text_field($status);
+        if ($status === '') {
+            return '';
+        }
+
+        return strpos($status, 'wc-') === 0 ? $status : 'wc-' . $status;
     }
 
     /**
@@ -1946,8 +2126,9 @@ class ReportsRostersDiagnosticsService {
             $builder = intersoccer_oop_get_roster_builder();
             $builder->buildRosterFromOrder($order_id, [
                 'validate_data' => false,
-                'skip_duplicates' => false,
+                'skip_duplicates' => true,
                 'update_existing' => true,
+                'update_past_events' => true,
                 'skip_age_group_validation' => true,
             ]);
             return $this->countRosterRowsForOrderItem($order_item_id) > 0;
@@ -2005,6 +2186,227 @@ class ReportsRostersDiagnosticsService {
         return $updated;
     }
 
+    /**
+     * Collect all mismatching order item IDs for the given diagnostics scope.
+     *
+     * @param array $filters
+     * @return array<int,int>
+     */
+    public function collectMismatchOrderItemIds(array $filters): array {
+        $filters = $this->sanitizeFilters($filters);
+        $filters['reason_filter'] = '';
+
+        $ids = [];
+        $offset = 0;
+        $page_size = self::MAX_LIMIT;
+        do {
+            $filters['limit'] = $page_size;
+            $filters['offset'] = $offset;
+            $diag = $this->runDiagnostics($filters);
+            foreach ($diag['mismatches'] as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $id = (int) ($row['order_item_id'] ?? 0);
+                if ($id > 0) {
+                    $ids[$id] = $id;
+                }
+            }
+            $total = (int) ($diag['pagination']['total_unfiltered'] ?? 0);
+            $offset += $page_size;
+        } while ($offset < $total);
+
+        return array_values($ids);
+    }
+
+    /**
+     * Run Fix Sync on a small set of order items (e.g. newly created during reconcile).
+     *
+     * @param array<int,int> $order_item_ids
+     * @return array<string,mixed>
+     */
+    public function alignOrderItemsById(array $order_item_ids): array {
+        $results = [
+            'candidate_count' => 0,
+            'fixed' => 0,
+            'partial' => 0,
+            'still_mismatch' => 0,
+            'errors' => 0,
+        ];
+
+        foreach ($order_item_ids as $order_item_id) {
+            $order_item_id = (int) $order_item_id;
+            if ($order_item_id <= 0) {
+                continue;
+            }
+            $results['candidate_count']++;
+            $fix = $this->runSafeFixForOrderItem($order_item_id);
+            $status = (string) ($fix['status'] ?? '');
+            if ($status === 'in_sync' || $status === 'fixed') {
+                $results['fixed']++;
+            } elseif ($status === 'fixed_partial') {
+                $results['partial']++;
+            } elseif (!empty($fix['reasons_after'])) {
+                $results['still_mismatch']++;
+            }
+            if ($status === 'error') {
+                $results['errors']++;
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Build a transient-backed queue of mismatching order items for batched alignment.
+     *
+     * @param array $filters
+     * @return array<string,mixed>
+     */
+    public function startReconcileAlignmentQueue(array $filters): array {
+        $filters = $this->sanitizeFilters($filters);
+        $ids = $this->collectMismatchOrderItemIds($filters);
+        $user_id = function_exists('get_current_user_id') ? (int) get_current_user_id() : 0;
+        $queue_key = 'intersoccer_reconcile_align_' . max(0, $user_id);
+
+        $payload = [
+            'ids' => array_values($ids),
+            'offset' => 0,
+            'year' => (string) ($filters['year'] ?? ''),
+            'filters' => $filters,
+            'stats' => [
+                'fixed' => 0,
+                'partial' => 0,
+                'still_mismatch' => 0,
+                'errors' => 0,
+            ],
+            'created_at' => time(),
+        ];
+
+        set_transient($queue_key, $payload, HOUR_IN_SECONDS);
+
+        return [
+            'queue_key' => $queue_key,
+            'total' => count($ids),
+            'batch_size' => 25,
+        ];
+    }
+
+    /**
+     * Process the next batch from a reconcile alignment queue.
+     *
+     * @param string $queue_key
+     * @param int $batch_size
+     * @return array<string,mixed>
+     */
+    public function processReconcileAlignmentBatch(string $queue_key, int $batch_size = 25): array {
+        $started = microtime(true);
+        $queue_key = sanitize_key($queue_key);
+        $batch_size = max(1, min(50, (int) $batch_size));
+        $queue = get_transient($queue_key);
+        if (!is_array($queue) || empty($queue['ids']) || !is_array($queue['ids'])) {
+            return [
+                'status' => 'error',
+                'message' => __('Alignment queue not found or expired.', 'intersoccer-reports-rosters'),
+                'complete' => true,
+            ];
+        }
+
+        $ids = array_values(array_map('intval', $queue['ids']));
+        $offset = (int) ($queue['offset'] ?? 0);
+        $total = count($ids);
+        $batch_ids = array_slice($ids, $offset, $batch_size);
+        $stats = is_array($queue['stats'] ?? null) ? $queue['stats'] : [
+            'fixed' => 0,
+            'partial' => 0,
+            'still_mismatch' => 0,
+            'errors' => 0,
+        ];
+
+        foreach ($batch_ids as $order_item_id) {
+            if ($order_item_id <= 0) {
+                continue;
+            }
+            $fix = $this->runSafeFixForOrderItem($order_item_id);
+            $status = (string) ($fix['status'] ?? '');
+            if ($status === 'in_sync' || $status === 'fixed') {
+                $stats['fixed']++;
+            } elseif ($status === 'fixed_partial') {
+                $stats['partial']++;
+            } elseif (!empty($fix['reasons_after'])) {
+                $stats['still_mismatch']++;
+            }
+            if ($status === 'error') {
+                $stats['errors']++;
+            }
+        }
+
+        $offset += count($batch_ids);
+        $complete = $offset >= $total;
+        $queue['offset'] = $offset;
+        $queue['stats'] = $stats;
+
+        $mismatch_after = null;
+        $reason_counts_after = null;
+        if ($complete) {
+            delete_transient($queue_key);
+            $filters = is_array($queue['filters'] ?? null) ? $queue['filters'] : ['year' => (string) ($queue['year'] ?? date('Y'))];
+            $diag_after = $this->runDiagnostics(array_merge($filters, ['limit' => 1, 'offset' => 0]));
+            $mismatch_after = (int) ($diag_after['summary']['mismatch_rows'] ?? 0);
+            $reason_counts_after = is_array($diag_after['reason_counts'] ?? null) ? $diag_after['reason_counts'] : [];
+        } else {
+            set_transient($queue_key, $queue, HOUR_IN_SECONDS);
+        }
+
+        return [
+            'status' => 'ok',
+            'complete' => $complete,
+            'processed' => $offset,
+            'total' => $total,
+            'batch_count' => count($batch_ids),
+            'stats' => $stats,
+            'mismatch_after' => $mismatch_after,
+            'reason_counts_after' => $reason_counts_after,
+            'elapsed_ms' => (int) round((microtime(true) - $started) * 1000),
+        ];
+    }
+
+    /**
+     * Run per-item Fix Sync on every mismatch in scope (same rules as Roster Sync Queue).
+     *
+     * @param array $filters
+     * @return array<string,mixed>
+     */
+    public function alignMismatchOrderItemsInScope(array $filters): array {
+        $started = microtime(true);
+        $ids = $this->collectMismatchOrderItemIds($filters);
+        $results = [
+            'candidate_count' => count($ids),
+            'fixed' => 0,
+            'partial' => 0,
+            'still_mismatch' => 0,
+            'errors' => 0,
+        ];
+
+        foreach ($ids as $order_item_id) {
+            $fix = $this->runSafeFixForOrderItem((int) $order_item_id);
+            $status = (string) ($fix['status'] ?? '');
+            if ($status === 'in_sync' || $status === 'fixed') {
+                $results['fixed']++;
+            } elseif ($status === 'fixed_partial') {
+                $results['partial']++;
+            } elseif (!empty($fix['reasons_after'])) {
+                $results['still_mismatch']++;
+            }
+            if ($status === 'error') {
+                $results['errors']++;
+            }
+        }
+
+        $results['elapsed_ms'] = (int) round((microtime(true) - $started) * 1000);
+        return $results;
+    }
+
     private function countRosterRowsForOrderItem(int $order_item_id): int {
         global $wpdb;
         $order_item_id = (int) $order_item_id;
@@ -2016,6 +2418,778 @@ class ReportsRostersDiagnosticsService {
             "SELECT COUNT(*) FROM {$table} WHERE order_item_id = %d",
             $order_item_id
         ));
+    }
+
+    /**
+     * Pair Woo and roster maps so existing line items are compared even when bulk Woo fetch skipped them.
+     *
+     * @param array<int,array<string,mixed>> $woo_map
+     * @param array<int,array<string,mixed>> $roster_map
+     * @param array<int,array<int,array<string,mixed>>> $roster_rows_by_item
+     * @param array<string,mixed> $filters
+     */
+    private function supplementDiagnosticsMaps(
+        array &$woo_map,
+        array &$roster_map,
+        array &$roster_rows_by_item,
+        array $filters,
+        int $bulk_woo_count = 0
+    ): void {
+        $stats = [
+            'bulk_woo_count' => $bulk_woo_count,
+            'woo_added' => 0,
+            'roster_added' => 0,
+            'woo_pair_failures' => [],
+        ];
+
+        foreach (array_keys($roster_map) as $order_item_id) {
+            $order_item_id = (int) $order_item_id;
+            if ($order_item_id <= 0 || isset($woo_map[$order_item_id])) {
+                continue;
+            }
+            $roster_row = $roster_map[$order_item_id] ?? null;
+            $pair = $this->fetchWooRowForDiagnosticsPairing($order_item_id, $filters, is_array($roster_row) ? $roster_row : null);
+            if ($pair !== null) {
+                $woo_map[$order_item_id] = $this->enrichWooRowFromRoster($pair, is_array($roster_row) ? $roster_row : null);
+                $stats['woo_added']++;
+            } else {
+                $reason = (string) ($this->classifyWooPairingFailure($order_item_id, $filters, is_array($roster_row) ? $roster_row : null)['cause'] ?? 'unknown');
+                if (!isset($stats['woo_pair_failures'][$reason])) {
+                    $stats['woo_pair_failures'][$reason] = 0;
+                }
+                $stats['woo_pair_failures'][$reason]++;
+            }
+        }
+
+        foreach (array_keys($woo_map) as $order_item_id) {
+            $order_item_id = (int) $order_item_id;
+            if ($order_item_id <= 0 || isset($roster_map[$order_item_id])) {
+                continue;
+            }
+            $row = $this->fetchRosterRowForDiagnosticsPairing(
+                $order_item_id,
+                $filters,
+                $woo_map[$order_item_id] ?? null
+            );
+            if ($row === null) {
+                continue;
+            }
+            if (!isset($roster_rows_by_item[$order_item_id])) {
+                $roster_rows_by_item[$order_item_id] = [];
+            }
+            $roster_rows_by_item[$order_item_id][] = $row;
+            $roster_map[$order_item_id] = $row;
+            $stats['roster_added']++;
+        }
+
+        $stats['woo_final_count'] = count($woo_map);
+        // #region agent log
+        error_log('[intersoccer-332b44] supplement diagnostics maps: ' . wp_json_encode([
+            'runId' => 'post-fix-unknown-type',
+            'stats' => $stats,
+        ]));
+        // #endregion
+    }
+
+    /**
+     * Copy roster context onto a Woo diagnostics row when Woo metadata is sparse.
+     *
+     * @param array<string,mixed> $woo
+     * @param array<string,mixed>|null $roster_row
+     * @return array<string,mixed>
+     */
+    private function enrichWooRowFromRoster(array $woo, ?array $roster_row): array {
+        if (!is_array($roster_row)) {
+            return $woo;
+        }
+        if (trim((string) ($woo['activity_type'] ?? '')) === '' && trim((string) ($roster_row['activity_type'] ?? '')) !== '') {
+            $woo['activity_type'] = (string) $roster_row['activity_type'];
+        }
+        if (trim((string) ($woo['season'] ?? '')) === '' && trim((string) ($roster_row['season'] ?? '')) !== '') {
+            $woo['season'] = (string) $roster_row['season'];
+        }
+        return $woo;
+    }
+
+    /**
+     * @param int $order_item_id
+     * @param array<string,mixed> $filters
+     * @param array<string,mixed>|null $roster_row
+     * @return array<string,mixed>|null
+     */
+    private function fetchWooRowForDiagnosticsPairing(int $order_item_id, array $filters, ?array $roster_row = null): ?array {
+        if (!$this->woocommerceLineItemExists($order_item_id)) {
+            return null;
+        }
+
+        $woo = $this->fetchWooRowByOrderItemId($order_item_id);
+        if ($woo === null) {
+            return null;
+        }
+
+        $order_id = (int) ($woo['order_id'] ?? 0);
+        if ($order_id <= 0) {
+            return null;
+        }
+
+        $allowed_statuses = is_array($filters['order_statuses'] ?? null)
+            ? $filters['order_statuses']
+            : self::DEFAULT_ORDER_STATUSES;
+        $order_meta = $this->loadOrderMetaForIds([$order_id]);
+        $order_status = (string) ($order_meta[$order_id]['status'] ?? '');
+        if (!$this->orderStatusAllowed($order_status, $allowed_statuses)) {
+            return null;
+        }
+
+        $order_date = (string) ($order_meta[$order_id]['date'] ?? '');
+        $year = (int) ($filters['year'] ?? (int) date('Y'));
+        if (is_array($roster_row) && !empty($roster_row['season'])) {
+            $woo['season'] = (string) $roster_row['season'];
+        }
+        $year_ok = $this->wooRowMatchesYear($woo, $year, $order_date);
+        if (!$year_ok && is_array($roster_row) && $this->rosterMatchesYear($roster_row, $year)) {
+            $year_ok = true;
+        }
+        if (!$year_ok) {
+            return null;
+        }
+
+        $activity = (string) ($filters['activity_type'] ?? 'All');
+        if (is_array($roster_row)) {
+            return $this->enrichWooRowFromRoster($woo, $roster_row);
+        }
+
+        if (!$this->matchesActivityTypeFilter($woo, $activity)) {
+            return null;
+        }
+
+        return $woo;
+    }
+
+    /**
+     * @param int $order_item_id
+     * @param array<string,mixed> $filters
+     * @param array<string,mixed>|null $roster_row
+     * @return array<string,mixed>
+     */
+    private function classifyWooPairingFailure(int $order_item_id, array $filters, ?array $roster_row = null): array {
+        if (!$this->woocommerceLineItemExists($order_item_id)) {
+            return ['cause' => 'line_item_deleted', 'hypothesisId' => 'H1'];
+        }
+
+        $woo = $this->fetchWooRowByOrderItemId($order_item_id);
+        if ($woo === null) {
+            return ['cause' => 'line_item_unfetchable', 'hypothesisId' => 'H1'];
+        }
+
+        $order_id = (int) ($woo['order_id'] ?? 0);
+        $allowed_statuses = is_array($filters['order_statuses'] ?? null)
+            ? $filters['order_statuses']
+            : self::DEFAULT_ORDER_STATUSES;
+        $order_meta = $this->loadOrderMetaForIds([$order_id]);
+        $order_status = (string) ($order_meta[$order_id]['status'] ?? '');
+        if (!$this->orderStatusAllowed($order_status, $allowed_statuses)) {
+            return ['cause' => 'order_status_excluded', 'order_status' => $order_status, 'hypothesisId' => 'H2'];
+        }
+
+        $order_date = (string) ($order_meta[$order_id]['date'] ?? '');
+        $year = (int) ($filters['year'] ?? (int) date('Y'));
+        if (is_array($roster_row) && !empty($roster_row['season'])) {
+            $woo['season'] = (string) $roster_row['season'];
+        }
+        $year_ok = $this->wooRowMatchesYear($woo, $year, $order_date);
+        if (!$year_ok && is_array($roster_row) && $this->rosterMatchesYear($roster_row, $year)) {
+            $year_ok = true;
+        }
+        if (!$year_ok) {
+            return ['cause' => 'woo_year_scope_miss', 'hypothesisId' => 'H3'];
+        }
+
+        $activity = (string) ($filters['activity_type'] ?? 'All');
+        if (!$this->matchesActivityTypeFilter($woo, $activity)) {
+            if (!is_array($roster_row) || !$this->matchesRosterActivityTypeFilter($roster_row, $activity)) {
+                return ['cause' => 'activity_type_filter', 'hypothesisId' => 'H4'];
+            }
+        }
+
+        return ['cause' => 'unknown_pair_failure', 'hypothesisId' => 'H6'];
+    }
+
+    /**
+     * @param int $order_item_id
+     * @param array<string,mixed> $filters
+     * @param array<string,mixed>|null $woo_row
+     * @return array<string,mixed>|null
+     */
+    private function fetchRosterRowForDiagnosticsPairing(int $order_item_id, array $filters, ?array $woo_row = null): ?array {
+        $row = $this->loadRosterRowFromDatabase($order_item_id);
+        if ($row === null || (int) ($row['is_placeholder'] ?? 0) === 1) {
+            return null;
+        }
+
+        $order_id = (int) ($row['order_id'] ?? 0);
+        if ($order_id <= 0) {
+            return null;
+        }
+
+        $allowed_statuses = is_array($filters['order_statuses'] ?? null)
+            ? $filters['order_statuses']
+            : self::DEFAULT_ORDER_STATUSES;
+        $order_meta = $this->loadOrderMetaForIds([$order_id]);
+        $order_status = (string) ($order_meta[$order_id]['status'] ?? '');
+        if (!$this->orderStatusAllowed($order_status, $allowed_statuses)) {
+            return null;
+        }
+
+        $order_date = (string) ($order_meta[$order_id]['date'] ?? '');
+        $year = (int) ($filters['year'] ?? (int) date('Y'));
+        $year_ok = $this->rosterMatchesYear($row, $year);
+        if (!$year_ok && is_array($woo_row)) {
+            $year_ok = $this->wooRowMatchesYear($woo_row, $year, $order_date);
+        }
+        if (!$year_ok) {
+            return null;
+        }
+
+        if (!$this->matchesRosterActivityTypeFilter($row, (string) ($filters['activity_type'] ?? 'All'))) {
+            return null;
+        }
+
+        return $row;
+    }
+
+    /**
+     * @param int $order_item_id
+     * @return array<string,mixed>|null
+     */
+    private function loadRosterRowFromDatabase(int $order_item_id): ?array {
+        global $wpdb;
+        $order_item_id = (int) $order_item_id;
+        if ($order_item_id <= 0) {
+            return null;
+        }
+
+        $table = $wpdb->prefix . 'intersoccer_rosters';
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, order_item_id, order_id, product_id, variation_id, activity_type,
+                        venue, course_day, season, canton_region, start_date, end_date,
+                        player_name, player_first_name, player_last_name, first_name, last_name, product_name,
+                        event_signature, is_placeholder
+                 FROM {$table}
+                 WHERE order_item_id = %d
+                 ORDER BY id DESC
+                 LIMIT 1",
+                $order_item_id
+            ),
+            ARRAY_A
+        );
+
+        return is_array($row) ? $row : null;
+    }
+
+    /**
+     * @param int $order_item_id
+     */
+    private function woocommerceLineItemExists(int $order_item_id): bool {
+        global $wpdb;
+        $order_item_id = (int) $order_item_id;
+        if ($order_item_id <= 0) {
+            return false;
+        }
+
+        $items_table = $wpdb->prefix . 'woocommerce_order_items';
+        return ((int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$items_table} WHERE order_item_id = %d AND order_item_type = 'line_item'",
+            $order_item_id
+        ))) > 0;
+    }
+
+    /**
+     * @param int $product_id
+     * @param int $variation_id
+     */
+    private function resolveActivityTypeCandidateFromProduct(int $product_id, int $variation_id): string {
+        $product_id = (int) $product_id;
+        $variation_id = (int) $variation_id;
+        if ($product_id <= 0) {
+            return '';
+        }
+
+        if ($variation_id > 0) {
+            $variation_attr = strtolower(trim((string) get_post_meta($variation_id, 'attribute_pa_activity-type', true)));
+            if ($variation_attr !== '') {
+                return $variation_attr;
+            }
+        }
+
+        $product_attr = strtolower(trim((string) get_post_meta($product_id, 'pa_activity-type', true)));
+        if ($product_attr !== '') {
+            return $product_attr;
+        }
+
+        if (function_exists('intersoccer_get_product_type_safe')) {
+            $ptype = strtolower((string) intersoccer_get_product_type_safe($product_id, $variation_id > 0 ? $variation_id : null));
+            if ($ptype !== '') {
+                return $ptype;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Backfill missing Woo venue/course-day metadata from roster values.
+     *
+     * @param int $order_item_id
+     * @param array<string,mixed> $roster
+     */
+    private function backfillMissingWooMetaFromRoster(int $order_item_id, array $roster): bool {
+        $order_item_id = (int) $order_item_id;
+        if ($order_item_id <= 0) {
+            return false;
+        }
+
+        $changed = false;
+
+        $venue = trim((string) ($roster['venue'] ?? ''));
+        if ($venue !== '' && self::normalizeVenueComparableValue($venue) !== '') {
+            $ok_a = $this->upsertOrderItemMeta($order_item_id, 'pa_intersoccer-venues', $venue);
+            $ok_b = $this->upsertOrderItemMeta($order_item_id, 'attribute_pa_intersoccer-venues', $venue);
+            $ok_c = $this->upsertOrderItemMeta($order_item_id, 'pa_intersoccer_venues', $venue);
+            $ok_d = $this->upsertOrderItemMeta($order_item_id, 'attribute_pa_intersoccer_venues', $venue);
+            $changed = $changed || $ok_a || $ok_b || $ok_c || $ok_d;
+        }
+
+        $course_day = trim((string) ($roster['course_day'] ?? ''));
+        if ($course_day !== '' && self::normalizeCourseDayComparableValue($course_day) !== '') {
+            $ok_a = $this->upsertOrderItemMeta($order_item_id, 'pa_course-day', $course_day);
+            $ok_b = $this->upsertOrderItemMeta($order_item_id, 'attribute_pa_course-day', $course_day);
+            $ok_c = $this->upsertOrderItemMeta($order_item_id, 'pa_course_day', $course_day);
+            $ok_d = $this->upsertOrderItemMeta($order_item_id, 'attribute_pa_course_day', $course_day);
+            $changed = $changed || $ok_a || $ok_b || $ok_c || $ok_d;
+        }
+
+        return $changed;
+    }
+
+    /**
+     * Classify mismatch buckets for sync-queue accuracy investigations.
+     *
+     * @param array<int,array<string,mixed>> $mismatches
+     * @param array<string,mixed> $filters
+     * @return array<string,mixed>
+     */
+    private function analyzeMismatchBuckets(array $mismatches, array $filters): array {
+        $missing_in_woo_causes = [];
+        $missing_in_woo_samples = [];
+        $missing_in_rosters_items = [];
+        $missing_in_woo_meta_samples = [];
+        $course_day_mismatch_samples = [];
+        $missing_in_woo_meta_count = 0;
+        $course_day_mismatch_count = 0;
+
+        foreach ($mismatches as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $order_item_id = (int) ($row['order_item_id'] ?? 0);
+            $reasons = isset($row['reasons']) && is_array($row['reasons']) ? $row['reasons'] : [];
+            if ($order_item_id <= 0 || $reasons === []) {
+                continue;
+            }
+
+            if (in_array('missing_in_woo', $reasons, true)) {
+                $classification = $this->classifyMissingInWooCause($order_item_id, $filters);
+                $cause = (string) ($classification['cause'] ?? 'unknown');
+                if (!isset($missing_in_woo_causes[$cause])) {
+                    $missing_in_woo_causes[$cause] = 0;
+                }
+                $missing_in_woo_causes[$cause]++;
+                if (count($missing_in_woo_samples) < 8) {
+                    $missing_in_woo_samples[] = array_merge(
+                        ['order_item_id' => $order_item_id, 'order_id' => (int) ($row['order_id'] ?? 0)],
+                        $classification
+                    );
+                }
+            }
+
+            if (in_array('missing_in_rosters', $reasons, true)) {
+                $missing_in_rosters_items[] = $this->classifyMissingInRostersCause($order_item_id, $filters);
+            }
+
+            if (in_array('missing_in_woo_meta', $reasons, true)) {
+                $missing_in_woo_meta_count++;
+                $meta_detail = $this->classifyMissingInWooMetaCause($order_item_id, $row);
+                $missing_in_woo_meta_samples[] = $meta_detail;
+            }
+
+            if (in_array('course_day_mismatch', $reasons, true)) {
+                $course_day_mismatch_count++;
+                if (count($course_day_mismatch_samples) < 8) {
+                    $course_day_mismatch_samples[] = [
+                    'order_item_id' => $order_item_id,
+                    'order_id' => (int) ($row['order_id'] ?? 0),
+                    'woo_course_day' => (string) ($row['woo_course_day'] ?? ''),
+                    'roster_course_day' => (string) ($row['roster_course_day'] ?? ''),
+                    'woo_norm' => self::normalizeComparableValue($row['woo_course_day'] ?? ''),
+                    'roster_norm' => self::normalizeComparableValue($row['roster_course_day'] ?? ''),
+                ];
+                }
+            }
+        }
+
+        return [
+            'summary' => [
+                'missing_in_woo' => array_sum($missing_in_woo_causes),
+                'missing_in_rosters' => count($missing_in_rosters_items),
+                'missing_in_woo_meta' => $missing_in_woo_meta_count,
+                'course_day_mismatch' => $course_day_mismatch_count,
+            ],
+            'missing_in_woo_causes' => $missing_in_woo_causes,
+            'missing_in_woo_samples' => $missing_in_woo_samples,
+            'missing_in_rosters_items' => $missing_in_rosters_items,
+            'missing_in_woo_meta_items' => $missing_in_woo_meta_samples,
+            'missing_in_rosters_likely_causes' => $this->summarizeLikelyCauses($missing_in_rosters_items, 'likely_cause'),
+            'missing_in_woo_meta_likely_causes' => $this->summarizeLikelyCauses($missing_in_woo_meta_samples, 'likely_cause'),
+            'missing_in_woo_meta_samples' => array_slice($missing_in_woo_meta_samples, 0, 8),
+            'course_day_mismatch_samples' => $course_day_mismatch_samples,
+        ];
+    }
+
+    /**
+     * @param int $order_item_id
+     * @param array<string,mixed> $filters
+     * @return array<string,mixed>
+     */
+    private function classifyMissingInWooCause(int $order_item_id, array $filters): array {
+        global $wpdb;
+
+        $order_item_id = (int) $order_item_id;
+        $items_table = $wpdb->prefix . 'woocommerce_order_items';
+        $line_exists = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$items_table} WHERE order_item_id = %d AND order_item_type = 'line_item'",
+            $order_item_id
+        ));
+        if ($line_exists === 0) {
+            return ['cause' => 'line_item_deleted', 'hypothesisId' => 'H1'];
+        }
+
+        $woo_row = $this->fetchWooRowByOrderItemId($order_item_id);
+        if ($woo_row === null) {
+            return ['cause' => 'line_item_unfetchable', 'hypothesisId' => 'H1'];
+        }
+
+        $order_id = (int) ($woo_row['order_id'] ?? 0);
+        $order_meta = $this->loadOrderMetaForIds([$order_id]);
+        $order_status = (string) ($order_meta[$order_id]['status'] ?? '');
+        $allowed_statuses = is_array($filters['order_statuses'] ?? null)
+            ? $filters['order_statuses']
+            : self::DEFAULT_ORDER_STATUSES;
+        if (!$this->orderStatusAllowed($order_status, $allowed_statuses)) {
+            return [
+                'cause' => 'order_status_excluded',
+                'order_status' => $order_status,
+                'hypothesisId' => 'H2',
+            ];
+        }
+
+        $product_id = (int) ($woo_row['product_id'] ?? 0);
+        $variation_id = (int) ($woo_row['variation_id'] ?? 0);
+        if (!$this->isRowRosterEligible($product_id, $variation_id, $woo_row)) {
+            return ['cause' => 'not_roster_eligible', 'hypothesisId' => 'H4'];
+        }
+
+        if (!$this->matchesActivityTypeFilter($woo_row, (string) ($filters['activity_type'] ?? 'All'))) {
+            return ['cause' => 'activity_type_filter', 'hypothesisId' => 'H4'];
+        }
+
+        $order_date = (string) ($order_meta[$order_id]['date'] ?? '');
+        if (!$this->wooRowMatchesYear($woo_row, (int) ($filters['year'] ?? (int) date('Y')), $order_date)) {
+            return [
+                'cause' => 'woo_year_scope_miss',
+                'order_date' => $order_date,
+                'season' => (string) ($woo_row['season'] ?? ''),
+                'hypothesisId' => 'H3',
+            ];
+        }
+
+        if (!empty($filters['exclude_buyclub'])) {
+            $is_buyclub = ((float) ($woo_row['line_subtotal'] ?? 0) > 0.0) && ((float) ($woo_row['line_total'] ?? 0) === 0.0);
+            if ($is_buyclub) {
+                return ['cause' => 'buyclub_excluded', 'hypothesisId' => 'H4'];
+            }
+        }
+
+        return ['cause' => 'unknown_scope_miss', 'hypothesisId' => 'H6'];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $items
+     * @param string $field
+     * @return array<string,int>
+     */
+    private function summarizeLikelyCauses(array $items, string $field): array {
+        $counts = [];
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $cause = (string) ($item[$field] ?? 'unknown');
+            if (!isset($counts[$cause])) {
+                $counts[$cause] = 0;
+            }
+            $counts[$cause]++;
+        }
+        return $counts;
+    }
+
+    /**
+     * Write one NDJSON debug trace line for sync investigations.
+     *
+     * @param array<string,mixed> $payload
+     */
+    private function writeAgentDebugLog(array $payload): void {
+        // #region agent log
+        $path = '/home/jeremy-lee/projects/underdog/intersoccer/players-and-events/.cursor/debug-332b44.log';
+        $payload['sessionId'] = '332b44';
+        $payload['timestamp'] = (int) round(microtime(true) * 1000);
+        @file_put_contents($path, wp_json_encode($payload) . "\n", FILE_APPEND | LOCK_EX);
+        // #endregion
+    }
+
+    /**
+     * Emit a per-row trace for every mismatch so each discrepancy can be audited.
+     *
+     * @param array<int,array<string,mixed>> $mismatches
+     * @param array<string,mixed> $filters
+     * @param array<int,array<string,mixed>> $woo_map
+     * @param array<int,array<string,mixed>> $roster_map
+     */
+    private function logFullDiscrepancyTrace(
+        array $mismatches,
+        array $filters,
+        array $woo_map,
+        array $roster_map
+    ): void {
+        $by_reason = [];
+        foreach ($mismatches as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $reasons = isset($row['reasons']) && is_array($row['reasons']) ? $row['reasons'] : [];
+            foreach ($reasons as $reason) {
+                if (!isset($by_reason[$reason])) {
+                    $by_reason[$reason] = 0;
+                }
+                $by_reason[$reason]++;
+            }
+        }
+
+        $this->writeAgentDebugLog([
+            'runId' => 'full-discrepancy-trace',
+            'location' => 'runDiagnostics',
+            'message' => 'discrepancy trace summary',
+            'hypothesisId' => 'TRACE',
+            'data' => [
+                'year' => $filters['year'] ?? '',
+                'order_statuses' => $filters['order_statuses'] ?? [],
+                'woo_map_count' => count($woo_map),
+                'roster_map_count' => count($roster_map),
+                'intersection' => count(array_intersect(array_keys($woo_map), array_keys($roster_map))),
+                'only_woo' => count(array_diff(array_keys($woo_map), array_keys($roster_map))),
+                'only_roster' => count(array_diff(array_keys($roster_map), array_keys($woo_map))),
+                'mismatch_row_count' => count($mismatches),
+                'reason_totals' => $by_reason,
+            ],
+        ]);
+
+        foreach ($mismatches as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $order_item_id = (int) ($row['order_item_id'] ?? 0);
+            $reasons = isset($row['reasons']) && is_array($row['reasons']) ? $row['reasons'] : [];
+            if ($order_item_id <= 0 || $reasons === []) {
+                continue;
+            }
+
+            $detail = [
+                'order_item_id' => $order_item_id,
+                'order_id' => (int) ($row['order_id'] ?? 0),
+                'reasons' => $reasons,
+                'product_name' => (string) ($row['product_name'] ?? ''),
+                'activity_type' => (string) ($row['activity_type'] ?? ''),
+                'participant_name' => (string) ($row['participant_name'] ?? ''),
+                'woo_venue' => (string) ($row['woo_venue'] ?? ''),
+                'roster_venue' => (string) ($row['roster_venue'] ?? ''),
+                'woo_course_day' => (string) ($row['woo_course_day'] ?? ''),
+                'roster_course_day' => (string) ($row['roster_course_day'] ?? ''),
+            ];
+
+            if (in_array('missing_in_rosters', $reasons, true)) {
+                $detail['missing_in_rosters'] = $this->classifyMissingInRostersCause($order_item_id, $filters);
+            }
+            if (in_array('missing_in_woo_meta', $reasons, true)) {
+                $detail['missing_in_woo_meta'] = $this->classifyMissingInWooMetaCause($order_item_id, $row);
+            }
+            if (in_array('missing_in_woo', $reasons, true)) {
+                $detail['missing_in_woo'] = $this->classifyMissingInWooCause($order_item_id, $filters);
+            }
+
+            $this->writeAgentDebugLog([
+                'runId' => 'full-discrepancy-trace',
+                'location' => 'runDiagnostics:row',
+                'message' => 'mismatch row detail',
+                'hypothesisId' => 'TRACE',
+                'data' => $detail,
+            ]);
+        }
+    }
+
+    /**
+     * @param int $order_item_id
+     * @param array<string,mixed> $filters
+     * @return array<string,mixed>
+     */
+    private function classifyMissingInRostersCause(int $order_item_id, array $filters): array {
+        $order_item_id = (int) $order_item_id;
+        $woo_row = $this->fetchWooRowByOrderItemId($order_item_id);
+        $has_attendee = false;
+        $attendee_name = '';
+        if (function_exists('intersoccer_resolve_assigned_attendee_from_order_item')) {
+            $attendee = intersoccer_resolve_assigned_attendee_from_order_item($order_item_id);
+            $attendee_name = $attendee;
+            $has_attendee = $attendee !== '';
+        }
+
+        $roster_count = $this->countRosterRowsForOrderItem($order_item_id);
+        $order_id = (int) ($woo_row['order_id'] ?? 0);
+        $product_id = (int) ($woo_row['product_id'] ?? 0);
+        $variation_id = (int) ($woo_row['variation_id'] ?? 0);
+        $activity_type = trim((string) ($woo_row['activity_type'] ?? ''));
+        $order_item_name = trim((string) ($woo_row['order_item_name'] ?? ''));
+
+        $order_meta = $order_id > 0 ? $this->loadOrderMetaForIds([$order_id]) : [];
+        $order_status = (string) ($order_meta[$order_id]['status'] ?? '');
+        $order_date = (string) ($order_meta[$order_id]['date'] ?? '');
+
+        $customer_id = 0;
+        if ($order_id > 0 && function_exists('wc_get_order')) {
+            $order = wc_get_order($order_id);
+            if ($order) {
+                $customer_id = (int) $order->get_customer_id();
+            }
+        }
+
+        $roster_eligible = is_array($woo_row)
+            ? $this->isRowRosterEligible($product_id, $variation_id, $woo_row)
+            : false;
+
+        $likely_cause = 'reconcile_never_created_row';
+        if (!$roster_eligible) {
+            $likely_cause = 'not_roster_eligible';
+        } elseif ($activity_type === '' && $order_item_name === '') {
+            $likely_cause = 'activity_type_missing';
+        } elseif ($customer_id <= 0) {
+            $likely_cause = 'guest_order_no_customer_id';
+        } elseif ($has_attendee && $roster_count === 0) {
+            $likely_cause = 'reconcile_player_match_or_validation_failed';
+        } elseif (!$has_attendee) {
+            $likely_cause = 'no_assigned_attendee';
+        }
+
+        return [
+            'order_item_id' => $order_item_id,
+            'order_id' => $order_id,
+            'order_status' => $order_status,
+            'order_date' => $order_date,
+            'customer_id' => $customer_id,
+            'product_id' => $product_id,
+            'variation_id' => $variation_id,
+            'order_item_name' => $order_item_name,
+            'woo_activity_type' => $activity_type,
+            'roster_eligible' => $roster_eligible,
+            'has_assigned_attendee' => $has_attendee,
+            'attendee_name' => $attendee_name,
+            'roster_row_count' => $roster_count,
+            'likely_cause' => $likely_cause,
+            'safe_fix' => 'runSafeFixForOrderItem or Reconcile',
+            'hypothesisId' => 'H7',
+        ];
+    }
+
+    /**
+     * @param int $order_item_id
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>
+     */
+    private function classifyMissingInWooMetaCause(int $order_item_id, array $row): array {
+        $order_item_id = (int) $order_item_id;
+        $woo_raw = (string) ($row['woo_venue'] ?? '');
+        $roster_raw = (string) ($row['roster_venue'] ?? '');
+        $woo_norm = self::normalizeVenueComparableValue($woo_raw);
+        $roster_norm = self::normalizeVenueComparableValue($roster_raw);
+
+        return [
+            'order_item_id' => $order_item_id,
+            'order_id' => (int) ($row['order_id'] ?? 0),
+            'woo_venue_raw' => $woo_raw,
+            'roster_venue_raw' => $roster_raw,
+            'woo_venue_norm' => $woo_norm,
+            'roster_venue_norm' => $roster_norm,
+            'woo_course_day' => (string) ($row['woo_course_day'] ?? ''),
+            'roster_course_day' => (string) ($row['roster_course_day'] ?? ''),
+            'venue_meta_keys' => $this->fetchVenueMetaKeysForOrderItem($order_item_id),
+            'backfillable_from_roster' => $roster_norm !== '',
+            'likely_cause' => $woo_norm === '' && $roster_norm !== '' ? 'woo_venue_meta_empty' : 'venue_normalization_mismatch',
+            'safe_fix' => 'backfillMissingWooMetaFromRoster',
+            'hypothesisId' => 'H8',
+        ];
+    }
+
+    /**
+     * @param int $order_item_id
+     * @return array<int,array{meta_key:string,meta_value:string}>
+     */
+    private function fetchVenueMetaKeysForOrderItem(int $order_item_id): array {
+        global $wpdb;
+        $order_item_id = (int) $order_item_id;
+        if ($order_item_id <= 0) {
+            return [];
+        }
+
+        $table = $wpdb->prefix . 'woocommerce_order_itemmeta';
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT meta_key, meta_value FROM {$table}
+             WHERE order_item_id = %d
+               AND (
+                    meta_key LIKE %s
+                    OR meta_key LIKE %s
+                    OR meta_key LIKE %s
+               )
+             ORDER BY meta_id ASC",
+            $order_item_id,
+            '%venue%',
+            '%Venue%',
+            '%intersoccer%'
+        ), ARRAY_A);
+
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $out[] = [
+                'meta_key' => (string) ($row['meta_key'] ?? ''),
+                'meta_value' => (string) ($row['meta_value'] ?? ''),
+            ];
+        }
+        return $out;
     }
 }
 

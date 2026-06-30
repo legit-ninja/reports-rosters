@@ -135,6 +135,44 @@ class ReportsRostersDiagnosticsServiceTest extends TestCase {
         $this->assertFalse($health['has_incomplete_player']);
     }
 
+    public function test_needs_resync_false_when_event_signature_present(): void {
+        $health = ReportsRostersDiagnosticsService::rosterItemSyncHealth([
+            [
+                'first_name' => 'Alex',
+                'last_name' => 'Smith',
+                'player_name' => 'Alex Smith',
+                'event_signature' => 'sig-123',
+            ],
+        ]);
+        $this->assertFalse($health['needs_resync']);
+    }
+
+    public function test_compute_item_mismatch_reasons_requires_event_signature_in_row(): void {
+        $woo = ['venue_value' => 'Geneva', 'course_day_value' => 'Monday'];
+        $roster_without_sig = [
+            'venue' => 'Geneva',
+            'course_day' => 'Monday',
+            'first_name' => 'Alex',
+            'last_name' => 'Smith',
+            'player_name' => 'Alex Smith',
+        ];
+        $roster_with_sig = $roster_without_sig + ['event_signature' => 'sig-123'];
+
+        $false_positive = ReportsRostersDiagnosticsService::computeItemMismatchReasons(
+            $woo,
+            $roster_without_sig,
+            [$roster_without_sig]
+        );
+        $expected = ReportsRostersDiagnosticsService::computeItemMismatchReasons(
+            $woo,
+            $roster_with_sig,
+            [$roster_with_sig]
+        );
+
+        $this->assertContains('fragmented_roster', $false_positive);
+        $this->assertNotContains('fragmented_roster', $expected);
+    }
+
     public function test_append_fragmented_roster_reason_for_duplicate_rows(): void {
         $health = ReportsRostersDiagnosticsService::rosterItemSyncHealth([
             ['first_name' => 'Alex', 'last_name' => 'Smith', 'player_name' => 'Alex Smith', 'event_signature' => 'sig-1'],
@@ -155,13 +193,55 @@ class ReportsRostersDiagnosticsServiceTest extends TestCase {
         $this->assertSame(1, $filtered[0]['order_item_id']);
     }
 
+    public function test_normalize_course_day_maps_french_dimanche_to_sunday(): void {
+        $this->assertSame('sunday', ReportsRostersDiagnosticsService::normalizeCourseDayComparableValue('dimanche'));
+        $this->assertSame('sunday', ReportsRostersDiagnosticsService::normalizeCourseDayComparableValue('Sunday'));
+    }
+
+    public function test_course_day_mismatch_not_raised_for_french_dimanche_vs_english_sunday(): void {
+        $woo = [
+            'venue_value' => 'Geneva',
+            'course_day_value' => 'dimanche',
+        ];
+        $roster = [
+            'venue' => 'Geneva',
+            'course_day' => 'Sunday',
+            'first_name' => 'Alex',
+            'last_name' => 'Smith',
+            'event_signature' => 'sig-123',
+        ];
+        $reasons = ReportsRostersDiagnosticsService::classifyMismatchReasons($woo, $roster);
+        $this->assertNotContains('course_day_mismatch', $reasons);
+    }
+
     public function test_sanitize_filters_defaults_order_statuses_and_activity_all(): void {
         $service = new ReportsRostersDiagnosticsService();
         $filters = $service->getSanitizedFilters([]);
 
         $this->assertSame('All', $filters['activity_type']);
-        $this->assertSame(ReportsRostersDiagnosticsService::defaultOrderStatuses(), $filters['order_statuses']);
+        $this->assertSame(['wc-completed'], $filters['order_statuses']);
+        $this->assertSame(['wc-completed'], ReportsRostersDiagnosticsService::defaultOrderStatuses());
         $this->assertSame('', $filters['reason_filter']);
+    }
+
+    public function test_row_roster_eligible_falls_back_to_order_item_name(): void {
+        $service = new ReportsRostersDiagnosticsService();
+        $method = new \ReflectionMethod(ReportsRostersDiagnosticsService::class, 'isRowRosterEligible');
+        $method->setAccessible(true);
+
+        $eligible = $method->invoke($service, 0, 0, [
+            'order_item_name' => 'Geneva Spring Course - Sunday',
+            'activity_type' => '',
+            'product_activity_type_attr' => '',
+        ]);
+        $this->assertTrue($eligible);
+
+        $ineligible = $method->invoke($service, 0, 0, [
+            'order_item_name' => 'Birthday Party Package',
+            'activity_type' => '',
+            'product_activity_type_attr' => '',
+        ]);
+        $this->assertFalse($ineligible);
     }
 }
 
