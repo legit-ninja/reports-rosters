@@ -1199,8 +1199,19 @@ class RosterListingService {
 
     private function applyCampFilters(array $groups, array $filters): array {
         return array_values(array_filter($groups, function ($group) use ($filters) {
-            if ($filters['season'] && $group['season'] !== $filters['season'] && $group['season_raw'] !== $filters['season']) {
-                return false;
+            if ($filters['season']) {
+                if (function_exists('intersoccer_roster_listing_season_filter_matches')) {
+                    $row = [
+                        'season' => (string) ($group['season_raw'] ?? $group['season'] ?? ''),
+                        'start_date' => (string) ($group['corrected_start_date'] ?? ''),
+                        'product_name' => (string) ($group['product_name'] ?? ''),
+                    ];
+                    if (!intersoccer_roster_listing_season_filter_matches($row, $filters['season'], 'camp')) {
+                        return false;
+                    }
+                } elseif ($group['season'] !== $filters['season'] && $group['season_raw'] !== $filters['season']) {
+                    return false;
+                }
             }
             if ($filters['venue'] && $group['venue'] !== $filters['venue']) {
                 return false;
@@ -1223,8 +1234,19 @@ class RosterListingService {
      */
     private function filterCampGroupsExcept(array $groups, array $filters, string $omit_dimension): array {
         return array_values(array_filter($groups, function ($group) use ($filters, $omit_dimension) {
-            if ($omit_dimension !== 'season' && $filters['season'] && $group['season'] !== $filters['season'] && $group['season_raw'] !== $filters['season']) {
-                return false;
+            if ($omit_dimension !== 'season' && $filters['season']) {
+                if (function_exists('intersoccer_roster_listing_season_filter_matches')) {
+                    $row = [
+                        'season' => (string) ($group['season_raw'] ?? $group['season'] ?? ''),
+                        'start_date' => (string) ($group['corrected_start_date'] ?? ''),
+                        'product_name' => (string) ($group['product_name'] ?? ''),
+                    ];
+                    if (!intersoccer_roster_listing_season_filter_matches($row, $filters['season'], 'camp')) {
+                        return false;
+                    }
+                } elseif ($group['season'] !== $filters['season'] && $group['season_raw'] !== $filters['season']) {
+                    return false;
+                }
             }
             if ($omit_dimension !== 'venue' && $filters['venue'] && $group['venue'] !== $filters['venue']) {
                 return false;

@@ -326,6 +326,61 @@ class UtilsTest extends TestCase {
         $this->assertTrue(intersoccer_roster_course_season_filter_matches($group, 'Winter 2026'));
     }
 
+    public function test_resolve_listing_year_from_season_or_start_date() {
+        if (!function_exists('intersoccer_roster_resolve_listing_year')) {
+            $this->markTestSkipped('intersoccer_roster_resolve_listing_year not loaded');
+        }
+        $this->assertSame(2026, intersoccer_roster_resolve_listing_year(['season' => 'Summer Camps 2026']));
+        $this->assertSame(2025, intersoccer_roster_resolve_listing_year([
+            'season' => '',
+            'start_date' => '2025-07-14',
+        ]));
+        $this->assertNull(intersoccer_roster_resolve_listing_year(['season' => '', 'start_date' => '']));
+    }
+
+    public function test_camp_listing_season_filter_matches_by_year_with_label_variants() {
+        if (!function_exists('intersoccer_roster_listing_season_filter_matches')) {
+            $this->markTestSkipped('intersoccer_roster_listing_season_filter_matches not loaded');
+        }
+        $row_2026 = [
+            'season' => 'Summer-camps-2026',
+            'start_date' => '2026-07-13',
+            'product_name' => 'Lausanne Summer Camp',
+        ];
+        $row_2025 = [
+            'season' => 'Summer Camps 2025',
+            'start_date' => '2025-07-14',
+            'product_name' => 'Lausanne Summer Camp',
+        ];
+        $this->assertTrue(intersoccer_roster_listing_season_filter_matches($row_2026, 'Summer Camps 2026', 'camp'));
+        $this->assertFalse(intersoccer_roster_listing_season_filter_matches($row_2025, 'Summer Camps 2026', 'camp'));
+        $this->assertTrue(intersoccer_roster_listing_season_filter_matches($row_2025, 'Summer Camps 2025', 'camp'));
+    }
+
+    public function test_consolidated_roster_group_key_separates_years_for_same_camp_slot() {
+        if (!function_exists('intersoccer_consolidated_roster_group_key')) {
+            $this->markTestSkipped('intersoccer_consolidated_roster_group_key not loaded');
+        }
+        $base = [
+            'product_id' => 25222,
+            'variation_id' => 32351,
+            'venue' => 'Lausanne- Stade de Rochettaz, Pully',
+            'camp_terms' => 'Summer Week 4: July 13-17 (5 days)',
+            'age_group' => '5-13y',
+            'times' => '0900-1700',
+            'girls_only' => 0,
+        ];
+        $key_2025 = intersoccer_consolidated_roster_group_key($base + [
+            'season' => 'Summer Camps 2025',
+            'start_date' => '2025-07-13',
+        ], 'camp');
+        $key_2026 = intersoccer_consolidated_roster_group_key($base + [
+            'season' => 'Summer Camps 2026',
+            'start_date' => '2026-07-13',
+        ], 'camp');
+        $this->assertNotSame($key_2025, $key_2026);
+    }
+
     public function test_resolve_season_taxonomy_label_humanizes_slug_when_term_missing() {
         if (!function_exists('intersoccer_roster_resolve_season_taxonomy_label')) {
             $this->markTestSkipped('intersoccer_roster_resolve_season_taxonomy_label not loaded');

@@ -1858,6 +1858,79 @@ if (!function_exists('intersoccer_roster_normalize_row_facets_for_display')) {
     }
 }
 
+if (!function_exists('intersoccer_roster_resolve_listing_year')) {
+    /**
+     * Resolve calendar year for a roster row from season label or start_date.
+     *
+     * @param array<string,mixed> $row
+     * @return int|null
+     */
+    function intersoccer_roster_resolve_listing_year(array $row) {
+        if (function_exists('intersoccer_extract_year_from_season')) {
+            $year = intersoccer_extract_year_from_season((string) ($row['season'] ?? ''));
+            if ($year !== null) {
+                return (int) $year;
+            }
+        }
+
+        $start = trim((string) ($row['start_date'] ?? ''));
+        if ($start !== '' && $start !== '0000-00-00' && $start !== '1970-01-01') {
+            $ts = strtotime($start);
+            if ($ts !== false) {
+                return (int) date('Y', $ts);
+            }
+        }
+
+        return null;
+    }
+}
+
+if (!function_exists('intersoccer_roster_listing_season_filter_matches')) {
+    /**
+     * Whether a roster row belongs to the requested listing season filter.
+     * Camps: match by calendar year when the filter includes a year (allows label variants).
+     * Courses: delegate to course season normalization when available.
+     *
+     * @param array<string,mixed> $row
+     * @param string              $filter_season
+     * @param string              $kind camp|course
+     * @return bool
+     */
+    function intersoccer_roster_listing_season_filter_matches(array $row, string $filter_season, $kind = 'camp') {
+        if ($filter_season === '') {
+            return true;
+        }
+
+        $season = trim((string) ($row['season'] ?? ''));
+        if ($season !== '' && strcasecmp($season, $filter_season) === 0) {
+            return true;
+        }
+
+        $kind = strtolower((string) $kind) === 'course' ? 'course' : 'camp';
+        if ($kind === 'course' && function_exists('intersoccer_roster_course_season_filter_matches')) {
+            $group = [
+                'season' => $season,
+                'season_raw' => $season,
+                'product_name' => $row['product_name'] ?? '',
+                'course_day' => $row['course_day'] ?? '',
+            ];
+            return intersoccer_roster_course_season_filter_matches($group, $filter_season);
+        }
+
+        if (!function_exists('intersoccer_extract_year_from_season')) {
+            return strcasecmp($season, $filter_season) === 0;
+        }
+
+        $filter_year = intersoccer_extract_year_from_season($filter_season);
+        if ($filter_year === null) {
+            return strcasecmp($season, $filter_season) === 0;
+        }
+
+        $row_year = intersoccer_roster_resolve_listing_year($row);
+        return $row_year !== null && $row_year === (int) $filter_year;
+    }
+}
+
 if (!function_exists('intersoccer_consolidated_roster_group_key')) {
     /**
      * Stable group key for admin “consolidated (all languages)” listings: canonical product + normalized event facets.
@@ -1877,13 +1950,20 @@ if (!function_exists('intersoccer_consolidated_roster_group_key')) {
         if ($times === '') {
             $times = $facet($row['times'] ?? '', 'pa_camp-times');
         }
+        $year = '';
+        if (function_exists('intersoccer_roster_resolve_listing_year')) {
+            $resolved_year = intersoccer_roster_resolve_listing_year($row);
+            if ($resolved_year !== null) {
+                $year = (string) $resolved_year;
+            }
+        }
         if ($kind === 'course') {
             $day = $facet($row['course_day'] ?? '', 'pa_course-day');
-            return md5('course|' . $pid . '|' . $day . '|' . $venue . '|' . $age . '|' . $times . '|' . $season);
+            return md5('course|' . $pid . '|' . $day . '|' . $venue . '|' . $age . '|' . $times . '|' . $season . '|' . $year);
         }
         $camp = $facet($row['camp_terms'] ?? '', 'pa_camp-terms');
         $g = isset($row['girls_only']) ? (int) $row['girls_only'] : 0;
-        return md5('camp|' . $pid . '|' . $camp . '|' . $venue . '|' . $age . '|' . $times . '|' . $season . '|' . $g);
+        return md5('camp|' . $pid . '|' . $camp . '|' . $venue . '|' . $age . '|' . $times . '|' . $season . '|' . $year . '|' . $g);
     }
 }
 

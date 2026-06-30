@@ -431,6 +431,20 @@ function intersoccer_fetch_roster_sibling_candidates_for_consolidation(array $an
         return [$anchor];
     }
 
+    if (function_exists('intersoccer_roster_resolve_listing_year')) {
+        $anchor_year = intersoccer_roster_resolve_listing_year($anchor);
+        if ($anchor_year !== null) {
+            $results = array_values(array_filter($results, static function ($row) use ($anchor_year) {
+                $row_year = intersoccer_roster_resolve_listing_year($row);
+                return $row_year === null || $row_year === $anchor_year;
+            }));
+        }
+    }
+
+    if (empty($results)) {
+        return [$anchor];
+    }
+
     return $results;
 }
 

@@ -82,14 +82,11 @@ class RosterDetailsService {
                 $this->logger->debug('RosterDetailsService: Merged roster rows in same consolidated event group', [
                     'added' => count($supplement),
                 ]);
-                // Season filter applies to listing-primary rows only; facet-scoped supplement rows
-                // may use a different persisted season label (e.g. Summer-courses-2026 vs Spring/Summer 2026).
                 if (!empty($filters['season'])) {
                     $primaryModels = $this->filterModelsByListingSeason($primaryModels, $filters['season'], $context);
-                    $rosterModels = array_merge($primaryModels, $supplement);
-                } else {
-                    $rosterModels = array_merge($primaryModels, $supplement);
+                    $supplement = $this->filterModelsByListingSeason($supplement, $filters['season'], $context);
                 }
+                $rosterModels = array_merge($primaryModels, $supplement);
             } elseif (!empty($filters['season'])) {
                 $rosterModels = $this->filterModelsByListingSeason($rosterModels, $filters['season'], $context);
             }
@@ -359,8 +356,16 @@ class RosterDetailsService {
             if (!is_object($model) || !method_exists($model, 'getAttribute')) {
                 return false;
             }
-            $season = trim((string) $model->getAttribute('season'));
-            return strcasecmp($season, $filterSeason) === 0;
+            if (!function_exists('intersoccer_roster_listing_season_filter_matches')) {
+                $season = trim((string) $model->getAttribute('season'));
+                return strcasecmp($season, $filterSeason) === 0;
+            }
+            $row = [
+                'season' => (string) $model->getAttribute('season'),
+                'start_date' => (string) $model->getAttribute('start_date'),
+                'product_name' => (string) $model->getAttribute('product_name'),
+            ];
+            return intersoccer_roster_listing_season_filter_matches($row, $filterSeason, 'camp');
         }));
     }
 
@@ -811,6 +816,14 @@ class RosterDetailsService {
             return [];
         }
 
+        $listing_year = null;
+        if (!empty($filters['season']) && function_exists('intersoccer_extract_year_from_season')) {
+            $listing_year = intersoccer_extract_year_from_season($filters['season']);
+        }
+        if ($listing_year === null && function_exists('intersoccer_roster_resolve_listing_year')) {
+            $listing_year = intersoccer_roster_resolve_listing_year($anchorRow);
+        }
+
         $this->repository->clearQueryCache();
         $collection = $this->repository->where($criteria, ['skip_cache' => true]);
         $candidates = $this->filterByValidOrderStatus($collection, true);
@@ -848,6 +861,15 @@ class RosterDetailsService {
             $order_item_id = (int) ($row['order_item_id'] ?? 0);
             if ($order_item_id > 0 && isset($loaded_order_item_ids[$order_item_id])) {
                 continue;
+            }
+            if (
+                $listing_year !== null
+                && function_exists('intersoccer_roster_resolve_listing_year')
+            ) {
+                $candidate_year = intersoccer_roster_resolve_listing_year($row);
+                if ($candidate_year !== null && $candidate_year !== (int) $listing_year) {
+                    continue;
+                }
             }
             $loaded_ids[$id] = true;
             if ($order_item_id > 0) {
