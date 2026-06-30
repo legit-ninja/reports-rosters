@@ -19,7 +19,7 @@ function intersoccer_sync_queue_default_order_statuses(): array {
         return \InterSoccer\ReportsRosters\Services\ReportsRostersDiagnosticsService::defaultOrderStatuses();
     }
 
-    return ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'];
+    return ['wc-completed'];
 }
 
 /**
@@ -335,6 +335,69 @@ function intersoccer_render_advanced_page() {
                     if (!confirm("<?php echo esc_js(__('Are you sure you want to reconcile rosters? This will sync data from orders, potentially updating existing entries.', 'intersoccer-reports-rosters')); ?>")) {
                         return false;
                     }
+
+                    function runAlignmentBatches(queue, onComplete, isFirstBatch) {
+                        if (!queue || (!queue.prepare && !queue.queue_key) || (!queue.total && !queue.prepare)) {
+                            onComplete(null);
+                            return;
+                        }
+
+                        var batchSize = queue.batch_size || 25;
+                        var payload = {
+                            action: 'intersoccer_reconcile_alignment_batch',
+                            nonce: $form.find('[name="nonce"]').val(),
+                            queue_key: queue.queue_key || '',
+                            batch_size: batchSize
+                        };
+                        if (isFirstBatch || queue.prepare) {
+                            payload.prepare = 1;
+                            payload.year = queue.year || String(new Date().getFullYear());
+                        }
+
+                        $.ajax({
+                            url: ajaxurl,
+                            type: 'POST',
+                            timeout: 0,
+                            data: payload,
+                            success: function(batchResponse) {
+                                if (!batchResponse.success) {
+                                    showAdminNotice('<?php echo esc_js(__('Alignment batch failed: ', 'intersoccer-reports-rosters')); ?>' + ((batchResponse.data && batchResponse.data.message) || ''), 'error');
+                                    onComplete(null);
+                                    return;
+                                }
+
+                                var data = batchResponse.data || {};
+                                if (data.queue_key) {
+                                    queue.queue_key = data.queue_key;
+                                }
+                                if (data.total) {
+                                    queue.total = data.total;
+                                }
+                                queue.prepare = false;
+
+                                var processed = data.processed || 0;
+                                var total = data.total || queue.total || 0;
+                                showAdminNotice(
+                                    '<?php echo esc_js(__('Sync queue alignment: ', 'intersoccer-reports-rosters')); ?>' + processed + '/' + total,
+                                    'info'
+                                );
+
+                                if (data.complete) {
+                                    onComplete(data);
+                                    return;
+                                }
+
+                                runAlignmentBatches(queue, onComplete, false);
+                            },
+                            error: function(xhr) {
+                                var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message
+                                    ? xhr.responseJSON.data.message
+                                    : (xhr.responseText || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                                showAdminNotice('<?php echo esc_js(__('Alignment batch failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
+                                onComplete(null);
+                            }
+                        });
+                    }
                     
                     showAdminNotice('<?php echo esc_js(__('Starting: Reconciling rosters...', 'intersoccer-reports-rosters')); ?>', 'info');
                     $button.prop('disabled', true).text('<?php echo esc_js(__('Running...', 'intersoccer-reports-rosters')); ?>');
@@ -342,14 +405,37 @@ function intersoccer_render_advanced_page() {
                     $.ajax({
                         url: ajaxurl,
                         type: 'POST',
+                        timeout: 0,
                         data: $form.serialize(),
                         success: function(response) {
-                            if (response.success) {
-                                showAdminNotice('<?php echo esc_js(__('Finished: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Rosters reconciled successfully.', 'intersoccer-reports-rosters')); ?>'), 'success');
-                            } else {
+                            if (!response.success) {
                                 showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>'), 'error');
+                                $button.prop('disabled', false).text('<?php echo esc_js(__('Reconcile Rosters', 'intersoccer-reports-rosters')); ?>');
+                                return;
                             }
-                            $button.prop('disabled', false).text('<?php echo esc_js(__('Reconcile Rosters', 'intersoccer-reports-rosters')); ?>');
+
+                            var queue = response.data.alignment_queue || null;
+                            var baseMessage = response.data.message || '<?php echo esc_js(__('Rosters reconciled successfully.', 'intersoccer-reports-rosters')); ?>';
+
+                            if (!queue || !queue.total) {
+                                showAdminNotice('<?php echo esc_js(__('Finished: ', 'intersoccer-reports-rosters')); ?>' + baseMessage, 'success');
+                                $button.prop('disabled', false).text('<?php echo esc_js(__('Reconcile Rosters', 'intersoccer-reports-rosters')); ?>');
+                                return;
+                            }
+
+                            showAdminNotice('<?php echo esc_js(__('Finished reconcile. Starting sync queue alignment...', 'intersoccer-reports-rosters')); ?>', 'info');
+                            runAlignmentBatches(queue, function(batchResult) {
+                                var finalMessage = baseMessage;
+                                if (batchResult && typeof batchResult.mismatch_after !== 'undefined' && batchResult.mismatch_after !== null) {
+                                    finalMessage += ' <?php echo esc_js(__('Sync queue mismatches after alignment:', 'intersoccer-reports-rosters')); ?> ' + batchResult.mismatch_after + '.';
+                                }
+                                if (batchResult && batchResult.stats) {
+                                    finalMessage += ' <?php echo esc_js(__('Fixed:', 'intersoccer-reports-rosters')); ?> ' + ((batchResult.stats.fixed || 0) + (batchResult.stats.partial || 0)) + '.';
+                                }
+                                showAdminNotice('<?php echo esc_js(__('Finished: ', 'intersoccer-reports-rosters')); ?>' + finalMessage, 'success');
+
+                                $button.prop('disabled', false).text('<?php echo esc_js(__('Reconcile Rosters', 'intersoccer-reports-rosters')); ?>');
+                            }, true);
                         },
                         error: function(xhr, status, error) {
                             var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
@@ -1642,7 +1728,7 @@ function intersoccer_render_reports_rosters_diagnostics_section() {
                                     <?php echo esc_html($status_label); ?>
                                 </label>
                             <?php endforeach; ?>
-                            <p class="description"><?php _e('Defaults match Reconcile Rosters (completed, processing, pending, on-hold).', 'intersoccer-reports-rosters'); ?></p>
+                            <p class="description"><?php _e('Defaults to completed orders only. Cancelled, refunded, and other non-completed statuses are excluded from both Woo and roster sides of the scan.', 'intersoccer-reports-rosters'); ?></p>
                         </td>
                     </tr>
                     <tr>

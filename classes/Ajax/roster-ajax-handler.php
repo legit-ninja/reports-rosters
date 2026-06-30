@@ -15,6 +15,7 @@ namespace InterSoccer\ReportsRosters\Ajax;
 use InterSoccer\ReportsRosters\Core\Logger;
 use InterSoccer\ReportsRosters\Data\Repositories\RosterRepository;
 use InterSoccer\ReportsRosters\Services\RosterBuilder;
+use InterSoccer\ReportsRosters\Services\ReportsRostersDiagnosticsService;
 use InterSoccer\ReportsRosters\Services\PlaceholderManager;
 use InterSoccer\ReportsRosters\Services\EventSignatureGenerator;
 use InterSoccer\ReportsRosters\Core\DatabaseMigrator;
@@ -109,6 +110,7 @@ class RosterAjaxHandler {
         add_action('wp_ajax_intersoccer_rebuild_rosters_and_reports', [$this, 'handleRebuildRosters']);
         add_action('wp_ajax_intersoccer_rebuild_rosters', [$this, 'handleRebuildRosters']);
         add_action('wp_ajax_intersoccer_reconcile_rosters', [$this, 'handleReconcileRosters']);
+        add_action('wp_ajax_intersoccer_reconcile_alignment_batch', [$this, 'handleReconcileAlignmentBatch']);
         add_action('wp_ajax_intersoccer_mark_event_completed', [$this, 'handleMarkEventCompleted']);
         
         // Event signature operations
@@ -185,7 +187,11 @@ class RosterAjaxHandler {
             }
             
             $this->logger->info('AJAX: Reconcile rosters request started');
-            
+
+            if (function_exists('set_time_limit')) {
+                @set_time_limit(0);
+            }
+
             $options = ['delete_obsolete' => true];
             if (!empty($_POST['date_from'])) {
                 $options['date_from'] = sanitize_text_field($_POST['date_from']);
@@ -196,18 +202,65 @@ class RosterAjaxHandler {
             if (!empty($options['date_from']) || !empty($options['date_to'])) {
                 $options['delete_obsolete'] = false;
             }
-            
+
+            $diag_year = (string) (int) date('Y');
+            $diag_scope = [
+                'year' => $diag_year,
+                'limit' => 500,
+                'offset' => 0,
+            ];
+            $diag_filters = [
+                'year' => $diag_year,
+                'limit' => 1,
+                'offset' => 0,
+            ];
+            $diag_service = class_exists(ReportsRostersDiagnosticsService::class)
+                ? new ReportsRostersDiagnosticsService()
+                : null;
+            $diag_before = $diag_service ? $diag_service->runDiagnostics($diag_filters) : null;
+
             // Run reconcile
             $results = $this->roster_builder->reconcile($options);
-            
+
+            $alignment_queue = null;
+            $newly_created_alignment = null;
+            if ($diag_service !== null) {
+                $newly_created = is_array($results['newly_created_item_ids'] ?? null)
+                    ? array_map('intval', $results['newly_created_item_ids'])
+                    : [];
+                if (!empty($newly_created)) {
+                    $newly_created_alignment = $diag_service->alignOrderItemsById($newly_created);
+                    $results['newly_created_alignment'] = $newly_created_alignment;
+                }
+
+                $mismatch_before = (int) ($diag_before['summary']['mismatch_rows'] ?? 0);
+                $alignment_queue = [
+                    'prepare' => true,
+                    'year' => $diag_year,
+                    'total' => $mismatch_before,
+                    'batch_size' => 25,
+                    'queue_key' => '',
+                ];
+                $results['alignment_queue'] = $alignment_queue;
+            }
+
+            $message = sprintf(
+                __('Reconciliation completed. Synced: %d, Deleted: %d, Errors: %d', 'intersoccer-reports-rosters'),
+                $results['synced'],
+                $results['deleted'],
+                $results['errors']
+            );
+            if (is_array($alignment_queue) && (int) ($alignment_queue['total'] ?? 0) > 0) {
+                $message .= sprintf(
+                    __(' Sync queue alignment will run in batches for ~%d items.', 'intersoccer-reports-rosters'),
+                    (int) $alignment_queue['total']
+                );
+            }
+
             wp_send_json_success([
-                'message' => sprintf(
-                    __('Reconciliation completed. Synced: %d, Deleted: %d, Errors: %d', 'intersoccer-reports-rosters'),
-                    $results['synced'],
-                    $results['deleted'],
-                    $results['errors']
-                ),
-                'results' => $results
+                'message' => $message,
+                'results' => $results,
+                'alignment_queue' => $alignment_queue,
             ]);
             
         } catch (\Exception $e) {
@@ -217,6 +270,70 @@ class RosterAjaxHandler {
             
             wp_send_json_error([
                 'message' => __('Reconciliation failed: ', 'intersoccer-reports-rosters') . $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Process the next batch of post-reconcile sync queue alignment.
+     *
+     * @return void
+     */
+    public function handleReconcileAlignmentBatch() {
+        try {
+            check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
+
+            if (!current_user_can('manage_options')) {
+                wp_send_json_error(['message' => __('Unauthorized', 'intersoccer-reports-rosters')]);
+            }
+
+            if (function_exists('set_time_limit')) {
+                @set_time_limit(0);
+            }
+
+            $prepare = !empty($_POST['prepare']);
+            $year = sanitize_text_field($_POST['year'] ?? (string) (int) date('Y'));
+            $queue_key = sanitize_text_field($_POST['queue_key'] ?? '');
+            $batch_size = isset($_POST['batch_size']) ? (int) $_POST['batch_size'] : 25;
+
+            if (!class_exists(ReportsRostersDiagnosticsService::class)) {
+                wp_send_json_error(['message' => __('Diagnostics service unavailable.', 'intersoccer-reports-rosters')]);
+            }
+
+            $diag_service = new ReportsRostersDiagnosticsService();
+            $queue_info = null;
+
+            if ($prepare || $queue_key === '') {
+                $this->logger->info('AJAX: Preparing reconcile alignment queue', ['year' => $year]);
+                $queue_info = $diag_service->startReconcileAlignmentQueue([
+                    'year' => $year,
+                    'limit' => 500,
+                    'offset' => 0,
+                ]);
+                $queue_key = (string) ($queue_info['queue_key'] ?? '');
+            }
+
+            if ($queue_key === '') {
+                wp_send_json_error(['message' => __('Missing alignment queue key.', 'intersoccer-reports-rosters')]);
+            }
+
+            $batch = $diag_service->processReconcileAlignmentBatch($queue_key, $batch_size);
+            $batch['queue_key'] = $queue_key;
+            if (is_array($queue_info)) {
+                $batch['total'] = (int) ($queue_info['total'] ?? ($batch['total'] ?? 0));
+            }
+
+            if (($batch['status'] ?? '') === 'error') {
+                wp_send_json_error(['message' => (string) ($batch['message'] ?? __('Alignment batch failed.', 'intersoccer-reports-rosters'))]);
+            }
+
+            wp_send_json_success($batch);
+        } catch (\Exception $e) {
+            $this->logger->error('AJAX: Reconcile alignment batch failed', [
+                'error' => $e->getMessage(),
+            ]);
+            wp_send_json_error([
+                'message' => __('Alignment batch failed: ', 'intersoccer-reports-rosters') . $e->getMessage(),
             ]);
         }
     }
