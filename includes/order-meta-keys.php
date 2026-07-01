@@ -151,14 +151,18 @@ function intersoccer_get_order_meta_manual_aliases() {
         ],
         'Late Pickup Type' => [
             'type de ramassage tardif',
+            'type de recuperation tardive',
             'späte abholung typ',
         ],
         'Late Pickup Days' => [
             'jours de ramassage tardif',
+            'jours de garde prolongee',
+            'jours de recuperation tardive',
             'tage für späte abholung',
         ],
         'Late Pickup Cost' => [
             'coût ramassage tardif',
+            'cout de recuperation tardive',
             'kosten späte abholung',
         ],
         'Variation ID' => [
@@ -702,23 +706,152 @@ function intersoccer_reports_enrich_and_normalize_final_report_rows(array &$rows
 }
 
 /**
+ * Load a WooCommerce product line item, with order-scoped fallback.
+ *
+ * @param int $order_item_id
+ * @param int $order_id
+ * @return \WC_Order_Item_Product|null
+ */
+function intersoccer_roster_load_order_item_product($order_item_id, $order_id = 0) {
+    $order_item_id = (int) $order_item_id;
+    if ($order_item_id <= 0) {
+        return null;
+    }
+
+    if (class_exists('\WC_Order_Factory')) {
+        $item = \WC_Order_Factory::get_order_item($order_item_id);
+        if ($item instanceof \WC_Order_Item_Product) {
+            return $item;
+        }
+    }
+
+    $order_id = (int) $order_id;
+    if ($order_id > 0 && function_exists('wc_get_order')) {
+        $order = wc_get_order($order_id);
+        if ($order) {
+            $item = $order->get_item($order_item_id);
+            if ($item instanceof \WC_Order_Item_Product) {
+                return $item;
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Flat order line meta map for roster enrichment (WC object + DB fallback).
+ *
+ * @param int $order_item_id
+ * @param int $order_id
+ * @return array<string,string>
+ */
+function intersoccer_collect_order_item_meta_map($order_item_id, $order_id = 0) {
+    $order_item_id = (int) $order_item_id;
+    if ($order_item_id <= 0) {
+        return [];
+    }
+
+    $map = [];
+    $item = intersoccer_roster_load_order_item_product($order_item_id, $order_id);
+    if ($item) {
+        foreach ($item->get_meta_data() as $meta) {
+            $data = $meta->get_data();
+            $raw_key = isset($data['key']) ? (string) $data['key'] : '';
+            if ($raw_key === '' || intersoccer_order_item_meta_key_is_internal($raw_key)) {
+                continue;
+            }
+            $map[$raw_key] = intersoccer_scalarize_order_item_meta_value($data['value'] ?? '', $raw_key);
+        }
+    }
+
+    if (!empty($map)) {
+        return $map;
+    }
+
+    global $wpdb;
+    if (isset($wpdb) && is_object($wpdb)) {
+        $table = $wpdb->prefix . 'woocommerce_order_itemmeta';
+        $rows = $wpdb->get_results(
+            $wpdb->prepare("SELECT meta_key, meta_value FROM {$table} WHERE order_item_id = %d", $order_item_id),
+            ARRAY_A
+        );
+        if (is_array($rows)) {
+            foreach ($rows as $row) {
+                $raw_key = (string) ($row['meta_key'] ?? '');
+                if ($raw_key === '' || intersoccer_order_item_meta_key_is_internal($raw_key)) {
+                    continue;
+                }
+                $map[$raw_key] = intersoccer_scalarize_order_item_meta_value($row['meta_value'] ?? '', $raw_key);
+            }
+        }
+    }
+
+    return $map;
+}
+
+/**
+ * Apply resolved late pickup fields onto a roster row object/array.
+ *
+ * @param object|array<string,mixed> $row
+ * @param array<string,string>       $meta_map
+ */
+function intersoccer_roster_apply_late_pickup_to_row(&$row, array $meta_map) {
+    if (empty($meta_map) || !function_exists('intersoccer_resolve_late_pickup_for_roster')) {
+        return;
+    }
+
+    $get = static function ($r, $k) {
+        if (is_object($r)) {
+            return isset($r->$k) ? trim((string) $r->$k) : '';
+        }
+        return isset($r[$k]) ? trim((string) $r[$k]) : '';
+    };
+    $set = static function (&$r, $k, $v) {
+        if (is_object($r)) {
+            $r->$k = $v;
+        } else {
+            $r[$k] = $v;
+        }
+    };
+
+    $resolved = intersoccer_resolve_late_pickup_for_roster($meta_map);
+    if ($resolved['late_pickup'] === 'Yes') {
+        $set($row, 'late_pickup', 'Yes');
+    }
+    if ($resolved['late_pickup_days'] !== '') {
+        $set($row, 'late_pickup_days', $resolved['late_pickup_days']);
+    }
+}
+
+/**
  * Fill empty booking_type / selected_days on a roster row from WooCommerce order line meta (FR/DE/EN keys).
  *
  * @param object|array $row Roster row (stdClass from DB or export array). Mutated in place.
  */
 function intersoccer_roster_enrich_camp_fields_from_order_item(&$row) {
     $item_id = 0;
+    $order_id = 0;
     if (is_object($row)) {
         $item_id = (int) ($row->order_item_id ?? 0);
+        $order_id = (int) ($row->order_id ?? 0);
     } elseif (is_array($row)) {
         $item_id = (int) ($row['order_item_id'] ?? 0);
+        $order_id = (int) ($row['order_id'] ?? 0);
     }
-    if ($item_id <= 0 || !class_exists('\WC_Order_Factory')) {
+    if ($item_id <= 0) {
         return;
     }
 
-    $item = \WC_Order_Factory::get_order_item($item_id);
-    if (!$item || !($item instanceof \WC_Order_Item_Product)) {
+    $meta_map = intersoccer_collect_order_item_meta_map($item_id, $order_id);
+    intersoccer_roster_apply_late_pickup_to_row($row, $meta_map);
+
+    if (!class_exists('\WC_Order_Factory')) {
+        return;
+    }
+
+    $item = intersoccer_roster_load_order_item_product($item_id, $order_id);
+    if (!$item) {
         return;
     }
 
@@ -985,7 +1118,23 @@ if (!function_exists('intersoccer_resolve_late_pickup_for_roster')) {
         $has_type = $type !== '' && !in_array($type_lower, ['none', 'no', 'n/a'], true);
         $late_pickup = ($has_type || $days !== '' || $has_cost) ? 'Yes' : 'No';
 
-        if ($days !== '' && function_exists('intersoccer_normalize_selected_days_for_storage')) {
+        if ($days === '') {
+            $display_pickup = $read_meta(['Late Pickup', 'Récupération tardive', 'Späte Abholung']);
+            if ($display_pickup !== '') {
+                $days = $display_pickup;
+            }
+        }
+
+        if ($late_pickup === 'Yes' && $days === '' && $has_type) {
+            if (
+                $type_lower === 'full-week'
+                || preg_match('/full[\s_-]*week|semaine[\s_-]*(compl|pleine)|ganze[\s_-]*woche/i', $type)
+            ) {
+                $days = 'Full Week';
+            }
+        }
+
+        if ($days !== '' && strcasecmp($days, 'Full Week') !== 0 && function_exists('intersoccer_normalize_selected_days_for_storage')) {
             $days = intersoccer_normalize_selected_days_for_storage($days);
         }
 
@@ -993,6 +1142,44 @@ if (!function_exists('intersoccer_resolve_late_pickup_for_roster')) {
             'late_pickup' => $late_pickup,
             'late_pickup_days' => $days,
         ];
+    }
+}
+
+if (!function_exists('intersoccer_roster_display_late_pickup_days')) {
+    /**
+     * Label for roster Late Pickup Days column (handles full-week and empty DB values).
+     *
+     * @param object|array<string,mixed> $row
+     * @return string
+     */
+    function intersoccer_roster_display_late_pickup_days($row) {
+        $get = static function ($r, $k) {
+            if (is_object($r)) {
+                return trim((string) ($r->$k ?? ''));
+            }
+            return trim((string) ($r[$k] ?? ''));
+        };
+
+        $days = $get($row, 'late_pickup_days');
+        if ($days !== '') {
+            return $days;
+        }
+
+        $late_pickup = $get($row, 'late_pickup');
+        if ($late_pickup !== 'Yes') {
+            return 'N/A';
+        }
+
+        $order_item_id = is_object($row) ? (int) ($row->order_item_id ?? 0) : (int) ($row['order_item_id'] ?? 0);
+        $order_id = is_object($row) ? (int) ($row->order_id ?? 0) : (int) ($row['order_id'] ?? 0);
+        if ($order_item_id > 0 && function_exists('intersoccer_collect_order_item_meta_map') && function_exists('intersoccer_resolve_late_pickup_for_roster')) {
+            $resolved = intersoccer_resolve_late_pickup_for_roster(intersoccer_collect_order_item_meta_map($order_item_id, $order_id));
+            if ($resolved['late_pickup_days'] !== '') {
+                return $resolved['late_pickup_days'];
+            }
+        }
+
+        return 'N/A';
     }
 }
 
