@@ -396,7 +396,7 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
     
     -- Venue and location
     LEFT JOIN $order_itemmeta_table venue_meta ON oi.order_item_id = venue_meta.order_item_id 
-        AND (venue_meta.meta_key = 'pa_intersoccer-venues' OR venue_meta.meta_key = 'InterSoccer Venues')
+        AND (venue_meta.meta_key = 'pa_intersoccer-venues' OR venue_meta.meta_key = 'Sites InterSoccer' OR venue_meta.meta_key = 'InterSoccer Venues')
     LEFT JOIN $order_itemmeta_table canton_region ON oi.order_item_id = canton_region.order_item_id
         AND (canton_region.meta_key = 'pa_canton-region' OR canton_region.meta_key = 'Canton / Region')
     
@@ -720,6 +720,7 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
         if (isset($meta_data['Activity Type'])) $activity_type = $meta_data['Activity Type'];
 
         if (isset($meta_data['pa_intersoccer-venues'])) $venue = $meta_data['pa_intersoccer-venues'];
+        if (isset($meta_data['Sites InterSoccer'])) $venue = $meta_data['Sites InterSoccer'];
         if (isset($meta_data['InterSoccer Venues'])) $venue = $meta_data['InterSoccer Venues'];
 
         // Calculate pricing

@@ -569,7 +569,7 @@ function intersoccer_render_roster_details_page() {
             $season = $base_roster->season;
         }
     } else {
-        $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.late_pickup_days, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.day_presence, r.selected_days, r.days_selected, r.event_details, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only, p.post_date as order_date";
+        $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.late_pickup_days, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.avs_number, r.customer_id, r.player_index, r.order_id, r.day_presence, r.selected_days, r.days_selected, r.event_details, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only, p.post_date as order_date";
         $query .= " FROM $rosters_table r";
         $query .= " JOIN {$wpdb->posts} p ON r.order_id = p.ID";
 
@@ -798,6 +798,7 @@ function intersoccer_render_roster_details_page() {
     echo '<th style="width: 200px;">' . esc_html__('Email', 'intersoccer-reports-rosters') . '</th>';
     echo '<th style="width: 50px;"><a href="' . esc_url(intersoccer_get_sort_url('age', $sort_by, $sort_order)) . '" style="color: inherit; text-decoration: none;">' . esc_html__('Age', 'intersoccer-reports-rosters') . intersoccer_get_sort_indicator('age', $sort_by, $sort_order) . '</a></th>';
     echo '<th style="width: 200px;">' . esc_html__('Medical/Dietary', 'intersoccer-reports-rosters') . '</th>';
+    echo '<th style="width: 140px;">' . esc_html__('AVS Number', 'intersoccer-reports-rosters') . '</th>';
     
     if ($is_camp_like) {
         echo '<th style="width: 100px;">' . esc_html__('Late Pickup', 'intersoccer-reports-rosters') . '</th>';
@@ -837,6 +838,15 @@ function intersoccer_render_roster_details_page() {
                 intersoccer_roster_persist_player_name_fields($row_array);
             }
         }
+        if (function_exists('intersoccer_roster_backfill_avs_number_from_user_meta')) {
+            $avs_row = intersoccer_roster_backfill_avs_number_from_user_meta((array) $row);
+            if (!empty($avs_row['avs_number'])) {
+                $row->avs_number = $avs_row['avs_number'];
+            }
+            if (!empty($avs_row['id']) && function_exists('intersoccer_roster_persist_avs_number')) {
+                intersoccer_roster_persist_avs_number($avs_row);
+            }
+        }
         $is_unknown = $row->player_name === 'Unknown Attendee';
         $day_presence = [
             'Monday' => 'No',
@@ -874,6 +884,7 @@ function intersoccer_render_roster_details_page() {
         echo '<td>' . esc_html($row->parent_email ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->age ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->medical_conditions ?? 'N/A') . '</td>';
+        echo '<td>' . esc_html(function_exists('intersoccer_roster_display_avs_number') ? intersoccer_roster_display_avs_number($row) : ($row->avs_number ?? 'N/A')) . '</td>';
         
         if ($is_camp_like) {
             $display_late_pickup_days = function_exists('intersoccer_roster_display_late_pickup_days')

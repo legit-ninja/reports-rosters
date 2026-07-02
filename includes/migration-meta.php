@@ -16,8 +16,8 @@ if (!function_exists('intersoccer_migration_human_alias_map')) {
     function intersoccer_migration_human_alias_map() {
         return [
             'intersoccer_venues' => [
-                'InterSoccer Venues',
                 'Sites InterSoccer',
+                'InterSoccer Venues',
                 'Lieux InterSoccer',
             ],
             'age_group' => [

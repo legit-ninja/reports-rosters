@@ -483,7 +483,12 @@ class Activator {
      * @return void
      */
     private function setup_default_taxonomy_terms() {
-        // Set up default terms for WooCommerce product attributes
+        if (function_exists('intersoccer_attr_sync_to_woocommerce')) {
+            intersoccer_attr_sync_to_woocommerce(true);
+            return;
+        }
+
+        // Fallback when product-variations registry is unavailable.
         $default_terms = [
             'pa_activity-type' => ['Camp', 'Course', 'Birthday Party'],
             'pa_age-group' => ['3-5y (Half-Day)', '5-13y (Full Day)', '3-12y'],

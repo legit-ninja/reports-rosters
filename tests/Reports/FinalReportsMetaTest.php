@@ -23,6 +23,14 @@ class FinalReportsMetaTest extends TestCase {
         $this->assertSame('Days Selected', intersoccer_normalize_order_item_meta_key('Days of Week'));
     }
 
+    public function test_normalize_order_item_meta_key_maps_venue_labels() {
+        if (!function_exists('intersoccer_normalize_order_item_meta_key')) {
+            $this->markTestSkipped('intersoccer_normalize_order_item_meta_key not loaded');
+        }
+        $this->assertSame('Sites InterSoccer', intersoccer_normalize_order_item_meta_key('Sites InterSoccer'));
+        $this->assertSame('Sites InterSoccer', intersoccer_normalize_order_item_meta_key('InterSoccer Venues'));
+    }
+
     public function test_normalize_booking_type_label_for_reports_french_full_week() {
         if (!function_exists('intersoccer_normalize_booking_type_label_for_reports')) {
             $this->markTestSkipped();

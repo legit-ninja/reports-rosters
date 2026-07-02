@@ -149,7 +149,7 @@ class FinancialReportService {
 
             $age_group = $this->extractMetaValue($meta_map, ['pa_age-group', 'Age Group']);
             $activity_type = $this->extractMetaValue($meta_map, ['pa_booking-type', 'Activity Type']);
-            $venue = $this->extractMetaValue($meta_map, ['pa_intersoccer-venues', 'InterSoccer Venues']);
+            $venue = $this->extractMetaValue($meta_map, ['pa_intersoccer-venues', 'Sites InterSoccer', 'InterSoccer Venues']);
 
             $base_price = (float) $row->line_subtotal;
             $line_total = (float) $row->line_total;

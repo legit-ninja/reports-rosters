@@ -1763,6 +1763,125 @@ if (!function_exists('intersoccer_roster_backfill_player_name_fields')) {
     }
 }
 
+if (!function_exists('intersoccer_roster_avs_number_is_missing')) {
+    /**
+     * @param mixed $value
+     */
+    function intersoccer_roster_avs_number_is_missing($value) {
+        $v = trim((string) ($value ?? ''));
+        return $v === '' || strcasecmp($v, 'N/A') === 0;
+    }
+}
+
+if (!function_exists('intersoccer_roster_backfill_avs_number_from_user_meta')) {
+    /**
+     * Fill avs_number from intersoccer_players user meta when the roster row is missing it.
+     *
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>
+     */
+    function intersoccer_roster_backfill_avs_number_from_user_meta(array $row) {
+        if (!intersoccer_roster_avs_number_is_missing($row['avs_number'] ?? null)) {
+            return $row;
+        }
+
+        $customer_id = (int) ($row['customer_id'] ?? 0);
+        if ($customer_id <= 0 && !empty($row['order_id']) && function_exists('wc_get_order')) {
+            $order = wc_get_order((int) $row['order_id']);
+            if ($order) {
+                $customer_id = (int) $order->get_user_id();
+            }
+        }
+        if ($customer_id <= 0) {
+            return $row;
+        }
+
+        $players = maybe_unserialize(get_user_meta($customer_id, 'intersoccer_players', true)) ?: [];
+        if (!is_array($players) || $players === []) {
+            return $row;
+        }
+
+        $player_index = $row['player_index'] ?? false;
+        if ($player_index !== false && $player_index !== null && isset($players[$player_index])) {
+            $avs = trim((string) ($players[$player_index]['avs_number'] ?? ''));
+            if ($avs !== '') {
+                $row['avs_number'] = substr($avs, 0, 50);
+                return $row;
+            }
+        }
+
+        $first_name = trim((string) ($row['first_name'] ?? ''));
+        $last_name = trim((string) ($row['last_name'] ?? ''));
+        if ($first_name === '' && $last_name === '' && !empty($row['player_name'])) {
+            $parsed = function_exists('intersoccer_roster_parse_attendee_display_name')
+                ? intersoccer_roster_parse_attendee_display_name((string) $row['player_name'])
+                : ['first_name' => '', 'last_name' => ''];
+            $first_name = trim((string) ($parsed['first_name'] ?? ''));
+            $last_name = trim((string) ($parsed['last_name'] ?? ''));
+        }
+
+        if ($first_name !== '' || $last_name !== '') {
+            $first_name_norm = strtolower(trim(preg_replace('/[^a-z]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $first_name) ?: $first_name)));
+            $last_name_norm = strtolower(trim(preg_replace('/[^a-z]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $last_name) ?: $last_name)));
+            foreach ($players as $player) {
+                $meta_first_norm = strtolower(trim(preg_replace('/[^a-z]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $player['first_name'] ?? '') ?: '')));
+                $meta_last_norm = strtolower(trim(preg_replace('/[^a-z]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $player['last_name'] ?? '') ?: '')));
+                if ($meta_first_norm === $first_name_norm && $meta_last_norm === $last_name_norm) {
+                    $avs = trim((string) ($player['avs_number'] ?? ''));
+                    if ($avs !== '') {
+                        $row['avs_number'] = substr($avs, 0, 50);
+                    }
+                    break;
+                }
+            }
+        }
+
+        return $row;
+    }
+}
+
+if (!function_exists('intersoccer_roster_persist_avs_number')) {
+    /**
+     * @param array<string,mixed> $row Must include id when updating.
+     * @return bool
+     */
+    function intersoccer_roster_persist_avs_number(array $row) {
+        global $wpdb;
+        $id = (int) ($row['id'] ?? 0);
+        if ($id <= 0 || !isset($wpdb) || !is_object($wpdb)) {
+            return false;
+        }
+        if (intersoccer_roster_avs_number_is_missing($row['avs_number'] ?? null)) {
+            return false;
+        }
+
+        $table = $wpdb->prefix . 'intersoccer_rosters';
+        $updated = $wpdb->update(
+            $table,
+            ['avs_number' => substr((string) $row['avs_number'], 0, 50)],
+            ['id' => $id],
+            ['%s'],
+            ['%d']
+        );
+
+        return $updated !== false;
+    }
+}
+
+if (!function_exists('intersoccer_roster_display_avs_number')) {
+    /**
+     * @param array|object $row
+     */
+    function intersoccer_roster_display_avs_number($row) {
+        $data = is_array($row) ? $row : (array) $row;
+        if (function_exists('intersoccer_roster_backfill_avs_number_from_user_meta')) {
+            $data = intersoccer_roster_backfill_avs_number_from_user_meta($data);
+        }
+        $avs = trim((string) ($data['avs_number'] ?? ''));
+        return $avs !== '' ? $avs : 'N/A';
+    }
+}
+
 if (!function_exists('intersoccer_roster_persist_player_name_fields')) {
     /**
      * @param array<string,mixed> $row Must include id when updating.
@@ -2807,7 +2926,7 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     }
 
     // Event details with fallbacks
-    $venue = $item_meta['pa_intersoccer-venues'] ?? $item_meta['InterSoccer Venues'] ?? '';
+    $venue = $item_meta['pa_intersoccer-venues'] ?? $item_meta['Sites InterSoccer'] ?? $item_meta['InterSoccer Venues'] ?? '';
     $age_group = $item_meta['pa_age-group'] ?? $item_meta['Age Group'] ?? '';
     $camp_terms = $item_meta['pa_camp-terms'] ?? $item_meta['Camp Terms'] ?? '';
     $times = $item_meta['pa_camp-times'] ?? $item_meta['pa_course-times'] ?? $item_meta['pa_tournament-time'] ?? $item_meta['Camp Times'] ?? $item_meta['Course Times'] ?? $item_meta['Tournament Time'] ?? '';
@@ -5680,4 +5799,5 @@ function intersoccer_parse_camp_dates_fixed($camp_terms, $season) {
     return [$start_date, $end_date, $event_dates];
 }
 
+require_once __DIR__ . '/attribute-contract.php';
 require_once __DIR__ . '/order-meta-keys.php';

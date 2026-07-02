@@ -18,7 +18,7 @@ function intersoccer_get_order_meta_field_map() {
         return $map;
     }
     $map = [
-        'InterSoccer Venues' => 'venue',
+        'Sites InterSoccer' => 'venue',
         'Age Group' => 'age_group',
         'Camp Terms' => 'event_type',
         'Camp Times' => 'camp_times',
@@ -53,11 +53,11 @@ function intersoccer_get_order_meta_field_map() {
  */
 function intersoccer_get_order_meta_manual_aliases() {
     return [
-        'InterSoccer Venues' => [
+        'Sites InterSoccer' => [
             'lieux intersoccer',
             'lieu intersoccer',
             'intersoccer-standorte',
-            'sites intersoccer',
+            'intersoccer venues',
         ],
         'Age Group' => [
             'groupe dage',

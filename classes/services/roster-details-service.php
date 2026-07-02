@@ -554,6 +554,12 @@ class RosterDetailsService {
             if (function_exists('intersoccer_roster_persist_player_name_fields') && !empty($data['id'])) {
                 intersoccer_roster_persist_player_name_fields($data);
             }
+            if (function_exists('intersoccer_roster_backfill_avs_number_from_user_meta')) {
+                $data = intersoccer_roster_backfill_avs_number_from_user_meta($data);
+                if (!empty($data['id']) && function_exists('intersoccer_roster_persist_avs_number')) {
+                    intersoccer_roster_persist_avs_number($data);
+                }
+            }
             $post = get_post($model->order_id);
             $data['order_date'] = $post ? $post->post_date : null;
             $data['girls_only'] = isset($data['girls_only']) ? (int) $data['girls_only'] : 0;

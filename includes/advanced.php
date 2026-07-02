@@ -932,7 +932,7 @@ if (!function_exists('intersoccer_migration_attribute_label_map')) {
      */
     function intersoccer_migration_attribute_label_map($taxonomy) {
         static $map = [
-            'pa_intersoccer-venues' => ['InterSoccer Venues', 'Sites InterSoccer'],
+            'pa_intersoccer-venues' => ['Sites InterSoccer', 'InterSoccer Venues'],
             'pa_age-group'          => ['Age Group'],
             'pa_camp-terms'         => ['Camp Terms'],
             'pa_course-day'         => ['Course Day'],

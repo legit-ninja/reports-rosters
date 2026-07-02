@@ -112,7 +112,7 @@ class RosterBuilder {
             return intersoccer_get_order_meta_field_map();
         }
         return [
-            'InterSoccer Venues' => 'venue',
+            'Sites InterSoccer' => 'venue',
             'Age Group' => 'age_group',
             'Camp Terms' => 'event_type',
             'Camp Times' => 'camp_times',
@@ -1147,6 +1147,7 @@ class RosterBuilder {
             'gender' => $player->gender,
             'medical_conditions' => $player->medical_conditions,
             'dietary_needs' => $player->dietary_needs,
+            'avs_number' => substr((string) (($player->avs_number && trim((string) $player->avs_number) !== '') ? $player->avs_number : 'N/A'), 0, 50),
 
             // Customer contact data (parent = billing contact)
             'parent_email' => $customer_data['email'],
