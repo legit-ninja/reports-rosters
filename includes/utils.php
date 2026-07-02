@@ -2183,7 +2183,30 @@ if (!function_exists('intersoccer_get_roster_details_url_for_listing_group')) {
             return '';
         }
 
+        if ($from === 'girls-only') {
+            $params['girls_only'] = '1';
+        }
+
         return add_query_arg($params, admin_url('admin.php'));
+    }
+}
+
+if (!function_exists('intersoccer_get_roster_listing_group_details_url')) {
+    /**
+     * Details URL for a camp/course listing card (routes girls-only groups to girls-only context).
+     *
+     * @param array<string,mixed> $group
+     * @param string              $default_from camps|courses
+     * @return string
+     */
+    function intersoccer_get_roster_listing_group_details_url(array $group, $default_from) {
+        if (!function_exists('intersoccer_get_roster_details_url_for_listing_group')) {
+            return '';
+        }
+
+        $from = !empty($group['girls_only']) ? 'girls-only' : sanitize_key((string) $default_from);
+
+        return intersoccer_get_roster_details_url_for_listing_group($group, $from);
     }
 }
 
@@ -2995,48 +3018,20 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
             do_action('wpml_switch_language', $current_lang);
         }
     }
+
+    $girls_only = function_exists('intersoccer_resolve_roster_girls_only_flag')
+        ? (bool) intersoccer_resolve_roster_girls_only_flag([
+            'raw_activity_type' => $activity_type,
+            'activity_type' => $activity_type,
+            'product_name' => $product_name,
+            'product_id' => $product_id,
+            'variation_id' => $variation_id,
+            'pa_girls-only' => $item_meta['pa_girls-only'] ?? $item_meta['attribute_pa_girls-only'] ?? '',
+        ])
+        : false;
     
     $shirt_size = 'N/A';
     $shorts_size = 'N/A';
-
-    // Determine girls_only and set activity_type to Camp or Course
-    $girls_only = FALSE;
-    if (!empty($activity_type)) {
-        // Log the raw activity type for debugging
-        error_log('InterSoccer: Raw Activity Type for order ' . $order_id . ', item ' . $item_id . ': "' . $activity_type . '"');
-        
-        // Normalize for comparison - handle apostrophes and case variations
-        $normalized_activity = trim(strtolower(html_entity_decode($activity_type, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
-        
-        // Split by comma and check each part
-        $activity_parts = array_map('trim', explode(',', $normalized_activity));
-        error_log('InterSoccer: Activity Type parts: ' . print_r($activity_parts, true));
-        
-        foreach ($activity_parts as $part) {
-            // Remove apostrophes and check for girls only patterns
-            $clean_part = str_replace(["'", '"'], '', $part);
-            
-            if (strpos($clean_part, 'girls only') !== false ||
-                strpos($clean_part, 'girls-only') !== false ||
-                strpos($clean_part, 'girlsonly') !== false) {
-                
-                $girls_only = TRUE;
-                error_log('InterSoccer: Set girls_only = TRUE for order ' . $order_id . ', item ' . $item_id . ' based on Activity Type part: "' . $part . '"');
-                break;
-            }
-        }
-    }
-
-    // Fallback: Check product name if Activity Type didn't indicate Girls' Only
-    if (!$girls_only && !empty($product_name)) {
-        $normalized_product_name = trim(strtolower(html_entity_decode($product_name, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
-        $clean_product_name = str_replace(['-', "'", '"'], ' ', $normalized_product_name);
-        
-        if (strpos($clean_product_name, 'girls only') !== false) {
-            $girls_only = TRUE;
-            error_log('InterSoccer: Set girls_only = TRUE for order ' . $order_id . ', item ' . $item_id . ' based on product name: "' . $product_name . '"');
-        }
-    }
 
     // Apply shirt/shorts size logic for Girls Only events
     if ($girls_only) {
@@ -5255,6 +5250,215 @@ if (!function_exists('intersoccer_roster_row_matches_listing_kind')) {
     }
 }
 
+if (!function_exists('intersoccer_pa_girls_only_slug_is_yes')) {
+    /**
+     * Whether a WooCommerce pa_girls-only attribute slug indicates a girls-only event.
+     *
+     * @param mixed $slug
+     * @return bool
+     */
+    function intersoccer_pa_girls_only_slug_is_yes($slug) {
+        $slug = strtolower(trim((string) $slug));
+        return in_array($slug, ['girls-only', 'yes', 'girls'], true);
+    }
+}
+
+if (!function_exists('intersoccer_text_indicates_girls_only')) {
+    /**
+     * Detect girls-only semantics in a free-text activity type or product name.
+     *
+     * @param mixed $text
+     * @return bool
+     */
+    function intersoccer_text_indicates_girls_only($text) {
+        if ($text === null || $text === '') {
+            return false;
+        }
+
+        $normalized = trim(strtolower(html_entity_decode((string) $text, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+        $parts = array_map('trim', explode(',', $normalized));
+        foreach ($parts as $part) {
+            $clean_part = str_replace(["'", '"'], '', $part);
+            if (strpos($clean_part, 'girls only') !== false
+                || strpos($clean_part, 'girls-only') !== false
+                || strpos($clean_part, 'girlsonly') !== false
+                || in_array($clean_part, ['girls only', 'camp girls only', 'course girls only'], true)) {
+                return true;
+            }
+        }
+
+        $clean_whole = str_replace(['-', "'", '"'], ' ', $normalized);
+        return strpos($clean_whole, 'girls only') !== false;
+    }
+}
+
+if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
+    /**
+     * Resolve the girls_only roster flag (0 or 1) from order-item / roster facets.
+     *
+     * @param array<string,mixed> $context
+     * @return int
+     */
+    function intersoccer_resolve_roster_girls_only_flag(array $context) {
+        $girls_meta_keys = [
+            'pa_girls-only',
+            'attribute_pa_girls-only',
+            'girls-only',
+            'pa_girls_only',
+            'attribute_pa_girls_only',
+        ];
+        foreach ($girls_meta_keys as $key) {
+            if (!array_key_exists($key, $context) || $context[$key] === '' || $context[$key] === null) {
+                continue;
+            }
+            $val = $context[$key];
+            if (is_array($val)) {
+                $val = $val[0] ?? reset($val);
+            }
+            if (intersoccer_pa_girls_only_slug_is_yes($val)) {
+                return 1;
+            }
+            if (in_array(strtolower(trim((string) $val)), ['mixed', 'no'], true)) {
+                return 0;
+            }
+        }
+
+        $activity_keys = [
+            'raw_activity_type',
+            'activity_type',
+            'Activity Type',
+            'pa_activity-type',
+            'attribute_pa_activity-type',
+        ];
+        foreach ($activity_keys as $key) {
+            if (!empty($context[$key]) && intersoccer_text_indicates_girls_only($context[$key])) {
+                return 1;
+            }
+        }
+
+        if (!empty($context['product_name']) && intersoccer_text_indicates_girls_only($context['product_name'])) {
+            return 1;
+        }
+
+        $product_id = (int) ($context['product_id'] ?? 0);
+        $variation_id = (int) ($context['variation_id'] ?? 0);
+        if (($variation_id > 0 || $product_id > 0) && function_exists('wc_get_product')) {
+            $check_id = $variation_id > 0 ? $variation_id : $product_id;
+            $product = wc_get_product($check_id);
+            if ($product) {
+                foreach (['pa_girls-only', 'girls-only'] as $attr_name) {
+                    $attr_value = $product->get_attribute($attr_name);
+                    if ($attr_value !== '' && intersoccer_pa_girls_only_slug_is_yes($attr_value)) {
+                        return 1;
+                    }
+                }
+                $attributes = $product->get_attributes();
+                foreach ($attributes as $attr_name => $attribute) {
+                    if (strpos((string) $attr_name, 'girls') === false) {
+                        continue;
+                    }
+                    if (is_object($attribute) && method_exists($attribute, 'get_options')) {
+                        foreach ((array) $attribute->get_options() as $option) {
+                            if (intersoccer_pa_girls_only_slug_is_yes($option)) {
+                                return 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
+}
+
+if (!function_exists('intersoccer_roster_row_looks_girls_only')) {
+    /**
+     * Whether stored roster row facets indicate a girls-only event.
+     *
+     * @param array<string,mixed> $row
+     * @return bool
+     */
+    function intersoccer_roster_row_looks_girls_only(array $row) {
+        return intersoccer_resolve_roster_girls_only_flag($row) === 1;
+    }
+}
+
+if (!function_exists('intersoccer_reconcile_backfill_girls_only_flags')) {
+    /**
+     * Set girls_only=1 on existing rows that were misclassified at build time.
+     *
+     * @return int Number of rows updated.
+     */
+    function intersoccer_reconcile_backfill_girls_only_flags() {
+        global $wpdb;
+
+        if (!function_exists('intersoccer_roster_row_looks_girls_only')) {
+            return 0;
+        }
+
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        $candidate_sql = "SELECT id, order_item_id, activity_type, product_name, product_id, variation_id
+            FROM {$rosters_table}
+            WHERE is_placeholder = 0 AND girls_only = 0
+              AND (
+                product_name LIKE %s OR product_name LIKE %s
+                OR activity_type LIKE %s OR activity_type LIKE %s
+              )";
+        $like_girls = '%Girls%';
+        $like_girl = '%girl%';
+
+        $updated = 0;
+        $offset = 0;
+        $chunk = 500;
+
+        while (true) {
+            $rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    $candidate_sql . ' LIMIT %d OFFSET %d',
+                    $like_girls,
+                    $like_girl,
+                    $like_girls,
+                    $like_girl,
+                    $chunk,
+                    $offset
+                ),
+                ARRAY_A
+            );
+            if (empty($rows)) {
+                break;
+            }
+
+            foreach ($rows as $row) {
+                if (!intersoccer_roster_row_looks_girls_only($row)) {
+                    continue;
+                }
+                $result = $wpdb->update(
+                    $rosters_table,
+                    ['girls_only' => 1],
+                    ['id' => (int) $row['id']],
+                    ['%d'],
+                    ['%d']
+                );
+                if ($result !== false) {
+                    $updated++;
+                }
+            }
+
+            if (count($rows) < $chunk) {
+                break;
+            }
+            $offset += $chunk;
+        }
+
+        if ($updated > 0) {
+            error_log('InterSoccer: Reconcile backfilled girls_only=1 on ' . $updated . ' roster row(s).');
+        }
+
+        return $updated;
+    }
+}
+
 if (!function_exists('intersoccer_roster_row_matches_girls_only_listing')) {
     /**
      * Whether a roster row belongs on the Girls Only admin listing (camps, courses, tournaments only).
@@ -5263,7 +5467,11 @@ if (!function_exists('intersoccer_roster_row_matches_girls_only_listing')) {
      * @return bool
      */
     function intersoccer_roster_row_matches_girls_only_listing(array $row) {
-        if ((int) ($row['girls_only'] ?? 0) !== 1) {
+        $is_girls = (int) ($row['girls_only'] ?? 0) === 1;
+        if (!$is_girls && function_exists('intersoccer_resolve_roster_girls_only_flag')) {
+            $is_girls = intersoccer_resolve_roster_girls_only_flag($row) === 1;
+        }
+        if (!$is_girls) {
             return false;
         }
 

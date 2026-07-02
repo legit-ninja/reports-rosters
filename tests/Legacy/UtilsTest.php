@@ -133,6 +133,54 @@ class UtilsTest extends TestCase {
             'girls_only' => 1,
             'activity_type' => 'Tournament, Girls Only',
         ]));
+        $this->assertTrue(intersoccer_roster_row_matches_girls_only_listing([
+            'girls_only' => 0,
+            'activity_type' => 'Camp',
+            'product_name' => 'West Ham Summer Camps 2026 - Girls Only',
+        ]));
+    }
+
+    public function test_resolve_roster_girls_only_flag_from_activity_type_variants() {
+        if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
+            $this->markTestSkipped('intersoccer_resolve_roster_girls_only_flag not loaded');
+        }
+
+        $this->assertSame(1, intersoccer_resolve_roster_girls_only_flag([
+            'raw_activity_type' => "Camp, Girls' only",
+        ]));
+        $this->assertSame(1, intersoccer_resolve_roster_girls_only_flag([
+            'activity_type' => 'Course, Girls Only',
+        ]));
+        $this->assertSame(1, intersoccer_resolve_roster_girls_only_flag([
+            'product_name' => 'Geneva Girls Only Summer Camp',
+        ]));
+        $this->assertSame(1, intersoccer_resolve_roster_girls_only_flag([
+            'pa_girls-only' => 'girls-only',
+        ]));
+        $this->assertSame(0, intersoccer_resolve_roster_girls_only_flag([
+            'activity_type' => 'Camp',
+            'product_name' => 'Lausanne Summer Camp',
+        ]));
+        $this->assertSame(0, intersoccer_resolve_roster_girls_only_flag([
+            'pa_girls-only' => 'mixed',
+        ]));
+    }
+
+    public function test_roster_row_looks_girls_only_wraps_resolver() {
+        if (!function_exists('intersoccer_roster_row_looks_girls_only')) {
+            $this->markTestSkipped('intersoccer_roster_row_looks_girls_only not loaded');
+        }
+
+        $this->assertTrue(intersoccer_roster_row_looks_girls_only([
+            'girls_only' => 0,
+            'activity_type' => 'Camp, Girls Only',
+            'product_name' => 'Summer Camp',
+        ]));
+        $this->assertFalse(intersoccer_roster_row_looks_girls_only([
+            'girls_only' => 0,
+            'activity_type' => 'Camp',
+            'product_name' => 'Summer Camp',
+        ]));
     }
 
     public function test_normalize_event_data_handles_french_values() {
@@ -531,6 +579,22 @@ class UtilsTest extends TestCase {
         $this->assertSame('Marie', $filled['first_name']);
         $this->assertSame('Dupont', $filled['last_name']);
         $this->assertSame('Marie Dupont', $filled['player_name']);
+    }
+
+    // Regression: ECO-004 — Player Index lacks FR/DE manual aliases in order meta normalization
+    public function test_normalize_player_index_fr_de_keys() {
+        if (!function_exists('intersoccer_normalize_order_item_meta_key')) {
+            require_once __DIR__ . '/../../includes/order-meta-keys.php';
+        }
+
+        $aliases = intersoccer_get_order_meta_manual_aliases();
+        $this->assertArrayHasKey('Player Index', $aliases, 'Player Index should have FR/DE manual aliases');
+
+        $normalized_fr = intersoccer_normalize_order_item_meta_key('Indice joueur');
+        $normalized_de = intersoccer_normalize_order_item_meta_key('Spielerindex');
+
+        $this->assertSame('Player Index', $normalized_fr);
+        $this->assertSame('Player Index', $normalized_de);
     }
 }
 

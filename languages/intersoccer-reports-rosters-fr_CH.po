@@ -1799,3 +1799,20 @@ msgstr ""
 msgid ""
 "InterSoccer Reports & Rosters requires the following plugins to be active: %s"
 msgstr ""
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php
+msgid "Event type"
+msgstr "Type d'événement"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php
+msgid "Mixed events"
+msgstr "Événements mixtes"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php
+msgid "All events"
+msgstr "Tous les événements"
+
+#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php
+#, php-format
+msgid "Event type: %s"
+msgstr "Type d'événement : %s"

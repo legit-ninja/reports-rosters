@@ -331,6 +331,28 @@ add_action('admin_head', function () {
             font-size: 11px;
             font-weight: 500;
         }
+
+        .roster-badge {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            line-height: 1.3;
+            z-index: 1;
+        }
+
+        .roster-badge--girls-only {
+            background: #7c3aed;
+        }
+
+        .camp-card--girls-only,
+        .course-card--girls-only {
+            border-left: 4px solid #7c3aed;
+        }
         
         .camp-details, .course-details {
             padding: 20px;
@@ -1046,6 +1068,34 @@ function intersoccer_rosters_admin_status_filter_label($status_filter) {
 }
 
 /**
+ * Girls-only event filter for Camps/Courses listings (mixed = default, excludes girls-only rows).
+ *
+ * @return string mixed|all|girls_only
+ */
+function intersoccer_rosters_admin_girls_only_mode_from_request() {
+    $raw = isset($_GET['girls_only_mode']) ? sanitize_key(wp_unslash((string) $_GET['girls_only_mode'])) : '';
+    if (in_array($raw, ['all', 'girls_only'], true)) {
+        return $raw;
+    }
+
+    return 'mixed';
+}
+
+/**
+ * @param string $girls_only_mode mixed|all|girls_only
+ */
+function intersoccer_rosters_admin_girls_only_mode_filter_label($girls_only_mode) {
+    switch ($girls_only_mode) {
+        case 'all':
+            return __('All events', 'intersoccer-reports-rosters');
+        case 'girls_only':
+            return __('Girls Only', 'intersoccer-reports-rosters');
+        default:
+            return __('Mixed events', 'intersoccer-reports-rosters');
+    }
+}
+
+/**
  * Admin notice when roster list filters hide some aggregated event groups (runtime: fewer rows than loaded groups).
  *
  * @param string $page_slug Admin page query value (e.g. intersoccer-camps).
@@ -1087,7 +1137,7 @@ function intersoccer_render_camps_page() {
     }
 
     if (function_exists('intersoccer_rosters_bootstrap_saved_list_filters')) {
-        intersoccer_rosters_bootstrap_saved_list_filters('camps', ['season', 'venue', 'camp_terms', 'age_group', 'city', 'status'], true);
+        intersoccer_rosters_bootstrap_saved_list_filters('camps', ['season', 'venue', 'camp_terms', 'age_group', 'city', 'status', 'girls_only_mode'], true);
     }
 
     // Check if user is a coach and filter venues accordingly
@@ -1109,6 +1159,7 @@ function intersoccer_render_camps_page() {
     $selected_age_group = isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '';
     $selected_city = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
     $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : '';
+    $girls_only_mode = intersoccer_rosters_admin_girls_only_mode_from_request();
     $show_closed = ($status_filter === 'closed' || $status_filter === 'all') ? $status_filter : false;
     $consolidated_view = intersoccer_roster_admin_consolidated_view_from_request();
 
@@ -1121,6 +1172,7 @@ function intersoccer_render_camps_page() {
             'age_group' => $selected_age_group,
             'city' => $selected_city,
             'status' => $status_filter,
+            'girls_only_mode' => $girls_only_mode,
         ],
         [
             'is_coach' => $is_coach,
@@ -1174,6 +1226,12 @@ function intersoccer_render_camps_page() {
             intersoccer_rosters_admin_status_filter_label($status_filter)
         );
     }
+    if ($girls_only_mode !== 'mixed') {
+        $camp_active_filter_labels[] = sprintf(
+            __('Event type: %s', 'intersoccer-reports-rosters'),
+            intersoccer_rosters_admin_girls_only_mode_filter_label($girls_only_mode)
+        );
+    }
 
     // Render the page
     ?>
@@ -1203,6 +1261,7 @@ function intersoccer_render_camps_page() {
                         'age_group' => $selected_age_group,
                         'city' => $selected_city,
                         'status' => $status_filter,
+                        'girls_only_mode' => $girls_only_mode,
                         'consolidated' => $consolidated_view ? '1' : '0',
                     ]);
                 }
@@ -1307,13 +1366,21 @@ function intersoccer_render_camps_page() {
             </select>
         </div>
         <div class="filter-group">
+            <label><?php esc_html_e('Event type', 'intersoccer-reports-rosters'); ?></label>
+            <select name="girls_only_mode" onchange="this.form.submit()">
+                <option value="mixed" <?php selected($girls_only_mode, 'mixed'); ?>><?php esc_html_e('Mixed events', 'intersoccer-reports-rosters'); ?></option>
+                <option value="all" <?php selected($girls_only_mode, 'all'); ?>><?php esc_html_e('All events', 'intersoccer-reports-rosters'); ?></option>
+                <option value="girls_only" <?php selected($girls_only_mode, 'girls_only'); ?>><?php esc_html_e('Girls Only', 'intersoccer-reports-rosters'); ?></option>
+            </select>
+        </div>
+        <div class="filter-group">
             <label style="display:flex;align-items:center;gap:6px;">
                 <input type="hidden" name="consolidated" value="0" />
                 <input type="checkbox" name="consolidated" value="1" <?php checked($consolidated_view); ?> onchange="this.form.submit()" />
                 <?php _e('Consolidated (all languages)', 'intersoccer-reports-rosters'); ?>
             </label>
         </div>
-        <?php if ($selected_season || $selected_venue || $selected_camp_terms || $selected_age_group || $selected_city || $status_filter): ?>
+        <?php if ($selected_season || $selected_venue || $selected_camp_terms || $selected_age_group || $selected_city || $status_filter || $girls_only_mode !== 'mixed'): ?>
                 <div class="filter-group">
                     <a href="<?php echo esc_url(function_exists('intersoccer_rosters_clear_filters_url') ? intersoccer_rosters_clear_filters_url('intersoccer-camps') : admin_url('admin.php?page=intersoccer-camps&clear_isrr_filters=1')); ?>" class="button button-secondary">
                         ↻ <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
@@ -1363,7 +1430,7 @@ function intersoccer_render_camps_page() {
                         </div>
                         <div class="camps-grid">
                             <?php foreach ($camps as $camp): ?>
-                                <div class="camp-card">
+                                <div class="camp-card<?php echo !empty($camp['girls_only']) ? ' camp-card--girls-only' : ''; ?>">
                                     <?php
                                     $camp_sig_list = !empty($camp['merged_event_signatures'])
                                         ? $camp['merged_event_signatures']
@@ -1375,6 +1442,9 @@ function intersoccer_render_camps_page() {
                                            data-event-signatures="<?php echo $camp_sigs_csv; ?>"
                                            data-is-closed="<?php echo !empty($camp['event_completed']) ? '1' : '0'; ?>">
                                     <div class="camp-header">
+                                        <?php if (!empty($camp['girls_only'])): ?>
+                                            <span class="roster-badge roster-badge--girls-only"><?php esc_html_e('Girls Only', 'intersoccer-reports-rosters'); ?></span>
+                                        <?php endif; ?>
                                         <h3 class="camp-venue">
                                             📍 <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($camp['venue'], 'pa_intersoccer-venues') : ($camp['venue'] ?: 'Unknown Venue')); ?>
                                         </h3>
@@ -1406,12 +1476,14 @@ function intersoccer_render_camps_page() {
                                         </div>
                                         <div class="camp-actions">
                                             <?php
-                                            $view_url = function_exists('intersoccer_get_roster_details_url_for_listing_group')
-                                                ? intersoccer_get_roster_details_url_for_listing_group($camp, 'camps')
-                                                : add_query_arg(
-                                                    ['page' => 'intersoccer-roster-details', 'from' => 'camps', 'event_signature' => $camp['event_signature'] ?? ''],
-                                                    admin_url('admin.php')
-                                                );
+                                            $view_url = function_exists('intersoccer_get_roster_listing_group_details_url')
+                                                ? intersoccer_get_roster_listing_group_details_url($camp, 'camps')
+                                                : (function_exists('intersoccer_get_roster_details_url_for_listing_group')
+                                                    ? intersoccer_get_roster_details_url_for_listing_group($camp, 'camps')
+                                                    : add_query_arg(
+                                                        ['page' => 'intersoccer-roster-details', 'from' => 'camps', 'event_signature' => $camp['event_signature'] ?? ''],
+                                                        admin_url('admin.php')
+                                                    ));
                                             $is_closed = !empty($camp['event_completed']);
                                             ?>
                                             <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
@@ -1455,7 +1527,7 @@ function intersoccer_render_courses_page() {
     }
 
     if (function_exists('intersoccer_rosters_bootstrap_saved_list_filters')) {
-        intersoccer_rosters_bootstrap_saved_list_filters('courses', ['season', 'venue', 'course_day', 'age_group', 'city', 'status'], true);
+        intersoccer_rosters_bootstrap_saved_list_filters('courses', ['season', 'venue', 'course_day', 'age_group', 'city', 'status', 'girls_only_mode'], true);
     }
 
     // Check if user is a coach and filter venues accordingly
@@ -1472,6 +1544,7 @@ function intersoccer_render_courses_page() {
     }
 
     $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : '';
+    $girls_only_mode = intersoccer_rosters_admin_girls_only_mode_from_request();
 
     $selected_season = isset($_GET['season']) ? sanitize_text_field($_GET['season']) : '';
     $selected_venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
@@ -1489,6 +1562,7 @@ function intersoccer_render_courses_page() {
             'age_group' => $selected_age_group,
             'city' => $selected_city,
             'status' => $status_filter,
+            'girls_only_mode' => $girls_only_mode,
         ],
         [
             'is_coach' => $is_coach,
@@ -1544,6 +1618,12 @@ function intersoccer_render_courses_page() {
             intersoccer_rosters_admin_status_filter_label($status_filter)
         );
     }
+    if ($girls_only_mode !== 'mixed') {
+        $course_active_filter_labels[] = sprintf(
+            __('Event type: %s', 'intersoccer-reports-rosters'),
+            intersoccer_rosters_admin_girls_only_mode_filter_label($girls_only_mode)
+        );
+    }
 
     // Render the page
     ?>
@@ -1573,6 +1653,7 @@ function intersoccer_render_courses_page() {
                         'age_group' => $selected_age_group,
                         'city' => $selected_city,
                         'status' => $status_filter,
+                        'girls_only_mode' => $girls_only_mode,
                         'consolidated' => $consolidated_view ? '1' : '0',
                     ]);
                 }
@@ -1677,13 +1758,21 @@ function intersoccer_render_courses_page() {
                     </select>
                 </div>
                 <div class="filter-group">
+                    <label><?php esc_html_e('Event type', 'intersoccer-reports-rosters'); ?></label>
+                    <select name="girls_only_mode" onchange="this.form.submit()">
+                        <option value="mixed" <?php selected($girls_only_mode, 'mixed'); ?>><?php esc_html_e('Mixed events', 'intersoccer-reports-rosters'); ?></option>
+                        <option value="all" <?php selected($girls_only_mode, 'all'); ?>><?php esc_html_e('All events', 'intersoccer-reports-rosters'); ?></option>
+                        <option value="girls_only" <?php selected($girls_only_mode, 'girls_only'); ?>><?php esc_html_e('Girls Only', 'intersoccer-reports-rosters'); ?></option>
+                    </select>
+                </div>
+                <div class="filter-group">
                     <label style="display:flex;align-items:center;gap:6px;">
                         <input type="hidden" name="consolidated" value="0" />
                         <input type="checkbox" name="consolidated" value="1" <?php checked($consolidated_view); ?> onchange="this.form.submit()" />
                         <?php _e('Consolidated (all languages)', 'intersoccer-reports-rosters'); ?>
                     </label>
                 </div>
-                <?php if ($selected_season || $selected_venue || $selected_course_day || $selected_age_group || $selected_city || $status_filter): ?>
+                <?php if ($selected_season || $selected_venue || $selected_course_day || $selected_age_group || $selected_city || $status_filter || $girls_only_mode !== 'mixed'): ?>
                 <div class="filter-group">
                     <a href="<?php echo esc_url(function_exists('intersoccer_rosters_clear_filters_url') ? intersoccer_rosters_clear_filters_url('intersoccer-courses') : admin_url('admin.php?page=intersoccer-courses&clear_isrr_filters=1')); ?>" class="button button-secondary">
                         ↻ <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
@@ -1757,7 +1846,7 @@ function intersoccer_render_courses_page() {
                                 </div>
                                 <div class="courses-grid">
                                     <?php foreach ($courses as $course): ?>
-                                        <div class="course-card">
+                                        <div class="course-card<?php echo !empty($course['girls_only']) ? ' course-card--girls-only' : ''; ?>">
                                             <?php
                                             $course_sig_list = !empty($course['merged_event_signatures'])
                                                 ? $course['merged_event_signatures']
@@ -1769,6 +1858,9 @@ function intersoccer_render_courses_page() {
                                                    data-event-signatures="<?php echo $course_sigs_csv; ?>"
                                                    data-is-closed="<?php echo !empty($course['event_completed']) ? '1' : '0'; ?>">
                                             <div class="course-header">
+                                                <?php if (!empty($course['girls_only'])): ?>
+                                                    <span class="roster-badge roster-badge--girls-only"><?php esc_html_e('Girls Only', 'intersoccer-reports-rosters'); ?></span>
+                                                <?php endif; ?>
                                                 <h3 class="course-venue">
                                                     📍 <?php echo esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($course['venue'], 'pa_intersoccer-venues') : ($course['venue'] ?: 'Unknown Venue')); ?>
                                                 </h3>
@@ -1806,12 +1898,14 @@ function intersoccer_render_courses_page() {
                                                 </div>
                                                 <div class="course-actions">
                                                     <?php
-                                                    $view_url = function_exists('intersoccer_get_roster_details_url_for_listing_group')
-                                                        ? intersoccer_get_roster_details_url_for_listing_group($course, 'courses')
-                                                        : add_query_arg(
-                                                            ['page' => 'intersoccer-roster-details', 'from' => 'courses', 'event_signature' => $course['event_signature'] ?? ''],
-                                                            admin_url('admin.php')
-                                                        );
+                                                    $view_url = function_exists('intersoccer_get_roster_listing_group_details_url')
+                                                        ? intersoccer_get_roster_listing_group_details_url($course, 'courses')
+                                                        : (function_exists('intersoccer_get_roster_details_url_for_listing_group')
+                                                            ? intersoccer_get_roster_details_url_for_listing_group($course, 'courses')
+                                                            : add_query_arg(
+                                                                ['page' => 'intersoccer-roster-details', 'from' => 'courses', 'event_signature' => $course['event_signature'] ?? ''],
+                                                                admin_url('admin.php')
+                                                            ));
                                                     $is_closed = !empty($course['event_completed']);
                                                     ?>
                                                     <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
@@ -1873,10 +1967,6 @@ function intersoccer_render_girls_only_page() {
         $coach_accessible_venues = InterSoccer_Admin_Coach_Assignments::get_coach_accessible_venues($current_user->ID);
     }
 
-    global $wpdb;
-    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-    $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
-
     $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : '';
 
     $girls_action = isset($_GET['girls_roster_action']) ? sanitize_key($_GET['girls_roster_action']) : '';
@@ -1905,123 +1995,6 @@ function intersoccer_render_girls_only_page() {
 
     delete_transient('intersoccer_rosters_cache');
 
-    // Simplified query using the new girls_only boolean column
-    $base_query = "SELECT COALESCE(r.season, 'N/A') as season,
-                          COALESCE(r.venue, 'N/A') as venue,
-                          COALESCE(r.city, oim.meta_value, 'N/A') as city,
-                          r.age_group,
-                          r.times,
-                          r.camp_terms,
-                          r.course_day,
-                          r.activity_type,
-                          MIN(r.start_date) as start_date,
-                          MAX(r.end_date) as end_date,
-                          COUNT(DISTINCT r.order_item_id) as total_players,
-                          GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids,
-                          r.event_signature,
-                          GROUP_CONCAT(DISTINCT r.player_name) as player_names,
-                          GROUP_CONCAT(DISTINCT r.product_name) as product_names,
-                          MAX(r.event_completed) as event_completed
-                   FROM $rosters_table r
-                   LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City'
-                   WHERE r.girls_only = 1" . intersoccer_roster_placeholder_where();
-    
-    // Add closed filter based on status
-    if ($status_filter === 'closed') {
-        $base_query .= " AND (r.event_completed = 1)";
-    } elseif ($status_filter !== 'all') {
-        $base_query .= intersoccer_roster_closed_where($status_filter);
-    }
-
-    // Add coach venue filtering if user is a coach
-    if ($is_coach && !empty($coach_accessible_venues)) {
-        $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
-        $base_query .= $wpdb->prepare(" AND r.venue IN ($placeholders)", $coach_accessible_venues);
-    } elseif ($is_coach && empty($coach_accessible_venues)) {
-        // Coach has no venue assignments, show no results
-        $base_query .= " AND 1=0";
-    }
-
-    $base_query .= " GROUP BY r.event_signature
-                     ORDER BY r.season DESC, r.activity_type, r.venue, r.age_group";
-
-    $start_time = microtime(true);
-    $groups = $wpdb->get_results($base_query, ARRAY_A);
-    $query_time = microtime(true) - $start_time;
-    $filter = intersoccer_roster_placeholder_where() . intersoccer_roster_closed_where($status_filter);
-    $all_venues = $wpdb->get_col("SELECT DISTINCT venue FROM $rosters_table WHERE girls_only = 1{$filter} AND venue IS NOT NULL ORDER BY venue");
-    $all_camp_terms = $wpdb->get_col("SELECT DISTINCT camp_terms FROM $rosters_table WHERE girls_only = 1{$filter} AND camp_terms IS NOT NULL ORDER BY camp_terms");
-    $all_course_days = $wpdb->get_col("SELECT DISTINCT course_day FROM $rosters_table WHERE girls_only = 1{$filter} AND course_day IS NOT NULL ORDER BY course_day");
-    $all_age_groups = $wpdb->get_col("SELECT DISTINCT age_group FROM $rosters_table WHERE girls_only = 1{$filter} AND age_group IS NOT NULL ORDER BY age_group");
-    $all_cities = $wpdb->get_col("SELECT DISTINCT COALESCE(r.city, oim.meta_value) FROM $rosters_table r LEFT JOIN $order_itemmeta_table oim ON r.order_item_id = oim.order_item_id AND oim.meta_key = 'City' WHERE r.girls_only = 1" . str_replace('is_placeholder', 'r.is_placeholder', $filter) . " AND (r.city IS NOT NULL AND r.city != '' OR (oim.meta_key = 'City' AND oim.meta_value IS NOT NULL AND oim.meta_value != '')) ORDER BY COALESCE(r.city, oim.meta_value)");
-    error_log("InterSoccer: Girls Only query results: " . print_r($groups, true));
-    error_log("InterSoccer: Girls Only query execution time: " . $query_time . " seconds");
-
-    // Process groups and separate camps from courses
-    $all_camps = [];
-    $all_courses = [];
-    $all_seasons = [];
-
-    foreach ($groups as $group) {
-        $group['girls_only'] = 1;
-        if (function_exists('intersoccer_roster_row_matches_girls_only_listing')
-            && !intersoccer_roster_row_matches_girls_only_listing($group)) {
-            continue;
-        }
-
-        $variation_ids = isset($group['variation_ids']) && !empty($group['variation_ids']) && is_string($group['variation_ids']) ? array_filter(explode(',', $group['variation_ids'])) : [];
-        if (empty($variation_ids)) {
-            error_log("InterSoccer: No valid variation_ids for girls-only group - Raw: " . print_r(isset($group['variation_ids']) ? $group['variation_ids'] : 'KEY_NOT_SET', true));
-            $variation_ids = [0];
-        }
-        $group['variation_ids'] = $variation_ids;
-
-        $bucket = function_exists('intersoccer_roster_girls_only_listing_bucket')
-            ? intersoccer_roster_girls_only_listing_bucket($group)
-            : '';
-        if ($bucket === '') {
-            continue;
-        }
-
-        $is_camp = ($bucket === 'camp' || $bucket === 'tournament');
-        
-        // Normalize season for display
-        $group['season'] = intersoccer_normalize_season_for_display($group['season']);
-        
-        // Validate and normalize dates (MIN/MAX already calculated in SQL)
-        $start = !empty($group['start_date']) ? trim($group['start_date']) : '1970-01-01';
-        $end = !empty($group['end_date']) ? trim($group['end_date']) : '1970-01-01';
-        
-        // Validate dates and filter out invalid ones
-        $start_timestamp = strtotime($start);
-        $end_timestamp = strtotime($end);
-        
-        if ($start_timestamp === false || $start === '1970-01-01' || $start === '0000-00-00') {
-            $start = '1970-01-01';
-        }
-        if ($end_timestamp === false || $end === '1970-01-01' || $end === '0000-00-00') {
-            $end = '1970-01-01';
-        }
-        
-        $group['start_date'] = ($start !== '1970-01-01' && $start !== '0000-00-00') ? date('Y-m-d', strtotime($start)) : '1970-01-01';
-        $group['end_date'] = ($end !== '1970-01-01' && $end !== '0000-00-00') ? date('Y-m-d', strtotime($end)) : '1970-01-01';
-
-        // Collect unique seasons
-        if ($group['season'] && $group['season'] !== 'N/A') {
-            $all_seasons[$group['season']] = $group['season'];
-        }
-
-        // Add to appropriate array
-        if ($is_camp) {
-            $all_camps[] = $group;
-        } else {
-            $all_courses[] = $group;
-        }
-    }
-
-    error_log("InterSoccer: Separated - Camps: " . count($all_camps) . ", Courses: " . count($all_courses));
-
-    // Get filter options
     $selected_season = isset($_GET['season']) ? sanitize_text_field($_GET['season']) : '';
     $selected_type = isset($_GET['type']) ? sanitize_text_field($_GET['type']) : '';
     $selected_venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
@@ -2030,78 +2003,36 @@ function intersoccer_render_girls_only_page() {
     $selected_age_group = isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '';
     $selected_city = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
 
-    // Apply filters
-    $display_camps = $all_camps;
-    $display_courses = $all_courses;
+    $service = intersoccer_oop_get_roster_listing_service();
+    $result = $service->getGirlsOnlyListings(
+        [
+            'season' => $selected_season,
+            'type' => $selected_type,
+            'venue' => $selected_venue,
+            'camp_terms' => $selected_camp_terms,
+            'course_day' => $selected_course_day,
+            'age_group' => $selected_age_group,
+            'city' => $selected_city,
+            'status' => $status_filter,
+        ],
+        [
+            'is_coach' => $is_coach,
+            'accessible_venues' => $coach_accessible_venues,
+        ]
+    );
 
-    if ($selected_season) {
-        $display_camps = array_filter($display_camps, function($group) use ($selected_season) {
-            return $group['season'] === $selected_season;
-        });
-        $display_courses = array_filter($display_courses, function($group) use ($selected_season) {
-            return $group['season'] === $selected_season;
-        });
-    }
+    $query_time = $result['query_time'];
+    $grouped_camps = $result['grouped_camps'];
+    $grouped_courses = $result['grouped_courses'];
+    $all_seasons = $result['filters']['seasons'];
+    $all_venues = $result['filters']['venues'];
+    $all_camp_terms = $result['filters']['camp_terms'];
+    $all_course_days = $result['filters']['course_days'];
+    $all_age_groups = $result['filters']['age_groups'];
+    $all_cities = $result['filters']['cities'];
 
-    // Filter by type if specified
-    if ($selected_type === 'camps') {
-        $display_courses = [];
-    } elseif ($selected_type === 'courses') {
-        $display_camps = [];
-    }
-    if ($selected_venue) {
-        $display_camps = array_filter($display_camps, function($group) use ($selected_venue) {
-            return $group['venue'] === $selected_venue;
-        });
-        $display_courses = array_filter($display_courses, function($group) use ($selected_venue) {
-            return $group['venue'] === $selected_venue;
-        });
-    }
-    if ($selected_camp_terms) {
-        $display_camps = array_filter($display_camps, function($group) use ($selected_camp_terms) {
-            return $group['camp_terms'] === $selected_camp_terms;
-        });
-    }
-    if ($selected_course_day) {
-        $display_courses = array_filter($display_courses, function($group) use ($selected_course_day) {
-            return $group['course_day'] === $selected_course_day;
-        });
-    }
-    if ($selected_age_group) {
-        $display_camps = array_filter($display_camps, function($group) use ($selected_age_group) {
-            return $group['age_group'] === $selected_age_group;
-        });
-        $display_courses = array_filter($display_courses, function($group) use ($selected_age_group) {
-            return $group['age_group'] === $selected_age_group;
-        });
-    }
-    if ($selected_city) {
-        $display_camps = array_filter($display_camps, function($group) use ($selected_city) {
-            return $group['city'] === $selected_city;
-        });
-        $display_courses = array_filter($display_courses, function($group) use ($selected_city) {
-            return $group['city'] === $selected_city;
-        });
-    }
-
-    error_log("InterSoccer: After filters - Camps: " . count($display_camps) . ", Courses: " . count($display_courses));
-
-    // Group camps by season
-    $grouped_camps = [];
-    foreach ($display_camps as $camp) {
-        $season = $camp['season'] ?: 'N/A';
-        $grouped_camps[$season][] = $camp;
-    }
-    krsort($grouped_camps);
-
-    // Group courses by season then day
-    $grouped_courses = [];
-    foreach ($display_courses as $course) {
-        $season = $course['season'] ?: 'N/A';
-        $course_day = $course['course_day'] ?: 'N/A';
-        $grouped_courses[$season][$course_day][] = $course;
-    }
-    krsort($grouped_courses);
+    error_log('InterSoccer OOP: Girls Only aggregation time ' . $query_time . ' seconds');
+    error_log('InterSoccer OOP: Girls Only camps seasons ' . count($grouped_camps) . ', course seasons ' . count($grouped_courses));
 
     // Render the page
     ?>

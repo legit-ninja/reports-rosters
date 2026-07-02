@@ -28,6 +28,9 @@ class RosterDetailsUrlTest extends TestCase {
         Functions\when('admin_url')->alias(function ($path = '') {
             return 'https://example.test/wp-admin/' . ltrim((string) $path, '/');
         });
+        Functions\when('sanitize_key')->alias(function ($key) {
+            return strtolower(preg_replace('/[^a-z0-9_-]/', '', (string) $key));
+        });
         Functions\when('add_query_arg')->alias(function ($args, $url) {
             $query = is_array($args) ? http_build_query($args) : (string) $args;
             $sep = strpos((string) $url, '?') === false ? '?' : '&';
@@ -247,5 +250,46 @@ class RosterDetailsUrlTest extends TestCase {
         $this->assertIsString($url);
         $this->assertStringContainsString('order_item_ids=4760%2C5127', $url);
         $this->assertStringNotContainsString('event_signature=', $url);
+    }
+
+    public function test_get_roster_listing_group_details_url_routes_girls_only_camp_to_girls_only_context() {
+        if (!function_exists('intersoccer_get_roster_listing_group_details_url')) {
+            $this->markTestSkipped('intersoccer_get_roster_listing_group_details_url not loaded');
+        }
+
+        $group = [
+            'event_signature' => 'abc123def456789012345678901234ab',
+            'venue' => 'Geneva',
+            'season' => 'Summer 2026',
+            'camp_terms' => 'Week 1',
+            'girls_only' => 1,
+            'order_item_ids' => [101, 102],
+        ];
+
+        $url = intersoccer_get_roster_listing_group_details_url($group, 'camps');
+
+        $this->assertStringContainsString('from=girls-only', $url);
+        $this->assertStringContainsString('girls_only=1', $url);
+        $this->assertStringContainsString('event_signature=', $url);
+    }
+
+    public function test_get_roster_listing_group_details_url_keeps_mixed_camp_on_camps_context() {
+        if (!function_exists('intersoccer_get_roster_listing_group_details_url')) {
+            $this->markTestSkipped('intersoccer_get_roster_listing_group_details_url not loaded');
+        }
+
+        $group = [
+            'event_signature' => 'abc123def456789012345678901234ab',
+            'venue' => 'Geneva',
+            'season' => 'Summer 2026',
+            'camp_terms' => 'Week 1',
+            'girls_only' => 0,
+            'order_item_ids' => [101],
+        ];
+
+        $url = intersoccer_get_roster_listing_group_details_url($group, 'camps');
+
+        $this->assertStringContainsString('from=camps', $url);
+        $this->assertStringNotContainsString('girls_only=1', $url);
     }
 }

@@ -210,7 +210,7 @@ function intersoccer_roster_export_listing_context_from_globals(): array {
  */
 function intersoccer_roster_export_parse_filter_post(array $raw): array {
     $out = [];
-    $keys = ['season', 'venue', 'camp_terms', 'course_day', 'age_group', 'city', 'status', 'type', 'consolidated', 'product_name', 'times'];
+    $keys = ['season', 'venue', 'camp_terms', 'course_day', 'age_group', 'city', 'status', 'type', 'consolidated', 'product_name', 'times', 'girls_only_mode'];
     foreach ($keys as $k) {
         if (isset($raw[$k]) && $raw[$k] !== '') {
             $out[$k] = sanitize_text_field((string) $raw[$k]);
@@ -249,6 +249,7 @@ function intersoccer_export_all_rosters_handler(): void {
         'age_group' => $filter['age_group'] ?? '',
         'city' => $filter['city'] ?? '',
         'status' => $filter['status'] ?? '',
+        'girls_only_mode' => $filter['girls_only_mode'] ?? '',
     ];
     $course_filters = [
         'season' => $filter['season'] ?? '',
@@ -257,6 +258,7 @@ function intersoccer_export_all_rosters_handler(): void {
         'age_group' => $filter['age_group'] ?? '',
         'city' => $filter['city'] ?? '',
         'status' => $filter['status'] ?? '',
+        'girls_only_mode' => $filter['girls_only_mode'] ?? '',
     ];
 
     $groups = [];

@@ -86,6 +86,8 @@ class Roster extends AbstractModel {
         'discount_applied',
         'order_status',
         'event_completed',
+        'girls_only',
+        'is_placeholder',
         'event_signature',
         'product_name',
         'base_price',
@@ -133,7 +135,10 @@ class Roster extends AbstractModel {
         'start_date' => 'date',
         'end_date' => 'date',
         'event_details' => 'json',
-        'selected_days' => 'array'
+        'selected_days' => 'array',
+        'girls_only' => 'integer',
+        'is_placeholder' => 'integer',
+        'event_completed' => 'integer',
     ];
     
     /**

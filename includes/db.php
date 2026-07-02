@@ -625,6 +625,13 @@ function intersoccer_rebuild_rosters_and_reports() {
 }
 
 function intersoccer_reconcile_rosters($options = []) {
+    if (function_exists('wp_raise_memory_limit')) {
+        wp_raise_memory_limit('admin');
+    }
+    if (function_exists('set_time_limit')) {
+        @set_time_limit(0);
+    }
+
     if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database')) {
         error_log('InterSoccer: Routing roster reconciliation through OOP RosterBuilder');
 
@@ -642,11 +649,21 @@ function intersoccer_reconcile_rosters($options = []) {
         try {
             $result = intersoccer_oop_reconcile_rosters($oop_options);
 
+            $girls_only_backfilled = function_exists('intersoccer_reconcile_backfill_girls_only_flags')
+                ? intersoccer_reconcile_backfill_girls_only_flags()
+                : 0;
+
             $message = sprintf(
                 __('Reconciled rosters via OOP engine: Synced %1$d entries, deleted %2$d obsolete ones.', 'intersoccer-reports-rosters'),
                 intval($result['synced'] ?? 0),
                 intval($result['deleted'] ?? 0)
             );
+            if ($girls_only_backfilled > 0) {
+                $message .= ' ' . sprintf(
+                    __('Corrected girls-only flag on %d roster row(s).', 'intersoccer-reports-rosters'),
+                    $girls_only_backfilled
+                );
+            }
 
             if (!empty($result['errors'])) {
                 $message .= ' ' . __('Some items reported errors. Check the logs for details.', 'intersoccer-reports-rosters');
@@ -658,6 +675,7 @@ function intersoccer_reconcile_rosters($options = []) {
                 'deleted' => intval($result['deleted'] ?? 0),
                 'errors' => intval($result['errors'] ?? 0),
                 'warnings' => $result['error_messages'] ?? [],
+                'girls_only_backfilled' => $girls_only_backfilled,
                 'message' => $message,
             ];
 
@@ -714,11 +732,22 @@ function intersoccer_reconcile_rosters($options = []) {
         }
 
         error_log('InterSoccer: Reconciliation completed. Synced: ' . $synced . ', Deleted: ' . $deleted);
+        $girls_only_backfilled = function_exists('intersoccer_reconcile_backfill_girls_only_flags')
+            ? intersoccer_reconcile_backfill_girls_only_flags()
+            : 0;
+        $message = __('Reconciled rosters: Synced ' . $synced . ' entries, deleted ' . $deleted . ' obsolete ones.', 'intersoccer-reports-rosters');
+        if ($girls_only_backfilled > 0) {
+            $message .= ' ' . sprintf(
+                __('Corrected girls-only flag on %d roster row(s).', 'intersoccer-reports-rosters'),
+                $girls_only_backfilled
+            );
+        }
         return [
             'status' => 'success',
             'synced' => $synced,
             'deleted' => $deleted,
-            'message' => __('Reconciled rosters: Synced ' . $synced . ' entries, deleted ' . $deleted . ' obsolete ones.', 'intersoccer-reports-rosters')
+            'girls_only_backfilled' => $girls_only_backfilled,
+            'message' => $message,
         ];
     } catch (Exception $e) {
         error_log('InterSoccer: Reconciliation failed: ' . $e->getMessage());
@@ -1503,22 +1532,16 @@ function intersoccer_upgrade_database() {
 
         $raw_order_item_meta = wc_get_order_item_meta($row->order_item_id, '', true);
         $meta_activity_type = $item_meta['pa_activity-type'] ?? $item_meta['Activity Type'] ?? $raw_order_item_meta['Activity Type'][0] ?? '';
-        if ($meta_activity_type) {
-            $normalized_activity = trim(strtolower(html_entity_decode($meta_activity_type, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
-            $normalized_activity = str_replace(["'", '"'], '', $normalized_activity);
-            $activity_types = array_map('trim', explode(',', $normalized_activity));
-            if (in_array('girls only', $activity_types) || in_array('camp girls only', $activity_types) || in_array('course girls only', $activity_types)) {
-                $girls_only = TRUE;
-            }
-        } elseif ($row->activity_type) {
-            // Fallback to existing activity_type for backfill
-            $normalized_activity = trim(strtolower(html_entity_decode($row->activity_type, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
-            $normalized_activity = str_replace(["'", '"'], '', $normalized_activity);
-            $activity_types = array_map('trim', explode(',', $normalized_activity));
-            if (in_array('girls only', $activity_types) || in_array('camp girls only', $activity_types) || in_array('course girls only', $activity_types)) {
-                $girls_only = TRUE;
-            }
-        }
+        $girls_only = function_exists('intersoccer_resolve_roster_girls_only_flag')
+            ? intersoccer_resolve_roster_girls_only_flag([
+                'raw_activity_type' => $meta_activity_type ?: ($row->activity_type ?? ''),
+                'activity_type' => $meta_activity_type ?: ($row->activity_type ?? ''),
+                'product_name' => $row->product_name ?? '',
+                'product_id' => $row->product_id ?? 0,
+                'variation_id' => $row->variation_id ?? 0,
+                'pa_girls-only' => $item_meta['pa_girls-only'] ?? $item_meta['attribute_pa_girls-only'] ?? '',
+            ])
+            : 0;
 
         $wpdb->update(
             $rosters_table,

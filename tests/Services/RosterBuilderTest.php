@@ -141,6 +141,33 @@ class RosterBuilderTest extends TestCase {
         $this->assertSame('lausanne-centre-sportif-dorigny-unil-fr', $result['venue']);
         $this->assertSame('Course', $result['activity_type']);
     }
+
+    public function test_extract_order_item_data_sets_girls_only_for_camp_girls_only_activity_type() {
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(42);
+        $order->shouldReceive('get_customer_id')->andReturn(7);
+        $order->shouldReceive('get_status')->andReturn('processing');
+
+        $item = Mockery::mock('WC_Order_Item_Product');
+        $item->shouldReceive('get_product')->andReturn(null);
+        $item->shouldReceive('get_variation_id')->andReturn(37638);
+        $item->shouldReceive('get_product_id')->andReturn(37635);
+        $item->shouldReceive('get_meta')->andReturn('');
+        $item->shouldReceive('get_meta_data')->andReturn([
+            $this->createOrderItemMeta('Activity Type', "Camp, Girls' only"),
+            $this->createOrderItemMeta('pa_program-season', 'summer-camps-2026'),
+            $this->createOrderItemMeta('pa_intersoccer-venues', 'geneva-venue'),
+        ]);
+
+        $reflection = new \ReflectionClass($this->rosterBuilder);
+        $method = $reflection->getMethod('extractOrderItemData');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($this->rosterBuilder, $order, 4761, $item);
+
+        $this->assertSame('Camp', $result['activity_type']);
+        $this->assertSame(1, $result['girls_only']);
+    }
     
     public function test_build_rosters_with_empty_options() {
         $this->database->shouldReceive('transaction')

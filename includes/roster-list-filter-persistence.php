@@ -191,6 +191,13 @@ function intersoccer_rosters_maybe_run_page_reconcile_action(): void {
         wp_die(esc_html__('Reconcile is unavailable.', 'intersoccer-reports-rosters'));
     }
 
+    if (function_exists('wp_raise_memory_limit')) {
+        wp_raise_memory_limit('admin');
+    }
+    if (function_exists('set_time_limit')) {
+        @set_time_limit(0);
+    }
+
     $result = intersoccer_reconcile_rosters(['delete_obsolete' => true]);
     $message = isset($result['message']) ? (string) $result['message'] : __('Rosters reconciled.', 'intersoccer-reports-rosters');
     if (function_exists('intersoccer_rosters_flash_admin_notice')) {

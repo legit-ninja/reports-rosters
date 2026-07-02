@@ -360,7 +360,7 @@ class RosterRepository implements RepositoryInterface {
             $this->logger->debug('Searching roster entries with criteria', $criteria);
             
             // Build cache key for complex queries
-            $cache_key = 'roster_query_' . md5(serialize(['criteria' => $criteria, 'options' => $options]));
+            $cache_key = 'roster_query_v2_' . md5(serialize(['criteria' => $criteria, 'options' => $options]));
             
             // Try cache for complex queries (only if no limit/offset and not skipped)
             $skip_cache = !empty($options['skip_cache']);

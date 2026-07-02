@@ -263,6 +263,10 @@ class RosterBuilder {
     public function reconcile(array $options = []) {
         $start_time = microtime(true);
 
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+
         $defaults = [
             'status' => ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'],
             'delete_obsolete' => true,
@@ -794,6 +798,7 @@ class RosterBuilder {
         }
         // Extract metadata from order item
         $meta_data = $item->get_meta_data();
+        $raw_activity_type = '';
         foreach ($meta_data as $meta) {
             $data = $meta->get_data();
             $raw_key = isset($data['key']) ? (string) $data['key'] : '';
@@ -809,6 +814,7 @@ class RosterBuilder {
                 $field = $field_map[$canonical_key];
 
                 if ($field === 'activity_type') {
+                    $raw_activity_type = is_string($value) ? $value : (string) $value;
                     $order_data[$field] = $this->normalizeActivityTypeValue($value);
                 } elseif ($field === 'booking_type') {
                     $order_data[$field] = $this->normalizeBookingTypeValue($value);
@@ -935,6 +941,16 @@ class RosterBuilder {
                 $val = preg_replace('/[^0-9.]/', '', wp_strip_all_tags((string) $val));
             }
             $order_data['final_price'] = $val !== '' ? (float) $val : 0.0;
+        }
+
+        if (function_exists('intersoccer_resolve_roster_girls_only_flag')) {
+            $order_data['girls_only'] = intersoccer_resolve_roster_girls_only_flag(array_merge($order_data, [
+                'raw_activity_type' => $raw_activity_type !== ''
+                    ? $raw_activity_type
+                    : ($order_data['activity_type'] ?? ''),
+            ]));
+        } else {
+            $order_data['girls_only'] = (int) ($order_data['girls_only'] ?? 0);
         }
 
         return $order_data;
@@ -1274,6 +1290,8 @@ class RosterBuilder {
         if (function_exists('intersoccer_apply_late_pickup_to_roster_data')) {
             $roster_data = intersoccer_apply_late_pickup_to_roster_data($roster_data);
         }
+
+        $roster_data['girls_only'] = (int) ($roster_data['girls_only'] ?? 0);
 
         return $roster_data;
     }

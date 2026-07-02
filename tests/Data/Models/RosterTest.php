@@ -48,6 +48,27 @@ class RosterTest extends TestCase {
         $this->assertTrue($roster1->conflictsWith($roster2));
     }
 
+    public function test_girls_only_hydrates_from_database_row(): void {
+        $roster = new Roster([
+            'order_id' => 1,
+            'order_item_id' => 10,
+            'product_id' => 100,
+            'customer_id' => 1,
+            'player_index' => 0,
+            'first_name' => 'Test',
+            'last_name' => 'Player',
+            'dob' => '2015-01-01',
+            'gender' => 'female',
+            'activity_type' => 'Camp',
+            'venue' => 'Geneva',
+            'order_status' => 'completed',
+            'girls_only' => 1,
+        ]);
+
+        $array = $roster->toArray();
+        $this->assertSame(1, (int) ($array['girls_only'] ?? 0));
+    }
+
     public function test_skip_age_group_validation_allows_completed_order_repair(): void {
         $roster = new Roster([
             'order_id' => 1,

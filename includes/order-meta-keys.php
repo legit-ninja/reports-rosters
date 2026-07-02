@@ -514,6 +514,26 @@ if (!function_exists('intersoccer_apply_order_item_attribute_meta_to_data')) {
             $data[$field] = $val;
         }
 
+        $girls_only_meta_keys = [
+            'pa_girls-only',
+            'attribute_pa_girls-only',
+            'pa_girls_only',
+            'attribute_pa_girls_only',
+        ];
+        foreach ($girls_only_meta_keys as $girls_meta_key) {
+            if (!array_key_exists($girls_meta_key, $raw)) {
+                continue;
+            }
+            $val = $raw[$girls_meta_key];
+            if (is_array($val)) {
+                $val = $val[0] ?? implode(', ', array_map('trim', $val));
+            }
+            $val = trim((string) $val);
+            if ($val !== '') {
+                $data['pa_girls-only'] = $val;
+            }
+        }
+
         return $data;
     }
 }
