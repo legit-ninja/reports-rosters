@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 2.7.1
+ * Version: 2.7.2
  * 
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
