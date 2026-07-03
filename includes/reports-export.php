@@ -145,9 +145,7 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
             'Course Name',
             'Course Day',
             'Times',
-            'Direct Online',
-            'Total',
-            'Final'
+            'Registrations'
         );
         $sheet->fromArray($headers, null, 'A1');
 
@@ -173,9 +171,7 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
                         $course_data['course_name'] ?? 'Unknown',
                         $course_data['course_day'] ?? 'Unknown',
                         $course_data['times'] ?? '-',
-                        $course_data['online'],
-                        $course_data['total'],
-                        $course_data['final']
+                        $course_data['registrations']
                     );
                     $sheet->fromArray($excel_row, null, 'A' . $row_index);
                     $row_index++;
@@ -191,19 +187,15 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
 
         $totals_start++;
         $sheet->setCellValue('A' . $totals_start, 'Category');
-        $sheet->setCellValue('E' . $totals_start, 'Online');
-        $sheet->setCellValue('F' . $totals_start, 'Total');
-        $sheet->setCellValue('G' . $totals_start, 'Final');
-        $sheet->getStyle('A' . $totals_start . ':G' . $totals_start)->getFont()->setBold(true);
+        $sheet->setCellValue('F' . $totals_start, 'Registrations');
+        $sheet->getStyle('A' . $totals_start . ':F' . $totals_start)->getFont()->setBold(true);
 
         $totals_start++;
         $course_all_export = $course_player_registration_totals !== null
             ? (int) $course_player_registration_totals['all']
-            : (int) ($totals['all']['final'] ?? 0);
+            : (int) ($totals['all']['registrations'] ?? 0);
         $sheet->setCellValue('A' . $totals_start, __('All Courses (roster registrations)', 'intersoccer-reports-rosters'));
-        $sheet->setCellValue('E' . $totals_start, $course_all_export);
         $sheet->setCellValue('F' . $totals_start, $course_all_export);
-        $sheet->setCellValue('G' . $totals_start, $course_all_export);
 
     }
 

@@ -11,6 +11,7 @@ if (!defined('ABSPATH')) {
 }
 
 require_once dirname(__FILE__) . '/utils.php';
+require_once dirname(__FILE__) . '/final-reports-totals.php';
 
 /**
  * Display booking report with filters
@@ -183,6 +184,13 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         // First, try to get data from rosters table (has parsed dates)
         // Ensure year is an integer for SQL comparison
         $year_int = intval($year);
+
+        $camp_statuses = function_exists('intersoccer_reports_final_report_order_statuses')
+            ? intersoccer_reports_final_report_order_statuses()
+            : ['wc-completed'];
+        $camp_status_sql = function_exists('intersoccer_reports_sql_in_placeholders')
+            ? intersoccer_reports_sql_in_placeholders($camp_statuses)
+            : '%s';
         
         // Build WHERE conditions dynamically based on filters
         // Exclude placeholder records (order_item_id = 0)
@@ -191,7 +199,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             "r.season LIKE %s",
             "r.order_item_id > 0",
             "p.post_type = 'shop_order'",
-            "p.post_status = 'wc-completed'"
+            "p.post_status IN ({$camp_status_sql})"
         ];
         $prepare_values = [
             $activity_type,
@@ -203,6 +211,8 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             $where_conditions[] = "r.season LIKE %s";
             $prepare_values[] = $season_type . '%';
         }
+
+        $prepare_values = array_merge($prepare_values, $camp_statuses);
         
         // Region filter applied in PHP after canton enrichment (order meta may be empty; product attribute fills in).
         
@@ -290,10 +300,10 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         // Build WHERE conditions for WooCommerce query
         $woo_where_conditions = [
             "p.post_type = 'shop_order'",
-            "p.post_status = 'wc-completed'",
+            "p.post_status IN ({$camp_status_sql})",
             "COALESCE(om_activity_type.meta_value, pm_activity_type.meta_value) = %s"
         ];
-        $woo_prepare_values = [$activity_type];
+        $woo_prepare_values = array_merge($camp_statuses, [$activity_type]);
         
         // Add season type filter if provided
         if (!empty($season_type)) {
@@ -358,8 +368,6 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         if (function_exists('intersoccer_reports_enrich_and_normalize_final_report_rows')) {
             intersoccer_reports_enrich_and_normalize_final_report_rows($rosters);
         }
-        $rosters_before_date_pruning = $rosters;
-        $rosters_before_date_pruning = $rosters;
         
         // Parse event dates and filter by event year
         $filtered_rosters = [];
@@ -680,27 +688,8 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         }
         unset($roster);
 
-        // Player-level totals (one roster table row per player), based on pre-date-pruning rows.
-        // This keeps Totals aligned with Camps roster counts when some rows are missing/invalid parsed dates.
-        $player_registration_totals = ['full_day' => 0, 'mini' => 0, 'all' => 0];
-        foreach ($rosters_before_date_pruning as $prow) {
-            $line_subtotal = floatval($prow['line_subtotal'] ?? 0);
-            $line_total = floatval($prow['line_total'] ?? 0);
-            $prow['is_buyclub'] = $line_subtotal > 0 && $line_total === 0.0;
-            if (function_exists('intersoccer_reports_row_should_exclude_for_buyclub_option') && intersoccer_reports_row_should_exclude_for_buyclub_option($prow, $exclude_buyclub)) {
-                continue;
-            }
-            $age_group_for_total = $prow['age_group'] ?? '';
-            $ctp = (!empty($age_group_for_total) && (stripos($age_group_for_total, '3-5y') !== false || stripos($age_group_for_total, 'half-day') !== false))
-                ? 'Mini - Half Day'
-                : 'Full Day';
-            if ($ctp === 'Mini - Half Day') {
-                $player_registration_totals['mini']++;
-            } else {
-                $player_registration_totals['full_day']++;
-            }
-            $player_registration_totals['all']++;
-        }
+        // Player-level totals from the same filtered row set as the grid (region/season/year applied).
+        $player_registration_totals = intersoccer_reports_compute_camp_registration_totals($rosters, $exclude_buyclub);
 
         // Group by date range (month or week), canton, venue, camp_type
         // Include all seasons, not just summer camps
@@ -714,9 +703,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         // Note: We skip entries with invalid dates (1970-01-01) as they can't be properly grouped
         foreach ($rosters as $entry) {
             // Use the same date sources as the roster row: event_* first, then DB start_date/end_date.
-            // Player registration totals count pre-filter rows; the grid previously skipped rows where
-            // event_start_date was unset but start_date was still present — producing an empty table with correct footer totals.
-            // Finally, parse camp_terms (same as roster filter) when structured dates are still missing.
+            // Parse camp_terms (same as roster filter) when structured dates are still missing.
             $parsed_from_terms_start = null;
             $parsed_from_terms_end = null;
             $esd = isset($entry['event_start_date']) ? trim((string) $entry['event_start_date']) : '';
@@ -951,10 +938,6 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         if ($course_has_placeholder_column) {
             $course_placeholder_clause = " AND (rr.is_placeholder = 0 OR rr.is_placeholder IS NULL)";
         }
-        $course_placeholder_clause_r = '';
-        if ($course_has_placeholder_column) {
-            $course_placeholder_clause_r = " AND (r.is_placeholder = 0 OR r.is_placeholder IS NULL)";
-        }
 
         $course_activity_types = function_exists('intersoccer_roster_listing_activity_types')
             ? intersoccer_roster_listing_activity_types('course')
@@ -1059,69 +1042,6 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         if (function_exists('intersoccer_reports_enrich_and_normalize_final_report_rows')) {
             intersoccer_reports_enrich_and_normalize_final_report_rows($rosters);
         }
-        $rosters_before_date_pruning = $rosters;
-
-        // Footer total: count from intersoccer_rosters joined to completed orders — not only rows that also
-        // pass the narrow Activity Type WooCommerce join used for the grid (otherwise roster registrations are under-counted).
-        $course_oim = $wpdb->prefix . 'woocommerce_order_itemmeta';
-        $course_year_like = '%' . intval($year) . '%';
-        $course_direct_total_sql = "
-            SELECT r.id,
-                   p.ID AS order_id,
-                   r.canton_region AS canton_region,
-                   r.activity_type,
-                   r.product_id,
-                   r.variation_id,
-                   (SELECT meta_value FROM {$course_oim} WHERE order_item_id = r.order_item_id AND meta_key = '_line_subtotal' LIMIT 1) AS line_subtotal,
-                   (SELECT meta_value FROM {$course_oim} WHERE order_item_id = r.order_item_id AND meta_key = '_line_total' LIMIT 1) AS line_total
-            FROM {$course_rosters_table} r
-            INNER JOIN {$wpdb->prefix}woocommerce_order_items oi ON r.order_item_id = oi.order_item_id
-            INNER JOIN {$wpdb->prefix}posts p ON oi.order_id = p.ID
-            WHERE r.activity_type IN ({$course_activity_sql})
-              AND r.order_item_id > 0
-              AND p.post_type = 'shop_order'
-              AND p.post_status IN ({$course_status_sql})
-              AND r.season LIKE %s
-              AND (r.girls_only = 0 OR r.girls_only IS NULL)
-              {$course_placeholder_clause_r}
-        ";
-        $course_direct_rows = $wpdb->get_results(
-            $wpdb->prepare(
-                $course_direct_total_sql,
-                array_merge($course_activity_types, $course_statuses, [$course_year_like])
-            ),
-            ARRAY_A
-        );
-        $course_player_registration_totals = ['all' => 0];
-        $course_direct_seen_id = [];
-        if (is_array($course_direct_rows)) {
-            foreach ($course_direct_rows as $cdr) {
-                $cdr_id = isset($cdr['id']) ? (int) $cdr['id'] : 0;
-                if ($cdr_id <= 0 || isset($course_direct_seen_id[$cdr_id])) {
-                    continue;
-                }
-                $course_direct_seen_id[$cdr_id] = true;
-                if (function_exists('intersoccer_roster_row_matches_listing_kind')
-                    && !intersoccer_roster_row_matches_listing_kind($cdr, 'course')) {
-                    continue;
-                }
-                if (!empty($region) && function_exists('intersoccer_reports_region_matches_filter')) {
-                    if (!intersoccer_reports_region_matches_filter($cdr['canton_region'] ?? '', $region)) {
-                        continue;
-                    }
-                }
-                $cdr_ls = floatval($cdr['line_subtotal'] ?? 0);
-                $cdr_lt = floatval($cdr['line_total'] ?? 0);
-                $cdr_entry = [
-                    'order_id' => isset($cdr['order_id']) ? (int) $cdr['order_id'] : 0,
-                    'is_buyclub' => $cdr_ls > 0 && $cdr_lt === 0.0,
-                ];
-                if (function_exists('intersoccer_reports_row_should_exclude_for_buyclub_option') && intersoccer_reports_row_should_exclude_for_buyclub_option($cdr_entry, $exclude_buyclub)) {
-                    continue;
-                }
-                $course_player_registration_totals['all']++;
-            }
-        }
         
         // Parse event dates and filter by event year
         $filtered_rosters = [];
@@ -1219,6 +1139,10 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             }));
         }
 
+        $course_player_registration_totals = [
+            'all' => intersoccer_reports_compute_course_registration_total($rosters, $exclude_buyclub),
+        ];
+
         // Group by region, venue, and stable identity (variation/product + course day).
         // This prevents duplicate report rows when the same event appears with multiple times/order rows.
         // Count one registration per roster row (distinct rr.id). Multiple players can share one
@@ -1308,9 +1232,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                     'course_name' => $course_name,
                     'course_day' => $course_day,
                     'times' => [],
-                    'online' => 0,
-                    'total' => 0,
-                    'final' => 0,
+                    'registrations' => 0,
                 ];
             }
 
@@ -1337,9 +1259,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 $report_data[$entry_region][$venue][$row_key]['times'][$times_key] = true;
             }
 
-            $report_data[$entry_region][$venue][$row_key]['online']++;
-            $report_data[$entry_region][$venue][$row_key]['total']++;
-            $report_data[$entry_region][$venue][$row_key]['final']++;
+            $report_data[$entry_region][$venue][$row_key]['registrations']++;
         }
 
         foreach ($report_data as $region_key => $venues_data) {
@@ -1421,10 +1341,8 @@ function intersoccer_calculate_final_reports_totals($report_data, $activity_type
         $totals = [
             'regions' => [],
             'all' => [
-                'online' => 0,
-                'total' => 0,
-                'final' => 0,
-            ]
+                'registrations' => 0,
+            ],
         ];
 
         foreach ($report_data as $region => $venues) {
@@ -1432,21 +1350,13 @@ function intersoccer_calculate_final_reports_totals($report_data, $activity_type
                 continue;
             }
             $totals['regions'][$region] = [
-                'online' => 0,
-                'total' => 0,
-                'final' => 0,
-                'prev_year' => 0, // Placeholder for previous year data
+                'registrations' => 0,
             ];
 
             foreach ($venues as $venue => $courses) {
                 foreach ($courses as $data) {
-                    $totals['regions'][$region]['online'] += $data['online'];
-                    $totals['regions'][$region]['total'] += $data['total'];
-                    $totals['regions'][$region]['final'] += $data['final'];
-
-                    $totals['all']['online'] += $data['online'];
-                    $totals['all']['total'] += $data['total'];
-                    $totals['all']['final'] += $data['final'];
+                    $totals['regions'][$region]['registrations'] += $data['registrations'];
+                    $totals['all']['registrations'] += $data['registrations'];
                 }
             }
         }

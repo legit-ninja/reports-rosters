@@ -131,24 +131,37 @@ function intersoccer_render_final_reports_page() {
     }
     sort($unique_season_types);
     
-    // Get unique regions/cantons for the selected year and activity type
+    // Region options: canton_region is often empty; region column holds the value (log H1: 0 vs 8).
+    $listing_activity_types = function_exists('intersoccer_roster_listing_activity_types')
+        ? intersoccer_roster_listing_activity_types(strtolower($activity_type) === 'course' ? 'course' : 'camp')
+        : [$activity_type];
+    $listing_activity_sql = function_exists('intersoccer_reports_sql_in_placeholders')
+        ? intersoccer_reports_sql_in_placeholders($listing_activity_types)
+        : '%s';
+    $final_statuses = function_exists('intersoccer_reports_final_report_order_statuses')
+        ? intersoccer_reports_final_report_order_statuses()
+        : ['wc-completed'];
+    $final_status_sql = function_exists('intersoccer_reports_sql_in_placeholders')
+        ? intersoccer_reports_sql_in_placeholders($final_statuses)
+        : '%s';
+
     $regions_query = $wpdb->prepare(
-        "SELECT DISTINCT r.canton_region 
+        "SELECT DISTINCT COALESCE(NULLIF(TRIM(r.canton_region), ''), NULLIF(TRIM(r.region), ''))
          FROM $rosters_table r
          JOIN {$wpdb->prefix}woocommerce_order_items oi ON r.order_item_id = oi.order_item_id
          JOIN {$wpdb->prefix}posts p ON oi.order_id = p.ID
-         WHERE r.activity_type = %s
+         WHERE r.activity_type IN ({$listing_activity_sql})
          AND r.season LIKE %s
          AND p.post_type = 'shop_order'
-         AND p.post_status = 'wc-completed'
-         AND r.canton_region IS NOT NULL
-         AND r.canton_region != ''
-         ORDER BY r.canton_region ASC",
-        $activity_type,
-        '%' . $year_int . '%'
+         AND p.post_status IN ({$final_status_sql})
+         AND COALESCE(NULLIF(TRIM(r.canton_region), ''), NULLIF(TRIM(r.region), '')) IS NOT NULL
+         AND COALESCE(NULLIF(TRIM(r.canton_region), ''), NULLIF(TRIM(r.region), '')) != ''
+         ORDER BY 1 ASC",
+        array_merge($listing_activity_types, ['%' . $year_int . '%'], $final_statuses)
     );
     $regions = $wpdb->get_col($regions_query);
-    sort($regions);
+    $regions = array_values(array_filter(array_map('trim', is_array($regions) ? $regions : [])));
+    sort($regions, SORT_NATURAL | SORT_FLAG_CASE);
 
     $report_data = intersoccer_get_final_reports_data($year, $activity_type, $season_type ?: null, $region ?: null, $exclude_buyclub);
     $camp_player_registration_totals = null;
@@ -450,9 +463,7 @@ function intersoccer_render_final_reports_page() {
                             <th><?php _e('Course Name', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Course Day', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php _e('Times', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Direct Online', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Total', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php _e('Final', 'intersoccer-reports-rosters'); ?></th>
+                            <th><?php _e('Registrations', 'intersoccer-reports-rosters'); ?></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -461,14 +472,12 @@ function intersoccer_render_final_reports_page() {
                         $current_course = '';
                         foreach ($report_data as $region => $venues): ?>
                             <?php if ($region === '__player_registration_totals__') { continue; } ?>
-                            <?php $region_total = $totals['regions'][$region] ?? ['bo' => 0, 'pitch_side' => 0, 'buyclub' => 0, 'total' => 0, 'final' => 0]; ?>
+                            <?php $region_total = $totals['regions'][$region] ?? ['registrations' => 0]; ?>
                             <tr style="background-color: #f0f0f0; font-weight: bold;">
                                 <td colspan="3"><?php echo esc_html($region); ?> - TOTAL</td>
                                 <td></td>
                                 <td></td>
-                                <td><?php echo esc_html($region_total['online']); ?></td>
-                                <td><?php echo esc_html($region_total['total']); ?></td>
-                                <td><?php echo esc_html($region_total['final']); ?></td>
+                                <td><?php echo esc_html($region_total['registrations']); ?></td>
                             </tr>
                             <?php foreach ($venues as $venue => $course_rows): ?>
                                 <?php foreach ($course_rows as $course_data): ?>
@@ -478,9 +487,7 @@ function intersoccer_render_final_reports_page() {
                                         <td><?php echo esc_html($course_data['course_name'] ?? 'Unknown'); ?></td>
                                         <td><?php echo esc_html($course_data['course_day'] ?? 'Unknown'); ?></td>
                                         <td><?php echo esc_html($course_data['times'] ?? '-'); ?></td>
-                                        <td><?php echo esc_html($course_data['online']); ?></td>
-                                        <td><?php echo esc_html($course_data['total']); ?></td>
-                                        <td><?php echo esc_html($course_data['final']); ?></td>
+                                        <td><?php echo esc_html($course_data['registrations']); ?></td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endforeach; ?>
@@ -491,13 +498,12 @@ function intersoccer_render_final_reports_page() {
                 <!-- Course Overall Totals -->
                 <div style="margin-top: 30px; padding: 20px; background: #f9f9fa; border-radius: 8px;">
                     <h3><?php _e('Overall Totals', 'intersoccer-reports-rosters'); ?></h3>
-                    <p class="description" style="margin-top:0;"><?php _e('The table above uses order-line counts after event-date filtering. The figures below count one registration per roster row for the selected year (same basis as Courses Rosters), including rows where order dates were missing or did not parse.', 'intersoccer-reports-rosters'); ?></p>
+                    <p class="description" style="margin-top:0;"><?php _e('Grid and footer both count one completed registration per roster row after all filters (same basis as Courses Rosters).', 'intersoccer-reports-rosters'); ?></p>
                     <table class="widefat fixed" style="margin-top: 10px;">
                         <thead>
                             <tr>
                                 <th><?php _e('Category', 'intersoccer-reports-rosters'); ?></th>
-                                <th><?php _e('Total', 'intersoccer-reports-rosters'); ?></th>
-                                <th><?php _e('Final', 'intersoccer-reports-rosters'); ?></th>
+                                <th><?php _e('Registrations', 'intersoccer-reports-rosters'); ?></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -506,14 +512,8 @@ function intersoccer_render_final_reports_page() {
                                 <td><?php
                                     $course_all_disp = $course_player_registration_totals !== null
                                         ? (int) $course_player_registration_totals['all']
-                                        : (int) $totals['all']['total'];
+                                        : (int) $totals['all']['registrations'];
                                     echo esc_html($course_all_disp);
-                                ?></td>
-                                <td><?php
-                                    $course_final_disp = $course_player_registration_totals !== null
-                                        ? (int) $course_player_registration_totals['all']
-                                        : (int) $totals['all']['final'];
-                                    echo esc_html($course_final_disp);
                                 ?></td>
                             </tr>
                         </tbody>

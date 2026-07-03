@@ -5544,12 +5544,15 @@ if (!function_exists('intersoccer_roster_girls_only_listing_bucket')) {
 
 if (!function_exists('intersoccer_reports_final_report_order_statuses')) {
     /**
-     * WooCommerce order statuses counted in Final Numbers (aligned with roster listing pages).
+     * WooCommerce order statuses counted in Final Numbers reports.
+     *
+     * Completed orders only. Roster listing pages (RosterListingService) use a broader
+     * set of statuses for operational views — do not conflate the two policies.
      *
      * @return string[]
      */
     function intersoccer_reports_final_report_order_statuses() {
-        return ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'];
+        return ['wc-completed'];
     }
 }
 
