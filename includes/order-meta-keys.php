@@ -32,6 +32,7 @@ function intersoccer_get_order_meta_field_map() {
         'Canton / Region' => 'region',
         'City' => 'city',
         'Activity Type' => 'activity_type',
+        'Girls Only' => 'girls_only',
         'Start Date' => 'start_date',
         'End Date' => 'end_date',
         'Holidays' => 'holidays',
@@ -120,6 +121,12 @@ function intersoccer_get_order_meta_manual_aliases() {
             'type d’activité',
             'type d\'activité',
             'aktivitätstyp',
+        ],
+        'Girls Only' => [
+            'filles uniquement',
+            'nur madchen',
+            'nur mädchen',
+            'girl s only',
         ],
         'Start Date' => [
             'date de début',

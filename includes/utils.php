@@ -3055,8 +3055,18 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
             }
         }
     }
-    // Set activity_type based on product_type
-    $activity_type = $product_type === 'camp' ? 'Camp' : ($product_type === 'course' ? 'Course' : ucfirst($product_type));
+    // Set activity_type: prefer order meta; apply girls-only composite when needed.
+    if (!empty($activity_type) && function_exists('intersoccer_canonical_activity_type_for_roster')) {
+        $activity_type = intersoccer_canonical_activity_type_for_roster($activity_type);
+    } elseif ($girls_only && in_array($product_type, ['camp', 'course'], true) && function_exists('intersoccer_canonical_activity_type_for_roster')) {
+        $plain = $product_type === 'camp' ? 'Camp' : 'Course';
+        $activity_type = intersoccer_canonical_activity_type_for_roster($plain . ', Girls Only');
+    } else {
+        $activity_type = $product_type === 'camp' ? 'Camp' : ($product_type === 'course' ? 'Course' : ucfirst((string) $product_type));
+        if ($girls_only && in_array($product_type, ['camp', 'course'], true) && function_exists('intersoccer_canonical_activity_type_for_roster')) {
+            $activity_type = intersoccer_canonical_activity_type_for_roster($activity_type . ', Girls Only');
+        }
+    }
     error_log('InterSoccer: Set activity_type to ' . $activity_type . ' for order ' . $order_id . ', item ' . $item_id);
 
     // Parse dates using unified parser
@@ -5032,6 +5042,16 @@ if (!function_exists('intersoccer_canonical_activity_type_for_roster')) {
             ? intersoccer_normalize_comparison_string($raw)
             : strtolower($raw);
 
+        if (preg_match('/\bgirls\b/u', $norm) || strpos($norm, 'filles') !== false || strpos($norm, 'madchen') !== false || strpos($norm, 'mädchen') !== false) {
+            if (strpos($norm, 'camp') !== false || strpos($norm, 'lager') !== false) {
+                return 'Camp, Girls Only';
+            }
+            if (strpos($norm, 'course') !== false || strpos($norm, 'cours') !== false || strpos($norm, 'kurs') !== false) {
+                return 'Course, Girls Only';
+            }
+            return 'Girls Only';
+        }
+
         $map = [
             'camp' => 'Camp',
             'cours' => 'Course',
@@ -5053,16 +5073,6 @@ if (!function_exists('intersoccer_canonical_activity_type_for_roster')) {
             if ($norm === $needle || strpos($norm, $needle) !== false) {
                 return $canonical;
             }
-        }
-
-        if (preg_match('/\bgirls\b/u', $norm)) {
-            if (strpos($norm, 'camp') !== false) {
-                return 'Camp, Girls Only';
-            }
-            if (strpos($norm, 'course') !== false || strpos($norm, 'cours') !== false) {
-                return 'Course, Girls Only';
-            }
-            return 'Girls Only';
         }
 
         return ucwords($raw);
