@@ -26,6 +26,10 @@ function intersoccer_get_order_meta_field_map() {
         'Course Times' => 'course_times',
         'Booking Type' => 'booking_type',
         'Assigned Attendee' => 'assigned_attendee',
+        'Attendee DOB' => 'attendee_dob',
+        'Attendee Gender' => 'attendee_gender',
+        'Medical Conditions' => 'medical_conditions',
+        'assigned_player' => 'player_index',
         'Player Index' => 'player_index',
         'Days Selected' => 'selected_days',
         'Season' => 'season',
@@ -91,6 +95,25 @@ function intersoccer_get_order_meta_manual_aliases() {
         'Assigned Attendee' => [
             'participant assigné',
             'zugewiesener teilnehmer',
+        ],
+        'Attendee DOB' => [
+            'date de naissance du participant',
+            'geburtsdatum des teilnehmers',
+            'attendee dob',
+        ],
+        'Attendee Gender' => [
+            'genre du participant',
+            'geschlecht des teilnehmers',
+            'gender',
+        ],
+        'Medical Conditions' => [
+            'conditions medicales',
+            'conditions médicales',
+            'medizinische bedingungen',
+        ],
+        'assigned_player' => [
+            'assigned player',
+            'player index',
         ],
         'Days Selected' => [
             'jours sélectionnés',
@@ -177,6 +200,23 @@ function intersoccer_get_order_meta_manual_aliases() {
             'varianten id',
         ],
     ];
+}
+
+/**
+ * WooCommerce order item meta_key candidates for SQL reports (canonical first, legacy fallbacks).
+ *
+ * @param string $field Internal field name from intersoccer_get_order_meta_field_map values.
+ * @return array<int,string>
+ */
+function intersoccer_reports_sql_meta_key_candidates($field) {
+    $map = [
+        'selected_days' => ['Days Selected', 'Days of Week'],
+        'attendee_gender' => ['Attendee Gender', 'gender'],
+        'discount_applied' => ['Discount', '_applied_discounts'],
+        'discount_amount' => ['Discount Amount'],
+    ];
+
+    return $map[$field] ?? [];
 }
 
 /**

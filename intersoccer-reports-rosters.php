@@ -109,6 +109,11 @@ if (file_exists($intersoccer_oop_adapter)) {
     require_once $intersoccer_oop_adapter;
 }
 
+$order_meta_repair_hook = plugin_dir_path(__FILE__) . 'includes/order-meta-repair-hook.php';
+if (file_exists($order_meta_repair_hook)) {
+    require_once $order_meta_repair_hook;
+}
+
 // Load Office 365 cron runner on init so the cron hook is registered (cron runs without admin).
 $office365_cron_file = plugin_dir_path(__FILE__) . 'includes/office365-cron.php';
 if (file_exists($office365_cron_file)) {
