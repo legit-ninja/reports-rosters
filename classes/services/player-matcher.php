@@ -49,6 +49,7 @@ class PlayerMatcher {
      * @var array
      */
     private $assignment_strategies = [
+        'metadata_uuid',  // assigned_player_id UUID in order meta
         'metadata_index', // assigned_player index in metadata
         'attendee_name',  // Assigned Attendee metadata
         'order_quantity', // Based on order quantity
@@ -148,6 +149,9 @@ class PlayerMatcher {
         ]);
         
         switch ($strategy) {
+            case 'metadata_uuid':
+                return $this->assignByMetadataUuid($item, $customer_players);
+
             case 'metadata_index':
                 return $this->assignByMetadataIndex($item, $customer_players);
                 
@@ -166,6 +170,38 @@ class PlayerMatcher {
         }
     }
     
+    /**
+     * Assign player by stable UUID (assigned_player_id).
+     *
+     * @param \WC_Order_Item_Product $item Order item
+     * @param PlayersCollection $customer_players Available players
+     * @return PlayersCollection Assigned players
+     */
+    private function assignByMetadataUuid(\WC_Order_Item_Product $item, PlayersCollection $customer_players) {
+        $player_uuid = $item->get_meta('assigned_player_id');
+        if ($player_uuid === '' || $player_uuid === null) {
+            return new PlayersCollection();
+        }
+
+        $assigned_player = $customer_players->firstWhere('player_id', (string) $player_uuid);
+        if (!$assigned_player) {
+            $this->logger->warning('Player not found for metadata UUID', [
+                'player_id' => $player_uuid,
+                'available_players' => $customer_players->count(),
+            ]);
+            return new PlayersCollection();
+        }
+
+        $full_name = trim($assigned_player->getFullName());
+        if ($full_name === '') {
+            return new PlayersCollection();
+        }
+
+        $collection = new PlayersCollection();
+        $collection->add($assigned_player);
+        return $collection;
+    }
+
     /**
      * Assign player by metadata index (assigned_player field)
      * 

@@ -334,7 +334,7 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
         player_first_name.meta_value as player_first_name,
         player_last_name.meta_value as player_last_name,
         player_age.meta_value as age,
-        player_gender.meta_value as gender,
+        COALESCE(attendee_gender.meta_value, gender_meta.meta_value, player_gender.meta_value) as gender,
         
         -- Booking details
         booking_type_meta.meta_value as booking_type,
@@ -381,6 +381,10 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
         AND player_age.meta_key = 'Player Age'
     LEFT JOIN $order_itemmeta_table player_gender ON oi.order_item_id = player_gender.order_item_id
         AND player_gender.meta_key = 'Player Gender'
+    LEFT JOIN $order_itemmeta_table attendee_gender ON oi.order_item_id = attendee_gender.order_item_id
+        AND attendee_gender.meta_key = 'Attendee Gender'
+    LEFT JOIN $order_itemmeta_table gender_meta ON oi.order_item_id = gender_meta.order_item_id
+        AND gender_meta.meta_key = 'gender'
     
     -- Booking details
     LEFT JOIN $order_itemmeta_table booking_type_meta ON oi.order_item_id = booking_type_meta.order_item_id

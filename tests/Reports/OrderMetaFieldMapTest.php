@@ -25,6 +25,28 @@ class OrderMetaFieldMapTest extends TestCase {
         $this->assertSame('attendee_gender', $map['Attendee Gender']);
         $this->assertSame('medical_conditions', $map['Medical Conditions']);
         $this->assertSame('player_index', $map['assigned_player']);
+        $this->assertSame('player_id', $map['assigned_player_id']);
+    }
+
+    public function test_get_order_item_meta_field_value_prefers_attendee_gender() {
+        if (!function_exists('intersoccer_get_order_item_meta_field_value')) {
+            $this->markTestSkipped('meta field helper not loaded');
+        }
+
+        $meta = [
+            'Player Gender' => 'Male',
+            'Attendee Gender' => 'Female',
+        ];
+        $this->assertSame('Female', intersoccer_get_order_item_meta_field_value($meta, 'attendee_gender', 'N/A'));
+    }
+
+    public function test_get_order_item_meta_field_value_falls_back_to_player_gender() {
+        if (!function_exists('intersoccer_get_order_item_meta_field_value')) {
+            $this->markTestSkipped('meta field helper not loaded');
+        }
+
+        $meta = ['Player Gender' => 'Male'];
+        $this->assertSame('Male', intersoccer_get_order_item_meta_field_value($meta, 'attendee_gender', 'N/A'));
     }
 
     public function test_normalize_attendee_gender_aliases() {
@@ -42,7 +64,7 @@ class OrderMetaFieldMapTest extends TestCase {
         }
 
         $this->assertSame(['Days Selected', 'Days of Week'], intersoccer_reports_sql_meta_key_candidates('selected_days'));
-        $this->assertSame(['Attendee Gender', 'gender'], intersoccer_reports_sql_meta_key_candidates('attendee_gender'));
+        $this->assertSame(['Attendee Gender', 'gender', 'Player Gender'], intersoccer_reports_sql_meta_key_candidates('attendee_gender'));
         $this->assertContains('Discount', intersoccer_reports_sql_meta_key_candidates('discount_applied'));
     }
 }

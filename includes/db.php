@@ -922,14 +922,25 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
         $last_name_norm = strtolower(trim(preg_replace('/[^a-z]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $last_name) ?? $last_name)));
 
         $user_id = $order->get_user_id();
-        $players = maybe_unserialize(get_user_meta($user_id, 'intersoccer_players', true)) ?: [];
+        $players = function_exists('intersoccer_get_user_players')
+            ? intersoccer_get_user_players($user_id)
+            : (maybe_unserialize(get_user_meta($user_id, 'intersoccer_players', true)) ?: []);
         $player_index = $order_item_meta['assigned_player'] ?? false;
+        $assigned_player_id = $order_item_meta['assigned_player_id'] ?? '';
         $age = isset($order_item_meta['Player Age']) ? (int)$order_item_meta['Player Age'] : null;
-        $gender = $order_item_meta['Player Gender'] ?? 'N/A';
+        $gender = function_exists('intersoccer_get_order_item_meta_field_value')
+            ? intersoccer_get_order_item_meta_field_value($order_item_meta, 'attendee_gender', 'N/A')
+            : ($order_item_meta['Attendee Gender'] ?? $order_item_meta['gender'] ?? $order_item_meta['Player Gender'] ?? 'N/A');
         $medical_conditions = $order_item_meta['Medical Conditions'] ?? '';
         $avs_number = 'N/A'; // Default
-        if ($player_index !== false && is_array($players) && isset($players[$player_index])) {
+        $player = null;
+        if ($assigned_player_id !== '' && function_exists('intersoccer_get_player_by_id')) {
+            $player = intersoccer_get_player_by_id($user_id, $assigned_player_id);
+        }
+        if (!$player && $player_index !== false && is_array($players) && isset($players[$player_index])) {
             $player = $players[$player_index];
+        }
+        if ($player) {
             $first_name = $player['first_name'] ?? $first_name;
             $last_name = $player['last_name'] ?? $last_name;
             $dob = $player['dob'] ?? null;

@@ -2903,17 +2903,28 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
 
     // Lookup player details from user meta
     $user_id = $order->get_user_id();
-    $players = maybe_unserialize(get_user_meta($user_id, 'intersoccer_players', true)) ?: [];
+    $players = function_exists('intersoccer_get_user_players')
+        ? intersoccer_get_user_players($user_id)
+        : (maybe_unserialize(get_user_meta($user_id, 'intersoccer_players', true)) ?: []);
     error_log('InterSoccer: User ' . $user_id . ' players meta: ' . print_r($players, true));
     $player_index = $item_meta['assigned_player'] ?? false;
+    $assigned_player_id = $item_meta['assigned_player_id'] ?? '';
     $age = isset($item_meta['Player Age']) ? (int)$item_meta['Player Age'] : null;
-    $gender = $item_meta['Player Gender'] ?? 'N/A';
+    $gender = function_exists('intersoccer_get_order_item_meta_field_value')
+        ? intersoccer_get_order_item_meta_field_value($item_meta, 'attendee_gender', 'N/A')
+        : ($item_meta['Attendee Gender'] ?? $item_meta['gender'] ?? $item_meta['Player Gender'] ?? 'N/A');
     $medical_conditions = $item_meta['Medical Conditions'] ?? '';
     $avs_number = 'N/A';
     $dob = null;
     $matched = false;
-    if ($player_index !== false && is_array($players) && isset($players[$player_index])) {
+    $player = null;
+    if ($assigned_player_id !== '' && function_exists('intersoccer_get_player_by_id')) {
+        $player = intersoccer_get_player_by_id($user_id, $assigned_player_id);
+    }
+    if (!$player && $player_index !== false && is_array($players) && isset($players[$player_index])) {
         $player = $players[$player_index];
+    }
+    if ($player) {
         $first_name = trim($player['first_name'] ?? $first_name);
         $last_name = trim($player['last_name'] ?? $last_name);
         $dob = $player['dob'] ?? null;
@@ -2944,7 +2955,9 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         $dob = $item_meta['Attendee DOB'] ?? null;
         $dob_obj = $dob ? DateTime::createFromFormat('Y-m-d', $dob) : null;
         $age = $dob_obj ? $dob_obj->diff(new DateTime())->y : $age;
-        $gender = $item_meta['Attendee Gender'] ?? $gender;
+        $gender = function_exists('intersoccer_get_order_item_meta_field_value')
+            ? intersoccer_get_order_item_meta_field_value($item_meta, 'attendee_gender', $gender)
+            : ($item_meta['Attendee Gender'] ?? $item_meta['gender'] ?? $gender);
         $medical_conditions = $item_meta['Medical Conditions'] ?? $medical_conditions;
     }
 

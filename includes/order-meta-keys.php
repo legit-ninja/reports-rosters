@@ -30,6 +30,7 @@ function intersoccer_get_order_meta_field_map() {
         'Attendee Gender' => 'attendee_gender',
         'Medical Conditions' => 'medical_conditions',
         'assigned_player' => 'player_index',
+        'assigned_player_id' => 'player_id',
         'Player Index' => 'player_index',
         'Days Selected' => 'selected_days',
         'Season' => 'season',
@@ -114,6 +115,10 @@ function intersoccer_get_order_meta_manual_aliases() {
         'assigned_player' => [
             'assigned player',
             'player index',
+        ],
+        'assigned_player_id' => [
+            'assigned player id',
+            'player id',
         ],
         'Days Selected' => [
             'jours sélectionnés',
@@ -211,12 +216,47 @@ function intersoccer_get_order_meta_manual_aliases() {
 function intersoccer_reports_sql_meta_key_candidates($field) {
     $map = [
         'selected_days' => ['Days Selected', 'Days of Week'],
-        'attendee_gender' => ['Attendee Gender', 'gender'],
+        'attendee_gender' => ['Attendee Gender', 'gender', 'Player Gender'],
         'discount_applied' => ['Discount', '_applied_discounts'],
         'discount_amount' => ['Discount Amount'],
     ];
 
     return $map[$field] ?? [];
+}
+
+/**
+ * Read the first non-empty value from order item meta using canonical field candidates.
+ *
+ * @param array<string,mixed> $item_meta Flat order item meta map (meta_key => value).
+ * @param string $field Internal field name from intersoccer_get_order_meta_field_map values.
+ * @param string $default Default when no candidate key is present.
+ * @return string
+ */
+function intersoccer_get_order_item_meta_field_value(array $item_meta, $field, $default = '') {
+    $candidates = intersoccer_reports_sql_meta_key_candidates($field);
+    if ($candidates === []) {
+        foreach (intersoccer_get_order_meta_field_map() as $meta_key => $internal) {
+            if ($internal === $field) {
+                $candidates[] = $meta_key;
+            }
+        }
+    }
+
+    foreach ($candidates as $meta_key) {
+        if (!array_key_exists($meta_key, $item_meta)) {
+            continue;
+        }
+        $value = $item_meta[$meta_key];
+        if (is_array($value)) {
+            $value = $value[0] ?? implode(', ', array_map('trim', $value));
+        }
+        $value = trim((string) $value);
+        if ($value !== '') {
+            return $value;
+        }
+    }
+
+    return $default;
 }
 
 /**

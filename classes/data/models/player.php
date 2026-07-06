@@ -36,6 +36,7 @@ class Player extends AbstractModel {
     protected $fillable = [
         'customer_id',
         'player_index',
+        'player_id',
         'avs_number',
         'first_name',
         'last_name',
@@ -407,6 +408,7 @@ class Player extends AbstractModel {
         $attributes = [
             'customer_id' => $customer_id,
             'player_index' => $player_index,
+            'player_id' => $player_data['player_id'] ?? '',
             'first_name' => $player_data['first_name'] ?? '',
             'last_name' => $player_data['last_name'] ?? '',
             'dob' => $player_data['dob'] ?? null,
@@ -428,6 +430,7 @@ class Player extends AbstractModel {
      */
     public function toUserMetadata() {
         return [
+            'player_id' => $this->player_id ?? '',
             'first_name' => $this->first_name,
             'last_name' => $this->last_name,
             'dob' => $this->dob,

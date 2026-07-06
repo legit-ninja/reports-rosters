@@ -828,6 +828,9 @@ class RosterBuilder {
             if ($canonical_key === 'assigned_player' || $raw_key === 'assigned_player') {
                 $order_data['player_index'] = $value;
             }
+            if ($canonical_key === 'assigned_player_id' || $raw_key === 'assigned_player_id') {
+                $order_data['player_id'] = $value;
+            }
         }
 
         if (function_exists('intersoccer_apply_order_item_attribute_meta_to_data')) {
