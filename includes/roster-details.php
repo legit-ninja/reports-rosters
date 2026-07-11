@@ -890,7 +890,7 @@ function intersoccer_render_roster_details_page() {
             $display_late_pickup_days = function_exists('intersoccer_roster_display_late_pickup_days')
                 ? intersoccer_roster_display_late_pickup_days($row)
                 : ($row->late_pickup_days ?? 'N/A');
-            echo '<td>' . esc_html($row->late_pickup ?? 'No') . '</td>';
+            echo '<td>' . esc_html(function_exists('intersoccer_roster_format_late_pickup_flag_for_display') ? intersoccer_roster_format_late_pickup_flag_for_display($row->late_pickup ?? 'No') : ($row->late_pickup ?? 'No')) . '</td>';
             echo '<td>' . esc_html($display_late_pickup_days !== '' ? $display_late_pickup_days : 'N/A') . '</td>';
             echo '<td>' . esc_html($row->booking_type ?? 'N/A') . '</td>';
             $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];

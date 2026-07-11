@@ -178,7 +178,7 @@ class MenuManager {
             'intersoccer-reports-rosters',
             __('InterSoccer Settings', 'intersoccer-reports-rosters'),
             __('Settings', 'intersoccer-reports-rosters'),
-            'read',
+            'manage_options',
             'intersoccer-advanced',
             [$this, 'render_advanced']
         );
@@ -246,7 +246,7 @@ class MenuManager {
     }
 
     public function render_final_camp_reports(): void {
-        $this->require_include('event-reports.php');
+        $this->require_include('reports-ui.php');
         if (function_exists('intersoccer_render_final_camp_reports_page')) {
             intersoccer_render_final_camp_reports_page();
             return;
@@ -255,7 +255,7 @@ class MenuManager {
     }
 
     public function render_final_course_reports(): void {
-        $this->require_include('event-reports.php');
+        $this->require_include('reports-ui.php');
         if (function_exists('intersoccer_render_final_course_reports_page')) {
             intersoccer_render_final_course_reports_page();
             return;
@@ -327,6 +327,9 @@ class MenuManager {
     }
 
     public function render_advanced(): void {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
+        }
         $this->require_include('roster-editor.php');
         $this->require_include('advanced.php');
         if (function_exists('intersoccer_render_advanced_page')) {

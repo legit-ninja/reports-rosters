@@ -622,7 +622,11 @@ function intersoccer_export_roster() {
             // Add camp-specific data for camps only
             if ($player['activity_type'] === 'Camp' || $player['activity_type'] === 'Girls Only' || $player['activity_type'] === 'Camp, Girls Only' || $player['activity_type'] === 'Camp, Girls\' only') {
                 $data = array_merge($data, [
-                    ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No'), // Late Pickup
+                    (function_exists('intersoccer_roster_format_late_pickup_flag_for_display')
+                        ? (intersoccer_roster_format_late_pickup_flag_for_display($player['late_pickup'] ?? '') === 'Yes'
+                            ? 'Yes (18:00)'
+                            : intersoccer_roster_format_late_pickup_flag_for_display($player['late_pickup'] ?? ''))
+                        : ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No')),
                     $player['booking_type'] ?? 'N/A', // Booking Type
                 ]);
             }

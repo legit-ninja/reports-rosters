@@ -1252,6 +1252,23 @@ if (!function_exists('intersoccer_resolve_late_pickup_for_roster')) {
     }
 }
 
+if (!function_exists('intersoccer_roster_format_late_pickup_flag_for_display')) {
+    /**
+     * Display formatter for roster Late Pickup Yes/No column.
+     *
+     * @param mixed $value Raw late_pickup value from DB.
+     * @return string Yes unchanged; No/empty becomes dash for easier scanning.
+     */
+    function intersoccer_roster_format_late_pickup_flag_for_display($value) {
+        $v = trim((string) $value);
+        if ($v === '' || strcasecmp($v, 'No') === 0) {
+            return '-';
+        }
+
+        return $v;
+    }
+}
+
 if (!function_exists('intersoccer_roster_display_late_pickup_days')) {
     /**
      * Label for roster Late Pickup Days column (handles full-week and empty DB values).
