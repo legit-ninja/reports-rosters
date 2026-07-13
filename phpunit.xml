@@ -38,6 +38,8 @@
         <!-- Production Test Suite - Minimal smoke coverage used by deploy.sh -->
         <testsuite name="Production">
             <file>tests/Core/LoggerTest.php</file>
+            <file>tests/Reports/FinalReportsTotalsTest.php</file>
+            <file>tests/Reports/FinalReportsAggregationAccuracyTest.php</file>
         </testsuite>
         
         <!-- Complete Test Suite - All tests including experimental -->

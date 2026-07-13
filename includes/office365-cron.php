@@ -74,7 +74,31 @@ function intersoccer_office365_run_scheduled_sync() {
             }
             $year = (int) date('Y');
             foreach (['Camp', 'Course'] as $activity_type) {
-                $result = intersoccer_office365_generate_final_reports_xlsx($year, $activity_type, null, null, false);
+                $result = intersoccer_office365_generate_final_reports_xlsx($year, $activity_type, null, null, false, false);
+                if ($result) {
+                    $filename = preg_replace('/\.xlsx$/', '_' . date('Y-m-d') . '.xlsx', $result['filename']);
+                    $upload = $service->uploadFile($filename, $result['content']);
+                    if (!empty($upload['success'])) {
+                        $uploaded++;
+                    } else {
+                        $errors[] = $filename . ': ' . (isset($upload['error']) ? $upload['error'] : 'Upload failed');
+                    }
+                }
+            }
+        } elseif ($job === 'final_reports_live_summer') {
+            if (!function_exists('intersoccer_office365_generate_final_reports_xlsx')) {
+                require_once $plugin_root . '/includes/reports-export.php';
+            }
+            $year = (int) date('Y');
+            // Summer camps (live) + courses (live, year-wide).
+            $live_jobs = [
+                ['Camp', 'Summer'],
+                ['Course', null],
+            ];
+            foreach ($live_jobs as $pair) {
+                $activity_type = $pair[0];
+                $season_type = $pair[1];
+                $result = intersoccer_office365_generate_final_reports_xlsx($year, $activity_type, $season_type, null, false, true);
                 if ($result) {
                     $filename = preg_replace('/\.xlsx$/', '_' . date('Y-m-d') . '.xlsx', $result['filename']);
                     $upload = $service->uploadFile($filename, $result['content']);

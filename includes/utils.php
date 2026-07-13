@@ -5559,12 +5559,19 @@ if (!function_exists('intersoccer_reports_final_report_order_statuses')) {
     /**
      * WooCommerce order statuses counted in Final Numbers reports.
      *
-     * Completed orders only. Roster listing pages (RosterListingService) use a broader
-     * set of statuses for operational views — do not conflate the two policies.
+     * - final (default): completed only — preserves historical Excel comparisons.
+     * - live: completed + processing — used by Live Snapshot and scheduled live exports.
      *
+     * Roster listing pages (RosterListingService) use a broader set for operational views —
+     * do not conflate the two policies.
+     *
+     * @param string $mode 'final' or 'live'.
      * @return string[]
      */
-    function intersoccer_reports_final_report_order_statuses() {
+    function intersoccer_reports_final_report_order_statuses($mode = 'final') {
+        if ($mode === 'live') {
+            return ['wc-completed', 'wc-processing'];
+        }
         return ['wc-completed'];
     }
 }

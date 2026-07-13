@@ -93,6 +93,8 @@ function intersoccer_render_final_reports_page() {
     $season_type = isset($_GET['season_type']) ? sanitize_text_field($_GET['season_type']) : '';
     $region = isset($_GET['region']) ? sanitize_text_field($_GET['region']) : '';
     $exclude_buyclub = !empty($_GET['exclude_buyclub']);
+    $live = !empty($_GET['live']);
+    $status_mode = $live ? 'live' : 'final';
 
     // Determine current page for form action
     $current_page = isset($_GET['page']) ? $_GET['page'] : 'intersoccer-final-reports';
@@ -102,6 +104,13 @@ function intersoccer_render_final_reports_page() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
     $year_int = intval($year);
+
+    $final_statuses = function_exists('intersoccer_reports_final_report_order_statuses')
+        ? intersoccer_reports_final_report_order_statuses($status_mode)
+        : ($live ? ['wc-completed', 'wc-processing'] : ['wc-completed']);
+    $final_status_sql = function_exists('intersoccer_reports_sql_in_placeholders')
+        ? intersoccer_reports_sql_in_placeholders($final_statuses)
+        : '%s';
     
     // Get unique season types for the selected year and activity type
     $season_types_query = $wpdb->prepare(
@@ -112,12 +121,11 @@ function intersoccer_render_final_reports_page() {
          WHERE r.activity_type = %s
          AND r.season LIKE %s
          AND p.post_type = 'shop_order'
-         AND p.post_status = 'wc-completed'
+         AND p.post_status IN ({$final_status_sql})
          AND r.season IS NOT NULL
          AND r.season != ''
          ORDER BY r.season ASC",
-        $activity_type,
-        '%' . $year_int . '%'
+        array_merge([$activity_type, '%' . $year_int . '%'], $final_statuses)
     );
     $seasons = $wpdb->get_col($season_types_query);
     
@@ -138,12 +146,6 @@ function intersoccer_render_final_reports_page() {
     $listing_activity_sql = function_exists('intersoccer_reports_sql_in_placeholders')
         ? intersoccer_reports_sql_in_placeholders($listing_activity_types)
         : '%s';
-    $final_statuses = function_exists('intersoccer_reports_final_report_order_statuses')
-        ? intersoccer_reports_final_report_order_statuses()
-        : ['wc-completed'];
-    $final_status_sql = function_exists('intersoccer_reports_sql_in_placeholders')
-        ? intersoccer_reports_sql_in_placeholders($final_statuses)
-        : '%s';
 
     $regions_query = $wpdb->prepare(
         "SELECT DISTINCT COALESCE(NULLIF(TRIM(r.canton_region), ''), NULLIF(TRIM(r.region), ''))
@@ -163,7 +165,7 @@ function intersoccer_render_final_reports_page() {
     $regions = array_values(array_filter(array_map('trim', is_array($regions) ? $regions : [])));
     sort($regions, SORT_NATURAL | SORT_FLAG_CASE);
 
-    $report_data = intersoccer_get_final_reports_data($year, $activity_type, $season_type ?: null, $region ?: null, $exclude_buyclub);
+    $report_data = intersoccer_get_final_reports_data($year, $activity_type, $season_type ?: null, $region ?: null, $exclude_buyclub, $live);
     $camp_player_registration_totals = null;
     $course_player_registration_totals = null;
     if ($activity_type === 'Camp' && isset($report_data['__player_registration_totals__'])) {
@@ -184,11 +186,23 @@ function intersoccer_render_final_reports_page() {
     };
     </script>
     <div class="wrap intersoccer-reports-rosters-final-reports">
-        <h1><?php _e('Final Numbers Report', 'intersoccer-reports-rosters'); ?></h1>
-        <p><?php _e('Aggregated booking numbers for camps and courses by week, canton, and venue.', 'intersoccer-reports-rosters'); ?></p>
+        <h1><?php echo $live
+            ? esc_html__('Live Numbers Report', 'intersoccer-reports-rosters')
+            : esc_html__('Final Numbers Report', 'intersoccer-reports-rosters'); ?></h1>
+        <?php if ($live): ?>
+            <div class="notice notice-info" style="margin: 12px 0 16px;">
+                <p style="margin:0.5em 0;"><strong><?php esc_html_e('Live figures (completed + processing)', 'intersoccer-reports-rosters'); ?></strong>
+                — <?php esc_html_e('Includes processing orders so enrollment reflects current bookings. Classic Final Reports remain completed-only for historical comparisons.', 'intersoccer-reports-rosters'); ?></p>
+            </div>
+        <?php else: ?>
+            <p><?php _e('Aggregated booking numbers for camps and courses by week, canton, and venue.', 'intersoccer-reports-rosters'); ?></p>
+        <?php endif; ?>
 
         <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" style="margin-bottom: 20px;">
             <input type="hidden" name="page" value="<?php echo esc_attr($current_page); ?>" />
+            <?php if ($live): ?>
+                <input type="hidden" name="live" value="1" />
+            <?php endif; ?>
             <label for="year"><?php _e('Year:', 'intersoccer-reports-rosters'); ?></label>
             <input type="number" name="year" id="year" value="<?php echo esc_attr($year); ?>" min="2020" max="<?php echo date('Y') + 2; ?>" />
             <?php if ($show_activity_type_filter): ?>
@@ -221,9 +235,11 @@ function intersoccer_render_final_reports_page() {
             <button type="submit" class="button"><?php _e('Filter', 'intersoccer-reports-rosters'); ?></button>
         </form>
 
-        <div class="export-section" style="margin-bottom: 20px;">
+        <div class="export-section" style="margin-bottom: 20px;<?php echo $live ? ' position: sticky; top: 32px; z-index: 10; background: #f0f0f1; padding: 12px; border: 1px solid #c3c4c7; border-radius: 4px;' : ''; ?>">
             <label style="margin-right:12px;"><input type="checkbox" id="final-reports-sync-office365" value="1" /> <?php _e('Also sync to Office 365', 'intersoccer-reports-rosters'); ?></label>
-            <button type="button" id="export-final-reports" class="button button-primary"><?php _e('Export to Excel', 'intersoccer-reports-rosters'); ?></button>
+            <button type="button" id="export-final-reports" class="button button-primary button-hero"><?php echo $live
+                ? esc_html__('Export Live Figures to Excel', 'intersoccer-reports-rosters')
+                : esc_html__('Export to Excel', 'intersoccer-reports-rosters'); ?></button>
         </div>
 
         <?php if (empty($report_data)): ?>
@@ -540,6 +556,7 @@ function intersoccer_render_final_reports_page() {
             var season_type = $('select[name="season_type"]').val() || '';
             var region = $('select[name="region"]').val() || '';
             var exclude_buyclub = $('input[name="exclude_buyclub"]').is(':checked') ? 1 : 0;
+            var live = <?php echo $live ? '1' : '0'; ?>;
             
             // If no select element (on specific camp/course pages), use the PHP variable
             if (!activity_type) {
@@ -557,6 +574,7 @@ function intersoccer_render_final_reports_page() {
                     season_type: season_type,
                     region: region,
                     exclude_buyclub: exclude_buyclub,
+                    live: live,
                     sync_to_office365: $('#final-reports-sync-office365').is(':checked') ? 1 : 0
                 },
                 success: function(response) {

@@ -22,11 +22,15 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
  * @param string|null $season_type   Optional season type.
  * @param string|null $region        Optional region.
  * @param bool        $exclude_buyclub Omit BuyClub / matching coupon rows when true.
+ * @param bool        $live          When true, include processing orders (Live Snapshot).
  * @return array{filename: string, content: string}|null Null on failure.
  */
-function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type = 'Camp', $season_type = null, $region = null, $exclude_buyclub = false) {
+function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type = 'Camp', $season_type = null, $region = null, $exclude_buyclub = false, $live = false) {
     require_once plugin_dir_path(__FILE__) . 'reports-data.php';
-    $report_data = intersoccer_get_final_reports_data($year, $activity_type, $season_type, $region, $exclude_buyclub);
+    if (!function_exists('intersoccer_reports_camp_excel_data_rows')) {
+        require_once plugin_dir_path(__FILE__) . 'final-reports-aggregation.php';
+    }
+    $report_data = intersoccer_get_final_reports_data($year, $activity_type, $season_type, $region, $exclude_buyclub, $live);
     $camp_player_registration_totals = null;
     $course_player_registration_totals = null;
     if ($activity_type === 'Camp' && isset($report_data['__player_registration_totals__'])) {
@@ -39,7 +43,7 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
     }
     $totals = intersoccer_calculate_final_reports_totals($report_data, $activity_type);
 
-    $filename = 'final-reports-' . strtolower($activity_type) . '-' . $year;
+    $filename = ($live ? 'live-' : '') . 'final-reports-' . strtolower($activity_type) . '-' . $year;
     if (!empty($season_type)) {
         $filename .= '-' . strtolower($season_type);
     }
@@ -80,32 +84,40 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
 
         // Camp Excel data
         $row_index = 2;
-        foreach ($report_data as $week_name => $cantons) {
-            if ($week_name === '__player_registration_totals__' || !is_array($cantons)) {
-                continue;
-            }
-            foreach ($cantons as $canton => $venues) {
-                foreach ($venues as $venue => $camp_types) {
-                    foreach ($camp_types as $camp_type => $data) {
-                        $excel_row = array(
-                            $week_name,
-                            $canton,
-                            $venue,
-                            $camp_type,
-                            $data['full_week'],
-                            $data['individual_days']['Monday'],
-                            $data['individual_days']['Tuesday'],
-                            $data['individual_days']['Wednesday'],
-                            $data['individual_days']['Thursday'],
-                            $data['individual_days']['Friday'],
-                            $data['min_max'],
-                            $data['full_week'] + array_sum($data['individual_days'])
-                        );
-                        $sheet->fromArray($excel_row, null, 'A' . $row_index);
-                        $row_index++;
+        $excel_body = function_exists('intersoccer_reports_camp_excel_data_rows')
+            ? intersoccer_reports_camp_excel_data_rows($report_data)
+            : [];
+        if (empty($excel_body)) {
+            // Fallback if aggregation helper not loaded
+            foreach ($report_data as $week_name => $cantons) {
+                if ($week_name === '__player_registration_totals__' || !is_array($cantons)) {
+                    continue;
+                }
+                foreach ($cantons as $canton => $venues) {
+                    foreach ($venues as $venue => $camp_types) {
+                        foreach ($camp_types as $camp_type => $data) {
+                            $excel_body[] = [
+                                $week_name,
+                                $canton,
+                                $venue,
+                                $camp_type,
+                                $data['full_week'],
+                                $data['individual_days']['Monday'],
+                                $data['individual_days']['Tuesday'],
+                                $data['individual_days']['Wednesday'],
+                                $data['individual_days']['Thursday'],
+                                $data['individual_days']['Friday'],
+                                $data['min_max'],
+                                $data['full_week'] + array_sum($data['individual_days']),
+                            ];
+                        }
                     }
                 }
             }
+        }
+        foreach ($excel_body as $excel_row) {
+            $sheet->fromArray($excel_row, null, 'A' . $row_index);
+            $row_index++;
         }
 
         // Camp totals
@@ -227,8 +239,9 @@ function intersoccer_export_final_reports_callback() {
     $season_type = isset($_POST['season_type']) ? sanitize_text_field($_POST['season_type']) : null;
     $region = isset($_POST['region']) ? sanitize_text_field($_POST['region']) : null;
     $exclude_buyclub = !empty($_POST['exclude_buyclub']);
+    $live = !empty($_POST['live']);
 
-    $result = intersoccer_office365_generate_final_reports_xlsx($year, $activity_type, $season_type, $region, $exclude_buyclub);
+    $result = intersoccer_office365_generate_final_reports_xlsx($year, $activity_type, $season_type, $region, $exclude_buyclub, $live);
     if (!$result) {
         wp_send_json_error(__('Failed to generate report.', 'intersoccer-reports-rosters'));
     }

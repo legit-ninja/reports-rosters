@@ -148,6 +148,7 @@ function intersoccer_render_office365_settings_tab_content(string $form_action =
                         <?php
                         $job_options = [
                             'final_reports' => __('Final reports (current year, Camp + Course)', 'intersoccer-reports-rosters'),
+                            'final_reports_live_summer' => __('Live Final reports — Summer Camps + Courses', 'intersoccer-reports-rosters'),
                             'booking_report' => __('Booking report (last 30 days)', 'intersoccer-reports-rosters'),
                             'roster_master' => __('Master roster (all activities)', 'intersoccer-reports-rosters'),
                         ];
@@ -302,7 +303,7 @@ function intersoccer_office365_sanitize_settings(array $post): array {
         'auto_sync_enabled' => !empty($post['office365_auto_sync_enabled']),
         'auto_sync_schedule' => isset($post['office365_auto_sync_schedule']) && $post['office365_auto_sync_schedule'] === 'weekly' ? 'weekly' : 'daily',
         'auto_sync_jobs' => isset($post['office365_auto_sync_jobs']) && is_array($post['office365_auto_sync_jobs'])
-            ? array_values(array_intersect(array_map('sanitize_text_field', $post['office365_auto_sync_jobs']), ['final_reports', 'booking_report', 'roster_master']))
+            ? array_values(array_intersect(array_map('sanitize_text_field', $post['office365_auto_sync_jobs']), ['final_reports', 'final_reports_live_summer', 'booking_report', 'roster_master']))
             : ($current['auto_sync_jobs'] ?? []),
     ];
 }

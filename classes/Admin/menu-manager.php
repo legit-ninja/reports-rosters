@@ -77,6 +77,24 @@ class MenuManager {
 
         add_submenu_page(
             'intersoccer-reports-rosters',
+            __('Live Snapshot', 'intersoccer-reports-rosters'),
+            __('Live Snapshot', 'intersoccer-reports-rosters'),
+            'manage_options',
+            'intersoccer-live-snapshot',
+            [$this, 'render_live_snapshot']
+        );
+
+        add_submenu_page(
+            'intersoccer-reports-rosters',
+            __('Underfilled programs', 'intersoccer-reports-rosters'),
+            __('Underfilled programs', 'intersoccer-reports-rosters'),
+            'manage_options',
+            'intersoccer-underfilled-programs',
+            [$this, 'render_underfilled_programs']
+        );
+
+        add_submenu_page(
+            'intersoccer-reports-rosters',
             __('InterSoccer Booking Reports', 'intersoccer-reports-rosters'),
             __('Booking Reports', 'intersoccer-reports-rosters'),
             'read',
@@ -234,6 +252,24 @@ class MenuManager {
         }
 
         wp_die(__('Overview page is not available.', 'intersoccer-reports-rosters'));
+    }
+
+    public function render_live_snapshot(): void {
+        $this->require_include('live-snapshot.php');
+        if (function_exists('intersoccer_render_live_snapshot_page')) {
+            intersoccer_render_live_snapshot_page();
+            return;
+        }
+        wp_die(__('Live Snapshot page is not available.', 'intersoccer-reports-rosters'));
+    }
+
+    public function render_underfilled_programs(): void {
+        $this->require_include('underfilled-programs.php');
+        if (function_exists('intersoccer_render_underfilled_programs_page')) {
+            intersoccer_render_underfilled_programs_page();
+            return;
+        }
+        wp_die(__('Underfilled programs page is not available.', 'intersoccer-reports-rosters'));
     }
 
     public function render_reports(): void {
