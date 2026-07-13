@@ -69,4 +69,38 @@ class UnderfilledProgramsTest extends TestCase {
         $this->assertSame('Busy Camp', $rows[1]['product_name']);
         $this->assertSame('count-good', $rows[1]['band']);
     }
+
+    public function test_underfilled_export_row_uses_camp_terms_or_course_day() {
+        if (!function_exists('intersoccer_underfilled_export_row')) {
+            $this->markTestSkipped('intersoccer_underfilled_export_row not loaded');
+        }
+
+        $camp = intersoccer_underfilled_export_row([
+            'activity' => 'Camp',
+            'product_name' => 'Camp A',
+            'venue' => 'Geneva',
+            'season' => 'Summer 2026',
+            'camp_terms' => 'Week 1',
+            'course_day' => 'Monday',
+            'age_group' => 'U8',
+            'total_players' => 4,
+            'band' => 'count-critical',
+        ]);
+        $this->assertSame('Week 1', $camp[4]);
+        $this->assertSame(4, $camp[6]);
+
+        $course = intersoccer_underfilled_export_row([
+            'activity' => 'Course',
+            'product_name' => 'Course B',
+            'venue' => 'Zurich',
+            'season' => 'Autumn 2026',
+            'camp_terms' => 'Week 1',
+            'course_day' => 'Wednesday',
+            'age_group' => 'U10',
+            'total_players' => 12,
+            'band' => 'count-low',
+        ]);
+        $this->assertSame('Wednesday', $course[4]);
+        $this->assertSame(12, $course[6]);
+    }
 }

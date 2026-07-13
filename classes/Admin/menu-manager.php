@@ -49,12 +49,36 @@ class MenuManager {
         add_action('admin_menu', [$this, 'register_menus']);
     }
 
+    /**
+     * Stream underfilled Excel before admin-header.php prints HTML onto the download.
+     *
+     * Registered from register_menus() (Plugin calls that directly; init() is unused).
+     */
+    public function maybe_export_underfilled(): void {
+        if (empty($_GET['export_excel'])) {
+            return;
+        }
+        $page = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
+        if ($page !== 'intersoccer-underfilled-programs') {
+            return;
+        }
+
+        $this->require_include('underfilled-programs.php');
+        if (function_exists('intersoccer_underfilled_maybe_export_excel')) {
+            intersoccer_underfilled_maybe_export_excel();
+        }
+    }
+
     public function register_menus(): void {
         // Load reports.php for ALL admin requests so:
         // 1) When page=intersoccer-reports: enqueue scripts (admin_enqueue_scripts)
         // 2) When AJAX: wp_ajax_intersoccer_filter_report is registered (AJAX requests
         //    hit admin-ajax.php and do NOT have page=intersoccer-reports in $_GET)
         $this->require_include('reports.php');
+
+        // Plugin invokes register_menus() directly (not init()); must register export here
+        // so admin_init/load-* fire before admin-header HTML contaminates the .xlsx.
+        add_action('admin_init', [$this, 'maybe_export_underfilled'], 1);
 
         add_menu_page(
             __('InterSoccer Reports and Rosters', 'intersoccer-reports-rosters'),
@@ -84,7 +108,7 @@ class MenuManager {
             [$this, 'render_live_snapshot']
         );
 
-        add_submenu_page(
+        $underfilled_hook = add_submenu_page(
             'intersoccer-reports-rosters',
             __('Underfilled programs', 'intersoccer-reports-rosters'),
             __('Underfilled programs', 'intersoccer-reports-rosters'),
@@ -92,6 +116,9 @@ class MenuManager {
             'intersoccer-underfilled-programs',
             [$this, 'render_underfilled_programs']
         );
+        if (is_string($underfilled_hook) && $underfilled_hook !== '') {
+            add_action('load-' . $underfilled_hook, [$this, 'maybe_export_underfilled']);
+        }
 
         add_submenu_page(
             'intersoccer-reports-rosters',
