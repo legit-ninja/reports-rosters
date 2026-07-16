@@ -83,6 +83,17 @@ class RosterListingService {
         $rosters = $this->filterListingRows($this->prepareRosterArray($collection), 'camp');
         $query_time = microtime(true) - $start_time;
 
+        $girls_only_mode = $this->normaliseGirlsOnlyMode($filters['girls_only_mode'] ?? '');
+        if ($girls_only || $girls_only_mode === 'girls_only') {
+            $rosters = $this->filterGirlsOnlyListingRows($rosters);
+        } elseif ($girls_only_mode !== 'all') {
+            $rosters = array_values(array_filter($rosters, function ($row) {
+                return !function_exists('intersoccer_roster_row_matches_girls_only_listing')
+                    || !intersoccer_roster_row_matches_girls_only_listing($row);
+            }));
+        }
+
+
         if (empty($rosters)) {
             return $this->emptyCampResponse($query_time);
         }
@@ -290,6 +301,16 @@ class RosterListingService {
 
         $query_time = microtime(true) - $start_time;
 
+        $girls_only_mode = $this->normaliseGirlsOnlyMode($filters['girls_only_mode'] ?? '');
+        if ($girls_only || $girls_only_mode === 'girls_only') {
+            $rosters = $this->filterGirlsOnlyListingRows($rosters);
+        } elseif ($girls_only_mode !== 'all') {
+            $rosters = array_values(array_filter($rosters, function ($row) {
+                return !function_exists('intersoccer_roster_row_matches_girls_only_listing')
+                    || !intersoccer_roster_row_matches_girls_only_listing($row);
+            }));
+        }
+
         if (empty($rosters)) {
             return $this->emptyCourseResponse($query_time);
         }
@@ -344,19 +365,11 @@ class RosterListingService {
      * @return array<string,int>
      */
     private function resolveGirlsOnlyRepositoryCriteria(array $filters, bool $legacyGirlsOnlyFlag): array {
-        if ($legacyGirlsOnlyFlag) {
-            return ['girls_only' => 1];
-        }
-
-        $mode = $this->normaliseGirlsOnlyMode($filters['girls_only_mode'] ?? '');
-        if ($mode === 'all') {
-            return [];
-        }
-        if ($mode === 'girls_only') {
-            return ['girls_only' => 1];
-        }
-
-        return ['girls_only' => 0];
+        // Post-query filtering handles girls-only detection using product_name,
+        // activity_type, and pa_girls-only — not just the DB flag column.
+        // This ensures older orders (girls_only=0 but product name contains
+        // "Girls Only") are correctly routed to/from the Girls Only page.
+        return [];
     }
 
     private function emptyCourseResponse(float $query_time = 0.0): array {
@@ -622,7 +635,6 @@ class RosterListingService {
         }
 
         $criteria = [
-            'girls_only' => 1,
             'is_placeholder' => 0,
         ];
 
@@ -641,6 +653,7 @@ class RosterListingService {
         $prepared = $this->prepareRosterArray($collection);
         $rosters = $this->filterGirlsOnlyListingRows($prepared);
         $query_time = microtime(true) - $start_time;
+
 
         if (empty($rosters)) {
             return $this->emptyGirlsResponse($query_time);
@@ -1276,17 +1289,62 @@ class RosterListingService {
     }
 
     private function deriveSeasonFromCamp(array $row): string {
-        if (!empty($row['season']) && $row['season'] !== 'N/A') {
-            return $row['season'];
+        $season = (!empty($row['season']) && $row['season'] !== 'N/A') ? $row['season'] : '';
+        $year = $this->extractYearFromCampRow($row);
+
+
+        if ($season && preg_match('/^(\w+)\s+Week\s+\d+/i', $season, $m)) {
+            $base = ucfirst(strtolower($m[1]));
+            return $base . ' Camps' . ($year ? ' ' . $year : '');
+        }
+
+        if (!empty($season)) {
+            return $season;
         }
 
         $camp_terms = $row['camp_terms'] ?? '';
-        if (empty($camp_terms) || $camp_terms === 'N/A') {
-            return 'N/A';
+        if (!empty($camp_terms) && $camp_terms !== 'N/A') {
+            $parts = explode('-', $camp_terms);
+            $derived = !empty($parts[0]) ? ucfirst(trim($parts[0])) : '';
+
+            if ($derived && preg_match('/^(\w+)\s+Week\s+\d+/i', $derived, $m)) {
+                $base = ucfirst(strtolower($m[1]));
+                return $base . ' Camps' . ($year ? ' ' . $year : '');
+            }
+
+            if (!empty($derived)) {
+                return $derived;
+            }
         }
 
-        $parts = explode('-', $camp_terms);
-        return !empty($parts[0]) ? ucfirst(trim($parts[0])) : 'N/A';
+        $product_name = $row['product_name'] ?? '';
+        if (!empty($product_name) && preg_match('/(Summer|Winter|Easter|Autumn|Spring|Herbst|Frühling|Sommer|Oster|Pâques)/i', $product_name, $pm)) {
+            $base = ucfirst(strtolower($pm[1]));
+            return $base . ' Camps' . ($year ? ' ' . $year : '');
+        }
+
+        return 'N/A';
+    }
+
+    private function extractYearFromCampRow(array $row): string {
+        if (!empty($row['start_date']) && $row['start_date'] !== '1970-01-01') {
+            return date('Y', strtotime($row['start_date']));
+        }
+        if (!empty($row['end_date']) && $row['end_date'] !== '1970-01-01') {
+            return date('Y', strtotime($row['end_date']));
+        }
+        if (!empty($row['product_name']) && preg_match('/(\d{4})/', $row['product_name'], $m)) {
+            return $m[1];
+        }
+        if (!empty($row['registration_timestamp'])) {
+            $ts = strtotime($row['registration_timestamp']);
+            if ($ts) return date('Y', $ts);
+        }
+        if (!empty($row['created_at'])) {
+            $ts = strtotime($row['created_at']);
+            if ($ts) return date('Y', $ts);
+        }
+        return '';
     }
 
     private function applyCampFilters(array $groups, array $filters): array {
@@ -1395,6 +1453,7 @@ class RosterListingService {
             $season = $group['season'] ?: 'N/A';
             $grouped[$season][] = $group;
         }
+
 
         if (!empty($grouped)) {
             krsort($grouped, SORT_NATURAL);

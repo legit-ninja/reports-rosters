@@ -58,7 +58,14 @@ function intersoccer_get_order_meta_field_map() {
  * @return array<string,array<int,string>>
  */
 function intersoccer_get_order_meta_manual_aliases() {
-    return [
+    static $aliases = null;
+    if ($aliases !== null) {
+        return $aliases;
+    }
+
+    $aliases = intersoccer_get_order_meta_manual_aliases_from_registry();
+
+    $extras = [
         'Sites InterSoccer' => [
             'lieux intersoccer',
             'lieu intersoccer',
@@ -205,6 +212,65 @@ function intersoccer_get_order_meta_manual_aliases() {
             'varianten id',
         ],
     ];
+
+    foreach ($extras as $canonical => $extra_aliases) {
+        if (!isset($aliases[$canonical])) {
+            $aliases[$canonical] = [];
+        }
+        foreach ($extra_aliases as $alias) {
+            if (!in_array($alias, $aliases[$canonical], true)) {
+                $aliases[$canonical][] = $alias;
+            }
+        }
+    }
+
+    return $aliases;
+}
+
+/**
+ * Build attribute-derived aliases from the PV registry bridge.
+ *
+ * @return array<string,array<int,string>>
+ */
+function intersoccer_get_order_meta_manual_aliases_from_registry() {
+    if (!function_exists('intersoccer_reports_attr_canonical_label_to_slug_map')
+        || !function_exists('intersoccer_reports_attr_legacy_order_meta_labels')) {
+        $contract = dirname(__FILE__) . '/attribute-contract.php';
+        if (is_readable($contract)) {
+            require_once $contract;
+        }
+    }
+
+    if (!function_exists('intersoccer_reports_attr_canonical_label_to_slug_map')) {
+        return [];
+    }
+
+    $normalize = function_exists('intersoccer_order_meta_normalize_comparison_string')
+        ? 'intersoccer_order_meta_normalize_comparison_string'
+        : null;
+
+    $label_to_slug = intersoccer_reports_attr_canonical_label_to_slug_map();
+    $aliases = [];
+
+    foreach ($label_to_slug as $canonical_label => $slug) {
+        $legacy_labels = intersoccer_reports_attr_legacy_order_meta_labels($slug);
+        if (empty($legacy_labels)) {
+            continue;
+        }
+
+        $normalized = [];
+        foreach ($legacy_labels as $label) {
+            $n = $normalize ? $normalize($label) : strtolower(trim($label));
+            if ($n !== '' && !in_array($n, $normalized, true)) {
+                $normalized[] = $n;
+            }
+        }
+        if (!empty($normalized)) {
+            $aliases[$canonical_label] = $normalized;
+        }
+    }
+
+    return $aliases;
 }
 
 /**

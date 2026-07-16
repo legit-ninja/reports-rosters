@@ -1841,7 +1841,7 @@ function intersoccer_render_signature_verifier_section() {
                 <?php _e('Event signatures ensure that the same physical event generates a unique identifier regardless of which language the customer used when purchasing. This prevents roster fragmentation across languages.', 'intersoccer-reports-rosters'); ?>
             </p>
             <p style="margin: 10px 0 0 0;">
-                <em><?php _e('For complete technical documentation, see <code>docs/MULTILINGUAL-EVENT-SIGNATURES.md</code> in the plugin repository.', 'intersoccer-reports-rosters'); ?></em>
+                <em><?php _e('Technical details: see the InterSoccer workspace Cursor skill <code>reports-rosters</code> (event signatures rule) or <code>docs/README.md</code> in this plugin.', 'intersoccer-reports-rosters'); ?></em>
             </p>
         </div>
 

@@ -213,14 +213,14 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             $activity_type,
             '%' . $year_int . '%'
         ];
+        $prepare_values = array_merge($prepare_values, $camp_statuses);
         
-        // Add season type filter if provided
+        // Add season type filter if provided (AFTER camp_statuses so binding
+        // order matches: activity_type, season LIKE, post_status IN, season_type LIKE).
         if (!empty($season_type)) {
             $where_conditions[] = "r.season LIKE %s";
             $prepare_values[] = $season_type . '%';
         }
-
-        $prepare_values = array_merge($prepare_values, $camp_statuses);
         
         // Region filter applied in PHP after canton enrichment (order meta may be empty; product attribute fills in).
         
@@ -239,6 +239,8 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 r.age_group,
                 r.activity_type,
                 r.product_id,
+                r.product_name,
+                r.girls_only,
                 r.start_date,
                 r.end_date,
                 oi.order_id,
@@ -406,6 +408,9 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                     
                     // Method 1: Try parsing from camp_terms
                     if (!empty($camp_terms) && $camp_terms !== 'N/A') {
+                        if (function_exists('intersoccer_reports_normalize_camp_terms_for_dates')) {
+                            $camp_terms = intersoccer_reports_normalize_camp_terms_for_dates($camp_terms);
+                        }
                         list($parsed_start, $parsed_end, $event_dates) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
                         if (!empty($parsed_start) && $parsed_start !== '1970-01-01') {
                             $event_start_date = $parsed_start;
@@ -455,6 +460,9 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                             $roster['event_start_date'] = '';
                             $roster['event_end_date'] = '';
                             $label = trim((string) ($roster['camp_terms'] ?? ''));
+                            if ($label !== '' && $label !== 'N/A' && function_exists('intersoccer_reports_normalize_camp_terms_for_dates')) {
+                                $label = intersoccer_reports_normalize_camp_terms_for_dates($label);
+                            }
                             if ($label === '' || $label === 'N/A') {
                                 $label = !empty($roster['season']) ? ('Undated - ' . $roster['season']) : 'Undated';
                             }
@@ -563,6 +571,11 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                     continue;
                 }
             }
+
+            if (!empty($camp_terms) && $camp_terms !== 'N/A' && function_exists('intersoccer_reports_normalize_camp_terms_for_dates')) {
+                $camp_terms = intersoccer_reports_normalize_camp_terms_for_dates($camp_terms);
+                $roster['camp_terms'] = $camp_terms;
+            }
             
             list($event_start_date, $event_end_date, $event_dates) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
             
@@ -586,7 +599,9 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                             $event_start_date = '';
                             $event_end_date = '';
                             $roster['undated_group_label'] = !empty($camp_terms) && $camp_terms !== 'N/A'
-                                ? trim((string) $camp_terms)
+                                ? (function_exists('intersoccer_reports_normalize_camp_terms_for_dates')
+                                    ? intersoccer_reports_normalize_camp_terms_for_dates(trim((string) $camp_terms))
+                                    : trim((string) $camp_terms))
                                 : (!empty($season) ? ('Undated - ' . $season) : 'Undated');
                         } else {
                             $skipped_no_dates++;
@@ -599,7 +614,9 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                         $event_start_date = '';
                         $event_end_date = '';
                         $roster['undated_group_label'] = !empty($camp_terms) && $camp_terms !== 'N/A'
-                            ? trim((string) $camp_terms)
+                            ? (function_exists('intersoccer_reports_normalize_camp_terms_for_dates')
+                                ? intersoccer_reports_normalize_camp_terms_for_dates(trim((string) $camp_terms))
+                                : trim((string) $camp_terms))
                             : (!empty($season) ? ('Undated - ' . $season) : 'Undated');
                     } else {
                         $skipped_no_dates++;
@@ -813,7 +830,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 OR rr.activity_type IN ({$course_activity_sql})
              )
              {$course_placeholder_clause}",
-            array_merge($course_activity_types, $course_activity_types, $course_statuses)
+            array_merge($course_statuses, $course_activity_types, $course_activity_types)
         );
 
             $rosters = $wpdb->get_results($query, ARRAY_A);
@@ -824,7 +841,6 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         
         // Parse event dates and filter by event year
         $filtered_rosters = [];
-        $skipped_no_dates = 0;
         foreach ($rosters as $roster) {
             if (function_exists('intersoccer_roster_row_matches_listing_kind')
                 && !intersoccer_roster_row_matches_listing_kind($roster, 'course')) {
@@ -865,7 +881,6 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                         : ($requested_year_int . '-12-31');
                     $parsed_end_date = $parsed_start_date;
                 } else {
-                    $skipped_no_dates++;
                     continue;
                 }
             }
@@ -877,10 +892,6 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 $season_for_year = $roster['roster_season'] ?? '';
                 $season_year = !empty($season_for_year) ? intersoccer_extract_year_from_season($season_for_year) : null;
                 if ($season_year === null || $season_year != intval($year)) {
-                    if (!isset($skipped_year_mismatch)) {
-                        $skipped_year_mismatch = 0;
-                    }
-                    $skipped_year_mismatch++;
                     continue;
                 }
             }
@@ -891,6 +902,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         }
         
         $rosters = $filtered_rosters;
+
         if (empty($rosters)) {
             return [];
         }
@@ -948,26 +960,29 @@ function intersoccer_calculate_final_reports_totals($report_data, $activity_type
                             foreach ($data['individual_days'] as $day => $count) {
                                 $totals['full_day']['individual_days'][$day] += $count;
                             }
-                            $totals['full_day']['online'] = $totals['full_day']['full_week'] + array_sum($totals['full_day']['individual_days']);
-                            $totals['full_day']['total'] += $data['full_week'] + array_sum($data['individual_days']);
+                            $bc = (int) ($data['buyclub'] ?? 0);
+                            $totals['full_day']['online'] = $totals['full_day']['full_week'] + $bc;
+                            $totals['full_day']['total'] += (int) $data['full_week'] + $bc;
                             $totals['full_day']['unique_records'] += $unique_records;
                         } elseif ($camp_type === 'Mini - Half Day') {
                             $totals['mini']['full_week'] += $data['full_week'];
                             foreach ($data['individual_days'] as $day => $count) {
                                 $totals['mini']['individual_days'][$day] += $count;
                             }
-                            $totals['mini']['online'] = $totals['mini']['full_week'] + array_sum($totals['mini']['individual_days']);
-                            $totals['mini']['total'] += $data['full_week'] + array_sum($data['individual_days']);
+                            $bc = (int) ($data['buyclub'] ?? 0);
+                            $totals['mini']['online'] = $totals['mini']['full_week'] + $bc;
+                            $totals['mini']['total'] += (int) $data['full_week'] + $bc;
                             $totals['mini']['unique_records'] += $unique_records;
                         }
 
-                        // All camps total
+                        // All camps total (All registrations style: FW + BuyClub)
+                        $bc = (int) ($data['buyclub'] ?? 0);
                         $totals['all']['full_week'] += $data['full_week'];
                         foreach ($data['individual_days'] as $day => $count) {
                             $totals['all']['individual_days'][$day] += $count;
                         }
-                        $totals['all']['online'] = $totals['all']['full_week'] + array_sum($totals['all']['individual_days']);
-                        $totals['all']['total'] += $data['full_week'] + array_sum($data['individual_days']);
+                        $totals['all']['online'] = $totals['all']['full_week'] + $bc;
+                        $totals['all']['total'] += (int) $data['full_week'] + $bc;
                         $totals['all']['unique_records'] += $unique_records;
                     }
                 }

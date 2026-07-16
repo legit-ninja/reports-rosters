@@ -475,6 +475,103 @@ class RosterBuilderTest extends TestCase {
         $this->assertArrayHasKey('errors', $result);
         $this->assertNotEmpty($result['errors']);
     }
+    public function test_extractOrderData_resolves_french_meta_keys() {
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(50);
+        $order->shouldReceive('get_customer_id')->andReturn(10);
+        $order->shouldReceive('get_status')->andReturn('completed');
+
+        $item = Mockery::mock('WC_Order_Item_Product');
+        $item->shouldReceive('get_product')->andReturn(null);
+        $item->shouldReceive('get_variation_id')->andReturn(0);
+        $item->shouldReceive('get_product_id')->andReturn(200);
+        $item->shouldReceive('get_meta_data')->andReturn([
+            $this->createOrderItemMeta('Lieux InterSoccer', 'geneve-centre-sportif'),
+            $this->createOrderItemMeta("Groupe d'âge", '5-13y-full-day'),
+            $this->createOrderItemMeta("Type d'activité", 'Camp'),
+            $this->createOrderItemMeta('Saison', 'Summer 2026'),
+            $this->createOrderItemMeta('Type de réservation', 'Full Week'),
+            $this->createOrderItemMeta('Assigned Attendee', 'Marie Dupont'),
+        ]);
+
+        $reflection = new \ReflectionClass($this->rosterBuilder);
+        $method = $reflection->getMethod('extractOrderItemData');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($this->rosterBuilder, $order, 600, $item);
+
+        $this->assertSame('geneve-centre-sportif', $result['venue']);
+        $this->assertSame('5-13y-full-day', $result['age_group']);
+        $this->assertSame('Camp', $result['activity_type']);
+        $this->assertSame('Summer 2026', $result['season']);
+        $this->assertSame('Full Week', $result['booking_type']);
+        $this->assertSame('Marie Dupont', $result['assigned_attendee']);
+    }
+
+    public function test_extractOrderData_resolves_german_meta_keys() {
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(51);
+        $order->shouldReceive('get_customer_id')->andReturn(11);
+        $order->shouldReceive('get_status')->andReturn('completed');
+
+        $item = Mockery::mock('WC_Order_Item_Product');
+        $item->shouldReceive('get_product')->andReturn(null);
+        $item->shouldReceive('get_variation_id')->andReturn(0);
+        $item->shouldReceive('get_product_id')->andReturn(201);
+        $item->shouldReceive('get_meta_data')->andReturn([
+            $this->createOrderItemMeta('InterSoccer-Standorte', 'zurich-venue'),
+            $this->createOrderItemMeta('Altersgruppe', '3-5y-half-day'),
+            $this->createOrderItemMeta('Aktivitätstyp', 'Course'),
+            $this->createOrderItemMeta('Jahreszeit', 'Autumn 2026'),
+            $this->createOrderItemMeta('Buchungstyp', 'Single Day(s)'),
+            $this->createOrderItemMeta('Assigned Attendee', 'Max Müller'),
+        ]);
+
+        $reflection = new \ReflectionClass($this->rosterBuilder);
+        $method = $reflection->getMethod('extractOrderItemData');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($this->rosterBuilder, $order, 601, $item);
+
+        $this->assertSame('zurich-venue', $result['venue']);
+        $this->assertSame('3-5y-half-day', $result['age_group']);
+        $this->assertSame('Course', $result['activity_type']);
+        $this->assertSame('Autumn 2026', $result['season']);
+        $this->assertSame('Single Day(s)', $result['booking_type']);
+        $this->assertSame('Max Müller', $result['assigned_attendee']);
+    }
+
+    public function test_extractOrderData_resolves_mixed_language_meta() {
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(52);
+        $order->shouldReceive('get_customer_id')->andReturn(12);
+        $order->shouldReceive('get_status')->andReturn('completed');
+
+        $item = Mockery::mock('WC_Order_Item_Product');
+        $item->shouldReceive('get_product')->andReturn(null);
+        $item->shouldReceive('get_variation_id')->andReturn(0);
+        $item->shouldReceive('get_product_id')->andReturn(202);
+        $item->shouldReceive('get_meta_data')->andReturn([
+            $this->createOrderItemMeta('Sites InterSoccer', 'lausanne-venue'),
+            $this->createOrderItemMeta("Groupe d'âge", '3-12y'),
+            $this->createOrderItemMeta('Buchungstyp', 'Full Term'),
+            $this->createOrderItemMeta('Activity Type', 'Course'),
+            $this->createOrderItemMeta('Assigned Attendee', 'Sophie Martin'),
+        ]);
+
+        $reflection = new \ReflectionClass($this->rosterBuilder);
+        $method = $reflection->getMethod('extractOrderItemData');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($this->rosterBuilder, $order, 602, $item);
+
+        $this->assertSame('lausanne-venue', $result['venue']);
+        $this->assertSame('3-12y', $result['age_group']);
+        $this->assertSame('Full Term', $result['booking_type']);
+        $this->assertSame('Course', $result['activity_type']);
+        $this->assertSame('Sophie Martin', $result['assigned_attendee']);
+    }
+
     /**
      * Helper to create a lightweight meta data object for order item meta lists.
      *

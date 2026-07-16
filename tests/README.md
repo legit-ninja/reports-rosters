@@ -1,6 +1,10 @@
 # InterSoccer Reports & Rosters - Test Suite
 
-This directory contains comprehensive PHPUnit tests for the InterSoccer Reports and Rosters plugin.
+This directory contains PHPUnit tests for the InterSoccer Reports and Rosters plugin.
+
+Enrollment / Final Numbers regressions: Production suite (`FinalReportsAggregationAccuracyTest`, `FinalReportsUrgencyTest`, `FinalReportsTotalsTest`). Contract: workspace rule **reports-rosters-accuracy**; recipes in **qa-test-writer** → `report-accuracy.md`.
+
+Archived export/tournament markdown notes: [archive/](archive/).
 
 ## Overview
 

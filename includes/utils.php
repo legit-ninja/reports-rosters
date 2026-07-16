@@ -4742,8 +4742,17 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
             $normalized['season'] = str_ireplace('printemps', 'spring', $normalized['season']);
             $normalized['season'] = str_ireplace('Automne', 'Autumn', $normalized['season']);
             $normalized['season'] = str_ireplace('automne', 'autumn', $normalized['season']);
-            // Capitalize first word
-            $normalized['season'] = ucfirst(strtolower($normalized['season']));
+            // German season words
+            $normalized['season'] = str_ireplace('Sommer', 'Summer', $normalized['season']);
+            $normalized['season'] = str_ireplace('Frühling', 'Spring', $normalized['season']);
+            $normalized['season'] = str_ireplace('Herbst', 'Autumn', $normalized['season']);
+            // Easter — French and German
+            $normalized['season'] = str_ireplace('Pâques', 'Easter', $normalized['season']);
+            $normalized['season'] = str_ireplace('Ostern', 'Easter', $normalized['season']);
+            $normalized['season'] = str_ireplace('Oster', 'Easter', $normalized['season']);
+            $normalized['season'] = preg_replace('/Camps\s+de\s+Easter/i', 'Easter Camps', $normalized['season']);
+            // Title-case for consistent grouping
+            $normalized['season'] = ucwords(strtolower($normalized['season']), " \t\r\n\f/");
         }
 
         // Normalize city (taxonomy term name) - important for tournaments
@@ -5754,6 +5763,17 @@ function intersoccer_get_term_slug_by_name($name, $taxonomy) {
 function intersoccer_normalize_season_for_display($season) {
     if (empty($season)) return $season;
 
+
+    // Convert slug format (e.g. "easter-camps-2026") to readable ("Easter Camps 2026")
+    if (preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)+$/i', $season)) {
+        $season = implode(' ', array_map('ucfirst', explode('-', strtolower($season))));
+    }
+
+    // Collapse "Season Week N: ..." to "Season Camps" (year added later if available)
+    if (preg_match('/^(\w+)\s+Week\s+\d+/i', $season, $wm)) {
+        $season = ucfirst(strtolower($wm[1])) . ' Camps';
+    }
+
     $normalized = str_ireplace('Hiver', 'Winter', $season);
     $normalized = str_ireplace('hiver', 'winter', $normalized);
     $normalized = str_ireplace('Été', 'Summer', $normalized);
@@ -5762,6 +5782,20 @@ function intersoccer_normalize_season_for_display($season) {
     $normalized = str_ireplace('printemps', 'spring', $normalized);
     $normalized = str_ireplace('Automne', 'Autumn', $normalized);
     $normalized = str_ireplace('automne', 'autumn', $normalized);
+    // German season words
+    $normalized = str_ireplace('Sommer', 'Summer', $normalized);
+    $normalized = str_ireplace('Frühling', 'Spring', $normalized);
+    $normalized = str_ireplace('Herbst', 'Autumn', $normalized);
+    // Easter — French and German
+    $normalized = str_ireplace('Pâques', 'Easter', $normalized);
+    $normalized = str_ireplace('Ostern', 'Easter', $normalized);
+    $normalized = str_ireplace('Oster', 'Easter', $normalized);
+    $normalized = preg_replace('/Camps\s+de\s+Easter/i', 'Easter Camps', $normalized);
+
+    // Normalize title case for consistent grouping (e.g. "Easter camps 2026" -> "Easter Camps 2026")
+    // Include / as word delimiter so "N/A" and "Spring/Summer" capitalise correctly
+    $normalized = ucwords(strtolower($normalized), " \t\r\n\f/");
+
 
     return $normalized;
 }
@@ -5943,6 +5977,91 @@ function intersoccer_roster_course_season_filter_matches(array $group, string $f
 }
 
 /**
+ * Map a month token (EN / FR / DE, accented or ASCII) to English month name for DateTime.
+ *
+ * @param string $token Month word or slug fragment.
+ * @return string English month name, or '' if unknown.
+ */
+function intersoccer_reports_month_token_to_english($token) {
+    $raw = trim((string) $token);
+    if ($raw === '') {
+        return '';
+    }
+    $ascii = $raw;
+    if (function_exists('iconv')) {
+        $converted = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $raw);
+        if (is_string($converted) && $converted !== '') {
+            $ascii = $converted;
+        }
+    }
+    $key = strtolower(preg_replace('/[^a-z]/i', '', $ascii));
+
+    $map = [
+        'january' => 'January', 'januar' => 'January', 'janvier' => 'January',
+        'february' => 'February', 'februar' => 'February', 'fevrier' => 'February',
+        'march' => 'March', 'marz' => 'March', 'maerz' => 'March', 'mars' => 'March',
+        'april' => 'April', 'avril' => 'April',
+        'may' => 'May', 'mai' => 'May',
+        'june' => 'June', 'juni' => 'June', 'juin' => 'June',
+        'july' => 'July', 'juli' => 'July', 'juillet' => 'July',
+        'august' => 'August', 'aout' => 'August',
+        'september' => 'September', 'septembre' => 'September',
+        'october' => 'October', 'oktober' => 'October', 'octobre' => 'October',
+        'november' => 'November', 'novembre' => 'November',
+        'december' => 'December', 'dezember' => 'December', 'decembre' => 'December',
+    ];
+
+    return $map[$key] ?? '';
+}
+
+/**
+ * Resolve camp_terms to default-language (English) term name for date parsing / undated labels.
+ * Skips WPML lookups under INTERSOCCER_TESTING so PHPUnit stays deterministic.
+ *
+ * @param string $camp_terms Raw slug or localized name.
+ * @return string
+ */
+function intersoccer_reports_normalize_camp_terms_for_dates($camp_terms) {
+    $camp_terms = trim((string) $camp_terms);
+    if ($camp_terms === '' || $camp_terms === 'N/A') {
+        return $camp_terms;
+    }
+    if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING) {
+        return $camp_terms;
+    }
+    if (function_exists('intersoccer_get_term_name')) {
+        $name = intersoccer_get_term_name($camp_terms, 'pa_camp-terms');
+        if (is_string($name) && $name !== '' && $name !== 'N/A') {
+            return $name;
+        }
+    }
+    return $camp_terms;
+}
+
+/**
+ * Build Y-m-d start/end from English month names and day numbers.
+ *
+ * @param string $start_month English month.
+ * @param int    $start_day
+ * @param string $end_month English month.
+ * @param int    $end_day
+ * @param int    $year
+ * @return array{0:?string,1:?string,2:string}
+ */
+function intersoccer_reports_camp_dates_from_months_days($start_month, $start_day, $end_month, $end_day, $year) {
+    $start_month = intersoccer_reports_month_token_to_english($start_month) ?: $start_month;
+    $end_month = intersoccer_reports_month_token_to_english($end_month) ?: $end_month;
+    $start_date_obj = DateTime::createFromFormat('!F j Y', "$start_month $start_day $year");
+    $end_date_obj = DateTime::createFromFormat('!F j Y', "$end_month $end_day $year");
+    if ($start_date_obj && $end_date_obj) {
+        $start_date = $start_date_obj->format('Y-m-d');
+        $end_date = $end_date_obj->format('Y-m-d');
+        return [$start_date, $end_date, "$start_date to $end_date"];
+    }
+    return [null, null, 'N/A'];
+}
+
+/**
  * Parse camp dates from camp_terms string
  * @param string $camp_terms The camp terms string
  * @param string $season The season/year
@@ -5957,6 +6076,8 @@ function intersoccer_parse_camp_dates_fixed($camp_terms, $season) {
         return [$start_date, $end_date, $event_dates];
     }
 
+    $camp_terms = trim((string) $camp_terms);
+
     // Extract year from season if available
     $year = null;
     if (!empty($season)) {
@@ -5968,63 +6089,119 @@ function intersoccer_parse_camp_dates_fixed($camp_terms, $season) {
         }
     }
     if (!$year) {
-        $year = date('Y');
+        $year = (int) date('Y');
     }
 
-    // Try first regex pattern: month-week-X-month-day-month-day-days
-    if (preg_match('/(\w+)-week-\d+-(\w+)-(\d{1,2})-(\w+)-(\d{1,2})-\d+-days/', $camp_terms, $matches)) {
-        $start_month = $matches[2];
-        $start_day = $matches[3];
-        $end_month = $matches[4];
-        $end_day = $matches[5];
-
-        $start_date_obj = DateTime::createFromFormat('F j Y', "$start_month $start_day $year");
-        $end_date_obj = DateTime::createFromFormat('F j Y', "$end_month $end_day $year");
-
-        if ($start_date_obj && $end_date_obj) {
-            $start_date = $start_date_obj->format('Y-m-d');
-            $end_date = $end_date_obj->format('Y-m-d');
-            $event_dates = "$start_date to $end_date";
-        }
+    // Try first regex pattern: month-week-X-month-day-month-day-days (English slug)
+    if (preg_match('/(\w+)-week-\d+-(\w+)-(\d{1,2})-(\w+)-(\d{1,2})-\d+-days/i', $camp_terms, $matches)) {
+        list($start_date, $end_date, $event_dates) = intersoccer_reports_camp_dates_from_months_days(
+            $matches[2],
+            (int) $matches[3],
+            $matches[4],
+            (int) $matches[5],
+            $year
+        );
     }
     // Try second regex pattern: month-week-X-month-day-day-days
-    elseif (preg_match('/(\w+)-week-\d+-(\w+)-(\d{1,2})-(\d{1,2})-\d+-days/', $camp_terms, $matches)) {
-        $month = $matches[2];
-        $start_day = $matches[3];
-        $end_day = $matches[4];
-
-        $start_date_obj = DateTime::createFromFormat('F j Y', "$month $start_day $year");
-        $end_date_obj = DateTime::createFromFormat('F j Y', "$month $end_day $year");
-
-        if ($start_date_obj && $end_date_obj) {
-            $start_date = $start_date_obj->format('Y-m-d');
-            $end_date = $end_date_obj->format('Y-m-d');
-            $event_dates = "$start_date to $end_date";
+    elseif (preg_match('/(\w+)-week-\d+-(\w+)-(\d{1,2})-(\d{1,2})-\d+-days/i', $camp_terms, $matches)) {
+        list($start_date, $end_date, $event_dates) = intersoccer_reports_camp_dates_from_months_days(
+            $matches[2],
+            (int) $matches[3],
+            $matches[2],
+            (int) $matches[4],
+            $year
+        );
+    }
+    // French slug: semaine-dete-4-13-17-juillet-5-jours (weeknum-startday-endday-month)
+    elseif (preg_match(
+        '/semaine-[a-zàâäéèêëïîôùûüç]+-(\d+)-(\d{1,2})-(\d{1,2})-([a-zàâäéèêëïîôùûüç]+)-(\d+)-jours/iu',
+        $camp_terms,
+        $matches
+    )) {
+        $month_en = intersoccer_reports_month_token_to_english($matches[4]);
+        if ($month_en !== '') {
+            list($start_date, $end_date, $event_dates) = intersoccer_reports_camp_dates_from_months_days(
+                $month_en,
+                (int) $matches[2],
+                $month_en,
+                (int) $matches[3],
+                $year
+            );
+        }
+    }
+    // German slug: sommer-woche-4-13-17-juli-5-tage (also sommer-week-…)
+    elseif (preg_match(
+        '/(?:sommer|winter|herbst|fruehling|frühling)-(?:woche|week)-(\d+)-(\d{1,2})-(\d{1,2})-([a-zäöüß]+)-(\d+)-tage/iu',
+        $camp_terms,
+        $matches
+    )) {
+        $month_en = intersoccer_reports_month_token_to_english($matches[4]);
+        if ($month_en !== '') {
+            list($start_date, $end_date, $event_dates) = intersoccer_reports_camp_dates_from_months_days(
+                $month_en,
+                (int) $matches[2],
+                $month_en,
+                (int) $matches[3],
+                $year
+            );
+        }
+    }
+    // Human label month range: "July 13-July 17", "juillet 13-juillet 17", "July 13 – July 17"
+    elseif (preg_match(
+        '/([A-Za-zàâäéèêëïîôùûüçäöüß]+)\s+(\d{1,2})\s*[-–—]\s*([A-Za-zàâäéèêëïîôùûüçäöüß]+)\s+(\d{1,2})/u',
+        $camp_terms,
+        $matches
+    )) {
+        $start_month_en = intersoccer_reports_month_token_to_english($matches[1]);
+        $end_month_en = intersoccer_reports_month_token_to_english($matches[3]);
+        if ($start_month_en !== '' && $end_month_en !== '') {
+            list($start_date, $end_date, $event_dates) = intersoccer_reports_camp_dates_from_months_days(
+                $start_month_en,
+                (int) $matches[2],
+                $end_month_en,
+                (int) $matches[4],
+                $year
+            );
+        }
+    }
+    // Compact same-month: "July 13–17" / "juillet 13-17"
+    elseif (preg_match(
+        '/([A-Za-zàâäéèêëïîôùûüçäöüß]+)\s+(\d{1,2})\s*[-–—]\s*(\d{1,2})(?!\s*[A-Za-z])/u',
+        $camp_terms,
+        $matches
+    )) {
+        $month_en = intersoccer_reports_month_token_to_english($matches[1]);
+        if ($month_en !== '') {
+            list($start_date, $end_date, $event_dates) = intersoccer_reports_camp_dates_from_months_days(
+                $month_en,
+                (int) $matches[2],
+                $month_en,
+                (int) $matches[3],
+                $year
+            );
         }
     }
     // Try third pattern: Season: Month Day (e.g., "Autumn: September 30", "Winter: December 15")
-    elseif (preg_match('/^\s*\w+\s*:\s*(\w+)\s+(\d{1,2})\s*$/i', $camp_terms, $matches)) {
-        $month = $matches[1];
-        $day = intval($matches[2]);
-
-        $date_obj = DateTime::createFromFormat('F j Y', "$month $day $year");
-        if ($date_obj) {
-            $start_date = $date_obj->format('Y-m-d');
-            $end_date = $start_date; // Single day event
-            $event_dates = $start_date;
-        }
+    elseif (preg_match('/^\s*\w+\s*:\s*(\w+)\s+(\d{1,2})\s*$/iu', $camp_terms, $matches)) {
+        $month_en = intersoccer_reports_month_token_to_english($matches[1]) ?: $matches[1];
+        list($start_date, $end_date, $event_dates) = intersoccer_reports_camp_dates_from_months_days(
+            $month_en,
+            (int) $matches[2],
+            $month_en,
+            (int) $matches[2],
+            $year
+        );
     }
     // Try fourth pattern: Just "Month Day" (e.g., "September 30")
-    elseif (preg_match('/^\s*(\w+)\s+(\d{1,2})\s*$/i', $camp_terms, $matches)) {
-        $month = $matches[1];
-        $day = intval($matches[2]);
-
-        $date_obj = DateTime::createFromFormat('F j Y', "$month $day $year");
-        if ($date_obj) {
-            $start_date = $date_obj->format('Y-m-d');
-            $end_date = $start_date; // Single day event
-            $event_dates = $start_date;
-        }
+    elseif (preg_match('/^\s*(\w+)\s+(\d{1,2})\s*$/iu', $camp_terms, $matches)) {
+        $month_en = intersoccer_reports_month_token_to_english($matches[1]) ?: $matches[1];
+        list($start_date, $end_date, $event_dates) = intersoccer_reports_camp_dates_from_months_days(
+            $month_en,
+            (int) $matches[2],
+            $month_en,
+            (int) $matches[2],
+            $year
+        );
     }
 
     return [$start_date, $end_date, $event_dates];

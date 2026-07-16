@@ -15,6 +15,24 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 /**
+ * Apply solid fill + white bold text for an urgency heat cell.
+ *
+ * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet Sheet.
+ * @param string                                         $cell  e.g. K2.
+ * @param string                                         $band  Urgency CSS class.
+ */
+function intersoccer_reports_excel_apply_urgency_fill($sheet, $cell, $band) {
+    $argb = function_exists('intersoccer_reports_urgency_band_argb')
+        ? intersoccer_reports_urgency_band_argb($band)
+        : 'FF6B7280';
+    $style = $sheet->getStyle($cell);
+    $style->getFill()
+        ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+        ->getStartColor()->setARGB($argb);
+    $style->getFont()->setBold(true)->getColor()->setARGB('FFFFFFFF');
+}
+
+/**
  * Generate final reports Excel file (for AJAX and scheduled sync).
  *
  * @param int         $year         Year.
@@ -23,9 +41,10 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
  * @param string|null $region        Optional region.
  * @param bool        $exclude_buyclub Omit BuyClub / matching coupon rows when true.
  * @param bool        $live          When true, include processing orders (Live Snapshot).
+ * @param bool        $urgency_only  When true, export Critical + Low rows only.
  * @return array{filename: string, content: string}|null Null on failure.
  */
-function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type = 'Camp', $season_type = null, $region = null, $exclude_buyclub = false, $live = false) {
+function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type = 'Camp', $season_type = null, $region = null, $exclude_buyclub = false, $live = false, $urgency_only = false) {
     require_once plugin_dir_path(__FILE__) . 'reports-data.php';
     if (!function_exists('intersoccer_reports_camp_excel_data_rows')) {
         require_once plugin_dir_path(__FILE__) . 'final-reports-aggregation.php';
@@ -50,6 +69,9 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
     if (!empty($region)) {
         $filename .= '-' . strtolower(str_replace(' ', '-', $region));
     }
+    if ($urgency_only) {
+        $filename .= '-urgent';
+    }
     $filename .= '.xlsx';
 
     $spreadsheet = new Spreadsheet();
@@ -57,98 +79,125 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
     $sheet->setTitle(substr('Final ' . $activity_type . ' Reports ' . $year, 0, 31));
 
     if ($activity_type === 'Camp') {
-        // Camp Excel headers
-        $headers = array(
-            'Date Range',
-            'Canton',
-            'Venue',
-            'Camp Type',
-            'Full Week',
-            'Monday',
-            'Tuesday',
-            'Wednesday',
-            'Thursday',
-            'Friday',
-            'Min-Max',
-            'Total'
-        );
-        $sheet->fromArray($headers, null, 'A1');
+        // Grid layout aligned with Admin Final Camp Numbers (no Pitchside column).
+        $sheet->setCellValue('B1', 'SUMMER CAMPS NUMBERS ' . $year);
+        $sheet->getStyle('B1')->getFont()->setBold(true)->setSize(14);
 
-        // Style header row
-        $header_range = 'A1:' . chr(64 + count($headers)) . '1';
-        $sheet->getStyle($header_range)->getFont()->setBold(true);
-        $sheet->getStyle($header_range)->getFill()
-              ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
-              ->getStartColor()->setARGB('FF4472C4');
-        $sheet->getStyle($header_range)->getFont()->getColor()->setARGB('FFFFFFFF');
+        $sheet->setCellValue('C2', 'Full Day Camps');
+        $sheet->mergeCells('C2:J2');
+        $sheet->setCellValue('K2', 'Mini - Half Day Camps');
+        $sheet->mergeCells('K2:R2');
+        $sheet->getStyle('C2:R2')->getFont()->setBold(true);
 
-        // Camp Excel data
-        $row_index = 2;
-        $excel_body = function_exists('intersoccer_reports_camp_excel_data_rows')
-            ? intersoccer_reports_camp_excel_data_rows($report_data)
-            : [];
-        if (empty($excel_body)) {
-            // Fallback if aggregation helper not loaded
-            foreach ($report_data as $week_name => $cantons) {
-                if ($week_name === '__player_registration_totals__' || !is_array($cantons)) {
+        $headers_r3 = [
+            'C' => 'Full Week', 'D' => 'BuyClub', 'E' => 'Individual days', 'J' => 'Total min-max',
+            'K' => 'Full Week', 'L' => 'BuyClub', 'M' => 'Individual days', 'R' => 'Total min-max',
+        ];
+        foreach ($headers_r3 as $col => $label) {
+            $sheet->setCellValue($col . '3', $label);
+        }
+        $sheet->mergeCells('E3:I3');
+        $sheet->mergeCells('M3:Q3');
+        foreach ([['E', 'M'], ['F', 'T'], ['G', 'W'], ['H', 'T'], ['I', 'F'],
+                  ['M', 'M'], ['N', 'T'], ['O', 'W'], ['P', 'T'], ['Q', 'F']] as $pair) {
+            $sheet->setCellValue($pair[0] . '4', $pair[1]);
+        }
+        $sheet->setCellValue('A5', 'Canton');
+        $sheet->getStyle('A3:R4')->getFont()->setBold(true);
+
+        $row_index = 5;
+        $write_metrics = static function ($sheet, $row, $start_col, array $m) {
+            $cols = [];
+            $ord = ord($start_col);
+            for ($i = 0; $i < 8; $i++) {
+                $cols[] = chr($ord + $i);
+            }
+            $sheet->setCellValue($cols[0] . $row, (int) $m['full_week']);
+            $sheet->setCellValue($cols[1] . $row, (int) $m['buyclub']);
+            $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+            foreach ($days as $i => $day) {
+                $sheet->setCellValue($cols[2 + $i] . $row, (int) ($m['individual_days'][$day] ?? 0));
+            }
+            $sheet->setCellValue($cols[7] . $row, (string) ($m['min_max'] ?? '0-0'));
+            return $cols[7];
+        };
+
+        foreach ($report_data as $week_name => $cantons) {
+            if ($week_name === '__player_registration_totals__' || !is_array($cantons)) {
+                continue;
+            }
+            $week_rows = [];
+            foreach ($cantons as $canton => $venues) {
+                if (!is_array($venues)) {
                     continue;
                 }
-                foreach ($cantons as $canton => $venues) {
-                    foreach ($venues as $venue => $camp_types) {
-                        foreach ($camp_types as $camp_type => $data) {
-                            $excel_body[] = [
-                                $week_name,
-                                $canton,
-                                $venue,
-                                $camp_type,
-                                $data['full_week'],
-                                $data['individual_days']['Monday'],
-                                $data['individual_days']['Tuesday'],
-                                $data['individual_days']['Wednesday'],
-                                $data['individual_days']['Thursday'],
-                                $data['individual_days']['Friday'],
-                                $data['min_max'],
-                                $data['full_week'] + array_sum($data['individual_days']),
-                            ];
-                        }
+                foreach ($venues as $venue => $camp_types) {
+                    if (!is_array($camp_types)) {
+                        continue;
                     }
+                    if ($urgency_only && function_exists('intersoccer_reports_camp_venue_is_urgent')
+                        && !intersoccer_reports_camp_venue_is_urgent($camp_types)) {
+                        continue;
+                    }
+                    $week_rows[] = [$canton, $venue, $camp_types];
                 }
             }
-        }
-        foreach ($excel_body as $excel_row) {
-            $sheet->fromArray($excel_row, null, 'A' . $row_index);
+            if (empty($week_rows)) {
+                continue;
+            }
+            $sheet->setCellValue('B' . $row_index, $week_name);
+            $sheet->getStyle('B' . $row_index)->getFont()->setBold(true);
             $row_index++;
+            foreach ($week_rows as $wr) {
+                list($canton, $venue, $camp_types) = $wr;
+                $fd = function_exists('intersoccer_reports_normalize_camp_metrics')
+                    ? intersoccer_reports_normalize_camp_metrics($camp_types['Full Day'] ?? null)
+                    : intersoccer_reports_empty_camp_metrics();
+                $mini = function_exists('intersoccer_reports_normalize_camp_metrics')
+                    ? intersoccer_reports_normalize_camp_metrics($camp_types['Mini - Half Day'] ?? null)
+                    : intersoccer_reports_empty_camp_metrics();
+                $sheet->setCellValue('A' . $row_index, $canton);
+                $sheet->setCellValue('B' . $row_index, $venue);
+                $fd_mm_col = $write_metrics($sheet, $row_index, 'C', $fd);
+                $mini_mm_col = $write_metrics($sheet, $row_index, 'K', $mini);
+                $fd_band = intersoccer_reports_camp_metrics_urgency_band($fd);
+                $mini_band = intersoccer_reports_camp_metrics_urgency_band($mini);
+                intersoccer_reports_excel_apply_urgency_fill($sheet, $fd_mm_col . $row_index, $fd_band);
+                intersoccer_reports_excel_apply_urgency_fill($sheet, $mini_mm_col . $row_index, $mini_band);
+                $row_index++;
+            }
         }
 
-        // Camp totals
-        $totals_start = $row_index + 2;
-        $sheet->setCellValue('A' . $totals_start, 'TOTALS');
-        $sheet->getStyle('A' . $totals_start)->getFont()->setBold(true)->setSize(14)->getColor()->setARGB('FF0073AA');
-        $sheet->mergeCells('A' . $totals_start . ':D' . $totals_start);
+        $grand = function_exists('intersoccer_reports_camp_grand_totals')
+            ? intersoccer_reports_camp_grand_totals($report_data, $urgency_only)
+            : null;
+        if (is_array($grand)) {
+            $sheet->setCellValue('C' . $row_index, 'Full Week');
+            $sheet->setCellValue('D' . $row_index, 'BuyClub');
+            $sheet->setCellValue('E' . $row_index, 'Individual days');
+            $sheet->setCellValue('K' . $row_index, 'Full Week');
+            $sheet->setCellValue('L' . $row_index, 'BuyClub');
+            $sheet->setCellValue('M' . $row_index, 'Individual days');
+            $sheet->getStyle('C' . $row_index . ':M' . $row_index)->getFont()->setBold(true);
+            $row_index++;
 
-        $totals_start++;
-        $sheet->setCellValue('A' . $totals_start, 'Category');
-        $sheet->setCellValue('E' . $totals_start, 'Total Registrations');
-        $sheet->getStyle('A' . $totals_start . ':E' . $totals_start)->getFont()->setBold(true);
+            $sheet->setCellValue('B' . $row_index, 'TOTAL');
+            $sheet->setCellValue('C' . $row_index, (int) $grand['full_day']['full_week']);
+            $sheet->setCellValue('D' . $row_index, (int) $grand['full_day']['buyclub']);
+            $sheet->setCellValue('E' . $row_index, (int) $grand['full_day']['individual_day_slots']);
+            $sheet->setCellValue('K' . $row_index, (int) $grand['mini']['full_week']);
+            $sheet->setCellValue('L' . $row_index, (int) $grand['mini']['buyclub']);
+            $sheet->setCellValue('M' . $row_index, (int) $grand['mini']['individual_day_slots']);
+            $sheet->getStyle('B' . $row_index . ':M' . $row_index)->getFont()->setBold(true);
+            $row_index++;
 
-        $totals_start++;
-        $sheet->setCellValue('A' . $totals_start, 'Full Day Camps');
-        $sheet->setCellValue('E' . $totals_start, $camp_player_registration_totals !== null
-            ? (int) $camp_player_registration_totals['full_day']
-            : (isset($totals['full_day']['unique_records']) ? $totals['full_day']['unique_records'] : $totals['full_day']['total']));
-
-        $totals_start++;
-        $sheet->setCellValue('A' . $totals_start, 'Mini - Half Day Camps');
-        $sheet->setCellValue('E' . $totals_start, $camp_player_registration_totals !== null
-            ? (int) $camp_player_registration_totals['mini']
-            : (isset($totals['mini']['unique_records']) ? $totals['mini']['unique_records'] : $totals['mini']['total']));
-
-        $totals_start++;
-        $sheet->setCellValue('A' . $totals_start, 'All Camps');
-        $sheet->getStyle('A' . $totals_start)->getFont()->setBold(true);
-        $sheet->setCellValue('E' . $totals_start, $camp_player_registration_totals !== null
-            ? (int) $camp_player_registration_totals['all']
-            : (isset($totals['all']['unique_records']) ? $totals['all']['unique_records'] : $totals['all']['total']));
+            $sheet->setCellValue('B' . $row_index, 'All registrations');
+            $sheet->setCellValue('C' . $row_index, (int) $grand['full_day']['all_registrations']);
+            $sheet->setCellValue('E' . $row_index, (int) $grand['full_day']['individual_day_slots']);
+            $sheet->setCellValue('K' . $row_index, (int) $grand['mini']['all_registrations']);
+            $sheet->setCellValue('M' . $row_index, (int) $grand['mini']['individual_day_slots']);
+            $sheet->getStyle('B' . $row_index . ':M' . $row_index)->getFont()->setBold(true);
+        }
     } else {
         // Course Excel headers
         $headers = array(
@@ -157,7 +206,8 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
             'Course Name',
             'Course Day',
             'Times',
-            'Registrations'
+            'Registrations',
+            'Urgency',
         );
         $sheet->fromArray($headers, null, 'A1');
 
@@ -172,20 +222,39 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
         // Course Excel data
         $row_index = 2;
         foreach ($report_data as $region => $venues) {
-            if ($region === '__player_registration_totals__') {
+            if ($region === '__player_registration_totals__' || !is_array($venues)) {
                 continue;
             }
             foreach ($venues as $venue => $course_rows) {
+                if (!is_array($course_rows)) {
+                    continue;
+                }
                 foreach ($course_rows as $course_data) {
+                    if (!is_array($course_data)) {
+                        continue;
+                    }
+                    if ($urgency_only && function_exists('intersoccer_reports_course_row_is_urgent')
+                        && !intersoccer_reports_course_row_is_urgent($course_data)) {
+                        continue;
+                    }
+                    $regs = (int) ($course_data['registrations'] ?? 0);
+                    $band = function_exists('intersoccer_reports_urgency_band')
+                        ? intersoccer_reports_urgency_band($regs)
+                        : 'count-critical';
                     $excel_row = array(
                         $region,
                         $venue,
                         $course_data['course_name'] ?? 'Unknown',
                         $course_data['course_day'] ?? 'Unknown',
                         $course_data['times'] ?? '-',
-                        $course_data['registrations']
+                        $regs,
+                        function_exists('intersoccer_reports_urgency_band_label')
+                            ? intersoccer_reports_urgency_band_label($band)
+                            : $band,
                     );
                     $sheet->fromArray($excel_row, null, 'A' . $row_index);
+                    intersoccer_reports_excel_apply_urgency_fill($sheet, 'F' . $row_index, $band);
+                    intersoccer_reports_excel_apply_urgency_fill($sheet, 'G' . $row_index, $band);
                     $row_index++;
                 }
             }
@@ -240,8 +309,9 @@ function intersoccer_export_final_reports_callback() {
     $region = isset($_POST['region']) ? sanitize_text_field($_POST['region']) : null;
     $exclude_buyclub = !empty($_POST['exclude_buyclub']);
     $live = !empty($_POST['live']);
+    $urgency_only = !empty($_POST['urgency_only']);
 
-    $result = intersoccer_office365_generate_final_reports_xlsx($year, $activity_type, $season_type, $region, $exclude_buyclub, $live);
+    $result = intersoccer_office365_generate_final_reports_xlsx($year, $activity_type, $season_type, $region, $exclude_buyclub, $live, $urgency_only);
     if (!$result) {
         wp_send_json_error(__('Failed to generate report.', 'intersoccer-reports-rosters'));
     }

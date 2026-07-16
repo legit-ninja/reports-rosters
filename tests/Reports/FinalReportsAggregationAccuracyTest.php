@@ -162,8 +162,111 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
 
         $included = intersoccer_reports_aggregate_camp_location_group($group, false);
         $excluded = intersoccer_reports_aggregate_camp_location_group($group, true);
-        $this->assertSame(2, $included['full_week']);
+        $this->assertSame(1, $included['full_week']);
+        $this->assertSame(1, $included['buyclub']);
         $this->assertSame(1, $excluded['full_week']);
+        $this->assertSame(0, $excluded['buyclub']);
+        // Min-max base includes BuyClub: min = FW+BC, max = FW+BC+peak singles.
+        $this->assertSame('2-2', $included['min_max']);
+        $this->assertSame('1-1', $excluded['min_max']);
+    }
+
+    public function test_camp_min_max_uses_fw_plus_buyclub_and_peak_singles() {
+        $this->skipIfMissingHelpers();
+
+        $group = [
+            [
+                'order_item_id' => 1,
+                'booking_type' => 'Full Week',
+                'is_buyclub' => false,
+            ],
+            [
+                'order_item_id' => 2,
+                'booking_type' => 'Full Week',
+                'is_buyclub' => true,
+                'line_subtotal' => 100,
+                'line_total' => 0,
+            ],
+            [
+                'order_item_id' => 3,
+                'booking_type' => 'Single Days',
+                'selected_days' => 'Wednesday',
+                'is_buyclub' => false,
+            ],
+            [
+                'order_item_id' => 4,
+                'booking_type' => 'Single Days',
+                'selected_days' => 'Wednesday',
+                'is_buyclub' => false,
+            ],
+            [
+                'order_item_id' => 5,
+                'booking_type' => 'Single Days',
+                'selected_days' => 'Monday',
+                'is_buyclub' => false,
+            ],
+        ];
+
+        // min = 1 FW + 1 BC = 2; max = 2 + peak Wed(2) = 4
+        $agg = intersoccer_reports_aggregate_camp_location_group($group, false);
+        $this->assertSame(1, $agg['full_week']);
+        $this->assertSame(1, $agg['buyclub']);
+        $this->assertSame(2, $agg['individual_days']['Wednesday']);
+        $this->assertSame(1, $agg['individual_days']['Monday']);
+        $this->assertSame('2-4', $agg['min_max']);
+    }
+
+    public function test_camp_grand_totals_match_workbook_formulas() {
+        $this->skipIfMissingHelpers();
+        if (!function_exists('intersoccer_reports_camp_grand_totals')) {
+            $this->markTestSkipped('intersoccer_reports_camp_grand_totals not loaded');
+        }
+
+        $report = [
+            'July 13 - July 17, 2026' => [
+                'Geneva' => [
+                    'Varembe' => [
+                        'Full Day' => [
+                            'full_week' => 10,
+                            'buyclub' => 3,
+                            'individual_days' => [
+                                'Monday' => 5,
+                                'Tuesday' => 7,
+                                'Wednesday' => 2,
+                                'Thursday' => 1,
+                                'Friday' => 0,
+                            ],
+                            'min_max' => '10-17',
+                            'unique_records' => 20,
+                        ],
+                        'Mini - Half Day' => [
+                            'full_week' => 6,
+                            'buyclub' => 1,
+                            'individual_days' => [
+                                'Monday' => 1,
+                                'Tuesday' => 0,
+                                'Wednesday' => 0,
+                                'Thursday' => 0,
+                                'Friday' => 0,
+                            ],
+                            'min_max' => '6-7',
+                            'unique_records' => 7,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $grand = intersoccer_reports_camp_grand_totals($report, false);
+        $this->assertSame(10, $grand['full_day']['full_week']);
+        $this->assertSame(3, $grand['full_day']['buyclub']);
+        $this->assertSame(15, $grand['full_day']['individual_day_slots']);
+        $this->assertSame(13, $grand['full_day']['all_registrations']);
+        $this->assertSame(6, $grand['mini']['full_week']);
+        $this->assertSame(1, $grand['mini']['buyclub']);
+        $this->assertSame(1, $grand['mini']['individual_day_slots']);
+        $this->assertSame(7, $grand['mini']['all_registrations']);
+        $this->assertArrayNotHasKey('pitchside', $grand['full_day']);
     }
 
     public function test_summer_season_filter_keeps_summer_drops_winter() {
@@ -346,7 +449,8 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
 
         $excel_total = 0;
         foreach ($excel_rows as $row) {
-            $excel_total += (int) $row[11];
+            // Index 12 = All registrations (Full Week + BuyClub), not FW+sum(days).
+            $excel_total += (int) $row[12];
         }
 
         $cell_total = 0;
@@ -357,7 +461,8 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
             foreach ($cantons as $venues) {
                 foreach ($venues as $camp_types) {
                     foreach ($camp_types as $data) {
-                        $cell_total += (int) $data['full_week'] + array_sum($data['individual_days']);
+                        $cell_total += (int) ($data['full_week'] ?? 0)
+                            + (int) ($data['buyclub'] ?? 0);
                     }
                 }
             }
@@ -365,5 +470,212 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
 
         $this->assertSame($cell_total, $excel_total);
         $this->assertGreaterThan(0, $excel_total);
+    }
+
+    public function test_camp_girls_only_separate_venue_grouping() {
+        $this->skipIfMissingHelpers();
+
+        $entries = [
+            [
+                'order_item_id' => 1,
+                'booking_type' => 'Full Week',
+                'age_group' => '6-9y Full Day',
+                'canton' => 'Geneva',
+                'venue' => 'Venue A',
+                'event_start_date' => '2026-07-06',
+                'event_end_date' => '2026-07-10',
+                'is_buyclub' => false,
+                'girls_only' => 0,
+                'line_subtotal' => 100,
+                'line_total' => 100,
+            ],
+            [
+                'order_item_id' => 2,
+                'booking_type' => 'Full Week',
+                'age_group' => '6-9y Full Day',
+                'canton' => 'Geneva',
+                'venue' => 'Venue A',
+                'event_start_date' => '2026-07-06',
+                'event_end_date' => '2026-07-10',
+                'is_buyclub' => false,
+                'girls_only' => 1,
+                'line_subtotal' => 100,
+                'line_total' => 100,
+            ],
+            [
+                'order_item_id' => 3,
+                'booking_type' => 'Single Days',
+                'selected_days' => 'Monday',
+                'age_group' => '6-9y Full Day',
+                'canton' => 'Geneva',
+                'venue' => 'Venue A',
+                'event_start_date' => '2026-07-06',
+                'event_end_date' => '2026-07-10',
+                'is_buyclub' => false,
+                'girls_only' => 0,
+                'line_subtotal' => 50,
+                'line_total' => 50,
+            ],
+        ];
+
+        $report = intersoccer_reports_build_camp_report_from_entries($entries, false, 2026);
+        $week_key = 'July 6 - July 10, 2026';
+
+        $this->assertArrayHasKey($week_key, $report);
+        $venues = $report[$week_key]['Geneva'];
+        $this->assertArrayHasKey('Venue A', $venues, 'Regular venue row should exist');
+        $this->assertArrayHasKey('Venue A (Girls Only)', $venues, 'Girls-only venue row should exist');
+
+        $regular = $venues['Venue A']['Full Day'];
+        $girls = $venues['Venue A (Girls Only)']['Full Day'];
+
+        $this->assertSame(1, $regular['full_week']);
+        $this->assertSame(1, $regular['individual_days']['Monday']);
+        $this->assertSame('1-2', $regular['min_max']);
+
+        $this->assertSame(1, $girls['full_week']);
+        $this->assertSame('1-1', $girls['min_max']);
+    }
+
+    public function test_camp_girls_only_via_activity_type_text() {
+        $this->skipIfMissingHelpers();
+
+        $entries = [
+            [
+                'order_item_id' => 1,
+                'booking_type' => 'Full Week',
+                'age_group' => '6-9y Full Day',
+                'canton' => 'Geneva',
+                'venue' => 'Venue B',
+                'event_start_date' => '2026-07-06',
+                'event_end_date' => '2026-07-10',
+                'is_buyclub' => false,
+                'activity_type' => 'Camp, Girls Only',
+                'line_subtotal' => 100,
+                'line_total' => 100,
+            ],
+            [
+                'order_item_id' => 2,
+                'booking_type' => 'Full Week',
+                'age_group' => '6-9y Full Day',
+                'canton' => 'Geneva',
+                'venue' => 'Venue B',
+                'event_start_date' => '2026-07-06',
+                'event_end_date' => '2026-07-10',
+                'is_buyclub' => false,
+                'activity_type' => 'Camp',
+                'line_subtotal' => 100,
+                'line_total' => 100,
+            ],
+        ];
+
+        $report = intersoccer_reports_build_camp_report_from_entries($entries, false, 2026);
+        $week_key = 'July 6 - July 10, 2026';
+        $venues = $report[$week_key]['Geneva'];
+
+        $this->assertArrayHasKey('Venue B', $venues, 'Regular venue row should exist');
+        $this->assertArrayHasKey('Venue B (Girls Only)', $venues, 'Girls-only venue row from activity_type text should exist');
+        $this->assertSame(1, $venues['Venue B']['Full Day']['full_week']);
+        $this->assertSame(1, $venues['Venue B (Girls Only)']['Full Day']['full_week']);
+    }
+
+    public function test_french_camp_terms_slug_parses_to_english_calendar_date_range() {
+        $this->skipIfMissingHelpers();
+        if (!function_exists('intersoccer_parse_camp_dates_fixed')) {
+            $this->markTestSkipped('intersoccer_parse_camp_dates_fixed not loaded');
+        }
+
+        // Regression: French camp_terms slug must group under English calendar Date Range
+        list($start, $end) = intersoccer_parse_camp_dates_fixed(
+            'semaine-dete-4-13-17-juillet-5-jours',
+            'Summer 2026'
+        );
+        $this->assertSame('2026-07-13', $start);
+        $this->assertSame('2026-07-17', $end);
+
+        list($de_start, $de_end) = intersoccer_parse_camp_dates_fixed(
+            'sommer-woche-4-13-17-juli-5-tage',
+            'Summer 2026'
+        );
+        $this->assertSame('2026-07-13', $de_start);
+        $this->assertSame('2026-07-17', $de_end);
+
+        $report = intersoccer_reports_build_camp_report_from_entries([
+            [
+                'order_item_id' => 901,
+                'booking_type' => 'Full Week',
+                'selected_days' => '',
+                'age_group' => '6-9y',
+                'canton' => 'Geneva',
+                'venue' => 'Venue A',
+                'camp_terms' => 'semaine-dete-4-13-17-juillet-5-jours',
+                'season' => 'Summer 2026',
+                'event_start_date' => '',
+                'event_end_date' => '',
+                'is_buyclub' => false,
+                'line_subtotal' => 100,
+                'line_total' => 100,
+            ],
+        ], false, 2026);
+
+        $this->assertArrayHasKey('July 13 - July 17, 2026', $report);
+        $this->assertArrayNotHasKey('semaine-dete-4-13-17-juillet-5-jours', $report);
+        $this->assertSame(1, $report['July 13 - July 17, 2026']['Geneva']['Venue A']['Full Day']['full_week']);
+    }
+
+    public function test_camp_date_groups_sorted_chronologically() {
+        $this->skipIfMissingHelpers();
+
+        $entries = [
+            [
+                'order_item_id' => 1,
+                'booking_type' => 'Full Week',
+                'age_group' => '6-9y Full Day',
+                'canton' => 'Geneva',
+                'venue' => 'Venue A',
+                'event_start_date' => '2026-07-13',
+                'event_end_date' => '2026-07-17',
+                'is_buyclub' => false,
+                'line_subtotal' => 100,
+                'line_total' => 100,
+            ],
+            [
+                'order_item_id' => 2,
+                'booking_type' => 'Full Week',
+                'age_group' => '6-9y Full Day',
+                'canton' => 'Geneva',
+                'venue' => 'Venue B',
+                'event_start_date' => '2026-06-29',
+                'event_end_date' => '2026-07-03',
+                'is_buyclub' => false,
+                'line_subtotal' => 100,
+                'line_total' => 100,
+            ],
+            [
+                'order_item_id' => 3,
+                'booking_type' => 'Full Week',
+                'age_group' => '6-9y Full Day',
+                'canton' => 'Zurich',
+                'venue' => 'Venue C',
+                'event_start_date' => '2026-07-06',
+                'event_end_date' => '2026-07-10',
+                'is_buyclub' => false,
+                'line_subtotal' => 100,
+                'line_total' => 100,
+            ],
+        ];
+
+        $report = intersoccer_reports_build_camp_report_from_entries($entries, false, 2026);
+
+        $keys = array_keys($report);
+        $keys = array_values(array_filter($keys, function ($k) {
+            return $k !== '__player_registration_totals__';
+        }));
+
+        $this->assertSame([
+            'June 29 - July 3, 2026',
+            'July 6 - July 10, 2026',
+            'July 13 - July 17, 2026',
+        ], $keys, 'Date groups must be in chronological order');
     }
 }

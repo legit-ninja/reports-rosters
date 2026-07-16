@@ -1024,7 +1024,13 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
         $end_date = null;
         $event_dates = 'N/A';
         $season = $raw_order_item_meta['Season'][0] ?? 'N/A';
-        
+        $season_year = null;
+        if ($season !== 'N/A') {
+            $season_year = function_exists('intersoccer_extract_year_from_season')
+                ? intersoccer_extract_year_from_season($season)
+                : (preg_match('/(\d{4})/', $season, $sy_matches) ? intval($sy_matches[1]) : null);
+        }
+
         if ($activity_type === 'Camp' && $camp_terms !== 'N/A') {
             if (preg_match('/(\w+)-week-\d+-(\w+)-(\d{1,2})-(\w+)-(\d{1,2})-\d+-days/', $camp_terms, $matches)) {
                 $start_month = $matches[2];
@@ -1288,6 +1294,17 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             }
         }
 
+        $girls_only = function_exists('intersoccer_resolve_roster_girls_only_flag')
+            ? intersoccer_resolve_roster_girls_only_flag([
+                'raw_activity_type' => $raw_order_item_meta['Activity Type'][0] ?? $activity_type,
+                'activity_type' => $activity_type,
+                'product_name' => $product_name,
+                'product_id' => $product_id,
+                'variation_id' => $variation_id,
+                'pa_girls-only' => $order_item_meta['pa_girls-only'] ?? $order_item_meta['attribute_pa_girls-only'] ?? '',
+            ])
+            : 0;
+
         $day_presence = ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
         if (strtolower($booking_type) === 'single-days') {
             $days = array_map('trim', explode(',', (string) $selected_days));
@@ -1428,7 +1445,7 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             'final_price' => 0.00,
             'reimbursement' => 0.00,
             'discount_codes' => '',
-            'girls_only' => FALSE,
+            'girls_only' => $girls_only,
         'event_signature' => '',
         'event_completed' => 0,
         ];

@@ -50,22 +50,21 @@ class MenuManager {
     }
 
     /**
-     * Stream underfilled Excel before admin-header.php prints HTML onto the download.
-     *
-     * Registered from register_menus() (Plugin calls that directly; init() is unused).
+     * Stream player camp status Excel before admin-header.php prints HTML.
      */
-    public function maybe_export_underfilled(): void {
+    public function maybe_export_player_camp_status(): void {
         if (empty($_GET['export_excel'])) {
             return;
         }
         $page = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
-        if ($page !== 'intersoccer-underfilled-programs') {
+        if ($page !== 'intersoccer-player-camp-status') {
             return;
         }
 
-        $this->require_include('underfilled-programs.php');
-        if (function_exists('intersoccer_underfilled_maybe_export_excel')) {
-            intersoccer_underfilled_maybe_export_excel();
+        $this->require_include('reports-data.php');
+        $this->require_include('player-camp-status.php');
+        if (function_exists('intersoccer_player_camp_status_maybe_export_excel')) {
+            intersoccer_player_camp_status_maybe_export_excel();
         }
     }
 
@@ -78,7 +77,7 @@ class MenuManager {
 
         // Plugin invokes register_menus() directly (not init()); must register export here
         // so admin_init/load-* fire before admin-header HTML contaminates the .xlsx.
-        add_action('admin_init', [$this, 'maybe_export_underfilled'], 1);
+        add_action('admin_init', [$this, 'maybe_export_player_camp_status'], 1);
 
         add_menu_page(
             __('InterSoccer Reports and Rosters', 'intersoccer-reports-rosters'),
@@ -108,16 +107,16 @@ class MenuManager {
             [$this, 'render_live_snapshot']
         );
 
-        $underfilled_hook = add_submenu_page(
+        $player_camp_status_hook = add_submenu_page(
             'intersoccer-reports-rosters',
-            __('Underfilled programs', 'intersoccer-reports-rosters'),
-            __('Underfilled programs', 'intersoccer-reports-rosters'),
+            __('Player camp status', 'intersoccer-reports-rosters'),
+            __('Player camp status', 'intersoccer-reports-rosters'),
             'manage_options',
-            'intersoccer-underfilled-programs',
-            [$this, 'render_underfilled_programs']
+            'intersoccer-player-camp-status',
+            [$this, 'render_player_camp_status']
         );
-        if (is_string($underfilled_hook) && $underfilled_hook !== '') {
-            add_action('load-' . $underfilled_hook, [$this, 'maybe_export_underfilled']);
+        if (is_string($player_camp_status_hook) && $player_camp_status_hook !== '') {
+            add_action('load-' . $player_camp_status_hook, [$this, 'maybe_export_player_camp_status']);
         }
 
         add_submenu_page(
@@ -290,13 +289,14 @@ class MenuManager {
         wp_die(__('Live Snapshot page is not available.', 'intersoccer-reports-rosters'));
     }
 
-    public function render_underfilled_programs(): void {
-        $this->require_include('underfilled-programs.php');
-        if (function_exists('intersoccer_render_underfilled_programs_page')) {
-            intersoccer_render_underfilled_programs_page();
+    public function render_player_camp_status(): void {
+        $this->require_include('reports-data.php');
+        $this->require_include('player-camp-status.php');
+        if (function_exists('intersoccer_render_player_camp_status_page')) {
+            intersoccer_render_player_camp_status_page();
             return;
         }
-        wp_die(__('Underfilled programs page is not available.', 'intersoccer-reports-rosters'));
+        wp_die(__('Player camp status page is not available.', 'intersoccer-reports-rosters'));
     }
 
     public function render_reports(): void {

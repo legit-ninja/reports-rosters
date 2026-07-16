@@ -11,63 +11,83 @@ if (!function_exists('intersoccer_migration_human_alias_map')) {
     /**
      * Map canonical metadata identifiers to their human-readable key variants.
      *
+     * Delegates to the PV attribute registry via the bridge when available;
+     * falls back to a static map otherwise.
+     *
      * @return array<string,array<int,string>>
      */
     function intersoccer_migration_human_alias_map() {
-        return [
-            'intersoccer_venues' => [
-                'Sites InterSoccer',
-                'InterSoccer Venues',
-                'Lieux InterSoccer',
-            ],
-            'age_group' => [
-                'Age Group',
-                "Groupe d'âge",
-                'Groupe dage',
-            ],
-            'camp_terms' => [
-                'Camp Terms',
-                'Conditions du camp',
-            ],
-            'course_day' => [
-                'Course Day',
-                'Jour de cours',
-            ],
-            'course_times' => [
-                'Course Times',
-                'Horaires du cours',
-            ],
-            'camp_times' => [
-                'Camp Times',
-                'Horaires du camp',
-            ],
-            'activity_type' => [
-                'Activity Type',
-                "Type d'activité",
-            ],
-            'season' => [
-                'Season',
-                'Saison',
-            ],
-            'booking_type' => [
-                'Booking Type',
-                'Type de réservation',
-                'Buchungstyp',
-            ],
-            'selected_days' => [
-                'Days Selected',
-                'Jours sélectionnés',
-                'Ausgewählte Tage',
-            ],
-            'canton_region' => [
-                'Canton / Region',
-                'Canton / Région',
-            ],
-            'city' => [
-                'City',
-                'Ville',
-            ],
+        static $map = null;
+        if ($map !== null) {
+            return $map;
+        }
+
+        $internal_to_slug = [
+            'intersoccer_venues' => 'intersoccer-venues',
+            'age_group'          => 'age-group',
+            'camp_terms'         => 'camp-terms',
+            'course_day'         => 'course-day',
+            'course_times'       => 'course-times',
+            'camp_times'         => 'camp-times',
+            'activity_type'      => 'activity-type',
+            'season'             => 'program-season',
+            'booking_type'       => 'booking-type',
+            'selected_days'      => null,
+            'canton_region'      => 'canton-region',
+            'city'               => 'city',
         ];
+
+        if (!function_exists('intersoccer_reports_attr_legacy_order_meta_labels')
+            || !function_exists('intersoccer_reports_attr_order_meta_label')) {
+            $contract = dirname(__FILE__) . '/attribute-contract.php';
+            if (is_readable($contract)) {
+                require_once $contract;
+            }
+        }
+
+        $can_bridge = function_exists('intersoccer_reports_attr_legacy_order_meta_labels')
+            && function_exists('intersoccer_reports_attr_order_meta_label');
+
+        $map = [];
+        foreach ($internal_to_slug as $internal => $slug) {
+            if ($slug !== null && $can_bridge) {
+                $canonical_label = intersoccer_reports_attr_order_meta_label($slug);
+                $legacy = intersoccer_reports_attr_legacy_order_meta_labels($slug);
+                if ($canonical_label !== '') {
+                    $map[$internal] = array_merge([$canonical_label], $legacy);
+                    continue;
+                }
+            }
+
+            $map[$internal] = intersoccer_migration_human_alias_map_static_fallback($internal);
+        }
+
+        return $map;
+    }
+}
+
+if (!function_exists('intersoccer_migration_human_alias_map_static_fallback')) {
+    /**
+     * @param string $internal
+     * @return array<int,string>
+     */
+    function intersoccer_migration_human_alias_map_static_fallback($internal) {
+        static $fallback = [
+            'intersoccer_venues' => ['Sites InterSoccer', 'InterSoccer Venues', 'Lieux InterSoccer'],
+            'age_group'          => ['Age Group', "Groupe d'âge", 'Groupe dage'],
+            'camp_terms'         => ['Camp Terms', 'Conditions du camp'],
+            'course_day'         => ['Course Day', 'Jour de cours'],
+            'course_times'       => ['Course Times', 'Horaires du cours'],
+            'camp_times'         => ['Camp Times', 'Horaires du camp'],
+            'activity_type'      => ['Activity Type', "Type d'activité"],
+            'season'             => ['Season', 'Saison'],
+            'booking_type'       => ['Booking Type', 'Type de réservation', 'Buchungstyp'],
+            'selected_days'      => ['Days Selected', 'Jours sélectionnés', 'Ausgewählte Tage'],
+            'canton_region'      => ['Canton / Region', 'Canton / Région'],
+            'city'               => ['City', 'Ville'],
+        ];
+
+        return $fallback[$internal] ?? [];
     }
 }
 

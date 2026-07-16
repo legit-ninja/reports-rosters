@@ -40,6 +40,8 @@
             <file>tests/Core/LoggerTest.php</file>
             <file>tests/Reports/FinalReportsTotalsTest.php</file>
             <file>tests/Reports/FinalReportsAggregationAccuracyTest.php</file>
+            <file>tests/Reports/FinalReportsUrgencyTest.php</file>
+            <file>tests/Reports/PlayerCampStatusTest.php</file>
         </testsuite>
         
         <!-- Complete Test Suite - All tests including experimental -->
