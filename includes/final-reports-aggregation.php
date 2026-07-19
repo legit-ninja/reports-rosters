@@ -306,11 +306,26 @@ if (!function_exists('intersoccer_reports_build_camp_report_from_entries')) {
             if ($ct !== '' && $ct !== 'N/A' && function_exists('intersoccer_reports_normalize_camp_terms_for_dates')) {
                 $ct = intersoccer_reports_normalize_camp_terms_for_dates($ct);
             }
-            if (($esd === '' || $esd === '1970-01-01' || $esd === '0000-00-00') && $ct !== '' && $ct !== 'N/A' && function_exists('intersoccer_parse_camp_dates_fixed')) {
-                $season_for_parse = $entry['season'] ?? '';
-                list($parsed_from_terms_start, $parsed_from_terms_end, $_ignored_ev) = intersoccer_parse_camp_dates_fixed($ct, $season_for_parse);
-                if (!empty($parsed_from_terms_start) && $parsed_from_terms_start !== '1970-01-01' && $parsed_from_terms_start !== '0000-00-00') {
-                    $esd = $parsed_from_terms_start;
+            if (($esd === '' || $esd === '1970-01-01' || $esd === '0000-00-00')) {
+                $vid = isset($entry['variation_id']) ? (int) $entry['variation_id'] : 0;
+                $oid = isset($entry['order_item_id']) ? (int) $entry['order_item_id'] : 0;
+                if (function_exists('intersoccer_reports_resolve_camp_schedule') && ($vid > 0 || $ct !== '')) {
+                    $season_for_parse = $entry['season'] ?? '';
+                    list($parsed_from_terms_start, $parsed_from_terms_end) = intersoccer_reports_resolve_camp_schedule(
+                        $vid,
+                        $oid,
+                        $ct,
+                        $season_for_parse
+                    );
+                    if (!empty($parsed_from_terms_start) && $parsed_from_terms_start !== '1970-01-01' && $parsed_from_terms_start !== '0000-00-00') {
+                        $esd = $parsed_from_terms_start;
+                    }
+                } elseif ($ct !== '' && $ct !== 'N/A' && function_exists('intersoccer_parse_camp_dates_fixed')) {
+                    $season_for_parse = $entry['season'] ?? '';
+                    list($parsed_from_terms_start, $parsed_from_terms_end, $_ignored_ev) = intersoccer_parse_camp_dates_fixed($ct, $season_for_parse);
+                    if (!empty($parsed_from_terms_start) && $parsed_from_terms_start !== '1970-01-01' && $parsed_from_terms_start !== '0000-00-00') {
+                        $esd = $parsed_from_terms_start;
+                    }
                 }
             }
             if ($esd === '' || $esd === '1970-01-01' || $esd === '0000-00-00') {

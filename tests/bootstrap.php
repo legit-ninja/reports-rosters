@@ -165,6 +165,31 @@ if (!function_exists('set_transient')) {
 if (!function_exists('delete_transient')) {
     function delete_transient($transient) { return true; }
 }
+if (!class_exists('InterSoccerRRTestMeta')) {
+    class InterSoccerRRTestMeta {
+        public static $data = [];
+    }
+}
+if (!function_exists('get_post_meta')) {
+    function get_post_meta($post_id, $key = '', $single = false) {
+        if ($key !== '' && isset(InterSoccerRRTestMeta::$data[$post_id][$key])) {
+            return InterSoccerRRTestMeta::$data[$post_id][$key];
+        }
+        return $single ? '' : [];
+    }
+}
+if (!function_exists('update_post_meta')) {
+    function update_post_meta($post_id, $key, $value) {
+        InterSoccerRRTestMeta::$data[$post_id][$key] = $value;
+        return true;
+    }
+}
+if (!function_exists('delete_post_meta')) {
+    function delete_post_meta($post_id, $key) {
+        unset(InterSoccerRRTestMeta::$data[$post_id][$key]);
+        return true;
+    }
+}
 if (!function_exists('wp_cache_flush')) {
     function wp_cache_flush() { return true; }
 }

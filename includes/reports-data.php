@@ -405,9 +405,24 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                     
                     $event_start_date = null;
                     $event_end_date = null;
-                    
-                    // Method 1: Try parsing from camp_terms
-                    if (!empty($camp_terms) && $camp_terms !== 'N/A') {
+                    $variation_id = isset($roster['variation_id']) ? (int) $roster['variation_id'] : 0;
+
+                    // Prefer structured camp schedule meta (variation / order item), then deprecated terms parse.
+                    if (function_exists('intersoccer_reports_resolve_camp_schedule')) {
+                        list($resolved_start, $resolved_end) = intersoccer_reports_resolve_camp_schedule(
+                            $variation_id,
+                            $order_item_id,
+                            $camp_terms,
+                            $season
+                        );
+                        if (!empty($resolved_start) && $resolved_start !== '1970-01-01') {
+                            $event_start_date = $resolved_start;
+                            $event_end_date = $resolved_end ?: $resolved_start;
+                        }
+                    }
+
+                    // Method 1: Try parsing from camp_terms (legacy path if helper unavailable)
+                    if (empty($event_start_date) && !empty($camp_terms) && $camp_terms !== 'N/A') {
                         if (function_exists('intersoccer_reports_normalize_camp_terms_for_dates')) {
                             $camp_terms = intersoccer_reports_normalize_camp_terms_for_dates($camp_terms);
                         }
@@ -576,8 +591,19 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 $camp_terms = intersoccer_reports_normalize_camp_terms_for_dates($camp_terms);
                 $roster['camp_terms'] = $camp_terms;
             }
-            
-            list($event_start_date, $event_end_date, $event_dates) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
+
+            $variation_id = isset($roster['variation_id']) ? (int) $roster['variation_id'] : 0;
+            $order_item_id_for_sched = $roster['order_item_id'] ?? null;
+            if (function_exists('intersoccer_reports_resolve_camp_schedule')) {
+                list($event_start_date, $event_end_date, $event_dates) = intersoccer_reports_resolve_camp_schedule(
+                    $variation_id,
+                    $order_item_id_for_sched,
+                    $camp_terms,
+                    $season
+                );
+            } else {
+                list($event_start_date, $event_end_date, $event_dates) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
+            }
             
             // If parsing failed, try to get dates from rosters table as fallback
             if (empty($event_start_date)) {

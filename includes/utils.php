@@ -6063,7 +6063,98 @@ function intersoccer_reports_camp_dates_from_months_days($start_month, $start_da
 }
 
 /**
+ * Resolve camp start/end preferring variation meta, then order-item stamp, then deprecated terms parse.
+ *
+ * @param int         $variation_id  Variation ID (0 if unknown).
+ * @param int|null    $order_item_id Order item ID.
+ * @param string      $camp_terms    Camp terms label/slug.
+ * @param string      $season        Season string.
+ * @return array{0:?string,1:?string,2:string,3:string} start, end, event_dates label, source
+ */
+function intersoccer_reports_resolve_camp_schedule($variation_id, $order_item_id, $camp_terms, $season) {
+    $variation_id  = (int) $variation_id;
+    $order_item_id = $order_item_id ? (int) $order_item_id : 0;
+    $start         = null;
+    $end           = null;
+    $source        = '';
+
+    if ($variation_id > 0) {
+        if (function_exists('intersoccer_get_camp_schedule_meta')) {
+            $meta = intersoccer_get_camp_schedule_meta($variation_id);
+            if (!empty($meta['start'])) {
+                $start  = $meta['start'];
+                $end    = !empty($meta['end']) ? $meta['end'] : $meta['start'];
+                $source = 'variation_meta';
+            }
+        } else {
+            $meta_start = get_post_meta($variation_id, '_camp_start_date', true);
+            $meta_end   = get_post_meta($variation_id, '_camp_end_date', true);
+            if (is_string($meta_start) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $meta_start)) {
+                $start  = $meta_start;
+                $end    = (is_string($meta_end) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $meta_end)) ? $meta_end : $meta_start;
+                $source = 'variation_meta';
+            }
+        }
+    }
+
+    if (empty($start) && $order_item_id && function_exists('wc_get_order_item_meta')) {
+        foreach (['_camp_start_date', 'Camp Start Date'] as $key) {
+            $raw = wc_get_order_item_meta($order_item_id, $key, true);
+            if (is_string($raw) && preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($raw))) {
+                $start = trim($raw);
+                $source = 'order_item_meta';
+                break;
+            }
+        }
+        foreach (['_camp_end_date', 'Camp End Date'] as $key) {
+            $raw = wc_get_order_item_meta($order_item_id, $key, true);
+            if (is_string($raw) && preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($raw))) {
+                $end = trim($raw);
+                break;
+            }
+        }
+        if (!empty($start) && empty($end)) {
+            $end = $start;
+        }
+    }
+
+    if (empty($start) && !empty($camp_terms) && $camp_terms !== 'N/A') {
+        if (function_exists('intersoccer_reports_normalize_camp_terms_for_dates')) {
+            $camp_terms = intersoccer_reports_normalize_camp_terms_for_dates($camp_terms);
+        }
+        list($parsed_start, $parsed_end, $event_dates) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
+        if (!empty($parsed_start) && $parsed_start !== '1970-01-01') {
+            $start  = $parsed_start;
+            $end    = $parsed_end ?: $parsed_start;
+            $source = 'terms_parse';
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                $bucket = 'intersoccer_rr_camp_terms_parse_' . gmdate('YmdH');
+                $count  = (int) get_transient($bucket);
+                if ($count < 20) {
+                    set_transient($bucket, $count + 1, HOUR_IN_SECONDS);
+                    error_log(sprintf(
+                        'InterSoccer RR: DEPRECATED camp-terms date parse (variation=%d). Prefer _camp_start_date.',
+                        $variation_id
+                    ));
+                }
+            }
+            return [$start, $end, $event_dates ?? 'N/A', $source];
+        }
+    }
+
+    $event_dates = 'N/A';
+    if (!empty($start)) {
+        $event_dates = !empty($end) && $end !== $start ? ($start . ' - ' . $end) : $start;
+    }
+
+    return [$start, $end, $event_dates, $source];
+}
+
+/**
  * Parse camp dates from camp_terms string
+ *
+ * @deprecated since RR 2.7.17 / PV 2.7.18 Remove in next major after camp meta migration — prefer intersoccer_reports_resolve_camp_schedule().
+ *
  * @param string $camp_terms The camp terms string
  * @param string $season The season/year
  * @return array [$start_date, $end_date, $event_dates]
