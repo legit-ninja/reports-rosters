@@ -42,6 +42,7 @@
             <file>tests/Reports/FinalReportsAggregationAccuracyTest.php</file>
             <file>tests/Reports/FinalReportsUrgencyTest.php</file>
             <file>tests/Reports/PlayerCampStatusTest.php</file>
+            <file>tests/Campaign/Final15CampaignFixtureTest.php</file>
         </testsuite>
         
         <!-- Complete Test Suite - All tests including experimental -->

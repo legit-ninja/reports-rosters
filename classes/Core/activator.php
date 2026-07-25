@@ -370,6 +370,7 @@ class Activator {
                 'intersoccer_roster_cache',
                 'intersoccer_roster_admin_log',
             ];
+            // intersoccer_campaign_summaries is created lazily via CampaignModule::maybe_create_table()
             
             $validation_results = [];
             foreach ($tables_to_validate as $table) {

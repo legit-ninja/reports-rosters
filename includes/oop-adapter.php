@@ -923,3 +923,23 @@ function intersoccer_order_has_confirmed_rosters($order_id) {
     ));
     return $count > 0;
 }
+
+/**
+ * Rebuild a campaign summary (Campaign Analytics).
+ *
+ * @param int $campaign_id
+ * @return array<string,mixed>|null
+ */
+function intersoccer_oop_rebuild_campaign_summary($campaign_id) {
+    $scheduler = new \InterSoccer\ReportsRosters\Campaign\CampaignRebuildScheduler();
+    return $scheduler->rebuild_campaign((int) $campaign_id);
+}
+
+/**
+ * Resolve campaign booking source (orders|roster).
+ *
+ * @return \InterSoccer\ReportsRosters\Campaign\BookingSourceInterface
+ */
+function intersoccer_oop_get_campaign_booking_source() {
+    return (new \InterSoccer\ReportsRosters\Campaign\CampaignRebuildScheduler())->resolve_source();
+}
