@@ -46,10 +46,15 @@ if (!function_exists('intersoccer_normalize_comparison_string')) {
      * @return string
      */
     function intersoccer_normalize_comparison_string($value) {
-        $normalized = strtolower(trim((string) ($value ?? '')));
+        $normalized = trim((string) ($value ?? ''));
         if ($normalized === '') {
             return '';
         }
+
+        // Decode HTML entities before stripping punctuation so Girls&#039; Only → girls only
+        // instead of girls039 only.
+        $normalized = html_entity_decode($normalized, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $normalized = strtolower($normalized);
 
         if (function_exists('remove_accents')) {
             $normalized = remove_accents($normalized);
@@ -2962,17 +2967,29 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         $medical_conditions = $item_meta['Medical Conditions'] ?? $medical_conditions;
     }
 
-    // Event details with fallbacks
-    $venue = $item_meta['pa_intersoccer-venues'] ?? $item_meta['Sites InterSoccer'] ?? $item_meta['InterSoccer Venues'] ?? '';
-    $age_group = $item_meta['pa_age-group'] ?? $item_meta['Age Group'] ?? '';
-    $camp_terms = $item_meta['pa_camp-terms'] ?? $item_meta['Camp Terms'] ?? '';
+    // Event details with fallbacks (prefer PV language-neutral canonical keys when present).
+    $canonical_str = static function ($raw) {
+        if (function_exists('intersoccer_canonical_order_meta_value_to_string')) {
+            return intersoccer_canonical_order_meta_value_to_string($raw);
+        }
+        return is_scalar($raw) ? trim((string) $raw) : '';
+    };
+    $venue = $canonical_str($item_meta['_intersoccer_canonical_venue'] ?? '')
+        ?: ($item_meta['pa_intersoccer-venues'] ?? $item_meta['Sites InterSoccer'] ?? $item_meta['InterSoccer Venues'] ?? '');
+    $age_group = $canonical_str($item_meta['_intersoccer_canonical_age_group'] ?? '')
+        ?: ($item_meta['pa_age-group'] ?? $item_meta['Age Group'] ?? '');
+    $camp_terms = $canonical_str($item_meta['_intersoccer_canonical_camp_terms'] ?? '')
+        ?: ($item_meta['pa_camp-terms'] ?? $item_meta['Camp Terms'] ?? '');
     $times = $item_meta['pa_camp-times'] ?? $item_meta['pa_course-times'] ?? $item_meta['pa_tournament-time'] ?? $item_meta['Camp Times'] ?? $item_meta['Course Times'] ?? $item_meta['Tournament Time'] ?? '';
-    $booking_type = $item_meta['pa_booking-type'] ?? $item_meta['Booking Type'] ?? '';
+    $booking_type = $canonical_str($item_meta['_intersoccer_canonical_booking_type'] ?? '')
+        ?: ($item_meta['pa_booking-type'] ?? $item_meta['Booking Type'] ?? '');
     $selected_days = $item_meta['Days Selected'] ?? '';
     $season = $item_meta['pa_program-season'] ?? $item_meta['Season'] ?? '';
-    $canton_region = $item_meta['pa_canton-region'] ?? $item_meta['Canton / Region'] ?? '';
+    $canton_region = $canonical_str($item_meta['_intersoccer_canonical_canton'] ?? '')
+        ?: ($item_meta['pa_canton-region'] ?? $item_meta['Canton / Region'] ?? '');
     $city = $item_meta['City'] ?? '';
-    $activity_type = $item_meta['pa_activity-type'] ?? $item_meta['Activity Type'] ?? '';
+    $activity_type = ($item_meta['_intersoccer_canonical_activity_type'] ?? '')
+        ?: ($item_meta['pa_activity-type'] ?? $item_meta['Activity Type'] ?? '');
     $start_date = $item_meta['Start Date'] ?? null;
     $end_date = $item_meta['End Date'] ?? null;
     $event_dates = 'N/A';

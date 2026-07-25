@@ -48,6 +48,10 @@ function intersoccer_get_order_meta_field_map() {
         'Late Pickup Type' => 'late_pickup_type',
         'Late Pickup Days' => 'late_pickup_days',
         'Late Pickup Cost' => 'late_pickup_cost',
+        '_intersoccer_canonical_activity_type' => '_intersoccer_canonical_activity_type',
+        '_intersoccer_canonical_girls_only' => '_intersoccer_canonical_girls_only',
+        '_intersoccer_activity_slug' => '_intersoccer_activity_slug',
+        '_intersoccer_girls_only' => '_intersoccer_girls_only',
     ];
     return $map;
 }
@@ -440,6 +444,94 @@ function intersoccer_order_item_meta_key_is_internal($raw_key): bool {
 }
 
 /**
+ * PV language-neutral canonical order item meta keys => roster field names.
+ *
+ * Prefer these over human labels / pa_* when present (see PV ORDER-META-CONTRACT.md).
+ *
+ * @return array<string,string>
+ */
+function intersoccer_get_canonical_order_meta_field_map() {
+    return [
+        '_intersoccer_canonical_activity_type' => 'activity_type',
+        '_intersoccer_canonical_girls_only' => 'girls_only',
+        '_intersoccer_canonical_booking_type' => 'booking_type',
+        '_intersoccer_canonical_venue' => 'venue',
+        '_intersoccer_canonical_canton' => 'region',
+        '_intersoccer_canonical_age_group' => 'age_group',
+        '_intersoccer_canonical_camp_terms' => 'event_type',
+    ];
+}
+
+/**
+ * Decode a PV canonical JSON slug array (or legacy scalar) to a roster string.
+ *
+ * @param mixed $raw
+ * @return string
+ */
+function intersoccer_canonical_order_meta_value_to_string($raw) {
+    if (is_array($raw)) {
+        $parts = array_values(array_filter(array_map('strval', $raw)));
+        return implode(', ', $parts);
+    }
+    $raw = trim((string) $raw);
+    if ($raw === '') {
+        return '';
+    }
+    if (isset($raw[0]) && $raw[0] === '[') {
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+            $parts = array_values(array_filter(array_map('strval', $decoded)));
+            return implode(', ', $parts);
+        }
+    }
+    return $raw;
+}
+
+/**
+ * Apply PV `_intersoccer_canonical_*` meta onto roster/order_data fields when empty (or always for girls_only/activity_type).
+ *
+ * @param array               $data
+ * @param array<string,mixed> $raw Meta key => value map from the order line.
+ * @return array
+ */
+function intersoccer_apply_canonical_order_item_meta_to_data(array $data, array $raw) {
+    $is_empty = static function ($value) {
+        $value = trim((string) ($value ?? ''));
+        return $value === '' || strcasecmp($value, 'N/A') === 0;
+    };
+
+    foreach (intersoccer_get_canonical_order_meta_field_map() as $meta_key => $field) {
+        if (!array_key_exists($meta_key, $raw)) {
+            continue;
+        }
+        $val = intersoccer_canonical_order_meta_value_to_string($raw[$meta_key]);
+        if ($val === '') {
+            continue;
+        }
+
+        if ($field === 'girls_only') {
+            $data['girls_only'] = in_array($val, ['1', 'yes', 'true'], true) ? 1 : 0;
+            if (in_array($val, ['1', 'yes', 'true'], true)) {
+                $data['pa_girls-only'] = 'girls-only';
+            }
+            continue;
+        }
+
+        if ($field === 'activity_type') {
+            $data['activity_type'] = $val;
+            continue;
+        }
+
+        if (!$is_empty($data[$field] ?? '')) {
+            continue;
+        }
+        $data[$field] = $val;
+    }
+
+    return $data;
+}
+
+/**
  * Convert order item meta value to a scalar string for report/roster enrichment.
  *
  * Nested arrays (e.g. attributed discount breakdowns) are skipped to avoid warnings.
@@ -646,6 +738,8 @@ if (!function_exists('intersoccer_apply_order_item_attribute_meta_to_data')) {
         if (empty($raw)) {
             return $data;
         }
+
+        $data = intersoccer_apply_canonical_order_item_meta_to_data($data, $raw);
 
         $is_empty = static function ($value) {
             $value = trim((string) ($value ?? ''));

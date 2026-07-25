@@ -100,6 +100,37 @@ class FinalReportsMetaTest extends TestCase {
         }
 
         $this->assertTrue(intersoccer_order_item_meta_key_is_internal('_intersoccer_item_discounts'));
+        $this->assertTrue(intersoccer_order_item_meta_key_is_internal('_intersoccer_canonical_booking_type'));
         $this->assertFalse(intersoccer_order_item_meta_key_is_internal('Days Selected'));
+    }
+
+    public function test_canonical_order_meta_value_to_string_decodes_json_array(): void {
+        if (!function_exists('intersoccer_canonical_order_meta_value_to_string')) {
+            $this->markTestSkipped();
+        }
+        $this->assertSame('full-week', intersoccer_canonical_order_meta_value_to_string('["full-week"]'));
+        $this->assertSame('3-5y-half-day, 5-13y-full-day', intersoccer_canonical_order_meta_value_to_string('["3-5y-half-day","5-13y-full-day"]'));
+    }
+
+    public function test_apply_canonical_order_item_meta_to_data_prefers_machine_keys(): void {
+        if (!function_exists('intersoccer_apply_canonical_order_item_meta_to_data')) {
+            $this->markTestSkipped();
+        }
+        $data = intersoccer_apply_canonical_order_item_meta_to_data([
+            'booking_type' => '',
+            'venue' => '',
+            'activity_type' => '',
+        ], [
+            '_intersoccer_canonical_booking_type' => '["full-week"]',
+            '_intersoccer_canonical_venue' => '["geneva"]',
+            '_intersoccer_canonical_activity_type' => 'camp',
+            '_intersoccer_canonical_girls_only' => '1',
+        ]);
+
+        $this->assertSame('full-week', $data['booking_type']);
+        $this->assertSame('geneva', $data['venue']);
+        $this->assertSame('camp', $data['activity_type']);
+        $this->assertSame(1, $data['girls_only']);
+        $this->assertSame('girls-only', $data['pa_girls-only']);
     }
 }
