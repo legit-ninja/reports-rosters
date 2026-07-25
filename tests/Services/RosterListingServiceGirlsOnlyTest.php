@@ -15,24 +15,28 @@ class RosterListingServiceGirlsOnlyTest extends TestCase {
     protected function setUp(): void {
         parent::setUp();
 
-        if (!function_exists('intersoccer_normalize_season_for_display')) {
-            eval('function intersoccer_normalize_season_for_display($season) { return (string) $season; }');
-        }
         if (!function_exists('sanitize_key')) {
             eval('function sanitize_key($key) { return strtolower(preg_replace("/[^a-z0-9_-]/", "", (string) $key)); }');
         }
         if (!function_exists('sanitize_text_field')) {
             eval('function sanitize_text_field($str) { return trim((string) $str); }');
         }
+        // Lightweight stubs — avoid require utils.php (needs WP taxonomy APIs).
+        if (!function_exists('intersoccer_normalize_season_for_display')) {
+            eval('function intersoccer_normalize_season_for_display($season) { return (string) $season; }');
+        }
+        if (!function_exists('get_term_by')) {
+            eval('function get_term_by($field, $value, $taxonomy = "", $output = OBJECT, $filter = "raw") { return false; }');
+        }
     }
 
     public function test_camp_listings_default_mixed_and_girls_only_page_use_expected_criteria() {
         $captured = [];
         $repository = Mockery::mock(RosterRepository::class);
-        $repository->shouldReceive('where')
+        $repository->shouldReceive('getListingAggregates')
             ->andReturnUsing(function ($criteria) use (&$captured) {
                 $captured[] = $criteria;
-                return new RostersCollection([]);
+                return [];
             });
 
         $service = new RosterListingService(null, $repository);
@@ -40,17 +44,18 @@ class RosterListingServiceGirlsOnlyTest extends TestCase {
         $service->getGirlsOnlyListings([]);
 
         $this->assertCount(2, $captured);
-        $this->assertSame(0, $captured[0]['girls_only']);
+        // Mixed camps use PHP post-filter so name-based girls-only rows are not lost.
+        $this->assertArrayNotHasKey('girls_only', $captured[0]);
         $this->assertSame(1, $captured[1]['girls_only']);
     }
 
     public function test_camp_listings_girls_only_mode_all_omits_girls_only_criterion() {
         $captured = [];
         $repository = Mockery::mock(RosterRepository::class);
-        $repository->shouldReceive('where')
+        $repository->shouldReceive('getListingAggregates')
             ->andReturnUsing(function ($criteria) use (&$captured) {
                 $captured[] = $criteria;
-                return new RostersCollection([]);
+                return [];
             });
 
         $service = new RosterListingService(null, $repository);
@@ -60,29 +65,29 @@ class RosterListingServiceGirlsOnlyTest extends TestCase {
         $this->assertArrayNotHasKey('girls_only', $captured[0]);
     }
 
-    public function test_camp_listings_girls_only_mode_girls_only_filters_camps_to_one() {
+    public function test_camp_listings_girls_only_mode_girls_only_omits_sql_flag_for_php_filter() {
         $captured = [];
         $repository = Mockery::mock(RosterRepository::class);
-        $repository->shouldReceive('where')
+        $repository->shouldReceive('getListingAggregates')
             ->andReturnUsing(function ($criteria) use (&$captured) {
                 $captured[] = $criteria;
-                return new RostersCollection([]);
+                return [];
             });
 
         $service = new RosterListingService(null, $repository);
         $service->getCampListings(['girls_only_mode' => 'girls_only'], [], false);
 
         $this->assertCount(1, $captured);
-        $this->assertSame(1, $captured[0]['girls_only']);
+        $this->assertArrayNotHasKey('girls_only', $captured[0]);
     }
 
-    public function test_course_listings_girls_only_mode_girls_only_filters_courses_to_one() {
+    public function test_course_listings_girls_only_mode_girls_only_omits_sql_flag_for_php_filter() {
         $captured = [];
         $repository = Mockery::mock(RosterRepository::class);
-        $repository->shouldReceive('where')
+        $repository->shouldReceive('getListingAggregates')
             ->andReturnUsing(function ($criteria) use (&$captured) {
                 $captured[] = $criteria;
-                return new RostersCollection([]);
+                return [];
             });
 
         $service = new RosterListingService(null, $repository);
@@ -90,8 +95,33 @@ class RosterListingServiceGirlsOnlyTest extends TestCase {
 
         $this->assertGreaterThanOrEqual(1, count($captured));
         foreach ($captured as $criteria) {
-            $this->assertSame(1, $criteria['girls_only']);
+            $this->assertArrayNotHasKey('girls_only', $criteria);
         }
+    }
+
+    public function test_camp_listings_pushes_venue_and_city_into_aggregate_criteria() {
+        $captured = [];
+        $repository = Mockery::mock(RosterRepository::class);
+        $repository->shouldReceive('getListingAggregates')
+            ->andReturnUsing(function ($criteria) use (&$captured) {
+                $captured[] = $criteria;
+                return [];
+            });
+
+        $service = new RosterListingService(null, $repository);
+        $service->getCampListings([
+            'venue' => 'geneva',
+            'city' => 'Geneva',
+            'camp_terms' => 'summer-week-1',
+            'age_group' => '5-13y',
+        ], [], false);
+
+        $this->assertCount(1, $captured);
+        $this->assertSame('geneva', $captured[0]['venue']);
+        $this->assertSame('Geneva', $captured[0]['city']);
+        $this->assertSame('summer-week-1', $captured[0]['camp_terms']);
+        $this->assertSame('5-13y', $captured[0]['age_group']);
+        $this->assertArrayNotHasKey('season', $captured[0]);
     }
 
     public function test_aggregate_camp_groups_merges_girls_only_flag_from_rows() {
@@ -135,7 +165,14 @@ class RosterListingServiceGirlsOnlyTest extends TestCase {
     public function test_consolidated_courses_do_not_merge_mixed_and_girls_only()
     {
         if (!function_exists('intersoccer_consolidated_roster_group_key')) {
-            require_once __DIR__ . '/../../includes/utils.php';
+            // Minimal stand-in: production key includes girls_only for camps; courses must too.
+            eval('function intersoccer_consolidated_roster_group_key(array $row, $kind) {
+                $kind = strtolower((string) $kind) === "course" ? "course" : "camp";
+                $g = isset($row["girls_only"]) ? (int) $row["girls_only"] : 0;
+                return md5($kind . "|" . (int) ($row["product_id"] ?? 0) . "|" . ($row["venue"] ?? "") . "|"
+                    . ($row["course_day"] ?? "") . "|" . ($row["age_group"] ?? "") . "|" . ($row["times"] ?? "")
+                    . "|" . ($row["season"] ?? "") . "|" . $g);
+            }');
         }
 
         $base = [

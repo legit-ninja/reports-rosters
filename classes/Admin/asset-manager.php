@@ -73,9 +73,11 @@ class AssetManager {
         // Roster listing pages (tabs + close/reopen actions)
         $roster_pages = [
             'intersoccer-reports-rosters_page_intersoccer-all-rosters',
+            'intersoccer-reports-rosters_page_intersoccer-rosters',
             'intersoccer-reports-rosters_page_intersoccer-camps',
             'intersoccer-reports-rosters_page_intersoccer-courses',
             'intersoccer-reports-rosters_page_intersoccer-girls-only',
+            'intersoccer-reports-rosters_page_intersoccer-tournaments',
             'intersoccer-reports-rosters_page_intersoccer-other-events',
             'intersoccer-reports-rosters_page_intersoccer-birthdays',
         ];
@@ -138,7 +140,13 @@ class AssetManager {
             $screen_id === 'intersoccer-reports-rosters_page_intersoccer-roster-sync-queue'
             || $screen_id === 'reports-and-rosters_page_intersoccer-roster-sync-queue'
             || $hook === 'intersoccer-reports-rosters_page_intersoccer-roster-sync-queue'
-            || $hook === 'reports-and-rosters_page_intersoccer-roster-sync-queue';
+            || $hook === 'reports-and-rosters_page_intersoccer-roster-sync-queue'
+            || (
+                ($screen_id === 'intersoccer-reports-rosters_page_intersoccer-advanced'
+                    || $hook === 'intersoccer-reports-rosters_page_intersoccer-advanced')
+                && isset($_GET['tab'])
+                && sanitize_key(wp_unslash((string) $_GET['tab'])) === 'roster-sync'
+            );
 
         if ($is_advanced_screen || $is_roster_sync_screen) {
             $advanced_js_path = dirname(__DIR__, 2) . '/js/advanced-ajax.js';

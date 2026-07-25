@@ -405,6 +405,49 @@ class RosterRepository implements RepositoryInterface {
             return new RostersCollection();
         }
     }
+
+    /**
+     * Listing aggregates for admin roster cards (status JOIN + GROUP BY event_signature).
+     *
+     * @param array $criteria Column filters
+     * @param array $options  Query options (skip_cache, order_statuses)
+     * @return array<int,array<string,mixed>>
+     */
+    public function getListingAggregates(array $criteria, array $options = []) {
+        try {
+            $skip_cache = !empty($options['skip_cache']);
+            $cache_key = 'roster_listing_agg_v1_' . md5(serialize([
+                'criteria' => $criteria,
+                'statuses' => $options['order_statuses'] ?? null,
+            ]));
+
+            if (!$skip_cache) {
+                $cached = $this->cache->get($cache_key);
+                if (is_array($cached)) {
+                    $this->logger->debug('Retrieved roster listing aggregates from cache');
+                    return $cached;
+                }
+            }
+
+            $rows = $this->database->get_roster_listing_aggregates($criteria, $options);
+            if ($rows === false) {
+                return [];
+            }
+
+            if (!$skip_cache) {
+                // Short-lived: listing cards refresh often after sync (5 minutes).
+                $this->cache->set($cache_key, $rows, 'default', 300);
+            }
+
+            return $rows;
+        } catch (\Exception $e) {
+            $this->logger->error('Failed to get listing aggregates', [
+                'criteria' => $criteria,
+                'error' => $e->getMessage(),
+            ]);
+            return [];
+        }
+    }
     
     /**
      * Count roster entries matching criteria

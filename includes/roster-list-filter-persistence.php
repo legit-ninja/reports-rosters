@@ -17,10 +17,19 @@ function intersoccer_rosters_filter_meta_key(string $list_slug): string {
 /**
  * URL that clears persisted roster list filters for a screen.
  *
- * @param string $page_slug Admin page query value (e.g. intersoccer-courses).
+ * @param string               $page_slug Admin page query value (e.g. intersoccer-courses).
+ * @param array<string,string> $extra_args Extra query args to preserve (e.g. activity_type).
  */
-function intersoccer_rosters_clear_filters_url(string $page_slug): string {
-    return admin_url('admin.php?page=' . rawurlencode($page_slug) . '&clear_isrr_filters=1');
+function intersoccer_rosters_clear_filters_url(string $page_slug, array $extra_args = []): string {
+    $args = array_merge(
+        [
+            'page' => $page_slug,
+            'clear_isrr_filters' => '1',
+        ],
+        $extra_args
+    );
+
+    return add_query_arg($args, admin_url('admin.php'));
 }
 
 /**
@@ -40,7 +49,18 @@ function intersoccer_rosters_bootstrap_saved_list_filters(string $list_slug, arr
         delete_user_meta($uid, $meta_key);
         $page = isset($_GET['page']) ? sanitize_key(wp_unslash((string) $_GET['page'])) : '';
         if ($page !== '' && !headers_sent()) {
-            wp_safe_redirect(admin_url('admin.php?page=' . rawurlencode($page)));
+            $redirect_args = ['page' => $page];
+            if ($page === 'intersoccer-rosters') {
+                $activity = isset($_GET['activity_type']) ? sanitize_key(wp_unslash((string) $_GET['activity_type'])) : 'camps';
+                if (function_exists('intersoccer_rosters_admin_activity_types')
+                    && in_array($activity, intersoccer_rosters_admin_activity_types(), true)
+                ) {
+                    $redirect_args['activity_type'] = $activity;
+                } else {
+                    $redirect_args['activity_type'] = 'camps';
+                }
+            }
+            wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             exit;
         }
         return;
@@ -101,6 +121,7 @@ function intersoccer_rosters_flash_admin_notice(string $message): void {
  */
 function intersoccer_rosters_flash_notice_allowed_pages(): array {
     return [
+        'intersoccer-rosters',
         'intersoccer-camps',
         'intersoccer-courses',
         'intersoccer-girls-only',
@@ -151,6 +172,7 @@ intersoccer_rosters_register_flash_notice_hook();
  */
 function intersoccer_rosters_reconcile_page_slugs(): array {
     return [
+        'intersoccer-rosters',
         'intersoccer-camps',
         'intersoccer-courses',
         'intersoccer-girls-only',

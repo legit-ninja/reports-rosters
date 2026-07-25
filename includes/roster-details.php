@@ -492,10 +492,35 @@ function intersoccer_render_roster_details_page() {
 
     // Check referer and from param
     $referer = wp_get_referer();
+    $is_from_rosters_page = $from_page === 'rosters' || intersoccer_roster_referer_has_page($referer, 'page=intersoccer-rosters');
+    $activity_from = isset($_GET['activity_type']) ? sanitize_key(wp_unslash((string) $_GET['activity_type'])) : '';
     $is_from_camps_page = $from_page === 'camps' || intersoccer_roster_referer_has_page($referer, 'page=intersoccer-camps');
     $is_from_courses_page = $from_page === 'courses' || intersoccer_roster_referer_has_page($referer, 'page=intersoccer-courses');
     $is_from_girls_only_page = $from_page === 'girls-only' || intersoccer_roster_referer_has_page($referer, 'page=intersoccer-girls-only') || $girls_only;
     $is_from_tournaments_page = $from_page === 'tournaments' || intersoccer_roster_referer_has_page($referer, 'page=intersoccer-tournaments');
+
+    if ($is_from_rosters_page) {
+        switch ($activity_from) {
+            case 'courses':
+                $is_from_courses_page = true;
+                break;
+            case 'girls_only':
+                $is_from_girls_only_page = true;
+                break;
+            case 'tournaments':
+                $is_from_tournaments_page = true;
+                break;
+            case 'camps':
+                $is_from_camps_page = true;
+                break;
+            default:
+                // Infer from legacy from= values already set above, or default camps.
+                if (!$is_from_courses_page && !$is_from_girls_only_page && !$is_from_tournaments_page) {
+                    $is_from_camps_page = true;
+                }
+                break;
+        }
+    }
 
     $use_oop_rosters = defined('INTERSOCCER_OOP_ACTIVE')
         && INTERSOCCER_OOP_ACTIVE

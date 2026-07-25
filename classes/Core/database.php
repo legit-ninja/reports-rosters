@@ -725,6 +725,144 @@ class Database {
             return false;
         }
     }
+
+    /**
+     * Allowed WooCommerce order statuses for admin roster listings.
+     *
+     * @return string[]
+     */
+    public function get_listing_allowed_order_statuses() {
+        return ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'];
+    }
+
+    /**
+     * Fetch roster listing aggregates (one row per event_signature) with order-status JOIN.
+     *
+     * Avoids SELECT * of player payloads and per-row get_post_status() lookups.
+     *
+     * @param array $filters Column filters (activity_type, venue, camp_terms, …). Values may be scalars or arrays.
+     * @param array $options Optional: skip_cache (unused here), order_statuses override.
+     * @return array<int,array<string,mixed>>|false Aggregate rows or false on failure.
+     */
+    public function get_roster_listing_aggregates(array $filters = [], array $options = []) {
+        try {
+            $table_name = $this->wpdb->prefix . 'intersoccer_rosters';
+            $posts_table = $this->wpdb->posts;
+
+            $allowed_fields = [
+                'activity_type',
+                'is_placeholder',
+                'event_completed',
+                'girls_only',
+                'venue',
+                'camp_terms',
+                'course_day',
+                'age_group',
+                'city',
+                'times',
+                'product_id',
+                'variation_id',
+            ];
+
+            $where_conditions = ['r.order_id > 0'];
+            $where_values = [];
+
+            foreach ($filters as $field => $value) {
+                if (!in_array($field, $allowed_fields, true)) {
+                    continue;
+                }
+                $column = 'r.' . $field;
+                if (is_array($value)) {
+                    if ($value === []) {
+                        continue;
+                    }
+                    $placeholders = implode(',', array_fill(0, count($value), '%s'));
+                    $where_conditions[] = "{$column} IN ({$placeholders})";
+                    $where_values = array_merge($where_values, array_values($value));
+                } elseif ($value === null) {
+                    $where_conditions[] = "{$column} IS NULL";
+                } else {
+                    $where_conditions[] = "{$column} = %s";
+                    $where_values[] = $value;
+                }
+            }
+
+            $statuses = !empty($options['order_statuses']) && is_array($options['order_statuses'])
+                ? array_values($options['order_statuses'])
+                : $this->get_listing_allowed_order_statuses();
+            $status_placeholders = implode(',', array_fill(0, count($statuses), '%s'));
+            $where_conditions[] = "p.post_status IN ({$status_placeholders})";
+            $where_values = array_merge($where_values, $statuses);
+
+            $group_key_expr = "CASE
+                WHEN r.event_signature IS NOT NULL AND r.event_signature != '' THEN r.event_signature
+                ELSE CONCAT(
+                    'fb|',
+                    IFNULL(r.product_id, 0), '|',
+                    IFNULL(r.venue, ''), '|',
+                    IFNULL(r.camp_terms, ''), '|',
+                    IFNULL(r.course_day, ''), '|',
+                    IFNULL(r.start_date, ''), '|',
+                    IFNULL(r.age_group, '')
+                )
+            END";
+
+            // Allow large GROUP_CONCAT for order_item_ids / variation_ids on busy events.
+            $this->wpdb->query('SET SESSION group_concat_max_len = 1000000');
+
+            $sql = "
+                SELECT
+                    {$group_key_expr} AS group_key,
+                    MAX(r.event_signature) AS event_signature,
+                    COUNT(DISTINCT r.order_item_id) AS player_count,
+                    MAX(r.product_id) AS product_id,
+                    MAX(r.product_name) AS product_name,
+                    MAX(r.variation_id) AS variation_id,
+                    MAX(r.venue) AS venue,
+                    MAX(r.city) AS city,
+                    MAX(r.age_group) AS age_group,
+                    MAX(r.camp_terms) AS camp_terms,
+                    MAX(r.course_day) AS course_day,
+                    MAX(r.times) AS times,
+                    MAX(r.season) AS season,
+                    MAX(r.activity_type) AS activity_type,
+                    MAX(r.start_date) AS start_date,
+                    MAX(r.end_date) AS end_date,
+                    MAX(r.event_completed) AS event_completed,
+                    MAX(r.girls_only) AS girls_only,
+                    GROUP_CONCAT(DISTINCT NULLIF(r.order_item_id, 0) ORDER BY r.order_item_id SEPARATOR ',') AS order_item_ids_csv,
+                    GROUP_CONCAT(DISTINCT NULLIF(r.variation_id, 0) ORDER BY r.variation_id SEPARATOR ',') AS variation_ids_csv,
+                    GROUP_CONCAT(DISTINCT NULLIF(r.event_signature, '') ORDER BY r.event_signature SEPARATOR ',') AS event_signatures_csv
+                FROM {$table_name} r
+                INNER JOIN {$posts_table} p ON p.ID = r.order_id
+                WHERE " . implode(' AND ', $where_conditions) . "
+                GROUP BY {$group_key_expr}
+            ";
+
+            $prepared = $this->wpdb->prepare($sql, $where_values);
+            if ($prepared === false || $prepared === null) {
+                throw new DatabaseException('Failed to prepare listing aggregates query: ' . $this->wpdb->last_error);
+            }
+
+            $results = $this->wpdb->get_results($prepared, ARRAY_A);
+            if ($results === null) {
+                throw new DatabaseException('Listing aggregates query failed: ' . $this->wpdb->last_error);
+            }
+
+            $this->logger->debug('Retrieved roster listing aggregates', [
+                'count' => count($results),
+                'filters' => $filters,
+            ]);
+
+            return $results;
+        } catch (\Exception $e) {
+            $this->logger->error('Failed to get roster listing aggregates', [
+                'error' => $e->getMessage(),
+                'filters' => $filters,
+            ]);
+            return false;
+        }
+    }
     
     /**
      * Get roster entries count with filters
