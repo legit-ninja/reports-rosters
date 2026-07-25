@@ -211,6 +211,15 @@ class MenuManager {
 
         add_submenu_page(
             'intersoccer-reports-rosters',
+            __('Campaign Analytics', 'intersoccer-reports-rosters'),
+            __('Campaign Analytics', 'intersoccer-reports-rosters'),
+            'manage_options',
+            'intersoccer-campaign-analytics',
+            [$this, 'render_campaign_analytics']
+        );
+
+        add_submenu_page(
+            'intersoccer-reports-rosters',
             __('Signature drift', 'intersoccer-reports-rosters'),
             __('Signature drift', 'intersoccer-reports-rosters'),
             'manage_options',
@@ -418,6 +427,18 @@ class MenuManager {
             return;
         }
         wp_die(__('Signature drift report is not available.', 'intersoccer-reports-rosters'));
+    }
+
+    public function render_campaign_analytics(): void {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
+        }
+        $this->require_include('campaign-analytics-admin.php');
+        if (function_exists('intersoccer_render_campaign_analytics_page')) {
+            intersoccer_render_campaign_analytics_page();
+            return;
+        }
+        wp_die(__('Campaign Analytics page is not available.', 'intersoccer-reports-rosters'));
     }
 
     public function render_roster_details(): void {

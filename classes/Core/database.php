@@ -150,6 +150,26 @@ class Database {
                     'unique_cache_key' => ['cache_key']
                 ]
             ],
+            'intersoccer_campaign_summaries' => [
+                'columns' => [
+                    'id' => 'bigint(20) unsigned NOT NULL AUTO_INCREMENT',
+                    'campaign_id' => 'bigint(20) unsigned NOT NULL',
+                    'definition_hash' => 'varchar(32) NOT NULL',
+                    'status_set' => 'varchar(191) NOT NULL',
+                    'status' => 'varchar(20) NOT NULL DEFAULT "building"',
+                    'computed_at' => 'datetime DEFAULT NULL',
+                    'payload_json' => 'longtext DEFAULT NULL',
+                    'warnings_json' => 'longtext DEFAULT NULL',
+                ],
+                'primary_key' => 'id',
+                'indexes' => [
+                    'status_idx' => ['status'],
+                    'campaign_id_idx' => ['campaign_id'],
+                ],
+                'unique_indexes' => [
+                    'campaign_def' => ['campaign_id', 'definition_hash', 'status_set'],
+                ],
+            ],
             'intersoccer_roster_admin_log' => [
                 'columns' => [
                     'id' => 'bigint(20) unsigned NOT NULL AUTO_INCREMENT',

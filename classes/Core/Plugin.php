@@ -17,6 +17,7 @@ use InterSoccer\ReportsRosters\Admin\AssetManager;
 use InterSoccer\ReportsRosters\Ajax\AjaxHandler;
 use InterSoccer\ReportsRosters\WooCommerce\HooksManager;
 use InterSoccer\ReportsRosters\Services\CacheManager;
+use InterSoccer\ReportsRosters\Campaign\CampaignModule;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -295,6 +296,8 @@ final class Plugin {
             
             // Load text domain for translations
             $this->load_textdomain();
+
+            CampaignModule::boot();
             
             $this->initialized = true;
             $this->logger->info('InterSoccer Plugin: Main initialization completed');

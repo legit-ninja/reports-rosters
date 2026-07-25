@@ -26,6 +26,9 @@
         }
     },
     "license": "Apache2",
+    "suggest": {
+        "phpoffice/phpword": "Optional: native .docx executive campaign exports (HTML .doc fallback is built-in)."
+    },
     "authors": [
         {
             "name": "Jeremy Lee",
