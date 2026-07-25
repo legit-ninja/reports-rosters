@@ -2078,7 +2078,8 @@ if (!function_exists('intersoccer_consolidated_roster_group_key')) {
         }
         if ($kind === 'course') {
             $day = $facet($row['course_day'] ?? '', 'pa_course-day');
-            return md5('course|' . $pid . '|' . $day . '|' . $venue . '|' . $age . '|' . $times . '|' . $season . '|' . $year);
+            $g = isset($row['girls_only']) ? (int) $row['girls_only'] : 0;
+            return md5('course|' . $pid . '|' . $day . '|' . $venue . '|' . $age . '|' . $times . '|' . $season . '|' . $year . '|' . $g);
         }
         $camp = $facet($row['camp_terms'] ?? '', 'pa_camp-terms');
         $g = isset($row['girls_only']) ? (int) $row['girls_only'] : 0;

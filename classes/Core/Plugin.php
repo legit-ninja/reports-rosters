@@ -338,7 +338,7 @@ final class Plugin {
             return;
         }
         // Load rosters.php early (before admin_head) when on a roster page so card CSS is registered
-        $roster_pages = ['intersoccer-camps', 'intersoccer-courses', 'intersoccer-girls-only', 'intersoccer-tournaments', 'intersoccer-other-events', 'intersoccer-all-rosters', 'intersoccer-birthdays'];
+        $roster_pages = ['intersoccer-rosters', 'intersoccer-camps', 'intersoccer-courses', 'intersoccer-girls-only', 'intersoccer-tournaments', 'intersoccer-other-events', 'intersoccer-all-rosters', 'intersoccer-birthdays'];
         $page = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
         if (in_array($page, $roster_pages, true)) {
             $includes_to_load = [$this->plugin_path . 'includes/rosters.php'];

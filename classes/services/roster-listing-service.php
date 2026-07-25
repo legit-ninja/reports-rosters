@@ -74,13 +74,13 @@ class RosterListingService {
         }
         // If status is 'all', don't filter by event_completed
 
-        if (!empty($context['accessible_venues'])) {
-            $criteria['venue'] = $context['accessible_venues'];
-        }
+        $criteria = $this->applyListingFacetCriteria($criteria, $filters, $context, ['venue', 'camp_terms', 'age_group', 'city']);
 
         $start_time = microtime(true);
-        $collection = $this->repository->where($criteria);
-        $rosters = $this->filterListingRows($this->prepareRosterArray($collection), 'camp');
+        $aggregates = $this->repository->getListingAggregates($criteria, [
+            'order_statuses' => $this->allowed_statuses,
+        ]);
+        $rosters = $this->filterListingRows($this->mapListingAggregatesToRows($aggregates), 'camp');
         $query_time = microtime(true) - $start_time;
 
         $girls_only_mode = $this->normaliseGirlsOnlyMode($filters['girls_only_mode'] ?? '');
@@ -149,6 +149,108 @@ class RosterListingService {
                 'cities' => [],
             ],
         ];
+    }
+
+    /**
+     * Push UI facet filters into SQL criteria (season stays PHP-side).
+     *
+     * @param string[] $facet_keys
+     */
+    private function applyListingFacetCriteria(array $criteria, array $filters, array $context, array $facet_keys): array {
+        $selected_venue = isset($filters['venue']) ? (string) $filters['venue'] : '';
+        $coach_venues = !empty($context['accessible_venues']) ? array_values((array) $context['accessible_venues']) : [];
+
+        if ($selected_venue !== '') {
+            if ($coach_venues !== [] && !in_array($selected_venue, $coach_venues, true)) {
+                $criteria['venue'] = ['__no_match__'];
+            } else {
+                $criteria['venue'] = $selected_venue;
+            }
+        } elseif ($coach_venues !== []) {
+            $criteria['venue'] = $coach_venues;
+        }
+
+        foreach ($facet_keys as $key) {
+            if ($key === 'venue') {
+                continue;
+            }
+            if (!empty($filters[$key])) {
+                $criteria[$key] = $filters[$key];
+            }
+        }
+
+        return $criteria;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $aggregates
+     * @return array<int,array<string,mixed>>
+     */
+    private function mapListingAggregatesToRows(array $aggregates): array {
+        $rows = [];
+        foreach ($aggregates as $agg) {
+            if (!is_array($agg)) {
+                continue;
+            }
+            $order_item_ids = $this->parseCsvIntList($agg['order_item_ids_csv'] ?? '');
+            $variation_ids = $this->parseCsvIntList($agg['variation_ids_csv'] ?? '');
+            $sigs = [];
+            foreach (explode(',', (string) ($agg['event_signatures_csv'] ?? '')) as $sig) {
+                $sig = trim($sig);
+                if ($sig !== '') {
+                    $sigs[] = $sig;
+                }
+            }
+
+            $row = [
+                'event_signature' => (string) ($agg['event_signature'] ?? $agg['group_key'] ?? ''),
+                'product_id' => (int) ($agg['product_id'] ?? 0),
+                'product_name' => (string) ($agg['product_name'] ?? 'N/A'),
+                'variation_id' => (int) ($agg['variation_id'] ?? 0),
+                'venue' => (string) ($agg['venue'] ?? 'N/A'),
+                'city' => (string) ($agg['city'] ?? 'N/A'),
+                'age_group' => (string) ($agg['age_group'] ?? 'N/A'),
+                'camp_terms' => (string) ($agg['camp_terms'] ?? 'N/A'),
+                'course_day' => (string) ($agg['course_day'] ?? ''),
+                'times' => (string) ($agg['times'] ?? 'N/A'),
+                'season' => (string) ($agg['season'] ?? 'N/A'),
+                'activity_type' => (string) ($agg['activity_type'] ?? ''),
+                'start_date' => (string) ($agg['start_date'] ?? ''),
+                'end_date' => (string) ($agg['end_date'] ?? ''),
+                'event_completed' => (int) ($agg['event_completed'] ?? 0),
+                'girls_only' => (int) ($agg['girls_only'] ?? 0),
+                'order_item_id' => $order_item_ids[0] ?? 0,
+                'order_item_ids' => $order_item_ids,
+                'variation_ids' => $variation_ids,
+                'merged_event_signatures' => $sigs,
+                'player_count' => (int) ($agg['player_count'] ?? count($order_item_ids)),
+                '_listing_aggregate' => true,
+            ];
+
+            if (function_exists('intersoccer_roster_normalize_row_facets_for_display')) {
+                $row = intersoccer_roster_normalize_row_facets_for_display($row);
+            }
+
+            $rows[] = $row;
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return int[]
+     */
+    private function parseCsvIntList($csv): array {
+        $out = [];
+        foreach (explode(',', (string) $csv) as $part) {
+            $part = trim($part);
+            if ($part === '' || !ctype_digit($part)) {
+                continue;
+            }
+            $out[] = (int) $part;
+        }
+
+        return array_values(array_unique($out));
     }
 
     private function prepareRosterArray($collection): array {
@@ -280,13 +382,13 @@ class RosterListingService {
         }
         // If status is 'all', don't filter by event_completed
 
-        if (!empty($context['accessible_venues'])) {
-            $criteria['venue'] = $context['accessible_venues'];
-        }
+        $criteria = $this->applyListingFacetCriteria($criteria, $filters, $context, ['venue', 'course_day', 'age_group', 'city']);
 
         $start_time = microtime(true);
-        $collection = $this->repository->where($criteria);
-        $rosters = $this->filterListingRows($this->prepareRosterArray($collection), 'course');
+        $aggregates = $this->repository->getListingAggregates($criteria, [
+            'order_statuses' => $this->allowed_statuses,
+        ]);
+        $rosters = $this->filterListingRows($this->mapListingAggregatesToRows($aggregates), 'course');
 
         // Recover course products stored under camp-shaped activity_type (mis-labeled only; camp facets excluded in filter).
         if (!$girls_only) {
@@ -294,8 +396,10 @@ class RosterListingService {
             $mislabel_criteria['activity_type'] = function_exists('intersoccer_roster_listing_activity_types')
                 ? intersoccer_roster_listing_activity_types('camp')
                 : [Roster::ACTIVITY_CAMP, 'Camp, Girls Only', "Camp, Girls' only"];
-            $mislabel_collection = $this->repository->where($mislabel_criteria);
-            $recovered = $this->filterListingRows($this->prepareRosterArray($mislabel_collection), 'course');
+            $mislabel_aggregates = $this->repository->getListingAggregates($mislabel_criteria, [
+                'order_statuses' => $this->allowed_statuses,
+            ]);
+            $recovered = $this->filterListingRows($this->mapListingAggregatesToRows($mislabel_aggregates), 'course');
             $rosters = $this->mergeListingRowsByOrderItemId($rosters, $recovered);
         }
 
@@ -436,17 +540,7 @@ class RosterListingService {
             $group =& $groups[$signature];
             $group['girls_only'] = max((int) ($group['girls_only'] ?? 0), (int) ($row['girls_only'] ?? 0));
 
-            if (!empty($row['event_signature'])) {
-                $group['merged_event_signatures'][$row['event_signature']] = true;
-            }
-
-            if (!empty($row['variation_id'])) {
-                $group['variation_ids'][$row['variation_id']] = $row['variation_id'];
-            }
-
-            if (!empty($row['order_item_id'])) {
-                $group['order_item_ids'][$row['order_item_id']] = true;
-            }
+            $this->mergeListingRowIdsIntoGroup($group, $row);
 
             if (!empty($row['start_date'])) {
                 $group['start_dates'][] = $row['start_date'];
@@ -636,6 +730,7 @@ class RosterListingService {
 
         $criteria = [
             'is_placeholder' => 0,
+            'girls_only' => 1,
         ];
 
         if (isset($filters['status']) && $filters['status'] === 'closed') {
@@ -644,13 +739,13 @@ class RosterListingService {
             $criteria['event_completed'] = 0;
         }
 
-        if (!empty($context['accessible_venues'])) {
-            $criteria['venue'] = $context['accessible_venues'];
-        }
+        $criteria = $this->applyListingFacetCriteria($criteria, $filters, $context, ['venue', 'camp_terms', 'course_day', 'age_group', 'city']);
 
         $start_time = microtime(true);
-        $collection = $this->repository->where($criteria, ['skip_cache' => true]);
-        $prepared = $this->prepareRosterArray($collection);
+        $aggregates = $this->repository->getListingAggregates($criteria, [
+            'order_statuses' => $this->allowed_statuses,
+        ]);
+        $prepared = $this->mapListingAggregatesToRows($aggregates);
         $rosters = $this->filterGirlsOnlyListingRows($prepared);
         $query_time = microtime(true) - $start_time;
 
@@ -699,13 +794,13 @@ class RosterListingService {
             'is_placeholder' => 0,
         ];
 
-        if (!empty($context['accessible_venues'])) {
-            $criteria['venue'] = $context['accessible_venues'];
-        }
+        $criteria = $this->applyListingFacetCriteria($criteria, $filters, $context, ['venue', 'age_group', 'city', 'times']);
 
         $start_time = microtime(true);
-        $collection = $this->repository->where($criteria);
-        $rosters = $this->prepareRosterArray($collection);
+        $aggregates = $this->repository->getListingAggregates($criteria, [
+            'order_statuses' => $this->allowed_statuses,
+        ]);
+        $rosters = $this->mapListingAggregatesToRows($aggregates);
         $query_time = microtime(true) - $start_time;
 
         if (empty($rosters)) {
@@ -812,11 +907,8 @@ class RosterListingService {
                 $group =& $camps[$signature];
             }
 
-            if (!empty($row['variation_id'])) {
-                $group['variation_ids'][$row['variation_id']] = $row['variation_id'];
-            }
-            if (!empty($row['order_item_id'])) {
-                $group['order_item_ids'][$row['order_item_id']] = true;
+            if (!empty($row['variation_id']) || !empty($row['_listing_aggregate']) || !empty($row['order_item_id'])) {
+                $this->mergeListingRowIdsIntoGroup($group, $row);
             }
             if (!empty($row['start_date'])) {
                 $group['start_dates'][] = $row['start_date'];
@@ -904,44 +996,53 @@ class RosterListingService {
 
     private function applyGirlsFilters(array $groups, array $filters): array {
         return array_values(array_filter($groups, function ($group) use ($filters) {
-            if ($filters['season']) {
+            $season = (string) ($filters['season'] ?? '');
+            $type = (string) ($filters['type'] ?? '');
+            $venue = (string) ($filters['venue'] ?? '');
+            $camp_terms = (string) ($filters['camp_terms'] ?? '');
+            $course_day = (string) ($filters['course_day'] ?? '');
+            $age_group = (string) ($filters['age_group'] ?? '');
+            $city = (string) ($filters['city'] ?? '');
+
+            if ($season !== '') {
                 if (function_exists('intersoccer_roster_listing_season_filter_matches')) {
                     $row = [
                         'season' => (string) ($group['season_raw'] ?? $group['season'] ?? ''),
                         'start_date' => (string) ($group['corrected_start_date'] ?? $group['start_date'] ?? ''),
                         'product_name' => (string) ($group['product_name'] ?? ''),
                     ];
-                    if (!intersoccer_roster_listing_season_filter_matches($row, $filters['season'], 'camp')) {
+                    $season_kind = $type === 'courses' ? 'course' : 'camp';
+                    if (!intersoccer_roster_listing_season_filter_matches($row, $season, $season_kind)) {
                         return false;
                     }
-                } elseif ($group['season'] !== $filters['season'] && $group['season_raw'] !== $filters['season']) {
+                } elseif (($group['season'] ?? '') !== $season && ($group['season_raw'] ?? '') !== $season) {
                     return false;
                 }
             }
-            if ($filters['venue'] && $group['venue'] !== $filters['venue']) {
+            if ($venue !== '' && ($group['venue'] ?? '') !== $venue) {
                 return false;
             }
-            if ($filters['type'] === 'camps') {
+            if ($type === 'camps') {
                 $is_camp = !empty($group['camp_terms']) && $group['camp_terms'] !== 'N/A';
                 if (!$is_camp) {
                     return false;
                 }
-            } elseif ($filters['type'] === 'courses') {
+            } elseif ($type === 'courses') {
                 $is_camp = !empty($group['camp_terms']) && $group['camp_terms'] !== 'N/A';
                 if ($is_camp) {
                     return false;
                 }
             }
-            if ($filters['camp_terms'] && (!isset($group['camp_terms']) || $group['camp_terms'] !== $filters['camp_terms'])) {
+            if ($camp_terms !== '' && (!isset($group['camp_terms']) || $group['camp_terms'] !== $camp_terms)) {
                 return false;
             }
-            if ($filters['course_day'] && (!isset($group['course_day']) || $group['course_day'] !== $filters['course_day'])) {
+            if ($course_day !== '' && (!isset($group['course_day']) || $group['course_day'] !== $course_day)) {
                 return false;
             }
-            if ($filters['age_group'] && $group['age_group'] !== $filters['age_group']) {
+            if ($age_group !== '' && ($group['age_group'] ?? '') !== $age_group) {
                 return false;
             }
-            if ($filters['city'] && $group['city'] !== $filters['city']) {
+            if ($city !== '' && ($group['city'] ?? '') !== $city) {
                 return false;
             }
             return true;
@@ -1083,12 +1184,7 @@ class RosterListingService {
             }
 
             $group =& $groups[$signature];
-            if (!empty($row['variation_id'])) {
-                $group['variation_ids'][$row['variation_id']] = $row['variation_id'];
-            }
-            if (!empty($row['order_item_id'])) {
-                $group['order_item_ids'][$row['order_item_id']] = true;
-            }
+            $this->mergeListingRowIdsIntoGroup($group, $row);
             if (!empty($row['start_date']) && $row['start_date'] !== '1970-01-01') {
                 $group['start_dates'][] = $row['start_date'];
             }
@@ -1227,17 +1323,7 @@ class RosterListingService {
             $group['event_completed'] = max((int) ($group['event_completed'] ?? 0), !empty($row['event_completed']) ? 1 : 0);
             $group['girls_only'] = max((int) ($group['girls_only'] ?? 0), (int) ($row['girls_only'] ?? 0));
 
-            if (!empty($row['event_signature'])) {
-                $group['merged_event_signatures'][$row['event_signature']] = true;
-            }
-
-            if (!empty($row['variation_id'])) {
-                $group['variation_ids'][$row['variation_id']] = $row['variation_id'];
-            }
-
-            if (!empty($row['order_item_id'])) {
-                $group['order_item_ids'][$row['order_item_id']] = true;
-            }
+            $this->mergeListingRowIdsIntoGroup($group, $row);
 
             if (!empty($row['start_date'])) {
                 $group['start_dates'][] = $row['start_date'];
@@ -1286,6 +1372,59 @@ class RosterListingService {
             'groups' => $groups,
             'filters' => $filters,
         ];
+    }
+
+    /**
+     * Merge order_item / variation / signature ids from a listing row into a group bucket.
+     *
+     * @param array<string,mixed> $group
+     * @param array<string,mixed> $row
+     */
+    private function mergeListingRowIdsIntoGroup(array &$group, array $row): void {
+        if (!isset($group['merged_event_signatures']) || !is_array($group['merged_event_signatures'])) {
+            $group['merged_event_signatures'] = [];
+        }
+        if (!isset($group['variation_ids']) || !is_array($group['variation_ids'])) {
+            $group['variation_ids'] = [];
+        }
+        if (!isset($group['order_item_ids']) || !is_array($group['order_item_ids'])) {
+            $group['order_item_ids'] = [];
+        }
+
+        if (!empty($row['_listing_aggregate'])) {
+            foreach ((array) ($row['merged_event_signatures'] ?? []) as $sig) {
+                $sig = trim((string) $sig);
+                if ($sig !== '') {
+                    $group['merged_event_signatures'][$sig] = true;
+                }
+            }
+            if (!empty($row['event_signature'])) {
+                $group['merged_event_signatures'][$row['event_signature']] = true;
+            }
+            foreach ((array) ($row['variation_ids'] ?? []) as $vid) {
+                $vid = (int) $vid;
+                if ($vid > 0) {
+                    $group['variation_ids'][$vid] = $vid;
+                }
+            }
+            foreach ((array) ($row['order_item_ids'] ?? []) as $oid) {
+                $oid = (int) $oid;
+                if ($oid > 0) {
+                    $group['order_item_ids'][$oid] = true;
+                }
+            }
+            return;
+        }
+
+        if (!empty($row['event_signature'])) {
+            $group['merged_event_signatures'][$row['event_signature']] = true;
+        }
+        if (!empty($row['variation_id'])) {
+            $group['variation_ids'][$row['variation_id']] = $row['variation_id'];
+        }
+        if (!empty($row['order_item_id'])) {
+            $group['order_item_ids'][$row['order_item_id']] = true;
+        }
     }
 
     private function deriveSeasonFromCamp(array $row): string {
