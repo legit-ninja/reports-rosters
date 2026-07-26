@@ -4,10 +4,10 @@ WordPress/WooCommerce plugin for event roster management, Final Numbers / Live S
 
 ## Version
 
-- **Current Version:** 2.7.17
+- **Current Version:** 2.7.25
 
 Camp event dates prefer variation `_camp_start_date` / `_camp_end_date` (and order-item stamps) via `intersoccer_reports_resolve_camp_schedule()`. Parsing `camp_terms` strings is a **deprecated transitional fallback** until catalogue migration is complete.
-- **Release Date:** July 16, 2026
+- **Release Date:** July 25, 2026
 
 ## Owns
 
