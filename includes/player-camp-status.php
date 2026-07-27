@@ -7,6 +7,14 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+if ( ! function_exists( 'intersoccer_roster_field_player_first_name' ) ) {
+	$__cf = dirname( __FILE__ ) . '/roster-canonical-fields.php';
+	if ( file_exists( $__cf ) ) {
+		require_once $__cf;
+	}
+}
+
+
 /**
  * Camp-like activity_type values (Camps listing types + Girls Only variants).
  *
@@ -210,8 +218,8 @@ function intersoccer_player_camp_status_build_roster_index(array $rows) {
 			$index[$key][] = $summary;
 		}
 
-		$first = intersoccer_player_camp_status_normalize_name($row['first_name'] ?? ($row['player_first_name'] ?? ''));
-		$last = intersoccer_player_camp_status_normalize_name($row['last_name'] ?? ($row['player_last_name'] ?? ''));
+		$first = intersoccer_player_camp_status_normalize_name( function_exists( 'intersoccer_roster_field_player_first_name' ) ? intersoccer_roster_field_player_first_name( $row ) : ( $row['first_name'] ?? ( $row['player_first_name'] ?? '' ) ) );
+		$last = intersoccer_player_camp_status_normalize_name( function_exists( 'intersoccer_roster_field_player_last_name' ) ? intersoccer_roster_field_player_last_name( $row ) : ( $row['last_name'] ?? ( $row['player_last_name'] ?? '' ) ) );
 		if ($customer_id > 0 && $first !== '' && $last !== '') {
 			$key = 'name:' . $customer_id . ':' . $first . '|' . $last;
 			$index[$key][] = $summary;

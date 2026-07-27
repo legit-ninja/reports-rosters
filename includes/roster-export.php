@@ -9,6 +9,14 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+if (!function_exists('intersoccer_roster_field_player_first_name')) {
+    $__cf = dirname(__FILE__) . '/roster-canonical-fields.php';
+    if (file_exists($__cf)) {
+        require_once $__cf;
+    }
+}
+
+
 // utils.php pulls in order-meta-keys (roster effective selected-days, enrich helpers) for AJAX export without roster-details.php.
 if (!function_exists('intersoccer_roster_effective_selected_days_string')) {
     $intersoccer_utils_export = dirname(__FILE__) . '/utils.php';
@@ -267,7 +275,27 @@ function intersoccer_export_roster() {
                     if (isset($arr['dob']) && !isset($arr['player_dob'])) {
                         $arr['player_dob'] = $arr['dob'];
                     }
-                    if (empty($arr['player_name']) && (!empty($arr['first_name']) || !empty($arr['last_name']))) {
+                    if (function_exists('intersoccer_roster_field_player_display_name')) {
+                        $display = intersoccer_roster_field_player_display_name($arr);
+                        if ($display !== '') {
+                            $arr['player_name'] = $display;
+                        }
+                        $arr['first_name'] = intersoccer_roster_field_player_first_name($arr);
+                        $arr['last_name'] = intersoccer_roster_field_player_last_name($arr);
+                        if (function_exists('intersoccer_roster_field_selected_days')) {
+                            $sd = intersoccer_roster_field_selected_days($arr);
+                            if ($sd !== '') {
+                                $arr['selected_days'] = $sd;
+                            }
+                        }
+                        if (function_exists('intersoccer_roster_field_player_medical')) {
+                            $med = intersoccer_roster_field_player_medical($arr);
+                            if ($med !== '') {
+                                $arr['medical_conditions'] = $med;
+                                $arr['player_medical'] = $med;
+                            }
+                        }
+                    } elseif (empty($arr['player_name']) && (!empty($arr['first_name']) || !empty($arr['last_name']))) {
                         $arr['player_name'] = trim(($arr['first_name'] ?? '') . ' ' . ($arr['last_name'] ?? ''));
                     }
                     if (empty($arr['product_name']) && !empty($arr['product_id'])) {
@@ -555,7 +583,12 @@ function intersoccer_export_roster() {
         foreach ($rosters as $player) {
             $is_camp_row = in_array($player['activity_type'] ?? '', ['Camp', 'Girls Only', 'Camp, Girls Only', "Camp, Girls' only"], true);
             if ($is_camp_row) {
-                if (empty($player['selected_days']) && !empty($player['days_selected'])) {
+                if (function_exists('intersoccer_roster_field_selected_days')) {
+                    $sd = intersoccer_roster_field_selected_days($player);
+                    if ($sd !== '') {
+                        $player['selected_days'] = $sd;
+                    }
+                } elseif (empty($player['selected_days']) && !empty($player['days_selected'])) {
                     $player['selected_days'] = (string) $player['days_selected'];
                 }
                 if (function_exists('intersoccer_roster_enrich_camp_fields_from_order_item')) {

@@ -1160,10 +1160,16 @@ class RosterBuilder {
             }
         }
 
-        // Merge all data sources
+        // Merge all data sources — prefer keep columns (data-model); mirror to drop via apply_canonical_write_fields.
+        $selected_days_raw = isset($order_data['selected_days']) ? (is_array($order_data['selected_days']) ? implode(', ', $order_data['selected_days']) : $order_data['selected_days']) : '';
         $roster_data = array_merge($order_data, [
-            // Player data
+            // Player data (keep + transitional drop keys)
             'player_index' => $player->player_index,
+            'player_first_name' => $player_first,
+            'player_last_name' => $player_last,
+            'player_dob' => $player->dob,
+            'player_gender' => $player->gender,
+            'player_medical' => $player->medical_conditions,
             'first_name' => $player_first,
             'last_name' => $player_last,
             'dob' => $player->dob,
@@ -1180,10 +1186,12 @@ class RosterBuilder {
             'emergency_contact' => $player->emergency_contact ?: $customer_data['emergency_contact'],
             'emergency_phone' => $player->emergency_phone ?: $customer_data['emergency_phone'],
             
-            // Times/term/days for DB columns
+            // Times/term/days for DB columns (keep: times, camp_terms, selected_days)
             'times' => $order_data['camp_times'] ?? $order_data['course_times'] ?? '',
+            'camp_terms' => $order_data['camp_terms'] ?? '',
             'term' => $order_data['course_day'] ?? $order_data['camp_terms'] ?? '',
-            'days_selected' => isset($order_data['selected_days']) ? (is_array($order_data['selected_days']) ? implode(', ', $order_data['selected_days']) : $order_data['selected_days']) : '',
+            'selected_days' => $selected_days_raw,
+            'days_selected' => $selected_days_raw,
         ]);
 
         // Set age from DOB when available (so roster table and details page show correct age)
@@ -1299,6 +1307,10 @@ class RosterBuilder {
         }
 
         $roster_data['girls_only'] = (int) ($roster_data['girls_only'] ?? 0);
+
+            if (function_exists('intersoccer_roster_apply_canonical_write_fields')) {
+                $roster_data = intersoccer_roster_apply_canonical_write_fields($roster_data);
+            }
 
         return $roster_data;
     }

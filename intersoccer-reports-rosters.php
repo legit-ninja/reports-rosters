@@ -103,6 +103,12 @@ try {
     return;
 }
 
+// Canonical roster field dual-read / keep-first write helpers (data-model).
+$intersoccer_roster_canonical = plugin_dir_path(__FILE__) . 'includes/roster-canonical-fields.php';
+if (file_exists($intersoccer_roster_canonical)) {
+    require_once $intersoccer_roster_canonical;
+}
+
 // Load OOP adapter/compat layer (kept small and will be further reduced).
 $intersoccer_oop_adapter = plugin_dir_path(__FILE__) . 'includes/oop-adapter.php';
 if (file_exists($intersoccer_oop_adapter)) {
