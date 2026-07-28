@@ -5319,11 +5319,42 @@ if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
     /**
      * Resolve the girls_only roster flag (0 or 1) from order-item / roster facets.
      *
+     * Prefers language-neutral `_intersoccer_canonical_girls_only`, then display/
+     * attribute Yes|No values (including mapped `girls_only` / `Girls Only`), then
+     * activity-type / product-name / WC attribute fallbacks.
+     *
      * @param array<string,mixed> $context
      * @return int
      */
     function intersoccer_resolve_roster_girls_only_flag(array $context) {
+        $normalize_val = static function ($val) {
+            if (is_array($val)) {
+                $val = $val[0] ?? reset($val);
+            }
+            return $val;
+        };
+
+        // Canonical 0/1 (or yes/no) written at checkout/repair — authoritative when present.
+        if (array_key_exists('_intersoccer_canonical_girls_only', $context)
+            && $context['_intersoccer_canonical_girls_only'] !== ''
+            && $context['_intersoccer_canonical_girls_only'] !== null) {
+            $canonical = $normalize_val($context['_intersoccer_canonical_girls_only']);
+            if (intersoccer_pa_girls_only_slug_is_yes($canonical) || (string) $canonical === '1' || $canonical === 1 || $canonical === true) {
+                return 1;
+            }
+            if (in_array(strtolower(trim((string) $canonical)), ['0', 'no', 'mixed', 'false'], true)
+                || $canonical === 0
+                || $canonical === false) {
+                return 0;
+            }
+        }
+
         $girls_meta_keys = [
+            'Girls Only',
+            'girls_only',
+            'Filles uniquement',
+            'Nur Mädchen',
+            'Nur Madchen',
             'pa_girls-only',
             'attribute_pa_girls-only',
             'girls-only',
@@ -5334,9 +5365,15 @@ if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
             if (!array_key_exists($key, $context) || $context[$key] === '' || $context[$key] === null) {
                 continue;
             }
-            $val = $context[$key];
-            if (is_array($val)) {
-                $val = $val[0] ?? reset($val);
+            $val = $normalize_val($context[$key]);
+
+            // Integer 0 on a denormalized row is not decisive — activity/product text may still
+            // indicate girls-only (backfill / looks_girls_only). Explicit "No"/"mixed" is decisive.
+            if ($val === 0 || $val === false) {
+                continue;
+            }
+            if ($val === 1 || $val === true || (string) $val === '1') {
+                return 1;
             }
             if (intersoccer_pa_girls_only_slug_is_yes($val)) {
                 return 1;

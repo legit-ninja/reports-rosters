@@ -455,24 +455,35 @@ class RosterListingService {
      */
     private function normaliseGirlsOnlyMode($mode): string {
         $mode = sanitize_key((string) $mode);
-        if (in_array($mode, ['all', 'girls_only'], true)) {
-            return $mode;
+        if (in_array($mode, ['yes', 'girls_only'], true)) {
+            return 'girls_only';
+        }
+        if (in_array($mode, ['no', 'mixed'], true)) {
+            return 'mixed';
+        }
+        if ($mode === 'all' || $mode === '') {
+            return 'all';
         }
 
-        return 'mixed';
+        return 'all';
     }
 
     /**
      * Repository girls_only criterion for camp/course listings.
      *
+     * Yes/No listing uses PHP post-filter (product_name / activity_type / flag) so
+     * rows with Girls Only=Yes meta but stale girls_only=0 are not dropped by SQL.
+     * Dedicated getGirlsOnlyListings still passes $legacyGirlsOnlyFlag=true → SQL =1.
+     *
      * @param array<string,mixed> $filters
      * @return array<string,int>
      */
     private function resolveGirlsOnlyRepositoryCriteria(array $filters, bool $legacyGirlsOnlyFlag): array {
-        // Post-query filtering handles girls-only detection using product_name,
-        // activity_type, and pa_girls-only — not just the DB flag column.
-        // This ensures older orders (girls_only=0 but product name contains
-        // "Girls Only") are correctly routed to/from the Girls Only page.
+        if ($legacyGirlsOnlyFlag) {
+            return ['girls_only' => 1];
+        }
+
+        // Intentionally empty: SQL on girls_only hides unreconciled Yes-meta rows (flag still 0).
         return [];
     }
 

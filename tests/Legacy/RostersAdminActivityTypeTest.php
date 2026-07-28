@@ -61,14 +61,27 @@ class RostersAdminActivityTypeTest extends TestCase {
             $this->markTestSkipped('activity type helper not loaded');
         }
 
-        foreach (['camps', 'courses', 'girls_only', 'tournaments'] as $type) {
+        foreach (['camps', 'courses', 'tournaments'] as $type) {
             $_GET['activity_type'] = $type;
+            unset($_GET['girls_only_mode'], $_REQUEST['girls_only_mode']);
             $this->assertSame($type, intersoccer_rosters_admin_activity_type_from_request());
         }
 
         $_GET['activity_type'] = 'birthday';
         $this->assertSame('camps', intersoccer_rosters_admin_activity_type_from_request());
         unset($_GET['activity_type']);
+    }
+
+    public function test_obsolete_girls_only_activity_type_remaps_to_camps_with_yes_filter(): void {
+        if (!function_exists('intersoccer_rosters_admin_activity_type_from_request')) {
+            $this->markTestSkipped('activity type helper not loaded');
+        }
+
+        unset($_GET['girls_only_mode'], $_REQUEST['girls_only_mode']);
+        $_GET['activity_type'] = 'girls_only';
+        $this->assertSame('camps', intersoccer_rosters_admin_activity_type_from_request());
+        $this->assertSame('yes', $_GET['girls_only_mode']);
+        unset($_GET['activity_type'], $_GET['girls_only_mode'], $_REQUEST['girls_only_mode']);
     }
 
     public function test_legacy_page_activity_type_map(): void {
@@ -79,7 +92,7 @@ class RostersAdminActivityTypeTest extends TestCase {
         $map = intersoccer_rosters_legacy_page_activity_type_map();
         $this->assertSame('camps', $map['intersoccer-camps']);
         $this->assertSame('courses', $map['intersoccer-courses']);
-        $this->assertSame('girls_only', $map['intersoccer-girls-only']);
+        $this->assertArrayNotHasKey('intersoccer-girls-only', $map);
         $this->assertSame('tournaments', $map['intersoccer-tournaments']);
     }
 
@@ -92,6 +105,7 @@ class RostersAdminActivityTypeTest extends TestCase {
             'page' => 'intersoccer-courses',
             'season' => 'autumn-2026',
             'venue' => 'geneva',
+            'girls_only_mode' => 'yes',
             'evil' => 'nope',
         ]);
 
@@ -99,7 +113,18 @@ class RostersAdminActivityTypeTest extends TestCase {
         $this->assertStringContainsString('activity_type=courses', $url);
         $this->assertStringContainsString('season=autumn-2026', $url);
         $this->assertStringContainsString('venue=geneva', $url);
+        $this->assertStringContainsString('girls_only_mode=yes', $url);
         $this->assertStringNotContainsString('evil=', $url);
+    }
+
+    public function test_unified_url_girls_only_activity_becomes_camps_yes(): void {
+        if (!function_exists('intersoccer_rosters_unified_url')) {
+            $this->markTestSkipped('unified url helper not loaded');
+        }
+
+        $url = intersoccer_rosters_unified_url('girls_only', []);
+        $this->assertStringContainsString('activity_type=camps', $url);
+        $this->assertStringContainsString('girls_only_mode=yes', $url);
     }
 
     public function test_activity_type_filter_labels(): void {
@@ -108,6 +133,37 @@ class RostersAdminActivityTypeTest extends TestCase {
         }
 
         $this->assertNotSame('', intersoccer_rosters_admin_activity_type_filter_label('camps'));
-        $this->assertNotSame('', intersoccer_rosters_admin_activity_type_filter_label('girls_only'));
+        $this->assertSame('Camps', intersoccer_rosters_admin_activity_type_filter_label('girls_only'));
+    }
+
+    public function test_girls_only_mode_parser_accepts_yes_no_all(): void {
+        if (!function_exists('intersoccer_rosters_admin_girls_only_mode_from_request')) {
+            $this->markTestSkipped('girls only mode helper not loaded');
+        }
+
+        unset($_GET['girls_only_mode']);
+        $this->assertSame('all', intersoccer_rosters_admin_girls_only_mode_from_request());
+
+        $_GET['girls_only_mode'] = 'yes';
+        $this->assertSame('girls_only', intersoccer_rosters_admin_girls_only_mode_from_request());
+        $_GET['girls_only_mode'] = 'no';
+        $this->assertSame('mixed', intersoccer_rosters_admin_girls_only_mode_from_request());
+        $_GET['girls_only_mode'] = 'all';
+        $this->assertSame('all', intersoccer_rosters_admin_girls_only_mode_from_request());
+        unset($_GET['girls_only_mode']);
+    }
+
+    public function test_reconcile_page_slugs_omit_retired_all_rosters(): void {
+        $persist = __DIR__ . '/../../includes/roster-list-filter-persistence.php';
+        if (file_exists($persist)) {
+            require_once $persist;
+        }
+        if (!function_exists('intersoccer_rosters_reconcile_page_slugs')) {
+            $this->markTestSkipped('reconcile page slugs helper not loaded');
+        }
+
+        $slugs = intersoccer_rosters_reconcile_page_slugs();
+        $this->assertContains('intersoccer-rosters', $slugs);
+        $this->assertNotContains('intersoccer-all-rosters', $slugs);
     }
 }

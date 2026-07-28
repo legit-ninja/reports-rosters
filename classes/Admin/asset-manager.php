@@ -71,8 +71,8 @@ class AssetManager {
         }
 
         // Roster listing pages (tabs + close/reopen actions)
+        // intersoccer-all-rosters redirects to Rosters — no assets needed for that slug.
         $roster_pages = [
-            'intersoccer-reports-rosters_page_intersoccer-all-rosters',
             'intersoccer-reports-rosters_page_intersoccer-rosters',
             'intersoccer-reports-rosters_page_intersoccer-camps',
             'intersoccer-reports-rosters_page_intersoccer-courses',
