@@ -30,7 +30,7 @@ class RosterListingServiceGirlsOnlyTest extends TestCase {
         }
     }
 
-    public function test_camp_listings_default_mixed_and_girls_only_page_use_expected_criteria() {
+    public function test_camp_listings_default_all_and_girls_only_page_use_expected_criteria() {
         $captured = [];
         $repository = Mockery::mock(RosterRepository::class);
         $repository->shouldReceive('getListingAggregates')
@@ -44,7 +44,7 @@ class RosterListingServiceGirlsOnlyTest extends TestCase {
         $service->getGirlsOnlyListings([]);
 
         $this->assertCount(2, $captured);
-        // Mixed camps use PHP post-filter so name-based girls-only rows are not lost.
+        // Default All: no girls_only SQL criterion.
         $this->assertArrayNotHasKey('girls_only', $captured[0]);
         $this->assertSame(1, $captured[1]['girls_only']);
     }
@@ -65,7 +65,7 @@ class RosterListingServiceGirlsOnlyTest extends TestCase {
         $this->assertArrayNotHasKey('girls_only', $captured[0]);
     }
 
-    public function test_camp_listings_girls_only_mode_girls_only_omits_sql_flag_for_php_filter() {
+    public function test_camp_listings_girls_only_mode_yes_omits_sql_flag_for_php_filter() {
         $captured = [];
         $repository = Mockery::mock(RosterRepository::class);
         $repository->shouldReceive('getListingAggregates')
@@ -75,13 +75,13 @@ class RosterListingServiceGirlsOnlyTest extends TestCase {
             });
 
         $service = new RosterListingService(null, $repository);
-        $service->getCampListings(['girls_only_mode' => 'girls_only'], [], false);
+        $service->getCampListings(['girls_only_mode' => 'yes'], [], false);
 
         $this->assertCount(1, $captured);
         $this->assertArrayNotHasKey('girls_only', $captured[0]);
     }
 
-    public function test_course_listings_girls_only_mode_girls_only_omits_sql_flag_for_php_filter() {
+    public function test_camp_listings_girls_only_mode_no_omits_sql_flag_for_php_filter() {
         $captured = [];
         $repository = Mockery::mock(RosterRepository::class);
         $repository->shouldReceive('getListingAggregates')
@@ -91,7 +91,23 @@ class RosterListingServiceGirlsOnlyTest extends TestCase {
             });
 
         $service = new RosterListingService(null, $repository);
-        $service->getCourseListings(['girls_only_mode' => 'girls_only'], [], false);
+        $service->getCampListings(['girls_only_mode' => 'no'], [], false);
+
+        $this->assertCount(1, $captured);
+        $this->assertArrayNotHasKey('girls_only', $captured[0]);
+    }
+
+    public function test_course_listings_girls_only_mode_yes_omits_sql_flag_for_php_filter() {
+        $captured = [];
+        $repository = Mockery::mock(RosterRepository::class);
+        $repository->shouldReceive('getListingAggregates')
+            ->andReturnUsing(function ($criteria) use (&$captured) {
+                $captured[] = $criteria;
+                return [];
+            });
+
+        $service = new RosterListingService(null, $repository);
+        $service->getCourseListings(['girls_only_mode' => 'yes'], [], false);
 
         $this->assertGreaterThanOrEqual(1, count($captured));
         foreach ($captured as $criteria) {

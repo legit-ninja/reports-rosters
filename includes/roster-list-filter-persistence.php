@@ -128,7 +128,6 @@ function intersoccer_rosters_flash_notice_allowed_pages(): array {
         'intersoccer-tournaments',
         'intersoccer-other-events',
         'intersoccer-birthdays',
-        'intersoccer-all-rosters',
         'intersoccer-roster-details',
         'intersoccer-signature-drift',
         'intersoccer-reports-rosters',
@@ -178,7 +177,6 @@ function intersoccer_rosters_reconcile_page_slugs(): array {
         'intersoccer-girls-only',
         'intersoccer-tournaments',
         'intersoccer-other-events',
-        'intersoccer-all-rosters',
     ];
 }
 

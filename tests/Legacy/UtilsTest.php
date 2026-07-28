@@ -164,6 +164,29 @@ class UtilsTest extends TestCase {
         $this->assertSame(0, intersoccer_resolve_roster_girls_only_flag([
             'pa_girls-only' => 'mixed',
         ]));
+        $this->assertSame(1, intersoccer_resolve_roster_girls_only_flag([
+            'Girls Only' => 'Yes',
+            'activity_type' => 'Camp',
+        ]));
+        $this->assertSame(0, intersoccer_resolve_roster_girls_only_flag([
+            'Girls Only' => 'No',
+            'activity_type' => 'Camp',
+        ]));
+        $this->assertSame(1, intersoccer_resolve_roster_girls_only_flag([
+            'girls_only' => 'yes',
+            'activity_type' => 'Camp',
+        ]));
+        $this->assertSame(1, intersoccer_resolve_roster_girls_only_flag([
+            '_intersoccer_canonical_girls_only' => '1',
+            'activity_type' => 'Camp',
+        ]));
+        $this->assertSame(0, intersoccer_resolve_roster_girls_only_flag([
+            '_intersoccer_canonical_girls_only' => '0',
+            'activity_type' => 'Camp, Girls Only',
+        ]));
+        $this->assertSame(1, intersoccer_resolve_roster_girls_only_flag([
+            'pa_girls-only' => 'yes',
+        ]));
     }
 
     public function test_roster_row_looks_girls_only_wraps_resolver() {

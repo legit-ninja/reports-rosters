@@ -34,6 +34,13 @@ class RosterBuilderTest extends TestCase {
     
     protected function setUp(): void {
         parent::setUp();
+
+        if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
+            $utils = dirname(__DIR__, 2) . '/includes/utils.php';
+            if (file_exists($utils)) {
+                require_once $utils;
+            }
+        }
         
         $this->logger = Mockery::mock(Logger::class);
         $this->logger->shouldReceive('info')->andReturn(null);
@@ -167,6 +174,87 @@ class RosterBuilderTest extends TestCase {
 
         $this->assertSame('Camp', $result['activity_type']);
         $this->assertSame(1, $result['girls_only']);
+    }
+
+    public function test_extract_order_item_data_sets_girls_only_from_yes_display_meta() {
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(43);
+        $order->shouldReceive('get_customer_id')->andReturn(8);
+        $order->shouldReceive('get_status')->andReturn('processing');
+
+        $item = Mockery::mock('WC_Order_Item_Product');
+        $item->shouldReceive('get_product')->andReturn(null);
+        $item->shouldReceive('get_variation_id')->andReturn(37639);
+        $item->shouldReceive('get_product_id')->andReturn(37635);
+        $item->shouldReceive('get_meta')->andReturn('');
+        $item->shouldReceive('get_meta_data')->andReturn([
+            $this->createOrderItemMeta('Activity Type', 'Camp'),
+            $this->createOrderItemMeta('Girls Only', 'Yes'),
+            $this->createOrderItemMeta('pa_program-season', 'summer-camps-2026'),
+            $this->createOrderItemMeta('pa_intersoccer-venues', 'geneva-venue'),
+        ]);
+
+        $reflection = new \ReflectionClass($this->rosterBuilder);
+        $method = $reflection->getMethod('extractOrderItemData');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($this->rosterBuilder, $order, 4762, $item);
+
+        $this->assertSame(1, $result['girls_only']);
+    }
+
+    public function test_extract_order_item_data_sets_girls_only_from_canonical_meta() {
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(44);
+        $order->shouldReceive('get_customer_id')->andReturn(9);
+        $order->shouldReceive('get_status')->andReturn('processing');
+
+        $item = Mockery::mock('WC_Order_Item_Product');
+        $item->shouldReceive('get_product')->andReturn(null);
+        $item->shouldReceive('get_variation_id')->andReturn(37640);
+        $item->shouldReceive('get_product_id')->andReturn(37635);
+        $item->shouldReceive('get_meta')->andReturn('');
+        $item->shouldReceive('get_meta_data')->andReturn([
+            $this->createOrderItemMeta('Activity Type', 'Camp'),
+            $this->createOrderItemMeta('_intersoccer_canonical_girls_only', '1'),
+            $this->createOrderItemMeta('pa_program-season', 'summer-camps-2026'),
+            $this->createOrderItemMeta('pa_intersoccer-venues', 'geneva-venue'),
+        ]);
+
+        $reflection = new \ReflectionClass($this->rosterBuilder);
+        $method = $reflection->getMethod('extractOrderItemData');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($this->rosterBuilder, $order, 4763, $item);
+
+        $this->assertSame(1, $result['girls_only']);
+    }
+
+    public function test_extract_order_item_data_girls_only_no_display_meta_is_zero() {
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(45);
+        $order->shouldReceive('get_customer_id')->andReturn(10);
+        $order->shouldReceive('get_status')->andReturn('processing');
+
+        $item = Mockery::mock('WC_Order_Item_Product');
+        $item->shouldReceive('get_product')->andReturn(null);
+        $item->shouldReceive('get_variation_id')->andReturn(37641);
+        $item->shouldReceive('get_product_id')->andReturn(37635);
+        $item->shouldReceive('get_meta')->andReturn('');
+        $item->shouldReceive('get_meta_data')->andReturn([
+            $this->createOrderItemMeta('Activity Type', 'Camp'),
+            $this->createOrderItemMeta('Girls Only', 'No'),
+            $this->createOrderItemMeta('pa_program-season', 'summer-camps-2026'),
+            $this->createOrderItemMeta('pa_intersoccer-venues', 'geneva-venue'),
+        ]);
+
+        $reflection = new \ReflectionClass($this->rosterBuilder);
+        $method = $reflection->getMethod('extractOrderItemData');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($this->rosterBuilder, $order, 4764, $item);
+
+        $this->assertSame(0, $result['girls_only']);
     }
     
     public function test_build_rosters_with_empty_options() {

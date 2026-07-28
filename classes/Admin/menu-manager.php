@@ -149,15 +149,6 @@ class MenuManager {
 
         add_submenu_page(
             'intersoccer-reports-rosters',
-            __('All Rosters', 'intersoccer-reports-rosters'),
-            __('All Rosters', 'intersoccer-reports-rosters'),
-            'read',
-            'intersoccer-all-rosters',
-            [$this, 'render_all_rosters']
-        );
-
-        add_submenu_page(
-            'intersoccer-reports-rosters',
             __('Rosters', 'intersoccer-reports-rosters'),
             __('Rosters', 'intersoccer-reports-rosters'),
             'read',
@@ -166,6 +157,8 @@ class MenuManager {
         );
 
         // Hidden legacy list pages → unified Rosters with activity_type.
+        // All Rosters retired: consolidated into Rosters (keep slug for redirects/bookmarks).
+        add_submenu_page(null, '', '', 'read', 'intersoccer-all-rosters', [$this, 'render_legacy_all_rosters_redirect']);
         add_submenu_page(null, '', '', 'read', 'intersoccer-camps', [$this, 'render_legacy_camps_redirect']);
         add_submenu_page(null, '', '', 'read', 'intersoccer-courses', [$this, 'render_legacy_courses_redirect']);
         add_submenu_page(null, '', '', 'read', 'intersoccer-girls-only', [$this, 'render_legacy_girls_only_redirect']);
@@ -346,12 +339,12 @@ class MenuManager {
     }
 
     public function render_all_rosters(): void {
-        $this->require_include('rosters.php');
-        if (function_exists('intersoccer_render_all_rosters_page')) {
-            intersoccer_render_all_rosters_page();
-            return;
-        }
-        wp_die(__('All rosters page is not available.', 'intersoccer-reports-rosters'));
+        $this->render_legacy_all_rosters_redirect();
+    }
+
+    public function render_legacy_all_rosters_redirect(): void {
+        wp_safe_redirect(admin_url('admin.php?page=intersoccer-rosters'));
+        exit;
     }
 
     public function render_rosters(): void {
@@ -372,7 +365,15 @@ class MenuManager {
     }
 
     public function render_legacy_girls_only_redirect(): void {
-        $this->redirect_legacy_list_page('girls_only');
+        $this->require_include('rosters.php');
+        if (function_exists('intersoccer_rosters_unified_url')) {
+            $get = $_GET;
+            $get['girls_only_mode'] = 'yes';
+            wp_safe_redirect(intersoccer_rosters_unified_url('camps', $get));
+            exit;
+        }
+        wp_safe_redirect(admin_url('admin.php?page=intersoccer-rosters&activity_type=camps&girls_only_mode=yes'));
+        exit;
     }
 
     public function render_legacy_tournaments_redirect(): void {
@@ -380,7 +381,7 @@ class MenuManager {
     }
 
     /**
-     * @param string $activity_type camps|courses|girls_only|tournaments
+     * @param string $activity_type camps|courses|tournaments
      */
     private function redirect_legacy_list_page(string $activity_type): void {
         $this->require_include('rosters.php');

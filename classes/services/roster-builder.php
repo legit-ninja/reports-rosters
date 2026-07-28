@@ -831,6 +831,10 @@ class RosterBuilder {
             if ($canonical_key === 'assigned_player_id' || $raw_key === 'assigned_player_id') {
                 $order_data['player_id'] = $value;
             }
+            // Language-neutral girls-only flag (not in display field map).
+            if ($raw_key === '_intersoccer_canonical_girls_only' || $canonical_key === '_intersoccer_canonical_girls_only') {
+                $order_data['_intersoccer_canonical_girls_only'] = $value;
+            }
         }
 
         if (function_exists('intersoccer_apply_order_item_attribute_meta_to_data')) {
