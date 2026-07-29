@@ -456,9 +456,9 @@ function intersoccer_get_canonical_order_meta_field_map() {
         '_intersoccer_canonical_girls_only' => 'girls_only',
         '_intersoccer_canonical_booking_type' => 'booking_type',
         '_intersoccer_canonical_venue' => 'venue',
-        '_intersoccer_canonical_canton' => 'region',
+        '_intersoccer_canonical_canton' => 'canton_region',
         '_intersoccer_canonical_age_group' => 'age_group',
-        '_intersoccer_canonical_camp_terms' => 'event_type',
+        '_intersoccer_canonical_camp_terms' => 'camp_terms',
     ];
 }
 

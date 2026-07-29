@@ -835,6 +835,9 @@ class RosterBuilder {
             if ($raw_key === '_intersoccer_canonical_girls_only' || $canonical_key === '_intersoccer_canonical_girls_only') {
                 $order_data['_intersoccer_canonical_girls_only'] = $value;
             }
+            if ($raw_key === '_intersoccer_canonical_activity_type' || $canonical_key === '_intersoccer_canonical_activity_type') {
+                $order_data['_intersoccer_canonical_activity_type'] = $value;
+            }
         }
 
         if (function_exists('intersoccer_apply_order_item_attribute_meta_to_data')) {

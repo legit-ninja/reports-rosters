@@ -133,4 +133,22 @@ class FinalReportsMetaTest extends TestCase {
         $this->assertSame(1, $data['girls_only']);
         $this->assertSame('girls-only', $data['pa_girls-only']);
     }
+
+    public function test_apply_canonical_maps_canton_and_camp_terms_to_roster_fields(): void {
+        if (!function_exists('intersoccer_apply_canonical_order_item_meta_to_data')) {
+            $this->markTestSkipped();
+        }
+        $data = intersoccer_apply_canonical_order_item_meta_to_data([
+            'canton_region' => '',
+            'camp_terms' => '',
+        ], [
+            '_intersoccer_canonical_canton' => '["vaud"]',
+            '_intersoccer_canonical_camp_terms' => '["week-1"]',
+        ]);
+
+        $this->assertSame('vaud', $data['canton_region']);
+        $this->assertSame('week-1', $data['camp_terms']);
+        $this->assertArrayNotHasKey('region', $data);
+        $this->assertArrayNotHasKey('event_type', $data);
+    }
 }
