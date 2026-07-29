@@ -20,7 +20,11 @@ class FinalReportsMetaTest extends TestCase {
             $this->markTestSkipped('intersoccer_normalize_order_item_meta_key not loaded');
         }
         $this->assertSame('Booking Type', intersoccer_normalize_order_item_meta_key('pa_booking-type'));
-        $this->assertSame('Days Selected', intersoccer_normalize_order_item_meta_key('Days of Week'));
+        // "Days of Week" is the variation attribute (Mon–Fri availability), not checkout
+        // "Days Selected" — do not alias them (see order-meta-keys Days Selected variants).
+        $this->assertSame('Days of Week', intersoccer_normalize_order_item_meta_key('Days of Week'));
+        $this->assertSame('Days Selected', intersoccer_normalize_order_item_meta_key('selected_days'));
+        $this->assertSame('Days Selected', intersoccer_normalize_order_item_meta_key('Days Selected'));
     }
 
     public function test_normalize_order_item_meta_key_maps_venue_labels() {
