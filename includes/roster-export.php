@@ -275,26 +275,8 @@ function intersoccer_export_roster() {
                     if (isset($arr['dob']) && !isset($arr['player_dob'])) {
                         $arr['player_dob'] = $arr['dob'];
                     }
-                    if (function_exists('intersoccer_roster_field_player_display_name')) {
-                        $display = intersoccer_roster_field_player_display_name($arr);
-                        if ($display !== '') {
-                            $arr['player_name'] = $display;
-                        }
-                        $arr['first_name'] = intersoccer_roster_field_player_first_name($arr);
-                        $arr['last_name'] = intersoccer_roster_field_player_last_name($arr);
-                        if (function_exists('intersoccer_roster_field_selected_days')) {
-                            $sd = intersoccer_roster_field_selected_days($arr);
-                            if ($sd !== '') {
-                                $arr['selected_days'] = $sd;
-                            }
-                        }
-                        if (function_exists('intersoccer_roster_field_player_medical')) {
-                            $med = intersoccer_roster_field_player_medical($arr);
-                            if ($med !== '') {
-                                $arr['medical_conditions'] = $med;
-                                $arr['player_medical'] = $med;
-                            }
-                        }
+                    if (function_exists('intersoccer_roster_normalize_export_row')) {
+                        $arr = intersoccer_roster_normalize_export_row($arr);
                     } elseif (empty($arr['player_name']) && (!empty($arr['first_name']) || !empty($arr['last_name']))) {
                         $arr['player_name'] = trim(($arr['first_name'] ?? '') . ' ' . ($arr['last_name'] ?? ''));
                     }
@@ -331,7 +313,7 @@ function intersoccer_export_roster() {
     if (!$using_oop_export) {
         global $wpdb;
         $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-        $query = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, selected_days, day_presence, age_group, activity_type, product_name, product_id, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
+        $query = "SELECT player_name, first_name, last_name, player_first_name, player_last_name, gender, player_gender, parent_phone, parent_email, age, player_dob, dob, medical_conditions, player_medical, late_pickup, late_pickup_days, booking_type, selected_days, days_selected, day_presence, age_group, activity_type, product_name, product_id, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
                 FROM $rosters_table";
         $where_clauses = [];
         $query_params = [];
@@ -454,7 +436,7 @@ function intersoccer_export_roster() {
         }
     } else {
         $query = $wpdb->prepare(
-            "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, selected_days, day_presence, age_group, activity_type, product_name, product_id, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
+            "SELECT player_name, first_name, last_name, player_first_name, player_last_name, gender, player_gender, parent_phone, parent_email, age, player_dob, dob, medical_conditions, player_medical, late_pickup, late_pickup_days, booking_type, selected_days, days_selected, day_presence, age_group, activity_type, product_name, product_id, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number
              FROM $rosters_table
              WHERE variation_id IN (" . implode(',', array_fill(0, count($variation_ids), '%d')) . ")",
             $variation_ids
@@ -486,6 +468,10 @@ function intersoccer_export_roster() {
         wp_send_json_error([
             'message' => __('No roster data found for export.', 'intersoccer-reports-rosters')
         ]);
+    }
+
+    if (function_exists('intersoccer_roster_normalize_export_row')) {
+        $rosters = array_map('intersoccer_roster_normalize_export_row', $rosters);
     }
 
     // Prepare base roster and headers for Excel export
@@ -618,8 +604,10 @@ function intersoccer_export_roster() {
             $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone);
             $excel_phone = $processed_phone;
 
-            // Format date of birth for Excel from player_dob
-            $birth_date = $player['player_dob'] ?? '';
+            // Format date of birth for Excel (keep-first already applied via normalize)
+            $birth_date = function_exists('intersoccer_roster_field_player_dob')
+                ? intersoccer_roster_field_player_dob($player)
+                : ($player['player_dob'] ?? '');
             $formatted_birth_date = 'N/A';
             if (!empty($birth_date) && $birth_date !== '0000-00-00' && $birth_date !== '1970-01-01') {
                 // Try to parse various date formats
@@ -638,17 +626,29 @@ function intersoccer_export_roster() {
                 }
             }
 
-            // Build data array based on activity type
+            // Build data array based on activity type (keep-first via helpers / normalized keys)
             $avs_export_value = isset($player['avs_number']) ? (string) $player['avs_number'] : 'N/A';
+            $export_first = function_exists('intersoccer_roster_field_player_first_name')
+                ? intersoccer_roster_field_player_first_name($player)
+                : ($player['first_name'] ?? '');
+            $export_last = function_exists('intersoccer_roster_field_player_last_name')
+                ? intersoccer_roster_field_player_last_name($player)
+                : ($player['last_name'] ?? '');
+            $export_gender = function_exists('intersoccer_roster_field_player_gender')
+                ? intersoccer_roster_field_player_gender($player)
+                : ($player['gender'] ?? '');
+            $export_medical = function_exists('intersoccer_roster_field_player_medical')
+                ? intersoccer_roster_field_player_medical($player)
+                : ($player['medical_conditions'] ?? '');
             $data = [
-                $player['first_name'] ?? 'N/A', // First Name
-                $player['last_name'] ?? 'N/A', // Surname
-                $player['gender'] ?? 'N/A', // Gender
+                $export_first !== '' ? $export_first : 'N/A',
+                $export_last !== '' ? $export_last : 'N/A',
+                $export_gender !== '' ? $export_gender : 'N/A',
                 $processed_phone, // Phone
                 $player['parent_email'] ?? 'N/A', // Email
                 $player['age'] ?? 'N/A', // Age
                 $formatted_birth_date, // Birth Date
-                $player['medical_conditions'] ?? 'N/A', // Medical/Dietary Conditions
+                $export_medical !== '' ? $export_medical : 'N/A',
                 $avs_export_value, // AVS Number
             ];
             

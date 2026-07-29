@@ -55,4 +55,25 @@ class RosterCanonicalFieldsTest extends TestCase {
 		$this->assertSame('Monday', $out['days_selected']);
 		$this->assertSame('Sam Lee', $out['player_name']);
 	}
+
+	public function test_normalize_export_row_prefers_keep_columns(): void {
+		$row = intersoccer_roster_normalize_export_row([
+			'player_first_name' => 'Ada',
+			'first_name'        => 'Legacy',
+			'player_last_name'  => 'Lovelace',
+			'last_name'         => 'Drop',
+			'player_gender'     => 'female',
+			'gender'            => 'male',
+			'player_medical'    => 'Peanut allergy',
+			'medical_conditions'=> 'Old',
+			'player_dob'        => '2015-01-02',
+			'dob'               => '2000-01-01',
+		]);
+		$this->assertSame('Ada', $row['first_name']);
+		$this->assertSame('Lovelace', $row['last_name']);
+		$this->assertSame('female', $row['gender']);
+		$this->assertSame('Peanut allergy', $row['medical_conditions']);
+		$this->assertSame('2015-01-02', $row['player_dob']);
+		$this->assertSame('Ada Lovelace', $row['player_name']);
+	}
 }

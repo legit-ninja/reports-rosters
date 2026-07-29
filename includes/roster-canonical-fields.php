@@ -178,3 +178,41 @@ function intersoccer_roster_apply_canonical_write_fields(array $roster_data) {
 
 	return $roster_data;
 }
+
+/**
+ * Normalize a roster row for Excel/UI export: keep-first into legacy keys Excel still reads.
+ *
+ * @param array $row Roster row (ARRAY_A).
+ * @return array
+ */
+function intersoccer_roster_normalize_export_row(array $row) {
+	$display = intersoccer_roster_field_player_display_name($row);
+	if ($display !== '') {
+		$row['player_name'] = $display;
+	}
+	$row['first_name'] = intersoccer_roster_field_player_first_name($row);
+	$row['last_name']  = intersoccer_roster_field_player_last_name($row);
+
+	$gender = intersoccer_roster_field_player_gender($row);
+	if ($gender !== '') {
+		$row['gender']        = $gender;
+		$row['player_gender'] = $gender;
+	}
+
+	$dob = intersoccer_roster_field_player_dob($row);
+	if ($dob !== '') {
+		$row['player_dob'] = $dob;
+		$row['dob']        = $dob;
+	}
+
+	$sd = intersoccer_roster_field_selected_days($row);
+	if ($sd !== '') {
+		$row['selected_days'] = $sd;
+	}
+
+	$med = intersoccer_roster_field_player_medical($row);
+	$row['medical_conditions'] = $med;
+	$row['player_medical']     = $med;
+
+	return $row;
+}
