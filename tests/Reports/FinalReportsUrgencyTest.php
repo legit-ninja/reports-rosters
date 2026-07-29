@@ -137,4 +137,62 @@ class FinalReportsUrgencyTest extends TestCase {
 		$this->assertSame('FF059669', intersoccer_reports_urgency_band_argb('count-good'));
 		$this->assertSame('FF1D4ED8', intersoccer_reports_urgency_band_argb('count-optimal'));
 	}
+
+	public function test_at_risk_critical_always() {
+		if (!function_exists('intersoccer_reports_is_at_risk_program')) {
+			$this->markTestSkipped('intersoccer_reports_is_at_risk_program not loaded');
+		}
+		$this->assertTrue(intersoccer_reports_is_at_risk_program(7, 60));
+		$this->assertTrue(intersoccer_reports_is_at_risk_program(0, null));
+		$this->assertSame('critical', intersoccer_reports_at_risk_reason(5, 30));
+	}
+
+	public function test_at_risk_fragile_only_within_cutoff() {
+		if (!function_exists('intersoccer_reports_is_at_risk_program')) {
+			$this->markTestSkipped('intersoccer_reports_is_at_risk_program not loaded');
+		}
+		$this->assertTrue(intersoccer_reports_is_at_risk_program(8, 14));
+		$this->assertTrue(intersoccer_reports_is_at_risk_program(9, 7));
+		$this->assertFalse(intersoccer_reports_is_at_risk_program(8, 15));
+		$this->assertFalse(intersoccer_reports_is_at_risk_program(9, null));
+		$this->assertFalse(intersoccer_reports_is_at_risk_program(10, 5));
+		$this->assertSame('fragile', intersoccer_reports_at_risk_reason(8, 10));
+	}
+
+	public function test_parse_week_start_date() {
+		if (!function_exists('intersoccer_reports_parse_week_start_date')) {
+			$this->markTestSkipped('intersoccer_reports_parse_week_start_date not loaded');
+		}
+		$this->assertSame('2026-07-06', intersoccer_reports_parse_week_start_date('6–10 Jul 2026'));
+		$this->assertSame('2026-07-06', intersoccer_reports_parse_week_start_date('6-10 Jul 2026'));
+		$this->assertNull(intersoccer_reports_parse_week_start_date(''));
+	}
+
+	public function test_camp_at_risk_rows_separate_full_and_mini() {
+		if (!function_exists('intersoccer_reports_camp_at_risk_rows')) {
+			$this->markTestSkipped('intersoccer_reports_camp_at_risk_rows not loaded');
+		}
+		$report = [
+			'6–10 Jul 2026' => [
+				'Geneva' => [
+					'Venue A' => [
+						'Full Day' => ['min_max' => '2-3'],
+						'Mini - Half Day' => ['min_max' => '8-8'],
+					],
+				],
+			],
+		];
+		// Today 2026-07-01 → 5 days left → Mini fragile qualifies; Full Day critical.
+		$rows = intersoccer_reports_camp_at_risk_rows($report, '2026-07-01');
+		$this->assertCount(2, $rows);
+		$types = array_column($rows, 'session_type');
+		$this->assertContains('Full Day', $types);
+		$this->assertContains('Mini - Half Day', $types);
+
+		// Far from start: only Critical (Full Day) remains.
+		$rows_far = intersoccer_reports_camp_at_risk_rows($report, '2026-05-01');
+		$this->assertCount(1, $rows_far);
+		$this->assertSame('Full Day', $rows_far[0]['session_type']);
+		$this->assertSame('critical', $rows_far[0]['reason']);
+	}
 }

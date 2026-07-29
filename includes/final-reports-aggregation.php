@@ -855,3 +855,207 @@ if (!function_exists('intersoccer_reports_camp_excel_data_rows')) {
 		return $rows;
 	}
 }
+
+if (!function_exists('intersoccer_reports_at_risk_days_default')) {
+	/**
+	 * Days-to-start cutoff for fragile (8–9) programs — catalog AT_RISK_DAYS_DEFAULT.
+	 *
+	 * @return int
+	 */
+	function intersoccer_reports_at_risk_days_default() {
+		$days = 14;
+		if (function_exists('apply_filters')) {
+			$days = (int) apply_filters('intersoccer_reports_at_risk_days_default', $days);
+		}
+		return max(1, $days);
+	}
+}
+
+if (!function_exists('intersoccer_reports_is_fragile_headcount')) {
+	/**
+	 * Fragile viable floor: headcount 8 or 9 (below comfortable 8–10 floor).
+	 *
+	 * @param int $headcount Peak headcount.
+	 * @return bool
+	 */
+	function intersoccer_reports_is_fragile_headcount($headcount) {
+		$n = (int) $headcount;
+		return $n >= 8 && $n <= 9;
+	}
+}
+
+if (!function_exists('intersoccer_reports_is_at_risk_program')) {
+	/**
+	 * At-risk: Critical (≤7) OR (fragile 8–9 AND days_to_start ≤ AT_RISK_DAYS_DEFAULT).
+	 *
+	 * When $days_to_start is null, only Critical qualifies (cannot judge fragile window).
+	 *
+	 * @param int      $headcount     Peak headcount (max of min–max for camps).
+	 * @param int|null $days_to_start Days until program start (null = unknown).
+	 * @param int|null $at_risk_days  Override cutoff.
+	 * @return bool
+	 */
+	function intersoccer_reports_is_at_risk_program($headcount, $days_to_start = null, $at_risk_days = null) {
+		$n = (int) $headcount;
+		$band = intersoccer_reports_urgency_band($n);
+		if ($band === 'count-critical') {
+			return true;
+		}
+		if (!intersoccer_reports_is_fragile_headcount($n)) {
+			return false;
+		}
+		if ($days_to_start === null) {
+			return false;
+		}
+		$cutoff = $at_risk_days === null ? intersoccer_reports_at_risk_days_default() : max(1, (int) $at_risk_days);
+		return (int) $days_to_start <= $cutoff;
+	}
+}
+
+if (!function_exists('intersoccer_reports_at_risk_reason')) {
+	/**
+	 * Reason code for an at-risk program line.
+	 *
+	 * @param int      $headcount     Peak headcount.
+	 * @param int|null $days_to_start Days until start.
+	 * @param int|null $at_risk_days  Override cutoff.
+	 * @return string critical|fragile|'' 
+	 */
+	function intersoccer_reports_at_risk_reason($headcount, $days_to_start = null, $at_risk_days = null) {
+		if (!intersoccer_reports_is_at_risk_program($headcount, $days_to_start, $at_risk_days)) {
+			return '';
+		}
+		$n = (int) $headcount;
+		if (intersoccer_reports_urgency_band($n) === 'count-critical') {
+			return 'critical';
+		}
+		return 'fragile';
+	}
+}
+
+if (!function_exists('intersoccer_reports_parse_week_start_date')) {
+	/**
+	 * Best-effort start date (Y-m-d) from a Final Camp week label like "6–10 Jul 2026".
+	 *
+	 * @param string $week_name Date-range label.
+	 * @return string|null Y-m-d or null.
+	 */
+	function intersoccer_reports_parse_week_start_date($week_name) {
+		$week_name = trim((string) $week_name);
+		if ($week_name === '' || $week_name === '__player_registration_totals__') {
+			return null;
+		}
+		// Prefer explicit meta when callers pass Y-m-d already.
+		if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $week_name)) {
+			return $week_name;
+		}
+		// "6–10 Jul 2026" / "6-10 Jul 2026" / "6 – 10 July 2026"
+		if (preg_match('/^(\d{1,2})\s*[–\-]\s*\d{1,2}\s+([A-Za-z]+)\s+(\d{4})/u', $week_name, $m)) {
+			$ts = strtotime($m[1] . ' ' . $m[2] . ' ' . $m[3]);
+			return $ts ? date('Y-m-d', $ts) : null;
+		}
+		// "Jul 6–10 2026"
+		if (preg_match('/^([A-Za-z]+)\s+(\d{1,2})\s*[–\-]\s*\d{1,2}\s+(\d{4})/u', $week_name, $m)) {
+			$ts = strtotime($m[2] . ' ' . $m[1] . ' ' . $m[3]);
+			return $ts ? date('Y-m-d', $ts) : null;
+		}
+		$ts = strtotime($week_name);
+		return $ts ? date('Y-m-d', $ts) : null;
+	}
+}
+
+if (!function_exists('intersoccer_reports_days_until_date')) {
+	/**
+	 * Whole days from $today to $ymd (negative if past).
+	 *
+	 * @param string      $ymd   Y-m-d.
+	 * @param string|null $today Y-m-d reference (default today).
+	 * @return int|null
+	 */
+	function intersoccer_reports_days_until_date($ymd, $today = null) {
+		$start = strtotime((string) $ymd . ' 00:00:00');
+		if ($start === false) {
+			return null;
+		}
+		$ref = $today ? strtotime((string) $today . ' 00:00:00') : strtotime(date('Y-m-d') . ' 00:00:00');
+		if ($ref === false) {
+			return null;
+		}
+		$day_secs = defined('DAY_IN_SECONDS') ? (int) DAY_IN_SECONDS : 86400;
+		return (int) floor(($start - $ref) / $day_secs);
+	}
+}
+
+if (!function_exists('intersoccer_reports_camp_at_risk_rows')) {
+	/**
+	 * Build at-risk attention rows from camp Final Numbers report data.
+	 * Judges Full Day and Mini separately — never merges session types.
+	 *
+	 * @param array       $report_data Camp report nested structure.
+	 * @param string|null $today       Y-m-d for days-left (tests).
+	 * @return array<int,array<string,mixed>>
+	 */
+	function intersoccer_reports_camp_at_risk_rows(array $report_data, $today = null) {
+		$rows = [];
+		foreach ($report_data as $week_name => $cantons) {
+			if ($week_name === '__player_registration_totals__' || !is_array($cantons)) {
+				continue;
+			}
+			$start_ymd = null;
+			if (is_array($cantons) && isset($cantons['__start_date']) && is_string($cantons['__start_date'])) {
+				$start_ymd = $cantons['__start_date'];
+			}
+			if (!$start_ymd) {
+				$start_ymd = intersoccer_reports_parse_week_start_date((string) $week_name);
+			}
+			$days_left = $start_ymd ? intersoccer_reports_days_until_date($start_ymd, $today) : null;
+
+			foreach ($cantons as $canton => $venues) {
+				if ($canton === '__start_date' || !is_array($venues)) {
+					continue;
+				}
+				foreach ($venues as $venue => $camp_types) {
+					if (!is_array($camp_types)) {
+						continue;
+					}
+					foreach ($camp_types as $camp_type => $data) {
+						if (!is_array($data) || !isset($data['min_max'])) {
+							continue;
+						}
+						// Optional per-cell start_date (camp schedule meta).
+						$cell_start = !empty($data['start_date']) ? (string) $data['start_date'] : $start_ymd;
+						$cell_days = $cell_start ? intersoccer_reports_days_until_date($cell_start, $today) : $days_left;
+						$headcount = intersoccer_reports_parse_min_max_max($data['min_max'] ?? '');
+						$reason = intersoccer_reports_at_risk_reason($headcount, $cell_days);
+						if ($reason === '') {
+							continue;
+						}
+						$rows[] = [
+							'week'         => (string) $week_name,
+							'canton'       => (string) $canton,
+							'venue'        => (string) $venue,
+							'session_type' => (string) $camp_type,
+							'headcount'    => $headcount,
+							'days_left'    => $cell_days,
+							'start_date'   => $cell_start,
+							'reason'       => $reason,
+							'min_max'      => (string) ($data['min_max'] ?? ''),
+						];
+					}
+				}
+			}
+		}
+		// Critical first, then fewest days left.
+		usort($rows, static function ($a, $b) {
+			$ra = ($a['reason'] === 'critical') ? 0 : 1;
+			$rb = ($b['reason'] === 'critical') ? 0 : 1;
+			if ($ra !== $rb) {
+				return $ra <=> $rb;
+			}
+			$da = $a['days_left'] === null ? 9999 : (int) $a['days_left'];
+			$db = $b['days_left'] === null ? 9999 : (int) $b['days_left'];
+			return $da <=> $db;
+		});
+		return $rows;
+	}
+}
