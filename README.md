@@ -6,7 +6,8 @@ WordPress/WooCommerce plugin for event roster management, Final Numbers / Live S
 
 - **Current Version:** 2.7.25
 
-Camp event dates prefer variation `_camp_start_date` / `_camp_end_date` (and order-item stamps) via `intersoccer_reports_resolve_camp_schedule()`. Parsing `camp_terms` strings is a **deprecated transitional fallback** until catalogue migration is complete.
+- Camp event dates prefer variation `_camp_start_date` / `_camp_end_date` (and order-item stamps) via `intersoccer_reports_resolve_camp_schedule()`. Parsing `camp_terms` strings is a **deprecated transitional fallback** until catalogue migration is complete.
+- Final Numbers / Live Snapshot resolve year via `intersoccer_reports_resolve_program_year()`: order-item `Year` / `pa_program-year` → digits in season → event dates. Evergreen seasons (e.g. `Autumn`) no longer require year digits in the season string. Season close requires an explicit year.
 - **Release Date:** July 25, 2026
 
 ## Owns
