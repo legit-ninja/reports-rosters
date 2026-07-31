@@ -201,22 +201,21 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             : '%s';
         
         // Build WHERE conditions dynamically based on filters
-        // Exclude placeholder records (order_item_id = 0)
+        // Exclude placeholder records (order_item_id = 0).
+        // Do NOT require year digits in r.season (evergreen seasons like "Autumn").
+        // Year is resolved in PHP via program_year / season digits / event dates.
         $where_conditions = [
             "r.activity_type = %s",
-            "r.season LIKE %s",
             "r.order_item_id > 0",
             "p.post_type = 'shop_order'",
             "p.post_status IN ({$camp_status_sql})"
         ];
         $prepare_values = [
             $activity_type,
-            '%' . $year_int . '%'
         ];
         $prepare_values = array_merge($prepare_values, $camp_statuses);
         
-        // Add season type filter if provided (AFTER camp_statuses so binding
-        // order matches: activity_type, season LIKE, post_status IN, season_type LIKE).
+        // Add season type filter if provided (type only — e.g. Autumn%, not year digits).
         if (!empty($season_type)) {
             $where_conditions[] = "r.season LIKE %s";
             $prepare_values[] = $season_type . '%';
@@ -246,12 +245,15 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 oi.order_id,
                 om_line_subtotal.meta_value AS line_subtotal,
                 om_line_total.meta_value AS line_total,
+                COALESCE(om_year.meta_value, om_year_alt.meta_value) AS program_year,
                 p.post_date
              FROM $rosters_table r
              JOIN $order_items_table oi ON r.order_item_id = oi.order_item_id
              JOIN $posts_table p ON oi.order_id = p.ID
              LEFT JOIN $order_itemmeta_table om_line_subtotal ON oi.order_item_id = om_line_subtotal.order_item_id AND om_line_subtotal.meta_key = '_line_subtotal'
              LEFT JOIN $order_itemmeta_table om_line_total ON oi.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
+             LEFT JOIN $order_itemmeta_table om_year ON oi.order_item_id = om_year.order_item_id AND om_year.meta_key = 'Year'
+             LEFT JOIN $order_itemmeta_table om_year_alt ON oi.order_item_id = om_year_alt.order_item_id AND om_year_alt.meta_key = 'pa_program-year'
              WHERE $where_clause",
             ...$prepare_values
         );
@@ -468,8 +470,10 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                         $roster['event_start_date'] = $event_start_date;
                         $roster['event_end_date'] = $event_end_date ?: $event_start_date;
                     } else {
-                        // Keep undated rows if season still matches requested year so table and totals stay aligned.
-                        $season_year_undated = !empty($roster['season']) ? intersoccer_extract_year_from_season($roster['season']) : null;
+                        // Keep undated rows if program year still matches requested year.
+                        $season_year_undated = function_exists('intersoccer_reports_resolve_program_year')
+                            ? intersoccer_reports_resolve_program_year($roster)
+                            : (!empty($roster['season']) ? intersoccer_extract_year_from_season($roster['season']) : null);
                         $requested_year_int = intval($year);
                         if ($season_year_undated !== null && $season_year_undated == $requested_year_int) {
                             $roster['event_start_date'] = '';
@@ -489,8 +493,10 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                     }
                 }
                 
-                // For camps, season is authoritative - match the user's query behavior (season LIKE '%year')
-                $season_year = !empty($roster['season']) ? intersoccer_extract_year_from_season($roster['season']) : null;
+                // Prefer program_year / season digits / event dates (evergreen-safe).
+                $season_year = function_exists('intersoccer_reports_resolve_program_year')
+                    ? intersoccer_reports_resolve_program_year($roster)
+                    : (!empty($roster['season']) ? intersoccer_extract_year_from_season($roster['season']) : null);
                 $requested_year_int = intval($year);
                 
                 // Apply season type filter if provided
@@ -512,7 +518,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                     }
                 }
                 
-                // Primary filter: season year must match (like user's query: season LIKE '%year')
+                // Primary filter: resolved program year must match
                 if ($season_year !== null) {
                     if ($season_year == $requested_year_int) {
                         // Season matches - include this record
@@ -526,7 +532,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                         continue;
                     }
                 } else {
-                    // No season - fall back to date-based filtering
+                    // No resolvable year - fall back to date-based filtering
                     $event_year = !empty($roster['event_start_date']) ? intval(date('Y', strtotime($roster['event_start_date']))) : null;
                     if ($event_year !== null && $event_year == $requested_year_int) {
                         $after_season_filter++;
@@ -576,7 +582,9 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             
             // Parse event dates from camp_terms
             if (empty($camp_terms) || $camp_terms === 'N/A') {
-                $season_year_undated = !empty($season) ? intersoccer_extract_year_from_season($season) : null;
+                $season_year_undated = function_exists('intersoccer_reports_resolve_program_year')
+                    ? intersoccer_reports_resolve_program_year(array_merge($roster, ['season' => $season]))
+                    : (!empty($season) ? intersoccer_extract_year_from_season($season) : null);
                 if ($season_year_undated !== null && $season_year_undated == intval($year)) {
                     $roster['event_start_date'] = '';
                     $roster['event_end_date'] = '';
@@ -898,7 +906,10 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
 
             if (empty($parsed_start_date) || $parsed_start_date === '1970-01-01') {
                 $season_for_year = $roster['roster_season'] ?? '';
-                $season_year = !empty($season_for_year) ? intersoccer_extract_year_from_season($season_for_year) : null;
+                $resolve_entry = array_merge($roster, ['season' => $season_for_year]);
+                $season_year = function_exists('intersoccer_reports_resolve_program_year')
+                    ? intersoccer_reports_resolve_program_year($resolve_entry)
+                    : (!empty($season_for_year) ? intersoccer_extract_year_from_season($season_for_year) : null);
                 $requested_year_int = intval($year);
                 if ($season_year !== null && $season_year == $requested_year_int) {
                     $post_date = isset($roster['post_date']) ? trim((string) $roster['post_date']) : '';
@@ -916,7 +927,10 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
 
             if ($start_year != $year && $end_year != $year) {
                 $season_for_year = $roster['roster_season'] ?? '';
-                $season_year = !empty($season_for_year) ? intersoccer_extract_year_from_season($season_for_year) : null;
+                $resolve_entry = array_merge($roster, ['season' => $season_for_year]);
+                $season_year = function_exists('intersoccer_reports_resolve_program_year')
+                    ? intersoccer_reports_resolve_program_year($resolve_entry)
+                    : (!empty($season_for_year) ? intersoccer_extract_year_from_season($season_for_year) : null);
                 if ($season_year === null || $season_year != intval($year)) {
                     continue;
                 }

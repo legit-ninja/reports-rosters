@@ -1001,7 +1001,18 @@ function intersoccer_roster_listing_page_scripts() {
             var $btn = $(this);
             var season = $btn.data('season');
             var page = $btn.data('page') || 'camps';
-            if (!confirm('<?php echo esc_js(__('Are you sure you want to close ALL active rosters in this season? This action cannot be undone.', 'intersoccer-reports-rosters')); ?>')) {
+            var year = parseInt($btn.data('year'), 10) || 0;
+            if (!year && season) {
+                var yearMatch = String(season).match(/\b(20\d{2})\b/);
+                if (yearMatch) {
+                    year = parseInt(yearMatch[1], 10);
+                }
+            }
+            if (!year) {
+                alert('<?php echo esc_js(__('Year is required to close a season. Filter or label the season with a year (e.g. Autumn 2026) before closing.', 'intersoccer-reports-rosters')); ?>');
+                return;
+            }
+            if (!confirm('<?php echo esc_js(__('Are you sure you want to close ALL active rosters in this season for the selected year? This action cannot be undone.', 'intersoccer-reports-rosters')); ?>')) {
                 return;
             }
             $btn.prop('disabled', true).text('<?php echo esc_js(__('Closing...', 'intersoccer-reports-rosters')); ?>');
@@ -1012,6 +1023,7 @@ function intersoccer_roster_listing_page_scripts() {
                     action: 'intersoccer_close_season_rosters',
                     nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
                     season: season,
+                    year: year,
                     page: page
                 },
                 success: function(response) {
@@ -1700,8 +1712,26 @@ function intersoccer_render_camps_page() {
                             </div>
                             <div class="season-actions">
                                 <?php if ($active_count > 0): ?>
+                                    <?php
+                                    $close_year = function_exists('intersoccer_extract_year_from_season')
+                                        ? intersoccer_extract_year_from_season($season)
+                                        : null;
+                                    if ($close_year === null && !empty($camps) && function_exists('intersoccer_reports_resolve_program_year')) {
+                                        $years = [];
+                                        foreach ($camps as $camp_row) {
+                                            $y = intersoccer_reports_resolve_program_year(is_array($camp_row) ? $camp_row : (array) $camp_row);
+                                            if ($y !== null) {
+                                                $years[$y] = true;
+                                            }
+                                        }
+                                        if (count($years) === 1) {
+                                            $close_year = (int) array_key_first($years);
+                                        }
+                                    }
+                                    ?>
                                     <button type="button" class="close-season-btn" 
                                             data-season="<?php echo esc_attr($season); ?>"
+                                            data-year="<?php echo esc_attr($close_year !== null ? (string) (int) $close_year : ''); ?>"
                                             data-page="camps"
                                             title="<?php esc_attr_e('Close all active rosters in this season', 'intersoccer-reports-rosters'); ?>">
                                         <?php _e('Close All in Season', 'intersoccer-reports-rosters'); ?>
@@ -2139,8 +2169,28 @@ function intersoccer_render_courses_page() {
                             </div>
                             <div class="season-actions">
                                 <?php if ($active_count > 0): ?>
+                                    <?php
+                                    $close_year = function_exists('intersoccer_extract_year_from_season')
+                                        ? intersoccer_extract_year_from_season($season)
+                                        : null;
+                                    if ($close_year === null && !empty($day_groups) && function_exists('intersoccer_reports_resolve_program_year')) {
+                                        $years = [];
+                                        foreach ($day_groups as $courses) {
+                                            foreach ((array) $courses as $course_row) {
+                                                $y = intersoccer_reports_resolve_program_year(is_array($course_row) ? $course_row : (array) $course_row);
+                                                if ($y !== null) {
+                                                    $years[$y] = true;
+                                                }
+                                            }
+                                        }
+                                        if (count($years) === 1) {
+                                            $close_year = (int) array_key_first($years);
+                                        }
+                                    }
+                                    ?>
                                     <button type="button" class="close-season-btn" 
                                             data-season="<?php echo esc_attr($season); ?>"
+                                            data-year="<?php echo esc_attr($close_year !== null ? (string) (int) $close_year : ''); ?>"
                                             data-page="courses"
                                             title="<?php esc_attr_e('Close all active rosters in this season', 'intersoccer-reports-rosters'); ?>">
                                         <?php _e('Close All in Season', 'intersoccer-reports-rosters'); ?>

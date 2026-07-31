@@ -279,10 +279,23 @@ class AdminToolsAjaxHandler {
             wp_send_json_error(['message' => __('Season is required.', 'intersoccer-reports-rosters')]);
         }
 
+        $year = isset($_POST['year']) ? absint($_POST['year']) : 0;
+        if ($year < 2000 && function_exists('intersoccer_extract_year_from_season')) {
+            $extracted = intersoccer_extract_year_from_season($season);
+            if ($extracted !== null) {
+                $year = (int) $extracted;
+            }
+        }
+        if ($year < 2000) {
+            wp_send_json_error([
+                'message' => __('Year is required to close a season. Evergreen seasons (e.g. Autumn) need an explicit year so other years are not closed.', 'intersoccer-reports-rosters'),
+            ]);
+        }
+
         global $wpdb;
         $table = $wpdb->prefix . 'intersoccer_rosters';
 
-        // Match case-insensitively; close ALL rosters in the matching season.
+        // Match case-insensitively; then scope by calendar year (evergreen-safe).
         $season_escaped = $wpdb->esc_like($season);
         $matching_seasons = $wpdb->get_col($wpdb->prepare(
             "SELECT DISTINCT season FROM {$table}
@@ -297,17 +310,53 @@ class AdminToolsAjaxHandler {
         }
 
         $season_placeholders = implode(',', array_fill(0, count($matching_seasons), '%s'));
-        $where_conditions = ["season IN ($season_placeholders)", "(event_completed = 0 OR event_completed IS NULL)"];
+        $candidates = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, season, start_date FROM {$table}
+                 WHERE season IN ($season_placeholders)
+                 AND (event_completed = 0 OR event_completed IS NULL)",
+                $matching_seasons
+            ),
+            ARRAY_A
+        );
 
-        $count_query = "SELECT COUNT(DISTINCT event_signature) FROM {$table} WHERE " . implode(' AND ', $where_conditions);
-        $roster_count = (int) $wpdb->get_var($wpdb->prepare($count_query, $matching_seasons));
+        $ids = [];
+        foreach ((array) $candidates as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (function_exists('intersoccer_reports_roster_matches_close_year')
+                ? intersoccer_reports_roster_matches_close_year($row, $year)
+                : false) {
+                $ids[] = (int) $row['id'];
+            }
+        }
+        $ids = array_values(array_filter(array_unique($ids)));
 
-        if ($roster_count <= 0) {
-            wp_send_json_error(['message' => __('No active rosters found for this season.', 'intersoccer-reports-rosters')]);
+        if (empty($ids)) {
+            wp_send_json_error([
+                'message' => sprintf(
+                    __('No active rosters found for season "%1$s" in year %2$d.', 'intersoccer-reports-rosters'),
+                    esc_html($season),
+                    $year
+                ),
+            ]);
         }
 
-        $update_query = "UPDATE {$table} SET event_completed = 1 WHERE " . implode(' AND ', $where_conditions);
-        $updated = $wpdb->query($wpdb->prepare($update_query, $matching_seasons));
+        $id_placeholders = implode(',', array_fill(0, count($ids), '%d'));
+        $roster_count = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(DISTINCT event_signature) FROM {$table} WHERE id IN ($id_placeholders)",
+                $ids
+            )
+        );
+
+        $updated = $wpdb->query(
+            $wpdb->prepare(
+                "UPDATE {$table} SET event_completed = 1 WHERE id IN ($id_placeholders)",
+                $ids
+            )
+        );
 
         if ($updated === false) {
             wp_send_json_error(['message' => __('Failed to close rosters in season.', 'intersoccer-reports-rosters')]);
@@ -315,7 +364,13 @@ class AdminToolsAjaxHandler {
 
         delete_transient('intersoccer_rosters_cache');
 
-        $season_msg = sprintf(__('Successfully closed %d roster(s) in season "%s". %d entries updated.', 'intersoccer-reports-rosters'), $roster_count, esc_html($season), $updated);
+        $season_msg = sprintf(
+            __('Successfully closed %1$d roster(s) in season "%2$s" (%3$d). %4$d entries updated.', 'intersoccer-reports-rosters'),
+            $roster_count,
+            esc_html($season),
+            $year,
+            $updated
+        );
         if (function_exists('intersoccer_rosters_flash_admin_notice')) {
             intersoccer_rosters_flash_admin_notice($season_msg);
         }
@@ -325,6 +380,7 @@ class AdminToolsAjaxHandler {
             'updated' => $updated,
             'roster_count' => $roster_count,
             'season' => $season,
+            'year' => $year,
         ]);
     }
 

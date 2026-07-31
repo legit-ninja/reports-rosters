@@ -9,6 +9,83 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!function_exists('intersoccer_reports_resolve_program_year')) {
+    /**
+     * Resolve program year for a Final Numbers / report entry.
+     *
+     * Priority: explicit program_year / Year meta → digits in season → event/start date year.
+     *
+     * @param array<string,mixed> $entry Roster or report row.
+     * @return int|null
+     */
+    function intersoccer_reports_resolve_program_year(array $entry) {
+        foreach (['program_year', 'Year', 'pa_program-year'] as $key) {
+            if (!isset($entry[$key]) || $entry[$key] === '' || $entry[$key] === null) {
+                continue;
+            }
+            $raw = trim((string) $entry[$key]);
+            if ($raw === '') {
+                continue;
+            }
+            if (preg_match('/\b(20\d{2})\b/', $raw, $m)) {
+                return (int) $m[1];
+            }
+            if (preg_match('/^(19|20)\d{2}$/', $raw)) {
+                return (int) $raw;
+            }
+        }
+
+        $season = '';
+        if (!empty($entry['season'])) {
+            $season = (string) $entry['season'];
+        } elseif (!empty($entry['roster_season'])) {
+            $season = (string) $entry['roster_season'];
+        }
+        if ($season !== '' && function_exists('intersoccer_extract_year_from_season')) {
+            $from_season = intersoccer_extract_year_from_season($season);
+            if ($from_season !== null) {
+                return (int) $from_season;
+            }
+        }
+
+        foreach (['event_start_date', 'start_date'] as $date_key) {
+            if (empty($entry[$date_key])) {
+                continue;
+            }
+            $date = trim((string) $entry[$date_key]);
+            if ($date === '' || $date === '1970-01-01' || $date === '0000-00-00' || $date === 'N/A') {
+                continue;
+            }
+            $ts = strtotime($date);
+            if ($ts !== false) {
+                return (int) date('Y', $ts);
+            }
+        }
+
+        return null;
+    }
+}
+
+if (!function_exists('intersoccer_reports_roster_matches_close_year')) {
+    /**
+     * Whether a roster row should be closed for the requested calendar year.
+     *
+     * @param array<string,mixed> $row
+     * @param int                 $year Required year (must be >= 2000).
+     * @return bool
+     */
+    function intersoccer_reports_roster_matches_close_year(array $row, $year) {
+        $year = (int) $year;
+        if ($year < 2000) {
+            return false;
+        }
+        $resolved = function_exists('intersoccer_reports_resolve_program_year')
+            ? intersoccer_reports_resolve_program_year($row)
+            : null;
+        return $resolved !== null && (int) $resolved === $year;
+    }
+}
+
 if (!function_exists('intersoccer_reports_order_status_allowed_for_mode')) {
     /**
      * Whether a WooCommerce order status is counted for Final Numbers mode.
@@ -60,17 +137,22 @@ if (!function_exists('intersoccer_reports_filter_entries_by_season_year')) {
                 }
             }
 
-            $season_year = ($season !== '' && function_exists('intersoccer_extract_year_from_season'))
-                ? intersoccer_extract_year_from_season($season)
+            $resolved_year = function_exists('intersoccer_reports_resolve_program_year')
+                ? intersoccer_reports_resolve_program_year($entry)
                 : null;
 
-            if ($season_year !== null) {
-                if ((int) $season_year === $requested_year) {
+            if ($resolved_year === null && $season !== '' && function_exists('intersoccer_extract_year_from_season')) {
+                $resolved_year = intersoccer_extract_year_from_season($season);
+            }
+
+            if ($resolved_year !== null) {
+                if ((int) $resolved_year === $requested_year) {
                     $out[] = $entry;
                 }
                 continue;
             }
 
+            // Last resort: event/start date when resolver unavailable or empty entry.
             $esd = isset($entry['event_start_date']) ? trim((string) $entry['event_start_date']) : '';
             if ($esd === '' || $esd === '1970-01-01' || $esd === '0000-00-00') {
                 $esd = isset($entry['start_date']) ? trim((string) $entry['start_date']) : '';

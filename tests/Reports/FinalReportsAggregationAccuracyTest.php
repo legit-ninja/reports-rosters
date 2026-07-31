@@ -33,7 +33,9 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
             || !function_exists('intersoccer_reports_filter_entries_by_season_year')
             || !function_exists('intersoccer_reports_build_course_report_from_entries')
             || !function_exists('intersoccer_reports_camp_excel_data_rows')
-            || !function_exists('intersoccer_reports_order_status_allowed_for_mode')) {
+            || !function_exists('intersoccer_reports_order_status_allowed_for_mode')
+            || !function_exists('intersoccer_reports_resolve_program_year')
+            || !function_exists('intersoccer_reports_roster_matches_close_year')) {
             $this->markTestSkipped('Final reports aggregation helpers not loaded');
         }
     }
@@ -292,6 +294,62 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
         $filtered = intersoccer_reports_filter_entries_by_season_year($entries, 2026, 'Summer');
         $this->assertCount(1, $filtered);
         $this->assertSame('Summer 2026', $filtered[0]['season']);
+    }
+
+    public function test_evergreen_season_uses_program_year() {
+        $this->skipIfMissingHelpers();
+
+        $entries = [
+            [
+                'order_item_id' => 1,
+                'season' => 'Autumn',
+                'program_year' => '2026',
+                'booking_type' => 'Full Week',
+                'event_start_date' => '2026-10-05',
+            ],
+            [
+                'order_item_id' => 2,
+                'season' => 'Autumn',
+                'program_year' => '2027',
+                'booking_type' => 'Full Week',
+                'event_start_date' => '2027-10-04',
+            ],
+            [
+                'order_item_id' => 3,
+                'season' => 'Autumn 2026',
+                'booking_type' => 'Full Week',
+                'event_start_date' => '2026-10-12',
+            ],
+            [
+                'order_item_id' => 4,
+                'season' => 'Autumn',
+                'program_year' => '2026',
+                'booking_type' => 'Full Week',
+                // Undated — kept via program_year
+            ],
+        ];
+
+        $filtered = intersoccer_reports_filter_entries_by_season_year($entries, 2026, 'Autumn');
+        $this->assertCount(3, $filtered);
+        $ids = array_column($filtered, 'order_item_id');
+        $this->assertContains(1, $ids);
+        $this->assertContains(3, $ids);
+        $this->assertContains(4, $ids);
+        $this->assertNotContains(2, $ids);
+
+        $this->assertSame(2026, intersoccer_reports_resolve_program_year($entries[0]));
+        $this->assertSame(2027, intersoccer_reports_resolve_program_year($entries[1]));
+        $this->assertSame(2026, intersoccer_reports_resolve_program_year($entries[2]));
+    }
+
+    public function test_close_season_requires_year_helper() {
+        $this->skipIfMissingHelpers();
+
+        $row_2026 = ['season' => 'Autumn', 'program_year' => '2026', 'start_date' => '2026-10-05'];
+        $row_2027 = ['season' => 'Autumn', 'program_year' => '2027', 'start_date' => '2027-10-04'];
+        $this->assertTrue(intersoccer_reports_roster_matches_close_year($row_2026, 2026));
+        $this->assertFalse(intersoccer_reports_roster_matches_close_year($row_2027, 2026));
+        $this->assertFalse(intersoccer_reports_roster_matches_close_year($row_2026, 0));
     }
 
     public function test_live_vs_final_order_status_mode() {

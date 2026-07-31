@@ -34,6 +34,8 @@ function intersoccer_get_order_meta_field_map() {
         'Player Index' => 'player_index',
         'Days Selected' => 'selected_days',
         'Season' => 'season',
+        'Year' => 'program_year',
+        'pa_program-year' => 'program_year',
         'Canton / Region' => 'region',
         'City' => 'city',
         'Activity Type' => 'activity_type',
@@ -784,6 +786,8 @@ function intersoccer_get_order_meta_canonical_to_final_report_row_keys() {
         'Days Selected' => 'selected_days',
         'Camp Terms' => 'camp_terms',
         'Season' => 'season',
+        'Year' => 'program_year',
+        'pa_program-year' => 'program_year',
     ];
 }
 
