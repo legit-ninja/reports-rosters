@@ -114,7 +114,13 @@ class FacetNormalizer {
 			$out['age_group'] = $this->normalize_age_group($age);
 		}
 
-		$week_index = $this->first_meta($raw, ['_camp_week_index', 'Camp Week Index']);
+		// Prefer human week labels (EN/FR/DE); `_camp_week_index` is legacy order-item fallback.
+		$week_index = $this->first_meta($raw, [
+			'Camp Week Index',
+			'Index de semaine du camp',
+			'Camp-Wochenindex',
+			'_camp_week_index',
+		]);
 		if ($week_index !== '' && is_numeric($week_index)) {
 			$out['camp_week_index'] = (int) $week_index;
 		}
