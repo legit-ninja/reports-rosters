@@ -42,6 +42,9 @@ function intersoccer_get_order_meta_field_map() {
         'Girls Only' => 'girls_only',
         'Start Date' => 'start_date',
         'End Date' => 'end_date',
+        'Camp Start Date' => 'camp_start_date',
+        'Camp End Date' => 'camp_end_date',
+        'Camp Week Index' => 'camp_week_index',
         'Holidays' => 'holidays',
         'Discount' => 'discount_applied',
         'Discount Amount' => 'discount_amount',
@@ -172,6 +175,21 @@ function intersoccer_get_order_meta_manual_aliases() {
         'End Date' => [
             'date de fin',
             'enddatum',
+        ],
+        'Camp Start Date' => [
+            'date de début du camp',
+            'camp-startdatum',
+            'camp start date',
+        ],
+        'Camp End Date' => [
+            'date de fin du camp',
+            'camp-enddatum',
+            'camp end date',
+        ],
+        'Camp Week Index' => [
+            'index de semaine du camp',
+            'camp-wochenindex',
+            'camp week index',
         ],
         'Holidays' => [
             'vacances',

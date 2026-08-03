@@ -6135,7 +6135,13 @@ function intersoccer_reports_resolve_camp_schedule($variation_id, $order_item_id
     }
 
     if (empty($start) && $order_item_id && function_exists('wc_get_order_item_meta')) {
-        foreach (['_camp_start_date', 'Camp Start Date'] as $key) {
+        // Prefer human labels (EN/FR/DE); `_camp_*` is legacy order-item dual-write fallback.
+        foreach ([
+            'Camp Start Date',
+            'Date de début du camp',
+            'Camp-Startdatum',
+            '_camp_start_date',
+        ] as $key) {
             $raw = wc_get_order_item_meta($order_item_id, $key, true);
             if (is_string($raw) && preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($raw))) {
                 $start = trim($raw);
@@ -6143,7 +6149,12 @@ function intersoccer_reports_resolve_camp_schedule($variation_id, $order_item_id
                 break;
             }
         }
-        foreach (['_camp_end_date', 'Camp End Date'] as $key) {
+        foreach ([
+            'Camp End Date',
+            'Date de fin du camp',
+            'Camp-Enddatum',
+            '_camp_end_date',
+        ] as $key) {
             $raw = wc_get_order_item_meta($order_item_id, $key, true);
             if (is_string($raw) && preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($raw))) {
                 $end = trim($raw);
