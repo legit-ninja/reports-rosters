@@ -26,6 +26,12 @@ Payload key `momentum`: weekly series, before/during/after phase rates (`orders_
 
 SWISS15 validated goldens: `../scratch/campaign-sql/swiss15_momentum_goldens.md` (window `2026-07-30 00:00:00` → `2026-08-02 22:00:00`, code `swiss15`). Incomplete after coverage → `insufficient_after` + admin warning.
 
+## Coded vs uncoded revenue
+
+Headline includes additive keys: `coded_orders` / `coded_revenue_order_totals` and `uncoded_*` (orders using any configured campaign coupon vs none). Classification uses `used_campaign_coupon` on order lines. Per-code detail remains in Coupon usage. Momentum weekly/daily also expose `coupon_revenue_order_totals`.
+
+**CPT coupon codes are required.** An empty campaign coupon list does not mean “any coupon” — coded metrics stay at zero and a `campaign_coupon_codes_empty` warning is raised. Coupon usage only lists codes configured on the campaign CPT (never incidental codes on the same orders).
+
 Season / new-family weekly series (M4/M5) are deferred.
 
 ## Sequencing

@@ -67,10 +67,18 @@ class ExcelExporter {
 		$summary->setCellValue('A6', 'Avg order value');
 		$summary->setCellValue('B6', '=IF(B2=0,0,ROUND(B4/B2,2))');
 		$summary->setCellValue('C6', (float) ($headline['baseline']['avg_order_value'] ?? 0));
-		$summary->setCellValue('A7', 'Child row count (formula)');
-		$summary->setCellValue('B7', '=COUNTA(Children!A2:A' . $last_data_row . ')');
-		$summary->setCellValue('A9', 'Revenue basis');
-		$summary->setCellValue('B9', 'order totals (default)');
+		$summary->setCellValue('A7', 'With campaign code(s) — orders');
+		$summary->setCellValue('B7', (int) ($headline['coded_orders'] ?? 0));
+		$summary->setCellValue('A8', 'With campaign code(s) — revenue');
+		$summary->setCellValue('B8', (float) ($headline['coded_revenue_order_totals'] ?? 0));
+		$summary->setCellValue('A9', 'Without campaign code(s) — orders');
+		$summary->setCellValue('B9', (int) ($headline['uncoded_orders'] ?? 0));
+		$summary->setCellValue('A10', 'Without campaign code(s) — revenue');
+		$summary->setCellValue('B10', (float) ($headline['uncoded_revenue_order_totals'] ?? 0));
+		$summary->setCellValue('A11', 'Child row count (formula)');
+		$summary->setCellValue('B11', '=COUNTA(Children!A2:A' . $last_data_row . ')');
+		$summary->setCellValue('A13', 'Revenue basis');
+		$summary->setCellValue('B13', 'order totals (default)');
 
 		// Sheet 3: Venues
 		$venues = $ss->createSheet();
@@ -123,6 +131,7 @@ class ExcelExporter {
 		$momentum_sheet->setCellValue('D' . $mr, 'Coupon orders');
 		$momentum_sheet->setCellValue('E' . $mr, 'Line bookings');
 		$momentum_sheet->setCellValue('F' . $mr, 'Revenue');
+		$momentum_sheet->setCellValue('G' . $mr, 'Coupon revenue');
 		$mr++;
 		foreach ((array) ($momentum['weekly'] ?? []) as $row) {
 			$momentum_sheet->setCellValue('A' . $mr, (string) ($row['week_start'] ?? ''));
@@ -131,6 +140,7 @@ class ExcelExporter {
 			$momentum_sheet->setCellValue('D' . $mr, (int) ($row['coupon_orders'] ?? 0));
 			$momentum_sheet->setCellValue('E' . $mr, (int) ($row['line_item_bookings'] ?? 0));
 			$momentum_sheet->setCellValue('F' . $mr, (float) ($row['revenue_order_totals'] ?? 0));
+			$momentum_sheet->setCellValue('G' . $mr, (float) ($row['coupon_revenue_order_totals'] ?? 0));
 			$mr++;
 		}
 

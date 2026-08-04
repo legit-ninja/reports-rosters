@@ -142,6 +142,18 @@ function intersoccer_campaign_analytics_render_payload(array $payload, $definiti
 			<tr><td><?php esc_html_e('Orders', 'intersoccer-reports-rosters'); ?></td><td><?php echo esc_html((string) ($h['orders'] ?? '')); ?></td><td><?php echo esc_html((string) ($h['baseline']['orders'] ?? '')); ?></td><td><?php echo esc_html((string) ($h['pct_change']['orders'] ?? '') . '%'); ?></td></tr>
 			<tr><td><?php esc_html_e('Line-item bookings', 'intersoccer-reports-rosters'); ?></td><td><?php echo esc_html((string) ($h['line_item_bookings'] ?? '')); ?></td><td><?php echo esc_html((string) ($h['baseline']['line_item_bookings'] ?? '')); ?></td><td><?php echo esc_html((string) ($h['pct_change']['line_item_bookings'] ?? '') . '%'); ?></td></tr>
 			<tr><td><?php esc_html_e('Revenue (order totals)', 'intersoccer-reports-rosters'); ?></td><td><?php echo esc_html((string) ($h['revenue_order_totals'] ?? '')); ?></td><td><?php echo esc_html((string) ($h['baseline']['revenue_order_totals'] ?? '')); ?></td><td><?php echo esc_html((string) ($h['pct_change']['revenue_order_totals'] ?? '') . '%'); ?></td></tr>
+			<tr><td><?php esc_html_e('With campaign code(s)', 'intersoccer-reports-rosters'); ?></td><td colspan="3"><?php echo esc_html(sprintf(
+				/* translators: 1: order count 2: revenue */
+				__('%1$s orders · %2$s revenue', 'intersoccer-reports-rosters'),
+				(string) ($h['coded_orders'] ?? '0'),
+				(string) ($h['coded_revenue_order_totals'] ?? '0')
+			)); ?></td></tr>
+			<tr><td><?php esc_html_e('Without campaign code(s)', 'intersoccer-reports-rosters'); ?></td><td colspan="3"><?php echo esc_html(sprintf(
+				/* translators: 1: order count 2: revenue */
+				__('%1$s orders · %2$s revenue', 'intersoccer-reports-rosters'),
+				(string) ($h['uncoded_orders'] ?? '0'),
+				(string) ($h['uncoded_revenue_order_totals'] ?? '0')
+			)); ?></td></tr>
 			<tr><td><?php esc_html_e('Revenue (line totals)', 'intersoccer-reports-rosters'); ?></td><td colspan="3"><?php echo esc_html((string) ($h['revenue_line_totals'] ?? '')); ?></td></tr>
 			<tr><td><?php esc_html_e('Avg order value', 'intersoccer-reports-rosters'); ?></td><td><?php echo esc_html((string) ($h['avg_order_value'] ?? '')); ?></td><td><?php echo esc_html((string) ($h['baseline']['avg_order_value'] ?? '')); ?></td><td><?php echo esc_html((string) ($h['pct_change']['avg_order_value'] ?? '') . '%'); ?></td></tr>
 		</tbody>
@@ -276,7 +288,7 @@ function intersoccer_campaign_analytics_render_payload(array $payload, $definiti
 
 	<h3><?php esc_html_e('Weekly momentum', 'intersoccer-reports-rosters'); ?></h3>
 	<table class="widefat striped">
-		<thead><tr><th><?php esc_html_e('Week start', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('ISO week', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Orders', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Campaign coupon orders', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Line bookings', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Revenue', 'intersoccer-reports-rosters'); ?></th></tr></thead>
+		<thead><tr><th><?php esc_html_e('Week start', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('ISO week', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Orders', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Campaign coupon orders', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Line bookings', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Revenue', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Coupon revenue', 'intersoccer-reports-rosters'); ?></th></tr></thead>
 		<tbody>
 		<?php foreach ((array) ($momentum['weekly'] ?? []) as $row) : ?>
 			<tr>
@@ -286,6 +298,7 @@ function intersoccer_campaign_analytics_render_payload(array $payload, $definiti
 				<td><?php echo esc_html((string) ($row['coupon_orders'] ?? '')); ?></td>
 				<td><?php echo esc_html((string) ($row['line_item_bookings'] ?? '')); ?></td>
 				<td><?php echo esc_html((string) ($row['revenue_order_totals'] ?? '')); ?></td>
+				<td><?php echo esc_html((string) ($row['coupon_revenue_order_totals'] ?? '')); ?></td>
 			</tr>
 		<?php endforeach; ?>
 		</tbody>
@@ -295,7 +308,7 @@ function intersoccer_campaign_analytics_render_payload(array $payload, $definiti
 		<details style="margin:1em 0;">
 			<summary><?php esc_html_e('Daily zoom (before / during / after)', 'intersoccer-reports-rosters'); ?></summary>
 			<table class="widefat striped">
-				<thead><tr><th><?php esc_html_e('Day', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Phase', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Orders', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Campaign coupon orders', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Revenue', 'intersoccer-reports-rosters'); ?></th></tr></thead>
+				<thead><tr><th><?php esc_html_e('Day', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Phase', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Orders', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Campaign coupon orders', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Revenue', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Coupon revenue', 'intersoccer-reports-rosters'); ?></th></tr></thead>
 				<tbody>
 				<?php foreach ((array) $momentum['daily'] as $row) : ?>
 					<tr>
@@ -310,6 +323,7 @@ function intersoccer_campaign_analytics_render_payload(array $payload, $definiti
 						<td><?php echo esc_html((string) ($row['orders'] ?? '')); ?></td>
 						<td><?php echo esc_html((string) ($row['coupon_orders'] ?? '')); ?></td>
 						<td><?php echo esc_html((string) ($row['revenue_order_totals'] ?? '')); ?></td>
+						<td><?php echo esc_html((string) ($row['coupon_revenue_order_totals'] ?? '')); ?></td>
 					</tr>
 				<?php endforeach; ?>
 				</tbody>
