@@ -71,6 +71,14 @@ class CampaignPostType {
 		$capacity_json = is_string($capacity) ? $capacity : wp_json_encode($capacity ?: new \stdClass());
 		$activations = get_post_meta($post->ID, '_isrr_campaign_activations', true);
 		$activations_json = is_string($activations) ? $activations : wp_json_encode($activations ?: []);
+		$momentum_before = (int) get_post_meta($post->ID, '_isrr_campaign_momentum_before_weeks', true);
+		if ($momentum_before < 1) {
+			$momentum_before = 4;
+		}
+		$momentum_after = (int) get_post_meta($post->ID, '_isrr_campaign_momentum_after_weeks', true);
+		if ($momentum_after < 1) {
+			$momentum_after = 2;
+		}
 		?>
 		<p>
 			<label><?php esc_html_e('Start (site local)', 'intersoccer-reports-rosters'); ?><br>
@@ -84,7 +92,16 @@ class CampaignPostType {
 		</p>
 		<p>
 			<label><?php esc_html_e('Coupon codes (comma-separated; multiple for per-channel attribution)', 'intersoccer-reports-rosters'); ?><br>
-			<input type="text" class="widefat" name="isrr_campaign_coupons" value="<?php echo esc_attr($codes); ?>" placeholder="AUG1MAIL, AUG1SOCIAL, AUG1FLYER" /></label>
+			<input type="text" class="widefat" name="isrr_campaign_coupons" value="<?php echo esc_attr($codes); ?>" placeholder="swiss15" /></label>
+		</p>
+		<p>
+			<label><?php esc_html_e('Momentum: weeks before campaign', 'intersoccer-reports-rosters'); ?><br>
+			<input type="number" min="1" max="52" class="small-text" name="isrr_campaign_momentum_before_weeks" value="<?php echo esc_attr((string) $momentum_before); ?>" /></label>
+		</p>
+		<p>
+			<label><?php esc_html_e('Momentum: weeks after campaign', 'intersoccer-reports-rosters'); ?><br>
+			<input type="number" min="1" max="52" class="small-text" name="isrr_campaign_momentum_after_weeks" value="<?php echo esc_attr((string) $momentum_after); ?>" /></label>
+			<span class="description"><?php esc_html_e('Used for generate-vs-shift trough rates (defaults 4 / 2).', 'intersoccer-reports-rosters'); ?></span>
 		</p>
 		<p>
 			<label><?php esc_html_e('Baseline mode', 'intersoccer-reports-rosters'); ?><br>
@@ -157,6 +174,11 @@ class CampaignPostType {
 		$statuses_raw = isset($_POST['isrr_campaign_statuses']) ? sanitize_text_field(wp_unslash($_POST['isrr_campaign_statuses'])) : 'completed,processing';
 		$statuses = array_values(array_filter(array_map('trim', explode(',', $statuses_raw))));
 		update_post_meta($post_id, '_isrr_campaign_statuses', $statuses);
+
+		$before_w = isset($_POST['isrr_campaign_momentum_before_weeks']) ? (int) $_POST['isrr_campaign_momentum_before_weeks'] : 4;
+		$after_w = isset($_POST['isrr_campaign_momentum_after_weeks']) ? (int) $_POST['isrr_campaign_momentum_after_weeks'] : 2;
+		update_post_meta($post_id, '_isrr_campaign_momentum_before_weeks', max(1, min(52, $before_w)));
+		update_post_meta($post_id, '_isrr_campaign_momentum_after_weeks', max(1, min(52, $after_w)));
 
 		foreach (['target_scope' => 'isrr_campaign_target_scope', 'capacity' => 'isrr_campaign_capacity', 'activations' => 'isrr_campaign_activations'] as $meta => $field) {
 			$raw = isset($_POST[$field]) ? wp_unslash($_POST[$field]) : '';

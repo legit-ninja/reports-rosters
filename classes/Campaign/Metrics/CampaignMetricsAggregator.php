@@ -8,6 +8,7 @@
 namespace InterSoccer\ReportsRosters\Campaign\Metrics;
 
 use InterSoccer\ReportsRosters\Campaign\CampaignDefinition;
+use InterSoccer\ReportsRosters\Campaign\CampaignTimezone;
 use InterSoccer\ReportsRosters\Campaign\DataQualityGate;
 use InterSoccer\ReportsRosters\Campaign\FacetNormalizer;
 use InterSoccer\ReportsRosters\Campaign\LineItem;
@@ -51,6 +52,8 @@ class CampaignMetricsAggregator {
 		$cohorts = $this->cohorts($campaign_lines, $context['prior_family_keys'] ?? null);
 		$demographics = $this->demographics($campaign_lines);
 		$occupancy = $this->occupancy($campaign_lines, $baseline_lines, $campaign->capacity_overrides);
+		$observation_lines = $context['observation_lines'] ?? [];
+		$momentum = $this->momentum($campaign, is_array($observation_lines) ? $observation_lines : [], $context);
 
 		$line_total = (int) $headline['line_item_bookings'];
 		$warnings = array_merge($gate['warnings'] ?? [], $baseline_window['warnings'] ?? []);
@@ -61,6 +64,12 @@ class CampaignMetricsAggregator {
 		}
 		if (!$this->gate->buckets_reconcile($line_total, $demand['by_week'] ?? [])) {
 			$warnings[] = 'demand_breakdown_partial';
+		}
+		if (!empty($momentum['trough']['verdict']) && $momentum['trough']['verdict'] === 'insufficient_after') {
+			$warnings[] = 'momentum_after_incomplete';
+		}
+		if (empty($campaign->coupon_codes)) {
+			$warnings[] = 'momentum_coupon_overlay_empty_codes';
 		}
 
 		$notes = $this->data_notes($campaign, $campaign_lines, $source_id, $warnings, $errors);
@@ -90,6 +99,7 @@ class CampaignMetricsAggregator {
 			'cohorts' => $cohorts,
 			'demographics' => $demographics,
 			'occupancy' => $occupancy,
+			'momentum' => $momentum,
 			'data_notes' => $notes,
 			'warnings' => $warnings,
 			'errors' => $errors,
@@ -782,6 +792,248 @@ class CampaignMetricsAggregator {
 	}
 
 	/**
+	 * Sales momentum: weekly series, before/during/after trough rates, daily zoom.
+	 *
+	 * @param CampaignDefinition $campaign
+	 * @param LineItem[]         $observation_lines
+	 * @param array<string,mixed> $context
+	 * @return array<string,mixed>
+	 */
+	public function momentum(CampaignDefinition $campaign, array $observation_lines, array $context = []) {
+		$obs = $context['observation_window'] ?? $campaign->observation_window();
+		$campaign_start = (string) $campaign->start_datetime;
+		$campaign_end = (string) $campaign->end_datetime;
+		$before_start = (string) ($obs['before_start'] ?? '');
+		$after_end = (string) ($obs['after_end'] ?? '');
+		$daily_start = (string) ($obs['daily_start'] ?? $before_start);
+		$before_days = (int) ($obs['before_days'] ?? ($campaign->momentum_before_weeks * 7));
+		$after_days = (int) ($obs['after_days'] ?? ($campaign->momentum_after_weeks * 7));
+
+		$latest_order_at = null;
+		foreach ($observation_lines as $line) {
+			$ts = (string) $line->get('booking_timestamp');
+			if ($ts !== '' && ($latest_order_at === null || $ts > $latest_order_at)) {
+				$latest_order_at = $ts;
+			}
+		}
+		$after_complete = $latest_order_at !== null && $latest_order_at >= $after_end;
+
+		$weekly_map = [];
+		$daily_map = [];
+		$phase_buckets = [
+			'before' => ['orders' => [], 'revenue' => 0.0, 'lines' => 0],
+			'during' => ['orders' => [], 'revenue' => 0.0, 'lines' => 0],
+			'after' => ['orders' => [], 'revenue' => 0.0, 'lines' => 0],
+		];
+
+		foreach ($observation_lines as $line) {
+			$ts = (string) $line->get('booking_timestamp');
+			if ($ts === '') {
+				continue;
+			}
+			$oid = (int) $line->get('order_id');
+			$order_rev = (float) $line->get('order_total', 0);
+			$used_coupon = (bool) $line->get('used_campaign_coupon');
+
+			$phase = 'during';
+			if ($ts < $campaign_start) {
+				$phase = 'before';
+			} elseif ($ts > $campaign_end) {
+				$phase = 'after';
+			}
+
+			// Phase trough uses configured before window start (not daily pad).
+			$in_before_phase = ($ts >= $before_start && $ts < $campaign_start);
+			$in_during_phase = ($ts >= $campaign_start && $ts <= $campaign_end);
+			$in_after_phase = ($ts > $campaign_end && $ts <= $after_end);
+
+			if ($in_before_phase || $in_during_phase || $in_after_phase) {
+				$pkey = $in_before_phase ? 'before' : ($in_during_phase ? 'during' : 'after');
+				$phase_buckets[$pkey]['lines']++;
+				if (!isset($phase_buckets[$pkey]['orders'][$oid])) {
+					$phase_buckets[$pkey]['orders'][$oid] = true;
+					$phase_buckets[$pkey]['revenue'] += $order_rev;
+				}
+			}
+
+			// Weekly series across full observation fetch.
+			try {
+				$dt = new \DateTimeImmutable($ts);
+				$iso_week = (int) $dt->format('oW');
+				// ISO week start (Monday).
+				$week_start = $dt->modify('monday this week')->format('Y-m-d');
+				$day = $dt->format('Y-m-d');
+				$day_name = $dt->format('l');
+			} catch (\Exception $e) {
+				continue;
+			}
+
+			if (!isset($weekly_map[$iso_week])) {
+				$weekly_map[$iso_week] = [
+					'iso_week' => $iso_week,
+					'week_start' => $week_start,
+					'orders' => [],
+					'coupon_orders' => [],
+					'line_item_bookings' => 0,
+					'revenue_order_totals' => 0.0,
+				];
+			}
+			$weekly_map[$iso_week]['line_item_bookings']++;
+			if (!isset($weekly_map[$iso_week]['orders'][$oid])) {
+				$weekly_map[$iso_week]['orders'][$oid] = true;
+				$weekly_map[$iso_week]['revenue_order_totals'] += $order_rev;
+			}
+			if ($used_coupon) {
+				$weekly_map[$iso_week]['coupon_orders'][$oid] = true;
+			}
+
+			if ($ts >= $daily_start && $ts <= $after_end) {
+				if (!isset($daily_map[$day])) {
+					$daily_map[$day] = [
+						'day' => $day,
+						'day_name' => $day_name,
+						'phase' => $phase,
+						'orders' => [],
+						'coupon_orders' => [],
+						'revenue_order_totals' => 0.0,
+					];
+				}
+				// If a calendar day spans during→after (e.g. expiry mid-day), keep first phase
+				// for the day key only when all orders share a phase; otherwise emit split keys.
+				$phase_day_key = $day . '|' . $phase;
+				if (!isset($daily_map[$phase_day_key])) {
+					$daily_map[$phase_day_key] = [
+						'day' => $day,
+						'day_name' => $day_name,
+						'phase' => $phase,
+						'orders' => [],
+						'coupon_orders' => [],
+						'revenue_order_totals' => 0.0,
+					];
+				}
+				if (!isset($daily_map[$phase_day_key]['orders'][$oid])) {
+					$daily_map[$phase_day_key]['orders'][$oid] = true;
+					$daily_map[$phase_day_key]['revenue_order_totals'] += $order_rev;
+				}
+				if ($used_coupon) {
+					$daily_map[$phase_day_key]['coupon_orders'][$oid] = true;
+				}
+			}
+		}
+
+		// Drop non-split day stubs (keys without |).
+		foreach (array_keys($daily_map) as $k) {
+			if (strpos((string) $k, '|') === false) {
+				unset($daily_map[$k]);
+			}
+		}
+
+		$weekly = [];
+		foreach ($weekly_map as $row) {
+			$weekly[] = [
+				'iso_week' => $row['iso_week'],
+				'week_start' => $row['week_start'],
+				'orders' => count($row['orders']),
+				'coupon_orders' => count($row['coupon_orders']),
+				'line_item_bookings' => $row['line_item_bookings'],
+				'revenue_order_totals' => round($row['revenue_order_totals'], 2),
+			];
+		}
+		usort($weekly, static function ($a, $b) {
+			return strcmp((string) $a['week_start'], (string) $b['week_start']);
+		});
+
+		$during_seconds = CampaignTimezone::parse_local($campaign_end)->getTimestamp()
+			- CampaignTimezone::parse_local($campaign_start)->getTimestamp();
+		$during_days_for_rate = max(1, (int) round($during_seconds / 86400.0));
+
+		$phase_defs = [
+			'before' => ['label' => 'BEFORE (' . (int) ($obs['before_weeks'] ?? 4) . ' wk)', 'days' => $before_days],
+			'during' => ['label' => 'DURING (promo)', 'days' => $during_days_for_rate],
+			'after' => ['label' => 'AFTER (' . (int) ($obs['after_weeks'] ?? 2) . ' wk)', 'days' => $after_days],
+		];
+
+		$phases = [];
+		$rates = [];
+		foreach ($phase_defs as $id => $def) {
+			$orders = count($phase_buckets[$id]['orders']);
+			$rev = round($phase_buckets[$id]['revenue'], 2);
+			$days = max(1, (int) $def['days']);
+			$orders_eq = round($orders / ($days / 7.0), 1);
+			$rev_eq = round($rev / ($days / 7.0), 2);
+			$rates[$id] = $orders_eq;
+			$phases[] = [
+				'id' => $id,
+				'label' => $def['label'],
+				'days' => $days,
+				'orders' => $orders,
+				'revenue_order_totals' => $rev,
+				'orders_per_week_equiv' => $orders_eq,
+				'revenue_per_week_equiv' => $rev_eq,
+			];
+		}
+
+		$notes = [
+			'Rising after-weeks in peak booking season may be seasonal, not promo-driven.',
+			'Phase rates use total demand (all orders); coupon_orders overlay is campaign codes only.',
+		];
+		$ratio = null;
+		$verdict = 'inconclusive';
+		if (!$after_complete) {
+			$verdict = 'insufficient_after';
+			$notes[] = 'AFTER window is incomplete relative to configured after_weeks; trough verdict is provisional.';
+		} elseif ($rates['before'] > 0) {
+			$ratio = round($rates['after'] / $rates['before'], 3);
+			$verdict = ($rates['after'] < $rates['before']) ? 'shifting' : 'generating';
+		} elseif ($rates['after'] > 0) {
+			$verdict = 'generating';
+			$ratio = null;
+		}
+
+		$daily = [];
+		foreach ($daily_map as $row) {
+			$daily[] = [
+				'day' => $row['day'],
+				'day_name' => $row['day_name'],
+				'phase' => $row['phase'],
+				'orders' => count($row['orders']),
+				'coupon_orders' => count($row['coupon_orders']),
+				'revenue_order_totals' => round($row['revenue_order_totals'], 2),
+			];
+		}
+		usort($daily, static function ($a, $b) {
+			$c = strcmp((string) $a['day'], (string) $b['day']);
+			if ($c !== 0) {
+				return $c;
+			}
+			$order = ['before' => 0, 'during' => 1, 'after' => 2];
+			return ($order[$a['phase']] ?? 9) <=> ($order[$b['phase']] ?? 9);
+		});
+
+		return [
+			'observation' => [
+				'start' => (string) ($obs['start'] ?? ''),
+				'end' => $after_end,
+				'before_start' => $before_start,
+				'after_end' => $after_end,
+				'daily_start' => $daily_start,
+				'before_weeks' => (int) ($obs['before_weeks'] ?? $campaign->momentum_before_weeks),
+				'after_weeks' => (int) ($obs['after_weeks'] ?? $campaign->momentum_after_weeks),
+				'latest_order_at' => $latest_order_at,
+				'after_complete' => $after_complete,
+			],
+			'weekly' => $weekly,
+			'phases' => $phases,
+			'trough' => [
+				'verdict' => $verdict,
+				'after_vs_before_orders_ratio' => $ratio,
+				'notes' => $notes,
+			],
+			'daily' => $daily,
+		];
+	}
+
+	/**
 	 * @param LineItem[] $lines
 	 * @return array{orders:int,lines:int,order_revenue:float,line_revenue:float}
 	 */
@@ -880,6 +1132,7 @@ class CampaignMetricsAggregator {
 			['topic' => 'Order statuses', 'detail' => implode(', ', $campaign->order_statuses)],
 			['topic' => 'Discounts', 'detail' => 'Coupon discount reported separately from sibling/combo (PV price adjustments).'],
 			['topic' => 'Attribution', 'detail' => self::attribution_limitation_copy()],
+			['topic' => 'Sales momentum', 'detail' => 'Before/during/after rates answer generate vs shift. Incomplete after windows are provisional. Peak season can raise after-weeks without the promo generating demand.'],
 			['topic' => 'Missing age group', 'detail' => $missing_age . ' line items'],
 			['topic' => 'Missing region', 'detail' => $missing_region . ' line items'],
 		];

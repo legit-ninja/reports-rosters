@@ -53,6 +53,15 @@ class CampaignDefinition {
 	/** @var string order_totals|line_totals */
 	public $revenue_basis = 'order_totals';
 
+	/** @var int weeks of total demand before campaign start (momentum trough) */
+	public $momentum_before_weeks = 4;
+
+	/** @var int weeks after campaign end (momentum trough) */
+	public $momentum_after_weeks = 2;
+
+	/** Days before campaign start included in daily zoom (M3). */
+	const MOMENTUM_DAILY_PAD_DAYS = 10;
+
 	/**
 	 * @param array<string,mixed> $row
 	 * @return self
@@ -77,6 +86,8 @@ class CampaignDefinition {
 			return strpos($s, 'wc-') === 0 ? $s : 'wc-' . $s;
 		}, $statuses);
 		$self->revenue_basis = ($row['revenue_basis'] ?? 'order_totals') === 'line_totals' ? 'line_totals' : 'order_totals';
+		$self->momentum_before_weeks = max(1, (int) ($row['momentum_before_weeks'] ?? 4));
+		$self->momentum_after_weeks = max(1, (int) ($row['momentum_after_weeks'] ?? 2));
 		return $self;
 	}
 
@@ -91,6 +102,46 @@ class CampaignDefinition {
 			$this->baseline_custom_start,
 			$this->baseline_custom_end
 		);
+	}
+
+	/**
+	 * Wide window for sales momentum (before + during + after + daily pad).
+	 *
+	 * @return array{
+	 *   start:string,
+	 *   end:string,
+	 *   before_start:string,
+	 *   after_end:string,
+	 *   before_weeks:int,
+	 *   after_weeks:int,
+	 *   before_days:int,
+	 *   after_days:int,
+	 *   daily_start:string
+	 * }
+	 */
+	public function observation_window() {
+		$start = CampaignTimezone::parse_local($this->start_datetime);
+		$end = CampaignTimezone::parse_local($this->end_datetime);
+		$before_days = $this->momentum_before_weeks * 7;
+		$after_days = $this->momentum_after_weeks * 7;
+
+		$before_start = $start->modify('-' . $before_days . ' days');
+		$after_end = $end->modify('+' . $after_days . ' days');
+		$daily_start = $start->modify('-' . self::MOMENTUM_DAILY_PAD_DAYS . ' days');
+
+		$obs_start = $before_start < $daily_start ? $before_start : $daily_start;
+
+		return [
+			'start' => CampaignTimezone::to_mysql_local($obs_start),
+			'end' => CampaignTimezone::to_mysql_local($after_end),
+			'before_start' => CampaignTimezone::to_mysql_local($before_start),
+			'after_end' => CampaignTimezone::to_mysql_local($after_end),
+			'before_weeks' => $this->momentum_before_weeks,
+			'after_weeks' => $this->momentum_after_weeks,
+			'before_days' => $before_days,
+			'after_days' => $after_days,
+			'daily_start' => CampaignTimezone::to_mysql_local($daily_start),
+		];
 	}
 
 	/**
@@ -110,6 +161,8 @@ class CampaignDefinition {
 			$this->capacity_overrides,
 			$this->order_statuses,
 			$this->revenue_basis,
+			$this->momentum_before_weeks,
+			$this->momentum_after_weeks,
 		];
 		$json = function_exists('wp_json_encode') ? wp_json_encode($payload) : json_encode($payload);
 		return md5((string) $json);

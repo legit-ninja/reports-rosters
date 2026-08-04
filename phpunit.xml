@@ -44,6 +44,7 @@
             <file>tests/Reports/PlayerCampStatusTest.php</file>
             <file>tests/Reports/FinalReportsMetaTest.php</file>
             <file>tests/Campaign/Final15CampaignFixtureTest.php</file>
+            <file>tests/Campaign/CampaignMomentumTest.php</file>
             <file>tests/Services/RosterCanonicalFieldsTest.php</file>
         </testsuite>
         

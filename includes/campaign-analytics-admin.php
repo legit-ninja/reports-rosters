@@ -226,6 +226,97 @@ function intersoccer_campaign_analytics_render_payload(array $payload, $definiti
 		<pre><?php echo esc_html(wp_json_encode($payload['timing']['marketing_activations'], JSON_PRETTY_PRINT)); ?></pre>
 	<?php endif; ?>
 
+	<?php
+	$momentum = (array) ($payload['momentum'] ?? []);
+	$trough = (array) ($momentum['trough'] ?? []);
+	$obs = (array) ($momentum['observation'] ?? []);
+	?>
+	<h2><?php esc_html_e('Sales momentum', 'intersoccer-reports-rosters'); ?></h2>
+	<?php if (!empty($trough['verdict']) && $trough['verdict'] === 'insufficient_after') : ?>
+		<div class="notice notice-warning inline"><p><?php esc_html_e('AFTER window is incomplete — trough verdict is provisional. Wait until configured after_weeks of orders exist past campaign end.', 'intersoccer-reports-rosters'); ?></p></div>
+	<?php endif; ?>
+	<p>
+		<strong><?php esc_html_e('Verdict:', 'intersoccer-reports-rosters'); ?></strong>
+		<code><?php echo esc_html((string) ($trough['verdict'] ?? '—')); ?></code>
+		<?php if (isset($trough['after_vs_before_orders_ratio']) && $trough['after_vs_before_orders_ratio'] !== null) : ?>
+			— <?php echo esc_html(sprintf(/* translators: %s ratio */ __('After/before order-rate ratio: %s', 'intersoccer-reports-rosters'), (string) $trough['after_vs_before_orders_ratio'])); ?>
+		<?php endif; ?>
+	</p>
+	<p class="description">
+		<?php esc_html_e('Observation:', 'intersoccer-reports-rosters'); ?>
+		<code><?php echo esc_html(($obs['before_start'] ?? '') . ' → ' . ($obs['after_end'] ?? '')); ?></code>
+		|
+		<?php esc_html_e('Latest order in window:', 'intersoccer-reports-rosters'); ?>
+		<code><?php echo esc_html((string) ($obs['latest_order_at'] ?? '—')); ?></code>
+	</p>
+	<?php if (!empty($trough['notes'])) : ?>
+		<ul>
+			<?php foreach ((array) $trough['notes'] as $note) : ?>
+				<li><?php echo esc_html((string) $note); ?></li>
+			<?php endforeach; ?>
+		</ul>
+	<?php endif; ?>
+
+	<h3><?php esc_html_e('Trough phases (per-week equivalent)', 'intersoccer-reports-rosters'); ?></h3>
+	<table class="widefat striped">
+		<thead><tr><th><?php esc_html_e('Phase', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Days', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Orders', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Orders / week', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Revenue', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Revenue / week', 'intersoccer-reports-rosters'); ?></th></tr></thead>
+		<tbody>
+		<?php foreach ((array) ($momentum['phases'] ?? []) as $row) : ?>
+			<tr>
+				<td><?php echo esc_html((string) ($row['label'] ?? $row['id'] ?? '')); ?></td>
+				<td><?php echo esc_html((string) ($row['days'] ?? '')); ?></td>
+				<td><?php echo esc_html((string) ($row['orders'] ?? '')); ?></td>
+				<td><?php echo esc_html((string) ($row['orders_per_week_equiv'] ?? '')); ?></td>
+				<td><?php echo esc_html((string) ($row['revenue_order_totals'] ?? '')); ?></td>
+				<td><?php echo esc_html((string) ($row['revenue_per_week_equiv'] ?? '')); ?></td>
+			</tr>
+		<?php endforeach; ?>
+		</tbody>
+	</table>
+
+	<h3><?php esc_html_e('Weekly momentum', 'intersoccer-reports-rosters'); ?></h3>
+	<table class="widefat striped">
+		<thead><tr><th><?php esc_html_e('Week start', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('ISO week', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Orders', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Campaign coupon orders', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Line bookings', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Revenue', 'intersoccer-reports-rosters'); ?></th></tr></thead>
+		<tbody>
+		<?php foreach ((array) ($momentum['weekly'] ?? []) as $row) : ?>
+			<tr>
+				<td><?php echo esc_html((string) ($row['week_start'] ?? '')); ?></td>
+				<td><?php echo esc_html((string) ($row['iso_week'] ?? '')); ?></td>
+				<td><?php echo esc_html((string) ($row['orders'] ?? '')); ?></td>
+				<td><?php echo esc_html((string) ($row['coupon_orders'] ?? '')); ?></td>
+				<td><?php echo esc_html((string) ($row['line_item_bookings'] ?? '')); ?></td>
+				<td><?php echo esc_html((string) ($row['revenue_order_totals'] ?? '')); ?></td>
+			</tr>
+		<?php endforeach; ?>
+		</tbody>
+	</table>
+
+	<?php if (!empty($momentum['daily'])) : ?>
+		<details style="margin:1em 0;">
+			<summary><?php esc_html_e('Daily zoom (before / during / after)', 'intersoccer-reports-rosters'); ?></summary>
+			<table class="widefat striped">
+				<thead><tr><th><?php esc_html_e('Day', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Phase', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Orders', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Campaign coupon orders', 'intersoccer-reports-rosters'); ?></th><th><?php esc_html_e('Revenue', 'intersoccer-reports-rosters'); ?></th></tr></thead>
+				<tbody>
+				<?php foreach ((array) $momentum['daily'] as $row) : ?>
+					<tr>
+						<td><?php
+							$label = (string) ($row['day'] ?? '');
+							if (!empty($row['day_name'])) {
+								$label .= ' (' . $row['day_name'] . ')';
+							}
+							echo esc_html($label);
+						?></td>
+						<td><?php echo esc_html((string) ($row['phase'] ?? '')); ?></td>
+						<td><?php echo esc_html((string) ($row['orders'] ?? '')); ?></td>
+						<td><?php echo esc_html((string) ($row['coupon_orders'] ?? '')); ?></td>
+						<td><?php echo esc_html((string) ($row['revenue_order_totals'] ?? '')); ?></td>
+					</tr>
+				<?php endforeach; ?>
+				</tbody>
+			</table>
+		</details>
+	<?php endif; ?>
+
 	<h2><?php esc_html_e('Attribution', 'intersoccer-reports-rosters'); ?></h2>
 	<table class="widefat striped">
 		<thead><tr><th>Source</th><th>Orders</th><th>Revenue</th></tr></thead>

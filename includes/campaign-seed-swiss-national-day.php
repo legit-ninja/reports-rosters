@@ -1,10 +1,11 @@
 <?php
 /**
- * One-time seed helper for Swiss National Day 2026 campaign (run via eval-file / mu-plugin).
+ * One-time seed helper for Swiss National Day 2026 / SWISS15 campaign (run via eval-file / mu-plugin).
  *
  * Usage (local sandbox WP-CLI):
  *   wp eval-file includes/campaign-seed-swiss-national-day.php
  *
+ * Window: 2026-07-30 00:00:00 → 2026-08-02 22:00:00, coupon swiss15 (validated).
  * Does nothing if a campaign titled "Swiss National Day 2026" already exists.
  */
 
@@ -37,11 +38,13 @@ if (is_wp_error($id) || !$id) {
 	return;
 }
 
-update_post_meta($id, '_isrr_campaign_start', '2026-08-01 00:00:00');
-update_post_meta($id, '_isrr_campaign_end', '2026-08-01 23:59:59');
-update_post_meta($id, '_isrr_campaign_coupons', ['AUG1MAIL', 'AUG1SOCIAL', 'AUG1FLYER']);
+update_post_meta($id, '_isrr_campaign_start', '2026-07-30 00:00:00');
+update_post_meta($id, '_isrr_campaign_end', '2026-08-02 22:00:00');
+update_post_meta($id, '_isrr_campaign_coupons', ['swiss15']);
 update_post_meta($id, '_isrr_campaign_baseline_mode', 'matched_prior');
 update_post_meta($id, '_isrr_campaign_statuses', ['completed', 'processing']);
+update_post_meta($id, '_isrr_campaign_momentum_before_weeks', 4);
+update_post_meta($id, '_isrr_campaign_momentum_after_weeks', 2);
 update_post_meta($id, '_isrr_campaign_target_scope', [
 	'camp_weeks' => ['summer_week_6', 'summer_week_7', 'summer_week_8'],
 ]);
