@@ -86,7 +86,55 @@ class ExcelExporter {
 			$vr++;
 		}
 
-		// Sheet 4: Data notes
+		// Sheet 4: Momentum
+		$momentum_sheet = $ss->createSheet();
+		$momentum_sheet->setTitle('Momentum');
+		$momentum = (array) ($payload['momentum'] ?? []);
+		$trough = (array) ($momentum['trough'] ?? []);
+		$obs = (array) ($momentum['observation'] ?? []);
+		$momentum_sheet->setCellValue('A1', 'Verdict');
+		$momentum_sheet->setCellValue('B1', (string) ($trough['verdict'] ?? ''));
+		$momentum_sheet->setCellValue('A2', 'After/before ratio');
+		$momentum_sheet->setCellValue('B2', $trough['after_vs_before_orders_ratio'] ?? '');
+		$momentum_sheet->setCellValue('A3', 'After complete');
+		$momentum_sheet->setCellValue('B3', !empty($obs['after_complete']) ? 'yes' : 'no');
+		$momentum_sheet->setCellValue('A4', 'Latest order');
+		$momentum_sheet->setCellValue('B4', (string) ($obs['latest_order_at'] ?? ''));
+		$momentum_sheet->setCellValue('A6', 'Phase');
+		$momentum_sheet->setCellValue('B6', 'Days');
+		$momentum_sheet->setCellValue('C6', 'Orders');
+		$momentum_sheet->setCellValue('D6', 'Orders/week');
+		$momentum_sheet->setCellValue('E6', 'Revenue');
+		$momentum_sheet->setCellValue('F6', 'Revenue/week');
+		$mr = 7;
+		foreach ((array) ($momentum['phases'] ?? []) as $row) {
+			$momentum_sheet->setCellValue('A' . $mr, (string) ($row['label'] ?? $row['id'] ?? ''));
+			$momentum_sheet->setCellValue('B' . $mr, (int) ($row['days'] ?? 0));
+			$momentum_sheet->setCellValue('C' . $mr, (int) ($row['orders'] ?? 0));
+			$momentum_sheet->setCellValue('D' . $mr, (float) ($row['orders_per_week_equiv'] ?? 0));
+			$momentum_sheet->setCellValue('E' . $mr, (float) ($row['revenue_order_totals'] ?? 0));
+			$momentum_sheet->setCellValue('F' . $mr, (float) ($row['revenue_per_week_equiv'] ?? 0));
+			$mr++;
+		}
+		$mr += 2;
+		$momentum_sheet->setCellValue('A' . $mr, 'Week start');
+		$momentum_sheet->setCellValue('B' . $mr, 'ISO week');
+		$momentum_sheet->setCellValue('C' . $mr, 'Orders');
+		$momentum_sheet->setCellValue('D' . $mr, 'Coupon orders');
+		$momentum_sheet->setCellValue('E' . $mr, 'Line bookings');
+		$momentum_sheet->setCellValue('F' . $mr, 'Revenue');
+		$mr++;
+		foreach ((array) ($momentum['weekly'] ?? []) as $row) {
+			$momentum_sheet->setCellValue('A' . $mr, (string) ($row['week_start'] ?? ''));
+			$momentum_sheet->setCellValue('B' . $mr, (string) ($row['iso_week'] ?? ''));
+			$momentum_sheet->setCellValue('C' . $mr, (int) ($row['orders'] ?? 0));
+			$momentum_sheet->setCellValue('D' . $mr, (int) ($row['coupon_orders'] ?? 0));
+			$momentum_sheet->setCellValue('E' . $mr, (int) ($row['line_item_bookings'] ?? 0));
+			$momentum_sheet->setCellValue('F' . $mr, (float) ($row['revenue_order_totals'] ?? 0));
+			$mr++;
+		}
+
+		// Sheet 5: Data notes
 		$notes = $ss->createSheet();
 		$notes->setTitle('Data notes');
 		$notes->setCellValue('A1', 'Topic');

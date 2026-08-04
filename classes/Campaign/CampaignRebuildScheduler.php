@@ -129,6 +129,14 @@ class CampaignRebuildScheduler {
 			[]
 		);
 
+		$observation = $campaign->observation_window();
+		$observation_lines = $source->fetch_line_items(
+			$observation['start'],
+			$observation['end'],
+			$campaign->order_statuses,
+			$campaign->coupon_codes
+		);
+
 		$usage_counts = $this->coupon_usage_counts($campaign->coupon_codes);
 		$prior_keys = $this->prior_family_keys($campaign_lines);
 
@@ -139,6 +147,8 @@ class CampaignRebuildScheduler {
 			'coupon_usage_counts' => $usage_counts,
 			'prior_family_keys' => $prior_keys,
 			'child_rows' => $this->child_rows_for_export($campaign_lines),
+			'observation_lines' => $observation_lines,
+			'observation_window' => $observation,
 		]);
 		$payload['child_rows'] = $this->child_rows_for_export($campaign_lines);
 

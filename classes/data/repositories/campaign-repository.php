@@ -74,6 +74,8 @@ class CampaignRepository {
 			'marketing_activations' => (array) get_post_meta($post->ID, '_isrr_campaign_activations', true),
 			'order_statuses' => $statuses,
 			'revenue_basis' => 'order_totals',
+			'momentum_before_weeks' => (int) (get_post_meta($post->ID, '_isrr_campaign_momentum_before_weeks', true) ?: 4),
+			'momentum_after_weeks' => (int) (get_post_meta($post->ID, '_isrr_campaign_momentum_after_weeks', true) ?: 2),
 		]);
 	}
 }
