@@ -69,7 +69,7 @@ class CampaignMetricsAggregator {
 			$warnings[] = 'momentum_after_incomplete';
 		}
 		if (empty($campaign->coupon_codes)) {
-			$warnings[] = 'momentum_coupon_overlay_empty_codes';
+			$warnings[] = 'campaign_coupon_codes_empty';
 		}
 
 		$notes = $this->data_notes($campaign, $campaign_lines, $source_id, $warnings, $errors);
@@ -128,6 +128,7 @@ class CampaignMetricsAggregator {
 	public function headline(array $campaign_lines, array $baseline_lines) {
 		$c = $this->period_totals($campaign_lines);
 		$b = $this->period_totals($baseline_lines);
+		$split = $this->coded_uncoded_order_totals($campaign_lines);
 
 		return [
 			'orders' => $c['orders'],
@@ -135,6 +136,10 @@ class CampaignMetricsAggregator {
 			'revenue_order_totals' => $c['order_revenue'],
 			'revenue_line_totals' => $c['line_revenue'],
 			'avg_order_value' => $c['orders'] > 0 ? round($c['order_revenue'] / $c['orders'], 2) : 0.0,
+			'coded_orders' => $split['coded_orders'],
+			'coded_revenue_order_totals' => $split['coded_revenue_order_totals'],
+			'uncoded_orders' => $split['uncoded_orders'],
+			'uncoded_revenue_order_totals' => $split['uncoded_revenue_order_totals'],
 			'baseline' => [
 				'orders' => $b['orders'],
 				'line_item_bookings' => $b['lines'],
@@ -156,6 +161,8 @@ class CampaignMetricsAggregator {
 				'revenue_line_totals' => 'Revenue (line totals)',
 				'orders' => 'Orders',
 				'line_item_bookings' => 'Line-item bookings',
+				'coded_orders' => 'Orders with campaign code(s)',
+				'uncoded_orders' => 'Orders without campaign code(s)',
 			],
 		];
 	}
@@ -223,17 +230,9 @@ class CampaignMetricsAggregator {
 			$day = substr($ts, 0, 10);
 			$oid = (int) $line->get('order_id');
 			foreach ($codes_on as $code_u) {
+				// Only CPT-configured codes — do not invent rows for incidental coupons.
 				if (!isset($by_code[$code_u])) {
-					$by_code[$code_u] = [
-						'code' => $code_u,
-						'orders' => [],
-						'line_items' => 0,
-						'revenue' => 0.0,
-						'discount' => 0.0,
-						'first_redemption' => null,
-						'last_redemption' => null,
-						'by_day' => [],
-					];
+					continue;
 				}
 				$by_code[$code_u]['line_items']++;
 				if (!isset($order_seen[$code_u][$oid])) {
@@ -876,6 +875,7 @@ class CampaignMetricsAggregator {
 					'coupon_orders' => [],
 					'line_item_bookings' => 0,
 					'revenue_order_totals' => 0.0,
+					'coupon_revenue_order_totals' => 0.0,
 				];
 			}
 			$weekly_map[$iso_week]['line_item_bookings']++;
@@ -883,8 +883,9 @@ class CampaignMetricsAggregator {
 				$weekly_map[$iso_week]['orders'][$oid] = true;
 				$weekly_map[$iso_week]['revenue_order_totals'] += $order_rev;
 			}
-			if ($used_coupon) {
+			if ($used_coupon && !isset($weekly_map[$iso_week]['coupon_orders'][$oid])) {
 				$weekly_map[$iso_week]['coupon_orders'][$oid] = true;
+				$weekly_map[$iso_week]['coupon_revenue_order_totals'] += $order_rev;
 			}
 
 			if ($ts >= $daily_start && $ts <= $after_end) {
@@ -896,6 +897,7 @@ class CampaignMetricsAggregator {
 						'orders' => [],
 						'coupon_orders' => [],
 						'revenue_order_totals' => 0.0,
+						'coupon_revenue_order_totals' => 0.0,
 					];
 				}
 				// If a calendar day spans during→after (e.g. expiry mid-day), keep first phase
@@ -909,14 +911,16 @@ class CampaignMetricsAggregator {
 						'orders' => [],
 						'coupon_orders' => [],
 						'revenue_order_totals' => 0.0,
+						'coupon_revenue_order_totals' => 0.0,
 					];
 				}
 				if (!isset($daily_map[$phase_day_key]['orders'][$oid])) {
 					$daily_map[$phase_day_key]['orders'][$oid] = true;
 					$daily_map[$phase_day_key]['revenue_order_totals'] += $order_rev;
 				}
-				if ($used_coupon) {
+				if ($used_coupon && !isset($daily_map[$phase_day_key]['coupon_orders'][$oid])) {
 					$daily_map[$phase_day_key]['coupon_orders'][$oid] = true;
+					$daily_map[$phase_day_key]['coupon_revenue_order_totals'] += $order_rev;
 				}
 			}
 		}
@@ -937,6 +941,7 @@ class CampaignMetricsAggregator {
 				'coupon_orders' => count($row['coupon_orders']),
 				'line_item_bookings' => $row['line_item_bookings'],
 				'revenue_order_totals' => round($row['revenue_order_totals'], 2),
+				'coupon_revenue_order_totals' => round($row['coupon_revenue_order_totals'], 2),
 			];
 		}
 		usort($weekly, static function ($a, $b) {
@@ -999,6 +1004,7 @@ class CampaignMetricsAggregator {
 				'orders' => count($row['orders']),
 				'coupon_orders' => count($row['coupon_orders']),
 				'revenue_order_totals' => round($row['revenue_order_totals'], 2),
+				'coupon_revenue_order_totals' => round($row['coupon_revenue_order_totals'], 2),
 			];
 		}
 		usort($daily, static function ($a, $b) {
@@ -1054,6 +1060,46 @@ class CampaignMetricsAggregator {
 			'lines' => count($lines),
 			'order_revenue' => round($order_revenue, 2),
 			'line_revenue' => round($line_revenue, 2),
+		];
+	}
+
+	/**
+	 * Split unique orders by used_campaign_coupon (campaign-configured codes only).
+	 *
+	 * @param LineItem[] $lines
+	 * @return array{
+	 *   coded_orders:int,
+	 *   coded_revenue_order_totals:float,
+	 *   uncoded_orders:int,
+	 *   uncoded_revenue_order_totals:float
+	 * }
+	 */
+	private function coded_uncoded_order_totals(array $lines) {
+		$coded = [];
+		$uncoded = [];
+		$coded_rev = 0.0;
+		$uncoded_rev = 0.0;
+
+		foreach ($lines as $line) {
+			$oid = (int) $line->get('order_id');
+			if (isset($coded[$oid]) || isset($uncoded[$oid])) {
+				continue;
+			}
+			$rev = (float) $line->get('order_total', 0);
+			if ((bool) $line->get('used_campaign_coupon')) {
+				$coded[$oid] = true;
+				$coded_rev += $rev;
+			} else {
+				$uncoded[$oid] = true;
+				$uncoded_rev += $rev;
+			}
+		}
+
+		return [
+			'coded_orders' => count($coded),
+			'coded_revenue_order_totals' => round($coded_rev, 2),
+			'uncoded_orders' => count($uncoded),
+			'uncoded_revenue_order_totals' => round($uncoded_rev, 2),
 		];
 	}
 

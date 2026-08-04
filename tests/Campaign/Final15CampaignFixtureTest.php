@@ -149,6 +149,17 @@ class Final15CampaignFixtureTest extends TestCase {
 		$this->assertNull($coupon['usage_count_warning']);
 		$this->assertSame('2026-07-19 23:35:54', $coupon['last_redemption']);
 
+		// Coded/uncoded split reconciles to headline; coded matches Coupon usage revenue.
+		$this->assertSame(74, $h['coded_orders'] + $h['uncoded_orders']);
+		$this->assertSame(25, $h['coded_orders']);
+		$this->assertSame(49, $h['uncoded_orders']);
+		$this->assertEqualsWithDelta(9710.00, $h['coded_revenue_order_totals'], 0.05);
+		$this->assertEqualsWithDelta(
+			$h['revenue_order_totals'],
+			$h['coded_revenue_order_totals'] + $h['uncoded_revenue_order_totals'],
+			0.05
+		);
+
 		$mix = $payload['mix']['activity'];
 		$this->assertSame(78, $mix['camp']['bookings']);
 		$this->assertSame(3, $mix['girls_only']['bookings']);
@@ -254,5 +265,28 @@ class Final15CampaignFixtureTest extends TestCase {
 			]
 		);
 		$this->assertNotNull($payload['coupons']['FINAL15']['usage_count_warning']);
+	}
+
+	public function test_empty_campaign_codes_warns_and_coupon_table_stays_empty() {
+		$campaign = CampaignDefinition::from_array([
+			'id' => 1,
+			'name' => 'No codes',
+			'start_datetime' => '2026-07-16 00:00:00',
+			'end_datetime' => '2026-07-19 23:59:59',
+			'coupon_codes' => [],
+		]);
+		$agg = new CampaignMetricsAggregator();
+		// Line carries an incidental code as if fetcher incorrectly matched — coupon_usage must still ignore it.
+		$line = Final15FixtureFactory::campaign_lines()[0]->with([
+			'coupon_codes' => ['INCIDENTAL'],
+			'used_campaign_coupon' => false,
+		]);
+		$payload = $agg->aggregate($campaign, [$line], [], [
+			'source_id' => 'orders',
+			'gate' => ['ok' => true, 'errors' => [], 'warnings' => []],
+		]);
+		$this->assertContains('campaign_coupon_codes_empty', $payload['warnings']);
+		$this->assertSame([], $payload['coupons']);
+		$this->assertSame(0, (int) $payload['headline']['coded_orders']);
 	}
 }

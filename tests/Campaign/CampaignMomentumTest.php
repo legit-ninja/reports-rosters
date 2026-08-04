@@ -141,6 +141,58 @@ class CampaignMomentumTest extends TestCase {
 		$this->assertContains('momentum_after_incomplete', $payload['warnings']);
 	}
 
+	public function test_headline_coded_uncoded_revenue_split() {
+		$campaign = $this->swiss_campaign();
+		$agg = new CampaignMetricsAggregator();
+		$lines = array_merge(
+			$this->orders_on_day('2026-07-31', 3, 100.0, true),
+			$this->orders_on_day('2026-08-01', 2, 50.0, false)
+		);
+		$payload = $agg->aggregate($campaign, $lines, [], [
+			'source_id' => 'orders',
+			'gate' => ['ok' => true, 'errors' => [], 'warnings' => []],
+			'observation_lines' => $lines,
+			'observation_window' => $campaign->observation_window(),
+		]);
+		$h = $payload['headline'];
+		$this->assertSame(5, $h['orders']);
+		$this->assertSame(3, $h['coded_orders']);
+		$this->assertSame(2, $h['uncoded_orders']);
+		$this->assertEqualsWithDelta(300.0, $h['coded_revenue_order_totals'], 0.01);
+		$this->assertEqualsWithDelta(100.0, $h['uncoded_revenue_order_totals'], 0.01);
+		$this->assertEqualsWithDelta(400.0, $h['revenue_order_totals'], 0.01);
+		$this->assertSame($h['orders'], $h['coded_orders'] + $h['uncoded_orders']);
+		$this->assertEqualsWithDelta(
+			$h['revenue_order_totals'],
+			$h['coded_revenue_order_totals'] + $h['uncoded_revenue_order_totals'],
+			0.01
+		);
+	}
+
+	public function test_momentum_daily_includes_coupon_revenue() {
+		$campaign = $this->swiss_campaign();
+		$agg = new CampaignMetricsAggregator();
+		$lines = [
+			$this->line(1, '2026-07-31 12:00:00', 200.0, true),
+			$this->line(2, '2026-07-31 13:00:00', 50.0, false),
+		];
+		$result = $agg->momentum($campaign, $lines, [
+			'observation_window' => $campaign->observation_window(),
+		]);
+		$during = null;
+		foreach ($result['daily'] as $row) {
+			if (($row['day'] ?? '') === '2026-07-31' && ($row['phase'] ?? '') === 'during') {
+				$during = $row;
+				break;
+			}
+		}
+		$this->assertNotNull($during);
+		$this->assertSame(2, $during['orders']);
+		$this->assertSame(1, $during['coupon_orders']);
+		$this->assertEqualsWithDelta(250.0, $during['revenue_order_totals'], 0.01);
+		$this->assertEqualsWithDelta(200.0, $during['coupon_revenue_order_totals'], 0.01);
+	}
+
 	/**
 	 * @return CampaignDefinition
 	 */

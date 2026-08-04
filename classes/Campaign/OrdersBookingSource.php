@@ -95,7 +95,8 @@ class OrdersBookingSource implements BookingSourceInterface {
 			$coupon_discount = 0.0;
 			foreach ($order_coupons as $c) {
 				$code_u = strtoupper((string) $c['code']);
-				if (empty($coupon_codes_l) || in_array($code_u, $coupon_codes_l, true)) {
+				// Require explicit campaign codes — empty list must not match every coupon.
+				if (!empty($coupon_codes_l) && in_array($code_u, $coupon_codes_l, true)) {
 					$matched_codes[] = (string) $c['code'];
 					$coupon_discount += (float) $c['discount'];
 				}
