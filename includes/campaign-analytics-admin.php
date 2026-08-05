@@ -31,8 +31,6 @@ function intersoccer_render_campaign_analytics_page() {
 		}
 	}
 
-	intersoccer_campaign_analytics_maybe_export($repo, $store);
-
 	$campaigns = $repo->all();
 	$selected = isset($_GET['campaign_id']) ? (int) $_GET['campaign_id'] : 0;
 	if ($selected <= 0 && !empty($campaigns)) {
@@ -83,8 +81,8 @@ function intersoccer_render_campaign_analytics_page() {
 				<?php wp_nonce_field('isrr_campaign_refresh'); ?>
 				<input type="hidden" name="campaign_id" value="<?php echo esc_attr((string) $definition->id); ?>" />
 				<button class="button" name="isrr_campaign_refresh" value="1"><?php esc_html_e('Refresh now', 'intersoccer-reports-rosters'); ?></button>
-				<a class="button" href="<?php echo esc_url(wp_nonce_url(add_query_arg(['page' => 'intersoccer-campaign-analytics', 'campaign_id' => $definition->id, 'export' => 'xlsx']), 'isrr_campaign_export')); ?>"><?php esc_html_e('Download Excel', 'intersoccer-reports-rosters'); ?></a>
-				<a class="button" href="<?php echo esc_url(wp_nonce_url(add_query_arg(['page' => 'intersoccer-campaign-analytics', 'campaign_id' => $definition->id, 'export' => 'docx']), 'isrr_campaign_export')); ?>"><?php esc_html_e('Download Word', 'intersoccer-reports-rosters'); ?></a>
+				<a class="button" href="<?php echo esc_url(wp_nonce_url(add_query_arg(['page' => 'intersoccer-campaign-analytics', 'campaign_id' => $definition->id, 'export' => 'xlsx']), 'isrr_campaign_export')); ?>"><?php esc_html_e('Export data (Excel)', 'intersoccer-reports-rosters'); ?></a>
+				<a class="button" href="<?php echo esc_url(wp_nonce_url(add_query_arg(['page' => 'intersoccer-campaign-analytics', 'campaign_id' => $definition->id, 'export' => 'docx']), 'isrr_campaign_export')); ?>"><?php esc_html_e('Export report (Word)', 'intersoccer-reports-rosters'); ?></a>
 			</form>
 
 			<p><strong><?php esc_html_e('Summary status:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html($status); ?>
@@ -94,13 +92,22 @@ function intersoccer_render_campaign_analytics_page() {
 			</p>
 
 			<?php if ($status === 'building' || $status === 'missing') : ?>
-				<div class="notice notice-info"><p><?php esc_html_e('Building… Last ready payload is shown when available. Use Refresh now to queue a rebuild.', 'intersoccer-reports-rosters'); ?></p></div>
+				<div class="notice notice-info"><p><?php esc_html_e('Building… Last ready payload is shown when available. Use Refresh now to queue a rebuild. Exports require a stored summary (ready or data-quality stub).', 'intersoccer-reports-rosters'); ?></p></div>
 			<?php endif; ?>
 
-			<?php if (is_array($payload)) : ?>
+			<?php
+			$gate_blocked = is_array($payload)
+				&& class_exists('\InterSoccer\ReportsRosters\Campaign\Export\CampaignReportSections')
+				&& \InterSoccer\ReportsRosters\Campaign\Export\CampaignReportSections::is_gate_blocked($payload);
+			?>
+			<?php if ($gate_blocked || ($status === 'failed' && is_array($payload))) : ?>
+				<div class="notice notice-error"><p><?php esc_html_e('Data quality gate blocked this campaign. Export will download a one-page stub listing blocked reasons — not a partial report.', 'intersoccer-reports-rosters'); ?></p>
+					<pre><?php echo esc_html(wp_json_encode(is_array($payload) ? ($payload['errors'] ?? $summary['warnings'] ?? []) : ($summary['warnings'] ?? []), JSON_PRETTY_PRINT)); ?></pre>
+				</div>
+			<?php elseif (is_array($payload)) : ?>
 				<?php intersoccer_campaign_analytics_render_payload($payload, $definition); ?>
 			<?php elseif ($status === 'failed') : ?>
-				<div class="notice notice-error"><p><?php esc_html_e('Rebuild failed. See data notes / warnings.', 'intersoccer-reports-rosters'); ?></p>
+				<div class="notice notice-error"><p><?php esc_html_e('Rebuild failed. Refresh again after fixing data-quality issues. No exportable stub is stored yet.', 'intersoccer-reports-rosters'); ?></p>
 					<pre><?php echo esc_html(wp_json_encode($summary['warnings'] ?? [], JSON_PRETTY_PRINT)); ?></pre>
 				</div>
 			<?php endif; ?>
@@ -503,10 +510,13 @@ function intersoccer_campaign_analytics_maybe_export($repo, $store) {
 	}
 	$hash = $definition->definition_hash();
 	$status_set = implode(',', $definition->order_statuses);
-	$summary = $store->get($definition->id, $hash, $status_set) ?: $store->get_latest_ready($definition->id);
+	$summary = $store->get($definition->id, $hash, $status_set);
+	if (!$summary || empty($summary['payload']) || !is_array($summary['payload'])) {
+		$summary = $store->get_latest_ready($definition->id);
+	}
 	$payload = is_array($summary) ? ($summary['payload'] ?? null) : null;
 	if (!is_array($payload)) {
-		wp_die(esc_html__('No ready summary to export. Refresh the campaign first.', 'intersoccer-reports-rosters'));
+		wp_die(esc_html__('No summary to export. Refresh the campaign first (exports use the cached summary, not a live recompute).', 'intersoccer-reports-rosters'));
 	}
 
 	$type = sanitize_key(wp_unslash($_GET['export']));
@@ -515,22 +525,46 @@ function intersoccer_campaign_analytics_maybe_export($repo, $store) {
 	if ($type === 'xlsx') {
 		$exporter = new \InterSoccer\ReportsRosters\Campaign\Export\ExcelExporter();
 		$binary = $exporter->build($payload);
-		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-		header('Content-Disposition: attachment; filename="campaign-' . $slug . '.xlsx"');
-		header('Content-Length: ' . strlen($binary));
-		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-		echo $binary;
-		exit;
+		if (substr($binary, 0, 2) === 'PK') {
+			intersoccer_campaign_send_download(
+				$binary,
+				'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+				'campaign-' . $slug . '.xlsx'
+			);
+		}
+		intersoccer_campaign_send_download($binary, 'text/csv; charset=utf-8', 'campaign-' . $slug . '.csv');
 	}
 
 	if ($type === 'docx') {
 		$exporter = new \InterSoccer\ReportsRosters\Campaign\Export\DocxExporter();
 		$file = $exporter->build($payload);
-		header('Content-Type: ' . $file['mime']);
-		header('Content-Disposition: attachment; filename="campaign-' . $slug . '.' . $file['ext'] . '"');
-		header('Content-Length: ' . strlen($file['body']));
-		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-		echo $file['body'];
-		exit;
+		intersoccer_campaign_send_download(
+			$file['body'],
+			$file['mime'],
+			'campaign-' . $slug . '.' . $file['ext']
+		);
 	}
+}
+
+/**
+ * Stream a generated export as a download.
+ *
+ * Discards buffered admin output so the body contains only the file bytes.
+ *
+ * @param string $body     File contents.
+ * @param string $mime     Content type.
+ * @param string $filename Download filename.
+ * @return void
+ */
+function intersoccer_campaign_send_download($body, $mime, $filename) {
+	while (ob_get_level() > 0) {
+		ob_end_clean();
+	}
+	nocache_headers();
+	header('Content-Type: ' . $mime);
+	header('Content-Disposition: attachment; filename="' . $filename . '"');
+	header('Content-Length: ' . strlen($body));
+	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+	echo $body;
+	exit;
 }
