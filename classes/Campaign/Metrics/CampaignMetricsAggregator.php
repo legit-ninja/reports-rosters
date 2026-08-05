@@ -402,10 +402,45 @@ class CampaignMetricsAggregator {
 			return [$a['day'], $a['hour']] <=> [$b['day'], $b['hour']];
 		});
 
+		$peak_day = null;
+		$peak_lines = -1;
+		foreach ($days_out as $day => $row) {
+			$n = (int) ($row['line_items'] ?? 0);
+			if ($n > $peak_lines) {
+				$peak_lines = $n;
+				$peak_day = [
+					'date' => $day,
+					'day_name' => (string) ($row['day_name'] ?? ''),
+					'line_items' => $n,
+					'orders' => (int) ($row['orders'] ?? 0),
+					'order_revenue' => (float) ($row['order_revenue'] ?? 0),
+				];
+			}
+		}
+
+		$deadline_note = '';
+		foreach ($activations as $act) {
+			if (!is_array($act)) {
+				continue;
+			}
+			$label = trim((string) ($act['label'] ?? $act['note'] ?? $act['deadline_note'] ?? ''));
+			$when = trim((string) ($act['at'] ?? $act['datetime'] ?? $act['deadline'] ?? ''));
+			if ($label === '' && $when === '') {
+				continue;
+			}
+			$deadline_note = $label !== '' ? $label : ('Deadline: ' . $when);
+			if ($label !== '' && $when !== '') {
+				$deadline_note = $label . ' (' . $when . ')';
+			}
+			break;
+		}
+
 		return [
 			'by_day' => $days_out,
 			'by_hour' => $hours_out,
 			'marketing_activations' => $activations,
+			'peak_day' => $peak_day,
+			'deadline_note' => $deadline_note,
 		];
 	}
 
@@ -673,9 +708,14 @@ class CampaignMetricsAggregator {
 			}
 		}
 
+		$cohort_label = is_array($prior_family_keys)
+			? 'first booking in our system'
+			: 'new vs existing (prior history unavailable)';
+
 		return [
 			'reliable' => $reliable,
 			'customer_id_populated_ratio' => round($populated_ratio, 2),
+			'cohort_label' => $cohort_label,
 			'new' => [
 				'orders' => count($new_orders),
 				'families' => count($new_families),

@@ -50,11 +50,22 @@ Reports and Rosters → **Campaign Analytics**. Campaigns are CPT `intersoccer_c
 
 ## Exports
 
-Excel (PhpSpreadsheet) with privacy allowlist + Data notes sheet + Momentum sheet. Word uses PhpWord when installed; otherwise HTML `.doc` fallback (`Campaign\Export\DocxExporter`).
+House-style templates mirror the hand-built SWISS15 Word/Excel reports:
 
-```bash
-composer require phpoffice/phpword:^1.2
-```
+| Format | Layout |
+|--------|--------|
+| **Word** (`DocxExporter`) | Calibri, navy `#1F4E5F` title + underline, grey provenance, red caveats, navy table headers. Section order: window note → executive summary → headline → timing → demand by season → mix → region → cohorts → codes/sources (attribution limitation mandatory) → recommendations → gaps → business-age footnote. Native `.docx` via PhpWord (`phpoffice/phpword`); HTML `.doc` fallback only if the library is missing. |
+| **Excel** (`ExcelExporter`) | Core sheets **Bookings / Summary / By Day / Data Notes** (Arial, navy headers, zebra rows, freeze + autofilter on Bookings). Summary uses `COUNTA`/`COUNTIF`/`IF` against Bookings (LibreOffice-safe). Optional **Channels** + **Momentum** sheets append after Data Notes. CSV fallback if PhpSpreadsheet is unavailable. |
+
+Bookings columns (privacy allowlist only): Order ID, Date, Day, Time, Child age, Gender, Activity, Booking type, Season, Region, Venue, Code used (`Yes`/`No`). No names, DOB, contact, medical, or AVS.
+
+**Data-quality gate:** if `gate.ok` is false, rebuild stores a stub payload and both exporters return a one-page “cannot produce” document listing blocked reasons (no partial figures).
+
+Admin buttons: **Export data (Excel)** / **Export report (Word)** — stream the cached summary only (never sync re-aggregate on click).
+
+**Download streaming:** exports run on `admin_init` (priority 5) via `CampaignModule::maybe_export`, not inside the page render callback. `intersoccer_campaign_send_download()` discards output buffers before setting `Content-Length`. Calling export after `admin_head` (or setting `Content-Length` to only the binary while admin HTML is already buffered) truncates the download to WordPress chrome.
+
+Shared section/prose builder: `Campaign\Export\CampaignReportSections`.
 
 ## Tests
 
@@ -63,7 +74,3 @@ composer require phpoffice/phpword:^1.2
 # or
 ./vendor/bin/phpunit tests/Campaign/
 ```
-
-## Optional PhpWord
-
-Listed as a Composer **suggest** — not required for deploy gates.

@@ -292,6 +292,22 @@ if (!function_exists('esc_html')) {
         return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
     }
 }
+if (!function_exists('wp_tempnam')) {
+    function wp_tempnam($filename = '', $dir = '') {
+        $prefix = $filename !== '' ? preg_replace('/[^a-zA-Z0-9_-]/', '', (string) $filename) : 'tmp';
+        if ($prefix === '') {
+            $prefix = 'tmp';
+        }
+        $base = ($dir !== '' ? rtrim($dir, '/') : sys_get_temp_dir());
+        $path = $base . '/' . $prefix . '-' . uniqid('', true);
+        $fh = fopen($path, 'w');
+        if ($fh === false) {
+            return false;
+        }
+        fclose($fh);
+        return $path;
+    }
+}
 if (!function_exists('__')) {
     function __($text, $domain = 'default') {
         return $text;

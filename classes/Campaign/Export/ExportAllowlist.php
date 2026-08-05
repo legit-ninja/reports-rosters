@@ -16,6 +16,7 @@ class ExportAllowlist {
 	 */
 	public static function allowed_keys() {
 		return [
+			'order_id',
 			'derived_age',
 			'gender',
 			'activity',
@@ -24,6 +25,7 @@ class ExportAllowlist {
 			'booking_type',
 			'venue',
 			'region',
+			'season',
 			'camp_week',
 			'price_paid',
 			'sibling_discount',

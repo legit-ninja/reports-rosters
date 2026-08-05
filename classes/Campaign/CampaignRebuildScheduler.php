@@ -105,8 +105,25 @@ class CampaignRebuildScheduler {
 		$source = $this->resolve_source();
 		$gate = (new DataQualityGate())->evaluate($source->source_id(), $campaign->start_datetime, $campaign->end_datetime);
 		if (!$gate['ok']) {
-			$this->store->upsert($campaign_id, $hash, $status_set, 'failed', null, $gate['errors']);
-			return null;
+			$stub = [
+				'_export_stub' => true,
+				'campaign' => [
+					'id' => $campaign->id,
+					'name' => $campaign->name,
+					'start' => $campaign->start_datetime,
+					'end' => $campaign->end_datetime,
+					'coupon_codes' => $campaign->coupon_codes,
+					'order_statuses' => $campaign->order_statuses,
+					'revenue_basis' => $campaign->revenue_basis,
+				],
+				'gate' => $gate,
+				'errors' => $gate['errors'],
+				'warnings' => $gate['warnings'],
+				'data_notes' => [],
+				'attribution_limitation' => Metrics\CampaignMetricsAggregator::attribution_limitation_copy(),
+			];
+			$this->store->upsert($campaign_id, $hash, $status_set, 'failed', $stub, $gate['errors']);
+			return $stub;
 		}
 
 		try {
@@ -272,7 +289,23 @@ class CampaignRebuildScheduler {
 		$allow = Export\ExportAllowlist::allowed_keys();
 		$rows = [];
 		foreach ($lines as $line) {
+			$ts = (string) $line->get('booking_timestamp', '');
+			$season = trim((string) $line->get('season', ''));
+			if ($season === '') {
+				$week = (string) $line->get('camp_week', '');
+				if (preg_match('/^(summer|autumn|winter|easter)/i', $week, $m)) {
+					$season = ucfirst(strtolower($m[1]));
+				}
+			}
+			if ($season !== '' && preg_match('/^\d{4}/', $ts)) {
+				$year = substr($ts, 0, 4);
+				if (stripos($season, $year) === false) {
+					$season = $season . ' ' . $year;
+				}
+			}
+
 			$row = [
+				'order_id' => (int) $line->get('order_id', 0),
 				'derived_age' => $line->get('age'),
 				'gender' => $line->get('gender'),
 				'activity' => $line->get('activity_type'),
@@ -281,20 +314,23 @@ class CampaignRebuildScheduler {
 				'booking_type' => $line->get('booking_type'),
 				'venue' => $line->get('venue'),
 				'region' => $line->get('region'),
+				'season' => $season !== '' ? $season : 'not_recorded',
 				'camp_week' => $line->get('camp_week'),
 				'price_paid' => $line->get('line_total'),
 				'sibling_discount' => $line->get('sibling_discount'),
 				'coupon_used' => $line->get('used_campaign_coupon') ? 1 : 0,
 				'coupon_codes' => implode(',', (array) $line->get('coupon_codes', [])),
-				'booking_timestamp' => $line->get('booking_timestamp'),
+				'booking_timestamp' => $ts,
 			];
-			$filtered = [];
+			$filtered = Export\ExportAllowlist::filter_row($row);
+			// Preserve allowlist key order for stable sheet columns.
+			$ordered = [];
 			foreach ($allow as $key) {
-				if (array_key_exists($key, $row)) {
-					$filtered[$key] = $row[$key];
+				if (array_key_exists($key, $filtered)) {
+					$ordered[$key] = $filtered[$key];
 				}
 			}
-			$rows[] = $filtered;
+			$rows[] = $ordered;
 		}
 		return $rows;
 	}
