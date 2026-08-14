@@ -500,13 +500,12 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 $requested_year_int = intval($year);
                 
                 // Apply season type filter if provided
-                if (!empty($season_type)) {
-                    $roster_season_type = !empty($roster['season']) ? intersoccer_extract_season_type($roster['season']) : null;
-                    if ($roster_season_type !== $season_type) {
-                        $skipped_year_mismatch++;
-                        $skipped_season_mismatch++;
-                        continue;
-                    }
+                if (!empty($season_type)
+                    && function_exists('intersoccer_reports_entry_matches_season_type')
+                    && !intersoccer_reports_entry_matches_season_type($roster, $season_type)) {
+                    $skipped_year_mismatch++;
+                    $skipped_season_mismatch++;
+                    continue;
                 }
                 
                 // Apply region filter if provided (after canton enrichment)
@@ -810,6 +809,11 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 om_end_date.meta_value AS end_date,
                 rr.start_date AS roster_start_date,
                 rr.end_date AS roster_end_date,
+                COALESCE(
+                    NULLIF(TRIM(om_season.meta_value), ''),
+                    NULLIF(TRIM(om_season_pa.meta_value), ''),
+                    NULLIF(TRIM(rr.season), '')
+                ) AS season,
                 rr.season AS roster_season,
                 rr.activity_type AS roster_activity_type,
                 p.post_date,
@@ -852,6 +856,8 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 )
             )
              LEFT JOIN {$wpdb->prefix}intersoccer_rosters rr ON rr.order_item_id = oi.order_item_id
+             LEFT JOIN $order_itemmeta_table om_season ON oi.order_item_id = om_season.order_item_id AND om_season.meta_key = 'Season'
+             LEFT JOIN $order_itemmeta_table om_season_pa ON oi.order_item_id = om_season_pa.order_item_id AND om_season_pa.meta_key = 'pa_program-season'
              LEFT JOIN $order_itemmeta_table om_start_date ON oi.order_item_id = om_start_date.order_item_id AND om_start_date.meta_key = 'Start Date'
              LEFT JOIN $order_itemmeta_table om_end_date ON oi.order_item_id = om_end_date.order_item_id AND om_end_date.meta_key = 'End Date'
              LEFT JOIN {$wpdb->postmeta} pm_activity_type ON om_product_id.meta_value = pm_activity_type.post_id AND pm_activity_type.meta_key = 'pa_activity-type'
@@ -905,7 +911,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             }
 
             if (empty($parsed_start_date) || $parsed_start_date === '1970-01-01') {
-                $season_for_year = $roster['roster_season'] ?? '';
+                $season_for_year = !empty($roster['season']) ? $roster['season'] : ($roster['roster_season'] ?? '');
                 $resolve_entry = array_merge($roster, ['season' => $season_for_year]);
                 $season_year = function_exists('intersoccer_reports_resolve_program_year')
                     ? intersoccer_reports_resolve_program_year($resolve_entry)
@@ -926,7 +932,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             $end_year = $parsed_end_date ? date('Y', strtotime($parsed_end_date)) : $start_year;
 
             if ($start_year != $year && $end_year != $year) {
-                $season_for_year = $roster['roster_season'] ?? '';
+                $season_for_year = !empty($roster['season']) ? $roster['season'] : ($roster['roster_season'] ?? '');
                 $resolve_entry = array_merge($roster, ['season' => $season_for_year]);
                 $season_year = function_exists('intersoccer_reports_resolve_program_year')
                     ? intersoccer_reports_resolve_program_year($resolve_entry)
@@ -961,8 +967,20 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             // Course Day: from pa_course-day attribute (empty string is not null — do not use ?? alone).
             $cd_row = isset($roster['course_day']) ? trim((string) $roster['course_day']) : '';
             $roster['course_day'] = ($cd_row === '') ? 'Unknown' : $cd_row;
+
+            $season_val = isset($roster['season']) ? trim((string) $roster['season']) : '';
+            if ($season_val === '') {
+                $season_val = isset($roster['roster_season']) ? trim((string) $roster['roster_season']) : '';
+            }
+            $roster['season'] = $season_val;
         }
         unset($roster);
+
+        if (!empty($season_type) && function_exists('intersoccer_reports_entry_matches_season_type')) {
+            $rosters = array_values(array_filter($rosters, static function ($row) use ($season_type) {
+                return intersoccer_reports_entry_matches_season_type($row, $season_type);
+            }));
+        }
 
         if (!empty($region) && function_exists('intersoccer_reports_region_matches_filter')) {
             $rosters = array_values(array_filter($rosters, static function ($row) use ($region) {
@@ -1039,18 +1057,25 @@ function intersoccer_calculate_final_reports_totals($report_data, $activity_type
             ],
         ];
 
-        foreach ($report_data as $region => $venues) {
-            if ($region === '__player_registration_totals__') {
+        foreach ($report_data as $season => $regions) {
+            if ($season === '__player_registration_totals__' || !is_array($regions)) {
                 continue;
             }
-            $totals['regions'][$region] = [
-                'registrations' => 0,
-            ];
-
-            foreach ($venues as $venue => $courses) {
+            foreach ($regions as $region => $courses) {
+                if (!is_array($courses)) {
+                    continue;
+                }
+                if (!isset($totals['regions'][$region])) {
+                    $totals['regions'][$region] = [
+                        'registrations' => 0,
+                    ];
+                }
                 foreach ($courses as $data) {
-                    $totals['regions'][$region]['registrations'] += $data['registrations'];
-                    $totals['all']['registrations'] += $data['registrations'];
+                    if (!is_array($data) || !isset($data['registrations'])) {
+                        continue;
+                    }
+                    $totals['regions'][$region]['registrations'] += (int) $data['registrations'];
+                    $totals['all']['registrations'] += (int) $data['registrations'];
                 }
             }
         }
