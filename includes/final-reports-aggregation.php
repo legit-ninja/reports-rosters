@@ -107,6 +107,38 @@ if (!function_exists('intersoccer_reports_order_status_allowed_for_mode')) {
     }
 }
 
+if (!function_exists('intersoccer_reports_entry_matches_season_type')) {
+    /**
+     * Whether a report entry matches an optional season type (Winter, Spring, …).
+     *
+     * Empty $season_type matches all. Prefer extract_season_type(); stripos fallback
+     * covers labels the extractor does not classify.
+     *
+     * @param array<string,mixed> $entry
+     * @param string|null         $season_type
+     * @return bool
+     */
+    function intersoccer_reports_entry_matches_season_type(array $entry, $season_type) {
+        if ($season_type === null || $season_type === '') {
+            return true;
+        }
+        $season_type = (string) $season_type;
+        $season = '';
+        if (!empty($entry['season'])) {
+            $season = (string) $entry['season'];
+        } elseif (!empty($entry['roster_season'])) {
+            $season = (string) $entry['roster_season'];
+        }
+        $roster_season_type = ($season !== '' && function_exists('intersoccer_extract_season_type'))
+            ? intersoccer_extract_season_type($season)
+            : null;
+        if ($roster_season_type === $season_type) {
+            return true;
+        }
+        return $season !== '' && stripos($season, $season_type) !== false;
+    }
+}
+
 if (!function_exists('intersoccer_reports_filter_entries_by_season_year')) {
     /**
      * Filter camp/course entries by calendar year and optional season type (e.g. Summer).
@@ -127,14 +159,8 @@ if (!function_exists('intersoccer_reports_filter_entries_by_season_year')) {
             }
             $season = isset($entry['season']) ? (string) $entry['season'] : '';
 
-            if ($season_type !== null) {
-                $roster_season_type = $season !== '' && function_exists('intersoccer_extract_season_type')
-                    ? intersoccer_extract_season_type($season)
-                    : null;
-                if ($roster_season_type !== $season_type
-                    && ($season === '' || stripos($season, $season_type) === false)) {
-                    continue;
-                }
+            if ($season_type !== null && !intersoccer_reports_entry_matches_season_type($entry, $season_type)) {
+                continue;
             }
 
             $resolved_year = function_exists('intersoccer_reports_resolve_program_year')
@@ -522,9 +548,140 @@ if (!function_exists('intersoccer_reports_build_camp_report_from_entries')) {
     }
 }
 
+if (!function_exists('intersoccer_reports_unknown_label_sort_rank')) {
+    /**
+     * Sort rank so "Unknown" labels sink after named values.
+     *
+     * @param string $label
+     * @return int 1 if Unknown, else 0.
+     */
+    function intersoccer_reports_unknown_label_sort_rank($label) {
+        return (strcasecmp(trim((string) $label), 'Unknown') === 0) ? 1 : 0;
+    }
+}
+
+if (!function_exists('intersoccer_reports_weekday_sort_rank')) {
+    /**
+     * Monday=1 … Sunday=7; unknown/empty last (8).
+     *
+     * @param mixed $day Course day label or token.
+     * @return int
+     */
+    function intersoccer_reports_weekday_sort_rank($day) {
+        static $rank = [
+            'Monday' => 1,
+            'Tuesday' => 2,
+            'Wednesday' => 3,
+            'Thursday' => 4,
+            'Friday' => 5,
+            'Saturday' => 6,
+            'Sunday' => 7,
+        ];
+        $canonical = function_exists('intersoccer_normalize_weekday_token')
+            ? intersoccer_normalize_weekday_token($day)
+            : null;
+        if ($canonical && isset($rank[$canonical])) {
+            return $rank[$canonical];
+        }
+        $raw = is_string($day) ? trim($day) : '';
+        if ($raw !== '' && isset($rank[$raw])) {
+            return $rank[$raw];
+        }
+        return 8;
+    }
+}
+
+if (!function_exists('intersoccer_reports_season_type_sort_rank')) {
+    /**
+     * Calendar-year fallback when a season has no event dates: Winter → Spring → Summer → Autumn.
+     *
+     * @param string $season Season display label.
+     * @return int
+     */
+    function intersoccer_reports_season_type_sort_rank($season) {
+        static $order = [
+            'Winter' => 1,
+            'Spring' => 2,
+            'Summer' => 3,
+            'Autumn' => 4,
+        ];
+        if (intersoccer_reports_unknown_label_sort_rank($season) === 1) {
+            return 99;
+        }
+        $type = function_exists('intersoccer_extract_season_type')
+            ? intersoccer_extract_season_type($season)
+            : null;
+        if ($type && isset($order[$type])) {
+            return $order[$type];
+        }
+        return 50;
+    }
+}
+
+if (!function_exists('intersoccer_reports_season_label_indicates_camp')) {
+    /**
+     * True when a season display/storage label is a camp program (not Spring/Summer courses).
+     *
+     * @param mixed $season
+     * @return bool
+     */
+    function intersoccer_reports_season_label_indicates_camp($season) {
+        $raw = strtolower(trim((string) $season));
+        return $raw !== '' && strpos($raw, 'camp') !== false;
+    }
+}
+
+if (!function_exists('intersoccer_reports_resolve_course_season_label')) {
+    /**
+     * Display season for Final Course Reports grouping.
+     *
+     * Camp program labels (e.g. "Summer Camps 2026") are not used as course
+     * section keys; product pa_program-season is preferred in that case.
+     *
+     * @param array<string,mixed> $entry
+     * @return string
+     */
+    function intersoccer_reports_resolve_course_season_label(array $entry) {
+        $candidates = [];
+        foreach (['season', 'roster_season', 'product_season'] as $key) {
+            if (!empty($entry[$key])) {
+                $candidates[] = trim((string) $entry[$key]);
+            }
+        }
+        if (!defined('INTERSOCCER_TESTING') || !INTERSOCCER_TESTING) {
+            $product_id = isset($entry['product_id']) ? (int) $entry['product_id'] : 0;
+            if ($product_id > 0 && function_exists('wc_get_product')) {
+                $product = wc_get_product($product_id);
+                if ($product && is_object($product) && method_exists($product, 'get_attribute')) {
+                    $from_product = trim((string) $product->get_attribute('pa_program-season'));
+                    if ($from_product !== '') {
+                        $candidates[] = $from_product;
+                    }
+                }
+            }
+        }
+
+        $fallback = 'Unknown';
+        foreach ($candidates as $raw) {
+            if ($raw === '' || intersoccer_reports_season_label_indicates_camp($raw)) {
+                continue;
+            }
+            $label = intersoccer_reports_resolve_facet_label($raw, 'pa_program-season', $raw);
+            if ($label !== '') {
+                return $label;
+            }
+            $fallback = $raw;
+        }
+        return $fallback !== '' ? $fallback : 'Unknown';
+    }
+}
+
 if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
     /**
      * Build course Final Numbers report_data from normalized entry rows.
+     *
+     * Nested as season → region → rows (venue is a column). Sorted season
+     * (earliest start), region A–Z, then Monday–Sunday / venue / course name.
      *
      * @param array $entries
      * @param bool  $exclude_buyclub
@@ -552,6 +709,7 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
         ];
 
         $report_data = [];
+        $season_starts = [];
         $seen_course_roster_ids = [];
         $seen_course_order_items_no_roster = [];
 
@@ -580,6 +738,7 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
                 }
             }
 
+            $season = intersoccer_reports_resolve_course_season_label($entry);
             $entry_region = intersoccer_reports_resolve_facet_label($entry['canton'] ?? 'Unknown', 'pa_canton-region', 'Unknown');
             $venue_raw = isset($entry['venue']) ? trim((string) $entry['venue']) : '';
             $venue = intersoccer_reports_resolve_facet_label($venue_raw !== '' ? $venue_raw : 'Unknown', 'pa_intersoccer-venues', 'Unknown');
@@ -597,18 +756,36 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
             }
             $cd_disp = isset($entry['course_day']) ? trim((string) $entry['course_day']) : '';
             $course_day = ($cd_disp === '') ? 'Unknown' : intersoccer_reports_resolve_facet_label($cd_disp, 'pa_course-day', $cd_disp);
-
-            if (!isset($report_data[$entry_region])) {
-                $report_data[$entry_region] = [];
+            if ($course_day !== 'Unknown' && function_exists('intersoccer_normalize_weekday_token')) {
+                $canonical_day = intersoccer_normalize_weekday_token($course_day);
+                if ($canonical_day) {
+                    $course_day = $canonical_day;
+                }
             }
-            if (!isset($report_data[$entry_region][$venue])) {
-                $report_data[$entry_region][$venue] = [];
+
+            $esd = isset($entry['event_start_date']) ? trim((string) $entry['event_start_date']) : '';
+            if ($esd === '' || $esd === '1970-01-01' || $esd === '0000-00-00') {
+                $esd = isset($entry['start_date']) ? trim((string) $entry['start_date']) : '';
+            }
+            if ($esd !== '' && $esd !== '1970-01-01' && $esd !== '0000-00-00' && $esd !== 'N/A') {
+                $esd_ts = strtotime($esd);
+                if ($esd_ts !== false && (!isset($season_starts[$season]) || $esd_ts < $season_starts[$season])) {
+                    $season_starts[$season] = $esd_ts;
+                }
+            }
+
+            if (!isset($report_data[$season])) {
+                $report_data[$season] = [];
+            }
+            if (!isset($report_data[$season][$entry_region])) {
+                $report_data[$season][$entry_region] = [];
             }
 
             $identity_id = $variation_id > 0 ? $variation_id : $product_id;
-            $row_key = $identity_id . '|' . $course_day;
-            if (!isset($report_data[$entry_region][$venue][$row_key])) {
-                $report_data[$entry_region][$venue][$row_key] = [
+            $row_key = $identity_id . '|' . $course_day . '|' . $venue;
+            if (!isset($report_data[$season][$entry_region][$row_key])) {
+                $report_data[$season][$entry_region][$row_key] = [
+                    'venue' => $venue,
                     'course_name' => $course_name,
                     'course_day' => $course_day,
                     'times' => [],
@@ -622,28 +799,63 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
                 if ($times_key === $times_disp) {
                     $times_key = intersoccer_reports_resolve_facet_label($times_disp, 'pa_course-times', $times_disp);
                 }
-                $report_data[$entry_region][$venue][$row_key]['times'][$times_key] = true;
+                $report_data[$season][$entry_region][$row_key]['times'][$times_key] = true;
             }
 
-            $report_data[$entry_region][$venue][$row_key]['registrations']++;
+            $report_data[$season][$entry_region][$row_key]['registrations']++;
         }
 
-        foreach ($report_data as $region_key => $venues_data) {
-            foreach ($venues_data as $venue_key => $courses_data) {
+        foreach ($report_data as $season_key => $regions_data) {
+            foreach ($regions_data as $region_key => $courses_data) {
                 foreach ($courses_data as $row_key => $course_metrics) {
                     $times_keys = array_keys($course_metrics['times'] ?? []);
                     sort($times_keys, SORT_NATURAL | SORT_FLAG_CASE);
-                    $report_data[$region_key][$venue_key][$row_key]['times'] = !empty($times_keys) ? implode(', ', $times_keys) : '-';
+                    $report_data[$season_key][$region_key][$row_key]['times'] = !empty($times_keys) ? implode(', ', $times_keys) : '-';
                 }
-                uasort($report_data[$region_key][$venue_key], static function ($a, $b) {
-                    $name_cmp = strcasecmp((string) ($a['course_name'] ?? ''), (string) ($b['course_name'] ?? ''));
-                    if ($name_cmp !== 0) {
-                        return $name_cmp;
+                uasort($report_data[$season_key][$region_key], static function ($a, $b) {
+                    $day_cmp = intersoccer_reports_weekday_sort_rank($a['course_day'] ?? '')
+                        <=> intersoccer_reports_weekday_sort_rank($b['course_day'] ?? '');
+                    if ($day_cmp !== 0) {
+                        return $day_cmp;
                     }
-                    return strcasecmp((string) ($a['course_day'] ?? ''), (string) ($b['course_day'] ?? ''));
+                    $venue_cmp = strnatcasecmp((string) ($a['venue'] ?? ''), (string) ($b['venue'] ?? ''));
+                    if ($venue_cmp !== 0) {
+                        return $venue_cmp;
+                    }
+                    return strcasecmp((string) ($a['course_name'] ?? ''), (string) ($b['course_name'] ?? ''));
                 });
             }
+            uksort($report_data[$season_key], static function ($a, $b) {
+                $unk = intersoccer_reports_unknown_label_sort_rank($a) <=> intersoccer_reports_unknown_label_sort_rank($b);
+                if ($unk !== 0) {
+                    return $unk;
+                }
+                return strnatcasecmp((string) $a, (string) $b);
+            });
         }
+
+        uksort($report_data, static function ($a, $b) use ($season_starts) {
+            $unk = intersoccer_reports_unknown_label_sort_rank($a) <=> intersoccer_reports_unknown_label_sort_rank($b);
+            if ($unk !== 0) {
+                return $unk;
+            }
+            $a_ts = $season_starts[$a] ?? null;
+            $b_ts = $season_starts[$b] ?? null;
+            if ($a_ts !== null && $b_ts !== null && $a_ts !== $b_ts) {
+                return $a_ts <=> $b_ts;
+            }
+            if ($a_ts !== null && $b_ts === null) {
+                return -1;
+            }
+            if ($a_ts === null && $b_ts !== null) {
+                return 1;
+            }
+            $type_cmp = intersoccer_reports_season_type_sort_rank($a) <=> intersoccer_reports_season_type_sort_rank($b);
+            if ($type_cmp !== 0) {
+                return $type_cmp;
+            }
+            return strcasecmp((string) $a, (string) $b);
+        });
 
         $report_data['__player_registration_totals__'] = $course_player_registration_totals;
         return $report_data;

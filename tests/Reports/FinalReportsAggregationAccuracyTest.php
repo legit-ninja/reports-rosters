@@ -35,7 +35,9 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
             || !function_exists('intersoccer_reports_camp_excel_data_rows')
             || !function_exists('intersoccer_reports_order_status_allowed_for_mode')
             || !function_exists('intersoccer_reports_resolve_program_year')
-            || !function_exists('intersoccer_reports_roster_matches_close_year')) {
+            || !function_exists('intersoccer_reports_roster_matches_close_year')
+            || !function_exists('intersoccer_reports_entry_matches_season_type')
+            || !function_exists('intersoccer_reports_season_label_indicates_camp')) {
             $this->markTestSkipped('Final reports aggregation helpers not loaded');
         }
     }
@@ -467,8 +469,238 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
 
         $report = intersoccer_reports_build_course_report_from_entries($filtered, false);
         $this->assertSame(3, $report['__player_registration_totals__']['all']);
-        $this->assertSame(2, $report['Geneva']['Pitch A']['50|Tuesday']['registrations']);
-        $this->assertSame(1, $report['Geneva']['Pitch A']['51|Wednesday']['registrations']);
+        $this->assertSame(2, $report['Spring 2026']['Geneva']['50|Tuesday|Pitch A']['registrations']);
+        $this->assertSame(1, $report['Spring 2026']['Geneva']['51|Wednesday|Pitch A']['registrations']);
+    }
+
+    public function test_course_season_type_filter_keeps_spring_drops_winter() {
+        $this->skipIfMissingHelpers();
+
+        $base = [
+            'variation_id' => 0,
+            'is_buyclub' => false,
+            'line_subtotal' => 50,
+            'line_total' => 50,
+            'canton' => 'Geneva',
+            'venue' => 'Pitch A',
+        ];
+        $entries = [
+            array_merge($base, [
+                'roster_row_id' => 1,
+                'order_item_id' => 1,
+                'product_id' => 10,
+                'order_item_name' => 'Winter Monday',
+                'course_day' => 'Monday',
+                'season' => 'Winter 2026',
+                'event_start_date' => '2026-01-12',
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 2,
+                'order_item_id' => 2,
+                'product_id' => 11,
+                'order_item_name' => 'Spring Tuesday',
+                'course_day' => 'Tuesday',
+                'season' => 'Spring 2026',
+                'event_start_date' => '2026-04-07',
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 3,
+                'order_item_id' => 3,
+                'product_id' => 12,
+                'order_item_name' => 'Spring Wednesday',
+                'course_day' => 'Wednesday',
+                'season' => 'Spring 2026',
+                'event_start_date' => '2026-04-08',
+            ]),
+        ];
+
+        $this->assertTrue(intersoccer_reports_entry_matches_season_type($entries[1], 'Spring'));
+        $this->assertFalse(intersoccer_reports_entry_matches_season_type($entries[0], 'Spring'));
+
+        $filtered = array_values(array_filter($entries, static function ($row) {
+            return intersoccer_reports_entry_matches_season_type($row, 'Spring');
+        }));
+        $this->assertCount(2, $filtered);
+
+        $report = intersoccer_reports_build_course_report_from_entries($filtered, false);
+        $this->assertSame(2, $report['__player_registration_totals__']['all']);
+        unset($report['__player_registration_totals__']);
+        $this->assertSame(['Spring 2026'], array_keys($report));
+        $this->assertArrayHasKey('11|Tuesday|Pitch A', $report['Spring 2026']['Geneva']);
+        $this->assertArrayHasKey('12|Wednesday|Pitch A', $report['Spring 2026']['Geneva']);
+    }
+
+    public function test_course_report_does_not_group_under_camp_season_label() {
+        $this->skipIfMissingHelpers();
+
+        $this->assertTrue(intersoccer_reports_season_label_indicates_camp('Summer Camps 2026'));
+        $this->assertFalse(intersoccer_reports_season_label_indicates_camp('Spring/Summer 2026'));
+        $this->assertFalse(intersoccer_reports_season_label_indicates_camp('Summer-courses-2026'));
+
+        $base = [
+            'variation_id' => 0,
+            'is_buyclub' => false,
+            'line_subtotal' => 50,
+            'line_total' => 50,
+            'canton' => 'Geneva',
+            'venue' => 'Pitch A',
+        ];
+        $entries = [
+            array_merge($base, [
+                'roster_row_id' => 1,
+                'order_item_id' => 1,
+                'product_id' => 37424,
+                'order_item_name' => 'Mis-stamped Sunday',
+                'course_day' => 'Sunday',
+                'season' => 'Summer Camps 2026',
+                'product_season' => 'Spring/Summer 2026',
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 2,
+                'order_item_id' => 2,
+                'product_id' => 37424,
+                'order_item_name' => 'Correct Sunday',
+                'course_day' => 'Sunday',
+                'season' => 'Spring/Summer 2026',
+            ]),
+        ];
+
+        $report = intersoccer_reports_build_course_report_from_entries($entries, false);
+        $this->assertSame(2, $report['__player_registration_totals__']['all']);
+        unset($report['__player_registration_totals__']);
+        $this->assertArrayNotHasKey('Summer Camps 2026', $report);
+        $this->assertSame(['Spring/Summer 2026'], array_keys($report));
+        $this->assertSame(2, $report['Spring/Summer 2026']['Geneva']['37424|Sunday|Pitch A']['registrations']);
+    }
+
+    public function test_course_report_groups_season_region_then_weekday() {
+        $this->skipIfMissingHelpers();
+
+        $base = [
+            'variation_id' => 0,
+            'is_buyclub' => false,
+            'line_subtotal' => 50,
+            'line_total' => 50,
+        ];
+        $entries = [
+            array_merge($base, [
+                'roster_row_id' => 1,
+                'order_item_id' => 1,
+                'canton' => 'Zurich',
+                'venue' => 'Pitch Z',
+                'product_id' => 10,
+                'order_item_name' => 'Zurich Monday',
+                'course_day' => 'Monday',
+                'season' => 'Spring 2026',
+                'event_start_date' => '2026-04-06',
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 2,
+                'order_item_id' => 2,
+                'canton' => 'Zurich',
+                'venue' => 'Pitch Z',
+                'product_id' => 20,
+                'order_item_name' => 'Zurich Winter Monday',
+                'course_day' => 'Monday',
+                'season' => 'Winter 2026',
+                'event_start_date' => '2026-01-12',
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 3,
+                'order_item_id' => 3,
+                'canton' => 'Geneva',
+                'venue' => 'Pitch B',
+                'product_id' => 11,
+                'order_item_name' => 'Geneva Monday B',
+                'course_day' => 'Monday',
+                'season' => 'Winter 2026',
+                'event_start_date' => '2026-01-12',
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 4,
+                'order_item_id' => 4,
+                'canton' => 'Geneva',
+                'venue' => 'Pitch A',
+                'product_id' => 12,
+                'order_item_name' => 'Geneva Monday A',
+                'course_day' => 'Monday',
+                'season' => 'Winter 2026',
+                'event_start_date' => '2026-01-12',
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 5,
+                'order_item_id' => 5,
+                'canton' => 'Geneva',
+                'venue' => 'Pitch A',
+                'product_id' => 13,
+                'order_item_name' => 'Geneva Friday',
+                'course_day' => 'Friday',
+                'season' => 'Winter 2026',
+                'event_start_date' => '2026-01-16',
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 6,
+                'order_item_id' => 6,
+                'canton' => 'Geneva',
+                'venue' => 'Pitch A',
+                'product_id' => 14,
+                'order_item_name' => 'Geneva Wednesday',
+                'course_day' => 'Wednesday',
+                'season' => 'Winter 2026',
+                'event_start_date' => '2026-01-14',
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 7,
+                'order_item_id' => 7,
+                'canton' => 'Geneva',
+                'venue' => 'Pitch C',
+                'product_id' => 15,
+                'order_item_name' => 'Geneva Vendredi',
+                'course_day' => 'vendredi',
+                'season' => 'Winter 2026',
+                'event_start_date' => '2026-01-16',
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 8,
+                'order_item_id' => 8,
+                'canton' => 'Geneva',
+                'venue' => 'Pitch B',
+                'product_id' => 12,
+                'order_item_name' => 'Geneva Monday A at B',
+                'course_day' => 'Monday',
+                'season' => 'Winter 2026',
+                'event_start_date' => '2026-01-12',
+            ]),
+        ];
+
+        $report = intersoccer_reports_build_course_report_from_entries($entries, false);
+        $this->assertSame(8, $report['__player_registration_totals__']['all']);
+        unset($report['__player_registration_totals__']);
+
+        $this->assertSame(['Winter 2026', 'Spring 2026'], array_keys($report));
+        $this->assertSame(['Geneva', 'Zurich'], array_keys($report['Winter 2026']));
+        $this->assertSame(['Zurich'], array_keys($report['Spring 2026']));
+
+        $geneva_rows = array_values($report['Winter 2026']['Geneva']);
+        $days = array_column($geneva_rows, 'course_day');
+        $this->assertSame(
+            ['Monday', 'Monday', 'Monday', 'Wednesday', 'Friday', 'Friday'],
+            $days,
+            'Within a region, rows must sort Monday through Sunday'
+        );
+
+        $monday_venues = [];
+        foreach ($geneva_rows as $row) {
+            if ($row['course_day'] === 'Monday') {
+                $monday_venues[] = $row['venue'];
+            }
+        }
+        $this->assertSame(['Pitch A', 'Pitch B', 'Pitch B'], $monday_venues);
+
+        $this->assertSame(1, $report['Winter 2026']['Geneva']['12|Monday|Pitch A']['registrations']);
+        $this->assertSame(1, $report['Winter 2026']['Geneva']['12|Monday|Pitch B']['registrations']);
+        $this->assertSame('Friday', $report['Winter 2026']['Geneva']['15|Friday|Pitch C']['course_day']);
+        $this->assertSame('Pitch C', $report['Winter 2026']['Geneva']['15|Friday|Pitch C']['venue']);
     }
 
     public function test_camp_excel_row_totals_match_aggregation() {

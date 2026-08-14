@@ -201,6 +201,7 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
     } else {
         // Course Excel headers
         $headers = array(
+            'Season',
             'Region',
             'Venue',
             'Course Name',
@@ -219,18 +220,18 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
               ->getStartColor()->setARGB('FF4472C4');
         $sheet->getStyle($header_range)->getFont()->getColor()->setARGB('FFFFFFFF');
 
-        // Course Excel data
+        // Course Excel data: season → region → weekday-sorted rows
         $row_index = 2;
-        foreach ($report_data as $region => $venues) {
-            if ($region === '__player_registration_totals__' || !is_array($venues)) {
+        foreach ($report_data as $season => $regions) {
+            if ($season === '__player_registration_totals__' || !is_array($regions)) {
                 continue;
             }
-            foreach ($venues as $venue => $course_rows) {
+            foreach ($regions as $region => $course_rows) {
                 if (!is_array($course_rows)) {
                     continue;
                 }
                 foreach ($course_rows as $course_data) {
-                    if (!is_array($course_data)) {
+                    if (!is_array($course_data) || !isset($course_data['registrations'])) {
                         continue;
                     }
                     if ($urgency_only && function_exists('intersoccer_reports_course_row_is_urgent')
@@ -242,8 +243,9 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
                         ? intersoccer_reports_urgency_band($regs)
                         : 'count-critical';
                     $excel_row = array(
+                        $season,
                         $region,
-                        $venue,
+                        $course_data['venue'] ?? 'Unknown',
                         $course_data['course_name'] ?? 'Unknown',
                         $course_data['course_day'] ?? 'Unknown',
                         $course_data['times'] ?? '-',
@@ -253,8 +255,8 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
                             : $band,
                     );
                     $sheet->fromArray($excel_row, null, 'A' . $row_index);
-                    intersoccer_reports_excel_apply_urgency_fill($sheet, 'F' . $row_index, $band);
                     intersoccer_reports_excel_apply_urgency_fill($sheet, 'G' . $row_index, $band);
+                    intersoccer_reports_excel_apply_urgency_fill($sheet, 'H' . $row_index, $band);
                     $row_index++;
                 }
             }
@@ -264,19 +266,19 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
         $totals_start = $row_index + 2;
         $sheet->setCellValue('A' . $totals_start, 'TOTALS');
         $sheet->getStyle('A' . $totals_start)->getFont()->setBold(true)->setSize(14)->getColor()->setARGB('FF0073AA');
-        $sheet->mergeCells('A' . $totals_start . ':D' . $totals_start);
+        $sheet->mergeCells('A' . $totals_start . ':E' . $totals_start);
 
         $totals_start++;
         $sheet->setCellValue('A' . $totals_start, 'Category');
-        $sheet->setCellValue('F' . $totals_start, 'Registrations');
-        $sheet->getStyle('A' . $totals_start . ':F' . $totals_start)->getFont()->setBold(true);
+        $sheet->setCellValue('G' . $totals_start, 'Registrations');
+        $sheet->getStyle('A' . $totals_start . ':G' . $totals_start)->getFont()->setBold(true);
 
         $totals_start++;
         $course_all_export = $course_player_registration_totals !== null
             ? (int) $course_player_registration_totals['all']
             : (int) ($totals['all']['registrations'] ?? 0);
         $sheet->setCellValue('A' . $totals_start, __('All Courses (roster registrations)', 'intersoccer-reports-rosters'));
-        $sheet->setCellValue('F' . $totals_start, $course_all_export);
+        $sheet->setCellValue('G' . $totals_start, $course_all_export);
 
     }
 

@@ -144,6 +144,12 @@ function intersoccer_render_final_reports_page() {
         array_merge([$activity_type, '%' . $year_int . '%'], $final_statuses)
     );
     $seasons = $wpdb->get_col($season_types_query);
+
+    if ($activity_type === 'Course' && function_exists('intersoccer_reports_season_label_indicates_camp')) {
+        $seasons = array_values(array_filter((array) $seasons, static function ($sn) {
+            return !intersoccer_reports_season_label_indicates_camp($sn);
+        }));
+    }
     
     // Extract unique season types
     $unique_season_types = [];
@@ -229,14 +235,14 @@ function intersoccer_render_final_reports_page() {
                     <option value="Course" <?php selected($activity_type, 'Course'); ?>><?php _e('Course', 'intersoccer-reports-rosters'); ?></option>
                 </select>
             <?php endif; ?>
+            <label for="season_type"><?php _e('Season:', 'intersoccer-reports-rosters'); ?></label>
+            <select name="season_type" id="season_type">
+                <option value=""><?php _e('All Seasons', 'intersoccer-reports-rosters'); ?></option>
+                <?php foreach ($unique_season_types as $st): ?>
+                    <option value="<?php echo esc_attr($st); ?>" <?php selected($season_type, $st); ?>><?php echo esc_html($st); ?></option>
+                <?php endforeach; ?>
+            </select>
             <?php if ($activity_type === 'Camp'): ?>
-                <label for="season_type"><?php _e('Season Type:', 'intersoccer-reports-rosters'); ?></label>
-                <select name="season_type" id="season_type">
-                    <option value=""><?php _e('All Seasons', 'intersoccer-reports-rosters'); ?></option>
-                    <?php foreach ($unique_season_types as $st): ?>
-                        <option value="<?php echo esc_attr($st); ?>" <?php selected($season_type, $st); ?>><?php echo esc_html($st); ?></option>
-                    <?php endforeach; ?>
-                </select>
                 <label for="region"><?php _e('Region:', 'intersoccer-reports-rosters'); ?></label>
                 <select name="region" id="region">
                     <option value=""><?php _e('All Regions', 'intersoccer-reports-rosters'); ?></option>
@@ -409,8 +415,11 @@ function intersoccer_render_final_reports_page() {
                     </tbody>
                 </table>
             <?php else: ?>
-                <!-- Course Report Table -->
-                <table class="widefat fixed">
+                <!-- Course Report Table: season → region → Mon–Sun -->
+                <style>
+                .course-reports-table .season-header td { background: #e8e8e8; font-weight: bold; text-align: left; }
+                </style>
+                <table class="widefat fixed course-reports-table">
                     <thead>
                         <tr>
                             <th><?php _e('Region', 'intersoccer-reports-rosters'); ?></th>
@@ -423,17 +432,18 @@ function intersoccer_render_final_reports_page() {
                     </thead>
                     <tbody>
                         <?php
-                        foreach ($report_data as $region => $venues): ?>
-                            <?php if ($region === '__player_registration_totals__' || !is_array($venues)) { continue; } ?>
+                        foreach ($report_data as $season => $regions): ?>
+                            <?php if ($season === '__player_registration_totals__' || !is_array($regions)) { continue; } ?>
                             <?php
-                            $region_rows = [];
-                            $region_regs = 0;
-                            foreach ($venues as $venue => $course_rows) {
+                            $region_blocks = [];
+                            foreach ($regions as $region => $course_rows) {
                                 if (!is_array($course_rows)) {
                                     continue;
                                 }
+                                $region_rows = [];
+                                $region_regs = 0;
                                 foreach ($course_rows as $course_data) {
-                                    if (!is_array($course_data)) {
+                                    if (!is_array($course_data) || !isset($course_data['registrations'])) {
                                         continue;
                                     }
                                     if ($urgency_only && function_exists('intersoccer_reports_course_row_is_urgent')
@@ -443,29 +453,41 @@ function intersoccer_render_final_reports_page() {
                                     $regs = (int) ($course_data['registrations'] ?? 0);
                                     $region_regs += $regs;
                                     $region_rows[] = [
-                                        'venue' => $venue,
+                                        'venue' => $course_data['venue'] ?? '',
                                         'course_data' => $course_data,
                                     ];
                                 }
+                                if (empty($region_rows)) {
+                                    continue;
+                                }
+                                $region_blocks[] = [
+                                    'region' => $region,
+                                    'regs' => $region_regs,
+                                    'rows' => $region_rows,
+                                ];
                             }
-                            if (empty($region_rows)) {
+                            if (empty($region_blocks)) {
                                 continue;
                             }
                             ?>
+                            <tr class="season-header">
+                                <td colspan="6"><?php echo esc_html($season); ?></td>
+                            </tr>
+                            <?php foreach ($region_blocks as $block): ?>
                             <tr style="background-color: #f0f0f0; font-weight: bold;">
-                                <td colspan="3"><?php echo esc_html($region); ?> - TOTAL</td>
+                                <td colspan="3"><?php echo esc_html($block['region']); ?> - TOTAL</td>
                                 <td></td>
                                 <td></td>
                                 <?php
                                 intersoccer_reports_render_urgency_heat_cell(
-                                    (string) $region_regs,
+                                    (string) $block['regs'],
                                     function_exists('intersoccer_reports_urgency_band')
-                                        ? intersoccer_reports_urgency_band($region_regs)
+                                        ? intersoccer_reports_urgency_band($block['regs'])
                                         : 'count-critical'
                                 );
                                 ?>
                             </tr>
-                            <?php foreach ($region_rows as $row): ?>
+                            <?php foreach ($block['rows'] as $row): ?>
                                 <?php
                                 $course_data = $row['course_data'];
                                 $regs = (int) ($course_data['registrations'] ?? 0);
@@ -481,6 +503,7 @@ function intersoccer_render_final_reports_page() {
                                         <td><?php echo esc_html($course_data['times'] ?? '-'); ?></td>
                                         <?php intersoccer_reports_render_urgency_heat_cell((string) $regs, $band); ?>
                                     </tr>
+                            <?php endforeach; ?>
                             <?php endforeach; ?>
                         <?php endforeach; ?>
                     </tbody>
