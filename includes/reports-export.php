@@ -199,87 +199,29 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
             $sheet->getStyle('B' . $row_index . ':M' . $row_index)->getFont()->setBold(true);
         }
     } else {
-        // Course Excel headers
-        $headers = array(
-            'Season',
-            'Region',
-            'Venue',
-            'Course Name',
-            'Course Day',
-            'Times',
-            'Registrations',
-            'Urgency',
-        );
-        $sheet->fromArray($headers, null, 'A1');
-
-        // Style header row
-        $header_range = 'A1:' . chr(64 + count($headers)) . '1';
-        $sheet->getStyle($header_range)->getFont()->setBold(true);
-        $sheet->getStyle($header_range)->getFill()
-              ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
-              ->getStartColor()->setARGB('FF4472C4');
-        $sheet->getStyle($header_range)->getFont()->getColor()->setARGB('FFFFFFFF');
-
-        // Course Excel data: season → region → weekday-sorted rows
-        $row_index = 2;
-        foreach ($report_data as $season => $regions) {
-            if ($season === '__player_registration_totals__' || !is_array($regions)) {
+        // Compact Courses Numbers layout (title, region blocks, one TOTAL column).
+        $sheet_rows = function_exists('intersoccer_reports_course_excel_sheet_rows')
+            ? intersoccer_reports_course_excel_sheet_rows($report_data, $year, $urgency_only)
+            : [];
+        $row_index = 1;
+        foreach ($sheet_rows as $sheet_row) {
+            if (!is_array($sheet_row)) {
                 continue;
             }
-            foreach ($regions as $region => $course_rows) {
-                if (!is_array($course_rows)) {
-                    continue;
-                }
-                foreach ($course_rows as $course_data) {
-                    if (!is_array($course_data) || !isset($course_data['registrations'])) {
-                        continue;
-                    }
-                    if ($urgency_only && function_exists('intersoccer_reports_course_row_is_urgent')
-                        && !intersoccer_reports_course_row_is_urgent($course_data)) {
-                        continue;
-                    }
-                    $regs = (int) ($course_data['registrations'] ?? 0);
-                    $band = function_exists('intersoccer_reports_urgency_band')
-                        ? intersoccer_reports_urgency_band($regs)
-                        : 'count-critical';
-                    $excel_row = array(
-                        $season,
-                        $region,
-                        $course_data['venue'] ?? 'Unknown',
-                        $course_data['course_name'] ?? 'Unknown',
-                        $course_data['course_day'] ?? 'Unknown',
-                        $course_data['times'] ?? '-',
-                        $regs,
-                        function_exists('intersoccer_reports_urgency_band_label')
-                            ? intersoccer_reports_urgency_band_label($band)
-                            : $band,
-                    );
-                    $sheet->fromArray($excel_row, null, 'A' . $row_index);
-                    intersoccer_reports_excel_apply_urgency_fill($sheet, 'G' . $row_index, $band);
-                    intersoccer_reports_excel_apply_urgency_fill($sheet, 'H' . $row_index, $band);
-                    $row_index++;
-                }
+            $kind = (string) ($sheet_row['kind'] ?? '');
+            $col_a = (string) ($sheet_row['col_a'] ?? '');
+            $col_b = $sheet_row['col_b'] ?? null;
+            $sheet->setCellValue('A' . $row_index, $col_a);
+            if ($col_b !== null && $col_b !== '') {
+                $sheet->setCellValue('B' . $row_index, $col_b);
             }
+            if ($kind === 'title') {
+                $sheet->getStyle('A' . $row_index)->getFont()->setBold(true)->setSize(14);
+            } elseif (in_array($kind, ['header', 'region', 'region_total', 'grand_total'], true)) {
+                $sheet->getStyle('A' . $row_index . ':B' . $row_index)->getFont()->setBold(true);
+            }
+            $row_index++;
         }
-
-        // Course totals
-        $totals_start = $row_index + 2;
-        $sheet->setCellValue('A' . $totals_start, 'TOTALS');
-        $sheet->getStyle('A' . $totals_start)->getFont()->setBold(true)->setSize(14)->getColor()->setARGB('FF0073AA');
-        $sheet->mergeCells('A' . $totals_start . ':E' . $totals_start);
-
-        $totals_start++;
-        $sheet->setCellValue('A' . $totals_start, 'Category');
-        $sheet->setCellValue('G' . $totals_start, 'Registrations');
-        $sheet->getStyle('A' . $totals_start . ':G' . $totals_start)->getFont()->setBold(true);
-
-        $totals_start++;
-        $course_all_export = $course_player_registration_totals !== null
-            ? (int) $course_player_registration_totals['all']
-            : (int) ($totals['all']['registrations'] ?? 0);
-        $sheet->setCellValue('A' . $totals_start, __('All Courses (roster registrations)', 'intersoccer-reports-rosters'));
-        $sheet->setCellValue('G' . $totals_start, $course_all_export);
-
     }
 
     // Set column widths

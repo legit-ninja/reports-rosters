@@ -1149,3 +1149,145 @@ if (!function_exists('intersoccer_reports_camp_excel_data_rows')) {
 		return $rows;
 	}
 }
+
+if (!function_exists('intersoccer_reports_course_excel_line_label')) {
+	/**
+	 * Composed "Name of Course / Day" cell for the compact course Excel sheet.
+	 *
+	 * @param array<string,mixed> $course_data Course metrics row.
+	 * @return string
+	 */
+	function intersoccer_reports_course_excel_line_label(array $course_data) {
+		$day = trim((string) ($course_data['course_day'] ?? ''));
+		$name = trim((string) ($course_data['course_name'] ?? ''));
+		$venue = trim((string) ($course_data['venue'] ?? ''));
+		$times = trim((string) ($course_data['times'] ?? ''));
+
+		$head = trim($day . ' ' . $name);
+		$tail = $venue;
+		if ($times !== '' && $times !== '-') {
+			$tail = trim($tail . ' ' . $times);
+		}
+
+		$parts = [];
+		if ($head !== '') {
+			$parts[] = $head;
+		}
+		if ($tail !== '') {
+			$parts[] = $tail;
+		}
+		return implode(', ', $parts);
+	}
+}
+
+if (!function_exists('intersoccer_reports_course_excel_sheet_rows')) {
+	/**
+	 * Compact Courses Numbers sheet rows (title, region blocks, totals).
+	 *
+	 * @param array $report_data Course report_data from aggregation.
+	 * @param int   $year        Export year for the title.
+	 * @param bool  $urgency_only When true, omit Good/Optimal course rows.
+	 * @return array<int,array{kind:string,col_a:string,col_b:string|int|null}>
+	 */
+	function intersoccer_reports_course_excel_sheet_rows(array $report_data, $year, $urgency_only = false) {
+		$rows = [];
+		$year_int = (int) $year;
+		$grand_total = 0;
+		$seasons_emitted = 0;
+
+		foreach ($report_data as $season => $regions) {
+			if ($season === '__player_registration_totals__' || !is_array($regions)) {
+				continue;
+			}
+
+			$season_blocks = [];
+			foreach ($regions as $region => $course_rows) {
+				if (!is_array($course_rows)) {
+					continue;
+				}
+				$visible = [];
+				$region_total = 0;
+				foreach ($course_rows as $course_data) {
+					if (!is_array($course_data) || !isset($course_data['registrations'])) {
+						continue;
+					}
+					if ($urgency_only && function_exists('intersoccer_reports_course_row_is_urgent')
+						&& !intersoccer_reports_course_row_is_urgent($course_data)) {
+						continue;
+					}
+					$regs = (int) $course_data['registrations'];
+					$region_total += $regs;
+					$visible[] = [
+						'kind' => 'course',
+						'col_a' => intersoccer_reports_course_excel_line_label($course_data),
+						'col_b' => $regs,
+					];
+				}
+				if (empty($visible)) {
+					continue;
+				}
+				$region_label = (string) $region;
+				$region_upper = function_exists('mb_strtoupper')
+					? mb_strtoupper($region_label, 'UTF-8')
+					: strtoupper($region_label);
+				$season_blocks[] = [
+					'region' => $region_label,
+					'region_upper' => $region_upper,
+					'rows' => $visible,
+					'total' => $region_total,
+				];
+			}
+
+			if (empty($season_blocks)) {
+				continue;
+			}
+
+			if ($seasons_emitted > 0) {
+				$rows[] = [
+					'kind' => 'spacer',
+					'col_a' => '',
+					'col_b' => null,
+				];
+			}
+
+			$rows[] = [
+				'kind' => 'title',
+				'col_a' => (string) $season . ' Courses Numbers ' . $year_int,
+				'col_b' => null,
+			];
+			$rows[] = [
+				'kind' => 'header',
+				'col_a' => 'Name of Course / Day',
+				'col_b' => 'TOTAL',
+			];
+
+			foreach ($season_blocks as $block) {
+				$rows[] = [
+					'kind' => 'region',
+					'col_a' => $block['region_upper'],
+					'col_b' => null,
+				];
+				foreach ($block['rows'] as $course_row) {
+					$rows[] = $course_row;
+				}
+				$rows[] = [
+					'kind' => 'region_total',
+					'col_a' => 'TOTAL ' . $block['region'] . ':',
+					'col_b' => (int) $block['total'],
+				];
+				$grand_total += (int) $block['total'];
+			}
+			$seasons_emitted++;
+		}
+
+		if ($seasons_emitted > 0) {
+			$rows[] = [
+				'kind' => 'grand_total',
+				'col_a' => 'TOTAL:',
+				'col_b' => $grand_total,
+			];
+		}
+
+		return $rows;
+	}
+}

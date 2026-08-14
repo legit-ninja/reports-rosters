@@ -33,6 +33,8 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
             || !function_exists('intersoccer_reports_filter_entries_by_season_year')
             || !function_exists('intersoccer_reports_build_course_report_from_entries')
             || !function_exists('intersoccer_reports_camp_excel_data_rows')
+            || !function_exists('intersoccer_reports_course_excel_sheet_rows')
+            || !function_exists('intersoccer_reports_course_excel_line_label')
             || !function_exists('intersoccer_reports_order_status_allowed_for_mode')
             || !function_exists('intersoccer_reports_resolve_program_year')
             || !function_exists('intersoccer_reports_roster_matches_close_year')
@@ -967,5 +969,174 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
             'July 6 - July 10, 2026',
             'July 13 - July 17, 2026',
         ], $keys, 'Date groups must be in chronological order');
+    }
+
+    public function test_course_excel_line_label_composes_day_name_venue_time() {
+        $this->skipIfMissingHelpers();
+
+        $this->assertSame(
+            'Sunday Football Courses, Chênois 09:30',
+            intersoccer_reports_course_excel_line_label([
+                'course_day' => 'Sunday',
+                'course_name' => 'Football Courses',
+                'venue' => 'Chênois',
+                'times' => '09:30',
+            ])
+        );
+        $this->assertSame(
+            'Monday Football Courses, Pitch A',
+            intersoccer_reports_course_excel_line_label([
+                'course_day' => 'Monday',
+                'course_name' => 'Football Courses',
+                'venue' => 'Pitch A',
+                'times' => '-',
+            ])
+        );
+    }
+
+    public function test_course_excel_sheet_matches_courses_numbers_layout() {
+        $this->skipIfMissingHelpers();
+
+        $base = [
+            'variation_id' => 0,
+            'line_subtotal' => 50,
+            'season' => 'Autumn 2026',
+            'event_start_date' => '2026-09-07',
+        ];
+        $entries = [
+            array_merge($base, [
+                'roster_row_id' => 1,
+                'order_item_id' => 1,
+                'canton' => 'Geneva',
+                'venue' => 'Pitch A',
+                'product_id' => 10,
+                'order_item_name' => 'Football Courses',
+                'course_day' => 'Sunday',
+                'times' => '09:30',
+                'is_buyclub' => false,
+                'line_total' => 50,
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 2,
+                'order_item_id' => 2,
+                'canton' => 'Geneva',
+                'venue' => 'Pitch A',
+                'product_id' => 10,
+                'order_item_name' => 'Football Courses',
+                'course_day' => 'Sunday',
+                'times' => '09:30',
+                'is_buyclub' => true,
+                'line_total' => 0,
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 3,
+                'order_item_id' => 3,
+                'canton' => 'Geneva',
+                'venue' => 'Pitch B',
+                'product_id' => 11,
+                'order_item_name' => 'Football Courses',
+                'course_day' => 'Monday',
+                'is_buyclub' => false,
+                'line_total' => 50,
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 4,
+                'order_item_id' => 4,
+                'canton' => 'Zurich',
+                'venue' => 'Pitch Z',
+                'product_id' => 20,
+                'order_item_name' => 'Football Courses',
+                'course_day' => 'Friday',
+                'is_buyclub' => false,
+                'line_total' => 50,
+            ]),
+        ];
+
+        $report = intersoccer_reports_build_course_report_from_entries($entries, false);
+        $rows = intersoccer_reports_course_excel_sheet_rows($report, 2026, false);
+
+        $kinds = array_column($rows, 'kind');
+        $this->assertSame('title', $rows[0]['kind']);
+        $this->assertSame('Autumn 2026 Courses Numbers 2026', $rows[0]['col_a']);
+        $this->assertSame('header', $rows[1]['kind']);
+        $this->assertSame('Name of Course / Day', $rows[1]['col_a']);
+        $this->assertSame('TOTAL', $rows[1]['col_b']);
+
+        $this->assertSame('region', $rows[2]['kind']);
+        $this->assertSame('GENEVA', $rows[2]['col_a']);
+        $this->assertSame('Monday Football Courses, Pitch B', $rows[3]['col_a']);
+        $this->assertSame(1, $rows[3]['col_b']);
+        $this->assertSame('Sunday Football Courses, Pitch A 09:30', $rows[4]['col_a']);
+        $this->assertSame(2, $rows[4]['col_b'], 'BuyClub registration is included in TOTAL');
+        $this->assertSame('region_total', $rows[5]['kind']);
+        $this->assertSame('TOTAL Geneva:', $rows[5]['col_a']);
+        $this->assertSame(3, $rows[5]['col_b']);
+
+        $this->assertSame('ZURICH', $rows[6]['col_a']);
+        $this->assertSame('Friday Football Courses, Pitch Z', $rows[7]['col_a']);
+        $this->assertSame(1, $rows[7]['col_b']);
+        $this->assertSame('TOTAL Zurich:', $rows[8]['col_a']);
+        $this->assertSame(1, $rows[8]['col_b']);
+
+        $this->assertSame('grand_total', $rows[9]['kind']);
+        $this->assertSame('TOTAL:', $rows[9]['col_a']);
+        $this->assertSame(4, $rows[9]['col_b']);
+        $this->assertContains('region', $kinds);
+        $this->assertContains('course', $kinds);
+    }
+
+    public function test_course_excel_urgency_only_drops_optimal_and_reduces_totals() {
+        $this->skipIfMissingHelpers();
+
+        $report = [
+            'Autumn 2026' => [
+                'Geneva' => [
+                    '1|Sunday|Chênois' => [
+                        'venue' => 'Chênois',
+                        'course_name' => 'Football Courses',
+                        'course_day' => 'Sunday',
+                        'times' => '09:30',
+                        'registrations' => 5,
+                    ],
+                    '2|Sunday|Sismondi' => [
+                        'venue' => 'Sismondi',
+                        'course_name' => 'Football Courses',
+                        'course_day' => 'Sunday',
+                        'times' => '11:15',
+                        'registrations' => 32,
+                    ],
+                ],
+            ],
+        ];
+
+        $all = intersoccer_reports_course_excel_sheet_rows($report, 2026, false);
+        $urgent = intersoccer_reports_course_excel_sheet_rows($report, 2026, true);
+
+        $all_courses = array_values(array_filter($all, static function ($row) {
+            return ($row['kind'] ?? '') === 'course';
+        }));
+        $urgent_courses = array_values(array_filter($urgent, static function ($row) {
+            return ($row['kind'] ?? '') === 'course';
+        }));
+        $this->assertCount(2, $all_courses);
+        $this->assertCount(1, $urgent_courses);
+        $this->assertSame(5, $urgent_courses[0]['col_b']);
+
+        $all_grand = null;
+        $urgent_grand = null;
+        foreach ($all as $row) {
+            if (($row['kind'] ?? '') === 'grand_total') {
+                $all_grand = $row['col_b'];
+            }
+        }
+        foreach ($urgent as $row) {
+            if (($row['kind'] ?? '') === 'grand_total') {
+                $urgent_grand = $row['col_b'];
+            }
+        }
+        $this->assertSame(37, $all_grand);
+        $this->assertSame(5, $urgent_grand);
+        $this->assertSame('TOTAL Geneva:', $urgent[4]['col_a']);
+        $this->assertSame(5, $urgent[4]['col_b']);
     }
 }
