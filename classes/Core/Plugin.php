@@ -34,7 +34,7 @@ final class Plugin {
     /**
      * Plugin version
      */
-    const VERSION = '2.8.3.1';
+    const VERSION = '2.8.17';
     
     /**
      * Plugin text domain
