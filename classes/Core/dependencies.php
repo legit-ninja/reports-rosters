@@ -130,10 +130,13 @@ class Dependencies {
         try {
             $this->logger->debug('Starting comprehensive dependency check');
             
+            // Caps, memory, and max_execution_time are logged as warnings only —
+            // they must not block production Activate (hosts often use 30s / 128M).
+            $this->check_user_capabilities();
+
             $checks = [
                 'system' => $this->check_system_requirements(),
                 'plugins' => $this->check_required_plugins(),
-                'capabilities' => $this->check_user_capabilities(),
                 'php_extensions' => $this->check_php_extensions(),
                 'database' => $this->check_database_requirements(),
             ];
@@ -165,20 +168,23 @@ class Dependencies {
      */
     public function check_system_requirements() {
         try {
-            $requirements = [
+            $hard = [
                 'wordpress_version' => $this->check_wordpress_version(),
                 'php_version' => $this->check_php_version(),
+            ];
+            $soft = [
                 'memory_limit' => $this->check_memory_limit(),
                 'max_execution_time' => $this->check_execution_time(),
             ];
-            
-            $passed = array_reduce($requirements, function($carry, $check) {
+
+            $passed = array_reduce($hard, function($carry, $check) {
                 return $carry && $check;
             }, true);
             
             $this->logger->debug('System requirements check', [
                 'passed' => $passed,
-                'individual_checks' => $requirements
+                'hard_checks' => $hard,
+                'soft_checks' => $soft,
             ]);
             
             return $passed;
@@ -486,7 +492,8 @@ class Dependencies {
             // Check character set support
             $charset_ok = $this->check_database_charset();
             
-            $all_ok = $version_adequate && $charset_ok;
+            // Charset is warning-only (same as permissions); do not block Activate.
+            $all_ok = $version_adequate;
             
             $this->logger->debug('Database requirements check', [
                 'version' => $db_version,

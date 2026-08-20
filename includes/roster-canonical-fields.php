@@ -16,6 +16,7 @@ defined('ABSPATH') or die('Restricted access');
  * @param string            $key Field.
  * @return mixed|null
  */
+if (!function_exists('intersoccer_roster_row_get')) {
 function intersoccer_roster_row_get($row, $key) {
 	if (is_array($row)) {
 		return array_key_exists($key, $row) ? $row[$key] : null;
@@ -24,6 +25,7 @@ function intersoccer_roster_row_get($row, $key) {
 		return isset($row->{$key}) ? $row->{$key} : null;
 	}
 	return null;
+}
 }
 
 /**
@@ -34,6 +36,7 @@ function intersoccer_roster_row_get($row, $key) {
  * @param string            $drop_key  Legacy column.
  * @return string
  */
+if (!function_exists('intersoccer_roster_field_keep_first')) {
 function intersoccer_roster_field_keep_first($row, $keep_key, $drop_key) {
 	$keep = intersoccer_roster_row_get($row, $keep_key);
 	if ($keep !== null && trim((string) $keep) !== '') {
@@ -45,37 +48,46 @@ function intersoccer_roster_field_keep_first($row, $keep_key, $drop_key) {
 	}
 	return is_string($drop) ? $drop : (string) $drop;
 }
+}
 
 /**
  * @param array|object|null $row Roster row.
  * @return string
  */
+if (!function_exists('intersoccer_roster_field_player_first_name')) {
 function intersoccer_roster_field_player_first_name($row) {
 	return intersoccer_roster_field_keep_first($row, 'player_first_name', 'first_name');
 }
+}
 
 /**
  * @param array|object|null $row Roster row.
  * @return string
  */
+if (!function_exists('intersoccer_roster_field_player_last_name')) {
 function intersoccer_roster_field_player_last_name($row) {
 	return intersoccer_roster_field_keep_first($row, 'player_last_name', 'last_name');
 }
-
-/**
- * @param array|object|null $row Roster row.
- * @return string
- */
-function intersoccer_roster_field_player_dob($row) {
-	return intersoccer_roster_field_keep_first($row, 'player_dob', 'dob');
 }
 
 /**
  * @param array|object|null $row Roster row.
  * @return string
  */
+if (!function_exists('intersoccer_roster_field_player_dob')) {
+function intersoccer_roster_field_player_dob($row) {
+	return intersoccer_roster_field_keep_first($row, 'player_dob', 'dob');
+}
+}
+
+/**
+ * @param array|object|null $row Roster row.
+ * @return string
+ */
+if (!function_exists('intersoccer_roster_field_player_gender')) {
 function intersoccer_roster_field_player_gender($row) {
 	return intersoccer_roster_field_keep_first($row, 'player_gender', 'gender');
+}
 }
 
 /**
@@ -84,8 +96,10 @@ function intersoccer_roster_field_player_gender($row) {
  * @param array|object|null $row Roster row.
  * @return string
  */
+if (!function_exists('intersoccer_roster_field_player_medical')) {
 function intersoccer_roster_field_player_medical($row) {
 	return intersoccer_roster_field_keep_first($row, 'player_medical', 'medical_conditions');
+}
 }
 
 /**
@@ -94,8 +108,10 @@ function intersoccer_roster_field_player_medical($row) {
  * @param array|object|null $row Roster row.
  * @return string
  */
+if (!function_exists('intersoccer_roster_field_selected_days')) {
 function intersoccer_roster_field_selected_days($row) {
 	return intersoccer_roster_field_keep_first($row, 'selected_days', 'days_selected');
+}
 }
 
 /**
@@ -104,6 +120,7 @@ function intersoccer_roster_field_selected_days($row) {
  * @param array|object|null $row Roster row.
  * @return string
  */
+if (!function_exists('intersoccer_roster_field_player_display_name')) {
 function intersoccer_roster_field_player_display_name($row) {
 	$first = intersoccer_roster_field_player_first_name($row);
 	$last  = intersoccer_roster_field_player_last_name($row);
@@ -117,6 +134,7 @@ function intersoccer_roster_field_player_display_name($row) {
 	}
 	return '';
 }
+}
 
 /**
  * Ensure keep player/day/medical keys are set on a roster_data array before DB write.
@@ -125,6 +143,7 @@ function intersoccer_roster_field_player_display_name($row) {
  * @param array $roster_data Builder payload.
  * @return array
  */
+if (!function_exists('intersoccer_roster_apply_canonical_write_fields')) {
 function intersoccer_roster_apply_canonical_write_fields(array $roster_data) {
 	$first = trim((string) ($roster_data['player_first_name'] ?? $roster_data['first_name'] ?? ''));
 	$last  = trim((string) ($roster_data['player_last_name'] ?? $roster_data['last_name'] ?? ''));
@@ -178,6 +197,7 @@ function intersoccer_roster_apply_canonical_write_fields(array $roster_data) {
 
 	return $roster_data;
 }
+}
 
 /**
  * Normalize a roster row for Excel/UI export: keep-first into legacy keys Excel still reads.
@@ -185,6 +205,7 @@ function intersoccer_roster_apply_canonical_write_fields(array $roster_data) {
  * @param array $row Roster row (ARRAY_A).
  * @return array
  */
+if (!function_exists('intersoccer_roster_normalize_export_row')) {
 function intersoccer_roster_normalize_export_row(array $row) {
 	$display = intersoccer_roster_field_player_display_name($row);
 	if ($display !== '') {
@@ -215,4 +236,5 @@ function intersoccer_roster_normalize_export_row(array $row) {
 	$row['player_medical']     = $med;
 
 	return $row;
+}
 }

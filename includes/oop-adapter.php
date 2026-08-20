@@ -2,6 +2,7 @@
 /**
  * Adapter: Get girls-only roster listings via OOP
  */
+if (!function_exists('intersoccer_oop_get_girls_only_listings')) {
 function intersoccer_oop_get_girls_only_listings($filters = [], $context = []) {
     try {
         return intersoccer_oop_get_roster_listing_service()->getGirlsOnlyListings($filters, $context);
@@ -24,10 +25,12 @@ function intersoccer_oop_get_girls_only_listings($filters = [], $context = []) {
         ];
     }
 }
+}
 
 /**
  * Adapter: Get tournament roster listings via OOP
  */
+if (!function_exists('intersoccer_oop_get_tournament_listings')) {
 function intersoccer_oop_get_tournament_listings($filters = [], $context = []) {
     try {
         return intersoccer_oop_get_roster_listing_service()->getTournamentListings($filters, $context);
@@ -47,6 +50,7 @@ function intersoccer_oop_get_tournament_listings($filters = [], $context = []) {
             ],
         ];
     }
+}
 }
 
 /**
@@ -108,8 +112,10 @@ use InterSoccer\ReportsRosters\Export\CSVExporter;
  * 
  * @return Plugin
  */
+if (!function_exists('intersoccer_oop_get_plugin')) {
 function intersoccer_oop_get_plugin() {
     return Plugin::get_instance();
+}
 }
 
 /**
@@ -117,9 +123,11 @@ function intersoccer_oop_get_plugin() {
  * 
  * @return Database
  */
+if (!function_exists('intersoccer_oop_get_database')) {
 function intersoccer_oop_get_database() {
     $plugin = intersoccer_oop_get_plugin();
     return $plugin->get_database();
+}
 }
 
 /**
@@ -127,6 +135,7 @@ function intersoccer_oop_get_database() {
  * 
  * @return RosterRepository
  */
+if (!function_exists('intersoccer_oop_get_roster_repository')) {
 function intersoccer_oop_get_roster_repository() {
     static $repository = null;
     if ($repository === null) {
@@ -139,12 +148,14 @@ function intersoccer_oop_get_roster_repository() {
     }
     return $repository;
 }
+}
 
 /**
  * Get OOP PlayerRepository instance
  * 
  * @return PlayerRepository
  */
+if (!function_exists('intersoccer_oop_get_player_repository')) {
 function intersoccer_oop_get_player_repository() {
     static $repository = null;
     if ($repository === null) {
@@ -157,6 +168,7 @@ function intersoccer_oop_get_player_repository() {
     }
     return $repository;
 }
+}
 
 // ============================================================================
 // DATABASE OPERATIONS - Adapters
@@ -167,6 +179,7 @@ function intersoccer_oop_get_player_repository() {
  * 
  * @return bool Success status
  */
+if (!function_exists('intersoccer_oop_create_rosters_table')) {
 function intersoccer_oop_create_rosters_table() {
     try {
         $database = intersoccer_oop_get_database();
@@ -178,12 +191,14 @@ function intersoccer_oop_create_rosters_table() {
         return false;
     }
 }
+}
 
 /**
  * Adapter: Validate rosters table using OOP
  * 
  * @return bool Validation passed
  */
+if (!function_exists('intersoccer_oop_validate_rosters_table')) {
 function intersoccer_oop_validate_rosters_table() {
     try {
         $database = intersoccer_oop_get_database();
@@ -204,6 +219,7 @@ function intersoccer_oop_validate_rosters_table() {
         return false;
     }
 }
+}
 
 // ============================================================================
 // ORDER PROCESSING - Adapters
@@ -215,9 +231,11 @@ function intersoccer_oop_validate_rosters_table() {
  *
  * @return bool
  */
+if (!function_exists('intersoccer_oop_verbose_log')) {
 function intersoccer_oop_verbose_log() {
     return (defined('WP_DEBUG') && WP_DEBUG)
         || (defined('INTERSOCCER_REPORTS_DEBUG_LOG') && INTERSOCCER_REPORTS_DEBUG_LOG);
+}
 }
 
 /**
@@ -226,6 +244,7 @@ function intersoccer_oop_verbose_log() {
  * @param int $order_id Order ID
  * @return bool Success status
  */
+if (!function_exists('intersoccer_oop_process_order')) {
 function intersoccer_oop_process_order($order_id) {
     try {
         if (intersoccer_oop_verbose_log()) {
@@ -262,6 +281,7 @@ function intersoccer_oop_process_order($order_id) {
         return false;
     }
 }
+}
 
 /**
  * Adapter: Process batch of orders using OOP
@@ -269,6 +289,7 @@ function intersoccer_oop_process_order($order_id) {
  * @param array $order_ids Array of order IDs
  * @return array Results
  */
+if (!function_exists('intersoccer_oop_process_orders_batch')) {
 function intersoccer_oop_process_orders_batch($order_ids) {
     try {
         $processor = intersoccer_oop_get_order_processor();
@@ -279,6 +300,7 @@ function intersoccer_oop_process_orders_batch($order_ids) {
         }
         return ['success' => false, 'error' => $e->getMessage()];
     }
+}
 }
 
 // ============================================================================
@@ -291,6 +313,7 @@ function intersoccer_oop_process_orders_batch($order_ids) {
  * @param array $filters Filter criteria
  * @return array Roster entries
  */
+if (!function_exists('intersoccer_oop_get_rosters')) {
 function intersoccer_oop_get_rosters($filters = []) {
     try {
         $repository = intersoccer_oop_get_roster_repository();
@@ -301,6 +324,7 @@ function intersoccer_oop_get_rosters($filters = []) {
         return [];
     }
 }
+}
 
 /**
  * Adapter: Get roster by ID using OOP
@@ -308,6 +332,7 @@ function intersoccer_oop_get_rosters($filters = []) {
  * @param int $roster_id Roster ID
  * @return array|null Roster data or null
  */
+if (!function_exists('intersoccer_oop_get_roster')) {
 function intersoccer_oop_get_roster($roster_id) {
     try {
         $repository = intersoccer_oop_get_roster_repository();
@@ -317,6 +342,7 @@ function intersoccer_oop_get_roster($roster_id) {
         error_log('InterSoccer OOP: Error getting roster - ' . $e->getMessage());
         return null;
     }
+}
 }
 
 // ============================================================================
@@ -329,6 +355,7 @@ function intersoccer_oop_get_roster($roster_id) {
  * @param array $filters Report filters
  * @return array Report data
  */
+if (!function_exists('intersoccer_oop_generate_camp_report')) {
 function intersoccer_oop_generate_camp_report($filters = []) {
     try {
         $plugin = intersoccer_oop_get_plugin();
@@ -339,6 +366,7 @@ function intersoccer_oop_generate_camp_report($filters = []) {
         return [];
     }
 }
+}
 
 /**
  * Adapter: Generate overview report using OOP
@@ -346,6 +374,7 @@ function intersoccer_oop_generate_camp_report($filters = []) {
  * @param array $filters Report filters
  * @return array Report data
  */
+if (!function_exists('intersoccer_oop_generate_overview_report')) {
 function intersoccer_oop_generate_overview_report($filters = []) {
     try {
         $plugin = intersoccer_oop_get_plugin();
@@ -355,6 +384,7 @@ function intersoccer_oop_generate_overview_report($filters = []) {
         error_log('InterSoccer OOP: Error generating overview report - ' . $e->getMessage());
         return [];
     }
+}
 }
 
 // ============================================================================
@@ -368,6 +398,7 @@ function intersoccer_oop_generate_overview_report($filters = []) {
  * @param string $filename Filename
  * @return string|false File path or false
  */
+if (!function_exists('intersoccer_oop_export_excel')) {
 function intersoccer_oop_export_excel($data, $filename = null) {
     try {
         $plugin = intersoccer_oop_get_plugin();
@@ -378,6 +409,7 @@ function intersoccer_oop_export_excel($data, $filename = null) {
         return false;
     }
 }
+}
 
 /**
  * Adapter: Export to CSV using OOP
@@ -386,6 +418,7 @@ function intersoccer_oop_export_excel($data, $filename = null) {
  * @param string $filename Filename
  * @return string|false File path or false
  */
+if (!function_exists('intersoccer_oop_export_csv')) {
 function intersoccer_oop_export_csv($data, $filename = null) {
     try {
         $plugin = intersoccer_oop_get_plugin();
@@ -395,6 +428,7 @@ function intersoccer_oop_export_csv($data, $filename = null) {
         error_log('InterSoccer OOP: Error exporting to CSV - ' . $e->getMessage());
         return false;
     }
+}
 }
 
 // ============================================================================
@@ -408,8 +442,10 @@ function intersoccer_oop_export_csv($data, $filename = null) {
  * @param string $feature Feature name (database, orders, rosters, reports, etc.)
  * @return bool Use OOP for this feature
  */
+if (!function_exists('intersoccer_use_oop_for')) {
 function intersoccer_use_oop_for($feature) {
     return defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE;
+}
 }
 
 /**
@@ -418,10 +454,12 @@ function intersoccer_use_oop_for($feature) {
  * @param string $feature Feature name
  * @return bool Success
  */
+if (!function_exists('intersoccer_enable_oop_feature')) {
 function intersoccer_enable_oop_feature($feature) {
     $features = get_option('intersoccer_oop_features', []);
     $features[$feature] = true;
     return update_option('intersoccer_oop_features', $features);
+}
 }
 
 /**
@@ -430,10 +468,12 @@ function intersoccer_enable_oop_feature($feature) {
  * @param string $feature Feature name
  * @return bool Success
  */
+if (!function_exists('intersoccer_disable_oop_feature')) {
 function intersoccer_disable_oop_feature($feature) {
     $features = get_option('intersoccer_oop_features', []);
     $features[$feature] = false;
     return update_option('intersoccer_oop_features', $features);
+}
 }
 
 /**
@@ -442,6 +482,7 @@ function intersoccer_disable_oop_feature($feature) {
  * @param array $features Feature keys to enable
  * @return void
  */
+if (!function_exists('intersoccer_oop_enable_defaults')) {
 function intersoccer_oop_enable_defaults(array $features) {
     $version_option = 'intersoccer_oop_defaults_version';
     $current_version = '2025-11-07-db-ajax-orders-reports-rosters';
@@ -467,6 +508,7 @@ function intersoccer_oop_enable_defaults(array $features) {
 
     update_option($version_option, $current_version);
 }
+}
 
 // OOP-only: always register AJAX handlers
 intersoccer_oop_register_roster_ajax_handlers();
@@ -481,6 +523,7 @@ intersoccer_oop_register_roster_ajax_handlers();
  * 
  * @return OrderProcessor
  */
+if (!function_exists('intersoccer_oop_get_order_processor')) {
 function intersoccer_oop_get_order_processor() {
     static $processor = null;
     if ($processor === null) {
@@ -493,12 +536,14 @@ function intersoccer_oop_get_order_processor() {
     }
     return $processor;
 }
+}
 
 /**
  * Get OOP RosterBuilder instance
  * 
  * @return RosterBuilder
  */
+if (!function_exists('intersoccer_oop_get_roster_builder')) {
 function intersoccer_oop_get_roster_builder() {
     static $builder = null;
     if ($builder === null) {
@@ -515,12 +560,14 @@ function intersoccer_oop_get_roster_builder() {
     }
     return $builder;
 }
+}
 
 /**
  * Get OOP EventSignatureGenerator instance
  * 
  * @return EventSignatureGenerator
  */
+if (!function_exists('intersoccer_oop_get_signature_generator')) {
 function intersoccer_oop_get_signature_generator() {
     static $generator = null;
     if ($generator === null) {
@@ -529,12 +576,14 @@ function intersoccer_oop_get_signature_generator() {
     }
     return $generator;
 }
+}
 
 /**
  * Get OOP PlaceholderManager instance
  * 
  * @return PlaceholderManager
  */
+if (!function_exists('intersoccer_oop_get_placeholder_manager')) {
 function intersoccer_oop_get_placeholder_manager() {
     static $manager = null;
     if ($manager === null) {
@@ -547,10 +596,12 @@ function intersoccer_oop_get_placeholder_manager() {
     }
     return $manager;
 }
+}
 
 /**
  * Get OOP RosterExportService instance
  */
+if (!function_exists('intersoccer_oop_get_roster_export_service')) {
 function intersoccer_oop_get_roster_export_service() {
     static $service = null;
     if ($service === null) {
@@ -562,10 +613,12 @@ function intersoccer_oop_get_roster_export_service() {
     }
     return $service;
 }
+}
 
 /**
  * Get OOP FinancialReportService instance
  */
+if (!function_exists('intersoccer_oop_get_financial_report_service')) {
 function intersoccer_oop_get_financial_report_service() {
     static $service = null;
     if ($service === null) {
@@ -577,10 +630,12 @@ function intersoccer_oop_get_financial_report_service() {
     }
     return $service;
 }
+}
 
 /**
  * Get OOP OrderFinancialAttributionService instance
  */
+if (!function_exists('intersoccer_oop_get_order_financial_attribution_service')) {
 function intersoccer_oop_get_order_financial_attribution_service() {
     static $service = null;
     if ($service === null) {
@@ -590,10 +645,12 @@ function intersoccer_oop_get_order_financial_attribution_service() {
     }
     return $service;
 }
+}
 
 /**
  * Attribute order discounts to line items after checkout.
  */
+if (!function_exists('intersoccer_oop_attribute_order_financials')) {
 function intersoccer_oop_attribute_order_financials($order_id) {
     if (!function_exists('wc_get_order')) {
         return;
@@ -610,10 +667,12 @@ function intersoccer_oop_attribute_order_financials($order_id) {
         error_log('InterSoccer OOP: Financial attribution failed for order ' . $order_id . ' - ' . $e->getMessage());
     }
 }
+}
 
 /**
  * Attribute a refund to original line items.
  */
+if (!function_exists('intersoccer_oop_attribute_order_refund')) {
 function intersoccer_oop_attribute_order_refund($order_id, $refund_id) {
     if (!function_exists('wc_get_order')) {
         return;
@@ -631,10 +690,12 @@ function intersoccer_oop_attribute_order_refund($order_id, $refund_id) {
         error_log('InterSoccer OOP: Refund attribution failed for order ' . $order_id . ' - ' . $e->getMessage());
     }
 }
+}
 
 /**
  * AJAX: Backfill financial attribution for historical orders.
  */
+if (!function_exists('intersoccer_oop_backfill_financial_attribution_ajax')) {
 function intersoccer_oop_backfill_financial_attribution_ajax() {
     check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
 
@@ -659,6 +720,7 @@ function intersoccer_oop_backfill_financial_attribution_ajax() {
         wp_send_json_error(['message' => $e->getMessage()]);
     }
 }
+}
 
 add_action('woocommerce_checkout_order_processed', 'intersoccer_oop_attribute_order_financials', 25, 1);
 add_action('woocommerce_order_refunded', 'intersoccer_oop_attribute_order_refund', 10, 2);
@@ -667,6 +729,7 @@ add_action('wp_ajax_intersoccer_backfill_financial_attribution', 'intersoccer_oo
 /**
  * Get OOP RosterDetailsService instance
  */
+if (!function_exists('intersoccer_oop_get_roster_details_service')) {
 function intersoccer_oop_get_roster_details_service() {
     static $service = null;
     if ($service === null) {
@@ -679,10 +742,12 @@ function intersoccer_oop_get_roster_details_service() {
     }
     return $service;
 }
+}
 
 /**
  * Get OOP RosterListingService instance
  */
+if (!function_exists('intersoccer_oop_get_roster_listing_service')) {
 function intersoccer_oop_get_roster_listing_service() {
     static $service = null;
     if ($service === null) {
@@ -693,12 +758,14 @@ function intersoccer_oop_get_roster_listing_service() {
     }
     return $service;
 }
+}
 
 /**
  * Get OOP Roster AJAX handler instance
  *
  * @return RosterAjaxHandler
  */
+if (!function_exists('intersoccer_oop_get_roster_ajax_handler')) {
 function intersoccer_oop_get_roster_ajax_handler() {
     static $handler = null;
     if ($handler === null) {
@@ -714,14 +781,17 @@ function intersoccer_oop_get_roster_ajax_handler() {
     }
     return $handler;
 }
+}
 
 /**
  * Register OOP AJAX handlers
  *
  * @return void
  */
+if (!function_exists('intersoccer_oop_register_roster_ajax_handlers')) {
 function intersoccer_oop_register_roster_ajax_handlers() {
     intersoccer_oop_get_roster_ajax_handler()->register();
+}
 }
 
 /**
@@ -729,6 +799,7 @@ function intersoccer_oop_register_roster_ajax_handlers() {
  * 
  * @return DatabaseMigrator
  */
+if (!function_exists('intersoccer_oop_get_database_migrator')) {
 function intersoccer_oop_get_database_migrator() {
     static $migrator = null;
     if ($migrator === null) {
@@ -737,6 +808,7 @@ function intersoccer_oop_get_database_migrator() {
     }
     return $migrator;
 }
+}
 
 /**
  * Adapter: Rebuild rosters using OOP
@@ -744,6 +816,7 @@ function intersoccer_oop_get_database_migrator() {
  * @param array $options Rebuild options
  * @return array Results
  */
+if (!function_exists('intersoccer_oop_rebuild_rosters')) {
 function intersoccer_oop_rebuild_rosters($options = []) {
     try {
         $builder = intersoccer_oop_get_roster_builder();
@@ -753,6 +826,7 @@ function intersoccer_oop_rebuild_rosters($options = []) {
         return ['processed' => 0, 'created' => 0, 'errors' => 1, 'error_messages' => [$e->getMessage()]];
     }
 }
+}
 
 /**
  * Adapter: Reconcile rosters using OOP
@@ -760,6 +834,7 @@ function intersoccer_oop_rebuild_rosters($options = []) {
  * @param array $options Reconcile options
  * @return array Results
  */
+if (!function_exists('intersoccer_oop_reconcile_rosters')) {
 function intersoccer_oop_reconcile_rosters($options = []) {
     try {
         $builder = intersoccer_oop_get_roster_builder();
@@ -769,12 +844,14 @@ function intersoccer_oop_reconcile_rosters($options = []) {
         return ['synced' => 0, 'deleted' => 0, 'errors' => 1];
     }
 }
+}
 
 /**
  * Adapter: Rebuild event signatures using OOP
  * 
  * @return array Results
  */
+if (!function_exists('intersoccer_oop_rebuild_event_signatures')) {
 function intersoccer_oop_rebuild_event_signatures() {
     try {
         $builder = intersoccer_oop_get_roster_builder();
@@ -784,6 +861,7 @@ function intersoccer_oop_rebuild_event_signatures() {
         return ['updated' => 0, 'errors' => 1];
     }
 }
+}
 
 /**
  * Adapter: Process order item using OOP
@@ -792,6 +870,7 @@ function intersoccer_oop_rebuild_event_signatures() {
  * @param int $item_id Order item ID
  * @return array Results
  */
+if (!function_exists('intersoccer_oop_update_roster_entry')) {
 function intersoccer_oop_update_roster_entry($order_id, $item_id) {
     try {
         $order = wc_get_order($order_id);
@@ -811,6 +890,7 @@ function intersoccer_oop_update_roster_entry($order_id, $item_id) {
         return ['success' => false, 'message' => $e->getMessage()];
     }
 }
+}
 
 /**
  * Adapter: Create placeholders for product using OOP
@@ -818,6 +898,7 @@ function intersoccer_oop_update_roster_entry($order_id, $item_id) {
  * @param int $product_id Product ID
  * @return array Results
  */
+if (!function_exists('intersoccer_oop_create_placeholders_for_product')) {
 function intersoccer_oop_create_placeholders_for_product($product_id) {
     try {
         $manager = intersoccer_oop_get_placeholder_manager();
@@ -827,6 +908,7 @@ function intersoccer_oop_create_placeholders_for_product($product_id) {
         return ['created' => 0, 'updated' => 0, 'skipped' => 0];
     }
 }
+}
 
 /**
  * Adapter: Delete placeholders for product using OOP
@@ -834,6 +916,7 @@ function intersoccer_oop_create_placeholders_for_product($product_id) {
  * @param int $product_id Product ID
  * @return int Number deleted
  */
+if (!function_exists('intersoccer_oop_delete_placeholders_for_product')) {
 function intersoccer_oop_delete_placeholders_for_product($product_id) {
     try {
         $manager = intersoccer_oop_get_placeholder_manager();
@@ -843,6 +926,7 @@ function intersoccer_oop_delete_placeholders_for_product($product_id) {
         return 0;
     }
 }
+}
 
 /**
  * Adapter: Delete placeholders by signature using OOP
@@ -850,6 +934,7 @@ function intersoccer_oop_delete_placeholders_for_product($product_id) {
  * @param string $event_signature Event signature
  * @return int Number deleted
  */
+if (!function_exists('intersoccer_oop_delete_placeholder_by_signature')) {
 function intersoccer_oop_delete_placeholder_by_signature($event_signature) {
     try {
         $manager = intersoccer_oop_get_placeholder_manager();
@@ -859,12 +944,14 @@ function intersoccer_oop_delete_placeholder_by_signature($event_signature) {
         return 0;
     }
 }
+}
 
 /**
  * Adapter: Upgrade database using OOP
  * 
  * @return bool Success status
  */
+if (!function_exists('intersoccer_oop_upgrade_database')) {
 function intersoccer_oop_upgrade_database() {
     try {
         $migrator = intersoccer_oop_get_database_migrator();
@@ -873,6 +960,7 @@ function intersoccer_oop_upgrade_database() {
         error_log('InterSoccer OOP: Error upgrading database - ' . $e->getMessage());
         return false;
     }
+}
 }
 
 // ============================================================================
@@ -887,6 +975,7 @@ function intersoccer_oop_upgrade_database() {
  * @param int|null $delay Delay in seconds. Defaults to filter-configured value.
  * @return void
  */
+if (!function_exists('intersoccer_schedule_order_completion_check')) {
 function intersoccer_schedule_order_completion_check($order_id, $delay = null) {
     $order_id = absint($order_id);
     if ($order_id <= 0 || !function_exists('wp_schedule_single_event') || !defined('INTERSOCCER_ORDER_AUTO_COMPLETE_SINGLE_HOOK')) {
@@ -903,6 +992,7 @@ function intersoccer_schedule_order_completion_check($order_id, $delay = null) {
         wp_schedule_single_event($timestamp, INTERSOCCER_ORDER_AUTO_COMPLETE_SINGLE_HOOK, [$order_id]);
     }
 }
+}
 
 /**
  * Check if an order has roster entries in the database.
@@ -910,6 +1000,7 @@ function intersoccer_schedule_order_completion_check($order_id, $delay = null) {
  * @param int $order_id Order ID
  * @return bool
  */
+if (!function_exists('intersoccer_order_has_confirmed_rosters')) {
 function intersoccer_order_has_confirmed_rosters($order_id) {
     global $wpdb;
     $order_id = absint($order_id);
@@ -923,6 +1014,7 @@ function intersoccer_order_has_confirmed_rosters($order_id) {
     ));
     return $count > 0;
 }
+}
 
 /**
  * Rebuild a campaign summary (Campaign Analytics).
@@ -930,9 +1022,11 @@ function intersoccer_order_has_confirmed_rosters($order_id) {
  * @param int $campaign_id
  * @return array<string,mixed>|null
  */
+if (!function_exists('intersoccer_oop_rebuild_campaign_summary')) {
 function intersoccer_oop_rebuild_campaign_summary($campaign_id) {
     $scheduler = new \InterSoccer\ReportsRosters\Campaign\CampaignRebuildScheduler();
     return $scheduler->rebuild_campaign((int) $campaign_id);
+}
 }
 
 /**
@@ -940,6 +1034,8 @@ function intersoccer_oop_rebuild_campaign_summary($campaign_id) {
  *
  * @return \InterSoccer\ReportsRosters\Campaign\BookingSourceInterface
  */
+if (!function_exists('intersoccer_oop_get_campaign_booking_source')) {
 function intersoccer_oop_get_campaign_booking_source() {
     return (new \InterSoccer\ReportsRosters\Campaign\CampaignRebuildScheduler())->resolve_source();
+}
 }

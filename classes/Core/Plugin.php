@@ -34,7 +34,7 @@ final class Plugin {
     /**
      * Plugin version
      */
-    const VERSION = '2.8.17';
+    const VERSION = '2.8.20';
     
     /**
      * Plugin text domain
@@ -169,14 +169,15 @@ final class Plugin {
             
             $this->logger->info('InterSoccer Plugin: Core components initialized successfully');
             
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             // Fallback logging if logger fails
-            error_log('InterSoccer Plugin Fatal Error: ' . $e->getMessage());
+            error_log('InterSoccer Plugin Fatal Error: ' . get_class($e) . ': ' . $e->getMessage());
             
             // Show admin notice
             add_action('admin_notices', function() use ($e) {
                 $message = sprintf(
-                    __('InterSoccer Reports & Rosters plugin failed to initialize: %s', self::TEXT_DOMAIN),
+                    __('InterSoccer Reports & Rosters plugin failed to initialize: %1$s: %2$s', self::TEXT_DOMAIN),
+                    get_class($e),
                     $e->getMessage()
                 );
                 printf('<div class="notice notice-error"><p>%s</p></div>', esc_html($message));
@@ -241,8 +242,13 @@ final class Plugin {
             
             $this->logger->info('InterSoccer Plugin: Activation completed successfully');
             
-        } catch (\Exception $e) {
-            $this->logger->error('InterSoccer Plugin: Activation failed', ['error' => $e->getMessage()]);
+        } catch (\Throwable $e) {
+            $detail = get_class($e) . ': ' . $e->getMessage();
+            if ($this->logger) {
+                $this->logger->error('InterSoccer Plugin: Activation failed', ['error' => $detail]);
+            } else {
+                error_log('InterSoccer Plugin: Activation failed: ' . $detail);
+            }
             
             // Deactivate plugin if activation fails
             deactivate_plugins(plugin_basename($this->plugin_file));
@@ -251,7 +257,7 @@ final class Plugin {
             wp_die(
                 sprintf(
                     __('InterSoccer Reports & Rosters activation failed: %s', self::TEXT_DOMAIN),
-                    $e->getMessage()
+                    $detail
                 ),
                 __('Plugin Activation Error', self::TEXT_DOMAIN),
                 ['back_link' => true]
