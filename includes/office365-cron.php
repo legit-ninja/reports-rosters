@@ -10,10 +10,14 @@ defined('ABSPATH') || exit;
 use InterSoccer\ReportsRosters\Office365\SyncService;
 
 /** Cron hook name for Office 365 scheduled sync */
-const INTERSOCCER_OFFICE365_CRON_HOOK = 'intersoccer_office365_scheduled_sync';
+if (!defined('INTERSOCCER_OFFICE365_CRON_HOOK')) {
+    define('INTERSOCCER_OFFICE365_CRON_HOOK', 'intersoccer_office365_scheduled_sync');
+}
 
 /** Option key for last sync result */
-const INTERSOCCER_OFFICE365_LAST_SYNC_OPTION = 'intersoccer_office365_last_sync';
+if (!defined('INTERSOCCER_OFFICE365_LAST_SYNC_OPTION')) {
+    define('INTERSOCCER_OFFICE365_LAST_SYNC_OPTION', 'intersoccer_office365_last_sync');
+}
 
 /**
  * Schedule or unschedule the Office 365 sync cron based on settings.
