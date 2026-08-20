@@ -9,6 +9,7 @@ plan
 
 # Deployment
 deploy.local.sh
+*.zip
 
 # Development
 node_modules/
