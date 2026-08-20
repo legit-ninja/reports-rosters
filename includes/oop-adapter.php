@@ -510,10 +510,6 @@ function intersoccer_oop_enable_defaults(array $features) {
 }
 }
 
-// OOP-only: always register AJAX handlers
-intersoccer_oop_register_roster_ajax_handlers();
-
-
 // ============================================================================
 // ORDER PROCESSING - Adapters
 // ============================================================================
@@ -1038,4 +1034,9 @@ if (!function_exists('intersoccer_oop_get_campaign_booking_source')) {
 function intersoccer_oop_get_campaign_booking_source() {
     return (new \InterSoccer\ReportsRosters\Campaign\CampaignRebuildScheduler())->resolve_source();
 }
+}
+
+// OOP-only: register after all function_exists wrappers (conditional decls are not hoisted).
+if (function_exists('intersoccer_oop_register_roster_ajax_handlers')) {
+    intersoccer_oop_register_roster_ajax_handlers();
 }
