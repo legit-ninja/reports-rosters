@@ -1,39 +1,51 @@
 #!/bin/bash
+# Build a WordPress-admin install zip with production Composer vendor
+# (composer install --no-dev). Does not modify the working-tree vendor/
+# (keep with-dev for PHPUnit).
 
-# Create Installable Plugin ZIP
-# WordPress requires specific folder structure for plugin installation
+set -euo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
 PLUGIN_SLUG="intersoccer-reports-rosters"
-VERSION=$(grep "Version:" ${PLUGIN_SLUG}.php | awk '{print $3}')
+VERSION=$(grep "Version:" "${PLUGIN_SLUG}.php" | awk '{print $3}')
 ZIP_NAME="${PLUGIN_SLUG}-${VERSION}.zip"
 
-echo -e "${BLUE}Creating installable plugin ZIP...${NC}"
+if ! command -v composer >/dev/null 2>&1; then
+    echo -e "${RED}composer is required to build a production zip.${NC}" >&2
+    echo "Install Composer, then re-run this script." >&2
+    exit 1
+fi
+
+echo -e "${BLUE}Creating installable plugin ZIP (production vendor, --no-dev)...${NC}"
 echo ""
 
-# Create temp directory
-TEMP_DIR="/tmp/${PLUGIN_SLUG}-zip-$$"
-mkdir -p "$TEMP_DIR/$PLUGIN_SLUG"
+TEMP_DIR="$(mktemp -d "/tmp/${PLUGIN_SLUG}-zip-XXXXXX")"
+cleanup() {
+    rm -rf "$TEMP_DIR"
+}
+trap cleanup EXIT
 
-echo "📦 Copying plugin files..."
+STAGE="$TEMP_DIR/$PLUGIN_SLUG"
+mkdir -p "$STAGE"
 
-# Copy all necessary files, excluding development files
-rsync -av \
+echo "Copying plugin files into staging (excluding working-tree vendor/)..."
+
+rsync -a \
     --exclude='.git' \
     --exclude='.gitignore' \
     --exclude='node_modules' \
     --exclude='vendor' \
     --exclude='tests' \
     --exclude='cypress' \
-    --exclude='scripts' \
     --exclude='docs' \
     --exclude='.phpunit.result.cache' \
-    --exclude='composer.json' \
-    --exclude='composer.lock' \
     --exclude='package.json' \
     --exclude='package-lock.json' \
     --exclude='phpunit.xml' \
@@ -49,34 +61,46 @@ rsync -av \
     --exclude='.DS_Store' \
     --exclude='*.swp' \
     --exclude='*~' \
-    ./ "$TEMP_DIR/$PLUGIN_SLUG/"
+    "$REPO_ROOT/" "$STAGE/"
 
-# Remove README.md but keep it for WordPress.org compatibility if needed
-# You can add README.md back with --include='README.md' if publishing to WordPress.org
+# rsync --exclude='*.sh' would drop scripts/*.php is kept; ensure patch script + composer files exist
+mkdir -p "$STAGE/scripts"
+cp "$REPO_ROOT/scripts/patch-phpspreadsheet-zipstream.php" "$STAGE/scripts/"
+cp "$REPO_ROOT/composer.json" "$REPO_ROOT/composer.lock" "$STAGE/"
 
-echo "✓ Files copied"
+echo "Running composer install --no-dev in staging (working-tree vendor/ unchanged)..."
+(
+    cd "$STAGE"
+    composer install --no-dev --optimize-autoloader --no-interaction
+)
+
+rm -rf "$STAGE/scripts" "$STAGE/tests" "$STAGE/.git"
+
+if [[ ! -f "$STAGE/vendor/autoload.php" ]]; then
+    echo -e "${RED}Staging vendor/autoload.php missing after composer install.${NC}" >&2
+    exit 1
+fi
+if [[ ! -d "$STAGE/vendor/ezyang/htmlpurifier" ]]; then
+    echo -e "${RED}Expected production package vendor/ezyang/htmlpurifier is missing.${NC}" >&2
+    exit 1
+fi
+if grep -E 'deep-copy|phpunit|mockery|brain/monkey' "$STAGE/vendor/composer/autoload_files.php" >/dev/null 2>&1; then
+    echo -e "${RED}autoload_files.php still lists PHPUnit/dev packages; zip would fatal on Activate.${NC}" >&2
+    exit 1
+fi
+
+echo "Creating ZIP archive..."
+(
+    cd "$TEMP_DIR"
+    zip -r "$ZIP_NAME" "$PLUGIN_SLUG" -q
+)
+mv "$TEMP_DIR/$ZIP_NAME" "$REPO_ROOT/$ZIP_NAME"
+
+echo -e "${GREEN}ZIP created: $ZIP_NAME${NC}"
+echo "File size: $(du -h "$REPO_ROOT/$ZIP_NAME" | cut -f1)"
 echo ""
-
-# Create ZIP from the temp directory
-cd "$TEMP_DIR"
-echo "📦 Creating ZIP archive..."
-zip -r "$ZIP_NAME" "$PLUGIN_SLUG" -q
-
-# Move ZIP to original directory
-mv "$ZIP_NAME" "$OLDPWD/"
-
-# Cleanup
-cd "$OLDPWD"
-rm -rf "$TEMP_DIR"
-
-echo -e "${GREEN}✓ ZIP created: $ZIP_NAME${NC}"
+echo "Working-tree vendor/ is unchanged (with-dev for PHPUnit)."
+echo "This zip contains --no-dev vendor only. Do not copy local vendor/ into the zip by hand."
 echo ""
-echo "File size: $(du -h $ZIP_NAME | cut -f1)"
-echo ""
-echo "This ZIP can be installed via:"
-echo "  WordPress Admin → Plugins → Add New → Upload Plugin"
-echo ""
-echo "Or uploaded to server and extracted:"
-echo "  unzip $ZIP_NAME -d /path/to/wp-content/plugins/"
-echo ""
-
+echo "Install via WordPress Admin → Plugins → Add New → Upload Plugin"
+echo "or: unzip $ZIP_NAME -d /path/to/wp-content/plugins/"

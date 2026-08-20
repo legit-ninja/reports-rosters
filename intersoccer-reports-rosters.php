@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 2.8.20
+ * Version: 2.8.20.1
  * 
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
@@ -27,40 +27,50 @@ add_filter('deprecated_function_trigger_error', '__return_false', 10, 2);
 // ============================================================================
 
 $autoloader = __DIR__ . '/vendor/autoload.php';
-if (!file_exists($autoloader)) {
-    add_action('admin_notices', function () use ($autoloader) {
+
+$intersoccer_rr_autoload_fail = static function ($detail) {
+    add_action('admin_notices', function () use ($detail) {
         if (!current_user_can('activate_plugins')) {
             return;
         }
         printf(
             '<div class="notice notice-error"><p>%s</p></div>',
             esc_html(sprintf(
-                __('InterSoccer Reports & Rosters is missing its Composer autoloader at %s. Please deploy the plugin with vendor/ included.', 'intersoccer-reports-rosters'),
-                $autoloader
+                __('InterSoccer Reports & Rosters could not load Composer: %s. Deploy with a production vendor/ from scripts/create-zip.sh (composer install --no-dev).', 'intersoccer-reports-rosters'),
+                $detail
             ))
         );
     });
-    add_action('admin_menu', function () use ($autoloader) {
+    add_action('admin_menu', function () use ($detail) {
         add_menu_page(
             __('InterSoccer Reports and Rosters', 'intersoccer-reports-rosters'),
             __('Reports and Rosters', 'intersoccer-reports-rosters'),
             'read',
             'intersoccer-reports-rosters',
-            function () use ($autoloader) {
+            function () use ($detail) {
                 echo '<div class="wrap"><h1>' . esc_html__('Reports and Rosters', 'intersoccer-reports-rosters') . '</h1>';
                 echo '<div class="notice notice-error"><p>' . esc_html(sprintf(
-                    __('InterSoccer Reports & Rosters is missing its Composer autoloader at %s. Please deploy the plugin with vendor/ included.', 'intersoccer-reports-rosters'),
-                    $autoloader
+                    __('InterSoccer Reports & Rosters could not load Composer: %s. Deploy with a production vendor/ from scripts/create-zip.sh (composer install --no-dev).', 'intersoccer-reports-rosters'),
+                    $detail
                 )) . '</p></div></div>';
             },
             'dashicons-chart-bar',
             30
         );
     }, 9);
+};
+
+if (!file_exists($autoloader)) {
+    $intersoccer_rr_autoload_fail($autoloader);
     return;
 }
 
-require_once $autoloader;
+try {
+    require_once $autoloader;
+} catch (\Throwable $e) {
+    $intersoccer_rr_autoload_fail(get_class($e) . ': ' . $e->getMessage());
+    return;
+}
 
 if (!defined('INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK')) {
     define('INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK', 'intersoccer_auto_complete_orders');
