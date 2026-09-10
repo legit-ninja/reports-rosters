@@ -14,6 +14,22 @@ if (!defined('ABSPATH')) {
 require_once plugin_dir_path(__FILE__) . 'reports-data.php';
 
 /**
+ * Map urgency CSS class to human-readable label.
+ *
+ * @param string $band Urgency CSS class (count-critical, count-low, count-good, count-optimal).
+ * @return string Human-readable label.
+ */
+function intersoccer_reports_urgency_band_label($band) {
+	$labels = [
+		'count-critical' => __('Critical', 'intersoccer-reports-rosters'),
+		'count-low'      => __('Low', 'intersoccer-reports-rosters'),
+		'count-good'     => __('Good', 'intersoccer-reports-rosters'),
+		'count-optimal'  => __('Optimal', 'intersoccer-reports-rosters'),
+	];
+	return $labels[$band] ?? '';
+}
+
+/**
  * Render a Final Numbers cell with urgency heatmap styling.
  *
  * @param string $display_text Escaped or plain text to show (will be escaped).
@@ -21,10 +37,14 @@ require_once plugin_dir_path(__FILE__) . 'reports-data.php';
  */
 function intersoccer_reports_render_urgency_heat_cell($display_text, $band) {
 	$band = (string) $band;
+	$label = intersoccer_reports_urgency_band_label($band);
+	$aria_label = $label ? sprintf('%s (%s)', $display_text, $label) : $display_text;
 	printf(
-		'<td class="intersoccer-urgency-heat" style="border: 1px solid #ddd; padding: 8px; text-align: center;"><span class="count-number %1$s" style="display:inline-block;padding:4px 8px;border-radius:4px;color:#fff;font-weight:600;">%2$s</span></td>',
+		'<td class="intersoccer-urgency-heat" style="border: 1px solid #ddd; padding: 8px; text-align: center;"><span class="count-number %1$s" aria-label="%3$s" title="%4$s" style="display:inline-block;padding:4px 8px;border-radius:4px;color:#fff;font-weight:600;">%2$s</span></td>',
 		esc_attr($band),
-		esc_html((string) $display_text)
+		esc_html((string) $display_text),
+		esc_attr($aria_label),
+		esc_attr($label)
 	);
 }
 
@@ -221,72 +241,117 @@ function intersoccer_render_final_reports_page() {
             <p><?php _e('Aggregated booking numbers for camps and courses by week, canton, and venue.', 'intersoccer-reports-rosters'); ?></p>
         <?php endif; ?>
 
-        <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" style="margin-bottom: 20px;">
+        <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" class="intersoccer-filter-toolbar">
             <input type="hidden" name="page" value="<?php echo esc_attr($current_page); ?>" />
             <?php if ($live): ?>
                 <input type="hidden" name="live" value="1" />
             <?php endif; ?>
-            <label for="year"><?php _e('Year:', 'intersoccer-reports-rosters'); ?></label>
-            <input type="number" name="year" id="year" value="<?php echo esc_attr($year); ?>" min="2020" max="<?php echo date('Y') + 2; ?>" />
-            <?php if ($show_activity_type_filter): ?>
-                <label for="activity_type"><?php _e('Activity Type:', 'intersoccer-reports-rosters'); ?></label>
-                <select name="activity_type" id="activity_type">
-                    <option value="Camp" <?php selected($activity_type, 'Camp'); ?>><?php _e('Camp', 'intersoccer-reports-rosters'); ?></option>
-                    <option value="Course" <?php selected($activity_type, 'Course'); ?>><?php _e('Course', 'intersoccer-reports-rosters'); ?></option>
-                </select>
-            <?php endif; ?>
-            <label for="season_type"><?php _e('Season:', 'intersoccer-reports-rosters'); ?></label>
-            <select name="season_type" id="season_type">
-                <option value=""><?php _e('All Seasons', 'intersoccer-reports-rosters'); ?></option>
-                <?php foreach ($unique_season_types as $st): ?>
-                    <option value="<?php echo esc_attr($st); ?>" <?php selected($season_type, $st); ?>><?php echo esc_html($st); ?></option>
-                <?php endforeach; ?>
-            </select>
-            <?php if ($activity_type === 'Camp'): ?>
-                <label for="region"><?php _e('Region:', 'intersoccer-reports-rosters'); ?></label>
-                <select name="region" id="region">
-                    <option value=""><?php _e('All Regions', 'intersoccer-reports-rosters'); ?></option>
-                    <?php foreach ($regions as $reg): ?>
-                        <option value="<?php echo esc_attr($reg); ?>" <?php selected($region, $reg); ?>><?php echo esc_html($reg); ?></option>
-                    <?php endforeach; ?>
-                </select>
-            <?php endif; ?>
-            <label style="margin-left:8px;">
-                <input type="checkbox" name="exclude_buyclub" value="1" <?php checked($exclude_buyclub); ?> />
-                <?php _e('Exclude BuyClub (100% coupon / already paid via buyclub.ch)', 'intersoccer-reports-rosters'); ?>
-            </label>
-            <label style="margin-left:8px;">
-                <input type="checkbox" name="urgency_only" value="1" <?php checked($urgency_only); ?> />
-                <?php esc_html_e('Show Critical + Low only', 'intersoccer-reports-rosters'); ?>
-            </label>
-            <button type="submit" class="button"><?php _e('Filter', 'intersoccer-reports-rosters'); ?></button>
+            
+            <div class="intersoccer-filter-group">
+                <p class="intersoccer-filter-group-label"><?php esc_html_e('Scope', 'intersoccer-reports-rosters'); ?></p>
+                <div class="intersoccer-filter-group-fields">
+                    <label for="year">
+                        <?php _e('Year', 'intersoccer-reports-rosters'); ?>
+                        <input type="number" name="year" id="year" value="<?php echo esc_attr($year); ?>" min="2020" max="<?php echo date('Y') + 2; ?>" style="width:80px;" />
+                    </label>
+                    <?php if ($show_activity_type_filter): ?>
+                        <label for="activity_type">
+                            <?php _e('Activity', 'intersoccer-reports-rosters'); ?>
+                            <select name="activity_type" id="activity_type">
+                                <option value="Camp" <?php selected($activity_type, 'Camp'); ?>><?php _e('Camp', 'intersoccer-reports-rosters'); ?></option>
+                                <option value="Course" <?php selected($activity_type, 'Course'); ?>><?php _e('Course', 'intersoccer-reports-rosters'); ?></option>
+                            </select>
+                        </label>
+                    <?php endif; ?>
+                    <label for="season_type">
+                        <?php _e('Season', 'intersoccer-reports-rosters'); ?>
+                        <select name="season_type" id="season_type">
+                            <option value=""><?php _e('All', 'intersoccer-reports-rosters'); ?></option>
+                            <?php foreach ($unique_season_types as $st): ?>
+                                <option value="<?php echo esc_attr($st); ?>" <?php selected($season_type, $st); ?>><?php echo esc_html($st); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <?php if ($activity_type === 'Camp'): ?>
+                        <label for="region">
+                            <?php _e('Region', 'intersoccer-reports-rosters'); ?>
+                            <select name="region" id="region">
+                                <option value=""><?php _e('All', 'intersoccer-reports-rosters'); ?></option>
+                                <?php foreach ($regions as $reg): ?>
+                                    <option value="<?php echo esc_attr($reg); ?>" <?php selected($region, $reg); ?>><?php echo esc_html($reg); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <div class="intersoccer-filter-group">
+                <p class="intersoccer-filter-group-label"><?php esc_html_e('Display', 'intersoccer-reports-rosters'); ?></p>
+                <div class="intersoccer-filter-group-fields">
+                    <label class="intersoccer-checkbox-with-help">
+                        <input type="checkbox" name="exclude_buyclub" value="1" <?php checked($exclude_buyclub); ?> />
+                        <?php esc_html_e('Exclude BuyClub', 'intersoccer-reports-rosters'); ?>
+                        <span class="intersoccer-help-icon" title="<?php esc_attr_e('BuyClub orders have a 100% coupon because they were already paid via buyclub.ch. Exclude them to see only direct WooCommerce payments.', 'intersoccer-reports-rosters'); ?>">?</span>
+                    </label>
+                    <label>
+                        <input type="checkbox" name="urgency_only" value="1" <?php checked($urgency_only); ?> />
+                        <?php esc_html_e('Critical + Low only', 'intersoccer-reports-rosters'); ?>
+                    </label>
+                </div>
+            </div>
+
+            <div class="intersoccer-filter-actions">
+                <button type="submit" class="button button-primary"><?php _e('Filter', 'intersoccer-reports-rosters'); ?></button>
+            </div>
         </form>
 
-        <p class="description" style="margin-bottom:12px;">
-            <strong><?php esc_html_e('Enrollment heatmap:', 'intersoccer-reports-rosters'); ?></strong>
-            <?php esc_html_e('Critical ≤7 · Low ≤20 · Good ≤29 · Optimal 30+', 'intersoccer-reports-rosters'); ?>
-            <?php if ($activity_type === 'Camp'): ?>
-                — <?php esc_html_e('Camps: Total min–max cells use the max of the range.', 'intersoccer-reports-rosters'); ?>
-            <?php else: ?>
-                — <?php esc_html_e('Courses: Registrations cells are colored.', 'intersoccer-reports-rosters'); ?>
-            <?php endif; ?>
-        </p>
-        <style>
-            .intersoccer-reports-rosters-final-reports .count-number.count-critical { background: #dc2626; }
-            .intersoccer-reports-rosters-final-reports .count-number.count-low { background: #d97706; }
-            .intersoccer-reports-rosters-final-reports .count-number.count-good { background: #059669; }
-            .intersoccer-reports-rosters-final-reports .count-number.count-optimal { background: #1d4ed8; }
-        </style>
+        <div class="intersoccer-heatmap-legend" role="list" aria-label="<?php esc_attr_e('Enrollment urgency legend', 'intersoccer-reports-rosters'); ?>">
+            <strong><?php esc_html_e('Urgency:', 'intersoccer-reports-rosters'); ?></strong>
+            <span class="intersoccer-heatmap-legend-item" role="listitem">
+                <span class="intersoccer-heatmap-legend-chip count-critical" aria-hidden="true"></span>
+                <?php esc_html_e('Critical ≤7', 'intersoccer-reports-rosters'); ?>
+            </span>
+            <span class="intersoccer-heatmap-legend-item" role="listitem">
+                <span class="intersoccer-heatmap-legend-chip count-low" aria-hidden="true"></span>
+                <?php esc_html_e('Low ≤20', 'intersoccer-reports-rosters'); ?>
+            </span>
+            <span class="intersoccer-heatmap-legend-item" role="listitem">
+                <span class="intersoccer-heatmap-legend-chip count-good" aria-hidden="true"></span>
+                <?php esc_html_e('Good ≤29', 'intersoccer-reports-rosters'); ?>
+            </span>
+            <span class="intersoccer-heatmap-legend-item" role="listitem">
+                <span class="intersoccer-heatmap-legend-chip count-optimal" aria-hidden="true"></span>
+                <?php esc_html_e('Optimal 30+', 'intersoccer-reports-rosters'); ?>
+            </span>
+        </div>
 
         <div class="export-section" style="margin-bottom: 20px;<?php echo $live ? ' position: sticky; top: 32px; z-index: 10; background: #f0f0f1; padding: 12px; border: 1px solid #c3c4c7; border-radius: 4px;' : ''; ?>">
             <label style="margin-right:12px;"><input type="checkbox" id="final-reports-sync-office365" value="1" /> <?php _e('Also sync to Office 365', 'intersoccer-reports-rosters'); ?></label>
-            <button type="button" id="export-final-reports" class="button button-primary button-hero"><?php echo $live
-                ? esc_html__('Export Live Figures to Excel', 'intersoccer-reports-rosters')
-                : esc_html__('Export to Excel', 'intersoccer-reports-rosters'); ?></button>
+            <button type="button" id="export-final-reports" class="button button-primary button-hero intersoccer-export-btn" <?php echo empty($report_data) ? 'disabled title="' . esc_attr__('No data to export', 'intersoccer-reports-rosters') . '"' : ''; ?>>
+                <span class="intersoccer-export-btn-text"><?php echo $live
+                    ? esc_html__('Export Live Figures to Excel', 'intersoccer-reports-rosters')
+                    : esc_html__('Export to Excel', 'intersoccer-reports-rosters'); ?></span>
+                <span class="intersoccer-export-btn-loading" style="display:none;"><span class="dashicons dashicons-update" style="animation: intersoccer-spin 1s linear infinite;"></span> <?php esc_html_e('Exporting…', 'intersoccer-reports-rosters'); ?></span>
+            </button>
         </div>
 
         <?php if (empty($report_data)): ?>
-            <p><?php _e('No data available for the selected filters.', 'intersoccer-reports-rosters'); ?></p>
+            <div class="intersoccer-empty-state">
+                <div class="intersoccer-empty-state-icon" aria-hidden="true">📋</div>
+                <h3 class="intersoccer-empty-state-title"><?php esc_html_e('No data found', 'intersoccer-reports-rosters'); ?></h3>
+                <p class="intersoccer-empty-state-message">
+                    <?php esc_html_e('No bookings match the selected filters. Try adjusting your filter criteria or selecting a different year.', 'intersoccer-reports-rosters'); ?>
+                </p>
+                <div class="intersoccer-empty-state-actions">
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=' . $current_page . ($live ? '&live=1' : ''))); ?>" class="button">
+                        <?php esc_html_e('Clear filters', 'intersoccer-reports-rosters'); ?>
+                    </a>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=' . $current_page . '&year=' . (intval($year) - 1) . ($live ? '&live=1' : ''))); ?>" class="button">
+                        <?php echo esc_html(sprintf(__('Try %d', 'intersoccer-reports-rosters'), intval($year) - 1)); ?>
+                    </a>
+                </div>
+            </div>
         <?php else: ?>
             <?php if ($activity_type === 'Camp'): ?>
                 <?php
@@ -296,7 +361,14 @@ function intersoccer_render_final_reports_page() {
                 ?>
                 <!-- Camp Report Table (summer camps numbers grid without Pitchside) -->
                 <h2 style="margin: 16px 0 8px;"><?php echo esc_html(sprintf(__('SUMMER CAMPS NUMBERS %s', 'intersoccer-reports-rosters'), $year)); ?></h2>
-                <p class="description"><?php esc_html_e('Full Week + BuyClub = All registrations. BuyClub rows are WooCommerce registrations with a 100% coupon (already paid via buyclub.ch)—use “Exclude BuyClub” to omit them. Individual days are summed separately across M–F. Total min–max: min = Full Week + BuyClub; max = that base plus the weekday with the most single-day bookings.', 'intersoccer-reports-rosters'); ?></p>
+                <details class="intersoccer-help-disclosure">
+                    <summary><?php esc_html_e('How to read this table', 'intersoccer-reports-rosters'); ?></summary>
+                    <div class="intersoccer-help-disclosure-content">
+                        <p style="margin:0 0 8px;"><?php esc_html_e('Full Week + BuyClub = All registrations. BuyClub rows are WooCommerce registrations with a 100% coupon (already paid via buyclub.ch)—use "Exclude BuyClub" to omit them.', 'intersoccer-reports-rosters'); ?></p>
+                        <p style="margin:0 0 8px;"><?php esc_html_e('Individual days (Mon–Fri) are summed separately across the week.', 'intersoccer-reports-rosters'); ?></p>
+                        <p style="margin:0;"><?php esc_html_e('Total min–max: min = Full Week + BuyClub; max = that base plus the weekday with the most single-day bookings.', 'intersoccer-reports-rosters'); ?></p>
+                    </div>
+                </details>
                 <style>
                 .camp-reports-table { table-layout: auto; width: 100%; border-collapse: collapse; font-size: 12px; }
                 .camp-reports-table th, .camp-reports-table td { border: 1px solid #ddd; padding: 4px 6px; text-align: center; }
@@ -324,10 +396,18 @@ function intersoccer_render_final_reports_page() {
                         </tr>
                         <tr style="background-color: #fafafa;">
                             <th></th><th></th>
-                            <th>M</th><th>T</th><th>W</th><th>T</th><th>F</th>
+                            <th title="<?php esc_attr_e('Monday', 'intersoccer-reports-rosters'); ?>">Mon</th>
+                            <th title="<?php esc_attr_e('Tuesday', 'intersoccer-reports-rosters'); ?>">Tue</th>
+                            <th title="<?php esc_attr_e('Wednesday', 'intersoccer-reports-rosters'); ?>">Wed</th>
+                            <th title="<?php esc_attr_e('Thursday', 'intersoccer-reports-rosters'); ?>">Thu</th>
+                            <th title="<?php esc_attr_e('Friday', 'intersoccer-reports-rosters'); ?>">Fri</th>
                             <th></th>
                             <th></th><th></th>
-                            <th>M</th><th>T</th><th>W</th><th>T</th><th>F</th>
+                            <th title="<?php esc_attr_e('Monday', 'intersoccer-reports-rosters'); ?>">Mon</th>
+                            <th title="<?php esc_attr_e('Tuesday', 'intersoccer-reports-rosters'); ?>">Tue</th>
+                            <th title="<?php esc_attr_e('Wednesday', 'intersoccer-reports-rosters'); ?>">Wed</th>
+                            <th title="<?php esc_attr_e('Thursday', 'intersoccer-reports-rosters'); ?>">Thu</th>
+                            <th title="<?php esc_attr_e('Friday', 'intersoccer-reports-rosters'); ?>">Fri</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -543,10 +623,11 @@ function intersoccer_render_final_reports_page() {
             e.preventDefault();
             
             var $button = $(this);
-            var originalText = $button.text();
             
-            // Disable button and show loading
-            $button.prop('disabled', true).text('<?php _e('Exporting...', 'intersoccer-reports-rosters'); ?>');
+            // Disable button and show loading state
+            $button.prop('disabled', true).addClass('is-loading');
+            $button.find('.intersoccer-export-btn-text').hide();
+            $button.find('.intersoccer-export-btn-loading').show();
             
             // Get current filter values
             var year = $('input[name="year"]').val();
@@ -617,7 +698,9 @@ function intersoccer_render_final_reports_page() {
                     console.error("AJAX export error:", error);
                 },
                 complete: function() {
-                    $button.prop('disabled', false).text(originalText);
+                    $button.prop('disabled', false).removeClass('is-loading');
+                    $button.find('.intersoccer-export-btn-text').show();
+                    $button.find('.intersoccer-export-btn-loading').hide();
                 }
             });
         });
