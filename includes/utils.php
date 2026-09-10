@@ -5708,7 +5708,7 @@ function intersoccer_generate_event_signature($event_data) {
         'course_day' => intersoccer_get_term_slug_by_name($event_data['course_day'] ?? '', 'pa_course-day'),
         'times' => intersoccer_resolve_times_slug_for_signature($event_data['times'] ?? ''),
         'season' => intersoccer_get_term_slug_by_name($event_data['season'] ?? '', 'pa_program-season'),
-        'girls_only' => $event_data['girls_only'] ? '1' : '0',
+        'girls_only' => !empty($event_data['girls_only']) ? '1' : '0',
         'city' => intersoccer_get_term_slug_by_name($event_data['city'] ?? '', 'pa_city'),
         'canton_region' => intersoccer_get_term_slug_by_name($event_data['canton_region'] ?? '', 'pa_canton-region'),
         'product_id' => $product_id, // Use normalized product_id
