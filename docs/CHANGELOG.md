@@ -1,5 +1,9 @@
 # Changelog
 
+## Docs — 2026-09-10
+
+- Document Final Numbers / Live Snapshot UX after Phase A (#22, #14–#17).
+
 ## 2.7.25 — 2026-07-25
 
 ### Added

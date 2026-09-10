@@ -15,7 +15,7 @@ WordPress/WooCommerce plugin for event roster management, Final Numbers / Live S
 - `wp_intersoccer_rosters` table and order → roster sync
 - Admin roster listings, details, analytics
 - Final Camp / Course Reports and Live Snapshot
-- Excel exports (PhpSpreadsheet)
+- Excel exports (PhpSpreadsheet) — Live sticky export and Office 365 checkbox are the main UX surfaces alongside the downloaded file
 - Order-item Check Sync / Fix Sync / Roster Sync Queue
 
 ## Does not own
