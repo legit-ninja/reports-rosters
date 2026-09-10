@@ -15,7 +15,7 @@ Historical writeups and one-off fix notes: [archive/](archive/).
 
 ## Final Numbers / Live Snapshot UX
 
-Phase A UX quick wins landed in [PR #22](https://github.com/intersoccer/reports-rosters/pull/22), closing issues #14–#17:
+Phase A UX quick wins landed in [PR #22](https://github.com/legit-ninja/reports-rosters/pull/22), closing issues #14–#17:
 
 ### Filter toolbar
 
@@ -46,9 +46,9 @@ Excel exports are owned here via PhpSpreadsheet. The Live sticky export button a
 ### Roadmap
 
 Phase B issues remain open:
-- [#18 — Camp table IA: Full Day | Mini tabs](https://github.com/intersoccer/reports-rosters/issues/18)
-- [#19 — Shared design tokens from rebuild-admin](https://github.com/intersoccer/reports-rosters/issues/19)
-- [#20 — Sticky Canton/Venue columns on wide tables](https://github.com/intersoccer/reports-rosters/issues/20)
+- [#18 — Camp table IA: Full Day | Mini tabs](https://github.com/legit-ninja/reports-rosters/issues/18)
+- [#19 — Shared design tokens from rebuild-admin](https://github.com/legit-ninja/reports-rosters/issues/19)
+- [#20 — Sticky Canton/Venue columns on wide tables](https://github.com/legit-ninja/reports-rosters/issues/20)
 
 ## Admin Rosters UX (unified page)
 
