@@ -510,10 +510,6 @@ function intersoccer_oop_enable_defaults(array $features) {
 }
 }
 
-// OOP-only: always register AJAX handlers
-intersoccer_oop_register_roster_ajax_handlers();
-
-
 // ============================================================================
 // ORDER PROCESSING - Adapters
 // ============================================================================
@@ -1039,3 +1035,12 @@ function intersoccer_oop_get_campaign_booking_source() {
     return (new \InterSoccer\ReportsRosters\Campaign\CampaignRebuildScheduler())->resolve_source();
 }
 }
+
+// ============================================================================
+// AJAX HANDLER REGISTRATION
+// ============================================================================
+// OOP-only: register AJAX handlers after all functions are defined.
+// Note: db.php has a guarded call that checks function_exists() first, so
+// double-registration is not a concern — the RosterAjaxHandler::register()
+// method uses add_action() which is idempotent for the same callback.
+intersoccer_oop_register_roster_ajax_handlers();
