@@ -3,7 +3,7 @@
  * OrderProcessor Test
  */
 
-namespace InterSoccer\ReportsRosters\Tests\WooCommerce;
+namespace InterSoccer\ReportsRosters\Tests\WooCommerce {
 
 use Mockery;
 use InterSoccer\ReportsRosters\Core\Logger;
@@ -210,6 +210,7 @@ class OrderProcessorTest extends TestCase {
         
         $this->assertFalse($result);
     }
+}
 }
 
 namespace {
