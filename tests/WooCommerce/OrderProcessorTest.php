@@ -3,7 +3,7 @@
  * OrderProcessor Test
  */
 
-namespace InterSoccer\ReportsRosters\Tests\WooCommerce;
+namespace InterSoccer\ReportsRosters\Tests\WooCommerce {
 
 use Mockery;
 use InterSoccer\ReportsRosters\Core\Logger;
@@ -211,14 +211,19 @@ class OrderProcessorTest extends TestCase {
         $this->assertFalse($result);
     }
 }
+}
 
 namespace {
-    function wc_get_order($order_id) {
-        return \InterSoccer\ReportsRosters\Tests\WooCommerce\OrderProcessorTest::getReloadedOrder($order_id);
+    if (!function_exists('wc_get_order')) {
+        function wc_get_order($order_id) {
+            return \InterSoccer\ReportsRosters\Tests\WooCommerce\OrderProcessorTest::getReloadedOrder($order_id);
+        }
     }
 
-    function intersoccer_schedule_order_completion_check($order_id, $delay = null) {
-        \InterSoccer\ReportsRosters\Tests\WooCommerce\OrderProcessorTest::recordScheduledOrder($order_id, $delay);
+    if (!function_exists('intersoccer_schedule_order_completion_check')) {
+        function intersoccer_schedule_order_completion_check($order_id, $delay = null) {
+            \InterSoccer\ReportsRosters\Tests\WooCommerce\OrderProcessorTest::recordScheduledOrder($order_id, $delay);
+        }
     }
 }
 
