@@ -1,6 +1,7 @@
 <?php
 /**
- * Single place for EN/FR/DE + HTML-entity normalisation until PV canonical writers land.
+ * Campaign facet grouping. Prefers `_intersoccer_canonical_*` slugs; display-label
+ * aliases remain for unrepaired historical orders.
  *
  * @package InterSoccer\ReportsRosters\Campaign
  */
@@ -60,11 +61,13 @@ class FacetNormalizer {
 			'season' => '',
 		];
 
+		$from_canonical = [];
 		foreach (self::canonical_meta_map() as $meta_key => $field) {
 			if (!array_key_exists($meta_key, $raw) || $raw[$meta_key] === '' || $raw[$meta_key] === null) {
 				continue;
 			}
 			$val = is_scalar($raw[$meta_key]) ? (string) $raw[$meta_key] : '';
+			$from_canonical[$field] = true;
 			if ($field === 'girls_only') {
 				$out['girls_only'] = in_array(strtolower($val), ['1', 'yes', 'true'], true) ? 1 : 0;
 			} elseif ($field === 'activity_type') {
@@ -82,35 +85,36 @@ class FacetNormalizer {
 			}
 		}
 
-		// Display-label fallbacks when canonical absent.
-		$activity_raw = $this->first_meta($raw, ['Activity Type', 'pa_activity-type', 'attribute_pa_activity-type']);
-		if ($out['activity_type'] === 'other' && $activity_raw !== '') {
+		// Display-label fallbacks when the matching canonical key is absent.
+		$activity_raw = $this->first_meta($raw, ['Activity Type', 'pa_activity-type', 'attribute_pa_activity-type', '_intersoccer_activity_slug']);
+		if (empty($from_canonical['activity_type']) && $out['activity_type'] === 'other' && $activity_raw !== '') {
 			$out['activity_type'] = $this->normalize_activity_type($activity_raw);
 		}
-		if (!$out['girls_only'] && $this->text_indicates_girls_only($activity_raw)) {
+		if (empty($from_canonical['girls_only']) && !$out['girls_only'] && $this->text_indicates_girls_only($activity_raw)) {
 			$out['girls_only'] = 1;
 		}
-		if (isset($raw['_intersoccer_girls_only']) && in_array(strtolower((string) $raw['_intersoccer_girls_only']), ['1', 'yes', 'true'], true)) {
+		if (empty($from_canonical['girls_only']) && isset($raw['_intersoccer_girls_only'])
+			&& in_array(strtolower((string) $raw['_intersoccer_girls_only']), ['1', 'yes', 'true'], true)) {
 			$out['girls_only'] = 1;
 		}
 
 		$bt = $this->first_meta($raw, ['Booking Type', 'pa_booking-type', 'attribute_pa_booking-type']);
-		if ($out['booking_type'] === 'other' && $bt !== '') {
+		if (empty($from_canonical['booking_type']) && $out['booking_type'] === 'other' && $bt !== '') {
 			$out['booking_type'] = $this->normalize_booking_type($bt);
 		}
 
 		$venue = $this->first_meta($raw, ['Sites InterSoccer', 'InterSoccer Venues', 'pa_intersoccer-venues', 'attribute_pa_intersoccer-venues']);
-		if ($out['venue'] === 'not_recorded' && $venue !== '') {
+		if (empty($from_canonical['venue']) && $out['venue'] === 'not_recorded' && $venue !== '') {
 			$out['venue'] = $this->normalize_venue($venue);
 		}
 
 		$region = $this->first_meta($raw, ['Canton / Region', 'pa_canton-region', 'attribute_pa_canton-region']);
-		if ($out['region'] === 'not_recorded' && $region !== '') {
+		if (empty($from_canonical['region']) && $out['region'] === 'not_recorded' && $region !== '') {
 			$out['region'] = $this->normalize_region($region);
 		}
 
 		$age = $this->first_meta($raw, ['Age Group', 'pa_age-group', 'attribute_pa_age-group']);
-		if ($out['age_group'] === 'not_recorded' && $age !== '') {
+		if (empty($from_canonical['age_group']) && $out['age_group'] === 'not_recorded' && $age !== '') {
 			$out['age_group'] = $this->normalize_age_group($age);
 		}
 
@@ -125,8 +129,8 @@ class FacetNormalizer {
 			$out['camp_week_index'] = (int) $week_index;
 		}
 
-		$camp_terms = $this->first_meta($raw, ['Camp Terms', 'pa_camp-terms', 'attribute_pa_camp-terms', '_intersoccer_canonical_camp_terms']);
-		if ($out['camp_week'] === 'not_recorded') {
+		$camp_terms = $this->first_meta($raw, ['Camp Terms', 'pa_camp-terms', 'attribute_pa_camp-terms']);
+		if (empty($from_canonical['camp_week_key']) && $out['camp_week'] === 'not_recorded') {
 			if ($camp_terms !== '') {
 				$out['camp_week'] = $this->normalize_camp_week($camp_terms);
 			} elseif ($out['camp_week_index']) {
@@ -357,6 +361,7 @@ class FacetNormalizer {
 		// Extract first week number when a multi-week string appears.
 		// Also match FR slug leaks: semaine-dete-5, semaine-d-ete-5 (MASTER B.7 / E trap).
 		if (preg_match('/(?:summer|printemps|été|ete|autumn|automne|winter|hiver|easter|pâques|paques)?\s*week\s*(\d+)/i', $t, $m)
+			|| preg_match('/(?:summer|autumn|winter|spring|easter)?[-_]?week[-_]?(\d+)/i', $t, $m)
 			|| preg_match('/semaine(?:\s+d[\'’`]?\s*ét[ée])?\s*(\d+)/iu', $t, $m)
 			|| preg_match('/semaine\s*(\d+)/i', $t, $m)
 			|| preg_match('/semaine[-_]?d[\'’`]?e?te[-_]?(\d+)/i', $t, $m)

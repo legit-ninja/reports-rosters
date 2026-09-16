@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 2.8.20
+ * Version: 2.8.21
  * 
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
@@ -118,6 +118,12 @@ if (file_exists($intersoccer_oop_adapter)) {
 $order_meta_repair_hook = plugin_dir_path(__FILE__) . 'includes/order-meta-repair-hook.php';
 if (file_exists($order_meta_repair_hook)) {
     require_once $order_meta_repair_hook;
+}
+
+// Final Numbers urgency + distressed variation-ID export (Campaign Offers calls this when present).
+$final_reports_aggregation = plugin_dir_path(__FILE__) . 'includes/final-reports-aggregation.php';
+if (file_exists($final_reports_aggregation)) {
+    require_once $final_reports_aggregation;
 }
 
 // Load Office 365 cron runner on init so the cron hook is registered (cron runs without admin).

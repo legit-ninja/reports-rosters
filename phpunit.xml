@@ -42,6 +42,9 @@
             <file>tests/Reports/FinalReportsTotalsTest.php</file>
             <file>tests/Reports/FinalReportsAggregationAccuracyTest.php</file>
             <file>tests/Reports/FinalReportsUrgencyTest.php</file>
+            <file>tests/Reports/EvergreenYearIsolationTest.php</file>
+            <file>tests/Reports/CanonicalOrderMetaPreferenceTest.php</file>
+            <file>tests/Reports/DistressedVariationIdsTest.php</file>
             <file>tests/Reports/PlayerCampStatusTest.php</file>
             <file>tests/Reports/FinalReportsMetaTest.php</file>
             <file>tests/Campaign/Final15CampaignFixtureTest.php</file>

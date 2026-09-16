@@ -256,6 +256,42 @@ class RosterBuilderTest extends TestCase {
 
         $this->assertSame(0, $result['girls_only']);
     }
+
+    public function test_extract_order_item_data_prefers_canonical_keys_over_display_labels() {
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(46);
+        $order->shouldReceive('get_customer_id')->andReturn(11);
+        $order->shouldReceive('get_status')->andReturn('processing');
+
+        $item = Mockery::mock('WC_Order_Item_Product');
+        $item->shouldReceive('get_product')->andReturn(null);
+        $item->shouldReceive('get_variation_id')->andReturn(37642);
+        $item->shouldReceive('get_product_id')->andReturn(37635);
+        $item->shouldReceive('get_meta')->andReturn('');
+        $item->shouldReceive('get_meta_data')->andReturn([
+            $this->createOrderItemMeta('Activity Type', 'Camp, Girls Only'),
+            $this->createOrderItemMeta('Booking Type', 'Saison'),
+            $this->createOrderItemMeta('Sites InterSoccer', 'Genève - Stade de Vessy'),
+            $this->createOrderItemMeta('Canton / Region', 'Genf'),
+            $this->createOrderItemMeta('_intersoccer_canonical_activity_type', 'camp'),
+            $this->createOrderItemMeta('_intersoccer_canonical_girls_only', '0'),
+            $this->createOrderItemMeta('_intersoccer_canonical_booking_type', 'full-week'),
+            $this->createOrderItemMeta('_intersoccer_canonical_venue', 'stade-de-vessy'),
+            $this->createOrderItemMeta('_intersoccer_canonical_canton', 'geneva'),
+        ]);
+
+        $reflection = new \ReflectionClass($this->rosterBuilder);
+        $method = $reflection->getMethod('extractOrderItemData');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($this->rosterBuilder, $order, 4765, $item);
+
+        $this->assertSame('Camp', $result['activity_type']);
+        $this->assertSame(0, $result['girls_only']);
+        $this->assertSame('Full Week', $result['booking_type']);
+        $this->assertSame('stade-de-vessy', $result['venue']);
+        $this->assertSame('geneva', $result['region']);
+    }
     
     public function test_build_rosters_with_empty_options() {
         $this->database->shouldReceive('transaction')
