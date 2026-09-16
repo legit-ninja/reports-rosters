@@ -840,7 +840,8 @@ class RosterBuilder {
 
         if (function_exists('intersoccer_apply_order_item_attribute_meta_to_data')) {
             $order_data = intersoccer_apply_order_item_attribute_meta_to_data($order_data, $item);
-        } elseif (function_exists('intersoccer_apply_canonical_order_item_meta_to_data')) {
+        }
+        if (function_exists('intersoccer_apply_canonical_order_item_meta_to_data')) {
             $order_data = intersoccer_apply_canonical_order_item_meta_to_data($order_data, $order_data);
         }
 
