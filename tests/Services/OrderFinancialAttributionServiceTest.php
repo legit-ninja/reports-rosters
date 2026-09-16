@@ -256,7 +256,7 @@ class TestRefundLineItem {
     }
 }
 
-class TestWCOrder {
+class TestWCOrder extends \WC_Order {
     private $line_items;
     private $fee_items;
     private $coupons;
