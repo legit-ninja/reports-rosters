@@ -234,6 +234,23 @@ if (!function_exists('wc_get_product')) {
         return false;
     }
 }
+if (!function_exists('wc_update_order_item_meta')) {
+    function wc_update_order_item_meta($item_id, $key, $value) {
+        $GLOBALS['intersoccer_test_item_meta'][(int) $item_id][$key] = $value;
+        return true;
+    }
+}
+if (!function_exists('wc_get_order_item_meta')) {
+    function wc_get_order_item_meta($item_id, $key, $single = true) {
+        return $GLOBALS['intersoccer_test_item_meta'][(int) $item_id][$key] ?? '';
+    }
+}
+if (!function_exists('wc_delete_order_item_meta')) {
+    function wc_delete_order_item_meta($item_id, $key) {
+        unset($GLOBALS['intersoccer_test_item_meta'][(int) $item_id][$key]);
+        return true;
+    }
+}
 if (!function_exists('is_plugin_active')) {
     function is_plugin_active($plugin) {
         return false;
@@ -283,6 +300,13 @@ if (!function_exists('dbDelta')) {
 }
 if (!function_exists('get_user_by')) {
     function get_user_by($field, $value) {
+        if ($field === 'ID' && is_numeric($value) && $value > 0) {
+            $user = new stdClass();
+            $user->ID = (int) $value;
+            $user->user_login = 'testuser' . $value;
+            $user->user_email = 'test' . $value . '@example.com';
+            return $user;
+        }
         return false;
     }
 }
@@ -391,6 +415,176 @@ if (!function_exists('intersoccer_schedule_order_completion_check')) {
         if (is_callable($intersoccer_test_schedule_completion_callback)) {
             call_user_func($intersoccer_test_schedule_completion_callback, $order_id, $delay);
         }
+    }
+}
+
+// WooCommerce class stubs needed by tests
+if (!class_exists('WooCommerce')) {
+    class WooCommerce {
+        public $version = '8.0.0';
+    }
+}
+if (!class_exists('WC_Order')) {
+    class WC_Order {
+        public function get_id() { return 1; }
+        public function get_status() { return 'completed'; }
+        public function get_customer_id() { return 1; }
+        public function get_billing_email() { return 'test@example.com'; }
+        public function get_billing_phone() { return '+41 12 345 67 89'; }
+        public function get_billing_first_name() { return 'John'; }
+        public function get_billing_last_name() { return 'Doe'; }
+        public function get_items($type = 'line_item') { return []; }
+        public function get_meta($key, $single = true) { return ''; }
+        public function update_meta_data($key, $value) {}
+        public function save() { return true; }
+        public function get_refunds() { return []; }
+        public function get_total() { return 0.0; }
+    }
+}
+if (!class_exists('WC_Order_Item_Product')) {
+    class WC_Order_Item_Product {
+        public function get_product_id() { return 1; }
+        public function get_variation_id() { return 0; }
+        public function get_quantity() { return 1; }
+        public function get_product() { return null; }
+        public function get_meta_data() { return []; }
+        public function get_meta($key, $single = true) { return ''; }
+        public function get_id() { return 1; }
+    }
+}
+if (!class_exists('WC_Product')) {
+    class WC_Product {
+        public function get_id() { return 1; }
+        public function get_name() { return 'Test Product'; }
+        public function get_price() { return 100.00; }
+        public function get_attributes() { return []; }
+    }
+}
+if (!class_exists('WC_Product_Variation')) {
+    class WC_Product_Variation extends WC_Product {
+        public function get_attributes() { return []; }
+        public function get_variation_attributes() { return []; }
+    }
+}
+
+// WP_Error class needed by some code paths
+if (!class_exists('WP_Error')) {
+    class WP_Error {
+        public $errors = [];
+        public $error_data = [];
+        public function __construct($code = '', $message = '', $data = '') {
+            if (!empty($code)) {
+                $this->errors[$code][] = $message;
+                if (!empty($data)) {
+                    $this->error_data[$code] = $data;
+                }
+            }
+        }
+        public function get_error_codes() { return array_keys($this->errors); }
+        public function get_error_code() { $codes = $this->get_error_codes(); return reset($codes); }
+        public function get_error_messages($code = '') {
+            if (empty($code)) {
+                $all = [];
+                foreach ($this->errors as $msgs) { $all = array_merge($all, $msgs); }
+                return $all;
+            }
+            return $this->errors[$code] ?? [];
+        }
+        public function get_error_message($code = '') {
+            if (empty($code)) { $code = $this->get_error_code(); }
+            $msgs = $this->get_error_messages($code);
+            return reset($msgs);
+        }
+        public function add($code, $message, $data = '') {
+            $this->errors[$code][] = $message;
+            if (!empty($data)) { $this->error_data[$code] = $data; }
+        }
+        public function has_errors() { return !empty($this->errors); }
+    }
+}
+if (!function_exists('wp_json_encode')) {
+    function wp_json_encode($data, $options = 0, $depth = 512) {
+        return json_encode($data, $options, $depth);
+    }
+}
+if (!function_exists('wp_next_scheduled')) {
+    function wp_next_scheduled($hook, $args = []) {
+        return false;
+    }
+}
+if (!function_exists('wp_clear_scheduled_hook')) {
+    function wp_clear_scheduled_hook($hook, $args = []) {
+        return 0;
+    }
+}
+if (!function_exists('wp_unschedule_event')) {
+    function wp_unschedule_event($timestamp, $hook, $args = []) {
+        return true;
+    }
+}
+if (!function_exists('wp_schedule_single_event')) {
+    function wp_schedule_single_event($timestamp, $hook, $args = [], $wp_error = false) {
+        return true;
+    }
+}
+if (!function_exists('register_post_type')) {
+    function register_post_type($post_type, $args = []) {
+        return new stdClass();
+    }
+}
+if (!function_exists('add_meta_box')) {
+    function add_meta_box($id, $title, $callback, $screen = null, $context = 'advanced', $priority = 'default', $callback_args = null) {
+        return;
+    }
+}
+if (!function_exists('sanitize_text_field')) {
+    function sanitize_text_field($str) {
+        return trim(strip_tags($str));
+    }
+}
+if (!function_exists('absint')) {
+    function absint($maybeint) {
+        return abs((int) $maybeint);
+    }
+}
+if (!function_exists('esc_attr')) {
+    function esc_attr($text) {
+        return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+    }
+}
+if (!function_exists('esc_url')) {
+    function esc_url($url, $protocols = null, $_context = 'display') {
+        return filter_var($url, FILTER_SANITIZE_URL);
+    }
+}
+if (!function_exists('wp_verify_nonce')) {
+    function wp_verify_nonce($nonce, $action = -1) {
+        return 1;
+    }
+}
+if (!function_exists('sanitize_key')) {
+    function sanitize_key($key) {
+        return preg_replace('/[^a-z0-9_\-]/', '', strtolower($key));
+    }
+}
+if (!function_exists('wp_kses_post')) {
+    function wp_kses_post($data) {
+        return $data;
+    }
+}
+if (!function_exists('admin_url')) {
+    function admin_url($path = '', $scheme = 'admin') {
+        return 'https://example.com/wp-admin/' . ltrim($path, '/');
+    }
+}
+if (!function_exists('home_url')) {
+    function home_url($path = '', $scheme = null) {
+        return 'https://example.com/' . ltrim($path, '/');
+    }
+}
+if (!function_exists('site_url')) {
+    function site_url($path = '', $scheme = null) {
+        return 'https://example.com/' . ltrim($path, '/');
     }
 }
 
