@@ -215,6 +215,8 @@ if (!function_exists('intersoccer_reports_empty_camp_metrics')) {
             ],
             'min_max' => '0-0',
             'unique_records' => 0,
+            'variation_ids' => [],
+            'product_ids' => [],
         ];
     }
 }
@@ -241,6 +243,8 @@ if (!function_exists('intersoccer_reports_aggregate_camp_location_group')) {
         $individual_days = ['Monday' => 0, 'Tuesday' => 0, 'Wednesday' => 0, 'Thursday' => 0, 'Friday' => 0];
         $processed_count = 0;
         $counted_order_items = [];
+        $variation_ids = [];
+        $product_ids = [];
 
         foreach ($group as $entry) {
             if (!is_array($entry)) {
@@ -258,6 +262,14 @@ if (!function_exists('intersoccer_reports_aggregate_camp_location_group')) {
                 $counted_order_items[$oid] = true;
             }
             $processed_count++;
+            $vid = isset($entry['variation_id']) ? (int) $entry['variation_id'] : 0;
+            $pid = isset($entry['product_id']) ? (int) $entry['product_id'] : 0;
+            if ($vid > 0) {
+                $variation_ids[$vid] = $vid;
+            }
+            if ($pid > 0) {
+                $product_ids[$pid] = $pid;
+            }
 
             // BuyClub is a separate column (additive), not folded into Full Week / days.
             if (!empty($entry['is_buyclub'])) {
@@ -306,6 +318,8 @@ if (!function_exists('intersoccer_reports_aggregate_camp_location_group')) {
             'individual_days' => $individual_days,
             'min_max' => "$min-$max",
             'unique_records' => $processed_count,
+            'variation_ids' => array_values($variation_ids),
+            'product_ids' => array_values($product_ids),
         ];
     }
 }
@@ -790,6 +804,8 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
                     'course_day' => $course_day,
                     'times' => [],
                     'registrations' => 0,
+                    'variation_id' => $variation_id,
+                    'product_id' => $product_id,
                 ];
             }
 
@@ -1009,6 +1025,180 @@ if (!function_exists('intersoccer_reports_course_row_is_urgent')) {
 	}
 }
 
+if (!function_exists('intersoccer_reports_normalize_season_type_filter')) {
+	/**
+	 * Map evergreen season slugs to the Final Numbers season-type filter.
+	 *
+	 * @param mixed $season Season slug or display label.
+	 * @return string|null
+	 */
+	function intersoccer_reports_normalize_season_type_filter($season) {
+		$season = trim((string) $season);
+		if ($season === '') {
+			return null;
+		}
+		$slugs = [
+			'summer' => 'Summer',
+			'autumn' => 'Autumn',
+			'spring' => 'Spring',
+			'winter' => 'Winter',
+		];
+		$lower = strtolower($season);
+		if (isset($slugs[$lower])) {
+			return $slugs[$lower];
+		}
+		if (function_exists('intersoccer_extract_season_type')) {
+			$extracted = intersoccer_extract_season_type($season);
+			if ($extracted) {
+				return $extracted;
+			}
+		}
+		return $season;
+	}
+}
+
+if (!function_exists('intersoccer_reports_collect_distressed_ids_from_final_numbers')) {
+	/**
+	 * Collect variation/product IDs from Final Numbers rows whose urgency band is Critical or Low.
+	 *
+	 * Uses the same helpers as the heatmap (`intersoccer_reports_urgency_band` /
+	 * `intersoccer_reports_is_urgent_band`). Does not invent a second distressed definition.
+	 *
+	 * @param array $camp_report   Camp report_data from intersoccer_get_final_reports_data / build_camp_report.
+	 * @param array $course_report Course report_data from the same helpers.
+	 * @return array{variation_ids:int[],product_ids:int[]}
+	 */
+	function intersoccer_reports_collect_distressed_ids_from_final_numbers(array $camp_report, array $course_report) {
+		$variation_ids = [];
+		$product_ids = [];
+
+		$add_ids = static function ($vids, $pids) use (&$variation_ids, &$product_ids) {
+			foreach ((array) $vids as $vid) {
+				$vid = (int) $vid;
+				if ($vid > 0) {
+					$variation_ids[$vid] = $vid;
+				}
+			}
+			foreach ((array) $pids as $pid) {
+				$pid = (int) $pid;
+				if ($pid > 0) {
+					$product_ids[$pid] = $pid;
+				}
+			}
+		};
+
+		foreach ($camp_report as $week_name => $cantons) {
+			if ($week_name === '__player_registration_totals__' || !is_array($cantons)) {
+				continue;
+			}
+			foreach ($cantons as $venues) {
+				if (!is_array($venues)) {
+					continue;
+				}
+				foreach ($venues as $camp_types) {
+					if (!is_array($camp_types)) {
+						continue;
+					}
+					foreach ($camp_types as $metrics) {
+						if (!is_array($metrics) || !isset($metrics['min_max'])) {
+							continue;
+						}
+						$band = intersoccer_reports_camp_metrics_urgency_band($metrics);
+						if (!intersoccer_reports_is_urgent_band($band)) {
+							continue;
+						}
+						$add_ids($metrics['variation_ids'] ?? [], $metrics['product_ids'] ?? []);
+					}
+				}
+			}
+		}
+
+		foreach ($course_report as $season_name => $regions) {
+			if ($season_name === '__player_registration_totals__' || !is_array($regions)) {
+				continue;
+			}
+			foreach ($regions as $rows) {
+				if (!is_array($rows)) {
+					continue;
+				}
+				foreach ($rows as $course_data) {
+					if (!is_array($course_data) || !isset($course_data['registrations'])) {
+						continue;
+					}
+					if (!intersoccer_reports_course_row_is_urgent($course_data)) {
+						continue;
+					}
+					$add_ids(
+						isset($course_data['variation_id']) ? [$course_data['variation_id']] : [],
+						isset($course_data['product_id']) ? [$course_data['product_id']] : []
+					);
+				}
+			}
+		}
+
+		$variation_ids = array_values($variation_ids);
+		$product_ids = array_values($product_ids);
+		sort($variation_ids, SORT_NUMERIC);
+		sort($product_ids, SORT_NUMERIC);
+
+		return [
+			'variation_ids' => $variation_ids,
+			'product_ids' => $product_ids,
+		];
+	}
+}
+
+if (!function_exists('intersoccer_reports_distressed_variation_ids')) {
+	/**
+	 * Variation and parent product IDs whose Final Numbers band is Critical or Low.
+	 *
+	 * Campaign Offers (Product Variations) calls this when the function exists and
+	 * snapshots the list. Eligibility is at variation level (venue/week SKU).
+	 *
+	 * @param string     $season       Evergreen season slug or display label (summer / Autumn).
+	 * @param int|string $program_year Bare program year (2026).
+	 * @return array{variation_ids:int[],product_ids:int[]}
+	 */
+	function intersoccer_reports_distressed_variation_ids($season, $program_year) {
+		$season_type = intersoccer_reports_normalize_season_type_filter($season);
+		$program_year = (int) $program_year;
+
+		$camp = [];
+		$course = [];
+
+		$injected = null;
+		if (function_exists('apply_filters')) {
+			$injected = apply_filters('intersoccer_reports_distressed_source_reports', null, $season_type, $program_year);
+		}
+		if (!is_array($injected) && defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING
+			&& isset($GLOBALS['intersoccer_reports_distressed_source_reports'])
+			&& is_array($GLOBALS['intersoccer_reports_distressed_source_reports'])) {
+			$injected = $GLOBALS['intersoccer_reports_distressed_source_reports'];
+		}
+
+		if (is_array($injected)) {
+			$camp = $injected['camp'] ?? [];
+			$course = $injected['course'] ?? [];
+		} elseif (!(defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING)) {
+			if (!function_exists('intersoccer_get_final_reports_data')) {
+				$reports_data = dirname(__FILE__) . '/reports-data.php';
+				if (is_readable($reports_data)) {
+					require_once $reports_data;
+				}
+			}
+			if (function_exists('intersoccer_get_final_reports_data')) {
+				$camp = intersoccer_get_final_reports_data($program_year, 'Camp', $season_type);
+				$course = intersoccer_get_final_reports_data($program_year, 'Course', $season_type);
+			}
+		}
+
+		return intersoccer_reports_collect_distressed_ids_from_final_numbers(
+			is_array($camp) ? $camp : [],
+			is_array($course) ? $course : []
+		);
+	}
+}
+
 if (!function_exists('intersoccer_reports_normalize_camp_metrics')) {
     /**
      * Ensure camp metrics include pitchside/buyclub keys for UI/export.
@@ -1031,6 +1221,8 @@ if (!function_exists('intersoccer_reports_normalize_camp_metrics')) {
             ),
             'min_max' => (string) ($data['min_max'] ?? '0-0'),
             'unique_records' => (int) ($data['unique_records'] ?? 0),
+            'variation_ids' => array_values(array_filter(array_map('intval', $data['variation_ids'] ?? []))),
+            'product_ids' => array_values(array_filter(array_map('intval', $data['product_ids'] ?? []))),
         ];
     }
 }

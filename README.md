@@ -4,7 +4,7 @@ WordPress/WooCommerce plugin for event roster management, Final Numbers / Live S
 
 ## Version
 
-- **Current Version:** 2.8.20
+- **Current Version:** 2.8.21
 
 - Camp event dates prefer variation `_camp_start_date` / `_camp_end_date` (and order-item stamps) via `intersoccer_reports_resolve_camp_schedule()`. Parsing `camp_terms` strings is a **deprecated transitional fallback** until catalogue migration is complete.
 - Final Numbers / Live Snapshot resolve year via `intersoccer_reports_resolve_program_year()`: order-item `Year` / `pa_program-year` → digits in season → event dates. Evergreen seasons (e.g. `Autumn`) no longer require year digits in the season string. Season close requires an explicit year.
@@ -30,6 +30,8 @@ Cart/pricing (product-variations), player CRUD (player-management), CRM sync (in
 - Optional: Customer Referral System (coach assignments — guarded)
 
 ## Documentation
+
+Taxonomy, order-meta keys, and distressed bands: InterSoccer Project Context `docs/taxonomy-standard.md`.
 
 Canonical guidance for agents and developers is in the InterSoccer workspace Cursor skill **reports-rosters** and the `reports-rosters-*` rules (see [docs/README.md](docs/README.md)).
 

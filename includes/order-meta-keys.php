@@ -58,6 +58,130 @@ function intersoccer_get_order_meta_field_map() {
 }
 
 /**
+ * Language-neutral order-item keys from the Product Variations ORDER-META-CONTRACT.
+ *
+ * Readers prefer these over display-label aliases when present.
+ *
+ * @return array<string,string> meta_key => internal field
+ */
+function intersoccer_get_canonical_order_meta_field_map() {
+    return [
+        '_intersoccer_canonical_activity_type' => 'activity_type',
+        '_intersoccer_canonical_girls_only' => 'girls_only',
+        '_intersoccer_canonical_booking_type' => 'booking_type',
+        '_intersoccer_canonical_venue' => 'venue',
+        '_intersoccer_canonical_canton' => 'region',
+        '_intersoccer_canonical_age_group' => 'age_group',
+        '_intersoccer_canonical_camp_terms' => 'event_type',
+    ];
+}
+
+/**
+ * Whether an order-item meta key is a language-neutral canonical facet.
+ *
+ * @param mixed $raw_key
+ */
+function intersoccer_order_item_meta_key_is_canonical($raw_key): bool {
+    return is_string($raw_key) && strpos($raw_key, '_intersoccer_canonical_') === 0;
+}
+
+/**
+ * Skip internal plugin storage for report/roster display scans, but keep canonical keys.
+ *
+ * @param mixed $raw_key
+ */
+function intersoccer_order_item_meta_key_skip_for_reports($raw_key): bool {
+    if (!is_string($raw_key) || $raw_key === '') {
+        return true;
+    }
+    if (function_exists('intersoccer_order_item_meta_key_is_canonical')
+        && intersoccer_order_item_meta_key_is_canonical($raw_key)) {
+        return false;
+    }
+    return intersoccer_order_item_meta_key_is_internal($raw_key);
+}
+
+/**
+ * Overlay language-neutral canonical keys onto roster/report data (preferred when present).
+ *
+ * Display-label aliases stay on $data for old orders; this overwrites those fields
+ * when `_intersoccer_canonical_*` (or the documented optional aliases) exist.
+ *
+ * @param array<string,mixed> $data
+ * @param array<string,mixed> $raw_meta Flat meta_key => value.
+ * @return array<string,mixed>
+ */
+function intersoccer_apply_canonical_order_item_meta_to_data(array $data, array $raw_meta) {
+    $scalar = static function ($value) {
+        if (is_array($value)) {
+            $value = $value[0] ?? implode(', ', array_map('trim', $value));
+        }
+        return trim((string) $value);
+    };
+
+    foreach (intersoccer_get_canonical_order_meta_field_map() as $meta_key => $field) {
+        if (!array_key_exists($meta_key, $raw_meta)) {
+            continue;
+        }
+        $val = $scalar($raw_meta[$meta_key]);
+        if ($val === '') {
+            continue;
+        }
+
+        $data[$meta_key] = $val;
+
+        if ($field === 'activity_type') {
+            $data['activity_type'] = function_exists('intersoccer_canonical_activity_type_for_roster')
+                ? intersoccer_canonical_activity_type_for_roster($val)
+                : $val;
+            continue;
+        }
+        if ($field === 'girls_only') {
+            $data['girls_only'] = $val;
+            continue;
+        }
+        if ($field === 'booking_type') {
+            $data['booking_type'] = function_exists('intersoccer_normalize_booking_type_label_for_reports')
+                ? intersoccer_normalize_booking_type_label_for_reports($val)
+                : $val;
+            continue;
+        }
+        if ($field === 'event_type') {
+            $data['event_type'] = $val;
+            $data['camp_terms'] = $val;
+            continue;
+        }
+        if ($field === 'region') {
+            $data['region'] = $val;
+            $data['canton'] = $val;
+            continue;
+        }
+        $data[$field] = $val;
+    }
+
+    if ((empty($data['_intersoccer_canonical_activity_type']) && empty($data['activity_type']))
+        && array_key_exists('_intersoccer_activity_slug', $raw_meta)) {
+        $slug = $scalar($raw_meta['_intersoccer_activity_slug']);
+        if ($slug !== '') {
+            $data['activity_type'] = function_exists('intersoccer_canonical_activity_type_for_roster')
+                ? intersoccer_canonical_activity_type_for_roster($slug)
+                : $slug;
+        }
+    }
+
+    if ((!array_key_exists('_intersoccer_canonical_girls_only', $data) || $data['_intersoccer_canonical_girls_only'] === '')
+        && array_key_exists('_intersoccer_girls_only', $raw_meta)) {
+        $flag = $scalar($raw_meta['_intersoccer_girls_only']);
+        if ($flag !== '') {
+            $data['_intersoccer_girls_only'] = $flag;
+            $data['girls_only'] = $flag;
+        }
+    }
+
+    return $data;
+}
+
+/**
  * Manual normalized-string aliases per canonical English meta label.
  *
  * @return array<string,array<int,string>>
@@ -305,6 +429,15 @@ function intersoccer_reports_sql_meta_key_candidates($field) {
         'attendee_gender' => ['Attendee Gender', 'gender', 'Player Gender'],
         'discount_applied' => ['Discount', '_applied_discounts'],
         'discount_amount' => ['Discount Amount'],
+        'activity_type' => ['_intersoccer_canonical_activity_type', 'Activity Type'],
+        'girls_only' => ['_intersoccer_canonical_girls_only', 'Girls Only'],
+        'booking_type' => ['_intersoccer_canonical_booking_type', 'Booking Type', 'pa_booking-type'],
+        'venue' => ['_intersoccer_canonical_venue', 'Sites InterSoccer'],
+        'region' => ['_intersoccer_canonical_canton', 'Canton / Region'],
+        'canton' => ['_intersoccer_canonical_canton', 'Canton / Region'],
+        'age_group' => ['_intersoccer_canonical_age_group', 'Age Group'],
+        'event_type' => ['_intersoccer_canonical_camp_terms', 'Camp Terms'],
+        'camp_terms' => ['_intersoccer_canonical_camp_terms', 'Camp Terms'],
     ];
 
     return $map[$field] ?? [];
@@ -321,6 +454,16 @@ function intersoccer_reports_sql_meta_key_candidates($field) {
 function intersoccer_get_order_item_meta_field_value(array $item_meta, $field, $default = '') {
     $candidates = intersoccer_reports_sql_meta_key_candidates($field);
     if ($candidates === []) {
+        if (function_exists('intersoccer_get_canonical_order_meta_field_map')) {
+            foreach (intersoccer_get_canonical_order_meta_field_map() as $meta_key => $internal) {
+                $maps_to_field = $internal === $field
+                    || ($field === 'camp_terms' && $internal === 'event_type')
+                    || ($field === 'canton' && $internal === 'region');
+                if ($maps_to_field) {
+                    $candidates[] = $meta_key;
+                }
+            }
+        }
         foreach (intersoccer_get_order_meta_field_map() as $meta_key => $internal) {
             if ($internal === $field) {
                 $candidates[] = $meta_key;
@@ -707,6 +850,10 @@ if (!function_exists('intersoccer_apply_order_item_attribute_meta_to_data')) {
             }
         }
 
+        if (function_exists('intersoccer_apply_canonical_order_item_meta_to_data')) {
+            $data = intersoccer_apply_canonical_order_item_meta_to_data($data, $raw);
+        }
+
         return $data;
     }
 }
@@ -835,7 +982,7 @@ function intersoccer_reports_enrich_final_report_row_from_order_item(array &$row
     foreach ($item->get_meta_data() as $meta) {
         $data = $meta->get_data();
         $raw_key = isset($data['key']) ? (string) $data['key'] : '';
-        if ($raw_key === '' || intersoccer_order_item_meta_key_is_internal($raw_key)) {
+        if ($raw_key === '' || intersoccer_order_item_meta_key_skip_for_reports($raw_key)) {
             continue;
         }
         $value = intersoccer_scalarize_order_item_meta_value($data['value'] ?? '', $raw_key);
@@ -858,6 +1005,17 @@ function intersoccer_reports_enrich_final_report_row_from_order_item(array &$row
         }
         $row[$row_key] = $value;
     }
+
+    $flat = [];
+    foreach ($item->get_meta_data() as $meta) {
+        $data = $meta->get_data();
+        $raw_key = isset($data['key']) ? (string) $data['key'] : '';
+        if ($raw_key === '') {
+            continue;
+        }
+        $flat[$raw_key] = $data['value'] ?? '';
+    }
+    $row = intersoccer_apply_canonical_order_item_meta_to_data($row, $flat);
 }
 
 /**
@@ -953,7 +1111,7 @@ function intersoccer_collect_order_item_meta_map($order_item_id, $order_id = 0) 
         foreach ($item->get_meta_data() as $meta) {
             $data = $meta->get_data();
             $raw_key = isset($data['key']) ? (string) $data['key'] : '';
-            if ($raw_key === '' || intersoccer_order_item_meta_key_is_internal($raw_key)) {
+            if ($raw_key === '' || intersoccer_order_item_meta_key_skip_for_reports($raw_key)) {
                 continue;
             }
             $map[$raw_key] = intersoccer_scalarize_order_item_meta_value($data['value'] ?? '', $raw_key);
@@ -974,7 +1132,7 @@ function intersoccer_collect_order_item_meta_map($order_item_id, $order_id = 0) 
         if (is_array($rows)) {
             foreach ($rows as $row) {
                 $raw_key = (string) ($row['meta_key'] ?? '');
-                if ($raw_key === '' || intersoccer_order_item_meta_key_is_internal($raw_key)) {
+                if ($raw_key === '' || intersoccer_order_item_meta_key_skip_for_reports($raw_key)) {
                     continue;
                 }
                 $map[$raw_key] = intersoccer_scalarize_order_item_meta_value($row['meta_value'] ?? '', $raw_key);
@@ -1040,6 +1198,16 @@ function intersoccer_roster_enrich_camp_fields_from_order_item(&$row) {
 
     $meta_map = intersoccer_collect_order_item_meta_map($item_id, $order_id);
     intersoccer_roster_apply_late_pickup_to_row($row, $meta_map);
+    if (is_array($row) && function_exists('intersoccer_apply_canonical_order_item_meta_to_data')) {
+        $row = intersoccer_apply_canonical_order_item_meta_to_data($row, $meta_map);
+    } elseif (is_object($row) && function_exists('intersoccer_apply_canonical_order_item_meta_to_data')) {
+        $overlay = intersoccer_apply_canonical_order_item_meta_to_data((array) $row, $meta_map);
+        foreach (['activity_type', 'booking_type', 'venue', 'region', 'canton', 'age_group', 'event_type', 'camp_terms', 'girls_only'] as $facet) {
+            if (array_key_exists($facet, $overlay)) {
+                $row->$facet = $overlay[$facet];
+            }
+        }
+    }
 
     if (!class_exists('\WC_Order_Factory')) {
         return;
@@ -1070,7 +1238,7 @@ function intersoccer_roster_enrich_camp_fields_from_order_item(&$row) {
     foreach ($item->get_meta_data() as $meta) {
         $data = $meta->get_data();
         $raw_key = isset($data['key']) ? (string) $data['key'] : '';
-        if ($raw_key === '' || intersoccer_order_item_meta_key_is_internal($raw_key)) {
+        if ($raw_key === '' || intersoccer_order_item_meta_key_skip_for_reports($raw_key)) {
             continue;
         }
         $value = intersoccer_scalarize_order_item_meta_value($data['value'] ?? '', $raw_key);
@@ -1118,7 +1286,7 @@ function intersoccer_roster_enrich_camp_fields_from_order_item(&$row) {
     }
 
     if ($get($row, 'booking_type') === '' && function_exists('wc_get_order_item_meta')) {
-        foreach (['Booking Type', 'booking_type', 'pa_booking-type'] as $meta_key) {
+        foreach (['_intersoccer_canonical_booking_type', 'Booking Type', 'booking_type', 'pa_booking-type'] as $meta_key) {
             $v = wc_get_order_item_meta($item_id, $meta_key, true);
             if ($v === null || $v === '') {
                 continue;

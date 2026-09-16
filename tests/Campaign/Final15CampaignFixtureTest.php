@@ -88,6 +88,14 @@ class Final15CampaignFixtureTest extends TestCase {
 		$facets = $n->normalize_from_meta(['Activity Type' => 'Camp, Girls&#039; Only']);
 		$this->assertSame(1, $facets['girls_only']);
 		$this->assertSame('camp', $facets['activity_type']);
+
+		$canonical = $n->normalize_from_meta([
+			'Activity Type' => 'Camp, Girls&#039; Only',
+			'_intersoccer_canonical_activity_type' => 'camp',
+			'_intersoccer_canonical_girls_only' => '0',
+		]);
+		$this->assertSame('camp', $canonical['activity_type']);
+		$this->assertSame(0, $canonical['girls_only']);
 	}
 
 	public function test_final15_headline_and_traps() {

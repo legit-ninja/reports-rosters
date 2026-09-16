@@ -831,14 +831,17 @@ class RosterBuilder {
             if ($canonical_key === 'assigned_player_id' || $raw_key === 'assigned_player_id') {
                 $order_data['player_id'] = $value;
             }
-            // Language-neutral girls-only flag (not in display field map).
-            if ($raw_key === '_intersoccer_canonical_girls_only' || $canonical_key === '_intersoccer_canonical_girls_only') {
-                $order_data['_intersoccer_canonical_girls_only'] = $value;
+            // Language-neutral canonical keys (not in the display-label field map).
+            if (function_exists('intersoccer_order_item_meta_key_is_canonical')
+                && intersoccer_order_item_meta_key_is_canonical($raw_key)) {
+                $order_data[$raw_key] = $value;
             }
         }
 
         if (function_exists('intersoccer_apply_order_item_attribute_meta_to_data')) {
             $order_data = intersoccer_apply_order_item_attribute_meta_to_data($order_data, $item);
+        } elseif (function_exists('intersoccer_apply_canonical_order_item_meta_to_data')) {
+            $order_data = intersoccer_apply_canonical_order_item_meta_to_data($order_data, $order_data);
         }
 
         // Extract additional data from product attributes

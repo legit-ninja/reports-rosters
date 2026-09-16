@@ -105,5 +105,10 @@ class FinalReportsMetaTest extends TestCase {
 
         $this->assertTrue(intersoccer_order_item_meta_key_is_internal('_intersoccer_item_discounts'));
         $this->assertFalse(intersoccer_order_item_meta_key_is_internal('Days Selected'));
+        if (function_exists('intersoccer_order_item_meta_key_is_canonical')) {
+            $this->assertTrue(intersoccer_order_item_meta_key_is_canonical('_intersoccer_canonical_activity_type'));
+            $this->assertFalse(intersoccer_order_item_meta_key_skip_for_reports('_intersoccer_canonical_activity_type'));
+            $this->assertTrue(intersoccer_order_item_meta_key_skip_for_reports('_intersoccer_item_discounts'));
+        }
     }
 }
