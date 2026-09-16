@@ -217,6 +217,10 @@ if (!function_exists('update_user_meta')) {
 }
 if (!function_exists('wc_get_order')) {
     function wc_get_order($order_id) {
+        global $intersoccer_test_wc_get_order_callback;
+        if (is_callable($intersoccer_test_wc_get_order_callback)) {
+            return call_user_func($intersoccer_test_wc_get_order_callback, $order_id);
+        }
         return false;
     }
 }
@@ -377,6 +381,16 @@ if (!function_exists('wp_mkdir_p')) {
         }
         
         return @mkdir($target, 0755);
+    }
+}
+
+// InterSoccer-specific stub with delegate support for test overrides
+if (!function_exists('intersoccer_schedule_order_completion_check')) {
+    function intersoccer_schedule_order_completion_check($order_id, $delay = null) {
+        global $intersoccer_test_schedule_completion_callback;
+        if (is_callable($intersoccer_test_schedule_completion_callback)) {
+            call_user_func($intersoccer_test_schedule_completion_callback, $order_id, $delay);
+        }
     }
 }
 
