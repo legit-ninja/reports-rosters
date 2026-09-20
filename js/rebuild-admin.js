@@ -75,6 +75,9 @@ jQuery(document).ready(function($) {
                     current_batch: 0
                 });
                 
+                // Show info notice that rebuild has started
+                this.showNotice('Database rebuild started. Processing ' + response.data.total + ' orders...', 'info');
+                
                 // Start processing batches
                 setTimeout(this.processBatch.bind(this), this.batchDelay);
             } else {
@@ -141,7 +144,10 @@ jQuery(document).ready(function($) {
             this.updateProgress({percentage: 100});
             this.updateStatus(message || intersoccerRebuild.strings.completed);
             
-            // Show success state for a few seconds, then reset
+            // Show durable success notice
+            this.showNotice(message || intersoccerRebuild.strings.completed, 'success');
+            
+            // Reset UI state but keep the success notice visible
             setTimeout(function() {
                 rebuildManager.setUIState('idle');
                 rebuildManager.loadDatabaseStats();
@@ -316,8 +322,48 @@ jQuery(document).ready(function($) {
             this.setUIState('idle');
             this.updateStatus('Error: ' + message);
             
+            // Show durable error notice
+            this.showNotice('Error: ' + message, 'error');
+            
             // Also log to console for debugging
             console.error('InterSoccer Rebuild Error:', message);
+        },
+        
+        showNotice: function(message, type) {
+            type = type || 'info';
+            var noticeClass = 'notice notice-' + type + ' is-dismissible intersoccer-rebuild-notice';
+            var $container = $('#intersoccer-operation-status');
+            
+            // If the standard operation status container doesn't exist, create one
+            if (!$container.length) {
+                $container = $('<div id="intersoccer-operation-status" style="margin: 20px 0;"></div>');
+                $('.wrap').first().prepend($container);
+            }
+            
+            // Remove any existing rebuild notices before adding a new one
+            $container.find('.intersoccer-rebuild-notice').remove();
+            
+            var $notice = $('<div class="' + noticeClass + '">' +
+                '<p><strong>' + message + '</strong></p>' +
+                '<button type="button" class="notice-dismiss">' +
+                '<span class="screen-reader-text">Dismiss this notice.</span>' +
+                '</button></div>');
+            
+            $container.append($notice);
+            
+            // Handle dismiss button click
+            $notice.find('.notice-dismiss').on('click', function() {
+                $notice.fadeOut(function() {
+                    $(this).remove();
+                });
+            });
+            
+            // Scroll to notice so user can see it
+            if ($container.offset()) {
+                $('html, body').animate({
+                    scrollTop: $container.offset().top - 50
+                }, 300);
+            }
         }
     };
     

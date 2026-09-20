@@ -243,3 +243,43 @@
     margin-top: 8px;
     display: block;
 }
+
+/* Rebuild Completion/Error Notices */
+.intersoccer-rebuild-notice {
+    margin: 15px 0 !important;
+    padding: 12px 15px !important;
+    border-left-width: 4px !important;
+}
+
+.intersoccer-rebuild-notice.notice-success {
+    background: #ecf7ed;
+    border-color: #00a32a;
+}
+
+.intersoccer-rebuild-notice.notice-error {
+    background: #fcf0f1;
+    border-color: #d63638;
+}
+
+.intersoccer-rebuild-notice p {
+    margin: 0;
+    padding: 0;
+    font-size: 14px;
+}
+
+.intersoccer-rebuild-notice.notice-success p strong {
+    color: #007017;
+}
+
+.intersoccer-rebuild-notice.notice-error p strong {
+    color: #8a1c1c;
+}
+
+.intersoccer-rebuild-notice.notice-info {
+    background: #f0f6fc;
+    border-color: #72aee6;
+}
+
+.intersoccer-rebuild-notice.notice-info p strong {
+    color: #135e96;
+}
