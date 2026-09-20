@@ -331,7 +331,6 @@ jQuery(document).ready(function($) {
         
         showNotice: function(message, type) {
             type = type || 'info';
-            var noticeClass = 'notice notice-' + type + ' is-dismissible intersoccer-rebuild-notice';
             var $container = $('#intersoccer-operation-status');
             
             // If the standard operation status container doesn't exist, create one
@@ -343,16 +342,21 @@ jQuery(document).ready(function($) {
             // Remove any existing rebuild notices before adding a new one
             $container.find('.intersoccer-rebuild-notice').remove();
             
-            var $notice = $('<div class="' + noticeClass + '">' +
-                '<p><strong>' + message + '</strong></p>' +
-                '<button type="button" class="notice-dismiss">' +
-                '<span class="screen-reader-text">Dismiss this notice.</span>' +
-                '</button></div>');
+            // Build notice safely using jQuery DOM methods to prevent XSS
+            var $notice = $('<div>')
+                .addClass('notice notice-' + type + ' is-dismissible intersoccer-rebuild-notice');
             
+            var $strong = $('<strong>').text(message);
+            var $p = $('<p>').append($strong);
+            
+            var $dismissBtn = $('<button type="button" class="notice-dismiss">')
+                .append($('<span class="screen-reader-text">').text('Dismiss this notice.'));
+            
+            $notice.append($p).append($dismissBtn);
             $container.append($notice);
             
             // Handle dismiss button click
-            $notice.find('.notice-dismiss').on('click', function() {
+            $dismissBtn.on('click', function() {
                 $notice.fadeOut(function() {
                     $(this).remove();
                 });
