@@ -372,10 +372,10 @@ function intersoccer_render_final_reports_page() {
 
                 <!-- Camp Type Tabs -->
                 <div class="intersoccer-camp-type-tabs" role="tablist" aria-label="<?php esc_attr_e('Camp type view', 'intersoccer-reports-rosters'); ?>">
-                    <button type="button" class="intersoccer-camp-type-tab active" role="tab" aria-selected="true" aria-controls="camp-table-full-day" data-camp-type="full-day">
+                    <button type="button" id="camp-tab-full-day" class="intersoccer-camp-type-tab active" role="tab" aria-selected="true" aria-controls="camp-table-full-day" data-camp-type="full-day">
                         <?php esc_html_e('Full Day', 'intersoccer-reports-rosters'); ?>
                     </button>
-                    <button type="button" class="intersoccer-camp-type-tab" role="tab" aria-selected="false" aria-controls="camp-table-mini" data-camp-type="mini">
+                    <button type="button" id="camp-tab-mini" class="intersoccer-camp-type-tab" role="tab" aria-selected="false" aria-controls="camp-table-mini" data-camp-type="mini">
                         <?php esc_html_e('Mini – Half Day', 'intersoccer-reports-rosters'); ?>
                     </button>
                 </div>
@@ -386,6 +386,16 @@ function intersoccer_render_final_reports_page() {
                 .camp-reports-table .week-header td { background: #f0f0f0; font-weight: bold; text-align: left; }
                 .camp-reports-table .grand-total td { background: #e8e8e8; font-weight: bold; }
                 .camp-reports-table .all-reg td { background: #f8f8f8; font-weight: bold; }
+                .camp-table-panel.is-hidden { display: none; }
+                </style>
+                <style media="print">
+                .intersoccer-camp-type-tabs { display: none !important; }
+                .camp-table-panel,
+                .camp-table-panel.is-hidden {
+                    display: block !important;
+                    visibility: visible !important;
+                    height: auto !important;
+                }
                 </style>
 
                 <!-- Full Day Camp Table -->
@@ -486,7 +496,7 @@ function intersoccer_render_final_reports_page() {
                 </div>
 
                 <!-- Mini – Half Day Camp Table -->
-                <div id="camp-table-mini" class="camp-table-panel" role="tabpanel" aria-labelledby="camp-tab-mini" style="display: none;">
+                <div id="camp-table-mini" class="camp-table-panel is-hidden" role="tabpanel" aria-labelledby="camp-tab-mini">
                 <table class="widefat striped camp-reports-table">
                     <thead>
                         <tr style="background-color: #f8e8f4;">
@@ -810,12 +820,12 @@ function intersoccer_render_final_reports_page() {
             $('.intersoccer-camp-type-tab').removeClass('active').attr('aria-selected', 'false');
             $tab.addClass('active').attr('aria-selected', 'true');
 
-            // Show/hide panels
-            $('.camp-table-panel').hide();
+            // Show/hide panels via class (not inline style) so print CSS can override
+            $('.camp-table-panel').addClass('is-hidden');
             if (campType === 'full-day') {
-                $('#camp-table-full-day').show();
+                $('#camp-table-full-day').removeClass('is-hidden');
             } else if (campType === 'mini') {
-                $('#camp-table-mini').show();
+                $('#camp-table-mini').removeClass('is-hidden');
             }
         });
     });

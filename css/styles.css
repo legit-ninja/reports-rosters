@@ -666,13 +666,21 @@
     font-weight: normal;
 }
 
+/* Hidden class for tab panels (JS toggle, print CSS can override) */
+.camp-table-panel.is-hidden {
+    display: none;
+}
+
 @media print {
     .intersoccer-camp-type-tabs {
         display: none !important;
     }
     
-    .camp-table-panel {
+    .camp-table-panel,
+    .camp-table-panel.is-hidden {
         display: block !important;
+        visibility: visible !important;
+        height: auto !important;
         page-break-before: always;
     }
     
