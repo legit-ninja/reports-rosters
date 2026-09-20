@@ -145,17 +145,19 @@ class RosterAjaxHandler {
             $this->logger->info('AJAX: Rebuild rosters request started');
             
             // Run rebuild
-            $results = $this->roster_builder->rebuildAll([
+            $results = $this->roster_builder->buildRosters([
                 'clear_existing' => true,
                 'batch_size' => 100
             ]);
             
+            $error_count = is_array($results['errors'] ?? null) ? count($results['errors']) : 0;
+            
             wp_send_json_success([
                 'message' => sprintf(
                     __('Rebuild completed. Processed: %d, Created: %d, Errors: %d', 'intersoccer-reports-rosters'),
-                    $results['processed'],
-                    $results['created'],
-                    $results['errors']
+                    $results['orders_processed'] ?? 0,
+                    $results['rosters_created'] ?? 0,
+                    $error_count
                 ),
                 'results' => $results
             ]);
