@@ -618,3 +618,65 @@
         margin-bottom: 8px;
     }
 }
+
+/* ==========================================================================
+   Camp Type Tabs (Full Day | Mini segmented control)
+   ========================================================================== */
+
+.intersoccer-camp-type-tabs {
+    display: inline-flex;
+    background: #f0f0f1;
+    border-radius: 4px;
+    padding: 3px;
+    margin: 12px 0;
+    gap: 2px;
+}
+
+.intersoccer-camp-type-tab {
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: #50575e;
+    transition: all 0.15s ease;
+}
+
+.intersoccer-camp-type-tab:hover {
+    color: #1d2327;
+    background: rgba(255,255,255,0.5);
+}
+
+.intersoccer-camp-type-tab.active {
+    background: #fff;
+    color: #1d2327;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.intersoccer-camp-type-tab:focus {
+    outline: 2px solid #2271b1;
+    outline-offset: 1px;
+}
+
+/* Camp table repeated canton styling */
+.camp-reports-table .canton-repeat {
+    color: #8c8f94;
+    font-weight: normal;
+}
+
+@media print {
+    .intersoccer-camp-type-tabs {
+        display: none !important;
+    }
+    
+    .camp-table-panel {
+        display: block !important;
+        page-break-before: always;
+    }
+    
+    .camp-table-panel:first-of-type {
+        page-break-before: auto;
+    }
+}
