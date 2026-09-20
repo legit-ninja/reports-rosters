@@ -599,6 +599,83 @@ class RosterBuilderTest extends TestCase {
         $this->assertArrayHasKey('errors', $result);
         $this->assertNotEmpty($result['errors']);
     }
+
+    public function test_build_rosters_with_clear_existing_uses_truncate() {
+        $wpdbStub = Mockery::mock('wpdb');
+        $wpdbStub->prefix = 'wp_';
+        $wpdbStub->shouldReceive('query')
+            ->once()
+            ->with('TRUNCATE TABLE wp_intersoccer_rosters')
+            ->andReturn(true);
+
+        $this->database->shouldReceive('get_wpdb')
+            ->once()
+            ->andReturn($wpdbStub);
+
+        $this->rosterRepository->shouldReceive('clearAllCaches')
+            ->once();
+
+        $this->database->shouldReceive('transaction')
+            ->once()
+            ->andReturnUsing(function($callback) {
+                return $callback();
+            });
+
+        Functions\when('wc_get_orders')->justReturn([]);
+
+        $result = $this->rosterBuilder->buildRosters(['clear_existing' => true]);
+
+        $this->assertIsArray($result);
+        $this->assertArrayHasKey('orders_processed', $result);
+    }
+
+    public function test_build_rosters_skips_refund_orders() {
+        $this->database->shouldReceive('transaction')
+            ->once()
+            ->andReturnUsing(function($callback) {
+                return $callback();
+            });
+
+        $refundOrder = Mockery::mock('WC_Order_Refund');
+        $refundOrder->shouldReceive('get_type')->andReturn('shop_order_refund');
+
+        Functions\expect('wc_get_orders')
+            ->times(2)
+            ->andReturn([999], []);
+
+        Functions\expect('wc_get_order')
+            ->with(999)
+            ->andReturn($refundOrder);
+
+        $result = $this->rosterBuilder->buildRosters();
+
+        $this->assertIsArray($result);
+        $this->assertEquals(1, $result['skipped_orders']);
+        $this->assertEquals(0, $result['orders_processed']);
+    }
+
+    public function test_build_rosters_skips_false_order() {
+        $this->database->shouldReceive('transaction')
+            ->once()
+            ->andReturnUsing(function($callback) {
+                return $callback();
+            });
+
+        Functions\expect('wc_get_orders')
+            ->times(2)
+            ->andReturn([888], []);
+
+        Functions\expect('wc_get_order')
+            ->with(888)
+            ->andReturn(false);
+
+        $result = $this->rosterBuilder->buildRosters();
+
+        $this->assertIsArray($result);
+        $this->assertEquals(1, $result['skipped_orders']);
+        $this->assertEquals(0, $result['orders_processed']);
+    }
+
     public function test_extractOrderData_resolves_french_meta_keys() {
         $order = Mockery::mock('WC_Order');
         $order->shouldReceive('get_id')->andReturn(50);
