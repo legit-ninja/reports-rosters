@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 jobs:
-  guard:
+  guard-production:
     name: Guard production release
     runs-on: ubuntu-latest
     if: github.event_name == 'release' && github.event.release.prerelease == false
@@ -36,16 +36,30 @@ jobs:
             exit 1
           fi
 
-  publish:
-    name: Publish via shared workflow
-    needs: [guard]
-    if: always() && (needs.guard.result == 'success' || needs.guard.result == 'skipped')
-    environment: ${{ github.event_name == 'workflow_dispatch' && 'staging' || (github.event.release.prerelease && 'staging' || 'production') }}
+  publish-staging:
+    name: Publish to staging
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && github.event.release.prerelease == true)
+    environment: staging
     uses: legit-ninja/intersoccer-ci/.github/workflows/publish-plugin.yml@main
     with:
       plugin_slug: intersoccer-reports-rosters
       bootstrap_php: intersoccer-reports-rosters.php
       version: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+      changelog: ${{ github.event.release.body || '' }}
+      publish_url: ${{ vars.UU_PUBLISH_URL }}
+    secrets:
+      UU_PUBLISH_TOKEN: ${{ secrets.UU_PUBLISH_TOKEN }}
+
+  publish-production:
+    name: Publish to production
+    needs: [guard-production]
+    if: github.event_name == 'release' && github.event.release.prerelease == false
+    environment: production
+    uses: legit-ninja/intersoccer-ci/.github/workflows/publish-plugin.yml@main
+    with:
+      plugin_slug: intersoccer-reports-rosters
+      bootstrap_php: intersoccer-reports-rosters.php
+      version: ${{ github.ref_name }}
       changelog: ${{ github.event.release.body || '' }}
       publish_url: ${{ vars.UU_PUBLISH_URL }}
     secrets:
