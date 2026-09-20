@@ -537,10 +537,21 @@ class RosterBuilder {
             // Process each order in the batch
             foreach ($orders as $order_id) {
                 try {
-                    $this->processOrderItems(wc_get_order($order_id), $options);
+                    $order = wc_get_order($order_id);
+                    
+                    if (!$order || !($order instanceof \WC_Order) || $order->get_type() !== 'shop_order') {
+                        $this->build_stats['skipped_orders']++;
+                        $this->logger->debug('Skipping non-shop-order', [
+                            'order_id' => $order_id,
+                            'type' => $order ? $order->get_type() : 'false/null'
+                        ]);
+                        continue;
+                    }
+                    
+                    $this->processOrderItems($order, $options);
                     $this->build_stats['orders_processed']++;
                     $total_processed++;
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
                     $this->build_stats['skipped_orders']++;
                     $this->build_stats['errors'][] = "Order {$order_id}: " . $e->getMessage();
                     $this->logger->error('Failed to process order in batch', [
@@ -582,6 +593,7 @@ class RosterBuilder {
             'limit' => $limit,
             'offset' => $offset,
             'status' => $options['order_statuses'],
+            'type' => 'shop_order',
             'return' => 'ids',
             'orderby' => 'date',
             'order' => 'ASC'
@@ -1761,11 +1773,14 @@ class RosterBuilder {
     private function clearExistingRosters() {
         $this->logger->info('Clearing existing roster entries');
         
-        $deleted_count = $this->roster_repository->deleteWhere([]);
+        $wpdb = $this->database->get_wpdb();
+        $table_name = $wpdb->prefix . 'intersoccer_rosters';
         
-        $this->logger->info('Cleared existing rosters', [
-            'deleted_count' => $deleted_count
-        ]);
+        $wpdb->query("TRUNCATE TABLE {$table_name}");
+        
+        $this->roster_repository->clearAllCaches();
+        
+        $this->logger->info('Cleared existing rosters via TRUNCATE');
     }
     
     /**
