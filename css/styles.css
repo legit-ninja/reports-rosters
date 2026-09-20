@@ -666,13 +666,28 @@
     font-weight: normal;
 }
 
+/* Tab wrapper layout */
+.intersoccer-camp-type-tabs-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 12px 0;
+    flex-wrap: wrap;
+}
+
 /* Hidden class for tab panels (JS toggle, print CSS can override) */
 .camp-table-panel.is-hidden {
     display: none;
 }
 
+/* JS-applied class for print mode */
+.intersoccer-camp-type-tabs-wrapper.print-hidden {
+    display: none !important;
+}
+
 @media print {
-    .intersoccer-camp-type-tabs {
+    .intersoccer-camp-type-tabs,
+    .intersoccer-camp-type-tabs-wrapper {
         display: none !important;
     }
     

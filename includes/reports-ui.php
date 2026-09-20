@@ -371,16 +371,22 @@ function intersoccer_render_final_reports_page() {
                 </details>
 
                 <!-- Camp Type Tabs -->
-                <div class="intersoccer-camp-type-tabs" role="tablist" aria-label="<?php esc_attr_e('Camp type view', 'intersoccer-reports-rosters'); ?>">
-                    <button type="button" id="camp-tab-full-day" class="intersoccer-camp-type-tab active" role="tab" aria-selected="true" aria-controls="camp-table-full-day" data-camp-type="full-day">
-                        <?php esc_html_e('Full Day', 'intersoccer-reports-rosters'); ?>
-                    </button>
-                    <button type="button" id="camp-tab-mini" class="intersoccer-camp-type-tab" role="tab" aria-selected="false" aria-controls="camp-table-mini" data-camp-type="mini">
-                        <?php esc_html_e('Mini – Half Day', 'intersoccer-reports-rosters'); ?>
+                <div class="intersoccer-camp-type-tabs-wrapper">
+                    <div class="intersoccer-camp-type-tabs" role="tablist" aria-label="<?php esc_attr_e('Camp type view', 'intersoccer-reports-rosters'); ?>">
+                        <button type="button" id="camp-tab-full-day" class="intersoccer-camp-type-tab active" role="tab" aria-selected="true" aria-controls="camp-table-full-day" data-camp-type="full-day">
+                            <?php esc_html_e('Full Day', 'intersoccer-reports-rosters'); ?>
+                        </button>
+                        <button type="button" id="camp-tab-mini" class="intersoccer-camp-type-tab" role="tab" aria-selected="false" aria-controls="camp-table-mini" data-camp-type="mini">
+                            <?php esc_html_e('Mini – Half Day', 'intersoccer-reports-rosters'); ?>
+                        </button>
+                    </div>
+                    <button type="button" id="camp-print-report" class="button">
+                        <span class="dashicons dashicons-printer" style="vertical-align: middle; margin-right: 4px;"></span><?php esc_html_e('Print report', 'intersoccer-reports-rosters'); ?>
                     </button>
                 </div>
 
                 <style>
+                .intersoccer-camp-type-tabs-wrapper { display: flex; align-items: center; gap: 16px; margin: 12px 0; flex-wrap: wrap; }
                 .camp-reports-table { table-layout: auto; width: 100%; border-collapse: collapse; font-size: 12px; }
                 .camp-reports-table th, .camp-reports-table td { border: 1px solid #ddd; padding: 4px 6px; text-align: center; }
                 .camp-reports-table .week-header td { background: #f0f0f0; font-weight: bold; text-align: left; }
@@ -389,7 +395,7 @@ function intersoccer_render_final_reports_page() {
                 .camp-table-panel.is-hidden { display: none; }
                 </style>
                 <style media="print">
-                .intersoccer-camp-type-tabs { display: none !important; }
+                .intersoccer-camp-type-tabs-wrapper { display: none !important; }
                 .camp-table-panel,
                 .camp-table-panel.is-hidden {
                     display: block !important;
@@ -812,9 +818,11 @@ function intersoccer_render_final_reports_page() {
         }
 
         // Camp type tab switching
+        var activeCampType = 'full-day';
+
         $('.intersoccer-camp-type-tab').on('click', function() {
             var $tab = $(this);
-            var campType = $tab.data('camp-type');
+            activeCampType = $tab.data('camp-type');
 
             // Update tab states
             $('.intersoccer-camp-type-tab').removeClass('active').attr('aria-selected', 'false');
@@ -822,11 +830,59 @@ function intersoccer_render_final_reports_page() {
 
             // Show/hide panels via class (not inline style) so print CSS can override
             $('.camp-table-panel').addClass('is-hidden');
-            if (campType === 'full-day') {
+            if (activeCampType === 'full-day') {
                 $('#camp-table-full-day').removeClass('is-hidden');
-            } else if (campType === 'mini') {
+            } else if (activeCampType === 'mini') {
                 $('#camp-table-mini').removeClass('is-hidden');
             }
+        });
+
+        // Print lifecycle: show both panels, hide tabs
+        function prepareForPrint() {
+            $('.intersoccer-camp-type-tabs-wrapper').addClass('print-hidden');
+            $('.camp-table-panel').removeClass('is-hidden');
+        }
+
+        function restoreAfterPrint() {
+            $('.intersoccer-camp-type-tabs-wrapper').removeClass('print-hidden');
+            // Restore single-panel view based on last active tab
+            $('.camp-table-panel').addClass('is-hidden');
+            if (activeCampType === 'full-day') {
+                $('#camp-table-full-day').removeClass('is-hidden');
+            } else {
+                $('#camp-table-mini').removeClass('is-hidden');
+            }
+        }
+
+        // Standard print events
+        $(window).on('beforeprint', prepareForPrint);
+        $(window).on('afterprint', restoreAfterPrint);
+
+        // Chrome matchMedia fallback (fires change event instead of beforeprint/afterprint)
+        if (window.matchMedia) {
+            var printMediaQuery = window.matchMedia('print');
+            var handlePrintChange = function(mql) {
+                if (mql.matches) {
+                    prepareForPrint();
+                } else {
+                    restoreAfterPrint();
+                }
+            };
+            // Modern browsers
+            if (printMediaQuery.addEventListener) {
+                printMediaQuery.addEventListener('change', handlePrintChange);
+            } else if (printMediaQuery.addListener) {
+                // Older browsers
+                printMediaQuery.addListener(handlePrintChange);
+            }
+        }
+
+        // Print button
+        $('#camp-print-report').on('click', function() {
+            prepareForPrint();
+            window.print();
+            // afterprint will restore, but add a fallback timeout for browsers that don't fire it
+            setTimeout(restoreAfterPrint, 1000);
         });
     });
     </script>
