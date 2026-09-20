@@ -258,21 +258,28 @@ function intersoccer_render_advanced_page() {
 
         <script type="text/javascript">
             // Helper function to show WordPress admin notices (global scope)
-            function showAdminNotice(message, type) {
+            // Options: { persistent: true } prevents auto-dismiss (used during long-running ops)
+            function showAdminNotice(message, type, options) {
                 var $ = jQuery;
                 type = type || 'info'; // success, error, warning, info
+                options = options || {};
                 var noticeClass = 'notice notice-' + type + ' is-dismissible';
-                var notice = $('<div class="' + noticeClass + '"><p><strong>' + message + '</strong></p><button type="button" class="notice-dismiss"><span class="screen-reader-text">Dismiss this notice.</span></button></div>');
+                
+                // Build notice with safe text insertion (XSS protection)
+                var notice = $('<div class="' + noticeClass + '"><p><strong></strong></p><button type="button" class="notice-dismiss"><span class="screen-reader-text">Dismiss this notice.</span></button></div>');
+                notice.find('strong').text(message);
                 
                 $('#intersoccer-operation-status').html(notice);
                 
-                // Auto-dismiss after 10 seconds for success/info, 15 seconds for warnings/errors
-                var dismissDelay = (type === 'success' || type === 'info') ? 10000 : 15000;
-                setTimeout(function() {
-                    notice.fadeOut(function() {
-                        $(this).remove();
-                    });
-                }, dismissDelay);
+                // Auto-dismiss: skip if persistent, otherwise 30s for success/error, 10s for info/warning
+                if (!options.persistent) {
+                    var dismissDelay = (type === 'success' || type === 'error') ? 30000 : 10000;
+                    setTimeout(function() {
+                        notice.fadeOut(function() {
+                            $(this).remove();
+                        });
+                    }, dismissDelay);
+                }
                 
                 // Handle manual dismiss
                 notice.find('.notice-dismiss').on('click', function() {
@@ -300,12 +307,14 @@ function intersoccer_render_advanced_page() {
                         return false;
                     }
                     
-                    showAdminNotice('<?php echo esc_js(__('Starting: Rebuilding rosters...', 'intersoccer-reports-rosters')); ?>', 'info');
+                    // Persistent notice stays visible until success/error replaces it
+                    showAdminNotice('<?php echo esc_js(__('Starting: Rebuilding rosters... (this may take a few minutes)', 'intersoccer-reports-rosters')); ?>', 'info', { persistent: true });
                     $button.prop('disabled', true).text('<?php echo esc_js(__('Running...', 'intersoccer-reports-rosters')); ?>');
                     
                     $.ajax({
                         url: ajaxurl,
                         type: 'POST',
+                        timeout: 180000, // 3 minute timeout for long rebuild operations
                         data: $form.serialize(),
                         success: function(response) {
                             if (response.success) {
@@ -316,9 +325,14 @@ function intersoccer_render_advanced_page() {
                             $button.prop('disabled', false).text('<?php echo esc_js(__('Rebuild Rosters', 'intersoccer-reports-rosters')); ?>');
                         },
                         error: function(xhr, status, error) {
-                            var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
-                                ? xhr.responseJSON.data.message 
-                                : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                            var errorMsg;
+                            if (status === 'timeout') {
+                                errorMsg = '<?php echo esc_js(__('Request timed out after 3 minutes. The rebuild may still be running on the server. Please wait and check the rosters table.', 'intersoccer-reports-rosters')); ?>';
+                            } else {
+                                errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
+                                    ? xhr.responseJSON.data.message 
+                                    : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                            }
                             showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
                             $button.prop('disabled', false).text('<?php echo esc_js(__('Rebuild Rosters', 'intersoccer-reports-rosters')); ?>');
                             console.error('AJAX Error: ', status, error, xhr.responseText);
