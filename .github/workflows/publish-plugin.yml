@@ -1,6 +1,10 @@
 # Thin caller: publish InterSoccer Reports & Rosters ZIP to Underdog Unlimited via shared reusable workflow.
 #
-# GitHub Environments: production (stable releases) | staging (prereleases + workflow_dispatch)
+# The reusable workflow (legit-ninja/intersoccer-ci) sets the GitHub Environment internally;
+# callers pass `target_environment` via `with:` instead of setting `environment:` on the job
+# (GitHub forbids `environment:` on `uses:` caller jobs — 422 error).
+#
+# Environments: production (stable releases) | staging (prereleases + workflow_dispatch)
 #
 # Secrets (per environment):
 #   UU_PUBLISH_TOKEN — same value as PLUGIN_PUBLISH_TOKEN on the Underdog server
@@ -40,9 +44,9 @@ jobs:
     name: Publish via shared workflow
     needs: [guard]
     if: always() && (needs.guard.result == 'success' || needs.guard.result == 'skipped')
-    environment: ${{ github.event_name == 'workflow_dispatch' && 'staging' || (github.event.release.prerelease && 'staging' || 'production') }}
     uses: legit-ninja/intersoccer-ci/.github/workflows/publish-plugin.yml@main
     with:
+      target_environment: ${{ github.event_name == 'workflow_dispatch' && 'staging' || (github.event.release.prerelease && 'staging' || 'production') }}
       plugin_slug: intersoccer-reports-rosters
       bootstrap_php: intersoccer-reports-rosters.php
       version: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
