@@ -381,40 +381,11 @@ function intersoccer_render_final_reports_page() {
                 </div>
 
                 <style>
-                .intersoccer-camp-type-tabs {
-                    display: inline-flex;
-                    background: #f0f0f1;
-                    border-radius: 4px;
-                    padding: 3px;
-                    margin: 12px 0;
-                    gap: 2px;
-                }
-                .intersoccer-camp-type-tab {
-                    padding: 8px 16px;
-                    border: none;
-                    background: transparent;
-                    border-radius: 3px;
-                    cursor: pointer;
-                    font-size: 13px;
-                    font-weight: 500;
-                    color: #50575e;
-                    transition: all 0.15s ease;
-                }
-                .intersoccer-camp-type-tab:hover {
-                    color: #1d2327;
-                    background: rgba(255,255,255,0.5);
-                }
-                .intersoccer-camp-type-tab.active {
-                    background: #fff;
-                    color: #1d2327;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                }
                 .camp-reports-table { table-layout: auto; width: 100%; border-collapse: collapse; font-size: 12px; }
                 .camp-reports-table th, .camp-reports-table td { border: 1px solid #ddd; padding: 4px 6px; text-align: center; }
                 .camp-reports-table .week-header td { background: #f0f0f0; font-weight: bold; text-align: left; }
                 .camp-reports-table .grand-total td { background: #e8e8e8; font-weight: bold; }
                 .camp-reports-table .all-reg td { background: #f8f8f8; font-weight: bold; }
-                .camp-reports-table .canton-repeat { color: #8c8f94; font-weight: normal; }
                 </style>
 
                 <!-- Full Day Camp Table -->
