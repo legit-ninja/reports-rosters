@@ -47,6 +47,7 @@ class MenuManager {
 
     public function init(): void {
         add_action('admin_menu', [$this, 'register_menus']);
+        add_action('admin_menu', [$this, 'register_campaign_analytics_under_wc_analytics'], 99);
     }
 
     /**
@@ -65,6 +66,41 @@ class MenuManager {
         $this->require_include('player-camp-status.php');
         if (function_exists('intersoccer_player_camp_status_maybe_export_excel')) {
             intersoccer_player_camp_status_maybe_export_excel();
+        }
+    }
+
+    /**
+     * Register Campaign Analytics under WooCommerce → Analytics.
+     *
+     * Uses add_submenu_page with the WC Analytics parent slug. The page slug
+     * remains 'intersoccer-campaign-analytics' so existing deep links,
+     * CampaignModule exports, and bookmarks continue to work.
+     */
+    public function register_campaign_analytics_under_wc_analytics(): void {
+        global $submenu;
+
+        // WooCommerce Analytics uses 'wc-admin&path=/analytics/overview' as its menu slug.
+        // Adding a submenu here places our PHP page under WooCommerce → Analytics.
+        $parent_slug = 'wc-admin&path=/analytics/overview';
+
+        add_submenu_page(
+            $parent_slug,
+            __('Campaign Analytics', 'intersoccer-reports-rosters'),
+            __('Campaign Analytics', 'intersoccer-reports-rosters'),
+            'manage_options',
+            'intersoccer-campaign-analytics',
+            [$this, 'render_campaign_analytics']
+        );
+
+        // Connect the PHP page to WC Admin for breadcrumbs/header integration.
+        if (function_exists('wc_admin_connect_page')) {
+            wc_admin_connect_page([
+                'id'        => 'intersoccer-campaign-analytics',
+                'parent'    => 'woocommerce-analytics',
+                'screen_id' => 'woocommerce_page_intersoccer-campaign-analytics',
+                'title'     => [__('Analytics', 'intersoccer-reports-rosters'), __('Campaign Analytics', 'intersoccer-reports-rosters')],
+                'path'      => add_query_arg('page', 'intersoccer-campaign-analytics', 'admin.php'),
+            ]);
         }
     }
 
@@ -182,14 +218,8 @@ class MenuManager {
             [$this, 'render_birthdays']
         );
 
-        add_submenu_page(
-            'intersoccer-reports-rosters',
-            __('Campaign Analytics', 'intersoccer-reports-rosters'),
-            __('Campaign Analytics', 'intersoccer-reports-rosters'),
-            'manage_options',
-            'intersoccer-campaign-analytics',
-            [$this, 'render_campaign_analytics']
-        );
+        // Campaign Analytics is now registered under WooCommerce → Analytics
+        // via register_campaign_analytics_under_wc_analytics().
 
         add_submenu_page(
             'intersoccer-reports-rosters',
