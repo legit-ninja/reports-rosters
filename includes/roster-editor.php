@@ -12,6 +12,184 @@
 defined('ABSPATH') or die('Restricted access');
 
 /**
+ * Output shared roster editor CSS styles (called once per page load).
+ */
+function intersoccer_roster_editor_styles() {
+    static $printed = false;
+    if ($printed) return;
+    $printed = true;
+    ?>
+    <style>
+        /* Roster Editor filter panel */
+        .intersoccer-editor-filters {
+            background: var(--intersoccer-bg-header, #f9f9f9);
+            border: 1px solid var(--intersoccer-border-subtle, #ddd);
+            border-radius: var(--intersoccer-radius-md, 4px);
+            padding: var(--intersoccer-space-xl, 20px);
+            margin: var(--intersoccer-space-xl, 20px) 0;
+        }
+        .intersoccer-editor-filters > form > div {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: var(--intersoccer-space-lg, 16px);
+            margin-bottom: var(--intersoccer-space-lg, 16px);
+        }
+        .intersoccer-editor-filters label {
+            display: block;
+            margin-bottom: var(--intersoccer-space-xs, 4px);
+            font-weight: 600;
+            color: var(--intersoccer-text-primary, #1d2327);
+        }
+        .intersoccer-editor-filters input,
+        .intersoccer-editor-filters select {
+            width: 100%;
+            padding: var(--intersoccer-space-sm, 8px);
+            border: 1px solid var(--intersoccer-border-subtle, #ddd);
+            border-radius: var(--intersoccer-radius-md, 4px);
+            background: var(--intersoccer-bg-surface, #fff);
+            transition: border-color var(--intersoccer-transition-fast, 0.15s ease);
+        }
+        .intersoccer-editor-filters input:focus,
+        .intersoccer-editor-filters select:focus {
+            border-color: var(--intersoccer-text-link, #2271b1);
+            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
+            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
+        }
+        
+        /* Roster Editor modal */
+        .intersoccer-editor-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--intersoccer-bg-surface, #fff);
+            padding: var(--intersoccer-space-xl, 20px);
+            border: 2px solid var(--intersoccer-text-link, #2271b1);
+            border-radius: var(--intersoccer-radius-lg, 6px);
+            box-shadow: var(--intersoccer-shadow-elevated, 0 4px 12px rgba(0, 0, 0, 0.1));
+            z-index: 100000;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .intersoccer-editor-modal h3 {
+            margin-top: 0;
+            color: var(--intersoccer-text-primary, #1d2327);
+        }
+        .intersoccer-editor-modal input,
+        .intersoccer-editor-modal select,
+        .intersoccer-editor-modal textarea {
+            width: 100%;
+            padding: var(--intersoccer-space-sm, 8px);
+            border: 1px solid var(--intersoccer-border-subtle, #ddd);
+            border-radius: var(--intersoccer-radius-md, 4px);
+            background: var(--intersoccer-bg-surface, #fff);
+        }
+        .intersoccer-editor-modal textarea {
+            min-height: 100px;
+        }
+        .intersoccer-editor-modal button:focus {
+            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
+            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
+        }
+        .intersoccer-editor-modal-actions {
+            margin-top: var(--intersoccer-space-lg, 16px);
+            display: flex;
+            gap: var(--intersoccer-space-sm, 8px);
+            justify-content: flex-end;
+        }
+        .intersoccer-editor-button-group {
+            display: flex;
+            gap: var(--intersoccer-space-sm, 8px);
+        }
+        .intersoccer-editor-loading {
+            display: none;
+            text-align: center;
+            padding: var(--intersoccer-space-xl, 20px);
+        }
+        
+        .intersoccer-editor-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--intersoccer-overlay-bg, rgba(0, 0, 0, 0.5));
+            z-index: 99999;
+            cursor: pointer;
+        }
+        
+        /* Table styles */
+        .intersoccer-roster-editor table.widefat {
+            margin-top: var(--intersoccer-space-xl, 20px);
+        }
+        .intersoccer-roster-editor table.widefat th,
+        .intersoccer-roster-editor table.widefat td {
+            padding: var(--intersoccer-space-sm, 8px) var(--intersoccer-space-md, 12px);
+            font-size: var(--intersoccer-font-size-md, 13px);
+            vertical-align: middle;
+        }
+        .intersoccer-roster-editor table.widefat th {
+            background: var(--intersoccer-bg-row-alt, #f8f9fa);
+            font-weight: 600;
+            border-bottom: 2px solid var(--intersoccer-border-default, #ccd0d4);
+        }
+        .intersoccer-roster-editor table.widefat tbody tr:hover {
+            background: var(--intersoccer-bg-muted, #f0f0f1);
+        }
+        .intersoccer-roster-editor .editable-cell {
+            cursor: pointer;
+            position: relative;
+            transition: background-color var(--intersoccer-transition-normal, 0.2s ease);
+        }
+        .intersoccer-roster-editor .editable-cell:hover {
+            background-color: var(--intersoccer-warning-bg, #fcf9e8) !important;
+        }
+        .intersoccer-roster-editor .editable-cell:focus {
+            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
+            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
+        }
+        .intersoccer-roster-editor .editable-cell.editing {
+            background-color: var(--intersoccer-warning-bg, #fcf9e8) !important;
+        }
+        .intersoccer-roster-editor .row-actions {
+            visibility: visible;
+        }
+        .tablenav {
+            margin: var(--intersoccer-space-sm, 8px) 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .tablenav-pages {
+            display: flex;
+            align-items: center;
+            gap: var(--intersoccer-space-sm, 8px);
+        }
+        @media (max-width: 782px) {
+            .intersoccer-editor-filters > form > div {
+                grid-template-columns: 1fr !important;
+            }
+            .intersoccer-roster-editor table.widefat {
+                font-size: var(--intersoccer-font-size-sm, 12px);
+            }
+            .intersoccer-roster-editor table.widefat th,
+            .intersoccer-roster-editor table.widefat td {
+                padding: var(--intersoccer-space-xs, 4px) var(--intersoccer-space-sm, 8px);
+            }
+            .intersoccer-editor-modal {
+                width: 95%;
+                max-width: 95%;
+            }
+        }
+    </style>
+    <?php
+}
+
+/**
  * Render the roster editor as tab content (for Settings page)
  */
 function intersoccer_render_roster_editor_tab() {
@@ -157,161 +335,7 @@ function intersoccer_render_roster_editor_tab() {
         <div id="inline-edit-overlay" class="intersoccer-editor-overlay"></div>
     </div>
 
-    <style>
-        /* Roster Editor filter panel */
-        .intersoccer-editor-filters {
-            background: var(--intersoccer-bg-header, #f9f9f9);
-            border: 1px solid var(--intersoccer-border-subtle, #ddd);
-            border-radius: var(--intersoccer-radius-md, 4px);
-            padding: var(--intersoccer-space-xl, 20px);
-            margin: var(--intersoccer-space-xl, 20px) 0;
-        }
-        .intersoccer-editor-filters > form > div {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: var(--intersoccer-space-lg, 16px);
-            margin-bottom: var(--intersoccer-space-lg, 16px);
-        }
-        .intersoccer-editor-filters label {
-            display: block;
-            margin-bottom: var(--intersoccer-space-xs, 4px);
-            font-weight: 600;
-            color: var(--intersoccer-text-primary, #1d2327);
-        }
-        .intersoccer-editor-filters input,
-        .intersoccer-editor-filters select {
-            width: 100%;
-            padding: var(--intersoccer-space-sm, 8px);
-            border: 1px solid var(--intersoccer-border-subtle, #ddd);
-            border-radius: var(--intersoccer-radius-md, 4px);
-            background: var(--intersoccer-bg-surface, #fff);
-            transition: border-color var(--intersoccer-transition-fast, 0.15s ease);
-        }
-        .intersoccer-editor-filters input:focus,
-        .intersoccer-editor-filters select:focus {
-            border-color: var(--intersoccer-text-link, #2271b1);
-            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
-            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
-        }
-        
-        /* Roster Editor modal */
-        .intersoccer-editor-modal {
-            display: none;
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: var(--intersoccer-bg-surface, #fff);
-            padding: var(--intersoccer-space-xl, 20px);
-            border: 2px solid var(--intersoccer-text-link, #2271b1);
-            border-radius: var(--intersoccer-radius-lg, 6px);
-            box-shadow: var(--intersoccer-shadow-elevated, 0 4px 12px rgba(0, 0, 0, 0.1));
-            z-index: 100000;
-            max-width: 500px;
-            width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-        .intersoccer-editor-modal h3 {
-            margin-top: 0;
-            color: var(--intersoccer-text-primary, #1d2327);
-        }
-        .intersoccer-editor-modal button:focus {
-            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
-            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
-        }
-        .intersoccer-editor-modal-actions {
-            margin-top: var(--intersoccer-space-lg, 16px);
-            display: flex;
-            gap: var(--intersoccer-space-sm, 8px);
-            justify-content: flex-end;
-        }
-        .intersoccer-editor-button-group {
-            display: flex;
-            gap: var(--intersoccer-space-sm, 8px);
-        }
-        .intersoccer-editor-loading {
-            display: none;
-            text-align: center;
-            padding: var(--intersoccer-space-xl, 20px);
-        }
-        
-        .intersoccer-editor-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 99999;
-            cursor: pointer;
-        }
-        
-        /* Table styles */
-        .intersoccer-roster-editor table.widefat {
-            margin-top: var(--intersoccer-space-xl, 20px);
-        }
-        .intersoccer-roster-editor table.widefat th,
-        .intersoccer-roster-editor table.widefat td {
-            padding: var(--intersoccer-space-sm, 8px) var(--intersoccer-space-md, 12px);
-            font-size: var(--intersoccer-font-size-md, 13px);
-            vertical-align: middle;
-        }
-        .intersoccer-roster-editor table.widefat th {
-            background: var(--intersoccer-bg-row-alt, #f8f9fa);
-            font-weight: 600;
-            border-bottom: 2px solid var(--intersoccer-border-default, #ccd0d4);
-        }
-        .intersoccer-roster-editor table.widefat tbody tr:hover {
-            background: var(--intersoccer-bg-muted, #f0f0f1);
-        }
-        .intersoccer-roster-editor .editable-cell {
-            cursor: pointer;
-            position: relative;
-            transition: background-color var(--intersoccer-transition-normal, 0.2s ease);
-        }
-        .intersoccer-roster-editor .editable-cell:hover {
-            background-color: var(--intersoccer-warning-bg, #fcf9e8) !important;
-        }
-        .intersoccer-roster-editor .editable-cell:focus {
-            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
-            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
-        }
-        .intersoccer-roster-editor .editable-cell.editing {
-            background-color: var(--intersoccer-warning-bg, #fcf9e8) !important;
-        }
-        .intersoccer-roster-editor .row-actions {
-            visibility: visible;
-        }
-        .tablenav {
-            margin: var(--intersoccer-space-sm, 8px) 0;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .tablenav-pages {
-            display: flex;
-            align-items: center;
-            gap: var(--intersoccer-space-sm, 8px);
-        }
-        @media (max-width: 782px) {
-            .intersoccer-editor-filters > form > div {
-                grid-template-columns: 1fr !important;
-            }
-            .intersoccer-roster-editor table.widefat {
-                font-size: var(--intersoccer-font-size-sm, 12px);
-            }
-            .intersoccer-roster-editor table.widefat th,
-            .intersoccer-roster-editor table.widefat td {
-                padding: var(--intersoccer-space-xs, 4px) var(--intersoccer-space-sm, 8px);
-            }
-            .intersoccer-editor-modal {
-                width: 95%;
-                max-width: 95%;
-            }
-        }
-    </style>
+    <?php intersoccer_roster_editor_styles(); ?>
 
     <script>
     // Define AJAX settings before jQuery ready
@@ -422,25 +446,25 @@ function intersoccer_render_roster_editor_tab() {
             // Clean current value (remove "—" and trim)
             var cleanValue = currentValue === '—' || currentValue === '' ? '' : currentValue.trim();
             
-            // Determine input type based on field
+            // Determine input type based on field (styles from .intersoccer-editor-modal CSS)
             var inputHtml = '';
             if (fieldName.includes('date')) {
-                inputHtml = '<input type="text" id="inline-edit-value" class="datepicker" value="' + escapeHtml(cleanValue) + '" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="text" id="inline-edit-value" class="datepicker" value="' + escapeHtml(cleanValue) + '" />';
             } else if (fieldName === 'gender' || fieldName === 'player_gender') {
-                inputHtml = '<select id="inline-edit-value" style="width: 100%; padding: 8px;">' +
+                inputHtml = '<select id="inline-edit-value">' +
                     '<option value=""><?php echo esc_js(__('N/A', 'intersoccer-reports-rosters')); ?></option>' +
                     '<option value="Male"' + (cleanValue === 'Male' ? ' selected' : '') + '>Male</option>' +
                     '<option value="Female"' + (cleanValue === 'Female' ? ' selected' : '') + '>Female</option>' +
                     '<option value="Other"' + (cleanValue === 'Other' ? ' selected' : '') + '>Other</option>' +
                     '</select>';
             } else if (fieldName.includes('text') || fieldName.includes('medical') || fieldName.includes('dietary')) {
-                inputHtml = '<textarea id="inline-edit-value" style="width: 100%; padding: 8px; min-height: 100px;">' + escapeHtml(cleanValue) + '</textarea>';
+                inputHtml = '<textarea id="inline-edit-value">' + escapeHtml(cleanValue) + '</textarea>';
             } else if (fieldName.includes('price') || fieldName.includes('amount')) {
-                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="0.01" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="0.01" />';
             } else if (fieldName === 'age') {
-                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="1" min="0" max="100" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="1" min="0" max="100" />';
             } else {
-                inputHtml = '<input type="text" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="text" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" />';
             }
 
             $('#inline-edit-content').html(inputHtml);
@@ -685,161 +709,7 @@ function intersoccer_render_roster_editor_page() {
         <div id="inline-edit-overlay" class="intersoccer-editor-overlay"></div>
     </div>
 
-    <style>
-        /* Roster Editor filter panel */
-        .intersoccer-editor-filters {
-            background: var(--intersoccer-bg-header, #f9f9f9);
-            border: 1px solid var(--intersoccer-border-subtle, #ddd);
-            border-radius: var(--intersoccer-radius-md, 4px);
-            padding: var(--intersoccer-space-xl, 20px);
-            margin: var(--intersoccer-space-xl, 20px) 0;
-        }
-        .intersoccer-editor-filters > form > div {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: var(--intersoccer-space-lg, 16px);
-            margin-bottom: var(--intersoccer-space-lg, 16px);
-        }
-        .intersoccer-editor-filters label {
-            display: block;
-            margin-bottom: var(--intersoccer-space-xs, 4px);
-            font-weight: 600;
-            color: var(--intersoccer-text-primary, #1d2327);
-        }
-        .intersoccer-editor-filters input,
-        .intersoccer-editor-filters select {
-            width: 100%;
-            padding: var(--intersoccer-space-sm, 8px);
-            border: 1px solid var(--intersoccer-border-subtle, #ddd);
-            border-radius: var(--intersoccer-radius-md, 4px);
-            background: var(--intersoccer-bg-surface, #fff);
-            transition: border-color var(--intersoccer-transition-fast, 0.15s ease);
-        }
-        .intersoccer-editor-filters input:focus,
-        .intersoccer-editor-filters select:focus {
-            border-color: var(--intersoccer-text-link, #2271b1);
-            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
-            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
-        }
-        
-        /* Roster Editor modal */
-        .intersoccer-editor-modal {
-            display: none;
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: var(--intersoccer-bg-surface, #fff);
-            padding: var(--intersoccer-space-xl, 20px);
-            border: 2px solid var(--intersoccer-text-link, #2271b1);
-            border-radius: var(--intersoccer-radius-lg, 6px);
-            box-shadow: var(--intersoccer-shadow-elevated, 0 4px 12px rgba(0, 0, 0, 0.1));
-            z-index: 100000;
-            max-width: 500px;
-            width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-        .intersoccer-editor-modal h3 {
-            margin-top: 0;
-            color: var(--intersoccer-text-primary, #1d2327);
-        }
-        .intersoccer-editor-modal button:focus {
-            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
-            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
-        }
-        .intersoccer-editor-modal-actions {
-            margin-top: var(--intersoccer-space-lg, 16px);
-            display: flex;
-            gap: var(--intersoccer-space-sm, 8px);
-            justify-content: flex-end;
-        }
-        .intersoccer-editor-button-group {
-            display: flex;
-            gap: var(--intersoccer-space-sm, 8px);
-        }
-        .intersoccer-editor-loading {
-            display: none;
-            text-align: center;
-            padding: var(--intersoccer-space-xl, 20px);
-        }
-        
-        .intersoccer-editor-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 99999;
-            cursor: pointer;
-        }
-        
-        /* Table styles */
-        .intersoccer-roster-editor table.widefat {
-            margin-top: var(--intersoccer-space-xl, 20px);
-        }
-        .intersoccer-roster-editor table.widefat th,
-        .intersoccer-roster-editor table.widefat td {
-            padding: var(--intersoccer-space-sm, 8px) var(--intersoccer-space-md, 12px);
-            font-size: var(--intersoccer-font-size-md, 13px);
-            vertical-align: middle;
-        }
-        .intersoccer-roster-editor table.widefat th {
-            background: var(--intersoccer-bg-row-alt, #f8f9fa);
-            font-weight: 600;
-            border-bottom: 2px solid var(--intersoccer-border-default, #ccd0d4);
-        }
-        .intersoccer-roster-editor table.widefat tbody tr:hover {
-            background: var(--intersoccer-bg-muted, #f0f0f1);
-        }
-        .intersoccer-roster-editor .editable-cell {
-            cursor: pointer;
-            position: relative;
-            transition: background-color var(--intersoccer-transition-normal, 0.2s ease);
-        }
-        .intersoccer-roster-editor .editable-cell:hover {
-            background-color: var(--intersoccer-warning-bg, #fcf9e8) !important;
-        }
-        .intersoccer-roster-editor .editable-cell:focus {
-            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
-            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
-        }
-        .intersoccer-roster-editor .editable-cell.editing {
-            background-color: var(--intersoccer-warning-bg, #fcf9e8) !important;
-        }
-        .intersoccer-roster-editor .row-actions {
-            visibility: visible;
-        }
-        .tablenav {
-            margin: var(--intersoccer-space-sm, 8px) 0;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .tablenav-pages {
-            display: flex;
-            align-items: center;
-            gap: var(--intersoccer-space-sm, 8px);
-        }
-        @media (max-width: 782px) {
-            .intersoccer-editor-filters > form > div {
-                grid-template-columns: 1fr !important;
-            }
-            .intersoccer-roster-editor table.widefat {
-                font-size: var(--intersoccer-font-size-sm, 12px);
-            }
-            .intersoccer-roster-editor table.widefat th,
-            .intersoccer-roster-editor table.widefat td {
-                padding: var(--intersoccer-space-xs, 4px) var(--intersoccer-space-sm, 8px);
-            }
-            .intersoccer-editor-modal {
-                width: 95%;
-                max-width: 95%;
-            }
-        }
-    </style>
+    <?php intersoccer_roster_editor_styles(); ?>
 
     <script>
     // Define AJAX settings before jQuery ready
@@ -950,25 +820,25 @@ function intersoccer_render_roster_editor_page() {
             // Clean current value (remove "—" and trim)
             var cleanValue = currentValue === '—' || currentValue === '' ? '' : currentValue.trim();
             
-            // Determine input type based on field
+            // Determine input type based on field (styles from .intersoccer-editor-modal CSS)
             var inputHtml = '';
             if (fieldName.includes('date')) {
-                inputHtml = '<input type="text" id="inline-edit-value" class="datepicker" value="' + escapeHtml(cleanValue) + '" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="text" id="inline-edit-value" class="datepicker" value="' + escapeHtml(cleanValue) + '" />';
             } else if (fieldName === 'gender' || fieldName === 'player_gender') {
-                inputHtml = '<select id="inline-edit-value" style="width: 100%; padding: 8px;">' +
+                inputHtml = '<select id="inline-edit-value">' +
                     '<option value=""><?php echo esc_js(__('N/A', 'intersoccer-reports-rosters')); ?></option>' +
                     '<option value="Male"' + (cleanValue === 'Male' ? ' selected' : '') + '>Male</option>' +
                     '<option value="Female"' + (cleanValue === 'Female' ? ' selected' : '') + '>Female</option>' +
                     '<option value="Other"' + (cleanValue === 'Other' ? ' selected' : '') + '>Other</option>' +
                     '</select>';
             } else if (fieldName.includes('text') || fieldName.includes('medical') || fieldName.includes('dietary')) {
-                inputHtml = '<textarea id="inline-edit-value" style="width: 100%; padding: 8px; min-height: 100px;">' + escapeHtml(cleanValue) + '</textarea>';
+                inputHtml = '<textarea id="inline-edit-value">' + escapeHtml(cleanValue) + '</textarea>';
             } else if (fieldName.includes('price') || fieldName.includes('amount')) {
-                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="0.01" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="0.01" />';
             } else if (fieldName === 'age') {
-                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="1" min="0" max="100" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="1" min="0" max="100" />';
             } else {
-                inputHtml = '<input type="text" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="text" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" />';
             }
 
             $('#inline-edit-content').html(inputHtml);

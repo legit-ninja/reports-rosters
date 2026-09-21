@@ -349,12 +349,12 @@ add_action('admin_head', function () {
         }
 
         .roster-badge--girls-only {
-            background: #7c3aed;
+            background: var(--intersoccer-accent-girls, #7c3aed);
         }
 
         .camp-card--girls-only,
         .course-card--girls-only {
-            border-left: 4px solid #7c3aed;
+            border-left: 4px solid var(--intersoccer-accent-girls, #7c3aed);
         }
         
         .camp-details, .course-details {
@@ -551,33 +551,19 @@ add_action('admin_head', function () {
             z-index: 10;
         }
         
-        /* No rosters state - replaced by intersoccer_render_empty_state() */
-        .no-rosters {
-            text-align: center;
-            padding: 80px var(--intersoccer-space-xl, 20px);
-            background: var(--intersoccer-bg-surface, #fff);
+        /* All Rosters table styling */
+        .intersoccer-all-rosters-table-wrap {
+            padding: var(--intersoccer-space-2xl, 24px);
+        }
+        .intersoccer-all-rosters-table {
             border-radius: var(--intersoccer-radius-lg, 6px);
-            border: 2px dashed var(--intersoccer-border-subtle, #ddd);
-            margin: var(--intersoccer-space-2xl, 24px) 0;
+            overflow: hidden;
         }
-        
-        .no-rosters-icon {
-            font-size: 64px;
-            margin-bottom: var(--intersoccer-space-xl, 20px);
-            opacity: 0.3;
+        .intersoccer-all-rosters-table thead {
+            background: var(--intersoccer-bg-row-alt, #f8f9fa);
         }
-        
-        .no-rosters h3 {
-            color: var(--intersoccer-text-secondary, #646970);
-            margin-bottom: var(--intersoccer-space-sm, 8px);
-            font-size: var(--intersoccer-font-size-2xl, 18px);
-        }
-        
-        .no-rosters p {
-            color: var(--intersoccer-text-muted, #8c8f94);
-            font-size: var(--intersoccer-font-size-lg, 14px);
-            max-width: 400px;
-            margin: 0 auto;
+        .intersoccer-all-rosters-table th {
+            padding: var(--intersoccer-space-lg, 16px);
         }
         
         /* Day groups for courses */
@@ -1711,28 +1697,26 @@ function intersoccer_render_camps_page() {
                 <?php
                 $has_active_filters = $selected_season || $selected_venue || $selected_camp_terms || $selected_age_group || $selected_city || $status_filter || $girls_only_mode !== 'all';
                 $reconcile_url = wp_nonce_url(admin_url('admin.php?page=' . rawurlencode($page_slug) . ($unified ? '&activity_type=' . rawurlencode($activity_type) : '') . '&action=reconcile'), 'intersoccer_reconcile');
-                $empty_actions = [];
                 if ($has_active_filters) {
-                    $empty_actions[] = [
-                        'label' => __('Clear Filters', 'intersoccer-reports-rosters'),
-                        'url'   => $clear_filters_url,
-                    ];
+                    intersoccer_render_empty_state([
+                        'title'        => __('No camps match these filters', 'intersoccer-reports-rosters'),
+                        'message'      => __('Try adjusting your filters or clear them to see all camps.', 'intersoccer-reports-rosters'),
+                        'icon'         => 'dashicons-groups',
+                        'variant'      => 'no-results',
+                        'action_label' => __('Clear Filters', 'intersoccer-reports-rosters'),
+                        'action_url'   => $clear_filters_url,
+                        'actions'      => [['label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'), 'url' => $reconcile_url]],
+                    ]);
+                } else {
+                    intersoccer_render_empty_state([
+                        'title'        => __('No camps found', 'intersoccer-reports-rosters'),
+                        'message'      => __('Reconcile rosters to sync data from WooCommerce orders.', 'intersoccer-reports-rosters'),
+                        'icon'         => 'dashicons-groups',
+                        'variant'      => 'empty',
+                        'action_label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
+                        'action_url'   => $reconcile_url,
+                    ]);
                 }
-                $empty_actions[] = [
-                    'label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
-                    'url'   => $reconcile_url,
-                ];
-                intersoccer_render_empty_state([
-                    'title'   => $has_active_filters
-                        ? __('No camps match these filters', 'intersoccer-reports-rosters')
-                        : __('No camps found', 'intersoccer-reports-rosters'),
-                    'message' => $has_active_filters
-                        ? __('Try adjusting your filters or clear them to see all camps.', 'intersoccer-reports-rosters')
-                        : __('Sync rosters from the Advanced page to see available camps.', 'intersoccer-reports-rosters'),
-                    'icon'    => '⚽',
-                    'variant' => $has_active_filters ? 'no-results' : 'empty',
-                    'actions' => $empty_actions,
-                ]);
                 ?>
             <?php else: ?>
                 <?php foreach ($grouped as $season => $camps): ?>
@@ -2184,28 +2168,26 @@ function intersoccer_render_courses_page() {
                 <?php
                 $has_active_filters = $selected_season || $selected_venue || $selected_course_day || $selected_age_group || $selected_city || $status_filter || $girls_only_mode !== 'all';
                 $reconcile_url = wp_nonce_url(admin_url('admin.php?page=' . rawurlencode($page_slug) . ($unified ? '&activity_type=' . rawurlencode($activity_type) : '') . '&action=reconcile'), 'intersoccer_reconcile');
-                $empty_actions = [];
                 if ($has_active_filters) {
-                    $empty_actions[] = [
-                        'label' => __('Clear Filters', 'intersoccer-reports-rosters'),
-                        'url'   => $clear_filters_url,
-                    ];
+                    intersoccer_render_empty_state([
+                        'title'        => __('No courses match these filters', 'intersoccer-reports-rosters'),
+                        'message'      => __('Try adjusting your filters or clear them to see all courses.', 'intersoccer-reports-rosters'),
+                        'icon'         => 'dashicons-groups',
+                        'variant'      => 'no-results',
+                        'action_label' => __('Clear Filters', 'intersoccer-reports-rosters'),
+                        'action_url'   => $clear_filters_url,
+                        'actions'      => [['label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'), 'url' => $reconcile_url]],
+                    ]);
+                } else {
+                    intersoccer_render_empty_state([
+                        'title'        => __('No courses found', 'intersoccer-reports-rosters'),
+                        'message'      => __('Reconcile rosters to sync data from WooCommerce orders.', 'intersoccer-reports-rosters'),
+                        'icon'         => 'dashicons-groups',
+                        'variant'      => 'empty',
+                        'action_label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
+                        'action_url'   => $reconcile_url,
+                    ]);
                 }
-                $empty_actions[] = [
-                    'label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
-                    'url'   => $reconcile_url,
-                ];
-                intersoccer_render_empty_state([
-                    'title'   => $has_active_filters
-                        ? __('No courses match these filters', 'intersoccer-reports-rosters')
-                        : __('No courses found', 'intersoccer-reports-rosters'),
-                    'message' => $has_active_filters
-                        ? __('Try adjusting your filters or clear them to see all courses.', 'intersoccer-reports-rosters')
-                        : __('Sync rosters from the Advanced page to see available courses.', 'intersoccer-reports-rosters'),
-                    'icon'    => '⚽',
-                    'variant' => $has_active_filters ? 'no-results' : 'empty',
-                    'actions' => $empty_actions,
-                ]);
                 ?>
             <?php else: ?>
                 <?php foreach ($grouped as $season => $day_groups): ?>
@@ -2485,7 +2467,7 @@ function intersoccer_render_girls_only_page() {
             <div class="header-actions">
                 <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=' . rawurlencode($page_slug) . ($unified ? '&activity_type=' . rawurlencode($activity_type) : '') . '&action=reconcile'), 'intersoccer_reconcile')); ?>"
                    class="button button-secondary">
-                    Reconcile Rosters
+                    ↻ <?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?>
                 </a>
             </div>
         </div>
@@ -2640,28 +2622,26 @@ function intersoccer_render_girls_only_page() {
                 $clear_filters_url_go = function_exists('intersoccer_rosters_clear_filters_url')
                     ? intersoccer_rosters_clear_filters_url($page_slug, $unified ? ['activity_type' => $activity_type] : [])
                     : admin_url('admin.php?page=' . rawurlencode($page_slug) . '&clear_isrr_filters=1');
-                $empty_actions = [];
                 if ($has_active_filters) {
-                    $empty_actions[] = [
-                        'label' => __('Clear Filters', 'intersoccer-reports-rosters'),
-                        'url'   => $clear_filters_url_go,
-                    ];
+                    intersoccer_render_empty_state([
+                        'title'        => __('No girls only events match these filters', 'intersoccer-reports-rosters'),
+                        'message'      => __('Try adjusting your filters or clear them to see all events.', 'intersoccer-reports-rosters'),
+                        'icon'         => 'dashicons-groups',
+                        'variant'      => 'no-results',
+                        'action_label' => __('Clear Filters', 'intersoccer-reports-rosters'),
+                        'action_url'   => $clear_filters_url_go,
+                        'actions'      => [['label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'), 'url' => $reconcile_url]],
+                    ]);
+                } else {
+                    intersoccer_render_empty_state([
+                        'title'        => __('No girls only events found', 'intersoccer-reports-rosters'),
+                        'message'      => __('Reconcile rosters to sync data from WooCommerce orders.', 'intersoccer-reports-rosters'),
+                        'icon'         => 'dashicons-groups',
+                        'variant'      => 'empty',
+                        'action_label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
+                        'action_url'   => $reconcile_url,
+                    ]);
                 }
-                $empty_actions[] = [
-                    'label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
-                    'url'   => $reconcile_url,
-                ];
-                intersoccer_render_empty_state([
-                    'title'   => $has_active_filters
-                        ? __('No girls only events match these filters', 'intersoccer-reports-rosters')
-                        : __('No girls only events found', 'intersoccer-reports-rosters'),
-                    'message' => $has_active_filters
-                        ? __('Try adjusting your filters or clear them to see all events.', 'intersoccer-reports-rosters')
-                        : __('Sync rosters from the Advanced page to see available girls only events.', 'intersoccer-reports-rosters'),
-                    'icon'    => '⚽',
-                    'variant' => $has_active_filters ? 'no-results' : 'empty',
-                    'actions' => $empty_actions,
-                ]);
                 ?>
             <?php else: ?>
                 
@@ -3096,28 +3076,26 @@ function intersoccer_render_tournaments_page() {
                 <?php
                 $has_active_filters = $selected_season || $selected_venue || $selected_age_group || $selected_city || $selected_time;
                 $reconcile_url = wp_nonce_url(admin_url('admin.php?page=' . rawurlencode($page_slug) . ($unified ? '&activity_type=' . rawurlencode($activity_type) : '') . '&action=reconcile'), 'intersoccer_reconcile');
-                $empty_actions = [];
                 if ($has_active_filters) {
-                    $empty_actions[] = [
-                        'label' => __('Clear Filters', 'intersoccer-reports-rosters'),
-                        'url'   => $clear_filters_url,
-                    ];
+                    intersoccer_render_empty_state([
+                        'title'        => __('No tournaments match these filters', 'intersoccer-reports-rosters'),
+                        'message'      => __('Try adjusting your filters or clear them to see all tournaments.', 'intersoccer-reports-rosters'),
+                        'icon'         => 'dashicons-awards',
+                        'variant'      => 'no-results',
+                        'action_label' => __('Clear Filters', 'intersoccer-reports-rosters'),
+                        'action_url'   => $clear_filters_url,
+                        'actions'      => [['label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'), 'url' => $reconcile_url]],
+                    ]);
+                } else {
+                    intersoccer_render_empty_state([
+                        'title'        => __('No tournaments found', 'intersoccer-reports-rosters'),
+                        'message'      => __('Reconcile rosters to sync data from WooCommerce orders.', 'intersoccer-reports-rosters'),
+                        'icon'         => 'dashicons-awards',
+                        'variant'      => 'empty',
+                        'action_label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
+                        'action_url'   => $reconcile_url,
+                    ]);
                 }
-                $empty_actions[] = [
-                    'label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
-                    'url'   => $reconcile_url,
-                ];
-                intersoccer_render_empty_state([
-                    'title'   => $has_active_filters
-                        ? __('No tournaments match these filters', 'intersoccer-reports-rosters')
-                        : __('No tournaments found', 'intersoccer-reports-rosters'),
-                    'message' => $has_active_filters
-                        ? __('Try adjusting your filters or clear them to see all tournaments.', 'intersoccer-reports-rosters')
-                        : __('Sync rosters from the Advanced page to see available tournaments.', 'intersoccer-reports-rosters'),
-                    'icon'    => '🏟️',
-                    'variant' => $has_active_filters ? 'no-results' : 'empty',
-                    'actions' => $empty_actions,
-                ]);
                 ?>
             <?php else: ?>
                 <?php foreach ($grouped as $season => $events): ?>
@@ -3421,7 +3399,7 @@ function intersoccer_render_other_events_page() {
         <div class="roster-header">
             <h1>⚽ <?php _e('Other Events', 'intersoccer-reports-rosters'); ?></h1>
             <div class="header-actions">
-                <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-other-events&action=reconcile'), 'intersoccer_reconcile'); ?>" 
+                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-other-events&action=reconcile'), 'intersoccer_reconcile')); ?>" 
                    class="button button-secondary">
                     ↻ <?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?>
                 </a>
@@ -3485,30 +3463,28 @@ function intersoccer_render_other_events_page() {
             <?php if (empty($grouped_events)): ?>
                 <?php
                 $has_active_filters = $selected_season || $selected_product_name;
-                $reconcile_url = wp_nonce_url(admin_url('admin.php?page=intersoccer-other-events&action=reconcile'), 'intersoccer_reconcile');
-                $clear_filters_url_oe = admin_url('admin.php?page=intersoccer-other-events&clear_isrr_filters=1');
-                $empty_actions = [];
+                $reconcile_url = esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-other-events&action=reconcile'), 'intersoccer_reconcile'));
+                $clear_filters_url_oe = esc_url(admin_url('admin.php?page=intersoccer-other-events&clear_isrr_filters=1'));
                 if ($has_active_filters) {
-                    $empty_actions[] = [
-                        'label' => __('Clear Filters', 'intersoccer-reports-rosters'),
-                        'url'   => $clear_filters_url_oe,
-                    ];
+                    intersoccer_render_empty_state([
+                        'title'        => __('No events match these filters', 'intersoccer-reports-rosters'),
+                        'message'      => __('Try adjusting your filters or clear them to see all events.', 'intersoccer-reports-rosters'),
+                        'icon'         => 'dashicons-calendar-alt',
+                        'variant'      => 'no-results',
+                        'action_label' => __('Clear Filters', 'intersoccer-reports-rosters'),
+                        'action_url'   => $clear_filters_url_oe,
+                        'actions'      => [['label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'), 'url' => $reconcile_url]],
+                    ]);
+                } else {
+                    intersoccer_render_empty_state([
+                        'title'        => __('No events found', 'intersoccer-reports-rosters'),
+                        'message'      => __('Reconcile rosters to sync data from WooCommerce orders.', 'intersoccer-reports-rosters'),
+                        'icon'         => 'dashicons-calendar-alt',
+                        'variant'      => 'empty',
+                        'action_label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
+                        'action_url'   => $reconcile_url,
+                    ]);
                 }
-                $empty_actions[] = [
-                    'label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
-                    'url'   => $reconcile_url,
-                ];
-                intersoccer_render_empty_state([
-                    'title'   => $has_active_filters
-                        ? __('No events match these filters', 'intersoccer-reports-rosters')
-                        : __('No events found', 'intersoccer-reports-rosters'),
-                    'message' => $has_active_filters
-                        ? __('Try adjusting your filters or clear them to see all events.', 'intersoccer-reports-rosters')
-                        : __('Sync rosters from the Advanced page to see available events.', 'intersoccer-reports-rosters'),
-                    'icon'    => '⚽',
-                    'variant' => $has_active_filters ? 'no-results' : 'empty',
-                    'actions' => $empty_actions,
-                ]);
                 ?>
             <?php else: ?>
                 <?php foreach ($grouped_events as $season => $events): ?>
@@ -3647,7 +3623,7 @@ function intersoccer_render_all_rosters_page() {
         <div class="roster-header">
             <h1>⚽ <?php _e('All Rosters', 'intersoccer-reports-rosters'); ?></h1>
             <div class="header-actions">
-                <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=intersoccer-all-rosters&action=reconcile'), 'intersoccer_reconcile'); ?>" 
+                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-all-rosters&action=reconcile'), 'intersoccer_reconcile')); ?>" 
                    class="button button-secondary">
                     ↻ <?php _e('Reconcile Rosters', 'intersoccer-reports-rosters'); ?>
                 </a>
@@ -3659,8 +3635,8 @@ function intersoccer_render_all_rosters_page() {
             $reconcile_url = wp_nonce_url(admin_url('admin.php?page=intersoccer-all-rosters&action=reconcile'), 'intersoccer_reconcile');
             intersoccer_render_empty_state([
                 'title'        => __('No rosters available', 'intersoccer-reports-rosters'),
-                'message'      => __('Reconcile rosters from the Advanced page to sync roster data.', 'intersoccer-reports-rosters'),
-                'icon'         => '⚽',
+                'message'      => __('Reconcile rosters to sync data from WooCommerce orders.', 'intersoccer-reports-rosters'),
+                'icon'         => 'dashicons-groups',
                 'variant'      => 'empty',
                 'action_label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
                 'action_url'   => $reconcile_url,
@@ -3722,14 +3698,14 @@ function intersoccer_render_all_rosters_page() {
                         echo '</div>';
                         echo '</div>';
                         
-                        echo '<div style="padding: 25px;">';
-                        echo '<table class="wp-list-table widefat fixed striped" style="border-radius: 8px; overflow: hidden;">';
-                        echo '<thead style="background: #f8f9fa;"><tr>';
-                        echo '<th style="padding: 15px;">' . __('Product Name', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="padding: 15px;">' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="padding: 15px;">' . __('Age Group', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="padding: 15px;">' . __('Total Players', 'intersoccer-reports-rosters') . '</th>';
-                        echo '<th style="padding: 15px;">' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<div class="intersoccer-all-rosters-table-wrap">';
+                        echo '<table class="wp-list-table widefat fixed striped intersoccer-all-rosters-table">';
+                        echo '<thead><tr>';
+                        echo '<th>' . __('Product Name', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th>' . __('Venue', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th>' . __('Age Group', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th>' . __('Total Players', 'intersoccer-reports-rosters') . '</th>';
+                        echo '<th>' . __('Actions', 'intersoccer-reports-rosters') . '</th>';
                         echo '</tr></thead><tbody>';
                         
                         foreach ($groups as $group) {
