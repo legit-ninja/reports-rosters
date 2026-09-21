@@ -51,9 +51,15 @@ class AssetManager {
 
         if ($is_intersoccer_admin_screen) {
             wp_enqueue_style(
+                'intersoccer-design-tokens-css',
+                $this->plugin_url . 'css/design-tokens.css',
+                [],
+                $this->version
+            );
+            wp_enqueue_style(
                 'intersoccer-reports-rosters-css',
                 $this->plugin_url . 'css/styles.css',
-                [],
+                ['intersoccer-design-tokens-css'],
                 $this->version
             );
         }
@@ -173,7 +179,7 @@ class AssetManager {
             wp_enqueue_style(
                 'intersoccer-reports-rosters-rebuild-admin-css',
                 $this->plugin_url . 'css/rebuild-admin.css',
-                [],
+                ['intersoccer-design-tokens-css'],
                 $this->version
             );
 
@@ -229,9 +235,15 @@ class AssetManager {
             );
 
             wp_enqueue_style(
+                'intersoccer-design-tokens-css',
+                $this->plugin_url . 'css/design-tokens.css',
+                [],
+                $this->version
+            );
+            wp_enqueue_style(
                 'intersoccer-styles',
                 $this->plugin_url . 'css/styles.css',
-                [],
+                ['intersoccer-design-tokens-css'],
                 $this->version
             );
 

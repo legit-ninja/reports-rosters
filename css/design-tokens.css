@@ -1,0 +1,235 @@
+/**
+ * InterSoccer Shared Design Tokens
+ * 
+ * Extracted from rebuild-admin.css to unify visual language across
+ * Final Numbers, Rebuild interface, and other admin components.
+ * 
+ * All plugin admin pages should include this file and wrap content
+ * in .intersoccer-reports or .intersoccer-rebuild-container (or both).
+ */
+
+/* ==========================================================================
+   Custom Properties (CSS Variables) - Global Tokens
+   ========================================================================== */
+
+:root {
+    /* -------------------------------------------------------------------------
+       Border Radius
+       ------------------------------------------------------------------------- */
+    --intersoccer-radius-sm: 3px;
+    --intersoccer-radius-md: 4px;
+    --intersoccer-radius-lg: 6px;
+    --intersoccer-radius-pill: 13px;
+
+    /* -------------------------------------------------------------------------
+       Border Colors
+       ------------------------------------------------------------------------- */
+    --intersoccer-border-default: #ccd0d4;
+    --intersoccer-border-light: #e1e1e1;
+    --intersoccer-border-subtle: #ddd;
+    --intersoccer-border-muted: #c3c4c7;
+
+    /* -------------------------------------------------------------------------
+       Status / Semantic Colors
+       ------------------------------------------------------------------------- */
+    /* Success (green) */
+    --intersoccer-success: #00a32a;
+    --intersoccer-success-hover: #008a20;
+    --intersoccer-success-gradient: linear-gradient(90deg, #00a32a, #4ab866);
+    --intersoccer-success-text: #00a32a;
+
+    /* Danger (red) */
+    --intersoccer-danger: #d63638;
+    --intersoccer-danger-hover: #b32d2e;
+    --intersoccer-danger-bg: #fef7f7;
+    --intersoccer-danger-border: #d63638;
+
+    /* Warning (amber/orange) */
+    --intersoccer-warning: #dba617;
+    --intersoccer-warning-bg: #fcf9e8;
+
+    /* Info (blue) */
+    --intersoccer-info: #72aee6;
+    --intersoccer-info-bg: #e5f5fa;
+
+    /* -------------------------------------------------------------------------
+       Urgency Heatmap Colors (Final Numbers)
+       ------------------------------------------------------------------------- */
+    --intersoccer-urgency-critical: #dc2626;
+    --intersoccer-urgency-low: #d97706;
+    --intersoccer-urgency-good: #059669;
+    --intersoccer-urgency-optimal: #1d4ed8;
+
+    /* -------------------------------------------------------------------------
+       Shadows
+       ------------------------------------------------------------------------- */
+    --intersoccer-shadow-card: 0 1px 1px rgba(0, 0, 0, 0.04);
+    --intersoccer-shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.1);
+
+    /* -------------------------------------------------------------------------
+       Background Colors
+       ------------------------------------------------------------------------- */
+    --intersoccer-bg-surface: #fff;
+    --intersoccer-bg-subtle: #f6f7f7;
+    --intersoccer-bg-muted: #f0f0f1;
+    --intersoccer-bg-row-alt: #f8f9fa;
+    --intersoccer-bg-header: #f9f9f9;
+
+    /* -------------------------------------------------------------------------
+       Text Colors
+       ------------------------------------------------------------------------- */
+    --intersoccer-text-primary: #1d2327;
+    --intersoccer-text-secondary: #646970;
+    --intersoccer-text-muted: #8c8f94;
+    --intersoccer-text-link: #2271b1;
+    --intersoccer-text-link-hover: #135e96;
+
+    /* -------------------------------------------------------------------------
+       Focus Ring
+       ------------------------------------------------------------------------- */
+    --intersoccer-focus-ring: 2px solid #2271b1;
+    --intersoccer-focus-ring-offset: 1px;
+    --intersoccer-focus-shadow: 0 0 0 2px rgba(0, 115, 170, 0.1);
+
+    /* -------------------------------------------------------------------------
+       Spacing Scale
+       ------------------------------------------------------------------------- */
+    --intersoccer-space-xs: 4px;
+    --intersoccer-space-sm: 8px;
+    --intersoccer-space-md: 12px;
+    --intersoccer-space-lg: 16px;
+    --intersoccer-space-xl: 20px;
+    --intersoccer-space-2xl: 24px;
+
+    /* -------------------------------------------------------------------------
+       Typography
+       ------------------------------------------------------------------------- */
+    --intersoccer-font-mono: Consolas, Monaco, monospace;
+    --intersoccer-font-size-xs: 11px;
+    --intersoccer-font-size-sm: 12px;
+    --intersoccer-font-size-md: 13px;
+    --intersoccer-font-size-lg: 14px;
+    --intersoccer-font-size-xl: 16px;
+    --intersoccer-font-size-2xl: 18px;
+
+    /* -------------------------------------------------------------------------
+       Transitions
+       ------------------------------------------------------------------------- */
+    --intersoccer-transition-fast: 0.15s ease;
+    --intersoccer-transition-normal: 0.2s ease;
+    --intersoccer-transition-slow: 0.3s ease;
+}
+
+/* ==========================================================================
+   Shared Component Styles (available inside .intersoccer-reports or
+   .intersoccer-rebuild-container wrappers)
+   ========================================================================== */
+
+/* Card component */
+.intersoccer-reports .card,
+.intersoccer-rebuild-container .card {
+    background: var(--intersoccer-bg-surface);
+    border: 1px solid var(--intersoccer-border-default);
+    border-radius: var(--intersoccer-radius-md);
+    padding: var(--intersoccer-space-xl);
+    box-shadow: var(--intersoccer-shadow-card);
+}
+
+.intersoccer-reports .card h2,
+.intersoccer-rebuild-container .card h2 {
+    margin-top: 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--intersoccer-border-light);
+}
+
+/* Info box (left-border accent) */
+.intersoccer-reports .intersoccer-info-box,
+.intersoccer-rebuild-container .rebuild-info {
+    background: var(--intersoccer-bg-subtle);
+    padding: var(--intersoccer-space-lg);
+    border-radius: var(--intersoccer-radius-md);
+    border-left: 4px solid var(--intersoccer-info);
+}
+
+.intersoccer-reports .intersoccer-info-box h3,
+.intersoccer-rebuild-container .rebuild-info h3 {
+    margin-top: 0;
+    color: var(--intersoccer-text-primary);
+}
+
+/* Status box */
+.intersoccer-reports .intersoccer-status-box,
+.intersoccer-rebuild-container #rebuild-status {
+    padding: var(--intersoccer-space-lg);
+    background: var(--intersoccer-bg-subtle);
+    border-radius: var(--intersoccer-radius-md);
+}
+
+/* Error item */
+.intersoccer-reports .intersoccer-error-item,
+.intersoccer-rebuild-container .error-item {
+    background: var(--intersoccer-danger-bg);
+    border: 1px solid var(--intersoccer-danger-border);
+    border-left: 4px solid var(--intersoccer-danger-border);
+    border-radius: var(--intersoccer-radius-md);
+    padding: var(--intersoccer-space-md);
+    margin: var(--intersoccer-space-sm) 0;
+}
+
+/* Stat item (grid stats) */
+.intersoccer-reports .intersoccer-stat-item,
+.intersoccer-rebuild-container .stat-item {
+    background: var(--intersoccer-bg-subtle);
+    padding: var(--intersoccer-space-xl) var(--intersoccer-space-lg);
+    border-radius: var(--intersoccer-radius-lg);
+    text-align: center;
+    border: 1px solid var(--intersoccer-border-light);
+    transition: transform var(--intersoccer-transition-normal),
+                box-shadow var(--intersoccer-transition-normal);
+}
+
+.intersoccer-reports .intersoccer-stat-item:hover,
+.intersoccer-rebuild-container .stat-item:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--intersoccer-shadow-elevated);
+}
+
+/* Primary button success variant */
+.intersoccer-reports .button-success,
+.intersoccer-rebuild-container #start-rebuild.button-primary {
+    background: var(--intersoccer-success);
+    border-color: var(--intersoccer-success);
+}
+
+.intersoccer-reports .button-success:hover:not(:disabled),
+.intersoccer-rebuild-container #start-rebuild.button-primary:hover:not(:disabled) {
+    background: var(--intersoccer-success-hover);
+    border-color: var(--intersoccer-success-hover);
+}
+
+/* Danger button */
+.intersoccer-reports .button-danger,
+.intersoccer-rebuild-container #stop-rebuild {
+    background: var(--intersoccer-danger);
+    border-color: var(--intersoccer-danger);
+    color: white;
+}
+
+.intersoccer-reports .button-danger:hover,
+.intersoccer-rebuild-container #stop-rebuild:hover {
+    background: var(--intersoccer-danger-hover);
+    border-color: var(--intersoccer-danger-hover);
+}
+
+/* Focus states */
+.intersoccer-reports button:focus,
+.intersoccer-reports a:focus,
+.intersoccer-reports input:focus,
+.intersoccer-reports select:focus,
+.intersoccer-rebuild-container button:focus,
+.intersoccer-rebuild-container a:focus,
+.intersoccer-rebuild-container input:focus,
+.intersoccer-rebuild-container select:focus {
+    outline: var(--intersoccer-focus-ring);
+    outline-offset: var(--intersoccer-focus-ring-offset);
+}

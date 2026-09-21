@@ -1,10 +1,16 @@
-/* InterSoccer Reports and Rosters CSS */
+/**
+ * InterSoccer Reports and Rosters CSS
+ * 
+ * Note: This file consumes shared design tokens from css/design-tokens.css.
+ * The tokens file must be enqueued before this stylesheet.
+ */
+
 .intersoccer-reports-rosters-rosters, .intersoccer-reports-rosters-reports, .intersoccer-reports-rosters-roster-details, .intersoccer-reports-rosters-dashboard, .intersoccer-reports-rosters-settings {
-    margin: 20px 0;
+    margin: var(--intersoccer-space-xl, 20px) 0;
 }
 
 .filter-section, .export-section {
-    margin-bottom: 20px;
+    margin-bottom: var(--intersoccer-space-xl, 20px);
 }
 
 .filter-row {
@@ -28,37 +34,45 @@
 }
 
 .widefat th, .widefat td {
-    padding: 8px;
-    border: 1px solid #ddd;
+    padding: var(--intersoccer-space-sm, 8px);
+    border: 1px solid var(--intersoccer-border-subtle, #ddd);
 }
 
 .widefat th {
-    background: #f9f9f9;
+    background: var(--intersoccer-bg-header, #f9f9f9);
 }
 
 /* Tab Styling */
 .nav-tab-wrapper {
-    margin-bottom: 20px;
-    border-bottom: 1px solid #ccc;
+    margin-bottom: var(--intersoccer-space-xl, 20px);
+    border-bottom: 1px solid var(--intersoccer-border-muted, #ccc);
 }
 
 .nav-tab {
     display: inline-block;
-    padding: 10px 20px;
+    padding: 10px var(--intersoccer-space-xl, 20px);
     margin: 0 5px -1px 0;
-    border: 1px solid #ccc;
+    border: 1px solid var(--intersoccer-border-muted, #ccc);
     border-bottom: none;
-    background: #f1f1f1;
+    background: var(--intersoccer-bg-muted, #f1f1f1);
+    border-radius: var(--intersoccer-radius-md, 4px) var(--intersoccer-radius-md, 4px) 0 0;
     cursor: pointer;
     text-decoration: none;
-    color: #555;
+    color: var(--intersoccer-text-secondary, #555);
+    transition: background var(--intersoccer-transition-fast, 0.15s ease),
+                color var(--intersoccer-transition-fast, 0.15s ease);
+}
+
+.nav-tab:hover {
+    background: var(--intersoccer-bg-subtle, #f6f7f7);
+    color: var(--intersoccer-text-primary, #1d2327);
 }
 
 .nav-tab-active {
-    background: #fff;
-    border-bottom: 1px solid #fff;
+    background: var(--intersoccer-bg-surface, #fff);
+    border-bottom: 1px solid var(--intersoccer-bg-surface, #fff);
     font-weight: bold;
-    color: #000;
+    color: var(--intersoccer-text-primary, #000);
 }
 
 .tab-content {
@@ -68,8 +82,9 @@
 .roster-details {
     margin-top: 10px;
     padding: 10px;
-    border: 1px solid #ccc;
-    background: #f9f9f9;
+    border: 1px solid var(--intersoccer-border-muted, #ccc);
+    border-radius: var(--intersoccer-radius-md, 4px);
+    background: var(--intersoccer-bg-header, #f9f9f9);
 }
 .roster-details table {
     width: 100%;
@@ -81,49 +96,50 @@
 }
 
 .bulk-actions {
-    background: #f8f9fa;
-    padding: 20px;
-    border-radius: 8px;
-    border: 1px solid #e1e4e8;
-    margin-top: 20px;
+    background: var(--intersoccer-bg-row-alt, #f8f9fa);
+    padding: var(--intersoccer-space-xl, 20px);
+    border-radius: var(--intersoccer-radius-lg, 8px);
+    border: 1px solid var(--intersoccer-border-light, #e1e4e8);
+    margin-top: var(--intersoccer-space-xl, 20px);
 }
 
 .bulk-actions select, 
 .bulk-actions input[type="number"] {
-    padding: 8px 12px;
-    border: 2px solid #ddd;
-    border-radius: 4px;
-    font-size: 14px;
+    padding: var(--intersoccer-space-sm, 8px) var(--intersoccer-space-md, 12px);
+    border: 2px solid var(--intersoccer-border-subtle, #ddd);
+    border-radius: var(--intersoccer-radius-md, 4px);
+    font-size: var(--intersoccer-font-size-lg, 14px);
 }
 
 .bulk-actions select:focus,
 .bulk-actions input[type="number"]:focus {
-    border-color: #0073aa;
+    border-color: var(--intersoccer-text-link, #0073aa);
     outline: none;
-    box-shadow: 0 0 0 2px rgba(0, 115, 170, 0.1);
+    box-shadow: var(--intersoccer-focus-shadow, 0 0 0 2px rgba(0, 115, 170, 0.1));
 }
 
 .bulk-actions input[type="number"].invalid-input {
-    border-color: #dc3232;
-    background-color: #ffeaea;
+    border-color: var(--intersoccer-danger, #dc3232);
+    background-color: var(--intersoccer-danger-bg, #ffeaea);
 }
 
 .bulk-actions button {
-    background: #0073aa;
+    background: var(--intersoccer-text-link, #0073aa);
     color: white;
     border: none;
-    padding: 10px 20px;
-    border-radius: 4px;
+    padding: 10px var(--intersoccer-space-xl, 20px);
+    border-radius: var(--intersoccer-radius-md, 4px);
     cursor: pointer;
     font-weight: 500;
+    transition: background var(--intersoccer-transition-fast, 0.15s ease);
 }
 
 .bulk-actions button:hover:not(:disabled) {
-    background: #005a87;
+    background: var(--intersoccer-text-link-hover, #005a87);
 }
 
 .bulk-actions button:disabled {
-    background: #ccc;
+    background: var(--intersoccer-border-muted, #ccc);
     cursor: not-allowed;
 }
 
@@ -170,9 +186,9 @@
 }
 
 .roster-table thead th {
-    background-color: #f8f9fa;
-    border-bottom: 2px solid #0073aa;
-    padding: 12px 8px;
+    background-color: var(--intersoccer-bg-row-alt, #f8f9fa);
+    border-bottom: 2px solid var(--intersoccer-text-link, #0073aa);
+    padding: var(--intersoccer-space-md, 12px) var(--intersoccer-space-sm, 8px);
     vertical-align: middle;
     position: relative;
 }
@@ -180,28 +196,28 @@
 /* Sortable column headers */
 .roster-table thead th a.sortable,
 .roster-table thead th a.sorted {
-    color: #0073aa;
+    color: var(--intersoccer-text-link, #0073aa);
     text-decoration: none;
     font-weight: 600;
     display: inline-block;
-    padding: 4px 8px;
-    border-radius: 4px;
-    transition: all 0.2s ease;
+    padding: var(--intersoccer-space-xs, 4px) var(--intersoccer-space-sm, 8px);
+    border-radius: var(--intersoccer-radius-md, 4px);
+    transition: all var(--intersoccer-transition-normal, 0.2s ease);
 }
 
 .roster-table thead th a.sortable:hover {
-    background-color: #e6f3ff;
-    color: #005a87;
+    background-color: var(--intersoccer-info-bg, #e6f3ff);
+    color: var(--intersoccer-text-link-hover, #005a87);
     text-decoration: none;
 }
 
 .roster-table thead th a.sorted {
-    background-color: #0073aa;
+    background-color: var(--intersoccer-text-link, #0073aa);
     color: white;
 }
 
 .roster-table thead th a.sorted:hover {
-    background-color: #005a87;
+    background-color: var(--intersoccer-text-link-hover, #005a87);
     color: white;
 }
 
@@ -220,22 +236,22 @@
 
 /* Hover effect for sortable columns */
 .roster-table thead th:has(a.sortable):hover {
-    background-color: #f0f8ff;
+    background-color: var(--intersoccer-bg-subtle, #f0f8ff);
     cursor: pointer;
 }
 
 /* Sorting info section */
 .sorting-info {
-    font-size: 13px;
+    font-size: var(--intersoccer-font-size-md, 13px);
     line-height: 1.4;
 }
 
 .sorting-info strong {
-    color: #2c3338;
+    color: var(--intersoccer-text-primary, #2c3338);
 }
 
 .sorting-info a {
-    color: #0073aa;
+    color: var(--intersoccer-text-link, #0073aa);
     text-decoration: none;
     font-weight: 500;
 }
@@ -268,29 +284,29 @@
 
 /* Table row highlighting on hover */
 .roster-table tbody tr:hover {
-    background-color: #f5f5f5;
+    background-color: var(--intersoccer-bg-row-alt, #f5f5f5);
 }
 
 /* Selected rows styling */
 .roster-table tbody tr:has(.player-select:checked) {
-    background-color: #e3f2fd;
+    background-color: var(--intersoccer-info-bg, #e3f2fd);
 }
 
 /* Booking date column styling */
 .roster-table td:last-child {
-    font-size: 12px;
-    color: #666;
+    font-size: var(--intersoccer-font-size-sm, 12px);
+    color: var(--intersoccer-text-secondary, #666);
     white-space: nowrap;
 }
 
 /* Sort indicator animation */
 .roster-table thead th a.sorted {
-    animation: sortHighlight 0.3s ease-in-out;
+    animation: sortHighlight var(--intersoccer-transition-slow, 0.3s) ease-in-out;
 }
 
 @keyframes sortHighlight {
     0% { background-color: #4f94cd; }
-    100% { background-color: #0073aa; }
+    100% { background-color: var(--intersoccer-text-link, #0073aa); }
 }
 
 /* Loading state for AJAX sorting */
@@ -318,7 +334,7 @@
 
 /* Focus styles for keyboard navigation */
 .roster-table thead th a:focus {
-    outline: 2px solid #0073aa;
+    outline: var(--intersoccer-focus-ring, 2px solid #0073aa);
     outline-offset: 2px;
 }
 
@@ -355,36 +371,36 @@
 /* Woo order item sync badges */
 .intersoccer-order-item-sync-controls .intersoccer-sync-badge {
     display: inline-block;
-    margin-right: 8px;
-    padding: 2px 8px;
+    margin-right: var(--intersoccer-space-sm, 8px);
+    padding: 2px var(--intersoccer-space-sm, 8px);
     border-radius: 999px;
-    border: 1px solid #c3c4c7;
-    background: #f6f7f7;
-    color: #1d2327;
-    font-size: 11px;
+    border: 1px solid var(--intersoccer-border-muted, #c3c4c7);
+    background: var(--intersoccer-bg-subtle, #f6f7f7);
+    color: var(--intersoccer-text-primary, #1d2327);
+    font-size: var(--intersoccer-font-size-xs, 11px);
     font-weight: 600;
     line-height: 1.8;
     vertical-align: middle;
 }
 
 .intersoccer-order-item-sync-controls .intersoccer-sync-badge-info {
-    background: #e5f5fa;
-    border-color: #72aee6;
+    background: var(--intersoccer-info-bg, #e5f5fa);
+    border-color: var(--intersoccer-info, #72aee6);
 }
 
 .intersoccer-order-item-sync-controls .intersoccer-sync-badge-success {
     background: #edfaef;
-    border-color: #00a32a;
+    border-color: var(--intersoccer-success, #00a32a);
 }
 
 .intersoccer-order-item-sync-controls .intersoccer-sync-badge-warning {
-    background: #fcf9e8;
-    border-color: #dba617;
+    background: var(--intersoccer-warning-bg, #fcf9e8);
+    border-color: var(--intersoccer-warning, #dba617);
 }
 
 .intersoccer-order-item-sync-controls .intersoccer-sync-badge-error {
-    background: #fcf0f1;
-    border-color: #d63638;
+    background: var(--intersoccer-danger-bg, #fcf0f1);
+    border-color: var(--intersoccer-danger, #d63638);
 }
 
 /* ==========================================================================
@@ -392,25 +408,25 @@
    ========================================================================== */
 
 /* Urgency heatmap colors */
-.intersoccer-reports-rosters-final-reports .count-number.count-critical { background: #dc2626; }
-.intersoccer-reports-rosters-final-reports .count-number.count-low { background: #d97706; }
-.intersoccer-reports-rosters-final-reports .count-number.count-good { background: #059669; }
-.intersoccer-reports-rosters-final-reports .count-number.count-optimal { background: #1d4ed8; }
+.intersoccer-reports-rosters-final-reports .count-number.count-critical { background: var(--intersoccer-urgency-critical, #dc2626); }
+.intersoccer-reports-rosters-final-reports .count-number.count-low { background: var(--intersoccer-urgency-low, #d97706); }
+.intersoccer-reports-rosters-final-reports .count-number.count-good { background: var(--intersoccer-urgency-good, #059669); }
+.intersoccer-reports-rosters-final-reports .count-number.count-optimal { background: var(--intersoccer-urgency-optimal, #1d4ed8); }
 
 /* Heatmap legend */
 .intersoccer-heatmap-legend {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: var(--intersoccer-space-md, 12px);
     align-items: center;
-    margin-bottom: 12px;
-    font-size: 13px;
+    margin-bottom: var(--intersoccer-space-md, 12px);
+    font-size: var(--intersoccer-font-size-md, 13px);
 }
 
 .intersoccer-heatmap-legend-item {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--intersoccer-space-xs, 4px);
 }
 
 .intersoccer-heatmap-legend-chip {
@@ -420,52 +436,53 @@
     border-radius: 2px;
 }
 
-.intersoccer-heatmap-legend-chip.count-critical { background: #dc2626; }
-.intersoccer-heatmap-legend-chip.count-low { background: #d97706; }
-.intersoccer-heatmap-legend-chip.count-good { background: #059669; }
-.intersoccer-heatmap-legend-chip.count-optimal { background: #1d4ed8; }
+.intersoccer-heatmap-legend-chip.count-critical { background: var(--intersoccer-urgency-critical, #dc2626); }
+.intersoccer-heatmap-legend-chip.count-low { background: var(--intersoccer-urgency-low, #d97706); }
+.intersoccer-heatmap-legend-chip.count-good { background: var(--intersoccer-urgency-good, #059669); }
+.intersoccer-heatmap-legend-chip.count-optimal { background: var(--intersoccer-urgency-optimal, #1d4ed8); }
 
 /* Filter toolbar grouped layout */
 .intersoccer-filter-toolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
+    gap: var(--intersoccer-space-lg, 16px);
     align-items: flex-start;
-    margin-bottom: 20px;
-    padding: 16px;
-    background: #f6f7f7;
-    border: 1px solid #c3c4c7;
-    border-radius: 4px;
+    margin-bottom: var(--intersoccer-space-xl, 20px);
+    padding: var(--intersoccer-space-lg, 16px);
+    background: var(--intersoccer-bg-subtle, #f6f7f7);
+    border: 1px solid var(--intersoccer-border-muted, #c3c4c7);
+    border-radius: var(--intersoccer-radius-md, 4px);
+    box-shadow: var(--intersoccer-shadow-card, 0 1px 1px rgba(0,0,0,.04));
 }
 
 .intersoccer-filter-group {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--intersoccer-space-sm, 8px);
 }
 
 .intersoccer-filter-group-label {
-    font-size: 11px;
+    font-size: var(--intersoccer-font-size-xs, 11px);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: #646970;
+    color: var(--intersoccer-text-secondary, #646970);
     margin: 0;
 }
 
 .intersoccer-filter-group-fields {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: var(--intersoccer-space-md, 12px);
     align-items: center;
 }
 
 .intersoccer-filter-group-fields label {
     display: flex;
     align-items: center;
-    gap: 4px;
-    font-size: 13px;
-    color: #2c3338;
+    gap: var(--intersoccer-space-xs, 4px);
+    font-size: var(--intersoccer-font-size-md, 13px);
+    color: var(--intersoccer-text-primary, #2c3338);
 }
 
 .intersoccer-filter-group-fields select,
@@ -483,7 +500,7 @@
 .intersoccer-checkbox-with-help {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--intersoccer-space-xs, 4px);
 }
 
 .intersoccer-help-icon {
@@ -493,45 +510,47 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: #c3c4c7;
-    color: #fff;
-    font-size: 11px;
+    background: var(--intersoccer-border-muted, #c3c4c7);
+    color: var(--intersoccer-bg-surface, #fff);
+    font-size: var(--intersoccer-font-size-xs, 11px);
     font-weight: 700;
     cursor: help;
     text-decoration: none;
+    transition: background var(--intersoccer-transition-fast, 0.15s ease);
 }
 
 .intersoccer-help-icon:hover {
-    background: #2271b1;
+    background: var(--intersoccer-text-link, #2271b1);
 }
 
 /* Empty state card */
 .intersoccer-empty-state {
-    padding: 40px 24px;
+    padding: 40px var(--intersoccer-space-2xl, 24px);
     text-align: center;
-    background: #fff;
-    border: 1px solid #c3c4c7;
-    border-radius: 4px;
-    margin: 20px 0;
+    background: var(--intersoccer-bg-surface, #fff);
+    border: 1px solid var(--intersoccer-border-muted, #c3c4c7);
+    border-radius: var(--intersoccer-radius-md, 4px);
+    box-shadow: var(--intersoccer-shadow-card, 0 1px 1px rgba(0,0,0,.04));
+    margin: var(--intersoccer-space-xl, 20px) 0;
 }
 
 .intersoccer-empty-state-icon {
     font-size: 48px;
-    margin-bottom: 16px;
+    margin-bottom: var(--intersoccer-space-lg, 16px);
     opacity: 0.5;
 }
 
 .intersoccer-empty-state-title {
-    font-size: 18px;
+    font-size: var(--intersoccer-font-size-2xl, 18px);
     font-weight: 600;
-    color: #1d2327;
-    margin: 0 0 8px;
+    color: var(--intersoccer-text-primary, #1d2327);
+    margin: 0 0 var(--intersoccer-space-sm, 8px);
 }
 
 .intersoccer-empty-state-message {
-    font-size: 14px;
-    color: #646970;
-    margin: 0 0 20px;
+    font-size: var(--intersoccer-font-size-lg, 14px);
+    color: var(--intersoccer-text-secondary, #646970);
+    margin: 0 0 var(--intersoccer-space-xl, 20px);
     max-width: 400px;
     margin-left: auto;
     margin-right: auto;
@@ -539,7 +558,7 @@
 
 .intersoccer-empty-state-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--intersoccer-space-sm, 8px);
     justify-content: center;
     flex-wrap: wrap;
 }
@@ -554,7 +573,8 @@
     pointer-events: none;
 }
 
-.intersoccer-export-btn.is-loading .dashicons {
+.intersoccer-export-btn.is-loading .dashicons,
+.intersoccer-spin-icon {
     animation: intersoccer-spin 1s linear infinite;
 }
 
@@ -565,32 +585,33 @@
 
 /* Help disclosure */
 .intersoccer-help-disclosure {
-    margin: 16px 0;
+    margin: var(--intersoccer-space-lg, 16px) 0;
 }
 
 .intersoccer-help-disclosure summary {
     cursor: pointer;
     font-weight: 500;
-    color: #2271b1;
-    padding: 8px 0;
+    color: var(--intersoccer-text-link, #2271b1);
+    padding: var(--intersoccer-space-sm, 8px) 0;
     user-select: none;
+    transition: color var(--intersoccer-transition-fast, 0.15s ease);
 }
 
 .intersoccer-help-disclosure summary:hover {
-    color: #135e96;
+    color: var(--intersoccer-text-link-hover, #135e96);
 }
 
 .intersoccer-help-disclosure[open] summary {
-    margin-bottom: 8px;
+    margin-bottom: var(--intersoccer-space-sm, 8px);
 }
 
 .intersoccer-help-disclosure-content {
-    padding: 12px 16px;
-    background: #f6f7f7;
-    border-left: 4px solid #72aee6;
-    border-radius: 0 4px 4px 0;
-    font-size: 13px;
-    color: #2c3338;
+    padding: var(--intersoccer-space-md, 12px) var(--intersoccer-space-lg, 16px);
+    background: var(--intersoccer-bg-subtle, #f6f7f7);
+    border-left: 4px solid var(--intersoccer-info, #72aee6);
+    border-radius: 0 var(--intersoccer-radius-md, 4px) var(--intersoccer-radius-md, 4px) 0;
+    font-size: var(--intersoccer-font-size-md, 13px);
+    color: var(--intersoccer-text-primary, #2c3338);
     line-height: 1.6;
 }
 
@@ -625,53 +646,91 @@
 
 .intersoccer-camp-type-tabs {
     display: inline-flex;
-    background: #f0f0f1;
-    border-radius: 4px;
-    padding: 3px;
-    margin: 12px 0;
+    background: var(--intersoccer-bg-muted, #f0f0f1);
+    border-radius: var(--intersoccer-radius-md, 4px);
+    padding: var(--intersoccer-space-xs, 3px);
+    margin: var(--intersoccer-space-md, 12px) 0;
     gap: 2px;
 }
 
 .intersoccer-camp-type-tab {
-    padding: 8px 16px;
+    padding: var(--intersoccer-space-sm, 8px) var(--intersoccer-space-lg, 16px);
     border: none;
     background: transparent;
-    border-radius: 3px;
+    border-radius: var(--intersoccer-radius-sm, 3px);
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--intersoccer-font-size-md, 13px);
     font-weight: 500;
-    color: #50575e;
-    transition: all 0.15s ease;
+    color: var(--intersoccer-text-muted, #50575e);
+    transition: all var(--intersoccer-transition-fast, 0.15s ease);
 }
 
 .intersoccer-camp-type-tab:hover {
-    color: #1d2327;
+    color: var(--intersoccer-text-primary, #1d2327);
     background: rgba(255,255,255,0.5);
 }
 
 .intersoccer-camp-type-tab.active {
-    background: #fff;
-    color: #1d2327;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    background: var(--intersoccer-bg-surface, #fff);
+    color: var(--intersoccer-text-primary, #1d2327);
+    box-shadow: var(--intersoccer-shadow-card, 0 1px 3px rgba(0,0,0,0.1));
 }
 
 .intersoccer-camp-type-tab:focus {
-    outline: 2px solid #2271b1;
-    outline-offset: 1px;
+    outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
+    outline-offset: var(--intersoccer-focus-ring-offset, 1px);
 }
 
 /* Camp table repeated canton styling */
 .camp-reports-table .canton-repeat {
-    color: #8c8f94;
+    color: var(--intersoccer-text-muted, #8c8f94);
     font-weight: normal;
+}
+
+/* Camp reports table base styling (moved from inline) */
+.camp-reports-table {
+    table-layout: auto;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--intersoccer-font-size-sm, 12px);
+}
+
+.camp-reports-table th,
+.camp-reports-table td {
+    border: 1px solid var(--intersoccer-border-subtle, #ddd);
+    padding: var(--intersoccer-space-xs, 4px) var(--intersoccer-space-sm, 6px);
+    text-align: center;
+}
+
+.camp-reports-table .week-header td {
+    background: var(--intersoccer-bg-muted, #f0f0f0);
+    font-weight: bold;
+    text-align: left;
+}
+
+.camp-reports-table .grand-total td {
+    background: #e8e8e8;
+    font-weight: bold;
+}
+
+.camp-reports-table .all-reg td {
+    background: var(--intersoccer-bg-row-alt, #f8f8f8);
+    font-weight: bold;
+}
+
+/* Course reports table season header (moved from inline) */
+.course-reports-table .season-header td {
+    background: #e8e8e8;
+    font-weight: bold;
+    text-align: left;
 }
 
 /* Tab wrapper layout */
 .intersoccer-camp-type-tabs-wrapper {
     display: flex;
     align-items: center;
-    gap: 16px;
-    margin: 12px 0;
+    gap: var(--intersoccer-space-lg, 16px);
+    margin: var(--intersoccer-space-md, 12px) 0;
     flex-wrap: wrap;
 }
 
@@ -702,4 +761,144 @@
     .camp-table-panel:first-of-type {
         page-break-before: auto;
     }
+}
+
+/* ==========================================================================
+   Final Numbers Report - Camp/Course Table Styles
+   ========================================================================== */
+
+/* Urgency heat cell styling */
+.intersoccer-urgency-heat {
+    border: 1px solid var(--intersoccer-border-subtle, #ddd);
+    padding: var(--intersoccer-space-sm, 8px);
+    text-align: center;
+}
+
+.intersoccer-urgency-heat .count-number {
+    display: inline-block;
+    padding: var(--intersoccer-space-xs, 4px) var(--intersoccer-space-sm, 8px);
+    border-radius: var(--intersoccer-radius-md, 4px);
+    color: var(--intersoccer-bg-surface, #fff);
+    font-weight: 600;
+}
+
+/* Camp table cell styling */
+.camp-reports-table .intersoccer-camp-cell {
+    border: 1px solid var(--intersoccer-border-subtle, #ddd);
+    padding: var(--intersoccer-space-xs, 4px) var(--intersoccer-space-sm, 6px);
+    text-align: center;
+}
+
+.camp-reports-table .intersoccer-camp-canton-cell {
+    background-color: var(--intersoccer-bg-row-alt, #f8f9fa);
+}
+
+.camp-reports-table .intersoccer-camp-canton-cell--first {
+    font-weight: bold;
+}
+
+.camp-reports-table .intersoccer-camp-venue-cell {
+    text-align: left;
+}
+
+/* Camp table header row colors */
+.camp-reports-table .intersoccer-camp-header-full-day {
+    background-color: #e8f4f8;
+}
+
+.camp-reports-table .intersoccer-camp-header-mini {
+    background-color: #f8e8f4;
+}
+
+.camp-reports-table .intersoccer-camp-header-subrow {
+    background-color: var(--intersoccer-bg-row-alt, #f8f8f8);
+}
+
+/* Camp table grand total and all-reg rows */
+.camp-reports-table .grand-total .intersoccer-camp-venue-cell,
+.camp-reports-table .all-reg .intersoccer-camp-venue-cell {
+    text-align: left;
+}
+
+/* Course table region header */
+.course-reports-table .intersoccer-course-region-header {
+    background-color: var(--intersoccer-bg-muted, #f0f0f0);
+    font-weight: bold;
+}
+
+/* Course overall totals section */
+.intersoccer-course-totals-section {
+    margin-top: 30px;
+    padding: var(--intersoccer-space-xl, 20px);
+    background: var(--intersoccer-bg-header, #f9f9fa);
+    border-radius: var(--intersoccer-radius-lg, 8px);
+    border: 1px solid var(--intersoccer-border-light, #e1e1e1);
+}
+
+.intersoccer-course-totals-section h3 {
+    margin-top: 0;
+    color: var(--intersoccer-text-primary, #1d2327);
+}
+
+.intersoccer-course-totals-section .description {
+    margin-top: 0;
+    color: var(--intersoccer-text-secondary, #646970);
+}
+
+.intersoccer-course-totals-section table {
+    margin-top: 10px;
+}
+
+.intersoccer-course-totals-row {
+    font-weight: bold;
+    background: #e9ecef;
+}
+
+/* Export section sticky mode for live reports */
+.export-section.intersoccer-export-section-sticky {
+    position: sticky;
+    top: 32px;
+    z-index: 10;
+    background: var(--intersoccer-bg-muted, #f0f0f1);
+    padding: var(--intersoccer-space-md, 12px);
+    border: 1px solid var(--intersoccer-border-muted, #c3c4c7);
+    border-radius: var(--intersoccer-radius-md, 4px);
+}
+
+.intersoccer-export-checkbox-label {
+    margin-right: var(--intersoccer-space-md, 12px);
+}
+
+/* Year input width */
+.intersoccer-filter-group-fields input[name="year"] {
+    width: 80px;
+}
+
+/* Live notice styling */
+.intersoccer-live-notice {
+    margin: var(--intersoccer-space-md, 12px) 0 var(--intersoccer-space-lg, 16px);
+}
+
+.intersoccer-live-notice p {
+    margin: 0.5em 0;
+}
+
+/* Camp section header */
+.intersoccer-camp-section-header {
+    margin: var(--intersoccer-space-lg, 16px) 0 var(--intersoccer-space-sm, 8px);
+}
+
+/* Help disclosure content paragraphs */
+.intersoccer-help-disclosure-content p {
+    margin: 0 0 var(--intersoccer-space-sm, 8px);
+}
+
+.intersoccer-help-disclosure-content p:last-child {
+    margin-bottom: 0;
+}
+
+/* Print button icon alignment */
+.intersoccer-print-btn .dashicons {
+    vertical-align: middle;
+    margin-right: var(--intersoccer-space-xs, 4px);
 }
