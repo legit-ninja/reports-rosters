@@ -46,7 +46,7 @@ See `intersoccer-product-variations/docs/ORDER-META-CONTRACT.md` → Language-ne
 
 ## Admin
 
-Reports and Rosters → **Campaign Analytics**. Campaigns are CPT `intersoccer_campaign`. Summaries compute via WP-Cron (`intersoccer_campaign_rebuild`) into `{prefix}intersoccer_campaign_summaries`.
+**WooCommerce → Analytics → Campaign Analytics**. Campaigns are CPT `intersoccer_campaign`. Summaries compute via WP-Cron (`intersoccer_campaign_rebuild`) into `{prefix}intersoccer_campaign_summaries`.
 
 ## Exports
 

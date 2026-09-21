@@ -44,12 +44,21 @@ class AssetManager {
         $screen = function_exists('get_current_screen') ? get_current_screen() : null;
         $screen_id = $screen && isset($screen->id) ? (string) $screen->id : '';
 
+        // Campaign Analytics is now under WooCommerce → Analytics. The page is
+        // registered as a hidden submenu (parent=null), so screen ID is
+        // 'admin_page_intersoccer-campaign-analytics'. Legacy screen IDs retained
+        // for backward compatibility.
+        $is_campaign_analytics_screen =
+            $screen_id === 'admin_page_intersoccer-campaign-analytics'
+            || $screen_id === 'woocommerce_page_intersoccer-campaign-analytics'
+            || $screen_id === 'intersoccer-reports-rosters_page_intersoccer-campaign-analytics'
+            || $screen_id === 'reports-and-rosters_page_intersoccer-campaign-analytics';
+
         $is_intersoccer_admin_screen =
             $screen_id === 'toplevel_page_intersoccer-reports-rosters'
             || (strpos($screen_id, 'intersoccer-reports-rosters_page_') === 0)
             || (strpos($screen_id, 'reports-and-rosters_page_') === 0)
-            || $screen_id === 'intersoccer-reports-rosters_page_intersoccer-campaign-analytics'
-            || $screen_id === 'reports-and-rosters_page_intersoccer-campaign-analytics';
+            || $is_campaign_analytics_screen;
 
         if ($is_intersoccer_admin_screen) {
             wp_enqueue_style(
