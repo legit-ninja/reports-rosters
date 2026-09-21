@@ -71,22 +71,22 @@ function intersoccer_roster_closed_where($status = false) {
  */
 add_action('admin_head', function () {
     echo '<style>
-        /* Conditional formatting for participant counts */
+        /* Conditional formatting for participant counts - uses design token urgency palette */
         .count-number.count-critical {
-            background: linear-gradient(135deg, #ef4444, #dc2626);
+            background: linear-gradient(135deg, var(--intersoccer-urgency-critical, #dc2626), var(--intersoccer-urgency-critical, #dc2626));
             animation: pulse-red 2s infinite;
         }
 
         .count-number.count-low {
-            background: linear-gradient(135deg, #f59e0b, #d97706);
+            background: linear-gradient(135deg, var(--intersoccer-urgency-low, #d97706), var(--intersoccer-urgency-low, #d97706));
         }
 
         .count-number.count-good {
-            background: linear-gradient(135deg, #10b981, #059669);
+            background: linear-gradient(135deg, var(--intersoccer-urgency-good, #059669), var(--intersoccer-urgency-good, #059669));
         }
 
         .count-number.count-optimal {
-            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            background: linear-gradient(135deg, var(--intersoccer-urgency-optimal, #1d4ed8), var(--intersoccer-urgency-optimal, #1d4ed8));
         }
 
         @keyframes pulse-red {
@@ -102,13 +102,13 @@ add_action('admin_head', function () {
             left: 50%;
             transform: translateX(-50%);
             background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 11px;
+            color: var(--intersoccer-bg-surface, #fff);
+            padding: var(--intersoccer-space-xs, 4px) var(--intersoccer-space-sm, 8px);
+            border-radius: var(--intersoccer-radius-md, 4px);
+            font-size: var(--intersoccer-font-size-xs, 11px);
             white-space: nowrap;
             opacity: 0;
-            transition: opacity 0.3s;
+            transition: opacity var(--intersoccer-transition-slow, 0.3s ease);
             pointer-events: none;
         }
 
@@ -123,10 +123,10 @@ add_action('admin_head', function () {
             all: initial;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             line-height: 1.5;
-            color: #111827;
-            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            color: var(--intersoccer-text-primary, #1d2327);
+            background: linear-gradient(135deg, var(--intersoccer-bg-subtle, #f6f7f7) 0%, var(--intersoccer-bg-muted, #f0f0f1) 100%);
             min-height: 100vh;
-            margin: 0 -20px 0 -22px;  /* Push outside admin area like roster-details */
+            margin: 0 -20px 0 -22px;
             position: relative;
             box-sizing: border-box;
         }
@@ -146,7 +146,7 @@ add_action('admin_head', function () {
         /* Ensure our content container has proper spacing */
         .intersoccer-rosters-page .wrap {
             margin: 0;
-            padding: 32px;
+            padding: var(--intersoccer-space-2xl, 24px);
             max-width: none;
         }
         
@@ -154,39 +154,39 @@ add_action('admin_head', function () {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 25px;
-            padding-bottom: 15px;
-            border-bottom: 3px solid #0073aa;
+            margin-bottom: var(--intersoccer-space-2xl, 24px);
+            padding-bottom: var(--intersoccer-space-lg, 16px);
+            border-bottom: 3px solid var(--intersoccer-text-link, #2271b1);
             flex-wrap: wrap;
-            gap: 15px;
+            gap: var(--intersoccer-space-lg, 16px);
         }
         
         .roster-header h1 {
             margin: 0;
-            color:rgb(0, 0, 0);
-            font-size: 28px;
+            color: var(--intersoccer-text-primary, #1d2327);
+            font-size: var(--intersoccer-font-size-2xl, 18px);
         }
         
         .header-actions {
             display: flex;
-            gap: 10px;
+            gap: var(--intersoccer-space-sm, 8px);
             align-items: center;
             flex-wrap: wrap;
         }
         
-        /* Improved filter styling */
+        /* Improved filter styling - aligned with Final Numbers */
         .roster-filters {
-            background: #f8f9fa;
-            padding: 20px;
-            margin: 20px 0;
-            border-radius: 8px;
-            border: 1px solid #e1e4e8;
+            background: var(--intersoccer-bg-row-alt, #f8f9fa);
+            padding: var(--intersoccer-space-xl, 20px);
+            margin: var(--intersoccer-space-xl, 20px) 0;
+            border-radius: var(--intersoccer-radius-lg, 6px);
+            border: 1px solid var(--intersoccer-border-light, #e1e1e1);
         }
         
         .filter-form {
             display: flex;
             flex-wrap: wrap;
-            gap: 20px;
+            gap: var(--intersoccer-space-xl, 20px);
             align-items: flex-end;
         }
         
@@ -200,87 +200,88 @@ add_action('admin_head', function () {
         
         .filter-group label {
             font-weight: 600;
-            margin-bottom: 6px;
-            color: #2c3338;
-            font-size: 13px;
+            margin-bottom: var(--intersoccer-space-xs, 4px);
+            color: var(--intersoccer-text-primary, #1d2327);
+            font-size: var(--intersoccer-font-size-md, 13px);
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
         
         .filter-group select {
             width: 100%;
-            padding: 10px 12px;
-            border: 2px solid #ddd;
-            border-radius: 6px;
-            background: white;
-            font-size: 14px;
+            padding: var(--intersoccer-space-sm, 8px) var(--intersoccer-space-md, 12px);
+            border: 2px solid var(--intersoccer-border-subtle, #ddd);
+            border-radius: var(--intersoccer-radius-lg, 6px);
+            background: var(--intersoccer-bg-surface, #fff);
+            font-size: var(--intersoccer-font-size-lg, 14px);
             box-sizing: border-box;
-            transition: all 0.2s ease;
+            transition: all var(--intersoccer-transition-normal, 0.2s ease);
         }
         
         .filter-group select:focus {
-            border-color: #0073aa;
-            outline: none;
-            box-shadow: 0 0 0 2px rgba(0, 115, 170, 0.1);
+            border-color: var(--intersoccer-text-link, #2271b1);
+            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
+            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
+            box-shadow: var(--intersoccer-focus-shadow, 0 0 0 2px rgba(0, 115, 170, 0.1));
         }
         
         .filter-group select:hover {
-            border-color: #0073aa;
+            border-color: var(--intersoccer-text-link, #2271b1);
         }
         
         /* Sports roster layout improvements */
         .sports-rosters {
-            margin-top: 30px;
+            margin-top: var(--intersoccer-space-2xl, 24px);
         }
         
         .roster-week, .roster-season {
-            margin-bottom: 35px;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            margin-bottom: var(--intersoccer-space-2xl, 24px);
+            background: var(--intersoccer-bg-surface, #fff);
+            border-radius: var(--intersoccer-radius-lg, 6px);
+            box-shadow: var(--intersoccer-shadow-elevated, 0 4px 12px rgba(0, 0, 0, 0.1));
             overflow: hidden;
-            border: 1px solid #e1e4e8;
+            border: 1px solid var(--intersoccer-border-light, #e1e1e1);
         }
         
         .week-header, .season-header {
-            background: linear-gradient(135deg, #0073aa 0%, #005a87 100%);
-            color: white;
-            padding: 25px;
+            background: linear-gradient(135deg, var(--intersoccer-text-link, #2271b1) 0%, var(--intersoccer-text-link-hover, #135e96) 100%);
+            color: var(--intersoccer-bg-surface, #fff);
+            padding: var(--intersoccer-space-2xl, 24px);
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
-            gap: 15px;
+            gap: var(--intersoccer-space-lg, 16px);
         }
         
         .week-title, .season-title {
             margin: 0;
-            font-size: 22px;
+            font-size: var(--intersoccer-font-size-2xl, 18px);
             font-weight: 600;
         }
 
         .season-title {
-            color: #ffffff;
+            color: var(--intersoccer-bg-surface, #fff);
         }
         
         .week-date {
-            font-size: 14px;
+            font-size: var(--intersoccer-font-size-lg, 14px);
             opacity: 0.9;
             font-weight: 300;
-            margin-left: 10px;
+            margin-left: var(--intersoccer-space-sm, 8px);
         }
         
         .week-stats, .season-stats {
             display: flex;
-            gap: 25px;
+            gap: var(--intersoccer-space-2xl, 24px);
             flex-wrap: wrap;
         }
         
         .stat-item {
             background: rgba(255,255,255,0.15);
-            padding: 8px 12px;
-            border-radius: 20px;
-            font-size: 13px;
+            padding: var(--intersoccer-space-sm, 8px) var(--intersoccer-space-md, 12px);
+            border-radius: var(--intersoccer-radius-pill, 13px);
+            font-size: var(--intersoccer-font-size-md, 13px);
             font-weight: 500;
             white-space: nowrap;
         }
@@ -289,59 +290,59 @@ add_action('admin_head', function () {
         .camps-grid, .courses-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-            gap: 20px;
-            padding: 25px;
-            background: #fafbfc;
+            gap: var(--intersoccer-space-xl, 20px);
+            padding: var(--intersoccer-space-2xl, 24px);
+            background: var(--intersoccer-bg-subtle, #f6f7f7);
         }
         
         .camp-card, .course-card {
-            background: white;
-            border: 1px solid #e1e4e8;
-            border-radius: 10px;
+            background: var(--intersoccer-bg-surface, #fff);
+            border: 1px solid var(--intersoccer-border-light, #e1e1e1);
+            border-radius: var(--intersoccer-radius-lg, 6px);
             overflow: hidden;
-            transition: all 0.3s ease;
+            transition: all var(--intersoccer-transition-slow, 0.3s ease);
             position: relative;
         }
         
         .camp-card:hover, .course-card:hover {
             transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-            border-color: #0073aa;
+            box-shadow: var(--intersoccer-shadow-elevated, 0 4px 12px rgba(0, 0, 0, 0.1));
+            border-color: var(--intersoccer-text-link, #2271b1);
         }
         
         .camp-header, .course-header {
-            padding: 18px 20px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #e1e4e8;
+            padding: var(--intersoccer-space-lg, 16px) var(--intersoccer-space-xl, 20px);
+            background: var(--intersoccer-bg-row-alt, #f8f9fa);
+            border-bottom: 1px solid var(--intersoccer-border-light, #e1e1e1);
         }
         
         .camp-venue, .course-venue {
             margin: 0;
-            font-size: 16px;
+            font-size: var(--intersoccer-font-size-xl, 16px);
             font-weight: 600;
-            color: #2c3338;
+            color: var(--intersoccer-text-primary, #1d2327);
         }
         
         .camp-type {
             position: absolute;
-            top: 15px;
-            right: 15px;
-            background: #0073aa;
-            color: white;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 11px;
+            top: var(--intersoccer-space-lg, 16px);
+            right: var(--intersoccer-space-lg, 16px);
+            background: var(--intersoccer-text-link, #2271b1);
+            color: var(--intersoccer-bg-surface, #fff);
+            padding: var(--intersoccer-space-xs, 4px) var(--intersoccer-space-sm, 8px);
+            border-radius: var(--intersoccer-radius-pill, 13px);
+            font-size: var(--intersoccer-font-size-xs, 11px);
             font-weight: 500;
         }
 
         .roster-badge {
             position: absolute;
-            top: 15px;
-            right: 15px;
-            color: #fff;
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 11px;
+            top: var(--intersoccer-space-lg, 16px);
+            right: var(--intersoccer-space-lg, 16px);
+            color: var(--intersoccer-bg-surface, #fff);
+            padding: var(--intersoccer-space-xs, 4px) var(--intersoccer-space-sm, 8px);
+            border-radius: var(--intersoccer-radius-pill, 13px);
+            font-size: var(--intersoccer-font-size-xs, 11px);
             font-weight: 600;
             line-height: 1.3;
             z-index: 1;
@@ -357,16 +358,16 @@ add_action('admin_head', function () {
         }
         
         .camp-details, .course-details {
-            padding: 20px;
+            padding: var(--intersoccer-space-xl, 20px);
         }
         
         .detail-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 12px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid #f1f3f4;
+            margin-bottom: var(--intersoccer-space-md, 12px);
+            padding-bottom: var(--intersoccer-space-sm, 8px);
+            border-bottom: 1px solid var(--intersoccer-bg-muted, #f0f0f1);
         }
         
         .detail-row:last-child {
@@ -376,12 +377,12 @@ add_action('admin_head', function () {
         
         .detail-label {
             font-weight: 600;
-            color: #5f6368;
-            font-size: 13px;
+            color: var(--intersoccer-text-secondary, #646970);
+            font-size: var(--intersoccer-font-size-md, 13px);
         }
         
         .detail-value {
-            color: #2c3338;
+            color: var(--intersoccer-text-primary, #1d2327);
             font-weight: 500;
             text-align: right;
             max-width: 60%;
@@ -389,67 +390,72 @@ add_action('admin_head', function () {
         }
         
         .camp-footer, .course-footer {
-            padding: 15px 20px;
-            background: #f8f9fa;
+            padding: var(--intersoccer-space-lg, 16px) var(--intersoccer-space-xl, 20px);
+            background: var(--intersoccer-bg-row-alt, #f8f9fa);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-top: 1px solid #e1e4e8;
+            border-top: 1px solid var(--intersoccer-border-light, #e1e1e1);
         }
         
         .player-count {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: var(--intersoccer-space-sm, 8px);
         }
         
         .count-number {
-            background: #0073aa;
-            color: white;
-            padding: 8px 12px;
-            border-radius: 20px;
+            background: var(--intersoccer-text-link, #2271b1);
+            color: var(--intersoccer-bg-surface, #fff);
+            padding: var(--intersoccer-space-sm, 8px) var(--intersoccer-space-md, 12px);
+            border-radius: var(--intersoccer-radius-pill, 13px);
             font-weight: 600;
-            font-size: 14px;
+            font-size: var(--intersoccer-font-size-lg, 14px);
             min-width: 35px;
             text-align: center;
         }
         
         .count-label {
-            color: #5f6368;
-            font-size: 13px;
+            color: var(--intersoccer-text-secondary, #646970);
+            font-size: var(--intersoccer-font-size-md, 13px);
             font-weight: 500;
         }
         
         .button-roster-view {
-            background: #0073aa;
-            color: white;
-            padding: 10px 16px;
-            border-radius: 6px;
+            background: var(--intersoccer-text-link, #2271b1);
+            color: var(--intersoccer-bg-surface, #fff);
+            padding: var(--intersoccer-space-sm, 8px) var(--intersoccer-space-lg, 16px);
+            border-radius: var(--intersoccer-radius-lg, 6px);
             text-decoration: none;
             font-weight: 500;
-            font-size: 13px;
-            transition: all 0.2s ease;
+            font-size: var(--intersoccer-font-size-md, 13px);
+            transition: all var(--intersoccer-transition-normal, 0.2s ease);
             border: none;
         }
         
         .button-roster-view:hover {
-            background: #005a87;
-            color: white;
+            background: var(--intersoccer-text-link-hover, #135e96);
+            color: var(--intersoccer-bg-surface, #fff);
             text-decoration: none;
             transform: translateY(-1px);
-            margin-right: 8px;
+            margin-right: var(--intersoccer-space-sm, 8px);
+        }
+        
+        .button-roster-view:focus {
+            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
+            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
         }
         
         .close-roster-btn, .reopen-roster-btn {
-            background: #dc3232;
-            color: white;
-            padding: 8px 10px;
-            border-radius: 6px;
+            background: var(--intersoccer-danger, #d63638);
+            color: var(--intersoccer-bg-surface, #fff);
+            padding: var(--intersoccer-space-sm, 8px);
+            border-radius: var(--intersoccer-radius-lg, 6px);
             border: none;
             cursor: pointer;
-            font-size: 16px;
+            font-size: var(--intersoccer-font-size-xl, 16px);
             line-height: 1;
-            transition: all 0.2s ease;
+            transition: all var(--intersoccer-transition-normal, 0.2s ease);
             width: 32px;
             height: 32px;
             display: inline-flex;
@@ -469,12 +475,17 @@ add_action('admin_head', function () {
         }
         
         .close-roster-btn:hover {
-            background: #a00;
+            background: var(--intersoccer-danger-hover, #b32d2e);
             transform: translateY(-1px);
         }
         
+        .close-roster-btn:focus, .reopen-roster-btn:focus {
+            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
+            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
+        }
+        
         .reopen-roster-btn {
-            background: #46b450;
+            background: var(--intersoccer-success, #00a32a);
         }
         
         .reopen-roster-btn::before {
@@ -485,26 +496,26 @@ add_action('admin_head', function () {
         }
         
         .reopen-roster-btn:hover {
-            background: #2e7d32;
+            background: var(--intersoccer-success-hover, #008a20);
             transform: translateY(-1px);
         }
         
         .camp-actions, .course-actions {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: var(--intersoccer-space-sm, 8px);
         }
         
         /* Bulk actions */
         .bulk-actions-bar {
-            background: #f8f9fa;
-            padding: 15px 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
+            background: var(--intersoccer-bg-row-alt, #f8f9fa);
+            padding: var(--intersoccer-space-lg, 16px) var(--intersoccer-space-xl, 20px);
+            border-radius: var(--intersoccer-radius-lg, 6px);
+            margin-bottom: var(--intersoccer-space-xl, 20px);
             display: none;
             align-items: center;
-            gap: 15px;
-            border: 1px solid #ddd;
+            gap: var(--intersoccer-space-lg, 16px);
+            border: 1px solid var(--intersoccer-border-subtle, #ddd);
         }
         
         .bulk-actions-bar.active {
@@ -513,14 +524,19 @@ add_action('admin_head', function () {
         
         .bulk-actions-bar .selected-count {
             font-weight: 600;
-            color: #0073aa;
+            color: var(--intersoccer-text-link, #2271b1);
         }
         
         .roster-checkbox {
-            margin-right: 8px;
+            margin-right: var(--intersoccer-space-sm, 8px);
             width: 18px;
             height: 18px;
             cursor: pointer;
+        }
+        
+        .roster-checkbox:focus {
+            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
+            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
         }
         
         .camp-card, .course-card {
@@ -530,59 +546,59 @@ add_action('admin_head', function () {
         .camp-card .roster-checkbox,
         .course-card .roster-checkbox {
             position: absolute;
-            top: 10px;
-            right: 10px;
+            top: var(--intersoccer-space-sm, 8px);
+            right: var(--intersoccer-space-sm, 8px);
             z-index: 10;
         }
         
-        /* No rosters state */
+        /* No rosters state - replaced by intersoccer_render_empty_state() */
         .no-rosters {
             text-align: center;
-            padding: 80px 20px;
-            background: white;
-            border-radius: 10px;
-            border: 2px dashed #ddd;
-            margin: 30px 0;
+            padding: 80px var(--intersoccer-space-xl, 20px);
+            background: var(--intersoccer-bg-surface, #fff);
+            border-radius: var(--intersoccer-radius-lg, 6px);
+            border: 2px dashed var(--intersoccer-border-subtle, #ddd);
+            margin: var(--intersoccer-space-2xl, 24px) 0;
         }
         
         .no-rosters-icon {
             font-size: 64px;
-            margin-bottom: 20px;
+            margin-bottom: var(--intersoccer-space-xl, 20px);
             opacity: 0.3;
         }
         
         .no-rosters h3 {
-            color: #5f6368;
-            margin-bottom: 10px;
-            font-size: 20px;
+            color: var(--intersoccer-text-secondary, #646970);
+            margin-bottom: var(--intersoccer-space-sm, 8px);
+            font-size: var(--intersoccer-font-size-2xl, 18px);
         }
         
         .no-rosters p {
-            color: #8a8a8a;
-            font-size: 14px;
+            color: var(--intersoccer-text-muted, #8c8f94);
+            font-size: var(--intersoccer-font-size-lg, 14px);
             max-width: 400px;
             margin: 0 auto;
         }
         
         /* Day groups for courses */
         .day-group {
-            margin-bottom: 30px;
+            margin-bottom: var(--intersoccer-space-2xl, 24px);
         }
         
         .day-group h3 {
-            background: #f1f3f4;
+            background: var(--intersoccer-bg-muted, #f0f0f1);
             margin: 0;
-            padding: 15px 25px;
-            font-size: 18px;
-            color: #2c3338;
-            border-left: 4px solid #0073aa;
+            padding: var(--intersoccer-space-lg, 16px) var(--intersoccer-space-2xl, 24px);
+            font-size: var(--intersoccer-font-size-2xl, 18px);
+            color: var(--intersoccer-text-primary, #1d2327);
+            border-left: 4px solid var(--intersoccer-text-link, #2271b1);
         }
         
         /* Export buttons styling */
         .export-buttons {
             display: flex;
-            gap: 12px;
-            margin-bottom: 25px;
+            gap: var(--intersoccer-space-md, 12px);
+            margin-bottom: var(--intersoccer-space-2xl, 24px);
             flex-wrap: wrap;
         }
         
@@ -591,23 +607,28 @@ add_action('admin_head', function () {
         }
         
         .export-buttons .button-primary {
-            background: #0073aa;
-            border-color: #0073aa;
-            padding: 8px 16px;
+            background: var(--intersoccer-text-link, #2271b1);
+            border-color: var(--intersoccer-text-link, #2271b1);
+            padding: var(--intersoccer-space-sm, 8px) var(--intersoccer-space-lg, 16px);
             font-weight: 500;
         }
         
         .export-buttons .button-primary:hover {
-            background: #005a87;
-            border-color: #005a87;
+            background: var(--intersoccer-text-link-hover, #135e96);
+            border-color: var(--intersoccer-text-link-hover, #135e96);
+        }
+        
+        .export-buttons .button-primary:focus {
+            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
+            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
         }
         
         /* Responsive design */
         @media (max-width: 1200px) {
             .camps-grid, .courses-grid {
                 grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-                gap: 15px;
-                padding: 20px;
+                gap: var(--intersoccer-space-lg, 16px);
+                padding: var(--intersoccer-space-xl, 20px);
             }
         }
         
@@ -619,7 +640,7 @@ add_action('admin_head', function () {
             
             .filter-form {
                 flex-direction: column;
-                gap: 15px;
+                gap: var(--intersoccer-space-lg, 16px);
             }
             
             .filter-group {
@@ -629,17 +650,17 @@ add_action('admin_head', function () {
             
             .camps-grid, .courses-grid {
                 grid-template-columns: 1fr;
-                padding: 15px;
+                padding: var(--intersoccer-space-lg, 16px);
             }
             
             .week-header, .season-header {
                 flex-direction: column;
                 align-items: flex-start;
-                gap: 10px;
+                gap: var(--intersoccer-space-sm, 8px);
             }
             
             .week-stats, .season-stats {
-                gap: 15px;
+                gap: var(--intersoccer-space-lg, 16px);
             }
             
             .export-buttons {
@@ -1688,11 +1709,29 @@ function intersoccer_render_camps_page() {
         <div class="sports-rosters">
             <?php if (empty($grouped)): ?>
                 <?php
+                $has_active_filters = $selected_season || $selected_venue || $selected_camp_terms || $selected_age_group || $selected_city || $status_filter || $girls_only_mode !== 'all';
+                $reconcile_url = wp_nonce_url(admin_url('admin.php?page=' . rawurlencode($page_slug) . ($unified ? '&activity_type=' . rawurlencode($activity_type) : '') . '&action=reconcile'), 'intersoccer_reconcile');
+                $empty_actions = [];
+                if ($has_active_filters) {
+                    $empty_actions[] = [
+                        'label' => __('Clear Filters', 'intersoccer-reports-rosters'),
+                        'url'   => $clear_filters_url,
+                    ];
+                }
+                $empty_actions[] = [
+                    'label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
+                    'url'   => $reconcile_url,
+                ];
                 intersoccer_render_empty_state([
-                    'title'   => __('No camps found', 'intersoccer-reports-rosters'),
-                    'message' => __('Try adjusting your filters or sync rosters to see available camps.', 'intersoccer-reports-rosters'),
+                    'title'   => $has_active_filters
+                        ? __('No camps match these filters', 'intersoccer-reports-rosters')
+                        : __('No camps found', 'intersoccer-reports-rosters'),
+                    'message' => $has_active_filters
+                        ? __('Try adjusting your filters or clear them to see all camps.', 'intersoccer-reports-rosters')
+                        : __('Sync rosters from the Advanced page to see available camps.', 'intersoccer-reports-rosters'),
                     'icon'    => '⚽',
-                    'variant' => 'no-results',
+                    'variant' => $has_active_filters ? 'no-results' : 'empty',
+                    'actions' => $empty_actions,
                 ]);
                 ?>
             <?php else: ?>
@@ -2143,11 +2182,29 @@ function intersoccer_render_courses_page() {
         <div class="sports-rosters">
             <?php if (empty($grouped)): ?>
                 <?php
+                $has_active_filters = $selected_season || $selected_venue || $selected_course_day || $selected_age_group || $selected_city || $status_filter || $girls_only_mode !== 'all';
+                $reconcile_url = wp_nonce_url(admin_url('admin.php?page=' . rawurlencode($page_slug) . ($unified ? '&activity_type=' . rawurlencode($activity_type) : '') . '&action=reconcile'), 'intersoccer_reconcile');
+                $empty_actions = [];
+                if ($has_active_filters) {
+                    $empty_actions[] = [
+                        'label' => __('Clear Filters', 'intersoccer-reports-rosters'),
+                        'url'   => $clear_filters_url,
+                    ];
+                }
+                $empty_actions[] = [
+                    'label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
+                    'url'   => $reconcile_url,
+                ];
                 intersoccer_render_empty_state([
-                    'title'   => __('No courses found', 'intersoccer-reports-rosters'),
-                    'message' => __('Try adjusting your filters or sync rosters to see available courses.', 'intersoccer-reports-rosters'),
+                    'title'   => $has_active_filters
+                        ? __('No courses match these filters', 'intersoccer-reports-rosters')
+                        : __('No courses found', 'intersoccer-reports-rosters'),
+                    'message' => $has_active_filters
+                        ? __('Try adjusting your filters or clear them to see all courses.', 'intersoccer-reports-rosters')
+                        : __('Sync rosters from the Advanced page to see available courses.', 'intersoccer-reports-rosters'),
                     'icon'    => '⚽',
-                    'variant' => 'no-results',
+                    'variant' => $has_active_filters ? 'no-results' : 'empty',
+                    'actions' => $empty_actions,
                 ]);
                 ?>
             <?php else: ?>
@@ -2578,11 +2635,32 @@ function intersoccer_render_girls_only_page() {
         <div class="sports-rosters">
             <?php if (empty($grouped_camps) && empty($grouped_courses)): ?>
                 <?php
+                $has_active_filters = $selected_season || $selected_type || $selected_venue || $selected_camp_terms || $selected_course_day || $selected_age_group || $selected_city || $status_filter;
+                $reconcile_url = wp_nonce_url(admin_url('admin.php?page=' . rawurlencode($page_slug) . ($unified ? '&activity_type=' . rawurlencode($activity_type) : '') . '&action=reconcile'), 'intersoccer_reconcile');
+                $clear_filters_url_go = function_exists('intersoccer_rosters_clear_filters_url')
+                    ? intersoccer_rosters_clear_filters_url($page_slug, $unified ? ['activity_type' => $activity_type] : [])
+                    : admin_url('admin.php?page=' . rawurlencode($page_slug) . '&clear_isrr_filters=1');
+                $empty_actions = [];
+                if ($has_active_filters) {
+                    $empty_actions[] = [
+                        'label' => __('Clear Filters', 'intersoccer-reports-rosters'),
+                        'url'   => $clear_filters_url_go,
+                    ];
+                }
+                $empty_actions[] = [
+                    'label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
+                    'url'   => $reconcile_url,
+                ];
                 intersoccer_render_empty_state([
-                    'title'   => __('No girls only events found', 'intersoccer-reports-rosters'),
-                    'message' => __('Try adjusting your filters or sync rosters to see available events.', 'intersoccer-reports-rosters'),
+                    'title'   => $has_active_filters
+                        ? __('No girls only events match these filters', 'intersoccer-reports-rosters')
+                        : __('No girls only events found', 'intersoccer-reports-rosters'),
+                    'message' => $has_active_filters
+                        ? __('Try adjusting your filters or clear them to see all events.', 'intersoccer-reports-rosters')
+                        : __('Sync rosters from the Advanced page to see available girls only events.', 'intersoccer-reports-rosters'),
                     'icon'    => '⚽',
-                    'variant' => 'no-results',
+                    'variant' => $has_active_filters ? 'no-results' : 'empty',
+                    'actions' => $empty_actions,
                 ]);
                 ?>
             <?php else: ?>
@@ -3016,11 +3094,29 @@ function intersoccer_render_tournaments_page() {
         <div class="sports-rosters">
             <?php if (empty($grouped)): ?>
                 <?php
+                $has_active_filters = $selected_season || $selected_venue || $selected_age_group || $selected_city || $selected_time;
+                $reconcile_url = wp_nonce_url(admin_url('admin.php?page=' . rawurlencode($page_slug) . ($unified ? '&activity_type=' . rawurlencode($activity_type) : '') . '&action=reconcile'), 'intersoccer_reconcile');
+                $empty_actions = [];
+                if ($has_active_filters) {
+                    $empty_actions[] = [
+                        'label' => __('Clear Filters', 'intersoccer-reports-rosters'),
+                        'url'   => $clear_filters_url,
+                    ];
+                }
+                $empty_actions[] = [
+                    'label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
+                    'url'   => $reconcile_url,
+                ];
                 intersoccer_render_empty_state([
-                    'title'   => __('No tournaments found', 'intersoccer-reports-rosters'),
-                    'message' => __('Try adjusting your filters or sync rosters to see available tournaments.', 'intersoccer-reports-rosters'),
+                    'title'   => $has_active_filters
+                        ? __('No tournaments match these filters', 'intersoccer-reports-rosters')
+                        : __('No tournaments found', 'intersoccer-reports-rosters'),
+                    'message' => $has_active_filters
+                        ? __('Try adjusting your filters or clear them to see all tournaments.', 'intersoccer-reports-rosters')
+                        : __('Sync rosters from the Advanced page to see available tournaments.', 'intersoccer-reports-rosters'),
                     'icon'    => '🏟️',
-                    'variant' => 'no-results',
+                    'variant' => $has_active_filters ? 'no-results' : 'empty',
+                    'actions' => $empty_actions,
                 ]);
                 ?>
             <?php else: ?>
@@ -3388,11 +3484,30 @@ function intersoccer_render_other_events_page() {
         <div class="sports-rosters">
             <?php if (empty($grouped_events)): ?>
                 <?php
+                $has_active_filters = $selected_season || $selected_product_name;
+                $reconcile_url = wp_nonce_url(admin_url('admin.php?page=intersoccer-other-events&action=reconcile'), 'intersoccer_reconcile');
+                $clear_filters_url_oe = admin_url('admin.php?page=intersoccer-other-events&clear_isrr_filters=1');
+                $empty_actions = [];
+                if ($has_active_filters) {
+                    $empty_actions[] = [
+                        'label' => __('Clear Filters', 'intersoccer-reports-rosters'),
+                        'url'   => $clear_filters_url_oe,
+                    ];
+                }
+                $empty_actions[] = [
+                    'label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
+                    'url'   => $reconcile_url,
+                ];
                 intersoccer_render_empty_state([
-                    'title'   => __('No events found', 'intersoccer-reports-rosters'),
-                    'message' => __('Try adjusting your filters or sync rosters to see available events.', 'intersoccer-reports-rosters'),
+                    'title'   => $has_active_filters
+                        ? __('No events match these filters', 'intersoccer-reports-rosters')
+                        : __('No events found', 'intersoccer-reports-rosters'),
+                    'message' => $has_active_filters
+                        ? __('Try adjusting your filters or clear them to see all events.', 'intersoccer-reports-rosters')
+                        : __('Sync rosters from the Advanced page to see available events.', 'intersoccer-reports-rosters'),
                     'icon'    => '⚽',
-                    'variant' => 'no-results',
+                    'variant' => $has_active_filters ? 'no-results' : 'empty',
+                    'actions' => $empty_actions,
                 ]);
                 ?>
             <?php else: ?>
@@ -3541,11 +3656,14 @@ function intersoccer_render_all_rosters_page() {
         
         <?php if (empty($product_names)) : ?>
             <?php
+            $reconcile_url = wp_nonce_url(admin_url('admin.php?page=intersoccer-all-rosters&action=reconcile'), 'intersoccer_reconcile');
             intersoccer_render_empty_state([
-                'title'   => __('No rosters available', 'intersoccer-reports-rosters'),
-                'message' => __('Please reconcile manually to sync roster data.', 'intersoccer-reports-rosters'),
-                'icon'    => '⚽',
-                'variant' => 'empty',
+                'title'        => __('No rosters available', 'intersoccer-reports-rosters'),
+                'message'      => __('Reconcile rosters from the Advanced page to sync roster data.', 'intersoccer-reports-rosters'),
+                'icon'         => '⚽',
+                'variant'      => 'empty',
+                'action_label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
+                'action_url'   => $reconcile_url,
             ]);
             ?>
         <?php else : ?>
