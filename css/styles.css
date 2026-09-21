@@ -691,6 +691,7 @@
 .camp-reports-table {
     table-layout: auto;
     width: 100%;
+    min-width: 1100px;
     font-size: var(--intersoccer-font-size-sm, 12px);
 }
 
@@ -715,6 +716,11 @@
 .camp-reports-table .all-reg td {
     background: var(--intersoccer-bg-row-alt, #f8f8f8);
     font-weight: bold;
+}
+
+/* Course reports table base styling */
+.course-reports-table {
+    min-width: 900px;
 }
 
 /* Course reports table season header (moved from inline) */
