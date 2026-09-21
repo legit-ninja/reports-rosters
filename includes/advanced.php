@@ -293,6 +293,60 @@ function intersoccer_render_advanced_page() {
                     scrollTop: $('#intersoccer-operation-status').offset().top - 50
                 }, 300);
             }
+
+            /**
+             * Extract a user-friendly error message from an AJAX XHR response.
+             * Handles JSON error responses, HTML error pages (PHP fatals, WP death screens),
+             * and timeouts. Caps output at ~400 chars for readable admin notices.
+             */
+            function extractAjaxErrorMessage(xhr, status, error) {
+                var MAX_LENGTH = 400;
+                var unknownError = '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>';
+
+                // Timeout has its own copy
+                if (status === 'timeout') {
+                    return '<?php echo esc_js(__('Request timed out. The operation may still be running on the server.', 'intersoccer-reports-rosters')); ?>';
+                }
+
+                // Prefer structured JSON response
+                if (xhr.responseJSON) {
+                    var jsonMsg = (xhr.responseJSON.data && xhr.responseJSON.data.message)
+                        ? xhr.responseJSON.data.message
+                        : xhr.responseJSON.message;
+                    if (jsonMsg) {
+                        return jsonMsg.length > MAX_LENGTH ? jsonMsg.substring(0, MAX_LENGTH) + '…' : jsonMsg;
+                    }
+                }
+
+                // Fall back to responseText — may be HTML from PHP fatal or WP error screen
+                var raw = xhr.responseText || '';
+                if (!raw) {
+                    return error || unknownError;
+                }
+
+                // Strip HTML tags
+                var stripped = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                if (!stripped) {
+                    return error || unknownError;
+                }
+
+                // Look for known PHP/WP error patterns in the stripped text
+                var errorPatterns = /Fatal error|Uncaught|Parse error|Allowed memory|Maximum execution/i;
+                var lines = stripped.split(/[\r\n]+/);
+                for (var i = 0; i < lines.length; i++) {
+                    var line = lines[i].trim();
+                    if (line && errorPatterns.test(line)) {
+                        return line.length > MAX_LENGTH ? line.substring(0, MAX_LENGTH) + '…' : line;
+                    }
+                }
+
+                // No recognizable error pattern — use first ~280 chars of stripped text
+                var preview = stripped.substring(0, 280).trim();
+                if (stripped.length > 280) {
+                    preview += '…';
+                }
+                return preview || error || unknownError;
+            }
             
             jQuery(document).ready(function($) {
                 console.log('InterSoccer: Advanced page JS loaded');
@@ -325,14 +379,9 @@ function intersoccer_render_advanced_page() {
                             $button.prop('disabled', false).text('<?php echo esc_js(__('Rebuild Rosters', 'intersoccer-reports-rosters')); ?>');
                         },
                         error: function(xhr, status, error) {
-                            var errorMsg;
-                            if (status === 'timeout') {
-                                errorMsg = '<?php echo esc_js(__('Request timed out after 3 minutes. The rebuild may still be running on the server. Please wait and check the rosters table.', 'intersoccer-reports-rosters')); ?>';
-                            } else {
-                                errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
-                                    ? xhr.responseJSON.data.message 
-                                    : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
-                            }
+                            var errorMsg = (status === 'timeout')
+                                ? '<?php echo esc_js(__('Request timed out after 3 minutes. The rebuild may still be running on the server. Please wait and check the rosters table.', 'intersoccer-reports-rosters')); ?>'
+                                : extractAjaxErrorMessage(xhr, status, error);
                             showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
                             $button.prop('disabled', false).text('<?php echo esc_js(__('Rebuild Rosters', 'intersoccer-reports-rosters')); ?>');
                             console.error('AJAX Error: ', status, error, xhr.responseText);
@@ -403,10 +452,9 @@ function intersoccer_render_advanced_page() {
 
                                 runAlignmentBatches(queue, onComplete, false);
                             },
-                            error: function(xhr) {
-                                var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message
-                                    ? xhr.responseJSON.data.message
-                                    : (xhr.responseText || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                            error: function(xhr, status, error) {
+                                console.error('AJAX Error:', status, error, xhr.responseText);
+                                var errorMsg = extractAjaxErrorMessage(xhr, status, error);
                                 showAdminNotice('<?php echo esc_js(__('Alignment batch failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
                                 onComplete(null);
                             }
@@ -452,9 +500,7 @@ function intersoccer_render_advanced_page() {
                             }, true);
                         },
                         error: function(xhr, status, error) {
-                            var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
-                                ? xhr.responseJSON.data.message 
-                                : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                            var errorMsg = extractAjaxErrorMessage(xhr, status, error);
                             showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
                             $button.prop('disabled', false).text('<?php echo esc_js(__('Reconcile Rosters', 'intersoccer-reports-rosters')); ?>');
                             console.error('AJAX Error: ', status, error, xhr.responseText);
@@ -499,9 +545,8 @@ function intersoccer_render_advanced_page() {
                                 $button.prop('disabled', false).text('<?php echo esc_js(__('Backfill Financial Attribution', 'intersoccer-reports-rosters')); ?>');
                             },
                             error: function(xhr, status, error) {
-                                var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message
-                                    ? xhr.responseJSON.data.message
-                                    : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                                console.error('AJAX Error:', status, error, xhr.responseText);
+                                var errorMsg = extractAjaxErrorMessage(xhr, status, error);
                                 showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
                                 $button.prop('disabled', false).text('<?php echo esc_js(__('Backfill Financial Attribution', 'intersoccer-reports-rosters')); ?>');
                             }
@@ -577,9 +622,8 @@ function intersoccer_render_advanced_page() {
                                 $button.prop('disabled', false).text('<?php echo esc_js(__('Normalize Roster Language (EN)', 'intersoccer-reports-rosters')); ?>');
                             },
                             error: function(xhr, status, error) {
-                                var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message
-                                    ? xhr.responseJSON.data.message
-                                    : (xhr.responseText || error || '');
+                                console.error('AJAX Error:', status, error, xhr.responseText);
+                                var errorMsg = extractAjaxErrorMessage(xhr, status, error);
                                 showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
                                 $button.prop('disabled', false).text('<?php echo esc_js(__('Normalize Roster Language (EN)', 'intersoccer-reports-rosters')); ?>');
                             }
@@ -615,9 +659,7 @@ function intersoccer_render_advanced_page() {
                             $button.prop('disabled', false).text('<?php echo esc_js(__('Rebuild Event Signatures', 'intersoccer-reports-rosters')); ?>');
                         },
                         error: function(xhr, status, error) {
-                            var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
-                                ? xhr.responseJSON.data.message 
-                                : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                            var errorMsg = extractAjaxErrorMessage(xhr, status, error);
                             showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
                             $button.prop('disabled', false).text('<?php echo esc_js(__('Rebuild Event Signatures', 'intersoccer-reports-rosters')); ?>');
                             console.error('AJAX Error: ', status, error, xhr.responseText);
@@ -647,9 +689,7 @@ function intersoccer_render_advanced_page() {
                             $button.prop('disabled', false).text('<?php echo esc_js(__('Process Orders', 'intersoccer-reports-rosters')); ?>');
                         },
                         error: function(xhr, status, error) {
-                            var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
-                                ? xhr.responseJSON.data.message 
-                                : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                            var errorMsg = extractAjaxErrorMessage(xhr, status, error);
                             showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
                             $button.prop('disabled', false).text('<?php echo esc_js(__('Process Orders', 'intersoccer-reports-rosters')); ?>');
                             console.error('AJAX Error: ', status, error, xhr.responseText);
@@ -679,9 +719,7 @@ function intersoccer_render_advanced_page() {
                             $button.prop('disabled', false).val('<?php echo esc_js(__('Upgrade Database', 'intersoccer-reports-rosters')); ?>');
                         },
                         error: function(xhr, status, error) {
-                            var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
-                                ? xhr.responseJSON.data.message 
-                                : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                            var errorMsg = extractAjaxErrorMessage(xhr, status, error);
                             showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
                             $button.prop('disabled', false).val('<?php echo esc_js(__('Upgrade Database', 'intersoccer-reports-rosters')); ?>');
                             console.error('AJAX Error: ', status, error, xhr.responseText);
@@ -2483,9 +2521,11 @@ function intersoccer_render_placeholder_management_section() {
                         },
                         error: function(xhr, status, error) {
                             console.error('AJAX Error:', status, error, xhr.responseText);
-                            var errorMsg = xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
-                                ? xhr.responseJSON.data.message 
-                                : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>');
+                            var errorMsg = (typeof extractAjaxErrorMessage === 'function')
+                                ? extractAjaxErrorMessage(xhr, status, error)
+                                : (xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message 
+                                    ? xhr.responseJSON.data.message 
+                                    : (xhr.responseText || error || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>'));
                             if (typeof showAdminNotice === 'function') {
                                 showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
                             } else {
