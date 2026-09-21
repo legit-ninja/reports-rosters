@@ -363,11 +363,25 @@ function intersoccer_render_birthdays_page(): void {
         </div>
 
         <?php if (empty($entries)): ?>
-            <div class="no-rosters">
-                <div class="no-rosters-icon">🎂</div>
-                <h3><?php esc_html_e('No birthdays found', 'intersoccer-reports-rosters'); ?></h3>
-                <p><?php esc_html_e('Birthday data will appear here when players with DOB values exist in rosters.', 'intersoccer-reports-rosters'); ?></p>
-            </div>
+            <?php
+            if (function_exists('intersoccer_render_empty_state')) {
+                intersoccer_render_empty_state([
+                    'title'   => __('No birthdays found', 'intersoccer-reports-rosters'),
+                    'message' => __('Birthday data will appear here when players with DOB values exist in rosters.', 'intersoccer-reports-rosters'),
+                    'icon'    => '🎂',
+                    'variant' => 'empty',
+                ]);
+            } else {
+                // Fallback if function not available
+                ?>
+                <div class="no-rosters">
+                    <div class="no-rosters-icon">🎂</div>
+                    <h3><?php esc_html_e('No birthdays found', 'intersoccer-reports-rosters'); ?></h3>
+                    <p><?php esc_html_e('Birthday data will appear here when players with DOB values exist in rosters.', 'intersoccer-reports-rosters'); ?></p>
+                </div>
+                <?php
+            }
+            ?>
         <?php elseif ($view === 'month'): ?>
             <?php intersoccer_render_birthdays_month_grid($entries, $year, $month); ?>
         <?php else: ?>

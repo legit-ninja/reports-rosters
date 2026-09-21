@@ -14,6 +14,28 @@ if (!defined('ABSPATH')) {
 require_once plugin_dir_path(__FILE__) . 'reports-data.php';
 
 /**
+ * Render the shared empty state partial.
+ *
+ * @param array $args {
+ *     Configuration arguments for the empty state.
+ *
+ *     @type string $title        Required. Heading text for the empty state.
+ *     @type string $message      Required. Descriptive message explaining the empty state.
+ *     @type string $icon         Optional. Emoji or dashicon class. Default '📋'.
+ *     @type string $variant      Optional. 'empty' | 'no-results' | 'error'. Default 'empty'.
+ *     @type string $action_label Optional. Primary action button text.
+ *     @type string $action_url   Optional. Primary action button URL.
+ *     @type array  $actions      Optional. Additional action links: [ ['label' => '', 'url' => ''], ... ]
+ * }
+ */
+function intersoccer_render_empty_state(array $args) {
+    $partial_path = plugin_dir_path(__FILE__) . 'partials/empty-state.php';
+    if (is_readable($partial_path)) {
+        include $partial_path;
+    }
+}
+
+/**
  * Map urgency CSS class to human-readable label.
  *
  * @param string $band Urgency CSS class (count-critical, count-low, count-good, count-optimal).
@@ -337,21 +359,24 @@ function intersoccer_render_final_reports_page() {
         </div>
 
         <?php if (empty($report_data)): ?>
-            <div class="intersoccer-empty-state">
-                <div class="intersoccer-empty-state-icon" aria-hidden="true">📋</div>
-                <h3 class="intersoccer-empty-state-title"><?php esc_html_e('No data found', 'intersoccer-reports-rosters'); ?></h3>
-                <p class="intersoccer-empty-state-message">
-                    <?php esc_html_e('No bookings match the selected filters. Try adjusting your filter criteria or selecting a different year.', 'intersoccer-reports-rosters'); ?>
-                </p>
-                <div class="intersoccer-empty-state-actions">
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=' . $current_page . ($live ? '&live=1' : ''))); ?>" class="button">
-                        <?php esc_html_e('Clear filters', 'intersoccer-reports-rosters'); ?>
-                    </a>
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=' . $current_page . '&year=' . (intval($year) - 1) . ($live ? '&live=1' : ''))); ?>" class="button">
-                        <?php echo esc_html(sprintf(__('Try %d', 'intersoccer-reports-rosters'), intval($year) - 1)); ?>
-                    </a>
-                </div>
-            </div>
+            <?php
+            intersoccer_render_empty_state([
+                'title'   => __('No data found', 'intersoccer-reports-rosters'),
+                'message' => __('No bookings match the selected filters. Try adjusting your filter criteria or selecting a different year.', 'intersoccer-reports-rosters'),
+                'icon'    => '📋',
+                'variant' => 'no-results',
+                'actions' => [
+                    [
+                        'label' => __('Clear filters', 'intersoccer-reports-rosters'),
+                        'url'   => admin_url('admin.php?page=' . $current_page . ($live ? '&live=1' : '')),
+                    ],
+                    [
+                        'label' => sprintf(__('Try %d', 'intersoccer-reports-rosters'), intval($year) - 1),
+                        'url'   => admin_url('admin.php?page=' . $current_page . '&year=' . (intval($year) - 1) . ($live ? '&live=1' : '')),
+                    ],
+                ],
+            ]);
+            ?>
         <?php else: ?>
             <?php if ($activity_type === 'Camp'): ?>
                 <?php
