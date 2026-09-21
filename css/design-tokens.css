@@ -118,6 +118,12 @@
     --intersoccer-transition-fast: 0.15s ease;
     --intersoccer-transition-normal: 0.2s ease;
     --intersoccer-transition-slow: 0.3s ease;
+
+    /* -------------------------------------------------------------------------
+       Z-Index Scale
+       ------------------------------------------------------------------------- */
+    --intersoccer-z-sticky-cell: 2;
+    --intersoccer-sticky-col-1-width: 80px;
 }
 
 /* ==========================================================================

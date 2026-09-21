@@ -907,3 +907,105 @@
     vertical-align: middle;
     margin-right: var(--intersoccer-space-xs, 4px);
 }
+
+/* ==========================================================================
+   Sticky Canton / Venue Columns (#20)
+   Keep place identity visible when scrolling horizontally in wide tables.
+   ========================================================================== */
+
+/* Enable sticky positioning on Canton + Venue columns in camp and course tables */
+.camp-reports-table th.intersoccer-sticky-col,
+.camp-reports-table td.intersoccer-sticky-col,
+.course-reports-table th.intersoccer-sticky-col,
+.course-reports-table td.intersoccer-sticky-col {
+    position: sticky;
+    z-index: var(--intersoccer-z-sticky-cell, 2);
+}
+
+/* Canton column (first sticky column) */
+.camp-reports-table th.intersoccer-sticky-col-canton,
+.camp-reports-table td.intersoccer-sticky-col-canton,
+.course-reports-table th.intersoccer-sticky-col-region,
+.course-reports-table td.intersoccer-sticky-col-region {
+    left: 0;
+}
+
+/* Venue column (second sticky column, offset by Canton width) */
+.camp-reports-table th.intersoccer-sticky-col-venue,
+.camp-reports-table td.intersoccer-sticky-col-venue,
+.course-reports-table th.intersoccer-sticky-col-venue,
+.course-reports-table td.intersoccer-sticky-col-venue {
+    left: var(--intersoccer-sticky-col-1-width, 80px);
+}
+
+/* Opaque backgrounds for sticky cells so content doesn't show through */
+.camp-reports-table th.intersoccer-sticky-col,
+.course-reports-table th.intersoccer-sticky-col {
+    background-color: var(--intersoccer-bg-header, #f9f9f9);
+}
+
+.camp-reports-table td.intersoccer-sticky-col,
+.course-reports-table td.intersoccer-sticky-col {
+    background-color: var(--intersoccer-bg-surface, #fff);
+}
+
+/* Respect header row backgrounds (Full Day / Mini headers) */
+.camp-reports-table .intersoccer-camp-header-full-day th.intersoccer-sticky-col {
+    background-color: #e8f4f8;
+}
+
+.camp-reports-table .intersoccer-camp-header-mini th.intersoccer-sticky-col {
+    background-color: #f8e8f4;
+}
+
+.camp-reports-table .intersoccer-camp-header-subrow th.intersoccer-sticky-col {
+    background-color: var(--intersoccer-bg-row-alt, #f8f8f8);
+}
+
+/* Week header rows */
+.camp-reports-table .week-header td.intersoccer-sticky-col {
+    background-color: var(--intersoccer-bg-muted, #f0f0f0);
+}
+
+/* Canton cell backgrounds (first appearance vs repeat) */
+.camp-reports-table td.intersoccer-sticky-col.intersoccer-camp-canton-cell {
+    background-color: var(--intersoccer-bg-row-alt, #f8f9fa);
+}
+
+/* Grand total and all-reg row sticky cells */
+.camp-reports-table .grand-total td.intersoccer-sticky-col {
+    background-color: #e8e8e8;
+}
+
+.camp-reports-table .all-reg td.intersoccer-sticky-col {
+    background-color: var(--intersoccer-bg-row-alt, #f8f8f8);
+}
+
+/* Course table: season header sticky cells */
+.course-reports-table .season-header td.intersoccer-sticky-col {
+    background-color: #e8e8e8;
+}
+
+/* Course table: region header sticky cells */
+.course-reports-table .intersoccer-course-region-header td.intersoccer-sticky-col {
+    background-color: var(--intersoccer-bg-muted, #f0f0f0);
+}
+
+/* Subtle right border on the last sticky column for visual separation */
+.camp-reports-table td.intersoccer-sticky-col-venue,
+.camp-reports-table th.intersoccer-sticky-col-venue,
+.course-reports-table td.intersoccer-sticky-col-venue,
+.course-reports-table th.intersoccer-sticky-col-venue {
+    border-right: 2px solid var(--intersoccer-border-muted, #c3c4c7);
+}
+
+/* Print: disable sticky to avoid layout issues */
+@media print {
+    .camp-reports-table th.intersoccer-sticky-col,
+    .camp-reports-table td.intersoccer-sticky-col,
+    .course-reports-table th.intersoccer-sticky-col,
+    .course-reports-table td.intersoccer-sticky-col {
+        position: static;
+        left: auto;
+    }
+}
