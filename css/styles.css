@@ -1122,25 +1122,25 @@
 }
 
 .intersoccer-campaign-status-badge--ready {
-    background: #edfaef;
+    background: var(--intersoccer-success-bg, #edfaef);
     border: 1px solid var(--intersoccer-success, #00a32a);
-    color: var(--intersoccer-success, #00a32a);
+    color: var(--intersoccer-success-text, #00a32a);
 }
 
 .intersoccer-campaign-status-badge--building {
     background: var(--intersoccer-info-bg, #e5f5fa);
     border: 1px solid var(--intersoccer-info, #72aee6);
-    color: #0a4b78;
+    color: var(--intersoccer-info-text, #0a4b78);
 }
 
 .intersoccer-campaign-status-badge--missing {
     background: var(--intersoccer-warning-bg, #fcf9e8);
     border: 1px solid var(--intersoccer-warning, #dba617);
-    color: #996800;
+    color: var(--intersoccer-warning-text, #996800);
 }
 
 .intersoccer-campaign-status-badge--failed {
-    background: var(--intersoccer-danger-bg, #fcf0f1);
+    background: var(--intersoccer-danger-bg, #fef7f7);
     border: 1px solid var(--intersoccer-danger, #d63638);
     color: var(--intersoccer-danger, #d63638);
 }

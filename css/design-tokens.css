@@ -36,6 +36,7 @@
     --intersoccer-success: #00a32a;
     --intersoccer-success-hover: #008a20;
     --intersoccer-success-gradient: linear-gradient(90deg, #00a32a, #4ab866);
+    --intersoccer-success-bg: #edfaef;
     --intersoccer-success-text: #00a32a;
 
     /* Danger (red) */
@@ -47,10 +48,12 @@
     /* Warning (amber/orange) */
     --intersoccer-warning: #dba617;
     --intersoccer-warning-bg: #fcf9e8;
+    --intersoccer-warning-text: #996800;
 
     /* Info (blue) */
     --intersoccer-info: #72aee6;
     --intersoccer-info-bg: #e5f5fa;
+    --intersoccer-info-text: #0a4b78;
 
     /* -------------------------------------------------------------------------
        Urgency Heatmap Colors (Final Numbers)
