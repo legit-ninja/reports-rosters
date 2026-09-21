@@ -1059,3 +1059,187 @@
         left: auto;
     }
 }
+
+/* ==========================================================================
+   Campaign Analytics Styles (#52)
+   Aligns with Final Numbers patterns: tokens, tab IA, empty states.
+   ========================================================================== */
+
+/* Page-level wrapper for token consumption */
+.intersoccer-reports-rosters-campaign-analytics {
+    margin: var(--intersoccer-space-xl, 20px) 0;
+}
+
+.intersoccer-reports-rosters-campaign-analytics h1 {
+    margin-bottom: var(--intersoccer-space-sm, 8px);
+}
+
+.intersoccer-reports-rosters-campaign-analytics .intersoccer-page-description {
+    color: var(--intersoccer-text-secondary, #646970);
+    margin-bottom: var(--intersoccer-space-lg, 16px);
+}
+
+/* Export / Refresh bar (aligned with Final Numbers export-section) */
+.intersoccer-campaign-export-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--intersoccer-space-sm, 8px);
+    align-items: center;
+    margin-bottom: var(--intersoccer-space-lg, 16px);
+}
+
+.intersoccer-campaign-export-bar .intersoccer-campaign-refresh-form {
+    display: inline-flex;
+}
+
+.intersoccer-campaign-export-bar .button .dashicons {
+    vertical-align: middle;
+    margin-right: var(--intersoccer-space-xs, 4px);
+    line-height: inherit;
+}
+
+/* Status bar */
+.intersoccer-campaign-status-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--intersoccer-space-sm, 8px);
+    padding: var(--intersoccer-space-md, 12px);
+    background: var(--intersoccer-bg-subtle, #f6f7f7);
+    border: 1px solid var(--intersoccer-border-muted, #c3c4c7);
+    border-radius: var(--intersoccer-radius-md, 4px);
+    margin-bottom: var(--intersoccer-space-lg, 16px);
+}
+
+.intersoccer-campaign-status-badge {
+    display: inline-block;
+    padding: var(--intersoccer-space-xs, 4px) var(--intersoccer-space-sm, 8px);
+    border-radius: var(--intersoccer-radius-pill, 13px);
+    font-size: var(--intersoccer-font-size-sm, 12px);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.intersoccer-campaign-status-badge--ready {
+    background: var(--intersoccer-success-bg, #edfaef);
+    border: 1px solid var(--intersoccer-success, #00a32a);
+    color: var(--intersoccer-success-text, #00a32a);
+}
+
+.intersoccer-campaign-status-badge--building {
+    background: var(--intersoccer-info-bg, #e5f5fa);
+    border: 1px solid var(--intersoccer-info, #72aee6);
+    color: var(--intersoccer-info-text, #0a4b78);
+}
+
+.intersoccer-campaign-status-badge--missing {
+    background: var(--intersoccer-warning-bg, #fcf9e8);
+    border: 1px solid var(--intersoccer-warning, #dba617);
+    color: var(--intersoccer-warning-text, #996800);
+}
+
+.intersoccer-campaign-status-badge--failed {
+    background: var(--intersoccer-danger-bg, #fef7f7);
+    border: 1px solid var(--intersoccer-danger, #d63638);
+    color: var(--intersoccer-danger, #d63638);
+}
+
+.intersoccer-campaign-computed-at {
+    color: var(--intersoccer-text-muted, #8c8f94);
+    font-size: var(--intersoccer-font-size-sm, 12px);
+}
+
+/* Error details disclosure (matches Final Numbers help-disclosure) */
+.intersoccer-campaign-error-details {
+    margin-top: var(--intersoccer-space-sm, 8px);
+}
+
+.intersoccer-campaign-error-details pre {
+    margin: 0;
+    font-family: var(--intersoccer-font-mono, Consolas, Monaco, monospace);
+    font-size: var(--intersoccer-font-size-sm, 12px);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Campaign payload tables: use consistent widefat styling from Final Numbers */
+.intersoccer-reports-rosters-campaign-analytics .widefat {
+    border-collapse: collapse;
+    margin-bottom: var(--intersoccer-space-lg, 16px);
+}
+
+.intersoccer-reports-rosters-campaign-analytics .widefat th,
+.intersoccer-reports-rosters-campaign-analytics .widefat td {
+    padding: var(--intersoccer-space-sm, 8px);
+    border: 1px solid var(--intersoccer-border-subtle, #ddd);
+}
+
+.intersoccer-reports-rosters-campaign-analytics .widefat th {
+    background: var(--intersoccer-bg-header, #f9f9f9);
+    font-weight: 600;
+}
+
+.intersoccer-reports-rosters-campaign-analytics h2 {
+    margin-top: var(--intersoccer-space-xl, 20px);
+    margin-bottom: var(--intersoccer-space-md, 12px);
+    color: var(--intersoccer-text-primary, #1d2327);
+}
+
+.intersoccer-reports-rosters-campaign-analytics h3 {
+    margin-top: var(--intersoccer-space-lg, 16px);
+    margin-bottom: var(--intersoccer-space-sm, 8px);
+    color: var(--intersoccer-text-primary, #1d2327);
+}
+
+/* Notice alignment with tokenized borders */
+.intersoccer-reports-rosters-campaign-analytics .notice {
+    border-left-width: 4px;
+    padding: var(--intersoccer-space-md, 12px);
+    margin: var(--intersoccer-space-md, 12px) 0;
+}
+
+.intersoccer-reports-rosters-campaign-analytics .notice-warning {
+    border-left-color: var(--intersoccer-warning, #dba617);
+    background: var(--intersoccer-warning-bg, #fcf9e8);
+}
+
+.intersoccer-reports-rosters-campaign-analytics .notice-info {
+    border-left-color: var(--intersoccer-info, #72aee6);
+    background: var(--intersoccer-info-bg, #e5f5fa);
+}
+
+.intersoccer-reports-rosters-campaign-analytics .notice-error {
+    border-left-color: var(--intersoccer-danger, #d63638);
+    background: var(--intersoccer-danger-bg, #fcf0f1);
+}
+
+/* Details/summary disclosure (campaign payload sections) */
+.intersoccer-reports-rosters-campaign-analytics details {
+    margin: var(--intersoccer-space-md, 12px) 0;
+}
+
+.intersoccer-reports-rosters-campaign-analytics details summary {
+    cursor: pointer;
+    font-weight: 500;
+    color: var(--intersoccer-text-link, #2271b1);
+    padding: var(--intersoccer-space-sm, 8px) 0;
+    user-select: none;
+    transition: color var(--intersoccer-transition-fast, 0.15s ease);
+}
+
+.intersoccer-reports-rosters-campaign-analytics details summary:hover {
+    color: var(--intersoccer-text-link-hover, #135e96);
+}
+
+.intersoccer-reports-rosters-campaign-analytics details[open] summary {
+    margin-bottom: var(--intersoccer-space-sm, 8px);
+}
+
+/* Print: hide filter toolbar and export bar */
+@media print {
+    .intersoccer-reports-rosters-campaign-analytics .intersoccer-filter-toolbar,
+    .intersoccer-reports-rosters-campaign-analytics .intersoccer-campaign-export-bar {
+        display: none !important;
+    }
+}
