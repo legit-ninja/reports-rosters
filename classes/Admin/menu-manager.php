@@ -47,7 +47,6 @@ class MenuManager {
 
     public function init(): void {
         add_action('admin_menu', [$this, 'register_menus']);
-        add_action('admin_menu', [$this, 'register_campaign_analytics_under_wc_analytics'], 99);
     }
 
     /**
@@ -80,6 +79,8 @@ class MenuManager {
      *
      * The page slug remains 'intersoccer-campaign-analytics' so existing deep
      * links, CampaignModule exports, and bookmarks continue to work.
+     *
+     * Called from register_menus() since Plugin.php invokes that method directly.
      */
     public function register_campaign_analytics_under_wc_analytics(): void {
         // Step 1: Register as a hidden WP admin page (parent=null).
@@ -96,8 +97,9 @@ class MenuManager {
 
         // Step 2: Add menu item to WooCommerce Analytics submenu.
         // WC Analytics menu slug is 'wc-admin&path=/analytics/overview'.
-        // We add our classic PHP page link directly to this submenu.
-        add_action('admin_menu', [$this, 'add_campaign_analytics_to_wc_analytics_menu'], 999);
+        // Plugin.php hooks register_menus at priority 5, WC registers at priority 10.
+        // Schedule at priority 999 to ensure WC Analytics menu exists.
+        add_action('admin_menu', [$this, 'inject_campaign_analytics_into_wc_analytics_submenu'], 999);
 
         // Step 3: Connect the PHP page to WC Admin for breadcrumbs/header.
         // Screen ID for a hidden page (parent=null) is 'admin_page_{slug}'.
@@ -113,21 +115,19 @@ class MenuManager {
     }
 
     /**
-     * Add Campaign Analytics menu item to WooCommerce Analytics submenu.
+     * Inject Campaign Analytics into WC Analytics submenu.
      *
-     * Called at priority 999 to ensure WC Analytics menu exists.
+     * Called at admin_menu priority 999 to ensure WC Analytics menu exists.
      */
-    public function add_campaign_analytics_to_wc_analytics_menu(): void {
+    public function inject_campaign_analytics_into_wc_analytics_submenu(): void {
         global $submenu;
 
-        // WC Analytics parent menu slug
         $analytics_menu_slug = 'wc-admin&path=/analytics/overview';
 
         if (!isset($submenu[$analytics_menu_slug])) {
             return;
         }
 
-        // Add our page to the Analytics submenu.
         // Format: [0]=title, [1]=capability, [2]=slug/url, [3]=page_title (optional)
         $submenu[$analytics_menu_slug][] = [
             __('Campaign Analytics', 'intersoccer-reports-rosters'),
@@ -251,8 +251,9 @@ class MenuManager {
             [$this, 'render_birthdays']
         );
 
-        // Campaign Analytics is now registered under WooCommerce → Analytics
-        // via register_campaign_analytics_under_wc_analytics().
+        // Campaign Analytics is registered under WooCommerce → Analytics.
+        // Must be called here since Plugin.php invokes register_menus() directly.
+        $this->register_campaign_analytics_under_wc_analytics();
 
         add_submenu_page(
             'intersoccer-reports-rosters',
