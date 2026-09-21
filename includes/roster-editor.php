@@ -12,6 +12,184 @@
 defined('ABSPATH') or die('Restricted access');
 
 /**
+ * Output shared roster editor CSS styles (called once per page load).
+ */
+function intersoccer_roster_editor_styles() {
+    static $printed = false;
+    if ($printed) return;
+    $printed = true;
+    ?>
+    <style>
+        /* Roster Editor filter panel */
+        .intersoccer-editor-filters {
+            background: var(--intersoccer-bg-header, #f9f9f9);
+            border: 1px solid var(--intersoccer-border-subtle, #ddd);
+            border-radius: var(--intersoccer-radius-md, 4px);
+            padding: var(--intersoccer-space-xl, 20px);
+            margin: var(--intersoccer-space-xl, 20px) 0;
+        }
+        .intersoccer-editor-filters > form > div {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: var(--intersoccer-space-lg, 16px);
+            margin-bottom: var(--intersoccer-space-lg, 16px);
+        }
+        .intersoccer-editor-filters label {
+            display: block;
+            margin-bottom: var(--intersoccer-space-xs, 4px);
+            font-weight: 600;
+            color: var(--intersoccer-text-primary, #1d2327);
+        }
+        .intersoccer-editor-filters input,
+        .intersoccer-editor-filters select {
+            width: 100%;
+            padding: var(--intersoccer-space-sm, 8px);
+            border: 1px solid var(--intersoccer-border-subtle, #ddd);
+            border-radius: var(--intersoccer-radius-md, 4px);
+            background: var(--intersoccer-bg-surface, #fff);
+            transition: border-color var(--intersoccer-transition-fast, 0.15s ease);
+        }
+        .intersoccer-editor-filters input:focus,
+        .intersoccer-editor-filters select:focus {
+            border-color: var(--intersoccer-text-link, #2271b1);
+            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
+            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
+        }
+        
+        /* Roster Editor modal */
+        .intersoccer-editor-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--intersoccer-bg-surface, #fff);
+            padding: var(--intersoccer-space-xl, 20px);
+            border: 2px solid var(--intersoccer-text-link, #2271b1);
+            border-radius: var(--intersoccer-radius-lg, 6px);
+            box-shadow: var(--intersoccer-shadow-elevated, 0 4px 12px rgba(0, 0, 0, 0.1));
+            z-index: 100000;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .intersoccer-editor-modal h3 {
+            margin-top: 0;
+            color: var(--intersoccer-text-primary, #1d2327);
+        }
+        .intersoccer-editor-modal input,
+        .intersoccer-editor-modal select,
+        .intersoccer-editor-modal textarea {
+            width: 100%;
+            padding: var(--intersoccer-space-sm, 8px);
+            border: 1px solid var(--intersoccer-border-subtle, #ddd);
+            border-radius: var(--intersoccer-radius-md, 4px);
+            background: var(--intersoccer-bg-surface, #fff);
+        }
+        .intersoccer-editor-modal textarea {
+            min-height: 100px;
+        }
+        .intersoccer-editor-modal button:focus {
+            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
+            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
+        }
+        .intersoccer-editor-modal-actions {
+            margin-top: var(--intersoccer-space-lg, 16px);
+            display: flex;
+            gap: var(--intersoccer-space-sm, 8px);
+            justify-content: flex-end;
+        }
+        .intersoccer-editor-button-group {
+            display: flex;
+            gap: var(--intersoccer-space-sm, 8px);
+        }
+        .intersoccer-editor-loading {
+            display: none;
+            text-align: center;
+            padding: var(--intersoccer-space-xl, 20px);
+        }
+        
+        .intersoccer-editor-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--intersoccer-overlay-bg, rgba(0, 0, 0, 0.5));
+            z-index: 99999;
+            cursor: pointer;
+        }
+        
+        /* Table styles */
+        .intersoccer-roster-editor table.widefat {
+            margin-top: var(--intersoccer-space-xl, 20px);
+        }
+        .intersoccer-roster-editor table.widefat th,
+        .intersoccer-roster-editor table.widefat td {
+            padding: var(--intersoccer-space-sm, 8px) var(--intersoccer-space-md, 12px);
+            font-size: var(--intersoccer-font-size-md, 13px);
+            vertical-align: middle;
+        }
+        .intersoccer-roster-editor table.widefat th {
+            background: var(--intersoccer-bg-row-alt, #f8f9fa);
+            font-weight: 600;
+            border-bottom: 2px solid var(--intersoccer-border-default, #ccd0d4);
+        }
+        .intersoccer-roster-editor table.widefat tbody tr:hover {
+            background: var(--intersoccer-bg-muted, #f0f0f1);
+        }
+        .intersoccer-roster-editor .editable-cell {
+            cursor: pointer;
+            position: relative;
+            transition: background-color var(--intersoccer-transition-normal, 0.2s ease);
+        }
+        .intersoccer-roster-editor .editable-cell:hover {
+            background-color: var(--intersoccer-warning-bg, #fcf9e8) !important;
+        }
+        .intersoccer-roster-editor .editable-cell:focus {
+            outline: var(--intersoccer-focus-ring, 2px solid #2271b1);
+            outline-offset: var(--intersoccer-focus-ring-offset, 1px);
+        }
+        .intersoccer-roster-editor .editable-cell.editing {
+            background-color: var(--intersoccer-warning-bg, #fcf9e8) !important;
+        }
+        .intersoccer-roster-editor .row-actions {
+            visibility: visible;
+        }
+        .tablenav {
+            margin: var(--intersoccer-space-sm, 8px) 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .tablenav-pages {
+            display: flex;
+            align-items: center;
+            gap: var(--intersoccer-space-sm, 8px);
+        }
+        @media (max-width: 782px) {
+            .intersoccer-editor-filters > form > div {
+                grid-template-columns: 1fr !important;
+            }
+            .intersoccer-roster-editor table.widefat {
+                font-size: var(--intersoccer-font-size-sm, 12px);
+            }
+            .intersoccer-roster-editor table.widefat th,
+            .intersoccer-roster-editor table.widefat td {
+                padding: var(--intersoccer-space-xs, 4px) var(--intersoccer-space-sm, 8px);
+            }
+            .intersoccer-editor-modal {
+                width: 95%;
+                max-width: 95%;
+            }
+        }
+    </style>
+    <?php
+}
+
+/**
  * Render the roster editor as tab content (for Settings page)
  */
 function intersoccer_render_roster_editor_tab() {
@@ -51,26 +229,26 @@ function intersoccer_render_roster_editor_tab() {
         <p><?php _e('Search, filter, and edit roster entries. Click on a row to edit inline, or use the Edit button for full editing.', 'intersoccer-reports-rosters'); ?></p>
 
         <!-- Filter Section -->
-        <div class="intersoccer-filters" style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">
+        <div class="intersoccer-filters intersoccer-editor-filters">
             <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" id="roster-editor-filters">
                 <input type="hidden" name="page" value="intersoccer-advanced" />
                 <input type="hidden" name="tab" value="edit-rosters" />
                 
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                <div>
                     <div>
-                        <label for="search" style="display: block; margin-bottom: 5px; font-weight: 600;">
+                        <label for="search" >
                             <?php _e('Search:', 'intersoccer-reports-rosters'); ?>
                         </label>
                         <input type="text" name="search" id="search" value="<?php echo esc_attr($search); ?>" 
                                placeholder="<?php esc_attr_e('Player name, Order ID, Venue...', 'intersoccer-reports-rosters'); ?>" 
-                               style="width: 100%;" />
+ />
                     </div>
                     
                     <div>
-                        <label for="activity_type" style="display: block; margin-bottom: 5px; font-weight: 600;">
+                        <label for="activity_type" >
                             <?php _e('Activity Type:', 'intersoccer-reports-rosters'); ?>
                         </label>
-                        <select name="activity_type" id="activity_type" style="width: 100%;">
+                        <select name="activity_type" id="activity_type">
                             <option value=""><?php _e('All Types', 'intersoccer-reports-rosters'); ?></option>
                             <?php foreach ($activity_types as $type): ?>
                                 <option value="<?php echo esc_attr($type); ?>" <?php selected($activity_type, $type); ?>>
@@ -81,10 +259,10 @@ function intersoccer_render_roster_editor_tab() {
                     </div>
                     
                     <div>
-                        <label for="season" style="display: block; margin-bottom: 5px; font-weight: 600;">
+                        <label for="season" >
                             <?php _e('Season:', 'intersoccer-reports-rosters'); ?>
                         </label>
-                        <select name="season" id="season" style="width: 100%;">
+                        <select name="season" id="season">
                             <option value=""><?php _e('All Seasons', 'intersoccer-reports-rosters'); ?></option>
                             <?php foreach ($seasons as $s): ?>
                                 <option value="<?php echo esc_attr($s); ?>" <?php selected($season, $s); ?>>
@@ -95,10 +273,10 @@ function intersoccer_render_roster_editor_tab() {
                     </div>
                     
                     <div>
-                        <label for="canton_region" style="display: block; margin-bottom: 5px; font-weight: 600;">
+                        <label for="canton_region" >
                             <?php _e('Canton/Region:', 'intersoccer-reports-rosters'); ?>
                         </label>
-                        <select name="canton_region" id="canton_region" style="width: 100%;">
+                        <select name="canton_region" id="canton_region">
                             <option value=""><?php _e('All Regions', 'intersoccer-reports-rosters'); ?></option>
                             <?php foreach ($canton_regions as $cr): ?>
                                 <option value="<?php echo esc_attr($cr); ?>" <?php selected($canton_region, $cr); ?>>
@@ -109,23 +287,23 @@ function intersoccer_render_roster_editor_tab() {
                     </div>
                     
                     <div>
-                        <label for="start_date" style="display: block; margin-bottom: 5px; font-weight: 600;">
+                        <label for="start_date" >
                             <?php _e('Start Date:', 'intersoccer-reports-rosters'); ?>
                         </label>
                         <input type="text" name="start_date" id="start_date" value="<?php echo esc_attr($start_date); ?>" 
-                               placeholder="YYYY-MM-DD" style="width: 100%;" />
+                               placeholder="YYYY-MM-DD" />
                     </div>
                     
                     <div>
-                        <label for="end_date" style="display: block; margin-bottom: 5px; font-weight: 600;">
+                        <label for="end_date" >
                             <?php _e('End Date:', 'intersoccer-reports-rosters'); ?>
                         </label>
                         <input type="text" name="end_date" id="end_date" value="<?php echo esc_attr($end_date); ?>" 
-                               placeholder="YYYY-MM-DD" style="width: 100%;" />
+                               placeholder="YYYY-MM-DD" />
                     </div>
                 </div>
                 
-                <div style="display: flex; gap: 10px;">
+                <div class="intersoccer-editor-button-group">
                     <button type="submit" class="button button-primary">
                         <?php _e('Filter', 'intersoccer-reports-rosters'); ?>
                     </button>
@@ -138,7 +316,7 @@ function intersoccer_render_roster_editor_tab() {
 
         <!-- Results Container -->
         <div id="roster-editor-results">
-            <div id="loading-indicator" style="display: none; text-align: center; padding: 20px;">
+            <div id="loading-indicator" class="intersoccer-editor-loading">
                 <span class="spinner is-active" style="float: none;"></span>
                 <?php _e('Loading...', 'intersoccer-reports-rosters'); ?>
             </div>
@@ -146,84 +324,18 @@ function intersoccer_render_roster_editor_tab() {
         </div>
 
         <!-- Inline edit modal (hidden by default) -->
-        <div id="inline-edit-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border: 2px solid #0073aa; box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 100000; max-width: 500px; width: 90%;">
+        <div id="inline-edit-modal" class="intersoccer-editor-modal">
             <h3 id="inline-edit-title"><?php _e('Edit Field', 'intersoccer-reports-rosters'); ?></h3>
             <div id="inline-edit-content"></div>
-            <div style="margin-top: 15px; display: flex; gap: 10px; justify-content: flex-end;">
+            <div class="intersoccer-editor-modal-actions">
                 <button type="button" class="button" id="inline-edit-cancel"><?php _e('Cancel', 'intersoccer-reports-rosters'); ?></button>
                 <button type="button" class="button button-primary" id="inline-edit-save"><?php _e('Save', 'intersoccer-reports-rosters'); ?></button>
             </div>
         </div>
-        <div id="inline-edit-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 99999;"></div>
+        <div id="inline-edit-overlay" class="intersoccer-editor-overlay"></div>
     </div>
 
-    <style>
-        .intersoccer-roster-editor table.widefat {
-            margin-top: 20px;
-        }
-        .intersoccer-roster-editor table.widefat th,
-        .intersoccer-roster-editor table.widefat td {
-            padding: 8px 12px;
-            font-size: 13px;
-            vertical-align: middle;
-        }
-        .intersoccer-roster-editor table.widefat th {
-            background: #f8f9fa;
-            font-weight: 600;
-            border-bottom: 2px solid #dee2e6;
-        }
-        .intersoccer-roster-editor table.widefat tbody tr:hover {
-            background: #e9ecef;
-        }
-        .intersoccer-roster-editor .editable-cell {
-            cursor: pointer;
-            position: relative;
-            transition: background-color 0.2s;
-        }
-        .intersoccer-roster-editor .editable-cell:hover {
-            background-color: #fff3cd !important;
-        }
-        .intersoccer-roster-editor .editable-cell.editing {
-            background-color: #fff3cd !important;
-        }
-        .intersoccer-roster-editor .row-actions {
-            visibility: visible;
-        }
-        #inline-edit-modal {
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-        #inline-edit-overlay {
-            cursor: pointer;
-        }
-        .tablenav {
-            margin: 10px 0;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .tablenav-pages {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        @media (max-width: 782px) {
-            .intersoccer-filters > div {
-                grid-template-columns: 1fr !important;
-            }
-            .intersoccer-roster-editor table.widefat {
-                font-size: 12px;
-            }
-            .intersoccer-roster-editor table.widefat th,
-            .intersoccer-roster-editor table.widefat td {
-                padding: 6px 8px;
-            }
-            #inline-edit-modal {
-                width: 95%;
-                max-width: 95%;
-            }
-        }
-    </style>
+    <?php intersoccer_roster_editor_styles(); ?>
 
     <script>
     // Define AJAX settings before jQuery ready
@@ -334,25 +446,25 @@ function intersoccer_render_roster_editor_tab() {
             // Clean current value (remove "—" and trim)
             var cleanValue = currentValue === '—' || currentValue === '' ? '' : currentValue.trim();
             
-            // Determine input type based on field
+            // Determine input type based on field (styles from .intersoccer-editor-modal CSS)
             var inputHtml = '';
             if (fieldName.includes('date')) {
-                inputHtml = '<input type="text" id="inline-edit-value" class="datepicker" value="' + escapeHtml(cleanValue) + '" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="text" id="inline-edit-value" class="datepicker" value="' + escapeHtml(cleanValue) + '" />';
             } else if (fieldName === 'gender' || fieldName === 'player_gender') {
-                inputHtml = '<select id="inline-edit-value" style="width: 100%; padding: 8px;">' +
+                inputHtml = '<select id="inline-edit-value">' +
                     '<option value=""><?php echo esc_js(__('N/A', 'intersoccer-reports-rosters')); ?></option>' +
                     '<option value="Male"' + (cleanValue === 'Male' ? ' selected' : '') + '>Male</option>' +
                     '<option value="Female"' + (cleanValue === 'Female' ? ' selected' : '') + '>Female</option>' +
                     '<option value="Other"' + (cleanValue === 'Other' ? ' selected' : '') + '>Other</option>' +
                     '</select>';
             } else if (fieldName.includes('text') || fieldName.includes('medical') || fieldName.includes('dietary')) {
-                inputHtml = '<textarea id="inline-edit-value" style="width: 100%; padding: 8px; min-height: 100px;">' + escapeHtml(cleanValue) + '</textarea>';
+                inputHtml = '<textarea id="inline-edit-value">' + escapeHtml(cleanValue) + '</textarea>';
             } else if (fieldName.includes('price') || fieldName.includes('amount')) {
-                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="0.01" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="0.01" />';
             } else if (fieldName === 'age') {
-                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="1" min="0" max="100" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="1" min="0" max="100" />';
             } else {
-                inputHtml = '<input type="text" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="text" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" />';
             }
 
             $('#inline-edit-content').html(inputHtml);
@@ -491,26 +603,26 @@ function intersoccer_render_roster_editor_page() {
         <p><?php _e('Search, filter, and edit roster entries. Click on a row to edit inline, or use the Edit button for full editing.', 'intersoccer-reports-rosters'); ?></p>
 
         <!-- Filter Section -->
-        <div class="intersoccer-filters" style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">
+        <div class="intersoccer-filters intersoccer-editor-filters">
             <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" id="roster-editor-filters">
                 <input type="hidden" name="page" value="intersoccer-advanced" />
                 <input type="hidden" name="tab" value="edit-rosters" />
                 
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                <div>
                     <div>
-                        <label for="search" style="display: block; margin-bottom: 5px; font-weight: 600;">
+                        <label for="search" >
                             <?php _e('Search:', 'intersoccer-reports-rosters'); ?>
                         </label>
                         <input type="text" name="search" id="search" value="<?php echo esc_attr($search); ?>" 
                                placeholder="<?php esc_attr_e('Player name, Order ID, Venue...', 'intersoccer-reports-rosters'); ?>" 
-                               style="width: 100%;" />
+ />
                     </div>
                     
                     <div>
-                        <label for="activity_type" style="display: block; margin-bottom: 5px; font-weight: 600;">
+                        <label for="activity_type" >
                             <?php _e('Activity Type:', 'intersoccer-reports-rosters'); ?>
                         </label>
-                        <select name="activity_type" id="activity_type" style="width: 100%;">
+                        <select name="activity_type" id="activity_type">
                             <option value=""><?php _e('All Types', 'intersoccer-reports-rosters'); ?></option>
                             <?php foreach ($activity_types as $type): ?>
                                 <option value="<?php echo esc_attr($type); ?>" <?php selected($activity_type, $type); ?>>
@@ -521,10 +633,10 @@ function intersoccer_render_roster_editor_page() {
                     </div>
                     
                     <div>
-                        <label for="season" style="display: block; margin-bottom: 5px; font-weight: 600;">
+                        <label for="season" >
                             <?php _e('Season:', 'intersoccer-reports-rosters'); ?>
                         </label>
-                        <select name="season" id="season" style="width: 100%;">
+                        <select name="season" id="season">
                             <option value=""><?php _e('All Seasons', 'intersoccer-reports-rosters'); ?></option>
                             <?php foreach ($seasons as $s): ?>
                                 <option value="<?php echo esc_attr($s); ?>" <?php selected($season, $s); ?>>
@@ -535,10 +647,10 @@ function intersoccer_render_roster_editor_page() {
                     </div>
                     
                     <div>
-                        <label for="canton_region" style="display: block; margin-bottom: 5px; font-weight: 600;">
+                        <label for="canton_region" >
                             <?php _e('Canton/Region:', 'intersoccer-reports-rosters'); ?>
                         </label>
-                        <select name="canton_region" id="canton_region" style="width: 100%;">
+                        <select name="canton_region" id="canton_region">
                             <option value=""><?php _e('All Regions', 'intersoccer-reports-rosters'); ?></option>
                             <?php foreach ($canton_regions as $cr): ?>
                                 <option value="<?php echo esc_attr($cr); ?>" <?php selected($canton_region, $cr); ?>>
@@ -549,23 +661,23 @@ function intersoccer_render_roster_editor_page() {
                     </div>
                     
                     <div>
-                        <label for="start_date" style="display: block; margin-bottom: 5px; font-weight: 600;">
+                        <label for="start_date" >
                             <?php _e('Start Date:', 'intersoccer-reports-rosters'); ?>
                         </label>
                         <input type="text" name="start_date" id="start_date" value="<?php echo esc_attr($start_date); ?>" 
-                               placeholder="YYYY-MM-DD" style="width: 100%;" />
+                               placeholder="YYYY-MM-DD" />
                     </div>
                     
                     <div>
-                        <label for="end_date" style="display: block; margin-bottom: 5px; font-weight: 600;">
+                        <label for="end_date" >
                             <?php _e('End Date:', 'intersoccer-reports-rosters'); ?>
                         </label>
                         <input type="text" name="end_date" id="end_date" value="<?php echo esc_attr($end_date); ?>" 
-                               placeholder="YYYY-MM-DD" style="width: 100%;" />
+                               placeholder="YYYY-MM-DD" />
                     </div>
                 </div>
                 
-                <div style="display: flex; gap: 10px;">
+                <div class="intersoccer-editor-button-group">
                     <button type="submit" class="button button-primary">
                         <?php _e('Filter', 'intersoccer-reports-rosters'); ?>
                     </button>
@@ -578,7 +690,7 @@ function intersoccer_render_roster_editor_page() {
 
         <!-- Results Container -->
         <div id="roster-editor-results">
-            <div id="loading-indicator" style="display: none; text-align: center; padding: 20px;">
+            <div id="loading-indicator" class="intersoccer-editor-loading">
                 <span class="spinner is-active" style="float: none;"></span>
                 <?php _e('Loading...', 'intersoccer-reports-rosters'); ?>
             </div>
@@ -586,84 +698,18 @@ function intersoccer_render_roster_editor_page() {
         </div>
 
         <!-- Inline edit modal (hidden by default) -->
-        <div id="inline-edit-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border: 2px solid #0073aa; box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 100000; max-width: 500px; width: 90%;">
+        <div id="inline-edit-modal" class="intersoccer-editor-modal">
             <h3 id="inline-edit-title"><?php _e('Edit Field', 'intersoccer-reports-rosters'); ?></h3>
             <div id="inline-edit-content"></div>
-            <div style="margin-top: 15px; display: flex; gap: 10px; justify-content: flex-end;">
+            <div class="intersoccer-editor-modal-actions">
                 <button type="button" class="button" id="inline-edit-cancel"><?php _e('Cancel', 'intersoccer-reports-rosters'); ?></button>
                 <button type="button" class="button button-primary" id="inline-edit-save"><?php _e('Save', 'intersoccer-reports-rosters'); ?></button>
             </div>
         </div>
-        <div id="inline-edit-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 99999;"></div>
+        <div id="inline-edit-overlay" class="intersoccer-editor-overlay"></div>
     </div>
 
-    <style>
-        .intersoccer-roster-editor table.widefat {
-            margin-top: 20px;
-        }
-        .intersoccer-roster-editor table.widefat th,
-        .intersoccer-roster-editor table.widefat td {
-            padding: 8px 12px;
-            font-size: 13px;
-            vertical-align: middle;
-        }
-        .intersoccer-roster-editor table.widefat th {
-            background: #f8f9fa;
-            font-weight: 600;
-            border-bottom: 2px solid #dee2e6;
-        }
-        .intersoccer-roster-editor table.widefat tbody tr:hover {
-            background: #e9ecef;
-        }
-        .intersoccer-roster-editor .editable-cell {
-            cursor: pointer;
-            position: relative;
-            transition: background-color 0.2s;
-        }
-        .intersoccer-roster-editor .editable-cell:hover {
-            background-color: #fff3cd !important;
-        }
-        .intersoccer-roster-editor .editable-cell.editing {
-            background-color: #fff3cd !important;
-        }
-        .intersoccer-roster-editor .row-actions {
-            visibility: visible;
-        }
-        #inline-edit-modal {
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-        #inline-edit-overlay {
-            cursor: pointer;
-        }
-        .tablenav {
-            margin: 10px 0;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .tablenav-pages {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        @media (max-width: 782px) {
-            .intersoccer-filters > div {
-                grid-template-columns: 1fr !important;
-            }
-            .intersoccer-roster-editor table.widefat {
-                font-size: 12px;
-            }
-            .intersoccer-roster-editor table.widefat th,
-            .intersoccer-roster-editor table.widefat td {
-                padding: 6px 8px;
-            }
-            #inline-edit-modal {
-                width: 95%;
-                max-width: 95%;
-            }
-        }
-    </style>
+    <?php intersoccer_roster_editor_styles(); ?>
 
     <script>
     // Define AJAX settings before jQuery ready
@@ -774,25 +820,25 @@ function intersoccer_render_roster_editor_page() {
             // Clean current value (remove "—" and trim)
             var cleanValue = currentValue === '—' || currentValue === '' ? '' : currentValue.trim();
             
-            // Determine input type based on field
+            // Determine input type based on field (styles from .intersoccer-editor-modal CSS)
             var inputHtml = '';
             if (fieldName.includes('date')) {
-                inputHtml = '<input type="text" id="inline-edit-value" class="datepicker" value="' + escapeHtml(cleanValue) + '" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="text" id="inline-edit-value" class="datepicker" value="' + escapeHtml(cleanValue) + '" />';
             } else if (fieldName === 'gender' || fieldName === 'player_gender') {
-                inputHtml = '<select id="inline-edit-value" style="width: 100%; padding: 8px;">' +
+                inputHtml = '<select id="inline-edit-value">' +
                     '<option value=""><?php echo esc_js(__('N/A', 'intersoccer-reports-rosters')); ?></option>' +
                     '<option value="Male"' + (cleanValue === 'Male' ? ' selected' : '') + '>Male</option>' +
                     '<option value="Female"' + (cleanValue === 'Female' ? ' selected' : '') + '>Female</option>' +
                     '<option value="Other"' + (cleanValue === 'Other' ? ' selected' : '') + '>Other</option>' +
                     '</select>';
             } else if (fieldName.includes('text') || fieldName.includes('medical') || fieldName.includes('dietary')) {
-                inputHtml = '<textarea id="inline-edit-value" style="width: 100%; padding: 8px; min-height: 100px;">' + escapeHtml(cleanValue) + '</textarea>';
+                inputHtml = '<textarea id="inline-edit-value">' + escapeHtml(cleanValue) + '</textarea>';
             } else if (fieldName.includes('price') || fieldName.includes('amount')) {
-                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="0.01" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="0.01" />';
             } else if (fieldName === 'age') {
-                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="1" min="0" max="100" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="number" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" step="1" min="0" max="100" />';
             } else {
-                inputHtml = '<input type="text" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" style="width: 100%; padding: 8px;" />';
+                inputHtml = '<input type="text" id="inline-edit-value" value="' + escapeHtml(cleanValue) + '" />';
             }
 
             $('#inline-edit-content').html(inputHtml);
@@ -1026,7 +1072,7 @@ function intersoccer_render_roster_edit_form() {
             </div>
 
             <!-- Read-only fields (for information) -->
-            <div style="margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 4px;">
+            <div class="intersoccer-info-box" style="margin-top: var(--intersoccer-space-xl, 20px);">
                 <h3><?php _e('System Information (Read-only)', 'intersoccer-reports-rosters'); ?></h3>
                 <table class="form-table">
                     <tr>
