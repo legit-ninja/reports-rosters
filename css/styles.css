@@ -523,7 +523,12 @@
     background: var(--intersoccer-text-link, #2271b1);
 }
 
-/* Empty state card */
+/* ==========================================================================
+   Shared Empty State Component
+   Reusable across Final Numbers, Rosters, and other admin views.
+   Variants: empty (default), no-results, error
+   ========================================================================== */
+
 .intersoccer-empty-state {
     padding: 40px var(--intersoccer-space-2xl, 24px);
     text-align: center;
@@ -537,7 +542,18 @@
 .intersoccer-empty-state-icon {
     font-size: 48px;
     margin-bottom: var(--intersoccer-space-lg, 16px);
-    opacity: 0.5;
+    opacity: 0.6;
+}
+
+.intersoccer-empty-state-icon--dashicon {
+    font-size: inherit;
+}
+
+.intersoccer-empty-state-icon--dashicon .dashicons {
+    font-size: 48px;
+    width: 48px;
+    height: 48px;
+    color: var(--intersoccer-text-muted, #8c8f94);
 }
 
 .intersoccer-empty-state-title {
@@ -561,6 +577,25 @@
     gap: var(--intersoccer-space-sm, 8px);
     justify-content: center;
     flex-wrap: wrap;
+}
+
+/* Variant: no-results (filter produced zero matches) */
+.intersoccer-empty-state--no-results {
+    border-left: 4px solid var(--intersoccer-warning, #dba617);
+}
+
+.intersoccer-empty-state--no-results .intersoccer-empty-state-icon--dashicon .dashicons {
+    color: var(--intersoccer-warning, #dba617);
+}
+
+/* Variant: error (soft error, recoverable) */
+.intersoccer-empty-state--error {
+    border-left: 4px solid var(--intersoccer-danger, #d63638);
+    background: var(--intersoccer-danger-bg, #fef7f7);
+}
+
+.intersoccer-empty-state--error .intersoccer-empty-state-icon--dashicon .dashicons {
+    color: var(--intersoccer-danger, #d63638);
 }
 
 /* Export button states */

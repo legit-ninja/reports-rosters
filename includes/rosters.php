@@ -12,6 +12,8 @@ if (is_readable($persist_roster_filters)) {
     require_once $persist_roster_filters;
 }
 
+require_once dirname(__FILE__) . '/reports-ui.php';
+
 /**
  * Helper: Get placeholder filter for WHERE clause
  */
@@ -1685,11 +1687,14 @@ function intersoccer_render_camps_page() {
 
         <div class="sports-rosters">
             <?php if (empty($grouped)): ?>
-                <div class="no-rosters">
-                    <div class="no-rosters-icon">⚽</div>
-                    <h3><?php _e('No camps found', 'intersoccer-reports-rosters'); ?></h3>
-                    <p><?php _e('Try adjusting your filters or sync rosters to see available camps.', 'intersoccer-reports-rosters'); ?></p>
-                </div>
+                <?php
+                intersoccer_render_empty_state([
+                    'title'   => __('No camps found', 'intersoccer-reports-rosters'),
+                    'message' => __('Try adjusting your filters or sync rosters to see available camps.', 'intersoccer-reports-rosters'),
+                    'icon'    => '⚽',
+                    'variant' => 'no-results',
+                ]);
+                ?>
             <?php else: ?>
                 <?php foreach ($grouped as $season => $camps): ?>
                     <div class="roster-season">
@@ -2137,11 +2142,14 @@ function intersoccer_render_courses_page() {
 
         <div class="sports-rosters">
             <?php if (empty($grouped)): ?>
-                <div class="no-rosters">
-                    <div class="no-rosters-icon">⚽</div>
-                    <h3><?php _e('No courses found', 'intersoccer-reports-rosters'); ?></h3>
-                    <p><?php _e('Try adjusting your filters or sync rosters to see available courses.', 'intersoccer-reports-rosters'); ?></p>
-                </div>
+                <?php
+                intersoccer_render_empty_state([
+                    'title'   => __('No courses found', 'intersoccer-reports-rosters'),
+                    'message' => __('Try adjusting your filters or sync rosters to see available courses.', 'intersoccer-reports-rosters'),
+                    'icon'    => '⚽',
+                    'variant' => 'no-results',
+                ]);
+                ?>
             <?php else: ?>
                 <?php foreach ($grouped as $season => $day_groups): ?>
                     <div class="roster-season">
@@ -2569,11 +2577,14 @@ function intersoccer_render_girls_only_page() {
 
         <div class="sports-rosters">
             <?php if (empty($grouped_camps) && empty($grouped_courses)): ?>
-                <div class="no-rosters">
-                    <div class="no-rosters-icon">⚽</div>
-                    <h3><?php _e('No girls only events found', 'intersoccer-reports-rosters'); ?></h3>
-                    <p><?php _e('Try adjusting your filters or sync rosters to see available events.', 'intersoccer-reports-rosters'); ?></p>
-                </div>
+                <?php
+                intersoccer_render_empty_state([
+                    'title'   => __('No girls only events found', 'intersoccer-reports-rosters'),
+                    'message' => __('Try adjusting your filters or sync rosters to see available events.', 'intersoccer-reports-rosters'),
+                    'icon'    => '⚽',
+                    'variant' => 'no-results',
+                ]);
+                ?>
             <?php else: ?>
                 
                 <!-- Camps Section -->
@@ -3004,11 +3015,14 @@ function intersoccer_render_tournaments_page() {
 
         <div class="sports-rosters">
             <?php if (empty($grouped)): ?>
-                <div class="no-rosters">
-                    <div class="no-rosters-icon">🏟️</div>
-                    <h3><?php _e('No tournaments found', 'intersoccer-reports-rosters'); ?></h3>
-                    <p><?php _e('Try adjusting your filters or sync rosters to see available tournaments.', 'intersoccer-reports-rosters'); ?></p>
-                </div>
+                <?php
+                intersoccer_render_empty_state([
+                    'title'   => __('No tournaments found', 'intersoccer-reports-rosters'),
+                    'message' => __('Try adjusting your filters or sync rosters to see available tournaments.', 'intersoccer-reports-rosters'),
+                    'icon'    => '🏟️',
+                    'variant' => 'no-results',
+                ]);
+                ?>
             <?php else: ?>
                 <?php foreach ($grouped as $season => $events): ?>
                     <div class="roster-season">
@@ -3373,11 +3387,14 @@ function intersoccer_render_other_events_page() {
 
         <div class="sports-rosters">
             <?php if (empty($grouped_events)): ?>
-                <div class="no-rosters">
-                    <div class="no-rosters-icon">⚽</div>
-                    <h3><?php _e('No events found', 'intersoccer-reports-rosters'); ?></h3>
-                    <p><?php _e('Try adjusting your filters or sync rosters to see available events.', 'intersoccer-reports-rosters'); ?></p>
-                </div>
+                <?php
+                intersoccer_render_empty_state([
+                    'title'   => __('No events found', 'intersoccer-reports-rosters'),
+                    'message' => __('Try adjusting your filters or sync rosters to see available events.', 'intersoccer-reports-rosters'),
+                    'icon'    => '⚽',
+                    'variant' => 'no-results',
+                ]);
+                ?>
             <?php else: ?>
                 <?php foreach ($grouped_events as $season => $events): ?>
                     <div class="roster-season">
@@ -3523,11 +3540,14 @@ function intersoccer_render_all_rosters_page() {
         </div>
         
         <?php if (empty($product_names)) : ?>
-            <div class="no-rosters">
-                <div class="no-rosters-icon">⚽</div>
-                <h3><?php _e('No rosters available', 'intersoccer-reports-rosters'); ?></h3>
-                <p><?php _e('Please reconcile manually to sync roster data.', 'intersoccer-reports-rosters'); ?></p>
-            </div>
+            <?php
+            intersoccer_render_empty_state([
+                'title'   => __('No rosters available', 'intersoccer-reports-rosters'),
+                'message' => __('Please reconcile manually to sync roster data.', 'intersoccer-reports-rosters'),
+                'icon'    => '⚽',
+                'variant' => 'empty',
+            ]);
+            ?>
         <?php else : ?>
             <div class="export-buttons">
                 <form method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="export-form">
