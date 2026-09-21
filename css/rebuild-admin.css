@@ -1,6 +1,9 @@
 /**
  * Admin CSS for InterSoccer Database Rebuild Interface
  * File: css/rebuild-admin.css
+ * 
+ * Note: This file consumes shared design tokens from css/design-tokens.css.
+ * The tokens file must be enqueued before this stylesheet.
  */
 
 .intersoccer-rebuild-container {
@@ -9,18 +12,18 @@
 }
 
 .intersoccer-rebuild-container .card {
-    background: #fff;
-    border: 1px solid #ccd0d4;
-    border-radius: 4px;
+    background: var(--intersoccer-bg-surface, #fff);
+    border: 1px solid var(--intersoccer-border-default, #ccd0d4);
+    border-radius: var(--intersoccer-radius-md, 4px);
     margin: 20px 0;
-    padding: 20px;
-    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+    padding: var(--intersoccer-space-xl, 20px);
+    box-shadow: var(--intersoccer-shadow-card, 0 1px 1px rgba(0,0,0,.04));
 }
 
 .intersoccer-rebuild-container .card h2 {
     margin-top: 0;
     padding-bottom: 10px;
-    border-bottom: 1px solid #e1e1e1;
+    border-bottom: 1px solid var(--intersoccer-border-light, #e1e1e1);
 }
 
 /* Progress Bar Styles */
@@ -31,16 +34,16 @@
 .progress-bar {
     width: 100%;
     height: 25px;
-    background-color: #f0f0f1;
-    border-radius: 13px;
+    background-color: var(--intersoccer-bg-muted, #f0f0f1);
+    border-radius: var(--intersoccer-radius-pill, 13px);
     overflow: hidden;
     position: relative;
-    border: 1px solid #ddd;
+    border: 1px solid var(--intersoccer-border-subtle, #ddd);
 }
 
 .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #00a32a, #4ab866);
+    background: var(--intersoccer-success-gradient, linear-gradient(90deg, #00a32a, #4ab866));
     width: 0%;
     transition: width 0.5s ease-in-out;
     border-radius: 12px;
@@ -81,12 +84,12 @@
 
 #progress-percentage {
     font-weight: 600;
-    color: #00a32a;
+    color: var(--intersoccer-success-text, #00a32a);
 }
 
 #progress-details {
-    color: #646970;
-    font-size: 13px;
+    color: var(--intersoccer-text-secondary, #646970);
+    font-size: var(--intersoccer-font-size-md, 13px);
 }
 
 /* Button Styles */
@@ -110,98 +113,98 @@
 }
 
 #start-rebuild.button-primary {
-    background: #00a32a;
-    border-color: #00a32a;
+    background: var(--intersoccer-success, #00a32a);
+    border-color: var(--intersoccer-success, #00a32a);
 }
 
 #start-rebuild.button-primary:hover:not(:disabled) {
-    background: #008a20;
-    border-color: #008a20;
+    background: var(--intersoccer-success-hover, #008a20);
+    border-color: var(--intersoccer-success-hover, #008a20);
 }
 
 #stop-rebuild {
-    background: #d63638;
-    border-color: #d63638;
+    background: var(--intersoccer-danger, #d63638);
+    border-color: var(--intersoccer-danger, #d63638);
     color: white;
 }
 
 #stop-rebuild:hover {
-    background: #b32d2e;
-    border-color: #b32d2e;
+    background: var(--intersoccer-danger-hover, #b32d2e);
+    border-color: var(--intersoccer-danger-hover, #b32d2e);
 }
 
 /* Info Section */
 .rebuild-info {
-    background: #f6f7f7;
-    padding: 15px;
-    border-radius: 4px;
-    border-left: 4px solid #72aee6;
+    background: var(--intersoccer-bg-subtle, #f6f7f7);
+    padding: var(--intersoccer-space-lg, 15px);
+    border-radius: var(--intersoccer-radius-md, 4px);
+    border-left: 4px solid var(--intersoccer-info, #72aee6);
 }
 
 .rebuild-info h3 {
     margin-top: 0;
-    color: #1d2327;
+    color: var(--intersoccer-text-primary, #1d2327);
 }
 
 .rebuild-info ul {
     list-style-type: disc;
-    padding-left: 20px;
+    padding-left: var(--intersoccer-space-xl, 20px);
     margin-bottom: 0;
 }
 
 .rebuild-info li {
     margin-bottom: 5px;
-    color: #646970;
+    color: var(--intersoccer-text-secondary, #646970);
 }
 
 /* Status Section */
 #rebuild-status {
-    padding: 15px;
-    background: #f6f7f7;
-    border-radius: 4px;
+    padding: var(--intersoccer-space-lg, 15px);
+    background: var(--intersoccer-bg-subtle, #f6f7f7);
+    border-radius: var(--intersoccer-radius-md, 4px);
 }
 
 #status-text {
-    font-size: 16px;
+    font-size: var(--intersoccer-font-size-xl, 16px);
     font-weight: 500;
     margin: 0;
-    color: #1d2327;
+    color: var(--intersoccer-text-primary, #1d2327);
 }
 
 #status-text:contains("Error") {
-    color: #d63638;
+    color: var(--intersoccer-danger, #d63638);
 }
 
 /* Error Log Styles */
 .error-item {
-    background: #fef7f7;
-    border: 1px solid #d63638;
-    border-left: 4px solid #d63638;
-    border-radius: 4px;
-    padding: 12px;
-    margin: 8px 0;
+    background: var(--intersoccer-danger-bg, #fef7f7);
+    border: 1px solid var(--intersoccer-danger-border, #d63638);
+    border-left: 4px solid var(--intersoccer-danger-border, #d63638);
+    border-radius: var(--intersoccer-radius-md, 4px);
+    padding: var(--intersoccer-space-md, 12px);
+    margin: var(--intersoccer-space-sm, 8px) 0;
 }
 
 .error-order {
     font-weight: 600;
-    color: #d63638;
+    color: var(--intersoccer-danger, #d63638);
     margin-bottom: 5px;
 }
 
 .error-message {
-    font-family: Consolas, Monaco, monospace;
-    font-size: 12px;
-    color: #1d2327;
+    font-family: var(--intersoccer-font-mono, Consolas, Monaco, monospace);
+    font-size: var(--intersoccer-font-size-sm, 12px);
+    color: var(--intersoccer-text-primary, #1d2327);
     background: rgba(0,0,0,0.05);
-    padding: 8px;
-    border-radius: 3px;
+    padding: var(--intersoccer-space-sm, 8px);
+    border-radius: var(--intersoccer-radius-sm, 3px);
     margin: 5px 0;
     word-break: break-all;
 }
 
 .error-time {
-    font-size: 11px;
-    color: #646970;
+    font-size: var(--intersoccer-font-size-xs, 11px);
+    color: var(--intersoccer-text-secondary, #646970);
     margin-top: 5px;
 }
 
@@ -209,37 +212,38 @@
 .stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 15px;
-    margin-top: 15px;
+    gap: var(--intersoccer-space-lg, 15px);
+    margin-top: var(--intersoccer-space-lg, 15px);
 }
 
 .stat-item {
-    background: #f6f7f7;
-    padding: 20px 15px;
-    border-radius: 6px;
+    background: var(--intersoccer-bg-subtle, #f6f7f7);
+    padding: var(--intersoccer-space-xl, 20px) var(--intersoccer-space-lg, 15px);
+    border-radius: var(--intersoccer-radius-lg, 6px);
     text-align: center;
-    border: 1px solid #e1e1e1;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border: 1px solid var(--intersoccer-border-light, #e1e1e1);
+    transition: transform var(--intersoccer-transition-normal, 0.2s ease),
+                box-shadow var(--intersoccer-transition-normal, 0.2s ease);
 }
 
 .stat-item:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    box-shadow: var(--intersoccer-shadow-elevated, 0 4px 12px rgba(0,0,0,0.1));
 }
 
 .stat-number {
     font-size: 28px;
     font-weight: 700;
-    color: #1d2327;
+    color: var(--intersoccer-text-primary, #1d2327);
     display: block;
     line-height: 1.2;
 }
 
 .stat-label {
-    font-size: 12px;
-    color: #646970;
+    font-size: var(--intersoccer-font-size-sm, 12px);
+    color: var(--intersoccer-text-secondary, #646970);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-top: 8px;
+    margin-top: var(--intersoccer-space-sm, 8px);
     display: block;
 }
