@@ -691,7 +691,6 @@
 .camp-reports-table {
     table-layout: auto;
     width: 100%;
-    border-collapse: collapse;
     font-size: var(--intersoccer-font-size-sm, 12px);
 }
 
@@ -912,6 +911,16 @@
    Sticky Canton / Venue Columns (#20)
    Keep place identity visible when scrolling horizontally in wide tables.
    ========================================================================== */
+
+/*
+ * Chrome requires border-collapse: separate for position: sticky to work.
+ * Use border-spacing: 0 to maintain the same visual appearance as collapsed.
+ */
+.camp-reports-table,
+.course-reports-table {
+    border-collapse: separate;
+    border-spacing: 0;
+}
 
 /* Enable sticky positioning on Canton + Venue columns in camp and course tables */
 .camp-reports-table th.intersoccer-sticky-col,
