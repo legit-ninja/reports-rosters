@@ -56,43 +56,74 @@ function intersoccer_render_campaign_analytics_page() {
 
 	$new_url = admin_url('post-new.php?post_type=intersoccer_campaign');
 	?>
-	<div class="wrap">
+	<div class="wrap intersoccer-reports-rosters-campaign-analytics">
 		<h1><?php esc_html_e('Campaign Analytics', 'intersoccer-reports-rosters'); ?></h1>
-		<p>
-			<a class="button button-primary" href="<?php echo esc_url($new_url); ?>"><?php esc_html_e('Add campaign', 'intersoccer-reports-rosters'); ?></a>
-			<?php if ($definition) : ?>
-				<a class="button" href="<?php echo esc_url(get_edit_post_link($definition->id)); ?>"><?php esc_html_e('Edit campaign', 'intersoccer-reports-rosters'); ?></a>
-			<?php endif; ?>
-		</p>
+		<p class="intersoccer-page-description"><?php esc_html_e('Analyse booking performance and campaign effectiveness across date windows.', 'intersoccer-reports-rosters'); ?></p>
 
-		<form method="get">
+		<!-- Filter Toolbar (aligned with Final Numbers pattern) -->
+		<form method="get" class="intersoccer-filter-toolbar">
 			<input type="hidden" name="page" value="intersoccer-campaign-analytics" />
-			<label for="campaign_id"><?php esc_html_e('Campaign', 'intersoccer-reports-rosters'); ?></label>
-			<select name="campaign_id" id="campaign_id" onchange="this.form.submit()">
-				<option value="0"><?php esc_html_e('— Select —', 'intersoccer-reports-rosters'); ?></option>
-				<?php foreach ($campaigns as $c) : ?>
-					<option value="<?php echo esc_attr((string) $c->id); ?>" <?php selected($selected, $c->id); ?>><?php echo esc_html($c->name); ?></option>
-				<?php endforeach; ?>
-			</select>
+
+			<div class="intersoccer-filter-group">
+				<p class="intersoccer-filter-group-label"><?php esc_html_e('Campaign', 'intersoccer-reports-rosters'); ?></p>
+				<div class="intersoccer-filter-group-fields">
+					<label for="campaign_id" class="screen-reader-text"><?php esc_html_e('Select campaign', 'intersoccer-reports-rosters'); ?></label>
+					<select name="campaign_id" id="campaign_id" onchange="this.form.submit()">
+						<option value="0"><?php esc_html_e('— Select —', 'intersoccer-reports-rosters'); ?></option>
+						<?php foreach ($campaigns as $c) : ?>
+							<option value="<?php echo esc_attr((string) $c->id); ?>" <?php selected($selected, $c->id); ?>><?php echo esc_html($c->name); ?></option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+			</div>
+
+			<div class="intersoccer-filter-actions">
+				<a class="button button-primary" href="<?php echo esc_url($new_url); ?>"><?php esc_html_e('Add campaign', 'intersoccer-reports-rosters'); ?></a>
+				<?php if ($definition) : ?>
+					<a class="button" href="<?php echo esc_url(get_edit_post_link($definition->id)); ?>"><?php esc_html_e('Edit campaign', 'intersoccer-reports-rosters'); ?></a>
+				<?php endif; ?>
+			</div>
 		</form>
 
 		<?php if ($definition) : ?>
-			<form method="post" style="margin-top:1em;">
-				<?php wp_nonce_field('isrr_campaign_refresh'); ?>
-				<input type="hidden" name="campaign_id" value="<?php echo esc_attr((string) $definition->id); ?>" />
-				<button class="button" name="isrr_campaign_refresh" value="1"><?php esc_html_e('Refresh now', 'intersoccer-reports-rosters'); ?></button>
-				<a class="button" href="<?php echo esc_url(wp_nonce_url(add_query_arg(['page' => 'intersoccer-campaign-analytics', 'campaign_id' => $definition->id, 'export' => 'xlsx']), 'isrr_campaign_export')); ?>"><?php esc_html_e('Export data (Excel)', 'intersoccer-reports-rosters'); ?></a>
+			<!-- Export / Refresh Bar (aligned with Final Numbers export-section pattern) -->
+			<div class="export-section intersoccer-campaign-export-bar">
+				<form method="post" class="intersoccer-campaign-refresh-form">
+					<?php wp_nonce_field('isrr_campaign_refresh'); ?>
+					<input type="hidden" name="campaign_id" value="<?php echo esc_attr((string) $definition->id); ?>" />
+					<button class="button" name="isrr_campaign_refresh" value="1">
+						<span class="dashicons dashicons-update" aria-hidden="true"></span>
+						<?php esc_html_e('Refresh now', 'intersoccer-reports-rosters'); ?>
+					</button>
+				</form>
+				<a class="button intersoccer-export-btn" href="<?php echo esc_url(wp_nonce_url(add_query_arg(['page' => 'intersoccer-campaign-analytics', 'campaign_id' => $definition->id, 'export' => 'xlsx']), 'isrr_campaign_export')); ?>">
+					<span class="intersoccer-export-btn-text"><?php esc_html_e('Export data (Excel)', 'intersoccer-reports-rosters'); ?></span>
+				</a>
 				<a class="button" href="<?php echo esc_url(wp_nonce_url(add_query_arg(['page' => 'intersoccer-campaign-analytics', 'campaign_id' => $definition->id, 'export' => 'docx']), 'isrr_campaign_export')); ?>"><?php esc_html_e('Export report (Word)', 'intersoccer-reports-rosters'); ?></a>
-			</form>
+			</div>
 
-			<p><strong><?php esc_html_e('Summary status:', 'intersoccer-reports-rosters'); ?></strong> <?php echo esc_html($status); ?>
+			<!-- Summary Status Badge -->
+			<div class="intersoccer-campaign-status-bar">
+				<strong><?php esc_html_e('Summary status:', 'intersoccer-reports-rosters'); ?></strong>
+				<span class="intersoccer-campaign-status-badge intersoccer-campaign-status-badge--<?php echo esc_attr($status); ?>">
+					<?php echo esc_html($status); ?>
+				</span>
 				<?php if (!empty($summary['computed_at'])) : ?>
-					— <?php echo esc_html((string) $summary['computed_at']); ?>
+					<span class="intersoccer-campaign-computed-at">
+						<?php echo esc_html((string) $summary['computed_at']); ?>
+					</span>
 				<?php endif; ?>
-			</p>
+			</div>
 
 			<?php if ($status === 'building' || $status === 'missing') : ?>
-				<div class="notice notice-info"><p><?php esc_html_e('Building… Last ready payload is shown when available. Use Refresh now to queue a rebuild. Exports require a stored summary (ready or data-quality stub).', 'intersoccer-reports-rosters'); ?></p></div>
+				<?php
+				intersoccer_render_empty_state([
+					'title'   => __('Summary building', 'intersoccer-reports-rosters'),
+					'message' => __('Building… Last ready payload is shown when available. Use Refresh now to queue a rebuild. Exports require a stored summary (ready or data-quality stub).', 'intersoccer-reports-rosters'),
+					'icon'    => 'dashicons-update',
+					'variant' => 'empty',
+				]);
+				?>
 			<?php endif; ?>
 
 			<?php
@@ -101,16 +132,52 @@ function intersoccer_render_campaign_analytics_page() {
 				&& \InterSoccer\ReportsRosters\Campaign\Export\CampaignReportSections::is_gate_blocked($payload);
 			?>
 			<?php if ($gate_blocked || ($status === 'failed' && is_array($payload))) : ?>
-				<div class="notice notice-error"><p><?php esc_html_e('Data quality gate blocked this campaign. Export will download a one-page stub listing blocked reasons — not a partial report.', 'intersoccer-reports-rosters'); ?></p>
-					<pre><?php echo esc_html(wp_json_encode(is_array($payload) ? ($payload['errors'] ?? $summary['warnings'] ?? []) : ($summary['warnings'] ?? []), JSON_PRETTY_PRINT)); ?></pre>
-				</div>
+				<?php
+				$error_details = is_array($payload) ? ($payload['errors'] ?? $summary['warnings'] ?? []) : ($summary['warnings'] ?? []);
+				intersoccer_render_empty_state([
+					'title'   => __('Data quality gate blocked', 'intersoccer-reports-rosters'),
+					'message' => __('Export will download a one-page stub listing blocked reasons — not a partial report.', 'intersoccer-reports-rosters'),
+					'icon'    => 'dashicons-warning',
+					'variant' => 'error',
+				]);
+				?>
+				<details class="intersoccer-help-disclosure intersoccer-campaign-error-details">
+					<summary><?php esc_html_e('View blocked reasons', 'intersoccer-reports-rosters'); ?></summary>
+					<div class="intersoccer-help-disclosure-content">
+						<pre><?php echo esc_html(wp_json_encode($error_details, JSON_PRETTY_PRINT)); ?></pre>
+					</div>
+				</details>
 			<?php elseif (is_array($payload)) : ?>
 				<?php intersoccer_campaign_analytics_render_payload($payload, $definition); ?>
 			<?php elseif ($status === 'failed') : ?>
-				<div class="notice notice-error"><p><?php esc_html_e('Rebuild failed. Refresh again after fixing data-quality issues. No exportable stub is stored yet.', 'intersoccer-reports-rosters'); ?></p>
-					<pre><?php echo esc_html(wp_json_encode($summary['warnings'] ?? [], JSON_PRETTY_PRINT)); ?></pre>
-				</div>
+				<?php
+				intersoccer_render_empty_state([
+					'title'   => __('Rebuild failed', 'intersoccer-reports-rosters'),
+					'message' => __('Refresh again after fixing data-quality issues. No exportable stub is stored yet.', 'intersoccer-reports-rosters'),
+					'icon'    => 'dashicons-dismiss',
+					'variant' => 'error',
+				]);
+				if (!empty($summary['warnings'])) :
+				?>
+				<details class="intersoccer-help-disclosure intersoccer-campaign-error-details">
+					<summary><?php esc_html_e('View warnings', 'intersoccer-reports-rosters'); ?></summary>
+					<div class="intersoccer-help-disclosure-content">
+						<pre><?php echo esc_html(wp_json_encode($summary['warnings'], JSON_PRETTY_PRINT)); ?></pre>
+					</div>
+				</details>
+				<?php endif; ?>
 			<?php endif; ?>
+		<?php else : ?>
+			<?php
+			intersoccer_render_empty_state([
+				'title'        => __('No campaign selected', 'intersoccer-reports-rosters'),
+				'message'      => __('Select a campaign from the dropdown above, or create a new one to start tracking.', 'intersoccer-reports-rosters'),
+				'icon'         => 'dashicons-chart-area',
+				'variant'      => 'empty',
+				'action_label' => __('Add campaign', 'intersoccer-reports-rosters'),
+				'action_url'   => $new_url,
+			]);
+			?>
 		<?php endif; ?>
 	</div>
 	<?php

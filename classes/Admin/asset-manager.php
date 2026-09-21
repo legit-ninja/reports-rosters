@@ -47,7 +47,9 @@ class AssetManager {
         $is_intersoccer_admin_screen =
             $screen_id === 'toplevel_page_intersoccer-reports-rosters'
             || (strpos($screen_id, 'intersoccer-reports-rosters_page_') === 0)
-            || (strpos($screen_id, 'reports-and-rosters_page_') === 0);
+            || (strpos($screen_id, 'reports-and-rosters_page_') === 0)
+            || $screen_id === 'intersoccer-reports-rosters_page_intersoccer-campaign-analytics'
+            || $screen_id === 'reports-and-rosters_page_intersoccer-campaign-analytics';
 
         if ($is_intersoccer_admin_screen) {
             wp_enqueue_style(
