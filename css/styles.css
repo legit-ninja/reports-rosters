@@ -745,11 +745,16 @@
 }
 
 @media print {
+    /* Hide all tab/print chrome */
     .intersoccer-camp-type-tabs,
-    .intersoccer-camp-type-tabs-wrapper {
+    .intersoccer-camp-type-tabs-wrapper,
+    .intersoccer-print-btn,
+    #camp-print-report,
+    .print-hidden {
         display: none !important;
     }
     
+    /* Force both camp table panels visible for print */
     .camp-table-panel,
     .camp-table-panel.is-hidden {
         display: block !important;

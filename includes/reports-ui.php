@@ -385,6 +385,22 @@ function intersoccer_render_final_reports_page() {
                     </button>
                 </div>
 
+                <?php // Page-local print styles ensure print hiding works regardless of external CSS load order. ?>
+                <style media="print">
+                .intersoccer-camp-type-tabs-wrapper,
+                .intersoccer-camp-type-tabs,
+                .intersoccer-print-btn,
+                #camp-print-report {
+                    display: none !important;
+                }
+                .camp-table-panel,
+                .camp-table-panel.is-hidden {
+                    display: block !important;
+                    visibility: visible !important;
+                    height: auto !important;
+                }
+                </style>
+
                 <!-- Full Day Camp Table -->
                 <div id="camp-table-full-day" class="camp-table-panel" role="tabpanel" aria-labelledby="camp-tab-full-day">
                 <table class="widefat striped camp-reports-table">
@@ -837,8 +853,8 @@ function intersoccer_render_final_reports_page() {
         $(window).on('afterprint', restoreAfterPrint);
 
         // Chrome matchMedia fallback (fires change event instead of beforeprint/afterprint)
-        if (window.matchMedia) {
-            var printMediaQuery = window.matchMedia('print');
+        var printMediaQuery = window.matchMedia ? window.matchMedia('print') : null;
+        if (printMediaQuery) {
             var handlePrintChange = function(mql) {
                 if (mql.matches) {
                     prepareForPrint();
@@ -855,12 +871,13 @@ function intersoccer_render_final_reports_page() {
             }
         }
 
-        // Print button
+        // Print button - rely on afterprint/matchMedia, not a racing timeout
         $('#camp-print-report').on('click', function() {
             prepareForPrint();
             window.print();
-            // afterprint will restore, but add a fallback timeout for browsers that don't fire it
-            setTimeout(restoreAfterPrint, 1000);
+            // Do NOT use setTimeout fallback - it races print preview.
+            // afterprint event or matchMedia('print') change to false will restore.
+            // For browsers that fire neither (very old), user can refresh.
         });
     });
     </script>
