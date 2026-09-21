@@ -54,7 +54,8 @@ class ExcelExporter {
 		$headers = CampaignReportSections::booking_headers();
 		$col = 1;
 		foreach ($headers as $h) {
-			$bookings->setCellValueByColumnAndRow($col, 4, $h);
+			$coord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . '4';
+			$bookings->setCellValue($coord, $h);
 			$col++;
 		}
 		$this->style_header_row($bookings, 4, count($headers));
@@ -66,7 +67,8 @@ class ExcelExporter {
 			$display = CampaignReportSections::booking_display_row($row);
 			$col = 1;
 			foreach ($headers as $h) {
-				$bookings->setCellValueByColumnAndRow($col, $r, $display[$h] ?? '');
+				$coord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $r;
+				$bookings->setCellValue($coord, $display[$h] ?? '');
 				$col++;
 			}
 			if (($r % 2) === 0) {
@@ -136,7 +138,8 @@ class ExcelExporter {
 		$this->style_title($by_day, 'A1', 13);
 		$day_headers = ['Date', 'Day', 'Orders', 'Bookings', 'Using code', 'Line revenue (CHF)'];
 		foreach ($day_headers as $i => $h) {
-			$by_day->setCellValueByColumnAndRow($i + 1, 3, $h);
+			$coord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i + 1) . '3';
+			$by_day->setCellValue($coord, $h);
 		}
 		$this->style_header_row($by_day, 3, 6);
 		$dr = 4;
