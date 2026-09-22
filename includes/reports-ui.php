@@ -100,6 +100,14 @@ function intersoccer_render_reports_page() {
 
     <script>
     jQuery(document).ready(function($) {
+        function activateTab(tabId) {
+            var target = '#' + tabId;
+            $('.nav-tab').removeClass('nav-tab-active');
+            $('.nav-tab[href="' + target + '"]').addClass('nav-tab-active');
+            $('.tab-content').hide();
+            $(target).show();
+        }
+
         $('.nav-tab').click(function(e) {
             e.preventDefault();
             var target = $(this).attr('href');
@@ -110,6 +118,13 @@ function intersoccer_render_reports_page() {
             $('.tab-content').hide();
             $(target).show();
         });
+
+        // Handle deep-link via ?tab= query param (e.g., from legacy redirects).
+        var urlParams = new URLSearchParams(window.location.search);
+        var tabParam = urlParams.get('tab');
+        if (tabParam) {
+            activateTab(tabParam);
+        }
     });
     </script>
     <?php
@@ -145,7 +160,9 @@ function intersoccer_render_final_reports_page() {
 
     // Determine current page for form action
     $current_page = isset($_GET['page']) ? $_GET['page'] : 'intersoccer-final-reports';
-    $show_activity_type_filter = !in_array($current_page, ['intersoccer-final-camp-reports', 'intersoccer-final-course-reports']);
+    // Activity filter is always visible on the canonical hub (page=intersoccer-reports).
+    // Legacy dedicated pages redirected in 2.8.24+ but the condition is kept for direct function calls.
+    $show_activity_type_filter = !in_array($current_page, ['intersoccer-final-camp-reports', 'intersoccer-final-course-reports'], true);
 
     // Query unique values for filter dropdowns
     global $wpdb;

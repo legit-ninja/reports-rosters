@@ -16,9 +16,13 @@ function intersoccer_render_live_snapshot_page() {
     }
 
     $year = (int) date('Y');
+    // Canonical Final Numbers home is the hub tab on page=intersoccer-reports#final-reports.
+    // All presets link there with activity_type, live, and other filters as query args.
     $summer_camps_url = add_query_arg(
         [
-            'page' => 'intersoccer-final-camp-reports',
+            'page' => 'intersoccer-reports',
+            'tab' => 'final-reports',
+            'activity_type' => 'Camp',
             'year' => $year,
             'season_type' => 'Summer',
             'live' => 1,
@@ -27,7 +31,9 @@ function intersoccer_render_live_snapshot_page() {
     );
     $courses_url = add_query_arg(
         [
-            'page' => 'intersoccer-final-course-reports',
+            'page' => 'intersoccer-reports',
+            'tab' => 'final-reports',
+            'activity_type' => 'Course',
             'year' => $year,
             'live' => 1,
         ],
@@ -35,7 +41,9 @@ function intersoccer_render_live_snapshot_page() {
     );
     $urgent_camps_url = add_query_arg(
         [
-            'page' => 'intersoccer-final-camp-reports',
+            'page' => 'intersoccer-reports',
+            'tab' => 'final-reports',
+            'activity_type' => 'Camp',
             'year' => $year,
             'season_type' => 'Summer',
             'live' => 1,
@@ -45,7 +53,9 @@ function intersoccer_render_live_snapshot_page() {
     );
     $urgent_courses_url = add_query_arg(
         [
-            'page' => 'intersoccer-final-course-reports',
+            'page' => 'intersoccer-reports',
+            'tab' => 'final-reports',
+            'activity_type' => 'Course',
             'year' => $year,
             'live' => 1,
             'urgency_only' => 1,

@@ -198,22 +198,24 @@ class MenuManager {
             [$this, 'render_reports']
         );
 
+        // Legacy Final Camp/Course Reports — hidden alias pages for bookmark compatibility.
+        // Redirects are handled in maybe_redirect_legacy_admin_pages() via admin_init.
+        // The canonical Final Numbers home is the hub tab on page=intersoccer-reports#final-reports.
         add_submenu_page(
-            'intersoccer-reports-rosters',
-            __('InterSoccer Final Camp Reports', 'intersoccer-reports-rosters'),
-            __('Final Camp Reports', 'intersoccer-reports-rosters'),
+            null,
+            '',
+            '',
             'read',
             'intersoccer-final-camp-reports',
-            [$this, 'render_final_camp_reports']
+            [$this, 'render_final_camp_reports_redirect']
         );
-
         add_submenu_page(
-            'intersoccer-reports-rosters',
-            __('InterSoccer Final Course Reports', 'intersoccer-reports-rosters'),
-            __('Final Course Reports', 'intersoccer-reports-rosters'),
+            null,
+            '',
+            '',
             'read',
             'intersoccer-final-course-reports',
-            [$this, 'render_final_course_reports']
+            [$this, 'render_final_course_reports_redirect']
         );
 
         add_submenu_page(
@@ -327,9 +329,46 @@ class MenuManager {
             return;
         }
 
+        // Legacy Final Camp/Course Reports → hub Final Numbers tab with activity filter.
+        if (in_array($page, ['intersoccer-final-camp-reports', 'intersoccer-final-course-reports'], true)) {
+            if (!headers_sent()) {
+                wp_safe_redirect($this->build_final_numbers_hub_url($page, $_GET));
+                exit;
+            }
+            return;
+        }
+
         if (function_exists('intersoccer_rosters_maybe_redirect_legacy_list_page')) {
             intersoccer_rosters_maybe_redirect_legacy_list_page($page);
         }
+    }
+
+    /**
+     * Build the canonical Final Numbers hub URL from a legacy final-camp/course page.
+     *
+     * Preserves year, region, season_type, live, urgency_only, exclude_buyclub and
+     * maps the legacy slug to the activity_type filter.
+     *
+     * @param string $legacy_page 'intersoccer-final-camp-reports' or 'intersoccer-final-course-reports'.
+     * @param array  $get_params  $_GET parameters from the original request.
+     * @return string Canonical admin URL for the hub Final Numbers tab.
+     */
+    public function build_final_numbers_hub_url(string $legacy_page, array $get_params): string {
+        $activity_type = $legacy_page === 'intersoccer-final-camp-reports' ? 'Camp' : 'Course';
+
+        $preserved_keys = ['year', 'region', 'season_type', 'live', 'urgency_only', 'exclude_buyclub'];
+        $args = [
+            'page' => 'intersoccer-reports',
+            'tab' => 'final-reports',
+            'activity_type' => $activity_type,
+        ];
+        foreach ($preserved_keys as $key) {
+            if (isset($get_params[$key]) && $get_params[$key] !== '') {
+                $args[$key] = sanitize_text_field(wp_unslash($get_params[$key]));
+            }
+        }
+
+        return add_query_arg($args, admin_url('admin.php'));
     }
 
     private function require_include(string $relative_file): void {
@@ -384,22 +423,22 @@ class MenuManager {
         wp_die(__('Reports page is not available.', 'intersoccer-reports-rosters'));
     }
 
-    public function render_final_camp_reports(): void {
-        $this->require_include('reports-ui.php');
-        if (function_exists('intersoccer_render_final_camp_reports_page')) {
-            intersoccer_render_final_camp_reports_page();
-            return;
-        }
-        wp_die(__('Final camp reports page is not available.', 'intersoccer-reports-rosters'));
+    /**
+     * Fallback redirect for legacy Final Camp Reports page.
+     * Normally admin_init redirect fires first; this is a safety net.
+     */
+    public function render_final_camp_reports_redirect(): void {
+        wp_safe_redirect($this->build_final_numbers_hub_url('intersoccer-final-camp-reports', $_GET));
+        exit;
     }
 
-    public function render_final_course_reports(): void {
-        $this->require_include('reports-ui.php');
-        if (function_exists('intersoccer_render_final_course_reports_page')) {
-            intersoccer_render_final_course_reports_page();
-            return;
-        }
-        wp_die(__('Final course reports page is not available.', 'intersoccer-reports-rosters'));
+    /**
+     * Fallback redirect for legacy Final Course Reports page.
+     * Normally admin_init redirect fires first; this is a safety net.
+     */
+    public function render_final_course_reports_redirect(): void {
+        wp_safe_redirect($this->build_final_numbers_hub_url('intersoccer-final-course-reports', $_GET));
+        exit;
     }
 
     public function render_all_rosters(): void {
