@@ -81,11 +81,16 @@ function intersoccer_render_reports_page() {
 
         <h2 class="nav-tab-wrapper">
             <a href="#booking-report" class="nav-tab nav-tab-active"><?php _e('Booking Report', 'intersoccer-reports-rosters'); ?></a>
+            <a href="#revenue-by-type" class="nav-tab"><?php _e('Revenue by Type', 'intersoccer-reports-rosters'); ?></a>
             <a href="#final-reports" class="nav-tab"><?php _e('Final Numbers', 'intersoccer-reports-rosters'); ?></a>
         </h2>
 
         <div id="booking-report" class="tab-content">
             <?php intersoccer_render_booking_report_tab(); ?>
+        </div>
+
+        <div id="revenue-by-type" class="tab-content" style="display: none;">
+            <?php intersoccer_render_revenue_by_type_tab(); ?>
         </div>
 
         <div id="final-reports" class="tab-content" style="display: none;">
@@ -967,4 +972,253 @@ function intersoccer_render_final_course_reports_page() {
     // Set activity type to Course and call the main final reports function
     $_GET['activity_type'] = 'Course';
     intersoccer_render_final_reports_page();
+}
+
+/**
+ * Render the Revenue by Product Type tab content.
+ *
+ * Displays revenue breakdown by product type (Course, Camp, Birthday, Tournament, Other/Unmapped)
+ * with date filters and Excel export.
+ */
+function intersoccer_render_revenue_by_type_tab() {
+    $default_end_date = date('Y-m-d');
+    $default_start_date = date('Y-m-d', strtotime('-30 days'));
+
+    $start_date = isset($_GET['rbt_start_date']) && !empty($_GET['rbt_start_date'])
+        ? sanitize_text_field($_GET['rbt_start_date'])
+        : $default_start_date;
+
+    $end_date = isset($_GET['rbt_end_date']) && !empty($_GET['rbt_end_date'])
+        ? sanitize_text_field($_GET['rbt_end_date'])
+        : $default_end_date;
+
+    $year = isset($_GET['rbt_year']) ? sanitize_text_field($_GET['rbt_year']) : date('Y');
+    ?>
+    <div class="wrap intersoccer-revenue-by-type-tab">
+        <h1><?php _e('Revenue by Product Type', 'intersoccer-reports-rosters'); ?></h1>
+        <p><?php _e('Breakdown of revenue by activity type: Course, Camp, Birthday, Tournament, Other/Unmapped.', 'intersoccer-reports-rosters'); ?></p>
+        <p class="description" style="margin-bottom: 15px;">
+            <?php _e('CHF only. BuyClub orders excluded. Net = Final − Refunds. Commissions not included.', 'intersoccer-reports-rosters'); ?>
+        </p>
+
+        <!-- Filter Panel -->
+        <div class="intersoccer-filters" style="background: #f8f9fa; padding: 15px; margin-bottom: 20px; border-radius: 5px;">
+            <h3 style="margin-top: 0;"><?php _e('Filter by Order Date', 'intersoccer-reports-rosters'); ?></h3>
+
+            <div class="filter-row" style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
+                <div class="filter-group">
+                    <label for="rbt_start_date"><?php _e('Start Date:', 'intersoccer-reports-rosters'); ?></label>
+                    <input type="text" name="rbt_start_date" id="rbt_start_date" value="<?php echo esc_attr($start_date); ?>"
+                           placeholder="YYYY-MM-DD" class="intersoccer-datepicker" />
+                </div>
+                <div class="filter-group">
+                    <label for="rbt_end_date"><?php _e('End Date:', 'intersoccer-reports-rosters'); ?></label>
+                    <input type="text" name="rbt_end_date" id="rbt_end_date" value="<?php echo esc_attr($end_date); ?>"
+                           placeholder="YYYY-MM-DD" class="intersoccer-datepicker" />
+                </div>
+                <div class="filter-group">
+                    <label for="rbt_year"><?php _e('Year (if no dates):', 'intersoccer-reports-rosters'); ?></label>
+                    <input type="number" name="rbt_year" id="rbt_year" value="<?php echo esc_attr($year); ?>"
+                           min="2020" max="<?php echo date('Y') + 2; ?>" style="width: 80px;" />
+                </div>
+                <button type="button" id="rbt-filter-btn" class="button button-primary"><?php _e('Apply Filter', 'intersoccer-reports-rosters'); ?></button>
+            </div>
+
+            <!-- Quick Date Range Buttons -->
+            <div class="filter-row" style="margin-top: 10px;">
+                <strong><?php _e('Quick Ranges:', 'intersoccer-reports-rosters'); ?></strong>
+                <div class="quick-dates" style="display: inline-flex; gap: 5px; margin-left: 10px;">
+                    <a href="#" class="rbt-quick-date-range button button-small" data-range="today"><?php _e('Today', 'intersoccer-reports-rosters'); ?></a>
+                    <a href="#" class="rbt-quick-date-range button button-small" data-range="week"><?php _e('Last 7 Days', 'intersoccer-reports-rosters'); ?></a>
+                    <a href="#" class="rbt-quick-date-range button button-small" data-range="month"><?php _e('Last 30 Days', 'intersoccer-reports-rosters'); ?></a>
+                    <a href="#" class="rbt-quick-date-range button button-small" data-range="quarter"><?php _e('Last 3 Months', 'intersoccer-reports-rosters'); ?></a>
+                    <a href="#" class="rbt-quick-date-range button button-small" data-range="year"><?php _e('Last Year', 'intersoccer-reports-rosters'); ?></a>
+                    <a href="#" class="rbt-quick-date-range button button-small" data-range="clear"><?php _e('Clear Dates', 'intersoccer-reports-rosters'); ?></a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Export Bar -->
+        <div class="stats-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 10px; background: #fff; border: 1px solid #ddd; border-radius: 3px;">
+            <div>
+                <span id="rbt-loading-indicator" style="display: none;">🔄 <?php _e('Loading...', 'intersoccer-reports-rosters'); ?></span>
+                <span id="rbt-record-count"></span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <button id="rbt-export-excel" class="button button-primary">
+                    ↓ <?php _e('Export to Excel', 'intersoccer-reports-rosters'); ?>
+                </button>
+                <label><input type="checkbox" id="rbt-sync-office365" name="rbt_sync_to_office365" value="1" /> <?php _e('Also sync to Office 365', 'intersoccer-reports-rosters'); ?></label>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="rbt-results">
+            <p style="color: #666; font-style: italic;"><?php _e('Click "Apply Filter" to load revenue breakdown.', 'intersoccer-reports-rosters'); ?></p>
+        </div>
+    </div>
+
+    <script>
+    jQuery(document).ready(function($) {
+        // Initialize datepickers if available
+        if ($.fn.datepicker) {
+            $('#rbt_start_date, #rbt_end_date').datepicker({
+                dateFormat: 'yy-mm-dd',
+                changeMonth: true,
+                changeYear: true
+            });
+        }
+
+        // Quick date range handler
+        $('.rbt-quick-date-range').click(function(e) {
+            e.preventDefault();
+            var range = $(this).data('range');
+            var today = new Date();
+            var start, end;
+
+            switch(range) {
+                case 'today':
+                    start = end = formatDate(today);
+                    break;
+                case 'week':
+                    end = formatDate(today);
+                    start = formatDate(new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000));
+                    break;
+                case 'month':
+                    end = formatDate(today);
+                    start = formatDate(new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000));
+                    break;
+                case 'quarter':
+                    end = formatDate(today);
+                    start = formatDate(new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000));
+                    break;
+                case 'year':
+                    end = formatDate(today);
+                    start = formatDate(new Date(today.getTime() - 365 * 24 * 60 * 60 * 1000));
+                    break;
+                case 'clear':
+                    start = end = '';
+                    break;
+            }
+
+            $('#rbt_start_date').val(start);
+            $('#rbt_end_date').val(end);
+            loadRevenueByType();
+        });
+
+        function formatDate(d) {
+            var month = '' + (d.getMonth() + 1);
+            var day = '' + d.getDate();
+            var year = d.getFullYear();
+            if (month.length < 2) month = '0' + month;
+            if (day.length < 2) day = '0' + day;
+            return [year, month, day].join('-');
+        }
+
+        // Filter button click
+        $('#rbt-filter-btn').click(function() {
+            loadRevenueByType();
+        });
+
+        // Load revenue by type data
+        function loadRevenueByType() {
+            var $results = $('#rbt-results');
+            var $loading = $('#rbt-loading-indicator');
+            var $count = $('#rbt-record-count');
+
+            $loading.show();
+            $count.text('');
+
+            $.ajax({
+                url: intersoccer_reports_ajax.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'intersoccer_filter_revenue_by_type',
+                    nonce: intersoccer_reports_ajax.nonce,
+                    start_date: $('#rbt_start_date').val(),
+                    end_date: $('#rbt_end_date').val(),
+                    year: $('#rbt_year').val()
+                },
+                success: function(response) {
+                    $loading.hide();
+                    if (response.success) {
+                        $results.html(response.data.html);
+                        $count.text(response.data.record_count + ' <?php echo esc_js(__('bookings', 'intersoccer-reports-rosters')); ?>');
+                    } else {
+                        $results.html('<p class="notice notice-error">' + (response.data.message || '<?php echo esc_js(__('Error loading data', 'intersoccer-reports-rosters')); ?>') + '</p>');
+                    }
+                },
+                error: function() {
+                    $loading.hide();
+                    $results.html('<p class="notice notice-error"><?php echo esc_js(__('Connection error. Please try again.', 'intersoccer-reports-rosters')); ?></p>');
+                }
+            });
+        }
+
+        // Export to Excel
+        $('#rbt-export-excel').click(function(e) {
+            e.preventDefault();
+            var $button = $(this);
+
+            $button.prop('disabled', true).text('<?php echo esc_js(__('Exporting...', 'intersoccer-reports-rosters')); ?>');
+
+            $.ajax({
+                url: intersoccer_reports_ajax.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'intersoccer_export_revenue_by_type',
+                    nonce: intersoccer_reports_ajax.nonce,
+                    start_date: $('#rbt_start_date').val(),
+                    end_date: $('#rbt_end_date').val(),
+                    year: $('#rbt_year').val(),
+                    sync_to_office365: $('#rbt-sync-office365').is(':checked') ? 1 : 0
+                },
+                success: function(response) {
+                    if (response.success && response.data.content) {
+                        var binary = atob(response.data.content);
+                        var array = new Uint8Array(binary.length);
+                        for (var i = 0; i < binary.length; i++) {
+                            array[i] = binary.charCodeAt(i);
+                        }
+                        var blob = new Blob([array], {
+                            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                        });
+                        var link = document.createElement('a');
+                        link.href = window.URL.createObjectURL(blob);
+                        link.download = response.data.filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+
+                        var msg = '<?php echo esc_js(__('Export completed!', 'intersoccer-reports-rosters')); ?>';
+                        if (response.data.synced === true) {
+                            msg = '<?php echo esc_js(__('Export completed and synced to Office 365.', 'intersoccer-reports-rosters')); ?>';
+                        }
+                        showNotification(msg, 'success');
+                    } else {
+                        showNotification('<?php echo esc_js(__('Export failed:', 'intersoccer-reports-rosters')); ?> ' + (response.data.message || '<?php echo esc_js(__('Unknown error', 'intersoccer-reports-rosters')); ?>'), 'error');
+                    }
+                },
+                error: function() {
+                    showNotification('<?php echo esc_js(__('Export failed: Connection error', 'intersoccer-reports-rosters')); ?>', 'error');
+                },
+                complete: function() {
+                    $button.prop('disabled', false).html('↓ <?php echo esc_js(__('Export to Excel', 'intersoccer-reports-rosters')); ?>');
+                }
+            });
+        });
+
+        function showNotification(message, type) {
+            var $notification = $('<div class="notice notice-' + type + ' is-dismissible"><p>' + message + '</p></div>');
+            $('.intersoccer-revenue-by-type-tab h1').after($notification);
+            setTimeout(function() {
+                $notification.fadeOut();
+            }, 5000);
+        }
+
+        // Auto-load on page ready
+        loadRevenueByType();
+    });
+    </script>
+    <?php
 }
