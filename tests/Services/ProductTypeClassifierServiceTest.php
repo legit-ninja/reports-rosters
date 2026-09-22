@@ -112,6 +112,30 @@ class ProductTypeClassifierServiceTest extends TestCase {
         $this->assertSame(ProductTypeClassifierService::TYPE_TOURNAMENT, $result);
     }
 
+    public function test_french_tournoi_maps_to_tournament(): void {
+        $meta = ['_intersoccer_canonical_activity_type' => 'tournoi'];
+        $result = $this->classifier->classifyOrderItem($meta, null);
+        $this->assertSame(ProductTypeClassifierService::TYPE_TOURNAMENT, $result);
+    }
+
+    public function test_french_tournois_plural_maps_to_tournament(): void {
+        $meta = ['_intersoccer_canonical_activity_type' => 'tournois'];
+        $result = $this->classifier->classifyOrderItem($meta, null);
+        $this->assertSame(ProductTypeClassifierService::TYPE_TOURNAMENT, $result);
+    }
+
+    public function test_german_turnier_maps_to_tournament(): void {
+        $meta = ['_intersoccer_canonical_activity_type' => 'turnier'];
+        $result = $this->classifier->classifyOrderItem($meta, null);
+        $this->assertSame(ProductTypeClassifierService::TYPE_TOURNAMENT, $result);
+    }
+
+    public function test_german_turniere_plural_maps_to_tournament(): void {
+        $meta = ['_intersoccer_canonical_activity_type' => 'turniere'];
+        $result = $this->classifier->classifyOrderItem($meta, null);
+        $this->assertSame(ProductTypeClassifierService::TYPE_TOURNAMENT, $result);
+    }
+
     public function test_event_maps_to_other(): void {
         $meta = ['_intersoccer_canonical_activity_type' => 'event'];
         $result = $this->classifier->classifyOrderItem($meta, null);
@@ -295,6 +319,70 @@ class ProductTypeClassifierServiceTest extends TestCase {
 
         // Total net = 1000, Course = 600 (60%), Camp = 400 (40%)
         $this->assertEquals(1000.0, $result['totals']['net']);
+    }
+
+    /**
+     * Critical test: Net = Final - refund ONCE, not twice.
+     * This validates the locked formula: Net = Final - attributed line refund.
+     * If refund were subtracted twice, Net would be 60 (80 - 20) instead of 80.
+     */
+    public function test_net_equals_final_minus_refund_once(): void {
+        // Scenario: Gross 100, Discount 20, Refund 20
+        // Final = Gross - Discount = 100 - 20 = 80 (NO refund in Final)
+        // Net = Final - Refund = 80 - 20 = 60 (refund subtracted ONCE)
+        // If buggy (double subtraction): Net = (100 - 20 - 20) - 20 = 40 (WRONG)
+        $data = [
+            [
+                '_item_meta' => ['_intersoccer_canonical_activity_type' => 'course'],
+                'base_price' => '100.00',
+                'final_price' => '80.00', // This is Final = Gross - Discount (no refund)
+                'reimbursement' => '20.00',
+            ],
+        ];
+
+        $result = $this->classifier->calculateRevenueByType($data);
+
+        // Verify the formula: Net = Final - Refund = 80 - 20 = 60
+        $this->assertEquals(100.0, $result['by_type']['Course']['gross'], 'Gross should be 100');
+        $this->assertEquals(80.0, $result['by_type']['Course']['final'], 'Final should be 80 (Gross - Discount)');
+        $this->assertEquals(60.0, $result['by_type']['Course']['net'], 'Net should be 60 (Final - Refund once), not 40');
+
+        // If Net were 40, the refund was subtracted twice (bug)
+        $this->assertNotEquals(40.0, $result['by_type']['Course']['net'], 'Net must NOT be 40 (double refund subtraction bug)');
+    }
+
+    /**
+     * Test Net calculation with multiple items including discount and refund.
+     */
+    public function test_net_aggregation_with_mixed_discounts_and_refunds(): void {
+        $data = [
+            [
+                '_item_meta' => ['_intersoccer_canonical_activity_type' => 'course'],
+                'base_price' => '200.00',  // Gross
+                'final_price' => '180.00', // Final = 200 - 20 discount
+                'reimbursement' => '30.00', // Refund
+                // Net = 180 - 30 = 150
+            ],
+            [
+                '_item_meta' => ['_intersoccer_canonical_activity_type' => 'course'],
+                'base_price' => '100.00',
+                'final_price' => '100.00', // No discount
+                'reimbursement' => '0.00', // No refund
+                // Net = 100 - 0 = 100
+            ],
+        ];
+
+        $result = $this->classifier->calculateRevenueByType($data);
+
+        // Course totals: Gross=300, Final=280, Net=250
+        $this->assertEquals(300.0, $result['by_type']['Course']['gross']);
+        $this->assertEquals(280.0, $result['by_type']['Course']['final']);
+        $this->assertEquals(250.0, $result['by_type']['Course']['net']);
+
+        // Overall totals
+        $this->assertEquals(300.0, $result['totals']['gross']);
+        $this->assertEquals(280.0, $result['totals']['final']);
+        $this->assertEquals(250.0, $result['totals']['net']);
     }
 
     // =========================================================================

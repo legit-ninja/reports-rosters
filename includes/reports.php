@@ -891,12 +891,12 @@ function intersoccer_office365_build_booking_report_xlsx($report_data, $start_da
                     $sheet->setCellValue('B' . $current_row, $values['gross']);
                     $sheet->setCellValue('C' . $current_row, $values['final']);
                     $sheet->setCellValue('D' . $current_row, $values['net']);
-                    $sheet->setCellValue('E' . $current_row, $values['net_percent'] / 100); // Decimal for Excel %
+                    $sheet->setCellValue('E' . $current_row, $values['net_percent'] / 100); // Store as decimal 0-1
                     $sheet->setCellValue('F' . $current_row, $values['count']);
                     
                     // Format currency columns
                     $sheet->getStyle('B' . $current_row . ':D' . $current_row)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
-                    $sheet->getStyle('E' . $current_row)->getNumberFormat()->setFormatCode('0.0"%"');
+                    $sheet->getStyle('E' . $current_row)->getNumberFormat()->setFormatCode('0.0%');
                     
                     $current_row++;
                 }
@@ -915,7 +915,7 @@ function intersoccer_office365_build_booking_report_xlsx($report_data, $start_da
                       ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
                       ->getStartColor()->setARGB('FFFFEEBA');
                 $sheet->getStyle('B' . $current_row . ':D' . $current_row)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
-                $sheet->getStyle('E' . $current_row)->getNumberFormat()->setFormatCode('0.0"%"');
+                $sheet->getStyle('E' . $current_row)->getNumberFormat()->setFormatCode('0.0%');
                 
                 $current_row++;
             } catch (\Exception $e) {

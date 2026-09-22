@@ -194,7 +194,9 @@ class FinancialReportService {
                 $reimbursement = (float) $meta_map[OrderFinancialAttributionService::META_ITEM_REFUND];
             }
 
-            $final_price = max(0.0, $base_price - $discount_amount - $reimbursement);
+            // Final = Gross - attributed line discounts (NO refund)
+            $final_price = max(0.0, $base_price - $discount_amount);
+            // Net = Final - attributed line refund (once)
             $net_price = max(0.0, $final_price - $reimbursement);
 
             // Aggregate by product type
