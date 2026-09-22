@@ -210,7 +210,7 @@ function intersoccer_render_enhanced_booking_totals($totals, $report_data = null
  * Handle AJAX filter request for Revenue by Product Type tab.
  */
 function intersoccer_filter_revenue_by_type_callback() {
-    check_ajax_referer('intersoccer_reports_nonce', 'nonce');
+    check_ajax_referer('intersoccer_reports_filter', 'nonce');
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => __('You do not have sufficient permissions.', 'intersoccer-reports-rosters')]);
@@ -303,7 +303,7 @@ function intersoccer_render_revenue_by_type_table($revenue_by_type, $totals) {
  * Handle AJAX export request for Revenue by Product Type.
  */
 function intersoccer_export_revenue_by_type_callback() {
-    check_ajax_referer('intersoccer_reports_nonce', 'nonce');
+    check_ajax_referer('intersoccer_reports_filter', 'nonce');
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => __('You do not have sufficient permissions.', 'intersoccer-reports-rosters')]);

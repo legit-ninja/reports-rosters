@@ -1060,6 +1060,12 @@ function intersoccer_render_revenue_by_type_tab() {
 
     <script>
     jQuery(document).ready(function($) {
+        // Use the same AJAX config as Booking Report (localized via reports.php)
+        // intersoccer_reports_ajax.ajaxurl + intersoccer_reports_ajax.nonce (action: intersoccer_reports_filter)
+        var rbtAjax = window.intersoccer_reports_ajax || {};
+        var rbtAjaxUrl = rbtAjax.ajaxurl || (window.ajaxurl || '<?php echo esc_js(admin_url('admin-ajax.php')); ?>');
+        var rbtNonce = rbtAjax.nonce || '';
+
         // Initialize datepickers if available
         if ($.fn.datepicker) {
             $('#rbt_start_date, #rbt_end_date').datepicker({
@@ -1128,13 +1134,20 @@ function intersoccer_render_revenue_by_type_tab() {
 
             $loading.show();
             $count.text('');
+            $results.html('');
+
+            if (!rbtNonce) {
+                $loading.hide();
+                $results.html('<div class="notice notice-error"><p><?php echo esc_js(__('AJAX configuration error: nonce not available. Please refresh the page.', 'intersoccer-reports-rosters')); ?></p></div>');
+                return;
+            }
 
             $.ajax({
-                url: intersoccer_reports_ajax.ajax_url,
+                url: rbtAjaxUrl,
                 type: 'POST',
                 data: {
                     action: 'intersoccer_filter_revenue_by_type',
-                    nonce: intersoccer_reports_ajax.nonce,
+                    nonce: rbtNonce,
                     start_date: $('#rbt_start_date').val(),
                     end_date: $('#rbt_end_date').val(),
                     year: $('#rbt_year').val()
@@ -1142,15 +1155,22 @@ function intersoccer_render_revenue_by_type_tab() {
                 success: function(response) {
                     $loading.hide();
                     if (response.success) {
-                        $results.html(response.data.html);
-                        $count.text(response.data.record_count + ' <?php echo esc_js(__('bookings', 'intersoccer-reports-rosters')); ?>');
+                        if (response.data.html) {
+                            $results.html(response.data.html);
+                        } else {
+                            $results.html('<div class="notice notice-warning"><p><?php echo esc_js(__('No data returned.', 'intersoccer-reports-rosters')); ?></p></div>');
+                        }
+                        var countText = (response.data.record_count || 0) + ' <?php echo esc_js(__('bookings', 'intersoccer-reports-rosters')); ?>';
+                        $count.text(countText);
                     } else {
-                        $results.html('<p class="notice notice-error">' + (response.data.message || '<?php echo esc_js(__('Error loading data', 'intersoccer-reports-rosters')); ?>') + '</p>');
+                        var errMsg = (response.data && response.data.message) ? response.data.message : '<?php echo esc_js(__('Error loading data', 'intersoccer-reports-rosters')); ?>';
+                        $results.html('<div class="notice notice-error"><p>' + errMsg + '</p></div>');
                     }
                 },
-                error: function() {
+                error: function(xhr, status, error) {
                     $loading.hide();
-                    $results.html('<p class="notice notice-error"><?php echo esc_js(__('Connection error. Please try again.', 'intersoccer-reports-rosters')); ?></p>');
+                    var errDetail = error || status || '<?php echo esc_js(__('Unknown error', 'intersoccer-reports-rosters')); ?>';
+                    $results.html('<div class="notice notice-error"><p><?php echo esc_js(__('Connection error:', 'intersoccer-reports-rosters')); ?> ' + errDetail + '</p></div>');
                 }
             });
         }
@@ -1160,14 +1180,19 @@ function intersoccer_render_revenue_by_type_tab() {
             e.preventDefault();
             var $button = $(this);
 
+            if (!rbtNonce) {
+                showNotification('<?php echo esc_js(__('AJAX configuration error: nonce not available.', 'intersoccer-reports-rosters')); ?>', 'error');
+                return;
+            }
+
             $button.prop('disabled', true).text('<?php echo esc_js(__('Exporting...', 'intersoccer-reports-rosters')); ?>');
 
             $.ajax({
-                url: intersoccer_reports_ajax.ajax_url,
+                url: rbtAjaxUrl,
                 type: 'POST',
                 data: {
                     action: 'intersoccer_export_revenue_by_type',
-                    nonce: intersoccer_reports_ajax.nonce,
+                    nonce: rbtNonce,
                     start_date: $('#rbt_start_date').val(),
                     end_date: $('#rbt_end_date').val(),
                     year: $('#rbt_year').val(),
@@ -1196,11 +1221,13 @@ function intersoccer_render_revenue_by_type_tab() {
                         }
                         showNotification(msg, 'success');
                     } else {
-                        showNotification('<?php echo esc_js(__('Export failed:', 'intersoccer-reports-rosters')); ?> ' + (response.data.message || '<?php echo esc_js(__('Unknown error', 'intersoccer-reports-rosters')); ?>'), 'error');
+                        var errMsg = (response.data && response.data.message) ? response.data.message : '<?php echo esc_js(__('Unknown error', 'intersoccer-reports-rosters')); ?>';
+                        showNotification('<?php echo esc_js(__('Export failed:', 'intersoccer-reports-rosters')); ?> ' + errMsg, 'error');
                     }
                 },
-                error: function() {
-                    showNotification('<?php echo esc_js(__('Export failed: Connection error', 'intersoccer-reports-rosters')); ?>', 'error');
+                error: function(xhr, status, error) {
+                    var errDetail = error || status || '<?php echo esc_js(__('Unknown error', 'intersoccer-reports-rosters')); ?>';
+                    showNotification('<?php echo esc_js(__('Export failed:', 'intersoccer-reports-rosters')); ?> ' + errDetail, 'error');
                 },
                 complete: function() {
                     $button.prop('disabled', false).html('↓ <?php echo esc_js(__('Export to Excel', 'intersoccer-reports-rosters')); ?>');
