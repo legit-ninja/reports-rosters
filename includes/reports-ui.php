@@ -36,22 +36,6 @@ function intersoccer_render_empty_state(array $args) {
 }
 
 /**
- * Map urgency CSS class to human-readable label.
- *
- * @param string $band Urgency CSS class (count-critical, count-low, count-good, count-optimal).
- * @return string Human-readable label.
- */
-function intersoccer_reports_urgency_band_label($band) {
-	$labels = [
-		'count-critical' => __('Critical', 'intersoccer-reports-rosters'),
-		'count-low'      => __('Low', 'intersoccer-reports-rosters'),
-		'count-good'     => __('Good', 'intersoccer-reports-rosters'),
-		'count-optimal'  => __('Optimal', 'intersoccer-reports-rosters'),
-	];
-	return $labels[$band] ?? '';
-}
-
-/**
  * Render a Final Numbers cell with urgency heatmap styling.
  *
  * @param string $display_text Escaped or plain text to show (will be escaped).
