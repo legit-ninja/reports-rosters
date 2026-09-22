@@ -48,7 +48,7 @@ class PluginTest extends TestCase {
     }
     
     public function test_plugin_version_constant() {
-        $this->assertEquals('2.8.22', Plugin::VERSION);
+        $this->assertEquals('2.8.23', Plugin::VERSION);
     }
     
     public function test_plugin_text_domain_constant() {
