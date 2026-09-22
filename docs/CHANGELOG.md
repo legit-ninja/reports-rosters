@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.8.22 — 2026-09-22
+
+### Fixed
+- Fatal error from a duplicate `intersoccer_reports_urgency_band_label()` definition in `includes/reports-ui.php` (#59).
+
+### Changed
+- Test/CI infrastructure after 2.8.21 (#58). 2.8.21 was already used for taxonomy/canonical keys and cannot be republished on Underdog.
+
 ## Docs — 2026-09-10
 
 - Document Final Numbers / Live Snapshot UX after Phase A (#22, #14–#17).
