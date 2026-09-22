@@ -98,6 +98,7 @@ use InterSoccer\ReportsRosters\Services\FinancialReportService;
 use InterSoccer\ReportsRosters\Services\OrderFinancialAttributionService;
 use InterSoccer\ReportsRosters\Services\RosterDetailsService;
 use InterSoccer\ReportsRosters\Services\RosterListingService;
+use InterSoccer\ReportsRosters\Services\ProductTypeClassifierService;
 use InterSoccer\ReportsRosters\WooCommerce\OrderProcessor;
 use InterSoccer\ReportsRosters\WooCommerce\DiscountCalculator;
 use InterSoccer\ReportsRosters\Ajax\RosterAjaxHandler;
@@ -751,6 +752,19 @@ function intersoccer_oop_get_roster_listing_service() {
             intersoccer_oop_get_plugin()->get_logger(),
             intersoccer_oop_get_roster_repository()
         );
+    }
+    return $service;
+}
+}
+
+/**
+ * Get OOP ProductTypeClassifierService instance
+ */
+if (!function_exists('intersoccer_oop_get_product_type_classifier_service')) {
+function intersoccer_oop_get_product_type_classifier_service() {
+    static $service = null;
+    if ($service === null) {
+        $service = new ProductTypeClassifierService();
     }
     return $service;
 }

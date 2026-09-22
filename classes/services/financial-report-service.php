@@ -5,13 +5,14 @@
  * Generates booking/financial report datasets for the admin UI.
  *
  * @package InterSoccer\ReportsRosters\Services
- * @version 2.0.0
+ * @version 2.1.0
  */
 
 namespace InterSoccer\ReportsRosters\Services;
 
 use InterSoccer\ReportsRosters\Core\Logger;
 use InterSoccer\ReportsRosters\Core\Database;
+use InterSoccer\ReportsRosters\Campaign\FacetNormalizer;
 
 defined('ABSPATH') or die('Restricted access');
 
@@ -33,12 +34,28 @@ class FinancialReportService {
     private $wpdb;
 
     /**
+     * @var ProductTypeClassifierService|null
+     */
+    private $productTypeClassifier;
+
+    /**
      * Constructor.
      */
-    public function __construct(Logger $logger = null, Database $database = null) {
+    public function __construct(Logger $logger = null, Database $database = null, ProductTypeClassifierService $productTypeClassifier = null) {
         $this->logger = $logger ?: new Logger();
         $this->database = $database ?: new Database($this->logger);
         $this->wpdb = $this->database->get_wpdb();
+        $this->productTypeClassifier = $productTypeClassifier;
+    }
+
+    /**
+     * Get or create ProductTypeClassifierService instance.
+     */
+    private function getProductTypeClassifier(): ProductTypeClassifierService {
+        if ($this->productTypeClassifier === null) {
+            $this->productTypeClassifier = new ProductTypeClassifierService(new FacetNormalizer());
+        }
+        return $this->productTypeClassifier;
     }
 
     /**
@@ -105,6 +122,18 @@ class FinancialReportService {
             'reimbursement' => 0.0,
         ];
 
+        // Initialize revenue by product type aggregation
+        $productTypeClassifier = $this->getProductTypeClassifier();
+        $revenueByType = [];
+        foreach (ProductTypeClassifierService::getValidBuckets() as $bucket) {
+            $revenueByType[$bucket] = [
+                'gross' => 0.0,
+                'final' => 0.0,
+                'net' => 0.0,
+                'count' => 0,
+            ];
+        }
+
         foreach ((array) $order_rows as $row) {
             $order_id = (int) $row->order_id;
 
@@ -148,8 +177,11 @@ class FinancialReportService {
             ]);
 
             $age_group = $this->extractMetaValue($meta_map, ['pa_age-group', 'Age Group']);
-            $activity_type = $this->extractMetaValue($meta_map, ['pa_booking-type', 'Activity Type']);
+            $activity_type_display = $this->extractMetaValue($meta_map, ['pa_booking-type', 'Activity Type']);
             $venue = $this->extractMetaValue($meta_map, ['pa_intersoccer-venues', 'Sites InterSoccer', 'InterSoccer Venues']);
+
+            // Classify product type using the classification chain
+            $productType = $productTypeClassifier->classifyOrderItem($meta_map, (int) $row->product_id);
 
             $base_price = (float) $row->line_subtotal;
             $line_total = (float) $row->line_total;
@@ -162,7 +194,16 @@ class FinancialReportService {
                 $reimbursement = (float) $meta_map[OrderFinancialAttributionService::META_ITEM_REFUND];
             }
 
-            $final_price = max(0.0, $base_price - $discount_amount - $reimbursement);
+            // Final = Gross - attributed line discounts (NO refund)
+            $final_price = max(0.0, $base_price - $discount_amount);
+            // Net = Final - attributed line refund (once)
+            $net_price = max(0.0, $final_price - $reimbursement);
+
+            // Aggregate by product type
+            $revenueByType[$productType]['gross'] += $base_price;
+            $revenueByType[$productType]['final'] += $final_price;
+            $revenueByType[$productType]['net'] += $net_price;
+            $revenueByType[$productType]['count']++;
 
             $coupons = $this->wpdb->get_col($this->wpdb->prepare(
                 "SELECT order_item_name FROM {$this->wpdb->prefix}woocommerce_order_items
@@ -197,7 +238,8 @@ class FinancialReportService {
                 'parent_phone' => $parent_phone ?: 'N/A',
                 'selected_days' => $selected_days ?: 'N/A',
                 'age_group' => $age_group ?: 'N/A',
-                'activity_type' => $activity_type ?: 'N/A',
+                'activity_type' => $activity_type_display ?: 'N/A',
+                'product_type' => $productType,
             ];
 
             $totals['base_price'] += $base_price;
@@ -208,9 +250,21 @@ class FinancialReportService {
 
         $totals['bookings'] = count($data);
 
+        // Round revenue by type values and calculate percentages
+        $totalNet = $totals['final_price'] - $totals['reimbursement'];
+        foreach ($revenueByType as $bucket => $values) {
+            $revenueByType[$bucket]['gross'] = round($values['gross'], 2);
+            $revenueByType[$bucket]['final'] = round($values['final'], 2);
+            $revenueByType[$bucket]['net'] = round($values['net'], 2);
+            $revenueByType[$bucket]['net_percent'] = $totalNet > 0
+                ? round(($values['net'] / $totalNet) * 100, 1)
+                : 0.0;
+        }
+
         return [
             'data' => $data,
             'totals' => $totals,
+            'revenue_by_type' => $revenueByType,
         ];
     }
 
