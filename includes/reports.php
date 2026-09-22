@@ -850,6 +850,79 @@ function intersoccer_office365_build_booking_report_xlsx($report_data, $start_da
             $current_row++;
         }
         
+        // Add Revenue by Product Type section
+        $revenue_by_type = isset($report_data['revenue_by_type']) ? $report_data['revenue_by_type'] : null;
+        if (!empty($revenue_by_type)) {
+            try {
+                $current_row += 2; // Add spacing
+                
+                // Section title
+                $sheet->setCellValueExplicit('A' . $current_row, 'REVENUE BY PRODUCT TYPE', DataType::TYPE_STRING);
+                $sheet->getStyle('A' . $current_row)->getFont()->setBold(true)->setSize(14);
+                $sheet->getStyle('A' . $current_row)->getFont()->getColor()->setARGB('FF856404');
+                $current_row++;
+                
+                // Note
+                $sheet->setCellValueExplicit('A' . $current_row, 'CHF only, BuyClub excluded. Net = Final − Refunds.', DataType::TYPE_STRING);
+                $sheet->getStyle('A' . $current_row)->getFont()->setItalic(true)->setSize(10);
+                $current_row++;
+                
+                // Header row
+                $type_headers = ['Product Type', 'Gross (CHF)', 'Final (CHF)', 'Net (CHF)', '% of Net', 'Bookings'];
+                foreach ($type_headers as $col_idx => $header) {
+                    $col_letter = chr(65 + $col_idx); // A, B, C, D, E, F
+                    $sheet->setCellValue($col_letter . $current_row, $header);
+                }
+                $header_range = 'A' . $current_row . ':F' . $current_row;
+                $sheet->getStyle($header_range)->getFont()->setBold(true);
+                $sheet->getStyle($header_range)->getFill()
+                      ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                      ->getStartColor()->setARGB('FFFFEEBA');
+                $current_row++;
+                
+                // Data rows
+                foreach ($revenue_by_type as $type => $values) {
+                    // Skip empty Other/Unmapped unless it has data
+                    if ($type === 'Other/Unmapped' && $values['count'] === 0) {
+                        continue;
+                    }
+                    
+                    $sheet->setCellValue('A' . $current_row, $type);
+                    $sheet->setCellValue('B' . $current_row, $values['gross']);
+                    $sheet->setCellValue('C' . $current_row, $values['final']);
+                    $sheet->setCellValue('D' . $current_row, $values['net']);
+                    $sheet->setCellValue('E' . $current_row, $values['net_percent'] / 100); // Decimal for Excel %
+                    $sheet->setCellValue('F' . $current_row, $values['count']);
+                    
+                    // Format currency columns
+                    $sheet->getStyle('B' . $current_row . ':D' . $current_row)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
+                    $sheet->getStyle('E' . $current_row)->getNumberFormat()->setFormatCode('0.0"%"');
+                    
+                    $current_row++;
+                }
+                
+                // Total row
+                $sheet->setCellValue('A' . $current_row, 'TOTAL');
+                $sheet->setCellValue('B' . $current_row, (float)$report_data['totals']['base_price']);
+                $sheet->setCellValue('C' . $current_row, (float)$report_data['totals']['final_price']);
+                $sheet->setCellValue('D' . $current_row, $net_revenue);
+                $sheet->setCellValue('E' . $current_row, 1); // 100%
+                $sheet->setCellValue('F' . $current_row, (int)$report_data['totals']['bookings']);
+                
+                $total_range = 'A' . $current_row . ':F' . $current_row;
+                $sheet->getStyle($total_range)->getFont()->setBold(true);
+                $sheet->getStyle($total_range)->getFill()
+                      ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                      ->getStartColor()->setARGB('FFFFEEBA');
+                $sheet->getStyle('B' . $current_row . ':D' . $current_row)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
+                $sheet->getStyle('E' . $current_row)->getNumberFormat()->setFormatCode('0.0"%"');
+                
+                $current_row++;
+            } catch (\Exception $e) {
+                error_log('InterSoccer ENHANCED: Error adding revenue by type section: ' . $e->getMessage());
+            }
+        }
+
         // Add generation info at the bottom
         try {
             $info_row = $current_row + 1;
@@ -859,7 +932,7 @@ function intersoccer_office365_build_booking_report_xlsx($report_data, $start_da
             } else {
                 $generation_info .= "Year: {$year} | ";
             }
-            $generation_info .= 'Records: ' . count($report_data['data']) . ' | Discount System: Enhanced';
+            $generation_info .= 'Records: ' . count($report_data['data']) . ' | Discount System: Enhanced | Product Type Breakdown: Included';
             
             // Use setCellValueExplicit to ensure it's treated as text, not formula
             $cell_ref = 'A' . $info_row;

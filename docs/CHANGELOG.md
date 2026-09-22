@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.8.23 — 2026-09-22
+
+### Added
+- **Revenue by Product Type** summary on Booking Report Dashboard: Course · Camp · Birthday · Tournament · Other/Unmapped buckets with Net CHF, % of Net, Gross, and Final columns.
+- Revenue by Product Type section in Booking Report Excel export (same metrics as UI).
+- `ProductTypeClassifierService` for order-item classification using the chain: `_intersoccer_canonical_activity_type` → FacetNormalizer → PV product type → Other/Unmapped.
+- PHPUnit tests for product type classification, birthday inclusion, and Net % math.
+
+### Notes
+- **Currency**: CHF only (documented in UI help text).
+- **BuyClub**: Excluded via existing `billing_company` skip (same as Booking Report).
+- **Birthday**: Now appears in revenue breakdown even though Rosters/Final Numbers exclude birthday.
+- No CRS changes; commission netting out of scope.
+
 ## 2.8.22 — 2026-09-22
 
 ### Fixed

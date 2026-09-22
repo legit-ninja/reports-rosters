@@ -33,11 +33,12 @@ function intersoccer_filter_report_callback() {
 
     // Use the simplified financial reporting function
     $report_data = intersoccer_get_financial_booking_report($start_date, $end_date, $year, $region);
+    $revenue_by_type = isset($report_data['revenue_by_type']) ? $report_data['revenue_by_type'] : null;
 
     ob_start();
     ?>
     <div id="intersoccer-report-totals" class="report-totals" style="margin-bottom: 20px;">
-        <?php intersoccer_render_enhanced_booking_totals($report_data['totals'], $report_data['data']); ?>
+        <?php intersoccer_render_enhanced_booking_totals($report_data['totals'], $report_data['data'], $revenue_by_type); ?>
     </div>
     <div id="intersoccer-report-table">
         <?php if (empty($report_data['data'])): ?>
@@ -137,10 +138,11 @@ function intersoccer_filter_report_callback() {
 /**
  * Render enhanced booking report totals.
  *
- * @param array      $totals      Aggregated totals.
- * @param array|null $report_data Optional row data for discount-type breakdown.
+ * @param array      $totals         Aggregated totals.
+ * @param array|null $report_data    Optional row data for discount-type breakdown.
+ * @param array|null $revenue_by_type Optional revenue breakdown by product type.
  */
-function intersoccer_render_enhanced_booking_totals($totals, $report_data = null) {
+function intersoccer_render_enhanced_booking_totals($totals, $report_data = null, $revenue_by_type = null) {
     if (empty($totals)) {
         echo '<p>No totals available.</p>';
         return;
@@ -201,6 +203,54 @@ function intersoccer_render_enhanced_booking_totals($totals, $report_data = null
             </div>
         </div>
     </div>
+
+    <?php if (!empty($revenue_by_type)) : ?>
+    <div class="report-summary revenue-by-type-summary" style="background: #fff3cd; padding: 15px; margin-bottom: 20px; border-radius: 5px; border: 1px solid #ffc107;">
+        <h3 style="margin-top: 0; color: #856404;">
+            <?php _e('Revenue by Product Type', 'intersoccer-reports-rosters'); ?>
+            <small style="font-weight: normal; font-size: 12px; color: #666;"><?php _e('(CHF only, BuyClub excluded)', 'intersoccer-reports-rosters'); ?></small>
+        </h3>
+        <p style="margin: 0 0 15px; font-size: 12px; color: #666;">
+            <?php _e('Net = Final Revenue − Refunds. Percentages are share of total Net Revenue.', 'intersoccer-reports-rosters'); ?>
+        </p>
+        <table class="widefat fixed" style="margin-bottom: 0;">
+            <thead>
+                <tr style="background: #ffeeba;">
+                    <th style="width: 25%;"><?php _e('Product Type', 'intersoccer-reports-rosters'); ?></th>
+                    <th style="text-align: right;"><?php _e('Gross (CHF)', 'intersoccer-reports-rosters'); ?></th>
+                    <th style="text-align: right;"><?php _e('Final (CHF)', 'intersoccer-reports-rosters'); ?></th>
+                    <th style="text-align: right;"><?php _e('Net (CHF)', 'intersoccer-reports-rosters'); ?></th>
+                    <th style="text-align: right;"><?php _e('% of Net', 'intersoccer-reports-rosters'); ?></th>
+                    <th style="text-align: right;"><?php _e('Bookings', 'intersoccer-reports-rosters'); ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($revenue_by_type as $type => $values) : ?>
+                    <?php if ($values['count'] > 0 || $type !== 'Other/Unmapped') : ?>
+                    <tr>
+                        <td><strong><?php echo esc_html($type); ?></strong></td>
+                        <td style="text-align: right;"><?php echo number_format($values['gross'], 2); ?></td>
+                        <td style="text-align: right;"><?php echo number_format($values['final'], 2); ?></td>
+                        <td style="text-align: right;"><?php echo number_format($values['net'], 2); ?></td>
+                        <td style="text-align: right;"><?php echo number_format($values['net_percent'], 1); ?>%</td>
+                        <td style="text-align: right;"><?php echo number_format($values['count']); ?></td>
+                    </tr>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+            </tbody>
+            <tfoot>
+                <tr style="background: #ffeeba; font-weight: bold;">
+                    <td><?php _e('TOTAL', 'intersoccer-reports-rosters'); ?></td>
+                    <td style="text-align: right;"><?php echo number_format($totals['base_price'], 2); ?></td>
+                    <td style="text-align: right;"><?php echo number_format($totals['final_price'], 2); ?></td>
+                    <td style="text-align: right;"><?php echo number_format($net_revenue, 2); ?></td>
+                    <td style="text-align: right;">100.0%</td>
+                    <td style="text-align: right;"><?php echo number_format($totals['bookings']); ?></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    <?php endif; ?>
     <?php
 }
 
