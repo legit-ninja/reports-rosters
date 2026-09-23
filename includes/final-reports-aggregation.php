@@ -758,6 +758,17 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
             $venue = intersoccer_reports_resolve_facet_label($venue_raw !== '' ? $venue_raw : 'Unknown', 'pa_intersoccer-venues', 'Unknown');
             $product_id = isset($entry['product_id']) ? (int) $entry['product_id'] : 0;
             $variation_id = isset($entry['variation_id']) ? (int) $entry['variation_id'] : 0;
+
+            // WPML canonicalization: collapse language siblings of the same SKU before row key.
+            if (function_exists('intersoccer_roster_canonicalize_row_product_ids')) {
+                $canonical = intersoccer_roster_canonicalize_row_product_ids([
+                    'variation_id' => $variation_id,
+                    'product_id' => $product_id,
+                ]);
+                $variation_id = (int) ($canonical['variation_id'] ?? $variation_id);
+                $product_id = (int) ($canonical['product_id'] ?? $product_id);
+            }
+
             $order_item_name = isset($entry['order_item_name']) ? (string) $entry['order_item_name'] : '';
             if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING) {
                 $course_name = $order_item_name !== '' ? $order_item_name : ('Course #' . ($variation_id > 0 ? $variation_id : $product_id));
@@ -777,6 +788,15 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
                 }
             }
 
+            // Girls-only detection: check girls_only flag, activity_type, product_name, order_item_name, and course_name.
+            // order_item_name / course_name often contain "Girls-Only" text on the Woo Final Course path.
+            $is_girls = !empty($entry['girls_only'])
+                || (function_exists('intersoccer_text_indicates_girls_only')
+                    && (intersoccer_text_indicates_girls_only($entry['activity_type'] ?? '')
+                        || intersoccer_text_indicates_girls_only($entry['product_name'] ?? '')
+                        || intersoccer_text_indicates_girls_only($order_item_name)
+                        || intersoccer_text_indicates_girls_only($course_name)));
+
             $esd = isset($entry['event_start_date']) ? trim((string) $entry['event_start_date']) : '';
             if ($esd === '' || $esd === '1970-01-01' || $esd === '0000-00-00') {
                 $esd = isset($entry['start_date']) ? trim((string) $entry['start_date']) : '';
@@ -795,8 +815,13 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
                 $report_data[$season][$entry_region] = [];
             }
 
+            // Row key keeps identity shape: {variation_id|product_id}|{course_day}|{venue}.
+            // Girls-only courses get a separate row via appended suffix to keep them visually distinct.
             $identity_id = $variation_id > 0 ? $variation_id : $product_id;
             $row_key = $identity_id . '|' . $course_day . '|' . $venue;
+            if ($is_girls) {
+                $row_key .= '|girls';
+            }
             if (!isset($report_data[$season][$entry_region][$row_key])) {
                 $report_data[$season][$entry_region][$row_key] = [
                     'venue' => $venue,
@@ -806,6 +831,7 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
                     'registrations' => 0,
                     'variation_id' => $variation_id,
                     'product_id' => $product_id,
+                    'girls_only' => $is_girls ? 1 : 0,
                 ];
             }
 
@@ -1354,11 +1380,15 @@ if (!function_exists('intersoccer_reports_course_excel_line_label')) {
 		$name = trim((string) ($course_data['course_name'] ?? ''));
 		$venue = trim((string) ($course_data['venue'] ?? ''));
 		$times = trim((string) ($course_data['times'] ?? ''));
+		$is_girls = !empty($course_data['girls_only']);
 
 		$head = trim($day . ' ' . $name);
 		$tail = $venue;
 		if ($times !== '' && $times !== '-') {
 			$tail = trim($tail . ' ' . $times);
+		}
+		if ($is_girls) {
+			$tail = trim($tail . ' (Girls Only)');
 		}
 
 		$parts = [];
