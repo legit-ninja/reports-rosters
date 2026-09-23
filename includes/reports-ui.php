@@ -55,7 +55,10 @@ function intersoccer_reports_render_urgency_heat_cell($display_text, $band) {
 }
 
 /**
- * Render the main reports page
+ * Render the main reports page (Booking Reports hub).
+ *
+ * Hub tabs: Booking Report + Revenue by Type only.
+ * Final Numbers has moved to its own page (intersoccer-final-reports).
  */
 function intersoccer_render_reports_page() {
     // Check user capabilities
@@ -82,7 +85,6 @@ function intersoccer_render_reports_page() {
         <h2 class="nav-tab-wrapper">
             <a href="#booking-report" class="nav-tab nav-tab-active"><?php _e('Booking Report', 'intersoccer-reports-rosters'); ?></a>
             <a href="#revenue-by-type" class="nav-tab"><?php _e('Revenue by Type', 'intersoccer-reports-rosters'); ?></a>
-            <a href="#final-reports" class="nav-tab"><?php _e('Final Numbers', 'intersoccer-reports-rosters'); ?></a>
         </h2>
 
         <div id="booking-report" class="tab-content">
@@ -91,10 +93,6 @@ function intersoccer_render_reports_page() {
 
         <div id="revenue-by-type" class="tab-content" style="display: none;">
             <?php intersoccer_render_revenue_by_type_tab(); ?>
-        </div>
-
-        <div id="final-reports" class="tab-content" style="display: none;">
-            <?php intersoccer_render_final_reports_page(); ?>
         </div>
     </div>
 
@@ -119,9 +117,22 @@ function intersoccer_render_reports_page() {
  * Render the booking report tab
  */
 /**
- * Render the Final Reports page.
+ * Render the standalone Final Reports page (intersoccer-final-reports).
+ *
+ * This wrapper ensures the page slug is always 'intersoccer-final-reports' and
+ * the activity type filter is shown. Called from MenuManager::render_final_reports().
  */
-function intersoccer_render_final_reports_page() {
+function intersoccer_render_final_reports_standalone_page() {
+    intersoccer_render_final_reports_page('intersoccer-final-reports', true);
+}
+
+/**
+ * Render the Final Reports page.
+ *
+ * @param string $page_slug               The page slug for form action (default: intersoccer-final-reports).
+ * @param bool   $show_activity_filter    Whether to show the activity type dropdown (default: true).
+ */
+function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-final-reports', bool $show_activity_filter = true) {
     if (!current_user_can('manage_options')) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
     }
@@ -143,9 +154,9 @@ function intersoccer_render_final_reports_page() {
     $urgency_only = !empty($_GET['urgency_only']);
     $status_mode = $live ? 'live' : 'final';
 
-    // Determine current page for form action
-    $current_page = isset($_GET['page']) ? $_GET['page'] : 'intersoccer-final-reports';
-    $show_activity_type_filter = !in_array($current_page, ['intersoccer-final-camp-reports', 'intersoccer-final-course-reports']);
+    // Form always submits to the Final Reports page to ensure stay-on-page.
+    $current_page = $page_slug;
+    $show_activity_type_filter = $show_activity_filter;
 
     // Query unique values for filter dropdowns
     global $wpdb;
@@ -957,21 +968,23 @@ function intersoccer_reports_echo_camp_metrics_cells(array $metrics) {
 }
 
 /**
- * Render the Final Camp Reports page
+ * Render the Final Camp Reports page (legacy).
+ *
+ * @deprecated Legacy slug now redirects via MenuManager. Kept for backward compat.
  */
 function intersoccer_render_final_camp_reports_page() {
-    // Set activity type to Camp and call the main final reports function
     $_GET['activity_type'] = 'Camp';
-    intersoccer_render_final_reports_page();
+    intersoccer_render_final_reports_page('intersoccer-final-reports', true);
 }
 
 /**
- * Render the Final Course Reports page
+ * Render the Final Course Reports page (legacy).
+ *
+ * @deprecated Legacy slug now redirects via MenuManager. Kept for backward compat.
  */
 function intersoccer_render_final_course_reports_page() {
-    // Set activity type to Course and call the main final reports function
     $_GET['activity_type'] = 'Course';
-    intersoccer_render_final_reports_page();
+    intersoccer_render_final_reports_page('intersoccer-final-reports', true);
 }
 
 /**

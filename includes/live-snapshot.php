@@ -18,7 +18,8 @@ function intersoccer_render_live_snapshot_page() {
     $year = (int) date('Y');
     $summer_camps_url = add_query_arg(
         [
-            'page' => 'intersoccer-final-camp-reports',
+            'page' => 'intersoccer-final-reports',
+            'activity_type' => 'Camp',
             'year' => $year,
             'season_type' => 'Summer',
             'live' => 1,
@@ -27,7 +28,8 @@ function intersoccer_render_live_snapshot_page() {
     );
     $courses_url = add_query_arg(
         [
-            'page' => 'intersoccer-final-course-reports',
+            'page' => 'intersoccer-final-reports',
+            'activity_type' => 'Course',
             'year' => $year,
             'live' => 1,
         ],
@@ -35,7 +37,8 @@ function intersoccer_render_live_snapshot_page() {
     );
     $urgent_camps_url = add_query_arg(
         [
-            'page' => 'intersoccer-final-camp-reports',
+            'page' => 'intersoccer-final-reports',
+            'activity_type' => 'Camp',
             'year' => $year,
             'season_type' => 'Summer',
             'live' => 1,
@@ -45,7 +48,8 @@ function intersoccer_render_live_snapshot_page() {
     );
     $urgent_courses_url = add_query_arg(
         [
-            'page' => 'intersoccer-final-course-reports',
+            'page' => 'intersoccer-final-reports',
+            'activity_type' => 'Course',
             'year' => $year,
             'live' => 1,
             'urgency_only' => 1,
