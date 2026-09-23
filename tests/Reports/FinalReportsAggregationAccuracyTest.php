@@ -1286,6 +1286,120 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
         $this->assertSame(0, $rows[$coed_key]['girls_only']);
     }
 
+    public function test_course_girls_only_detected_via_order_item_name() {
+        $this->skipIfMissingHelpers();
+
+        $base = [
+            'variation_id' => 0,
+            'is_buyclub' => false,
+            'line_subtotal' => 50,
+            'line_total' => 50,
+            'canton' => 'Zug',
+            'venue' => 'ISZL Walterwil',
+            'season' => 'Autumn 2026',
+            'event_start_date' => '2026-09-07',
+        ];
+        $entries = [
+            array_merge($base, [
+                'roster_row_id' => 1,
+                'order_item_id' => 1,
+                'product_id' => 200,
+                'order_item_name' => 'Football Courses Girls-Only Monday ISZL',
+                'course_day' => 'Monday',
+                'activity_type' => 'Course',
+                'product_name' => 'Football Courses',
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 2,
+                'order_item_id' => 2,
+                'product_id' => 201,
+                'order_item_name' => 'Football Courses Monday ISZL',
+                'course_day' => 'Monday',
+                'activity_type' => 'Course',
+                'product_name' => 'Football Courses',
+            ]),
+        ];
+
+        $report = intersoccer_reports_build_course_report_from_entries($entries, false);
+        $this->assertSame(2, $report['__player_registration_totals__']['all']);
+        unset($report['__player_registration_totals__']);
+
+        $rows = $report['Autumn 2026']['Zug'];
+        $this->assertCount(2, $rows, 'Girls-only and co-ed must be separate rows');
+
+        $girls_key = '200|Monday|ISZL Walterwil|girls';
+        $coed_key = '201|Monday|ISZL Walterwil';
+        $this->assertArrayHasKey($girls_key, $rows, 'Girls-only row from order_item_name should exist');
+        $this->assertArrayHasKey($coed_key, $rows, 'Co-ed row should exist');
+        $this->assertSame(1, $rows[$girls_key]['girls_only']);
+        $this->assertSame(0, $rows[$coed_key]['girls_only']);
+
+        $girls_label = intersoccer_reports_course_excel_line_label($rows[$girls_key]);
+        $coed_label = intersoccer_reports_course_excel_line_label($rows[$coed_key]);
+        $this->assertStringContainsString('(Girls Only)', $girls_label, 'Excel label should include (Girls Only)');
+        $this->assertStringNotContainsString('(Girls Only)', $coed_label, 'Co-ed Excel label should not include (Girls Only)');
+    }
+
+    public function test_course_girls_only_detected_via_course_name_display() {
+        $this->skipIfMissingHelpers();
+
+        $base = [
+            'variation_id' => 0,
+            'is_buyclub' => false,
+            'line_subtotal' => 50,
+            'line_total' => 50,
+            'canton' => 'Geneva',
+            'venue' => 'Stade Chênois',
+            'season' => 'Autumn 2026',
+            'event_start_date' => '2026-09-07',
+        ];
+        $entries = [
+            array_merge($base, [
+                'roster_row_id' => 1,
+                'order_item_id' => 1,
+                'product_id' => 300,
+                'order_item_name' => 'Girls Only Football Sunday Chênois',
+                'course_day' => 'Sunday',
+                'activity_type' => 'Course',
+                'product_name' => 'Football Courses',
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 2,
+                'order_item_id' => 2,
+                'product_id' => 301,
+                'order_item_name' => 'Football Sunday Chênois',
+                'course_day' => 'Sunday',
+                'activity_type' => 'Course',
+                'product_name' => 'Football Courses',
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 3,
+                'order_item_id' => 3,
+                'product_id' => 300,
+                'order_item_name' => 'Girls Only Football Sunday Chênois',
+                'course_day' => 'Sunday',
+                'activity_type' => 'Course',
+                'product_name' => 'Football Courses',
+            ]),
+        ];
+
+        $report = intersoccer_reports_build_course_report_from_entries($entries, false);
+        $this->assertSame(3, $report['__player_registration_totals__']['all']);
+        unset($report['__player_registration_totals__']);
+
+        $rows = $report['Autumn 2026']['Geneva'];
+        $this->assertCount(2, $rows, 'Girls-only and co-ed must be separate rows');
+
+        $girls_key = '300|Sunday|Stade Chênois|girls';
+        $coed_key = '301|Sunday|Stade Chênois';
+        $this->assertArrayHasKey($girls_key, $rows, 'Girls-only row should exist');
+        $this->assertArrayHasKey($coed_key, $rows, 'Co-ed row should exist');
+        $this->assertSame(2, $rows[$girls_key]['registrations'], 'Girls-only row should have 2 registrations');
+        $this->assertSame(1, $rows[$coed_key]['registrations'], 'Co-ed row should have 1 registration');
+        $this->assertSame(1, $rows[$girls_key]['girls_only']);
+        $this->assertSame(0, $rows[$coed_key]['girls_only']);
+    }
+
     public function test_course_wpml_language_siblings_stay_separate_without_wpml() {
         $this->skipIfMissingHelpers();
 

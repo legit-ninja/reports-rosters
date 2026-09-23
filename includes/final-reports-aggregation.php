@@ -788,11 +788,14 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
                 }
             }
 
-            // Girls-only detection: match Camp Final approach using girls_only flag / activity_type / product_name.
+            // Girls-only detection: check girls_only flag, activity_type, product_name, order_item_name, and course_name.
+            // order_item_name / course_name often contain "Girls-Only" text on the Woo Final Course path.
             $is_girls = !empty($entry['girls_only'])
                 || (function_exists('intersoccer_text_indicates_girls_only')
                     && (intersoccer_text_indicates_girls_only($entry['activity_type'] ?? '')
-                        || intersoccer_text_indicates_girls_only($entry['product_name'] ?? '')));
+                        || intersoccer_text_indicates_girls_only($entry['product_name'] ?? '')
+                        || intersoccer_text_indicates_girls_only($order_item_name)
+                        || intersoccer_text_indicates_girls_only($course_name)));
 
             $esd = isset($entry['event_start_date']) ? trim((string) $entry['event_start_date']) : '';
             if ($esd === '' || $esd === '1970-01-01' || $esd === '0000-00-00') {
