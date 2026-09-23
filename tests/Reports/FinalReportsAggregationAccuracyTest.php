@@ -1286,7 +1286,7 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
         $this->assertSame(0, $rows[$coed_key]['girls_only']);
     }
 
-    public function test_course_wpml_language_siblings_collapse() {
+    public function test_course_wpml_language_siblings_stay_separate_without_wpml() {
         $this->skipIfMissingHelpers();
 
         $base = [
@@ -1329,6 +1329,61 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
 
         $rows = $report['Winter 2026']['Basel'];
         $this->assertCount(3, $rows, 'Without WPML mocking, all 3 distinct variation IDs should be separate rows');
+    }
+
+    public function test_course_wpml_language_siblings_collapse_when_canonicalized() {
+        $this->skipIfMissingHelpers();
+
+        $base = [
+            'is_buyclub' => false,
+            'line_subtotal' => 50,
+            'line_total' => 50,
+            'canton' => 'Basel',
+            'venue' => 'Volta',
+            'season' => 'Winter 2026',
+            'event_start_date' => '2026-01-12',
+            'course_day' => 'Monday',
+        ];
+
+        $canonical_variation_id = 2001;
+        $canonical_product_id = 1000;
+
+        $entries = [
+            array_merge($base, [
+                'roster_row_id' => 1,
+                'order_item_id' => 1,
+                'product_id' => $canonical_product_id,
+                'variation_id' => $canonical_variation_id,
+                'order_item_name' => 'EN Monday Course',
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 2,
+                'order_item_id' => 2,
+                'product_id' => $canonical_product_id,
+                'variation_id' => $canonical_variation_id,
+                'order_item_name' => 'FR Cours lundi',
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 3,
+                'order_item_id' => 3,
+                'product_id' => $canonical_product_id,
+                'variation_id' => $canonical_variation_id,
+                'order_item_name' => 'DE Montag Kurs',
+            ]),
+        ];
+
+        $report = intersoccer_reports_build_course_report_from_entries($entries, false);
+        $this->assertSame(3, $report['__player_registration_totals__']['all']);
+        unset($report['__player_registration_totals__']);
+
+        $rows = $report['Winter 2026']['Basel'];
+        $this->assertCount(1, $rows, 'When entries share the same canonical variation_id, they should collapse to one row');
+
+        $row_key = $canonical_variation_id . '|Monday|Volta';
+        $this->assertArrayHasKey($row_key, $rows);
+        $this->assertSame(3, $rows[$row_key]['registrations'], 'All 3 registrations should sum into the collapsed row');
+        $this->assertSame($canonical_variation_id, $rows[$row_key]['variation_id']);
+        $this->assertSame($canonical_product_id, $rows[$row_key]['product_id']);
     }
 
     public function test_course_girls_only_vs_coed_different_variations_do_not_collapse() {
