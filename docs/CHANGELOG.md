@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.24 — 2026-09-23
+
+### Changed
+- **Final Reports as its own admin page** (`page=intersoccer-final-reports`) — no longer a hub tab. Camp/Course `activity_type` filters available. Form stays on the Final Reports page after submission. Booking Reports hub now contains only Booking Report + Revenue by Type. Legacy redirects preserved. (#65, #62)
+
 ## 2.8.23 — 2026-09-22
 
 ### Added
