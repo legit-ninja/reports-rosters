@@ -705,10 +705,12 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                                 $band = function_exists('intersoccer_reports_urgency_band')
                                     ? intersoccer_reports_urgency_band($regs)
                                     : 'count-critical';
+                                $course_is_girls = !empty($course_data['girls_only']);
+                                $venue_display = $row['venue'] . ($course_is_girls ? ' (Girls Only)' : '');
                                 ?>
                                     <tr>
                                         <td class="intersoccer-sticky-col intersoccer-sticky-col-region"></td>
-                                        <td class="intersoccer-sticky-col intersoccer-sticky-col-venue"><?php echo esc_html($row['venue']); ?></td>
+                                        <td class="intersoccer-sticky-col intersoccer-sticky-col-venue"><?php echo esc_html($venue_display); ?></td>
                                         <td><?php echo esc_html($course_data['course_name'] ?? 'Unknown'); ?></td>
                                         <td><?php echo esc_html($course_data['course_day'] ?? 'Unknown'); ?></td>
                                         <td><?php echo esc_html($course_data['times'] ?? '-'); ?></td>
