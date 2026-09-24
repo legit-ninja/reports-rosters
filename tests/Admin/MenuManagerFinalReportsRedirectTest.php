@@ -168,4 +168,32 @@ class MenuManagerFinalReportsRedirectTest extends TestCase {
         $this->assertStringNotContainsString('intersoccer-final-course-reports', $url);
         $this->assertStringNotContainsString('intersoccer-reports&tab=', $url);
     }
+
+    /**
+     * Verify that the Final Reports render function uses the same capability
+     * as the menu registration ('read'), not 'manage_options'.
+     *
+     * This guards against capability mismatch regressions where the menu
+     * registration allows access but the render-time check denies it.
+     *
+     * @see https://github.com/legit-ninja/reports-rosters/issues/67
+     */
+    public function test_final_reports_render_uses_read_capability(): void {
+        $reports_ui_path = dirname(__DIR__, 2) . '/includes/reports-ui.php';
+        $this->assertFileExists($reports_ui_path, 'reports-ui.php should exist');
+
+        $source = file_get_contents($reports_ui_path);
+
+        $pattern = '/function\s+intersoccer_render_final_reports_page\s*\([^)]*\)\s*\{[^}]*current_user_can\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)/s';
+        $this->assertMatchesRegularExpression($pattern, $source, 'Final reports render function should contain a current_user_can check');
+
+        preg_match($pattern, $source, $matches);
+        $capability = $matches[1] ?? '';
+
+        $this->assertSame(
+            'read',
+            $capability,
+            "Final Reports render function should check 'read' capability (matching menu registration), not '{$capability}'"
+        );
+    }
 }

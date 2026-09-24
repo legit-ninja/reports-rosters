@@ -133,7 +133,7 @@ function intersoccer_render_final_reports_standalone_page() {
  * @param bool   $show_activity_filter    Whether to show the activity type dropdown (default: true).
  */
 function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-final-reports', bool $show_activity_filter = true) {
-    if (!current_user_can('manage_options')) {
+    if (!current_user_can('read')) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
     }
 
