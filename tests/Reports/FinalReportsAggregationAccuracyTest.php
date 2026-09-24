@@ -1544,4 +1544,148 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
         $this->assertArrayHasKey($coed_key, $rows);
         $this->assertArrayHasKey($girls_key, $rows);
     }
+
+    /**
+     * Validate that rosters-table-style course entries produce correct aggregation.
+     * This tests the new Course Final rosters-table path where entries come directly
+     * from the intersoccer_rosters table rather than WooCommerce order_itemmeta JOINs.
+     */
+    public function test_course_rosters_table_path_entries_aggregate_correctly() {
+        $this->skipIfMissingHelpers();
+
+        // Simulate entries as they come from the rosters table query path:
+        // - canton comes from canton_region / region columns
+        // - course_day comes from course_day column
+        // - times comes from times / course_times column
+        // - girls_only is an integer flag
+        $base = [
+            'is_buyclub' => false,
+            'line_subtotal' => 100,
+            'line_total' => 100,
+        ];
+        $entries = [
+            array_merge($base, [
+                'roster_row_id' => 1001,
+                'order_item_id' => 5001,
+                'canton' => 'Geneva',
+                'venue' => 'Stade Pré-Bois',
+                'product_id' => 888,
+                'variation_id' => 0,
+                'product_name' => 'Football Courses',
+                'order_item_name' => 'Football Courses Monday Pré-Bois',
+                'course_day' => 'Monday',
+                'times' => '15:30-17:00',
+                'season' => 'Autumn 2026',
+                'activity_type' => 'Course',
+                'start_date' => '2026-09-07',
+                'end_date' => '2026-12-14',
+                'girls_only' => 0,
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 1002,
+                'order_item_id' => 5002,
+                'canton' => 'Geneva',
+                'venue' => 'Stade Pré-Bois',
+                'product_id' => 888,
+                'variation_id' => 0,
+                'product_name' => 'Football Courses',
+                'order_item_name' => 'Football Courses Monday Pré-Bois',
+                'course_day' => 'Monday',
+                'times' => '15:30-17:00',
+                'season' => 'Autumn 2026',
+                'activity_type' => 'Course',
+                'start_date' => '2026-09-07',
+                'end_date' => '2026-12-14',
+                'girls_only' => 0,
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 1003,
+                'order_item_id' => 5003,
+                'canton' => 'Zurich',
+                'venue' => 'Sportanlage Buchs',
+                'product_id' => 999,
+                'variation_id' => 0,
+                'product_name' => 'Football Courses Girls Only',
+                'order_item_name' => 'Girls Only Football Wednesday Buchs',
+                'course_day' => 'Wednesday',
+                'times' => '16:00-17:30',
+                'season' => 'Autumn 2026',
+                'activity_type' => 'Course',
+                'start_date' => '2026-09-09',
+                'end_date' => '2026-12-16',
+                'girls_only' => 1,
+            ]),
+        ];
+
+        $report = intersoccer_reports_build_course_report_from_entries($entries, false);
+
+        $this->assertSame(3, $report['__player_registration_totals__']['all']);
+        unset($report['__player_registration_totals__']);
+
+        $this->assertArrayHasKey('Autumn 2026', $report);
+        $this->assertArrayHasKey('Geneva', $report['Autumn 2026']);
+        $this->assertArrayHasKey('Zurich', $report['Autumn 2026']);
+
+        $geneva_row_key = '888|Monday|Stade Pré-Bois';
+        $zurich_row_key = '999|Wednesday|Sportanlage Buchs|girls';
+
+        $this->assertArrayHasKey($geneva_row_key, $report['Autumn 2026']['Geneva']);
+        $this->assertSame(2, $report['Autumn 2026']['Geneva'][$geneva_row_key]['registrations']);
+        $this->assertSame('Monday', $report['Autumn 2026']['Geneva'][$geneva_row_key]['course_day']);
+        $this->assertSame('15:30-17:00', $report['Autumn 2026']['Geneva'][$geneva_row_key]['times']);
+        $this->assertSame(0, $report['Autumn 2026']['Geneva'][$geneva_row_key]['girls_only']);
+
+        $this->assertArrayHasKey($zurich_row_key, $report['Autumn 2026']['Zurich']);
+        $this->assertSame(1, $report['Autumn 2026']['Zurich'][$zurich_row_key]['registrations']);
+        $this->assertSame('Wednesday', $report['Autumn 2026']['Zurich'][$zurich_row_key]['course_day']);
+        $this->assertSame(1, $report['Autumn 2026']['Zurich'][$zurich_row_key]['girls_only']);
+    }
+
+    /**
+     * Validate that BuyClub entries from rosters-table path work correctly.
+     * BuyClub is determined by line_subtotal > 0 AND line_total = 0.
+     */
+    public function test_course_rosters_table_path_buyclub_detection() {
+        $this->skipIfMissingHelpers();
+
+        $base = [
+            'roster_row_id' => 1,
+            'order_item_id' => 1,
+            'canton' => 'Geneva',
+            'venue' => 'Test Venue',
+            'product_id' => 100,
+            'variation_id' => 0,
+            'order_item_name' => 'Test Course',
+            'course_day' => 'Tuesday',
+            'season' => 'Spring 2026',
+            'activity_type' => 'Course',
+        ];
+
+        $entries = [
+            array_merge($base, [
+                'roster_row_id' => 1,
+                'order_item_id' => 1,
+                'line_subtotal' => 200,
+                'line_total' => 200,
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 2,
+                'order_item_id' => 2,
+                'line_subtotal' => 200,
+                'line_total' => 0,
+            ]),
+            array_merge($base, [
+                'roster_row_id' => 3,
+                'order_item_id' => 3,
+                'line_subtotal' => 200,
+                'line_total' => 0,
+            ]),
+        ];
+
+        $with_buyclub = intersoccer_reports_build_course_report_from_entries($entries, false);
+        $without_buyclub = intersoccer_reports_build_course_report_from_entries($entries, true);
+
+        $this->assertSame(3, $with_buyclub['__player_registration_totals__']['all']);
+        $this->assertSame(1, $without_buyclub['__player_registration_totals__']['all']);
+    }
 }
