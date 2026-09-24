@@ -758,20 +758,10 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         // Player-level totals + grid from the same filtered row set (region/season/year applied).
         return intersoccer_reports_build_camp_report_from_entries($rosters, $exclude_buyclub, $year_int);
     } else {
-        // Course logic
-        // Query orders for courses (with BuyClub data optimization)
-        // Note: Final Reports query WooCommerce directly, not the rosters table
-        // Placeholder filtering is only needed for roster display pages, not reports
-        $course_placeholder_clause = '';
-        $course_has_placeholder_column = false;
-        $course_rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-        $course_placeholder_col = $wpdb->get_var(
-            $wpdb->prepare("SHOW COLUMNS FROM {$course_rosters_table} LIKE %s", 'is_placeholder')
-        );
-        $course_has_placeholder_column = !empty($course_placeholder_col);
-        if ($course_has_placeholder_column) {
-            $course_placeholder_clause = " AND (rr.is_placeholder = 0 OR rr.is_placeholder IS NULL)";
-        }
+        // Course logic - use rosters table path for performance (like Camp).
+        // The rosters table has already-normalized data, avoiding 25+ LEFT JOINs to order_itemmeta.
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        $year_int = intval($year);
 
         $course_activity_types = function_exists('intersoccer_roster_listing_activity_types')
             ? intersoccer_roster_listing_activity_types('course')
@@ -786,108 +776,63 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             ? intersoccer_reports_sql_in_placeholders($course_activity_types)
             : '%s';
 
-        $query = $wpdb->prepare(
+        // Build WHERE conditions for rosters-table query.
+        // Exclude placeholders, require valid order_item_id, and filter by activity type.
+        $where_conditions = [
+            "r.order_item_id > 0",
+            "(r.is_placeholder = 0 OR r.is_placeholder IS NULL)",
+            "r.activity_type IN ({$course_activity_sql})",
+            "p.post_type = 'shop_order'",
+            "p.post_status IN ({$course_status_sql})",
+        ];
+        $prepare_values = array_merge($course_activity_types, $course_statuses);
+
+        // Add season type filter if provided (type only — e.g. Spring%, not year digits).
+        if (!empty($season_type)) {
+            $where_conditions[] = "r.season LIKE %s";
+            $prepare_values[] = $season_type . '%';
+        }
+
+        $where_clause = implode(' AND ', $where_conditions);
+
+        // Query rosters table directly with minimal JOINs (posts for status, order_itemmeta only for financial data).
+        $rosters_query = $wpdb->prepare(
             "SELECT
-                oi.order_item_id,
+                r.id AS roster_row_id,
+                r.order_item_id,
+                r.order_id,
+                r.product_id,
+                r.variation_id,
+                r.product_name,
+                COALESCE(NULLIF(r.canton_region, ''), r.region) AS canton,
+                r.venue,
+                r.course_day,
+                COALESCE(r.times, r.course_times) AS times,
+                r.season,
+                r.season AS roster_season,
+                r.activity_type,
+                r.activity_type AS roster_activity_type,
+                r.start_date,
+                r.start_date AS roster_start_date,
+                r.end_date,
+                r.end_date AS roster_end_date,
+                r.girls_only,
+                r.booking_type,
+                r.age_group,
                 oi.order_item_name AS order_item_name,
-                p.ID AS order_id,
-                COALESCE(om_canonical_canton.meta_value, om_canton.meta_value) AS canton,
-                COALESCE(om_canonical_venue.meta_value, t.name) AS venue,
-                om_variation_id.meta_value AS variation_id,
-                om_product_id.meta_value AS product_id,
-                COALESCE(
-                    NULLIF(TRIM(om_canonical_booking.meta_value), ''),
-                    NULLIF(TRIM(om_booking_type_booking.meta_value), ''),
-                    NULLIF(TRIM(om_booking_type_pa.meta_value), ''),
-                    NULLIF(TRIM(om_booking_type_attr.meta_value), '')
-                ) AS booking_type,
-                COALESCE(om_discount.meta_value, om_discount_amount.meta_value, om_discount_legacy.meta_value) AS discount_codes,
-                COALESCE(om_gender.meta_value, om_gender_legacy.meta_value) AS gender,
-                COALESCE(
-                    t_cd.name,
-                    NULLIF(om_course_day.meta_value, ''),
-                    om_course_day_attr.meta_value
-                ) AS course_day,
-                COALESCE(
-                    NULLIF(TRIM(om_course_times.meta_value), ''),
-                    NULLIF(TRIM(om_course_times_pa.meta_value), ''),
-                    NULLIF(TRIM(om_course_times_attr.meta_value), ''),
-                    NULLIF(TRIM(rr.times), '')
-                ) AS times,
-                om_start_date.meta_value AS start_date,
-                om_end_date.meta_value AS end_date,
-                rr.start_date AS roster_start_date,
-                rr.end_date AS roster_end_date,
-                COALESCE(
-                    NULLIF(TRIM(om_season.meta_value), ''),
-                    NULLIF(TRIM(om_season_pa.meta_value), ''),
-                    NULLIF(TRIM(rr.season), '')
-                ) AS season,
-                rr.season AS roster_season,
-                rr.activity_type AS roster_activity_type,
                 p.post_date,
-                rr.id AS roster_row_id,
                 om_line_subtotal.meta_value AS line_subtotal,
                 om_line_total.meta_value AS line_total
-             FROM $posts_table p
-             JOIN $order_items_table oi ON p.ID = oi.order_id AND oi.order_item_type = 'line_item'
-             LEFT JOIN $order_itemmeta_table om_canonical_activity ON oi.order_item_id = om_canonical_activity.order_item_id AND om_canonical_activity.meta_key = '_intersoccer_canonical_activity_type'
-             LEFT JOIN $order_itemmeta_table om_canonical_booking ON oi.order_item_id = om_canonical_booking.order_item_id AND om_canonical_booking.meta_key = '_intersoccer_canonical_booking_type'
-             LEFT JOIN $order_itemmeta_table om_canonical_venue ON oi.order_item_id = om_canonical_venue.order_item_id AND om_canonical_venue.meta_key = '_intersoccer_canonical_venue'
-             LEFT JOIN $order_itemmeta_table om_canonical_canton ON oi.order_item_id = om_canonical_canton.order_item_id AND om_canonical_canton.meta_key = '_intersoccer_canonical_canton'
-             LEFT JOIN $order_itemmeta_table om_canton ON oi.order_item_id = om_canton.order_item_id AND om_canton.meta_key = 'Canton / Region'
-             LEFT JOIN $order_itemmeta_table om_venue ON oi.order_item_id = om_venue.order_item_id AND om_venue.meta_key = 'pa_intersoccer-venues'
-             LEFT JOIN $order_itemmeta_table om_venue_attr ON oi.order_item_id = om_venue_attr.order_item_id AND om_venue_attr.meta_key = 'attribute_pa_intersoccer-venues'
-             LEFT JOIN $terms_table t ON (
-                t.slug = NULLIF(TRIM(COALESCE(NULLIF(om_venue.meta_value, ''), om_venue_attr.meta_value)), '')
-                OR (
-                    TRIM(COALESCE(om_venue.meta_value, om_venue_attr.meta_value)) REGEXP '^[0-9]+$'
-                    AND t.term_id = CAST(TRIM(COALESCE(om_venue.meta_value, om_venue_attr.meta_value)) AS UNSIGNED)
-                )
-            )
-             LEFT JOIN $order_itemmeta_table om_variation_id ON oi.order_item_id = om_variation_id.order_item_id AND om_variation_id.meta_key = '_variation_id'
-             LEFT JOIN $order_itemmeta_table om_product_id ON oi.order_item_id = om_product_id.order_item_id AND om_product_id.meta_key = '_product_id'
-             LEFT JOIN $order_itemmeta_table om_booking_type_booking ON oi.order_item_id = om_booking_type_booking.order_item_id AND om_booking_type_booking.meta_key = 'booking_type'
-             LEFT JOIN $order_itemmeta_table om_booking_type_pa ON oi.order_item_id = om_booking_type_pa.order_item_id AND om_booking_type_pa.meta_key = 'pa_booking-type'
-             LEFT JOIN $order_itemmeta_table om_booking_type_attr ON oi.order_item_id = om_booking_type_attr.order_item_id AND om_booking_type_attr.meta_key = 'attribute_pa_booking-type'
-             LEFT JOIN $order_itemmeta_table om_discount ON oi.order_item_id = om_discount.order_item_id AND om_discount.meta_key = 'Discount'
-             LEFT JOIN $order_itemmeta_table om_discount_amount ON oi.order_item_id = om_discount_amount.order_item_id AND om_discount_amount.meta_key = 'Discount Amount'
-             LEFT JOIN $order_itemmeta_table om_discount_legacy ON oi.order_item_id = om_discount_legacy.order_item_id AND om_discount_legacy.meta_key = '_applied_discounts'
-             LEFT JOIN $order_itemmeta_table om_gender ON oi.order_item_id = om_gender.order_item_id AND om_gender.meta_key = 'Attendee Gender'
-             LEFT JOIN $order_itemmeta_table om_gender_legacy ON oi.order_item_id = om_gender_legacy.order_item_id AND om_gender_legacy.meta_key = 'gender'
-             LEFT JOIN $order_itemmeta_table om_activity_type ON oi.order_item_id = om_activity_type.order_item_id AND om_activity_type.meta_key = 'Activity Type'
-             LEFT JOIN $order_itemmeta_table om_course_day ON oi.order_item_id = om_course_day.order_item_id AND om_course_day.meta_key = 'pa_course-day'
-             LEFT JOIN $order_itemmeta_table om_course_day_attr ON oi.order_item_id = om_course_day_attr.order_item_id AND om_course_day_attr.meta_key = 'attribute_pa_course-day'
-             LEFT JOIN $order_itemmeta_table om_course_times ON oi.order_item_id = om_course_times.order_item_id AND om_course_times.meta_key = 'Course Times'
-             LEFT JOIN $order_itemmeta_table om_course_times_pa ON oi.order_item_id = om_course_times_pa.order_item_id AND om_course_times_pa.meta_key = 'pa_course-times'
-             LEFT JOIN $order_itemmeta_table om_course_times_attr ON oi.order_item_id = om_course_times_attr.order_item_id AND om_course_times_attr.meta_key = 'attribute_pa_course-times'
-             LEFT JOIN $terms_table t_cd ON (
-                t_cd.slug = NULLIF(TRIM(COALESCE(NULLIF(om_course_day.meta_value, ''), om_course_day_attr.meta_value)), '')
-                OR (
-                    TRIM(COALESCE(om_course_day.meta_value, om_course_day_attr.meta_value)) REGEXP '^[0-9]+$'
-                    AND t_cd.term_id = CAST(TRIM(COALESCE(om_course_day.meta_value, om_course_day_attr.meta_value)) AS UNSIGNED)
-                )
-            )
-             LEFT JOIN {$wpdb->prefix}intersoccer_rosters rr ON rr.order_item_id = oi.order_item_id
-             LEFT JOIN $order_itemmeta_table om_season ON oi.order_item_id = om_season.order_item_id AND om_season.meta_key = 'Season'
-             LEFT JOIN $order_itemmeta_table om_season_pa ON oi.order_item_id = om_season_pa.order_item_id AND om_season_pa.meta_key = 'pa_program-season'
-             LEFT JOIN $order_itemmeta_table om_start_date ON oi.order_item_id = om_start_date.order_item_id AND om_start_date.meta_key = 'Start Date'
-             LEFT JOIN $order_itemmeta_table om_end_date ON oi.order_item_id = om_end_date.order_item_id AND om_end_date.meta_key = 'End Date'
-             LEFT JOIN {$wpdb->postmeta} pm_activity_type ON om_product_id.meta_value = pm_activity_type.post_id AND pm_activity_type.meta_key = 'pa_activity-type'
-             LEFT JOIN $order_itemmeta_table om_line_subtotal ON oi.order_item_id = om_line_subtotal.order_item_id AND om_line_subtotal.meta_key = '_line_subtotal'
-             LEFT JOIN $order_itemmeta_table om_line_total ON oi.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
-             WHERE p.post_type = 'shop_order'
-             AND p.post_status IN ({$course_status_sql})
-             AND (
-                om_canonical_activity.meta_value IN ('course', 'Course')
-                OR COALESCE(om_activity_type.meta_value, pm_activity_type.meta_value) IN ({$course_activity_sql})
-                OR rr.activity_type IN ({$course_activity_sql})
-             )
-             {$course_placeholder_clause}",
-            array_merge($course_statuses, $course_activity_types, $course_activity_types)
+             FROM {$rosters_table} r
+             JOIN {$wpdb->prefix}woocommerce_order_items oi ON r.order_item_id = oi.order_item_id
+             JOIN {$posts_table} p ON r.order_id = p.ID
+             LEFT JOIN {$order_itemmeta_table} om_line_subtotal ON r.order_item_id = om_line_subtotal.order_item_id AND om_line_subtotal.meta_key = '_line_subtotal'
+             LEFT JOIN {$order_itemmeta_table} om_line_total ON r.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
+             WHERE {$where_clause}",
+            ...$prepare_values
         );
 
-            $rosters = $wpdb->get_results($query, ARRAY_A);
+        $rosters = $wpdb->get_results($rosters_query, ARRAY_A);
 
         if (function_exists('intersoccer_reports_enrich_and_normalize_final_report_rows')) {
             intersoccer_reports_enrich_and_normalize_final_report_rows($rosters);
