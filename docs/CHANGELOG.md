@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.8.25 — 2026-09-24
+
+### Changed
+- **Final Course Girls Only venue label** — Girls Only courses now display proper venue labels in Final Reports (#67).
+- **WPML row-key canonicalize** — row keys in Final Reports are now canonicalized for WPML multi-language consistency (#67).
+
 ## 2.8.24 — 2026-09-23
 
 ### Changed
