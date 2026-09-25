@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.8.26 — 2026-09-24
+
+### Changed
+- **Course Final roster-path perf** — Course Final Final Reports path now uses the intersoccer_rosters roster path (Camp-style joins) instead of heavy order-meta JOINs (#69).
+- **Final Reports page access** — Final Reports own-page render capability aligned with menu so editor/read roles can open the page (#70).
+
 ## 2.8.25 — 2026-09-24
 
 ### Changed
