@@ -773,6 +773,67 @@ class RosterBuilderTest extends TestCase {
         $this->assertSame('Sophie Martin', $result['assigned_attendee']);
     }
 
+    public function test_extractOrderData_falls_back_to_days_of_week_when_days_selected_empty() {
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(61239);
+        $order->shouldReceive('get_customer_id')->andReturn(99);
+        $order->shouldReceive('get_status')->andReturn('completed');
+
+        $item = Mockery::mock('WC_Order_Item_Product');
+        $item->shouldReceive('get_product')->andReturn(null);
+        $item->shouldReceive('get_variation_id')->andReturn(0);
+        $item->shouldReceive('get_product_id')->andReturn(303);
+        $item->shouldReceive('get_meta_data')->andReturn([
+            $this->createOrderItemMeta('Booking Type', 'Single Day(s)'),
+            $this->createOrderItemMeta('Activity Type', 'Camp'),
+            $this->createOrderItemMeta('Days of Week', 'Monday, Wednesday, Friday'),
+            $this->createOrderItemMeta('Assigned Attendee', 'Léo Ferrari'),
+        ]);
+        $item->shouldReceive('get_meta')
+            ->with('Days of Week', true)
+            ->andReturn('Monday, Wednesday, Friday');
+
+        $reflection = new \ReflectionClass($this->rosterBuilder);
+        $method = $reflection->getMethod('extractOrderItemData');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($this->rosterBuilder, $order, 7619, $item);
+
+        $this->assertSame('Single Day(s)', $result['booking_type']);
+        $this->assertSame('Monday, Wednesday, Friday', $result['selected_days']);
+    }
+
+    public function test_extractOrderData_prefers_days_selected_over_days_of_week() {
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(61240);
+        $order->shouldReceive('get_customer_id')->andReturn(99);
+        $order->shouldReceive('get_status')->andReturn('completed');
+
+        $item = Mockery::mock('WC_Order_Item_Product');
+        $item->shouldReceive('get_product')->andReturn(null);
+        $item->shouldReceive('get_variation_id')->andReturn(0);
+        $item->shouldReceive('get_product_id')->andReturn(303);
+        $item->shouldReceive('get_meta_data')->andReturn([
+            $this->createOrderItemMeta('Booking Type', 'Single Day(s)'),
+            $this->createOrderItemMeta('Activity Type', 'Camp'),
+            $this->createOrderItemMeta('Days Selected', 'Tuesday, Thursday'),
+            $this->createOrderItemMeta('Days of Week', 'Monday, Tuesday, Wednesday, Thursday, Friday'),
+            $this->createOrderItemMeta('Assigned Attendee', 'Mathis Ferrari'),
+        ]);
+        $item->shouldReceive('get_meta')
+            ->with('Days of Week', true)
+            ->andReturn('Monday, Tuesday, Wednesday, Thursday, Friday');
+
+        $reflection = new \ReflectionClass($this->rosterBuilder);
+        $method = $reflection->getMethod('extractOrderItemData');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($this->rosterBuilder, $order, 7620, $item);
+
+        $this->assertSame('Single Day(s)', $result['booking_type']);
+        $this->assertSame('Tuesday, Thursday', $result['selected_days']);
+    }
+
     /**
      * Helper to create a lightweight meta data object for order item meta lists.
      *

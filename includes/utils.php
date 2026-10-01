@@ -884,7 +884,13 @@ if (!function_exists('intersoccer_read_order_item_booking_fields')) {
 
         return [
             'booking_type'     => $read(['pa_booking-type', 'Booking Type', 'Type de réservation', 'Buchungstyp']),
-            'selected_days'    => $read(['Days Selected', 'Jours sélectionnés', 'Ausgewählte Tage', 'Selected Days']),
+            'selected_days'    => $read([
+                'Days Selected',
+                'Jours sélectionnés',
+                'Ausgewählte Tage',
+                'Selected Days',
+                'Days of Week',
+            ]),
             'late_pickup_days' => $read(['Late Pickup Days', 'Jours de garde prolongée']),
         ];
     }

@@ -137,4 +137,37 @@ class OrderMetaFieldMapTest extends TestCase {
             intersoccer_normalize_order_item_meta_key('Buchungstyp')
         );
     }
+
+    public function test_read_booking_fields_selected_days_includes_days_of_week_fallback() {
+        if (!function_exists('intersoccer_read_order_item_booking_fields')) {
+            if (file_exists(dirname(__DIR__, 2) . '/includes/utils.php')) {
+                require_once dirname(__DIR__, 2) . '/includes/utils.php';
+            }
+        }
+        if (!function_exists('intersoccer_read_order_item_booking_fields')) {
+            $this->markTestSkipped('intersoccer_read_order_item_booking_fields not loaded');
+        }
+
+        $reflection = new \ReflectionFunction('intersoccer_read_order_item_booking_fields');
+        $source = file_get_contents($reflection->getFileName());
+
+        $fn_start = $reflection->getStartLine();
+        $fn_end = $reflection->getEndLine();
+        $fn_lines = array_slice(explode("\n", $source), $fn_start - 1, $fn_end - $fn_start + 1);
+        $fn_body = implode("\n", $fn_lines);
+
+        $this->assertStringContainsString(
+            "'Days of Week'",
+            $fn_body,
+            'intersoccer_read_order_item_booking_fields should fall back to Days of Week for selected_days'
+        );
+
+        $days_of_week_pos = strpos($fn_body, "'Days of Week'");
+        $days_selected_pos = strpos($fn_body, "'Days Selected'");
+        $this->assertGreaterThan(
+            $days_selected_pos,
+            $days_of_week_pos,
+            'Days of Week should appear after Days Selected (as a fallback, not primary)'
+        );
+    }
 }
