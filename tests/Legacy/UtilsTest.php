@@ -15,14 +15,9 @@ class UtilsTest extends TestCase {
         if (file_exists(__DIR__ . '/../../includes/utils.php')) {
             require_once __DIR__ . '/../../includes/utils.php';
         }
-        
-        // Mock WordPress functions
-        Functions\when('wpml_get_current_language')->justReturn('en');
-        Functions\when('wpml_get_default_language')->justReturn('en');
-        Functions\when('do_action')->justReturn();
-        Functions\when('get_terms')->justReturn([]);
-        Functions\when('get_term_by')->justReturn(false);
-        Functions\when('is_wp_error')->justReturn(false);
+        if (file_exists(__DIR__ . '/../../includes/reports-data.php')) {
+            require_once __DIR__ . '/../../includes/reports-data.php';
+        }
     }
     
     public function test_utility_functions_loaded() {
@@ -426,6 +421,69 @@ class UtilsTest extends TestCase {
         $this->assertTrue(intersoccer_roster_listing_season_filter_matches($row_2026, 'Summer Camps 2026', 'camp'));
         $this->assertFalse(intersoccer_roster_listing_season_filter_matches($row_2025, 'Summer Camps 2026', 'camp'));
         $this->assertTrue(intersoccer_roster_listing_season_filter_matches($row_2025, 'Summer Camps 2025', 'camp'));
+    }
+
+    public function test_camp_listing_season_filter_requires_year_and_season_type() {
+        if (!function_exists('intersoccer_roster_listing_season_filter_matches')) {
+            $this->markTestSkipped('intersoccer_roster_listing_season_filter_matches not loaded');
+        }
+
+        $autumn_row = [
+            'season' => 'Autumn camps 2026',
+            'start_date' => '2026-10-19',
+            'product_name' => 'Geneva Autumn Camp',
+        ];
+        $summer_row = [
+            'season' => 'Summer Camps 2026',
+            'start_date' => '2026-07-13',
+            'product_name' => 'Lausanne Summer Camp',
+        ];
+        $easter_row = [
+            'season' => 'Easter Camps 2026',
+            'start_date' => '2026-04-06',
+            'product_name' => 'Zurich Easter Camp',
+        ];
+        $winter_row = [
+            'season' => 'Winter Camps 2026',
+            'start_date' => '2026-02-16',
+            'product_name' => 'Verbier Winter Camp',
+        ];
+
+        $this->assertTrue(
+            intersoccer_roster_listing_season_filter_matches($autumn_row, 'Autumn camps 2026', 'camp'),
+            'Autumn 2026 should match Autumn 2026 filter'
+        );
+        $this->assertFalse(
+            intersoccer_roster_listing_season_filter_matches($summer_row, 'Autumn camps 2026', 'camp'),
+            'Summer 2026 must NOT match Autumn 2026 filter'
+        );
+        $this->assertFalse(
+            intersoccer_roster_listing_season_filter_matches($easter_row, 'Autumn camps 2026', 'camp'),
+            'Easter 2026 must NOT match Autumn 2026 filter'
+        );
+        $this->assertFalse(
+            intersoccer_roster_listing_season_filter_matches($winter_row, 'Autumn camps 2026', 'camp'),
+            'Winter 2026 must NOT match Autumn 2026 filter'
+        );
+
+        $this->assertTrue(
+            intersoccer_roster_listing_season_filter_matches($summer_row, 'Summer Camps 2026', 'camp'),
+            'Summer 2026 should match Summer 2026 filter'
+        );
+        $this->assertFalse(
+            intersoccer_roster_listing_season_filter_matches($autumn_row, 'Summer Camps 2026', 'camp'),
+            'Autumn 2026 must NOT match Summer 2026 filter'
+        );
+
+        $summer_variant_row = [
+            'season' => 'Summer-camps-2026',
+            'start_date' => '2026-07-20',
+            'product_name' => 'Lausanne Summer Camp',
+        ];
+        $this->assertTrue(
+            intersoccer_roster_listing_season_filter_matches($summer_variant_row, 'Summer Camps 2026', 'camp'),
+            'Summer-camps-2026 (slug) should match Summer Camps 2026 (human label)'
+        );
     }
 
     public function test_consolidated_roster_group_key_separates_years_for_same_camp_slot() {
