@@ -486,6 +486,69 @@ class UtilsTest extends TestCase {
         );
     }
 
+    public function test_camp_listing_season_filter_normalizes_fr_de_labels_for_type_extract() {
+        if (!function_exists('intersoccer_roster_listing_season_filter_matches')) {
+            $this->markTestSkipped('intersoccer_roster_listing_season_filter_matches not loaded');
+        }
+
+        $fr_easter_row = [
+            'season' => 'Camps de pâques 2026',
+            'start_date' => '2026-04-06',
+            'product_name' => 'Geneva Easter Camp',
+        ];
+        $de_easter_row = [
+            'season' => 'Oster camps 2026',
+            'start_date' => '2026-04-06',
+            'product_name' => 'Zurich Easter Camp',
+        ];
+        $en_easter_row = [
+            'season' => 'Easter Camps 2026',
+            'start_date' => '2026-04-06',
+            'product_name' => 'Lausanne Easter Camp',
+        ];
+
+        $this->assertTrue(
+            intersoccer_roster_listing_season_filter_matches($fr_easter_row, 'Easter Camps 2026', 'camp'),
+            'FR "Camps de pâques 2026" should match Easter Camps 2026 filter'
+        );
+        $this->assertTrue(
+            intersoccer_roster_listing_season_filter_matches($de_easter_row, 'Easter Camps 2026', 'camp'),
+            'DE "Oster camps 2026" should match Easter Camps 2026 filter'
+        );
+        $this->assertTrue(
+            intersoccer_roster_listing_season_filter_matches($en_easter_row, 'Camps de pâques 2026', 'camp'),
+            'EN "Easter Camps 2026" should match FR filter "Camps de pâques 2026"'
+        );
+
+        $fr_autumn_row = [
+            'season' => 'Camps automne 2026',
+            'start_date' => '2026-10-19',
+            'product_name' => 'Geneva Autumn Camp',
+        ];
+        $de_autumn_row = [
+            'season' => 'Herbst camps 2026',
+            'start_date' => '2026-10-19',
+            'product_name' => 'Zurich Autumn Camp',
+        ];
+        $this->assertTrue(
+            intersoccer_roster_listing_season_filter_matches($fr_autumn_row, 'Autumn camps 2026', 'camp'),
+            'FR "Camps automne 2026" should match Autumn camps 2026 filter'
+        );
+        $this->assertTrue(
+            intersoccer_roster_listing_season_filter_matches($de_autumn_row, 'Autumn camps 2026', 'camp'),
+            'DE "Herbst camps 2026" should match Autumn camps 2026 filter'
+        );
+
+        $this->assertFalse(
+            intersoccer_roster_listing_season_filter_matches($fr_easter_row, 'Autumn camps 2026', 'camp'),
+            'FR Easter row must NOT match Autumn filter'
+        );
+        $this->assertFalse(
+            intersoccer_roster_listing_season_filter_matches($de_autumn_row, 'Easter Camps 2026', 'camp'),
+            'DE Autumn row must NOT match Easter filter'
+        );
+    }
+
     public function test_consolidated_roster_group_key_separates_years_for_same_camp_slot() {
         if (!function_exists('intersoccer_consolidated_roster_group_key')) {
             $this->markTestSkipped('intersoccer_consolidated_roster_group_key not loaded');

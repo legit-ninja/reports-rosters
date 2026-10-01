@@ -2059,11 +2059,18 @@ if (!function_exists('intersoccer_roster_listing_season_filter_matches')) {
         if (!function_exists('intersoccer_extract_season_type')) {
             return true;
         }
-        $filter_type = intersoccer_extract_season_type($filter_season);
+
+        $normalize = function_exists('intersoccer_normalize_season_for_display')
+            ? 'intersoccer_normalize_season_for_display'
+            : null;
+        $filter_normalized = $normalize ? $normalize($filter_season) : $filter_season;
+        $row_normalized = $normalize ? $normalize($season) : $season;
+
+        $filter_type = intersoccer_extract_season_type($filter_normalized);
         if ($filter_type === null) {
             return true;
         }
-        $row_type = intersoccer_extract_season_type($season);
+        $row_type = intersoccer_extract_season_type($row_normalized);
         return $row_type !== null && strcasecmp($row_type, $filter_type) === 0;
     }
 }
