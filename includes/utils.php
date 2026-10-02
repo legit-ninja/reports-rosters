@@ -4871,6 +4871,10 @@ if (!function_exists('intersoccer_resolve_times_slug_for_signature')) {
     }
 }
 
+if (!function_exists('intersoccer_normalize_times_slug_for_roster_facet')) {
+    require_once __DIR__ . '/roster-times-facet.php';
+}
+
 /**
  * Helper function to get term by translated name and return it in default language
  * 

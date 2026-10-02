@@ -1770,9 +1770,30 @@ function intersoccer_render_roster_details_page() {
                         resetDestinationFilters();
                         moveOptions.hide();
                         
-                        // Reload page to show updated data
+                        // Reload without moved order_item_ids so source details can soft-filter / show empty
                         console.log('InterSoccer Migration: Reloading page to show changes');
-                        location.reload();
+                        try {
+                            const reloadUrl = new URL(window.location.href);
+                            const rawIds = reloadUrl.searchParams.get('order_item_ids');
+                            if (rawIds) {
+                                const moved = new Set(selectedItems.map(String));
+                                const remaining = rawIds.split(',')
+                                    .map(function(s) { return String(s).trim(); })
+                                    .filter(Boolean)
+                                    .filter(function(id) { return !moved.has(id); });
+                                if (remaining.length > 0) {
+                                    reloadUrl.searchParams.set('order_item_ids', remaining.join(','));
+                                } else {
+                                    reloadUrl.searchParams.delete('order_item_ids');
+                                }
+                                window.location.href = reloadUrl.toString();
+                            } else {
+                                location.reload();
+                            }
+                        } catch (reloadErr) {
+                            console.error('InterSoccer Migration: URL rewrite failed, falling back to reload', reloadErr);
+                            location.reload();
+                        }
                     } else {
                         alert('Error: ' + (response.data?.message || 'Unknown error occurred'));
                         console.error('InterSoccer Migration: Server returned error:', response.data);
