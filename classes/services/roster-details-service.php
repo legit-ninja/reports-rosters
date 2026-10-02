@@ -92,6 +92,8 @@ class RosterDetailsService {
             }
         }
 
+        $rosterModels = $this->filterModelsByUrlTimesFacet($rosterModels, $filters);
+
         // When event_signature returns 0: roster rows may have NULL/empty event_signature; the listing
         // displays a computed fallback (md5) but DB has empty. Use order_item_ids, variation_ids, or camp_terms+venue as fallback.
         if (empty($rosterModels) && $hasEventSignature) {
@@ -131,6 +133,7 @@ class RosterDetailsService {
                 if (!empty($filters['season'])) {
                     $rosterModels = $this->filterModelsByListingSeason($rosterModels, $filters['season'], $context);
                 }
+                $rosterModels = $this->filterModelsByUrlTimesFacet($rosterModels, $filters);
                 $loadCriteria = $fallbackCriteria;
                 $filteredOrderItemIds = $this->extractOrderItemIdsFromModels($rosterModels);
                 if (!empty($filteredOrderItemIds)) {
@@ -145,6 +148,7 @@ class RosterDetailsService {
             $retry_criteria = ['order_item_id' => $filters['order_item_ids']];
             $collection = $this->repository->where($retry_criteria, ['skip_cache' => true]);
             $rosterModels = $this->filterByValidOrderStatus($collection, $allow_missing_status);
+            $rosterModels = $this->filterModelsByUrlTimesFacet($rosterModels, $filters);
             $loadCriteria = $retry_criteria;
         }
 
@@ -171,6 +175,7 @@ class RosterDetailsService {
         $this->repository->clearQueryCache();
         $collection = $this->repository->where($loadCriteria, ['skip_cache' => true]);
         $rosterModels = $this->filterByValidOrderStatus($collection, $allow_missing_status);
+        $rosterModels = $this->filterModelsByUrlTimesFacet($rosterModels, $filters);
 
         $rosters = $this->hydrateAndSortRosters($rosterModels, $context['sort_by'], $context['sort_order']);
         $baseRoster = $rosters[0] ?? null;
@@ -279,6 +284,8 @@ class RosterDetailsService {
 
         // When order_item_ids or event_signature is present, they uniquely identify the roster group - do NOT add
         // activity_type or girls_only, as those can exclude valid rows if DB values differ.
+        // Soft-filter by URL times (slug-normalized) happens in getRosterContext after load so moved
+        // players drop from source details without undoing Unknown/WPML order_item_ids consolidation.
         $useOrderItemIdsOnly = !empty($criteria['order_item_id']);
         $useEventSignatureOnly = !empty($criteria['event_signature']);
         if (!$useEventSignatureOnly && !$useOrderItemIdsOnly) {
@@ -366,6 +373,43 @@ class RosterDetailsService {
                 'product_name' => (string) $model->getAttribute('product_name'),
             ];
             return intersoccer_roster_listing_season_filter_matches($row, $filterSeason, 'camp');
+        }));
+    }
+
+    /**
+     * Soft-filter roster models by URL times facet when order_item_ids drove the load.
+     * Drop rows whose normalized times slug differs from the URL times (courses / camp times).
+     * Fail open when normalization returns empty (do not undo Unknown/WPML consolidation).
+     *
+     * @param array<int,\InterSoccer\ReportsRosters\Data\Models\Roster> $models
+     * @param array<string,mixed> $filters
+     * @return array<int,\InterSoccer\ReportsRosters\Data\Models\Roster>
+     */
+    private function filterModelsByUrlTimesFacet(array $models, array $filters): array {
+        if (empty($models) || empty($filters['order_item_ids'])) {
+            return $models;
+        }
+
+        $url_times = isset($filters['times']) ? trim((string) $filters['times']) : '';
+        if ($url_times === '' || strcasecmp($url_times, 'N/A') === 0) {
+            return $models;
+        }
+
+        if (!function_exists('intersoccer_roster_times_matches_url_facet')) {
+            return $models;
+        }
+
+        return array_values(array_filter($models, function ($model) use ($url_times) {
+            if (!is_object($model)) {
+                return false;
+            }
+            $row_times = '';
+            if (method_exists($model, 'getAttribute')) {
+                $row_times = (string) $model->getAttribute('times');
+            } elseif (isset($model->times)) {
+                $row_times = (string) $model->times;
+            }
+            return intersoccer_roster_times_matches_url_facet($row_times, $url_times);
         }));
     }
 

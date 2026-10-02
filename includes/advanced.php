@@ -1686,8 +1686,46 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
         ['%d']
     );
 
+    error_log('InterSoccer Migration: Roster update rows affected for item ' . $item_id . ': ' . var_export($update_result, true));
+
     if ($update_result === false) {
         throw new Exception('Database update failed for roster entry');
+    }
+
+    if ((int) $update_result === 0) {
+        $verify = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT variation_id, times FROM {$rosters_table} WHERE order_item_id = %d LIMIT 1",
+                $item_id
+            ),
+            ARRAY_A
+        );
+        if (!$verify) {
+            throw new Exception('No roster row found for order item ' . $item_id);
+        }
+
+        $expected_variation_id = (int) ($update_data['variation_id'] ?? $target_variation_id);
+        $actual_variation_id = (int) ($verify['variation_id'] ?? 0);
+        if ($actual_variation_id !== $expected_variation_id) {
+            throw new Exception(
+                'Roster update was a no-op but variation_id mismatch for order item '
+                . $item_id . ' (have ' . $actual_variation_id . ', want ' . $expected_variation_id . ')'
+            );
+        }
+
+        $expected_times = (string) ($update_data['times'] ?? $normalized['times'] ?? '');
+        $actual_times = (string) ($verify['times'] ?? '');
+        $times_ok = function_exists('intersoccer_roster_times_equal_for_move_verify')
+            ? intersoccer_roster_times_equal_for_move_verify($actual_times, $expected_times)
+            : (strcasecmp(trim($actual_times), trim($expected_times)) === 0);
+        if (!$times_ok) {
+            throw new Exception(
+                'Roster update was a no-op but times mismatch for order item '
+                . $item_id . ' (have "' . $actual_times . '", want "' . $expected_times . '")'
+            );
+        }
+
+        error_log('InterSoccer Migration: Roster row already matched target for item ' . $item_id);
     }
 
     error_log('InterSoccer Migration: Updated roster entry with normalized data: ' . print_r($normalized, true));
