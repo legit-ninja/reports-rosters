@@ -555,8 +555,13 @@ function intersoccer_render_roster_details_page() {
             ]
         );
 
+        $stale_times_pin = !empty($result['stale_times_pin']);
+
         if (!$result['success']) {
             echo '<div class="wrap"><h1>' . esc_html__('Roster Details', 'intersoccer-reports-rosters') . '</h1>';
+            if ($stale_times_pin && function_exists('intersoccer_roster_echo_stale_times_pin_notice')) {
+                intersoccer_roster_echo_stale_times_pin_notice();
+            }
             echo '<p>' . esc_html($result['error']) . '</p></div>';
             return;
         }
@@ -712,6 +717,18 @@ function intersoccer_render_roster_details_page() {
 
         if (!$rosters) {
             echo '<div class="wrap"><h1>' . esc_html__('Roster Details', 'intersoccer-reports-rosters') . '</h1>';
+            if (!empty($order_item_ids) && $times !== '' && strcasecmp($times, 'N/A') !== 0
+                && function_exists('intersoccer_roster_url_times_pin_is_stale')
+                && function_exists('intersoccer_roster_echo_stale_times_pin_notice')) {
+                $placeholders = implode(',', array_fill(0, count($order_item_ids), '%d'));
+                $pin_times = $wpdb->get_col($wpdb->prepare(
+                    "SELECT times FROM {$rosters_table} WHERE order_item_id IN ($placeholders)",
+                    $order_item_ids
+                ));
+                if (intersoccer_roster_url_times_pin_is_stale($pin_times ?: [], $times)) {
+                    intersoccer_roster_echo_stale_times_pin_notice();
+                }
+            }
             echo '<p>' . esc_html__('No rosters found for the provided parameters.', 'intersoccer-reports-rosters') . '</p></div>';
             return;
         }
@@ -772,6 +789,15 @@ function intersoccer_render_roster_details_page() {
         $cross_gender_rosters = $wpdb->get_results($cross_gender_rosters_query, OBJECT);
 
         $unknown_count = count(array_filter($rosters, fn($row) => $row->player_name === 'Unknown Attendee'));
+
+        $stale_times_pin = false;
+        if (!empty($order_item_ids) && $times !== '' && strcasecmp($times, 'N/A') !== 0
+            && function_exists('intersoccer_roster_url_times_pin_is_stale')) {
+            $legacy_row_times = array_map(static function ($row) {
+                return is_object($row) ? ($row->times ?? '') : '';
+            }, $rosters);
+            $stale_times_pin = intersoccer_roster_url_times_pin_is_stale($legacy_row_times, $times);
+        }
     }
 
     // Get base roster for event attributes
@@ -806,6 +832,13 @@ function intersoccer_render_roster_details_page() {
         : '';
     
     echo '<h1>' . esc_html__('Roster Details for ', 'intersoccer-reports-rosters') . esc_html($event_label) . ' - ' . esc_html($display_venue) . $age_group_suffix . $title_suffix . '</h1>';
+
+    if (!isset($stale_times_pin)) {
+        $stale_times_pin = false;
+    }
+    if ($stale_times_pin && function_exists('intersoccer_roster_echo_stale_times_pin_notice')) {
+        intersoccer_roster_echo_stale_times_pin_notice();
+    }
     
     if ($unknown_count > 0) {
         echo '<p style="color: red;">' . esc_html(sprintf(_n('%d Unknown Attendee entry found. Please update player assignments in the Player Management UI.', '%d Unknown Attendee entries found. Please update player assignments in the Player Management UI.', $unknown_count, 'intersoccer-reports-rosters'), $unknown_count)) . '</p>';

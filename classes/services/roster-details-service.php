@@ -73,6 +73,7 @@ class RosterDetailsService {
         $rosterModels = $this->filterByValidOrderStatus($collection, $allow_missing_status);
         $loadCriteria = $criteria;
         $supplementMerged = false;
+        $stale_times_pin = false;
 
         if (!empty($rosterModels)) {
             $primaryModels = $rosterModels;
@@ -92,6 +93,7 @@ class RosterDetailsService {
             }
         }
 
+        $stale_times_pin = $this->urlTimesPinIsStaleForModels($rosterModels, $filters);
         $rosterModels = $this->filterModelsByUrlTimesFacet($rosterModels, $filters);
 
         // When event_signature returns 0: roster rows may have NULL/empty event_signature; the listing
@@ -133,6 +135,9 @@ class RosterDetailsService {
                 if (!empty($filters['season'])) {
                     $rosterModels = $this->filterModelsByListingSeason($rosterModels, $filters['season'], $context);
                 }
+                if (!$stale_times_pin) {
+                    $stale_times_pin = $this->urlTimesPinIsStaleForModels($rosterModels, $filters);
+                }
                 $rosterModels = $this->filterModelsByUrlTimesFacet($rosterModels, $filters);
                 $loadCriteria = $fallbackCriteria;
                 $filteredOrderItemIds = $this->extractOrderItemIdsFromModels($rosterModels);
@@ -148,6 +153,9 @@ class RosterDetailsService {
             $retry_criteria = ['order_item_id' => $filters['order_item_ids']];
             $collection = $this->repository->where($retry_criteria, ['skip_cache' => true]);
             $rosterModels = $this->filterByValidOrderStatus($collection, $allow_missing_status);
+            if (!$stale_times_pin) {
+                $stale_times_pin = $this->urlTimesPinIsStaleForModels($rosterModels, $filters);
+            }
             $rosterModels = $this->filterModelsByUrlTimesFacet($rosterModels, $filters);
             $loadCriteria = $retry_criteria;
         }
@@ -156,6 +164,7 @@ class RosterDetailsService {
             return [
                 'success' => false,
                 'error' => __('No rosters found for the provided parameters.', 'intersoccer-reports-rosters'),
+                'stale_times_pin' => $stale_times_pin,
             ];
         }
 
@@ -175,6 +184,9 @@ class RosterDetailsService {
         $this->repository->clearQueryCache();
         $collection = $this->repository->where($loadCriteria, ['skip_cache' => true]);
         $rosterModels = $this->filterByValidOrderStatus($collection, $allow_missing_status);
+        if (!$stale_times_pin) {
+            $stale_times_pin = $this->urlTimesPinIsStaleForModels($rosterModels, $filters);
+        }
         $rosterModels = $this->filterModelsByUrlTimesFacet($rosterModels, $filters);
 
         $rosters = $this->hydrateAndSortRosters($rosterModels, $context['sort_by'], $context['sort_order']);
@@ -184,6 +196,7 @@ class RosterDetailsService {
             return [
                 'success' => false,
                 'error' => __('Unable to determine base roster for the provided parameters.', 'intersoccer-reports-rosters'),
+                'stale_times_pin' => $stale_times_pin,
             ];
         }
 
@@ -198,6 +211,7 @@ class RosterDetailsService {
             'available_rosters' => $availableRosters,
             'cross_gender_rosters' => $crossGenderRosters,
             'unknown_count' => $unknownCount,
+            'stale_times_pin' => $stale_times_pin,
         ];
     }
 
@@ -411,6 +425,43 @@ class RosterDetailsService {
             }
             return intersoccer_roster_times_matches_url_facet($row_times, $url_times);
         }));
+    }
+
+    /**
+     * Detect post-move stale URL pin: order_item_ids present + URL times disagree with a loaded row.
+     * Fail open when normalize is empty (matches soft-filter behavior).
+     *
+     * @param array<int,\InterSoccer\ReportsRosters\Data\Models\Roster> $models
+     * @param array<string,mixed> $filters
+     * @return bool
+     */
+    private function urlTimesPinIsStaleForModels(array $models, array $filters): bool {
+        if (empty($models) || empty($filters['order_item_ids'])) {
+            return false;
+        }
+
+        $url_times = isset($filters['times']) ? trim((string) $filters['times']) : '';
+        if ($url_times === '' || strcasecmp($url_times, 'N/A') === 0) {
+            return false;
+        }
+
+        if (!function_exists('intersoccer_roster_url_times_pin_is_stale')) {
+            return false;
+        }
+
+        $row_times = [];
+        foreach ($models as $model) {
+            if (!is_object($model)) {
+                continue;
+            }
+            if (method_exists($model, 'getAttribute')) {
+                $row_times[] = (string) $model->getAttribute('times');
+            } elseif (isset($model->times)) {
+                $row_times[] = (string) $model->times;
+            }
+        }
+
+        return intersoccer_roster_url_times_pin_is_stale($row_times, $url_times);
     }
 
     /**

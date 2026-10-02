@@ -92,3 +92,67 @@ if (!function_exists('intersoccer_roster_times_equal_for_move_verify')) {
         return strcasecmp(trim((string) ($a ?? '')), trim((string) ($b ?? ''))) === 0;
     }
 }
+
+if (!function_exists('intersoccer_roster_url_times_pin_is_stale')) {
+    /**
+     * True when URL times disagree with at least one pinned order-item row's times.
+     * Fail open (false) when URL times empty/N/A or URL/row normalize is empty.
+     *
+     * @param array<int,mixed> $row_times_values Times values from roster rows for URL order_item_ids.
+     * @param mixed            $url_times
+     * @return bool
+     */
+    function intersoccer_roster_url_times_pin_is_stale($row_times_values, $url_times) {
+        $url = trim((string) ($url_times ?? ''));
+        if ($url === '' || strcasecmp($url, 'N/A') === 0) {
+            return false;
+        }
+
+        $url_slug = intersoccer_normalize_times_slug_for_roster_facet($url);
+        if ($url_slug === '') {
+            return false;
+        }
+
+        foreach ((array) $row_times_values as $row_times) {
+            $row_slug = intersoccer_normalize_times_slug_for_roster_facet($row_times);
+            if ($row_slug === '') {
+                continue;
+            }
+            if ($row_slug !== $url_slug) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+if (!function_exists('intersoccer_roster_stale_times_pin_notice_message')) {
+    /**
+     * Friendly admin copy for a post-move stale details URL pin.
+     *
+     * @return string
+     */
+    function intersoccer_roster_stale_times_pin_notice_message() {
+        if (function_exists('__')) {
+            return __(
+                'This roster details tab may be out of date after a player was moved to a different times slot. Reopen this roster from the course listing to see the current players. You do not need to move the player again.',
+                'intersoccer-reports-rosters'
+            );
+        }
+
+        return 'This roster details tab may be out of date after a player was moved to a different times slot. Reopen this roster from the course listing to see the current players. You do not need to move the player again.';
+    }
+}
+
+if (!function_exists('intersoccer_roster_echo_stale_times_pin_notice')) {
+    /**
+     * Echo a WP admin-style warning notice for a stale times pin (no redirect / no re-move).
+     *
+     * @return void
+     */
+    function intersoccer_roster_echo_stale_times_pin_notice() {
+        $message = intersoccer_roster_stale_times_pin_notice_message();
+        echo '<div class="notice notice-warning"><p>' . esc_html($message) . '</p></div>';
+    }
+}
