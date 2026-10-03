@@ -172,6 +172,33 @@ function intersoccer_export_roster() {
             'message' => __('You do not have permission to export rosters.', 'intersoccer-reports-rosters')
         ]);
     }
+
+    // Coach venue restriction: same get_coach_accessible_venues check as listing / export-all.
+    // Admins (manage_options) keep full access.
+    if (!current_user_can('manage_options') && function_exists('intersoccer_roster_current_user_can_access_venues')) {
+        $venue_for_check = isset($_POST['venue']) ? sanitize_text_field(wp_unslash((string) $_POST['venue'])) : '';
+        $variation_id_for_check = isset($_POST['variation_id']) ? intval($_POST['variation_id']) : 0;
+        $variation_ids_str_for_check = isset($_POST['variation_ids']) ? sanitize_text_field(wp_unslash((string) $_POST['variation_ids'])) : '';
+        $variation_ids_for_check = $variation_ids_str_for_check ? array_filter(array_map('intval', explode(',', $variation_ids_str_for_check))) : [];
+        $order_item_ids_str_for_check = isset($_POST['order_item_ids']) ? sanitize_text_field(wp_unslash((string) $_POST['order_item_ids'])) : '';
+        $order_item_ids_for_check = $order_item_ids_str_for_check ? array_filter(array_map('intval', explode(',', $order_item_ids_str_for_check))) : [];
+        $event_signature_for_check = isset($_POST['event_signature']) ? sanitize_text_field(wp_unslash((string) $_POST['event_signature'])) : '';
+
+        $resolved_venues = intersoccer_roster_resolve_venues_from_request([
+            'venue' => $venue_for_check,
+            'variation_id' => $variation_id_for_check,
+            'variation_ids' => $variation_ids_for_check,
+            'order_item_ids' => $order_item_ids_for_check,
+            'event_signature' => $event_signature_for_check,
+        ]);
+
+        if (!intersoccer_roster_current_user_can_access_venues($resolved_venues)) {
+            wp_send_json_error([
+                'message' => __('You do not have permission to export rosters for this venue.', 'intersoccer-reports-rosters')
+            ]);
+        }
+    }
+
     $use_fields = isset($_POST['use_fields']) ? (bool)$_POST['use_fields'] : false;
     $product_id = isset($_POST['product_id']) ? intval($_POST['product_id']) : 0;
     $variation_id = isset($_POST['variation_id']) ? intval($_POST['variation_id']) : 0;

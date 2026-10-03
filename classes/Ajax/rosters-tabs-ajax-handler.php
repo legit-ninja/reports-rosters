@@ -28,6 +28,22 @@ class RostersTabsAjaxHandler {
             wp_send_json_error(['message' => __('Invalid variation ID.', 'intersoccer-reports-rosters')]);
         }
 
+        // Coach venue restriction: same get_coach_accessible_venues check as listing / export-all.
+        if (!function_exists('intersoccer_roster_current_user_can_access_venues')) {
+            $helper = dirname(__DIR__, 2) . '/includes/roster-coach-venue-access.php';
+            if (is_readable($helper)) {
+                require_once $helper;
+            }
+        }
+        if (!current_user_can('manage_options') && function_exists('intersoccer_roster_current_user_can_access_venues')) {
+            $resolved_venues = intersoccer_roster_resolve_venues_from_request([
+                'variation_id' => $variation_id,
+            ]);
+            if (!intersoccer_roster_current_user_can_access_venues($resolved_venues)) {
+                wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
+            }
+        }
+
         global $wpdb;
         $table = $wpdb->prefix . 'intersoccer_rosters';
 

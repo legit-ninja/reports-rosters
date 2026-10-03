@@ -471,6 +471,27 @@ function intersoccer_render_roster_details_page() {
     $camp_terms = isset($_GET['camp_terms']) ? sanitize_text_field($_GET['camp_terms']) : '';
     $course_day = isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '';
     $venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
+
+    // Coach venue restriction: same get_coach_accessible_venues check as listing / export-all.
+    if (!function_exists('intersoccer_roster_current_user_can_access_venues')) {
+        $helper = dirname(__FILE__) . '/roster-coach-venue-access.php';
+        if (is_readable($helper)) {
+            require_once $helper;
+        }
+    }
+    if (!current_user_can('manage_options') && function_exists('intersoccer_roster_current_user_can_access_venues')) {
+        $resolved_venues = intersoccer_roster_resolve_venues_from_request([
+            'venue' => $venue,
+            'variation_id' => $variation_id,
+            'variation_ids' => $variation_ids,
+            'order_item_ids' => $order_item_ids,
+            'event_signature' => $event_signature,
+            'event_signatures' => $event_signatures,
+        ]);
+        if (!intersoccer_roster_current_user_can_access_venues($resolved_venues)) {
+            wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
+        }
+    }
     $age_group = isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '';
     $times = isset($_GET['times']) ? sanitize_text_field($_GET['times']) : '';
     $product_name = isset($_GET['product_name']) ? sanitize_text_field($_GET['product_name']) : '';
