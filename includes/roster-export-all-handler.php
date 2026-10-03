@@ -7,6 +7,11 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+$intersoccer_coach_venue_access = dirname(__FILE__) . '/roster-coach-venue-access.php';
+if (is_readable($intersoccer_coach_venue_access)) {
+    require_once $intersoccer_coach_venue_access;
+}
+
 /**
  * Print hidden inputs so bulk export uses the same filters as the current roster list view.
  *
@@ -186,7 +191,10 @@ function intersoccer_roster_export_listing_context_from_globals(): array {
     $current_user = wp_get_current_user();
     $is_coach = in_array('coach', (array) $current_user->roles, true);
     $venues = [];
-    if ($is_coach) {
+    if ($is_coach && function_exists('intersoccer_roster_get_coach_accessible_venues_for_user')) {
+        $venues = intersoccer_roster_get_coach_accessible_venues_for_user((int) $current_user->ID);
+    } elseif ($is_coach) {
+        // Fallback identical to historical inline check
         if (!class_exists('InterSoccer_Admin_Coach_Assignments')) {
             $path = WP_PLUGIN_DIR . '/customer-referral-system/includes/class-admin-coach-assignments.php';
             if (file_exists($path)) {

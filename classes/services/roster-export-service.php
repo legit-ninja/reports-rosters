@@ -158,6 +158,10 @@ class RosterExportService {
             }
         }
 
+        if (!$this->applyCoachVenueScope($where, $params, $filters)) {
+            return [];
+        }
+
         $sql = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, selected_days, days_selected, event_details, day_presence, age_group, activity_type, product_name, product_id, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number FROM {$table}";
 
         if (!empty($where)) {
@@ -189,7 +193,8 @@ class RosterExportService {
             'last_error' => $this->wpdb->last_error,
         ]);
 
-        return is_array($rows) ? $rows : [];
+        $rows = is_array($rows) ? $rows : [];
+        return $this->filterRowsByCoachVenueScope($rows, $filters);
     }
 
     /**
@@ -230,6 +235,10 @@ class RosterExportService {
             $params[] = '%' . $this->wpdb->esc_like($age_group) . '%';
         }
 
+        if (!$this->applyCoachVenueScope($where, $params, $filters)) {
+            return [];
+        }
+
         if (!empty($where)) {
             $sql .= ' WHERE ' . implode(' AND ', $where);
         }
@@ -260,6 +269,66 @@ class RosterExportService {
 
         return is_array($rows) ? $rows : [];
     }
+    /**
+     * Exact venue IN filter for coaches (empty/NULL venue never matches).
+     *
+     * @param string[] $where
+     * @param array<int,mixed> $params
+     * @param array<string,mixed> $filters
+     * @return bool false when coach scope is empty (no rows)
+     */
+    private function applyCoachVenueScope(array &$where, array &$params, array $filters): bool {
+        if (!array_key_exists('coach_accessible_venues', $filters)) {
+            return true;
+        }
+        $scope = $filters['coach_accessible_venues'];
+        if ($scope === null) {
+            return true; // admin / unrestricted
+        }
+        if (!is_array($scope)) {
+            return false;
+        }
+        $venues = array_values(array_filter(array_map('strval', $scope), static function ($v) {
+            return $v !== '';
+        }));
+        if ($venues === []) {
+            return false;
+        }
+        $ph = implode(',', array_fill(0, count($venues), '%s'));
+        $where[] = "venue IN ({$ph})";
+        $params = array_merge($params, $venues);
+        return true;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @param array<string,mixed> $filters
+     * @return array<int,array<string,mixed>>
+     */
+    private function filterRowsByCoachVenueScope(array $rows, array $filters): array {
+        if (!array_key_exists('coach_accessible_venues', $filters) || $filters['coach_accessible_venues'] === null) {
+            return $rows;
+        }
+        $scope = is_array($filters['coach_accessible_venues']) ? $filters['coach_accessible_venues'] : [];
+        if (function_exists('intersoccer_roster_filter_rows_to_accessible_venues')) {
+            return intersoccer_roster_filter_rows_to_accessible_venues($rows, $scope);
+        }
+        $venues = array_values(array_filter(array_map('strval', $scope), static function ($v) {
+            return $v !== '';
+        }));
+        if ($venues === []) {
+            return [];
+        }
+        $out = [];
+        foreach ($rows as $row) {
+            $venue = isset($row['venue']) ? (string) $row['venue'] : '';
+            if ($venue !== '' && in_array($venue, $venues, true)) {
+                $out[] = $row;
+            }
+        }
+        return $out;
+    }
+
 }
 
 

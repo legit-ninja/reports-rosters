@@ -69,6 +69,7 @@
             <file>tests/Campaign/Final15CampaignFixtureTest.php</file>
             <file>tests/Campaign/CampaignMomentumTest.php</file>
             <file>tests/Services/RosterCanonicalFieldsTest.php</file>
+            <file>tests/Ajax/RosterVenueAccessTest.php</file>
         </testsuite>
         <testsuite name="Complete">
             <directory>tests</directory>

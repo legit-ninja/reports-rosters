@@ -30,6 +30,11 @@ if (is_readable($intersoccer_export_all_handler)) {
     require_once $intersoccer_export_all_handler;
 }
 
+$intersoccer_coach_venue_access = dirname(__FILE__) . '/roster-coach-venue-access.php';
+if (is_readable($intersoccer_coach_venue_access)) {
+    require_once $intersoccer_coach_venue_access;
+}
+
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -172,6 +177,56 @@ function intersoccer_export_roster() {
             'message' => __('You do not have permission to export rosters.', 'intersoccer-reports-rosters')
         ]);
     }
+
+    // Coach venue restriction: require helper (no fail-open) + query/result venue IN filter.
+    // Admins (manage_options) keep full access, including empty venues.
+    if (!function_exists('intersoccer_roster_current_user_coach_venue_scope')) {
+        $helper = dirname(__FILE__) . '/roster-coach-venue-access.php';
+        if (is_readable($helper)) {
+            require_once $helper;
+        }
+    }
+    if (!function_exists('intersoccer_roster_current_user_coach_venue_scope')) {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error([
+                'message' => __('You do not have permission to export rosters for this venue.', 'intersoccer-reports-rosters')
+            ]);
+        }
+        $coach_venue_scope = null;
+    } else {
+        $coach_venue_scope = intersoccer_roster_current_user_coach_venue_scope();
+    }
+
+    if ($coach_venue_scope !== null) {
+        if ($coach_venue_scope === []) {
+            wp_send_json_error([
+                'message' => __('You do not have permission to export rosters for this venue.', 'intersoccer-reports-rosters')
+            ]);
+        }
+
+        $venue_for_check = isset($_POST['venue']) ? sanitize_text_field(wp_unslash((string) $_POST['venue'])) : '';
+        $variation_id_for_check = isset($_POST['variation_id']) ? intval($_POST['variation_id']) : 0;
+        $variation_ids_str_for_check = isset($_POST['variation_ids']) ? sanitize_text_field(wp_unslash((string) $_POST['variation_ids'])) : '';
+        $variation_ids_for_check = $variation_ids_str_for_check ? array_filter(array_map('intval', explode(',', $variation_ids_str_for_check))) : [];
+        $order_item_ids_str_for_check = isset($_POST['order_item_ids']) ? sanitize_text_field(wp_unslash((string) $_POST['order_item_ids'])) : '';
+        $order_item_ids_for_check = $order_item_ids_str_for_check ? array_filter(array_map('intval', explode(',', $order_item_ids_str_for_check))) : [];
+        $event_signature_for_check = isset($_POST['event_signature']) ? sanitize_text_field(wp_unslash((string) $_POST['event_signature'])) : '';
+
+        $resolved_venues = intersoccer_roster_resolve_venues_from_request([
+            'venue' => $venue_for_check,
+            'variation_id' => $variation_id_for_check,
+            'variation_ids' => $variation_ids_for_check,
+            'order_item_ids' => $order_item_ids_for_check,
+            'event_signature' => $event_signature_for_check,
+        ]);
+
+        if (!intersoccer_roster_venues_allowed_for_coach($resolved_venues, $coach_venue_scope)) {
+            wp_send_json_error([
+                'message' => __('You do not have permission to export rosters for this venue.', 'intersoccer-reports-rosters')
+            ]);
+        }
+    }
+
     $use_fields = isset($_POST['use_fields']) ? (bool)$_POST['use_fields'] : false;
     $product_id = isset($_POST['product_id']) ? intval($_POST['product_id']) : 0;
     $variation_id = isset($_POST['variation_id']) ? intval($_POST['variation_id']) : 0;
@@ -227,6 +282,7 @@ function intersoccer_export_roster() {
         'times' => $times,
         'girls_only' => $girls_only,
         'activity_types' => $activity_types,
+        'coach_accessible_venues' => $coach_venue_scope,
     ];
 
     $rosters = [];
@@ -411,6 +467,15 @@ function intersoccer_export_roster() {
                 $query_params[] = $girls_only;
             }
         }
+        // Exact venue membership for coaches (blocks empty venue + LIKE substring bleed).
+        if ($coach_venue_scope !== null) {
+            if (!intersoccer_roster_append_coach_venue_in_clause($where_clauses, $query_params, $coach_venue_scope)) {
+                $rosters = [];
+                $where_clauses = ['1=0'];
+                $query_params = [];
+            }
+        }
+
         // Only log if debugging
         if (defined('WP_DEBUG') && WP_DEBUG) {
             error_log('InterSoccer Export: Before WHERE - Clauses: ' . json_encode($where_clauses));
@@ -447,6 +512,15 @@ function intersoccer_export_roster() {
         if ($age_group) {
             $query .= $wpdb->prepare(" AND (age_group = %s OR age_group LIKE %s)", $age_group, '%' . $wpdb->esc_like($age_group) . '%');
         }
+        if ($coach_venue_scope !== null) {
+            $coach_where = [];
+            $coach_params = [];
+            if (intersoccer_roster_append_coach_venue_in_clause($coach_where, $coach_params, $coach_venue_scope)) {
+                $query .= $wpdb->prepare(' AND ' . $coach_where[0], $coach_params);
+            } else {
+                $query .= ' AND 1=0';
+            }
+        }
         // Sort by registration timestamp (most recent orders first)
         $query .= " ORDER BY registration_timestamp DESC";
         $rosters = $wpdb->get_results($query, ARRAY_A);
@@ -464,6 +538,11 @@ function intersoccer_export_roster() {
         }
     }
     
+    // Final exact-venue filter for coaches (covers details-service / OOP paths and any LIKE bleed).
+    if ($coach_venue_scope !== null && function_exists('intersoccer_roster_filter_rows_to_accessible_venues')) {
+        $rosters = intersoccer_roster_filter_rows_to_accessible_venues(is_array($rosters) ? $rosters : [], $coach_venue_scope);
+    }
+
     if (empty($rosters)) {
         wp_send_json_error([
             'message' => __('No roster data found for export.', 'intersoccer-reports-rosters')

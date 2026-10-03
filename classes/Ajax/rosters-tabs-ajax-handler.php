@@ -28,22 +28,61 @@ class RostersTabsAjaxHandler {
             wp_send_json_error(['message' => __('Invalid variation ID.', 'intersoccer-reports-rosters')]);
         }
 
+        // Coach venue restriction: require helper (no fail-open) + venue IN on the query.
+        $helper = dirname(__DIR__, 2) . '/includes/roster-coach-venue-access.php';
+        if (!function_exists('intersoccer_roster_current_user_coach_venue_scope') && is_readable($helper)) {
+            require_once $helper;
+        }
+        if (!function_exists('intersoccer_roster_current_user_coach_venue_scope')) {
+            if (!current_user_can('manage_options')) {
+                wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
+            }
+            $coach_venue_scope = null;
+        } else {
+            $coach_venue_scope = intersoccer_roster_current_user_coach_venue_scope();
+        }
+
+        if ($coach_venue_scope !== null) {
+            if ($coach_venue_scope === []) {
+                wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
+            }
+            $resolved_venues = intersoccer_roster_resolve_venues_from_request([
+                'variation_id' => $variation_id,
+            ]);
+            if (!intersoccer_roster_venues_allowed_for_coach($resolved_venues, $coach_venue_scope)) {
+                wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
+            }
+        }
+
         global $wpdb;
         $table = $wpdb->prefix . 'intersoccer_rosters';
 
+        $where_sql = 'variation_id = %d';
+        $params = [$variation_id];
+        if ($coach_venue_scope !== null) {
+            $ph = implode(',', array_fill(0, count($coach_venue_scope), '%s'));
+            $where_sql .= " AND venue IN ({$ph})";
+            $params = array_merge($params, $coach_venue_scope);
+        }
+
         $total = (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM {$table} WHERE variation_id = %d",
-            $variation_id
+            "SELECT COUNT(*) FROM {$table} WHERE {$where_sql}",
+            $params
         ));
 
         $entries = $wpdb->get_results($wpdb->prepare(
-            "SELECT id, player_name, first_name, last_name, age, gender, booking_type, selected_days, day_presence, order_id, order_item_id, event_signature, event_completed
+            "SELECT id, player_name, first_name, last_name, age, gender, booking_type, selected_days, day_presence, order_id, order_item_id, event_signature, event_completed, venue
              FROM {$table}
-             WHERE variation_id = %d
+             WHERE {$where_sql}
              ORDER BY last_name ASC, first_name ASC, id ASC
              LIMIT 250",
-            $variation_id
+            $params
         ), ARRAY_A);
+
+        if ($coach_venue_scope !== null && function_exists('intersoccer_roster_filter_rows_to_accessible_venues') && is_array($entries)) {
+            $entries = intersoccer_roster_filter_rows_to_accessible_venues($entries, $coach_venue_scope);
+            $total = count($entries);
+        }
 
         if (!is_array($entries) || empty($entries)) {
             wp_send_json_success([
