@@ -472,14 +472,23 @@ function intersoccer_render_roster_details_page() {
     $course_day = isset($_GET['course_day']) ? sanitize_text_field($_GET['course_day']) : '';
     $venue = isset($_GET['venue']) ? sanitize_text_field($_GET['venue']) : '';
 
-    // Coach venue restriction: same get_coach_accessible_venues check as listing / export-all.
-    if (!function_exists('intersoccer_roster_current_user_can_access_venues')) {
-        $helper = dirname(__FILE__) . '/roster-coach-venue-access.php';
-        if (is_readable($helper)) {
-            require_once $helper;
-        }
+    // Coach venue restriction: require helper (no fail-open). Query paths still need venue IN / row filter.
+    $helper = dirname(__FILE__) . '/roster-coach-venue-access.php';
+    if (!function_exists('intersoccer_roster_current_user_coach_venue_scope') && is_readable($helper)) {
+        require_once $helper;
     }
-    if (!current_user_can('manage_options') && function_exists('intersoccer_roster_current_user_can_access_venues')) {
+    if (!function_exists('intersoccer_roster_current_user_coach_venue_scope')) {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
+        }
+        $coach_venue_scope = null;
+    } else {
+        $coach_venue_scope = intersoccer_roster_current_user_coach_venue_scope();
+    }
+    if ($coach_venue_scope !== null) {
+        if ($coach_venue_scope === []) {
+            wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
+        }
         $resolved_venues = intersoccer_roster_resolve_venues_from_request([
             'venue' => $venue,
             'variation_id' => $variation_id,
@@ -488,7 +497,7 @@ function intersoccer_render_roster_details_page() {
             'event_signature' => $event_signature,
             'event_signatures' => $event_signatures,
         ]);
-        if (!intersoccer_roster_current_user_can_access_venues($resolved_venues)) {
+        if (!intersoccer_roster_venues_allowed_for_coach($resolved_venues, $coach_venue_scope)) {
             wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
         }
     }
@@ -588,6 +597,18 @@ function intersoccer_render_roster_details_page() {
         }
 
         $rosters = $result['rosters'];
+        if (isset($coach_venue_scope) && $coach_venue_scope !== null && function_exists('intersoccer_roster_filter_rows_to_accessible_venues')) {
+            $roster_arrays = [];
+            foreach ((array) $rosters as $row) {
+                $roster_arrays[] = is_object($row) ? (array) $row : $row;
+            }
+            $filtered = intersoccer_roster_filter_rows_to_accessible_venues($roster_arrays, $coach_venue_scope);
+            $rosters = array_map(static function ($row) {
+                return (object) $row;
+            }, $filtered);
+            $result['rosters'] = $rosters;
+        }
+
         $base_roster = $result['base_roster'];
         $available_rosters = $result['available_rosters'];
         $cross_gender_rosters = $result['cross_gender_rosters'];
@@ -710,6 +731,16 @@ function intersoccer_render_roster_details_page() {
             $query_params[] = $season;
         }
 
+        if (isset($coach_venue_scope) && $coach_venue_scope !== null) {
+            if ($coach_venue_scope === []) {
+                $where_clauses[] = '1=0';
+            } else {
+                $ph = implode(',', array_fill(0, count($coach_venue_scope), '%s'));
+                $where_clauses[] = "r.venue IN ({$ph})";
+                $query_params = array_merge($query_params, $coach_venue_scope);
+            }
+        }
+
         if (empty($where_clauses)) {
             error_log('InterSoccer: No valid parameters provided for roster details');
             echo '<div class="wrap"><h1>' . esc_html__('Roster Details', 'intersoccer-reports-rosters') . '</h1>';
@@ -732,6 +763,16 @@ function intersoccer_render_roster_details_page() {
         $query .= " ORDER BY {$order_field} {$sort_order}, r.first_name ASC, r.last_name ASC";
 
         $rosters = $wpdb->get_results($wpdb->prepare($query, $query_params), OBJECT);
+
+        if (isset($coach_venue_scope) && $coach_venue_scope !== null && function_exists('intersoccer_roster_filter_rows_to_accessible_venues')) {
+            $roster_arrays = array_map(static function ($row) {
+                return (array) $row;
+            }, is_array($rosters) ? $rosters : []);
+            $filtered = intersoccer_roster_filter_rows_to_accessible_venues($roster_arrays, $coach_venue_scope);
+            $rosters = array_map(static function ($row) {
+                return (object) $row;
+            }, $filtered);
+        }
 
         error_log('InterSoccer: Roster details query: ' . $wpdb->last_query);
         error_log('InterSoccer: Roster details results count: ' . count($rosters));

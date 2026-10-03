@@ -202,3 +202,82 @@ if (!function_exists('intersoccer_roster_current_user_can_access_venues')) {
         return intersoccer_roster_venues_allowed_for_coach($venues, $accessible);
     }
 }
+
+if (!function_exists('intersoccer_roster_current_user_coach_venue_scope')) {
+    /**
+     * Venue scope for the current user.
+     *
+     * @return string[]|null null = admin / unrestricted; string[] = coach allowed venues
+     *                      (empty array means no venues — deny all rows).
+     */
+    function intersoccer_roster_current_user_coach_venue_scope(): ?array {
+        if (current_user_can('manage_options')) {
+            return null;
+        }
+
+        $current_user = wp_get_current_user();
+        $is_coach = in_array('coach', (array) $current_user->roles, true) || current_user_can('coach');
+        if (!$is_coach) {
+            return [];
+        }
+
+        return intersoccer_roster_get_coach_accessible_venues_for_user((int) $current_user->ID);
+    }
+}
+
+if (!function_exists('intersoccer_roster_filter_rows_to_accessible_venues')) {
+    /**
+     * Keep only rows whose venue is an exact member of $accessible_venues.
+     * Empty / NULL venue is never accessible to a coach.
+     *
+     * @param array<int,array<string,mixed>> $rows
+     * @param string[] $accessible_venues
+     * @return array<int,array<string,mixed>>
+     */
+    function intersoccer_roster_filter_rows_to_accessible_venues(array $rows, array $accessible_venues): array {
+        $accessible_venues = array_values(array_filter(array_map('strval', $accessible_venues), static function ($v) {
+            return $v !== '';
+        }));
+        if ($accessible_venues === []) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $venue = isset($row['venue']) ? (string) $row['venue'] : '';
+            if ($venue !== '' && in_array($venue, $accessible_venues, true)) {
+                $out[] = $row;
+            }
+        }
+
+        return $out;
+    }
+}
+
+if (!function_exists('intersoccer_roster_append_coach_venue_in_clause')) {
+    /**
+     * Append exact venue IN (...) for coaches (same pattern as export-all).
+     *
+     * @param string[] $where_clauses
+     * @param array<int,mixed> $params
+     * @param string[] $accessible_venues
+     * @return bool false when accessible list is empty (caller should return no rows)
+     */
+    function intersoccer_roster_append_coach_venue_in_clause(array &$where_clauses, array &$params, array $accessible_venues): bool {
+        $accessible_venues = array_values(array_filter(array_map('strval', $accessible_venues), static function ($v) {
+            return $v !== '';
+        }));
+        if ($accessible_venues === []) {
+            return false;
+        }
+        $ph = implode(',', array_fill(0, count($accessible_venues), '%s'));
+        $where_clauses[] = "venue IN ({$ph})";
+        $params = array_merge($params, $accessible_venues);
+
+        return true;
+    }
+}
+
