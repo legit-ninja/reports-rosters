@@ -738,9 +738,14 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                             <tr class="intersoccer-course-totals-row">
                                 <td><?php _e('All Courses', 'intersoccer-reports-rosters'); ?></td>
                                 <td><?php
-                                    $course_all_disp = $course_player_registration_totals !== null
-                                        ? (int) $course_player_registration_totals['all']
-                                        : (int) $totals['all']['registrations'];
+                                    $course_fallback_total = isset($totals['all']['registrations']) ? (int) $totals['all']['registrations'] : 0;
+                                    if (function_exists('intersoccer_reports_course_onscreen_all_total')) {
+                                        $course_all_disp = intersoccer_reports_course_onscreen_all_total($report_data, !empty($urgency_only), $course_fallback_total);
+                                    } else {
+                                        $course_all_disp = $course_player_registration_totals !== null
+                                            ? (int) $course_player_registration_totals['all']
+                                            : $course_fallback_total;
+                                    }
                                     echo esc_html($course_all_disp);
                                 ?></td>
                             </tr>
