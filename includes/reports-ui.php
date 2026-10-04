@@ -822,8 +822,14 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                         }
                         showNotification(msg, response.data.synced === false && response.data.sync_error ? "warning" : "success");
                     } else {
-                        showNotification("<?php _e('Export failed:', 'intersoccer-reports-rosters'); ?> " + (response.data.message || "<?php _e('Unknown error', 'intersoccer-reports-rosters'); ?>"), "error");
-                        console.error("Export error:", response.data.message);
+                        var exportError = "<?php echo esc_js(__('Unknown error', 'intersoccer-reports-rosters')); ?>";
+                        if (response && typeof response.data === 'string' && response.data) {
+                            exportError = response.data;
+                        } else if (response && response.data && response.data.message) {
+                            exportError = response.data.message;
+                        }
+                        showNotification("<?php echo esc_js(__('Export failed:', 'intersoccer-reports-rosters')); ?> " + exportError, "error");
+                        console.error("Export error:", exportError);
                     }
                 },
                 error: function(xhr, status, error) {
