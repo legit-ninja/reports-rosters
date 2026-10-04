@@ -385,7 +385,7 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                     : null;
                 ?>
                 <!-- Camp Report Table (summer camps numbers grid without Pitchside) -->
-                <h2 class="intersoccer-camp-section-header"><?php echo esc_html(sprintf(__('SUMMER CAMPS NUMBERS %s', 'intersoccer-reports-rosters'), $year)); ?></h2>
+                <h2 class="intersoccer-camp-section-header"><?php echo esc_html(intersoccer_reports_camp_section_heading($year, $season_type)); ?></h2>
                 <details class="intersoccer-help-disclosure">
                     <summary><?php esc_html_e('How to read this table', 'intersoccer-reports-rosters'); ?></summary>
                     <div class="intersoccer-help-disclosure-content">
