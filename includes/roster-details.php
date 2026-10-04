@@ -15,6 +15,20 @@ if (!defined('ABSPATH')) {
 
 require_once plugin_dir_path(dirname(__FILE__)) . 'includes/roster-data.php';
 
+if (!function_exists('intersoccer_user_can_view_roster_admin')) {
+    /**
+     * Rosters, other events, birthdays, and roster details.
+     * Administrators, coaches, and shop managers. Not every user with `read`.
+     */
+    function intersoccer_user_can_view_roster_admin() {
+        return current_user_can('manage_options')
+            || current_user_can('coach')
+            || current_user_can('manage_woocommerce')
+            || current_user_can('manage_intersoccer_rosters');
+    }
+}
+
+
 /**
  * Generate URL for sortable column
  */
@@ -452,7 +466,7 @@ function intersoccer_fetch_roster_sibling_candidates_for_consolidation(array $an
  * Render the roster details page
  */
 function intersoccer_render_roster_details_page() {
-    if (!current_user_can('manage_options') && !current_user_can('coach')) {
+    if (!intersoccer_user_can_view_roster_admin()) {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 

@@ -14,6 +14,20 @@ if (is_readable($persist_roster_filters)) {
 
 require_once dirname(__FILE__) . '/reports-ui.php';
 
+if (!function_exists('intersoccer_user_can_view_roster_admin')) {
+    /**
+     * Rosters, other events, birthdays, and roster details.
+     * Administrators, coaches, and shop managers. Not every user with `read`.
+     */
+    function intersoccer_user_can_view_roster_admin() {
+        return current_user_can('manage_options')
+            || current_user_can('coach')
+            || current_user_can('manage_woocommerce')
+            || current_user_can('manage_intersoccer_rosters');
+    }
+}
+
+
 /**
  * Helper: Get placeholder filter for WHERE clause
  */
@@ -1348,7 +1362,7 @@ function intersoccer_rosters_admin_print_girls_only_filter($current) {
  * Girls Only is filtered via girls_only_mode (All / Yes / No), not a peer Activity Type.
  */
 function intersoccer_render_rosters_page() {
-    if (!current_user_can('manage_options') && !current_user_can('coach')) {
+    if (!intersoccer_user_can_view_roster_admin()) {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 
@@ -1405,7 +1419,7 @@ function intersoccer_rosters_admin_narrowing_notice($page_slug, $shown, $total, 
  * Updated Camps page with improved formatting, no booking_type split, and City display
  */
 function intersoccer_render_camps_page() {
-    if (!current_user_can('manage_options') && !current_user_can('coach')) {
+    if (!intersoccer_user_can_view_roster_admin()) {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 
@@ -1861,7 +1875,7 @@ function intersoccer_render_camps_page() {
  * Updated Courses page with improved formatting
  */
 function intersoccer_render_courses_page() {
-    if (!current_user_can('manage_options') && !current_user_can('coach')) {
+    if (!intersoccer_user_can_view_roster_admin()) {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 
@@ -2352,7 +2366,7 @@ function intersoccer_render_courses_page() {
  * Render Girls Only page with improved formatting
  */
 function intersoccer_render_girls_only_page() {
-    if (!current_user_can('manage_options') && !current_user_can('coach')) {
+    if (!intersoccer_user_can_view_roster_admin()) {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 
@@ -2896,7 +2910,7 @@ function intersoccer_render_girls_only_page() {
  * Render Tournament rosters page
  */
 function intersoccer_render_tournaments_page() {
-    if (!current_user_can('manage_options') && !current_user_can('coach')) {
+    if (!intersoccer_user_can_view_roster_admin()) {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 
@@ -3246,7 +3260,7 @@ function intersoccer_get_course_day_from_order_item($order_item_id) {
  * Render Other Events page with improved formatting
  */
 function intersoccer_render_other_events_page() {
-    if (!current_user_can('manage_options') && !current_user_can('coach')) {
+    if (!intersoccer_user_can_view_roster_admin()) {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 
@@ -3579,7 +3593,7 @@ function intersoccer_render_other_events_page() {
  * Updated All Rosters page with improved formatting
  */
 function intersoccer_render_all_rosters_page() {
-    if (!current_user_can('manage_options') && !current_user_can('coach')) {
+    if (!intersoccer_user_can_view_roster_admin()) {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 
