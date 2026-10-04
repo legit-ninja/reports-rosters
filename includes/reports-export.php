@@ -243,8 +243,11 @@ add_action('wp_ajax_intersoccer_export_final_reports', 'intersoccer_export_final
 function intersoccer_export_final_reports_callback() {
     check_ajax_referer('intersoccer_reports_nonce', 'nonce');
 
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error(__('You do not have sufficient permissions to export reports.', 'intersoccer-reports-rosters'));
+    $can_export = current_user_can('manage_options')
+        || current_user_can('manage_woocommerce')
+        || current_user_can('export_intersoccer_rosters');
+    if (!$can_export) {
+        wp_send_json_error(['message' => __('You do not have sufficient permissions to export reports.', 'intersoccer-reports-rosters')]);
     }
 
     $year = isset($_POST['year']) ? absint($_POST['year']) : date('Y');
@@ -257,7 +260,7 @@ function intersoccer_export_final_reports_callback() {
 
     $result = intersoccer_office365_generate_final_reports_xlsx($year, $activity_type, $season_type, $region, $exclude_buyclub, $live, $urgency_only);
     if (!$result) {
-        wp_send_json_error(__('Failed to generate report.', 'intersoccer-reports-rosters'));
+        wp_send_json_error(['message' => __('Failed to generate report.', 'intersoccer-reports-rosters')]);
     }
 
     $payload = [
