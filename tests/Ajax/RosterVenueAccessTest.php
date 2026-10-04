@@ -16,7 +16,12 @@ class RosterVenueAccessTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
-		unset($GLOBALS['intersoccer_test_current_user_caps'], $GLOBALS['intersoccer_test_current_user']);
+		unset(
+			$GLOBALS['intersoccer_test_current_user_caps'],
+			$GLOBALS['intersoccer_test_current_user'],
+			$GLOBALS['intersoccer_test_json_error_throws']
+		);
+		$_POST = [];
 		parent::tearDown();
 	}
 
@@ -182,5 +187,63 @@ class RosterVenueAccessTest extends TestCase {
 		$scope = intersoccer_roster_current_user_coach_venue_scope();
 		$this->assertIsArray($scope);
 		$this->assertNotNull($scope);
+	}
+
+	/**
+	 * Export and expand-row were still manage_options or coach only, before venue scope.
+	 * Shop managers use the same roster-page check as the menu.
+	 */
+	public function test_shop_manager_is_not_denied_at_export_or_expand_row_gates(): void {
+		require_once dirname(__DIR__, 2) . '/includes/roster-export.php';
+		require_once dirname(__DIR__, 2) . '/classes/Ajax/rosters-tabs-ajax-handler.php';
+		$GLOBALS['intersoccer_test_json_error_throws'] = true;
+		$_POST = [];
+
+		foreach (['manage_woocommerce', 'manage_intersoccer_rosters'] as $cap) {
+			$GLOBALS['intersoccer_test_current_user_caps'] = [$cap => true];
+
+			try {
+				intersoccer_export_roster();
+				$this->fail('Export should stop before building a file.');
+			} catch (\RuntimeException $e) {
+				$this->assertStringContainsString('No variation IDs', $e->getMessage());
+				$this->assertStringNotContainsString('for this venue', $e->getMessage());
+			}
+
+			try {
+				(new \InterSoccer\ReportsRosters\Ajax\RostersTabsAjaxHandler())->getRosterDetails();
+				$this->fail('Expand-row should stop on a missing variation.');
+			} catch (\RuntimeException $e) {
+				$this->assertStringContainsString('Invalid variation ID', $e->getMessage());
+				$this->assertStringNotContainsString('Permission denied.', $e->getMessage());
+			}
+		}
+	}
+
+	public function test_user_without_roster_admin_caps_is_denied_at_export_and_expand_row(): void {
+		require_once dirname(__DIR__, 2) . '/includes/roster-export.php';
+		require_once dirname(__DIR__, 2) . '/classes/Ajax/rosters-tabs-ajax-handler.php';
+		$GLOBALS['intersoccer_test_json_error_throws'] = true;
+		$GLOBALS['intersoccer_test_current_user_caps'] = [];
+		$GLOBALS['intersoccer_test_current_user'] = (object) [
+			'ID' => 9,
+			'roles' => ['subscriber'],
+		];
+		$_POST = [];
+
+		try {
+			intersoccer_export_roster();
+			$this->fail('Export should deny a user with no roster caps.');
+		} catch (\RuntimeException $e) {
+			$this->assertStringContainsString('You do not have permission to export rosters.', $e->getMessage());
+			$this->assertStringNotContainsString('for this venue', $e->getMessage());
+		}
+
+		try {
+			(new \InterSoccer\ReportsRosters\Ajax\RostersTabsAjaxHandler())->getRosterDetails();
+			$this->fail('Expand-row should deny a user with no roster caps.');
+		} catch (\RuntimeException $e) {
+			$this->assertStringContainsString('Permission denied.', $e->getMessage());
+		}
 	}
 }

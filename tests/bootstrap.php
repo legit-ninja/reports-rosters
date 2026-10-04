@@ -580,7 +580,11 @@ if (!function_exists('wp_send_json_success')) {
 
 if (!function_exists('wp_send_json_error')) {
     function wp_send_json_error($data = null, $status_code = null, $flags = 0) {
-        echo json_encode(['success' => false, 'data' => $data], $flags);
+        $json = json_encode(['success' => false, 'data' => $data], $flags);
+        echo $json;
+        if (!empty($GLOBALS['intersoccer_test_json_error_throws'])) {
+            throw new \RuntimeException($json);
+        }
     }
 }
 
