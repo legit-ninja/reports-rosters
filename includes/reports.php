@@ -1006,7 +1006,10 @@ function intersoccer_office365_build_booking_report_xlsx($report_data, $start_da
 function intersoccer_export_booking_report_callback() {
     check_ajax_referer('intersoccer_reports_filter', 'nonce');
 
-    if (!current_user_can('manage_options')) {
+    $can_use_booking_reports = function_exists('intersoccer_user_can_use_booking_reports')
+        ? intersoccer_user_can_use_booking_reports()
+        : current_user_can('manage_options');
+    if (!$can_use_booking_reports) {
         wp_send_json_error(['message' => __('You do not have sufficient permissions to export this report.', 'intersoccer-reports-rosters')]);
         return;
     }

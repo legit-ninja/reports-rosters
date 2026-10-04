@@ -152,7 +152,7 @@ class MenuManager {
         add_menu_page(
             __('InterSoccer Reports and Rosters', 'intersoccer-reports-rosters'),
             __('Reports and Rosters', 'intersoccer-reports-rosters'),
-            'read',
+            'intersoccer_use_booking_reports',
             'intersoccer-reports-rosters',
             [$this, 'render_overview'],
             'dashicons-chart-bar',
@@ -163,7 +163,7 @@ class MenuManager {
             'intersoccer-reports-rosters',
             __('InterSoccer Overview', 'intersoccer-reports-rosters'),
             __('Overview', 'intersoccer-reports-rosters'),
-            'read',
+            'intersoccer_use_booking_reports',
             'intersoccer-reports-rosters',
             [$this, 'render_overview']
         );
@@ -193,7 +193,7 @@ class MenuManager {
             'intersoccer-reports-rosters',
             __('InterSoccer Booking Reports', 'intersoccer-reports-rosters'),
             __('Booking Reports', 'intersoccer-reports-rosters'),
-            'read',
+            'intersoccer_use_booking_reports',
             'intersoccer-reports',
             [$this, 'render_reports']
         );

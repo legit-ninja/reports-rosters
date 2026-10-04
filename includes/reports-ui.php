@@ -61,8 +61,11 @@ function intersoccer_reports_render_urgency_heat_cell($display_text, $band) {
  * Final Numbers has moved to its own page (intersoccer-final-reports).
  */
 function intersoccer_render_reports_page() {
-    // Check user capabilities
-    if (!current_user_can('manage_options')) {
+    // Same capability as the Booking Reports menu (administrators and shop managers).
+    $can_use_booking_reports = function_exists('intersoccer_user_can_use_booking_reports')
+        ? intersoccer_user_can_use_booking_reports()
+        : current_user_can('manage_options');
+    if (!$can_use_booking_reports) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
     }
 
