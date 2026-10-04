@@ -22,6 +22,29 @@ define('INTERSOCCER_REPORTS_ROSTERS_LOADED', true);
 
 add_filter('deprecated_function_trigger_error', '__return_false', 10, 2);
 
+/**
+ * Shop Managers run day-to-day booking reports. Administrators keep access.
+ * Subscribers with only `read` do not.
+ */
+function intersoccer_user_can_use_booking_reports() {
+    return current_user_can('manage_options') || current_user_can('manage_woocommerce');
+}
+
+/**
+ * Menu registration accepts one capability. Map it to the same check as the pages.
+ */
+function intersoccer_map_booking_reports_cap($allcaps, $caps) {
+    if (!is_array($caps) || !in_array('intersoccer_use_booking_reports', $caps, true)) {
+        return $allcaps;
+    }
+    if (!empty($allcaps['manage_options']) || !empty($allcaps['manage_woocommerce'])) {
+        $allcaps['intersoccer_use_booking_reports'] = true;
+    }
+    return $allcaps;
+}
+add_filter('user_has_cap', 'intersoccer_map_booking_reports_cap', 10, 2);
+
+
 // ============================================================================
 // OOP BOOTSTRAP (OOP-only)
 // ============================================================================
@@ -273,7 +296,7 @@ add_action('init', function () {
  */
 if (!function_exists('intersoccer_render_plugin_overview_page')) {
 function intersoccer_render_plugin_overview_page() {
-    if (!current_user_can('manage_options')) {
+    if (!intersoccer_user_can_use_booking_reports()) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
     }
 

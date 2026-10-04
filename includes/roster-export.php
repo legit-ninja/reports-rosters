@@ -169,10 +169,24 @@ function intersoccer_normalize_phone_number($phone) {
  * Export roster data to Excel
  */
 add_action('wp_ajax_intersoccer_export_roster', 'intersoccer_export_roster');
+
+if (!function_exists('intersoccer_user_can_view_roster_admin')) {
+    /**
+     * Rosters, other events, birthdays, and roster details.
+     * Administrators, coaches, and shop managers. Not every user with `read`.
+     */
+    function intersoccer_user_can_view_roster_admin() {
+        return current_user_can('manage_options')
+            || current_user_can('coach')
+            || current_user_can('manage_woocommerce')
+            || current_user_can('manage_intersoccer_rosters');
+    }
+}
+
 function intersoccer_export_roster() {
     check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
 
-    if (!current_user_can('manage_options') && !current_user_can('coach')) {
+    if (!intersoccer_user_can_view_roster_admin()) {
         wp_send_json_error([
             'message' => __('You do not have permission to export rosters.', 'intersoccer-reports-rosters')
         ]);
@@ -187,7 +201,7 @@ function intersoccer_export_roster() {
         }
     }
     if (!function_exists('intersoccer_roster_current_user_coach_venue_scope')) {
-        if (!current_user_can('manage_options')) {
+        if (!intersoccer_user_can_view_roster_admin()) {
             wp_send_json_error([
                 'message' => __('You do not have permission to export rosters for this venue.', 'intersoccer-reports-rosters')
             ]);

@@ -140,6 +140,25 @@ function intersoccer_extract_year_from_season($season) {
 }
 
 /**
+ * Camp numbers heading for Final Reports.
+ *
+ * A selected season is part of the heading. All (or an empty filter) is not labeled summer.
+ *
+ * @param int|string $year
+ * @param string|null $season_type
+ * @return string
+ */
+function intersoccer_reports_camp_section_heading($year, $season_type = null) {
+    $year_label = (string) $year;
+    $season = trim((string) $season_type);
+    if ($season === '' || strcasecmp($season, 'all') === 0) {
+        return sprintf(__('CAMPS NUMBERS %s', 'intersoccer-reports-rosters'), $year_label);
+    }
+    $season_upper = function_exists('mb_strtoupper') ? mb_strtoupper($season, 'UTF-8') : strtoupper($season);
+    return sprintf(__('%1$s CAMPS NUMBERS %2$s', 'intersoccer-reports-rosters'), $season_upper, $year_label);
+}
+
+/**
  * Extract season type from season string (e.g., "Summer camps 2025" -> "Summer", "Winter 2026" -> "Winter")
  * @param string $season Season string
  * @return string|null Season type if found, null otherwise

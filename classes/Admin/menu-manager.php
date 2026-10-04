@@ -152,7 +152,7 @@ class MenuManager {
         add_menu_page(
             __('InterSoccer Reports and Rosters', 'intersoccer-reports-rosters'),
             __('Reports and Rosters', 'intersoccer-reports-rosters'),
-            'read',
+            'intersoccer_use_booking_reports',
             'intersoccer-reports-rosters',
             [$this, 'render_overview'],
             'dashicons-chart-bar',
@@ -163,7 +163,7 @@ class MenuManager {
             'intersoccer-reports-rosters',
             __('InterSoccer Overview', 'intersoccer-reports-rosters'),
             __('Overview', 'intersoccer-reports-rosters'),
-            'read',
+            'intersoccer_use_booking_reports',
             'intersoccer-reports-rosters',
             [$this, 'render_overview']
         );
@@ -193,7 +193,7 @@ class MenuManager {
             'intersoccer-reports-rosters',
             __('InterSoccer Booking Reports', 'intersoccer-reports-rosters'),
             __('Booking Reports', 'intersoccer-reports-rosters'),
-            'read',
+            'intersoccer_use_booking_reports',
             'intersoccer-reports',
             [$this, 'render_reports']
         );
@@ -215,24 +215,24 @@ class MenuManager {
             'intersoccer-reports-rosters',
             __('Rosters', 'intersoccer-reports-rosters'),
             __('Rosters', 'intersoccer-reports-rosters'),
-            'read',
+            'intersoccer_view_roster_admin',
             'intersoccer-rosters',
             [$this, 'render_rosters']
         );
 
         // Hidden legacy list pages → unified Rosters with activity_type.
         // All Rosters retired: consolidated into Rosters (keep slug for redirects/bookmarks).
-        add_submenu_page(null, '', '', 'read', 'intersoccer-all-rosters', [$this, 'render_legacy_all_rosters_redirect']);
-        add_submenu_page(null, '', '', 'read', 'intersoccer-camps', [$this, 'render_legacy_camps_redirect']);
-        add_submenu_page(null, '', '', 'read', 'intersoccer-courses', [$this, 'render_legacy_courses_redirect']);
-        add_submenu_page(null, '', '', 'read', 'intersoccer-girls-only', [$this, 'render_legacy_girls_only_redirect']);
-        add_submenu_page(null, '', '', 'read', 'intersoccer-tournaments', [$this, 'render_legacy_tournaments_redirect']);
+        add_submenu_page(null, '', '', 'intersoccer_view_roster_admin', 'intersoccer-all-rosters', [$this, 'render_legacy_all_rosters_redirect']);
+        add_submenu_page(null, '', '', 'intersoccer_view_roster_admin', 'intersoccer-camps', [$this, 'render_legacy_camps_redirect']);
+        add_submenu_page(null, '', '', 'intersoccer_view_roster_admin', 'intersoccer-courses', [$this, 'render_legacy_courses_redirect']);
+        add_submenu_page(null, '', '', 'intersoccer_view_roster_admin', 'intersoccer-girls-only', [$this, 'render_legacy_girls_only_redirect']);
+        add_submenu_page(null, '', '', 'intersoccer_view_roster_admin', 'intersoccer-tournaments', [$this, 'render_legacy_tournaments_redirect']);
 
         add_submenu_page(
             'intersoccer-reports-rosters',
             __('Other Events', 'intersoccer-reports-rosters'),
             __('Other Events', 'intersoccer-reports-rosters'),
-            'read',
+            'intersoccer_view_roster_admin',
             'intersoccer-other-events',
             [$this, 'render_other_events']
         );
@@ -241,7 +241,7 @@ class MenuManager {
             'intersoccer-reports-rosters',
             __('Birthdays', 'intersoccer-reports-rosters'),
             __('Birthdays', 'intersoccer-reports-rosters'),
-            'read',
+            'intersoccer_view_roster_admin',
             'intersoccer-birthdays',
             [$this, 'render_birthdays']
         );
@@ -283,7 +283,7 @@ class MenuManager {
             null,
             '',
             '',
-            'read',
+            'intersoccer_view_roster_admin',
             'intersoccer-roster-details',
             [$this, 'render_roster_details']
         );
@@ -578,3 +578,24 @@ class MenuManager {
         wp_die(__('Roster edit page is not available.', 'intersoccer-reports-rosters'));
     }
 }
+
+/**
+ * Menu registration accepts one capability. Grant it to the same people who may open the pages.
+ *
+ * @param array $allcaps
+ * @param array $caps
+ * @return array
+ */
+function intersoccer_grant_roster_admin_cap($allcaps, $caps) {
+    if (!is_array($caps) || !in_array('intersoccer_view_roster_admin', $caps, true)) {
+        return $allcaps;
+    }
+    if (!empty($allcaps['manage_options'])
+        || !empty($allcaps['coach'])
+        || !empty($allcaps['manage_woocommerce'])
+        || !empty($allcaps['manage_intersoccer_rosters'])) {
+        $allcaps['intersoccer_view_roster_admin'] = true;
+    }
+    return $allcaps;
+}
+\add_filter('user_has_cap', __NAMESPACE__ . '\\intersoccer_grant_roster_admin_cap', 10, 2);

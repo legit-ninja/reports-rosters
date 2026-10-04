@@ -61,8 +61,11 @@ function intersoccer_reports_render_urgency_heat_cell($display_text, $band) {
  * Final Numbers has moved to its own page (intersoccer-final-reports).
  */
 function intersoccer_render_reports_page() {
-    // Check user capabilities
-    if (!current_user_can('manage_options')) {
+    // Same capability as the Booking Reports menu (administrators and shop managers).
+    $can_use_booking_reports = function_exists('intersoccer_user_can_use_booking_reports')
+        ? intersoccer_user_can_use_booking_reports()
+        : current_user_can('manage_options');
+    if (!$can_use_booking_reports) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'intersoccer-reports-rosters'));
     }
 
@@ -385,7 +388,7 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                     : null;
                 ?>
                 <!-- Camp Report Table (summer camps numbers grid without Pitchside) -->
-                <h2 class="intersoccer-camp-section-header"><?php echo esc_html(sprintf(__('SUMMER CAMPS NUMBERS %s', 'intersoccer-reports-rosters'), $year)); ?></h2>
+                <h2 class="intersoccer-camp-section-header"><?php echo esc_html(intersoccer_reports_camp_section_heading($year, $season_type)); ?></h2>
                 <details class="intersoccer-help-disclosure">
                     <summary><?php esc_html_e('How to read this table', 'intersoccer-reports-rosters'); ?></summary>
                     <div class="intersoccer-help-disclosure-content">
@@ -824,8 +827,14 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                         }
                         showNotification(msg, response.data.synced === false && response.data.sync_error ? "warning" : "success");
                     } else {
-                        showNotification("<?php _e('Export failed:', 'intersoccer-reports-rosters'); ?> " + (response.data.message || "<?php _e('Unknown error', 'intersoccer-reports-rosters'); ?>"), "error");
-                        console.error("Export error:", response.data.message);
+                        var exportError = "<?php echo esc_js(__('Unknown error', 'intersoccer-reports-rosters')); ?>";
+                        if (response && typeof response.data === 'string' && response.data) {
+                            exportError = response.data;
+                        } else if (response && response.data && response.data.message) {
+                            exportError = response.data.message;
+                        }
+                        showNotification("<?php echo esc_js(__('Export failed:', 'intersoccer-reports-rosters')); ?> " + exportError, "error");
+                        console.error("Export error:", exportError);
                     }
                 },
                 error: function(xhr, status, error) {

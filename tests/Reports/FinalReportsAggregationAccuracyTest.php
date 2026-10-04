@@ -1689,6 +1689,17 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
         $this->assertSame(1, $without_buyclub['__player_registration_totals__']['all']);
     }
 
+    public function test_camp_section_heading_uses_selected_season_not_always_summer() {
+        if (!function_exists('intersoccer_reports_camp_section_heading')) {
+            $this->markTestSkipped('Camp section heading helper not loaded');
+        }
+        $this->assertSame('CAMPS NUMBERS 2026', intersoccer_reports_camp_section_heading(2026, ''));
+        $this->assertSame('CAMPS NUMBERS 2026', intersoccer_reports_camp_section_heading(2026, 'All'));
+        $this->assertSame('SUMMER CAMPS NUMBERS 2026', intersoccer_reports_camp_section_heading(2026, 'Summer'));
+        $this->assertSame('WINTER CAMPS NUMBERS 2026', intersoccer_reports_camp_section_heading(2026, 'Winter'));
+        $this->assertSame('SPRING CAMPS NUMBERS 2026', intersoccer_reports_camp_section_heading(2026, 'spring'));
+    }
+
     public function test_course_onscreen_all_total_follows_critical_low_filter() {
         if (!function_exists('intersoccer_reports_course_onscreen_all_total')
             || !function_exists('intersoccer_reports_course_row_is_urgent')

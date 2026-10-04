@@ -7,6 +7,20 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+if (!function_exists('intersoccer_user_can_view_roster_admin')) {
+    /**
+     * Rosters, other events, birthdays, and roster details.
+     * Administrators, coaches, and shop managers. Not every user with `read`.
+     */
+    function intersoccer_user_can_view_roster_admin() {
+        return current_user_can('manage_options')
+            || current_user_can('coach')
+            || current_user_can('manage_woocommerce')
+            || current_user_can('manage_intersoccer_rosters');
+    }
+}
+
+
 /**
  * Build a privacy-safe display name for calendar entries.
  */
@@ -239,7 +253,7 @@ function intersoccer_render_birthdays_year_grid(array $entries): void {
  * Render Birthdays page.
  */
 function intersoccer_render_birthdays_page(): void {
-    if (!current_user_can('manage_options') && !current_user_can('coach')) {
+    if (!intersoccer_user_can_view_roster_admin()) {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
 

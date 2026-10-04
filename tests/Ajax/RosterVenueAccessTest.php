@@ -15,6 +15,16 @@ class RosterVenueAccessTest extends TestCase {
 		require_once dirname(__DIR__, 2) . '/includes/roster-coach-venue-access.php';
 	}
 
+	protected function tearDown(): void {
+		unset(
+			$GLOBALS['intersoccer_test_current_user_caps'],
+			$GLOBALS['intersoccer_test_current_user'],
+			$GLOBALS['intersoccer_test_json_error_throws']
+		);
+		$_POST = [];
+		parent::tearDown();
+	}
+
 	public function test_coach_without_venue_is_denied(): void {
 		$this->assertFalse(
 			intersoccer_roster_venues_allowed_for_coach(['Geneva Stadium'], ['Zurich North'])
@@ -137,5 +147,103 @@ class RosterVenueAccessTest extends TestCase {
 	public function test_shared_helper_still_calls_get_coach_accessible_venues(): void {
 		$src = file_get_contents(dirname(__DIR__, 2) . '/includes/roster-coach-venue-access.php');
 		$this->assertStringContainsString('get_coach_accessible_venues', $src);
+	}
+
+	/**
+	 * Shop Manager passes the menu check, then details, export, and expand-row
+	 * read this scope. Null is unrestricted. An empty list would deny.
+	 */
+	public function test_shop_manager_capabilities_are_unrestricted_venue_scope(): void {
+		$GLOBALS['intersoccer_test_current_user_caps'] = [
+			'manage_woocommerce' => true,
+		];
+		$this->assertNull(intersoccer_roster_current_user_coach_venue_scope());
+
+		$GLOBALS['intersoccer_test_current_user_caps'] = [
+			'manage_intersoccer_rosters' => true,
+		];
+		$this->assertNull(intersoccer_roster_current_user_coach_venue_scope());
+	}
+
+	public function test_user_without_roster_capabilities_gets_empty_venue_scope(): void {
+		$GLOBALS['intersoccer_test_current_user_caps'] = [];
+		$GLOBALS['intersoccer_test_current_user'] = (object) [
+			'ID' => 7,
+			'roles' => ['subscriber'],
+		];
+
+		$this->assertSame([], intersoccer_roster_current_user_coach_venue_scope());
+	}
+
+	public function test_coach_without_shop_capabilities_stays_venue_limited(): void {
+		$GLOBALS['intersoccer_test_current_user_caps'] = [
+			'coach' => true,
+		];
+		$GLOBALS['intersoccer_test_current_user'] = (object) [
+			'ID' => 42,
+			'roles' => ['coach'],
+		];
+
+		$scope = intersoccer_roster_current_user_coach_venue_scope();
+		$this->assertIsArray($scope);
+		$this->assertNotNull($scope);
+	}
+
+	/**
+	 * Export and expand-row were still manage_options or coach only, before venue scope.
+	 * Shop managers use the same roster-page check as the menu.
+	 */
+	public function test_shop_manager_is_not_denied_at_export_or_expand_row_gates(): void {
+		require_once dirname(__DIR__, 2) . '/includes/roster-export.php';
+		require_once dirname(__DIR__, 2) . '/classes/Ajax/rosters-tabs-ajax-handler.php';
+		$GLOBALS['intersoccer_test_json_error_throws'] = true;
+		$_POST = [];
+
+		foreach (['manage_woocommerce', 'manage_intersoccer_rosters'] as $cap) {
+			$GLOBALS['intersoccer_test_current_user_caps'] = [$cap => true];
+
+			try {
+				intersoccer_export_roster();
+				$this->fail('Export should stop before building a file.');
+			} catch (\RuntimeException $e) {
+				$this->assertStringContainsString('No variation IDs', $e->getMessage());
+				$this->assertStringNotContainsString('for this venue', $e->getMessage());
+			}
+
+			try {
+				(new \InterSoccer\ReportsRosters\Ajax\RostersTabsAjaxHandler())->getRosterDetails();
+				$this->fail('Expand-row should stop on a missing variation.');
+			} catch (\RuntimeException $e) {
+				$this->assertStringContainsString('Invalid variation ID', $e->getMessage());
+				$this->assertStringNotContainsString('Permission denied.', $e->getMessage());
+			}
+		}
+	}
+
+	public function test_user_without_roster_admin_caps_is_denied_at_export_and_expand_row(): void {
+		require_once dirname(__DIR__, 2) . '/includes/roster-export.php';
+		require_once dirname(__DIR__, 2) . '/classes/Ajax/rosters-tabs-ajax-handler.php';
+		$GLOBALS['intersoccer_test_json_error_throws'] = true;
+		$GLOBALS['intersoccer_test_current_user_caps'] = [];
+		$GLOBALS['intersoccer_test_current_user'] = (object) [
+			'ID' => 9,
+			'roles' => ['subscriber'],
+		];
+		$_POST = [];
+
+		try {
+			intersoccer_export_roster();
+			$this->fail('Export should deny a user with no roster caps.');
+		} catch (\RuntimeException $e) {
+			$this->assertStringContainsString('You do not have permission to export rosters.', $e->getMessage());
+			$this->assertStringNotContainsString('for this venue', $e->getMessage());
+		}
+
+		try {
+			(new \InterSoccer\ReportsRosters\Ajax\RostersTabsAjaxHandler())->getRosterDetails();
+			$this->fail('Expand-row should deny a user with no roster caps.');
+		} catch (\RuntimeException $e) {
+			$this->assertStringContainsString('Permission denied.', $e->getMessage());
+		}
 	}
 }
