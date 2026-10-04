@@ -1513,3 +1513,51 @@ if (!function_exists('intersoccer_reports_course_excel_sheet_rows')) {
 		return $rows;
 	}
 }
+
+
+if (!function_exists('intersoccer_reports_course_onscreen_all_total')) {
+	/**
+	 * All Courses footer total.
+	 *
+	 * Without the Critical + Low filter, keep the pre-filter registration total.
+	 * With the filter, sum only the rows the grid keeps (same basis as Excel TOTAL).
+	 *
+	 * @param array      $report_data
+	 * @param bool       $urgency_only
+	 * @param int|null   $fallback_total Used only when the pre-filter total is absent.
+	 * @return int
+	 */
+	function intersoccer_reports_course_onscreen_all_total(array $report_data, $urgency_only = false, $fallback_total = null) {
+		if (!$urgency_only) {
+			if (isset($report_data['__player_registration_totals__']['all'])) {
+				return (int) $report_data['__player_registration_totals__']['all'];
+			}
+			if ($fallback_total !== null) {
+				return (int) $fallback_total;
+			}
+		}
+
+		$sum = 0;
+		foreach ($report_data as $season => $regions) {
+			if ($season === '__player_registration_totals__' || !is_array($regions)) {
+				continue;
+			}
+			foreach ($regions as $course_rows) {
+				if (!is_array($course_rows)) {
+					continue;
+				}
+				foreach ($course_rows as $course_data) {
+					if (!is_array($course_data) || !isset($course_data['registrations'])) {
+						continue;
+					}
+					if ($urgency_only && function_exists('intersoccer_reports_course_row_is_urgent')
+						&& !intersoccer_reports_course_row_is_urgent($course_data)) {
+						continue;
+					}
+					$sum += (int) $course_data['registrations'];
+				}
+			}
+		}
+		return $sum;
+	}
+}

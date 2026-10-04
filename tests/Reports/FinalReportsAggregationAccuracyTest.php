@@ -1699,4 +1699,47 @@ class FinalReportsAggregationAccuracyTest extends TestCase {
         $this->assertSame('WINTER CAMPS NUMBERS 2026', intersoccer_reports_camp_section_heading(2026, 'Winter'));
         $this->assertSame('SPRING CAMPS NUMBERS 2026', intersoccer_reports_camp_section_heading(2026, 'spring'));
     }
+
+    public function test_course_onscreen_all_total_follows_critical_low_filter() {
+        if (!function_exists('intersoccer_reports_course_onscreen_all_total')
+            || !function_exists('intersoccer_reports_course_row_is_urgent')
+            || !function_exists('intersoccer_reports_course_excel_sheet_rows')) {
+            $this->markTestSkipped('Course on-screen total helper not loaded');
+        }
+
+        $report = [
+            'Autumn 2026' => [
+                'Geneva' => [
+                    'urgent' => [
+                        'venue' => 'Chenois',
+                        'course_name' => 'Football Courses',
+                        'course_day' => 'Sunday',
+                        'times' => '09:30',
+                        'registrations' => 5,
+                    ],
+                    'optimal' => [
+                        'venue' => 'Sismondi',
+                        'course_name' => 'Football Courses',
+                        'course_day' => 'Sunday',
+                        'times' => '11:15',
+                        'registrations' => 32,
+                    ],
+                ],
+            ],
+            '__player_registration_totals__' => [
+                'all' => 37,
+            ],
+        ];
+
+        $this->assertSame(37, intersoccer_reports_course_onscreen_all_total($report, false, 0));
+        $this->assertSame(5, intersoccer_reports_course_onscreen_all_total($report, true, 37));
+
+        $urgent_grand = null;
+        foreach (intersoccer_reports_course_excel_sheet_rows($report, 2026, true) as $row) {
+            if (($row['kind'] ?? '') === 'grand_total') {
+                $urgent_grand = $row['col_b'];
+            }
+        }
+        $this->assertSame(5, $urgent_grand);
+    }
 }
