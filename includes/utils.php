@@ -4330,8 +4330,8 @@ function intersoccer_debug_specific_products() {
     error_log('=== END DEBUG SPECIFIC PRODUCTS ===');
 }
 
-// Uncomment to run the debug test
-add_action('admin_init', 'intersoccer_debug_specific_products');
+// One-off investigation helper. Do not hook this to admin_init; it queries
+// hard-coded products and writes a large block to the error log on every admin request.
 
 require_once dirname(__FILE__) . '/migration-meta.php';
 
