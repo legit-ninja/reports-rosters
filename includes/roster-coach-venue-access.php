@@ -207,11 +207,19 @@ if (!function_exists('intersoccer_roster_current_user_coach_venue_scope')) {
     /**
      * Venue scope for the current user.
      *
-     * @return string[]|null null = admin / unrestricted; string[] = coach allowed venues
+     * Null means unrestricted: no venue filter. An empty list means no venues,
+     * so roster details, export, and expand-row deny the request.
+     * Shop managers hold manage_woocommerce or manage_intersoccer_rosters and
+     * are unrestricted the same way an administrator is. Coaches stay limited
+     * to assigned venues.
+     *
+     * @return string[]|null null = unrestricted; string[] = coach allowed venues
      *                      (empty array means no venues — deny all rows).
      */
     function intersoccer_roster_current_user_coach_venue_scope(): ?array {
-        if (current_user_can('manage_options')) {
+        if (current_user_can('manage_options')
+            || current_user_can('manage_woocommerce')
+            || current_user_can('manage_intersoccer_rosters')) {
             return null;
         }
 

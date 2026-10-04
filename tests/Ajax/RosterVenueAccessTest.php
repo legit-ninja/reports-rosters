@@ -15,6 +15,11 @@ class RosterVenueAccessTest extends TestCase {
 		require_once dirname(__DIR__, 2) . '/includes/roster-coach-venue-access.php';
 	}
 
+	protected function tearDown(): void {
+		unset($GLOBALS['intersoccer_test_current_user_caps'], $GLOBALS['intersoccer_test_current_user']);
+		parent::tearDown();
+	}
+
 	public function test_coach_without_venue_is_denied(): void {
 		$this->assertFalse(
 			intersoccer_roster_venues_allowed_for_coach(['Geneva Stadium'], ['Zurich North'])
@@ -137,5 +142,45 @@ class RosterVenueAccessTest extends TestCase {
 	public function test_shared_helper_still_calls_get_coach_accessible_venues(): void {
 		$src = file_get_contents(dirname(__DIR__, 2) . '/includes/roster-coach-venue-access.php');
 		$this->assertStringContainsString('get_coach_accessible_venues', $src);
+	}
+
+	/**
+	 * Shop Manager passes the menu check, then details, export, and expand-row
+	 * read this scope. Null is unrestricted. An empty list would deny.
+	 */
+	public function test_shop_manager_capabilities_are_unrestricted_venue_scope(): void {
+		$GLOBALS['intersoccer_test_current_user_caps'] = [
+			'manage_woocommerce' => true,
+		];
+		$this->assertNull(intersoccer_roster_current_user_coach_venue_scope());
+
+		$GLOBALS['intersoccer_test_current_user_caps'] = [
+			'manage_intersoccer_rosters' => true,
+		];
+		$this->assertNull(intersoccer_roster_current_user_coach_venue_scope());
+	}
+
+	public function test_user_without_roster_capabilities_gets_empty_venue_scope(): void {
+		$GLOBALS['intersoccer_test_current_user_caps'] = [];
+		$GLOBALS['intersoccer_test_current_user'] = (object) [
+			'ID' => 7,
+			'roles' => ['subscriber'],
+		];
+
+		$this->assertSame([], intersoccer_roster_current_user_coach_venue_scope());
+	}
+
+	public function test_coach_without_shop_capabilities_stays_venue_limited(): void {
+		$GLOBALS['intersoccer_test_current_user_caps'] = [
+			'coach' => true,
+		];
+		$GLOBALS['intersoccer_test_current_user'] = (object) [
+			'ID' => 42,
+			'roles' => ['coach'],
+		];
+
+		$scope = intersoccer_roster_current_user_coach_venue_scope();
+		$this->assertIsArray($scope);
+		$this->assertNotNull($scope);
 	}
 }
