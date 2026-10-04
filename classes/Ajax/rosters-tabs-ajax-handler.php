@@ -11,6 +11,20 @@ namespace InterSoccer\ReportsRosters\Ajax;
 
 defined('ABSPATH') or die('Restricted access');
 
+
+if (!function_exists('intersoccer_user_can_view_roster_admin')) {
+    /**
+     * Rosters, other events, birthdays, and roster details.
+     * Administrators, coaches, and shop managers. Not every user with `read`.
+     */
+    function intersoccer_user_can_view_roster_admin() {
+        return current_user_can('manage_options')
+            || current_user_can('coach')
+            || current_user_can('manage_woocommerce')
+            || current_user_can('manage_intersoccer_rosters');
+    }
+}
+
 class RostersTabsAjaxHandler {
     public function register(): void {
         add_action('wp_ajax_intersoccer_get_roster_details', [$this, 'getRosterDetails']);
@@ -19,7 +33,7 @@ class RostersTabsAjaxHandler {
     public function getRosterDetails(): void {
         check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
 
-        if (!current_user_can('manage_options') && !current_user_can('coach')) {
+        if (!intersoccer_user_can_view_roster_admin()) {
             wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
         }
 
@@ -34,7 +48,7 @@ class RostersTabsAjaxHandler {
             require_once $helper;
         }
         if (!function_exists('intersoccer_roster_current_user_coach_venue_scope')) {
-            if (!current_user_can('manage_options')) {
+            if (!intersoccer_user_can_view_roster_admin()) {
                 wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
             }
             $coach_venue_scope = null;

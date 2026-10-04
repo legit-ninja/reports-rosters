@@ -270,7 +270,25 @@ if (!function_exists('get_user_by')) {
 
 // Capabilities
 if (!function_exists('current_user_can')) {
-    function current_user_can($capability, ...$args) { return true; }
+    function current_user_can($capability, ...$args) {
+        if (array_key_exists('intersoccer_test_current_user_caps', $GLOBALS)
+            && is_array($GLOBALS['intersoccer_test_current_user_caps'])) {
+            return !empty($GLOBALS['intersoccer_test_current_user_caps'][$capability]);
+        }
+        return true;
+    }
+}
+
+if (!function_exists('wp_get_current_user')) {
+    function wp_get_current_user() {
+        if (isset($GLOBALS['intersoccer_test_current_user']) && is_object($GLOBALS['intersoccer_test_current_user'])) {
+            return $GLOBALS['intersoccer_test_current_user'];
+        }
+        $user = new stdClass();
+        $user->ID = 1;
+        $user->roles = [];
+        return $user;
+    }
 }
 
 if (!function_exists('get_role')) {
@@ -562,7 +580,11 @@ if (!function_exists('wp_send_json_success')) {
 
 if (!function_exists('wp_send_json_error')) {
     function wp_send_json_error($data = null, $status_code = null, $flags = 0) {
-        echo json_encode(['success' => false, 'data' => $data], $flags);
+        $json = json_encode(['success' => false, 'data' => $data], $flags);
+        echo $json;
+        if (!empty($GLOBALS['intersoccer_test_json_error_throws'])) {
+            throw new \RuntimeException($json);
+        }
     }
 }
 
