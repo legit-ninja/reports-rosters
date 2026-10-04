@@ -11,6 +11,56 @@ if (!defined('ABSPATH')) {
 }
 
 /**
+ * Extract a div by id, including nested divs.
+ *
+ * A non-greedy match stops at the first inner closing tag and splits the financial summary.
+ *
+ * @param string $html
+ * @param string $id
+ * @return array{found:bool,inner:string,outer:string}
+ */
+function intersoccer_extract_balanced_div_by_id($html, $id) {
+    $html = (string) $html;
+    $id = (string) $id;
+    $pattern = '/<div\b[^>]*\bid=["\']' . preg_quote($id, '/') . '["\'][^>]*>/i';
+    if (!preg_match($pattern, $html, $open, PREG_OFFSET_CAPTURE)) {
+        return ['found' => false, 'inner' => '', 'outer' => ''];
+    }
+
+    $start = (int) $open[0][1];
+    $open_tag = (string) $open[0][0];
+    $inner_start = $start + strlen($open_tag);
+    $depth = 1;
+    $offset = $inner_start;
+    $length = strlen($html);
+
+    while ($offset < $length && $depth > 0) {
+        if (!preg_match('/<\/?div\b[^>]*>/i', $html, $tag, PREG_OFFSET_CAPTURE, $offset)) {
+            break;
+        }
+        $tag_html = (string) $tag[0][0];
+        $tag_pos = (int) $tag[0][1];
+        $is_close = stripos($tag_html, '</div') === 0;
+        if ($is_close) {
+            $depth--;
+            if ($depth === 0) {
+                $outer_end = $tag_pos + strlen($tag_html);
+                return [
+                    'found' => true,
+                    'inner' => substr($html, $inner_start, $tag_pos - $inner_start),
+                    'outer' => substr($html, $start, $outer_end - $start),
+                ];
+            }
+        } else {
+            $depth++;
+        }
+        $offset = $tag_pos + strlen($tag_html);
+    }
+
+    return ['found' => false, 'inner' => '', 'outer' => ''];
+}
+
+/**
  * Handle AJAX filter request for booking report.
  */
 function intersoccer_filter_report_callback() {
@@ -120,14 +170,15 @@ function intersoccer_filter_report_callback() {
     <?php
     $output = ob_get_clean();
     
-    // Extract totals HTML from the output
-    $totals_html = '';
-    if (preg_match('/<div id="intersoccer-report-totals"[^>]*>(.*?)<\/div>/s', $output, $matches)) {
-        $totals_html = $matches[1];
+    // Extract totals HTML from the output, including nested summary divs.
+    $totals_block = intersoccer_extract_balanced_div_by_id($output, 'intersoccer-report-totals');
+    $totals_html = !empty($totals_block['found']) ? $totals_block['inner'] : '';
+
+    // Remove totals from table output since they're handled separately.
+    $table_html = $output;
+    if (!empty($totals_block['found']) && $totals_block['outer'] !== '') {
+        $table_html = str_replace($totals_block['outer'], '', $output);
     }
-    
-    // Remove totals from table output since they're handled separately
-    $table_html = preg_replace('/<div id="intersoccer-report-totals"[^>]*>.*?<\/div>/s', '', $output);
     
     // Calculate record count
     $record_count = isset($report_data['data']) ? count($report_data['data']) : 0;

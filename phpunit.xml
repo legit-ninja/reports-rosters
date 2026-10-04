@@ -59,6 +59,7 @@
             <file>tests/Core/LoggerTest.php</file>
             <file>tests/Core/ActivationRequirementsTest.php</file>
             <file>tests/Reports/FinalReportsTotalsTest.php</file>
+            <file>tests/Reports/BookingReportTotalsHtmlTest.php</file>
             <file>tests/Reports/FinalReportsAggregationAccuracyTest.php</file>
             <file>tests/Reports/FinalReportsUrgencyTest.php</file>
             <file>tests/Reports/EvergreenYearIsolationTest.php</file>
