@@ -16,7 +16,10 @@ if (!defined('ABSPATH')) {
 function intersoccer_filter_report_callback() {
     check_ajax_referer('intersoccer_reports_filter', 'nonce');
 
-    if (!current_user_can('manage_options')) {
+    $can_use_booking_reports = function_exists('intersoccer_user_can_use_booking_reports')
+        ? intersoccer_user_can_use_booking_reports()
+        : current_user_can('manage_options');
+    if (!$can_use_booking_reports) {
         wp_send_json_error(['message' => __('You do not have sufficient permissions to access this report.', 'intersoccer-reports-rosters')]);
         return;
     }
@@ -212,7 +215,10 @@ function intersoccer_render_enhanced_booking_totals($totals, $report_data = null
 function intersoccer_filter_revenue_by_type_callback() {
     check_ajax_referer('intersoccer_reports_filter', 'nonce');
 
-    if (!current_user_can('manage_options')) {
+    $can_use_booking_reports = function_exists('intersoccer_user_can_use_booking_reports')
+        ? intersoccer_user_can_use_booking_reports()
+        : current_user_can('manage_options');
+    if (!$can_use_booking_reports) {
         wp_send_json_error(['message' => __('You do not have sufficient permissions.', 'intersoccer-reports-rosters')]);
         return;
     }
@@ -305,7 +311,10 @@ function intersoccer_render_revenue_by_type_table($revenue_by_type, $totals) {
 function intersoccer_export_revenue_by_type_callback() {
     check_ajax_referer('intersoccer_reports_filter', 'nonce');
 
-    if (!current_user_can('manage_options')) {
+    $can_use_booking_reports = function_exists('intersoccer_user_can_use_booking_reports')
+        ? intersoccer_user_can_use_booking_reports()
+        : current_user_can('manage_options');
+    if (!$can_use_booking_reports) {
         wp_send_json_error(['message' => __('You do not have sufficient permissions.', 'intersoccer-reports-rosters')]);
         return;
     }
