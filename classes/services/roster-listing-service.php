@@ -261,6 +261,11 @@ class RosterListingService {
                 continue;
             }
 
+            $row_status = (string) ($model->order_status ?? '');
+            if (RosterRefundService::isFlaggedRowStatus($row_status)) {
+                continue;
+            }
+
             $status = get_post_status($model->order_id);
             if (!$status) {
                 continue;

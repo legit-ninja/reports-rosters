@@ -94,6 +94,13 @@ class RosterBuilder {
      * @var EventSignatureGenerator
      */
     private $signature_generator;
+
+    /**
+     * Roster refund / cancellation flagging (lazy default when not injected).
+     *
+     * @var RosterRefundService|null
+     */
+    private $roster_refund_service;
     
     /**
      * Build statistics
@@ -163,6 +170,7 @@ class RosterBuilder {
      * @param DataValidator $validator Data validator
      * @param EventMatcher $event_matcher Event matcher
      * @param PlayerMatcher $player_matcher Player matcher
+     * @param RosterRefundService|null $roster_refund_service Refund flagging service
      */
     public function __construct(
         Logger $logger = null,
@@ -171,7 +179,8 @@ class RosterBuilder {
         RosterRepository $roster_repository = null,
         DataValidator $validator = null,
         EventMatcher $event_matcher = null,
-        PlayerMatcher $player_matcher = null
+        PlayerMatcher $player_matcher = null,
+        RosterRefundService $roster_refund_service = null
     ) {
         $this->logger = $logger ?: new Logger();
         $this->database = $database ?: new Database($this->logger);
@@ -181,8 +190,27 @@ class RosterBuilder {
         $this->event_matcher = $event_matcher ?: new EventMatcher($this->logger);
         $this->player_matcher = $player_matcher ?: new PlayerMatcher($this->logger);
         $this->signature_generator = new EventSignatureGenerator();
+        $this->roster_refund_service = $roster_refund_service;
 
         $this->init_build_stats();
+    }
+
+    /**
+     * @param RosterRefundService $roster_refund_service
+     * @return void
+     */
+    public function setRosterRefundService(RosterRefundService $roster_refund_service): void {
+        $this->roster_refund_service = $roster_refund_service;
+    }
+
+    /**
+     * @return RosterRefundService
+     */
+    private function getRosterRefundService(): RosterRefundService {
+        if ($this->roster_refund_service === null) {
+            $this->roster_refund_service = new RosterRefundService($this->logger);
+        }
+        return $this->roster_refund_service;
     }
     
     /**
@@ -1694,6 +1722,35 @@ class RosterBuilder {
      * @return array
      */
     private function preserveExistingRosterFields(Roster $existing_roster, array $roster_data): array {
+        $existing_status = (string) ($existing_roster->order_status ?? '');
+        $incoming_status = (string) ($roster_data['order_status'] ?? '');
+
+        if (RosterRefundService::isFlaggedRowStatus($existing_status)) {
+            $keep_flagged_status = RosterRefundService::isInactiveRebuildOrderStatus($incoming_status);
+            $status_to_preserve = $existing_status;
+
+            if (
+                !$keep_flagged_status
+                && (
+                    RosterRefundService::isRefundedRowStatus($existing_status)
+                    || RosterRefundService::isCancelledRowStatus($existing_status)
+                )
+            ) {
+                $order_id = (int) ($roster_data['order_id'] ?? $existing_roster->order_id ?? 0);
+                $order_item_id = (int) ($roster_data['order_item_id'] ?? $existing_roster->order_item_id ?? 0);
+                if ($order_id > 0 && $order_item_id > 0 && function_exists('wc_get_order')) {
+                    $order = wc_get_order($order_id);
+                    if ($order && $this->getRosterRefundService()->isOrderItemFullyRefunded($order, $order_item_id)) {
+                        $keep_flagged_status = true;
+                        $status_to_preserve = Roster::STATUS_REFUNDED;
+                    }
+                }
+            }
+
+            if ($keep_flagged_status) {
+                $roster_data['order_status'] = $status_to_preserve;
+            }
+        }
         if (empty($roster_data['product_id']) && !empty($existing_roster->product_id)) {
             $roster_data['product_id'] = (int) $existing_roster->product_id;
         }

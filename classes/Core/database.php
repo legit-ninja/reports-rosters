@@ -13,6 +13,7 @@
 namespace InterSoccer\ReportsRosters\Core;
 
 use InterSoccer\ReportsRosters\Exceptions\DatabaseException;
+use InterSoccer\ReportsRosters\Services\RosterRefundService;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -756,6 +757,15 @@ class Database {
     }
 
     /**
+     * Roster row order_status values excluded from admin listing aggregates.
+     *
+     * @return string[]
+     */
+    public function get_listing_excluded_roster_row_statuses() {
+        return RosterRefundService::getFlaggedRowStatuses();
+    }
+
+    /**
      * Fetch roster listing aggregates (one row per event_signature) with order-status JOIN.
      *
      * Avoids SELECT * of player payloads and per-row get_post_status() lookups.
@@ -813,6 +823,13 @@ class Database {
             $status_placeholders = implode(',', array_fill(0, count($statuses), '%s'));
             $where_conditions[] = "p.post_status IN ({$status_placeholders})";
             $where_values = array_merge($where_values, $statuses);
+
+            $excluded_row_statuses = $this->get_listing_excluded_roster_row_statuses();
+            if (!empty($excluded_row_statuses)) {
+                $excluded_placeholders = implode(',', array_fill(0, count($excluded_row_statuses), '%s'));
+                $where_conditions[] = "(r.order_status IS NULL OR r.order_status NOT IN ({$excluded_placeholders}))";
+                $where_values = array_merge($where_values, $excluded_row_statuses);
+            }
 
             $group_key_expr = "CASE
                 WHEN r.event_signature IS NOT NULL AND r.event_signature != '' THEN r.event_signature

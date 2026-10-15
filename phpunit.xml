@@ -58,6 +58,7 @@
         <testsuite name="Production">
             <file>tests/Core/LoggerTest.php</file>
             <file>tests/Core/ActivationRequirementsTest.php</file>
+            <file>tests/Core/CommittedPluginAutoloadTest.php</file>
             <file>tests/Reports/FinalReportsTotalsTest.php</file>
             <file>tests/Reports/BookingReportTotalsHtmlTest.php</file>
             <file>tests/Reports/FinalReportsAggregationAccuracyTest.php</file>
@@ -70,6 +71,8 @@
             <file>tests/Campaign/Final15CampaignFixtureTest.php</file>
             <file>tests/Campaign/CampaignMomentumTest.php</file>
             <file>tests/Services/RosterCanonicalFieldsTest.php</file>
+            <file>tests/Services/RosterRefundServiceTest.php</file>
+            <file>tests/Services/RosterExportRefundFilterTest.php</file>
             <file>tests/Ajax/RosterVenueAccessTest.php</file>
             <file>tests/Unit/RosterDaysUnknownTest.php</file>
             <file>tests/Reports/OrderMetaFieldMapTest.php</file>

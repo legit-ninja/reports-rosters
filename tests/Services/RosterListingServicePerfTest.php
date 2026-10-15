@@ -82,6 +82,7 @@ class RosterListingServicePerfTest extends TestCase {
         $this->assertStringContainsString('INNER JOIN', $captured_sql);
         $this->assertStringContainsString('wp_posts', $captured_sql);
         $this->assertStringContainsString('p.post_status IN', $captured_sql);
+        $this->assertStringContainsString('r.order_status IS NULL OR r.order_status NOT IN', $captured_sql);
         $this->assertStringContainsString('GROUP BY', $captured_sql);
         $this->assertStringContainsString('r.venue = %s', $captured_sql);
         $this->assertStringContainsString('r.event_completed = %s', $captured_sql);

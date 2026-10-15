@@ -162,6 +162,8 @@ class RosterExportService {
             return [];
         }
 
+        RosterRefundService::appendSqlExcludeFlaggedRowStatuses($where, $params);
+
         $sql = "SELECT player_name, first_name, last_name, gender, parent_phone, parent_email, age, player_dob, medical_conditions, late_pickup, late_pickup_days, booking_type, selected_days, days_selected, event_details, day_presence, age_group, activity_type, product_name, product_id, camp_terms, course_day, venue, times, shirt_size, shorts_size, avs_number FROM {$table}";
 
         if (!empty($where)) {
@@ -238,6 +240,8 @@ class RosterExportService {
         if (!$this->applyCoachVenueScope($where, $params, $filters)) {
             return [];
         }
+
+        RosterRefundService::appendSqlExcludeFlaggedRowStatuses($where, $params);
 
         if (!empty($where)) {
             $sql .= ' WHERE ' . implode(' AND ', $where);

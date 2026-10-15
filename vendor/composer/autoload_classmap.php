@@ -100,6 +100,7 @@ return array(
     'InterSoccer\\ReportsRosters\\Services\\RosterDetailsService' => $baseDir . '/classes/services/roster-details-service.php',
     'InterSoccer\\ReportsRosters\\Services\\RosterExportService' => $baseDir . '/classes/services/roster-export-service.php',
     'InterSoccer\\ReportsRosters\\Services\\RosterListingService' => $baseDir . '/classes/services/roster-listing-service.php',
+    'InterSoccer\\ReportsRosters\\Services\\RosterRefundService' => $baseDir . '/classes/services/roster-refund-service.php',
     'InterSoccer\\ReportsRosters\\Services\\SignatureDriftService' => $baseDir . '/classes/services/signature-drift-service.php',
     'InterSoccer\\ReportsRosters\\UI\\Components\\ChartsComponent' => $baseDir . '/classes/ui/components/charts-component.php',
     'InterSoccer\\ReportsRosters\\UI\\Components\\ExportComponent' => $baseDir . '/classes/ui/components/export-component.php',

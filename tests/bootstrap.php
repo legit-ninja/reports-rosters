@@ -56,7 +56,16 @@ if (!function_exists('is_admin')) {
 }
 
 if (!function_exists('add_action')) {
-    function add_action($hook, $callback, $priority = 10, $accepted_args = 1) { return true; }
+    function add_action($hook, $callback, $priority = 10, $accepted_args = 1) {
+        if (!empty($GLOBALS['intersoccer_test_capture_action_registrations'])) {
+            $GLOBALS['intersoccer_test_action_registrations'][] = [
+                'hook' => $hook,
+                'priority' => $priority,
+                'accepted_args' => (int) $accepted_args,
+            ];
+        }
+        return true;
+    }
 }
 
 if (!function_exists('add_filter')) {
@@ -550,6 +559,30 @@ if (!function_exists('wp_parse_args')) {
             parse_str($args, $parsed_args);
         }
         return array_merge($defaults, $parsed_args);
+    }
+}
+
+if (!function_exists('wp_convert_hr_to_bytes')) {
+    function wp_convert_hr_to_bytes($value) {
+        if (is_numeric($value)) {
+            return (int) $value;
+        }
+        $value = trim((string) $value);
+        if ($value === '' || $value === '-1') {
+            return -1;
+        }
+        $unit = strtolower(substr($value, -1));
+        $number = (int) $value;
+        switch ($unit) {
+            case 'g':
+                return $number * 1024 * 1024 * 1024;
+            case 'm':
+                return $number * 1024 * 1024;
+            case 'k':
+                return $number * 1024;
+            default:
+                return (int) $value;
+        }
     }
 }
 

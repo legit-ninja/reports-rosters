@@ -12,7 +12,9 @@ namespace InterSoccer\ReportsRosters\Services;
 
 use InterSoccer\ReportsRosters\Core\Logger;
 use InterSoccer\ReportsRosters\Core\Database;
+use InterSoccer\ReportsRosters\Data\Models\Roster;
 use InterSoccer\ReportsRosters\Data\Repositories\RosterRepository;
+use InterSoccer\ReportsRosters\Services\RosterRefundService;
 
 defined('ABSPATH') or die('Restricted access');
 
@@ -556,6 +558,11 @@ class RosterDetailsService {
                     continue;
                 }
             } elseif (!in_array($status, $this->allowed_statuses, true)) {
+                continue;
+            }
+
+            $row_status = (string) ($model->order_status ?? '');
+            if (RosterRefundService::isFlaggedRowStatus($row_status)) {
                 continue;
             }
 
