@@ -58,6 +58,7 @@ class HooksManager {
         add_action('woocommerce_order_status_cancelled', [$this, 'handle_order_cancelled'], 10, 1);
         add_action('woocommerce_order_status_refunded', [$this, 'handle_order_status_refunded'], 10, 1);
         add_action('woocommerce_order_refunded', [$this, 'handle_order_refunded'], 10, 2);
+        add_action('woocommerce_order_status_changed', [$this, 'handle_order_status_changed'], 10, 4);
 
         // Cron schedule + recurring job
         add_filter('cron_schedules', [$this, 'register_cron_schedule']);
@@ -112,6 +113,18 @@ class HooksManager {
             return;
         }
         $this->roster_refund_service->handleOrderRefundCreated($order_id, $refund_id);
+    }
+
+    public function handle_order_status_changed($order_id, $old_status, $new_status, $order): void {
+        $order_id = absint($order_id);
+        if ($order_id <= 0) {
+            return;
+        }
+        $this->roster_refund_service->handleOrderStatusChanged(
+            $order_id,
+            (string) $old_status,
+            (string) $new_status
+        );
     }
 
     public function register_cron_schedule(array $schedules): array {

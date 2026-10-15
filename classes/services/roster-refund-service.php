@@ -69,6 +69,35 @@ class RosterRefundService {
     }
 
     /**
+     * Woo order statuses that should restore flagged roster rows to an active row status.
+     *
+     * @return string[]
+     */
+    public static function getReinstateRosterOrderStatuses(): array {
+        return [
+            Roster::STATUS_COMPLETED,
+            Roster::STATUS_PROCESSING,
+        ];
+    }
+
+    public static function normalizeWooOrderStatus(string $status): string {
+        $status = strtolower(trim($status));
+        if (str_starts_with($status, 'wc-')) {
+            $status = substr($status, 3);
+        }
+        return $status;
+    }
+
+    public static function shouldReinstateRosterRowsForStatusChange(string $old_status, string $new_status): bool {
+        $old = self::normalizeWooOrderStatus($old_status);
+        $new = self::normalizeWooOrderStatus($new_status);
+        if (!in_array($new, self::getReinstateRosterOrderStatuses(), true)) {
+            return false;
+        }
+        return self::isInactiveRebuildOrderStatus($old);
+    }
+
+    /**
      * SQL fragment + bound values to exclude flagged roster rows (NULL order_status kept).
      *
      * @return array{clause:string,params:string[]}
@@ -114,6 +143,19 @@ class RosterRefundService {
             return;
         }
         $this->updateOrderRosterStatus($order_id, Roster::STATUS_REFUNDED);
+    }
+
+    /**
+     * When a cancelled or refunded order returns to an active Woo status, restore roster rows.
+     */
+    public function handleOrderStatusChanged(int $order_id, string $old_status, string $new_status): void {
+        $order_id = (int) $order_id;
+        if ($order_id <= 0 || !self::shouldReinstateRosterRowsForStatusChange($old_status, $new_status)) {
+            return;
+        }
+
+        $active_status = self::normalizeWooOrderStatus($new_status);
+        $this->reactivateFlaggedOrderRosterRows($order_id, $active_status);
     }
 
     /**
@@ -232,6 +274,107 @@ class RosterRefundService {
         }
 
         return $total;
+    }
+
+    /**
+     * @return int Rows updated (0 if none).
+     */
+    private function reactivateFlaggedOrderRosterRows(int $order_id, string $active_status): int {
+        global $wpdb;
+        if (!isset($wpdb) || !is_object($wpdb) || $order_id <= 0 || $active_status === '') {
+            return 0;
+        }
+
+        $updated = 0;
+        $updated += $this->reactivateCancelledOrderRosterRows($order_id, $active_status);
+        $updated += $this->reactivateRefundedOrderRosterRows($order_id, $active_status);
+
+        if ($updated > 0) {
+            $this->logger->info('RosterRefundService: reactivated flagged roster rows for order', [
+                'order_id' => $order_id,
+                'order_status' => $active_status,
+                'rows' => $updated,
+            ]);
+        }
+
+        return $updated;
+    }
+
+    private function reactivateCancelledOrderRosterRows(int $order_id, string $active_status): int {
+        global $wpdb;
+        $table = $wpdb->prefix . 'intersoccer_rosters';
+        $cancelled_statuses = [Roster::STATUS_CANCELLED, 'wc-cancelled'];
+        $placeholders = implode(',', array_fill(0, count($cancelled_statuses), '%s'));
+        $params = array_merge([$active_status, $order_id], $cancelled_statuses);
+
+        $sql = "UPDATE {$table} SET order_status = %s WHERE order_id = %d AND order_status IN ({$placeholders})";
+        $result = $wpdb->query($wpdb->prepare($sql, ...$params));
+
+        if ($result === false) {
+            $this->logger->warning('RosterRefundService: failed to reactivate cancelled roster rows', [
+                'order_id' => $order_id,
+                'order_status' => $active_status,
+                'db_error' => $wpdb->last_error ?? '',
+            ]);
+            return 0;
+        }
+
+        return (int) $result;
+    }
+
+    private function reactivateRefundedOrderRosterRows(int $order_id, string $active_status): int {
+        global $wpdb;
+        $table = $wpdb->prefix . 'intersoccer_rosters';
+        $refunded_statuses = [Roster::STATUS_REFUNDED, 'wc-refunded'];
+        $placeholders = implode(',', array_fill(0, count($refunded_statuses), '%s'));
+        $params = array_merge([$order_id], $refunded_statuses);
+
+        $sql = "SELECT order_item_id, order_status FROM {$table} WHERE order_id = %d AND order_status IN ({$placeholders})";
+        $rows = $wpdb->get_results($wpdb->prepare($sql, ...$params), ARRAY_A);
+        if (!is_array($rows) || $rows === []) {
+            return 0;
+        }
+
+        $order = null;
+        if (function_exists('wc_get_order')) {
+            $order = wc_get_order($order_id);
+        }
+
+        $updated = 0;
+        foreach ($rows as $row) {
+            $order_item_id = (int) ($row['order_item_id'] ?? 0);
+            if ($order_item_id <= 0) {
+                continue;
+            }
+            if ($order && $this->isOrderItemFullyRefunded($order, $order_item_id)) {
+                continue;
+            }
+
+            $row_updated = $wpdb->update(
+                $table,
+                ['order_status' => $active_status],
+                [
+                    'order_id' => $order_id,
+                    'order_item_id' => $order_item_id,
+                ],
+                ['%s'],
+                ['%d', '%d']
+            );
+
+            if ($row_updated === false) {
+                $this->logger->warning('RosterRefundService: failed to reactivate refunded roster row', [
+                    'order_id' => $order_id,
+                    'order_item_id' => $order_item_id,
+                    'order_status' => $active_status,
+                    'db_error' => $wpdb->last_error ?? '',
+                ]);
+                continue;
+            }
+
+            $updated += (int) $row_updated;
+        }
+
+        return $updated;
     }
 
     /**

@@ -27,6 +27,16 @@ class RosterRefundServiceTest extends TestCase {
     private $wpdb_updates = [];
 
     /**
+     * @var array<int,string>
+     */
+    private $wpdb_queries = [];
+
+    /**
+     * @var array<int,array<string,mixed>>|null
+     */
+    private $wpdb_get_results_override = null;
+
+    /**
      * @var object|null
      */
     private $previous_wpdb = null;
@@ -36,6 +46,8 @@ class RosterRefundServiceTest extends TestCase {
         global $wpdb;
         $this->previous_wpdb = isset($wpdb) ? $wpdb : null;
         $this->wpdb_updates = [];
+        $this->wpdb_queries = [];
+        $this->wpdb_get_results_override = null;
         $this->installWpdbStub();
 
         if (!function_exists('get_post_status')) {
@@ -64,9 +76,14 @@ class RosterRefundServiceTest extends TestCase {
             return vsprintf(str_replace(['%s', '%d', '%f'], ["'%s'", '%d', '%f'], $query), $args);
         });
         $wpdb->shouldReceive('get_var')->andReturn(null);
-        $wpdb->shouldReceive('get_results')->andReturn([]);
+        $wpdb->shouldReceive('get_results')->andReturnUsing(function () {
+            return $this->wpdb_get_results_override ?? [];
+        });
         $wpdb->shouldReceive('get_col')->andReturn([]);
-        $wpdb->shouldReceive('query')->andReturn(0);
+        $wpdb->shouldReceive('query')->andReturnUsing(function ($sql) {
+            $this->wpdb_queries[] = (string) $sql;
+            return 1;
+        });
         $wpdb->shouldReceive('update')->andReturnUsing(function ($table, $data, $where) {
             $this->wpdb_updates[] = [
                 'table' => $table,
@@ -196,6 +213,7 @@ class RosterRefundServiceTest extends TestCase {
         $refund_service->shouldReceive('handleOrderCancelled')->once()->with(77);
         $refund_service->shouldReceive('handleOrderRefundedStatus')->once()->with(88);
         $refund_service->shouldReceive('handleOrderRefundCreated')->once()->with(99, 1000);
+        $refund_service->shouldReceive('handleOrderStatusChanged')->once()->with(55, 'cancelled', 'completed');
 
         $processor = Mockery::mock(OrderProcessor::class);
         $hooks = new HooksManager(new Logger(), $processor, $refund_service);
@@ -203,8 +221,36 @@ class RosterRefundServiceTest extends TestCase {
         $hooks->handle_order_cancelled(77);
         $hooks->handle_order_status_refunded(88);
         $hooks->handle_order_refunded(99, 1000);
+        $hooks->handle_order_status_changed(55, 'cancelled', 'completed', null);
 
         $this->addToAssertionCount(Mockery::getContainer()->mockery_getExpectationCount());
+    }
+
+    public function test_cancelled_to_completed_reactivates_roster_rows(): void {
+        $service = new RosterRefundService(new Logger());
+        $service->handleOrderStatusChanged(601, 'cancelled', 'completed');
+
+        $this->assertNotEmpty($this->wpdb_queries);
+        $this->assertStringContainsString('UPDATE wp_intersoccer_rosters SET order_status', $this->wpdb_queries[0]);
+        $this->assertStringContainsString("'completed'", $this->wpdb_queries[0]);
+        $this->assertStringContainsString("'cancelled'", $this->wpdb_queries[0]);
+    }
+
+    public function test_refunded_to_processing_reactivates_roster_rows(): void {
+        $this->wpdb_get_results_override = [
+            [
+                'order_item_id' => 15,
+                'order_status' => Roster::STATUS_REFUNDED,
+            ],
+        ];
+
+        $service = new RosterRefundService(new Logger());
+        $service->handleOrderStatusChanged(602, 'refunded', 'processing');
+
+        $this->assertCount(1, $this->wpdb_updates);
+        $this->assertSame(Roster::STATUS_PROCESSING, $this->wpdb_updates[0]['data']['order_status']);
+        $this->assertSame(602, $this->wpdb_updates[0]['where']['order_id']);
+        $this->assertSame(15, $this->wpdb_updates[0]['where']['order_item_id']);
     }
 
     public function test_listing_prepare_excludes_refunded_roster_rows(): void {
