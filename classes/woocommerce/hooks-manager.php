@@ -11,6 +11,7 @@
 namespace InterSoccer\ReportsRosters\WooCommerce;
 
 use InterSoccer\ReportsRosters\Core\Logger;
+use InterSoccer\ReportsRosters\Services\RosterRefundService;
 
 defined('ABSPATH') or die('Restricted access');
 
@@ -25,7 +26,16 @@ class HooksManager {
      */
     private $order_processor;
 
-    public function __construct(Logger $logger = null, OrderProcessor $order_processor = null) {
+    /**
+     * @var RosterRefundService
+     */
+    private $roster_refund_service;
+
+    public function __construct(
+        Logger $logger = null,
+        OrderProcessor $order_processor = null,
+        RosterRefundService $roster_refund_service = null
+    ) {
         $this->logger = $logger ?: new Logger();
         if ($order_processor !== null) {
             $this->order_processor = $order_processor;
@@ -34,6 +44,7 @@ class HooksManager {
         } else {
             $this->order_processor = new OrderProcessor($this->logger);
         }
+        $this->roster_refund_service = $roster_refund_service ?: new RosterRefundService($this->logger);
     }
 
     public function init(): void {
@@ -43,6 +54,10 @@ class HooksManager {
         if (apply_filters('intersoccer_process_order_on_processing_status', false)) {
             add_action('woocommerce_order_status_processing', [$this, 'handle_order_status'], 10, 1);
         }
+
+        add_action('woocommerce_order_status_cancelled', [$this, 'handle_order_cancelled'], 10, 1);
+        add_action('woocommerce_order_status_refunded', [$this, 'handle_order_status_refunded'], 10, 1);
+        add_action('woocommerce_order_refunded', [$this, 'handle_order_refunded'], 10, 2);
 
         // Cron schedule + recurring job
         add_filter('cron_schedules', [$this, 'register_cron_schedule']);
@@ -72,6 +87,31 @@ class HooksManager {
             return;
         }
         $this->order_processor->processOrder($order_id);
+    }
+
+    public function handle_order_cancelled($order_id): void {
+        $order_id = absint($order_id);
+        if ($order_id <= 0) {
+            return;
+        }
+        $this->roster_refund_service->handleOrderCancelled($order_id);
+    }
+
+    public function handle_order_status_refunded($order_id): void {
+        $order_id = absint($order_id);
+        if ($order_id <= 0) {
+            return;
+        }
+        $this->roster_refund_service->handleOrderRefundedStatus($order_id);
+    }
+
+    public function handle_order_refunded($order_id, $refund_id): void {
+        $order_id = absint($order_id);
+        $refund_id = absint($refund_id);
+        if ($order_id <= 0 || $refund_id <= 0) {
+            return;
+        }
+        $this->roster_refund_service->handleOrderRefundCreated($order_id, $refund_id);
     }
 
     public function register_cron_schedule(array $schedules): array {

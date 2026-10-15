@@ -1718,6 +1718,28 @@ class RosterBuilder {
      * @return array
      */
     private function preserveExistingRosterFields(Roster $existing_roster, array $roster_data): array {
+        $existing_status = (string) ($existing_roster->order_status ?? '');
+        $incoming_status = (string) ($roster_data['order_status'] ?? '');
+
+        if (RosterRefundService::isFlaggedRowStatus($existing_status)) {
+            $keep_flagged_status = RosterRefundService::isInactiveRebuildOrderStatus($incoming_status);
+
+            if (!$keep_flagged_status && RosterRefundService::isRefundedRowStatus($existing_status)) {
+                $order_id = (int) ($roster_data['order_id'] ?? $existing_roster->order_id ?? 0);
+                $order_item_id = (int) ($roster_data['order_item_id'] ?? $existing_roster->order_item_id ?? 0);
+                if ($order_id > 0 && $order_item_id > 0 && function_exists('wc_get_order')) {
+                    $order = wc_get_order($order_id);
+                    if ($order) {
+                        $refund_service = new RosterRefundService();
+                        $keep_flagged_status = $refund_service->isOrderItemFullyRefunded($order, $order_item_id);
+                    }
+                }
+            }
+
+            if ($keep_flagged_status) {
+                $roster_data['order_status'] = $existing_status;
+            }
+        }
         if (empty($roster_data['product_id']) && !empty($existing_roster->product_id)) {
             $roster_data['product_id'] = (int) $existing_roster->product_id;
         }
