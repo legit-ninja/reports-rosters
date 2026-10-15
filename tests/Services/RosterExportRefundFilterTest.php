@@ -103,9 +103,36 @@ class RosterExportRefundFilterTest extends TestCase {
     }
 
     /**
-     * Legacy intersoccer_export_roster() field-filter path (non-OOP) must keep both filters.
+     * Legacy intersoccer_export_roster() field-filter path (non-OOP) must keep flagged-status filter.
      */
     public function test_legacy_intersoccer_export_roster_field_filters_sql_excludes_refunded_and_cancelled_orders(): void {
+        $captured_sql = $this->runLegacyIntersoccerExportStoppingAfterRosterQuery([
+            'nonce' => 'test_nonce',
+            'use_fields' => '1',
+            'variation_id' => 123,
+        ]);
+
+        $this->assertSqlExcludesExactFlaggedOrderStatuses($captured_sql);
+    }
+
+    /**
+     * Legacy intersoccer_export_roster() variation-id branch must keep the prepared status filter.
+     */
+    public function test_legacy_intersoccer_export_roster_variation_ids_sql_excludes_flagged_order_statuses(): void {
+        $captured_sql = $this->runLegacyIntersoccerExportStoppingAfterRosterQuery([
+            'nonce' => 'test_nonce',
+            'use_fields' => '0',
+            'variation_ids' => '10,11',
+        ]);
+
+        $this->assertStringContainsString('variation_id IN', $captured_sql);
+        $this->assertSqlExcludesExactFlaggedOrderStatuses($captured_sql);
+    }
+
+    /**
+     * @param array<string,mixed> $post
+     */
+    private function runLegacyIntersoccerExportStoppingAfterRosterQuery(array $post): string {
         if (!class_exists('PhpOffice\PhpSpreadsheet\Spreadsheet')) {
             $this->markTestSkipped('PhpSpreadsheet not available');
         }
@@ -124,18 +151,24 @@ class RosterExportRefundFilterTest extends TestCase {
         $wpdb->shouldReceive('prepare')->andReturnUsing(function ($query) {
             $args = func_get_args();
             array_shift($args);
-            return vsprintf(str_replace(['%s', '%d'], ["'%s'", '%d'], $query), $args);
+            $flat = [];
+            foreach ($args as $arg) {
+                if (is_array($arg)) {
+                    foreach ($arg as $item) {
+                        $flat[] = $item;
+                    }
+                    continue;
+                }
+                $flat[] = $arg;
+            }
+            return vsprintf(str_replace(['%s', '%d'], ["'%s'", '%d'], $query), $flat);
         });
         $wpdb->shouldReceive('get_results')->andReturnUsing(function ($query) use (&$captured_sql) {
             $captured_sql = (string) $query;
             throw new \RuntimeException('intersoccer_test_stop_after_roster_query');
         });
 
-        $_POST = [
-            'nonce' => 'test_nonce',
-            'use_fields' => '1',
-            'variation_id' => 123,
-        ];
+        $_POST = $post;
 
         ob_start();
         try {
@@ -145,13 +178,20 @@ class RosterExportRefundFilterTest extends TestCase {
         }
         ob_end_clean();
 
-        $this->assertLegacyExportSqlExcludesRefundedAndCancelled($captured_sql);
+        return $captured_sql;
     }
 
-    private function assertLegacyExportSqlExcludesRefundedAndCancelled(string $sql): void {
+    private function assertSqlExcludesExactFlaggedOrderStatuses(string $sql): void {
         $this->assertNotEmpty($sql, 'Legacy export should execute a roster query');
-        $this->assertStringContainsString('order_status', $sql);
-        $this->assertStringContainsString('refunded', $sql);
-        $this->assertStringContainsString('cancelled', $sql);
+        $this->assertStringContainsString('order_status IS NULL', $sql);
+        $this->assertStringContainsString('order_status NOT IN', $sql);
+
+        foreach (RosterRefundService::getFlaggedRowStatuses() as $status) {
+            $this->assertStringContainsString(
+                "'" . $status . "'",
+                $sql,
+                'SQL must exclude flagged roster order_status: ' . $status
+            );
+        }
     }
 }
