@@ -774,7 +774,8 @@ if (!function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
         }
         if (strpos($ascii_for_heuristic, 'single day') !== false || strpos($ascii_for_heuristic, 'jours selectionnes') !== false
             || strpos($ascii_for_heuristic, 'a la journee') !== false || strpos($ascii_for_heuristic, 'la journee') !== false
-            || strpos($ascii_for_heuristic, 'ausgewahlte tage') !== false || strpos($ascii_for_heuristic, 'einzeltag') !== false) {
+            || strpos($ascii_for_heuristic, 'ausgewahlte tage') !== false || strpos($ascii_for_heuristic, 'einzeltag') !== false
+            || strpos($ascii_for_heuristic, 'einzelner tag') !== false || strpos($ascii_for_heuristic, 'einzelne tag') !== false) {
             return 'single-days';
         }
         if (strpos($ascii_for_heuristic, 'full term') !== false || strpos($ascii_for_heuristic, 'trimestre') !== false
@@ -889,7 +890,6 @@ if (!function_exists('intersoccer_read_order_item_booking_fields')) {
                 'Jours sélectionnés',
                 'Ausgewählte Tage',
                 'Selected Days',
-                'Days of Week',
             ]),
             'late_pickup_days' => $read(['Late Pickup Days', 'Jours de garde prolongée']),
         ];
@@ -6378,3 +6378,41 @@ function intersoccer_parse_camp_dates_fixed($camp_terms, $season) {
 
 require_once __DIR__ . '/attribute-contract.php';
 require_once __DIR__ . '/order-meta-keys.php';
+
+
+if (!function_exists('intersoccer_roster_days_unknown')) {
+    /**
+     * True when a single-day booking has no recorded day selection.
+     *
+     * Such rows must not be filled from the camp's offered days; they are shown as "Days unknown".
+     *
+     * @param string       $booking_type  Booking type (any language).
+     * @param string|array $selected_days Stored selected days.
+     * @return bool
+     */
+    function intersoccer_roster_days_unknown($booking_type, $selected_days) {
+        if (intersoccer_normalize_booking_type_slug_for_reports((string) $booking_type) !== 'single-days') {
+            return false;
+        }
+        if (is_array($selected_days)) {
+            $selected_days = implode(',', $selected_days);
+        }
+        return trim((string) $selected_days, " \t\n\r\0\x0B,") === '';
+    }
+}
+
+if (!function_exists('intersoccer_roster_selected_days_display')) {
+    /**
+     * Selected days as shown in roster tables and exports, with an explicit "Days unknown" label.
+     *
+     * @param string       $booking_type
+     * @param string|array $selected_days
+     * @return string
+     */
+    function intersoccer_roster_selected_days_display($booking_type, $selected_days) {
+        if (intersoccer_roster_days_unknown($booking_type, $selected_days)) {
+            return function_exists('__') ? __('Days unknown', 'intersoccer-reports-rosters') : 'Days unknown';
+        }
+        return is_array($selected_days) ? implode(', ', $selected_days) : (string) $selected_days;
+    }
+}

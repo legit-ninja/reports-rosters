@@ -773,7 +773,7 @@ class RosterBuilderTest extends TestCase {
         $this->assertSame('Sophie Martin', $result['assigned_attendee']);
     }
 
-    public function test_extractOrderData_falls_back_to_days_of_week_when_days_selected_empty() {
+    public function test_extractOrderData_does_not_guess_days_from_days_of_week_when_days_selected_empty() {
         $order = Mockery::mock('WC_Order');
         $order->shouldReceive('get_id')->andReturn(61239);
         $order->shouldReceive('get_customer_id')->andReturn(99);
@@ -792,6 +792,7 @@ class RosterBuilderTest extends TestCase {
         $item->shouldReceive('get_meta')
             ->with('Days of Week', true)
             ->andReturn('Monday, Wednesday, Friday');
+        $item->shouldReceive('get_meta')->andReturn('');
 
         $reflection = new \ReflectionClass($this->rosterBuilder);
         $method = $reflection->getMethod('extractOrderItemData');
@@ -800,7 +801,8 @@ class RosterBuilderTest extends TestCase {
         $result = $method->invoke($this->rosterBuilder, $order, 7619, $item);
 
         $this->assertSame('Single Day(s)', $result['booking_type']);
-        $this->assertSame('Monday, Wednesday, Friday', $result['selected_days']);
+        $this->assertTrue(empty($result['selected_days']), 'Days of Week must not be used as the booked days');
+        $this->assertTrue(intersoccer_roster_days_unknown($result['booking_type'], $result['selected_days'] ?? ''));
     }
 
     public function test_extractOrderData_prefers_days_selected_over_days_of_week() {

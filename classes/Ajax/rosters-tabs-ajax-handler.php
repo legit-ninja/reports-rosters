@@ -150,7 +150,7 @@ class RostersTabsAjaxHandler {
                         <td><?php echo esc_html($row['age']); ?></td>
                         <td><?php echo esc_html($row['gender']); ?></td>
                         <td><?php echo esc_html($row['booking_type']); ?></td>
-                        <td><?php echo esc_html($row['selected_days']); ?></td>
+                        <td><?php echo esc_html(function_exists('intersoccer_roster_selected_days_display') ? intersoccer_roster_selected_days_display($row['booking_type'] ?? '', $row['selected_days'] ?? '') : $row['selected_days']); ?></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>

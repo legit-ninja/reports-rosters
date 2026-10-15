@@ -857,18 +857,9 @@ class RosterBuilder {
             $order_data = intersoccer_apply_canonical_order_item_meta_to_data($order_data, $order_data);
         }
 
-        // Selected days fallback: when Days Selected is empty, use Days of Week from order item meta.
-        // This handles Single Day(s) bookings where the checkout selection is stored under Days of Week
-        // instead of Days Selected. Note: this reads order item meta, not the product variation attribute
-        // pa_days-of-week (which represents the camp's Mon–Fri offering, not the checkout selection).
-        if (empty($order_data['selected_days'])) {
-            $days_of_week_value = $item->get_meta('Days of Week', true);
-            if ($days_of_week_value !== '' && $days_of_week_value !== null) {
-                $order_data['selected_days'] = is_array($days_of_week_value)
-                    ? implode(', ', array_map('trim', $days_of_week_value))
-                    : trim((string) $days_of_week_value);
-            }
-        }
+        // Single-day camps: never guess the booked days from the line's "Days of Week" meta (that
+        // lists the camp's offered days, not the customer's choice). When Days Selected is empty the
+        // row is stored with no selected days and flagged as days unknown (see buildEventDetails).
 
         // Extract additional data from product attributes
         if ($product && $variation_id) {
@@ -1444,6 +1435,10 @@ class RosterBuilder {
                         'booking_type' => $roster_data['booking_type'] ?? null,
                         'selected_days' => $roster_data['selected_days'] ?? null
                     ];
+                    if (function_exists('intersoccer_roster_days_unknown')
+                        && intersoccer_roster_days_unknown($roster_data['booking_type'] ?? '', $roster_data['selected_days'] ?? '')) {
+                        $details['days_unknown'] = true;
+                    }
                     break;
                     
                 case 'course':

@@ -680,6 +680,10 @@ function intersoccer_export_roster() {
                 $day_presence = function_exists('intersoccer_roster_compute_camp_day_presence_for_display')
                     ? intersoccer_roster_compute_camp_day_presence_for_display($bt_export, $sd_export)
                     : (!empty($player['day_presence']) ? json_decode($player['day_presence'], true) : []);
+                if (function_exists('intersoccer_roster_days_unknown') && intersoccer_roster_days_unknown($bt_export, $sd_export)) {
+                    // Single-day booking with no recorded days: show that explicitly instead of five "No" cells.
+                    $day_presence = array_fill_keys(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], 'Unknown');
+                }
             } else {
                 $day_presence = !empty($player['day_presence']) ? json_decode($player['day_presence'], true) : [];
             }
