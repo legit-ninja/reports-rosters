@@ -36,6 +36,7 @@ if (is_readable($intersoccer_coach_venue_access)) {
 }
 
 require_once dirname(__DIR__) . '/vendor/autoload.php';
+use InterSoccer\ReportsRosters\Services\RosterRefundService;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
@@ -497,6 +498,8 @@ function intersoccer_export_roster() {
             error_log('InterSoccer Export: Applied filters - activity_type: ' . ($where_clauses[0] ?? 'N/A') . ', age_group: ' . ($where_clauses[1] ?? 'N/A') . ', times: ' . ($where_clauses[2] ?? 'N/A'));
         }
         
+        RosterRefundService::appendSqlExcludeFlaggedRowStatuses($where_clauses, $query_params);
+
         // Add WHERE clause if there are conditions
         if (!empty($where_clauses)) {
             $query .= " WHERE " . implode(' AND ', $where_clauses);
@@ -535,6 +538,8 @@ function intersoccer_export_roster() {
                 $query .= ' AND 1=0';
             }
         }
+        $flagged_exclude = RosterRefundService::getSqlExcludeFlaggedRowStatuses('order_status');
+        $query .= ' AND ' . $wpdb->prepare($flagged_exclude['clause'], ...$flagged_exclude['params']);
         // Sort by registration timestamp (most recent orders first)
         $query .= " ORDER BY registration_timestamp DESC";
         $rosters = $wpdb->get_results($query, ARRAY_A);

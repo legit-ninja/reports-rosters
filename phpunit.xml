@@ -71,6 +71,7 @@
             <file>tests/Campaign/CampaignMomentumTest.php</file>
             <file>tests/Services/RosterCanonicalFieldsTest.php</file>
             <file>tests/Services/RosterRefundServiceTest.php</file>
+            <file>tests/Services/RosterExportRefundFilterTest.php</file>
             <file>tests/Ajax/RosterVenueAccessTest.php</file>
         </testsuite>
         <testsuite name="Complete">

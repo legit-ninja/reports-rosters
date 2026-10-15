@@ -314,6 +314,46 @@ class RosterRefundServiceTest extends TestCase {
         $this->assertSame('completed', $merged['order_status']);
     }
 
+    public function test_reinstated_cancelled_order_keeps_refunded_when_line_still_fully_refunded(): void {
+        global $intersoccer_test_wc_get_order_callback;
+
+        $line = Mockery::mock('WC_Order_Item_Product');
+        $line->shouldReceive('get_quantity')->andReturn(1.0);
+        $line->shouldReceive('get_total')->andReturn(120.0);
+
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_item')->with(21)->andReturn($line);
+        $order->shouldReceive('get_qty_refunded_for_item')->with(21)->andReturn(-1.0);
+        $order->shouldReceive('get_refunds')->andReturn([]);
+
+        $intersoccer_test_wc_get_order_callback = function ($id) use ($order) {
+            return (int) $id === 4 ? $order : null;
+        };
+
+        $refund_service = Mockery::mock(RosterRefundService::class)->makePartial();
+        $refund_service->shouldReceive('isOrderItemFullyRefunded')->once()->andReturn(true);
+
+        $existing = new Roster([
+            'order_id' => 4,
+            'order_item_id' => 21,
+            'order_status' => Roster::STATUS_CANCELLED,
+            'product_id' => 100,
+        ]);
+
+        $builder = new RosterBuilder(new Logger(), null, null, null, null, null, null, $refund_service);
+        $method = new ReflectionMethod(RosterBuilder::class, 'preserveExistingRosterFields');
+        $method->setAccessible(true);
+        $merged = $method->invoke($builder, $existing, [
+            'order_id' => 4,
+            'order_item_id' => 21,
+            'order_status' => 'completed',
+        ]);
+
+        $this->assertSame(Roster::STATUS_REFUNDED, $merged['order_status']);
+
+        $intersoccer_test_wc_get_order_callback = null;
+    }
+
     public function test_partially_refunded_line_keeps_refunded_on_active_order_rebuild(): void {
         global $intersoccer_test_wc_get_order_callback;
 

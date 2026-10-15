@@ -64,6 +64,34 @@ class RosterRefundService {
         return in_array($status, [Roster::STATUS_REFUNDED, 'wc-refunded'], true);
     }
 
+    public static function isCancelledRowStatus(string $status): bool {
+        return in_array($status, [Roster::STATUS_CANCELLED, 'wc-cancelled'], true);
+    }
+
+    /**
+     * SQL fragment + bound values to exclude flagged roster rows (NULL order_status kept).
+     *
+     * @return array{clause:string,params:string[]}
+     */
+    public static function getSqlExcludeFlaggedRowStatuses(string $column = 'order_status'): array {
+        $statuses = self::getFlaggedRowStatuses();
+        $placeholders = implode(',', array_fill(0, count($statuses), '%s'));
+        return [
+            'clause' => "({$column} IS NULL OR {$column} NOT IN ({$placeholders}))",
+            'params' => $statuses,
+        ];
+    }
+
+    /**
+     * @param string[] $where
+     * @param array<int,mixed> $params
+     */
+    public static function appendSqlExcludeFlaggedRowStatuses(array &$where, array &$params, string $column = 'order_status'): void {
+        $fragment = self::getSqlExcludeFlaggedRowStatuses($column);
+        $where[] = $fragment['clause'];
+        $params = array_merge($params, $fragment['params']);
+    }
+
     public function __construct(Logger $logger = null) {
         $this->logger = $logger ?: new Logger();
     }
