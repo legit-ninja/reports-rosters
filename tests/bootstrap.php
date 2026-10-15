@@ -56,7 +56,16 @@ if (!function_exists('is_admin')) {
 }
 
 if (!function_exists('add_action')) {
-    function add_action($hook, $callback, $priority = 10, $accepted_args = 1) { return true; }
+    function add_action($hook, $callback, $priority = 10, $accepted_args = 1) {
+        if (!empty($GLOBALS['intersoccer_test_capture_action_registrations'])) {
+            $GLOBALS['intersoccer_test_action_registrations'][] = [
+                'hook' => $hook,
+                'priority' => $priority,
+                'accepted_args' => (int) $accepted_args,
+            ];
+        }
+        return true;
+    }
 }
 
 if (!function_exists('add_filter')) {

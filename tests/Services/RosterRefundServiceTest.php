@@ -37,6 +37,11 @@ class RosterRefundServiceTest extends TestCase {
     private $wpdb_get_results_override = null;
 
     /**
+     * @var mixed
+     */
+    private $wpdb_get_var_override = null;
+
+    /**
      * @var object|null
      */
     private $previous_wpdb = null;
@@ -48,6 +53,7 @@ class RosterRefundServiceTest extends TestCase {
         $this->wpdb_updates = [];
         $this->wpdb_queries = [];
         $this->wpdb_get_results_override = null;
+        $this->wpdb_get_var_override = null;
         $this->installWpdbStub();
 
         if (!function_exists('get_post_status')) {
@@ -75,7 +81,9 @@ class RosterRefundServiceTest extends TestCase {
             }
             return vsprintf(str_replace(['%s', '%d', '%f'], ["'%s'", '%d', '%f'], $query), $args);
         });
-        $wpdb->shouldReceive('get_var')->andReturn(null);
+        $wpdb->shouldReceive('get_var')->andReturnUsing(function () {
+            return $this->wpdb_get_var_override ?? null;
+        });
         $wpdb->shouldReceive('get_results')->andReturnUsing(function () {
             return $this->wpdb_get_results_override ?? [];
         });
@@ -226,31 +234,140 @@ class RosterRefundServiceTest extends TestCase {
         $this->addToAssertionCount(Mockery::getContainer()->mockery_getExpectationCount());
     }
 
-    public function test_cancelled_to_completed_reactivates_roster_rows(): void {
-        $service = new RosterRefundService(new Logger());
-        $service->handleOrderStatusChanged(601, 'cancelled', 'completed');
+    public function test_completed_after_cancelled_reactivates_only_partly_refunded_line(): void {
+        global $intersoccer_test_wc_get_order_callback;
 
-        $this->assertNotEmpty($this->wpdb_queries);
-        $this->assertStringContainsString('UPDATE wp_intersoccer_rosters SET order_status', $this->wpdb_queries[0]);
-        $this->assertStringContainsString("'completed'", $this->wpdb_queries[0]);
-        $this->assertStringContainsString("'cancelled'", $this->wpdb_queries[0]);
-    }
+        $order_id = 701;
+        $order = $this->createOrderMockWithRefundState($order_id, [10], [20]);
+        $intersoccer_test_wc_get_order_callback = function ($id) use ($order, $order_id) {
+            return (int) $id === $order_id ? $order : null;
+        };
 
-    public function test_refunded_to_processing_reactivates_roster_rows(): void {
+        $this->wpdb_get_var_override = '2';
         $this->wpdb_get_results_override = [
-            [
-                'order_item_id' => 15,
-                'order_status' => Roster::STATUS_REFUNDED,
-            ],
+            ['order_item_id' => 10, 'order_status' => Roster::STATUS_CANCELLED],
+            ['order_item_id' => 20, 'order_status' => Roster::STATUS_CANCELLED],
         ];
 
         $service = new RosterRefundService(new Logger());
-        $service->handleOrderStatusChanged(602, 'refunded', 'processing');
+        $service->handleOrderStatusChanged($order_id, 'cancelled', 'completed');
 
         $this->assertCount(1, $this->wpdb_updates);
+        $this->assertSame(20, (int) $this->wpdb_updates[0]['where']['order_item_id']);
+        $this->assertSame(Roster::STATUS_COMPLETED, $this->wpdb_updates[0]['data']['order_status']);
+
+        $intersoccer_test_wc_get_order_callback = null;
+    }
+
+    public function test_refunded_then_cancelled_then_completed_keeps_fully_refunded_line_flagged(): void {
+        global $intersoccer_test_wc_get_order_callback;
+
+        $order_id = 702;
+        $order = $this->createOrderMockWithRefundState($order_id, [11], []);
+        $intersoccer_test_wc_get_order_callback = function ($id) use ($order, $order_id) {
+            return (int) $id === $order_id ? $order : null;
+        };
+
+        $service = new RosterRefundService(new Logger());
+        $service->handleOrderRefundedStatus($order_id);
+        $service->handleOrderCancelled($order_id);
+        $this->wpdb_updates = [];
+
+        $this->wpdb_get_var_override = '1';
+        $this->wpdb_get_results_override = [
+            ['order_item_id' => 11, 'order_status' => Roster::STATUS_CANCELLED],
+        ];
+
+        $service->handleOrderStatusChanged($order_id, 'cancelled', 'completed');
+
+        $this->assertSame([], $this->wpdb_updates);
+
+        $intersoccer_test_wc_get_order_callback = null;
+    }
+
+    public function test_on_hold_then_processing_reactivates_flagged_rows_after_cancelled_hop(): void {
+        global $intersoccer_test_wc_get_order_callback;
+
+        $order_id = 703;
+        $order = $this->createOrderMockWithRefundState($order_id, [], [30]);
+        $intersoccer_test_wc_get_order_callback = function ($id) use ($order, $order_id) {
+            return (int) $id === $order_id ? $order : null;
+        };
+
+        $this->wpdb_get_var_override = '1';
+        $this->wpdb_get_results_override = [
+            ['order_item_id' => 30, 'order_status' => Roster::STATUS_CANCELLED],
+        ];
+
+        $service = new RosterRefundService(new Logger());
+        $service->handleOrderStatusChanged($order_id, 'cancelled', 'on-hold');
+        $this->assertSame([], $this->wpdb_updates);
+
+        $service->handleOrderStatusChanged($order_id, 'on-hold', 'processing');
+        $this->assertCount(1, $this->wpdb_updates);
         $this->assertSame(Roster::STATUS_PROCESSING, $this->wpdb_updates[0]['data']['order_status']);
-        $this->assertSame(602, $this->wpdb_updates[0]['where']['order_id']);
-        $this->assertSame(15, $this->wpdb_updates[0]['where']['order_item_id']);
+        $this->assertSame(30, (int) $this->wpdb_updates[0]['where']['order_item_id']);
+
+        $intersoccer_test_wc_get_order_callback = null;
+    }
+
+    public function test_failed_to_completed_does_not_reactivate_without_flagged_roster_rows(): void {
+        $this->wpdb_get_var_override = '0';
+
+        $service = new RosterRefundService(new Logger());
+        $service->handleOrderStatusChanged(704, 'failed', 'completed');
+
+        $this->assertSame([], $this->wpdb_updates);
+    }
+
+    public function test_hooks_manager_init_registers_order_status_changed_with_four_arguments(): void {
+        $GLOBALS['intersoccer_test_capture_action_registrations'] = true;
+        $GLOBALS['intersoccer_test_action_registrations'] = [];
+
+        $processor = Mockery::mock(OrderProcessor::class);
+        $hooks = new HooksManager(new Logger(), $processor, new RosterRefundService(new Logger()));
+        $hooks->init();
+
+        $matched = array_values(array_filter(
+            $GLOBALS['intersoccer_test_action_registrations'],
+            static function (array $registration): bool {
+                return ($registration['hook'] ?? '') === 'woocommerce_order_status_changed';
+            }
+        ));
+
+        $GLOBALS['intersoccer_test_capture_action_registrations'] = false;
+        unset($GLOBALS['intersoccer_test_action_registrations']);
+
+        $this->assertCount(1, $matched);
+        $this->assertSame(4, $matched[0]['accepted_args']);
+    }
+
+    /**
+     * @param int[] $fully_refunded_item_ids
+     * @param int[] $partly_refunded_item_ids
+     */
+    private function createOrderMockWithRefundState(int $order_id, array $fully_refunded_item_ids, array $partly_refunded_item_ids): object {
+        $lines = [];
+        foreach ($fully_refunded_item_ids as $item_id) {
+            $lines[(int) $item_id] = 1.0;
+        }
+        foreach ($partly_refunded_item_ids as $item_id) {
+            $lines[(int) $item_id] = 0.5;
+        }
+
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_refunds')->andReturn([]);
+
+        foreach ($lines as $item_id => $qty_refunded) {
+            $line = Mockery::mock('WC_Order_Item_Product');
+            $line->shouldReceive('get_quantity')->andReturn(1.0);
+            $line->shouldReceive('get_total')->andReturn(100.0);
+            $line->shouldReceive('get_subtotal')->andReturn(100.0);
+            $order->shouldReceive('get_item')->with($item_id)->andReturn($line);
+            $order->shouldReceive('get_qty_refunded_for_item')->with($item_id)->andReturn(-$qty_refunded);
+        }
+
+        return $order;
     }
 
     public function test_listing_prepare_excludes_refunded_roster_rows(): void {
