@@ -553,6 +553,30 @@ if (!function_exists('wp_parse_args')) {
     }
 }
 
+if (!function_exists('wp_convert_hr_to_bytes')) {
+    function wp_convert_hr_to_bytes($value) {
+        if (is_numeric($value)) {
+            return (int) $value;
+        }
+        $value = trim((string) $value);
+        if ($value === '' || $value === '-1') {
+            return -1;
+        }
+        $unit = strtolower(substr($value, -1));
+        $number = (int) $value;
+        switch ($unit) {
+            case 'g':
+                return $number * 1024 * 1024 * 1024;
+            case 'm':
+                return $number * 1024 * 1024;
+            case 'k':
+                return $number * 1024;
+            default:
+                return (int) $value;
+        }
+    }
+}
+
 // AJAX functions
 if (!function_exists('check_ajax_referer')) {
     function check_ajax_referer($action = -1, $query_arg = false, $die = true) { return true; }

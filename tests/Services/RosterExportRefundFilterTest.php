@@ -101,4 +101,57 @@ class RosterExportRefundFilterTest extends TestCase {
         $this->assertStringContainsString('cancelled', $and_clause);
         $this->assertStringContainsString('refunded', $and_clause);
     }
+
+    /**
+     * Legacy intersoccer_export_roster() field-filter path (non-OOP) must keep both filters.
+     */
+    public function test_legacy_intersoccer_export_roster_field_filters_sql_excludes_refunded_and_cancelled_orders(): void {
+        if (!class_exists('PhpOffice\PhpSpreadsheet\Spreadsheet')) {
+            $this->markTestSkipped('PhpSpreadsheet not available');
+        }
+
+        require_once dirname(__DIR__, 2) . '/includes/roster-export.php';
+
+        global $wpdb;
+        $captured_sql = '';
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $wpdb->last_error = '';
+        $wpdb->last_query = '';
+        $wpdb->shouldReceive('esc_like')->andReturnUsing(function ($value) {
+            return (string) $value;
+        });
+        $wpdb->shouldReceive('prepare')->andReturnUsing(function ($query) {
+            $args = func_get_args();
+            array_shift($args);
+            return vsprintf(str_replace(['%s', '%d'], ["'%s'", '%d'], $query), $args);
+        });
+        $wpdb->shouldReceive('get_results')->andReturnUsing(function ($query) use (&$captured_sql) {
+            $captured_sql = (string) $query;
+            throw new \RuntimeException('intersoccer_test_stop_after_roster_query');
+        });
+
+        $_POST = [
+            'nonce' => 'test_nonce',
+            'use_fields' => '1',
+            'variation_id' => 123,
+        ];
+
+        ob_start();
+        try {
+            intersoccer_export_roster();
+        } catch (\RuntimeException $e) {
+            $this->assertSame('intersoccer_test_stop_after_roster_query', $e->getMessage());
+        }
+        ob_end_clean();
+
+        $this->assertLegacyExportSqlExcludesRefundedAndCancelled($captured_sql);
+    }
+
+    private function assertLegacyExportSqlExcludesRefundedAndCancelled(string $sql): void {
+        $this->assertNotEmpty($sql, 'Legacy export should execute a roster query');
+        $this->assertStringContainsString('order_status', $sql);
+        $this->assertStringContainsString('refunded', $sql);
+        $this->assertStringContainsString('cancelled', $sql);
+    }
 }

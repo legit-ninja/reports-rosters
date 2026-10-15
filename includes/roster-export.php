@@ -498,7 +498,8 @@ function intersoccer_export_roster() {
             error_log('InterSoccer Export: Applied filters - activity_type: ' . ($where_clauses[0] ?? 'N/A') . ', age_group: ' . ($where_clauses[1] ?? 'N/A') . ', times: ' . ($where_clauses[2] ?? 'N/A'));
         }
         
-        RosterRefundService::appendSqlExcludeFlaggedRowStatuses($where_clauses, $query_params);
+        $flagged_exclude = RosterRefundService::getSqlExcludeFlaggedRowStatuses('order_status');
+        $where_clauses[] = $wpdb->prepare($flagged_exclude['clause'], ...$flagged_exclude['params']);
 
         // Add WHERE clause if there are conditions
         if (!empty($where_clauses)) {
