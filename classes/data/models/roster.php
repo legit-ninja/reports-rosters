@@ -942,6 +942,14 @@ class Roster extends AbstractModel {
             $selected_days = $this->getSelectedDaysArray();
             
             if (empty($selected_days)) {
+                if (function_exists('intersoccer_roster_days_unknown')
+                    && intersoccer_roster_days_unknown($this->booking_type, '')) {
+                    return;
+                }
+                if (function_exists('intersoccer_roster_row_has_days_unknown_flag')
+                    && intersoccer_roster_row_has_days_unknown_flag($this)) {
+                    return;
+                }
                 throw new ValidationException('Selected days are required for single day bookings');
             }
             

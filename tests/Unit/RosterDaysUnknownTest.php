@@ -20,6 +20,8 @@ class RosterDaysUnknownTest extends TestCase {
         $this->assertSame('single-days', intersoccer_normalize_booking_type_slug_for_reports('Einzelner Tage'));
         $this->assertTrue(intersoccer_roster_days_unknown('Einzelner Tage', ''));
         $this->assertTrue(intersoccer_roster_days_unknown('einzelner-tage', ''));
+        $this->assertSame('Single Day(s)', intersoccer_normalize_booking_type_for_storage('einzelner-tage'));
+        $this->assertSame('single-days', intersoccer_normalize_booking_type_slug_for_reports('Einzelne(r) Tag(e)'));
     }
 
     public function test_single_day_with_days_is_known() {

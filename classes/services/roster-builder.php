@@ -1116,31 +1116,11 @@ class RosterBuilder {
         if (!is_string($value) || $value === '') {
             return (string) $value;
         }
-        $normalized = $this->normalizeComparisonString($value);
-        // Full Week: EN, FR (journée/semaine complète), DE (ganze/komplette woche)
-        if (strpos($normalized, 'full week') !== false
-            || strpos($normalized, 'journee complete') !== false
-            || strpos($normalized, 'semaine complete') !== false
-            || strpos($normalized, 'ganze woche') !== false
-            || strpos($normalized, 'komplette woche') !== false
-            || strpos($normalized, 'woche komplett') !== false) {
-            return 'Full Week';
-        }
-        // Single Day(s): EN, FR (jour(s) sélectionné(s)), DE (einzelne tage, ausgewählte tage)
-        if (strpos($normalized, 'single day') !== false || strpos($normalized, 'jours selectionnes') !== false
-            || strpos($normalized, 'a la journee') !== false || strpos($normalized, 'la journee') !== false
-            || strpos($normalized, 'ausgewahlte tage') !== false || strpos($normalized, 'einzeltag') !== false
-            || strpos($normalized, 'einzelner tag') !== false || strpos($normalized, 'einzelne tag') !== false) {
-            return 'Single Day(s)';
-        }
-        // Full Term: EN, FR (trimestre), DE (voller Begriff / full term)
-        if (strpos($normalized, 'full term') !== false || strpos($normalized, 'trimestre') !== false
-            || strpos($normalized, 'voller begriff') !== false) {
-            return 'Full Term';
-        }
-        // Already English or unknown
-        if (in_array(trim($value), ['Full Week', 'Single Day(s)', 'Full Term'], true)) {
-            return trim($value);
+        if (function_exists('intersoccer_normalize_booking_type_for_storage')) {
+            $label = intersoccer_normalize_booking_type_for_storage($value);
+            if ($label !== 'Unknown' || in_array(trim($value), ['Full Week', 'Single Day(s)', 'Full Term'], true)) {
+                return $label;
+            }
         }
         return trim($value);
     }

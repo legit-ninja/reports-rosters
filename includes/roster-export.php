@@ -673,7 +673,9 @@ function intersoccer_export_roster() {
                 if (function_exists('intersoccer_roster_enrich_camp_fields_from_order_item')) {
                     intersoccer_roster_enrich_camp_fields_from_order_item($player);
                 }
-                $bt_export = (string) ($player['booking_type'] ?? '');
+                $bt_export = function_exists('intersoccer_normalize_booking_type_for_storage')
+                    ? intersoccer_normalize_booking_type_for_storage($player['booking_type'] ?? '')
+                    : (string) ($player['booking_type'] ?? '');
                 $sd_export = function_exists('intersoccer_roster_effective_selected_days_string')
                     ? intersoccer_roster_effective_selected_days_string((object) $player)
                     : (string) ($player['selected_days'] ?? '');
@@ -757,7 +759,9 @@ function intersoccer_export_roster() {
                             ? 'Yes (18:00)'
                             : intersoccer_roster_format_late_pickup_flag_for_display($player['late_pickup'] ?? ''))
                         : ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No')),
-                    $player['booking_type'] ?? 'N/A', // Booking Type
+                    (function_exists('intersoccer_normalize_booking_type_for_storage')
+                        ? intersoccer_normalize_booking_type_for_storage($player['booking_type'] ?? '')
+                        : ($player['booking_type'] ?? 'N/A')), // Booking Type
                 ]);
             }
             

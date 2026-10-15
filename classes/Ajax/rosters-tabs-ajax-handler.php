@@ -84,8 +84,15 @@ class RostersTabsAjaxHandler {
             $params
         ));
 
+        if (!function_exists('intersoccer_roster_camp_booking_display_context')) {
+            $utils = dirname(__DIR__, 2) . '/includes/utils.php';
+            if (is_readable($utils)) {
+                require_once $utils;
+            }
+        }
+
         $entries = $wpdb->get_results($wpdb->prepare(
-            "SELECT id, player_name, first_name, last_name, age, gender, booking_type, selected_days, day_presence, order_id, order_item_id, event_signature, event_completed, venue
+            "SELECT id, player_name, first_name, last_name, age, gender, booking_type, selected_days, days_selected, day_presence, event_details, order_id, order_item_id, event_signature, event_completed, venue
              FROM {$table}
              WHERE {$where_sql}
              ORDER BY last_name ASC, first_name ASC, id ASC
@@ -145,12 +152,23 @@ class RostersTabsAjaxHandler {
                 </thead>
                 <tbody>
                 <?php foreach ($entries as $row): ?>
+                    <?php
+                    $camp_ctx = function_exists('intersoccer_roster_camp_booking_display_context')
+                        ? intersoccer_roster_camp_booking_display_context($row)
+                        : null;
+                    $booking_cell = $camp_ctx ? ($camp_ctx['booking_type'] ?? ($row['booking_type'] ?? '')) : ($row['booking_type'] ?? '');
+                    $days_cell = $camp_ctx
+                        ? ($camp_ctx['selected_days_display'] ?? '')
+                        : (function_exists('intersoccer_roster_selected_days_display')
+                            ? intersoccer_roster_selected_days_display($row['booking_type'] ?? '', $row['selected_days'] ?? ($row['days_selected'] ?? ''))
+                            : ($row['selected_days'] ?? $row['days_selected'] ?? ''));
+                    ?>
                     <tr>
                         <td><?php echo esc_html($row['player_name'] ?: trim(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? ''))); ?></td>
                         <td><?php echo esc_html($row['age']); ?></td>
                         <td><?php echo esc_html($row['gender']); ?></td>
-                        <td><?php echo esc_html($row['booking_type']); ?></td>
-                        <td><?php echo esc_html(function_exists('intersoccer_roster_selected_days_display') ? intersoccer_roster_selected_days_display($row['booking_type'] ?? '', $row['selected_days'] ?? '') : $row['selected_days']); ?></td>
+                        <td><?php echo esc_html($booking_cell); ?></td>
+                        <td><?php echo esc_html($days_cell); ?></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>

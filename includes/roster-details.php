@@ -938,6 +938,7 @@ function intersoccer_render_roster_details_page() {
         echo '<th style="width: 100px;">' . esc_html__('Late Pickup', 'intersoccer-reports-rosters') . '</th>';
         echo '<th style="width: 120px;">' . esc_html__('Late Pickup Days', 'intersoccer-reports-rosters') . '</th>';
         echo '<th style="width: 120px;">' . esc_html__('Booking Type', 'intersoccer-reports-rosters') . '</th>';
+        echo '<th style="width: 140px;">' . esc_html__('Selected days', 'intersoccer-reports-rosters') . '</th>';
         echo '<th style="width: 70px;">' . esc_html__('Monday', 'intersoccer-reports-rosters') . '</th>';
         echo '<th style="width: 70px;">' . esc_html__('Tuesday', 'intersoccer-reports-rosters') . '</th>';
         echo '<th style="width: 70px;">' . esc_html__('Wednesday', 'intersoccer-reports-rosters') . '</th>';
@@ -982,24 +983,9 @@ function intersoccer_render_roster_details_page() {
             }
         }
         $is_unknown = $row->player_name === 'Unknown Attendee';
-        $day_presence = [
-            'Monday' => 'No',
-            'Tuesday' => 'No',
-            'Wednesday' => 'No',
-            'Thursday' => 'No',
-            'Friday' => 'No',
-        ];
-        if ($is_camp_like) {
-            if (function_exists('intersoccer_roster_enrich_camp_fields_from_order_item')) {
-                intersoccer_roster_enrich_camp_fields_from_order_item($row);
-            }
-            $bt = $row->booking_type ?? '';
-            $sd = function_exists('intersoccer_roster_effective_selected_days_string')
-                ? intersoccer_roster_effective_selected_days_string($row)
-                : (string) ($row->selected_days ?? '');
-            if (function_exists('intersoccer_roster_compute_camp_day_presence_for_display')) {
-                $day_presence = intersoccer_roster_compute_camp_day_presence_for_display($bt, $sd);
-            }
+        $camp_display = null;
+        if ($is_camp_like && function_exists('intersoccer_roster_camp_booking_display_context')) {
+            $camp_display = intersoccer_roster_camp_booking_display_context($row);
         }
 
         echo '<tr data-order-item-id="' . esc_attr($row->order_item_id) . '">';
@@ -1026,11 +1012,25 @@ function intersoccer_render_roster_details_page() {
                 : ($row->late_pickup_days ?? 'N/A');
             echo '<td>' . esc_html(function_exists('intersoccer_roster_format_late_pickup_flag_for_display') ? intersoccer_roster_format_late_pickup_flag_for_display($row->late_pickup ?? 'No') : ($row->late_pickup ?? 'No')) . '</td>';
             echo '<td>' . esc_html($display_late_pickup_days !== '' ? $display_late_pickup_days : 'N/A') . '</td>';
-            echo '<td>' . esc_html($row->booking_type ?? 'N/A') . '</td>';
+            $booking_label = $camp_display ? ($camp_display['booking_type'] ?? ($row->booking_type ?? 'N/A')) : ($row->booking_type ?? 'N/A');
+            echo '<td>' . esc_html($booking_label !== '' ? $booking_label : 'N/A') . '</td>';
+            $selected_days_label = $camp_display
+                ? ($camp_display['selected_days_display'] ?? '')
+                : (function_exists('intersoccer_roster_selected_days_display')
+                    ? intersoccer_roster_selected_days_display($row->booking_type ?? '', $row->selected_days ?? '')
+                    : (string) ($row->selected_days ?? ''));
+            echo '<td>' . esc_html($selected_days_label !== '' ? $selected_days_label : '—') . '</td>';
             $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+            $day_presence = $camp_display ? ($camp_display['day_presence'] ?? []) : [];
             foreach ($days as $day) {
                 $presence = $day_presence[$day] ?? 'No';
-                $style = ($presence === 'Yes') ? 'background-color: green; color: black;' : 'background-color: lightpink; color: black;';
+                if ($presence === 'Yes') {
+                    $style = 'background-color: green; color: black;';
+                } elseif ($presence === 'Unknown') {
+                    $style = 'background-color: #f0e6a8; color: black;';
+                } else {
+                    $style = 'background-color: lightpink; color: black;';
+                }
                 echo '<td style="' . esc_attr($style) . '">' . esc_html($presence) . '</td>';
             }
         }
