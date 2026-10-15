@@ -673,13 +673,19 @@ function intersoccer_export_roster() {
                 if (function_exists('intersoccer_roster_enrich_camp_fields_from_order_item')) {
                     intersoccer_roster_enrich_camp_fields_from_order_item($player);
                 }
-                $bt_export = (string) ($player['booking_type'] ?? '');
+                $bt_export = function_exists('intersoccer_normalize_booking_type_for_storage')
+                    ? intersoccer_normalize_booking_type_for_storage($player['booking_type'] ?? '')
+                    : (string) ($player['booking_type'] ?? '');
                 $sd_export = function_exists('intersoccer_roster_effective_selected_days_string')
                     ? intersoccer_roster_effective_selected_days_string((object) $player)
                     : (string) ($player['selected_days'] ?? '');
                 $day_presence = function_exists('intersoccer_roster_compute_camp_day_presence_for_display')
                     ? intersoccer_roster_compute_camp_day_presence_for_display($bt_export, $sd_export)
                     : (!empty($player['day_presence']) ? json_decode($player['day_presence'], true) : []);
+                if (function_exists('intersoccer_roster_export_day_presence')) {
+                    // Single-day booking with no recorded days: "Unknown" instead of five "No" cells.
+                    $day_presence = intersoccer_roster_export_day_presence($bt_export, $sd_export, is_array($day_presence) ? $day_presence : []);
+                }
             } else {
                 $day_presence = !empty($player['day_presence']) ? json_decode($player['day_presence'], true) : [];
             }
@@ -753,7 +759,9 @@ function intersoccer_export_roster() {
                             ? 'Yes (18:00)'
                             : intersoccer_roster_format_late_pickup_flag_for_display($player['late_pickup'] ?? ''))
                         : ($player['late_pickup'] === 'Yes' ? 'Yes (18:00)' : 'No')),
-                    $player['booking_type'] ?? 'N/A', // Booking Type
+                    (function_exists('intersoccer_normalize_booking_type_for_storage')
+                        ? intersoccer_normalize_booking_type_for_storage($player['booking_type'] ?? '')
+                        : ($player['booking_type'] ?? 'N/A')), // Booking Type
                 ]);
             }
             

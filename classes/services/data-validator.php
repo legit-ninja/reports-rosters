@@ -51,10 +51,10 @@ class DataValidator {
     /**
      * Constructor
      * 
-     * @param Logger $logger Logger instance
+     * @param Logger|null $logger Logger instance (defaults to a new Logger when omitted)
      */
-    public function __construct(Logger $logger) {
-        $this->logger = $logger;
+    public function __construct(?Logger $logger = null) {
+        $this->logger = $logger ?? new Logger();
         $this->init_custom_rules();
     }
     
@@ -957,12 +957,7 @@ class DataValidator {
             }
         }
         
-        // Validate selected days for single day bookings
-        if (isset($data['booking_type']) && $data['booking_type'] === 'Single Day(s)') {
-            if (empty($data['selected_days'])) {
-                $errors[] = 'Selected days are required for single day bookings';
-            }
-        }
+        // Single-day camp rows may be stored with no recorded days (days_unknown); do not reject here.
         
         // Validate age group eligibility
         if (isset($data['dob']) && isset($data['age_group']) && 

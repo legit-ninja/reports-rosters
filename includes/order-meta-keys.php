@@ -693,22 +693,11 @@ function intersoccer_normalize_booking_type_label_for_reports($value) {
     if (!is_string($value) || $value === '') {
         return (string) $value;
     }
-    $normalized = intersoccer_order_meta_normalize_comparison_string($value);
-    if (strpos($normalized, 'full week') !== false || strpos($normalized, 'journee complete') !== false
-        || strpos($normalized, 'ganze woche') !== false) {
-        return 'Full Week';
-    }
-    if (strpos($normalized, 'single day') !== false || strpos($normalized, 'jours selectionnes') !== false
-        || strpos($normalized, 'a la journee') !== false || strpos($normalized, 'la journee') !== false
-        || strpos($normalized, 'ausgewahlte tage') !== false || strpos($normalized, 'einzeltag') !== false) {
-        return 'Single Day(s)';
-    }
-    if (strpos($normalized, 'full term') !== false || strpos($normalized, 'trimestre') !== false
-        || strpos($normalized, 'voller begriff') !== false) {
-        return 'Full Term';
-    }
-    if (in_array(trim($value), ['Full Week', 'Single Day(s)', 'Full Term'], true)) {
-        return trim($value);
+    if (function_exists('intersoccer_normalize_booking_type_for_storage')) {
+        $label = intersoccer_normalize_booking_type_for_storage($value);
+        if ($label !== 'Unknown' || trim($value) === '') {
+            return $label;
+        }
     }
     return trim($value);
 }
@@ -914,7 +903,14 @@ if (!function_exists('intersoccer_roster_effective_selected_days_string')) {
             }
         }
 
-        $sd_col = isset($row->selected_days) ? $to_str($row->selected_days) : '';
+        if (function_exists('intersoccer_roster_field_selected_days')) {
+            $sd_col = $to_str(intersoccer_roster_field_selected_days($row));
+        } else {
+            $sd_col = isset($row->selected_days) ? $to_str($row->selected_days) : '';
+            if ($sd_col === '' && isset($row->days_selected)) {
+                $sd_col = $to_str($row->days_selected);
+            }
+        }
         $ds = isset($row->days_selected) ? $to_str($row->days_selected) : '';
 
         $result = '';

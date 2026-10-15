@@ -857,18 +857,9 @@ class RosterBuilder {
             $order_data = intersoccer_apply_canonical_order_item_meta_to_data($order_data, $order_data);
         }
 
-        // Selected days fallback: when Days Selected is empty, use Days of Week from order item meta.
-        // This handles Single Day(s) bookings where the checkout selection is stored under Days of Week
-        // instead of Days Selected. Note: this reads order item meta, not the product variation attribute
-        // pa_days-of-week (which represents the camp's Mon–Fri offering, not the checkout selection).
-        if (empty($order_data['selected_days'])) {
-            $days_of_week_value = $item->get_meta('Days of Week', true);
-            if ($days_of_week_value !== '' && $days_of_week_value !== null) {
-                $order_data['selected_days'] = is_array($days_of_week_value)
-                    ? implode(', ', array_map('trim', $days_of_week_value))
-                    : trim((string) $days_of_week_value);
-            }
-        }
+        // Single-day camps: never guess the booked days from the line's "Days of Week" meta (that
+        // lists the camp's offered days, not the customer's choice). When Days Selected is empty the
+        // row is stored with no selected days and flagged as days unknown (see buildEventDetails).
 
         // Extract additional data from product attributes
         if ($product && $variation_id) {
@@ -1125,30 +1116,11 @@ class RosterBuilder {
         if (!is_string($value) || $value === '') {
             return (string) $value;
         }
-        $normalized = $this->normalizeComparisonString($value);
-        // Full Week: EN, FR (journée/semaine complète), DE (ganze/komplette woche)
-        if (strpos($normalized, 'full week') !== false
-            || strpos($normalized, 'journee complete') !== false
-            || strpos($normalized, 'semaine complete') !== false
-            || strpos($normalized, 'ganze woche') !== false
-            || strpos($normalized, 'komplette woche') !== false
-            || strpos($normalized, 'woche komplett') !== false) {
-            return 'Full Week';
-        }
-        // Single Day(s): EN, FR (jour(s) sélectionné(s)), DE (einzelne tage, ausgewählte tage)
-        if (strpos($normalized, 'single day') !== false || strpos($normalized, 'jours selectionnes') !== false
-            || strpos($normalized, 'a la journee') !== false || strpos($normalized, 'la journee') !== false
-            || strpos($normalized, 'ausgewahlte tage') !== false || strpos($normalized, 'einzeltag') !== false) {
-            return 'Single Day(s)';
-        }
-        // Full Term: EN, FR (trimestre), DE (voller Begriff / full term)
-        if (strpos($normalized, 'full term') !== false || strpos($normalized, 'trimestre') !== false
-            || strpos($normalized, 'voller begriff') !== false) {
-            return 'Full Term';
-        }
-        // Already English or unknown
-        if (in_array(trim($value), ['Full Week', 'Single Day(s)', 'Full Term'], true)) {
-            return trim($value);
+        if (function_exists('intersoccer_normalize_booking_type_for_storage')) {
+            $label = intersoccer_normalize_booking_type_for_storage($value);
+            if ($label !== 'Unknown' || in_array(trim($value), ['Full Week', 'Single Day(s)', 'Full Term'], true)) {
+                return $label;
+            }
         }
         return trim($value);
     }
@@ -1444,6 +1416,10 @@ class RosterBuilder {
                         'booking_type' => $roster_data['booking_type'] ?? null,
                         'selected_days' => $roster_data['selected_days'] ?? null
                     ];
+                    if (function_exists('intersoccer_roster_days_unknown')
+                        && intersoccer_roster_days_unknown($roster_data['booking_type'] ?? '', $roster_data['selected_days'] ?? '')) {
+                        $details['days_unknown'] = true;
+                    }
                     break;
                     
                 case 'course':
