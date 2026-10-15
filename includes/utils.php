@@ -6416,3 +6416,22 @@ if (!function_exists('intersoccer_roster_selected_days_display')) {
         return is_array($selected_days) ? implode(', ', $selected_days) : (string) $selected_days;
     }
 }
+
+if (!function_exists('intersoccer_roster_export_day_presence')) {
+    /**
+     * Monday–Friday cells for the roster Excel export.
+     *
+     * A single-day booking with no recorded days gets "Unknown" in every cell instead of five "No".
+     *
+     * @param string       $booking_type
+     * @param string|array $selected_days
+     * @param array        $presence Day => Yes/No as computed for display.
+     * @return array<string,string>
+     */
+    function intersoccer_roster_export_day_presence($booking_type, $selected_days, array $presence) {
+        if (intersoccer_roster_days_unknown($booking_type, $selected_days)) {
+            return array_fill_keys(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], 'Unknown');
+        }
+        return $presence;
+    }
+}

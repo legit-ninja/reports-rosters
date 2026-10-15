@@ -71,6 +71,9 @@
             <file>tests/Campaign/CampaignMomentumTest.php</file>
             <file>tests/Services/RosterCanonicalFieldsTest.php</file>
             <file>tests/Ajax/RosterVenueAccessTest.php</file>
+            <file>tests/Unit/RosterDaysUnknownTest.php</file>
+            <file>tests/Reports/OrderMetaFieldMapTest.php</file>
+            <file>tests/Services/RosterBuilderSingleDayTest.php</file>
         </testsuite>
         <testsuite name="Complete">
             <directory>tests</directory>

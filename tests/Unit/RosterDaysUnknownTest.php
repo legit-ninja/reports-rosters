@@ -40,4 +40,16 @@ class RosterDaysUnknownTest extends TestCase {
         $presence = intersoccer_compute_day_presence('Single Day(s)', '');
         $this->assertSame(['No'], array_values(array_unique($presence)));
     }
+
+    public function test_export_cells_are_unknown_for_single_day_without_days() {
+        $cells = intersoccer_roster_export_day_presence('Single Day(s)', '', intersoccer_compute_day_presence('Single Day(s)', ''));
+        $this->assertSame(['Monday' => 'Unknown', 'Tuesday' => 'Unknown', 'Wednesday' => 'Unknown', 'Thursday' => 'Unknown', 'Friday' => 'Unknown'], $cells);
+    }
+
+    public function test_export_cells_unchanged_when_days_known() {
+        $presence = intersoccer_compute_day_presence('Single Day(s)', 'Monday, Friday');
+        $this->assertSame($presence, intersoccer_roster_export_day_presence('Single Day(s)', 'Monday, Friday', $presence));
+        $this->assertSame('Yes', $presence['Monday']);
+        $this->assertSame('No', $presence['Tuesday']);
+    }
 }

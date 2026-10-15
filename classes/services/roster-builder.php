@@ -1129,7 +1129,8 @@ class RosterBuilder {
         // Single Day(s): EN, FR (jour(s) sélectionné(s)), DE (einzelne tage, ausgewählte tage)
         if (strpos($normalized, 'single day') !== false || strpos($normalized, 'jours selectionnes') !== false
             || strpos($normalized, 'a la journee') !== false || strpos($normalized, 'la journee') !== false
-            || strpos($normalized, 'ausgewahlte tage') !== false || strpos($normalized, 'einzeltag') !== false) {
+            || strpos($normalized, 'ausgewahlte tage') !== false || strpos($normalized, 'einzeltag') !== false
+            || strpos($normalized, 'einzelner tag') !== false || strpos($normalized, 'einzelne tag') !== false) {
             return 'Single Day(s)';
         }
         // Full Term: EN, FR (trimestre), DE (voller Begriff / full term)
