@@ -13,6 +13,9 @@ use Mockery;
 class MovePlayersMigrationMetaTest extends TestCase {
 
     protected function setUp(): void {
+        if (function_exists('\Patchwork\restoreAll')) {
+            \Patchwork\restoreAll();
+        }
         parent::setUp();
         global $intersoccer_test_get_product_type_callback, $intersoccer_test_product_type_safe_callback;
         $intersoccer_test_get_product_type_callback = static function () {
