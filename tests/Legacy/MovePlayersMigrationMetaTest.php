@@ -712,6 +712,38 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertNotSame('yes', $normalized['pa_girls-only']);
     }
 
+    public function test_normalize_slug_meta_writes_venue_term_slug_when_name_differs_from_slug(): void {
+        $venue_slug = 'geneva-stade-chenois-thonex';
+        $venue_display = 'Geneva - Stade Chênois, Thonex';
+
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_intersoccer-venues' => $venue_slug,
+        ]);
+        $variation->shouldReceive('get_attribute')->with('pa_intersoccer-venues')->andReturn($venue_display);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn(0);
+
+        $existing_line_pa = [
+            'pa_intersoccer-venues' => 'geneva-college-sismondi-nations',
+            'attribute_pa_intersoccer-venues' => 'geneva-college-sismondi-nations',
+        ];
+        $slug_meta = [
+            'pa_intersoccer-venues' => $venue_slug,
+            'attribute_pa_intersoccer-venues' => $venue_slug,
+        ];
+
+        $normalized = intersoccer_migration_normalize_slug_meta_for_variation(
+            $slug_meta,
+            $variation,
+            $existing_line_pa
+        );
+
+        $this->assertSame($venue_slug, $normalized['pa_intersoccer-venues']);
+        $this->assertSame($venue_slug, $normalized['attribute_pa_intersoccer-venues']);
+        $this->assertNotSame($venue_display, $normalized['pa_intersoccer-venues']);
+    }
+
     public function test_normalize_slug_meta_writes_target_slug_when_term_changes_or_key_missing(): void {
         $variation = Mockery::mock('WC_Product_Variation');
         $variation->shouldReceive('get_variation_attributes')->andReturn([
@@ -765,6 +797,27 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertSame('yes', $normalized['attribute_pa_girls-only']);
         $this->assertSame('full-term', $normalized['pa_booking-type']);
         $this->assertSame('full-term', $normalized['attribute_pa_booking-type']);
+    }
+
+    public function test_prune_keeps_girls_only_alias_when_line_had_girls_only_label_key(): void {
+        global $intersoccer_test_wc_order_item_meta;
+
+        $item_id = 88002;
+        $lookup = intersoccer_migration_build_lookup(intersoccer_migration_human_alias_map());
+        $existing_keys = ['Activity Type', 'Girls Only', 'pa_girls-only', 'attribute_pa_girls-only'];
+
+        $intersoccer_test_wc_order_item_meta[$item_id] = [
+            'Activity Type' => 'Course',
+            'Girls Only' => 'Yes',
+            'girls_only' => 'Yes',
+            'pa_girls-only' => 'yes',
+            'attribute_pa_girls-only' => 'yes',
+        ];
+
+        intersoccer_migration_prune_unexpected_move_meta_keys($item_id, $existing_keys, $lookup);
+
+        $this->assertArrayHasKey('Girls Only', $intersoccer_test_wc_order_item_meta[$item_id]);
+        $this->assertArrayHasKey('girls_only', $intersoccer_test_wc_order_item_meta[$item_id]);
     }
 
     public function test_prune_removes_girls_only_key_when_it_was_not_on_line_before_move(): void {
