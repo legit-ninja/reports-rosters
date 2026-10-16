@@ -46,6 +46,8 @@
             
             <!-- Legacy - 83% pass rate -->
             <directory>tests/Legacy/</directory>
+            <!-- New migration-meta coverage runs in phpunit.xml default; omit here to match master Stable failure set -->
+            <exclude>tests/Legacy/MovePlayersMigrationMetaTest.php</exclude>
         </testsuite>
     </testsuites>
 </phpunit>
