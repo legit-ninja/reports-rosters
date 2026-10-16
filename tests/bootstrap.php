@@ -1119,5 +1119,4 @@ foreach (glob(dirname(__DIR__) . '/classes/admin/*.php') as $file) {
 }
 
 require_once __DIR__ . '/stubs/get-product-type-stub.php';
-require_once __DIR__ . '/stubs/move-players-product-type-stub.php';
 require_once __DIR__ . '/helpers/migration-meta-seed.php';
