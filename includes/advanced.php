@@ -1435,6 +1435,9 @@ function intersoccer_move_players_ajax() {
             $existing_pa_slug_keys = function_exists('intersoccer_migration_snapshot_existing_pa_slug_meta_keys')
                 ? intersoccer_migration_snapshot_existing_pa_slug_meta_keys($item)
                 : [];
+            $existing_pa_slug_values = function_exists('intersoccer_migration_snapshot_line_pa_slug_values')
+                ? intersoccer_migration_snapshot_line_pa_slug_values($item)
+                : [];
 
             // Get target product information
             $new_product_id = $variation->get_parent_id();
@@ -1473,11 +1476,15 @@ function intersoccer_move_players_ajax() {
                 $slug_meta = intersoccer_migration_filter_slug_meta_for_move(
                     $slug_meta,
                     $existing_pa_slug_keys,
-                    $variation
+                    $variation,
+                    $existing_pa_slug_values
                 );
-            }
-            if (function_exists('intersoccer_migration_normalize_slug_meta_for_variation')) {
-                $slug_meta = intersoccer_migration_normalize_slug_meta_for_variation($slug_meta, $variation);
+            } elseif (function_exists('intersoccer_migration_normalize_slug_meta_for_variation')) {
+                $slug_meta = intersoccer_migration_normalize_slug_meta_for_variation(
+                    $slug_meta,
+                    $variation,
+                    $existing_pa_slug_values
+                );
             }
 
             InterSoccer_Roster_Move_Item_Renormalize_Suppress::push((int) $item_id);
