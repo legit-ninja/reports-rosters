@@ -4211,41 +4211,43 @@ if (defined('INTERSOCCER_RUN_TEST_PROCESS_ORDERS') && INTERSOCCER_RUN_TEST_PROCE
     add_action('admin_init', 'intersoccer_test_process_orders');
 }
 
-function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
-    global $intersoccer_test_product_type_safe_callback;
-    if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING
-        && is_callable($intersoccer_test_product_type_safe_callback)
-    ) {
-        return (string) call_user_func($intersoccer_test_product_type_safe_callback, $product_id, $variation_id);
-    }
-
-    // Check if the Product Variations plugin function exists
-    if (!function_exists('intersoccer_get_product_type')) {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('InterSoccer: CRITICAL - intersoccer_get_product_type function not found from Product Variations plugin');
+if (!function_exists('intersoccer_get_product_type_safe')) {
+    function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
+        global $intersoccer_test_product_type_safe_callback;
+        if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING
+            && is_callable($intersoccer_test_product_type_safe_callback)
+        ) {
+            return (string) call_user_func($intersoccer_test_product_type_safe_callback, $product_id, $variation_id);
         }
-        return 'unknown';
-    }
-    
-    // Try variation ID first if provided
-    if ($variation_id && $variation_id > 0) {
-        $type = intersoccer_get_product_type($variation_id);
+
+        // Check if the Product Variations plugin function exists
+        if (!function_exists('intersoccer_get_product_type')) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer: CRITICAL - intersoccer_get_product_type function not found from Product Variations plugin');
+            }
+            return 'unknown';
+        }
+
+        // Try variation ID first if provided
+        if ($variation_id && $variation_id > 0) {
+            $type = intersoccer_get_product_type($variation_id);
+            if (!empty($type)) {
+                return $type;
+            }
+        }
+
+        // Try parent product ID
+        $type = intersoccer_get_product_type($product_id);
         if (!empty($type)) {
             return $type;
         }
-    }
-    
-    // Try parent product ID
-    $type = intersoccer_get_product_type($product_id);
-    if (!empty($type)) {
-        return $type;
-    }
 
-    if ((int) $product_id > 0 || ($variation_id && (int) $variation_id > 0)) {
-        return intersoccer_manual_product_type_detection($product_id, $variation_id);
-    }
+        if ((int) $product_id > 0 || ($variation_id && (int) $variation_id > 0)) {
+            return intersoccer_manual_product_type_detection($product_id, $variation_id);
+        }
 
-    return 'unknown';
+        return 'unknown';
+    }
 }
 
 // 2. Manual fallback function based on the Product Variations logic
