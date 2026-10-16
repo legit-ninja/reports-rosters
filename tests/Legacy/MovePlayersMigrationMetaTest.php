@@ -623,6 +623,111 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertSame('no', intersoccer_migration_coerce_pa_taxonomy_slug('pa_girls-only', 'No'));
     }
 
+    public function test_normalize_slug_meta_preserves_display_bytes_when_term_unchanged_on_line(): void {
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_activity-type' => 'Course',
+            'attribute_pa_girls-only' => 'No',
+            'attribute_pa_program-season' => 'Autumn 2026',
+        ]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn(0);
+
+        $existing_line_pa = [
+            'pa_activity-type' => 'Course',
+            'attribute_pa_activity-type' => 'Course',
+            'pa_girls-only' => 'No',
+            'attribute_pa_girls-only' => 'No',
+            'pa_program-season' => 'Autumn 2026',
+            'attribute_pa_program-season' => 'Autumn 2026',
+        ];
+
+        $slug_meta = [
+            'pa_activity-type' => 'course',
+            'attribute_pa_activity-type' => 'course',
+            'pa_girls-only' => 'no',
+            'attribute_pa_girls-only' => 'no',
+            'pa_program-season' => 'autumn-2026',
+            'attribute_pa_program-season' => 'autumn-2026',
+        ];
+
+        $normalized = intersoccer_migration_normalize_slug_meta_for_variation(
+            $slug_meta,
+            $variation,
+            $existing_line_pa
+        );
+
+        $this->assertSame('Course', $normalized['pa_activity-type']);
+        $this->assertSame('Course', $normalized['attribute_pa_activity-type']);
+        $this->assertSame('No', $normalized['pa_girls-only']);
+        $this->assertSame('Autumn 2026', $normalized['pa_program-season']);
+    }
+
+    public function test_normalize_slug_meta_writes_display_when_term_changes_from_composite_line_value(): void {
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_activity-type' => 'course',
+            'attribute_pa_girls-only' => 'no',
+        ]);
+        $variation->shouldReceive('get_attribute')->with('pa_activity-type')->andReturn('Course');
+        $variation->shouldReceive('get_attribute')->with('pa_girls-only')->andReturn('No');
+        $variation->shouldReceive('get_parent_id')->andReturn(0);
+
+        $existing_line_pa = [
+            'pa_activity-type' => 'course-girls-only',
+            'attribute_pa_activity-type' => 'course-girls-only',
+            'pa_girls-only' => 'yes',
+            'attribute_pa_girls-only' => 'yes',
+        ];
+        $slug_meta = [
+            'pa_activity-type' => 'course',
+            'attribute_pa_activity-type' => 'course',
+            'pa_girls-only' => 'no',
+            'attribute_pa_girls-only' => 'no',
+        ];
+
+        $normalized = intersoccer_migration_normalize_slug_meta_for_variation(
+            $slug_meta,
+            $variation,
+            $existing_line_pa
+        );
+
+        $this->assertSame('course', $normalized['pa_activity-type']);
+        $this->assertSame('no', $normalized['pa_girls-only']);
+        $this->assertNotSame('course-girls-only', $normalized['pa_activity-type']);
+        $this->assertNotSame('yes', $normalized['pa_girls-only']);
+    }
+
+    public function test_normalize_slug_meta_writes_target_slug_when_term_changes_or_key_missing(): void {
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_age-group' => '5-12',
+        ]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn(0);
+
+        $existing_line_pa = [
+            'pa_age-group' => '3-12y',
+            'attribute_pa_age-group' => '3-12y',
+        ];
+
+        $slug_meta = [
+            'pa_age-group' => '5-12',
+            'attribute_pa_age-group' => '5-12',
+            'pa_city' => 'geneva',
+            'attribute_pa_city' => 'geneva',
+        ];
+
+        $normalized = intersoccer_migration_normalize_slug_meta_for_variation(
+            $slug_meta,
+            $variation,
+            $existing_line_pa
+        );
+
+        $this->assertSame('5-12', $normalized['pa_age-group']);
+        $this->assertSame('geneva', $normalized['pa_city']);
+    }
+
     public function test_normalize_slug_meta_keeps_girls_only_and_booking_slugs_lowercase(): void {
         $variation = Mockery::mock('WC_Product_Variation');
         $variation->shouldReceive('get_variation_attributes')->andReturn([

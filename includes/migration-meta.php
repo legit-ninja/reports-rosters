@@ -590,12 +590,110 @@ if (!function_exists('intersoccer_migration_pa_attribute_slug_for_variation')) {
     }
 }
 
+if (!function_exists('intersoccer_migration_pa_variation_attribute_stored_form')) {
+    /**
+     * Raw attribute value WooCommerce exposes for a variation (often display text).
+     */
+    function intersoccer_migration_pa_variation_attribute_stored_form(
+        WC_Product_Variation $variation,
+        string $taxonomy,
+        string $target_slug
+    ): string {
+        $raw = '';
+        foreach ($variation->get_variation_attributes() as $attribute_key => $attribute_value) {
+            $clean_key = str_replace('attribute_', '', (string) $attribute_key);
+            if ($clean_key !== $taxonomy) {
+                continue;
+            }
+            $raw = is_array($attribute_value) ? (string) reset($attribute_value) : (string) $attribute_value;
+            break;
+        }
+        $variation_display = '';
+        if (method_exists($variation, 'get_attribute')) {
+            $from_attr = $variation->get_attribute($taxonomy);
+            if ($from_attr !== '' && $from_attr !== null) {
+                $variation_display = (string) $from_attr;
+                if ($raw === '') {
+                    $raw = $variation_display;
+                }
+            }
+        }
+        $parent_display = '';
+        if (method_exists($variation, 'get_parent_id') && function_exists('wc_get_product')) {
+            $parent_id = (int) $variation->get_parent_id();
+            if ($parent_id > 0) {
+                $parent = wc_get_product($parent_id);
+                if ($parent && method_exists($parent, 'get_attribute')) {
+                    $from_parent = $parent->get_attribute($taxonomy);
+                    if ($from_parent !== '' && $from_parent !== null) {
+                        $parent_display = (string) $from_parent;
+                        if ($raw === '') {
+                            $raw = $parent_display;
+                        }
+                    }
+                }
+            }
+        }
+        if ($raw !== '' && $target_slug !== ''
+            && intersoccer_migration_pa_stored_value_same_term_as_slug($taxonomy, $raw, $target_slug)) {
+            $coerced_raw = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $raw);
+            if ($raw === $coerced_raw) {
+                if ($variation_display !== ''
+                    && $variation_display !== $raw
+                    && intersoccer_migration_pa_stored_value_same_term_as_slug($taxonomy, $variation_display, $target_slug)) {
+                    return $variation_display;
+                }
+                if ($parent_display !== ''
+                    && $parent_display !== $raw
+                    && intersoccer_migration_pa_stored_value_same_term_as_slug($taxonomy, $parent_display, $target_slug)) {
+                    return $parent_display;
+                }
+            }
+
+            return $raw;
+        }
+
+        if ($parent_display !== '' && $target_slug !== ''
+            && intersoccer_migration_pa_stored_value_same_term_as_slug($taxonomy, $parent_display, $target_slug)) {
+            return $parent_display;
+        }
+
+        return $target_slug;
+    }
+}
+
+if (!function_exists('intersoccer_migration_pa_stored_value_same_term_as_slug')) {
+    /**
+     * Whether a stored pa_* / attribute_pa_* value refers to the same taxonomy term as the target slug.
+     */
+    function intersoccer_migration_pa_stored_value_same_term_as_slug(string $taxonomy, string $stored, string $target_slug): bool {
+        $stored = trim($stored);
+        $target_slug = trim($target_slug);
+        if ($stored === '' || $target_slug === '') {
+            return false;
+        }
+        if ($stored === $target_slug) {
+            return true;
+        }
+
+        $stored_slug = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $stored);
+        $target_norm = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $target_slug);
+
+        return $stored_slug !== '' && $target_norm !== '' && $stored_slug === $target_norm;
+    }
+}
+
 if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation')) {
     /**
      * @param array<string,string> $slug_meta
+     * @param array<string,string> $existing_line_pa Raw pa_* values on the line before rewrite (optional).
      * @return array<string,string>
      */
-    function intersoccer_migration_normalize_slug_meta_for_variation(array $slug_meta, WC_Product_Variation $variation): array {
+    function intersoccer_migration_normalize_slug_meta_for_variation(
+        array $slug_meta,
+        WC_Product_Variation $variation,
+        array $existing_line_pa = []
+    ): array {
         $normalized = [];
         foreach ($slug_meta as $meta_key => $meta_value) {
             if ($meta_key === '' || $meta_value === '' || $meta_value === null) {
@@ -613,8 +711,15 @@ if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation'))
                     is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value
                 );
             }
-            if ($slug !== '') {
-                $normalized[$meta_key] = $slug;
+            if ($slug === '') {
+                continue;
+            }
+            $existing = $existing_line_pa[$meta_key] ?? '';
+            $preferred = intersoccer_migration_pa_variation_attribute_stored_form($variation, $taxonomy, $slug);
+            if ($existing !== '' && intersoccer_migration_pa_stored_value_same_term_as_slug($taxonomy, $existing, $slug)) {
+                $normalized[$meta_key] = $existing;
+            } else {
+                $normalized[$meta_key] = $preferred !== '' ? $preferred : $slug;
             }
         }
 
@@ -622,12 +727,33 @@ if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation'))
             if (!preg_match('/^pa_/i', (string) $meta_key)) {
                 continue;
             }
+            $taxonomy = (string) $meta_key;
             $attribute_key = 'attribute_' . $meta_key;
-            if (!isset($normalized[$attribute_key]) || $normalized[$attribute_key] === '') {
-                $normalized[$attribute_key] = $slug;
+            $target_slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy);
+            if ($target_slug === '') {
+                $target_slug = is_string($slug) ? $slug : '';
             }
-            if ($normalized[$attribute_key] !== $slug) {
-                $normalized[$attribute_key] = $slug;
+            $existing_attr = $existing_line_pa[$attribute_key] ?? '';
+            $preferred_pair = intersoccer_migration_pa_variation_attribute_stored_form($variation, $taxonomy, $target_slug);
+            if ($existing_attr !== '' && $target_slug !== ''
+                && intersoccer_migration_pa_stored_value_same_term_as_slug($taxonomy, $existing_attr, $target_slug)) {
+                $normalized[$attribute_key] = $existing_attr;
+            } elseif (!isset($normalized[$attribute_key]) || $normalized[$attribute_key] === '') {
+                $normalized[$attribute_key] = $normalized[$meta_key];
+            } elseif ($target_slug !== ''
+                && !intersoccer_migration_pa_stored_value_same_term_as_slug(
+                    $taxonomy,
+                    (string) $normalized[$attribute_key],
+                    $target_slug
+                )) {
+                $normalized[$attribute_key] = $normalized[$meta_key];
+            } elseif (($existing_line_pa[$meta_key] ?? '') !== ''
+                && intersoccer_migration_pa_stored_value_same_term_as_slug(
+                    $taxonomy,
+                    (string) $existing_line_pa[$meta_key],
+                    $target_slug
+                )) {
+                $normalized[$attribute_key] = $normalized[$meta_key];
             }
         }
 
@@ -735,7 +861,12 @@ if (!function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
      * @param \WC_Product_Variation $variation
      * @return array<string,string>
      */
-    function intersoccer_migration_filter_slug_meta_for_move(array $slug_meta, array $existing_pa_keys, WC_Product_Variation $variation): array {
+    function intersoccer_migration_filter_slug_meta_for_move(
+        array $slug_meta,
+        array $existing_pa_keys,
+        WC_Product_Variation $variation,
+        array $existing_line_pa = []
+    ): array {
         $allowed = [];
         foreach ($existing_pa_keys as $key) {
             $allowed[$key] = true;
@@ -769,7 +900,7 @@ if (!function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
             $filtered[$meta_key] = is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value;
         }
 
-        return intersoccer_migration_normalize_slug_meta_for_variation($filtered, $variation);
+        return intersoccer_migration_normalize_slug_meta_for_variation($filtered, $variation, $existing_line_pa);
     }
 }
 
@@ -999,11 +1130,21 @@ if (!function_exists('intersoccer_migration_finalize_move_item_meta')) {
                 return preg_match('/^(attribute_)?pa_/i', (string) $key);
             }
         ));
-        if (function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
-            $slug_meta = intersoccer_migration_filter_slug_meta_for_move($slug_meta, $existing_pa, $variation);
+        $existing_line_pa = [];
+        if (function_exists('wc_get_order_item_meta') && $item_id > 0) {
+            foreach ($existing_pa as $pa_key) {
+                $existing_line_pa[$pa_key] = (string) wc_get_order_item_meta($item_id, $pa_key, true);
+            }
         }
-        if (function_exists('intersoccer_migration_normalize_slug_meta_for_variation')) {
-            $slug_meta = intersoccer_migration_normalize_slug_meta_for_variation($slug_meta, $variation);
+        if (function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
+            $slug_meta = intersoccer_migration_filter_slug_meta_for_move(
+                $slug_meta,
+                $existing_pa,
+                $variation,
+                $existing_line_pa
+            );
+        } elseif (function_exists('intersoccer_migration_normalize_slug_meta_for_variation')) {
+            $slug_meta = intersoccer_migration_normalize_slug_meta_for_variation($slug_meta, $variation, $existing_line_pa);
         }
 
         intersoccer_migration_restore_canonical_meta(
