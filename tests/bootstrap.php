@@ -24,6 +24,12 @@ if (!defined('ABSPATH')) {
 }
 
 // Database output format constants
+if (!function_exists('wp_get_post_terms')) {
+    function wp_get_post_terms($post_id, $taxonomy = 'post_tag', $args = []) {
+        return [];
+    }
+}
+
 if (!defined('ARRAY_A')) {
     define('ARRAY_A', 'ARRAY_A');
 }
@@ -297,6 +303,24 @@ if (!function_exists('wp_get_current_user')) {
         $user->ID = 1;
         $user->roles = [];
         return $user;
+    }
+}
+
+if (!function_exists('get_current_user_id')) {
+    function get_current_user_id() {
+        $user = wp_get_current_user();
+        return isset($user->ID) ? (int) $user->ID : 0;
+    }
+}
+
+if (!function_exists('get_userdata')) {
+    function get_userdata($user_id) {
+        global $intersoccer_test_userdata_map;
+        $user_id = (int) $user_id;
+        if (is_array($intersoccer_test_userdata_map) && isset($intersoccer_test_userdata_map[$user_id])) {
+            return $intersoccer_test_userdata_map[$user_id];
+        }
+        return false;
     }
 }
 
@@ -719,6 +743,21 @@ if (!class_exists('WC_Order')) {
             return $this->meta_data[$key] ?? ($single ? '' : []);
         }
         public function update_meta_data($key, $value) { $this->meta_data[$key] = $value; }
+        public function add_order_note($note, $is_customer_note = false, $added_by_user = false) {
+            global $intersoccer_test_order_notes;
+            if (!is_array($intersoccer_test_order_notes)) {
+                $intersoccer_test_order_notes = [];
+            }
+            if (!isset($intersoccer_test_order_notes[$this->id])) {
+                $intersoccer_test_order_notes[$this->id] = [];
+            }
+            $intersoccer_test_order_notes[$this->id][] = [
+                'note' => (string) $note,
+                'is_customer_note' => (bool) $is_customer_note,
+                'added_by_user' => (bool) $added_by_user,
+            ];
+            return 0;
+        }
         public function save() { return true; }
     }
 }
@@ -731,6 +770,22 @@ if (!class_exists('WC_DateTime')) {
     }
 }
 
+if (!class_exists('WC_Order_Item_Meta_Stub')) {
+    class WC_Order_Item_Meta_Stub {
+        public $key;
+        public $value;
+
+        public function __construct($key, $value) {
+            $this->key = $key;
+            $this->value = $value;
+        }
+
+        public function get_data() {
+            return ['key' => $this->key, 'value' => $this->value];
+        }
+    }
+}
+
 if (!class_exists('WC_Order_Item_Product')) {
     class WC_Order_Item_Product {
         protected $data = [];
@@ -739,6 +794,26 @@ if (!class_exists('WC_Order_Item_Product')) {
         
         public function __construct($item_id = 0) {
             $this->id = $item_id ?: 1;
+            $this->hydrateMetaFromTestStore();
+        }
+
+        protected function hydrateMetaFromTestStore(): void {
+            global $intersoccer_test_wc_order_item_meta;
+            $item_id = (int) $this->id;
+            if (!is_array($intersoccer_test_wc_order_item_meta) || !isset($intersoccer_test_wc_order_item_meta[$item_id])) {
+                return;
+            }
+            foreach ($intersoccer_test_wc_order_item_meta[$item_id] as $key => $value) {
+                $this->meta_data[$key] = $value;
+            }
+        }
+
+        protected function persistMetaToTestStore(): void {
+            global $intersoccer_test_wc_order_item_meta;
+            if (!is_array($intersoccer_test_wc_order_item_meta)) {
+                $intersoccer_test_wc_order_item_meta = [];
+            }
+            $intersoccer_test_wc_order_item_meta[(int) $this->id] = $this->meta_data;
         }
         
         public function get_id() { return $this->id; }
@@ -749,9 +824,33 @@ if (!class_exists('WC_Order_Item_Product')) {
         public function get_subtotal() { return $this->data['subtotal'] ?? 100.00; }
         public function get_name() { return $this->data['name'] ?? 'Test Product'; }
         public function get_product() { return null; }
-        public function get_meta_data() { return $this->meta_data; }
+        public function get_meta_data() {
+            $out = [];
+            foreach ($this->meta_data as $key => $value) {
+                $out[] = new WC_Order_Item_Meta_Stub($key, $value);
+            }
+            return $out;
+        }
         public function get_meta($key, $single = true) {
-            return $this->meta_data[$key] ?? ($single ? '' : []);
+            $key = (string) $key;
+            if (!array_key_exists($key, $this->meta_data)) {
+                return $single ? '' : [];
+            }
+            $val = $this->meta_data[$key];
+            return $single ? $val : [$val];
+        }
+        public function update_meta_data($key, $value) {
+            $this->meta_data[(string) $key] = $value;
+        }
+        public function add_meta_data($key, $value, $unique = false) {
+            $this->update_meta_data($key, $value);
+        }
+        public function delete_meta_data($key) {
+            unset($this->meta_data[(string) $key]);
+        }
+        public function save() {
+            $this->persistMetaToTestStore();
+            return (int) $this->id;
         }
         public function set_data($data) { $this->data = $data; }
         public function set_meta_data($meta) { $this->meta_data = $meta; }
@@ -825,12 +924,29 @@ if (!function_exists('wc_get_product')) {
 
 if (!function_exists('wc_get_order_item_meta')) {
     function wc_get_order_item_meta($item_id, $key, $single = true) {
+        global $intersoccer_test_wc_order_item_meta;
+        $item_id = (int) $item_id;
+        if (is_array($intersoccer_test_wc_order_item_meta)
+            && isset($intersoccer_test_wc_order_item_meta[$item_id][$key])
+        ) {
+            $val = $intersoccer_test_wc_order_item_meta[$item_id][$key];
+            return $single ? $val : [$val];
+        }
         return $single ? '' : [];
     }
 }
 
 if (!function_exists('wc_update_order_item_meta')) {
     function wc_update_order_item_meta($item_id, $meta_key, $meta_value, $prev_value = '') {
+        global $intersoccer_test_wc_order_item_meta;
+        $item_id = (int) $item_id;
+        if (!is_array($intersoccer_test_wc_order_item_meta)) {
+            $intersoccer_test_wc_order_item_meta = [];
+        }
+        if (!isset($intersoccer_test_wc_order_item_meta[$item_id])) {
+            $intersoccer_test_wc_order_item_meta[$item_id] = [];
+        }
+        $intersoccer_test_wc_order_item_meta[$item_id][(string) $meta_key] = $meta_value;
         return true;
     }
 }
@@ -1001,3 +1117,5 @@ foreach (glob(dirname(__DIR__) . '/classes/woocommerce/*.php') as $file) {
 foreach (glob(dirname(__DIR__) . '/classes/admin/*.php') as $file) {
     require_once $file;
 }
+
+require_once __DIR__ . '/helpers/migration-meta-seed.php';

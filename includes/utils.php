@@ -3511,6 +3511,11 @@ if (!function_exists('intersoccer_renormalize_order_item_event_meta')) {
             return false;
         }
 
+        if (function_exists('intersoccer_roster_move_item_renormalize_is_suppressed')
+            && intersoccer_roster_move_item_renormalize_is_suppressed($order_item_id)) {
+            return true;
+        }
+
         if (!function_exists('intersoccer_migration_human_alias_map')
             || !function_exists('intersoccer_migration_build_lookup')) {
             return false;
@@ -3558,6 +3563,17 @@ if (!function_exists('intersoccer_renormalize_order_item_event_meta')) {
             $event_data['activity_type'] = $activity_meta;
         }
 
+        if (function_exists('intersoccer_resolve_roster_girls_only_tristate')) {
+            $girls_context = [
+                'Activity Type' => $activity_meta,
+                'activity_type' => $activity_meta,
+                'Girls Only' => $item->get_meta('Girls Only', true),
+                'pa_girls-only' => $item->get_meta('pa_girls-only', true),
+                'attribute_pa_girls-only' => $item->get_meta('attribute_pa_girls-only', true),
+            ];
+            $event_data['girls_only'] = intersoccer_resolve_roster_girls_only_tristate($girls_context) === 'yes' ? 1 : 0;
+        }
+
         $booking_raw = intersoccer_read_order_item_booking_fields($order_item_id);
         if ($booking_raw['booking_type'] !== '') {
             $event_data['booking_type'] = $booking_raw['booking_type'];
@@ -3571,6 +3587,13 @@ if (!function_exists('intersoccer_renormalize_order_item_event_meta')) {
         $normalized['booking_type'] = $booking['booking_type'];
         $normalized['selected_days'] = $booking['selected_days'];
         $human_meta = intersoccer_human_meta_from_normalized_facets($normalized);
+        if ((int) ($normalized['girls_only'] ?? 0) === 1
+            && function_exists('intersoccer_migration_activity_type_for_girls_only_tristate')) {
+            $human_meta['activity_type'] = intersoccer_migration_activity_type_for_girls_only_tristate(
+                (string) ($human_meta['activity_type'] ?? $normalized['activity_type'] ?? ''),
+                'yes'
+            );
+        }
 
         intersoccer_migration_restore_canonical_meta(
             $order_item_id,
@@ -3794,7 +3817,9 @@ if (!function_exists('intersoccer_renormalize_roster_row_language')) {
                 ARRAY_A
             ) ?: $record;
 
-            if (function_exists('intersoccer_renormalize_order_item_event_meta')) {
+            if ((!function_exists('intersoccer_roster_move_item_renormalize_is_suppressed')
+                    || !intersoccer_roster_move_item_renormalize_is_suppressed($order_item_id))
+                && function_exists('intersoccer_renormalize_order_item_event_meta')) {
                 intersoccer_renormalize_order_item_event_meta($order_item_id);
             }
             $booking = intersoccer_normalize_roster_booking_columns(
@@ -4187,6 +4212,13 @@ if (defined('INTERSOCCER_RUN_TEST_PROCESS_ORDERS') && INTERSOCCER_RUN_TEST_PROCE
 }
 
 function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
+    global $intersoccer_test_product_type_safe_callback;
+    if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING
+        && is_callable($intersoccer_test_product_type_safe_callback)
+    ) {
+        return (string) call_user_func($intersoccer_test_product_type_safe_callback, $product_id, $variation_id);
+    }
+
     // Check if the Product Variations plugin function exists
     if (!function_exists('intersoccer_get_product_type')) {
         if (defined('WP_DEBUG') && WP_DEBUG) {
@@ -4208,9 +4240,12 @@ function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
     if (!empty($type)) {
         return $type;
     }
-    
-    // Manual fallback if the function fails
-    return intersoccer_manual_product_type_detection($product_id, $variation_id);
+
+    if ((int) $product_id > 0 || ($variation_id && (int) $variation_id > 0)) {
+        return intersoccer_manual_product_type_detection($product_id, $variation_id);
+    }
+
+    return 'unknown';
 }
 
 // 2. Manual fallback function based on the Product Variations logic
@@ -4593,6 +4628,14 @@ if (!function_exists('intersoccer_normalize_roster_facets_for_storage')) {
             $normalized['girls_only'] = !empty($event_data['girls_only']) ? 1 : 0;
         }
 
+        if ((int) ($normalized['girls_only'] ?? 0) === 1
+            && function_exists('intersoccer_migration_activity_type_for_girls_only_tristate')) {
+            $normalized['activity_type'] = intersoccer_migration_activity_type_for_girls_only_tristate(
+                (string) ($normalized['activity_type'] ?? ''),
+                'yes'
+            );
+        }
+
         if (!empty($event_data['product_id'])) {
             $normalized['product_id'] = (int) $event_data['product_id'];
         }
@@ -4841,6 +4884,9 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
 
         // Normalize activity_type - this might be a direct value, not a taxonomy term
         if (!empty($event_data['activity_type'])) {
+            $preserve_girls_suffix = !empty($event_data['girls_only'])
+                || (function_exists('intersoccer_text_indicates_girls_only')
+                    && intersoccer_text_indicates_girls_only($event_data['activity_type']));
             // Check if it's a taxonomy term first
             $term = function_exists('intersoccer_get_term_in_default_language')
                 ? intersoccer_get_term_in_default_language($event_data['activity_type'], 'pa_activity-type')
@@ -4850,6 +4896,14 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
             } else {
                 $normalized['activity_type'] = intersoccer_canonical_activity_type_for_roster(
                     intersoccer_normalize_activity_type($event_data['activity_type'])
+                );
+            }
+            if ($preserve_girls_suffix
+                && function_exists('intersoccer_migration_activity_type_for_girls_only_tristate')
+                && !intersoccer_text_indicates_girls_only($normalized['activity_type'])) {
+                $normalized['activity_type'] = intersoccer_migration_activity_type_for_girls_only_tristate(
+                    (string) $event_data['activity_type'],
+                    'yes'
                 );
             }
         }
@@ -5376,18 +5430,46 @@ if (!function_exists('intersoccer_text_indicates_girls_only')) {
     }
 }
 
-if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
+if (!function_exists('intersoccer_roster_girls_only_pa_slug_to_tristate')) {
     /**
-     * Resolve the girls_only roster flag (0 or 1) from order-item / roster facets.
+     * Map a pa_girls-only slug to yes or mixed (InterSoccer: no, mixed, unset are all mixed).
      *
-     * Prefers language-neutral `_intersoccer_canonical_girls_only`, then display/
-     * attribute Yes|No values (including mapped `girls_only` / `Girls Only`), then
-     * activity-type / product-name / WC attribute fallbacks.
+     * @return string yes|mixed|'' when slug empty
+     */
+    function intersoccer_roster_girls_only_pa_slug_to_tristate($slug) {
+        $slug = strtolower(trim((string) $slug));
+        if ($slug === '') {
+            return '';
+        }
+        if (function_exists('intersoccer_pa_girls_only_slug_is_yes') && intersoccer_pa_girls_only_slug_is_yes($slug)) {
+            return 'yes';
+        }
+
+        return 'mixed';
+    }
+}
+
+if (!function_exists('intersoccer_resolve_roster_girls_only_tristate')) {
+    /**
+     * Single source of truth for girls-only on roster moves: yes, mixed, or unknown.
+     *
+     * InterSoccer semantics: explicit No, mixed, and unset all mean mixed (not girls-only).
+     *
+     * Precedence:
+     * 1) `_intersoccer_canonical_girls_only` when decisive.
+     * 2) Variation pa_girls-only beats parent pa_girls-only on the product.
+     * 3) Activity / product-type / name / WC attribute girls-only signals → yes, unless the
+     *    variation has an explicit mixed/no pa and the only conflicting yes signal is on the parent.
+     * 4) Effective product pa (variation else parent) → yes or mixed.
+     * 5) Order-line pa_girls-only meta (when present) applies like variation pa for sources.
+     * 6) Unset pa with no yes signals → mixed.
+     * 7) Parent yes vs variation mixed/no with conflicting parent-only yes signals and no variation
+     *    pa value → unknown (target may be girls-only; cross-gender should warn).
      *
      * @param array<string,mixed> $context
-     * @return int
+     * @return string yes|mixed|unknown
      */
-    function intersoccer_resolve_roster_girls_only_flag(array $context) {
+    function intersoccer_resolve_roster_girls_only_tristate(array $context) {
         $normalize_val = static function ($val) {
             if (is_array($val)) {
                 $val = $val[0] ?? reset($val);
@@ -5395,55 +5477,49 @@ if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
             return $val;
         };
 
-        // Canonical 0/1 (or yes/no) written at checkout/repair — authoritative when present.
         if (array_key_exists('_intersoccer_canonical_girls_only', $context)
             && $context['_intersoccer_canonical_girls_only'] !== ''
             && $context['_intersoccer_canonical_girls_only'] !== null) {
             $canonical = $normalize_val($context['_intersoccer_canonical_girls_only']);
             if (intersoccer_pa_girls_only_slug_is_yes($canonical) || (string) $canonical === '1' || $canonical === 1 || $canonical === true) {
-                return 1;
+                return 'yes';
             }
             if (in_array(strtolower(trim((string) $canonical)), ['0', 'no', 'mixed', 'false'], true)
                 || $canonical === 0
                 || $canonical === false) {
-                return 0;
+                return 'mixed';
             }
         }
 
-        $girls_meta_keys = [
-            'Girls Only',
-            'girls_only',
-            'Filles uniquement',
-            'Nur Mädchen',
-            'Nur Madchen',
-            'pa_girls-only',
-            'attribute_pa_girls-only',
-            'girls-only',
-            'pa_girls_only',
-            'attribute_pa_girls_only',
-        ];
-        foreach ($girls_meta_keys as $key) {
-            if (!array_key_exists($key, $context) || $context[$key] === '' || $context[$key] === null) {
-                continue;
-            }
-            $val = $normalize_val($context[$key]);
+        $line_pa_slug = '';
+        if (!empty($context['line_pa_girls-only'])) {
+            $line_pa_slug = strtolower(trim((string) $normalize_val($context['line_pa_girls-only'])));
+        } elseif (!empty($context['pa_girls-only']) && empty($context['variation_pa_girls-only'])) {
+            $line_pa_slug = strtolower(trim((string) $normalize_val($context['pa_girls-only'])));
+        }
 
-            // Integer 0 on a denormalized row is not decisive — activity/product text may still
-            // indicate girls-only (backfill / looks_girls_only). Explicit "No"/"mixed" is decisive.
-            if ($val === 0 || $val === false) {
+        $variation_pa_slug = !empty($context['variation_pa_girls-only'])
+            ? strtolower(trim((string) $normalize_val($context['variation_pa_girls-only'])))
+            : '';
+        $parent_pa_slug = !empty($context['parent_pa_girls-only'])
+            ? strtolower(trim((string) $normalize_val($context['parent_pa_girls-only'])))
+            : '';
+
+        foreach (['Girls Only', 'girls_only'] as $human_key) {
+            if (empty($context[$human_key])) {
                 continue;
             }
-            if ($val === 1 || $val === true || (string) $val === '1') {
-                return 1;
-            }
-            if (intersoccer_pa_girls_only_slug_is_yes($val)) {
-                return 1;
-            }
-            if (in_array(strtolower(trim((string) $val)), ['mixed', 'no'], true)) {
-                return 0;
+            $val = $normalize_val($context[$human_key]);
+            $val_lower = strtolower(trim((string) $val));
+            if ($val === 1 || $val === true || (string) $val === '1'
+                || (function_exists('intersoccer_pa_girls_only_slug_is_yes') && intersoccer_pa_girls_only_slug_is_yes($val_lower))) {
+                $line_pa_slug = $line_pa_slug !== '' ? $line_pa_slug : 'yes';
+            } elseif (in_array($val_lower, ['no', 'mixed'], true)) {
+                $line_pa_slug = $line_pa_slug !== '' ? $line_pa_slug : 'no';
             }
         }
 
+        $text_signal = false;
         $activity_keys = [
             'raw_activity_type',
             'activity_type',
@@ -5453,14 +5529,36 @@ if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
         ];
         foreach ($activity_keys as $key) {
             if (!empty($context[$key]) && intersoccer_text_indicates_girls_only($context[$key])) {
-                return 1;
+                $text_signal = true;
+                break;
+            }
+        }
+        if (!$text_signal && !empty($context['product_name']) && intersoccer_text_indicates_girls_only($context['product_name'])) {
+            $text_signal = true;
+        }
+        if (!$text_signal && !empty($context['parent_product_name']) && intersoccer_text_indicates_girls_only($context['parent_product_name'])) {
+            $text_signal = true;
+        }
+        $variation_name_signal = !empty($context['product_name'])
+            && intersoccer_text_indicates_girls_only($context['product_name']);
+
+        $product_type_signal = false;
+        $product_type = strtolower(trim((string) ($context['product_type'] ?? '')));
+        if ($product_type !== '' && strpos($product_type, 'girls') !== false) {
+            $product_type_signal = true;
+        }
+        if (!$product_type_signal) {
+            $parent_id = (int) ($context['product_id'] ?? 0);
+            $variation_id = (int) ($context['variation_id'] ?? 0);
+            if ($parent_id > 0 && function_exists('intersoccer_get_product_type_safe')) {
+                $safe_type = strtolower((string) intersoccer_get_product_type_safe($parent_id, $variation_id > 0 ? $variation_id : null));
+                if ($safe_type !== '' && strpos($safe_type, 'girls') !== false) {
+                    $product_type_signal = true;
+                }
             }
         }
 
-        if (!empty($context['product_name']) && intersoccer_text_indicates_girls_only($context['product_name'])) {
-            return 1;
-        }
-
+        $wc_attr_yes = false;
         $product_id = (int) ($context['product_id'] ?? 0);
         $variation_id = (int) ($context['variation_id'] ?? 0);
         if (($variation_id > 0 || $product_id > 0) && function_exists('wc_get_product')) {
@@ -5470,26 +5568,102 @@ if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
                 foreach (['pa_girls-only', 'girls-only'] as $attr_name) {
                     $attr_value = $product->get_attribute($attr_name);
                     if ($attr_value !== '' && intersoccer_pa_girls_only_slug_is_yes($attr_value)) {
-                        return 1;
+                        $wc_attr_yes = true;
+                        break;
                     }
                 }
-                $attributes = $product->get_attributes();
-                foreach ($attributes as $attr_name => $attribute) {
-                    if (strpos((string) $attr_name, 'girls') === false) {
-                        continue;
-                    }
-                    if (is_object($attribute) && method_exists($attribute, 'get_options')) {
-                        foreach ((array) $attribute->get_options() as $option) {
-                            if (intersoccer_pa_girls_only_slug_is_yes($option)) {
-                                return 1;
+                if (!$wc_attr_yes) {
+                    $attributes = $product->get_attributes();
+                    foreach ($attributes as $attr_name => $attribute) {
+                        if (strpos((string) $attr_name, 'girls') === false) {
+                            continue;
+                        }
+                        if (is_object($attribute) && method_exists($attribute, 'get_options')) {
+                            foreach ((array) $attribute->get_options() as $option) {
+                                if (intersoccer_pa_girls_only_slug_is_yes($option)) {
+                                    $wc_attr_yes = true;
+                                    break 2;
+                                }
                             }
+                        }
+                    }
+                }
+            }
+            if (!$wc_attr_yes && $product_id > 0 && $variation_id > 0) {
+                $parent = wc_get_product($product_id);
+                if ($parent && method_exists($parent, 'get_attribute')) {
+                    foreach (['pa_girls-only', 'girls-only'] as $attr_name) {
+                        $attr_value = $parent->get_attribute($attr_name);
+                        if ($attr_value !== '' && intersoccer_pa_girls_only_slug_is_yes($attr_value)) {
+                            $wc_attr_yes = true;
+                            break;
                         }
                     }
                 }
             }
         }
 
-        return 0;
+        $any_girls_signal = $text_signal || $product_type_signal || $wc_attr_yes || $variation_name_signal;
+
+        if ($line_pa_slug !== '') {
+            $line_face = intersoccer_roster_girls_only_pa_slug_to_tristate($line_pa_slug);
+            if ($line_face === 'yes') {
+                return 'yes';
+            }
+            if ($any_girls_signal) {
+                return 'yes';
+            }
+
+            return 'mixed';
+        }
+
+        $variation_face = $variation_pa_slug !== ''
+            ? intersoccer_roster_girls_only_pa_slug_to_tristate($variation_pa_slug)
+            : '';
+        $parent_face = $parent_pa_slug !== ''
+            ? intersoccer_roster_girls_only_pa_slug_to_tristate($parent_pa_slug)
+            : '';
+
+        if ($variation_face === 'yes') {
+            return 'yes';
+        }
+        if ($variation_face === 'mixed') {
+            if ($variation_pa_slug !== '') {
+                return 'mixed';
+            }
+            if ($parent_face === 'yes' && ($product_type_signal || (!$variation_name_signal && !empty($context['parent_product_name'])
+                && intersoccer_text_indicates_girls_only($context['parent_product_name'])))) {
+                return 'unknown';
+            }
+
+            return 'mixed';
+        }
+
+        if ($any_girls_signal) {
+            return 'yes';
+        }
+        if ($parent_face === 'yes') {
+            return 'yes';
+        }
+        if ($variation_pa_slug !== '' || $parent_pa_slug !== '') {
+            return 'mixed';
+        }
+
+        return 'mixed';
+    }
+}
+
+if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
+    /**
+     * Resolve the girls_only roster flag (0 or 1) from order-item / roster facets.
+     *
+     * @param array<string,mixed> $context
+     * @return int
+     */
+    function intersoccer_resolve_roster_girls_only_flag(array $context) {
+        $tristate = intersoccer_resolve_roster_girls_only_tristate($context);
+
+        return $tristate === 'yes' ? 1 : 0;
     }
 }
 
