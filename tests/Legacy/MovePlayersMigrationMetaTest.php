@@ -946,6 +946,77 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertSame('full-term', $normalized['attribute_pa_booking-type']);
     }
 
+    public function test_sandbox_7883_shape_missing_pa_age_group_writes_slug_sibling_on_filter(): void {
+        $line_meta = $this->sandboxOrderItem7883MetaShape();
+        unset($line_meta['pa_age-group'], $line_meta['pa_course-times'], $line_meta['pa_intersoccer-venues']);
+        $existing_pa = array_keys(array_filter(
+            $line_meta,
+            static function ($key) {
+                return preg_match('/^(attribute_)?pa_/i', (string) $key);
+            },
+            ARRAY_FILTER_USE_KEY
+        ));
+
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_age-group' => '5-12',
+            'attribute_pa_course-times' => '1000-1130',
+            'attribute_pa_intersoccer-venues' => 'geneva-stade-chenois-thonex',
+        ]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn(0);
+
+        $slug_meta = [
+            'attribute_pa_age-group' => '5-12',
+            'attribute_pa_course-times' => '1000-1130',
+            'attribute_pa_intersoccer-venues' => 'geneva-stade-chenois-thonex',
+            'pa_age-group' => '5-12',
+            'pa_course-times' => '1000-1130',
+            'pa_intersoccer-venues' => 'geneva-stade-chenois-thonex',
+        ];
+
+        $existing_line_pa = [];
+        foreach ($existing_pa as $pa_key) {
+            $existing_line_pa[$pa_key] = $line_meta[$pa_key];
+        }
+
+        $filtered = intersoccer_migration_filter_slug_meta_for_move(
+            $slug_meta,
+            $existing_pa,
+            $variation,
+            $existing_line_pa
+        );
+
+        $this->assertSame('5-12', $filtered['attribute_pa_age-group']);
+        $this->assertSame('5-12', $filtered['pa_age-group']);
+        $this->assertSame('1000-1130', $filtered['pa_course-times']);
+        $this->assertSame('geneva-stade-chenois-thonex', $filtered['pa_intersoccer-venues']);
+    }
+
+    public function test_prune_meta_rows_keeps_girls_only_label_and_lowercase_when_both_on_line(): void {
+        global $wpdb;
+
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $rows = [
+            (object) ['meta_id' => 101, 'meta_key' => 'Girls Only', 'meta_value' => 'Yes'],
+            (object) ['meta_id' => 102, 'meta_key' => 'girls_only', 'meta_value' => 'Yes'],
+        ];
+        $wpdb->shouldReceive('prepare')->andReturn('prune-sql');
+        $wpdb->shouldReceive('get_results')->andReturn($rows);
+        $wpdb->shouldReceive('delete')->never();
+        $wpdb->shouldReceive('update')->never();
+
+        intersoccer_migration_prune_meta_rows(
+            88088,
+            intersoccer_migration_human_alias_map(),
+            intersoccer_migration_build_lookup(intersoccer_migration_human_alias_map()),
+            ['Girls Only', 'girls_only']
+        );
+
+        $this->addToAssertionCount(1);
+    }
+
     public function test_prune_keeps_girls_only_alias_when_line_had_girls_only_label_key(): void {
         global $intersoccer_test_wc_order_item_meta;
 
