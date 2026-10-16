@@ -4,6 +4,20 @@
          beStrictAboutOutputDuringTests="false"
          failOnRisky="false"
          failOnWarning="false">
+    <php>
+        <ini name="intl.default_locale" value="en"/>
+        <ini name="intl.error_level" value="0"/>
+        <ini name="memory_limit" value="-1"/>
+        <ini name="error_reporting" value="E_ALL"/>
+        <ini name="display_errors" value="1"/>
+        <ini name="display_startup_errors" value="1"/>
+        <const name="WP_TESTS_DIR" value="/tmp/wordpress-tests-lib"/>
+        <const name="WP_TESTS_MULTISITE" value="0"/>
+        <env name="WP_TESTS_DB_NAME" value="wp_test"/>
+        <env name="WP_TESTS_DB_USER" value="root"/>
+        <env name="WP_TESTS_DB_PASSWORD" value=""/>
+        <env name="WP_TESTS_DB_HOST" value="localhost"/>
+    </php>
     <testsuites>
         <!-- Passing Tests Only - For Production Deployment -->
         <testsuite name="Stable">
