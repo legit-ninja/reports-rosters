@@ -217,22 +217,42 @@ if (!function_exists('intersoccer_migration_cleanup_item_meta')) {
      * @param array<string,array<int,string>> $alias_map
      * @param array<string,string> $lookup
      */
-    function intersoccer_migration_cleanup_item_meta($item_id, array $alias_map, array $lookup) {
+    function intersoccer_migration_cleanup_item_meta(
+        $item_id,
+        array $alias_map,
+        array $lookup,
+        array $existing_line_keys = []
+    ) {
         $item = new WC_Order_Item_Product($item_id);
         $meta_data = array_reverse($item->get_meta_data());
-        $seen = [];
+        $existing_flip = array_fill_keys($existing_line_keys, true);
+        $seen_key = [];
+        $canonical_keys_kept = [];
 
         foreach ($meta_data as $meta) {
-            $normalized = intersoccer_migration_normalize_meta_key($meta->key);
+            $key = (string) $meta->key;
+            $normalized = intersoccer_migration_normalize_meta_key($key);
             if (!isset($lookup[$normalized])) {
                 continue;
             }
             $canonical = $lookup[$normalized];
-            if (isset($seen[$canonical])) {
-                wc_delete_order_item_meta($item_id, $meta->key, $meta->value);
+
+            if (isset($seen_key[$key])) {
+                wc_delete_order_item_meta($item_id, $key, $meta->value);
                 continue;
             }
-            $seen[$canonical] = $meta->key;
+            $seen_key[$key] = true;
+
+            $keep = $existing_line_keys === []
+                || isset($existing_flip[$key])
+                || !isset($canonical_keys_kept[$canonical])
+                || $canonical_keys_kept[$canonical] === [];
+            if ($keep) {
+                $canonical_keys_kept[$canonical][$key] = true;
+                continue;
+            }
+
+            wc_delete_order_item_meta($item_id, $key, $meta->value);
         }
     }
 }
@@ -241,7 +261,12 @@ if (!function_exists('intersoccer_migration_prune_meta_rows')) {
     /**
      * Ensure only one row per canonical field remains at the database level.
      */
-    function intersoccer_migration_prune_meta_rows($item_id, array $alias_map, array $lookup) {
+    function intersoccer_migration_prune_meta_rows(
+        $item_id,
+        array $alias_map,
+        array $lookup,
+        array $existing_line_keys = []
+    ) {
         global $wpdb;
 
         $canonical_to_keys = [];
@@ -249,6 +274,7 @@ if (!function_exists('intersoccer_migration_prune_meta_rows')) {
             $canonical_to_keys[$canonical] = array_unique(array_merge([$canonical], $aliases));
         }
 
+        $existing_flip = array_fill_keys($existing_line_keys, true);
         $table = $wpdb->prefix . 'woocommerce_order_itemmeta';
         foreach ($canonical_to_keys as $canonical => $keys) {
             $placeholders = implode(',', array_fill(0, count($keys), '%s'));
@@ -258,6 +284,33 @@ if (!function_exists('intersoccer_migration_prune_meta_rows')) {
                 "SELECT meta_id, meta_key, meta_value FROM {$table} WHERE order_item_id = %d AND meta_key IN ($placeholders) ORDER BY meta_id ASC",
                 $params
             )) ?: [];
+
+            if ($existing_line_keys !== []) {
+                $rows_by_key = [];
+                foreach ($rows as $row) {
+                    $normalized = intersoccer_migration_normalize_meta_key($row->meta_key);
+                    if ($normalized !== $canonical && (!isset($lookup[$normalized]) || $lookup[$normalized] !== $canonical)) {
+                        continue;
+                    }
+                    $rows_by_key[$row->meta_key][] = $row;
+                }
+                foreach ($rows_by_key as $meta_key => $key_rows) {
+                    if (!isset($existing_flip[$meta_key])) {
+                        foreach ($key_rows as $row) {
+                            $wpdb->delete($table, ['meta_id' => (int) $row->meta_id], ['%d']);
+                        }
+                        continue;
+                    }
+                    $keep = end($key_rows);
+                    foreach ($key_rows as $row) {
+                        if ((int) $row->meta_id === (int) $keep->meta_id) {
+                            continue;
+                        }
+                        $wpdb->delete($table, ['meta_id' => (int) $row->meta_id], ['%d']);
+                    }
+                }
+                continue;
+            }
 
             $chosen_meta_id = null;
             $chosen_key = null;
@@ -664,27 +717,58 @@ if (!function_exists('intersoccer_migration_pa_variation_attribute_stored_form')
 
 if (!function_exists('intersoccer_migration_pa_existing_line_value_for_key')) {
     /**
-     * Raw pa_* / attribute_pa_* bytes on the line for a slug_meta key (paired keys fall back).
+     * Raw bytes for one pa_* / attribute_pa_* key on the line (no paired-key fallback).
      *
      * @param array<string,string> $existing_line_pa
      */
     function intersoccer_migration_pa_existing_line_value_for_key(array $existing_line_pa, string $meta_key): string {
-        if (isset($existing_line_pa[$meta_key]) && $existing_line_pa[$meta_key] !== '') {
-            return (string) $existing_line_pa[$meta_key];
+        if (!isset($existing_line_pa[$meta_key]) || $existing_line_pa[$meta_key] === '') {
+            return '';
         }
-        if (preg_match('/^attribute_(pa_.+)$/i', $meta_key, $matches)) {
-            $paired = $matches[1];
-            if (isset($existing_line_pa[$paired]) && $existing_line_pa[$paired] !== '') {
-                return (string) $existing_line_pa[$paired];
+
+        return (string) $existing_line_pa[$meta_key];
+    }
+}
+
+if (!function_exists('intersoccer_migration_seed_missing_pa_slug_meta_keys')) {
+    /**
+     * When only one of pa_X / attribute_pa_X exists on the line, seed the missing key for slug write.
+     *
+     * @param array<string,string>  $slug_meta
+     * @param array<int,string>     $existing_pa_keys
+     * @return array<string,string>
+     */
+    function intersoccer_migration_seed_missing_pa_slug_meta_keys(
+        array $slug_meta,
+        array $existing_pa_keys,
+        WC_Product_Variation $variation
+    ): array {
+        $existing_flip = array_fill_keys($existing_pa_keys, true);
+        foreach ($existing_pa_keys as $key) {
+            if (preg_match('/^attribute_(pa_.+)$/i', (string) $key, $matches)) {
+                $taxonomy = $matches[1];
+                if (isset($existing_flip[$taxonomy])) {
+                    continue;
+                }
+                $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy);
+                if ($slug !== '') {
+                    $slug_meta[$taxonomy] = $slug;
+                }
+                continue;
             }
-        } elseif (preg_match('/^pa_/i', $meta_key)) {
-            $paired = 'attribute_' . $meta_key;
-            if (isset($existing_line_pa[$paired]) && $existing_line_pa[$paired] !== '') {
-                return (string) $existing_line_pa[$paired];
+            if (preg_match('/^pa_/i', (string) $key)) {
+                $attribute_key = 'attribute_' . $key;
+                if (isset($existing_flip[$attribute_key])) {
+                    continue;
+                }
+                $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, (string) $key);
+                if ($slug !== '') {
+                    $slug_meta[$attribute_key] = $slug;
+                }
             }
         }
 
-        return '';
+        return $slug_meta;
     }
 }
 
@@ -842,39 +926,6 @@ if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation'))
             }
         }
 
-        foreach ($normalized as $meta_key => $slug) {
-            if (!preg_match('/^pa_/i', (string) $meta_key)) {
-                continue;
-            }
-            $taxonomy = (string) $meta_key;
-            $attribute_key = 'attribute_' . $meta_key;
-            $target_slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy);
-            if ($target_slug === '') {
-                $target_slug = is_string($slug) ? $slug : '';
-            }
-            $existing_attr = intersoccer_migration_pa_existing_line_value_for_key($existing_line_pa, $attribute_key);
-            if ($existing_attr !== '' && $target_slug !== ''
-                && intersoccer_migration_pa_stored_value_same_term_as_slug($taxonomy, $existing_attr, $target_slug)) {
-                $normalized[$attribute_key] = $existing_attr;
-            } elseif (!isset($normalized[$attribute_key]) || $normalized[$attribute_key] === '') {
-                $normalized[$attribute_key] = $normalized[$meta_key];
-            } elseif ($target_slug !== ''
-                && !intersoccer_migration_pa_stored_value_same_term_as_slug(
-                    $taxonomy,
-                    (string) $normalized[$attribute_key],
-                    $target_slug
-                )) {
-                $normalized[$attribute_key] = $normalized[$meta_key];
-            } elseif (($existing_line_pa[$meta_key] ?? '') !== ''
-                && intersoccer_migration_pa_stored_value_same_term_as_slug(
-                    $taxonomy,
-                    (string) $existing_line_pa[$meta_key],
-                    $target_slug
-                )) {
-                $normalized[$attribute_key] = $normalized[$meta_key];
-            }
-        }
-
         return $normalized;
     }
 }
@@ -985,9 +1036,16 @@ if (!function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
         WC_Product_Variation $variation,
         array $existing_line_pa = []
     ): array {
+        $slug_meta = intersoccer_migration_seed_missing_pa_slug_meta_keys($slug_meta, $existing_pa_keys, $variation);
+
         $allowed = [];
         foreach ($existing_pa_keys as $key) {
             $allowed[$key] = true;
+            if (preg_match('/^attribute_(pa_.+)$/i', (string) $key, $matches)) {
+                $allowed[$matches[1]] = true;
+            } elseif (preg_match('/^pa_/i', (string) $key)) {
+                $allowed['attribute_' . $key] = true;
+            }
         }
         foreach ($variation->get_variation_attributes() as $attribute_key => $attribute_value) {
             $allowed[(string) $attribute_key] = true;
@@ -1201,7 +1259,14 @@ if (!function_exists('intersoccer_migration_prune_unexpected_move_meta_keys')) {
         array $human_lookup
     ): void {
         $allowed = array_fill_keys($existing_line_keys, true);
-        if (isset($allowed['Girls Only'])) {
+        foreach ($existing_line_keys as $key) {
+            if (preg_match('/^attribute_(pa_.+)$/i', (string) $key, $matches)) {
+                $allowed[$matches[1]] = true;
+            } elseif (preg_match('/^pa_/i', (string) $key)) {
+                $allowed['attribute_' . $key] = true;
+            }
+        }
+        if (isset($allowed['Girls Only']) || isset($allowed['girls_only'])) {
             foreach (['Girls Only', 'girls_only', 'pa_girls-only', 'attribute_pa_girls-only'] as $related) {
                 $allowed[$related] = true;
             }
@@ -1316,15 +1381,27 @@ if (!function_exists('intersoccer_migration_restore_canonical_meta')) {
                 continue;
             }
 
-            $aliases = $human_alias_map[$canonical] ?? [$canonical];
+            $aliases = array_unique(array_merge(
+                [$canonical],
+                $human_alias_map[$canonical] ?? []
+            ));
+            $existing_flip = array_fill_keys($existing_line_keys, true);
+            $wrote = false;
             foreach ($aliases as $alias_key) {
+                if ($existing_line_keys !== [] && !isset($existing_flip[$alias_key])) {
+                    continue;
+                }
                 $item->delete_meta_data($alias_key);
+                $item->add_meta_data($alias_key, $normalized_value, true);
+                $wrote = true;
             }
-
-            $label = function_exists('intersoccer_migration_pick_meta_label_for_canonical')
-                ? intersoccer_migration_pick_meta_label_for_canonical($canonical, $human_alias_map, $existing_line_keys)
-                : $aliases[0];
-            $item->add_meta_data($label, $normalized_value, true);
+            if (!$wrote) {
+                $label = function_exists('intersoccer_migration_pick_meta_label_for_canonical')
+                    ? intersoccer_migration_pick_meta_label_for_canonical($canonical, $human_alias_map, $existing_line_keys)
+                    : $aliases[0];
+                $item->delete_meta_data($label);
+                $item->add_meta_data($label, $normalized_value, true);
+            }
         }
 
         foreach ($other_meta as $meta_key => $meta_value) {
@@ -1342,8 +1419,8 @@ if (!function_exists('intersoccer_migration_restore_canonical_meta')) {
 
         $item->save();
 
-        intersoccer_migration_cleanup_item_meta($item_id, $human_alias_map, $human_lookup);
-        intersoccer_migration_prune_meta_rows($item_id, $human_alias_map, $human_lookup);
+        intersoccer_migration_cleanup_item_meta($item_id, $human_alias_map, $human_lookup, $existing_line_keys);
+        intersoccer_migration_prune_meta_rows($item_id, $human_alias_map, $human_lookup, $existing_line_keys);
 
         error_log('InterSoccer: Restored canonical metadata for item ' . $item_id);
     }
