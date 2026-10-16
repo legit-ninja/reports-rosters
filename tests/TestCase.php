@@ -26,6 +26,21 @@ abstract class TestCase extends PHPUnitTestCase {
      * Teardown after each test
      */
     protected function tearDown(): void {
+        global $intersoccer_test_product_type_safe_callback;
+        global $intersoccer_test_get_product_type_callback;
+        global $intersoccer_test_wc_get_product_callback;
+        global $intersoccer_test_post_status_map;
+        global $intersoccer_test_wc_order_item_meta;
+        global $intersoccer_test_order_notes;
+        global $intersoccer_test_userdata_map;
+        $intersoccer_test_product_type_safe_callback = null;
+        $intersoccer_test_get_product_type_callback = null;
+        $intersoccer_test_wc_get_product_callback = null;
+        $intersoccer_test_post_status_map = [];
+        $intersoccer_test_wc_order_item_meta = [];
+        $intersoccer_test_order_notes = [];
+        $intersoccer_test_userdata_map = [];
+
         Mockery::close();
         parent::tearDown();
     }

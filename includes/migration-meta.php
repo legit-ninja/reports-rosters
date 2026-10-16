@@ -7,6 +7,8 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+require_once dirname(__FILE__) . '/roster-move-item-renormalize-suppress.php';
+
 if (!function_exists('intersoccer_migration_human_alias_map')) {
     /**
      * Map canonical metadata identifiers to their human-readable key variants.
@@ -62,6 +64,17 @@ if (!function_exists('intersoccer_migration_human_alias_map')) {
             $map[$internal] = intersoccer_migration_human_alias_map_static_fallback($internal);
         }
 
+        foreach (['girls_only', 'program_year'] as $canonical_extra) {
+            $aliases = intersoccer_migration_human_alias_map_static_fallback($canonical_extra);
+            if ($aliases === []) {
+                continue;
+            }
+            $map[$canonical_extra] = array_values(array_unique(array_merge(
+                $map[$canonical_extra] ?? [],
+                $aliases
+            )));
+        }
+
         return $map;
     }
 }
@@ -85,9 +98,37 @@ if (!function_exists('intersoccer_migration_human_alias_map_static_fallback')) {
             'selected_days'      => ['Days Selected', 'Jours sélectionnés', 'Ausgewählte Tage'],
             'canton_region'      => ['Canton / Region', 'Canton / Région'],
             'city'               => ['City', 'Ville'],
+            'program_year'       => ['Year'],
+            'girls_only'         => ['Girls Only', 'girls_only'],
         ];
 
         return $fallback[$internal] ?? [];
+    }
+}
+
+if (!function_exists('intersoccer_migration_pick_meta_label_for_canonical')) {
+    /**
+     * Prefer the human-meta key shape already stored on the line (e.g. girls_only vs Girls Only).
+     *
+     * @param array<int,string> $existing_line_keys
+     */
+    function intersoccer_migration_pick_meta_label_for_canonical(
+        string $canonical,
+        array $human_alias_map,
+        array $existing_line_keys
+    ): string {
+        $aliases = $human_alias_map[$canonical] ?? [$canonical];
+        $flip = array_fill_keys($existing_line_keys, true);
+        foreach ($aliases as $alias) {
+            if (isset($flip[$alias])) {
+                return $alias;
+            }
+        }
+        if (isset($flip[$canonical])) {
+            return $canonical;
+        }
+
+        return $aliases[0] ?? $canonical;
     }
 }
 
@@ -143,6 +184,7 @@ if (!function_exists('intersoccer_migration_canonical_to_facet_key')) {
             'camp_times'         => 'times',
             'activity_type'      => 'activity_type',
             'season'             => 'season',
+            'program_year'       => 'program_year',
             'booking_type'       => 'booking_type',
             'selected_days'      => 'selected_days',
             'canton_region'      => 'canton_region',
@@ -248,6 +290,739 @@ if (!function_exists('intersoccer_migration_prune_meta_rows')) {
     }
 }
 
+if (!function_exists('intersoccer_migration_activity_type_for_girls_only_tristate')) {
+    /**
+     * Activity Type label from base activity text and unified girls-only resolution.
+     */
+    function intersoccer_migration_activity_type_for_girls_only_tristate(string $activity_type, string $girls_only_tristate): string {
+        if ($girls_only_tristate !== 'yes') {
+            return function_exists('intersoccer_canonical_activity_type_for_roster')
+                ? (string) intersoccer_canonical_activity_type_for_roster($activity_type)
+                : trim($activity_type);
+        }
+
+        $base = trim($activity_type);
+        if ($base !== '' && function_exists('intersoccer_text_indicates_girls_only')
+            && intersoccer_text_indicates_girls_only($base)) {
+            $stripped = preg_replace('/,?\s*girls[\s\'\-]*only/iu', '', $base);
+            $base = trim((string) $stripped, ', ');
+            if ($base === '') {
+                $base = 'Course';
+            }
+        }
+
+        return intersoccer_migration_activity_type_with_girls_only_flag($base, 1);
+    }
+}
+
+if (!function_exists('intersoccer_migration_activity_type_with_girls_only_flag')) {
+    /**
+     * Canonical order-item Activity Type label when girls_only is set on the target variation.
+     */
+    function intersoccer_migration_activity_type_with_girls_only_flag(string $activity_type, int $girls_only_flag): string {
+        $activity_type = trim($activity_type);
+        if ($activity_type === '' || $girls_only_flag !== 1) {
+            return function_exists('intersoccer_canonical_activity_type_for_roster')
+                ? (string) intersoccer_canonical_activity_type_for_roster($activity_type)
+                : $activity_type;
+        }
+
+        if (function_exists('intersoccer_text_indicates_girls_only')
+            && intersoccer_text_indicates_girls_only($activity_type)) {
+            return function_exists('intersoccer_canonical_activity_type_for_roster')
+                ? (string) intersoccer_canonical_activity_type_for_roster($activity_type)
+                : $activity_type;
+        }
+
+        $base = function_exists('intersoccer_canonical_activity_type_for_roster')
+            ? (string) intersoccer_canonical_activity_type_for_roster($activity_type)
+            : ucfirst(strtolower($activity_type));
+
+        if ($base === 'Camp') {
+            return 'Camp, Girls Only';
+        }
+        if ($base === 'Course') {
+            return 'Course, Girls Only';
+        }
+        if ($base === 'Girls Only') {
+            return 'Girls Only';
+        }
+
+        return $base . ', Girls Only';
+    }
+}
+
+if (!function_exists('intersoccer_migration_is_player_attendee_meta_key')) {
+    /**
+     * Order-item keys that must survive a roster move (player / attendee, not variation facets).
+     */
+    function intersoccer_migration_is_player_attendee_meta_key(string $key): bool {
+        if ($key === 'assigned_player' || $key === 'assigned_player_id') {
+            return true;
+        }
+
+        if (!function_exists('intersoccer_get_order_meta_field_map')) {
+            $path = dirname(__FILE__) . '/order-meta-keys.php';
+            if (is_readable($path)) {
+                require_once $path;
+            }
+        }
+
+        if (!function_exists('intersoccer_get_order_meta_field_map')) {
+            return in_array($key, [
+                'Assigned Attendee',
+                'Player Index',
+                'Attendee DOB',
+                'Attendee Gender',
+                'Medical Conditions',
+            ], true);
+        }
+
+        $map = intersoccer_get_order_meta_field_map();
+        if (!isset($map[$key])) {
+            return false;
+        }
+
+        return in_array($map[$key], [
+            'assigned_attendee',
+            'player_index',
+            'player_id',
+            'attendee_dob',
+            'attendee_gender',
+            'medical_conditions',
+            'dietary_needs',
+        ], true);
+    }
+}
+
+if (!function_exists('intersoccer_migration_is_variation_rewrite_meta_key')) {
+    /**
+     * Whether this order-item meta key should be removed and rewritten from the target variation.
+     *
+     * @param array<string,string> $human_lookup
+     */
+    function intersoccer_migration_is_variation_rewrite_meta_key(string $key, array $human_lookup): bool {
+        if ($key === '') {
+            return false;
+        }
+
+        if (intersoccer_migration_is_player_attendee_meta_key($key)) {
+            return false;
+        }
+
+        if (function_exists('intersoccer_order_item_meta_key_is_canonical')
+            && intersoccer_order_item_meta_key_is_canonical($key)) {
+            return true;
+        }
+
+        if (preg_match('/^(attribute_)?pa_/i', $key)) {
+            return true;
+        }
+
+        $normalized = intersoccer_migration_normalize_meta_key($key);
+        if (isset($human_lookup[$normalized])) {
+            return true;
+        }
+
+        static $extra_variation_labels = [
+            'variation id',
+            'start date',
+            'end date',
+            'holidays',
+            'year',
+            'note',
+            'girls only',
+            'girls-only',
+            'discount',
+            'discount amount',
+            'base price',
+            'remaining sessions',
+            'late pickup type',
+            'late pickup days',
+            'late pickup cost',
+            'camp start date',
+            'camp end date',
+            'camp week index',
+        ];
+
+        return in_array($normalized, $extra_variation_labels, true);
+    }
+}
+
+if (!function_exists('intersoccer_migration_snapshot_player_attendee_meta')) {
+    /**
+     * @param \WC_Order_Item_Product $item
+     * @return array<string,mixed>
+     */
+    function intersoccer_migration_snapshot_player_attendee_meta($item): array {
+        $snapshot = [];
+        foreach ($item->get_meta_data() as $meta) {
+            $data = $meta->get_data();
+            $key = (string) ($data['key'] ?? '');
+            if ($key === '' || !intersoccer_migration_is_player_attendee_meta_key($key)) {
+                continue;
+            }
+            $snapshot[$key] = $data['value'] ?? '';
+        }
+
+        return $snapshot;
+    }
+}
+
+if (!function_exists('intersoccer_migration_apply_player_attendee_meta_snapshot')) {
+    /**
+     * @param int $item_id
+     * @param array<string,mixed> $snapshot
+     */
+    function intersoccer_migration_apply_player_attendee_meta_snapshot($item_id, array $snapshot): void {
+        if ($item_id <= 0 || $snapshot === []) {
+            return;
+        }
+
+        $item = new WC_Order_Item_Product($item_id);
+        foreach ($snapshot as $key => $value) {
+            $item->update_meta_data((string) $key, $value);
+        }
+        $item->save();
+    }
+}
+
+if (!function_exists('intersoccer_migration_pa_taxonomy_keys_for_move')) {
+    /**
+     * @return array<int,string>
+     */
+    function intersoccer_migration_pa_taxonomy_keys_for_move(): array {
+        return [
+            'pa_intersoccer-venues',
+            'pa_age-group',
+            'pa_camp-terms',
+            'pa_course-day',
+            'pa_course-times',
+            'pa_camp-times',
+            'pa_activity-type',
+            'pa_program-season',
+            'pa_booking-type',
+            'pa_canton-region',
+            'pa_city',
+            'pa_girls-only',
+        ];
+    }
+}
+
+if (!function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
+    /**
+     * Normalize a pa_* meta value to the WooCommerce term slug (not display name).
+     */
+    function intersoccer_migration_coerce_pa_taxonomy_slug(string $taxonomy, string $value): string {
+        $value = trim((string) $value);
+        if ($value === '' || $taxonomy === '') {
+            return '';
+        }
+
+        if ($taxonomy === 'pa_girls-only') {
+            $lower = strtolower($value);
+            if (function_exists('intersoccer_pa_girls_only_slug_is_yes') && intersoccer_pa_girls_only_slug_is_yes($lower)) {
+                return 'yes';
+            }
+            if (in_array($lower, ['no', 'mixed'], true)) {
+                return 'no';
+            }
+
+            return $lower;
+        }
+
+        if (function_exists('taxonomy_exists') && taxonomy_exists($taxonomy)) {
+            if (function_exists('intersoccer_get_cached_term_in_default_language')) {
+                $term = intersoccer_get_cached_term_in_default_language($value, $taxonomy);
+                if ($term && !is_wp_error($term)) {
+                    return (string) $term->slug;
+                }
+            }
+            if (function_exists('intersoccer_get_term_slug_by_name')) {
+                return (string) intersoccer_get_term_slug_by_name($value, $taxonomy);
+            }
+        }
+
+        if (strpos($value, ' ') === false) {
+            return $value;
+        }
+
+        return function_exists('sanitize_title') ? sanitize_title($value) : strtolower(str_replace(' ', '-', $value));
+    }
+}
+
+if (!function_exists('intersoccer_migration_pa_attribute_slug_for_variation')) {
+    /**
+     * Term slug WooCommerce stores for a variation attribute (variation attrs first, then parent).
+     */
+    function intersoccer_migration_pa_attribute_slug_for_variation(WC_Product_Variation $variation, string $taxonomy): string {
+        $taxonomy = str_replace('attribute_', '', $taxonomy);
+
+        foreach ($variation->get_variation_attributes() as $attribute_key => $attribute_value) {
+            $clean_key = str_replace('attribute_', '', (string) $attribute_key);
+            if ($clean_key !== $taxonomy) {
+                continue;
+            }
+            $raw = is_array($attribute_value) ? (string) reset($attribute_value) : (string) $attribute_value;
+
+            return intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $raw);
+        }
+
+        if (method_exists($variation, 'get_attribute')) {
+            $from_variation = $variation->get_attribute($taxonomy);
+            if ($from_variation !== '' && $from_variation !== null) {
+                return intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, (string) $from_variation);
+            }
+        }
+
+        $parent_id = (int) $variation->get_parent_id();
+        if ($parent_id > 0 && function_exists('wc_get_product')) {
+            $parent = wc_get_product($parent_id);
+            if ($parent && method_exists($parent, 'get_attribute')) {
+                $from_parent = $parent->get_attribute($taxonomy);
+                if ($from_parent !== '' && $from_parent !== null) {
+                    return intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, (string) $from_parent);
+                }
+            }
+        }
+
+        return '';
+    }
+}
+
+if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation')) {
+    /**
+     * @param array<string,string> $slug_meta
+     * @return array<string,string>
+     */
+    function intersoccer_migration_normalize_slug_meta_for_variation(array $slug_meta, WC_Product_Variation $variation): array {
+        $normalized = [];
+        foreach ($slug_meta as $meta_key => $meta_value) {
+            if ($meta_key === '' || $meta_value === '' || $meta_value === null) {
+                continue;
+            }
+            if (!preg_match('/^(attribute_)?pa_/i', (string) $meta_key)) {
+                $normalized[$meta_key] = is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value;
+                continue;
+            }
+            $taxonomy = preg_replace('/^attribute_/i', '', (string) $meta_key);
+            $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy);
+            if ($slug === '') {
+                $slug = intersoccer_migration_coerce_pa_taxonomy_slug(
+                    $taxonomy,
+                    is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value
+                );
+            }
+            if ($slug !== '') {
+                $normalized[$meta_key] = $slug;
+            }
+        }
+
+        foreach ($normalized as $meta_key => $slug) {
+            if (!preg_match('/^pa_/i', (string) $meta_key)) {
+                continue;
+            }
+            $attribute_key = 'attribute_' . $meta_key;
+            if (!isset($normalized[$attribute_key]) || $normalized[$attribute_key] === '') {
+                $normalized[$attribute_key] = $slug;
+            }
+            if ($normalized[$attribute_key] !== $slug) {
+                $normalized[$attribute_key] = $slug;
+            }
+        }
+
+        return $normalized;
+    }
+}
+
+if (!function_exists('intersoccer_migration_set_slug_meta_pair')) {
+    /**
+     * @param array<string,string> $slug_meta
+     */
+    function intersoccer_migration_set_slug_meta_pair(array &$slug_meta, string $taxonomy, string $value): void {
+        $value = trim((string) $value);
+        if ($taxonomy === '' || $value === '') {
+            return;
+        }
+        $value = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $value);
+
+        if (!isset($slug_meta[$taxonomy]) || $slug_meta[$taxonomy] === '') {
+            $slug_meta[$taxonomy] = $value;
+        }
+        $attribute_key = 'attribute_' . $taxonomy;
+        if (!isset($slug_meta[$attribute_key]) || $slug_meta[$attribute_key] === '') {
+            $slug_meta[$attribute_key] = $value;
+        }
+    }
+}
+
+if (!function_exists('intersoccer_migration_enrich_slug_meta_from_variation')) {
+    /**
+     * Fill pa_* slugs from variation then parent (WooCommerce line-item shape).
+     *
+     * @param \WC_Product_Variation $variation
+     * @param array<string,string>  $slug_meta
+     * @return array<string,string>
+     */
+    function intersoccer_migration_enrich_slug_meta_from_variation(WC_Product_Variation $variation, array $slug_meta): array {
+        $slug_meta = intersoccer_migration_normalize_slug_meta_for_variation($slug_meta, $variation);
+
+        foreach (intersoccer_migration_pa_taxonomy_keys_for_move() as $taxonomy) {
+            $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy);
+            if ($slug !== '') {
+                intersoccer_migration_set_slug_meta_pair($slug_meta, $taxonomy, $slug);
+            }
+        }
+
+        return intersoccer_migration_normalize_slug_meta_for_variation($slug_meta, $variation);
+    }
+}
+
+if (!function_exists('intersoccer_migration_snapshot_line_pa_slug_values')) {
+    /**
+     * Raw pa_* / attribute_pa_* values on the line before a move rewrite.
+     *
+     * @return array<string,string>
+     */
+    function intersoccer_migration_snapshot_line_pa_slug_values($item): array {
+        $values = [];
+        foreach ($item->get_meta_data() as $meta) {
+            if (is_object($meta) && method_exists($meta, 'get_data')) {
+                $data = $meta->get_data();
+                $key = (string) ($data['key'] ?? '');
+                $value = $data['value'] ?? '';
+            } elseif (is_string($meta)) {
+                continue;
+            } else {
+                continue;
+            }
+            if ($key === '' || !preg_match('/^(attribute_)?pa_/i', $key)) {
+                continue;
+            }
+            $values[$key] = is_array($value) ? (string) reset($value) : (string) $value;
+        }
+
+        return $values;
+    }
+}
+
+if (!function_exists('intersoccer_migration_snapshot_existing_pa_slug_meta_keys')) {
+    /**
+     * pa_* / attribute_pa_* keys already stored on the line (before rewrite).
+     *
+     * @param \WC_Order_Item_Product $item
+     * @return array<int,string>
+     */
+    function intersoccer_migration_snapshot_existing_pa_slug_meta_keys($item): array {
+        $keys = [];
+        foreach ($item->get_meta_data() as $meta) {
+            $key = (string) ($meta->get_data()['key'] ?? '');
+            if ($key !== '' && preg_match('/^(attribute_)?pa_/i', $key)) {
+                $keys[$key] = true;
+            }
+        }
+
+        return array_keys($keys);
+    }
+}
+
+if (!function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
+    /**
+     * Keep slug rewrites on keys the line already had, plus variation attributes Woo would store.
+     *
+     * @param array<string,string>  $slug_meta
+     * @param array<int,string>     $existing_pa_keys
+     * @param \WC_Product_Variation $variation
+     * @return array<string,string>
+     */
+    function intersoccer_migration_filter_slug_meta_for_move(array $slug_meta, array $existing_pa_keys, WC_Product_Variation $variation): array {
+        $allowed = [];
+        foreach ($existing_pa_keys as $key) {
+            $allowed[$key] = true;
+        }
+        foreach ($variation->get_variation_attributes() as $attribute_key => $attribute_value) {
+            $allowed[(string) $attribute_key] = true;
+            $clean_key = str_replace('attribute_', '', (string) $attribute_key);
+            $allowed[$clean_key] = true;
+        }
+
+        if (function_exists('intersoccer_migration_pa_taxonomy_keys_for_move')
+            && method_exists($variation, 'get_attribute')) {
+            foreach (intersoccer_migration_pa_taxonomy_keys_for_move() as $taxonomy) {
+                $from_variation = $variation->get_attribute($taxonomy);
+                if ($from_variation === '' || $from_variation === null) {
+                    continue;
+                }
+                $allowed[$taxonomy] = true;
+                $allowed['attribute_' . $taxonomy] = true;
+            }
+        }
+
+        $filtered = [];
+        foreach ($slug_meta as $meta_key => $meta_value) {
+            if (!isset($allowed[$meta_key])) {
+                continue;
+            }
+            if ($meta_value === '' || $meta_value === null) {
+                continue;
+            }
+            $filtered[$meta_key] = is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value;
+        }
+
+        return intersoccer_migration_normalize_slug_meta_for_variation($filtered, $variation);
+    }
+}
+
+if (!function_exists('intersoccer_migration_apply_slug_meta_for_move')) {
+    /**
+     * @param array<string,string> $slug_meta
+     */
+    function intersoccer_migration_apply_slug_meta_for_move(int $item_id, array $slug_meta): void {
+        if ($item_id <= 0 || $slug_meta === []) {
+            return;
+        }
+
+        $item = new WC_Order_Item_Product($item_id);
+        foreach ($slug_meta as $meta_key => $meta_value) {
+            if ($meta_key === '' || $meta_value === '' || $meta_value === null) {
+                continue;
+            }
+            $item->update_meta_data((string) $meta_key, is_array($meta_value) ? reset($meta_value) : $meta_value);
+        }
+        $item->save();
+    }
+}
+
+if (!function_exists('intersoccer_migration_remove_variation_meta_for_move')) {
+    /**
+     * Strip variation-derived meta before WooCommerce saves the new line item; preserve player/attendee keys.
+     *
+     * @param \WC_Order_Item_Product $item
+     * @param array<string,string>   $human_lookup
+     */
+    function intersoccer_migration_remove_variation_meta_for_move($item, array $human_lookup): void {
+        foreach ($item->get_meta_data() as $meta) {
+            $key = (string) $meta->get_data()['key'];
+            if (!intersoccer_migration_is_variation_rewrite_meta_key($key, $human_lookup)) {
+                continue;
+            }
+            $item->delete_meta_data($key);
+        }
+    }
+}
+
+if (!function_exists('intersoccer_migration_snapshot_line_meta_keys')) {
+    /**
+     * @param \WC_Order_Item_Product $item
+     * @return array<int,string>
+     */
+    function intersoccer_migration_snapshot_line_meta_keys($item): array {
+        $keys = [];
+        foreach ($item->get_meta_data() as $meta) {
+            $key = (string) ($meta->get_data()['key'] ?? '');
+            if ($key !== '') {
+                $keys[$key] = true;
+            }
+        }
+
+        return array_keys($keys);
+    }
+}
+
+if (!function_exists('intersoccer_migration_snapshot_line_meta_values')) {
+    /**
+     * @return array{human: array<string,string>, other: array<string,string>}
+     */
+    function intersoccer_migration_snapshot_line_meta_values(
+        $item,
+        array $human_alias_map,
+        array $human_lookup
+    ): array {
+        $human = [];
+        $other = [];
+        foreach ($item->get_meta_data() as $meta) {
+            $data = $meta->get_data();
+            $key = (string) ($data['key'] ?? '');
+            if ($key === '') {
+                continue;
+            }
+            $value = is_array($data['value'] ?? null)
+                ? implode(', ', array_map('trim', $data['value']))
+                : trim((string) ($data['value'] ?? ''));
+            $normalized = intersoccer_migration_normalize_meta_key($key);
+            if (isset($human_lookup[$normalized])) {
+                $human[$human_lookup[$normalized]] = $value;
+                continue;
+            }
+            $other[$key] = $value;
+        }
+
+        return ['human' => $human, 'other' => $other];
+    }
+}
+
+if (!function_exists('intersoccer_migration_allowed_canonicals_for_move')) {
+    /**
+     * @param array<int,string>              $existing_line_keys
+     * @param array<string,array<int,string>> $human_alias_map
+     * @param array<string,string>           $human_lookup
+     * @return array<int,string>
+     */
+    function intersoccer_migration_allowed_canonicals_for_move(
+        array $existing_line_keys,
+        array $human_alias_map,
+        array $human_lookup
+    ): array {
+        $allowed = [];
+        $existing_flip = array_fill_keys($existing_line_keys, true);
+
+        foreach ($existing_line_keys as $key) {
+            $normalized = intersoccer_migration_normalize_meta_key($key);
+            if (isset($human_lookup[$normalized])) {
+                $allowed[$human_lookup[$normalized]] = true;
+            }
+        }
+
+        foreach (['Girls Only', 'girls_only', 'pa_girls-only', 'attribute_pa_girls-only'] as $girls_key) {
+            if (isset($existing_flip[$girls_key])) {
+                $allowed['girls_only'] = true;
+                break;
+            }
+        }
+
+        if (isset($existing_flip['Year'])) {
+            $allowed['program_year'] = true;
+        }
+
+        return array_keys($allowed);
+    }
+}
+
+if (!function_exists('intersoccer_migration_filter_human_meta_for_move')) {
+    /**
+     * @param array<string,string> $human_meta
+     * @param array<int,string>    $allowed_canonicals
+     * @return array<string,string>
+     */
+    function intersoccer_migration_filter_human_meta_for_move(array $human_meta, array $allowed_canonicals): array {
+        if ($allowed_canonicals === []) {
+            return $human_meta;
+        }
+
+        $flip = array_fill_keys($allowed_canonicals, true);
+        $filtered = [];
+        foreach ($human_meta as $canonical => $value) {
+            if (isset($flip[$canonical])) {
+                $filtered[$canonical] = $value;
+            }
+        }
+
+        return $filtered;
+    }
+}
+
+if (!function_exists('intersoccer_migration_filter_other_meta_for_move')) {
+    /**
+     * @param array<string,string> $other_meta
+     * @param array<int,string>    $existing_line_keys
+     * @return array<string,string>
+     */
+    function intersoccer_migration_filter_other_meta_for_move(array $other_meta, array $existing_line_keys): array {
+        $flip = array_fill_keys($existing_line_keys, true);
+        $filtered = [];
+        foreach ($other_meta as $key => $value) {
+            if (isset($flip[$key])) {
+                $filtered[$key] = $value;
+            }
+        }
+
+        return $filtered;
+    }
+}
+
+if (!function_exists('intersoccer_migration_prune_unexpected_move_meta_keys')) {
+    /**
+     * @param int                  $item_id
+     * @param array<int,string>    $existing_line_keys
+     * @param array<string,string> $human_lookup
+     */
+    function intersoccer_migration_prune_unexpected_move_meta_keys(
+        int $item_id,
+        array $existing_line_keys,
+        array $human_lookup
+    ): void {
+        $allowed = array_fill_keys($existing_line_keys, true);
+        $item = new WC_Order_Item_Product($item_id);
+        foreach ($item->get_meta_data() as $meta) {
+            $key = (string) ($meta->get_data()['key'] ?? '');
+            if ($key === '' || isset($allowed[$key])) {
+                continue;
+            }
+            if (!intersoccer_migration_is_variation_rewrite_meta_key($key, $human_lookup)) {
+                continue;
+            }
+            $item->delete_meta_data($key);
+        }
+        $item->save();
+    }
+}
+
+if (!function_exists('intersoccer_migration_finalize_move_item_meta')) {
+    /**
+     * @param \WC_Product_Variation $variation
+     */
+    function intersoccer_migration_finalize_move_item_meta(
+        int $item_id,
+        array $human_alias_map,
+        array $human_lookup,
+        array $human_meta,
+        array $other_meta,
+        array $slug_meta,
+        array $existing_line_keys,
+        WC_Product_Variation $variation
+    ): void {
+        if ($item_id <= 0) {
+            return;
+        }
+
+        $allowed_canonicals = intersoccer_migration_allowed_canonicals_for_move(
+            $existing_line_keys,
+            $human_alias_map,
+            $human_lookup
+        );
+        $human_meta = intersoccer_migration_filter_human_meta_for_move($human_meta, $allowed_canonicals);
+        $other_meta = intersoccer_migration_filter_other_meta_for_move($other_meta, $existing_line_keys);
+
+        $existing_pa = array_values(array_filter(
+            $existing_line_keys,
+            static function ($key) {
+                return preg_match('/^(attribute_)?pa_/i', (string) $key);
+            }
+        ));
+        if (function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
+            $slug_meta = intersoccer_migration_filter_slug_meta_for_move($slug_meta, $existing_pa, $variation);
+        }
+        if (function_exists('intersoccer_migration_normalize_slug_meta_for_variation')) {
+            $slug_meta = intersoccer_migration_normalize_slug_meta_for_variation($slug_meta, $variation);
+        }
+
+        intersoccer_migration_restore_canonical_meta(
+            $item_id,
+            $human_alias_map,
+            $human_lookup,
+            $human_meta,
+            $other_meta,
+            $existing_line_keys
+        );
+
+        if ($slug_meta !== [] && function_exists('intersoccer_migration_apply_slug_meta_for_move')) {
+            intersoccer_migration_apply_slug_meta_for_move($item_id, $slug_meta);
+        }
+
+        intersoccer_migration_prune_unexpected_move_meta_keys($item_id, $existing_line_keys, $human_lookup);
+    }
+}
+
 if (!function_exists('intersoccer_migration_restore_canonical_meta')) {
     /**
      * Reapply canonical checkout metadata (English keys and values).
@@ -263,7 +1038,8 @@ if (!function_exists('intersoccer_migration_restore_canonical_meta')) {
         array $human_alias_map,
         array $human_lookup,
         array $human_meta,
-        array $other_meta
+        array $other_meta,
+        array $existing_line_keys = []
     ) {
         $item = new WC_Order_Item_Product($item_id);
 
@@ -281,7 +1057,10 @@ if (!function_exists('intersoccer_migration_restore_canonical_meta')) {
                 $item->delete_meta_data($alias_key);
             }
 
-            $item->add_meta_data($aliases[0], $normalized_value, true);
+            $label = function_exists('intersoccer_migration_pick_meta_label_for_canonical')
+                ? intersoccer_migration_pick_meta_label_for_canonical($canonical, $human_alias_map, $existing_line_keys)
+                : $aliases[0];
+            $item->add_meta_data($label, $normalized_value, true);
         }
 
         foreach ($other_meta as $meta_key => $meta_value) {
