@@ -1839,8 +1839,24 @@ function intersoccer_render_roster_details_page() {
 
             console.log('InterSoccer Migration: Starting AJAX request with allow_cross_gender=' + allowCrossGender);
 
-            // Enhanced AJAX call with better error handling
-            $.ajax({
+            const warningLabels = {
+                private: '<?php echo esc_js(__('Destination variation is not publicly purchasable (e.g. private).', 'intersoccer-reports-rosters')); ?>',
+                full: '<?php echo esc_js(__('Destination may be full (stock or roster capacity).', 'intersoccer-reports-rosters')); ?>',
+                past_end_date: '<?php echo esc_js(__('Destination end date is in the past.', 'intersoccer-reports-rosters')); ?>',
+                cross_gender: '<?php echo esc_js(__('Moving between Girls Only and regular rosters.', 'intersoccer-reports-rosters')); ?>'
+            };
+
+            function formatMoveWarnings(warnings) {
+                if (!warnings || !warnings.length) {
+                    return '';
+                }
+                return warnings.map(function(code) {
+                    return '• ' + (warningLabels[code] || code);
+                }).join('\n');
+            }
+
+            function runMoveAjax(confirmWarnings) {
+                $.ajax({
                 url: ajaxurl,
                 type: 'POST',
                 data: {
@@ -1848,10 +1864,11 @@ function intersoccer_render_roster_details_page() {
                     nonce: '<?php echo esc_js(wp_create_nonce('intersoccer_move_nonce')); ?>',
                     target_variation_id: parseInt(targetVar),
                     order_item_ids: selectedItems,
-                    allow_cross_gender: allowCrossGender ? '1' : '0'
+                    allow_cross_gender: allowCrossGender ? '1' : '0',
+                    confirm_warnings: confirmWarnings ? '1' : '0'
                 },
                 beforeSend: function() {
-                    console.log('InterSoccer Migration: AJAX request started');
+                    console.log('InterSoccer Migration: AJAX request started (confirm_warnings=' + (confirmWarnings ? '1' : '0') + ')');
                     applyBulk.prop('disabled', true).text('Moving Players...');
                     
                     // Show progress indicator
@@ -1865,6 +1882,17 @@ function intersoccer_render_roster_details_page() {
                     
                     $('#migration-progress').remove();
                     
+                    if (response.success && response.data && response.data.needs_confirmation) {
+                        applyBulk.prop('disabled', false).text('Apply');
+                        const warnText = formatMoveWarnings(response.data.warnings || []);
+                        const confirmWarnMessage = (response.data.message || '<?php echo esc_js(__('Confirm move despite warnings?', 'intersoccer-reports-rosters')); ?>') +
+                            '\n\n' + warnText + '\n\n<?php echo esc_js(__('Proceed with the move?', 'intersoccer-reports-rosters')); ?>';
+                        if (confirm(confirmWarnMessage)) {
+                            runMoveAjax(true);
+                        }
+                        return;
+                    }
+
                     if (response.success) {
                         alert('Success: ' + response.data.message);
                         const shouldOpenTargetRoster = confirm('<?php echo esc_js(__('Open destination roster in a new tab to verify migrated player data?', 'intersoccer-reports-rosters')); ?>');
@@ -1945,6 +1973,9 @@ function intersoccer_render_roster_details_page() {
                     $('#migration-progress').remove();
                 }
             });
+            }
+
+            runMoveAjax(false);
         });
 
         // Add keyboard shortcuts for better UX
