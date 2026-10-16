@@ -609,7 +609,7 @@ if (!function_exists('intersoccer_migration_pa_variation_attribute_stored_form')
             break;
         }
         $variation_display = '';
-        if (method_exists($variation, 'get_attribute')) {
+        if (is_object($variation) && is_callable([$variation, 'get_attribute'])) {
             $from_attr = $variation->get_attribute($taxonomy);
             if ($from_attr !== '' && $from_attr !== null) {
                 $variation_display = (string) $from_attr;
@@ -688,34 +688,92 @@ if (!function_exists('intersoccer_migration_pa_existing_line_value_for_key')) {
     }
 }
 
+if (!function_exists('intersoccer_migration_pa_line_value_uses_slug_form')) {
+    /**
+     * Whether the line already stores a taxonomy value as the term slug (not a display label).
+     */
+    function intersoccer_migration_pa_line_value_uses_slug_form(string $taxonomy, string $existing): bool {
+        $existing = trim($existing);
+        if ($existing === '') {
+            return true;
+        }
+        $coerced = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $existing);
+
+        return $coerced !== '' && $coerced === $existing;
+    }
+}
+
+if (!function_exists('intersoccer_migration_pa_target_term_display_for_variation')) {
+    /**
+     * Display label for the target term on this variation (fallback: WP term name).
+     */
+    function intersoccer_migration_pa_target_term_display_for_variation(
+        string $taxonomy,
+        WC_Product_Variation $variation,
+        string $target_slug
+    ): string {
+        $target_slug = trim($target_slug);
+        if ($target_slug === '') {
+            return '';
+        }
+
+        $preferred = intersoccer_migration_pa_variation_attribute_stored_form($variation, $taxonomy, $target_slug);
+        if ($preferred !== ''
+            && intersoccer_migration_pa_stored_value_same_term_as_slug($taxonomy, $preferred, $target_slug)
+            && !intersoccer_migration_pa_line_value_uses_slug_form($taxonomy, $preferred)) {
+            return $preferred;
+        }
+
+        if (is_object($variation) && is_callable([$variation, 'get_attribute'])) {
+            $from_attr = $variation->get_attribute($taxonomy);
+            if ($from_attr !== '' && $from_attr !== null
+                && intersoccer_migration_pa_stored_value_same_term_as_slug($taxonomy, (string) $from_attr, $target_slug)
+                && !intersoccer_migration_pa_line_value_uses_slug_form($taxonomy, (string) $from_attr)) {
+                return (string) $from_attr;
+            }
+        }
+
+        if (function_exists('taxonomy_exists') && taxonomy_exists($taxonomy)) {
+            if (function_exists('intersoccer_get_cached_term_in_default_language')) {
+                $term = intersoccer_get_cached_term_in_default_language($target_slug, $taxonomy);
+                if ($term && !is_wp_error($term)) {
+                    return (string) $term->name;
+                }
+            }
+            $term = get_term_by('slug', $target_slug, $taxonomy);
+            if ($term && !is_wp_error($term)) {
+                return (string) $term->name;
+            }
+        }
+
+        return $target_slug;
+    }
+}
+
 if (!function_exists('intersoccer_migration_pa_value_when_term_changes')) {
     /**
-     * Bytes to store when the target term differs from the line (Emily: term slug, not venue display labels).
+     * Bytes when the target term differs from the line: match slug vs display form per key; missing → slug.
      */
     function intersoccer_migration_pa_value_when_term_changes(
         string $taxonomy,
         WC_Product_Variation $variation,
-        string $slug
+        string $slug,
+        string $existing_on_key
     ): string {
         $slug = trim($slug);
         if ($slug === '') {
             return '';
         }
 
-        if ($taxonomy === 'pa_intersoccer-venues') {
+        if (trim($existing_on_key) === '') {
             return $slug;
         }
 
-        $preferred = intersoccer_migration_pa_variation_attribute_stored_form($variation, $taxonomy, $slug);
-        if ($preferred === '') {
+        if (intersoccer_migration_pa_line_value_uses_slug_form($taxonomy, $existing_on_key)) {
             return $slug;
         }
 
-        if (!intersoccer_migration_pa_stored_value_same_term_as_slug($taxonomy, $preferred, $slug)) {
-            return $slug;
-        }
-
-        return $preferred;
+        return intersoccer_migration_pa_target_term_display_for_variation($taxonomy, $variation, $slug);
     }
 }
 
@@ -775,7 +833,12 @@ if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation'))
             if ($existing !== '' && intersoccer_migration_pa_stored_value_same_term_as_slug($taxonomy, $existing, $slug)) {
                 $normalized[$meta_key] = $existing;
             } else {
-                $normalized[$meta_key] = intersoccer_migration_pa_value_when_term_changes($taxonomy, $variation, $slug);
+                $normalized[$meta_key] = intersoccer_migration_pa_value_when_term_changes(
+                    $taxonomy,
+                    $variation,
+                    $slug,
+                    $existing
+                );
             }
         }
 
