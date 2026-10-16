@@ -712,6 +712,134 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertNotSame('yes', $normalized['pa_girls-only']);
     }
 
+    public function test_normalize_slug_meta_writes_display_name_when_term_changes_and_line_used_display_form(): void {
+        $target_slug = 'spring-summer-2026';
+        $target_display = 'Spring Summer 2026';
+
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_program-season' => $target_slug,
+        ]);
+        $variation->shouldReceive('get_attribute')->with('pa_program-season')->andReturn($target_display);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn(0);
+
+        $existing_line_pa = [
+            'pa_program-season' => 'Autumn 2026',
+            'attribute_pa_program-season' => 'Autumn 2026',
+        ];
+        $slug_meta = [
+            'pa_program-season' => $target_slug,
+            'attribute_pa_program-season' => $target_slug,
+        ];
+
+        $normalized = intersoccer_migration_normalize_slug_meta_for_variation(
+            $slug_meta,
+            $variation,
+            $existing_line_pa
+        );
+
+        $this->assertSame($target_display, $normalized['pa_program-season']);
+        $this->assertSame($target_display, $normalized['attribute_pa_program-season']);
+        $this->assertNotSame($target_slug, $normalized['pa_program-season']);
+    }
+
+    public function test_normalize_slug_meta_round_trip_slug_form_across_real_term_change(): void {
+        $from_slug = 'geneva-college-sismondi-nations';
+        $to_slug = 'geneva-stade-chenois-thonex';
+        $to_display = 'Geneva - Stade Chênois, Thonex';
+
+        $variation_out = Mockery::mock('WC_Product_Variation');
+        $variation_out->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_intersoccer-venues' => $to_slug,
+        ]);
+        $variation_out->shouldReceive('get_attribute')->with('pa_intersoccer-venues')->andReturn($to_display);
+        $variation_out->shouldReceive('get_attribute')->andReturn('');
+        $variation_out->shouldReceive('get_parent_id')->andReturn(0);
+
+        $variation_back = Mockery::mock('WC_Product_Variation');
+        $variation_back->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_intersoccer-venues' => $from_slug,
+        ]);
+        $variation_back->shouldReceive('get_attribute')->with('pa_intersoccer-venues')->andReturn('Geneva - Collège Sismondi (Nations)');
+        $variation_back->shouldReceive('get_attribute')->andReturn('');
+        $variation_back->shouldReceive('get_parent_id')->andReturn(0);
+
+        $baseline = [
+            'pa_intersoccer-venues' => $from_slug,
+            'attribute_pa_intersoccer-venues' => $from_slug,
+        ];
+        $slug_meta_out = [
+            'pa_intersoccer-venues' => $to_slug,
+            'attribute_pa_intersoccer-venues' => $to_slug,
+        ];
+        $after_out = intersoccer_migration_normalize_slug_meta_for_variation($slug_meta_out, $variation_out, $baseline);
+        $this->assertSame($to_slug, $after_out['pa_intersoccer-venues']);
+
+        $slug_meta_back = [
+            'pa_intersoccer-venues' => $from_slug,
+            'attribute_pa_intersoccer-venues' => $from_slug,
+        ];
+        $line_after_out = [
+            'pa_intersoccer-venues' => $after_out['pa_intersoccer-venues'],
+            'attribute_pa_intersoccer-venues' => $after_out['attribute_pa_intersoccer-venues'],
+        ];
+        $after_back = intersoccer_migration_normalize_slug_meta_for_variation($slug_meta_back, $variation_back, $line_after_out);
+        $this->assertSame($baseline['pa_intersoccer-venues'], $after_back['pa_intersoccer-venues']);
+        $this->assertSame($baseline['attribute_pa_intersoccer-venues'], $after_back['attribute_pa_intersoccer-venues']);
+    }
+
+    public function test_normalize_slug_meta_round_trip_display_form_across_real_term_change(): void {
+        $autumn_display = 'Autumn 2026';
+        $spring_slug = 'spring-summer-2026';
+        $spring_display = 'Spring Summer 2026';
+
+        $variation_out = Mockery::mock('WC_Product_Variation');
+        $variation_out->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_program-season' => $spring_slug,
+        ]);
+        $variation_out->shouldReceive('get_attribute')->with('pa_program-season')->andReturn($spring_display);
+        $variation_out->shouldReceive('get_attribute')->andReturn('');
+        $variation_out->shouldReceive('get_parent_id')->andReturn(0);
+
+        $variation_back = Mockery::mock('WC_Product_Variation');
+        $variation_back->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_program-season' => 'autumn-2026',
+        ]);
+        $variation_back->shouldReceive('get_attribute')->with('pa_program-season')->andReturn($autumn_display);
+        $variation_back->shouldReceive('get_attribute')->andReturn('');
+        $variation_back->shouldReceive('get_parent_id')->andReturn(0);
+
+        $baseline = [
+            'pa_program-season' => $autumn_display,
+            'attribute_pa_program-season' => $autumn_display,
+        ];
+        $after_out = intersoccer_migration_normalize_slug_meta_for_variation(
+            [
+                'pa_program-season' => $spring_slug,
+                'attribute_pa_program-season' => $spring_slug,
+            ],
+            $variation_out,
+            $baseline
+        );
+        $this->assertSame($spring_display, $after_out['pa_program-season']);
+
+        $line_after_out = [
+            'pa_program-season' => $after_out['pa_program-season'],
+            'attribute_pa_program-season' => $after_out['attribute_pa_program-season'],
+        ];
+        $after_back = intersoccer_migration_normalize_slug_meta_for_variation(
+            [
+                'pa_program-season' => 'autumn-2026',
+                'attribute_pa_program-season' => 'autumn-2026',
+            ],
+            $variation_back,
+            $line_after_out
+        );
+        $this->assertSame($baseline['pa_program-season'], $after_back['pa_program-season']);
+        $this->assertSame($baseline['attribute_pa_program-season'], $after_back['attribute_pa_program-season']);
+    }
+
     public function test_normalize_slug_meta_writes_venue_term_slug_when_name_differs_from_slug(): void {
         $venue_slug = 'geneva-stade-chenois-thonex';
         $venue_display = 'Geneva - Stade Chênois, Thonex';
@@ -742,6 +870,25 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertSame($venue_slug, $normalized['pa_intersoccer-venues']);
         $this->assertSame($venue_slug, $normalized['attribute_pa_intersoccer-venues']);
         $this->assertNotSame($venue_display, $normalized['pa_intersoccer-venues']);
+    }
+
+    public function test_normalize_slug_meta_writes_slug_when_key_missing_on_line(): void {
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_city' => 'geneva',
+        ]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn(0);
+
+        $slug_meta = [
+            'pa_city' => 'geneva',
+            'attribute_pa_city' => 'geneva',
+        ];
+
+        $normalized = intersoccer_migration_normalize_slug_meta_for_variation($slug_meta, $variation, []);
+
+        $this->assertSame('geneva', $normalized['pa_city']);
+        $this->assertSame('geneva', $normalized['attribute_pa_city']);
     }
 
     public function test_normalize_slug_meta_writes_target_slug_when_term_changes_or_key_missing(): void {
