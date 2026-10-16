@@ -213,6 +213,10 @@ class MovePlayersMigrationMetaTest extends TestCase {
         );
     }
 
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
     public function test_build_migration_meta_updates_keeps_girls_only_in_activity_type(): void {
         if (!function_exists('intersoccer_build_migration_meta_updates')) {
             $this->markTestSkipped('intersoccer_build_migration_meta_updates not available');
@@ -578,6 +582,10 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertSame('girls_only', $label);
     }
 
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
     public function test_sandbox_7884_shape_girls_only_target_activity_type_label(): void {
         if (!function_exists('intersoccer_build_migration_meta_updates')) {
             $this->markTestSkipped('intersoccer_build_migration_meta_updates not available');
