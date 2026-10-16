@@ -1128,7 +1128,12 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
         }
 
         $product_type = '';
-        if (function_exists('intersoccer_get_product_type')) {
+        if (function_exists('intersoccer_get_product_type_safe')) {
+            $product_type = intersoccer_get_product_type_safe(
+                (int) $variation->get_parent_id(),
+                (int) $variation->get_id()
+            );
+        } elseif (function_exists('intersoccer_get_product_type')) {
             $product_type = intersoccer_get_product_type($variation->get_parent_id());
         }
 
