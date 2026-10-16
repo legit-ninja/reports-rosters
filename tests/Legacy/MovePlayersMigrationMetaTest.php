@@ -26,7 +26,6 @@ class MovePlayersMigrationMetaTest extends TestCase {
         require_once dirname(__DIR__, 2) . '/includes/migration-meta.php';
         require_once dirname(__DIR__, 2) . '/includes/utils.php';
         require_once dirname(__DIR__, 2) . '/includes/roster-move-admin-target.php';
-        require_once dirname(__DIR__) . '/stubs/move-players-product-type-stub.php';
         if (file_exists(dirname(__DIR__, 2) . '/includes/advanced.php')) {
             require_once dirname(__DIR__, 2) . '/includes/advanced.php';
         }
