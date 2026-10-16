@@ -14,8 +14,11 @@ class MovePlayersMigrationMetaTest extends TestCase {
 
     protected function setUp(): void {
         parent::setUp();
-        global $intersoccer_test_get_product_type_callback;
+        global $intersoccer_test_get_product_type_callback, $intersoccer_test_product_type_safe_callback;
         $intersoccer_test_get_product_type_callback = static function () {
+            return 'course';
+        };
+        $intersoccer_test_product_type_safe_callback = static function () {
             return 'course';
         };
         require_once dirname(__DIR__, 2) . '/includes/order-meta-keys.php';
@@ -23,7 +26,7 @@ class MovePlayersMigrationMetaTest extends TestCase {
         require_once dirname(__DIR__, 2) . '/includes/migration-meta.php';
         require_once dirname(__DIR__, 2) . '/includes/utils.php';
         require_once dirname(__DIR__, 2) . '/includes/roster-move-admin-target.php';
-        require_once dirname(__DIR__) . '/stubs/get-product-type-stub.php';
+        require_once dirname(__DIR__) . '/stubs/move-players-product-type-stub.php';
         if (file_exists(dirname(__DIR__, 2) . '/includes/advanced.php')) {
             require_once dirname(__DIR__, 2) . '/includes/advanced.php';
         }
@@ -160,8 +163,11 @@ class MovePlayersMigrationMetaTest extends TestCase {
      * @return \Mockery\MockInterface
      */
     private function makeParentGirlsOnlyVariationForMigration(int $variation_id = 53637, int $parent_id = 37430) {
-        global $intersoccer_test_get_product_type_callback;
+        global $intersoccer_test_get_product_type_callback, $intersoccer_test_product_type_safe_callback;
         $intersoccer_test_get_product_type_callback = static function () {
+            return 'course';
+        };
+        $intersoccer_test_product_type_safe_callback = static function () {
             return 'course';
         };
 
@@ -213,8 +219,11 @@ class MovePlayersMigrationMetaTest extends TestCase {
             $this->markTestSkipped('intersoccer_build_migration_meta_updates not available');
         }
 
-        global $intersoccer_test_get_product_type_callback;
+        global $intersoccer_test_get_product_type_callback, $intersoccer_test_product_type_safe_callback;
         $intersoccer_test_get_product_type_callback = static function () {
+            return 'course';
+        };
+        $intersoccer_test_product_type_safe_callback = static function () {
             return 'course';
         };
 
@@ -575,8 +584,11 @@ class MovePlayersMigrationMetaTest extends TestCase {
             $this->markTestSkipped('intersoccer_build_migration_meta_updates not available');
         }
 
-        global $intersoccer_test_get_product_type_callback;
+        global $intersoccer_test_get_product_type_callback, $intersoccer_test_product_type_safe_callback;
         $intersoccer_test_get_product_type_callback = static function () {
+            return 'course';
+        };
+        $intersoccer_test_product_type_safe_callback = static function () {
             return 'course';
         };
 
