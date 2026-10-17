@@ -498,19 +498,28 @@ if (function_exists('intersoccer_set_bulk_normalize_quiet')) {
     intersoccer_set_bulk_normalize_quiet(false);
 }
 
+if (function_exists('intersoccer_reports_note_readonly_db_error_if_any')) {
+    intersoccer_reports_note_readonly_db_error_if_any();
+}
+
 $readonly_write_attempts = function_exists('intersoccer_reports_get_readonly_write_attempts')
     ? intersoccer_reports_get_readonly_write_attempts()
     : 0;
+
+echo "\n== dry-run result summary\n";
 if ($readonly_write_attempts > 0) {
-    echo "\nABORT: {$readonly_write_attempts} transient/option write attempt(s) detected during dry-run\n";
+    echo "RESULT: INVALID\n";
+    echo "ABORT: {$readonly_write_attempts} transient/option write attempt(s) detected during dry-run\n";
     if (function_exists('intersoccer_reports_set_readonly_mode')) {
         intersoccer_reports_set_readonly_mode(false);
     }
     return;
 }
 
+echo "RESULT: OK\n";
+
 if (function_exists('intersoccer_reports_set_readonly_mode')) {
     intersoccer_reports_set_readonly_mode(false);
 }
 
-echo "\nDRY RUN complete (no writes).\n";
+echo "DRY RUN complete (no writes).\n";

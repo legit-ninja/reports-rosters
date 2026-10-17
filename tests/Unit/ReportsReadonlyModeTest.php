@@ -21,6 +21,7 @@ class ReportsReadonlyModeTest extends TestCase {
     }
 
     protected function tearDown(): void {
+        unset($GLOBALS['intersoccer_test_emit_wp_hooks']);
         if (function_exists('intersoccer_reports_set_readonly_mode')) {
             intersoccer_reports_set_readonly_mode(false);
         }
@@ -52,5 +53,21 @@ class ReportsReadonlyModeTest extends TestCase {
         $second = intersoccer_get_cached_term_in_default_language('geneva-venue', 'pa_intersoccer-venues');
 
         $this->assertSame($first, $second);
+    }
+
+    public function test_write_guards_count_add_option_update_option_and_setted_transient(): void {
+        if (!function_exists('intersoccer_reports_register_readonly_write_guards')) {
+            $this->fail('Read-only write guards must be loaded');
+        }
+
+        $GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
+        intersoccer_reports_register_readonly_write_guards();
+        intersoccer_reports_set_readonly_mode(true);
+
+        add_option('_transient_new_dryrun_probe', 'payload', 'no');
+        set_transient('new_dryrun_transient_key', 'payload', HOUR_IN_SECONDS);
+        update_option('intersoccer_dryrun_probe_option', 'next');
+
+        $this->assertSame(3, intersoccer_reports_get_readonly_write_attempts());
     }
 }

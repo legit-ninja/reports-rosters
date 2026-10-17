@@ -4426,6 +4426,34 @@ if (!function_exists('intersoccer_reports_get_readonly_write_attempts')) {
     }
 }
 
+if (!function_exists('intersoccer_reports_note_readonly_write_attempt')) {
+    function intersoccer_reports_note_readonly_write_attempt() {
+        if (!intersoccer_reports_is_readonly_mode()) {
+            return;
+        }
+        $GLOBALS['intersoccer_reports_readonly_write_attempts'] = intersoccer_reports_get_readonly_write_attempts() + 1;
+    }
+}
+
+if (!function_exists('intersoccer_reports_note_readonly_db_error_if_any')) {
+    /**
+     * Treat MySQL read-only transaction errors as write attempts (dry-run detector).
+     */
+    function intersoccer_reports_note_readonly_db_error_if_any() {
+        if (!intersoccer_reports_is_readonly_mode()) {
+            return;
+        }
+        global $wpdb;
+        $err = isset($wpdb->last_error) ? (string) $wpdb->last_error : '';
+        if ($err === '') {
+            return;
+        }
+        if (stripos($err, 'read-only') !== false || stripos($err, '1792') !== false) {
+            intersoccer_reports_note_readonly_write_attempt();
+        }
+    }
+}
+
 if (!function_exists('intersoccer_reports_persist_transient')) {
     /**
      * @return bool True when set_transient ran; false when skipped (read-only).
@@ -4440,30 +4468,28 @@ if (!function_exists('intersoccer_reports_persist_transient')) {
 
 if (!function_exists('intersoccer_reports_register_readonly_write_guards')) {
     /**
-     * Count and block transient/option writes while read-only mode is on (dry-run safety net).
+     * Count option/transient writes while read-only mode is on; block option updates via pre_update_option.
      */
     function intersoccer_reports_register_readonly_write_guards() {
         static $registered = false;
-        if ($registered || !function_exists('add_filter')) {
+        if ($registered || !function_exists('add_action')) {
             return;
         }
         $registered = true;
 
-        add_filter('pre_set_transient', static function ($value, $transient) {
-            if (!intersoccer_reports_is_readonly_mode()) {
-                return $value;
-            }
-            $GLOBALS['intersoccer_reports_readonly_write_attempts'] = intersoccer_reports_get_readonly_write_attempts() + 1;
-            return false;
-        }, 1, 2);
+        add_action('add_option', 'intersoccer_reports_note_readonly_write_attempt', 1, 0);
+        add_action('update_option', 'intersoccer_reports_note_readonly_write_attempt', 1, 0);
+        add_action('setted_transient', 'intersoccer_reports_note_readonly_write_attempt', 1, 0);
 
-        add_filter('pre_update_option', static function ($value, $option, $old_value) {
-            if (!intersoccer_reports_is_readonly_mode()) {
-                return $value;
-            }
-            $GLOBALS['intersoccer_reports_readonly_write_attempts'] = intersoccer_reports_get_readonly_write_attempts() + 1;
-            return $old_value;
-        }, 1, 3);
+        if (function_exists('add_filter')) {
+            add_filter('pre_update_option', static function ($value, $option, $old_value) {
+                if (!intersoccer_reports_is_readonly_mode()) {
+                    return $value;
+                }
+                intersoccer_reports_note_readonly_write_attempt();
+                return $old_value;
+            }, 1, 3);
+        }
     }
 }
 
