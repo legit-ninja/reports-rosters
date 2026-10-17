@@ -22,37 +22,37 @@ if ( ! function_exists( 'intersoccer_rr_current_user_can_view_dob' ) ) {
 }
 
 /**
- * @return bool|null
+ * @return array<int,bool>
  */
-function &intersoccer_player_camp_status_dob_gate_cache() {
-	static $can_view = null;
+function &intersoccer_player_camp_status_dob_gate_user_cache() {
+	static $cache = [];
 
-	return $can_view;
+	return $cache;
 }
 
 /**
- * Whether the current user may see DOB on this report (resolved once per request).
+ * Whether the current user may see DOB on this report (cached per user ID).
  */
 function intersoccer_player_camp_status_user_can_view_dob() {
-	$can_view = &intersoccer_player_camp_status_dob_gate_cache();
-	if ( $can_view !== null ) {
-		return $can_view;
+	$cache = &intersoccer_player_camp_status_dob_gate_user_cache();
+	$uid   = (int) get_current_user_id();
+	if ( array_key_exists( $uid, $cache ) ) {
+		return $cache[ $uid ];
 	}
 	if ( ! function_exists( 'intersoccer_rr_current_user_can_view_dob' ) ) {
-		$can_view = false;
-		return $can_view;
-	}
-	$can_view = intersoccer_rr_current_user_can_view_dob() === true;
+		$cache[ $uid ] = false;
 
-	return $can_view;
+		return $cache[ $uid ];
+	}
+	$cache[ $uid ] = intersoccer_rr_current_user_can_view_dob() === true;
+
+	return $cache[ $uid ];
 }
 
-/**
- * Reset cached DOB permission (tests only).
- */
+/** @internal tests */
 function intersoccer_player_camp_status_reset_dob_gate_cache() {
-	$can_view = &intersoccer_player_camp_status_dob_gate_cache();
-	$can_view = null;
+	$cache = &intersoccer_player_camp_status_dob_gate_user_cache();
+	$cache = [];
 }
 
 /**

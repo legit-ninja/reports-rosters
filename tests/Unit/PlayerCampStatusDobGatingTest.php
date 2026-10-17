@@ -74,4 +74,26 @@ class PlayerCampStatusDobGatingTest extends TestCase
         $dob_index = array_search('DOB', $headers, true);
         $this->assertSame(self::SAMPLE_DOB, $row[$dob_index]);
     }
+
+    public function test_dob_gate_is_cached_per_user_within_one_process(): void
+    {
+        $admin = new \stdClass();
+        $admin->ID = 101;
+        $admin->roles = [];
+        $coach = new \stdClass();
+        $coach->ID = 202;
+        $coach->roles = ['coach'];
+
+        $GLOBALS['intersoccer_test_current_user'] = $admin;
+        $GLOBALS['intersoccer_test_current_user_caps'] = ['manage_options' => true];
+        $this->assertTrue(intersoccer_player_camp_status_user_can_view_dob());
+
+        $GLOBALS['intersoccer_test_current_user'] = $coach;
+        $GLOBALS['intersoccer_test_current_user_caps'] = ['coach' => true, 'read' => true];
+        $this->assertFalse(intersoccer_player_camp_status_user_can_view_dob());
+
+        $GLOBALS['intersoccer_test_current_user'] = $admin;
+        $GLOBALS['intersoccer_test_current_user_caps'] = ['manage_options' => true];
+        $this->assertTrue(intersoccer_player_camp_status_user_can_view_dob());
+    }
 }

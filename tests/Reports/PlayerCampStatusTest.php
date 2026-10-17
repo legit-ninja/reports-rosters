@@ -22,6 +22,17 @@ class PlayerCampStatusTest extends TestCase {
 		}
 	}
 
+	protected function tearDown(): void {
+		if (function_exists('intersoccer_player_camp_status_reset_dob_gate_cache')) {
+			intersoccer_player_camp_status_reset_dob_gate_cache();
+		}
+		unset(
+			$GLOBALS['intersoccer_test_current_user_caps'],
+			$GLOBALS['intersoccer_test_current_user']
+		);
+		parent::tearDown();
+	}
+
 	public function test_filter_roster_rows_by_year_and_season_type() {
 		if (!function_exists('intersoccer_player_camp_status_filter_roster_rows')) {
 			$this->markTestSkipped('player-camp-status helpers not loaded');
