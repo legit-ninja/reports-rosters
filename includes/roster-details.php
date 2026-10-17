@@ -969,17 +969,11 @@ function intersoccer_render_roster_details_page() {
                     $row->{$name_field} = $row_array[$name_field];
                 }
             }
-            if (!empty($row_array['id']) && function_exists('intersoccer_roster_persist_player_name_fields')) {
-                intersoccer_roster_persist_player_name_fields($row_array);
-            }
         }
         if (function_exists('intersoccer_roster_backfill_avs_number_from_user_meta')) {
             $avs_row = intersoccer_roster_backfill_avs_number_from_user_meta((array) $row);
             if (!empty($avs_row['avs_number'])) {
                 $row->avs_number = $avs_row['avs_number'];
-            }
-            if (!empty($avs_row['id']) && function_exists('intersoccer_roster_persist_avs_number')) {
-                intersoccer_roster_persist_avs_number($avs_row);
             }
         }
         $is_unknown = $row->player_name === 'Unknown Attendee';

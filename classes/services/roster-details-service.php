@@ -653,14 +653,8 @@ class RosterDetailsService {
             if (function_exists('intersoccer_roster_normalize_row_facets_for_display')) {
                 $data = intersoccer_roster_normalize_row_facets_for_display($data);
             }
-            if (function_exists('intersoccer_roster_persist_player_name_fields') && !empty($data['id'])) {
-                intersoccer_roster_persist_player_name_fields($data);
-            }
             if (function_exists('intersoccer_roster_backfill_avs_number_from_user_meta')) {
                 $data = intersoccer_roster_backfill_avs_number_from_user_meta($data);
-                if (!empty($data['id']) && function_exists('intersoccer_roster_persist_avs_number')) {
-                    intersoccer_roster_persist_avs_number($data);
-                }
             }
             $post = get_post($model->order_id);
             $data['order_date'] = $post ? $post->post_date : null;
