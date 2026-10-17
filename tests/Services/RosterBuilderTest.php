@@ -346,9 +346,9 @@ class RosterBuilderTest extends TestCase {
         Functions\when('wc_get_orders')->justReturn([]);
         Functions\when('current_time')->justReturn('2024-01-01 00:00:00');
 
-        $this->rosterRepository->shouldReceive('deleteWhere')
+        $this->rosterRepository->shouldReceive('deleteByOrderItemId')
             ->once()
-            ->with(['order_item_id' => 123])
+            ->with(123)
             ->andReturn(1);
 
         $result = $this->rosterBuilder->reconcile();

@@ -801,6 +801,38 @@ class RosterRepository implements RepositoryInterface {
      * @param array $criteria Search criteria
      * @return int Number of deleted roster entries
      */
+    /**
+     * Delete roster rows for a Woo line item without loading full models (reconcile hot path).
+     *
+     * @param int $order_item_id
+     * @return int Number of deleted rows
+     */
+    public function deleteByOrderItemId(int $order_item_id): int {
+        if ($order_item_id <= 0) {
+            return 0;
+        }
+
+        try {
+            $this->logger->debug('Deleting roster entries by order_item_id', ['order_item_id' => $order_item_id]);
+
+            $deleted_count = $this->database->transaction(function () use ($order_item_id) {
+                return (int) $this->database->delete_roster_entries(['order_item_id' => $order_item_id]);
+            });
+
+            if ($deleted_count > 0) {
+                $this->clearRelatedCaches();
+            }
+
+            return $deleted_count;
+        } catch (\Exception $e) {
+            $this->logger->error('Failed to delete roster entries by order_item_id', [
+                'order_item_id' => $order_item_id,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
     public function deleteWhere(array $criteria) {
         try {
             $this->logger->debug('Bulk deleting roster entries', $criteria);
