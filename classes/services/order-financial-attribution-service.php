@@ -555,9 +555,11 @@ class OrderFinancialAttributionService {
         $attributed_net = 0.0;
         foreach ($line_items as $item_id => $item) {
             $base = (float) $item->get_subtotal();
+            $line_total = (float) $item->get_total();
             $discount = (float) wc_get_order_item_meta((int) $item_id, self::META_ITEM_DISCOUNT_TOTAL, true);
             $refund = (float) wc_get_order_item_meta((int) $item_id, self::META_ITEM_REFUND, true);
-            $attributed_net += $base - $discount - $refund;
+            $final = intersoccer_financial_line_final_price($base, $line_total, $discount);
+            $attributed_net += $final - $refund;
         }
 
         $order_total = (float) $order->get_total();
