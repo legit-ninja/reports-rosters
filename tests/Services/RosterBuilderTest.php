@@ -337,6 +337,12 @@ class RosterBuilderTest extends TestCase {
             public function get_col($query) {
                 return [123];
             }
+            public function prepare($query, ...$args) {
+                return $query;
+            }
+            public function get_var($query) {
+                return null;
+            }
         };
 
         $this->database->shouldReceive('get_wpdb')

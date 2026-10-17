@@ -4435,6 +4435,25 @@ if (!function_exists('intersoccer_reports_note_readonly_write_attempt')) {
     }
 }
 
+if (!function_exists('intersoccer_reports_note_readonly_memory_write_attempt')) {
+    /**
+     * In-memory option/transient writes during dry-run (do not invalidate the run).
+     */
+    function intersoccer_reports_note_readonly_memory_write_attempt() {
+        if (!intersoccer_reports_is_readonly_mode()) {
+            return;
+        }
+        $GLOBALS['intersoccer_dryrun_memory_write_attempts'] = (int) ($GLOBALS['intersoccer_dryrun_memory_write_attempts'] ?? 0) + 1;
+        intersoccer_reports_note_readonly_write_attempt();
+    }
+}
+
+if (!function_exists('intersoccer_reports_get_readonly_memory_write_attempts')) {
+    function intersoccer_reports_get_readonly_memory_write_attempts() {
+        return (int) ($GLOBALS['intersoccer_dryrun_memory_write_attempts'] ?? 0);
+    }
+}
+
 if (!function_exists('intersoccer_reports_note_readonly_db_error_if_any')) {
     /**
      * Treat MySQL read-only transaction errors as write attempts (dry-run detector).
@@ -4477,16 +4496,16 @@ if (!function_exists('intersoccer_reports_register_readonly_write_guards')) {
         }
         $registered = true;
 
-        add_action('add_option', 'intersoccer_reports_note_readonly_write_attempt', 1, 0);
-        add_action('update_option', 'intersoccer_reports_note_readonly_write_attempt', 1, 0);
-        add_action('setted_transient', 'intersoccer_reports_note_readonly_write_attempt', 1, 0);
+        add_action('add_option', 'intersoccer_reports_note_readonly_memory_write_attempt', 1, 0);
+        add_action('update_option', 'intersoccer_reports_note_readonly_memory_write_attempt', 1, 0);
+        add_action('setted_transient', 'intersoccer_reports_note_readonly_memory_write_attempt', 1, 0);
 
         if (function_exists('add_filter')) {
             add_filter('pre_update_option', static function ($value, $option, $old_value) {
                 if (!intersoccer_reports_is_readonly_mode()) {
                     return $value;
                 }
-                intersoccer_reports_note_readonly_write_attempt();
+                intersoccer_reports_note_readonly_memory_write_attempt();
                 return $old_value;
             }, 1, 3);
         }
@@ -5822,10 +5841,104 @@ if (!function_exists('intersoccer_roster_row_looks_girls_only')) {
      * @return bool
      */
     function intersoccer_roster_row_looks_girls_only(array $row) {
+        if (function_exists('intersoccer_resolve_roster_girls_only_flag')) {
+            return intersoccer_resolve_roster_girls_only_flag($row) === 1;
+        }
         if (function_exists('intersoccer_roster_is_girls_only')) {
             return intersoccer_roster_is_girls_only($row);
         }
-        return intersoccer_resolve_roster_girls_only_flag($row) === 1;
+        return false;
+    }
+}
+
+if (!function_exists('intersoccer_reconcile_default_order_statuses')) {
+    /**
+     * Order statuses that reconcile syncs and that keep roster rows when still present.
+     *
+     * @return array<int,string>
+     */
+    function intersoccer_reconcile_default_order_statuses() {
+        return ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'];
+    }
+}
+
+if (!function_exists('intersoccer_reconcile_wc_order_query_args')) {
+    /**
+     * Base wc_get_orders args for reconcile (language-independent; WPML-safe).
+     *
+     * @param array<string,mixed> $extra
+     * @return array<string,mixed>
+     */
+    function intersoccer_reconcile_wc_order_query_args(array $extra = []) {
+        return array_merge(
+            [
+                'type' => 'shop_order',
+                'suppress_filters' => true,
+            ],
+            $extra
+        );
+    }
+}
+
+if (!function_exists('intersoccer_reconcile_release_batch_memory')) {
+    function intersoccer_reconcile_release_batch_memory() {
+        if (function_exists('wp_cache_flush')) {
+            wp_cache_flush();
+        }
+        if (function_exists('gc_collect_cycles')) {
+            gc_collect_cycles();
+        }
+    }
+}
+
+if (!function_exists('intersoccer_reconcile_may_delete_roster_for_order_item')) {
+    /**
+     * Whether reconcile may delete a roster row for this order line item.
+     *
+     * Rows are kept when the parent order still exists with a reconcile-eligible status
+     * (even if WPML filtered the order out of wc_get_orders). Rows may be removed when the
+     * line item or order is gone, or the order status is outside the eligible set.
+     *
+     * @param int          $order_item_id
+     * @param array<int,string> $eligible_statuses
+     */
+    function intersoccer_reconcile_may_delete_roster_for_order_item($order_item_id, array $eligible_statuses = []) {
+        $order_item_id = (int) $order_item_id;
+        if ($order_item_id <= 0) {
+            return false;
+        }
+        if ($eligible_statuses === []) {
+            $eligible_statuses = intersoccer_reconcile_default_order_statuses();
+        }
+
+        global $wpdb;
+        $items_table = $wpdb->prefix . 'woocommerce_order_items';
+        $order_id = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT order_id FROM {$items_table} WHERE order_item_id = %d LIMIT 1",
+                $order_item_id
+            )
+        );
+        if (!$order_id) {
+            return true;
+        }
+        if (!function_exists('wc_get_order')) {
+            return false;
+        }
+        $order = wc_get_order((int) $order_id);
+        if (!$order) {
+            return true;
+        }
+        $status = $order->get_status();
+        $normalized = strpos($status, 'wc-') === 0 ? $status : 'wc-' . $status;
+        foreach ($eligible_statuses as $eligible) {
+            $el = strpos((string) $eligible, 'wc-') === 0 ? (string) $eligible : 'wc-' . $eligible;
+            if ($normalized === $el || $status === ltrim($el, 'wc-')) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
 
@@ -5847,13 +5960,7 @@ if (!function_exists('intersoccer_reconcile_backfill_girls_only_flags')) {
                 venue, age_group, camp_terms, course_day, times, season, city, canton_region,
                 start_date, end_date, girls_only, event_signature
             FROM {$rosters_table}
-            WHERE is_placeholder = 0 AND girls_only = 0
-              AND (
-                product_name LIKE %s OR product_name LIKE %s
-                OR activity_type LIKE %s OR activity_type LIKE %s
-              )";
-        $like_girls = '%Girls%';
-        $like_girl = '%girl%';
+            WHERE is_placeholder = 0 AND girls_only = 0";
 
         $updated = 0;
         $offset = 0;
@@ -5863,10 +5970,6 @@ if (!function_exists('intersoccer_reconcile_backfill_girls_only_flags')) {
             $rows = $wpdb->get_results(
                 $wpdb->prepare(
                     $candidate_sql . ' LIMIT %d OFFSET %d',
-                    $like_girls,
-                    $like_girl,
-                    $like_girls,
-                    $like_girl,
                     $chunk,
                     $offset
                 ),
