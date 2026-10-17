@@ -103,22 +103,34 @@ if (!function_exists('intersoccer_rr_current_user_can_view_medical')) {
      * @param int|null $user_id Optional user ID (defaults to current user).
      */
     function intersoccer_rr_current_user_can_view_medical($user_id = null): bool {
-        $user_id = $user_id ? (int) $user_id : (int) get_current_user_id();
-
-        if (!function_exists('intersoccer_filter_can_view_medical')) {
+        $user_id = $user_id !== null ? (int) $user_id : (int) get_current_user_id();
+        if ($user_id <= 0) {
             return false;
         }
 
-        $allowed = false;
-        if ($user_id > 0) {
-            if ($user_id === (int) get_current_user_id()) {
-                $allowed = current_user_can('manage_options') || current_user_can('manage_woocommerce');
-            } elseif (function_exists('user_can')) {
-                $allowed = user_can($user_id, 'manage_options') || user_can($user_id, 'manage_woocommerce');
-            }
+        if (!function_exists('intersoccer_user_can_view_medical')) {
+            return false;
         }
 
-        return apply_filters('intersoccer_can_view_medical', $allowed, $user_id) === true;
+        return intersoccer_user_can_view_medical($user_id) === true;
+    }
+}
+
+if (!function_exists('intersoccer_rr_current_user_can_view_dob')) {
+    /**
+     * @param int|null $user_id Optional user ID (defaults to current user).
+     */
+    function intersoccer_rr_current_user_can_view_dob($user_id = null): bool {
+        $user_id = $user_id !== null ? (int) $user_id : (int) get_current_user_id();
+        if ($user_id <= 0) {
+            return false;
+        }
+
+        if (!function_exists('intersoccer_user_can_view_dob')) {
+            return false;
+        }
+
+        return intersoccer_user_can_view_dob($user_id) === true;
     }
 }
 
@@ -192,19 +204,25 @@ if (!function_exists('intersoccer_rr_redact_medical_in_roster_row')) {
      * @return array<string,mixed>
      */
     function intersoccer_rr_redact_medical_in_roster_row(array $row): array {
-        if (intersoccer_rr_current_user_can_view_medical()) {
+        $can_medical = intersoccer_rr_current_user_can_view_medical();
+        $can_dob = intersoccer_rr_current_user_can_view_dob();
+        if ($can_medical && $can_dob) {
             return $row;
         }
 
         $restricted = intersoccer_rr_medical_restricted_label();
-        foreach (intersoccer_rr_medical_roster_field_keys() as $key) {
-            if (array_key_exists($key, $row)) {
-                $row[$key] = $restricted;
+        if (!$can_medical) {
+            foreach (intersoccer_rr_medical_roster_field_keys() as $key) {
+                if (array_key_exists($key, $row)) {
+                    $row[$key] = $restricted;
+                }
             }
         }
-        foreach (intersoccer_rr_medical_dob_field_keys() as $key) {
-            if (array_key_exists($key, $row)) {
-                $row[$key] = $restricted;
+        if (!$can_dob) {
+            foreach (intersoccer_rr_medical_dob_field_keys() as $key) {
+                if (array_key_exists($key, $row)) {
+                    $row[$key] = $restricted;
+                }
             }
         }
 
@@ -220,15 +238,15 @@ if (!function_exists('intersoccer_rr_strip_medical_from_update_data')) {
      * @return array<string,mixed>
      */
     function intersoccer_rr_strip_medical_from_update_data(array $update_data): array {
-        if (intersoccer_rr_current_user_can_view_medical()) {
-            return $update_data;
+        if (!intersoccer_rr_current_user_can_view_medical()) {
+            foreach (intersoccer_rr_medical_roster_field_keys() as $key) {
+                unset($update_data[$key]);
+            }
         }
-
-        foreach (intersoccer_rr_medical_roster_field_keys() as $key) {
-            unset($update_data[$key]);
-        }
-        foreach (intersoccer_rr_medical_dob_field_keys() as $key) {
-            unset($update_data[$key]);
+        if (!intersoccer_rr_current_user_can_view_dob()) {
+            foreach (intersoccer_rr_medical_dob_field_keys() as $key) {
+                unset($update_data[$key]);
+            }
         }
 
         return $update_data;

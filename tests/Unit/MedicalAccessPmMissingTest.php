@@ -3,7 +3,7 @@
 use PHPUnit\Framework\TestCase;
 
 /**
- * PM absent: intersoccer_filter_can_view_medical must not exist in this process.
+ * PM absent: intersoccer_user_can_view_medical must not exist in this process.
  */
 class MedicalAccessPmMissingTest extends TestCase
 {
@@ -13,7 +13,7 @@ class MedicalAccessPmMissingTest extends TestCase
      */
     public function test_admin_and_shop_manager_denied_when_pm_filter_function_missing(): void
     {
-        $this->assertFalse(function_exists('intersoccer_filter_can_view_medical'));
+        $this->assertFalse(function_exists('intersoccer_user_can_view_medical'));
 
         require_once dirname(__DIR__, 2) . '/includes/medical-access.php';
 
