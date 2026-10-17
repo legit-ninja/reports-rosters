@@ -14,7 +14,7 @@ namespace InterSoccer\ReportsRosters\Data\Models;
 
 use InterSoccer\ReportsRosters\Data\Models\AbstractModel;
 use InterSoccer\ReportsRosters\Utils\DateHelper;
-use InterSoccer\ReportsRosters\Utils\AgeGroupHelper;
+use InterSoccer\ReportsRosters\Utils\ValidationHelper;
 use InterSoccer\ReportsRosters\Exceptions\ValidationException;
 
 // Prevent direct access
@@ -233,9 +233,9 @@ class Player extends AbstractModel {
             return null;
         }
 
-        return AgeGroupHelper::parseMinMax(
+        return ValidationHelper::parseAgeGroupMinMax(
             (string) $age_group,
-            AgeGroupHelper::flattenPredefinedCatalog(self::AGE_GROUPS)
+            ValidationHelper::flattenPredefinedAgeGroupCatalog(self::AGE_GROUPS)
         );
     }
     

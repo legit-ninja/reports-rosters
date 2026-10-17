@@ -15,7 +15,7 @@ namespace InterSoccer\ReportsRosters\Services;
 use InterSoccer\ReportsRosters\Core\Logger;
 use InterSoccer\ReportsRosters\Data\Models\Player;
 use InterSoccer\ReportsRosters\Exceptions\ValidationException;
-use InterSoccer\ReportsRosters\Utils\AgeGroupHelper;
+use InterSoccer\ReportsRosters\Utils\ValidationHelper;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -971,9 +971,9 @@ class DataValidator {
             
             $age = $birth_date->diff($check_date)->y;
 
-            $age_range = AgeGroupHelper::parseMinMax(
+            $age_range = ValidationHelper::parseAgeGroupMinMax(
                 (string) $data['age_group'],
-                AgeGroupHelper::flattenPredefinedCatalog(Player::AGE_GROUPS)
+                ValidationHelper::flattenPredefinedAgeGroupCatalog(Player::AGE_GROUPS)
             );
             if ($age_range !== null) {
                 if ($age < $age_range['min'] || $age > $age_range['max']) {
