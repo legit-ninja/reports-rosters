@@ -296,9 +296,7 @@ class RosterBuilder {
         }
 
         $defaults = [
-            'status' => function_exists('intersoccer_reconcile_default_order_statuses')
-                ? intersoccer_reconcile_default_order_statuses()
-                : ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'],
+            'status' => ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'],
             'delete_obsolete' => true,
             'validate_data' => false,
             'skip_duplicates' => true,
@@ -306,7 +304,6 @@ class RosterBuilder {
             'skip_age_group_validation' => true,
             'date_from' => '',
             'date_to' => '',
-            'order_batch_size' => 200,
         ];
         $options = array_merge($defaults, $options);
         // When a date range is set, do not delete obsolete (only sync orders in range)
@@ -339,157 +336,116 @@ class RosterBuilder {
                 }
             }
 
+            $order_args = [
+                'limit' => -1,
+                'status' => $options['status'],
+                'return' => 'objects',
+            ];
             $date_from = isset($options['date_from']) ? trim((string) $options['date_from']) : '';
             $date_to = isset($options['date_to']) ? trim((string) $options['date_to']) : '';
-            $batch_size = max(1, (int) ($options['order_batch_size'] ?? 200));
-            $orders_processed = 0;
-            $page = 1;
+            if ($date_from !== '' || $date_to !== '') {
+                $from = $date_from !== '' ? date('Y-m-d', strtotime($date_from)) : '';
+                $to = $date_to !== '' ? date('Y-m-d', strtotime($date_to)) : '';
+                if ($from !== '' && $to !== '') {
+                    $order_args['date_created'] = $from . '...' . $to;
+                } elseif ($from !== '') {
+                    $order_args['date_created'] = '>=' . $from;
+                } else {
+                    $order_args['date_created'] = '<=' . $to;
+                }
+            }
+            $orders = wc_get_orders($order_args);
 
-            do {
-                $order_args = function_exists('intersoccer_reconcile_wc_order_query_args')
-                    ? intersoccer_reconcile_wc_order_query_args([
-                        'limit' => $batch_size,
-                        'page' => $page,
-                        'status' => $options['status'],
-                        'return' => 'ids',
-                        'orderby' => 'ID',
-                        'order' => 'ASC',
-                    ])
-                    : [
-                        'limit' => $batch_size,
-                        'page' => $page,
-                        'status' => $options['status'],
-                        'return' => 'ids',
-                        'type' => 'shop_order',
-                        'suppress_filters' => true,
-                        'orderby' => 'ID',
-                        'order' => 'ASC',
-                    ];
-                if ($date_from !== '' || $date_to !== '') {
-                    $from = $date_from !== '' ? date('Y-m-d', strtotime($date_from)) : '';
-                    $to = $date_to !== '' ? date('Y-m-d', strtotime($date_to)) : '';
-                    if ($from !== '' && $to !== '') {
-                        $order_args['date_created'] = $from . '...' . $to;
-                    } elseif ($from !== '') {
-                        $order_args['date_created'] = '>=' . $from;
-                    } else {
-                        $order_args['date_created'] = '<=' . $to;
-                    }
+            $this->logger->info('Orders fetched for reconciliation', ['count' => count($orders), 'date_from' => $date_from ?: null, 'date_to' => $date_to ?: null]);
+
+            $active_order_item_ids = [];
+            foreach ($orders as $order) {
+                if (!method_exists($order, 'get_items')) {
+                    continue;
+                }
+                foreach ($order->get_items() as $item_id => $item) {
+                    $active_order_item_ids[(int) $item_id] = true;
+                }
+            }
+
+            foreach ($orders as $order) {
+                // Skip refunds and other non-order types that don't support get_customer_id()
+                if (!method_exists($order, 'get_customer_id')) {
+                    $this->logger->debug('Skipping non-order object in reconciliation', ['order_id' => $order->get_id()]);
+                    continue;
                 }
 
-                $order_ids = wc_get_orders($order_args);
-                $batch_count = is_array($order_ids) ? count($order_ids) : 0;
-                if ($batch_count === 0) {
-                    break;
-                }
+                $order_id = $order->get_id();
 
-                $this->logger->info('Reconcile order batch', [
-                    'page' => $page,
-                    'batch_size' => $batch_count,
-                    'date_from' => $date_from ?: null,
-                    'date_to' => $date_to ?: null,
-                ]);
-
-                foreach ($order_ids as $order_id) {
-                    $order = wc_get_order((int) $order_id);
-                    if (!$order) {
-                        continue;
+                try {
+                    $customer_id = $order->get_customer_id();
+                    if (!$customer_id) {
+                        throw new \Exception("Order {$order_id} has no customer ID");
                     }
 
-                    // Skip refunds and other non-order types that don't support get_customer_id()
-                    if (!method_exists($order, 'get_customer_id')) {
-                        $this->logger->debug('Skipping non-order object in reconciliation', ['order_id' => $order->get_id()]);
-                        unset($order);
-                        continue;
-                    }
+                    $customer_players = $this->player_repository->getPlayersByCustomerId($customer_id);
+                    $customer_data = $this->extractCustomerData($order);
 
-                    $order_id = $order->get_id();
+                    foreach ($order->get_items() as $item_id => $item) {
+                        try {
+                            $rows_before = (int) $wpdb->get_var($wpdb->prepare(
+                                "SELECT COUNT(*) FROM {$table} WHERE order_item_id = %d",
+                                (int) $item_id
+                            ));
 
-                    try {
-                        $customer_id = $order->get_customer_id();
-                        if (!$customer_id) {
-                            throw new \Exception("Order {$order_id} has no customer ID");
-                        }
+                            $item_rosters = $this->processOrderItem(
+                                $order,
+                                $item_id,
+                                $item,
+                                $customer_players,
+                                $customer_data,
+                                [
+                                    'validate_data' => $options['validate_data'],
+                                    'skip_duplicates' => $options['skip_duplicates'],
+                                    'update_existing' => $options['update_existing'],
+                                    'update_past_events' => true,
+                                    'skip_age_group_validation' => !empty($options['skip_age_group_validation']),
+                                ]
+                            );
 
-                        $customer_players = $this->player_repository->getPlayersByCustomerId($customer_id);
-                        $customer_data = $this->extractCustomerData($order);
-
-                        foreach ($order->get_items() as $item_id => $item) {
-                            try {
-                                $rows_before = (int) $wpdb->get_var($wpdb->prepare(
+                            if ($item_rosters->count() > 0) {
+                                $rows_after = (int) $wpdb->get_var($wpdb->prepare(
                                     "SELECT COUNT(*) FROM {$table} WHERE order_item_id = %d",
                                     (int) $item_id
                                 ));
-
-                                $item_rosters = $this->processOrderItem(
-                                    $order,
-                                    $item_id,
-                                    $item,
-                                    $customer_players,
-                                    $customer_data,
-                                    [
-                                        'validate_data' => $options['validate_data'],
-                                        'skip_duplicates' => $options['skip_duplicates'],
-                                        'update_existing' => $options['update_existing'],
-                                        'update_past_events' => true,
-                                        'skip_age_group_validation' => !empty($options['skip_age_group_validation']),
-                                    ]
-                                );
-
-                                if ($item_rosters->count() > 0) {
-                                    $rows_after = (int) $wpdb->get_var($wpdb->prepare(
-                                        "SELECT COUNT(*) FROM {$table} WHERE order_item_id = %d",
-                                        (int) $item_id
-                                    ));
-                                    if ($rows_before === 0 && $rows_after > 0) {
-                                        $results['newly_created_item_ids'][] = (int) $item_id;
-                                    }
-                                    $results['synced'] += $item_rosters->count();
-                                    unset($existing_item_map[$item_id]);
+                                if ($rows_before === 0 && $rows_after > 0) {
+                                    $results['newly_created_item_ids'][] = (int) $item_id;
                                 }
-
-                            } catch (\Exception $e) {
-                                $results['errors']++;
-                                $error_msg = "Order {$order_id}, Item {$item_id}: {$e->getMessage()}";
-                                $results['error_messages'][] = $error_msg;
-                                $this->logger->error('Failed to reconcile order item', [
-                                    'order_id' => $order_id,
-                                    'item_id' => $item_id,
-                                    'error' => $e->getMessage()
-                                ]);
+                                $results['synced'] += $item_rosters->count();
+                                unset($existing_item_map[$item_id]);
                             }
-                        }
 
-                    } catch (\Exception $e) {
-                        $results['errors']++;
-                        $results['error_messages'][] = "Order {$order_id}: " . $e->getMessage();
-                        $this->logger->error('Failed to reconcile order', [
-                            'order_id' => $order_id,
-                            'error' => $e->getMessage()
-                        ]);
+                        } catch (\Exception $e) {
+                            $results['errors']++;
+                            $error_msg = "Order {$order_id}, Item {$item_id}: {$e->getMessage()}";
+                            $results['error_messages'][] = $error_msg;
+                            $this->logger->error('Failed to reconcile order item', [
+                                'order_id' => $order_id,
+                                'item_id' => $item_id,
+                                'error' => $e->getMessage()
+                            ]);
+                        }
                     }
 
-                    unset($order, $customer_players, $customer_data);
-                    $orders_processed++;
+                } catch (\Exception $e) {
+                    $results['errors']++;
+                    $results['error_messages'][] = "Order {$order_id}: " . $e->getMessage();
+                    $this->logger->error('Failed to reconcile order', [
+                        'order_id' => $order_id,
+                        'error' => $e->getMessage()
+                    ]);
                 }
-
-                unset($order_ids);
-                if (function_exists('intersoccer_reconcile_release_batch_memory')) {
-                    intersoccer_reconcile_release_batch_memory();
-                }
-                $page++;
-            } while ($batch_count === $batch_size);
-
-            $this->logger->info('Orders processed for reconciliation', [
-                'count' => $orders_processed,
-                'date_from' => $date_from ?: null,
-                'date_to' => $date_to ?: null,
-            ]);
+            }
 
             if ($options['delete_obsolete'] && !empty($existing_item_map)) {
                 foreach (array_keys($existing_item_map) as $obsolete_item_id) {
-                    if (function_exists('intersoccer_reconcile_may_delete_roster_for_order_item')
-                        && !intersoccer_reconcile_may_delete_roster_for_order_item($obsolete_item_id, $options['status'])) {
+                    // Only remove rows for line items that no longer exist on any fetched order.
+                    if (isset($active_order_item_ids[$obsolete_item_id])) {
                         continue;
                     }
                     try {
@@ -661,25 +617,15 @@ class RosterBuilder {
      * @return array Order IDs
      */
     private function getOrdersBatch($offset, $limit, array $options) {
-        $args = function_exists('intersoccer_reconcile_wc_order_query_args')
-            ? intersoccer_reconcile_wc_order_query_args([
-                'limit' => $limit,
-                'offset' => $offset,
-                'status' => $options['order_statuses'],
-                'return' => 'ids',
-                'orderby' => 'date',
-                'order' => 'ASC',
-            ])
-            : [
-                'limit' => $limit,
-                'offset' => $offset,
-                'status' => $options['order_statuses'],
-                'type' => 'shop_order',
-                'return' => 'ids',
-                'orderby' => 'date',
-                'order' => 'ASC',
-                'suppress_filters' => true,
-            ];
+        $args = [
+            'limit' => $limit,
+            'offset' => $offset,
+            'status' => $options['order_statuses'],
+            'type' => 'shop_order',
+            'return' => 'ids',
+            'orderby' => 'date',
+            'order' => 'ASC'
+        ];
         
         // Add date range filter if specified
         if (!empty($options['date_range'])) {

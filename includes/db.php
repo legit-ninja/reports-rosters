@@ -705,12 +705,11 @@ function intersoccer_reconcile_rosters($options = []) {
 
     error_log('InterSoccer: Starting roster reconciliation');
 
-    $eligible_statuses = function_exists('intersoccer_reconcile_default_order_statuses')
-        ? intersoccer_reconcile_default_order_statuses()
-        : ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'];
-    $batch_size = 200;
-    $page = 1;
-    $orders_processed = 0;
+    $orders = wc_get_orders([
+        'limit' => -1,
+        'status' => ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'],
+    ]);
+    error_log('InterSoccer: Found ' . count($orders) . ' orders for reconciliation');
 
     $synced = 0;
     $deleted = 0;
@@ -718,68 +717,23 @@ function intersoccer_reconcile_rosters($options = []) {
     try {
         $existing_items = $wpdb->get_col("SELECT order_item_id FROM $rosters_table");
 
-        do {
-            $order_args = function_exists('intersoccer_reconcile_wc_order_query_args')
-                ? intersoccer_reconcile_wc_order_query_args([
-                    'limit' => $batch_size,
-                    'page' => $page,
-                    'status' => $eligible_statuses,
-                    'return' => 'ids',
-                    'orderby' => 'ID',
-                    'order' => 'ASC',
-                ])
-                : [
-                    'limit' => $batch_size,
-                    'page' => $page,
-                    'status' => $eligible_statuses,
-                    'return' => 'ids',
-                    'type' => 'shop_order',
-                    'suppress_filters' => true,
-                    'orderby' => 'ID',
-                    'order' => 'ASC',
-                ];
-            $order_ids = wc_get_orders($order_args);
-            $batch_count = is_array($order_ids) ? count($order_ids) : 0;
-            if ($batch_count === 0) {
-                break;
-            }
+        foreach ($orders as $order) {
+            $order_id = $order->get_id();
+            error_log('InterSoccer: Reconciling order ' . $order_id);
 
-            foreach ($order_ids as $order_id) {
-                $order = wc_get_order((int) $order_id);
-                if (!$order) {
-                    continue;
-                }
-                $order_id = $order->get_id();
-                error_log('InterSoccer: Reconciling order ' . $order_id);
-
-                foreach ($order->get_items() as $item_id => $item) {
-                    $result = intersoccer_update_roster_entry($order_id, $item_id);
-                    if ($result) {
-                        $synced++;
-                        $key = array_search($item_id, $existing_items);
-                        if ($key !== false) {
-                            unset($existing_items[$key]);
-                        }
+            foreach ($order->get_items() as $item_id => $item) {
+                $result = intersoccer_update_roster_entry($order_id, $item_id);
+                if ($result) {
+                    $synced++;
+                    $key = array_search($item_id, $existing_items);
+                    if ($key !== false) {
+                        unset($existing_items[$key]);
                     }
                 }
-                unset($order);
-                $orders_processed++;
             }
-
-            unset($order_ids);
-            if (function_exists('intersoccer_reconcile_release_batch_memory')) {
-                intersoccer_reconcile_release_batch_memory();
-            }
-            $page++;
-        } while ($batch_count === $batch_size);
-
-        error_log('InterSoccer: Found ' . $orders_processed . ' orders for reconciliation');
+        }
 
         foreach ($existing_items as $obsolete_item_id) {
-            if (function_exists('intersoccer_reconcile_may_delete_roster_for_order_item')
-                && !intersoccer_reconcile_may_delete_roster_for_order_item($obsolete_item_id, $eligible_statuses)) {
-                continue;
-            }
             $wpdb->delete($rosters_table, ['order_item_id' => $obsolete_item_id]);
             $deleted++;
             error_log('InterSoccer: Deleted obsolete roster entry for order_item_id ' . $obsolete_item_id);
