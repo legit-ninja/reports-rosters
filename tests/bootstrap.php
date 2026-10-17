@@ -69,7 +69,16 @@ if (!function_exists('add_action')) {
 }
 
 if (!function_exists('add_filter')) {
-    function add_filter($hook, $callback, $priority = 10, $accepted_args = 1) { return true; }
+    function add_filter($hook, $callback, $priority = 10, $accepted_args = 1) {
+        if (!isset($GLOBALS['intersoccer_test_filters']) || !is_array($GLOBALS['intersoccer_test_filters'])) {
+            $GLOBALS['intersoccer_test_filters'] = [];
+        }
+        if (!isset($GLOBALS['intersoccer_test_filters'][$hook])) {
+            $GLOBALS['intersoccer_test_filters'][$hook] = [];
+        }
+        $GLOBALS['intersoccer_test_filters'][$hook][] = $callback;
+        return true;
+    }
 }
 
 if (!function_exists('remove_action')) {
@@ -85,7 +94,16 @@ if (!function_exists('do_action')) {
 }
 
 if (!function_exists('apply_filters')) {
-    function apply_filters($hook, $value, ...$args) { return $value; }
+    function apply_filters($hook, $value, ...$args) {
+        if (!empty($GLOBALS['intersoccer_test_filters'][$hook]) && is_array($GLOBALS['intersoccer_test_filters'][$hook])) {
+            foreach ($GLOBALS['intersoccer_test_filters'][$hook] as $callback) {
+                if (is_callable($callback)) {
+                    $value = $callback($value, ...$args);
+                }
+            }
+        }
+        return $value;
+    }
 }
 
 if (!function_exists('has_action')) {
