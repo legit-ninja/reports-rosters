@@ -5882,6 +5882,12 @@ if (!function_exists('intersoccer_girls_only_attribute_source_product_id')) {
         if (is_int($original_id) && $original_id > 0) {
             return $original_id;
         }
+        if (is_string($original_id) && $original_id !== '' && ctype_digit($original_id)) {
+            $parsed = (int) $original_id;
+            if ($parsed > 0) {
+                return $parsed;
+            }
+        }
         return $id;
     }
 }

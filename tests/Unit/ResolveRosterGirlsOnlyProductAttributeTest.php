@@ -237,6 +237,28 @@ class ResolveRosterGirlsOnlyProductAttributeTest extends TestCase {
         $this->assertSame(1, $flag);
     }
 
+    public function test_plain_product_reads_girls_only_when_wpml_object_id_returns_numeric_string(): void {
+        $translated_id = 500;
+        $original_id = 501;
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$args) use ($original_id, $translated_id) {
+            if ($hook === 'wpml_default_language') {
+                return 'en';
+            }
+            if ($hook === 'wpml_object_id' && isset($args[0]) && $args[0] === 'product' && (int) $value === $translated_id) {
+                return (string) $original_id;
+            }
+            return $value;
+        };
+        $this->stub_wc_products([
+            $translated_id => $this->make_product_stub('oui'),
+            $original_id => $this->make_product_stub('yes'),
+        ]);
+        $flag = intersoccer_resolve_roster_girls_only_flag([
+            'product_id' => $translated_id,
+        ]);
+        $this->assertSame(1, $flag);
+    }
+
     public function test_without_wpml_translated_parent_oui_does_not_resolve_yes(): void {
         $this->stub_wc_products([
             self::TRANSLATED_PARENT_ID => $this->make_product_stub('oui'),
