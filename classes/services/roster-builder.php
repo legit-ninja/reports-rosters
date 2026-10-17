@@ -750,9 +750,7 @@ class RosterBuilder {
 
                 // Advisory validation on write paths — Roster::validate remains the hard gate.
                 if ($options['validate_data']) {
-                    $validation = $this->validator->validateRosterData($roster_data, [
-                        'skip_age_group_validation' => !empty($options['skip_age_group_validation']),
-                    ]);
+                    $validation = $this->validator->validateRosterData($roster_data);
                     if (empty($validation['valid'])) {
                         $this->logAdvisoryRosterDataValidationWarning($order, (int) $item_id, $validation);
                     }
@@ -1507,6 +1505,7 @@ class RosterBuilder {
         
         // Parse event details from various sources
         $roster_data['event_details'] = $this->buildEventDetails($roster_data);
+        $roster_data['event_details'] = $this->applyUnderAgeAtStartToEventDetails($roster_data);
 
         if (function_exists('intersoccer_roster_backfill_player_name_fields')) {
             $roster_data = intersoccer_roster_backfill_player_name_fields($roster_data);
@@ -1611,6 +1610,47 @@ class RosterBuilder {
      * @param array $roster_data Roster data
      * @return array Event details
      */
+    /**
+     * @param array $roster_data
+     * @return array|string|null
+     */
+    private function applyUnderAgeAtStartToEventDetails(array $roster_data) {
+        $details = $roster_data['event_details'] ?? [];
+        if (is_string($details)) {
+            $decoded = json_decode($details, true);
+            $details = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($details)) {
+            $details = [];
+        }
+        if (!$this->rosterRowIsUnderMinAgeAtStart($roster_data)) {
+            return $details;
+        }
+        $details['under_age_at_start'] = true;
+
+        return $details;
+    }
+
+    private function rosterRowIsUnderMinAgeAtStart(array $roster_data): bool {
+        $dob = trim((string) ($roster_data['player_dob'] ?? $roster_data['dob'] ?? ''));
+        $age_group = trim((string) ($roster_data['age_group'] ?? ''));
+        $start_date = trim((string) ($roster_data['start_date'] ?? ''));
+        if ($dob === '' || $age_group === '' || $start_date === '') {
+            return false;
+        }
+
+        $player = new Player([
+            'customer_id' => (int) ($roster_data['customer_id'] ?? 0),
+            'player_index' => (int) ($roster_data['player_index'] ?? 0),
+            'first_name' => (string) ($roster_data['player_first_name'] ?? $roster_data['first_name'] ?? ''),
+            'last_name' => (string) ($roster_data['player_last_name'] ?? $roster_data['last_name'] ?? ''),
+            'dob' => $dob,
+            'gender' => (string) ($roster_data['player_gender'] ?? $roster_data['gender'] ?? ''),
+        ]);
+
+        return $player->isBelowMinAgeForAgeGroupAt($age_group, $start_date);
+    }
+
     private function buildEventDetails(array $roster_data) {
         $details = [];
         

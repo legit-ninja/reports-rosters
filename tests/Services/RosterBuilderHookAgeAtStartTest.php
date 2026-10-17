@@ -193,6 +193,9 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         $order->shouldReceive('get_items')->andReturn([$item_id => $item]);
         $order->shouldReceive('get_item')->andReturnUsing(fn($id) => (int) $id === $item_id ? $item : false);
         $order->shouldReceive('add_order_note')->andReturn(1);
+        $order->shouldReceive('get_meta')->andReturn([]);
+        $order->shouldReceive('update_meta_data')->andReturn(null);
+        $order->shouldReceive('save')->andReturn($order_id);
         foreach (['get_billing_email' => 'parent@example.test', 'get_billing_phone' => '+41 00 000 00 00',
                   'get_billing_first_name' => 'Parent', 'get_billing_last_name' => 'Test'] as $m => $v) {
             $order->shouldReceive($m)->andReturn($v);
@@ -394,6 +397,36 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
     }
 
     /** Rules out the 'y'-suffix parse bug: both age groups parse; only age-at-start differs. */
+    public function test_under_age_at_start_marker_in_event_details() {
+        $uuid = '00000000-0000-4000-8000-000000000505';
+        $item = $this->item(52636, 52637, $this->etoyItemMeta($uuid, '2023-08-31'));
+        $this->order(1005, 205, 505, $item);
+        $b = $this->makeBuilder($this->player(205, $uuid, '2023-08-31'));
+
+        $b->buildRosterFromOrder(1005, self::LIVE_HOOK_OPTIONS);
+
+        $ed = $this->inserted[0]['event_details'] ?? [];
+        if (is_string($ed)) {
+            $ed = json_decode($ed, true) ?: [];
+        }
+        $this->assertTrue(!empty($ed['under_age_at_start']));
+    }
+
+    public function test_eligible_age_omits_under_age_at_start_marker() {
+        $uuid = '00000000-0000-4000-8000-000000000506';
+        $item = $this->item(52636, 52637, $this->etoyItemMeta($uuid, '2015-02-03'));
+        $this->order(1006, 206, 506, $item);
+        $b = $this->makeBuilder($this->player(206, $uuid, '2015-02-03'));
+
+        $b->buildRosterFromOrder(1006, self::LIVE_HOOK_OPTIONS);
+
+        $ed = $this->inserted[0]['event_details'] ?? [];
+        if (is_string($ed)) {
+            $ed = json_decode($ed, true) ?: [];
+        }
+        $this->assertArrayNotHasKey('under_age_at_start', $ed);
+    }
+
     public function test_age_groups_parse_and_only_age_on_start_date_differs() {
         $parse = new \ReflectionMethod(Player::class, 'parseAgeGroup');
         $parse->setAccessible(true);
