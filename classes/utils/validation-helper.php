@@ -889,4 +889,305 @@ class ValidationHelper {
             'errors' => $all_errors
         ];
     }
+
+    /**
+     * @var array<string, true>
+     */
+    private static $logged_unparseable_age_groups = [];
+
+    /**
+     * @var array<string, true>
+     */
+    private static $logged_grade_age_check_skipped = [];
+
+    /**
+     * @param array<string, array<string, array{min: int, max: int}>> $catalog
+     * @return array<string, array{min: int, max: int}>
+     */
+    public static function flattenPredefinedAgeGroupCatalog(array $catalog): array {
+        $flat = [];
+        foreach ($catalog as $groups) {
+            if (!is_array($groups)) {
+                continue;
+            }
+            foreach ($groups as $label => $range) {
+                if (is_array($range) && isset($range['min'], $range['max'])) {
+                    $flat[(string) $label] = [
+                        'min' => (int) $range['min'],
+                        'max' => (int) $range['max'],
+                    ];
+                }
+            }
+        }
+        return $flat;
+    }
+
+    public static function normalizeAgeGroupLabel(string $age_group): string {
+        $normalized = preg_replace('/\s+/u', ' ', trim($age_group));
+        return preg_replace('/[–—−]/u', '-', $normalized);
+    }
+
+    /**
+     * Strip conservative slug suffixes before numeric age parsing (not applied to grade detection).
+     */
+    public static function stripConservativeAgeGroupSlugSuffix(string $age_group): string {
+        $s = trim($age_group);
+        foreach (['-full-day', '-half-day', '-fr', '-de', '-en'] as $suffix) {
+            $len = strlen($suffix);
+            if (strlen($s) > $len && strcasecmp(substr($s, -$len), $suffix) === 0) {
+                return substr($s, 0, -$len);
+            }
+        }
+        return $s;
+    }
+
+    /**
+     * Parse an age-group label to min/max ages (DataValidator format + master-compatible substring "Ny").
+     *
+     * @param array<string, array{min: int, max: int}> $predefined_exact
+     * @return array{min: int, max: int}|null
+     */
+    public static function parseAgeGroupMinMax(string $age_group, array $predefined_exact = []): ?array {
+        if ($age_group === '') {
+            return null;
+        }
+
+        if (isset($predefined_exact[$age_group])) {
+            return $predefined_exact[$age_group];
+        }
+
+        $parse_label = self::stripConservativeAgeGroupSlugSuffix($age_group);
+
+        if (preg_match('/U(\d+)/i', $parse_label, $matches) ||
+            preg_match('/Under\s*(\d+)/i', $parse_label, $matches)) {
+            return [
+                'min' => 0,
+                'max' => (int) $matches[1],
+            ];
+        }
+
+        $normalized = self::normalizeAgeGroupLabel($parse_label);
+
+        if (preg_match(
+            '/^(\d+)\s*-\s*(\d+)(?:\s*(?:y|years?|ans|jahre?))?(?:\s+alt(?:\s*\([^)]+\))?|\s*\([^)]+\)(?:\s+alt)?)?$/iu',
+            $normalized,
+            $matches
+        )) {
+            return [
+                'min' => (int) $matches[1],
+                'max' => (int) $matches[2],
+            ];
+        }
+
+        if (preg_match('/^(\d+)\+$/', $normalized, $matches)) {
+            return [
+                'min' => (int) $matches[1],
+                'max' => 99,
+            ];
+        }
+
+        // Master Player::parseAgeGroup used unanchored /(\d+)-(\d+)y/ (e.g. "Ages 5-12y").
+        if (preg_match('/(\d+)-(\d+)y/i', $parse_label, $matches)) {
+            return [
+                'min' => (int) $matches[1],
+                'max' => (int) $matches[2],
+            ];
+        }
+
+        if (self::isGradeAgeGroup($age_group)) {
+            return null;
+        }
+
+        self::logUnparseableAgeGroupOnce($age_group);
+
+        return null;
+    }
+
+    /**
+     * @param array<string, array{min: int, max: int}> $predefined_exact
+     * @return array{min: int, max: int}|null
+     */
+    public static function parseAgeGroupMinMaxAsOnRelease21015(string $age_group, array $predefined_exact = []): ?array {
+        if ($age_group === '') {
+            return null;
+        }
+
+        if (isset($predefined_exact[$age_group])) {
+            return $predefined_exact[$age_group];
+        }
+
+        if (preg_match('/U(\d+)/i', $age_group, $matches) ||
+            preg_match('/Under\s*(\d+)/i', $age_group, $matches)) {
+            return [
+                'min' => 0,
+                'max' => (int) $matches[1],
+            ];
+        }
+
+        if (preg_match('/(\d+)-(\d+)y/', $age_group, $matches)) {
+            return [
+                'min' => (int) $matches[1],
+                'max' => (int) $matches[2],
+            ];
+        }
+
+        return null;
+    }
+
+    public static function logUnparseableAgeGroupOnce(string $age_group): void {
+        if (isset(self::$logged_unparseable_age_groups[$age_group])) {
+            return;
+        }
+        self::$logged_unparseable_age_groups[$age_group] = true;
+        error_log('InterSoccer Reports: unparseable age group: ' . $age_group);
+    }
+
+    public static function logGradeAgeCheckSkippedOnce(string $age_group): void {
+        if (isset(self::$logged_grade_age_check_skipped[$age_group])) {
+            return;
+        }
+        self::$logged_grade_age_check_skipped[$age_group] = true;
+        error_log('InterSoccer Reports: age check skipped for grade age group: ' . $age_group);
+    }
+
+    /**
+     * Whether an age-group label uses school grade tokens (not numeric year ranges).
+     */
+    public static function isGradeAgeGroup(string $age_group): bool {
+        $age_group = trim($age_group);
+        if ($age_group === '') {
+            return false;
+        }
+
+        if (preg_match('/U(\d+)/i', $age_group) || preg_match('/Under\s*(\d+)/i', $age_group)) {
+            return false;
+        }
+
+        $normalized = self::normalizeAgeGroupLabel($age_group);
+        if (preg_match('/^\d+\s*-\s*\d+/', $normalized)) {
+            return false;
+        }
+        if (preg_match('/^\d+\+$/', $normalized)) {
+            return false;
+        }
+        if (preg_match('/(\d+)-(\d+)y/i', $age_group)) {
+            return false;
+        }
+
+        $parts = self::splitGradeAgeGroupParts($age_group);
+        if ($parts === null) {
+            return false;
+        }
+        if (count($parts) === 1) {
+            return true;
+        }
+
+        $left = $parts[0];
+        $right = $parts[1];
+        return self::isGradeAgeGroupToken($right) || self::isGradeRangeBareEndToken($left, $right);
+    }
+
+    /**
+     * @return array{0: string, 1?: string}|null
+     */
+    private static function splitGradeAgeGroupParts(string $age_group): ?array {
+        $work = preg_replace('/[–—−]/u', '-', trim($age_group));
+
+        if (preg_match('/\s+to\s+/i', $work)) {
+            $parts = preg_split('/\s+to\s+/i', $work, 2);
+            $left = trim($parts[0]);
+            $right = trim($parts[1]);
+            if ($left === '' || $right === '') {
+                return null;
+            }
+            if (!self::isGradeAgeGroupToken($left)) {
+                return null;
+            }
+            if (!self::isGradeAgeGroupToken($right) && !self::isGradeRangeBareEndToken($left, $right)) {
+                return null;
+            }
+            return [$left, $right];
+        }
+
+        if (preg_match('/-to-/i', $work)) {
+            $parts = preg_split('/-to-/i', $work, 2);
+            $left = trim($parts[0]);
+            $right = trim($parts[1]);
+            if ($left === '' || $right === '') {
+                return null;
+            }
+            if (!self::isGradeAgeGroupToken($left)) {
+                return null;
+            }
+            if (!self::isGradeAgeGroupToken($right) && !self::isGradeRangeBareEndToken($left, $right)) {
+                return null;
+            }
+            return [$left, $right];
+        }
+
+        $length = strlen($work);
+        for ($pos = 0; $pos < $length; $pos++) {
+            if ($work[$pos] !== '-') {
+                continue;
+            }
+            $left = substr($work, 0, $pos);
+            $right = substr($work, $pos + 1);
+            if ($left === '' || $right === '') {
+                continue;
+            }
+            if (!self::isGradeAgeGroupToken($left)) {
+                continue;
+            }
+            if (self::isGradeAgeGroupToken($right) || self::isGradeRangeBareEndToken($left, $right)) {
+                return [$left, $right];
+            }
+        }
+
+        if (self::isGradeAgeGroupToken($work)) {
+            return [$work];
+        }
+
+        return null;
+    }
+
+    private static function isGradeAgeGroupToken(string $token): bool {
+        $token = trim($token);
+        if ($token === '') {
+            return false;
+        }
+        if (preg_match('/^pre-?k$/i', $token)) {
+            return true;
+        }
+        if (preg_match('/^k$/i', $token)) {
+            return true;
+        }
+        if (preg_match('/^kg$/i', $token)) {
+            return true;
+        }
+        if (preg_match('/^grade\s+(\d{1,2})$/i', $token, $matches)) {
+            $n = (int) $matches[1];
+            return $n >= 1 && $n <= 12;
+        }
+        if (preg_match('/^g(\d{1,2})$/i', $token, $matches)) {
+            $n = (int) $matches[1];
+            return $n >= 1 && $n <= 12;
+        }
+        if (preg_match('/^gr(\d{1,2})$/i', $token, $matches)) {
+            $n = (int) $matches[1];
+            return $n >= 1 && $n <= 12;
+        }
+
+        return false;
+    }
+
+    private static function isGradeRangeBareEndToken(string $left, string $right): bool {
+        if (!preg_match('/^g(?:r)?(\d{1,2})$/i', $left)) {
+            return false;
+        }
+        if (!preg_match('/^(\d{1,2})$/', $right, $matches)) {
+            return false;
+        }
+        $n = (int) $matches[1];
+        return $n >= 1 && $n <= 12;
+    }
 }
