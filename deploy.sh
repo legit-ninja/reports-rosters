@@ -316,7 +316,9 @@ deploy_to_server() {
         --exclude='debug.log' \
         --exclude='debug_*.php' \
         --exclude='temp_*.php' \
-        --exclude='scripts/*.sh' \
+        --exclude='deploy.local.sh' \
+        --exclude='utils' \
+        --exclude='scripts' \
         --exclude='*.md' \
         --exclude='.DS_Store' \
         --exclude='*.swp' \
