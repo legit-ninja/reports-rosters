@@ -1533,6 +1533,45 @@ class RosterBuilder {
                 }
             }
         }
+
+        $needs_camp_dates = empty($data['start_date']) || $data['start_date'] === '1970-01-01';
+        if ($needs_camp_dates && !empty($data['camp_start_date'])) {
+            $parsed_camp = $this->parseDate($data['camp_start_date']);
+            if ($parsed_camp && $parsed_camp !== '1970-01-01') {
+                $data['start_date'] = $parsed_camp;
+                if (empty($data['end_date']) || $data['end_date'] === '1970-01-01') {
+                    $camp_end = !empty($data['camp_end_date']) ? $this->parseDate($data['camp_end_date']) : null;
+                    $data['end_date'] = ($camp_end && $camp_end !== '1970-01-01') ? $camp_end : $parsed_camp;
+                }
+            }
+        }
+        if ((empty($data['start_date']) || $data['start_date'] === '1970-01-01')
+            && function_exists('intersoccer_reports_resolve_camp_schedule')) {
+            $camp_terms = $data['camp_terms'] ?? $data['event_type'] ?? '';
+            $season = $data['season'] ?? '';
+            $order_item_id = isset($data['order_item_id']) ? (int) $data['order_item_id'] : 0;
+            $variation_id = (int) ($data['variation_id'] ?? 0);
+            list($resolved_start, $resolved_end) = intersoccer_reports_resolve_camp_schedule(
+                $variation_id,
+                $order_item_id > 0 ? $order_item_id : null,
+                (string) $camp_terms,
+                (string) $season
+            );
+            if (!empty($resolved_start) && $resolved_start !== '1970-01-01') {
+                $data['start_date'] = $resolved_start;
+                if (!empty($resolved_end) && $resolved_end !== '1970-01-01') {
+                    $data['end_date'] = $resolved_end;
+                } elseif (empty($data['end_date']) || $data['end_date'] === '1970-01-01') {
+                    $data['end_date'] = $resolved_start;
+                }
+            }
+        }
+
+        foreach (['start_date', 'end_date'] as $date_key) {
+            if (isset($data[$date_key]) && $data[$date_key] === '1970-01-01') {
+                unset($data[$date_key]);
+            }
+        }
         
         return $data;
     }

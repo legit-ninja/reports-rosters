@@ -409,7 +409,14 @@ class PlaceholderManager {
                         ?: $this->getProductAttribute('pa_course-times', $variation, $parent_product),
                 'season' => $this->getProductAttribute('pa_season', $variation, $parent_product),
                 'booking_type' => $this->getProductAttribute('pa_booking-type', $variation, $parent_product),
-                'girls_only' => strtolower($activity_type) === 'girls only' ? 1 : 0,
+                'girls_only' => function_exists('intersoccer_resolve_roster_girls_only_flag')
+                    ? intersoccer_resolve_roster_girls_only_flag([
+                        'activity_type' => $activity_type,
+                        'product_id' => $parent_product->get_id(),
+                        'variation_id' => $variation->get_id(),
+                        'pa_girls-only' => $this->getProductAttribute('pa_girls-only', $variation, $parent_product),
+                    ])
+                    : (strtolower($activity_type) === 'girls only' ? 1 : 0),
                 'product_id' => $parent_product->get_id()
             ];
             

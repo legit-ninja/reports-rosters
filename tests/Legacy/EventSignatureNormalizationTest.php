@@ -99,6 +99,33 @@ class EventSignatureNormalizationTest extends TestCase {
         $this->assertEquals($signature_1, $signature_2, 'Tournaments with same date and attributes should have same signature');
     }
     
+    public function test_girls_only_legacy_composite_and_base_activity_type_share_signature() {
+        if (!function_exists('intersoccer_generate_event_signature')) {
+            $this->markTestSkipped('intersoccer_generate_event_signature function not found');
+        }
+
+        $facets = [
+            'venue' => 'geneva-test-venue',
+            'age_group' => '5-12',
+            'camp_terms' => 'summer-week-1',
+            'course_day' => '',
+            'times' => '0900-1200',
+            'season' => 'Summer 2026',
+            'city' => 'geneva',
+            'canton_region' => '',
+            'product_id' => 12345,
+            'girls_only' => 1,
+        ];
+
+        $legacy = array_merge($facets, ['activity_type' => 'Camp, Girls Only']);
+        $modern = array_merge($facets, ['activity_type' => 'Camp']);
+
+        $this->assertSame(
+            intersoccer_generate_event_signature($legacy),
+            intersoccer_generate_event_signature($modern)
+        );
+    }
+
     public function test_normalize_event_data_for_signature() {
         if (!function_exists('intersoccer_normalize_event_data_for_signature')) {
             $this->markTestSkipped('intersoccer_normalize_event_data_for_signature function not found');

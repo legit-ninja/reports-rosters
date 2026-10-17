@@ -3303,7 +3303,7 @@ function intersoccer_render_other_events_page() {
                FROM $rosters_table
                WHERE activity_type NOT IN ('Camp', 'Course')
                AND activity_type NOT LIKE '%Girls%'
-               AND girls_only = 0";  // EXCLUDE Girls Only events (double check)
+               AND girls_only = 0";  // EXCLUDE Girls Only events (flag + legacy composite text)
 
     // Add coach venue filtering if user is a coach
     if ($is_coach && !empty($coach_accessible_venues)) {

@@ -141,9 +141,45 @@ function intersoccer_apply_canonical_order_item_meta_to_data(array $data, array 
             continue;
         }
         if ($field === 'booking_type') {
-            $data['booking_type'] = function_exists('intersoccer_normalize_booking_type_label_for_reports')
+            $normalized_bt = function_exists('intersoccer_normalize_booking_type_label_for_reports')
                 ? intersoccer_normalize_booking_type_label_for_reports($val)
                 : $val;
+            $normalized_slug = function_exists('intersoccer_normalize_booking_type_slug_for_reports')
+                ? intersoccer_normalize_booking_type_slug_for_reports($normalized_bt)
+                : strtolower(trim((string) $normalized_bt));
+            if ($normalized_slug === 'other' && !empty($data['booking_type'])) {
+                $existing = function_exists('intersoccer_normalize_booking_type_label_for_reports')
+                    ? intersoccer_normalize_booking_type_label_for_reports($data['booking_type'])
+                    : $data['booking_type'];
+                $existing_slug = function_exists('intersoccer_normalize_booking_type_slug_for_reports')
+                    ? intersoccer_normalize_booking_type_slug_for_reports($existing)
+                    : strtolower(trim((string) $existing));
+                if ($existing_slug !== '' && $existing_slug !== 'other') {
+                    continue;
+                }
+            }
+            if ($normalized_slug === 'other') {
+                foreach (['Booking Type', 'buchungstyp', 'type de réservation', 'pa_booking-type', 'attribute_pa_booking-type'] as $alias_key) {
+                    if (!array_key_exists($alias_key, $raw_meta)) {
+                        continue;
+                    }
+                    $alias_val = $scalar($raw_meta[$alias_key]);
+                    if ($alias_val === '') {
+                        continue;
+                    }
+                    $resolved = function_exists('intersoccer_normalize_booking_type_label_for_reports')
+                        ? intersoccer_normalize_booking_type_label_for_reports($alias_val)
+                        : $alias_val;
+                    $resolved_slug = function_exists('intersoccer_normalize_booking_type_slug_for_reports')
+                        ? intersoccer_normalize_booking_type_slug_for_reports($resolved)
+                        : strtolower(trim((string) $resolved));
+                    if ($resolved_slug !== '' && $resolved_slug !== 'other') {
+                        $data['booking_type'] = $resolved;
+                        continue 2;
+                    }
+                }
+            }
+            $data['booking_type'] = $normalized_bt;
             continue;
         }
         if ($field === 'event_type') {

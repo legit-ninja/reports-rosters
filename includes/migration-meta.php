@@ -305,3 +305,44 @@ if (!function_exists('intersoccer_migration_restore_canonical_meta')) {
         error_log('InterSoccer: Restored canonical metadata for item ' . $item_id);
     }
 }
+
+if (!function_exists('intersoccer_migration_activity_type_for_girls_only_tristate')) {
+    /**
+     * Activity Type label from base activity text and unified girls-only resolution (storage shape).
+     */
+    function intersoccer_migration_activity_type_for_girls_only_tristate(string $activity_type, string $girls_only_tristate): string {
+        $base = function_exists('intersoccer_canonical_activity_type_for_roster')
+            ? (string) intersoccer_canonical_activity_type_for_roster($activity_type)
+            : trim($activity_type);
+
+        if ($girls_only_tristate !== 'yes') {
+            return $base;
+        }
+
+        return intersoccer_migration_activity_type_with_girls_only_flag($base, 1);
+    }
+}
+
+if (!function_exists('intersoccer_migration_activity_type_with_girls_only_flag')) {
+    /**
+     * Canonical order-item / roster activity_type when girls_only is set (base type only).
+     */
+    function intersoccer_migration_activity_type_with_girls_only_flag(string $activity_type, int $girls_only_flag): string {
+        $activity_type = trim($activity_type);
+        if ($activity_type === '' || $girls_only_flag !== 1) {
+            return function_exists('intersoccer_canonical_activity_type_for_roster')
+                ? (string) intersoccer_canonical_activity_type_for_roster($activity_type)
+                : $activity_type;
+        }
+
+        $base = function_exists('intersoccer_canonical_activity_type_for_roster')
+            ? (string) intersoccer_canonical_activity_type_for_roster($activity_type)
+            : ucfirst(strtolower($activity_type));
+
+        if ($base === 'Girls Only') {
+            return 'Camp';
+        }
+
+        return $base;
+    }
+}
