@@ -630,9 +630,8 @@ if (!($eval['valid'] ?? false)) {
             }
         }
     }
-    if (function_exists('intersoccer_reports_set_readonly_mode')) {
-        intersoccer_reports_set_readonly_mode(false);
-    }
+    // Leave read-only mode and the query guard enabled through process shutdown so
+    // WPML/other shutdown handlers cannot hit MySQL while SESSION TRANSACTION READ ONLY.
     return;
 }
 
@@ -640,8 +639,6 @@ echo "RESULT: OK\n";
 echo "   signature_branch_vs_master_drift=0 (required)\n";
 echo "   stored_vs_branch_drift={$sig_stored_mismatch} (informational only)\n";
 
-if (function_exists('intersoccer_reports_set_readonly_mode')) {
-    intersoccer_reports_set_readonly_mode(false);
-}
+// Read-only guard stays on until exit (see INVALID path comment above).
 
 echo "DRY RUN complete (no writes).\n";

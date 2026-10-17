@@ -73,4 +73,12 @@ class DryRunReadonlyTest extends TestCase {
         $eval = intersoccer_reports_dryrun_evaluate_result();
         $this->assertTrue($eval['valid']);
     }
+
+    public function test_query_guard_still_blocks_writes_after_script_body_when_readonly_left_on(): void {
+        intersoccer_reports_dryrun_bootstrap_readonly();
+        $shutdown_write = "UPDATE wp_options SET option_value = 'x' WHERE option_name = 'wpml_notices'";
+        $blocked = apply_filters('query', $shutdown_write);
+        $this->assertSame('SELECT 1', $blocked);
+        $this->assertGreaterThan(0, intersoccer_reports_dryrun_count_blocked_sql_writes());
+    }
 }
