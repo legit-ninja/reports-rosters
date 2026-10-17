@@ -170,6 +170,24 @@ run_phpunit_tests() {
         return $PHPUNIT_EXIT_CODE
 }
 
+# Rsync allowlist: runtime plugin files only (no deploy scripts, dev tree, or dotfiles).
+intersoccer_rr_deploy_rsync_filters() {
+    # shellcheck disable=SC2034
+    RSYNC_FILTERS=(
+        --include='/intersoccer-reports-rosters.php'
+        --include='/wpml-config.xml'
+        --include='/README.md'
+        --include='/classes/***'
+        --include='/includes/***'
+        --include='/css/***'
+        --include='/js/***'
+        --include='/languages/***'
+        --include='/templates/***'
+        --include='/vendor/***'
+        --exclude='*'
+    )
+}
+
 run_cypress_tests() {
     print_header "Running Cypress E2E Tests"
     
@@ -266,70 +284,24 @@ deploy_to_server() {
         echo ""
     fi
     
+    intersoccer_rr_deploy_rsync_filters
+
     # Build rsync command WITHOUT --delete flag
     # Using --delete is dangerous - could delete other plugins if path is wrong!
-    RSYNC_CMD="rsync -avz"
-    
-    # Add dry-run flag if requested
+    local -a rsync_args=(rsync -avz)
+
     if [ "$DRY_RUN" = true ]; then
-        RSYNC_CMD="$RSYNC_CMD --dry-run"
+        rsync_args+=(--dry-run)
         echo -e "${YELLOW}DRY RUN MODE - No files will be uploaded${NC}"
         echo ""
     fi
-    
-    # Add SSH options
-    RSYNC_CMD="$RSYNC_CMD -e 'ssh -p ${SSH_PORT} -i ${SSH_KEY}'"
-    
-    # Important: Include rules must come BEFORE exclude rules in rsync
-    # Include README.md before excluding other *.md files
-    RSYNC_CMD="$RSYNC_CMD --include='README.md'"
-    
-    # Exclude files/directories
-    # Note: Production vendor dependencies are included in the repo
-    RSYNC_CMD="$RSYNC_CMD \
-        --include='scripts/patch-phpspreadsheet-zipstream.php' \
-        --include='vendor/autoload.php' \
-        --include='vendor/composer/**' \
-        --exclude='vendor/composer/installed.json' \
-        --exclude='vendor/composer/installed.php' \
-        --include='vendor/ezyang/**' \
-        --include='vendor/maennchen/**' \
-        --include='vendor/markbaker/**' \
-        --include='vendor/myclabs/php-enum/**' \
-        --include='vendor/phpoffice/**' \
-        --include='vendor/psr/**' \
-        --include='vendor/symfony/**' \
-        --exclude='vendor/phpunit/**' \
-        --exclude='vendor/yoast/**' \
-        --exclude='vendor/mockery/**' \
-        --exclude='vendor/brain/**' \
-        --exclude='.git' \
-        --exclude='.gitignore' \
-        --exclude='node_modules' \
-        --exclude='tests' \
-        --exclude='docs' \
-        --exclude='.phpunit.result.cache' \
-        --exclude='package.json' \
-        --exclude='package-lock.json' \
-        --exclude='phpunit.xml' \
-        --exclude='*.log' \
-        --exclude='debug.log' \
-        --exclude='debug_*.php' \
-        --exclude='temp_*.php' \
-        --exclude='deploy.local.sh' \
-        --exclude='utils' \
-        --exclude='scripts' \
-        --exclude='*.md' \
-        --exclude='.DS_Store' \
-        --exclude='*.swp' \
-        --exclude='*~'"
-    
-    # Add source and destination
-    RSYNC_CMD="$RSYNC_CMD ./ ${SERVER_USER}@${SERVER_HOST}:${SERVER_PATH}/"
-    
-    # Execute rsync
+
+    rsync_args+=(-e "ssh -p ${SSH_PORT} -i ${SSH_KEY}")
+    rsync_args+=("${RSYNC_FILTERS[@]}")
+    rsync_args+=(./ "${SERVER_USER}@${SERVER_HOST}:${SERVER_PATH}/")
+
     echo "Uploading files..."
-    eval $RSYNC_CMD
+    "${rsync_args[@]}"
     
     if [ $? -eq 0 ]; then
         if [ "$DRY_RUN" = false ]; then
@@ -349,12 +321,6 @@ deploy_to_server() {
                 echo -e "${GREEN}✓ ZipStream 2.x is correctly installed${NC}"
             fi
             
-            # Run patch script on server if it exists
-            echo ""
-            echo -e "${BLUE}Applying PhpSpreadsheet ZipStream compatibility patch on server...${NC}"
-            ssh -p ${SSH_PORT} -i ${SSH_KEY} ${SERVER_USER}@${SERVER_HOST} "cd ${SERVER_PATH} && php scripts/patch-phpspreadsheet-zipstream.php 2>&1" || {
-                echo -e "${YELLOW}⚠ Warning: Patch script failed on server, but continuing${NC}"
-            }
         fi
     else
         echo -e "${RED}✗ Upload failed${NC}"
