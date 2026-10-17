@@ -5843,7 +5843,9 @@ if (!function_exists('intersoccer_reconcile_backfill_girls_only_flags')) {
         }
 
         $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-        $candidate_sql = "SELECT id, order_item_id, activity_type, product_name, product_id, variation_id
+        $candidate_sql = "SELECT id, order_item_id, activity_type, product_name, product_id, variation_id,
+                venue, age_group, camp_terms, course_day, times, season, city, canton_region,
+                start_date, end_date, girls_only, event_signature
             FROM {$rosters_table}
             WHERE is_placeholder = 0 AND girls_only = 0
               AND (
@@ -5878,11 +5880,42 @@ if (!function_exists('intersoccer_reconcile_backfill_girls_only_flags')) {
                 if (!intersoccer_roster_row_looks_girls_only($row)) {
                     continue;
                 }
+                $new_girls_only = 1;
+                $current_girls_only = (int) ($row['girls_only'] ?? 0);
+                if ($new_girls_only === $current_girls_only) {
+                    continue;
+                }
+                $signature_payload = [
+                    'activity_type' => $row['activity_type'] ?? '',
+                    'venue' => $row['venue'] ?? '',
+                    'age_group' => $row['age_group'] ?? '',
+                    'camp_terms' => $row['camp_terms'] ?? '',
+                    'course_day' => $row['course_day'] ?? '',
+                    'times' => $row['times'] ?? '',
+                    'season' => $row['season'] ?? '',
+                    'city' => $row['city'] ?? '',
+                    'canton_region' => $row['canton_region'] ?? '',
+                    'product_id' => (int) ($row['product_id'] ?? 0),
+                    'start_date' => $row['start_date'] ?? null,
+                    'end_date' => $row['end_date'] ?? null,
+                    'girls_only' => $new_girls_only,
+                ];
+                $event_signature = function_exists('intersoccer_event_signature_branch_pipeline')
+                    ? intersoccer_event_signature_branch_pipeline($signature_payload)
+                    : (function_exists('intersoccer_event_signature_from_event_data')
+                        ? intersoccer_event_signature_from_event_data($signature_payload)
+                        : '');
+                if ($event_signature === '') {
+                    continue;
+                }
                 $result = $wpdb->update(
                     $rosters_table,
-                    ['girls_only' => 1],
+                    [
+                        'girls_only' => $new_girls_only,
+                        'event_signature' => $event_signature,
+                    ],
                     ['id' => (int) $row['id']],
-                    ['%d'],
+                    ['%d', '%s'],
                     ['%d']
                 );
                 if ($result !== false) {
