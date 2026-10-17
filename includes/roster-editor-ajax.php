@@ -345,6 +345,7 @@ function intersoccer_ajax_update_roster_entry() {
                 'message' => __('No changes to save.', 'intersoccer-reports-rosters'),
                 'updated_fields' => [],
             ]);
+            return;
         }
 
         $where = ['id' => $roster_id];
