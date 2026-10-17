@@ -42,7 +42,21 @@ class DryRunReadonlyTest extends TestCase {
 
         $blocked = apply_filters('query', "DELETE FROM wp_options WHERE option_name LIKE '_transient_timeout_%'");
         $this->assertSame('SELECT 1', $blocked);
-        $this->assertGreaterThan(0, intersoccer_reports_get_readonly_write_attempts());
+        $this->assertGreaterThan(0, intersoccer_reports_dryrun_count_blocked_sql_writes());
+    }
+
+    public function test_dryrun_evaluate_ok_when_only_memory_transient_writes(): void {
+        intersoccer_reports_dryrun_bootstrap_readonly();
+        $GLOBALS['intersoccer_dryrun_signature_branch_vs_master_drift'] = 0;
+        if (function_exists('intersoccer_reports_note_readonly_memory_write_attempt')) {
+            for ($i = 0; $i < 9; $i++) {
+                intersoccer_reports_note_readonly_memory_write_attempt();
+            }
+        }
+        $eval = intersoccer_reports_dryrun_evaluate_result();
+        $this->assertTrue($eval['valid']);
+        $this->assertSame(9, $eval['memory_write_attempts']);
+        $this->assertSame(0, $eval['blocked_sql_write_attempts']);
     }
 
     public function test_dryrun_evaluate_result_invalid_when_sql_errors_present(): void {

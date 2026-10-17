@@ -100,7 +100,19 @@ if (!function_exists('intersoccer_reports_note_blocked_query')) {
         if (count($bucket['samples']) < 5) {
             $bucket['samples'][] = intersoccer_reports_dryrun_mask_sql($query);
         }
-        intersoccer_reports_note_readonly_write_attempt();
+    }
+}
+
+if (!function_exists('intersoccer_reports_dryrun_count_blocked_sql_writes')) {
+    function intersoccer_reports_dryrun_count_blocked_sql_writes() {
+        if (empty($GLOBALS['intersoccer_dryrun_blocked_queries']['by_type'])) {
+            return 0;
+        }
+        $total = 0;
+        foreach ($GLOBALS['intersoccer_dryrun_blocked_queries']['by_type'] as $cnt) {
+            $total += (int) $cnt;
+        }
+        return $total;
     }
 }
 
@@ -164,6 +176,7 @@ if (!function_exists('intersoccer_reports_dryrun_bootstrap_readonly')) {
             'by_table' => [],
             'samples' => [],
         ];
+        $GLOBALS['intersoccer_dryrun_memory_write_attempts'] = 0;
     }
 }
 
@@ -208,11 +221,9 @@ if (!function_exists('intersoccer_reports_dryrun_evaluate_result')) {
      */
     function intersoccer_reports_dryrun_evaluate_result() {
         $reasons = [];
-        $writes = function_exists('intersoccer_reports_get_readonly_write_attempts')
-            ? intersoccer_reports_get_readonly_write_attempts()
-            : 0;
-        if ($writes > 0) {
-            $reasons[] = "blocked_write_attempts={$writes}";
+        $blocked_sql = intersoccer_reports_dryrun_count_blocked_sql_writes();
+        if ($blocked_sql > 0) {
+            $reasons[] = "blocked_sql_write_attempts={$blocked_sql}";
         }
         $sql_errors = intersoccer_reports_dryrun_get_sql_error_count();
         if ($sql_errors > 0) {
@@ -222,9 +233,15 @@ if (!function_exists('intersoccer_reports_dryrun_evaluate_result')) {
             && (int) $GLOBALS['intersoccer_dryrun_signature_branch_vs_master_drift'] > 0) {
             $reasons[] = 'signature_branch_vs_master_drift>0';
         }
+        $memory_writes = function_exists('intersoccer_reports_get_readonly_memory_write_attempts')
+            ? intersoccer_reports_get_readonly_memory_write_attempts()
+            : (int) ($GLOBALS['intersoccer_dryrun_memory_write_attempts'] ?? 0);
+
         return [
             'valid' => $reasons === [],
             'reasons' => $reasons,
+            'memory_write_attempts' => $memory_writes,
+            'blocked_sql_write_attempts' => $blocked_sql,
         ];
     }
 }
