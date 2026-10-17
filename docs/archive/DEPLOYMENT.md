@@ -16,7 +16,7 @@ Edit `deploy.local.sh` and set your server credentials:
 
 ```bash
 SERVER_USER="your-ssh-username"
-SERVER_HOST="intersoccer.legit.ninja"
+SERVER_HOST="test-site.example"
 SERVER_PATH="/var/www/html/wp-content/plugins/intersoccer-reports-rosters"
 SSH_PORT="22"
 SSH_KEY="~/.ssh/id_rsa"
@@ -121,7 +121,7 @@ chmod +x deploy.sh
 ### SSH Connection Failed
 - Check your `deploy.local.sh` credentials
 - Verify SSH key permissions: `chmod 600 ~/.ssh/id_rsa`
-- Test SSH connection: `ssh -p 22 -i ~/.ssh/id_rsa user@intersoccer.legit.ninja`
+- Test SSH connection: `ssh -p 22 -i ~/.ssh/id_rsa user@test-site.example`
 
 ### Deployment Fails Mid-Upload
 - Run with `--dry-run` first to preview changes
