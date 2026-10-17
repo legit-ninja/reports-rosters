@@ -1028,6 +1028,8 @@ class Database {
             'discount_applied' => 'text',
             'order_status' => 'text',
             'event_signature' => 'text',
+            'girls_only' => 'roster_flag',
+            'is_placeholder' => 'roster_flag',
             'product_name' => 'text',
             'player_name' => 'text',
             'player_first_name' => 'text',
@@ -1074,6 +1076,18 @@ class Database {
         switch ($type) {
             case 'int':
                 return (int) $value;
+
+            case 'roster_flag':
+                if ($value === null || $value === '') {
+                    return 0;
+                }
+                if ($value === true || $value === 1 || $value === '1') {
+                    return 1;
+                }
+                if ($value === false || $value === 0 || $value === '0') {
+                    return 0;
+                }
+                return !empty($value) ? 1 : 0;
                 
             case 'text':
                 return sanitize_text_field($value);

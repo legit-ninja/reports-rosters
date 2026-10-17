@@ -982,8 +982,13 @@ class RosterListingService {
 
             $group['corrected_start_date'] = $this->getEarliestDate($group['start_dates']);
             $group['corrected_end_date'] = $this->getLatestDate($group['end_dates']);
-            $group['start_date'] = $group['corrected_start_date'] ?? '1970-01-01';
-            $group['end_date'] = $group['corrected_end_date'] ?? '1970-01-01';
+            if (function_exists('intersoccer_roster_nullable_storage_date')) {
+                $group['start_date'] = intersoccer_roster_nullable_storage_date($group['corrected_start_date'] ?? null);
+                $group['end_date'] = intersoccer_roster_nullable_storage_date($group['corrected_end_date'] ?? null);
+            } else {
+                $group['start_date'] = $group['corrected_start_date'] ?? null;
+                $group['end_date'] = $group['corrected_end_date'] ?? null;
+            }
 
             $filters['seasons'][$group['season']] = $group['season'];
             $filters['venues'][$group['venue']] = $group['venue'];
@@ -1620,7 +1625,7 @@ class RosterListingService {
     private function getEarliestDate(array $dates): string {
         $dates = array_filter(array_map('strtotime', $dates));
         if (empty($dates)) {
-            return '1970-01-01';
+            return '';
         }
         return date('Y-m-d', min($dates));
     }
@@ -1628,7 +1633,7 @@ class RosterListingService {
     private function getLatestDate(array $dates): string {
         $dates = array_filter(array_map('strtotime', $dates));
         if (empty($dates)) {
-            return '1970-01-01';
+            return '';
         }
         return date('Y-m-d', max($dates));
     }

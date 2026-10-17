@@ -147,31 +147,40 @@ if (!function_exists('intersoccer_get_cached_term_in_default_language')) {
             return $request_cache[$request_key];
         }
 
+        $persist_term_cache = static function ($term_id) use ($transient_key, &$request_cache, $request_key, $taxonomy) {
+            if (function_exists('intersoccer_reports_persist_transient')) {
+                intersoccer_reports_persist_transient($transient_key, (int) $term_id, 6 * HOUR_IN_SECONDS);
+            } else {
+                set_transient($transient_key, (int) $term_id, 6 * HOUR_IN_SECONDS);
+            }
+            $term = get_term((int) $term_id, $taxonomy);
+            $request_cache[$request_key] = ($term && !is_wp_error($term)) ? $term : null;
+            return $request_cache[$request_key];
+        };
+
         $term = null;
         if (function_exists('intersoccer_get_term_by_translated_name')) {
             $term = intersoccer_get_term_by_translated_name($value, $taxonomy);
             if ($term && !is_wp_error($term)) {
-                set_transient($transient_key, (int) $term->term_id, 6 * HOUR_IN_SECONDS);
-                $request_cache[$request_key] = $term;
-                return $term;
+                return $persist_term_cache((int) $term->term_id);
             }
         }
 
         $term = get_term_by('slug', $value, $taxonomy);
         if ($term && !is_wp_error($term)) {
-            set_transient($transient_key, (int) $term->term_id, 6 * HOUR_IN_SECONDS);
-            $request_cache[$request_key] = $term;
-            return $term;
+            return $persist_term_cache((int) $term->term_id);
         }
 
         $term = get_term_by('name', $value, $taxonomy);
         if ($term && !is_wp_error($term)) {
-            set_transient($transient_key, (int) $term->term_id, 6 * HOUR_IN_SECONDS);
-            $request_cache[$request_key] = $term;
-            return $term;
+            return $persist_term_cache((int) $term->term_id);
         }
 
-        set_transient($transient_key, 0, 15 * MINUTE_IN_SECONDS);
+        if (function_exists('intersoccer_reports_persist_transient')) {
+            intersoccer_reports_persist_transient($transient_key, 0, 15 * MINUTE_IN_SECONDS);
+        } else {
+            set_transient($transient_key, 0, 15 * MINUTE_IN_SECONDS);
+        }
         $request_cache[$request_key] = null;
         return null;
     }
@@ -3131,8 +3140,16 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     error_log('InterSoccer: Set activity_type to ' . $activity_type . ' for order ' . $order_id . ', item ' . $item_id);
 
     // Parse dates using unified parser
-    if ($product_type === 'camp' && !empty($camp_terms) && $camp_terms !== 'N/A') {
-        list($start_date, $end_date, $event_dates) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
+    if ($product_type === 'camp' && function_exists('intersoccer_reports_resolve_camp_schedule')) {
+        list($start_date, $end_date, $event_dates) = intersoccer_reports_resolve_camp_schedule(
+            (int) $variation_id,
+            (int) $item_id,
+            (string) $camp_terms,
+            (string) $season
+        );
+        if (empty($event_dates) || $event_dates === 'N/A') {
+            $event_dates = 'N/A';
+        }
     } elseif ($product_type === 'tournament') {
         // For tournaments, get date from product attribute pa_date or Date
         $variation = $variation_id ? wc_get_product($variation_id) : null;
@@ -3228,8 +3245,8 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
                 error_log('InterSoccer: Parsed tournament date: ' . $start_date);
             } else {
                 error_log('InterSoccer: Failed to parse tournament date "' . $tournament_date . '" for order ' . $order_id . ', item ' . $item_id);
-                $start_date = '1970-01-01';
-                $end_date = '1970-01-01';
+                $start_date = null;
+                $end_date = null;
                 $event_dates = 'N/A';
             }
         } else {
@@ -3245,15 +3262,15 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
                     $end_date = $parsed_end;
                     $event_dates = "$start_date to $end_date";
                 } else {
-                    error_log('InterSoccer: Date parsing failed for order ' . $order_id . ', item ' . $item_id . ' - Using defaults');
-                    $start_date = '1970-01-01';
-                    $end_date = '1970-01-01';
+                    error_log('InterSoccer: Date parsing failed for order ' . $order_id . ', item ' . $item_id . ' - leaving dates empty');
+                    $start_date = null;
+                    $end_date = null;
                     $event_dates = 'N/A';
                 }
             } else {
-                error_log('InterSoccer: No tournament date found (checked pa_date, Date attribute, and Start Date/End Date metadata) for order ' . $order_id . ', item ' . $item_id . ' - Using defaults');
-                $start_date = '1970-01-01';
-                $end_date = '1970-01-01';
+                error_log('InterSoccer: No tournament date found (checked pa_date, Date attribute, and Start Date/End Date metadata) for order ' . $order_id . ', item ' . $item_id . ' - leaving dates empty');
+                $start_date = null;
+                $end_date = null;
                 $event_dates = 'N/A';
             }
         }
@@ -3269,9 +3286,9 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
             $end_date = $parsed_end;
             $event_dates = "$start_date to $end_date";
         } else {
-            error_log('InterSoccer: Invalid course date format for item ' . $item_id . ' in order ' . $order_id . ' - Using defaults');
-            $start_date = '1970-01-01';
-            $end_date = '1970-01-01';
+            error_log('InterSoccer: Invalid course date format for item ' . $item_id . ' in order ' . $order_id . ' - leaving dates empty');
+            $start_date = null;
+            $end_date = null;
             $event_dates = 'N/A';
         }
     }
@@ -3378,8 +3395,12 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         'late_pickup_days' => $late_pickup_days,
         'day_presence' => json_encode($day_presence),
         'age_group' => substr((string)($normalized_age_group ?: 'N/A'), 0, 50),
-        'start_date' => $start_date ?: '1970-01-01',
-        'end_date' => $end_date ?: '1970-01-01',
+        'start_date' => function_exists('intersoccer_roster_nullable_storage_date')
+            ? intersoccer_roster_nullable_storage_date($start_date)
+            : ($start_date && $start_date !== '1970-01-01' ? $start_date : null),
+        'end_date' => function_exists('intersoccer_roster_nullable_storage_date')
+            ? intersoccer_roster_nullable_storage_date($end_date)
+            : ($end_date && $end_date !== '1970-01-01' ? $end_date : null),
         'event_dates' => substr((string)($event_dates ?: 'N/A'), 0, 100),
         'product_name' => substr((string)($product_name ?: 'Unknown Product'), 0, 255), // Already normalized to English above
         'activity_type' => substr((string)($normalized_activity_type), 0, 50),
@@ -4379,6 +4400,118 @@ if (!function_exists('intersoccer_is_bulk_normalize_quiet')) {
     }
 }
 
+if (!function_exists('intersoccer_reports_set_readonly_mode')) {
+    /**
+     * When true, roster report/dry-run helpers must not persist transients or options.
+     *
+     * @param bool $enabled
+     */
+    function intersoccer_reports_set_readonly_mode($enabled) {
+        $GLOBALS['intersoccer_reports_readonly_mode'] = (bool) $enabled;
+        if (!$enabled) {
+            unset($GLOBALS['intersoccer_reports_readonly_write_attempts']);
+        }
+    }
+}
+
+if (!function_exists('intersoccer_reports_is_readonly_mode')) {
+    function intersoccer_reports_is_readonly_mode() {
+        return !empty($GLOBALS['intersoccer_reports_readonly_mode']);
+    }
+}
+
+if (!function_exists('intersoccer_reports_get_readonly_write_attempts')) {
+    function intersoccer_reports_get_readonly_write_attempts() {
+        return (int) ($GLOBALS['intersoccer_reports_readonly_write_attempts'] ?? 0);
+    }
+}
+
+if (!function_exists('intersoccer_reports_note_readonly_write_attempt')) {
+    function intersoccer_reports_note_readonly_write_attempt() {
+        if (!intersoccer_reports_is_readonly_mode()) {
+            return;
+        }
+        $GLOBALS['intersoccer_reports_readonly_write_attempts'] = intersoccer_reports_get_readonly_write_attempts() + 1;
+    }
+}
+
+if (!function_exists('intersoccer_reports_note_readonly_memory_write_attempt')) {
+    /**
+     * In-memory option/transient writes during dry-run (do not invalidate the run).
+     */
+    function intersoccer_reports_note_readonly_memory_write_attempt() {
+        if (!intersoccer_reports_is_readonly_mode()) {
+            return;
+        }
+        $GLOBALS['intersoccer_dryrun_memory_write_attempts'] = (int) ($GLOBALS['intersoccer_dryrun_memory_write_attempts'] ?? 0) + 1;
+        intersoccer_reports_note_readonly_write_attempt();
+    }
+}
+
+if (!function_exists('intersoccer_reports_get_readonly_memory_write_attempts')) {
+    function intersoccer_reports_get_readonly_memory_write_attempts() {
+        return (int) ($GLOBALS['intersoccer_dryrun_memory_write_attempts'] ?? 0);
+    }
+}
+
+if (!function_exists('intersoccer_reports_note_readonly_db_error_if_any')) {
+    /**
+     * Treat MySQL read-only transaction errors as write attempts (dry-run detector).
+     */
+    function intersoccer_reports_note_readonly_db_error_if_any() {
+        if (!intersoccer_reports_is_readonly_mode()) {
+            return;
+        }
+        global $wpdb;
+        $err = isset($wpdb->last_error) ? (string) $wpdb->last_error : '';
+        if ($err === '') {
+            return;
+        }
+        if (stripos($err, 'read-only') !== false || stripos($err, '1792') !== false) {
+            intersoccer_reports_note_readonly_write_attempt();
+        }
+    }
+}
+
+if (!function_exists('intersoccer_reports_persist_transient')) {
+    /**
+     * @return bool True when set_transient ran; false when skipped (read-only).
+     */
+    function intersoccer_reports_persist_transient($transient, $value, $expiration) {
+        if (intersoccer_reports_is_readonly_mode()) {
+            return false;
+        }
+        return set_transient($transient, $value, $expiration);
+    }
+}
+
+if (!function_exists('intersoccer_reports_register_readonly_write_guards')) {
+    /**
+     * Count option/transient writes while read-only mode is on; block option updates via pre_update_option.
+     */
+    function intersoccer_reports_register_readonly_write_guards() {
+        static $registered = false;
+        if ($registered || !function_exists('add_action')) {
+            return;
+        }
+        $registered = true;
+
+        add_action('add_option', 'intersoccer_reports_note_readonly_memory_write_attempt', 1, 0);
+        add_action('update_option', 'intersoccer_reports_note_readonly_memory_write_attempt', 1, 0);
+        add_action('setted_transient', 'intersoccer_reports_note_readonly_memory_write_attempt', 1, 0);
+
+        if (function_exists('add_filter')) {
+            add_filter('pre_update_option', static function ($value, $option, $old_value) {
+                if (!intersoccer_reports_is_readonly_mode()) {
+                    return $value;
+                }
+                intersoccer_reports_note_readonly_memory_write_attempt();
+                return $old_value;
+            }, 1, 3);
+        }
+    }
+}
+
 if (!function_exists('intersoccer_resolve_variation_for_roster')) {
     /**
      * Resolve a variation ID to the default-language (English) variation for roster reads/writes.
@@ -4459,9 +4592,13 @@ if (!function_exists('intersoccer_event_signature_from_event_data')) {
             || !function_exists('intersoccer_generate_event_signature')) {
             return '';
         }
+        $event_data = intersoccer_roster_apply_signature_date_fields($event_data);
         $normalized = intersoccer_normalize_event_data_for_signature($event_data);
         if (array_key_exists('start_date', $event_data)) {
             $normalized['start_date'] = $event_data['start_date'];
+        }
+        if (array_key_exists('end_date', $event_data)) {
+            $normalized['end_date'] = $event_data['end_date'];
         }
         return intersoccer_generate_event_signature($normalized);
     }
@@ -5094,9 +5231,185 @@ if (!function_exists('intersoccer_normalize_activity_type')) {
     }
 }
 
+if (!function_exists('intersoccer_roster_nullable_storage_date')) {
+    /**
+     * Normalize roster start/end dates for DB storage (NULL when unknown; never 1970-01-01).
+     *
+     * @param mixed $value
+     * @return string|null
+     */
+    function intersoccer_roster_nullable_storage_date($value) {
+        if ($value === null || $value === '' || $value === '1970-01-01' || $value === '0000-00-00') {
+            return null;
+        }
+        return (string) $value;
+    }
+}
+
+if (!function_exists('intersoccer_roster_has_real_date')) {
+    /**
+     * Whether a roster date value is a real calendar date (not NULL, empty, or epoch placeholders).
+     *
+     * @param mixed $value
+     */
+    function intersoccer_roster_has_real_date($value): bool {
+        if ($value === null || $value === '') {
+            return false;
+        }
+        $s = trim((string) $value);
+        if ($s === '' || $s === '1970-01-01' || $s === '0000-00-00') {
+            return false;
+        }
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $s) === 1;
+    }
+}
+
+if (!function_exists('intersoccer_roster_format_date_range_or_tbd')) {
+    /**
+     * Format roster start/end for admin cards; missing or sentinel dates become TBD.
+     *
+     * @param mixed $start
+     * @param mixed $end
+     */
+    function intersoccer_roster_format_date_range_or_tbd($start, $end, bool $single_if_same = false) {
+        if (!intersoccer_roster_has_real_date($start) || !intersoccer_roster_has_real_date($end)) {
+            return 'TBD';
+        }
+        $start_ts = strtotime((string) $start);
+        $end_ts = strtotime((string) $end);
+        $format = static function ($date_format, $timestamp) {
+            if (function_exists('date_i18n')) {
+                return date_i18n($date_format, $timestamp);
+            }
+            return date($date_format, $timestamp);
+        };
+        if ($single_if_same && (string) $start === (string) $end) {
+            return $format('M j, Y', $start_ts);
+        }
+        return $format('M j', $start_ts) . ' - ' . $format('M j, Y', $end_ts);
+    }
+}
+
+if (!function_exists('intersoccer_roster_signature_missing_date_token')) {
+    /**
+     * Date token master writers fed into signature generation for unknown start/end dates.
+     */
+    function intersoccer_roster_signature_missing_date_token() {
+        return '1970-01-01';
+    }
+}
+
+if (!function_exists('intersoccer_roster_date_for_signature')) {
+    /**
+     * Normalize roster storage dates for signature hashing only (DB column may stay NULL).
+     *
+     * @param mixed $value
+     */
+    function intersoccer_roster_date_for_signature($value) {
+        if ($value === null || $value === '') {
+            return intersoccer_roster_signature_missing_date_token();
+        }
+        $s = trim((string) $value);
+        if ($s === '' || $s === '1970-01-01' || $s === '0000-00-00') {
+            return intersoccer_roster_signature_missing_date_token();
+        }
+        return $s;
+    }
+}
+
+if (!function_exists('intersoccer_roster_apply_signature_date_fields')) {
+    /**
+     * @param array<string,mixed> $event_data
+     * @return array<string,mixed>
+     */
+    function intersoccer_roster_apply_signature_date_fields(array $event_data) {
+        foreach (['start_date', 'end_date'] as $field) {
+            if (array_key_exists($field, $event_data)) {
+                $event_data[$field] = intersoccer_roster_date_for_signature($event_data[$field]);
+            }
+        }
+        return $event_data;
+    }
+}
+
+if (!function_exists('intersoccer_roster_coerce_master_writer_dates_for_signature')) {
+    /**
+     * Master @ 80bf153 roster writers stored 1970-01-01 before hashing; branch stores NULL.
+     *
+     * @param array<string,mixed> $event_data
+     * @return array<string,mixed>
+     */
+    function intersoccer_roster_coerce_master_writer_dates_for_signature(array $event_data) {
+        return intersoccer_roster_apply_signature_date_fields($event_data);
+    }
+}
+
+if (!function_exists('intersoccer_event_signature_master_pipeline')) {
+    /**
+     * Full master pipeline: writer date coercion then signature helpers.
+     *
+     * @param array<string,mixed> $event_data Source order/line-item shaped event data (branch storage dates).
+     */
+    function intersoccer_event_signature_master_pipeline(array $event_data) {
+        $master_shaped = intersoccer_roster_coerce_master_writer_dates_for_signature($event_data);
+        return intersoccer_event_signature_from_event_data($master_shaped);
+    }
+}
+
+if (!function_exists('intersoccer_event_signature_branch_pipeline')) {
+    /**
+     * Full branch pipeline: NULL storage dates with signature-only coercion inside from_event_data.
+     *
+     * @param array<string,mixed> $event_data
+     */
+    function intersoccer_event_signature_branch_pipeline(array $event_data) {
+        return intersoccer_event_signature_from_event_data($event_data);
+    }
+}
+
+if (!function_exists('intersoccer_roster_sql_treat_null_date_as_epoch')) {
+    /**
+     * SQL expression treating NULL/empty/1970 roster dates like legacy 1970-01-01 for comparisons.
+     *
+     * @param string $column SQL column reference e.g. r.end_date
+     */
+    function intersoccer_roster_sql_treat_null_date_as_epoch($column) {
+        return "COALESCE(NULLIF(NULLIF({$column}, ''), '1970-01-01'), '1970-01-01')";
+    }
+}
+
+if (!function_exists('intersoccer_roster_strip_girls_only_from_activity_label')) {
+    /**
+     * Remove girls-only suffixes from an activity label (EN/FR/DE), leaving the base activity name.
+     *
+     * @param string $activity_type
+     * @return string
+     */
+    function intersoccer_roster_strip_girls_only_from_activity_label($activity_type) {
+        $raw = trim((string) $activity_type);
+        if ($raw === '') {
+            return '';
+        }
+        if (function_exists('intersoccer_text_indicates_girls_only')
+            && intersoccer_text_indicates_girls_only($raw)) {
+            $stripped = preg_replace('/,?\s*girls[\s\'\-]*only/iu', '', $raw);
+            $stripped = preg_replace('/,?\s*filles\s+(seulement|uniquement)/iu', '', (string) $stripped);
+            $stripped = preg_replace('/,?\s*nur\s+m[äa]dchen/iu', '', (string) $stripped);
+            $stripped = trim((string) $stripped, ', ');
+            if ($stripped !== '') {
+                return $stripped;
+            }
+        }
+        return $raw;
+    }
+}
+
 if (!function_exists('intersoccer_canonical_activity_type_for_roster')) {
     /**
      * Map any activity type label (EN/FR/DE, slug or name) to the canonical value stored and queried in rosters.
+     *
+     * Girls-only sessions store the base type (Camp/Course/Tournament) with girls_only = 1; composite
+     * labels from legacy orders are normalized to the base type (use intersoccer_roster_is_girls_only() to read).
      *
      * @param mixed $activity_type Raw value from order meta, taxonomy, or DB.
      * @return string Canonical value e.g. Course, Camp, Tournament, Girls Only, or best-effort title case.
@@ -5107,14 +5420,16 @@ if (!function_exists('intersoccer_canonical_activity_type_for_roster')) {
             return '';
         }
 
-        $already = ['Camp', 'Course', 'Tournament', 'Birthday Party', 'Girls Only', 'Camp, Girls Only', "Camp, Girls' only", 'Course, Girls Only', "Course, Girls' only", 'Event', 'Other'];
-        if (in_array($raw, $already, true)) {
-            return $raw;
+        $base_input = intersoccer_roster_strip_girls_only_from_activity_label($raw);
+
+        $already = ['Camp', 'Course', 'Tournament', 'Birthday Party', 'Girls Only', 'Event', 'Other'];
+        if (in_array($base_input, $already, true)) {
+            return $base_input;
         }
 
         $norm = function_exists('intersoccer_normalize_comparison_string')
-            ? intersoccer_normalize_comparison_string($raw)
-            : strtolower($raw);
+            ? intersoccer_normalize_comparison_string($base_input)
+            : strtolower($base_input);
 
         $map = [
             'camp' => 'Camp',
@@ -5129,8 +5444,8 @@ if (!function_exists('intersoccer_canonical_activity_type_for_roster')) {
             'birthday' => 'Birthday Party',
             'anniversaire' => 'Birthday Party',
             'girls only' => 'Girls Only',
-            'camp girls only' => 'Camp, Girls Only',
-            'course girls only' => 'Course, Girls Only',
+            'camp girls only' => 'Camp',
+            'course girls only' => 'Course',
         ];
 
         foreach ($map as $needle => $canonical) {
@@ -5141,15 +5456,15 @@ if (!function_exists('intersoccer_canonical_activity_type_for_roster')) {
 
         if (preg_match('/\bgirls\b/u', $norm)) {
             if (strpos($norm, 'camp') !== false) {
-                return 'Camp, Girls Only';
+                return 'Camp';
             }
             if (strpos($norm, 'course') !== false || strpos($norm, 'cours') !== false) {
-                return 'Course, Girls Only';
+                return 'Course';
             }
             return 'Girls Only';
         }
 
-        return ucwords($raw);
+        return ucwords($base_input);
     }
 }
 
@@ -5366,13 +5681,214 @@ if (!function_exists('intersoccer_text_indicates_girls_only')) {
             if (strpos($clean_part, 'girls only') !== false
                 || strpos($clean_part, 'girls-only') !== false
                 || strpos($clean_part, 'girlsonly') !== false
+                || strpos($clean_part, 'filles seulement') !== false
+                || strpos($clean_part, 'filles uniquement') !== false
+                || strpos($clean_part, 'nur madchen') !== false
+                || strpos($clean_part, 'nur mädchen') !== false
+                || preg_match('/\bmädchen\b/u', $clean_part)
                 || in_array($clean_part, ['girls only', 'camp girls only', 'course girls only'], true)) {
                 return true;
             }
         }
 
         $clean_whole = str_replace(['-', "'", '"'], ' ', $normalized);
-        return strpos($clean_whole, 'girls only') !== false;
+        if (strpos($clean_whole, 'girls only') !== false) {
+            return true;
+        }
+        if (strpos($clean_whole, 'filles seulement') !== false
+            || strpos($clean_whole, 'filles uniquement') !== false
+            || strpos($clean_whole, 'nur madchen') !== false
+            || strpos($clean_whole, 'nur mädchen') !== false) {
+            return true;
+        }
+        return (bool) preg_match('/\bmädchen\b/u', $clean_whole);
+    }
+}
+
+if (!function_exists('intersoccer_roster_is_girls_only')) {
+    /**
+     * Whether a roster row or facet context represents a girls-only event.
+     *
+     * @param array<string,mixed> $row
+     * @return bool
+     */
+    function intersoccer_roster_is_girls_only(array $row) {
+        if ((int) ($row['girls_only'] ?? 0) === 1) {
+            return true;
+        }
+        return function_exists('intersoccer_text_indicates_girls_only')
+            && intersoccer_text_indicates_girls_only($row['activity_type'] ?? '');
+    }
+}
+
+if (!function_exists('intersoccer_roster_export_row_is_camp')) {
+    /**
+     * Camp-shaped roster export row (includes girls-only camps stored with activity_type Camp).
+     *
+     * @param array<string,mixed> $row
+     * @return bool
+     */
+    function intersoccer_roster_export_row_is_camp(array $row) {
+        if (function_exists('intersoccer_canonical_activity_type_for_roster')) {
+            $base = intersoccer_canonical_activity_type_for_roster($row['activity_type'] ?? '');
+            if ($base === 'Camp') {
+                return true;
+            }
+            if ($base === 'Girls Only' && intersoccer_roster_is_girls_only($row)) {
+                return true;
+            }
+        }
+        return in_array($row['activity_type'] ?? '', ['Camp', 'Girls Only', 'Camp, Girls Only', "Camp, Girls' only"], true);
+    }
+}
+
+if (!function_exists('intersoccer_product_girls_only_values')) {
+    /**
+     * Listed girls-only facet values on a product (attribute labels and option IDs/slugs).
+     *
+     * @param object|null $product WC_Product or test stub.
+     * @return list<string|int>
+     */
+    function intersoccer_product_girls_only_values($product) {
+        if (!$product || !is_object($product)) {
+            return [];
+        }
+        $attributes_by_name = [];
+        if (method_exists($product, 'get_attributes')) {
+            foreach ((array) $product->get_attributes() as $attr_name => $attribute) {
+                if (strpos((string) $attr_name, 'girls') === false) {
+                    continue;
+                }
+                $attributes_by_name[(string) $attr_name] = $attribute;
+            }
+        }
+        foreach (['pa_girls-only', 'girls-only'] as $attr_name) {
+            if (!isset($attributes_by_name[$attr_name])
+                && method_exists($product, 'get_attribute')
+                && $product->get_attribute($attr_name) !== '') {
+                $attributes_by_name[$attr_name] = null;
+            }
+        }
+
+        $values = [];
+        foreach ($attributes_by_name as $attr_name => $attribute) {
+            $pieces = [];
+            if (method_exists($product, 'get_attribute')) {
+                $attr_value = $product->get_attribute($attr_name);
+                if ($attr_value !== '') {
+                    foreach (explode(',', (string) $attr_value) as $piece) {
+                        $piece = trim($piece);
+                        if ($piece !== '') {
+                            $pieces[] = $piece;
+                        }
+                    }
+                }
+            }
+            if ($pieces === [] && is_object($attribute) && method_exists($attribute, 'get_options')) {
+                foreach ((array) $attribute->get_options() as $option) {
+                    if ($option === '' || $option === null) {
+                        continue;
+                    }
+                    if (is_numeric($option) && function_exists('get_term')) {
+                        $term = get_term((int) $option);
+                        if ($term && !is_wp_error($term) && isset($term->slug)) {
+                            $pieces[] = $term->slug;
+                            continue;
+                        }
+                    }
+                    $pieces[] = $option;
+                }
+            }
+            foreach ($pieces as $piece) {
+                $values[] = $piece;
+            }
+        }
+
+        $unique = [];
+        $seen = [];
+        foreach ($values as $value) {
+            $dedupe_key = is_string($value) ? strtolower($value) : (string) $value;
+            if (isset($seen[$dedupe_key])) {
+                continue;
+            }
+            $seen[$dedupe_key] = true;
+            $unique[] = $value;
+        }
+        return $unique;
+    }
+}
+
+if (!function_exists('intersoccer_product_girls_only_from_pa_attribute')) {
+    /**
+     * Resolve girls-only from WooCommerce pa_girls-only on a single product (variation path).
+     *
+     * Uses the first non-empty value only — appropriate when the product is a variation.
+     *
+     * @param object|null $product WC_Product or test stub.
+     * @return int|null 1=yes, 0=non-empty non-yes value, null=no girls-only attribute on product.
+     */
+    function intersoccer_product_girls_only_from_pa_attribute($product) {
+        if (!$product || !is_object($product)) {
+            return null;
+        }
+        $found_girls_attribute = false;
+        if (method_exists($product, 'get_attribute')) {
+            foreach (['pa_girls-only', 'girls-only'] as $attr_name) {
+                $attr_value = $product->get_attribute($attr_name);
+                if ($attr_value !== '') {
+                    return intersoccer_pa_girls_only_slug_is_yes($attr_value) ? 1 : 0;
+                }
+            }
+        }
+        if (method_exists($product, 'get_attributes')) {
+            $attributes = $product->get_attributes();
+            foreach ($attributes as $attr_name => $attribute) {
+                if (strpos((string) $attr_name, 'girls') === false) {
+                    continue;
+                }
+                $found_girls_attribute = true;
+                if (is_object($attribute) && method_exists($attribute, 'get_options')) {
+                    foreach ((array) $attribute->get_options() as $option) {
+                        if ($option === '' || $option === null) {
+                            continue;
+                        }
+                        return intersoccer_pa_girls_only_slug_is_yes($option) ? 1 : 0;
+                    }
+                }
+            }
+        }
+        return $found_girls_attribute ? 0 : null;
+    }
+}
+
+if (!function_exists('intersoccer_girls_only_attribute_source_product_id')) {
+    /**
+     * Default-language product ID for reading pa_girls-only (WPML translated parents store localized terms).
+     *
+     * @param int $id Product or parent product ID from order context.
+     * @return int
+     */
+    function intersoccer_girls_only_attribute_source_product_id(int $id): int {
+        if ($id <= 0 || !function_exists('apply_filters')) {
+            return $id;
+        }
+        $original_id = apply_filters(
+            'wpml_object_id',
+            $id,
+            'product',
+            true,
+            apply_filters('wpml_default_language', null)
+        );
+        if (is_int($original_id) && $original_id > 0) {
+            return $original_id;
+        }
+        if (is_string($original_id) && $original_id !== '' && ctype_digit($original_id)) {
+            $parsed = (int) $original_id;
+            if ($parsed > 0) {
+                return $parsed;
+            }
+        }
+        return $id;
     }
 }
 
@@ -5464,26 +5980,49 @@ if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
         $product_id = (int) ($context['product_id'] ?? 0);
         $variation_id = (int) ($context['variation_id'] ?? 0);
         if (($variation_id > 0 || $product_id > 0) && function_exists('wc_get_product')) {
-            $check_id = $variation_id > 0 ? $variation_id : $product_id;
-            $product = wc_get_product($check_id);
-            if ($product) {
-                foreach (['pa_girls-only', 'girls-only'] as $attr_name) {
-                    $attr_value = $product->get_attribute($attr_name);
-                    if ($attr_value !== '' && intersoccer_pa_girls_only_slug_is_yes($attr_value)) {
-                        return 1;
+            if ($variation_id > 0) {
+                $variation = wc_get_product($variation_id);
+                $from_variation = $variation
+                    ? intersoccer_product_girls_only_from_pa_attribute($variation)
+                    : null;
+                if ($from_variation === 1) {
+                    return 1;
+                }
+                if ($from_variation === 0) {
+                    return 0;
+                }
+                $parent_id = $product_id > 0 ? $product_id : 0;
+                if ($parent_id <= 0 && $variation && method_exists($variation, 'get_parent_id')) {
+                    $parent_id = (int) $variation->get_parent_id();
+                }
+                if ($parent_id > 0) {
+                    $parent = wc_get_product(
+                        intersoccer_girls_only_attribute_source_product_id($parent_id)
+                    );
+                    if ($parent) {
+                        $parent_values = intersoccer_product_girls_only_values($parent);
+                        if (count($parent_values) === 1) {
+                            return intersoccer_pa_girls_only_slug_is_yes($parent_values[0]) ? 1 : 0;
+                        }
+                        if (count($parent_values) > 1) {
+                            error_log('InterSoccer: ambiguous girls-only parent attribute on product ' . $parent_id);
+                            return 0;
+                        }
                     }
                 }
-                $attributes = $product->get_attributes();
-                foreach ($attributes as $attr_name => $attribute) {
-                    if (strpos((string) $attr_name, 'girls') === false) {
-                        continue;
-                    }
-                    if (is_object($attribute) && method_exists($attribute, 'get_options')) {
-                        foreach ((array) $attribute->get_options() as $option) {
-                            if (intersoccer_pa_girls_only_slug_is_yes($option)) {
+            } else {
+                $product = wc_get_product(
+                    intersoccer_girls_only_attribute_source_product_id($product_id)
+                );
+                if ($product) {
+                    $product_values = intersoccer_product_girls_only_values($product);
+                    if ($product_values !== []) {
+                        foreach ($product_values as $value) {
+                            if (intersoccer_pa_girls_only_slug_is_yes($value)) {
                                 return 1;
                             }
                         }
+                        return 0;
                     }
                 }
             }
@@ -5501,7 +6040,13 @@ if (!function_exists('intersoccer_roster_row_looks_girls_only')) {
      * @return bool
      */
     function intersoccer_roster_row_looks_girls_only(array $row) {
-        return intersoccer_resolve_roster_girls_only_flag($row) === 1;
+        if (function_exists('intersoccer_resolve_roster_girls_only_flag')) {
+            return intersoccer_resolve_roster_girls_only_flag($row) === 1;
+        }
+        if (function_exists('intersoccer_roster_is_girls_only')) {
+            return intersoccer_roster_is_girls_only($row);
+        }
+        return false;
     }
 }
 
@@ -5519,15 +6064,11 @@ if (!function_exists('intersoccer_reconcile_backfill_girls_only_flags')) {
         }
 
         $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-        $candidate_sql = "SELECT id, order_item_id, activity_type, product_name, product_id, variation_id
+        $candidate_sql = "SELECT id, order_item_id, activity_type, product_name, product_id, variation_id,
+                venue, age_group, camp_terms, course_day, times, season, city, canton_region,
+                start_date, end_date, girls_only, event_signature
             FROM {$rosters_table}
-            WHERE is_placeholder = 0 AND girls_only = 0
-              AND (
-                product_name LIKE %s OR product_name LIKE %s
-                OR activity_type LIKE %s OR activity_type LIKE %s
-              )";
-        $like_girls = '%Girls%';
-        $like_girl = '%girl%';
+            WHERE is_placeholder = 0 AND girls_only = 0";
 
         $updated = 0;
         $offset = 0;
@@ -5537,10 +6078,6 @@ if (!function_exists('intersoccer_reconcile_backfill_girls_only_flags')) {
             $rows = $wpdb->get_results(
                 $wpdb->prepare(
                     $candidate_sql . ' LIMIT %d OFFSET %d',
-                    $like_girls,
-                    $like_girl,
-                    $like_girls,
-                    $like_girl,
                     $chunk,
                     $offset
                 ),
@@ -5554,11 +6091,42 @@ if (!function_exists('intersoccer_reconcile_backfill_girls_only_flags')) {
                 if (!intersoccer_roster_row_looks_girls_only($row)) {
                     continue;
                 }
+                $new_girls_only = 1;
+                $current_girls_only = (int) ($row['girls_only'] ?? 0);
+                if ($new_girls_only === $current_girls_only) {
+                    continue;
+                }
+                $signature_payload = [
+                    'activity_type' => $row['activity_type'] ?? '',
+                    'venue' => $row['venue'] ?? '',
+                    'age_group' => $row['age_group'] ?? '',
+                    'camp_terms' => $row['camp_terms'] ?? '',
+                    'course_day' => $row['course_day'] ?? '',
+                    'times' => $row['times'] ?? '',
+                    'season' => $row['season'] ?? '',
+                    'city' => $row['city'] ?? '',
+                    'canton_region' => $row['canton_region'] ?? '',
+                    'product_id' => (int) ($row['product_id'] ?? 0),
+                    'start_date' => $row['start_date'] ?? null,
+                    'end_date' => $row['end_date'] ?? null,
+                    'girls_only' => $new_girls_only,
+                ];
+                $event_signature = function_exists('intersoccer_event_signature_branch_pipeline')
+                    ? intersoccer_event_signature_branch_pipeline($signature_payload)
+                    : (function_exists('intersoccer_event_signature_from_event_data')
+                        ? intersoccer_event_signature_from_event_data($signature_payload)
+                        : '');
+                if ($event_signature === '') {
+                    continue;
+                }
                 $result = $wpdb->update(
                     $rosters_table,
-                    ['girls_only' => 1],
+                    [
+                        'girls_only' => $new_girls_only,
+                        'event_signature' => $event_signature,
+                    ],
                     ['id' => (int) $row['id']],
-                    ['%d'],
+                    ['%d', '%s'],
                     ['%d']
                 );
                 if ($result !== false) {
@@ -5760,7 +6328,8 @@ function intersoccer_generate_event_signature($event_data) {
         }
     }
     
-    // Normalize translatable term names to slugs for language-agnostic signatures
+    // Signature parity with pre-2.10.16 rows: use stored activity_type and girls_only column only
+    // (no canonical activity map or girls-only text inference — those change hashes for legacy DB shapes).
     $normalized_components = [
         'activity_type' => $event_data['activity_type'] ?? '',
         'venue' => intersoccer_get_term_slug_by_name($event_data['venue'] ?? '', 'pa_intersoccer-venues'),
@@ -5812,7 +6381,9 @@ function intersoccer_generate_event_signature($event_data) {
     // Generate MD5 hash for consistent length and comparison
     $signature = md5($signature_string);
 
-    error_log('InterSoccer: Generated normalized event signature: ' . $signature . ' from components: ' . json_encode($normalized_components));
+    if (!function_exists('intersoccer_is_bulk_normalize_quiet') || !intersoccer_is_bulk_normalize_quiet()) {
+        error_log('InterSoccer: Generated normalized event signature: ' . $signature . ' from components: ' . json_encode($normalized_components));
+    }
 
     return $signature;
 }
@@ -6240,7 +6811,11 @@ function intersoccer_reports_resolve_camp_schedule($variation_id, $order_item_id
                 $bucket = 'intersoccer_rr_camp_terms_parse_' . gmdate('YmdH');
                 $count  = (int) get_transient($bucket);
                 if ($count < 20) {
-                    set_transient($bucket, $count + 1, HOUR_IN_SECONDS);
+                    if (function_exists('intersoccer_reports_persist_transient')) {
+                        intersoccer_reports_persist_transient($bucket, $count + 1, HOUR_IN_SECONDS);
+                    } else {
+                        set_transient($bucket, $count + 1, HOUR_IN_SECONDS);
+                    }
                     error_log(sprintf(
                         'InterSoccer RR: DEPRECATED camp-terms date parse (variation=%d). Prefer _camp_start_date.',
                         $variation_id

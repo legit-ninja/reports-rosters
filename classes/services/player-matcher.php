@@ -405,9 +405,9 @@ class PlayerMatcher {
         }
         $gender = 'other';
         if ($gender_raw !== '') {
-            if (preg_match('/\b(f|female|girl|filles?)\b/u', $gender_raw)) {
+            if (preg_match('/\b(f|female|girl|filles?|mädchen|weiblich)\b/ui', $gender_raw)) {
                 $gender = 'female';
-            } elseif (preg_match('/\b(m|male|boy|garcons?)\b/u', $gender_raw)) {
+            } elseif (preg_match('/\b(m|male|boy|garcons?|junge|männlich)\b/ui', $gender_raw)) {
                 $gender = 'male';
             }
         }
@@ -677,11 +677,25 @@ class PlayerMatcher {
             }
         }
 
-        $event_type = $item->get_meta('Camp Terms') ?: $item->get_meta('Event Type');
-        if (!empty($event_type) && stripos($event_type, 'girls') !== false) {
-            if (strtolower($player->gender) !== 'female') {
-                throw new ValidationException('Player gender not eligible for girls-only event');
+        $girls_context = [
+            'activity_type' => $item->get_meta('Activity Type'),
+            'girls_only' => $item->get_meta('girls_only'),
+            '_intersoccer_canonical_girls_only' => $item->get_meta('_intersoccer_canonical_girls_only'),
+            'Girls Only' => $item->get_meta('Girls Only'),
+            'product_id' => $item->get_product_id(),
+            'variation_id' => $item->get_variation_id(),
+        ];
+        $is_girls_only = function_exists('intersoccer_roster_is_girls_only')
+            ? intersoccer_roster_is_girls_only($girls_context)
+            : false;
+        if (!$is_girls_only) {
+            $event_type = $item->get_meta('Camp Terms') ?: $item->get_meta('Event Type');
+            if (!empty($event_type) && stripos($event_type, 'girls') !== false) {
+                $is_girls_only = true;
             }
+        }
+        if ($is_girls_only && strtolower($player->gender) !== 'female') {
+            throw new ValidationException('Player gender not eligible for girls-only event');
         }
     }
     

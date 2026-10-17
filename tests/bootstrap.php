@@ -55,6 +55,47 @@ if (!function_exists('is_admin')) {
     function is_admin() { return false; }
 }
 
+if (!function_exists('intersoccer_test_store_wp_hook_callback')) {
+    function intersoccer_test_store_wp_hook_callback($type, $hook, $callback, $priority, $accepted_args) {
+        if (!isset($GLOBALS['intersoccer_test_wp_hooks'])) {
+            $GLOBALS['intersoccer_test_wp_hooks'] = ['actions' => [], 'filters' => []];
+        }
+        $bucket = &$GLOBALS['intersoccer_test_wp_hooks'][$type][$hook][(int) $priority];
+        $bucket[] = ['callback' => $callback, 'accepted_args' => (int) $accepted_args];
+    }
+}
+
+if (!function_exists('intersoccer_test_run_wp_hooks')) {
+    function intersoccer_test_run_wp_hooks($type, $hook, $initial_value, array $args) {
+        if (empty($GLOBALS['intersoccer_test_emit_wp_hooks'])
+            || empty($GLOBALS['intersoccer_test_wp_hooks'][$type][$hook])) {
+            return $initial_value;
+        }
+        $value = $initial_value;
+        $by_priority = $GLOBALS['intersoccer_test_wp_hooks'][$type][$hook];
+        ksort($by_priority);
+        foreach ($by_priority as $callbacks) {
+            foreach ($callbacks as $entry) {
+                $callback = $entry['callback'];
+                $accepted = max(1, (int) $entry['accepted_args']);
+                if ($type === 'filters') {
+                    if ($accepted <= 1) {
+                        $value = call_user_func($callback, $value);
+                    } else {
+                        $call_args = array_merge([$value], array_slice($args, 0, $accepted - 1));
+                        $value = call_user_func_array($callback, $call_args);
+                    }
+                } elseif ($accepted <= 0) {
+                    call_user_func($callback);
+                } else {
+                    call_user_func_array($callback, array_slice($args, 0, $accepted));
+                }
+            }
+        }
+        return $value;
+    }
+}
+
 if (!function_exists('add_action')) {
     function add_action($hook, $callback, $priority = 10, $accepted_args = 1) {
         if (!empty($GLOBALS['intersoccer_test_capture_action_registrations'])) {
@@ -64,12 +105,16 @@ if (!function_exists('add_action')) {
                 'accepted_args' => (int) $accepted_args,
             ];
         }
+        intersoccer_test_store_wp_hook_callback('actions', $hook, $callback, $priority, $accepted_args);
         return true;
     }
 }
 
 if (!function_exists('add_filter')) {
-    function add_filter($hook, $callback, $priority = 10, $accepted_args = 1) { return true; }
+    function add_filter($hook, $callback, $priority = 10, $accepted_args = 1) {
+        intersoccer_test_store_wp_hook_callback('filters', $hook, $callback, $priority, $accepted_args);
+        return true;
+    }
 }
 
 if (!function_exists('remove_action')) {
@@ -81,11 +126,19 @@ if (!function_exists('remove_filter')) {
 }
 
 if (!function_exists('do_action')) {
-    function do_action($hook, ...$args) { return; }
+    function do_action($hook, ...$args) {
+        intersoccer_test_run_wp_hooks('actions', $hook, null, $args);
+    }
 }
 
 if (!function_exists('apply_filters')) {
-    function apply_filters($hook, $value, ...$args) { return $value; }
+    function apply_filters($hook, $value, ...$args) {
+        if (!empty($GLOBALS['intersoccer_test_apply_filters_callback'])
+            && is_callable($GLOBALS['intersoccer_test_apply_filters_callback'])) {
+            $value = $GLOBALS['intersoccer_test_apply_filters_callback']($hook, $value, ...$args);
+        }
+        return intersoccer_test_run_wp_hooks('filters', $hook, $value, $args);
+    }
 }
 
 if (!function_exists('has_action')) {
@@ -190,8 +243,19 @@ if (!function_exists('get_option')) {
     function get_option($option, $default = false) { return $default; }
 }
 
+if (!function_exists('add_option')) {
+    function add_option($option, $value, $deprecated = '', $autoload = 'yes') {
+        do_action('add_option', $option, $value, $autoload);
+        return true;
+    }
+}
+
 if (!function_exists('update_option')) {
-    function update_option($option, $value, $autoload = null) { return true; }
+    function update_option($option, $value, $autoload = null) {
+        $old = get_option($option, null);
+        do_action('update_option', $option, $old, $value);
+        return true;
+    }
 }
 
 if (!function_exists('delete_option')) {
@@ -203,8 +267,20 @@ if (!function_exists('get_transient')) {
     function get_transient($transient) { return false; }
 }
 
+if (!function_exists('wp_using_ext_object_cache')) {
+    function wp_using_ext_object_cache($using = null) {
+        if ($using !== null) {
+            $GLOBALS['intersoccer_test_using_ext_object_cache'] = (bool) $using;
+        }
+        return !empty($GLOBALS['intersoccer_test_using_ext_object_cache']);
+    }
+}
+
 if (!function_exists('set_transient')) {
-    function set_transient($transient, $value, $expiration = 0) { return true; }
+    function set_transient($transient, $value, $expiration = 0) {
+        do_action('setted_transient', $transient, $value, $expiration);
+        return true;
+    }
 }
 
 if (!function_exists('delete_transient')) {

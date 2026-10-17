@@ -107,7 +107,7 @@ class RosterExportService {
                 }
 
                 if (in_array("girls' only", $activity_types, true) || in_array("girls\' only", $activity_types, true)) {
-                    $where[] = 'activity_type LIKE %s';
+                    $where[] = '(activity_type LIKE %s OR girls_only = 1)';
                     $params[] = "%girls' only%";
                 } else {
                     $where[] = '(' . implode(' OR ', $like_conditions) . ')';

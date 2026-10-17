@@ -23,11 +23,11 @@ class OrderMetaActivityTypeTest extends TestCase {
         }
 
         $this->assertSame(
-            'Camp, Girls Only',
+            'Camp',
             intersoccer_canonical_activity_type_for_roster('Camp, Girls Only')
         );
         $this->assertSame(
-            'Camp, Girls Only',
+            'Camp',
             intersoccer_canonical_activity_type_for_roster('camp girls only')
         );
     }

@@ -837,7 +837,10 @@ class CampsPage extends AbstractPage {
             }
 
             if (!empty($filters['date_to'])) {
-                $where_conditions[] = 'r.end_date <= %s';
+                $end_col = function_exists('intersoccer_roster_sql_treat_null_date_as_epoch')
+                    ? intersoccer_roster_sql_treat_null_date_as_epoch('r.end_date')
+                    : "COALESCE(NULLIF(NULLIF(r.end_date, ''), '1970-01-01'), '1970-01-01')";
+                $where_conditions[] = "{$end_col} <= %s";
                 $where_values[] = $filters['date_to'];
             }
 
@@ -862,7 +865,11 @@ class CampsPage extends AbstractPage {
             $stats = [
                 'total_camps' => count(array_unique(array_column($camps, 'product_variation_id'))),
                 'total_attendees' => count($camps),
-                'active_camps' => count(array_filter($camps, function($camp) {
+                'active_camps' => count(array_filter($camps, function ($camp) {
+                    if (!function_exists('intersoccer_roster_has_real_date')
+                        || !intersoccer_roster_has_real_date($camp['end_date'] ?? null)) {
+                        return false;
+                    }
                     return strtotime($camp['end_date']) >= time();
                 })),
                 'unique_venues' => count(array_unique(array_column($camps, 'venue')))

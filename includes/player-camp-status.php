@@ -173,7 +173,9 @@ function intersoccer_player_camp_status_booking_summary(array $row) {
 	}
 	$season = trim((string) ($row['season'] ?? ''));
 	$start = trim((string) ($row['start_date'] ?? ''));
-	if ($start === '1970-01-01') {
+	if (function_exists('intersoccer_roster_has_real_date') && !intersoccer_roster_has_real_date($start)) {
+		$start = '';
+	} elseif ($start === '1970-01-01') {
 		$start = '';
 	}
 
