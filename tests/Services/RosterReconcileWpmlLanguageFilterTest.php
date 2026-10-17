@@ -47,8 +47,10 @@ class RosterReconcileWpmlLanguageFilterTest extends TestCase {
         1009 => ['lang' => 'de', 'status' => 'on-hold',   'item' => 9009],
     ];
 
-    /** A roster row whose line item exists on no order at all (true orphan). */
+    /** Roster row whose stored order no longer exists (confirmed missing on lookup). */
     private const ORPHAN_ITEM = 9999;
+
+    private const ORPHAN_ORDER_ID = 19999;
 
     /** @var string */
     private static $currentLang = 'en';
@@ -68,12 +70,28 @@ class RosterReconcileWpmlLanguageFilterTest extends TestCase {
         $logger = Mockery::mock(Logger::class);
         $logger->shouldReceive('info', 'debug', 'warning', 'error')->andReturn(null);
 
-        $existing = array_merge(array_column(self::ORDERS, 'item'), [self::ORPHAN_ITEM]);
-        $wpdb = new class($existing) {
+        $rows = [];
+        foreach (self::ORDERS as $order_id => $o) {
+            $rows[] = [
+                'order_item_id' => (string) $o['item'],
+                'order_id' => (string) $order_id,
+            ];
+        }
+        $rows[] = [
+            'order_item_id' => (string) self::ORPHAN_ITEM,
+            'order_id' => (string) self::ORPHAN_ORDER_ID,
+        ];
+        $wpdb = new class($rows) {
             public $prefix = 'wp_';
-            private $existing;
-            public function __construct(array $existing) { $this->existing = $existing; }
-            public function get_col($query) { return array_map('strval', $this->existing); }
+            /** @var array<int,array<string,string>> */
+            private $rows;
+            public function __construct(array $rows) { $this->rows = $rows; }
+            public function get_results($query, $output = OBJECT) {
+                if ($output === ARRAY_A) {
+                    return $this->rows;
+                }
+                return $this->rows;
+            }
             public function get_var($query) { return 1; }
             public function prepare($query, ...$args) { return $query; }
         };
@@ -101,27 +119,16 @@ class RosterReconcileWpmlLanguageFilterTest extends TestCase {
         self::$queryArgs = [];
         $this->deletedItemIds = [];
 
-        global $intersoccer_test_wc_get_orders_callback, $intersoccer_test_wc_get_order_callback, $intersoccer_test_wc_get_order_id_by_order_item_id_callback;
+        global $intersoccer_test_wc_get_orders_callback, $intersoccer_test_wc_get_order_callback;
         $intersoccer_test_wc_get_orders_callback = [self::class, 'fakeWpmlFilteredWcGetOrders'];
         $intersoccer_test_wc_get_order_callback = [self::class, 'fakeWcGetOrder'];
-        $intersoccer_test_wc_get_order_id_by_order_item_id_callback = [self::class, 'fakeWcGetOrderIdByOrderItemId'];
     }
 
     protected function tearDown(): void {
-        global $intersoccer_test_wc_get_orders_callback, $intersoccer_test_wc_get_order_callback, $intersoccer_test_wc_get_order_id_by_order_item_id_callback;
+        global $intersoccer_test_wc_get_orders_callback, $intersoccer_test_wc_get_order_callback;
         $intersoccer_test_wc_get_orders_callback = null;
         $intersoccer_test_wc_get_order_callback = null;
-        $intersoccer_test_wc_get_order_id_by_order_item_id_callback = null;
         parent::tearDown();
-    }
-
-    public static function fakeWcGetOrderIdByOrderItemId($order_item_id) {
-        foreach (self::ORDERS as $order_id => $o) {
-            if ((int) $o['item'] === (int) $order_item_id) {
-                return $order_id;
-            }
-        }
-        return 0;
     }
 
     public static function fakeWcGetOrder($order_id) {

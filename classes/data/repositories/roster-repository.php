@@ -796,12 +796,6 @@ class RosterRepository implements RepositoryInterface {
     }
     
     /**
-     * Delete roster entries matching criteria
-     * 
-     * @param array $criteria Search criteria
-     * @return int Number of deleted roster entries
-     */
-    /**
      * Delete roster rows for a Woo line item without loading full models (reconcile hot path).
      *
      * @param int $order_item_id
@@ -833,6 +827,12 @@ class RosterRepository implements RepositoryInterface {
         }
     }
 
+    /**
+     * Delete roster entries matching criteria
+     *
+     * @param array $criteria Search criteria
+     * @return int Number of deleted roster entries
+     */
     public function deleteWhere(array $criteria) {
         try {
             $this->logger->debug('Bulk deleting roster entries', $criteria);

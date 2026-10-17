@@ -328,11 +328,18 @@ class RosterBuilder {
             $wpdb = $this->database->get_wpdb();
             $table = $wpdb->prefix . 'intersoccer_rosters';
 
-            $existing_item_ids = $wpdb->get_col("SELECT DISTINCT order_item_id FROM {$table}");
+            $existing_rows = $wpdb->get_results(
+                "SELECT order_item_id, order_id FROM {$table}",
+                ARRAY_A
+            );
             $existing_item_map = [];
-            foreach ($existing_item_ids as $item_id) {
-                if ($item_id !== null && $item_id !== '') {
-                    $existing_item_map[(int) $item_id] = true;
+            if (is_array($existing_rows)) {
+                foreach ($existing_rows as $row) {
+                    $item_id = isset($row['order_item_id']) ? (int) $row['order_item_id'] : 0;
+                    if ($item_id <= 0) {
+                        continue;
+                    }
+                    $existing_item_map[$item_id] = isset($row['order_id']) ? (int) $row['order_id'] : 0;
                 }
             }
 
@@ -461,7 +468,10 @@ class RosterBuilder {
                 for ($i = 0, $total = count($obsolete_ids); $i < $total; $i += $delete_chunk_size) {
                     $chunk = array_slice($obsolete_ids, $i, $delete_chunk_size);
                     foreach ($chunk as $obsolete_item_id) {
-                        if (!$this->shouldDeleteObsoleteReconcileRow((int) $obsolete_item_id)) {
+                        $stored_order_id = isset($existing_item_map[$obsolete_item_id])
+                            ? (int) $existing_item_map[$obsolete_item_id]
+                            : 0;
+                        if (!$this->shouldDeleteObsoleteReconcileRow((int) $obsolete_item_id, $stored_order_id)) {
                             continue;
                         }
                         try {
@@ -695,42 +705,56 @@ class RosterBuilder {
     }
 
     /**
-     * True only when the roster row's line item / order is gone or the order is ineligible.
+     * True only when the roster row's stored order is gone or confirmed ineligible for rebuild.
+     *
+     * Uses the row's denormalized order_id (never wc_get_order_id_by_order_item_id). On any
+     * uncertainty (missing helper, invalid stored id, lookup failure), returns false (keep).
      */
-    private function shouldDeleteObsoleteReconcileRow(int $order_item_id): bool {
-        if ($order_item_id <= 0) {
+    private function shouldDeleteObsoleteReconcileRow(int $order_item_id, int $stored_order_id): bool {
+        try {
+            if ($order_item_id <= 0 || $stored_order_id <= 0) {
+                return false;
+            }
+
+            if (!function_exists('wc_get_order')) {
+                return false;
+            }
+
+            $order = wc_get_order($stored_order_id);
+            if (!$order || !is_object($order) || !method_exists($order, 'get_status')) {
+                return true;
+            }
+
+            $status = (string) $order->get_status();
+            if (RosterRefundService::isFlaggedRowStatus($status)) {
+                unset($order);
+                return false;
+            }
+
+            $normalized = RosterRefundService::normalizeWooOrderStatus($status);
+            if (in_array($normalized, ['refunded', 'cancelled'], true)) {
+                unset($order);
+                return false;
+            }
+
+            if (RosterRefundService::isInactiveRebuildOrderStatus($status)) {
+                unset($order);
+                return true;
+            }
+
+            if (!method_exists($order, 'get_items')) {
+                unset($order);
+                return false;
+            }
+
+            $items = $order->get_items();
+            $line_still_on_order = is_array($items) && array_key_exists($order_item_id, $items);
+            unset($order);
+
+            return !$line_still_on_order;
+        } catch (\Throwable $e) {
             return false;
         }
-
-        $order_id = 0;
-        if (function_exists('wc_get_order_id_by_order_item_id')) {
-            $order_id = (int) wc_get_order_id_by_order_item_id($order_item_id);
-        }
-
-        if ($order_id <= 0) {
-            return true;
-        }
-
-        $order = wc_get_order($order_id);
-        if (!$order || !is_object($order) || !method_exists($order, 'get_status')) {
-            return false;
-        }
-
-        $status = (string) $order->get_status();
-        if (RosterRefundService::isFlaggedRowStatus($status)) {
-            return false;
-        }
-
-        $normalized = RosterRefundService::normalizeWooOrderStatus($status);
-        if (in_array($normalized, ['refunded', 'cancelled'], true)) {
-            return false;
-        }
-
-        if (RosterRefundService::isInactiveRebuildOrderStatus($status)) {
-            return true;
-        }
-
-        return false;
     }
     
     /**
