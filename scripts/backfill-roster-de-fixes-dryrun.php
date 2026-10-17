@@ -264,6 +264,15 @@ echo "\n== headline start_date population (NULL or 1970 only)\n";
 echo "   bad_start_total={$bad_start_total} (target ~1894)\n";
 echo "   bad_end_only_rows={$bad_end_only}\n";
 
+$tournament_bad_start = (int) $wpdb->get_var(
+    "SELECT COUNT(DISTINCT id) FROM {$table}
+     WHERE (start_date IS NULL OR start_date = '1970-01-01')
+       AND LOWER(activity_type) LIKE '%tournament%'"
+);
+$non_tournament_bad_start = max(0, $bad_start_total - $tournament_bad_start);
+echo "   tournament_bad_start_skipped={$tournament_bad_start}\n";
+echo "   non_tournament_bad_start_denominator={$non_tournament_bad_start}\n";
+
 $date_page = 300;
 $date_offset = 0;
 $source_counts = [];
@@ -272,8 +281,23 @@ $disagree_item_variation = 0;
 $unrecoverable = [];
 $ahead_today = 0;
 $ahead_oct7 = 0;
+$tournament_bucket = 0;
 $today = gmdate('Y-m-d');
 $as_of_oct7 = '2026-10-07';
+
+$unrecoverable_sort_tuple = static function (array $row) use ($today) {
+    $bd = $row['best_date'] ?? null;
+    $undated = ($bd === null || $bd === '' || $bd === '0000-01-01');
+    $season = (int) ($row['season_year'] ?? 0);
+    if ($undated) {
+        return [1, 1, PHP_INT_MAX, PHP_INT_MAX, -$season];
+    }
+    $is_past = ($bd < $today) ? 1 : 0;
+    if ($is_past === 0) {
+        return [0, 0, strtotime($bd), PHP_INT_MAX, -$season];
+    }
+    return [0, 1, PHP_INT_MAX, -strtotime($bd), -$season];
+};
 
 while (true) {
     $batch = $wpdb->get_results($wpdb->prepare(
@@ -294,6 +318,11 @@ while (true) {
         $id = (int) $r['id'];
         $atype = strtolower(trim((string) ($r['activity_type'] ?? '')));
         if (strpos($atype, 'tournament') !== false) {
+            ++$tournament_bucket;
+            if (!isset($source_counts['tournament_skipped'])) {
+                $source_counts['tournament_skipped'] = 0;
+            }
+            $source_counts['tournament_skipped']++;
             continue;
         }
 
@@ -342,10 +371,18 @@ while (true) {
         }
         $source_counts[$source]++;
 
-        $best_date = $resolved_end ?: $resolved_start;
-        if (!$best_date && function_exists('intersoccer_parse_camp_dates_fixed')) {
+        $best_date = null;
+        if ($is_iso_date($resolved_end)) {
+            $best_date = $resolved_end;
+        } elseif ($is_iso_date($resolved_start)) {
+            $best_date = $resolved_start;
+        } elseif (function_exists('intersoccer_parse_camp_dates_fixed')) {
             list($ps, $pe) = intersoccer_parse_camp_dates_fixed((string) ($r['camp_terms'] ?? ''), (string) ($r['season'] ?? ''));
-            $best_date = $is_iso_date($pe) ? $pe : ($is_iso_date($ps) ? $ps : null);
+            if ($is_iso_date($pe)) {
+                $best_date = $pe;
+            } elseif ($is_iso_date($ps)) {
+                $best_date = $ps;
+            }
         }
         $season_year = 0;
         if (preg_match('/(\d{4})/', (string) ($r['season'] ?? ''), $m)) {
@@ -363,7 +400,7 @@ while (true) {
         } else {
             $unrecoverable[] = [
                 'id' => $id,
-                'best_date' => $best_date ?: '0000-01-01',
+                'best_date' => $best_date,
                 'season_year' => $season_year,
             ];
         }
@@ -376,7 +413,7 @@ while (true) {
 }
 
 $unrecoverable_count = count($unrecoverable);
-$recoverable_total = $bad_start_total - $unrecoverable_count;
+$recoverable_non_tournament = max(0, $non_tournament_bad_start - $unrecoverable_count);
 $source_rows = [];
 foreach ($source_counts as $source => $cnt) {
     $source_rows[] = ['source' => $source, 'cnt' => $cnt];
@@ -386,16 +423,17 @@ usort($source_rows, static function ($a, $b) {
 });
 $echo_section('recoverable date source (bad start rows, non-tournament)', $source_rows);
 echo "   sizing_camp_meta_recoverable(item+variation ISO)={$sizing_camp_meta_recoverable} (target ~1544)\n";
-echo "   unrecoverable_count={$unrecoverable_count} (target ~350)\n";
+echo "   recoverable_non_tournament={$recoverable_non_tournament}\n";
+echo "   unrecoverable_count={$unrecoverable_count} (target ~350, denominator excludes tournaments)\n";
+echo "   tournament_bucket={$tournament_bucket}\n";
 echo "   item_vs_variation_iso_disagree={$disagree_item_variation}\n";
 echo "   ahead_proposed_end_vs_today={$ahead_today} (target ~103)\n";
 echo "   ahead_proposed_end_vs_2026-10-07={$ahead_oct7} (target ~222)\n";
 
-usort($unrecoverable, static function ($a, $b) {
-    if ($a['best_date'] !== $b['best_date']) {
-        return strcmp($b['best_date'], $a['best_date']);
-    }
-    return ($b['season_year'] ?? 0) <=> ($a['season_year'] ?? 0);
+usort($unrecoverable, static function ($a, $b) use ($unrecoverable_sort_tuple) {
+    $ta = $unrecoverable_sort_tuple($a);
+    $tb = $unrecoverable_sort_tuple($b);
+    return $ta <=> $tb;
 });
 $echo_section('unrecoverable roster ids (upcoming-first)', array_map(static function ($row) {
     return ['id' => (int) $row['id']];

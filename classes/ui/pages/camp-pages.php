@@ -865,7 +865,11 @@ class CampsPage extends AbstractPage {
             $stats = [
                 'total_camps' => count(array_unique(array_column($camps, 'product_variation_id'))),
                 'total_attendees' => count($camps),
-                'active_camps' => count(array_filter($camps, function($camp) {
+                'active_camps' => count(array_filter($camps, function ($camp) {
+                    if (!function_exists('intersoccer_roster_has_real_date')
+                        || !intersoccer_roster_has_real_date($camp['end_date'] ?? null)) {
+                        return false;
+                    }
                     return strtotime($camp['end_date']) >= time();
                 })),
                 'unique_venues' => count(array_unique(array_column($camps, 'venue')))

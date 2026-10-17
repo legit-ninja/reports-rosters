@@ -24,6 +24,7 @@ class RosterDateGuardTest extends TestCase {
         $this->assertFalse(intersoccer_roster_has_real_date(null));
         $this->assertFalse(intersoccer_roster_has_real_date(''));
         $this->assertFalse(intersoccer_roster_has_real_date('1970-01-01'));
+        $this->assertFalse(intersoccer_roster_has_real_date('0000-00-00'));
         $this->assertTrue(intersoccer_roster_has_real_date('2026-10-19'));
     }
 
@@ -39,6 +40,17 @@ class RosterDateGuardTest extends TestCase {
         ]]));
     }
 
+    public function test_roster_date_range_end_only_keeps_null_dates(): void {
+        $roster = new Roster([
+            'start_date' => null,
+            'end_date' => null,
+            'order_status' => 'completed',
+        ]);
+        $this->assertTrue($roster->matches(['date_range' => [
+            'end' => '2026-12-31',
+        ]]));
+    }
+
     public function test_roster_date_range_filter_includes_real_dates(): void {
         $roster = new Roster([
             'start_date' => '2026-06-01',
@@ -49,5 +61,22 @@ class RosterDateGuardTest extends TestCase {
             'start' => '2026-01-01',
             'end' => '2026-12-31',
         ]]));
+    }
+
+    public function test_conflicts_with_returns_false_when_either_start_date_missing(): void {
+        $a = new Roster([
+            'customer_id' => 1,
+            'player_index' => 0,
+            'start_date' => null,
+            'end_date' => null,
+        ]);
+        $b = new Roster([
+            'customer_id' => 1,
+            'player_index' => 0,
+            'start_date' => '2026-08-01',
+            'end_date' => '2026-08-05',
+        ]);
+        $this->assertFalse($a->conflictsWith($b));
+        $this->assertFalse($b->conflictsWith($a));
     }
 }

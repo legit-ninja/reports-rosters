@@ -271,11 +271,14 @@ class OverviewReport extends AbstractReport {
         $rosters_table = $this->db->prefix . 'intersoccer_rosters';
         
         $sql = "SELECT 
-                    DATE_FORMAT(start_date, '%Y-%m') as month,
+                    CASE
+                        WHEN start_date IS NULL OR start_date IN ('', '1970-01-01', '0000-00-00') THEN NULL
+                        ELSE DATE_FORMAT(start_date, '%Y-%m')
+                    END as month,
                     COUNT(*) as participant_count,
                     SUM(order_total) as revenue
                 FROM {$rosters_table}
-                {$where_clause} AND start_date IS NOT NULL
+                {$where_clause}
                 GROUP BY month
                 ORDER BY month ASC
                 LIMIT 12";
@@ -288,7 +291,11 @@ class OverviewReport extends AbstractReport {
         
         // Format results
         foreach ($results as &$result) {
-            $result->month_name = date('M Y', strtotime($result->month . '-01'));
+            if ($result->month === null || $result->month === '') {
+                $result->month_name = __('No date', 'intersoccer-reports-rosters');
+            } else {
+                $result->month_name = date('M Y', strtotime($result->month . '-01'));
+            }
             $result->formatted_revenue = $this->format_currency($result->revenue);
         }
         

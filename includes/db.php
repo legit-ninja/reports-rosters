@@ -40,8 +40,8 @@ function intersoccer_create_rosters_table() {
         late_pickup_days text,
         day_presence text,
         age_group varchar(50) DEFAULT '',
-        start_date date DEFAULT '1970-01-01',
-        end_date date DEFAULT '1970-01-01',
+        start_date date DEFAULT NULL,
+        end_date date DEFAULT NULL,
         event_dates varchar(100) DEFAULT 'N/A',
         product_name varchar(255) NOT NULL,
         activity_type varchar(50) DEFAULT '',
@@ -184,6 +184,14 @@ function intersoccer_migrate_rosters_table() {
 
         $columns[] = 'event_completed';
         error_log('InterSoccer: Added event_completed column with index');
+    }
+
+    $db_version = get_option('intersoccer_db_version', '1.0.0');
+    if (version_compare($db_version, '2.2.0', '<')) {
+        $wpdb->query("ALTER TABLE $rosters_table MODIFY start_date date DEFAULT NULL");
+        $wpdb->query("ALTER TABLE $rosters_table MODIFY end_date date DEFAULT NULL");
+        update_option('intersoccer_db_version', '2.2.0');
+        error_log('InterSoccer: Rosters start_date/end_date defaults set to NULL (schema 2.2.0)');
     }
 }
 

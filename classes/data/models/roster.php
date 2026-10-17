@@ -477,10 +477,15 @@ class Roster extends AbstractModel {
      */
     public function getFormattedDuration() {
         if ($this->isCourse()) {
+            if (!function_exists('intersoccer_roster_has_real_date')
+                || !intersoccer_roster_has_real_date($this->start_date)
+                || !intersoccer_roster_has_real_date($this->end_date)) {
+                return 'TBD';
+            }
             $start = new \DateTime($this->start_date);
             $end = new \DateTime($this->end_date);
             $weeks = ceil($start->diff($end)->days / 7);
-            
+
             return $weeks . ' week' . ($weeks > 1 ? 's' : '');
         }
         
@@ -749,12 +754,15 @@ class Roster extends AbstractModel {
                     }
 
                     if (isset($value['end'])) {
+                        if (!function_exists('intersoccer_roster_has_real_date')) {
+                            return false;
+                        }
                         $end_raw = intersoccer_roster_has_real_date($this->end_date)
                             ? $this->end_date
                             : ($this->start_date ?? null);
-                        if (!function_exists('intersoccer_roster_has_real_date')
-                            || !intersoccer_roster_has_real_date($end_raw)) {
-                            return false;
+                        if (!intersoccer_roster_has_real_date($end_raw)) {
+                            // NULL/1970 rows stay visible for end-only filters (matches SQL COALESCE behavior).
+                            break;
                         }
                         $end_date = new \DateTime($end_raw);
                         $filter_end = new \DateTime($value['end']);
@@ -814,13 +822,21 @@ class Roster extends AbstractModel {
             return false; // Different players can't conflict
         }
         
-        // Check for date/time overlap
+        if (!function_exists('intersoccer_roster_has_real_date')) {
+            return false;
+        }
+        if (!intersoccer_roster_has_real_date($this->start_date)
+            || !intersoccer_roster_has_real_date($other->start_date)) {
+            return false;
+        }
+
         $this_start = new \DateTime($this->start_date);
-        $this_end = new \DateTime($this->end_date ?: $this->start_date);
+        $this_end_raw = intersoccer_roster_has_real_date($this->end_date) ? $this->end_date : $this->start_date;
         $other_start = new \DateTime($other->start_date);
-        $other_end = new \DateTime($other->end_date ?: $other->start_date);
-        
-        // Same player, overlapping dates = conflict
+        $other_end_raw = intersoccer_roster_has_real_date($other->end_date) ? $other->end_date : $other->start_date;
+        $this_end = new \DateTime($this_end_raw);
+        $other_end = new \DateTime($other_end_raw);
+
         return ($this_start <= $other_end && $this_end >= $other_start);
     }
     

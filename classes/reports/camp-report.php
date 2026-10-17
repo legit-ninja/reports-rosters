@@ -204,11 +204,17 @@ class CampReport extends AbstractReport {
         
         // Weekly attendance pattern
         $weekly_sql = "SELECT 
-                          WEEK(start_date) as week_number,
-                          YEAR(start_date) as year,
+                          CASE
+                            WHEN start_date IS NULL OR start_date IN ('', '1970-01-01', '0000-00-00') THEN NULL
+                            ELSE WEEK(start_date)
+                          END as week_number,
+                          CASE
+                            WHEN start_date IS NULL OR start_date IN ('', '1970-01-01', '0000-00-00') THEN NULL
+                            ELSE YEAR(start_date)
+                          END as year,
                           COUNT(*) as participants
                        FROM {$rosters_table}
-                       {$where_clause} AND start_date IS NOT NULL
+                       {$where_clause}
                        GROUP BY year, week_number
                        ORDER BY year, week_number";
         
@@ -217,6 +223,21 @@ class CampReport extends AbstractReport {
         }
         
         $weekly_attendance = $this->db->get_results($weekly_sql);
+
+        $no_date_label = __('No date', 'intersoccer-reports-rosters');
+        foreach ($weekly_attendance as &$row) {
+            if ($row->week_number === null || $row->week_number === ''
+                || $row->year === null || $row->year === '') {
+                $row->week_label = $no_date_label;
+            } else {
+                $row->week_label = sprintf(
+                    __('Week %1$s, %2$s', 'intersoccer-reports-rosters'),
+                    $row->week_number,
+                    $row->year
+                );
+            }
+        }
+        unset($row);
         
         // Age group distribution
         $age_distribution_sql = "SELECT 

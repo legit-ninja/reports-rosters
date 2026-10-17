@@ -1053,9 +1053,15 @@ class RosterRepository implements RepositoryInterface {
         global $wpdb;
         $table_name = $wpdb->prefix . $this->table;
         
-        $sql = "SELECT * FROM {$table_name} 
-                WHERE start_date <= %s 
-                AND (end_date >= %s OR end_date IS NULL)
+        $start_lte = function_exists('intersoccer_roster_sql_treat_null_date_as_epoch')
+            ? intersoccer_roster_sql_treat_null_date_as_epoch('start_date')
+            : "COALESCE(NULLIF(NULLIF(start_date, ''), '1970-01-01'), '1970-01-01')";
+        $end_epoch = function_exists('intersoccer_roster_sql_treat_null_date_as_epoch')
+            ? intersoccer_roster_sql_treat_null_date_as_epoch('end_date')
+            : "COALESCE(NULLIF(NULLIF(end_date, ''), '1970-01-01'), '1970-01-01')";
+        $sql = "SELECT * FROM {$table_name}
+                WHERE {$start_lte} <= %s
+                AND ({$end_epoch} >= %s OR end_date IS NULL)
                 AND order_status = 'completed'
                 ORDER BY start_date ASC";
         

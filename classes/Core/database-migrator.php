@@ -52,7 +52,7 @@ class DatabaseMigrator {
      * 
      * @var string
      */
-    const CURRENT_VERSION = '2.1.0';
+    const CURRENT_VERSION = '2.2.0';
     
     /**
      * Constructor
@@ -162,6 +162,7 @@ class DatabaseMigrator {
         return [
             '2.0.0' => [$this, 'migrate_2_0_0'],
             '2.1.0' => [$this, 'migrate_2_1_0'],
+            '2.2.0' => [$this, 'migrate_2_2_0'],
         ];
     }
     
@@ -257,6 +258,31 @@ class DatabaseMigrator {
         } catch (\Exception $e) {
             $this->logger->error('Migration 2.1.0 failed', [
                 'error' => $e->getMessage()
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Migration for version 2.2.0
+     * start_date / end_date column defaults NULL (no 1970 sentinel on insert omit).
+     *
+     * @return bool Success status
+     */
+    private function migrate_2_2_0() {
+        $table = $this->wpdb->prefix . 'intersoccer_rosters';
+
+        try {
+            $this->logger->info('Setting start_date and end_date DEFAULT NULL');
+            $ok_start = $this->wpdb->query("ALTER TABLE {$table} MODIFY start_date date DEFAULT NULL");
+            $ok_end = $this->wpdb->query("ALTER TABLE {$table} MODIFY end_date date DEFAULT NULL");
+            if ($ok_start === false || $ok_end === false) {
+                throw new DatabaseException('Failed to modify start_date/end_date defaults');
+            }
+            return true;
+        } catch (\Exception $e) {
+            $this->logger->error('Migration 2.2.0 failed', [
+                'error' => $e->getMessage(),
             ]);
             return false;
         }
