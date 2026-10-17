@@ -14,14 +14,17 @@
 
 # SSH Connection Settings
 SERVER_USER="your-ssh-username"
-SERVER_HOST="intersoccer.legit.ninja"
+SERVER_HOST="deploy-host.example"
+
+# Public site URL for docs/Cypress (optional; deploy.sh uses https://${SERVER_HOST} if unset)
+TEST_SITE_URL="https://test-site.example"
 SERVER_PATH="/var/www/html/wp-content/plugins/intersoccer-reports-rosters"
 SSH_PORT="22"
 SSH_KEY="~/.ssh/id_rsa"
 
 # Example values (uncomment and modify):
 # SERVER_USER="jeremy"
-# SERVER_HOST="intersoccer.legit.ninja"
+# SERVER_HOST="deploy-host.example"
 # SERVER_PATH="/var/www/html/wp-content/plugins/intersoccer-reports-rosters"
 # SSH_PORT="22"
 # SSH_KEY="~/.ssh/id_rsa"
