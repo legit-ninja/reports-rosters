@@ -3251,7 +3251,12 @@ function intersoccer_get_course_day_from_order_item($order_item_id) {
         $order_item_id
     ), ARRAY_A);
     
-    error_log("InterSoccer: Could not find course_day. All metadata for order_item_id $order_item_id: " . json_encode($all_meta));
+    if (function_exists('intersoccer_rr_debug_log')) {
+        intersoccer_rr_debug_log(
+            "InterSoccer: Could not find course_day for order_item_id $order_item_id: "
+            . wp_json_encode(intersoccer_rr_debug_summarize_order_item_meta_rows($all_meta))
+        );
+    }
     
     return null;
 }
