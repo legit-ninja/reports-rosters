@@ -4573,9 +4573,13 @@ if (!function_exists('intersoccer_event_signature_from_event_data')) {
             || !function_exists('intersoccer_generate_event_signature')) {
             return '';
         }
+        $event_data = intersoccer_roster_apply_signature_date_fields($event_data);
         $normalized = intersoccer_normalize_event_data_for_signature($event_data);
         if (array_key_exists('start_date', $event_data)) {
             $normalized['start_date'] = $event_data['start_date'];
+        }
+        if (array_key_exists('end_date', $event_data)) {
+            $normalized['end_date'] = $event_data['end_date'];
         }
         return intersoccer_generate_event_signature($normalized);
     }
@@ -5238,6 +5242,83 @@ if (!function_exists('intersoccer_roster_has_real_date')) {
             return false;
         }
         return preg_match('/^\d{4}-\d{2}-\d{2}$/', $s) === 1;
+    }
+}
+
+if (!function_exists('intersoccer_roster_signature_missing_date_token')) {
+    /**
+     * Date token master writers fed into signature generation for unknown start/end dates.
+     */
+    function intersoccer_roster_signature_missing_date_token() {
+        return '1970-01-01';
+    }
+}
+
+if (!function_exists('intersoccer_roster_date_for_signature')) {
+    /**
+     * Normalize roster storage dates for signature hashing only (DB column may stay NULL).
+     *
+     * @param mixed $value
+     */
+    function intersoccer_roster_date_for_signature($value) {
+        if ($value === null || $value === '') {
+            return intersoccer_roster_signature_missing_date_token();
+        }
+        $s = trim((string) $value);
+        if ($s === '' || $s === '1970-01-01' || $s === '0000-00-00') {
+            return intersoccer_roster_signature_missing_date_token();
+        }
+        return $s;
+    }
+}
+
+if (!function_exists('intersoccer_roster_apply_signature_date_fields')) {
+    /**
+     * @param array<string,mixed> $event_data
+     * @return array<string,mixed>
+     */
+    function intersoccer_roster_apply_signature_date_fields(array $event_data) {
+        foreach (['start_date', 'end_date'] as $field) {
+            if (array_key_exists($field, $event_data)) {
+                $event_data[$field] = intersoccer_roster_date_for_signature($event_data[$field]);
+            }
+        }
+        return $event_data;
+    }
+}
+
+if (!function_exists('intersoccer_roster_coerce_master_writer_dates_for_signature')) {
+    /**
+     * Master @ 80bf153 roster writers stored 1970-01-01 before hashing; branch stores NULL.
+     *
+     * @param array<string,mixed> $event_data
+     * @return array<string,mixed>
+     */
+    function intersoccer_roster_coerce_master_writer_dates_for_signature(array $event_data) {
+        return intersoccer_roster_apply_signature_date_fields($event_data);
+    }
+}
+
+if (!function_exists('intersoccer_event_signature_master_pipeline')) {
+    /**
+     * Full master pipeline: writer date coercion then signature helpers.
+     *
+     * @param array<string,mixed> $event_data Source order/line-item shaped event data (branch storage dates).
+     */
+    function intersoccer_event_signature_master_pipeline(array $event_data) {
+        $master_shaped = intersoccer_roster_coerce_master_writer_dates_for_signature($event_data);
+        return intersoccer_event_signature_from_event_data($master_shaped);
+    }
+}
+
+if (!function_exists('intersoccer_event_signature_branch_pipeline')) {
+    /**
+     * Full branch pipeline: NULL storage dates with signature-only coercion inside from_event_data.
+     *
+     * @param array<string,mixed> $event_data
+     */
+    function intersoccer_event_signature_branch_pipeline(array $event_data) {
+        return intersoccer_event_signature_from_event_data($event_data);
     }
 }
 

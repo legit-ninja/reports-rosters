@@ -188,14 +188,21 @@ $sig_stored_mismatch = 0;
 $sig_empty_stored = 0;
 $sig_stored_match = 0;
 $sig_branch_vs_master = 0;
-$sig_field_diff_counts = [];
+$sig_stored_cause_by_type = [];
 $sig_stored_mismatch_by_type = [];
+$bump_stored_cause = static function ($atype, $cause) use (&$sig_stored_cause_by_type) {
+    if (!isset($sig_stored_cause_by_type[$atype])) {
+        $sig_stored_cause_by_type[$atype] = [];
+    }
+    $sig_stored_cause_by_type[$atype][$cause] = (int) ($sig_stored_cause_by_type[$atype][$cause] ?? 0) + 1;
+};
 
-if (function_exists('intersoccer_event_signature_from_event_data')) {
+if (function_exists('intersoccer_event_signature_branch_pipeline')
+    && function_exists('intersoccer_event_signature_master_pipeline')) {
     while (true) {
         $rows = $wpdb->get_results($wpdb->prepare(
             "SELECT id, activity_type, venue, age_group, camp_terms, course_day, times, season, girls_only,
-                    city, canton_region, product_id, start_date, event_signature
+                    city, canton_region, product_id, start_date, end_date, event_signature
              FROM {$table}
              ORDER BY id ASC
              LIMIT %d OFFSET %d",
@@ -219,10 +226,14 @@ if (function_exists('intersoccer_event_signature_from_event_data')) {
                 ];
             }
             $sig_by_type[$atype]['rows']++;
-            $start_raw = $row['start_date'] ?? null;
-            if ($start_raw === '1970-01-01' || $start_raw === '0000-00-00') {
-                $start_raw = null;
-            }
+            $normalize_storage_date = static function ($value) {
+                if ($value === '1970-01-01' || $value === '0000-00-00') {
+                    return null;
+                }
+                return $value;
+            };
+            $start_raw = $normalize_storage_date($row['start_date'] ?? null);
+            $end_raw = $normalize_storage_date($row['end_date'] ?? null);
             $payload = [
                 'activity_type' => $row['activity_type'] ?? '',
                 'venue' => $row['venue'] ?? '',
@@ -236,10 +247,10 @@ if (function_exists('intersoccer_event_signature_from_event_data')) {
                 'canton_region' => $row['canton_region'] ?? '',
                 'product_id' => (int) ($row['product_id'] ?? 0),
                 'start_date' => $start_raw,
+                'end_date' => $end_raw,
             ];
-            $branch_sig = intersoccer_event_signature_from_event_data($payload);
-            // Master @ 80bf153: same from_event_data + generate path (see EventSignatureMasterParityTest).
-            $master_sig = intersoccer_event_signature_from_event_data($payload);
+            $branch_sig = intersoccer_event_signature_branch_pipeline($payload);
+            $master_sig = intersoccer_event_signature_master_pipeline($payload);
             if ($branch_sig !== '' && $master_sig !== '' && !hash_equals($branch_sig, $master_sig)) {
                 ++$sig_branch_vs_master;
                 $sig_by_type[$atype]['branch_vs_master']++;
@@ -262,24 +273,26 @@ if (function_exists('intersoccer_event_signature_from_event_data')) {
                 $sig_stored_mismatch_by_type[$atype]++;
                 $payload_legacy_start = $payload;
                 $payload_legacy_start['start_date'] = $row['start_date'] ?? '';
-                $legacy_sig = intersoccer_event_signature_from_event_data($payload_legacy_start);
+                $payload_legacy_start['end_date'] = $row['end_date'] ?? '';
+                $legacy_sig = intersoccer_event_signature_branch_pipeline($payload_legacy_start);
                 if (hash_equals($stored, $legacy_sig)) {
-                    $sig_field_diff_counts['start_date_legacy_sentinel'] = (int) ($sig_field_diff_counts['start_date_legacy_sentinel'] ?? 0) + 1;
+                    $bump_stored_cause($atype, 'start_date_legacy_sentinel');
                 } else {
+                    $attributed = false;
                     $candidates = ['venue', 'season', 'camp_terms', 'course_day', 'times', 'city', 'canton_region', 'product_id', 'activity_type', 'girls_only'];
                     foreach ($candidates as $field) {
                         $trial = $payload;
                         $trial[$field] = is_int($payload[$field] ?? null) ? 0 : '';
-                        $try_sig = intersoccer_event_signature_from_event_data($trial);
+                        $try_sig = intersoccer_event_signature_branch_pipeline($trial);
                         if ($try_sig !== '' && hash_equals($stored, $try_sig)) {
-                            $sig_field_diff_counts[$field . '_normalization'] = (int) ($sig_field_diff_counts[$field . '_normalization'] ?? 0) + 1;
+                            $bump_stored_cause($atype, $field . '_normalization');
+                            $attributed = true;
                             break;
                         }
                     }
-                    if (!isset($sig_field_diff_counts['unattributed_stored_drift'])) {
-                        $sig_field_diff_counts['unattributed_stored_drift'] = 0;
+                    if (!$attributed) {
+                        $bump_stored_cause($atype, 'unattributed_stored_drift');
                     }
-                    $sig_field_diff_counts['unattributed_stored_drift']++;
                 }
             }
         }
@@ -309,14 +322,24 @@ $echo_section('event_signature branch vs master code (gate: drift must be 0)', [
 ]);
 $echo_section('event_signature stored vs branch recompute (informational; stale DB rows)', $sig_rows);
 echo "   totals: rows={$sig_total} stored_match={$sig_stored_match} stored_drift={$sig_stored_mismatch} branch_vs_master_drift={$sig_branch_vs_master} empty_stored={$sig_empty_stored}\n";
-$field_rows = [];
-foreach ($sig_field_diff_counts as $cause => $cnt) {
-    $field_rows[] = ['cause' => $cause, 'cnt' => $cnt];
+$stored_cause_rows = [];
+foreach ($sig_stored_cause_by_type as $atype => $causes) {
+    foreach ($causes as $cause => $cnt) {
+        $stored_cause_rows[] = [
+            'activity_type' => $atype,
+            'cause' => $cause,
+            'cnt' => $cnt,
+        ];
+    }
 }
-usort($field_rows, static function ($a, $b) {
-    return ($b['cnt'] ?? 0) <=> ($a['cnt'] ?? 0);
+usort($stored_cause_rows, static function ($a, $b) {
+    $by_cnt = ($b['cnt'] ?? 0) <=> ($a['cnt'] ?? 0);
+    if ($by_cnt !== 0) {
+        return $by_cnt;
+    }
+    return strcmp((string) ($a['activity_type'] ?? ''), (string) ($b['activity_type'] ?? ''));
 });
-$echo_section('stored drift attribution (by cause, no ids)', $field_rows);
+$echo_section('stored vs branch drift attribution (by activity_type and cause, no ids)', $stored_cause_rows);
 
 $relabel_would = $wpdb->get_var(
     "SELECT COUNT(DISTINCT id) FROM {$table}
