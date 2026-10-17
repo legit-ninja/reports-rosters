@@ -344,10 +344,6 @@ if (!function_exists('intersoccer_test_ensure_pm_filter_stub')) {
      * Stand in for PM's intersoccer_filter_can_view_medical when privacy-settings.php is not loaded.
      */
     function intersoccer_test_ensure_pm_filter_stub(): void {
-        if (function_exists('intersoccer_user_can_view_medical')) {
-            return;
-        }
-
         if (!function_exists('intersoccer_user_can_view_medical')) {
             function intersoccer_user_can_view_medical($user_id): bool {
                 $user_id = (int) $user_id;

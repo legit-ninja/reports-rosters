@@ -14,9 +14,27 @@ class RosterExportAllMedicalGatingTest extends TestCase
         unset(
             $GLOBALS['intersoccer_test_current_user_caps'],
             $GLOBALS['intersoccer_test_current_user'],
-            $GLOBALS['intersoccer_medical_access_test_filters']
+            $GLOBALS['intersoccer_medical_access_test_filters'],
+            $GLOBALS['intersoccer_rr_hook_test_filters']
         );
         parent::tearDown();
+    }
+
+    private function setSplitPermissionFilters(bool $medical_allowed, bool $dob_allowed): void
+    {
+        unset($GLOBALS['intersoccer_medical_access_test_filters']);
+        $GLOBALS['intersoccer_rr_hook_test_filters'] = [
+            'intersoccer_can_view_medical' => [
+                static function ($allowed, $user_id) use ($medical_allowed) {
+                    return $medical_allowed;
+                },
+            ],
+            'intersoccer_can_view_dob' => [
+                static function ($allowed, $user_id) use ($dob_allowed) {
+                    return $dob_allowed;
+                },
+            ],
+        ];
     }
 
     protected function setUp(): void
@@ -85,6 +103,46 @@ class RosterExportAllMedicalGatingTest extends TestCase
         $this->assertArrayHasKey('medical_conditions', $rows[0]);
         $this->assertSame('2012-04-04', $rows[0]['player_dob']);
         $this->assertSame('Secret', $rows[0]['medical_conditions']);
+    }
+
+    public function test_export_all_medical_allowed_dob_denied_strips_only_dob_keys(): void
+    {
+        intersoccer_test_set_user_caps(['coach' => true]);
+        $this->setSplitPermissionFilters(true, false);
+        $row = [
+            'first_name' => 'Amy',
+            'player_dob' => '2012-04-04',
+            'medical_conditions' => 'Peanuts',
+            'venue' => 'Geneva',
+        ];
+        $stripped = intersoccer_rr_strip_sensitive_fields_from_export_row($row);
+        $this->assertArrayNotHasKey('player_dob', $stripped);
+        $this->assertSame('Peanuts', $stripped['medical_conditions']);
+
+        $service = $this->createExportServiceWithSampleRow();
+        $rows = $service->getExportRows(['variation_ids' => [42]]);
+        $this->assertArrayNotHasKey('player_dob', $rows[0]);
+        $this->assertSame('Secret', $rows[0]['medical_conditions']);
+    }
+
+    public function test_export_all_dob_allowed_medical_denied_strips_only_medical_keys(): void
+    {
+        intersoccer_test_set_user_caps(['coach' => true]);
+        $this->setSplitPermissionFilters(false, true);
+        $row = [
+            'first_name' => 'Amy',
+            'player_dob' => '2012-04-04',
+            'medical_conditions' => 'Peanuts',
+            'venue' => 'Geneva',
+        ];
+        $stripped = intersoccer_rr_strip_sensitive_fields_from_export_row($row);
+        $this->assertArrayNotHasKey('medical_conditions', $stripped);
+        $this->assertSame('2012-04-04', $stripped['player_dob']);
+
+        $service = $this->createExportServiceWithSampleRow();
+        $rows = $service->getExportRows(['variation_ids' => [42]]);
+        $this->assertArrayNotHasKey('medical_conditions', $rows[0]);
+        $this->assertSame('2012-04-04', $rows[0]['player_dob']);
     }
 
     /**

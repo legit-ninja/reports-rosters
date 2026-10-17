@@ -184,6 +184,57 @@ if (!function_exists('intersoccer_user_can_view_roster_admin')) {
     }
 }
 
+if (!function_exists('intersoccer_rr_single_roster_export_sensitive_personal_values')) {
+    /**
+     * DOB and medical strings for single-roster spreadsheet rows (permission-gated).
+     *
+     * @param array<string,mixed> $player
+     * @return array{formatted_birth_date:string,export_medical:string}
+     */
+    function intersoccer_rr_single_roster_export_sensitive_personal_values(array $player): array {
+        if (!function_exists('intersoccer_rr_current_user_can_view_dob')) {
+            require_once __DIR__ . '/medical-access.php';
+        }
+
+        $formatted_birth_date = 'N/A';
+        $export_medical = '';
+
+        if (intersoccer_rr_current_user_can_view_dob()) {
+            $birth_date = function_exists('intersoccer_roster_field_player_dob')
+                ? intersoccer_roster_field_player_dob($player)
+                : ($player['player_dob'] ?? '');
+            if (!empty($birth_date) && $birth_date !== '0000-00-00' && $birth_date !== '1970-01-01') {
+                $date_obj = DateTime::createFromFormat('Y-m-d', $birth_date);
+                if (!$date_obj) {
+                    $date_obj = DateTime::createFromFormat('d/m/Y', $birth_date);
+                }
+                if (!$date_obj) {
+                    $date_obj = DateTime::createFromFormat('m/d/Y', $birth_date);
+                }
+                if ($date_obj) {
+                    $formatted_birth_date = $date_obj->format('d/m/Y');
+                } else {
+                    $row_id = isset($player['id']) ? (int) $player['id'] : 0;
+                    $order_item_id = isset($player['order_item_id']) ? (int) $player['order_item_id'] : 0;
+                    error_log('InterSoccer Export: Could not parse date of birth for roster row id ' . $row_id . ' order_item_id ' . $order_item_id);
+                    $formatted_birth_date = 'N/A';
+                }
+            }
+        }
+
+        if (intersoccer_rr_current_user_can_view_medical()) {
+            $export_medical = function_exists('intersoccer_roster_field_player_medical')
+                ? intersoccer_roster_field_player_medical($player)
+                : ($player['medical_conditions'] ?? '');
+        }
+
+        return [
+            'formatted_birth_date' => $formatted_birth_date,
+            'export_medical' => $export_medical,
+        ];
+    }
+}
+
 function intersoccer_export_roster() {
     check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
 
@@ -703,33 +754,9 @@ function intersoccer_export_roster() {
             $processed_phone = (string)intersoccer_normalize_phone_number($raw_phone);
             $excel_phone = $processed_phone;
 
-            $formatted_birth_date = 'N/A';
-            $export_medical = '';
-            if (intersoccer_rr_current_user_can_view_medical()) {
-                $birth_date = function_exists('intersoccer_roster_field_player_dob')
-                    ? intersoccer_roster_field_player_dob($player)
-                    : ($player['player_dob'] ?? '');
-                if (!empty($birth_date) && $birth_date !== '0000-00-00' && $birth_date !== '1970-01-01') {
-                    $date_obj = DateTime::createFromFormat('Y-m-d', $birth_date);
-                    if (!$date_obj) {
-                        $date_obj = DateTime::createFromFormat('d/m/Y', $birth_date);
-                    }
-                    if (!$date_obj) {
-                        $date_obj = DateTime::createFromFormat('m/d/Y', $birth_date);
-                    }
-                    if ($date_obj) {
-                        $formatted_birth_date = $date_obj->format('d/m/Y');
-                    } else {
-                        $row_id = isset($player['id']) ? (int) $player['id'] : 0;
-                        $order_item_id = isset($player['order_item_id']) ? (int) $player['order_item_id'] : 0;
-                        error_log('InterSoccer Export: Could not parse date of birth for roster row id ' . $row_id . ' order_item_id ' . $order_item_id);
-                        $formatted_birth_date = 'N/A';
-                    }
-                }
-                $export_medical = function_exists('intersoccer_roster_field_player_medical')
-                    ? intersoccer_roster_field_player_medical($player)
-                    : ($player['medical_conditions'] ?? '');
-            }
+            $sensitive_personal = intersoccer_rr_single_roster_export_sensitive_personal_values($player);
+            $formatted_birth_date = $sensitive_personal['formatted_birth_date'];
+            $export_medical = $sensitive_personal['export_medical'];
 
             $data = intersoccer_rr_roster_export_personal_row_values(
                 $player,

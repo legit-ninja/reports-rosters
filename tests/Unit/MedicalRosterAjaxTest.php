@@ -11,10 +11,28 @@ class MedicalRosterAjaxTest extends TestCase
             $GLOBALS['intersoccer_test_current_user_caps'],
             $GLOBALS['intersoccer_test_current_user'],
             $GLOBALS['intersoccer_medical_access_test_filters'],
+            $GLOBALS['intersoccer_rr_hook_test_filters'],
             $GLOBALS['intersoccer_test_json_error_throws'],
             $GLOBALS['intersoccer_test_wpdb_row']
         );
         parent::tearDown();
+    }
+
+    private function setSplitPermissionFilters(bool $medical_allowed, bool $dob_allowed): void
+    {
+        unset($GLOBALS['intersoccer_medical_access_test_filters']);
+        $GLOBALS['intersoccer_rr_hook_test_filters'] = [
+            'intersoccer_can_view_medical' => [
+                static function ($allowed, $user_id) use ($medical_allowed) {
+                    return $medical_allowed;
+                },
+            ],
+            'intersoccer_can_view_dob' => [
+                static function ($allowed, $user_id) use ($dob_allowed) {
+                    return $dob_allowed;
+                },
+            ],
+        ];
     }
 
     protected function setUp(): void
@@ -61,8 +79,9 @@ class MedicalRosterAjaxTest extends TestCase
         intersoccer_ajax_update_roster_entry();
     }
 
-    public function test_dob_field_update_rejected_when_medical_access_denied(): void
+    public function test_dob_field_update_rejected_when_dob_access_denied(): void
     {
+        $this->setSplitPermissionFilters(true, false);
         $GLOBALS['intersoccer_test_wpdb_row'] = [
             'id' => 7,
             'player_dob' => '2012-03-04',
@@ -86,6 +105,41 @@ class MedicalRosterAjaxTest extends TestCase
         $this->expectExceptionMessage('This field cannot be edited');
 
         intersoccer_ajax_update_roster_entry();
+    }
+
+    public function test_dob_field_update_allowed_when_dob_granted_medical_denied(): void
+    {
+        $this->setSplitPermissionFilters(false, true);
+        $GLOBALS['intersoccer_test_wpdb_row'] = [
+            'id' => 7,
+            'player_dob' => '2012-03-04',
+        ];
+        global $wpdb;
+        $wpdb = new class extends InterSoccerTestWpdb {
+            public $last_update = null;
+
+            public function get_row($query = null, $output = OBJECT, $y = 0) {
+                return $GLOBALS['intersoccer_test_wpdb_row'];
+            }
+
+            public function update($table, $data, $where, $format = null, $where_format = null) {
+                $this->last_update = $data;
+                return 1;
+            }
+        };
+
+        $_POST = [
+            'nonce' => 'test',
+            'roster_id' => '7',
+            'field' => 'player_dob',
+            'value' => '2013-04-05',
+        ];
+
+        ob_start();
+        intersoccer_ajax_update_roster_entry();
+        ob_end_clean();
+
+        $this->assertSame(['player_dob' => '2013-04-05'], $wpdb->last_update);
     }
 
     public function test_strip_medical_on_full_update_when_medical_access_denied(): void

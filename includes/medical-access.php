@@ -55,12 +55,17 @@ if (!function_exists('intersoccer_rr_strip_sensitive_fields_from_export_row')) {
      * @return array<string,mixed>
      */
     function intersoccer_rr_strip_sensitive_fields_from_export_row(array $row): array {
-        if (intersoccer_rr_current_user_can_view_medical()) {
-            return $row;
+        if (!intersoccer_rr_current_user_can_view_medical()) {
+            foreach (intersoccer_rr_sensitive_export_field_keys() as $key) {
+                if (!in_array($key, intersoccer_rr_medical_dob_field_keys(), true)) {
+                    unset($row[$key]);
+                }
+            }
         }
-
-        foreach (intersoccer_rr_sensitive_export_field_keys() as $key) {
-            unset($row[$key]);
+        if (!intersoccer_rr_current_user_can_view_dob()) {
+            foreach (intersoccer_rr_medical_dob_field_keys() as $key) {
+                unset($row[$key]);
+            }
         }
 
         return $row;
