@@ -29,6 +29,9 @@ class RosterEditorFormFieldEscapeTest extends TestCase {
         if (!function_exists('intersoccer_render_form_field')) {
             require_once dirname(__DIR__, 2) . '/includes/roster-editor.php';
         }
+        if (!function_exists('intersoccer_rr_strip_medical_from_update_data')) {
+            require_once dirname(__DIR__, 2) . '/includes/medical-access.php';
+        }
         if (!function_exists('intersoccer_ajax_update_roster_entry')) {
             require_once dirname(__DIR__, 2) . '/includes/roster-editor-ajax.php';
         }
