@@ -70,7 +70,8 @@ class RosterExportService {
         }
 
         if (!function_exists('intersoccer_rr_strip_sensitive_fields_from_export_rows')) {
-            return $rows;
+            $this->logger->warning('RosterExportService: export medical privacy helper unavailable; returning no rows');
+            return [];
         }
 
         return intersoccer_rr_strip_sensitive_fields_from_export_rows($rows);
@@ -198,9 +199,10 @@ class RosterExportService {
         $rows = $this->wpdb->get_results($sql, ARRAY_A);
         
         // Log SQL errors if any
-        if ($this->wpdb->last_error) {
+        $db_error = !empty($this->wpdb->last_error);
+        if ($db_error) {
             $this->logger->error('RosterExportService: SQL error in fetchUsingFieldFilters', [
-                'error' => $this->wpdb->last_error,
+                'db_error' => true,
                 'variation_id' => $variation_id,
                 'variation_ids_count' => count($variation_ids),
                 'order_item_ids_count' => count($order_item_ids),
@@ -215,7 +217,7 @@ class RosterExportService {
             'variation_ids_count' => count($variation_ids),
             'order_item_ids_count' => count($order_item_ids),
             'event_signatures_count' => count($event_signatures),
-            'last_error' => $this->wpdb->last_error,
+            'db_error' => $db_error,
         ]);
 
         $rows = is_array($rows) ? $rows : [];
@@ -279,9 +281,10 @@ class RosterExportService {
         $rows = $this->wpdb->get_results($sql, ARRAY_A);
         
         // Log SQL errors if any
-        if ($this->wpdb->last_error) {
+        $db_error = !empty($this->wpdb->last_error);
+        if ($db_error) {
             $this->logger->error('RosterExportService: SQL error in fetchUsingVariations', [
-                'error' => $this->wpdb->last_error,
+                'db_error' => true,
                 'variation_ids_count' => count($variation_ids),
                 'product_id' => $product_id,
                 'has_event_signature' => $event_signature !== '',
@@ -293,7 +296,7 @@ class RosterExportService {
             'variation_ids_count' => count($variation_ids),
             'product_id' => $product_id,
             'has_event_signature' => $event_signature !== '',
-            'last_error' => $this->wpdb->last_error,
+            'db_error' => $db_error,
         ]);
 
         return is_array($rows) ? $rows : [];

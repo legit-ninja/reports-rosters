@@ -64,6 +64,33 @@ class RosterExportAllMedicalGatingTest extends TestCase
     public function test_get_export_rows_strips_sensitive_fields_for_denied_user(): void
     {
         intersoccer_test_set_user_caps(['coach' => true]);
+        $service = $this->createExportServiceWithSampleRow();
+        $rows = $service->getExportRows(['variation_ids' => [42]]);
+
+        $this->assertCount(1, $rows);
+        $this->assertArrayNotHasKey('player_dob', $rows[0]);
+        $this->assertArrayNotHasKey('medical_conditions', $rows[0]);
+        $this->assertSame('Amy', $rows[0]['first_name']);
+    }
+
+    public function test_get_export_rows_keeps_sensitive_fields_for_allowed_user(): void
+    {
+        intersoccer_test_set_user_caps(['manage_options' => true]);
+        $service = $this->createExportServiceWithSampleRow();
+        $rows = $service->getExportRows(['variation_ids' => [42]]);
+
+        $this->assertCount(1, $rows);
+        $this->assertArrayHasKey('player_dob', $rows[0]);
+        $this->assertArrayHasKey('medical_conditions', $rows[0]);
+        $this->assertSame('2012-04-04', $rows[0]['player_dob']);
+        $this->assertSame('Secret', $rows[0]['medical_conditions']);
+    }
+
+    /**
+     * @return RosterExportService
+     */
+    private function createExportServiceWithSampleRow(): RosterExportService
+    {
         global $wpdb;
         $wpdb = Mockery::mock('wpdb');
         $wpdb->prefix = 'wp_';
@@ -86,12 +113,6 @@ class RosterExportAllMedicalGatingTest extends TestCase
         $database = Mockery::mock(Database::class);
         $database->shouldReceive('get_wpdb')->andReturn($wpdb);
 
-        $service = new RosterExportService(new Logger(), $database);
-        $rows = $service->getExportRows(['variation_ids' => [42]]);
-
-        $this->assertCount(1, $rows);
-        $this->assertArrayNotHasKey('player_dob', $rows[0]);
-        $this->assertArrayNotHasKey('medical_conditions', $rows[0]);
-        $this->assertSame('Amy', $rows[0]['first_name']);
+        return new RosterExportService(new Logger(), $database);
     }
 }
