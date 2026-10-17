@@ -9,10 +9,11 @@ class MedicalAccessTest extends TestCase
         unset(
             $GLOBALS['intersoccer_test_current_user_caps'],
             $GLOBALS['intersoccer_test_current_user'],
-            $GLOBALS['intersoccer_test_filters']
+            $GLOBALS['intersoccer_medical_access_test_filters']
         );
         parent::tearDown();
     }
+
 
     protected function setUp(): void
     {
@@ -61,18 +62,22 @@ class MedicalAccessTest extends TestCase
     public function test_filter_can_grant_medical_access(): void
     {
         $this->setCaps(['coach' => true, 'read' => true]);
-        add_filter('intersoccer_can_view_medical', function ($allowed, $user_id) {
-            return true;
-        }, 10, 2);
+        $GLOBALS['intersoccer_medical_access_test_filters'] = [
+            function ($allowed, $user_id) {
+                return true;
+            },
+        ];
         $this->assertTrue(intersoccer_rr_current_user_can_view_medical());
     }
 
     public function test_filter_can_revoke_medical_access(): void
     {
         $this->setCaps(['manage_options' => true]);
-        add_filter('intersoccer_can_view_medical', function ($allowed, $user_id) {
-            return false;
-        }, 10, 2);
+        $GLOBALS['intersoccer_medical_access_test_filters'] = [
+            function ($allowed, $user_id) {
+                return false;
+            },
+        ];
         $this->assertFalse(intersoccer_rr_current_user_can_view_medical());
     }
 

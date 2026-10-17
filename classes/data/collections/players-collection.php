@@ -502,6 +502,18 @@ class PlayersCollection extends AbstractCollection {
             'gender_split' => $this->countBy('gender'),
             'special_needs_count' => $players_with_special_needs->count(),
             'special_needs_details' => $players_with_special_needs->map(function(Player $player) use ($event_date) {
+                if (!intersoccer_rr_current_user_can_view_medical()) {
+                    $restricted = intersoccer_rr_medical_restricted_label();
+                    return [
+                        'name' => $player->getFullName(),
+                        'age' => $event_date ? $player->getAgeAt($event_date) : $player->getAge(),
+                        'medical_conditions' => $restricted,
+                        'dietary_needs' => $restricted,
+                        'emergency_contact' => $player->emergency_contact ?: 'Not provided',
+                        'emergency_phone' => $player->emergency_phone ?: 'Not provided',
+                    ];
+                }
+
                 return [
                     'name' => $player->getFullName(),
                     'age' => $event_date ? $player->getAgeAt($event_date) : $player->getAge(),

@@ -1017,10 +1017,8 @@ function intersoccer_render_roster_edit_form() {
                     <h2><?php _e('Medical/Dietary Information', 'intersoccer-reports-rosters'); ?></h2>
                     <table class="form-table">
                         <?php
-                        if (function_exists('intersoccer_rr_current_user_can_view_medical') && !intersoccer_rr_current_user_can_view_medical()) {
-                            $restricted = function_exists('intersoccer_rr_medical_restricted_label')
-                                ? intersoccer_rr_medical_restricted_label()
-                                : __('Restricted', 'intersoccer-reports-rosters');
+                        if (!intersoccer_rr_current_user_can_view_medical()) {
+                            $restricted = intersoccer_rr_medical_restricted_label();
                             foreach (
                                 [
                                     'medical_conditions' => __('Medical Conditions', 'intersoccer-reports-rosters'),

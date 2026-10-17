@@ -132,10 +132,7 @@ if (file_exists($intersoccer_roster_canonical)) {
     require_once $intersoccer_roster_canonical;
 }
 
-$intersoccer_medical_access = plugin_dir_path(__FILE__) . 'includes/medical-access.php';
-if (file_exists($intersoccer_medical_access)) {
-    require_once $intersoccer_medical_access;
-}
+require_once plugin_dir_path(__FILE__) . 'includes/medical-access.php';
 
 // Load OOP adapter/compat layer (kept small and will be further reduced).
 $intersoccer_oop_adapter = plugin_dir_path(__FILE__) . 'includes/oop-adapter.php';

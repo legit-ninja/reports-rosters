@@ -290,9 +290,7 @@ function intersoccer_ajax_update_roster_entry() {
             wp_send_json_error(['message' => __('This field cannot be edited.', 'intersoccer-reports-rosters')]);
         }
 
-        if (function_exists('intersoccer_rr_medical_roster_field_keys')
-            && in_array($field, intersoccer_rr_medical_roster_field_keys(), true)
-            && function_exists('intersoccer_rr_current_user_can_view_medical')
+        if (in_array($field, intersoccer_rr_medical_roster_field_keys(), true)
             && !intersoccer_rr_current_user_can_view_medical()) {
             wp_send_json_error(['message' => __('This field cannot be edited.', 'intersoccer-reports-rosters')]);
         }
@@ -305,10 +303,10 @@ function intersoccer_ajax_update_roster_entry() {
         }
 
         // Update single field
-        $update_data = [$field => $sanitized_value];
-        if (function_exists('intersoccer_rr_strip_medical_from_update_data')) {
-            $update_data = intersoccer_rr_strip_medical_from_update_data($update_data, $existing);
-        }
+        $update_data = intersoccer_rr_strip_medical_from_update_data(
+            [$field => $sanitized_value],
+            $existing
+        );
         if ($update_data === []) {
             wp_send_json_error(['message' => __('This field cannot be edited.', 'intersoccer-reports-rosters')]);
         }
@@ -338,9 +336,7 @@ function intersoccer_ajax_update_roster_entry() {
             }
         }
 
-        if (function_exists('intersoccer_rr_strip_medical_from_update_data')) {
-            $update_data = intersoccer_rr_strip_medical_from_update_data($update_data, $existing);
-        }
+        $update_data = intersoccer_rr_strip_medical_from_update_data($update_data, $existing);
 
         if (empty($update_data)) {
             wp_send_json_error(['message' => __('No valid fields to update.', 'intersoccer-reports-rosters')]);
@@ -386,9 +382,7 @@ function intersoccer_ajax_get_roster_entry() {
         wp_send_json_error(['message' => __('Roster entry not found.', 'intersoccer-reports-rosters')]);
     }
 
-    if (function_exists('intersoccer_rr_redact_medical_in_roster_row')) {
-        $roster = intersoccer_rr_redact_medical_in_roster_row($roster);
-    }
+    $roster = intersoccer_rr_redact_medical_in_roster_row($roster);
 
     wp_send_json_success(['roster' => $roster]);
 }

@@ -468,7 +468,7 @@ class CampsPage extends AbstractPage {
             'search' => $this->get_request_param('search', ''),
             'date_from' => $this->get_request_param('date_from', ''),
             'date_to' => $this->get_request_param('date_to', ''),
-            'medical_only' => (function_exists('intersoccer_rr_current_user_can_view_medical') && intersoccer_rr_current_user_can_view_medical())
+            'medical_only' => intersoccer_rr_current_user_can_view_medical()
                 ? $this->get_request_param('medical_only', false, 'bool')
                 : false,
         ];
@@ -633,7 +633,7 @@ class CampsPage extends AbstractPage {
                     </div>
                 </div>
                 
-                <?php if (function_exists('intersoccer_rr_current_user_can_view_medical') && intersoccer_rr_current_user_can_view_medical()) : ?>
+                <?php if (intersoccer_rr_current_user_can_view_medical()) : ?>
                 <div style="margin-top: 15px;">
                     <label>
                         <input type="checkbox" name="medical_only" value="1" <?php checked($current_filters['medical_only']); ?>>
@@ -746,9 +746,7 @@ class CampsPage extends AbstractPage {
                                     <td>
                                         <div class="medical-info">
                                             <?php
-                                            $medical_cell = function_exists('intersoccer_rr_format_camp_medical_display_value')
-                                                ? intersoccer_rr_format_camp_medical_display_value($camp['medical_conditions'] ?? '')
-                                                : ($camp['medical_conditions'] ?? '');
+                                            $medical_cell = intersoccer_rr_format_camp_medical_display_value($camp['medical_conditions'] ?? '');
                                             if ($medical_cell === 'none') :
                                                 ?>
                                                 <span class="medical-none"><?php _e('None', 'intersoccer-reports-rosters'); ?></span>
@@ -850,9 +848,7 @@ class CampsPage extends AbstractPage {
                 $where_values[] = $filters['date_to'];
             }
 
-            if (!empty($filters['medical_only'])
-                && function_exists('intersoccer_rr_current_user_can_view_medical')
-                && intersoccer_rr_current_user_can_view_medical()) {
+            if (!empty($filters['medical_only']) && intersoccer_rr_current_user_can_view_medical()) {
                 $where_conditions[] = "r.medical_conditions != '' AND r.medical_conditions != 'None' AND r.medical_conditions IS NOT NULL";
             }
 
@@ -964,7 +960,7 @@ class CampsPage extends AbstractPage {
                 'booking_type' => sanitize_text_field($_POST['booking_type'] ?? ''),
                 'gender' => sanitize_text_field($_POST['gender'] ?? ''),
                 'search' => sanitize_text_field($_POST['search'] ?? ''),
-                'medical_only' => (function_exists('intersoccer_rr_current_user_can_view_medical') && intersoccer_rr_current_user_can_view_medical())
+                'medical_only' => intersoccer_rr_current_user_can_view_medical()
                     ? (bool) ($_POST['medical_only'] ?? false)
                     : false,
             ];
@@ -1111,7 +1107,7 @@ class CampsPage extends AbstractPage {
      * @return int Number of attendees with medical conditions
      */
     private function get_medical_conditions_count() {
-        if (function_exists('intersoccer_rr_current_user_can_view_medical') && !intersoccer_rr_current_user_can_view_medical()) {
+        if (!intersoccer_rr_current_user_can_view_medical()) {
             return 0;
         }
 
