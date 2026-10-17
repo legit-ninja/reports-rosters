@@ -52,7 +52,7 @@ class DatabaseMigrator {
      * 
      * @var string
      */
-    const CURRENT_VERSION = '2.2.0';
+    const CURRENT_VERSION = '2.3.0';
     
     /**
      * Constructor
@@ -163,6 +163,7 @@ class DatabaseMigrator {
             '2.0.0' => [$this, 'migrate_2_0_0'],
             '2.1.0' => [$this, 'migrate_2_1_0'],
             '2.2.0' => [$this, 'migrate_2_2_0'],
+            '2.3.0' => [$this, 'migrate_2_3_0'],
         ];
     }
     
@@ -282,6 +283,35 @@ class DatabaseMigrator {
             return true;
         } catch (\Exception $e) {
             $this->logger->error('Migration 2.2.0 failed', [
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Migration for version 2.3.0
+     * Normalize legacy 1970-01-01 roster dates to NULL (signatures unchanged).
+     *
+     * @return bool Success status
+     */
+    private function migrate_2_3_0() {
+        $table = $this->wpdb->prefix . 'intersoccer_rosters';
+
+        try {
+            $this->logger->info('Normalizing legacy 1970-01-01 roster start/end dates to NULL');
+            $ok_start = $this->wpdb->query(
+                "UPDATE {$table} SET start_date = NULL WHERE start_date = '1970-01-01'"
+            );
+            $ok_end = $this->wpdb->query(
+                "UPDATE {$table} SET end_date = NULL WHERE end_date = '1970-01-01'"
+            );
+            if ($ok_start === false || $ok_end === false) {
+                throw new DatabaseException('Failed to normalize legacy roster dates');
+            }
+            return true;
+        } catch (\Exception $e) {
+            $this->logger->error('Migration 2.3.0 failed', [
                 'error' => $e->getMessage(),
             ]);
             return false;
