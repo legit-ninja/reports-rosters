@@ -128,26 +128,104 @@ class PlayerAgeGroupParserTest extends TestCase {
     }
 
     /**
-     * School/grade labels are not mapped to numeric ages anywhere in RR today (validator, matcher, or Player).
-     *
      * @return array<string, array{0: string}>
      */
-    public function gradeStyleAgeGroupProvider(): array {
+    public function gradeAgeGroupMustMatchProvider(): array {
         return [
             'G1-G5' => ['G1-G5'],
             'Pre-K to G5' => ['Pre-K to G5'],
             'KG-GR1' => ['KG-GR1'],
             'GR2-5' => ['GR2-5'],
+            'Grade 3' => ['Grade 3'],
+            'K-G2' => ['K-G2'],
         ];
     }
 
     /**
-     * @dataProvider gradeStyleAgeGroupProvider
+     * @return array<string, array{0: string}>
      */
-    public function test_grade_style_age_groups_remain_unparsed(string $age_group): void {
+    public function gradeAgeGroupMustNotMatchProvider(): array {
+        return [
+            'numeric range' => ['5-12'],
+            'U14' => ['U14'],
+            'garbage' => ['not-a-valid-age-group'],
+            'G alone' => ['G'],
+            'GR alone' => ['GR'],
+            'Group 5' => ['Group 5'],
+            'empty' => [''],
+        ];
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: int}>
+     */
+    public function gradeEligibleAtAgesProvider(): array {
+        $cases = [];
+        foreach ($this->gradeAgeGroupMustMatchProvider() as $label => $row) {
+            foreach ([3, 9, 16] as $age) {
+                $cases["{$label} age {$age}"] = [$row[0], $age];
+            }
+        }
+        return $cases;
+    }
+
+    private function resetGradeSkipLog(): void {
+        $ref = new \ReflectionClass(ValidationHelper::class);
+        $prop = $ref->getProperty('logged_grade_age_check_skipped');
+        $prop->setAccessible(true);
+        $prop->setValue(null, []);
+    }
+
+    /**
+     * @dataProvider gradeAgeGroupMustMatchProvider
+     */
+    public function test_grade_age_groups_do_not_parse_to_numeric_range(string $age_group): void {
         $this->assertNull($this->parseAgeGroup($age_group));
+        $this->assertTrue(ValidationHelper::isGradeAgeGroup($age_group));
+    }
+
+    /**
+     * @dataProvider gradeEligibleAtAgesProvider
+     */
+    public function test_grade_age_groups_skip_age_check_and_are_eligible(string $age_group, int $age): void {
+        $player = new Player(['dob' => $this->dobForAgeAtEvent($age)]);
+        $this->assertTrue($player->isEligibleForAgeGroup($age_group, self::EVENT_DATE));
+    }
+
+    /**
+     * @dataProvider gradeAgeGroupMustNotMatchProvider
+     */
+    public function test_non_grade_labels_are_not_grade_age_groups(string $age_group): void {
+        $this->assertFalse(ValidationHelper::isGradeAgeGroup($age_group));
+    }
+
+    public function test_non_grade_unparseable_stays_ineligible(): void {
         $player = new Player(['dob' => $this->dobForAgeAtEvent(9)]);
-        $this->assertFalse($player->isEligibleForAgeGroup($age_group, self::EVENT_DATE));
+        $this->assertFalse($player->isEligibleForAgeGroup('not-a-valid-age-group', self::EVENT_DATE));
+        $this->assertFalse($player->isEligibleForAgeGroup('G', self::EVENT_DATE));
+    }
+
+    public function test_numeric_range_still_follows_bounds_not_grade_skip(): void {
+        $young = new Player(['dob' => $this->dobForAgeAtEvent(4)]);
+        $in_range = new Player(['dob' => $this->dobForAgeAtEvent(9)]);
+        $this->assertFalse($young->isEligibleForAgeGroup('5-12', self::EVENT_DATE));
+        $this->assertTrue($in_range->isEligibleForAgeGroup('5-12', self::EVENT_DATE));
+    }
+
+    /**
+     * @dataProvider gradeAgeGroupMustMatchProvider
+     */
+    public function test_grade_skip_logs_once_per_term(string $age_group): void {
+        $this->resetGradeSkipLog();
+        $player = new Player(['dob' => $this->dobForAgeAtEvent(9)]);
+        $player->isEligibleForAgeGroup($age_group, self::EVENT_DATE);
+        $player->isEligibleForAgeGroup($age_group, self::EVENT_DATE);
+        $ref = new \ReflectionClass(ValidationHelper::class);
+        $prop = $ref->getProperty('logged_grade_age_check_skipped');
+        $prop->setAccessible(true);
+        $logged = $prop->getValue();
+        $this->assertArrayHasKey($age_group, $logged);
+        $this->assertCount(1, array_keys($logged));
     }
 
     /**

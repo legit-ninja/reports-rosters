@@ -122,16 +122,29 @@ if ($rows === null) {
 
 $by_age_group = [];
 $by_activity = [];
-$total = 0;
+$total_range_form = 0;
+
+$by_grade_age_group = [];
+$by_grade_activity = [];
+$total_grade = 0;
 
 foreach ($rows as $row) {
     $label = (string) ($row['age_group_label'] ?? '');
     if (!$fails_master_parser($label)) {
         continue;
     }
-    ++$total;
-    $by_age_group[$label] = ($by_age_group[$label] ?? 0) + 1;
     $activity = (string) ($row['activity_type'] ?? '(unknown)');
+    if (ValidationHelper::isGradeAgeGroup($label)) {
+        ++$total_grade;
+        $by_grade_age_group[$label] = ($by_grade_age_group[$label] ?? 0) + 1;
+        if (!isset($by_grade_activity[$activity])) {
+            $by_grade_activity[$activity] = [];
+        }
+        $by_grade_activity[$activity][$label] = ($by_grade_activity[$activity][$label] ?? 0) + 1;
+        continue;
+    }
+    ++$total_range_form;
+    $by_age_group[$label] = ($by_age_group[$label] ?? 0) + 1;
     if (!isset($by_activity[$activity])) {
         $by_activity[$activity] = [];
     }
@@ -140,9 +153,11 @@ foreach ($rows as $row) {
 
 ksort($by_age_group);
 ksort($by_activity);
+ksort($by_grade_age_group);
+ksort($by_grade_activity);
 
-echo "== Paid order items: age group fails master parser, no roster row ==\n";
-echo 'Total: ' . $total . "\n\n";
+echo "== Paid order items: age group fails master parser, no roster row (range / non-grade) ==\n";
+echo 'Total: ' . $total_range_form . "\n\n";
 
 echo "By age-group string:\n";
 if ($by_age_group === []) {
@@ -158,6 +173,31 @@ if ($by_activity === []) {
     echo "  (none)\n";
 } else {
     foreach ($by_activity as $activity => $groups) {
+        echo '  ' . $activity . ":\n";
+        ksort($groups);
+        foreach ($groups as $label => $count) {
+            echo '    ' . $count . ' × ' . $label . "\n";
+        }
+    }
+}
+
+echo "\n== grade terms (age check now skipped), no roster row ==\n";
+echo 'Total: ' . $total_grade . "\n\n";
+
+echo "By age-group string:\n";
+if ($by_grade_age_group === []) {
+    echo "  (none)\n";
+} else {
+    foreach ($by_grade_age_group as $label => $count) {
+        echo '  ' . $count . ' × ' . $label . "\n";
+    }
+}
+
+echo "\nBy activity type (then age group):\n";
+if ($by_grade_activity === []) {
+    echo "  (none)\n";
+} else {
+    foreach ($by_grade_activity as $activity => $groups) {
         echo '  ' . $activity . ":\n";
         ksort($groups);
         foreach ($groups as $label => $count) {

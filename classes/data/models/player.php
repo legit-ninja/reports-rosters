@@ -215,6 +215,11 @@ class Player extends AbstractModel {
         // Parse age group
         $age_range = $this->parseAgeGroup($age_group);
         if (!$age_range) {
+            $label = (string) $age_group;
+            if (ValidationHelper::isGradeAgeGroup($label)) {
+                ValidationHelper::logGradeAgeCheckSkippedOnce($label);
+                return true;
+            }
             return false;
         }
         
