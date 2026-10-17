@@ -5716,6 +5716,47 @@ if (!function_exists('intersoccer_roster_export_row_is_camp')) {
     }
 }
 
+if (!function_exists('intersoccer_product_girls_only_from_pa_attribute')) {
+    /**
+     * Resolve girls-only from WooCommerce pa_girls-only on a single product.
+     *
+     * @param object|null $product WC_Product or test stub.
+     * @return int|null 1=yes, 0=non-empty non-yes value, null=no girls-only attribute on product.
+     */
+    function intersoccer_product_girls_only_from_pa_attribute($product) {
+        if (!$product || !is_object($product)) {
+            return null;
+        }
+        $found_girls_attribute = false;
+        if (method_exists($product, 'get_attribute')) {
+            foreach (['pa_girls-only', 'girls-only'] as $attr_name) {
+                $attr_value = $product->get_attribute($attr_name);
+                if ($attr_value !== '') {
+                    return intersoccer_pa_girls_only_slug_is_yes($attr_value) ? 1 : 0;
+                }
+            }
+        }
+        if (method_exists($product, 'get_attributes')) {
+            $attributes = $product->get_attributes();
+            foreach ($attributes as $attr_name => $attribute) {
+                if (strpos((string) $attr_name, 'girls') === false) {
+                    continue;
+                }
+                $found_girls_attribute = true;
+                if (is_object($attribute) && method_exists($attribute, 'get_options')) {
+                    foreach ((array) $attribute->get_options() as $option) {
+                        if ($option === '' || $option === null) {
+                            continue;
+                        }
+                        return intersoccer_pa_girls_only_slug_is_yes($option) ? 1 : 0;
+                    }
+                }
+            }
+        }
+        return $found_girls_attribute ? 0 : null;
+    }
+}
+
 if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
     /**
      * Resolve the girls_only roster flag (0 or 1) from order-item / roster facets.
@@ -5804,26 +5845,42 @@ if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
         $product_id = (int) ($context['product_id'] ?? 0);
         $variation_id = (int) ($context['variation_id'] ?? 0);
         if (($variation_id > 0 || $product_id > 0) && function_exists('wc_get_product')) {
-            $check_id = $variation_id > 0 ? $variation_id : $product_id;
-            $product = wc_get_product($check_id);
-            if ($product) {
-                foreach (['pa_girls-only', 'girls-only'] as $attr_name) {
-                    $attr_value = $product->get_attribute($attr_name);
-                    if ($attr_value !== '' && intersoccer_pa_girls_only_slug_is_yes($attr_value)) {
+            if ($variation_id > 0) {
+                $variation = wc_get_product($variation_id);
+                $from_variation = $variation
+                    ? intersoccer_product_girls_only_from_pa_attribute($variation)
+                    : null;
+                if ($from_variation === 1) {
+                    return 1;
+                }
+                if ($from_variation === 0) {
+                    return 0;
+                }
+                $parent_id = $product_id > 0 ? $product_id : 0;
+                if ($parent_id <= 0 && $variation && method_exists($variation, 'get_parent_id')) {
+                    $parent_id = (int) $variation->get_parent_id();
+                }
+                if ($parent_id > 0) {
+                    $parent = wc_get_product($parent_id);
+                    $from_parent = $parent
+                        ? intersoccer_product_girls_only_from_pa_attribute($parent)
+                        : null;
+                    if ($from_parent === 1) {
                         return 1;
                     }
-                }
-                $attributes = $product->get_attributes();
-                foreach ($attributes as $attr_name => $attribute) {
-                    if (strpos((string) $attr_name, 'girls') === false) {
-                        continue;
+                    if ($from_parent === 0) {
+                        return 0;
                     }
-                    if (is_object($attribute) && method_exists($attribute, 'get_options')) {
-                        foreach ((array) $attribute->get_options() as $option) {
-                            if (intersoccer_pa_girls_only_slug_is_yes($option)) {
-                                return 1;
-                            }
-                        }
+                }
+            } else {
+                $product = wc_get_product($product_id);
+                if ($product) {
+                    $from_product = intersoccer_product_girls_only_from_pa_attribute($product);
+                    if ($from_product === 1) {
+                        return 1;
+                    }
+                    if ($from_product === 0) {
+                        return 0;
                     }
                 }
             }
