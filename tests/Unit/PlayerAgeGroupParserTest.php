@@ -26,6 +26,10 @@ class PlayerAgeGroupParserTest extends TestCase {
             'de jahre' => ['5-12 Jahre', 5, 12],
             'en dash' => ['5–12', 5, 12],
             'extra whitespace' => ['5 - 12', 5, 12],
+            'de jahre qualifier' => ['5-13 Jahre (ganztägig)', 5, 13],
+            'de jahre half-day qualifier' => ['3-5 Jahre (halbtags)', 3, 5],
+            'slug fr suffix' => ['5-12-fr', 5, 12],
+            'slug y full-day' => ['5-13y-full-day', 5, 13],
         ];
     }
 
@@ -138,6 +142,9 @@ class PlayerAgeGroupParserTest extends TestCase {
             'GR2-5' => ['GR2-5'],
             'Grade 3' => ['Grade 3'],
             'K-G2' => ['K-G2'],
+            'hyphen pre-k-to-g5' => ['pre-k-to-g5'],
+            'hyphen pre-k-g2' => ['pre-k-g2'],
+            'hyphen k-to-g3' => ['k-to-g3'],
         ];
     }
 
@@ -197,6 +204,10 @@ class PlayerAgeGroupParserTest extends TestCase {
      */
     public function test_non_grade_labels_are_not_grade_age_groups(string $age_group): void {
         $this->assertFalse(ValidationHelper::isGradeAgeGroup($age_group));
+    }
+
+    public function test_slug_suffix_range_is_not_grade_age_group(): void {
+        $this->assertFalse(ValidationHelper::isGradeAgeGroup('5-12-fr'));
     }
 
     public function test_non_grade_unparseable_stays_ineligible(): void {
