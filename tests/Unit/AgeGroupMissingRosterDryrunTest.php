@@ -65,6 +65,53 @@ class AgeGroupMissingRosterDryrunTest extends TestCase {
         $this->assertFalse(intersoccer_agegroup_dryrun_sql_is_read_only('INSERT INTO wp_options VALUES (1,2)'));
     }
 
+    public function test_main_query_sql_scopes_age_term_to_pa_age_group_taxonomy(): void {
+        $sql = intersoccer_agegroup_dryrun_build_main_query_sql(
+            "INNER JOIN wp_posts o ON o.ID = oi.order_id",
+            'wp_woocommerce_order_items',
+            'wp_woocommerce_order_itemmeta',
+            'wp_postmeta',
+            'wp_terms',
+            'wp_term_taxonomy',
+            'wp_intersoccer_rosters'
+        );
+
+        $this->assertStringContainsString('COALESCE(age_term.name, attr.meta_value)', $sql);
+        $this->assertMatchesRegularExpression(
+            '/FROM\s+wp_terms\s+t\s+INNER JOIN\s+wp_term_taxonomy\s+tt\s+ON\s+tt\.term_id\s*=\s*t\.term_id\s+AND\s+tt\.taxonomy\s*=\s*\'pa_age-group\'/i',
+            $sql
+        );
+        $this->assertStringContainsString(') age_term ON age_term.slug = attr.meta_value', $sql);
+        $this->assertStringNotContainsString('LEFT JOIN wp_terms t', $sql);
+    }
+
+    public function test_dedupe_line_items_keeps_first_row_per_order_item_id(): void {
+        $rows = [
+            [
+                'order_item_id' => 900001,
+                'age_group_label' => '3-12 Jahre',
+                'activity_type' => 'Camp',
+            ],
+            [
+                'order_item_id' => 900001,
+                'age_group_label' => 'duplicate-inflated-label',
+                'activity_type' => 'Camp',
+            ],
+            [
+                'order_item_id' => 900002,
+                'age_group_label' => '5-12 Jahre',
+                'activity_type' => 'Course',
+            ],
+        ];
+
+        $deduped = intersoccer_agegroup_dryrun_dedupe_line_items_first_wins($rows);
+        $this->assertCount(2, $deduped);
+        $this->assertSame(900001, (int) $deduped[0]['order_item_id']);
+        $this->assertSame('3-12 Jahre', $deduped[0]['age_group_label']);
+
+        $this->assertNotContains('duplicate-inflated-label', array_column($deduped, 'age_group_label'));
+    }
+
     private function resetValidationLogs(): void {
         foreach (['logged_unparseable_age_groups', 'logged_grade_age_check_skipped'] as $prop_name) {
             $ref = new \ReflectionClass(ValidationHelper::class);

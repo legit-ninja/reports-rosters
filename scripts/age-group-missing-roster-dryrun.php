@@ -117,6 +117,82 @@ if (!function_exists('intersoccer_agegroup_dryrun_disable_cron_for_request')) {
     }
 }
 
+if (!function_exists('intersoccer_agegroup_dryrun_build_main_query_sql')) {
+    /**
+     * @return string
+     */
+    function intersoccer_agegroup_dryrun_build_main_query_sql(
+        string $order_join,
+        string $order_items,
+        string $itemmeta,
+        string $postmeta,
+        string $terms,
+        string $term_taxonomy,
+        string $roster_table
+    ) {
+        return "
+            SELECT
+                oi.order_item_id,
+                CAST(variation.meta_value AS UNSIGNED) AS variation_id,
+                attr.meta_value AS age_slug,
+                COALESCE(age_term.name, attr.meta_value) AS age_group_label,
+                COALESCE(
+                    NULLIF(activity.meta_value, ''),
+                    NULLIF(product_activity.meta_value, '')
+                ) AS activity_type
+            FROM {$order_items} oi
+            {$order_join}
+            INNER JOIN {$itemmeta} variation
+                ON variation.order_item_id = oi.order_item_id
+                AND variation.meta_key = '_variation_id'
+                AND variation.meta_value > 0
+            INNER JOIN {$postmeta} attr
+                ON attr.post_id = variation.meta_value
+                AND attr.meta_key = 'attribute_pa_age-group'
+                AND attr.meta_value <> ''
+            LEFT JOIN (
+                SELECT t.term_id, t.name, t.slug
+                FROM {$terms} t
+                INNER JOIN {$term_taxonomy} tt
+                    ON tt.term_id = t.term_id
+                    AND tt.taxonomy = 'pa_age-group'
+            ) age_term ON age_term.slug = attr.meta_value
+            LEFT JOIN {$itemmeta} activity
+                ON activity.order_item_id = oi.order_item_id
+                AND activity.meta_key = 'Activity Type'
+            LEFT JOIN {$itemmeta} product_ref
+                ON product_ref.order_item_id = oi.order_item_id
+                AND product_ref.meta_key = '_product_id'
+            LEFT JOIN {$postmeta} product_activity
+                ON product_activity.post_id = product_ref.meta_value
+                AND product_activity.meta_key = '_intersoccer_activity_type'
+            LEFT JOIN {$roster_table} r ON r.order_item_id = oi.order_item_id
+            WHERE oi.order_item_type = 'line_item'
+              AND r.id IS NULL
+        ";
+    }
+}
+
+if (!function_exists('intersoccer_agegroup_dryrun_dedupe_line_items_first_wins')) {
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    function intersoccer_agegroup_dryrun_dedupe_line_items_first_wins(array $rows): array {
+        $seen = [];
+        $deduped = [];
+        foreach ($rows as $row) {
+            $order_item_id = (int) ($row['order_item_id'] ?? 0);
+            if ($order_item_id <= 0 || isset($seen[$order_item_id])) {
+                continue;
+            }
+            $seen[$order_item_id] = true;
+            $deduped[] = $row;
+        }
+        return $deduped;
+    }
+}
+
 if (!function_exists('intersoccer_agegroup_dryrun_evaluate_result')) {
     /**
      * @param array{sql_error: string, blocked: array} $state
@@ -236,44 +312,15 @@ if (!function_exists('intersoccer_agegroup_dryrun_run')) {
 
         echo 'Order storage: ' . $order_storage . "\n";
 
-        $sql = "
-            SELECT
-                oi.order_item_id,
-                CAST(variation.meta_value AS UNSIGNED) AS variation_id,
-                attr.meta_value AS age_slug,
-                COALESCE(t.name, attr.meta_value) AS age_group_label,
-                COALESCE(
-                    NULLIF(activity.meta_value, ''),
-                    NULLIF(product_activity.meta_value, '')
-                ) AS activity_type
-            FROM {$order_items} oi
-            {$order_join}
-            INNER JOIN {$itemmeta} variation
-                ON variation.order_item_id = oi.order_item_id
-                AND variation.meta_key = '_variation_id'
-                AND variation.meta_value > 0
-            INNER JOIN {$postmeta} attr
-                ON attr.post_id = variation.meta_value
-                AND attr.meta_key = 'attribute_pa_age-group'
-                AND attr.meta_value <> ''
-            LEFT JOIN {$terms} t
-                ON t.slug = attr.meta_value
-            LEFT JOIN {$term_taxonomy} tt
-                ON tt.term_id = t.term_id
-                AND tt.taxonomy = 'pa_age-group'
-            LEFT JOIN {$itemmeta} activity
-                ON activity.order_item_id = oi.order_item_id
-                AND activity.meta_key = 'Activity Type'
-            LEFT JOIN {$itemmeta} product_ref
-                ON product_ref.order_item_id = oi.order_item_id
-                AND product_ref.meta_key = '_product_id'
-            LEFT JOIN {$postmeta} product_activity
-                ON product_activity.post_id = product_ref.meta_value
-                AND product_activity.meta_key = '_intersoccer_activity_type'
-            LEFT JOIN {$roster_table} r ON r.order_item_id = oi.order_item_id
-            WHERE oi.order_item_type = 'line_item'
-              AND r.id IS NULL
-        ";
+        $sql = intersoccer_agegroup_dryrun_build_main_query_sql(
+            $order_join,
+            $order_items,
+            $itemmeta,
+            $postmeta,
+            $terms,
+            $term_taxonomy,
+            $roster_table
+        );
 
         $rows = $wpdb->get_results($sql, ARRAY_A);
         intersoccer_agegroup_dryrun_record_sql_error($wpdb);
@@ -284,6 +331,9 @@ if (!function_exists('intersoccer_agegroup_dryrun_run')) {
         }
 
         if (intersoccer_agegroup_dryrun_gate_state()['sql_error'] === '' && is_array($rows)) {
+            $rows = intersoccer_agegroup_dryrun_dedupe_line_items_first_wins($rows);
+            echo 'Distinct line items scanned: ' . count($rows) . "\n\n";
+
             $by_age_group = [];
             $by_activity = [];
             $total_range_form = 0;
