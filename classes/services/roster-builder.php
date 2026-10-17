@@ -708,7 +708,8 @@ class RosterBuilder {
      * True only when the roster row's stored order is gone or confirmed ineligible for rebuild.
      *
      * Uses the row's denormalized order_id (never wc_get_order_id_by_order_item_id). On any
-     * uncertainty (missing helper, invalid stored id, lookup failure), returns false (keep).
+     * uncertainty (missing helper, invalid stored id, lookup failure, unreadable line items),
+     * returns false (keep).
      */
     private function shouldDeleteObsoleteReconcileRow(int $order_item_id, int $stored_order_id): bool {
         try {
@@ -748,7 +749,12 @@ class RosterBuilder {
             }
 
             $items = $order->get_items();
-            $line_still_on_order = is_array($items) && array_key_exists($order_item_id, $items);
+            if (!is_array($items)) {
+                unset($order);
+                return false;
+            }
+
+            $line_still_on_order = array_key_exists($order_item_id, $items);
             unset($order);
 
             return !$line_still_on_order;

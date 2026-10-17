@@ -216,6 +216,33 @@ class RosterReconcileDeleteRulesTest extends TestCase {
         $this->assertNotContains($itemId, $this->deletedItemIds);
     }
 
+    public function test_unreadable_order_items_keeps_row(): void {
+        $orderId = 5007;
+        $itemId = 8007;
+        $this->runReconcile(
+            [['order_item_id' => (string) $itemId, 'order_id' => (string) $orderId]],
+            static function (array $args): array {
+                return [];
+            },
+            static function ($order_id) use ($orderId, $itemId) {
+                if ((int) $order_id !== $orderId) {
+                    return false;
+                }
+                return new class($orderId) {
+                    private $id;
+                    public function __construct($id) { $this->id = $id; }
+                    public function get_id() { return $this->id; }
+                    public function get_type() { return 'shop_order'; }
+                    public function get_status() { return 'processing'; }
+                    public function get_customer_id() { return 0; }
+                    public function get_items() { return null; }
+                };
+            }
+        );
+
+        $this->assertNotContains($itemId, $this->deletedItemIds);
+    }
+
     public function test_lookup_exception_keeps_row(): void {
         $itemId = 8006;
         $this->runReconcile(
