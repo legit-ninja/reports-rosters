@@ -2297,12 +2297,14 @@ function intersoccer_render_courses_page() {
                                                 <div class="detail-row">
                                                     <span class="detail-label">📅 Duration</span>
                                                     <span class="detail-value">
-                                                        <?php 
-                                                        if ($course['corrected_start_date'] !== '1970-01-01' && $course['corrected_end_date'] !== '1970-01-01') {
-                                                            echo esc_html(date_i18n('M j', strtotime($course['corrected_start_date'])) . ' - ' . date_i18n('M j, Y', strtotime($course['corrected_end_date'])));
-                                                        } else {
-                                                            echo 'TBD';
-                                                        }
+                                                        <?php
+                                                        $duration_label = function_exists('intersoccer_roster_format_date_range_or_tbd')
+                                                            ? intersoccer_roster_format_date_range_or_tbd(
+                                                                $course['corrected_start_date'] ?? null,
+                                                                $course['corrected_end_date'] ?? null
+                                                            )
+                                                            : 'TBD';
+                                                        echo esc_html($duration_label);
                                                         ?>
                                                     </span>
                                                 </div>
@@ -3162,15 +3164,17 @@ function intersoccer_render_tournaments_page() {
                                             <span class="detail-label">📅 <?php _e('Date', 'intersoccer-reports-rosters'); ?></span>
                                             <span class="detail-value">
                                                 <?php
-                                                if ($tournament['corrected_start_date'] !== '1970-01-01' && $tournament['corrected_end_date'] !== '1970-01-01') {
-                                                    // Tournaments typically last one day, so show single date if start and end are the same
-                                                    if ($tournament['corrected_start_date'] === $tournament['corrected_end_date']) {
-                                                        echo esc_html(date_i18n('M j, Y', strtotime($tournament['corrected_start_date'])));
-                                                    } else {
-                                                        echo esc_html(date_i18n('M j', strtotime($tournament['corrected_start_date'])) . ' - ' . date_i18n('M j, Y', strtotime($tournament['corrected_end_date'])));
-                                                    }
-                                                } else {
+                                                $tournament_date_label = function_exists('intersoccer_roster_format_date_range_or_tbd')
+                                                    ? intersoccer_roster_format_date_range_or_tbd(
+                                                        $tournament['corrected_start_date'] ?? null,
+                                                        $tournament['corrected_end_date'] ?? null,
+                                                        true
+                                                    )
+                                                    : 'TBD';
+                                                if ($tournament_date_label === 'TBD') {
                                                     echo esc_html__('TBD', 'intersoccer-reports-rosters');
+                                                } else {
+                                                    echo esc_html($tournament_date_label);
                                                 }
                                                 ?>
                                             </span>
@@ -3303,7 +3307,7 @@ function intersoccer_render_other_events_page() {
                FROM $rosters_table
                WHERE activity_type NOT IN ('Camp', 'Course')
                AND activity_type NOT LIKE '%Girls%'
-               AND girls_only = 0";  // EXCLUDE Girls Only events (double check)
+               AND girls_only = 0";  // EXCLUDE Girls Only events (flag + legacy composite text)
 
     // Add coach venue filtering if user is a coach
     if ($is_coach && !empty($coach_accessible_venues)) {
@@ -3547,7 +3551,9 @@ function intersoccer_render_other_events_page() {
                                             <div class="detail-row">
                                                 <span class="detail-label">📅 Duration</span>
                                                 <span class="detail-value"><?php 
-                                                if ($event['start_date'] !== '1970-01-01' && $event['end_date'] !== '1970-01-01') {
+                                                if (function_exists('intersoccer_roster_has_real_date')
+                                                    && intersoccer_roster_has_real_date($event['start_date'] ?? null)
+                                                    && intersoccer_roster_has_real_date($event['end_date'] ?? null)) {
                                                     echo esc_html(date_i18n('M j', strtotime($event['start_date'])) . ' - ' . date_i18n('M j, Y', strtotime($event['end_date'])));
                                                 } else {
                                                     echo 'TBD';

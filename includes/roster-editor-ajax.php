@@ -75,7 +75,10 @@ function intersoccer_ajax_load_roster_entries() {
     }
 
     if (!empty($end_date)) {
-        $where_conditions[] = "start_date <= %s";
+        $start_lte = function_exists('intersoccer_roster_sql_treat_null_date_as_epoch')
+            ? intersoccer_roster_sql_treat_null_date_as_epoch('start_date')
+            : "COALESCE(NULLIF(NULLIF(start_date, ''), '1970-01-01'), '1970-01-01')";
+        $where_conditions[] = "{$start_lte} <= %s";
         $where_values[] = $end_date;
     }
 
@@ -402,7 +405,10 @@ function intersoccer_sanitize_roster_field($field_name, $value) {
     if ($value === '' || $value === null) {
         // Return appropriate default based on field type
         if (strpos($field_name, 'date') !== false) {
-            return '1970-01-01'; // Default date
+            if (in_array($field_name, ['start_date', 'end_date'], true)) {
+                return null;
+            }
+            return '1970-01-01';
         }
         if (strpos($field_name, 'price') !== false || strpos($field_name, 'amount') !== false) {
             return '0.00';
@@ -417,14 +423,27 @@ function intersoccer_sanitize_roster_field($field_name, $value) {
     if (strpos($field_name, 'date') !== false || strpos($field_name, 'dob') !== false) {
         // Validate date format (YYYY-MM-DD)
         if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
-            return sanitize_text_field($value);
+            $iso = sanitize_text_field($value);
+            if (in_array($field_name, ['start_date', 'end_date'], true)
+                && function_exists('intersoccer_roster_nullable_storage_date')) {
+                return intersoccer_roster_nullable_storage_date($iso);
+            }
+            return $iso;
         }
         // Try to parse other date formats
         $timestamp = strtotime($value);
         if ($timestamp !== false) {
-            return date('Y-m-d', $timestamp);
+            $parsed = date('Y-m-d', $timestamp);
+            if (in_array($field_name, ['start_date', 'end_date'], true)
+                && function_exists('intersoccer_roster_nullable_storage_date')) {
+                return intersoccer_roster_nullable_storage_date($parsed);
+            }
+            return $parsed;
         }
-        return '1970-01-01'; // Default invalid date
+        if (in_array($field_name, ['start_date', 'end_date'], true)) {
+            return null;
+        }
+        return '1970-01-01';
     }
 
     // Datetime fields

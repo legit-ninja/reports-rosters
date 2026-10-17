@@ -366,7 +366,11 @@ class RostersCollection extends AbstractCollection {
      * @return array Array of collections keyed by month name
      */
     public function groupByMonth() {
-        return $this->groupBy(function(Roster $roster) {
+        return $this->groupBy(function (Roster $roster) {
+            if (!function_exists('intersoccer_roster_has_real_date')
+                || !intersoccer_roster_has_real_date($roster->start_date)) {
+                return 'Unknown';
+            }
             return date('F Y', strtotime($roster->start_date));
         });
     }
@@ -818,6 +822,10 @@ class RostersCollection extends AbstractCollection {
         
         // Group rosters by day of week
         foreach ($week_rosters as $roster) {
+            if (!function_exists('intersoccer_roster_has_real_date')
+                || !intersoccer_roster_has_real_date($roster->start_date)) {
+                continue;
+            }
             $day_of_week = date('l', strtotime($roster->start_date));
             if (isset($schedule[$day_of_week])) {
                 $schedule[$day_of_week]->add($roster);

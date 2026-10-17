@@ -640,7 +640,9 @@ function intersoccer_export_roster() {
     $base_headers = intersoccer_rr_roster_export_personal_headers();
     
     // Add camp-specific headers for camps only
-    if ($base_roster['activity_type'] === 'Camp' || $base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
+    if (function_exists('intersoccer_roster_export_row_is_camp')
+        ? intersoccer_roster_export_row_is_camp($base_roster)
+        : in_array($base_roster['activity_type'] ?? '', ['Camp', 'Girls Only', 'Camp, Girls Only', "Camp, Girls' only"], true)) {
         $base_headers = array_merge($base_headers, ['Late Pickup', 'Booking Type']);
     }
     
@@ -653,7 +655,9 @@ function intersoccer_export_roster() {
     
     $headers = $base_headers;
     
-    if ($base_roster['activity_type'] === 'Camp' || $base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
+    if (function_exists('intersoccer_roster_export_row_is_camp')
+        ? intersoccer_roster_export_row_is_camp($base_roster)
+        : in_array($base_roster['activity_type'] ?? '', ['Camp', 'Girls Only', 'Camp, Girls Only', "Camp, Girls' only"], true)) {
         // Add camp-specific headers
         $camp_headers = [
             'Late Pickup Days',
@@ -677,7 +681,9 @@ function intersoccer_export_roster() {
     }
     
     // Add girls-specific headers if applicable
-    if ($base_roster['activity_type'] === 'Girls Only' || $base_roster['activity_type'] === 'Camp, Girls Only' || $base_roster['activity_type'] === 'Camp, Girls\' only') {
+    if (function_exists('intersoccer_roster_is_girls_only')
+        ? intersoccer_roster_is_girls_only($base_roster)
+        : in_array($base_roster['activity_type'] ?? '', ['Girls Only', 'Camp, Girls Only', "Camp, Girls' only"], true)) {
         $headers[] = __('Shirt Size', 'intersoccer-reports-rosters');
         $headers[] = __('Shorts Size', 'intersoccer-reports-rosters');
     }
@@ -711,7 +717,9 @@ function intersoccer_export_roster() {
 
         $row = 2;
         foreach ($rosters as $player) {
-            $is_camp_row = in_array($player['activity_type'] ?? '', ['Camp', 'Girls Only', 'Camp, Girls Only', "Camp, Girls' only"], true);
+            $is_camp_row = function_exists('intersoccer_roster_export_row_is_camp')
+                ? intersoccer_roster_export_row_is_camp($player)
+                : in_array($player['activity_type'] ?? '', ['Camp', 'Girls Only', 'Camp, Girls Only', "Camp, Girls' only"], true);
             if ($is_camp_row) {
                 if (function_exists('intersoccer_roster_field_selected_days')) {
                     $sd = intersoccer_roster_field_selected_days($player);

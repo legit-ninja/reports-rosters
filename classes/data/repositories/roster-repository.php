@@ -18,6 +18,7 @@ use InterSoccer\ReportsRosters\Data\Collections\RostersCollection;
 use InterSoccer\ReportsRosters\Core\Logger;
 use InterSoccer\ReportsRosters\Core\Database;
 use InterSoccer\ReportsRosters\Services\CacheManager;
+use InterSoccer\ReportsRosters\Services\RosterRefundService;
 use InterSoccer\ReportsRosters\Exceptions\ValidationException;
 use InterSoccer\ReportsRosters\Exceptions\DatabaseException;
 
@@ -796,8 +797,82 @@ class RosterRepository implements RepositoryInterface {
     }
     
     /**
+     * Sync non-flagged roster rows for a refunded/cancelled order kept during reconcile.
+     *
+     * @param int    $order_id
+     * @param string $status
+     * @return int Rows updated (0 if none or on failure).
+     */
+    public function syncOrderStatusForKeptRows(int $order_id, string $status): int {
+        if ($order_id <= 0) {
+            return 0;
+        }
+        if (!in_array($status, [Roster::STATUS_REFUNDED, Roster::STATUS_CANCELLED], true)) {
+            return 0;
+        }
+
+        $wpdb = $this->database->get_wpdb();
+        if (!isset($wpdb) || !is_object($wpdb)) {
+            return 0;
+        }
+
+        $table = $wpdb->prefix . $this->table;
+        $fragment = RosterRefundService::getSqlExcludeFlaggedRowStatuses('order_status');
+        $sql = "UPDATE {$table} SET order_status = %s WHERE order_id = %d AND {$fragment['clause']}";
+        $params = array_merge([$status, $order_id], $fragment['params']);
+        $prepared = $wpdb->prepare($sql, ...$params);
+        $updated = $wpdb->query($prepared);
+
+        if ($updated === false) {
+            $this->logger->warning('Failed to sync order_status for kept reconcile rows', [
+                'order_id' => $order_id,
+            ]);
+            return 0;
+        }
+
+        $updated = (int) $updated;
+        if ($updated > 0) {
+            $this->clearRelatedCaches();
+        }
+
+        return $updated;
+    }
+
+    /**
+     * Delete roster rows for a Woo line item without loading full models (reconcile hot path).
+     *
+     * @param int $order_item_id
+     * @return int Number of deleted rows
+     */
+    public function deleteByOrderItemId(int $order_item_id): int {
+        if ($order_item_id <= 0) {
+            return 0;
+        }
+
+        try {
+            $this->logger->debug('Deleting roster entries by order_item_id', ['order_item_id' => $order_item_id]);
+
+            $deleted_count = $this->database->transaction(function () use ($order_item_id) {
+                return (int) $this->database->delete_roster_entries(['order_item_id' => $order_item_id]);
+            });
+
+            if ($deleted_count > 0) {
+                $this->clearRelatedCaches();
+            }
+
+            return $deleted_count;
+        } catch (\Exception $e) {
+            $this->logger->error('Failed to delete roster entries by order_item_id', [
+                'order_item_id' => $order_item_id,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
      * Delete roster entries matching criteria
-     * 
+     *
      * @param array $criteria Search criteria
      * @return int Number of deleted roster entries
      */
@@ -875,6 +950,65 @@ class RosterRepository implements RepositoryInterface {
         $this->clearRelatedCaches();
     }
     
+    /**
+     * Girls-only roster rows (admin Girls Only page and legacy listings).
+     *
+     * Includes rows with girls_only = 1 and legacy rows whose activity_type still carries
+     * a girls-only label (EN/FR/DE), matching intersoccer_roster_is_girls_only() semantics.
+     *
+     * @param array<string,mixed> $filters Optional season, venue, activity_type, limit, offset.
+     * @return RostersCollection
+     */
+    public function find_girls_only(array $filters = []) {
+        global $wpdb;
+
+        $table_name = $wpdb->prefix . $this->table;
+        $where = [
+            'is_placeholder = 0',
+            "(girls_only = 1 OR activity_type = 'Girls Only' OR activity_type LIKE '%Girls Only%'
+                OR activity_type LIKE '%girls only%' OR activity_type LIKE '%filles seulement%'
+                OR activity_type LIKE '%filles uniquement%' OR activity_type LIKE '%nur mädchen%'
+                OR activity_type LIKE '%nur madchen%' OR activity_type LIKE '%Nur Mädchen%'
+                OR activity_type LIKE '%Mädchen%')",
+        ];
+        $params = [];
+
+        $allowed_filters = ['season', 'venue', 'activity_type', 'age_group', 'city', 'canton_region'];
+        foreach ($allowed_filters as $field) {
+            if (!isset($filters[$field]) || $filters[$field] === '' || $filters[$field] === null) {
+                continue;
+            }
+            $where[] = "{$field} = %s";
+            $params[] = $filters[$field];
+        }
+
+        $sql = 'SELECT * FROM ' . $table_name . ' WHERE ' . implode(' AND ', $where) . ' ORDER BY start_date DESC, id DESC';
+        if ($params !== []) {
+            $sql = $wpdb->prepare($sql, $params);
+        }
+
+        $limit = isset($filters['limit']) ? max(0, (int) $filters['limit']) : 0;
+        $offset = isset($filters['offset']) ? max(0, (int) $filters['offset']) : 0;
+        if ($limit > 0) {
+            $sql .= $wpdb->prepare(' LIMIT %d OFFSET %d', $limit, $offset);
+        }
+
+        $results = $wpdb->get_results($sql, ARRAY_A);
+
+        $rosters = new RostersCollection();
+        foreach ($results as $data) {
+            if (function_exists('intersoccer_roster_is_girls_only')
+                && !intersoccer_roster_is_girls_only($data)) {
+                continue;
+            }
+            $roster = new Roster($data);
+            $roster->setExists(true);
+            $rosters->add($roster);
+        }
+
+        return $rosters;
+    }
+
     /**
      * Get roster entries by activity type
      * 
@@ -994,9 +1128,15 @@ class RosterRepository implements RepositoryInterface {
         global $wpdb;
         $table_name = $wpdb->prefix . $this->table;
         
-        $sql = "SELECT * FROM {$table_name} 
-                WHERE start_date <= %s 
-                AND (end_date >= %s OR end_date IS NULL)
+        $start_lte = function_exists('intersoccer_roster_sql_treat_null_date_as_epoch')
+            ? intersoccer_roster_sql_treat_null_date_as_epoch('start_date')
+            : "COALESCE(NULLIF(NULLIF(start_date, ''), '1970-01-01'), '1970-01-01')";
+        $end_epoch = function_exists('intersoccer_roster_sql_treat_null_date_as_epoch')
+            ? intersoccer_roster_sql_treat_null_date_as_epoch('end_date')
+            : "COALESCE(NULLIF(NULLIF(end_date, ''), '1970-01-01'), '1970-01-01')";
+        $sql = "SELECT * FROM {$table_name}
+                WHERE {$start_lte} <= %s
+                AND ({$end_epoch} >= %s OR end_date IS NULL)
                 AND order_status = 'completed'
                 ORDER BY start_date ASC";
         
