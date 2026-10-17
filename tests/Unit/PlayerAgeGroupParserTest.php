@@ -7,6 +7,7 @@ namespace InterSoccer\ReportsRosters\Tests\Unit;
 
 use InterSoccer\ReportsRosters\Data\Models\Player;
 use InterSoccer\ReportsRosters\Tests\TestCase;
+use InterSoccer\ReportsRosters\Utils\ValidationHelper;
 
 class PlayerAgeGroupParserTest extends TestCase {
 
@@ -147,5 +148,92 @@ class PlayerAgeGroupParserTest extends TestCase {
         $this->assertNull($this->parseAgeGroup($age_group));
         $player = new Player(['dob' => $this->dobForAgeAtEvent(9)]);
         $this->assertFalse($player->isEligibleForAgeGroup($age_group, self::EVENT_DATE));
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: int, 2: int}>
+     */
+    public function masterSubstringYLabelProvider(): array {
+        return [
+            'prefix Ages' => ['Ages 5-12y', 5, 12],
+            'suffix Full Day' => ['5-12y Full Day', 5, 12],
+            'suffix Half Day' => ['5-12y - Half Day', 5, 12],
+        ];
+    }
+
+    /**
+     * @dataProvider masterSubstringYLabelProvider
+     */
+    public function test_master_unanchored_y_labels_still_parse(string $age_group, int $min, int $max): void {
+        $this->assertSame(['min' => $min, 'max' => $max], $this->parseAgeGroup($age_group));
+    }
+
+    public function test_parse_age_group_min_max_loads_via_committed_autoloader(): void {
+        require dirname(__DIR__, 2) . '/vendor/autoload.php';
+        $this->assertTrue(method_exists(ValidationHelper::class, 'parseAgeGroupMinMax'));
+        $this->assertSame(
+            ['min' => 5, 'max' => 12],
+            ValidationHelper::parseAgeGroupMinMax('5-12', [])
+        );
+    }
+
+    public function test_predefined_age_group_catalog_matches_master_parser(): void {
+        $catalog = ValidationHelper::flattenPredefinedAgeGroupCatalog(Player::AGE_GROUPS);
+        foreach ($catalog as $label => $expected) {
+            $this->assertSame(
+                $expected,
+                ValidationHelper::parseAgeGroupMinMaxAsOnRelease21015($label, $catalog),
+                "master parser for predefined label {$label}"
+            );
+            $this->assertSame(
+                $expected,
+                $this->parseAgeGroup($label),
+                "current parser for predefined label {$label}"
+            );
+        }
+    }
+
+    public function test_new_parser_is_superset_of_master_for_varied_strings(): void {
+        $catalog = ValidationHelper::flattenPredefinedAgeGroupCatalog(Player::AGE_GROUPS);
+        $samples = [
+            '5-12',
+            '5-12y',
+            '5 - 12',
+            '5-12 ans',
+            '5-12 Jahre',
+            '5–12',
+            'Ages 5-12y',
+            '5-12y Full Day',
+            '5-12y - Half Day',
+            '5-13y (Full Day)',
+            '3-5y (Half-Day)',
+            'U14',
+            'Under 14',
+            '13+',
+            'not-a-valid-age-group',
+            'G1-G5',
+            'Pre-K to G5',
+            'GR2-5',
+            '9-11y',
+            'course label 7-9y extra',
+            'bogus 3-4y text',
+            '3-5y',
+            '8-12y',
+            '5-13y',
+            '4-5y',
+        ];
+        foreach (array_keys($catalog) as $label) {
+            $samples[] = $label;
+        }
+        $samples = array_values(array_unique($samples));
+        $this->assertGreaterThanOrEqual(20, count($samples));
+
+        foreach ($samples as $label) {
+            $master = ValidationHelper::parseAgeGroupMinMaxAsOnRelease21015($label, $catalog);
+            $current = ValidationHelper::parseAgeGroupMinMax($label, $catalog);
+            if ($master !== null) {
+                $this->assertSame($master, $current, "superset check failed for label: {$label}");
+            }
+        }
     }
 }

@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
 }
 
 use InterSoccer\ReportsRosters\Data\Models\Player;
-use InterSoccer\ReportsRosters\Utils\AgeGroupHelper;
+use InterSoccer\ReportsRosters\Utils\ValidationHelper;
 
 global $wpdb;
 
@@ -41,18 +41,40 @@ if ((string) $ro_after !== '1') {
 if (function_exists('intersoccer_reports_set_readonly_mode')) {
     intersoccer_reports_set_readonly_mode(true);
 }
+if (function_exists('intersoccer_reports_register_readonly_write_guards')) {
+    intersoccer_reports_register_readonly_write_guards();
+}
 
-$predefined = AgeGroupHelper::flattenPredefinedCatalog(Player::AGE_GROUPS);
+$predefined = ValidationHelper::flattenPredefinedAgeGroupCatalog(Player::AGE_GROUPS);
 
 $fails_master_parser = static function (string $label) use ($predefined): bool {
     $label = trim($label);
     if ($label === '') {
         return false;
     }
-    return AgeGroupHelper::parseMinMaxAsOnRelease21015($label, $predefined) === null;
+    return ValidationHelper::parseAgeGroupMinMaxAsOnRelease21015($label, $predefined) === null;
 };
 
 $paid_statuses = "'wc-completed','wc-processing','wc-on-hold'";
+
+$wc_orders_table = $wpdb->prefix . 'wc_orders';
+$orders_table_exists = (bool) $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wc_orders_table));
+$hpos_enabled = $orders_table_exists
+    && get_option('woocommerce_custom_orders_table_enabled') === 'yes';
+
+if ($hpos_enabled) {
+    $order_storage = 'hpos';
+    $order_join = "INNER JOIN {$wc_orders_table} o ON o.id = oi.order_id
+        AND o.type = 'shop_order'
+        AND o.status IN ({$paid_statuses})";
+} else {
+    $order_storage = 'posts';
+    $order_join = "INNER JOIN {$posts} o ON o.ID = oi.order_id
+        AND o.post_type = 'shop_order'
+        AND o.post_status IN ({$paid_statuses})";
+}
+
+echo 'Order storage: ' . $order_storage . "\n";
 
 $sql = "
     SELECT
@@ -65,9 +87,7 @@ $sql = "
             NULLIF(product_activity.meta_value, '')
         ) AS activity_type
     FROM {$order_items} oi
-    INNER JOIN {$posts} o ON o.ID = oi.order_id
-        AND o.post_type = 'shop_order'
-        AND o.post_status IN ({$paid_statuses})
+    {$order_join}
     INNER JOIN {$itemmeta} variation
         ON variation.order_item_id = oi.order_item_id
         AND variation.meta_key = '_variation_id'
@@ -147,3 +167,27 @@ if ($by_activity === []) {
 }
 
 echo "\n(read-only session; no roster rows created)\n";
+
+if (function_exists('intersoccer_reports_note_readonly_db_error_if_any')) {
+    intersoccer_reports_note_readonly_db_error_if_any();
+}
+
+$readonly_write_attempts = function_exists('intersoccer_reports_get_readonly_write_attempts')
+    ? intersoccer_reports_get_readonly_write_attempts()
+    : 0;
+
+echo "\n== dry-run result summary\n";
+if ($readonly_write_attempts > 0) {
+    echo "RESULT: INVALID\n";
+    echo "ABORT: {$readonly_write_attempts} transient/option write attempt(s) detected during dry-run\n";
+    if (function_exists('intersoccer_reports_set_readonly_mode')) {
+        intersoccer_reports_set_readonly_mode(false);
+    }
+    return;
+}
+
+echo "RESULT: OK\n";
+
+if (function_exists('intersoccer_reports_set_readonly_mode')) {
+    intersoccer_reports_set_readonly_mode(false);
+}

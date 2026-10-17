@@ -43,11 +43,11 @@ class GirlsOnlyAgeGroupNoYTest extends PHPUnitTestCase {
 
     private function courseRosterData(string $age_group, int $girls_only): array {
         return [
-            'order_id' => 62494,
-            'order_item_id' => 1001,
-            'product_id' => 62476,
-            'variation_id' => 62477,
-            'customer_id' => 1,
+            'order_id' => 900001,
+            'order_item_id' => 900002,
+            'product_id' => 900003,
+            'variation_id' => 900004,
+            'customer_id' => 900005,
             'player_index' => 0,
             'first_name' => 'Test',
             'last_name' => 'Player',
