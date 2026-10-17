@@ -167,6 +167,10 @@ add_action('admin_init', function () {
     if (file_exists($office365_file)) {
         require_once $office365_file;
     }
+    $summer_camps_report_file = plugin_dir_path(__FILE__) . 'includes/summer-camps-report.php';
+    if (file_exists($summer_camps_report_file)) {
+        require_once $summer_camps_report_file;
+    }
 }, 0);
 
 // Register strings for WPML translation on init to ensure WPML is loaded
