@@ -2933,7 +2933,8 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
 
     // Get item metadata - use same robust method as prepare_roster_entry
     $raw_order_item_meta = wc_get_order_item_meta($item_id, '', true);
-    error_log('InterSoccer: Raw order item meta for order ' . $order_id . ', item ' . $item_id . ': ' . print_r($raw_order_item_meta, true));
+    $meta_keys = is_array($raw_order_item_meta) ? array_keys($raw_order_item_meta) : [];
+    error_log('InterSoccer: Order item meta keys for order ' . $order_id . ', item ' . $item_id . ': ' . implode(', ', $meta_keys));
 
     $item_meta = array_combine(
         array_keys($raw_order_item_meta),
@@ -2973,7 +2974,8 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     $players = function_exists('intersoccer_get_user_players')
         ? intersoccer_get_user_players($user_id)
         : (maybe_unserialize(get_user_meta($user_id, 'intersoccer_players', true)) ?: []);
-    error_log('InterSoccer: User ' . $user_id . ' players meta: ' . print_r($players, true));
+    $player_count = is_array($players) ? count($players) : 0;
+    error_log('InterSoccer: User ' . $user_id . ' players meta count: ' . $player_count);
     $player_index = $item_meta['assigned_player'] ?? false;
     $assigned_player_id = $item_meta['assigned_player_id'] ?? '';
     $age = isset($item_meta['Player Age']) ? (int)$item_meta['Player Age'] : null;
@@ -3476,7 +3478,8 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     // Insert or update
     $result = $wpdb->replace($table_name, $data);
     $insert_id = $wpdb->insert_id;
-    error_log('InterSoccer: Upsert result for order ' . $order_id . ', item ' . $item_id . ': ' . var_export($result, true) . ' | Insert ID: ' . $insert_id . ' | Last DB error: ' . $wpdb->last_error . ' | Last query: ' . $wpdb->last_query);
+    $rows_affected = ($result === false) ? 0 : (int) $result;
+    error_log('InterSoccer: Upsert for order ' . $order_id . ', item ' . $item_id . ': rows_affected=' . $rows_affected . ' insert_id=' . $insert_id);
 
     if ($result) {
         error_log('InterSoccer: Successfully upserted roster entry for order ' . $order_id . ', item ' . $item_id . ' (ID: ' . $insert_id . ') with event_signature: ' . $data['event_signature']);

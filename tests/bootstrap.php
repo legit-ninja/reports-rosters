@@ -133,6 +133,21 @@ if (!function_exists('do_action')) {
 
 if (!function_exists('apply_filters')) {
     function apply_filters($hook, $value, ...$args) {
+        if ($hook === 'intersoccer_can_view_medical' || $hook === 'intersoccer_can_view_dob') {
+            $hook_callbacks = [];
+            if (!empty($GLOBALS['intersoccer_rr_hook_test_filters'][$hook])
+                && is_array($GLOBALS['intersoccer_rr_hook_test_filters'][$hook])) {
+                $hook_callbacks = $GLOBALS['intersoccer_rr_hook_test_filters'][$hook];
+            } elseif (!empty($GLOBALS['intersoccer_medical_access_test_filters'])
+                && is_array($GLOBALS['intersoccer_medical_access_test_filters'])) {
+                $hook_callbacks = $GLOBALS['intersoccer_medical_access_test_filters'];
+            }
+            foreach ($hook_callbacks as $callback) {
+                if (is_callable($callback)) {
+                    $value = $callback($value, ...$args);
+                }
+            }
+        }
         if (!empty($GLOBALS['intersoccer_test_apply_filters_callback'])
             && is_callable($GLOBALS['intersoccer_test_apply_filters_callback'])) {
             $value = $GLOBALS['intersoccer_test_apply_filters_callback']($hook, $value, ...$args);
@@ -378,6 +393,67 @@ if (!function_exists('wp_get_current_user')) {
         $user->ID = 1;
         $user->roles = [];
         return $user;
+    }
+}
+
+if (!function_exists('get_current_user_id')) {
+    function get_current_user_id() {
+        $user = wp_get_current_user();
+        return isset($user->ID) ? (int) $user->ID : 0;
+    }
+}
+
+if (!function_exists('intersoccer_test_set_user_caps')) {
+    /**
+     * Shared test helper for medical / roster permission tests.
+     *
+     * @param array<string,bool> $caps
+     */
+    function intersoccer_test_set_user_caps(array $caps): void {
+        $GLOBALS['intersoccer_test_current_user_caps'] = $caps;
+        $user = new stdClass();
+        $user->ID = 42;
+        $user->roles = !empty($caps['coach']) ? ['coach'] : [];
+        $GLOBALS['intersoccer_test_current_user'] = $user;
+    }
+}
+
+if (!function_exists('intersoccer_test_ensure_pm_filter_stub')) {
+    /**
+     * Stand in for PM's intersoccer_filter_can_view_medical when privacy-settings.php is not loaded.
+     */
+    function intersoccer_test_ensure_pm_filter_stub(): void {
+        if (!function_exists('intersoccer_user_can_view_medical')) {
+            function intersoccer_user_can_view_medical($user_id): bool {
+                $user_id = (int) $user_id;
+                if ($user_id <= 0) {
+                    return false;
+                }
+                $allowed = current_user_can('manage_options') || current_user_can('manage_woocommerce');
+                $filtered = apply_filters('intersoccer_can_view_medical', $allowed, $user_id);
+
+                return $filtered === true;
+            }
+        }
+
+        if (!function_exists('intersoccer_user_can_view_dob')) {
+            function intersoccer_user_can_view_dob($user_id): bool {
+                $user_id = (int) $user_id;
+                if ($user_id <= 0) {
+                    return false;
+                }
+                $allowed = current_user_can('manage_options') || current_user_can('manage_woocommerce');
+                $filtered = apply_filters('intersoccer_can_view_dob', $allowed, $user_id);
+
+                return $filtered === true;
+            }
+        }
+    }
+}
+
+if (!function_exists('sanitize_textarea_field')) {
+    function sanitize_textarea_field($str) {
+        return trim((string) $str);
     }
 }
 

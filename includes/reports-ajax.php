@@ -79,10 +79,31 @@ function intersoccer_filter_report_callback() {
     $year = isset($_POST['year']) ? sanitize_text_field($_POST['year']) : date('Y');
     $region = isset($_POST['region']) ? sanitize_text_field($_POST['region']) : '';
 
-    $visible_columns = isset($_POST['columns']) ? array_map('sanitize_text_field', (array)$_POST['columns']) : [
-        'ref', 'booked', 'base_price', 'discount_amount', 'discounts_applied', 'stripe_fee', 'final_price',
-        'class_name', 'venue', 'booker_email', 'booker_phone'
+    $allowed_financial_columns = [
+        'ref',
+        'booked',
+        'base_price',
+        'discount_amount',
+        'discounts_applied',
+        'stripe_fee',
+        'final_price',
+        'discount_codes',
+        'class_name',
+        'venue',
+        'booker_email',
+        'booker_phone',
     ];
+    $default_columns = [
+        'ref', 'booked', 'base_price', 'discount_amount', 'discounts_applied', 'stripe_fee', 'final_price',
+        'class_name', 'venue', 'booker_email', 'booker_phone',
+    ];
+    $requested_columns = isset($_POST['columns'])
+        ? array_map('sanitize_text_field', (array) $_POST['columns'])
+        : $default_columns;
+    $visible_columns = array_values(array_intersect($requested_columns, $allowed_financial_columns));
+    if ($visible_columns === []) {
+        $visible_columns = $default_columns;
+    }
 
     // Use the simplified financial reporting function
     $report_data = intersoccer_get_financial_booking_report($start_date, $end_date, $year, $region);

@@ -997,7 +997,7 @@ function intersoccer_render_roster_details_page() {
         echo '<td>' . esc_html($row->parent_phone ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->parent_email ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->age ?? 'N/A') . '</td>';
-        echo '<td>' . esc_html($row->medical_conditions ?? 'N/A') . '</td>';
+        echo '<td>' . esc_html(intersoccer_rr_format_medical_display_value($row->medical_conditions ?? '')) . '</td>';
         echo '<td>' . esc_html(function_exists('intersoccer_roster_display_avs_number') ? intersoccer_roster_display_avs_number($row) : ($row->avs_number ?? 'N/A')) . '</td>';
         
         if ($is_camp_like) {
