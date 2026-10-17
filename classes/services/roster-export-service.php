@@ -50,11 +50,31 @@ class RosterExportService {
     public function getExportRows(array $filters): array {
         $use_fields = !empty($filters['use_fields']);
 
-        if ($use_fields) {
-            return $this->fetchUsingFieldFilters($filters);
+        $rows = $use_fields
+            ? $this->fetchUsingFieldFilters($filters)
+            : $this->fetchUsingVariations($filters);
+
+        return $this->applyExportMedicalPrivacy($rows);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @return array<int,array<string,mixed>>
+     */
+    private function applyExportMedicalPrivacy(array $rows): array {
+        if (!function_exists('intersoccer_rr_strip_sensitive_fields_from_export_rows')) {
+            $medical_access = dirname(__DIR__, 2) . '/includes/medical-access.php';
+            if (is_readable($medical_access)) {
+                require_once $medical_access;
+            }
         }
 
-        return $this->fetchUsingVariations($filters);
+        if (!function_exists('intersoccer_rr_strip_sensitive_fields_from_export_rows')) {
+            $this->logger->warning('RosterExportService: export medical privacy helper unavailable; returning no rows');
+            return [];
+        }
+
+        return intersoccer_rr_strip_sensitive_fields_from_export_rows($rows);
     }
 
     /**
@@ -179,20 +199,25 @@ class RosterExportService {
         $rows = $this->wpdb->get_results($sql, ARRAY_A);
         
         // Log SQL errors if any
-        if ($this->wpdb->last_error) {
+        $db_error = !empty($this->wpdb->last_error);
+        if ($db_error) {
             $this->logger->error('RosterExportService: SQL error in fetchUsingFieldFilters', [
-                'error' => $this->wpdb->last_error,
-                'query' => $sql,
-                'params' => $params,
+                'db_error' => true,
+                'variation_id' => $variation_id,
+                'variation_ids_count' => count($variation_ids),
+                'order_item_ids_count' => count($order_item_ids),
+                'event_signatures_count' => count($event_signatures),
             ]);
         }
 
         $row_count = is_array($rows) ? count($rows) : 0;
         $this->logger->debug('RosterExportService: Fetched rows via field filters', [
             'count' => $row_count,
-            'filters' => $filters,
-            'sql' => $sql,
-            'last_error' => $this->wpdb->last_error,
+            'variation_id' => $variation_id,
+            'variation_ids_count' => count($variation_ids),
+            'order_item_ids_count' => count($order_item_ids),
+            'event_signatures_count' => count($event_signatures),
+            'db_error' => $db_error,
         ]);
 
         $rows = is_array($rows) ? $rows : [];
@@ -256,19 +281,22 @@ class RosterExportService {
         $rows = $this->wpdb->get_results($sql, ARRAY_A);
         
         // Log SQL errors if any
-        if ($this->wpdb->last_error) {
+        $db_error = !empty($this->wpdb->last_error);
+        if ($db_error) {
             $this->logger->error('RosterExportService: SQL error in fetchUsingVariations', [
-                'error' => $this->wpdb->last_error,
-                'query' => $sql,
-                'params' => $params,
+                'db_error' => true,
+                'variation_ids_count' => count($variation_ids),
+                'product_id' => $product_id,
+                'has_event_signature' => $event_signature !== '',
             ]);
         }
 
         $this->logger->debug('RosterExportService: Fetched rows via variation filters', [
             'count' => is_array($rows) ? count($rows) : 0,
-            'filters' => $filters,
-            'sql' => $sql,
-            'last_error' => $this->wpdb->last_error,
+            'variation_ids_count' => count($variation_ids),
+            'product_id' => $product_id,
+            'has_event_signature' => $event_signature !== '',
+            'db_error' => $db_error,
         ]);
 
         return is_array($rows) ? $rows : [];

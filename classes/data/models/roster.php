@@ -648,6 +648,18 @@ class Roster extends AbstractModel {
      * @return array Coach information
      */
     public function getCoachInfo() {
+        if (!intersoccer_rr_current_user_can_view_medical()) {
+            $restricted = intersoccer_rr_medical_restricted_label();
+            return [
+                'player_name' => $this->getFullName(),
+                'age' => $this->getAgeAtEvent(),
+                'medical_conditions' => $restricted,
+                'dietary_needs' => $restricted,
+                'emergency_contact' => $this->getEmergencyContact(),
+                'special_notes' => $restricted,
+            ];
+        }
+
         return [
             'player_name' => $this->getFullName(),
             'age' => $this->getAgeAtEvent(),

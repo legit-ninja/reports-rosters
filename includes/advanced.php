@@ -1728,7 +1728,8 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
         error_log('InterSoccer Migration: Roster row already matched target for item ' . $item_id);
     }
 
-    error_log('InterSoccer Migration: Updated roster entry with normalized data: ' . print_r($normalized, true));
+    $field_names = is_array($normalized) ? implode(', ', array_keys($normalized)) : '';
+    error_log('InterSoccer Migration: Updated roster entry fields for item ' . $item_id . ': ' . $field_names);
 }
 
 /**
