@@ -30,6 +30,9 @@ class RosterBuilderOrderItemWriteFailureTest extends TestCase {
     /** @var array<int,array<string,mixed>> */
     private $errorLogContexts = [];
 
+    /** @var array<string,mixed> */
+    private $failureNoteMeta = [];
+
     protected function setUp(): void {
         parent::setUp();
         if (!function_exists('intersoccer_parse_date_unified')) {
@@ -45,6 +48,7 @@ class RosterBuilderOrderItemWriteFailureTest extends TestCase {
         $GLOBALS['intersoccer_test_wc_get_order_callback'] = [self::class, 'getOrder'];
         self::$orders = [];
         $this->errorLogContexts = [];
+        $this->failureNoteMeta = [];
     }
 
     protected function tearDown(): void {
@@ -126,8 +130,17 @@ class RosterBuilderOrderItemWriteFailureTest extends TestCase {
             $notes[] = $note;
             return 1;
         });
-        $order->shouldReceive('get_meta')->andReturn([]);
-        $order->shouldReceive('update_meta_data')->andReturn(null);
+        $order->shouldReceive('get_meta')->andReturnUsing(function ($key, $single = false) {
+            if ($key === '_intersoccer_roster_failure_notes') {
+                return $single ? $this->failureNoteMeta : [$this->failureNoteMeta];
+            }
+            return $single ? '' : [];
+        });
+        $order->shouldReceive('update_meta_data')->andReturnUsing(function ($key, $value) {
+            if ($key === '_intersoccer_roster_failure_notes') {
+                $this->failureNoteMeta = is_array($value) ? $value : [];
+            }
+        });
         $order->shouldReceive('save')->andReturn($order_id);
         foreach (['get_billing_email' => 'parent@example.test', 'get_billing_phone' => '+41 00 000 00 00',
                   'get_billing_first_name' => 'Parent', 'get_billing_last_name' => 'Test'] as $m => $v) {
@@ -193,7 +206,7 @@ class RosterBuilderOrderItemWriteFailureTest extends TestCase {
         );
     }
 
-    public function test_ineligible_age_records_log_note_and_build_failure_flag() {
+    public function test_forced_repository_failure_logs_and_notes() {
         $uuid = '00000000-0000-4000-8000-000000000601';
         $item = $this->courseItem(52636, 52637, $this->courseMeta($uuid, '2015-02-03'));
         $notes = [];
@@ -324,6 +337,69 @@ class RosterBuilderOrderItemWriteFailureTest extends TestCase {
         $stats = $result['statistics'];
         $this->assertSame(2, $stats['orders_processed']);
         $this->assertSame(2, $stats['item_write_failures']);
+    }
+
+    public function test_order_processor_e2e_repository_insert_failure_notes_once() {
+        $uuid = '00000000-0000-4000-8000-000000000604';
+        $item = $this->courseItem(52636, 52637, $this->courseMeta($uuid, '2015-02-03'));
+        $notes = [];
+        $order = $this->orderWithNoteCapture(5001, 501, 804, $item, $notes);
+        $validator = Mockery::mock(DataValidator::class);
+        $validator->shouldReceive('validateRosterData')->andReturn(['valid' => true, 'errors' => [], 'field_errors' => []]);
+        $builder = $this->makeBuilder($this->player(501, $uuid, '2015-02-03'), $validator);
+        $repo = $this->rosterRepository();
+        $repo->shouldReceive('count')->andReturn(0);
+        $processor = new OrderProcessor($this->logger(), $repo, $builder);
+
+        $this->assertFalse($processor->processOrder($order));
+        $this->assertCount(1, $notes);
+
+        $this->assertFalse($processor->processOrder($order));
+        $this->assertCount(1, $notes);
+    }
+
+    public function test_create_returns_null_records_persist_failure() {
+        $uuid = '00000000-0000-4000-8000-000000000605';
+        $item = $this->courseItem(52636, 52637, $this->courseMeta($uuid, '2015-02-03'));
+        $notes = [];
+        $this->orderWithNoteCapture(5002, 502, 805, $item, $notes);
+        $validator = Mockery::mock(DataValidator::class);
+        $validator->shouldReceive('validateRosterData')->andReturn(['valid' => true, 'errors' => [], 'field_errors' => []]);
+        $db = Mockery::mock(Database::class);
+        $cache = Mockery::mock(CacheManager::class);
+        $cache->shouldReceive('get')->andReturn(null);
+        $cache->shouldReceive('set', 'forget', 'forgetPattern')->andReturn(true);
+        $repo = Mockery::mock(RosterRepository::class, [$this->logger(), $db, $cache])->makePartial();
+        $repo->shouldReceive('first')->andReturn(null);
+        $repo->shouldReceive('count')->andReturn(0);
+        $repo->shouldReceive('where')->andReturn(new RostersCollection());
+        $repo->shouldReceive('create')->andReturn(null);
+        $players = new PlayersCollection();
+        $players->add($this->player(502, $uuid, '2015-02-03'));
+        $playerRepo = Mockery::mock(PlayerRepository::class);
+        $playerRepo->shouldReceive('getPlayersByCustomerId')->andReturn($players);
+        $matcher = Mockery::mock(PlayerMatcher::class);
+        $matcher->shouldReceive('getAssignedPlayers')->andReturn($players);
+        $builder = new RosterBuilder(
+            $this->logger(),
+            Mockery::mock(Database::class),
+            $playerRepo,
+            $repo,
+            $validator,
+            Mockery::mock(EventMatcher::class),
+            $matcher
+        );
+
+        $rows = $builder->buildRosterFromOrder(5002, [
+            'validate_data' => true,
+            'skip_age_group_validation' => true,
+        ]);
+
+        $this->assertSame(0, $rows->count());
+        $this->assertTrue($builder->hadOrderItemWriteFailures());
+        $this->assertCount(1, $notes);
+        $this->assertStringContainsString('Roster row was not persisted', $notes[0]);
+        $this->assertSame('Roster row was not persisted', $this->errorLogContexts[0]['reason']);
     }
 
     public function test_order_processor_returns_false_when_builder_reports_write_failures() {
