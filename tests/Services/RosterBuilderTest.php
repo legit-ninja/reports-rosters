@@ -312,7 +312,7 @@ class RosterBuilderTest extends TestCase {
     public function test_reconcile_with_no_orders_returns_zeroes() {
         $wpdbStub = new class {
             public $prefix = 'wp_';
-            public function get_col($query) {
+            public function get_results($query, $output = OBJECT) {
                 return [];
             }
         };
@@ -334,8 +334,10 @@ class RosterBuilderTest extends TestCase {
     public function test_reconcile_deletes_obsolete_entries() {
         $wpdbStub = new class {
             public $prefix = 'wp_';
-            public function get_col($query) {
-                return [123];
+            public function get_results($query, $output = OBJECT) {
+                return [
+                    ['order_item_id' => '123', 'order_id' => '9000'],
+                ];
             }
         };
 
@@ -344,11 +346,12 @@ class RosterBuilderTest extends TestCase {
             ->andReturn($wpdbStub);
 
         Functions\when('wc_get_orders')->justReturn([]);
+        Functions\when('wc_get_order')->justReturn(false);
         Functions\when('current_time')->justReturn('2024-01-01 00:00:00');
 
-        $this->rosterRepository->shouldReceive('deleteWhere')
+        $this->rosterRepository->shouldReceive('deleteByOrderItemId')
             ->once()
-            ->with(['order_item_id' => 123])
+            ->with(123)
             ->andReturn(1);
 
         $result = $this->rosterBuilder->reconcile();
