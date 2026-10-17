@@ -24,7 +24,7 @@ if (!function_exists('intersoccer_rr_register_local_admin_vendor_assets')) {
         $main = intersoccer_rr_plugin_main_file();
 
         wp_register_script(
-            'chart-js',
+            'intersoccer-rr-chart-js',
             plugins_url('js/vendor/chart.js/chart.min.js', $main),
             [],
             '3.9.1',
@@ -32,7 +32,7 @@ if (!function_exists('intersoccer_rr_register_local_admin_vendor_assets')) {
         );
 
         wp_register_style(
-            'jquery-ui-css',
+            'intersoccer-rr-jquery-ui-css',
             plugins_url('css/vendor/jquery-ui/jquery-ui.css', $main),
             [],
             '1.12.1'

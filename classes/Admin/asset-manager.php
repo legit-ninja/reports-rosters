@@ -77,11 +77,11 @@ class AssetManager {
 
         // Overview charts
         if ($screen_id === 'toplevel_page_intersoccer-reports-rosters') {
-            wp_enqueue_script('chart-js');
+            wp_enqueue_script('intersoccer-rr-chart-js');
             wp_enqueue_script(
                 'intersoccer-overview-charts',
                 $this->plugin_url . 'js/overview-charts.js',
-                ['chart-js'],
+                ['intersoccer-rr-chart-js'],
                 $this->version,
                 true
             );

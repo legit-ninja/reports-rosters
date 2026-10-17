@@ -481,7 +481,7 @@ class ReportsPage extends AbstractPage {
      * Enqueue page-specific assets
      */
     protected function enqueue_assets() {
-        wp_enqueue_script('intersoccer-reports-charts', $this->plugin->get_plugin_url() . 'js/reports-charts.js', ['chart-js'], '2.0.0', true);
+        wp_enqueue_script('intersoccer-reports-charts', $this->plugin->get_plugin_url() . 'js/reports-charts.js', ['intersoccer-rr-chart-js'], '2.0.0', true);
         wp_enqueue_style('intersoccer-reports-css', $this->plugin->get_plugin_url() . 'css/reports.css', [], '2.0.0');
     }
 }
