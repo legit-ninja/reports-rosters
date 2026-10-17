@@ -911,15 +911,6 @@ class RosterBuilder {
             $reason = 'Unknown error';
         }
 
-        if ($this->orderItemWriteFailureWasAlreadyNoted($order, $item_id, $reason)) {
-            $this->logger->error('Order line roster write failed (duplicate note suppressed)', [
-                'order_id' => $order_id,
-                'item_id' => $item_id,
-                'reason' => $reason,
-            ]);
-            return;
-        }
-
         $this->build_stats['item_write_failures']++;
         $this->last_build_call_item_write_failures++;
         $this->build_stats['validation_errors']++;
@@ -930,6 +921,10 @@ class RosterBuilder {
             'item_id' => $item_id,
             'reason' => $reason,
         ]);
+
+        if ($this->orderItemWriteFailureWasAlreadyNoted($order, $item_id, $reason)) {
+            return;
+        }
 
         if (is_callable([$order, 'add_order_note'])) {
             $note = sprintf(

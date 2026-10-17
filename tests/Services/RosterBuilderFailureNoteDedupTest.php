@@ -214,8 +214,10 @@ class RosterBuilderFailureNoteDedupTest extends TestCase {
         $builder = $this->makeBuilder($this->failingRepo());
 
         $builder->buildRosterFromOrder(6001, ['validate_data' => true, 'skip_age_group_validation' => true]);
-        $builder->buildRosterFromOrder(6001, ['validate_data' => true, 'skip_age_group_validation' => true]);
+        $this->assertTrue($builder->hadOrderItemWriteFailures());
 
+        $builder->buildRosterFromOrder(6001, ['validate_data' => true, 'skip_age_group_validation' => true]);
+        $this->assertTrue($builder->hadOrderItemWriteFailures());
         $this->assertCount(1, $notes);
     }
 
