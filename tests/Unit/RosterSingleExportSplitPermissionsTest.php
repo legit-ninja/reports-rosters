@@ -75,6 +75,7 @@ class RosterSingleExportSplitPermissionsTest extends TestCase
         );
         $this->assertContains('Date of Birth', $headers);
         $this->assertNotContains('Medical/Dietary Conditions', $headers);
+        $this->assertCount(count($headers), $row);
         $this->assertContains('01/06/2015', $row);
         $this->assertNotContains('Peanuts', $row);
     }
@@ -97,6 +98,7 @@ class RosterSingleExportSplitPermissionsTest extends TestCase
         );
         $this->assertNotContains('Date of Birth', $headers);
         $this->assertContains('Medical/Dietary Conditions', $headers);
+        $this->assertCount(count($headers), $row);
         $this->assertContains('Peanuts', $row);
         $this->assertNotContains('01/06/2015', $row);
     }

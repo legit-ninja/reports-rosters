@@ -87,6 +87,7 @@
             <file>tests/Unit/RosterExportMedicalGatingTest.php</file>
             <file>tests/Unit/RosterExportAllMedicalGatingTest.php</file>
             <file>tests/Unit/RosterSingleExportSplitPermissionsTest.php</file>
+            <file>tests/Unit/MedicalRosterEditorDobGateTest.php</file>
         </testsuite>
         <testsuite name="Complete">
             <directory>tests</directory>
