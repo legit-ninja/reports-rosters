@@ -40,7 +40,7 @@ class RosterEditorFormFieldEscapeTest extends TestCase {
         }
         global $wpdb;
         $this->previousWpdb = $wpdb ?? null;
-        $this->previousPost = $_POST;
+        $this->previousPost = $_POST ?? [];
         $GLOBALS['intersoccer_test_current_user_caps'] = ['manage_options' => true];
     }
 
