@@ -200,7 +200,7 @@ function intersoccer_render_roster_editor_tab() {
     // Enqueue scripts and styles
     wp_enqueue_script('jquery');
     wp_enqueue_script('jquery-ui-datepicker');
-    wp_enqueue_style('jquery-ui-css', 'https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
+    wp_enqueue_style('jquery-ui-css');
     
     // Get filter values from URL
     $search = isset($_GET['search']) ? sanitize_text_field($_GET['search']) : '';
@@ -573,7 +573,7 @@ function intersoccer_render_roster_editor_page() {
     // Enqueue scripts and styles
     wp_enqueue_script('jquery');
     wp_enqueue_script('jquery-ui-datepicker');
-    wp_enqueue_style('jquery-ui-css', 'https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
+    wp_enqueue_style('jquery-ui-css');
     
     // Get filter values from URL
     $search = isset($_GET['search']) ? sanitize_text_field($_GET['search']) : '';
@@ -973,7 +973,7 @@ function intersoccer_render_roster_edit_form() {
     // Enqueue scripts
     wp_enqueue_script('jquery');
     wp_enqueue_script('jquery-ui-datepicker');
-    wp_enqueue_style('jquery-ui-css', 'https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
+    wp_enqueue_style('jquery-ui-css');
 
     wp_localize_script('jquery', 'intersoccer_roster_editor', [
         'ajaxurl' => admin_url('admin-ajax.php'),
