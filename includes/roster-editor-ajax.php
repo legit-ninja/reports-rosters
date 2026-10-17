@@ -290,6 +290,13 @@ function intersoccer_ajax_update_roster_entry() {
             wp_send_json_error(['message' => __('This field cannot be edited.', 'intersoccer-reports-rosters')]);
         }
 
+        if (function_exists('intersoccer_rr_medical_roster_field_keys')
+            && in_array($field, intersoccer_rr_medical_roster_field_keys(), true)
+            && function_exists('intersoccer_rr_current_user_can_view_medical')
+            && !intersoccer_rr_current_user_can_view_medical()) {
+            wp_send_json_error(['message' => __('This field cannot be edited.', 'intersoccer-reports-rosters')]);
+        }
+
         // Validate and sanitize the value
         $sanitized_value = intersoccer_sanitize_roster_field($field, $value);
 
@@ -299,6 +306,12 @@ function intersoccer_ajax_update_roster_entry() {
 
         // Update single field
         $update_data = [$field => $sanitized_value];
+        if (function_exists('intersoccer_rr_strip_medical_from_update_data')) {
+            $update_data = intersoccer_rr_strip_medical_from_update_data($update_data, $existing);
+        }
+        if ($update_data === []) {
+            wp_send_json_error(['message' => __('This field cannot be edited.', 'intersoccer-reports-rosters')]);
+        }
         $where = ['id' => $roster_id];
 
         $result = $wpdb->update($rosters_table, $update_data, $where);
@@ -323,6 +336,10 @@ function intersoccer_ajax_update_roster_entry() {
             if ($sanitized_value !== false) {
                 $update_data[$field] = $sanitized_value;
             }
+        }
+
+        if (function_exists('intersoccer_rr_strip_medical_from_update_data')) {
+            $update_data = intersoccer_rr_strip_medical_from_update_data($update_data, $existing);
         }
 
         if (empty($update_data)) {
@@ -367,6 +384,10 @@ function intersoccer_ajax_get_roster_entry() {
     
     if (!$roster) {
         wp_send_json_error(['message' => __('Roster entry not found.', 'intersoccer-reports-rosters')]);
+    }
+
+    if (function_exists('intersoccer_rr_redact_medical_in_roster_row')) {
+        $roster = intersoccer_rr_redact_medical_in_roster_row($roster);
     }
 
     wp_send_json_success(['roster' => $roster]);

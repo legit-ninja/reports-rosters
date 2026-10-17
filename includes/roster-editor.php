@@ -1016,9 +1016,26 @@ function intersoccer_render_roster_edit_form() {
 
                     <h2><?php _e('Medical/Dietary Information', 'intersoccer-reports-rosters'); ?></h2>
                     <table class="form-table">
-                        <?php intersoccer_render_form_field($roster, 'medical_conditions', 'Medical Conditions', 'textarea'); ?>
-                        <?php intersoccer_render_form_field($roster, 'player_medical', 'Player Medical Info', 'textarea'); ?>
-                        <?php intersoccer_render_form_field($roster, 'player_dietary', 'Dietary Needs', 'textarea'); ?>
+                        <?php
+                        if (function_exists('intersoccer_rr_current_user_can_view_medical') && !intersoccer_rr_current_user_can_view_medical()) {
+                            $restricted = function_exists('intersoccer_rr_medical_restricted_label')
+                                ? intersoccer_rr_medical_restricted_label()
+                                : __('Restricted', 'intersoccer-reports-rosters');
+                            foreach (
+                                [
+                                    'medical_conditions' => __('Medical Conditions', 'intersoccer-reports-rosters'),
+                                    'player_medical'     => __('Player Medical Info', 'intersoccer-reports-rosters'),
+                                    'player_dietary'     => __('Dietary Needs', 'intersoccer-reports-rosters'),
+                                ] as $field_key => $field_label
+                            ) {
+                                echo '<tr><th>' . esc_html($field_label) . '</th><td>' . esc_html($restricted) . '</td></tr>';
+                            }
+                        } else {
+                            intersoccer_render_form_field($roster, 'medical_conditions', 'Medical Conditions', 'textarea');
+                            intersoccer_render_form_field($roster, 'player_medical', 'Player Medical Info', 'textarea');
+                            intersoccer_render_form_field($roster, 'player_dietary', 'Dietary Needs', 'textarea');
+                        }
+                        ?>
                     </table>
                 </div>
 

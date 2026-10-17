@@ -468,7 +468,9 @@ class CampsPage extends AbstractPage {
             'search' => $this->get_request_param('search', ''),
             'date_from' => $this->get_request_param('date_from', ''),
             'date_to' => $this->get_request_param('date_to', ''),
-            'medical_only' => $this->get_request_param('medical_only', false, 'bool')
+            'medical_only' => (function_exists('intersoccer_rr_current_user_can_view_medical') && intersoccer_rr_current_user_can_view_medical())
+                ? $this->get_request_param('medical_only', false, 'bool')
+                : false,
         ];
     }
 
@@ -631,12 +633,14 @@ class CampsPage extends AbstractPage {
                     </div>
                 </div>
                 
+                <?php if (function_exists('intersoccer_rr_current_user_can_view_medical') && intersoccer_rr_current_user_can_view_medical()) : ?>
                 <div style="margin-top: 15px;">
                     <label>
                         <input type="checkbox" name="medical_only" value="1" <?php checked($current_filters['medical_only']); ?>>
                         <?php _e('Show only attendees with medical conditions', 'intersoccer-reports-rosters'); ?>
                     </label>
                 </div>
+                <?php endif; ?>
             </form>
         </div>
         <?php
@@ -741,11 +745,16 @@ class CampsPage extends AbstractPage {
                                     </td>
                                     <td>
                                         <div class="medical-info">
-                                            <?php if (empty($camp['medical_conditions']) || strtolower($camp['medical_conditions']) === 'none'): ?>
+                                            <?php
+                                            $medical_cell = function_exists('intersoccer_rr_format_camp_medical_display_value')
+                                                ? intersoccer_rr_format_camp_medical_display_value($camp['medical_conditions'] ?? '')
+                                                : ($camp['medical_conditions'] ?? '');
+                                            if ($medical_cell === 'none') :
+                                                ?>
                                                 <span class="medical-none"><?php _e('None', 'intersoccer-reports-rosters'); ?></span>
-                                            <?php else: ?>
+                                            <?php else : ?>
                                                 <span class="medical-conditions">
-                                                    <?php echo esc_html($camp['medical_conditions']); ?>
+                                                    <?php echo esc_html($medical_cell); ?>
                                                 </span>
                                             <?php endif; ?>
                                         </div>
@@ -841,7 +850,9 @@ class CampsPage extends AbstractPage {
                 $where_values[] = $filters['date_to'];
             }
 
-            if (!empty($filters['medical_only'])) {
+            if (!empty($filters['medical_only'])
+                && function_exists('intersoccer_rr_current_user_can_view_medical')
+                && intersoccer_rr_current_user_can_view_medical()) {
                 $where_conditions[] = "r.medical_conditions != '' AND r.medical_conditions != 'None' AND r.medical_conditions IS NOT NULL";
             }
 
@@ -953,7 +964,9 @@ class CampsPage extends AbstractPage {
                 'booking_type' => sanitize_text_field($_POST['booking_type'] ?? ''),
                 'gender' => sanitize_text_field($_POST['gender'] ?? ''),
                 'search' => sanitize_text_field($_POST['search'] ?? ''),
-                'medical_only' => (bool) ($_POST['medical_only'] ?? false)
+                'medical_only' => (function_exists('intersoccer_rr_current_user_can_view_medical') && intersoccer_rr_current_user_can_view_medical())
+                    ? (bool) ($_POST['medical_only'] ?? false)
+                    : false,
             ];
             
             // Get filtered data
@@ -1098,6 +1111,10 @@ class CampsPage extends AbstractPage {
      * @return int Number of attendees with medical conditions
      */
     private function get_medical_conditions_count() {
+        if (function_exists('intersoccer_rr_current_user_can_view_medical') && !intersoccer_rr_current_user_can_view_medical()) {
+            return 0;
+        }
+
         global $wpdb;
         $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
         
