@@ -87,12 +87,17 @@ if (!function_exists('do_action')) {
 if (!function_exists('apply_filters')) {
     function apply_filters($hook, $value, ...$args) {
         if ($hook === 'intersoccer_can_view_medical' || $hook === 'intersoccer_can_view_dob') {
-            if (!empty($GLOBALS['intersoccer_medical_access_test_filters'])
+            $hook_callbacks = [];
+            if (!empty($GLOBALS['intersoccer_rr_hook_test_filters'][$hook])
+                && is_array($GLOBALS['intersoccer_rr_hook_test_filters'][$hook])) {
+                $hook_callbacks = $GLOBALS['intersoccer_rr_hook_test_filters'][$hook];
+            } elseif (!empty($GLOBALS['intersoccer_medical_access_test_filters'])
                 && is_array($GLOBALS['intersoccer_medical_access_test_filters'])) {
-                foreach ($GLOBALS['intersoccer_medical_access_test_filters'] as $callback) {
-                    if (is_callable($callback)) {
-                        $value = $callback($value, ...$args);
-                    }
+                $hook_callbacks = $GLOBALS['intersoccer_medical_access_test_filters'];
+            }
+            foreach ($hook_callbacks as $callback) {
+                if (is_callable($callback)) {
+                    $value = $callback($value, ...$args);
                 }
             }
         }

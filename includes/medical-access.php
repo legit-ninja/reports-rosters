@@ -268,8 +268,10 @@ if (!function_exists('intersoccer_rr_roster_export_personal_headers')) {
             'Email',
             'Age',
         ];
-        if (intersoccer_rr_current_user_can_view_medical()) {
+        if (intersoccer_rr_current_user_can_view_dob()) {
             $headers[] = 'Date of Birth';
+        }
+        if (intersoccer_rr_current_user_can_view_medical()) {
             $headers[] = 'Medical/Dietary Conditions';
         }
         $headers[] = 'AVS Number';
@@ -309,8 +311,10 @@ if (!function_exists('intersoccer_rr_roster_export_personal_row_values')) {
             $player['parent_email'] ?? 'N/A',
             $player['age'] ?? 'N/A',
         ];
-        if (intersoccer_rr_current_user_can_view_medical()) {
+        if (intersoccer_rr_current_user_can_view_dob()) {
             $row[] = $formatted_birth_date;
+        }
+        if (intersoccer_rr_current_user_can_view_medical()) {
             $row[] = $export_medical !== '' ? $export_medical : 'N/A';
         }
         $row[] = $avs_export_value;
