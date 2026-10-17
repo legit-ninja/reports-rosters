@@ -304,8 +304,7 @@ function intersoccer_ajax_update_roster_entry() {
 
         // Update single field
         $update_data = intersoccer_rr_strip_medical_from_update_data(
-            [$field => $sanitized_value],
-            $existing
+            [$field => $sanitized_value]
         );
         if ($update_data === []) {
             wp_send_json_error(['message' => __('This field cannot be edited.', 'intersoccer-reports-rosters')]);
@@ -336,7 +335,7 @@ function intersoccer_ajax_update_roster_entry() {
             }
         }
 
-        $update_data = intersoccer_rr_strip_medical_from_update_data($update_data, $existing);
+        $update_data = intersoccer_rr_strip_medical_from_update_data($update_data);
 
         if (empty($update_data)) {
             wp_send_json_error(['message' => __('No valid fields to update.', 'intersoccer-reports-rosters')]);

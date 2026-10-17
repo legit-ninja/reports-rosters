@@ -70,6 +70,17 @@ class MedicalAccessTest extends TestCase
         $this->assertTrue(intersoccer_rr_current_user_can_view_medical());
     }
 
+    public function test_filter_truthy_without_strict_true_does_not_grant(): void
+    {
+        $this->setCaps(['coach' => true, 'read' => true]);
+        $GLOBALS['intersoccer_medical_access_test_filters'] = [
+            function ($allowed, $user_id) {
+                return 1;
+            },
+        ];
+        $this->assertFalse(intersoccer_rr_current_user_can_view_medical());
+    }
+
     public function test_filter_can_revoke_medical_access(): void
     {
         $this->setCaps(['manage_options' => true]);
@@ -90,6 +101,24 @@ class MedicalAccessTest extends TestCase
         $this->assertStringNotContainsString('SECRET', $display);
     }
 
+    public function test_allowed_user_empty_medical_shows_na(): void
+    {
+        $this->setCaps(['manage_options' => true]);
+        $this->assertSame('N/A', intersoccer_rr_format_medical_display_value(''));
+    }
+
+    public function test_camp_medical_cell_states(): void
+    {
+        $this->setCaps(['manage_options' => true]);
+        $none = intersoccer_rr_camp_medical_cell('');
+        $this->assertSame('none', $none['state']);
+
+        $this->setCaps(['coach' => true]);
+        $restricted = intersoccer_rr_camp_medical_cell('Asthma');
+        $this->assertSame('restricted', $restricted['state']);
+        $this->assertSame('Restricted', $restricted['text']);
+    }
+
     public function test_redact_row_replaces_medical_fields_for_denied_user(): void
     {
         $this->setCaps(['coach' => true]);
@@ -97,26 +126,24 @@ class MedicalAccessTest extends TestCase
             'player_name' => 'Kid',
             'medical_conditions' => 'Asthma',
             'player_dietary' => 'Gluten free',
+            'player_dob' => '2015-01-01',
         ];
         $out = intersoccer_rr_redact_medical_in_roster_row($row);
         $this->assertSame('Restricted', $out['medical_conditions']);
         $this->assertSame('Restricted', $out['player_dietary']);
+        $this->assertSame('Restricted', $out['player_dob']);
         $this->assertSame('Kid', $out['player_name']);
     }
 
-    public function test_strip_medical_preserves_existing_on_save_for_denied_user(): void
+    public function test_strip_medical_removes_fields_on_save_for_denied_user(): void
     {
         $this->setCaps(['coach' => true]);
-        $existing = [
-            'medical_conditions' => 'Keep me',
-            'player_medical' => 'Keep me',
-        ];
         $update = [
             'parent_phone' => '123',
             'medical_conditions' => '',
             'player_medical' => 'Hacked',
         ];
-        $stripped = intersoccer_rr_strip_medical_from_update_data($update, $existing);
+        $stripped = intersoccer_rr_strip_medical_from_update_data($update);
         $this->assertSame(['parent_phone' => '123'], $stripped);
     }
 }

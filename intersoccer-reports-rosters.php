@@ -192,6 +192,8 @@ add_action('init', function () {
             'Camps',
             'Courses',
             'Girls Only',
+            'Restricted',
+            'N/A',
             'Tournaments',
             'Other Events',
             'InterSoccer Settings',

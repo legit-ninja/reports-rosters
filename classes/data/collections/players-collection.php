@@ -494,35 +494,29 @@ class PlayersCollection extends AbstractCollection {
      * @return array Coach-friendly summary data
      */
     public function getCoachSummary($event_date = null) {
-        $players_with_special_needs = $this->filterBySpecialNeeds(true);
-        
-        return [
-            'total_players' => $this->count(),
-            'age_distribution' => $this->getAgeGroupDistribution($event_date),
-            'gender_split' => $this->countBy('gender'),
-            'special_needs_count' => $players_with_special_needs->count(),
-            'special_needs_details' => $players_with_special_needs->map(function(Player $player) use ($event_date) {
-                if (!intersoccer_rr_current_user_can_view_medical()) {
-                    $restricted = intersoccer_rr_medical_restricted_label();
-                    return [
-                        'name' => $player->getFullName(),
-                        'age' => $event_date ? $player->getAgeAt($event_date) : $player->getAge(),
-                        'medical_conditions' => $restricted,
-                        'dietary_needs' => $restricted,
-                        'emergency_contact' => $player->emergency_contact ?: 'Not provided',
-                        'emergency_phone' => $player->emergency_phone ?: 'Not provided',
-                    ];
-                }
-
+        $special_needs_count = 0;
+        $special_needs_details = [];
+        if (intersoccer_rr_current_user_can_view_medical()) {
+            $players_with_special_needs = $this->filterBySpecialNeeds(true);
+            $special_needs_count = $players_with_special_needs->count();
+            $special_needs_details = $players_with_special_needs->map(function (Player $player) use ($event_date) {
                 return [
                     'name' => $player->getFullName(),
                     'age' => $event_date ? $player->getAgeAt($event_date) : $player->getAge(),
                     'medical_conditions' => $player->medical_conditions ?: 'None',
                     'dietary_needs' => $player->dietary_needs ?: 'None',
                     'emergency_contact' => $player->emergency_contact ?: 'Not provided',
-                    'emergency_phone' => $player->emergency_phone ?: 'Not provided'
+                    'emergency_phone' => $player->emergency_phone ?: 'Not provided',
                 ];
-            })->toArray(),
+            })->toArray();
+        }
+
+        return [
+            'total_players' => $this->count(),
+            'age_distribution' => $this->getAgeGroupDistribution($event_date),
+            'gender_split' => $this->countBy('gender'),
+            'special_needs_count' => $special_needs_count,
+            'special_needs_details' => $special_needs_details,
             'emergency_contacts' => $this->getEmergencyContactsSummary()
         ];
     }

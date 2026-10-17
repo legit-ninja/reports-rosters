@@ -863,7 +863,8 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
     $parent_product = wc_get_product($product_id);
 
     $raw_order_item_meta = wc_get_order_item_meta($order_item_id, '', true);
-    error_log("InterSoccer: Raw order item meta for order $order_id, item $order_item_id: " . print_r($raw_order_item_meta, true));
+    $meta_keys = is_array($raw_order_item_meta) ? array_keys($raw_order_item_meta) : [];
+    error_log("InterSoccer: Order item meta keys for order $order_id, item $order_item_id: " . implode(', ', $meta_keys));
 
     // Activity type logic (same as rebuild)
     $activity_type = $raw_order_item_meta['Activity Type'][0] ?? null;

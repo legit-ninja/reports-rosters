@@ -746,13 +746,13 @@ class CampsPage extends AbstractPage {
                                     <td>
                                         <div class="medical-info">
                                             <?php
-                                            $medical_cell = intersoccer_rr_format_camp_medical_display_value($camp['medical_conditions'] ?? '');
-                                            if ($medical_cell === 'none') :
+                                            $medical_cell = intersoccer_rr_camp_medical_cell($camp['medical_conditions'] ?? '');
+                                            if ($medical_cell['state'] === 'none') :
                                                 ?>
                                                 <span class="medical-none"><?php _e('None', 'intersoccer-reports-rosters'); ?></span>
                                             <?php else : ?>
                                                 <span class="medical-conditions">
-                                                    <?php echo esc_html($medical_cell); ?>
+                                                    <?php echo esc_html($medical_cell['text']); ?>
                                                 </span>
                                             <?php endif; ?>
                                         </div>
@@ -864,6 +864,14 @@ class CampsPage extends AbstractPage {
             }
             
             $camps = $wpdb->get_results($query, ARRAY_A);
+            $camps = array_map(
+                static function ($camp) {
+                    return is_array($camp)
+                        ? intersoccer_rr_redact_medical_in_roster_row($camp)
+                        : $camp;
+                },
+                $camps
+            );
 
             // Calculate statistics
             $stats = [
@@ -1059,21 +1067,29 @@ class CampsPage extends AbstractPage {
      * @return array Dashboard statistics
      */
     public function get_dashboard_stats() {
-        $cache_key = $this->get_cache_key('dashboard_stats');
-        
+        $can_view_medical = intersoccer_rr_current_user_can_view_medical();
+        $cache_key = $this->get_cache_key(
+            'dashboard_stats_' . ($can_view_medical ? 'medical' : 'no_medical')
+        );
+
         return $this->cache->remember(
             $cache_key,
-            function() {
+            function () use ($can_view_medical) {
                 $camps_data = $this->get_camps_data();
-                
-                return [
+
+                $stats = [
                     'total_camps' => $camps_data['stats']['total_camps'],
                     'total_attendees' => $camps_data['stats']['total_attendees'],
                     'active_camps' => $camps_data['stats']['active_camps'],
                     'venues_count' => $camps_data['stats']['unique_venues'],
                     'this_week_camps' => $this->get_this_week_camps_count(),
-                    'medical_conditions_count' => $this->get_medical_conditions_count()
                 ];
+
+                if ($can_view_medical) {
+                    $stats['medical_conditions_count'] = $this->get_medical_conditions_count();
+                }
+
+                return $stats;
             },
             'roster_data',
             3600 // 1 hour
