@@ -20,6 +20,7 @@ class MedicalRosterAjaxTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        intersoccer_test_ensure_pm_filter_stub();
         intersoccer_test_set_user_caps(['manage_options' => true]);
         $GLOBALS['intersoccer_medical_access_test_filters'] = [
             static function ($allowed, $user_id) {

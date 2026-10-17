@@ -17,6 +17,7 @@ class RosterExportMedicalGatingTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        intersoccer_test_ensure_pm_filter_stub();
         require_once dirname(__DIR__, 2) . '/includes/medical-access.php';
     }
 

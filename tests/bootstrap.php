@@ -86,12 +86,17 @@ if (!function_exists('do_action')) {
 
 if (!function_exists('apply_filters')) {
     function apply_filters($hook, $value, ...$args) {
-        if ($hook === 'intersoccer_can_view_medical'
-            && !empty($GLOBALS['intersoccer_medical_access_test_filters'])
-            && is_array($GLOBALS['intersoccer_medical_access_test_filters'])) {
-            foreach ($GLOBALS['intersoccer_medical_access_test_filters'] as $callback) {
-                if (is_callable($callback)) {
-                    $value = $callback($value, ...$args);
+        if ($hook === 'intersoccer_can_view_medical') {
+            if (function_exists('intersoccer_filter_can_view_medical')) {
+                $user_id = isset($args[0]) ? (int) $args[0] : 0;
+                $value = intersoccer_filter_can_view_medical($value, $user_id);
+            }
+            if (!empty($GLOBALS['intersoccer_medical_access_test_filters'])
+                && is_array($GLOBALS['intersoccer_medical_access_test_filters'])) {
+                foreach ($GLOBALS['intersoccer_medical_access_test_filters'] as $callback) {
+                    if (is_callable($callback)) {
+                        $value = $callback($value, ...$args);
+                    }
                 }
             }
         }
@@ -330,6 +335,26 @@ if (!function_exists('intersoccer_test_set_user_caps')) {
         $user->ID = 42;
         $user->roles = !empty($caps['coach']) ? ['coach'] : [];
         $GLOBALS['intersoccer_test_current_user'] = $user;
+    }
+}
+
+if (!function_exists('intersoccer_test_ensure_pm_filter_stub')) {
+    /**
+     * Stand in for PM's intersoccer_filter_can_view_medical when privacy-settings.php is not loaded.
+     */
+    function intersoccer_test_ensure_pm_filter_stub(): void {
+        if (function_exists('intersoccer_filter_can_view_medical')) {
+            return;
+        }
+
+        /**
+         * @param bool $allowed
+         * @param int  $user_id
+         * @return bool
+         */
+        function intersoccer_filter_can_view_medical($allowed, $user_id = 0) {
+            return $allowed;
+        }
     }
 }
 
