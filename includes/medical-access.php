@@ -23,6 +23,65 @@ if (!function_exists('intersoccer_rr_medical_roster_field_keys')) {
     }
 }
 
+if (!function_exists('intersoccer_rr_sensitive_export_field_keys')) {
+    /**
+     * Roster export row keys removed entirely when medical access is denied.
+     *
+     * @return string[]
+     */
+    function intersoccer_rr_sensitive_export_field_keys(): array {
+        return array_values(array_unique(array_merge(
+            intersoccer_rr_medical_roster_field_keys(),
+            intersoccer_rr_medical_dob_field_keys(),
+            [
+                'medical_conditions',
+                'dietary_needs',
+                'player_dietary',
+                'player_medical',
+                'allergy',
+                'allergies',
+                'food_allergies',
+                'dietary_requirements',
+            ]
+        )));
+    }
+}
+
+if (!function_exists('intersoccer_rr_strip_sensitive_fields_from_export_row')) {
+    /**
+     * Remove sensitive columns from one export row (export-all CSV uses array_keys).
+     *
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>
+     */
+    function intersoccer_rr_strip_sensitive_fields_from_export_row(array $row): array {
+        if (intersoccer_rr_current_user_can_view_medical()) {
+            return $row;
+        }
+
+        foreach (intersoccer_rr_sensitive_export_field_keys() as $key) {
+            unset($row[$key]);
+        }
+
+        return $row;
+    }
+}
+
+if (!function_exists('intersoccer_rr_strip_sensitive_fields_from_export_rows')) {
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @return array<int,array<string,mixed>>
+     */
+    function intersoccer_rr_strip_sensitive_fields_from_export_rows(array $rows): array {
+        return array_map(
+            static function ($row) {
+                return is_array($row) ? intersoccer_rr_strip_sensitive_fields_from_export_row($row) : $row;
+            },
+            $rows
+        );
+    }
+}
+
 if (!function_exists('intersoccer_rr_medical_dob_field_keys')) {
     /**
      * Roster row keys for date of birth (hidden when medical access is denied).

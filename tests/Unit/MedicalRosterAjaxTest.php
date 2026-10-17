@@ -152,6 +152,34 @@ class MedicalRosterAjaxTest extends TestCase
         $this->assertSame('Restricted', $payload['data']['roster']['player_dob']);
     }
 
+    public function test_get_roster_entry_returns_real_medical_and_dob_for_allowed_user(): void
+    {
+        unset($GLOBALS['intersoccer_medical_access_test_filters']);
+        intersoccer_test_set_user_caps(['manage_options' => true]);
+        $GLOBALS['intersoccer_test_wpdb_row'] = [
+            'id' => 10,
+            'player_name' => 'Kid',
+            'medical_conditions' => 'Asthma',
+            'player_dob' => '2011-05-05',
+        ];
+        global $wpdb;
+        $wpdb = new class extends InterSoccerTestWpdb {
+            public function get_row($query = null, $output = OBJECT, $y = 0) {
+                return $GLOBALS['intersoccer_test_wpdb_row'];
+            }
+        };
+
+        $_POST = ['nonce' => 'test', 'roster_id' => '10'];
+
+        ob_start();
+        intersoccer_ajax_get_roster_entry();
+        $json = ob_get_clean();
+        $payload = json_decode($json, true);
+        $this->assertTrue($payload['success']);
+        $this->assertSame('Asthma', $payload['data']['roster']['medical_conditions']);
+        $this->assertSame('2011-05-05', $payload['data']['roster']['player_dob']);
+    }
+
     public function test_camps_row_redaction_matches_ajax_payload_shape(): void
     {
         unset($GLOBALS['intersoccer_medical_access_test_filters']);
