@@ -136,10 +136,13 @@ class MedicalRosterAjaxTest extends TestCase
         ];
 
         $GLOBALS['intersoccer_test_json_error_throws'] = true;
-        ob_start();
-        intersoccer_ajax_update_roster_entry();
-        ob_end_clean();
-        unset($GLOBALS['intersoccer_test_json_error_throws']);
+        try {
+            ob_start();
+            intersoccer_ajax_update_roster_entry();
+            ob_end_clean();
+        } finally {
+            unset($GLOBALS['intersoccer_test_json_error_throws']);
+        }
 
         $this->assertSame(['player_dob' => '2013-04-05'], $wpdb->last_update);
     }

@@ -14,6 +14,83 @@ if ( ! function_exists( 'intersoccer_roster_field_player_first_name' ) ) {
 	}
 }
 
+if ( ! function_exists( 'intersoccer_rr_current_user_can_view_dob' ) ) {
+	$__ma = dirname( __FILE__ ) . '/medical-access.php';
+	if ( file_exists( $__ma ) ) {
+		require_once $__ma;
+	}
+}
+
+/**
+ * @return bool|null
+ */
+function &intersoccer_player_camp_status_dob_gate_cache() {
+	static $can_view = null;
+
+	return $can_view;
+}
+
+/**
+ * Whether the current user may see DOB on this report (resolved once per request).
+ */
+function intersoccer_player_camp_status_user_can_view_dob() {
+	$can_view = &intersoccer_player_camp_status_dob_gate_cache();
+	if ( $can_view !== null ) {
+		return $can_view;
+	}
+	if ( ! function_exists( 'intersoccer_rr_current_user_can_view_dob' ) ) {
+		$can_view = false;
+		return $can_view;
+	}
+	$can_view = intersoccer_rr_current_user_can_view_dob() === true;
+
+	return $can_view;
+}
+
+/**
+ * Reset cached DOB permission (tests only).
+ */
+function intersoccer_player_camp_status_reset_dob_gate_cache() {
+	$can_view = &intersoccer_player_camp_status_dob_gate_cache();
+	$can_view = null;
+}
+
+/**
+ * DOB cell value for the admin HTML table.
+ *
+ * @param string $dob Raw DOB from player meta.
+ */
+function intersoccer_player_camp_status_format_dob_for_display( $dob ) {
+	if ( ! intersoccer_player_camp_status_user_can_view_dob() ) {
+		return function_exists( 'intersoccer_rr_medical_restricted_label' )
+			? intersoccer_rr_medical_restricted_label()
+			: 'Restricted';
+	}
+
+	return (string) $dob;
+}
+
+/**
+ * Excel column headers for player camp status export.
+ *
+ * @return string[]
+ */
+function intersoccer_player_camp_status_export_headers() {
+	$headers = [
+		'Player Name',
+		'Parent Email',
+		'User ID',
+	];
+	if ( intersoccer_player_camp_status_user_can_view_dob() ) {
+		$headers[] = 'DOB';
+	}
+	$headers[] = 'Age';
+	$headers[] = 'Booked';
+	$headers[] = 'Camp Bookings';
+
+	return $headers;
+}
+
 
 /**
  * Camp-like activity_type values (Camps listing types + Girls Only variants).
@@ -603,19 +680,23 @@ function intersoccer_player_camp_status_request_filters() {
  * Flat export row for Excel.
  *
  * @param array<string,mixed> $row
- * @return array{0:string,1:string,2:int|string,3:string,4:string|int|null,5:string,6:string}
+ * @return list<string|int>
  */
 function intersoccer_player_camp_status_export_row(array $row) {
 	$name = trim(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? ''));
-	return [
+	$out = [
 		$name,
 		(string) ($row['user_email'] ?? ''),
 		(int) ($row['user_id'] ?? 0),
-		(string) ($row['dob'] ?? ''),
-		$row['age'] ?? '',
-		!empty($row['booked']) ? 'Yes' : 'No',
-		(string) ($row['bookings_display'] ?? ''),
 	];
+	if ( intersoccer_player_camp_status_user_can_view_dob() ) {
+		$out[] = (string) ( $row['dob'] ?? '' );
+	}
+	$out[] = $row['age'] ?? '';
+	$out[] = ! empty( $row['booked'] ) ? 'Yes' : 'No';
+	$out[] = (string) ( $row['bookings_display'] ?? '' );
+
+	return $out;
 }
 
 /**
@@ -643,17 +724,10 @@ function intersoccer_player_camp_status_stream_excel(array $rows, $year) {
 	$sheet = $spreadsheet->getActiveSheet();
 	$sheet->setTitle('Player Camp Status');
 
-	$headers = [
-		'Player Name',
-		'Parent Email',
-		'User ID',
-		'DOB',
-		'Age',
-		'Booked',
-		'Camp Bookings',
-	];
+	$headers = intersoccer_player_camp_status_export_headers();
 	$sheet->fromArray($headers, null, 'A1');
-	$sheet->getStyle('A1:G1')->getFont()->setBold(true);
+	$last_col = chr( ord( 'A' ) + count( $headers ) - 1 );
+	$sheet->getStyle( 'A1:' . $last_col . '1' )->getFont()->setBold( true );
 
 	$row_index = 2;
 	foreach ($rows as $row) {
@@ -661,7 +735,7 @@ function intersoccer_player_camp_status_stream_excel(array $rows, $year) {
 		$row_index++;
 	}
 
-	foreach (range('A', 'G') as $col) {
+	foreach ( range( 'A', $last_col ) as $col ) {
 		$sheet->getColumnDimension($col)->setAutoSize(true);
 	}
 
@@ -846,7 +920,7 @@ function intersoccer_render_player_camp_status_page() {
 								<br />
 								<a href="<?php echo esc_url($user_edit); ?>">#<?php echo esc_html((string) (int) $row['user_id']); ?></a>
 							</td>
-							<td><?php echo esc_html((string) ($row['dob'] ?? '')); ?></td>
+							<td><?php echo esc_html( intersoccer_player_camp_status_format_dob_for_display( (string) ( $row['dob'] ?? '' ) ) ); ?></td>
 							<td><?php echo esc_html($row['age'] !== null && $row['age'] !== '' ? (string) $row['age'] : '—'); ?></td>
 							<td>
 								<?php if (!empty($row['booked'])) : ?>
