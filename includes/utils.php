@@ -3131,8 +3131,16 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     error_log('InterSoccer: Set activity_type to ' . $activity_type . ' for order ' . $order_id . ', item ' . $item_id);
 
     // Parse dates using unified parser
-    if ($product_type === 'camp' && !empty($camp_terms) && $camp_terms !== 'N/A') {
-        list($start_date, $end_date, $event_dates) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
+    if ($product_type === 'camp' && function_exists('intersoccer_reports_resolve_camp_schedule')) {
+        list($start_date, $end_date, $event_dates) = intersoccer_reports_resolve_camp_schedule(
+            (int) $variation_id,
+            (int) $item_id,
+            (string) $camp_terms,
+            (string) $season
+        );
+        if (empty($event_dates) || $event_dates === 'N/A') {
+            $event_dates = 'N/A';
+        }
     } elseif ($product_type === 'tournament') {
         // For tournaments, get date from product attribute pa_date or Date
         $variation = $variation_id ? wc_get_product($variation_id) : null;
@@ -3228,8 +3236,8 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
                 error_log('InterSoccer: Parsed tournament date: ' . $start_date);
             } else {
                 error_log('InterSoccer: Failed to parse tournament date "' . $tournament_date . '" for order ' . $order_id . ', item ' . $item_id);
-                $start_date = '1970-01-01';
-                $end_date = '1970-01-01';
+                $start_date = null;
+                $end_date = null;
                 $event_dates = 'N/A';
             }
         } else {
@@ -3245,15 +3253,15 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
                     $end_date = $parsed_end;
                     $event_dates = "$start_date to $end_date";
                 } else {
-                    error_log('InterSoccer: Date parsing failed for order ' . $order_id . ', item ' . $item_id . ' - Using defaults');
-                    $start_date = '1970-01-01';
-                    $end_date = '1970-01-01';
+                    error_log('InterSoccer: Date parsing failed for order ' . $order_id . ', item ' . $item_id . ' - leaving dates empty');
+                    $start_date = null;
+                    $end_date = null;
                     $event_dates = 'N/A';
                 }
             } else {
-                error_log('InterSoccer: No tournament date found (checked pa_date, Date attribute, and Start Date/End Date metadata) for order ' . $order_id . ', item ' . $item_id . ' - Using defaults');
-                $start_date = '1970-01-01';
-                $end_date = '1970-01-01';
+                error_log('InterSoccer: No tournament date found (checked pa_date, Date attribute, and Start Date/End Date metadata) for order ' . $order_id . ', item ' . $item_id . ' - leaving dates empty');
+                $start_date = null;
+                $end_date = null;
                 $event_dates = 'N/A';
             }
         }
@@ -3269,9 +3277,9 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
             $end_date = $parsed_end;
             $event_dates = "$start_date to $end_date";
         } else {
-            error_log('InterSoccer: Invalid course date format for item ' . $item_id . ' in order ' . $order_id . ' - Using defaults');
-            $start_date = '1970-01-01';
-            $end_date = '1970-01-01';
+            error_log('InterSoccer: Invalid course date format for item ' . $item_id . ' in order ' . $order_id . ' - leaving dates empty');
+            $start_date = null;
+            $end_date = null;
             $event_dates = 'N/A';
         }
     }
@@ -3378,8 +3386,12 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         'late_pickup_days' => $late_pickup_days,
         'day_presence' => json_encode($day_presence),
         'age_group' => substr((string)($normalized_age_group ?: 'N/A'), 0, 50),
-        'start_date' => $start_date ?: '1970-01-01',
-        'end_date' => $end_date ?: '1970-01-01',
+        'start_date' => function_exists('intersoccer_roster_nullable_storage_date')
+            ? intersoccer_roster_nullable_storage_date($start_date)
+            : ($start_date && $start_date !== '1970-01-01' ? $start_date : null),
+        'end_date' => function_exists('intersoccer_roster_nullable_storage_date')
+            ? intersoccer_roster_nullable_storage_date($end_date)
+            : ($end_date && $end_date !== '1970-01-01' ? $end_date : null),
         'event_dates' => substr((string)($event_dates ?: 'N/A'), 0, 100),
         'product_name' => substr((string)($product_name ?: 'Unknown Product'), 0, 255), // Already normalized to English above
         'activity_type' => substr((string)($normalized_activity_type), 0, 50),
@@ -5102,6 +5114,21 @@ if (!function_exists('intersoccer_normalize_activity_type')) {
     }
 }
 
+if (!function_exists('intersoccer_roster_nullable_storage_date')) {
+    /**
+     * Normalize roster start/end dates for DB storage (NULL when unknown; never 1970-01-01).
+     *
+     * @param mixed $value
+     * @return string|null
+     */
+    function intersoccer_roster_nullable_storage_date($value) {
+        if ($value === null || $value === '' || $value === '1970-01-01' || $value === '0000-00-00') {
+            return null;
+        }
+        return (string) $value;
+    }
+}
+
 if (!function_exists('intersoccer_roster_strip_girls_only_from_activity_label')) {
     /**
      * Remove girls-only suffixes from an activity label (EN/FR/DE), leaving the base activity name.
@@ -5853,26 +5880,17 @@ function intersoccer_generate_event_signature($event_data) {
         }
     }
     
-    $raw_activity_for_sig = $event_data['activity_type'] ?? '';
-    $canonical_activity = function_exists('intersoccer_canonical_activity_type_for_roster')
-        ? intersoccer_canonical_activity_type_for_roster($raw_activity_for_sig)
-        : $raw_activity_for_sig;
-    $girls_only_sig = !empty($event_data['girls_only']) ? '1' : '0';
-    if ($girls_only_sig === '0' && function_exists('intersoccer_text_indicates_girls_only')
-        && intersoccer_text_indicates_girls_only($raw_activity_for_sig)) {
-        $girls_only_sig = '1';
-    }
-
-    // Normalize translatable term names to slugs for language-agnostic signatures
+    // Signature parity with pre-2.10.16 rows: use stored activity_type and girls_only column only
+    // (no canonical activity map or girls-only text inference — those change hashes for legacy DB shapes).
     $normalized_components = [
-        'activity_type' => $canonical_activity,
+        'activity_type' => $event_data['activity_type'] ?? '',
         'venue' => intersoccer_get_term_slug_by_name($event_data['venue'] ?? '', 'pa_intersoccer-venues'),
         'age_group' => intersoccer_get_term_slug_by_name($event_data['age_group'] ?? '', 'pa_age-group'),
         'camp_terms' => intersoccer_get_term_slug_by_name($event_data['camp_terms'] ?? '', 'pa_camp-terms'),
         'course_day' => intersoccer_get_term_slug_by_name($event_data['course_day'] ?? '', 'pa_course-day'),
         'times' => intersoccer_resolve_times_slug_for_signature($event_data['times'] ?? ''),
         'season' => intersoccer_get_term_slug_by_name($event_data['season'] ?? '', 'pa_program-season'),
-        'girls_only' => $girls_only_sig,
+        'girls_only' => !empty($event_data['girls_only']) ? '1' : '0',
         'city' => intersoccer_get_term_slug_by_name($event_data['city'] ?? '', 'pa_city'),
         'canton_region' => intersoccer_get_term_slug_by_name($event_data['canton_region'] ?? '', 'pa_canton-region'),
         'product_id' => $product_id, // Use normalized product_id
