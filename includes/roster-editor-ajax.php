@@ -313,23 +313,38 @@ function intersoccer_ajax_update_roster_entry() {
         wp_send_json_success(['message' => __('Field updated successfully.', 'intersoccer-reports-rosters')]);
 
     } else {
-        // Full form update
+        // Full form update — only write fields that actually changed (UI posts every input).
         $update_data = [];
 
-        // Only process keys present in the editable allowlist
         foreach ($editable_fields as $field) {
             if (!array_key_exists($field, $_POST)) {
                 continue;
             }
 
-            $sanitized_value = intersoccer_sanitize_roster_field($field, $_POST[$field]);
-            if ($sanitized_value !== false) {
-                $update_data[$field] = $sanitized_value;
+            $posted_value = $_POST[$field];
+            $existing_value = array_key_exists($field, $existing) ? $existing[$field] : null;
+
+            if ($posted_value === '' && $existing_value === null) {
+                continue;
             }
+
+            $sanitized_value = intersoccer_sanitize_roster_field($field, $posted_value);
+            if ($sanitized_value === false) {
+                continue;
+            }
+
+            if (intersoccer_roster_editor_full_form_value_equals($field, $sanitized_value, $existing_value)) {
+                continue;
+            }
+
+            $update_data[$field] = $sanitized_value;
         }
 
         if (empty($update_data)) {
-            wp_send_json_error(['message' => __('No valid fields to update.', 'intersoccer-reports-rosters')]);
+            wp_send_json_success([
+                'message' => __('No changes to save.', 'intersoccer-reports-rosters'),
+                'updated_fields' => [],
+            ]);
         }
 
         $where = ['id' => $roster_id];
@@ -376,6 +391,33 @@ function intersoccer_ajax_get_roster_entry() {
 }
 
 /**
+ * Whether a sanitized full-form value matches the loaded DB row (for skip-unchanged writes).
+ *
+ * @param string $field_name Field name
+ * @param mixed  $sanitized  Sanitized value from intersoccer_sanitize_roster_field()
+ * @param mixed  $existing   Value from the existing roster row
+ */
+function intersoccer_roster_editor_full_form_value_equals($field_name, $sanitized, $existing) {
+    if ($existing === null || $existing === '') {
+        return $sanitized === null || $sanitized === '';
+    }
+    if ($sanitized === null || $sanitized === '') {
+        return false;
+    }
+    if (in_array($field_name, ['age', 'girls_only', 'player_index', 'is_placeholder', 'event_completed'], true)) {
+        return (string) $sanitized === (string) $existing;
+    }
+    if (strpos($field_name, 'timestamp') !== false || strpos($field_name, 'created_at') !== false || strpos($field_name, 'updated_at') !== false) {
+        $norm_existing = (string) $existing;
+        if (strpos($norm_existing, 'T') !== false) {
+            $norm_existing = str_replace('T', ' ', $norm_existing);
+        }
+        return (string) $sanitized === $norm_existing;
+    }
+    return (string) $sanitized === (string) $existing;
+}
+
+/**
  * Sanitize a roster field value based on field type
  * 
  * @param string $field_name Field name
@@ -385,6 +427,9 @@ function intersoccer_ajax_get_roster_entry() {
 function intersoccer_sanitize_roster_field($field_name, $value) {
     // Handle empty values
     if ($value === '' || $value === null) {
+        if (strpos($field_name, 'timestamp') !== false || strpos($field_name, 'created_at') !== false || strpos($field_name, 'updated_at') !== false) {
+            return null;
+        }
         // Return appropriate default based on field type
         if (strpos($field_name, 'date') !== false) {
             if (in_array($field_name, ['start_date', 'end_date'], true)) {
