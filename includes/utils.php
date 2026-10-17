@@ -147,31 +147,40 @@ if (!function_exists('intersoccer_get_cached_term_in_default_language')) {
             return $request_cache[$request_key];
         }
 
+        $persist_term_cache = static function ($term_id) use ($transient_key, &$request_cache, $request_key, $taxonomy) {
+            if (function_exists('intersoccer_reports_persist_transient')) {
+                intersoccer_reports_persist_transient($transient_key, (int) $term_id, 6 * HOUR_IN_SECONDS);
+            } else {
+                set_transient($transient_key, (int) $term_id, 6 * HOUR_IN_SECONDS);
+            }
+            $term = get_term((int) $term_id, $taxonomy);
+            $request_cache[$request_key] = ($term && !is_wp_error($term)) ? $term : null;
+            return $request_cache[$request_key];
+        };
+
         $term = null;
         if (function_exists('intersoccer_get_term_by_translated_name')) {
             $term = intersoccer_get_term_by_translated_name($value, $taxonomy);
             if ($term && !is_wp_error($term)) {
-                set_transient($transient_key, (int) $term->term_id, 6 * HOUR_IN_SECONDS);
-                $request_cache[$request_key] = $term;
-                return $term;
+                return $persist_term_cache((int) $term->term_id);
             }
         }
 
         $term = get_term_by('slug', $value, $taxonomy);
         if ($term && !is_wp_error($term)) {
-            set_transient($transient_key, (int) $term->term_id, 6 * HOUR_IN_SECONDS);
-            $request_cache[$request_key] = $term;
-            return $term;
+            return $persist_term_cache((int) $term->term_id);
         }
 
         $term = get_term_by('name', $value, $taxonomy);
         if ($term && !is_wp_error($term)) {
-            set_transient($transient_key, (int) $term->term_id, 6 * HOUR_IN_SECONDS);
-            $request_cache[$request_key] = $term;
-            return $term;
+            return $persist_term_cache((int) $term->term_id);
         }
 
-        set_transient($transient_key, 0, 15 * MINUTE_IN_SECONDS);
+        if (function_exists('intersoccer_reports_persist_transient')) {
+            intersoccer_reports_persist_transient($transient_key, 0, 15 * MINUTE_IN_SECONDS);
+        } else {
+            set_transient($transient_key, 0, 15 * MINUTE_IN_SECONDS);
+        }
         $request_cache[$request_key] = null;
         return null;
     }
@@ -4391,6 +4400,73 @@ if (!function_exists('intersoccer_is_bulk_normalize_quiet')) {
     }
 }
 
+if (!function_exists('intersoccer_reports_set_readonly_mode')) {
+    /**
+     * When true, roster report/dry-run helpers must not persist transients or options.
+     *
+     * @param bool $enabled
+     */
+    function intersoccer_reports_set_readonly_mode($enabled) {
+        $GLOBALS['intersoccer_reports_readonly_mode'] = (bool) $enabled;
+        if (!$enabled) {
+            unset($GLOBALS['intersoccer_reports_readonly_write_attempts']);
+        }
+    }
+}
+
+if (!function_exists('intersoccer_reports_is_readonly_mode')) {
+    function intersoccer_reports_is_readonly_mode() {
+        return !empty($GLOBALS['intersoccer_reports_readonly_mode']);
+    }
+}
+
+if (!function_exists('intersoccer_reports_get_readonly_write_attempts')) {
+    function intersoccer_reports_get_readonly_write_attempts() {
+        return (int) ($GLOBALS['intersoccer_reports_readonly_write_attempts'] ?? 0);
+    }
+}
+
+if (!function_exists('intersoccer_reports_persist_transient')) {
+    /**
+     * @return bool True when set_transient ran; false when skipped (read-only).
+     */
+    function intersoccer_reports_persist_transient($transient, $value, $expiration) {
+        if (intersoccer_reports_is_readonly_mode()) {
+            return false;
+        }
+        return set_transient($transient, $value, $expiration);
+    }
+}
+
+if (!function_exists('intersoccer_reports_register_readonly_write_guards')) {
+    /**
+     * Count and block transient/option writes while read-only mode is on (dry-run safety net).
+     */
+    function intersoccer_reports_register_readonly_write_guards() {
+        static $registered = false;
+        if ($registered || !function_exists('add_filter')) {
+            return;
+        }
+        $registered = true;
+
+        add_filter('pre_set_transient', static function ($value, $transient) {
+            if (!intersoccer_reports_is_readonly_mode()) {
+                return $value;
+            }
+            $GLOBALS['intersoccer_reports_readonly_write_attempts'] = intersoccer_reports_get_readonly_write_attempts() + 1;
+            return false;
+        }, 1, 2);
+
+        add_filter('pre_update_option', static function ($value, $option, $old_value) {
+            if (!intersoccer_reports_is_readonly_mode()) {
+                return $value;
+            }
+            $GLOBALS['intersoccer_reports_readonly_write_attempts'] = intersoccer_reports_get_readonly_write_attempts() + 1;
+            return $old_value;
+        }, 1, 3);
+    }
+}
+
 if (!function_exists('intersoccer_resolve_variation_for_roster')) {
     /**
      * Resolve a variation ID to the default-language (English) variation for roster reads/writes.
@@ -6384,7 +6460,11 @@ function intersoccer_reports_resolve_camp_schedule($variation_id, $order_item_id
                 $bucket = 'intersoccer_rr_camp_terms_parse_' . gmdate('YmdH');
                 $count  = (int) get_transient($bucket);
                 if ($count < 20) {
-                    set_transient($bucket, $count + 1, HOUR_IN_SECONDS);
+                    if (function_exists('intersoccer_reports_persist_transient')) {
+                        intersoccer_reports_persist_transient($bucket, $count + 1, HOUR_IN_SECONDS);
+                    } else {
+                        set_transient($bucket, $count + 1, HOUR_IN_SECONDS);
+                    }
                     error_log(sprintf(
                         'InterSoccer RR: DEPRECATED camp-terms date parse (variation=%d). Prefer _camp_start_date.',
                         $variation_id

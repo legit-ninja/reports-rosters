@@ -33,6 +33,12 @@ if ((string) $ro_after !== '1') {
 if (function_exists('intersoccer_set_bulk_normalize_quiet')) {
     intersoccer_set_bulk_normalize_quiet(true);
 }
+if (function_exists('intersoccer_reports_set_readonly_mode')) {
+    intersoccer_reports_set_readonly_mode(true);
+}
+if (function_exists('intersoccer_reports_register_readonly_write_guards')) {
+    intersoccer_reports_register_readonly_write_guards();
+}
 
 $echo_section = static function (string $title, array $rows) {
     echo "\n== {$title}\n";
@@ -490,6 +496,21 @@ $echo_section('girls-only label text but girls_only = 0', $label_girls_flag_zero
 
 if (function_exists('intersoccer_set_bulk_normalize_quiet')) {
     intersoccer_set_bulk_normalize_quiet(false);
+}
+
+$readonly_write_attempts = function_exists('intersoccer_reports_get_readonly_write_attempts')
+    ? intersoccer_reports_get_readonly_write_attempts()
+    : 0;
+if ($readonly_write_attempts > 0) {
+    echo "\nABORT: {$readonly_write_attempts} transient/option write attempt(s) detected during dry-run\n";
+    if (function_exists('intersoccer_reports_set_readonly_mode')) {
+        intersoccer_reports_set_readonly_mode(false);
+    }
+    return;
+}
+
+if (function_exists('intersoccer_reports_set_readonly_mode')) {
+    intersoccer_reports_set_readonly_mode(false);
 }
 
 echo "\nDRY RUN complete (no writes).\n";
