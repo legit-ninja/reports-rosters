@@ -1210,7 +1210,9 @@ function intersoccer_render_roster_edit_form() {
  * Helper function to render a form field
  */
 function intersoccer_render_form_field($roster, $field_name, $label, $type = 'text', $atts = []) {
-    $value = isset($roster[$field_name]) ? esc_attr($roster[$field_name]) : '';
+    $raw_value = isset($roster[$field_name]) && $roster[$field_name] !== null
+        ? (string) $roster[$field_name]
+        : '';
     $input_attrs = '';
     
     foreach ($atts as $key => $val) {
@@ -1222,17 +1224,17 @@ function intersoccer_render_form_field($roster, $field_name, $label, $type = 'te
     echo '<td>';
     
     if ($type === 'textarea') {
-        echo '<textarea name="' . esc_attr($field_name) . '" id="' . esc_attr($field_name) . '" class="regular-text" rows="3"' . $input_attrs . '>' . esc_textarea($value) . '</textarea>';
+        echo '<textarea name="' . esc_attr($field_name) . '" id="' . esc_attr($field_name) . '" class="regular-text" rows="3"' . $input_attrs . '>' . esc_textarea($raw_value) . '</textarea>';
     } elseif ($type === 'datetime-local') {
-        // Convert MySQL datetime to datetime-local format
-        if ($value && strpos($value, ' ') !== false) {
-            $value = str_replace(' ', 'T', $value);
+        $display_value = $raw_value;
+        if ($display_value !== '' && strpos($display_value, ' ') !== false) {
+            $display_value = str_replace(' ', 'T', $display_value);
         }
-        echo '<input type="datetime-local" name="' . esc_attr($field_name) . '" id="' . esc_attr($field_name) . '" value="' . $value . '" class="regular-text"' . $input_attrs . ' />';
+        echo '<input type="datetime-local" name="' . esc_attr($field_name) . '" id="' . esc_attr($field_name) . '" value="' . esc_attr($display_value) . '" class="regular-text"' . $input_attrs . ' />';
     } else {
         $input_type = ($type === 'date') ? 'text' : $type;
         $date_class = ($type === 'date') ? ' datepicker' : '';
-        echo '<input type="' . esc_attr($input_type) . '" name="' . esc_attr($field_name) . '" id="' . esc_attr($field_name) . '" value="' . $value . '" class="regular-text' . $date_class . '"' . $input_attrs . ' />';
+        echo '<input type="' . esc_attr($input_type) . '" name="' . esc_attr($field_name) . '" id="' . esc_attr($field_name) . '" value="' . esc_attr($raw_value) . '" class="regular-text' . $date_class . '"' . $input_attrs . ' />';
     }
     
     echo '</td>';

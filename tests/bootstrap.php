@@ -345,6 +345,11 @@ if (!function_exists('add_post_meta')) {
 // User meta functions
 if (!function_exists('get_user_meta')) {
     function get_user_meta($user_id, $key = '', $single = false) {
+        // Tests may seed synthetic user meta: $GLOBALS['intersoccer_test_user_meta'][$user_id][$key] = value.
+        $seeded = $GLOBALS['intersoccer_test_user_meta'][(int) $user_id] ?? null;
+        if (is_array($seeded) && $key !== '' && array_key_exists($key, $seeded)) {
+            return $single ? $seeded[$key] : [$seeded[$key]];
+        }
         return $single ? '' : [];
     }
 }
