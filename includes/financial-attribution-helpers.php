@@ -119,9 +119,6 @@ function intersoccer_map_discount_type_to_report_bucket(string $type): string {
 }
 
 /**
- * Parse a legacy HTML or plain-text discount amount from order item meta.
- */
-/**
  * Post-discount line revenue before refunds (WooCommerce line total semantics).
  *
  * When subtotal already equals line total, attributed discount meta is informational
@@ -139,6 +136,9 @@ function intersoccer_financial_line_final_price(float $line_subtotal, float $lin
     return max(0.0, $line_subtotal - $attributed_discount_amount);
 }
 
+/**
+ * Parse a legacy HTML or plain-text discount amount from order item meta.
+ */
 function intersoccer_parse_legacy_discount_amount($value): float {
     if ($value === null || $value === '') {
         return 0.0;
