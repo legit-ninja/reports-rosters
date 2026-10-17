@@ -82,6 +82,7 @@
             <file>tests/Unit/BookingTypeNormalizerTest.php</file>
             <file>tests/Unit/MedicalAccessTest.php</file>
             <file>tests/Unit/MedicalRosterAjaxTest.php</file>
+            <file>tests/Unit/RosterExportMedicalGatingTest.php</file>
         </testsuite>
         <testsuite name="Complete">
             <directory>tests</directory>

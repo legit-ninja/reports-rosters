@@ -725,9 +725,16 @@ class CampsPage extends AbstractPage {
                                             <?php echo esc_html($camp['first_name'] . ' ' . $camp['last_name']); ?>
                                         </div>
                                         <div class="player-details">
-                                            <?php if (!empty($camp['dob'])): ?>
-                                                <?php printf(__('Age: %d', 'intersoccer-reports-rosters'), DateHelper::get_age($camp['dob'])); ?><br>
-                                            <?php endif; ?>
+                                            <?php
+                                            $camp_dob = $camp['dob'] ?? $camp['player_dob'] ?? '';
+                                            $restricted_label = intersoccer_rr_medical_restricted_label();
+                                            if ($camp_dob === $restricted_label) :
+                                                echo esc_html($restricted_label) . '<br>';
+                                            elseif ($camp_dob !== '') :
+                                                printf(__('Age: %d', 'intersoccer-reports-rosters'), DateHelper::get_age($camp_dob));
+                                                echo '<br>';
+                                            endif;
+                                            ?>
                                             <?php if (!empty($camp['gender'])): ?>
                                                 <?php echo ucfirst(esc_html($camp['gender'])); ?>
                                             <?php endif; ?>

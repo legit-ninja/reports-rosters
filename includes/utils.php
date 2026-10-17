@@ -3457,7 +3457,8 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     // Insert or update
     $result = $wpdb->replace($table_name, $data);
     $insert_id = $wpdb->insert_id;
-    error_log('InterSoccer: Upsert result for order ' . $order_id . ', item ' . $item_id . ': ' . var_export($result, true) . ' | Insert ID: ' . $insert_id . ' | Last DB error: ' . $wpdb->last_error . ' | Last query: ' . $wpdb->last_query);
+    $rows_affected = ($result === false) ? 0 : (int) $result;
+    error_log('InterSoccer: Upsert for order ' . $order_id . ', item ' . $item_id . ': rows_affected=' . $rows_affected . ' insert_id=' . $insert_id);
 
     if ($result) {
         error_log('InterSoccer: Successfully upserted roster entry for order ' . $order_id . ', item ' . $item_id . ' (ID: ' . $insert_id . ') with event_signature: ' . $data['event_signature']);

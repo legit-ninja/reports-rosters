@@ -178,7 +178,76 @@ if (!function_exists('intersoccer_rr_strip_medical_from_update_data')) {
         foreach (intersoccer_rr_medical_roster_field_keys() as $key) {
             unset($update_data[$key]);
         }
+        foreach (intersoccer_rr_medical_dob_field_keys() as $key) {
+            unset($update_data[$key]);
+        }
 
         return $update_data;
+    }
+}
+
+if (!function_exists('intersoccer_rr_roster_export_personal_headers')) {
+    /**
+     * Spreadsheet personal columns (aligned with export row builder).
+     *
+     * @return string[]
+     */
+    function intersoccer_rr_roster_export_personal_headers(): array {
+        $headers = [
+            'First Name',
+            'Surname',
+            'Gender',
+            'Phone',
+            'Email',
+            'Age',
+        ];
+        if (intersoccer_rr_current_user_can_view_medical()) {
+            $headers[] = 'Date of Birth';
+            $headers[] = 'Medical/Dietary Conditions';
+        }
+        $headers[] = 'AVS Number';
+
+        return $headers;
+    }
+}
+
+if (!function_exists('intersoccer_rr_roster_export_personal_row_values')) {
+    /**
+     * Personal column values for one export row (no camp/course tail).
+     *
+     * @param array<string,mixed> $player
+     */
+    function intersoccer_rr_roster_export_personal_row_values(
+        array $player,
+        string $processed_phone,
+        string $formatted_birth_date,
+        string $export_medical
+    ): array {
+        $export_first = function_exists('intersoccer_roster_field_player_first_name')
+            ? intersoccer_roster_field_player_first_name($player)
+            : ($player['first_name'] ?? '');
+        $export_last = function_exists('intersoccer_roster_field_player_last_name')
+            ? intersoccer_roster_field_player_last_name($player)
+            : ($player['last_name'] ?? '');
+        $export_gender = function_exists('intersoccer_roster_field_player_gender')
+            ? intersoccer_roster_field_player_gender($player)
+            : ($player['gender'] ?? '');
+        $avs_export_value = isset($player['avs_number']) ? (string) $player['avs_number'] : 'N/A';
+
+        $row = [
+            $export_first !== '' ? $export_first : 'N/A',
+            $export_last !== '' ? $export_last : 'N/A',
+            $export_gender !== '' ? $export_gender : 'N/A',
+            $processed_phone,
+            $player['parent_email'] ?? 'N/A',
+            $player['age'] ?? 'N/A',
+        ];
+        if (intersoccer_rr_current_user_can_view_medical()) {
+            $row[] = $formatted_birth_date;
+            $row[] = $export_medical !== '' ? $export_medical : 'N/A';
+        }
+        $row[] = $avs_export_value;
+
+        return $row;
     }
 }

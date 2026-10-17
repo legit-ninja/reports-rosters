@@ -999,7 +999,13 @@ function intersoccer_render_roster_edit_form() {
                         <?php intersoccer_render_form_field($roster, 'last_name', 'Last Name', 'text'); ?>
                         <?php intersoccer_render_form_field($roster, 'player_first_name', 'Player First Name', 'text'); ?>
                         <?php intersoccer_render_form_field($roster, 'player_last_name', 'Player Last Name', 'text'); ?>
-                        <?php intersoccer_render_form_field($roster, 'player_dob', 'Player Date of Birth', 'date'); ?>
+                        <?php
+                        if (!intersoccer_rr_current_user_can_view_medical()) {
+                            echo '<tr><th>' . esc_html__('Player Date of Birth', 'intersoccer-reports-rosters') . '</th><td>' . esc_html(intersoccer_rr_medical_restricted_label()) . '</td></tr>';
+                        } else {
+                            intersoccer_render_form_field($roster, 'player_dob', 'Player Date of Birth', 'date');
+                        }
+                        ?>
                         <?php intersoccer_render_form_field($roster, 'age', 'Age', 'number'); ?>
                         <?php intersoccer_render_form_field_select($roster, 'gender', 'Gender', ['N/A', 'Male', 'Female', 'Other']); ?>
                         <?php intersoccer_render_form_field_select($roster, 'player_gender', 'Player Gender', ['', 'Male', 'Female', 'Other']); ?>

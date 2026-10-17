@@ -290,8 +290,11 @@ function intersoccer_ajax_update_roster_entry() {
             wp_send_json_error(['message' => __('This field cannot be edited.', 'intersoccer-reports-rosters')]);
         }
 
-        if (in_array($field, intersoccer_rr_medical_roster_field_keys(), true)
-            && !intersoccer_rr_current_user_can_view_medical()) {
+        if (!intersoccer_rr_current_user_can_view_medical()
+            && (
+                in_array($field, intersoccer_rr_medical_roster_field_keys(), true)
+                || in_array($field, intersoccer_rr_medical_dob_field_keys(), true)
+            )) {
             wp_send_json_error(['message' => __('This field cannot be edited.', 'intersoccer-reports-rosters')]);
         }
 

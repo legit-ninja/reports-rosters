@@ -311,6 +311,34 @@ if (!function_exists('wp_get_current_user')) {
     }
 }
 
+if (!function_exists('get_current_user_id')) {
+    function get_current_user_id() {
+        $user = wp_get_current_user();
+        return isset($user->ID) ? (int) $user->ID : 0;
+    }
+}
+
+if (!function_exists('intersoccer_test_set_user_caps')) {
+    /**
+     * Shared test helper for medical / roster permission tests.
+     *
+     * @param array<string,bool> $caps
+     */
+    function intersoccer_test_set_user_caps(array $caps): void {
+        $GLOBALS['intersoccer_test_current_user_caps'] = $caps;
+        $user = new stdClass();
+        $user->ID = 42;
+        $user->roles = !empty($caps['coach']) ? ['coach'] : [];
+        $GLOBALS['intersoccer_test_current_user'] = $user;
+    }
+}
+
+if (!function_exists('sanitize_textarea_field')) {
+    function sanitize_textarea_field($str) {
+        return trim((string) $str);
+    }
+}
+
 if (!function_exists('get_role')) {
     function get_role($role) {
         $mock = new stdClass();
