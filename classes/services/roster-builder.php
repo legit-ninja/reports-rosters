@@ -750,7 +750,9 @@ class RosterBuilder {
 
                 // Validate roster data
                 if ($options['validate_data']) {
-                    $validation = $this->validator->validateRosterData($roster_data);
+                    $validation = $this->validator->validateRosterData($roster_data, [
+                        'skip_age_group_validation' => !empty($options['skip_age_group_validation']),
+                    ]);
                     if (empty($validation['valid'])) {
                         $this->recordOrderItemRosterWriteFailure(
                             $order,

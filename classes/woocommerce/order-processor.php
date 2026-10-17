@@ -122,6 +122,7 @@ class OrderProcessor {
                     'validate_data'  => true,
                     'skip_duplicates' => true,
                     'update_existing' => true,
+                    'skip_age_group_validation' => true,
                 ]
             );
 

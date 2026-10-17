@@ -814,9 +814,10 @@ class DataValidator {
      * Validate roster data
      * 
      * @param array $roster_data Roster data to validate
+     * @param array $context Optional context (e.g. skip_age_group_validation for reconcile/hook bypass)
      * @return array Validation results
      */
-    public function validateRosterData(array $roster_data) {
+    public function validateRosterData(array $roster_data, array $context = []) {
         $rules = [
             'order_id' => ['required', 'integer', 'min:1'],
             'order_item_id' => ['required', 'integer', 'min:1'],
@@ -839,7 +840,7 @@ class DataValidator {
             'order_status' => ['required', 'in:pending,processing,on-hold,completed,cancelled,refunded,failed']
         ];
         
-        return $this->validate_data($roster_data, $rules);
+        return $this->validate_data($roster_data, $rules, $context);
     }
     
     /**
@@ -867,9 +868,10 @@ class DataValidator {
      * 
      * @param array $data Data to validate
      * @param array $rules Validation rules
+     * @param array $context Optional validation context
      * @return array Validation results
      */
-    public function validate_data(array $data, array $rules) {
+    public function validate_data(array $data, array $rules, array $context = []) {
         $validation_results = [
             'valid' => true,
             'errors' => [],
@@ -888,7 +890,7 @@ class DataValidator {
         }
         
         // Perform cross-field validation
-        $cross_field_errors = $this->validateCrossFieldRules($data, $rules);
+        $cross_field_errors = $this->validateCrossFieldRules($data, $rules, $context);
         if (!empty($cross_field_errors)) {
             $validation_results['valid'] = false;
             $validation_results['errors'] = array_merge($validation_results['errors'], $cross_field_errors);
@@ -902,9 +904,10 @@ class DataValidator {
      * 
      * @param array $data Data being validated
      * @param array $rules Validation rules
+     * @param array $context Optional validation context
      * @return array Cross-field validation errors
      */
-    private function validateCrossFieldRules(array $data, array $rules) {
+    private function validateCrossFieldRules(array $data, array $rules, array $context = []) {
         $errors = [];
         
         // Validate date ranges
@@ -959,9 +962,10 @@ class DataValidator {
         
         // Single-day camp rows may be stored with no recorded days (days_unknown); do not reject here.
         
-        // Validate age group eligibility
-        if (isset($data['dob']) && isset($data['age_group']) && 
-            !empty($data['dob']) && !empty($data['age_group'])) {
+        // Validate age group eligibility (skipped when reconcile/hook bypass age-group checks)
+        if (empty($context['skip_age_group_validation'])
+            && isset($data['dob']) && isset($data['age_group'])
+            && !empty($data['dob']) && !empty($data['age_group'])) {
             
             $event_date = $data['start_date'] ?? null;
             $birth_date = new \DateTime($data['dob']);

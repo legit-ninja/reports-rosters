@@ -43,11 +43,12 @@ use Mockery;
 
 class RosterBuilderHookAgeAtStartTest extends TestCase {
 
-    /** Options passed by the live hook, copied from order-processor.php:121-125. */
+    /** Options passed by the live hook, copied from order-processor.php build options. */
     private const LIVE_HOOK_OPTIONS = [
         'validate_data'   => true,
         'skip_duplicates' => true,
         'update_existing' => true,
+        'skip_age_group_validation' => true,
     ];
 
     /** @var array<int,mixed> */
@@ -144,6 +145,25 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         );
     }
 
+    /** Same wiring as makeBuilder but exercises DataValidator cross-field age rules. */
+    private function makeBuilderWithRealValidator(Player $player): RosterBuilder {
+        $players = new PlayersCollection();
+        $players->add($player);
+        $playerRepo = Mockery::mock(PlayerRepository::class);
+        $playerRepo->shouldReceive('getPlayersByCustomerId')->andReturn($players);
+        $matcher = Mockery::mock(PlayerMatcher::class);
+        $matcher->shouldReceive('getAssignedPlayers')->andReturn($players);
+        return new RosterBuilder(
+            $this->logger(),
+            Mockery::mock(Database::class),
+            $playerRepo,
+            $this->rosterRepository(),
+            new DataValidator($this->logger()),
+            Mockery::mock(EventMatcher::class),
+            $matcher
+        );
+    }
+
     private function meta(string $key, $value) {
         $m = Mockery::mock();
         $m->shouldReceive('get_data')->andReturn(['key' => $key, 'value' => $value]);
@@ -172,12 +192,21 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         $order->shouldReceive('get_customer_id')->andReturn($customer_id);
         $order->shouldReceive('get_items')->andReturn([$item_id => $item]);
         $order->shouldReceive('get_item')->andReturnUsing(fn($id) => (int) $id === $item_id ? $item : false);
+        $order->shouldReceive('add_order_note')->andReturn(1);
         foreach (['get_billing_email' => 'parent@example.test', 'get_billing_phone' => '+41 00 000 00 00',
                   'get_billing_first_name' => 'Parent', 'get_billing_last_name' => 'Test'] as $m => $v) {
             $order->shouldReceive($m)->andReturn($v);
         }
         self::$orders[$order_id] = $order;
         return $order;
+    }
+
+    /** Etoy meta with season cleared so PHPUnit normalization does not break season_format. */
+    private function etoyItemMetaForDataValidator(string $uuid, string $dob): array {
+        $meta = $this->etoyItemMeta($uuid, $dob);
+        $meta['Season'] = '';
+        unset($meta['Year']);
+        return $meta;
     }
 
     /** Etoy Autumn 2026 course line, EN order (missing case A and its control). */
@@ -276,6 +305,38 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
     }
 
     // ------------------------------------------------------------------ Etoy (full path from item meta)
+
+    public function test_real_validator_hook_options_with_skip_creates_under_age_row() {
+        $uuid = '00000000-0000-4000-8000-000000000511';
+        $item = $this->item(52636, 52637, $this->etoyItemMetaForDataValidator($uuid, '2023-08-31'));
+        $this->order(1011, 211, 511, $item);
+        $b = $this->makeBuilderWithRealValidator($this->player(211, $uuid, '2023-08-31'));
+
+        $rows = $b->buildRosterFromOrder(1011, self::LIVE_HOOK_OPTIONS);
+
+        $this->assertSame(1, $rows->count(), 'errors: ' . json_encode($this->buildErrors($b)));
+        $this->assertCount(1, $this->inserted);
+        $this->assertFalse($b->hadOrderItemWriteFailures());
+    }
+
+    public function test_real_validator_without_skip_rejects_under_age_at_start() {
+        $uuid = '00000000-0000-4000-8000-000000000512';
+        $item = $this->item(52636, 52637, $this->etoyItemMetaForDataValidator($uuid, '2023-08-31'));
+        $this->order(1012, 212, 512, $item);
+        $b = $this->makeBuilderWithRealValidator($this->player(212, $uuid, '2023-08-31'));
+
+        $rows = $b->buildRosterFromOrder(1012, [
+            'validate_data' => true,
+            'skip_duplicates' => true,
+            'update_existing' => true,
+        ]);
+
+        $this->assertSame(0, $rows->count());
+        $this->assertTrue($b->hadOrderItemWriteFailures());
+        $errors = $this->buildErrors($b);
+        $this->assertNotEmpty($errors);
+        $this->assertStringContainsString('not eligible for age group', implode(' ', $errors));
+    }
 
     public function test_case_a_etoy_live_hook_options_create_one_row() {
         $uuid = '00000000-0000-4000-8000-000000000501';
