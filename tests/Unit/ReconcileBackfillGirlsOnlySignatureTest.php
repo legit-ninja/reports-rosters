@@ -73,6 +73,7 @@ class ReconcileBackfillGirlsOnlySignatureTest extends TestCase {
     }
 
     protected function tearDown(): void {
+        unset($GLOBALS['intersoccer_test_wc_get_product_callback']);
         if (function_exists('intersoccer_set_bulk_normalize_quiet')) {
             intersoccer_set_bulk_normalize_quiet(false);
         }
@@ -147,6 +148,51 @@ class ReconcileBackfillGirlsOnlySignatureTest extends TestCase {
         $count = intersoccer_reconcile_backfill_girls_only_flags();
         $this->assertSame(0, $count);
         $this->assertCount(0, $this->capturedUpdates);
+    }
+
+    public function test_backfill_detects_girls_only_from_product_attribute_without_label_hint(): void {
+        if (!function_exists('intersoccer_reconcile_backfill_girls_only_flags')
+            || !function_exists('intersoccer_event_signature_branch_pipeline')) {
+            $this->fail('Backfill and branch pipeline helpers must be loaded');
+        }
+
+        $product_stub = new class {
+            public function get_attribute($name) {
+                return $name === 'pa_girls-only' ? 'yes' : '';
+            }
+            public function get_attributes() {
+                return [];
+            }
+        };
+        $GLOBALS['intersoccer_test_wc_get_product_callback'] = static function () use ($product_stub) {
+            return $product_stub;
+        };
+
+        $expected_signature = intersoccer_event_signature_branch_pipeline(array_merge(self::SHARED_FACETS, [
+            'activity_type' => 'Camp',
+            'girls_only' => 1,
+        ]));
+        $stale_signature = intersoccer_event_signature_branch_pipeline(array_merge(self::SHARED_FACETS, [
+            'activity_type' => 'Camp',
+            'girls_only' => 0,
+        ]));
+
+        $this->wpdb->candidate_rows = [
+            array_merge(self::SHARED_FACETS, [
+                'id' => 301,
+                'order_item_id' => 7001,
+                'activity_type' => 'Camp',
+                'product_name' => 'Plain Camp Title',
+                'variation_id' => 8801,
+                'girls_only' => 0,
+                'event_signature' => $stale_signature,
+            ]),
+        ];
+
+        $count = intersoccer_reconcile_backfill_girls_only_flags();
+        $this->assertSame(1, $count);
+        $this->assertSame(1, (int) $this->capturedUpdates[0]['data']['girls_only']);
+        $this->assertSame($expected_signature, $this->capturedUpdates[0]['data']['event_signature']);
     }
 
     public function test_backfill_signature_recompute_is_required_for_correct_hash(): void {
