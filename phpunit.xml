@@ -80,6 +80,10 @@
             <file>tests/Services/DataValidatorSingleDayUnknownTest.php</file>
             <file>tests/Unit/RosterCampBookingDisplayTest.php</file>
             <file>tests/Unit/BookingTypeNormalizerTest.php</file>
+            <file>tests/Services/RosterBuilderHookAgeAtStartTest.php</file>
+            <file>tests/Services/RosterBuilderOrderItemWriteFailureTest.php</file>
+            <file>tests/Services/RosterBuilderAdvisoryValidationTest.php</file>
+            <file>tests/Services/RosterBuilderFailureNoteDedupTest.php</file>
         </testsuite>
         <testsuite name="Complete">
             <directory>tests</directory>

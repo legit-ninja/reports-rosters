@@ -110,6 +110,15 @@ class RosterBuilder {
     private $build_stats = [];
 
     /**
+     * Order-line write failures recorded during the last buildRosterFromOrder() call only.
+     *
+     * @var int
+     */
+    private $last_build_call_item_write_failures = 0;
+
+    private const ORDER_META_ROSTER_FAILURE_NOTES = '_intersoccer_roster_failure_notes';
+
+    /**
      * Order IDs already status-synced during the current reconcile delete_obsolete pass.
      *
      * @var array<int,bool>
@@ -239,6 +248,7 @@ class RosterBuilder {
             'rosters_updated' => 0,
             'players_processed' => 0,
             'validation_errors' => 0,
+            'item_write_failures' => 0,
             'skipped_orders' => 0,
             'start_time' => microtime(true),
             'end_time' => null,
@@ -545,6 +555,8 @@ class RosterBuilder {
      */
     public function buildRosterFromOrder($order_id, array $options = []) {
         try {
+            $this->last_build_call_item_write_failures = 0;
+
             $this->logger->debug('Building roster from single order', [
                 'order_id' => $order_id,
                 'options' => $options
@@ -861,14 +873,11 @@ class RosterBuilder {
                 $rosters = $rosters->merge($item_rosters);
                 
             } catch (\Exception $e) {
-                $this->build_stats['validation_errors']++;
-                $this->build_stats['errors'][] = "Order {$order_id}, Item {$item_id}: " . $e->getMessage();
-                
-                $this->logger->error('Failed to process order item', [
-                    'order_id' => $order_id,
-                    'item_id' => $item_id,
-                    'error' => $e->getMessage()
-                ]);
+                $this->recordOrderItemRosterWriteFailure(
+                    $order,
+                    (int) $item_id,
+                    $this->normalizeOrderItemWriteFailureReason($e)
+                );
             }
         }
         
@@ -917,13 +926,17 @@ class RosterBuilder {
         }
         
         // Create roster entry for each assigned player
+        $item_failure_recorded = false;
         foreach ($assigned_players as $player) {
             try {
                 $roster_data = $this->buildRosterData($order_data, $player, $customer_data);
 
-                // Validate roster data
+                // Advisory validation on write paths — Roster::validate remains the hard gate.
                 if ($options['validate_data']) {
-                    $this->validator->validateRosterData($roster_data);
+                    $validation = $this->validator->validateRosterData($roster_data);
+                    if (empty($validation['valid'])) {
+                        $this->logAdvisoryRosterDataValidationWarning($order, (int) $item_id, $validation);
+                    }
                 }
                 
                 // Create or update roster entry
@@ -931,23 +944,184 @@ class RosterBuilder {
                 if ($roster) {
                     $rosters->add($roster);
                     $this->build_stats['players_processed']++;
+                    $this->clearItemWriteFailureNoteMarker($order, (int) $item_id);
                     // One roster row per order line item (uniq_order_item_id).
                     break;
                 }
-                
-            } catch (\Exception $e) {
-                $this->build_stats['validation_errors']++;
-                $this->build_stats['errors'][] = "Player {$player->getFullName()}: " . $e->getMessage();
 
-                $this->logger->error('Failed to create roster for player', [
-                    'order_id' => $order->get_id(),
-                    'player' => $player->getLogSummary(),
-                    'error' => $e->getMessage()
-                ]);
+                if (!$item_failure_recorded) {
+                    $this->recordOrderItemRosterWriteFailure(
+                        $order,
+                        (int) $item_id,
+                        'Roster row was not persisted'
+                    );
+                    $item_failure_recorded = true;
+                }
+                break;
+
+            } catch (\Exception $e) {
+                if (!$item_failure_recorded) {
+                    $this->recordOrderItemRosterWriteFailure(
+                        $order,
+                        (int) $item_id,
+                        $this->normalizeOrderItemWriteFailureReason($e)
+                    );
+                    $item_failure_recorded = true;
+                }
+                break;
             }
         }
 
         return $rosters;
+    }
+
+    /**
+     * Whether the current/last build recorded any order-line roster write failures.
+     */
+    public function hadOrderItemWriteFailures(): bool {
+        return $this->last_build_call_item_write_failures > 0;
+    }
+
+    /**
+     * Log advisory validateRosterData failures (does not block the write).
+     *
+     * @param array{valid?:bool,failed_rules?:array<string,array<int,string>>} $validation
+     */
+    private function logAdvisoryRosterDataValidationWarning(\WC_Order $order, int $item_id, array $validation): void {
+        $order_id = (int) $order->get_id();
+        $rules = $this->formatValidationRuleIdentifiers($validation);
+
+        $this->logger->warning('Roster data validation advisory failure on write path', [
+            'order_id' => $order_id,
+            'item_id' => $item_id,
+            'rules' => $rules,
+        ]);
+    }
+
+    /**
+     * @param array{failed_rules?:array<string,array<int,string>>,field_errors?:array<string,mixed>} $validation
+     * @return string Comma-separated field/rule identifiers (no error message text).
+     */
+    private function formatValidationRuleIdentifiers(array $validation): string {
+        $parts = [];
+        foreach ($validation['failed_rules'] ?? [] as $field => $rules) {
+            if ($field === '_cross_field') {
+                foreach ((array) $rules as $rule) {
+                    $parts[] = (string) $rule;
+                }
+                continue;
+            }
+            foreach ((array) $rules as $rule) {
+                $parts[] = $field . '/' . $rule;
+            }
+        }
+        if ($parts === []) {
+            foreach (array_keys($validation['field_errors'] ?? []) as $field) {
+                $parts[] = (string) $field;
+            }
+        }
+
+        return implode(', ', array_unique($parts));
+    }
+
+    private function normalizeOrderItemWriteFailureReason(\Throwable $e): string {
+        if ($e instanceof DatabaseException) {
+            return 'database write failed';
+        }
+        if ($e instanceof ValidationException) {
+            return $e->getMessage();
+        }
+
+        return 'roster write failed';
+    }
+
+    /**
+     * @return array<int|string,string>
+     */
+    private function getItemWriteFailureNoteMarkers(\WC_Order $order): array {
+        if (!method_exists($order, 'get_meta')) {
+            return [];
+        }
+        $markers = $order->get_meta(self::ORDER_META_ROSTER_FAILURE_NOTES, true);
+        return is_array($markers) ? $markers : [];
+    }
+
+    private function failureReasonHash(string $reason): string {
+        return substr(md5($reason), 0, 8);
+    }
+
+    private function orderItemWriteFailureWasAlreadyNoted(\WC_Order $order, int $item_id, string $reason): bool {
+        $markers = $this->getItemWriteFailureNoteMarkers($order);
+        $key = (string) $item_id;
+        if (!isset($markers[$key])) {
+            return false;
+        }
+
+        return (string) $markers[$key] === $this->failureReasonHash($reason);
+    }
+
+    private function markItemWriteFailureNoted(\WC_Order $order, int $item_id, string $reason): void {
+        if (!method_exists($order, 'update_meta_data') || !method_exists($order, 'save')) {
+            return;
+        }
+        $markers = $this->getItemWriteFailureNoteMarkers($order);
+        $markers[(string) $item_id] = $this->failureReasonHash($reason);
+        $order->update_meta_data(self::ORDER_META_ROSTER_FAILURE_NOTES, $markers);
+        $order->save();
+    }
+
+    private function clearItemWriteFailureNoteMarker(\WC_Order $order, int $item_id): void {
+        if (!method_exists($order, 'get_meta') || !method_exists($order, 'update_meta_data') || !method_exists($order, 'save')) {
+            return;
+        }
+        $markers = $this->getItemWriteFailureNoteMarkers($order);
+        $key = (string) $item_id;
+        if (!isset($markers[$key])) {
+            return;
+        }
+        unset($markers[$key]);
+        $order->update_meta_data(self::ORDER_META_ROSTER_FAILURE_NOTES, $markers);
+        $order->save();
+    }
+
+    /**
+     * Log, note, and count a failed roster write for one order line (no player PII in logs).
+     */
+    private function recordOrderItemRosterWriteFailure(\WC_Order $order, int $item_id, string $reason): void {
+        $order_id = (int) $order->get_id();
+        $reason = trim($reason);
+        if ($reason === '') {
+            $reason = 'Unknown error';
+        }
+
+        $this->build_stats['item_write_failures']++;
+        $this->last_build_call_item_write_failures++;
+        $this->build_stats['validation_errors']++;
+        $this->build_stats['errors'][] = "Order {$order_id}, Item {$item_id}: {$reason}";
+
+        $this->logger->error('Order line roster write failed', [
+            'order_id' => $order_id,
+            'item_id' => $item_id,
+            'reason' => $reason,
+        ]);
+
+        if ($this->orderItemWriteFailureWasAlreadyNoted($order, $item_id, $reason)) {
+            return;
+        }
+
+        if (is_callable([$order, 'add_order_note'])) {
+            $note = sprintf(
+                /* translators: 1: order line item ID, 2: failure reason */
+                \__(
+                    'InterSoccer rosters: booking line item %1$d could not be added to the roster. Reason: %2$s',
+                    'intersoccer-reports-rosters'
+                ),
+                $item_id,
+                $reason
+            );
+            $order->add_order_note($note, false, false);
+            $this->markItemWriteFailureNoted($order, $item_id, $reason);
+        }
     }
     
     /**
@@ -1509,6 +1683,7 @@ class RosterBuilder {
         
         // Parse event details from various sources
         $roster_data['event_details'] = $this->buildEventDetails($roster_data);
+        $roster_data['event_details'] = $this->applyUnderAgeAtStartToEventDetails($roster_data);
 
         if (function_exists('intersoccer_roster_backfill_player_name_fields')) {
             $roster_data = intersoccer_roster_backfill_player_name_fields($roster_data);
@@ -1608,8 +1783,49 @@ class RosterBuilder {
     }
 
     /**
+     * @param array $roster_data
+     * @return array|string|null
+     */
+    private function applyUnderAgeAtStartToEventDetails(array $roster_data) {
+        $details = $roster_data['event_details'] ?? [];
+        if (is_string($details)) {
+            $decoded = json_decode($details, true);
+            $details = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($details)) {
+            $details = [];
+        }
+        if (!$this->rosterRowIsUnderMinAgeAtStart($roster_data)) {
+            return $details;
+        }
+        $details['under_age_at_start'] = true;
+
+        return $details;
+    }
+
+    private function rosterRowIsUnderMinAgeAtStart(array $roster_data): bool {
+        $dob = trim((string) ($roster_data['player_dob'] ?? $roster_data['dob'] ?? ''));
+        $age_group = trim((string) ($roster_data['age_group'] ?? ''));
+        $start_date = trim((string) ($roster_data['start_date'] ?? ''));
+        if ($dob === '' || $age_group === '' || $start_date === '') {
+            return false;
+        }
+
+        $player = new Player([
+            'customer_id' => (int) ($roster_data['customer_id'] ?? 0),
+            'player_index' => (int) ($roster_data['player_index'] ?? 0),
+            'first_name' => (string) ($roster_data['player_first_name'] ?? $roster_data['first_name'] ?? ''),
+            'last_name' => (string) ($roster_data['player_last_name'] ?? $roster_data['last_name'] ?? ''),
+            'dob' => $dob,
+            'gender' => (string) ($roster_data['player_gender'] ?? $roster_data['gender'] ?? ''),
+        ]);
+
+        return $player->isBelowMinAgeForAgeGroupAt($age_group, $start_date);
+    }
+
+    /**
      * Build event details JSON from roster data
-     * 
+     *
      * @param array $roster_data Roster data
      * @return array Event details
      */

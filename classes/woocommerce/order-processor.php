@@ -122,6 +122,7 @@ class OrderProcessor {
                     'validate_data'  => true,
                     'skip_duplicates' => true,
                     'update_existing' => true,
+                    'skip_age_group_validation' => true,
                 ]
             );
 
@@ -210,6 +211,13 @@ class OrderProcessor {
                     'rosters_created' => $roster_count,
                     'completed'       => $completed,
                 ]);
+            }
+
+            if ($this->roster_builder->hadOrderItemWriteFailures()) {
+                $this->logger->error('OrderProcessor: Roster build had order line write failures', [
+                    'order_id' => $wc_order->get_id(),
+                ]);
+                return false;
             }
 
             return true;

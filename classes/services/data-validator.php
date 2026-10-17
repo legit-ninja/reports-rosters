@@ -88,24 +88,34 @@ class DataValidator {
      * @return array Array of error messages (empty if valid)
      */
     public function validate_field($field_name, $value, $rules) {
+        return $this->validateFieldRules($field_name, $value, $rules)[0];
+    }
+
+    /**
+     * @return array{0:array<int,string>,1:array<int,string>} Messages and failed rule names.
+     */
+    private function validateFieldRules($field_name, $value, $rules) {
         if (is_string($rules)) {
             $rules = explode('|', $rules);
         }
-        
+
         $errors = [];
-        
+        $failed_rules = [];
+
         foreach ($rules as $rule) {
             $rule_parts = explode(':', $rule, 2);
             $rule_name = $rule_parts[0];
             $rule_params = isset($rule_parts[1]) ? explode(',', $rule_parts[1]) : [];
-            
+
             try {
                 $result = $this->apply_validation_rule($field_name, $value, $rule_name, $rule_params);
                 if ($result !== true) {
                     $errors[] = $result;
+                    $failed_rules[] = $rule_name;
                 }
             } catch (\Exception $e) {
                 $errors[] = "Validation error for {$field_name}: " . $e->getMessage();
+                $failed_rules[] = $rule_name;
                 $this->logger->error('Validation rule failed', [
                     'field' => $field_name,
                     'rule' => $rule_name,
@@ -114,8 +124,8 @@ class DataValidator {
                 ]);
             }
         }
-        
-        return $errors;
+
+        return [$errors, $failed_rules];
     }
     
     /**
@@ -873,27 +883,35 @@ class DataValidator {
         $validation_results = [
             'valid' => true,
             'errors' => [],
-            'field_errors' => []
+            'field_errors' => [],
+            'failed_rules' => [],
         ];
-        
+
         foreach ($rules as $field_name => $field_rules) {
             $field_value = $data[$field_name] ?? null;
-            $field_errors = $this->validate_field($field_name, $field_value, $field_rules);
-            
+            [$field_errors, $field_failed_rules] = $this->validateFieldRules($field_name, $field_value, $field_rules);
+
             if (!empty($field_errors)) {
                 $validation_results['valid'] = false;
                 $validation_results['field_errors'][$field_name] = $field_errors;
                 $validation_results['errors'] = array_merge($validation_results['errors'], $field_errors);
+                if (!empty($field_failed_rules)) {
+                    $validation_results['failed_rules'][$field_name] = $field_failed_rules;
+                }
             }
         }
-        
+
         // Perform cross-field validation
-        $cross_field_errors = $this->validateCrossFieldRules($data, $rules);
+        $cross_field = $this->validateCrossFieldRules($data, $rules);
+        $cross_field_errors = $cross_field['errors'] ?? [];
         if (!empty($cross_field_errors)) {
             $validation_results['valid'] = false;
             $validation_results['errors'] = array_merge($validation_results['errors'], $cross_field_errors);
+            if (!empty($cross_field['failed_rules'])) {
+                $validation_results['failed_rules']['_cross_field'] = $cross_field['failed_rules'];
+            }
         }
-        
+
         return $validation_results;
     }
     
@@ -902,10 +920,11 @@ class DataValidator {
      * 
      * @param array $data Data being validated
      * @param array $rules Validation rules
-     * @return array Cross-field validation errors
+     * @return array{errors:array<int,string>,failed_rules:array<int,string>} Cross-field validation result
      */
     private function validateCrossFieldRules(array $data, array $rules) {
         $errors = [];
+        $failed_rules = [];
         
         // Validate date ranges
         if (isset($data['start_date']) && isset($data['end_date']) && 
@@ -960,7 +979,7 @@ class DataValidator {
         // Single-day camp rows may be stored with no recorded days (days_unknown); do not reject here.
         
         // Validate age group eligibility
-        if (isset($data['dob']) && isset($data['age_group']) && 
+        if (isset($data['dob']) && isset($data['age_group']) &&
             !empty($data['dob']) && !empty($data['age_group'])) {
             
             $event_date = $data['start_date'] ?? null;
@@ -976,11 +995,15 @@ class DataValidator {
                 
                 if ($age < $min_age || $age > $max_age) {
                     $errors[] = "Player age ({$age}) is not eligible for age group: {$data['age_group']}";
+                    $failed_rules[] = 'age_group_eligibility';
                 }
             }
         }
-        
-        return $errors;
+
+        return [
+            'errors' => $errors,
+            'failed_rules' => $failed_rules,
+        ];
     }
     
     /**

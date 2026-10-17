@@ -94,6 +94,7 @@ class OrderProcessorTest extends TestCase {
             ->once()
             ->with(123, Mockery::type('array'))
             ->andReturn($rosters);
+        $this->rosterBuilder->shouldReceive('hadOrderItemWriteFailures')->andReturn(false);
         
         $result = $this->processor->processOrder($order);
         
@@ -123,6 +124,7 @@ class OrderProcessorTest extends TestCase {
             ->once()
             ->with(55, Mockery::type('array'))
             ->andReturn($rosters);
+        $this->rosterBuilder->shouldReceive('hadOrderItemWriteFailures')->andReturn(false);
         
         $result = $this->processor->processOrder($order);
         
@@ -165,6 +167,7 @@ class OrderProcessorTest extends TestCase {
             ->once()
             ->with(10, Mockery::type('array'))
             ->andReturn($rosters);
+        $this->rosterBuilder->shouldReceive('hadOrderItemWriteFailures')->andReturn(false);
         
         $orderFailure = Mockery::mock('WC_Order');
         $orderFailure->shouldReceive('get_status')->andReturn('pending');
@@ -202,6 +205,7 @@ class OrderProcessorTest extends TestCase {
             ->once()
             ->with(999, Mockery::type('array'))
             ->andReturn($rosters);
+        $this->rosterBuilder->shouldReceive('hadOrderItemWriteFailures')->andReturn(false);
 
         $result = $this->processor->processOrder($order);
 
