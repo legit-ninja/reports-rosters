@@ -192,17 +192,18 @@ class RosterBuilderOrderItemWriteFailureTest extends TestCase {
 
     public function test_ineligible_age_records_log_note_and_build_failure_flag() {
         $uuid = '00000000-0000-4000-8000-000000000601';
-        $item = $this->courseItem(52636, 52637, $this->courseMeta($uuid, '2023-08-31'));
+        $item = $this->courseItem(52636, 52637, $this->courseMeta($uuid, '2015-02-03'));
         $notes = [];
         $this->orderWithNoteCapture(2001, 301, 601, $item, $notes);
         $validator = Mockery::mock(DataValidator::class);
         $validator->shouldReceive('validateRosterData')->andReturn(['valid' => true, 'errors' => [], 'field_errors' => []]);
-        $builder = $this->makeBuilder($this->player(301, $uuid, '2023-08-31'), $validator);
+        $builder = $this->makeBuilder($this->player(301, $uuid, '2015-02-03'), $validator);
 
         $rows = $builder->buildRosterFromOrder(2001, [
             'validate_data' => true,
             'skip_duplicates' => true,
             'update_existing' => true,
+            'skip_age_group_validation' => true,
         ]);
 
         $this->assertSame(0, $rows->count());
@@ -212,13 +213,14 @@ class RosterBuilderOrderItemWriteFailureTest extends TestCase {
         $this->assertSame(2001, $ctx['order_id']);
         $this->assertSame(601, $ctx['item_id']);
         $this->assertArrayHasKey('reason', $ctx);
+        $this->assertSame('database write failed', $ctx['reason']);
         $this->assertArrayNotHasKey('player', $ctx);
-        $this->assertStringNotContainsString('Test Player', (string) $ctx['reason']);
         $this->assertNotEmpty($notes);
         $this->assertStringContainsString('could not be added to the roster', $notes[0]);
+        $this->assertStringContainsString('database write failed', $notes[0]);
     }
 
-    public function test_validate_roster_data_failure_is_not_ignored() {
+    public function test_validate_roster_data_advisory_does_not_block_write_or_note() {
         $uuid = '00000000-0000-4000-8000-000000000602';
         $item = $this->courseItem(52636, 52637, $this->courseMeta($uuid, '2015-02-03'));
         $notes = [];
@@ -227,15 +229,39 @@ class RosterBuilderOrderItemWriteFailureTest extends TestCase {
         $validator->shouldReceive('validateRosterData')->once()->andReturn([
             'valid' => false,
             'errors' => ['venue field is required'],
-            'field_errors' => [],
+            'field_errors' => ['venue' => ['venue field is required']],
+            'failed_rules' => ['venue' => ['required']],
         ]);
-        $builder = $this->makeBuilder($this->player(302, $uuid, '2015-02-03'), $validator);
+        $db = Mockery::mock(Database::class);
+        $db->shouldReceive('insert_roster_entry')->andReturn(42);
+        $cache = Mockery::mock(CacheManager::class);
+        $cache->shouldReceive('get')->andReturn(null);
+        $cache->shouldReceive('set', 'forget', 'forgetPattern')->andReturn(true);
+        $repo = Mockery::mock(RosterRepository::class, [$this->logger(), $db, $cache])->makePartial();
+        $repo->shouldReceive('first')->andReturn(null);
+        $repo->shouldReceive('count')->andReturn(0);
+        $repo->shouldReceive('where')->andReturn(new RostersCollection());
+        $players = new PlayersCollection();
+        $players->add($this->player(302, $uuid, '2015-02-03'));
+        $playerRepo = Mockery::mock(PlayerRepository::class);
+        $playerRepo->shouldReceive('getPlayersByCustomerId')->andReturn($players);
+        $matcher = Mockery::mock(PlayerMatcher::class);
+        $matcher->shouldReceive('getAssignedPlayers')->andReturn($players);
+        $builder = new RosterBuilder(
+            $this->logger(),
+            Mockery::mock(Database::class),
+            $playerRepo,
+            $repo,
+            $validator,
+            Mockery::mock(EventMatcher::class),
+            $matcher
+        );
 
-        $builder->buildRosterFromOrder(2002, ['validate_data' => true]);
+        $rows = $builder->buildRosterFromOrder(2002, ['validate_data' => true, 'skip_age_group_validation' => true]);
 
-        $this->assertTrue($builder->hadOrderItemWriteFailures());
-        $this->assertSame('venue field is required', $this->errorLogContexts[0]['reason']);
-        $this->assertStringContainsString('venue field is required', $notes[0]);
+        $this->assertSame(1, $rows->count());
+        $this->assertFalse($builder->hadOrderItemWriteFailures());
+        $this->assertSame([], $notes);
     }
 
     public function test_rebuild_specific_orders_accumulates_build_statistics_across_orders() {
@@ -243,12 +269,9 @@ class RosterBuilderOrderItemWriteFailureTest extends TestCase {
         $db->shouldReceive('transaction')->andReturnUsing(function ($callback) {
             return $callback();
         });
+        $db->shouldReceive('insert_roster_entry')->andReturn(0);
         $validator = Mockery::mock(DataValidator::class);
-        $validator->shouldReceive('validateRosterData')->twice()->andReturn([
-            'valid' => false,
-            'errors' => ['simulated validation failure'],
-            'field_errors' => [],
-        ]);
+        $validator->shouldReceive('validateRosterData')->andReturn(['valid' => true, 'errors' => [], 'field_errors' => []]);
 
         $makeOrder = function (int $order_id, int $customer_id, int $item_id) {
             $uuid = sprintf('00000000-0000-4000-8000-%012d', $item_id);
@@ -318,5 +341,38 @@ class RosterBuilderOrderItemWriteFailureTest extends TestCase {
         $result = (new OrderProcessor($logger, $repo, $builder))->processOrder($order);
 
         $this->assertFalse($result);
+    }
+
+    public function test_item_level_exception_records_failure_and_note() {
+        $uuid = '00000000-0000-4000-8000-000000000603';
+        $item = $this->courseItem(52636, 52637, $this->courseMeta($uuid, '2015-02-03'));
+        $notes = [];
+        $this->orderWithNoteCapture(2003, 303, 603, $item, $notes);
+        $players = new PlayersCollection();
+        $players->add($this->player(303, $uuid, '2015-02-03'));
+        $playerRepo = Mockery::mock(PlayerRepository::class);
+        $playerRepo->shouldReceive('getPlayersByCustomerId')->andReturn($players);
+        $matcher = Mockery::mock(PlayerMatcher::class);
+        $matcher->shouldReceive('getAssignedPlayers')->andThrow(new \RuntimeException('simulated matcher failure'));
+        $validator = Mockery::mock(DataValidator::class);
+        $validator->shouldReceive('validateRosterData')->never();
+        $builder = new RosterBuilder(
+            $this->logger(),
+            Mockery::mock(Database::class),
+            $playerRepo,
+            $this->rosterRepository(),
+            $validator,
+            Mockery::mock(EventMatcher::class),
+            $matcher
+        );
+
+        $builder->buildRosterFromOrder(2003, ['validate_data' => true]);
+
+        $this->assertTrue($builder->hadOrderItemWriteFailures());
+        $this->assertCount(1, $this->errorLogContexts);
+        $this->assertSame(2003, $this->errorLogContexts[0]['order_id']);
+        $this->assertSame(603, $this->errorLogContexts[0]['item_id']);
+        $this->assertCount(1, $notes);
+        $this->assertSame('roster write failed', $this->errorLogContexts[0]['reason']);
     }
 }

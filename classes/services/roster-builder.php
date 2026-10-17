@@ -688,14 +688,11 @@ class RosterBuilder {
                 $rosters = $rosters->merge($item_rosters);
                 
             } catch (\Exception $e) {
-                $this->build_stats['validation_errors']++;
-                $this->build_stats['errors'][] = "Order {$order_id}, Item {$item_id}: " . $e->getMessage();
-                
-                $this->logger->error('Failed to process order item', [
-                    'order_id' => $order_id,
-                    'item_id' => $item_id,
-                    'error' => $e->getMessage()
-                ]);
+                $this->recordOrderItemRosterWriteFailure(
+                    $order,
+                    (int) $item_id,
+                    $this->normalizeOrderItemWriteFailureReason($e)
+                );
             }
         }
         
@@ -744,6 +741,7 @@ class RosterBuilder {
         }
         
         // Create roster entry for each assigned player
+        $item_failure_recorded = false;
         foreach ($assigned_players as $player) {
             try {
                 $roster_data = $this->buildRosterData($order_data, $player, $customer_data);
@@ -767,15 +765,26 @@ class RosterBuilder {
                     break;
                 }
 
-                $this->recordOrderItemRosterWriteFailure(
-                    $order,
-                    (int) $item_id,
-                    'Roster row was not persisted'
-                );
+                if (!$item_failure_recorded) {
+                    $this->recordOrderItemRosterWriteFailure(
+                        $order,
+                        (int) $item_id,
+                        'Roster row was not persisted'
+                    );
+                    $item_failure_recorded = true;
+                }
                 break;
-                
+
             } catch (\Exception $e) {
-                $this->recordOrderItemRosterWriteFailure($order, (int) $item_id, $e->getMessage());
+                if (!$item_failure_recorded) {
+                    $this->recordOrderItemRosterWriteFailure(
+                        $order,
+                        (int) $item_id,
+                        $this->normalizeOrderItemWriteFailureReason($e)
+                    );
+                    $item_failure_recorded = true;
+                }
+                break;
             }
         }
 
@@ -829,6 +838,17 @@ class RosterBuilder {
         }
 
         return implode(', ', array_unique($parts));
+    }
+
+    private function normalizeOrderItemWriteFailureReason(\Throwable $e): string {
+        if ($e instanceof DatabaseException) {
+            return 'database write failed';
+        }
+        if ($e instanceof ValidationException) {
+            return $e->getMessage();
+        }
+
+        return 'roster write failed';
     }
 
     /**
