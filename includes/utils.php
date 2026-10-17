@@ -5264,6 +5264,32 @@ if (!function_exists('intersoccer_roster_has_real_date')) {
     }
 }
 
+if (!function_exists('intersoccer_roster_format_date_range_or_tbd')) {
+    /**
+     * Format roster start/end for admin cards; missing or sentinel dates become TBD.
+     *
+     * @param mixed $start
+     * @param mixed $end
+     */
+    function intersoccer_roster_format_date_range_or_tbd($start, $end, bool $single_if_same = false) {
+        if (!intersoccer_roster_has_real_date($start) || !intersoccer_roster_has_real_date($end)) {
+            return 'TBD';
+        }
+        $start_ts = strtotime((string) $start);
+        $end_ts = strtotime((string) $end);
+        $format = static function ($date_format, $timestamp) {
+            if (function_exists('date_i18n')) {
+                return date_i18n($date_format, $timestamp);
+            }
+            return date($date_format, $timestamp);
+        };
+        if ($single_if_same && (string) $start === (string) $end) {
+            return $format('M j, Y', $start_ts);
+        }
+        return $format('M j', $start_ts) . ' - ' . $format('M j, Y', $end_ts);
+    }
+}
+
 if (!function_exists('intersoccer_roster_signature_missing_date_token')) {
     /**
      * Date token master writers fed into signature generation for unknown start/end dates.

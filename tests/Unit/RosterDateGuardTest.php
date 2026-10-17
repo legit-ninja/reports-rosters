@@ -17,6 +17,23 @@ class RosterDateGuardTest extends TestCase {
         }
     }
 
+    public function test_roster_format_date_range_or_tbd(): void {
+        if (!function_exists('intersoccer_roster_format_date_range_or_tbd')) {
+            $this->fail('intersoccer_roster_format_date_range_or_tbd must be loaded');
+        }
+        $this->assertSame(
+            'Jun 1 - Jun 5, 2026',
+            intersoccer_roster_format_date_range_or_tbd('2026-06-01', '2026-06-05')
+        );
+        $this->assertSame('TBD', intersoccer_roster_format_date_range_or_tbd('2026-06-01', ''));
+        $this->assertSame('TBD', intersoccer_roster_format_date_range_or_tbd('2026-06-01', null));
+        $this->assertSame('TBD', intersoccer_roster_format_date_range_or_tbd('1970-01-01', '2026-06-05'));
+        $this->assertSame(
+            'Jun 1, 2026',
+            intersoccer_roster_format_date_range_or_tbd('2026-06-01', '2026-06-01', true)
+        );
+    }
+
     public function test_roster_has_real_date_helper(): void {
         if (!function_exists('intersoccer_roster_has_real_date')) {
             $this->fail('intersoccer_roster_has_real_date must be loaded');
