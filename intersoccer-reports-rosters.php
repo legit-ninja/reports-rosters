@@ -156,6 +156,13 @@ if (file_exists($office365_cron_file)) {
     add_action(INTERSOCCER_OFFICE365_CRON_HOOK, 'intersoccer_office365_run_scheduled_sync');
 }
 
+if (is_admin()) {
+    $summer_camps_report_file = plugin_dir_path(__FILE__) . 'includes/summer-camps-report.php';
+    if (file_exists($summer_camps_report_file)) {
+        require_once $summer_camps_report_file;
+    }
+}
+
 // Load reports.php on admin_init so AJAX handler is registered for admin-ajax.php requests.
 // admin_menu does NOT run for admin-ajax, so we must use admin_init which does.
 add_action('admin_init', function () {
@@ -166,10 +173,6 @@ add_action('admin_init', function () {
     $office365_file = plugin_dir_path(__FILE__) . 'includes/office365-settings.php';
     if (file_exists($office365_file)) {
         require_once $office365_file;
-    }
-    $summer_camps_report_file = plugin_dir_path(__FILE__) . 'includes/summer-camps-report.php';
-    if (file_exists($summer_camps_report_file)) {
-        require_once $summer_camps_report_file;
     }
 }, 0);
 
