@@ -5742,9 +5742,63 @@ if (!function_exists('intersoccer_roster_export_row_is_camp')) {
     }
 }
 
+if (!function_exists('intersoccer_product_girls_only_values')) {
+    /**
+     * Listed girls-only facet values on a product (attribute labels and option IDs/slugs).
+     *
+     * @param object|null $product WC_Product or test stub.
+     * @return list<string|int>
+     */
+    function intersoccer_product_girls_only_values($product) {
+        if (!$product || !is_object($product)) {
+            return [];
+        }
+        $values = [];
+        if (method_exists($product, 'get_attribute')) {
+            foreach (['pa_girls-only', 'girls-only'] as $attr_name) {
+                $attr_value = $product->get_attribute($attr_name);
+                if ($attr_value === '') {
+                    continue;
+                }
+                foreach (explode(',', (string) $attr_value) as $piece) {
+                    $piece = trim($piece);
+                    if ($piece !== '') {
+                        $values[] = $piece;
+                    }
+                }
+            }
+        }
+        if (method_exists($product, 'get_attributes')) {
+            $attributes = $product->get_attributes();
+            foreach ($attributes as $attr_name => $attribute) {
+                if (strpos((string) $attr_name, 'girls') === false) {
+                    continue;
+                }
+                if (is_object($attribute) && method_exists($attribute, 'get_options')) {
+                    foreach ((array) $attribute->get_options() as $option) {
+                        if ($option === '' || $option === null) {
+                            continue;
+                        }
+                        $values[] = $option;
+                    }
+                }
+            }
+        }
+        $unique = [];
+        foreach ($values as $value) {
+            if (!in_array($value, $unique, true)) {
+                $unique[] = $value;
+            }
+        }
+        return $unique;
+    }
+}
+
 if (!function_exists('intersoccer_product_girls_only_from_pa_attribute')) {
     /**
-     * Resolve girls-only from WooCommerce pa_girls-only on a single product.
+     * Resolve girls-only from WooCommerce pa_girls-only on a single product (variation path).
+     *
+     * Uses the first non-empty value only — appropriate when the product is a variation.
      *
      * @param object|null $product WC_Product or test stub.
      * @return int|null 1=yes, 0=non-empty non-yes value, null=no girls-only attribute on product.
@@ -5888,24 +5942,27 @@ if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
                 }
                 if ($parent_id > 0) {
                     $parent = wc_get_product($parent_id);
-                    $from_parent = $parent
-                        ? intersoccer_product_girls_only_from_pa_attribute($parent)
-                        : null;
-                    if ($from_parent === 1) {
-                        return 1;
-                    }
-                    if ($from_parent === 0) {
-                        return 0;
+                    if ($parent) {
+                        $parent_values = intersoccer_product_girls_only_values($parent);
+                        if (count($parent_values) === 1) {
+                            return intersoccer_pa_girls_only_slug_is_yes($parent_values[0]) ? 1 : 0;
+                        }
+                        if (count($parent_values) > 1) {
+                            error_log('InterSoccer: ambiguous girls-only parent attribute on product ' . $parent_id);
+                            return 0;
+                        }
                     }
                 }
             } else {
                 $product = wc_get_product($product_id);
                 if ($product) {
-                    $from_product = intersoccer_product_girls_only_from_pa_attribute($product);
-                    if ($from_product === 1) {
-                        return 1;
-                    }
-                    if ($from_product === 0) {
+                    $product_values = intersoccer_product_girls_only_values($product);
+                    if ($product_values !== []) {
+                        foreach ($product_values as $value) {
+                            if (intersoccer_pa_girls_only_slug_is_yes($value)) {
+                                return 1;
+                            }
+                        }
                         return 0;
                     }
                 }
