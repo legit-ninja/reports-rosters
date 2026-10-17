@@ -785,13 +785,6 @@ if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exis
                 ob_clean();
                 wp_send_json_error(['message' => __('You do not have permission to rebuild rosters.', 'intersoccer-reports-rosters')]);
             }
-            if (function_exists('intersoccer_rr_debug_log')) {
-                intersoccer_rr_debug_log(
-                    'InterSoccer: AJAX rebuild request context: ' . wp_json_encode(
-                        intersoccer_rr_debug_allowlisted_request_fields($_POST)
-                    )
-                );
-            }
 
             try {
                 $result = intersoccer_rebuild_rosters_and_reports();
@@ -831,13 +824,6 @@ if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exis
             if (!current_user_can('manage_options')) {
                 ob_clean();
                 wp_send_json_error(['message' => __('You do not have permission to reconcile rosters.', 'intersoccer-reports-rosters')]);
-            }
-            if (function_exists('intersoccer_rr_debug_log')) {
-                intersoccer_rr_debug_log(
-                    'InterSoccer: AJAX reconcile request context: ' . wp_json_encode(
-                        intersoccer_rr_debug_allowlisted_request_fields($_POST)
-                    )
-                );
             }
 
             try {

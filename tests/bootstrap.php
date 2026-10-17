@@ -588,7 +588,18 @@ if (!function_exists('wp_convert_hr_to_bytes')) {
 
 // AJAX functions
 if (!function_exists('check_ajax_referer')) {
-    function check_ajax_referer($action = -1, $query_arg = false, $die = true) { return true; }
+    function check_ajax_referer($action = -1, $query_arg = false, $die = true) {
+        if (isset($GLOBALS['intersoccer_test_check_ajax_referer_callback'])
+            && is_callable($GLOBALS['intersoccer_test_check_ajax_referer_callback'])) {
+            return (bool) call_user_func(
+                $GLOBALS['intersoccer_test_check_ajax_referer_callback'],
+                $action,
+                $query_arg,
+                $die
+            );
+        }
+        return true;
+    }
 }
 
 if (!function_exists('wp_verify_nonce')) {
@@ -815,6 +826,9 @@ if (!function_exists('wc_get_orders')) {
 
 if (!function_exists('wc_get_product')) {
     function wc_get_product($product_id) {
+        if (!empty($GLOBALS['intersoccer_test_wc_get_product_forbidden'])) {
+            throw new \RuntimeException('wc_get_product should not be called');
+        }
         global $intersoccer_test_wc_get_product_callback;
         if (is_callable($intersoccer_test_wc_get_product_callback)) {
             return call_user_func($intersoccer_test_wc_get_product_callback, $product_id);

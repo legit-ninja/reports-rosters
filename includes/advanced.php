@@ -1210,20 +1210,17 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
 }
 
 function intersoccer_move_players_ajax() {
-    // Log start of migration request
-    error_log('InterSoccer Migration: Starting player migration request');
-    if (function_exists('intersoccer_rr_debug_log')) {
-        intersoccer_rr_debug_log(
-            'InterSoccer Migration: Request context: '
-            . wp_json_encode(intersoccer_rr_debug_allowlisted_request_fields($_POST))
-        );
+    if (!check_ajax_referer('intersoccer_move_nonce', 'nonce', false)) {
+        wp_send_json_error(['message' => __('Security check failed. Please refresh the page and try again.', 'intersoccer-reports-rosters')]);
+        return;
     }
-    
-    check_ajax_referer('intersoccer_move_nonce', 'nonce');
+
     if (!current_user_can('manage_options')) {
-        error_log('InterSoccer Migration: Permission denied for user ' . get_current_user_id());
         wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
+        return;
     }
+
+    error_log('InterSoccer Migration: Starting player migration request');
 
     $target_variation_id = intval($_POST['target_variation_id']);
     if (function_exists('intersoccer_resolve_variation_for_roster')) {
