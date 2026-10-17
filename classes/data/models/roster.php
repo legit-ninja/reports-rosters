@@ -737,15 +737,26 @@ class Roster extends AbstractModel {
                     
                 case 'date_range':
                     if (isset($value['start'])) {
+                        if (!function_exists('intersoccer_roster_has_real_date')
+                            || !intersoccer_roster_has_real_date($this->start_date)) {
+                            return false;
+                        }
                         $start_date = new \DateTime($this->start_date);
                         $filter_start = new \DateTime($value['start']);
                         if ($start_date < $filter_start) {
                             return false;
                         }
                     }
-                    
+
                     if (isset($value['end'])) {
-                        $end_date = new \DateTime($this->end_date ?: $this->start_date);
+                        $end_raw = intersoccer_roster_has_real_date($this->end_date)
+                            ? $this->end_date
+                            : ($this->start_date ?? null);
+                        if (!function_exists('intersoccer_roster_has_real_date')
+                            || !intersoccer_roster_has_real_date($end_raw)) {
+                            return false;
+                        }
+                        $end_date = new \DateTime($end_raw);
                         $filter_end = new \DateTime($value['end']);
                         if ($end_date > $filter_end) {
                             return false;

@@ -137,7 +137,7 @@ class UtilsTest extends TestCase {
 
     public function test_roster_is_girls_only_uses_flag_or_text() {
         if (!function_exists('intersoccer_roster_is_girls_only')) {
-            $this->markTestSkipped('intersoccer_roster_is_girls_only not loaded');
+            $this->fail('intersoccer_roster_is_girls_only must be loaded');
         }
 
         $this->assertTrue(intersoccer_roster_is_girls_only(['girls_only' => 1, 'activity_type' => 'Camp']));
@@ -147,7 +147,7 @@ class UtilsTest extends TestCase {
 
     public function test_canonical_activity_type_strips_girls_only_composite_for_storage() {
         if (!function_exists('intersoccer_canonical_activity_type_for_roster')) {
-            $this->markTestSkipped('intersoccer_canonical_activity_type_for_roster not loaded');
+            $this->fail('intersoccer_canonical_activity_type_for_roster must be loaded');
         }
 
         $this->assertSame('Camp', intersoccer_canonical_activity_type_for_roster('Camp, Girls Only'));

@@ -3547,7 +3547,9 @@ function intersoccer_render_other_events_page() {
                                             <div class="detail-row">
                                                 <span class="detail-label">📅 Duration</span>
                                                 <span class="detail-value"><?php 
-                                                if ($event['start_date'] !== '1970-01-01' && $event['end_date'] !== '1970-01-01') {
+                                                if (function_exists('intersoccer_roster_has_real_date')
+                                                    && intersoccer_roster_has_real_date($event['start_date'] ?? null)
+                                                    && intersoccer_roster_has_real_date($event['end_date'] ?? null)) {
                                                     echo esc_html(date_i18n('M j', strtotime($event['start_date'])) . ' - ' . date_i18n('M j, Y', strtotime($event['end_date'])));
                                                 } else {
                                                     echo 'TBD';

@@ -4605,14 +4605,6 @@ if (!function_exists('intersoccer_normalize_roster_facets_for_storage')) {
             $normalized['girls_only'] = !empty($event_data['girls_only']) ? 1 : 0;
         }
 
-        if ((int) ($normalized['girls_only'] ?? 0) === 1
-            && function_exists('intersoccer_migration_activity_type_with_girls_only_flag')) {
-            $normalized['activity_type'] = intersoccer_migration_activity_type_with_girls_only_flag(
-                (string) ($normalized['activity_type'] ?? ''),
-                1
-            );
-        }
-
         if (!empty($event_data['product_id'])) {
             $normalized['product_id'] = (int) $event_data['product_id'];
         }
@@ -5126,6 +5118,35 @@ if (!function_exists('intersoccer_roster_nullable_storage_date')) {
             return null;
         }
         return (string) $value;
+    }
+}
+
+if (!function_exists('intersoccer_roster_has_real_date')) {
+    /**
+     * Whether a roster date value is a real calendar date (not NULL, empty, or epoch placeholders).
+     *
+     * @param mixed $value
+     */
+    function intersoccer_roster_has_real_date($value): bool {
+        if ($value === null || $value === '') {
+            return false;
+        }
+        $s = trim((string) $value);
+        if ($s === '' || $s === '1970-01-01' || $s === '0000-00-00') {
+            return false;
+        }
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $s) === 1;
+    }
+}
+
+if (!function_exists('intersoccer_roster_sql_treat_null_date_as_epoch')) {
+    /**
+     * SQL expression treating NULL/empty/1970 roster dates like legacy 1970-01-01 for comparisons.
+     *
+     * @param string $column SQL column reference e.g. r.end_date
+     */
+    function intersoccer_roster_sql_treat_null_date_as_epoch($column) {
+        return "COALESCE(NULLIF(NULLIF({$column}, ''), '1970-01-01'), '1970-01-01')";
     }
 }
 
@@ -5933,7 +5954,9 @@ function intersoccer_generate_event_signature($event_data) {
     // Generate MD5 hash for consistent length and comparison
     $signature = md5($signature_string);
 
-    error_log('InterSoccer: Generated normalized event signature: ' . $signature . ' from components: ' . json_encode($normalized_components));
+    if (!function_exists('intersoccer_is_bulk_normalize_quiet') || !intersoccer_is_bulk_normalize_quiet()) {
+        error_log('InterSoccer: Generated normalized event signature: ' . $signature . ' from components: ' . json_encode($normalized_components));
+    }
 
     return $signature;
 }

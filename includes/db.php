@@ -1210,8 +1210,8 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                     error_log("InterSoccer: Parsed tournament date: $start_date");
                 } else {
                     error_log("InterSoccer: Failed to parse tournament date '$tournament_date' for order $order_id, item $order_item_id");
-                    $start_date = '1970-01-01';
-                    $end_date = '1970-01-01';
+                    $start_date = null;
+                    $end_date = null;
                     $event_dates = 'N/A';
                 }
             } else {
@@ -1226,14 +1226,14 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                         $event_dates = "$start_date to $end_date";
                     } else {
                         error_log("InterSoccer: Date parsing failed for order $order_id, item $order_item_id. Using default dates.");
-                        $start_date = '1970-01-01';
-                        $end_date = '1970-01-01';
+                        $start_date = null;
+                        $end_date = null;
                         $event_dates = 'N/A';
                     }
                 } else {
                     error_log("InterSoccer: No tournament date found (checked pa_date, Date attribute, and Start Date/End Date metadata) for order $order_id, item $order_item_id. Using defaults.");
-                    $start_date = '1970-01-01';
-                    $end_date = '1970-01-01';
+                    $start_date = null;
+                    $end_date = null;
                     $event_dates = 'N/A';
                 }
             }
@@ -1250,8 +1250,8 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             // Fallback if parsing fails
             if (!$start_date || !$end_date) {
                 error_log("InterSoccer: Date parsing failed for order $order_id, item $order_item_id. Using default dates.");
-                $start_date = '1970-01-01';
-                $end_date = '1970-01-01';
+                $start_date = null;
+                $end_date = null;
                 $event_dates = 'N/A';
             } else {
                 $event_dates = "$start_date to $end_date";
@@ -1260,8 +1260,8 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             if ($activity_type === 'Course' || $activity_type === 'Tournament') {
                 error_log("InterSoccer: Missing or invalid Start Date/End Date for $activity_type in order $order_id, item $order_item_id. Using defaults.");
             }
-            $start_date = '1970-01-01';
-            $end_date = '1970-01-01';
+            $start_date = null;
+            $end_date = null;
             $event_dates = 'N/A';
         }
 
@@ -1413,8 +1413,12 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             'late_pickup_days' => $late_pickup_days,
             'day_presence' => json_encode($day_presence),
             'age_group' => substr((string)($normalized_age_group ?: 'N/A'), 0, 50),
-            'start_date' => $start_date ?: '1970-01-01',
-            'end_date' => $end_date ?: '1970-01-01',
+            'start_date' => function_exists('intersoccer_roster_nullable_storage_date')
+                ? intersoccer_roster_nullable_storage_date($start_date)
+                : ($start_date && $start_date !== '1970-01-01' ? $start_date : null),
+            'end_date' => function_exists('intersoccer_roster_nullable_storage_date')
+                ? intersoccer_roster_nullable_storage_date($end_date)
+                : ($end_date && $end_date !== '1970-01-01' ? $end_date : null),
             'event_dates' => substr((string)($event_dates ?: 'N/A'), 0, 100),
             'product_name' => substr((string)($product_name ?: 'Unknown Product'), 0, 255),
             'activity_type' => substr((string)($normalized_activity_type), 0, 50),

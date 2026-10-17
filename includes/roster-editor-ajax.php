@@ -384,7 +384,10 @@ function intersoccer_sanitize_roster_field($field_name, $value) {
     if ($value === '' || $value === null) {
         // Return appropriate default based on field type
         if (strpos($field_name, 'date') !== false) {
-            return '1970-01-01'; // Default date
+            if (in_array($field_name, ['start_date', 'end_date'], true)) {
+                return null;
+            }
+            return '1970-01-01';
         }
         if (strpos($field_name, 'price') !== false || strpos($field_name, 'amount') !== false) {
             return '0.00';
@@ -406,7 +409,10 @@ function intersoccer_sanitize_roster_field($field_name, $value) {
         if ($timestamp !== false) {
             return date('Y-m-d', $timestamp);
         }
-        return '1970-01-01'; // Default invalid date
+        if (in_array($field_name, ['start_date', 'end_date'], true)) {
+            return null;
+        }
+        return '1970-01-01';
     }
 
     // Datetime fields

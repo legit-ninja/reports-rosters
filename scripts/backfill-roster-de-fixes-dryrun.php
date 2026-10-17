@@ -4,8 +4,6 @@
  *
  * Usage (sql-sandbox):
  *   docker compose run --rm wpcli eval-file /path/to/backfill-roster-de-fixes-dryrun.php
- *
- * There is intentionally no --apply mode in this script.
  */
 
 if (!defined('ABSPATH')) {
@@ -20,7 +18,21 @@ $order_items = $wpdb->prefix . 'woocommerce_order_items';
 $posts = $wpdb->posts;
 $postmeta = $wpdb->postmeta;
 
+$ro_readonly = $wpdb->get_var('SELECT @@transaction_read_only');
+if ($ro_readonly === null) {
+    echo "ABORT: could not read @@transaction_read_only\n";
+    return;
+}
 $wpdb->query('SET SESSION TRANSACTION READ ONLY');
+$ro_after = $wpdb->get_var('SELECT @@transaction_read_only');
+if ((string) $ro_after !== '1') {
+    echo "ABORT: SET SESSION TRANSACTION READ ONLY did not take effect (got " . var_export($ro_after, true) . ")\n";
+    return;
+}
+
+if (function_exists('intersoccer_set_bulk_normalize_quiet')) {
+    intersoccer_set_bulk_normalize_quiet(true);
+}
 
 $echo_section = static function (string $title, array $rows) {
     echo "\n== {$title}\n";
@@ -50,15 +62,114 @@ $camp_item_end_keys = [
     'Camp-Enddatum',
 ];
 
-$girls_composite_sql = "(activity_type LIKE '%Girls Only%' OR activity_type LIKE '%Filles uniquement%' OR activity_type LIKE '%filles uniquement%'
+$girls_composite_sql = "(activity_type LIKE '%Girls Only%' OR activity_type LIKE '%Girls'' only%' OR activity_type LIKE '%Girls'' Only%'
+    OR activity_type LIKE '%Filles uniquement%' OR activity_type LIKE '%filles uniquement%' OR activity_type LIKE '%filles seulement%'
     OR activity_type LIKE '%Nur Mädchen%' OR activity_type LIKE '%nur mädchen%' OR activity_type LIKE '%Nur Maedchen%')";
 
-// --- Signature drift (paged) ---
+$resolve_variation_id = static function (int $roster_variation_id, int $order_item_id) use ($wpdb, $itemmeta) {
+    $variation_id = $roster_variation_id;
+    if ($order_item_id > 0) {
+        $item_vid = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT meta_value FROM {$itemmeta} WHERE order_item_id = %d AND meta_key = '_variation_id' LIMIT 1",
+            $order_item_id
+        ));
+        if ($item_vid > 0) {
+            $variation_id = $item_vid;
+        }
+    }
+    if ($variation_id > 0 && function_exists('intersoccer_get_default_language_variation_id')) {
+        $default_vid = (int) intersoccer_get_default_language_variation_id($variation_id);
+        if ($default_vid > 0) {
+            $variation_id = $default_vid;
+        }
+    }
+    return $variation_id;
+};
+
+$read_camp_variation_meta = static function (int $variation_id) use ($wpdb, $postmeta, $is_iso_date) {
+    if ($variation_id <= 0) {
+        return [null, null];
+    }
+    $start = $wpdb->get_var($wpdb->prepare(
+        "SELECT meta_value FROM {$postmeta} WHERE post_id = %d AND meta_key = '_camp_start_date' LIMIT 1",
+        $variation_id
+    ));
+    $end = $wpdb->get_var($wpdb->prepare(
+        "SELECT meta_value FROM {$postmeta} WHERE post_id = %d AND meta_key = '_camp_end_date' LIMIT 1",
+        $variation_id
+    ));
+    return [
+        $is_iso_date($start) ? trim((string) $start) : null,
+        $is_iso_date($end) ? trim((string) $end) : null,
+    ];
+};
+
+$read_camp_item_meta = static function (int $order_item_id) use ($wpdb, $itemmeta, $camp_item_meta_keys, $camp_item_end_keys, $is_iso_date) {
+    $item_start = null;
+    $item_end = null;
+    if ($order_item_id <= 0) {
+        return [$item_start, $item_end];
+    }
+    foreach ($camp_item_meta_keys as $mk) {
+        $raw = $wpdb->get_var($wpdb->prepare(
+            "SELECT meta_value FROM {$itemmeta} WHERE order_item_id = %d AND meta_key = %s LIMIT 1",
+            $order_item_id,
+            $mk
+        ));
+        if ($is_iso_date($raw)) {
+            $item_start = trim((string) $raw);
+            break;
+        }
+    }
+    foreach ($camp_item_end_keys as $mk) {
+        $raw = $wpdb->get_var($wpdb->prepare(
+            "SELECT meta_value FROM {$itemmeta} WHERE order_item_id = %d AND meta_key = %s LIMIT 1",
+            $order_item_id,
+            $mk
+        ));
+        if ($is_iso_date($raw)) {
+            $item_end = trim((string) $raw);
+            break;
+        }
+    }
+    return [$item_start, $item_end];
+};
+
+$resolve_camp_dates_readonly = static function (
+    int $variation_id,
+    int $order_item_id,
+    string $camp_terms,
+    string $season
+) use ($read_camp_variation_meta, $read_camp_item_meta, $is_iso_date) {
+    list($var_start, $var_end) = $read_camp_variation_meta($variation_id);
+    if ($var_start) {
+        return [$var_start, $var_end ?: $var_start, 'variation_meta'];
+    }
+    list($item_start, $item_end) = $read_camp_item_meta($order_item_id);
+    if ($item_start) {
+        return [$item_start, $item_end ?: $item_start, 'order_item_meta'];
+    }
+    if ($camp_terms !== '' && $camp_terms !== 'N/A' && function_exists('intersoccer_parse_camp_dates_fixed')) {
+        if (function_exists('intersoccer_reports_normalize_camp_terms_for_dates')) {
+            $camp_terms = intersoccer_reports_normalize_camp_terms_for_dates($camp_terms);
+        }
+        list($parsed_start, $parsed_end) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
+        if ($is_iso_date($parsed_start) && $parsed_start !== '1970-01-01') {
+            return [$parsed_start, $is_iso_date($parsed_end) ? $parsed_end : $parsed_start, 'terms_parse'];
+        }
+    }
+    return [null, null, 'none'];
+};
+
+// --- Signature drift ---
 $sig_page = 500;
 $sig_offset = 0;
 $sig_by_type = [];
 $sig_total = 0;
 $sig_mismatch = 0;
+$sig_empty_stored = 0;
+$sig_match = 0;
+
 if (function_exists('intersoccer_event_signature_from_event_data')) {
     while (true) {
         $rows = $wpdb->get_results($wpdb->prepare(
@@ -77,7 +188,7 @@ if (function_exists('intersoccer_event_signature_from_event_data')) {
             ++$sig_total;
             $atype = (string) ($row['activity_type'] ?? '');
             if (!isset($sig_by_type[$atype])) {
-                $sig_by_type[$atype] = ['rows' => 0, 'match' => 0, 'mismatch' => 0];
+                $sig_by_type[$atype] = ['rows' => 0, 'match' => 0, 'mismatch' => 0, 'empty_stored' => 0];
             }
             $sig_by_type[$atype]['rows']++;
             $payload = [
@@ -94,16 +205,19 @@ if (function_exists('intersoccer_event_signature_from_event_data')) {
                 'product_id' => (int) ($row['product_id'] ?? 0),
                 'start_date' => $row['start_date'] ?? '',
             ];
-            if ($payload['start_date'] === '1970-01-01') {
-                $payload['start_date'] = '';
+            $stored = (string) ($row['event_signature'] ?? '');
+            if ($stored === '') {
+                ++$sig_empty_stored;
+                $sig_by_type[$atype]['empty_stored']++;
+                continue;
             }
             $recomputed = intersoccer_event_signature_from_event_data($payload);
-            $stored = (string) ($row['event_signature'] ?? '');
-            if ($stored !== '' && $recomputed !== '' && hash_equals($stored, $recomputed)) {
+            if ($recomputed !== '' && hash_equals($stored, $recomputed)) {
+                ++$sig_match;
                 $sig_by_type[$atype]['match']++;
             } else {
-                $sig_by_type[$atype]['mismatch']++;
                 ++$sig_mismatch;
+                $sig_by_type[$atype]['mismatch']++;
             }
         }
         $sig_offset += $sig_page;
@@ -119,31 +233,54 @@ foreach ($sig_by_type as $atype => $counts) {
         'rows' => $counts['rows'],
         'stored_eq_recomputed' => $counts['match'],
         'drift' => $counts['mismatch'],
+        'empty_stored' => $counts['empty_stored'],
     ];
 }
 usort($sig_rows, static function ($a, $b) {
     return ($b['drift'] ?? 0) <=> ($a['drift'] ?? 0);
 });
 $echo_section('event_signature stored vs recomputed (by activity_type)', $sig_rows);
-echo "   totals: rows={$sig_total} drift={$sig_mismatch}\n";
+echo "   totals: rows={$sig_total} match={$sig_match} drift={$sig_mismatch} empty_stored={$sig_empty_stored}\n";
 
-// --- Date recovery (resolver order: variation _camp_* then order item meta, then terms parse) ---
+$relabel_would = $wpdb->get_var(
+    "SELECT COUNT(DISTINCT id) FROM {$table}
+     WHERE girls_only = 1 AND activity_type = 'Girls Only'"
+);
+$echo_section('repair path: girls_only=1 rows kept as activity_type Girls Only (legacy would relabel to Camp)', [
+    ['cnt' => (int) $relabel_would],
+]);
+
+// --- Headline bad start_date population (sizing-aligned) ---
+$bad_start_total = (int) $wpdb->get_var(
+    "SELECT COUNT(DISTINCT id) FROM {$table}
+     WHERE start_date IS NULL OR start_date = '1970-01-01'"
+);
+$bad_end_only = (int) $wpdb->get_var(
+    "SELECT COUNT(DISTINCT id) FROM {$table}
+     WHERE (end_date IS NULL OR end_date = '' OR end_date = '1970-01-01')
+       AND NOT (start_date IS NULL OR start_date = '1970-01-01')"
+);
+echo "\n== headline start_date population (NULL or 1970 only)\n";
+echo "   bad_start_total={$bad_start_total} (target ~1894)\n";
+echo "   bad_end_only_rows={$bad_end_only}\n";
+
 $date_page = 300;
 $date_offset = 0;
 $source_counts = [];
+$sizing_camp_meta_recoverable = 0;
 $disagree_item_variation = 0;
-$placeholder_buckets = [];
-$bad_start = 0;
-$bad_end = 0;
 $unrecoverable = [];
+$ahead_today = 0;
+$ahead_oct7 = 0;
+$today = gmdate('Y-m-d');
+$as_of_oct7 = '2026-10-07';
 
 while (true) {
     $batch = $wpdb->get_results($wpdb->prepare(
         "SELECT r.id, r.order_item_id, r.variation_id, r.activity_type, r.camp_terms, r.season,
-                r.start_date, r.end_date, r.is_placeholder, r.product_name
+                r.start_date, r.end_date, r.is_placeholder
          FROM {$table} r
-         WHERE (r.start_date IS NULL OR r.start_date = '' OR r.start_date = '1970-01-01'
-                OR r.end_date IS NULL OR r.end_date = '' OR r.end_date = '1970-01-01')
+         WHERE r.start_date IS NULL OR r.start_date = '1970-01-01'
          ORDER BY r.id ASC
          LIMIT %d OFFSET %d",
         $date_page,
@@ -155,68 +292,16 @@ while (true) {
 
     foreach ($batch as $r) {
         $id = (int) $r['id'];
-        $ph = (int) ($r['is_placeholder'] ?? 0);
         $atype = strtolower(trim((string) ($r['activity_type'] ?? '')));
-        if (!isset($placeholder_buckets[$ph])) {
-            $placeholder_buckets[$ph] = ['rows' => 0, 'recoverable' => 0, 'unrecoverable' => 0];
-        }
-        $placeholder_buckets[$ph]['rows']++;
-
         if (strpos($atype, 'tournament') !== false) {
             continue;
         }
 
-        $needs_start = empty($r['start_date']) || $r['start_date'] === '1970-01-01';
-        $needs_end = empty($r['end_date']) || $r['end_date'] === '1970-01-01';
-        if ($needs_start) {
-            ++$bad_start;
-        }
-        if ($needs_end) {
-            ++$bad_end;
-        }
-
-        $variation_id = (int) ($r['variation_id'] ?? 0);
         $order_item_id = (int) ($r['order_item_id'] ?? 0);
-        $var_start = null;
-        $var_end = null;
-        if ($variation_id > 0) {
-            $var_start = $wpdb->get_var($wpdb->prepare(
-                "SELECT meta_value FROM {$postmeta} WHERE post_id = %d AND meta_key = '_camp_start_date' LIMIT 1",
-                $variation_id
-            ));
-            $var_end = $wpdb->get_var($wpdb->prepare(
-                "SELECT meta_value FROM {$postmeta} WHERE post_id = %d AND meta_key = '_camp_end_date' LIMIT 1",
-                $variation_id
-            ));
-        }
-        $item_start = null;
-        $item_end = null;
-        if ($order_item_id > 0) {
-            foreach ($camp_item_meta_keys as $mk) {
-                $raw = $wpdb->get_var($wpdb->prepare(
-                    "SELECT meta_value FROM {$itemmeta} WHERE order_item_id = %d AND meta_key = %s LIMIT 1",
-                    $order_item_id,
-                    $mk
-                ));
-                if ($is_iso_date($raw)) {
-                    $item_start = trim((string) $raw);
-                    break;
-                }
-            }
-            foreach ($camp_item_end_keys as $mk) {
-                $raw = $wpdb->get_var($wpdb->prepare(
-                    "SELECT meta_value FROM {$itemmeta} WHERE order_item_id = %d AND meta_key = %s LIMIT 1",
-                    $order_item_id,
-                    $mk
-                ));
-                if ($is_iso_date($raw)) {
-                    $item_end = trim((string) $raw);
-                    break;
-                }
-            }
-        }
-
-        if ($is_iso_date($var_start) && $is_iso_date($item_start) && $var_start !== $item_start) {
+        $variation_id = $resolve_variation_id((int) ($r['variation_id'] ?? 0), $order_item_id);
+        list($var_start, $var_end) = $read_camp_variation_meta($variation_id);
+        list($item_start, $item_end) = $read_camp_item_meta($order_item_id);
+        if ($var_start && $item_start && $var_start !== $item_start) {
             ++$disagree_item_variation;
         }
 
@@ -232,7 +317,7 @@ while (true) {
                 $variation_id
             ));
             $ce = $wpdb->get_var($wpdb->prepare(
-                "SELECT meta_value FROM {$postmeta} WHERE post_id = %d AND meta_key = '_course_end_date' LIMIT 1",
+                "SELECT meta_value FROM {$postmeta} WHERE post_id = %d AND meta_key = '_end_date' LIMIT 1",
                 $variation_id
             ));
             if ($is_iso_date($cs)) {
@@ -240,27 +325,15 @@ while (true) {
                 $resolved_end = $is_iso_date($ce) ? $ce : $cs;
                 $source = 'variation_course_meta';
             }
-        } elseif (strpos($atype, 'camp') !== false || $atype === '') {
-            if ($is_iso_date($var_start)) {
-                $resolved_start = $var_start;
-                $resolved_end = $is_iso_date($var_end) ? $var_end : $var_start;
-                $source = 'variation_meta';
-            } elseif ($is_iso_date($item_start)) {
-                $resolved_start = $item_start;
-                $resolved_end = $is_iso_date($item_end) ? $item_end : $item_start;
-                $source = 'order_item_meta';
-            } elseif (function_exists('intersoccer_reports_resolve_camp_schedule')) {
-                list($rs, $re) = intersoccer_reports_resolve_camp_schedule(
-                    $variation_id,
-                    $order_item_id,
-                    (string) ($r['camp_terms'] ?? ''),
-                    (string) ($r['season'] ?? '')
-                );
-                if ($is_iso_date($rs)) {
-                    $resolved_start = $rs;
-                    $resolved_end = $is_iso_date($re) ? $re : $rs;
-                    $source = 'terms_parse';
-                }
+        } elseif (strpos($atype, 'camp') !== false || $atype === '' || strpos($atype, 'girls') !== false) {
+            list($resolved_start, $resolved_end, $source) = $resolve_camp_dates_readonly(
+                $variation_id,
+                $order_item_id,
+                (string) ($r['camp_terms'] ?? ''),
+                (string) ($r['season'] ?? '')
+            );
+            if (in_array($source, ['variation_meta', 'order_item_meta'], true)) {
+                ++$sizing_camp_meta_recoverable;
             }
         }
 
@@ -269,18 +342,28 @@ while (true) {
         }
         $source_counts[$source]++;
 
+        $best_date = $resolved_end ?: $resolved_start;
+        if (!$best_date && function_exists('intersoccer_parse_camp_dates_fixed')) {
+            list($ps, $pe) = intersoccer_parse_camp_dates_fixed((string) ($r['camp_terms'] ?? ''), (string) ($r['season'] ?? ''));
+            $best_date = $is_iso_date($pe) ? $pe : ($is_iso_date($ps) ? $ps : null);
+        }
+        $season_year = 0;
+        if (preg_match('/(\d{4})/', (string) ($r['season'] ?? ''), $m)) {
+            $season_year = (int) $m[1];
+        }
+
         if ($resolved_start) {
-            $placeholder_buckets[$ph]['recoverable']++;
-        } else {
-            $placeholder_buckets[$ph]['unrecoverable']++;
-            $season_year = 0;
-            if (preg_match('/(\d{4})/', (string) ($r['season'] ?? ''), $m)) {
-                $season_year = (int) $m[1];
+            $prop_end = $resolved_end ?: $resolved_start;
+            if ($prop_end >= $today) {
+                ++$ahead_today;
             }
+            if ($prop_end >= $as_of_oct7) {
+                ++$ahead_oct7;
+            }
+        } else {
             $unrecoverable[] = [
                 'id' => $id,
-                'end_sort' => $r['end_date'] && $r['end_date'] !== '1970-01-01' ? $r['end_date'] : '9999-12-31',
-                'start_sort' => $r['start_date'] && $r['start_date'] !== '1970-01-01' ? $r['start_date'] : '9999-12-31',
+                'best_date' => $best_date ?: '0000-01-01',
                 'season_year' => $season_year,
             ];
         }
@@ -292,6 +375,8 @@ while (true) {
     }
 }
 
+$unrecoverable_count = count($unrecoverable);
+$recoverable_total = $bad_start_total - $unrecoverable_count;
 $source_rows = [];
 foreach ($source_counts as $source => $cnt) {
     $source_rows[] = ['source' => $source, 'cnt' => $cnt];
@@ -299,33 +384,39 @@ foreach ($source_counts as $source => $cnt) {
 usort($source_rows, static function ($a, $b) {
     return ($b['cnt'] ?? 0) <=> ($a['cnt'] ?? 0);
 });
-$echo_section('recoverable camp/course date source (resolver order)', $source_rows);
+$echo_section('recoverable date source (bad start rows, non-tournament)', $source_rows);
+echo "   sizing_camp_meta_recoverable(item+variation ISO)={$sizing_camp_meta_recoverable} (target ~1544)\n";
+echo "   unrecoverable_count={$unrecoverable_count} (target ~350)\n";
 echo "   item_vs_variation_iso_disagree={$disagree_item_variation}\n";
-echo "   rows_with_bad_start={$bad_start} rows_with_bad_end={$bad_end}\n";
-
-$ph_rows = [];
-foreach ($placeholder_buckets as $ph => $b) {
-    $ph_rows[] = ['is_placeholder' => $ph] + $b;
-}
-$echo_section('bad start/end rows by is_placeholder', $ph_rows ?: []);
+echo "   ahead_proposed_end_vs_today={$ahead_today} (target ~103)\n";
+echo "   ahead_proposed_end_vs_2026-10-07={$ahead_oct7} (target ~222)\n";
 
 usort($unrecoverable, static function ($a, $b) {
-    if ($a['end_sort'] !== $b['end_sort']) {
-        return strcmp($a['end_sort'], $b['end_sort']);
+    if ($a['best_date'] !== $b['best_date']) {
+        return strcmp($b['best_date'], $a['best_date']);
     }
-    if ($a['start_sort'] !== $b['start_sort']) {
-        return strcmp($a['start_sort'], $b['start_sort']);
-    }
-    return ($a['season_year'] ?? 0) <=> ($b['season_year'] ?? 0);
+    return ($b['season_year'] ?? 0) <=> ($a['season_year'] ?? 0);
 });
-$unrecoverable_ids = array_map(static function ($row) {
-    return (int) $row['id'];
-}, $unrecoverable);
-$echo_section('unrecoverable roster ids (upcoming-first sort)', array_map(static function ($id) {
-    return ['id' => $id];
-}, $unrecoverable_ids));
+$echo_section('unrecoverable roster ids (upcoming-first)', array_map(static function ($row) {
+    return ['id' => (int) $row['id']];
+}, $unrecoverable));
 
 // --- Girls-only ---
+$nein_false_positive = $wpdb->get_results(
+    "SELECT COUNT(DISTINCT oi.order_item_id) AS cnt
+     FROM {$order_items} oi
+     INNER JOIN {$posts} p ON p.ID = oi.order_id AND p.post_type = 'shop_order'
+       AND p.post_status IN ('wc-completed','wc-processing')
+     INNER JOIN {$itemmeta} oim
+       ON oim.order_item_id = oi.order_item_id AND oim.meta_key = '_intersoccer_canonical_girls_only'
+       AND oim.meta_value = '1'
+     LEFT JOIN {$itemmeta} lbl
+       ON lbl.order_item_id = oi.order_item_id AND lbl.meta_key = 'Girls Only' AND LOWER(lbl.meta_value) = 'nein'
+     WHERE oi.order_item_type = 'line_item' AND lbl.meta_id IS NOT NULL",
+    ARRAY_A
+);
+$echo_section('canonical girls_only=1 with Girls Only label nein (misread false positives)', $nein_false_positive ?: []);
+
 $missing_roster = $wpdb->get_results(
     "SELECT COUNT(DISTINCT oi.order_item_id) AS cnt
      FROM {$order_items} oi
@@ -333,24 +424,14 @@ $missing_roster = $wpdb->get_results(
        AND p.post_status IN ('wc-completed','wc-processing')
      INNER JOIN {$itemmeta} oim
        ON oim.order_item_id = oi.order_item_id AND oim.meta_key = '_intersoccer_canonical_girls_only'
+       AND oim.meta_value = '1'
+     LEFT JOIN {$itemmeta} lbl_nein
+       ON lbl_nein.order_item_id = oi.order_item_id AND lbl_nein.meta_key = 'Girls Only' AND LOWER(lbl_nein.meta_value) = 'nein'
      LEFT JOIN {$table} r ON r.order_item_id = oi.order_item_id AND r.is_placeholder = 0
-     WHERE oim.meta_value IN ('1', 'yes') AND r.id IS NULL
-       AND oi.order_item_type = 'line_item'",
+     WHERE oi.order_item_type = 'line_item' AND r.id IS NULL AND lbl_nein.meta_id IS NULL",
     ARRAY_A
 );
-$echo_section('girls_only canonical yes lines with no roster row', $missing_roster ?: []);
-
-$de_nein_fp = $wpdb->get_results(
-    "SELECT COUNT(DISTINCT oi.order_item_id) AS cnt
-     FROM {$order_items} oi
-     INNER JOIN {$posts} p ON p.ID = oi.order_id AND p.post_type = 'shop_order'
-       AND p.post_status IN ('wc-completed','wc-processing')
-     INNER JOIN {$itemmeta} oim
-       ON oim.order_item_id = oi.order_item_id AND oim.meta_key = '_intersoccer_canonical_girls_only'
-     WHERE oi.order_item_type = 'line_item' AND LOWER(oim.meta_value) IN ('0', 'no', 'nein')",
-    ARRAY_A
-);
-$echo_section('DE nein / canonical girls_only false (order lines)', $de_nein_fp ?: []);
+$echo_section('girls_only canonical yes lines with no roster row (nein excluded)', $missing_roster ?: []);
 
 $composite_to_flag = $wpdb->get_results(
     "SELECT COUNT(DISTINCT id) AS cnt
@@ -359,7 +440,7 @@ $composite_to_flag = $wpdb->get_results(
        AND activity_type NOT IN ('Camp', 'Course', 'Tournament')",
     ARRAY_A
 );
-$echo_section("rows with composite girls-only label (would become base + girls_only=1)", $composite_to_flag ?: []);
+$echo_section("composite girls-only label -> base + girls_only=1", $composite_to_flag ?: []);
 
 $label_girls_flag_zero = $wpdb->get_results(
     "SELECT COUNT(DISTINCT id) AS cnt
@@ -369,18 +450,8 @@ $label_girls_flag_zero = $wpdb->get_results(
 );
 $echo_section('girls-only label text but girls_only = 0', $label_girls_flag_zero ?: []);
 
-$disagree = $wpdb->get_results(
-    "SELECT
-       CASE WHEN girls_only = 1 THEN 'flag=1' ELSE 'flag=0' END AS flag_bucket,
-       COUNT(DISTINCT id) AS cnt
-     FROM {$table}
-     WHERE (
-         (girls_only = 1 AND NOT ({$girls_composite_sql}) AND activity_type NOT IN ('Girls Only'))
-         OR (girls_only = 0 AND ({$girls_composite_sql} OR activity_type = 'Girls Only'))
-       )
-     GROUP BY flag_bucket",
-    ARRAY_A
-);
-$echo_section('girls_only flag vs composite label disagree', $disagree ?: []);
+if (function_exists('intersoccer_set_bulk_normalize_quiet')) {
+    intersoccer_set_bulk_normalize_quiet(false);
+}
 
 echo "\nDRY RUN complete (no writes).\n";

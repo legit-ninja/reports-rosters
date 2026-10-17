@@ -837,7 +837,10 @@ class CampsPage extends AbstractPage {
             }
 
             if (!empty($filters['date_to'])) {
-                $where_conditions[] = 'r.end_date <= %s';
+                $end_col = function_exists('intersoccer_roster_sql_treat_null_date_as_epoch')
+                    ? intersoccer_roster_sql_treat_null_date_as_epoch('r.end_date')
+                    : "COALESCE(NULLIF(NULLIF(r.end_date, ''), '1970-01-01'), '1970-01-01')";
+                $where_conditions[] = "{$end_col} <= %s";
                 $where_values[] = $filters['date_to'];
             }
 

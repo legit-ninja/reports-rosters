@@ -340,7 +340,7 @@ if (!function_exists('intersoccer_migration_activity_type_with_girls_only_flag')
             : ucfirst(strtolower($activity_type));
 
         if ($base === 'Girls Only') {
-            return 'Camp';
+            return 'Girls Only';
         }
 
         return $base;

@@ -5,9 +5,70 @@ namespace InterSoccer\Reports\Tests\Reports;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Branch signatures must match master (80bf153) for stored roster row shapes.
+ * Signature hashes frozen from master @ 80bf153 (computed via detached worktree, not a hand copy).
  */
 class EventSignatureMasterParityTest extends TestCase {
+    private const BASE = [
+        'venue' => 'geneva-venue',
+        'age_group' => '5-12',
+        'camp_terms' => 'summer-week-1',
+        'course_day' => 'monday',
+        'times' => '0900-1200',
+        'season' => 'Summer 2026',
+        'city' => 'geneva',
+        'canton_region' => 'ge',
+        'product_id' => 4242,
+        'girls_only' => 0,
+    ];
+
+    /** @var array<string, array{generate: string, from_event_data: string}> */
+    private const MASTER_HASHES_80BF153 = [
+        'en_composite' => [
+            'generate' => '5164cee7d68c2ce594db095cac7361a4',
+            'from_event_data' => 'e4928226262c2294b4c29bdc4f31ad9f',
+        ],
+        'fr_composite' => [
+            'generate' => 'f7a1809ea488fd4ae21383db31857ec8',
+            'from_event_data' => 'e4928226262c2294b4c29bdc4f31ad9f',
+        ],
+        'de_composite' => [
+            'generate' => 'b7ee439e7a229f8dcc0058a00a3881d3',
+            'from_event_data' => 'd8bf97adb11627877cac5f5a7bd13550',
+        ],
+        'lower_composite' => [
+            'generate' => '1d2b998debf89997f001a86bff44e804',
+            'from_event_data' => 'e4928226262c2294b4c29bdc4f31ad9f',
+        ],
+        'girls_only_alone' => [
+            'generate' => 'c88bb205038366f0d7794fbf74819382',
+            'from_event_data' => 'c88bb205038366f0d7794fbf74819382',
+        ],
+        'course_composite' => [
+            'generate' => '49aebefad5c037a02e90b817f6bc1647',
+            'from_event_data' => '3ac58d9cfa6d4245b6be3e3ea049ea76',
+        ],
+        'tournament_iso' => [
+            'generate' => '5f96904b61b81537c5f600c5587de453',
+            'from_event_data' => '5f96904b61b81537c5f600c5587de453',
+        ],
+        'camp_flag' => [
+            'generate' => 'd8bf97adb11627877cac5f5a7bd13550',
+            'from_event_data' => 'd8bf97adb11627877cac5f5a7bd13550',
+        ],
+        'apostrophe_composite' => [
+            'generate' => 'c01d87cd32ce33fea3b3b117539500b6',
+            'from_event_data' => 'e4928226262c2294b4c29bdc4f31ad9f',
+        ],
+        'tournament_non_iso' => [
+            'generate' => '5f96904b61b81537c5f600c5587de453',
+            'from_event_data' => '5f96904b61b81537c5f600c5587de453',
+        ],
+        'tournament_no_date' => [
+            'generate' => '89fe2c567613a4aee403bd60500ef24e',
+            'from_event_data' => '89fe2c567613a4aee403bd60500ef24e',
+        ],
+    ];
+
     protected function setUp(): void {
         parent::setUp();
         if (!defined('ABSPATH')) {
@@ -17,133 +78,89 @@ class EventSignatureMasterParityTest extends TestCase {
         if (file_exists($utils)) {
             require_once $utils;
         }
+        if (function_exists('intersoccer_set_bulk_normalize_quiet')) {
+            intersoccer_set_bulk_normalize_quiet(true);
+        }
     }
 
-    /**
-     * Replica of intersoccer_generate_event_signature() on master @ 80bf153 (parity reference).
-     */
-    private static function masterReferenceSignature(array $event_data): string {
-        $product_id = $event_data['product_id'] ?? '';
-        $slug = static function ($name, $taxonomy) {
-            if (function_exists('intersoccer_get_term_slug_by_name')) {
-                return intersoccer_get_term_slug_by_name($name, $taxonomy);
-            }
-            return $name;
-        };
-        $times = $event_data['times'] ?? '';
-        if (function_exists('intersoccer_resolve_times_slug_for_signature')) {
-            $times = intersoccer_resolve_times_slug_for_signature($times);
+    protected function tearDown(): void {
+        if (function_exists('intersoccer_set_bulk_normalize_quiet')) {
+            intersoccer_set_bulk_normalize_quiet(false);
         }
-        $normalized_components = [
-            'activity_type' => $event_data['activity_type'] ?? '',
-            'venue' => $slug($event_data['venue'] ?? '', 'pa_intersoccer-venues'),
-            'age_group' => $slug($event_data['age_group'] ?? '', 'pa_age-group'),
-            'camp_terms' => $slug($event_data['camp_terms'] ?? '', 'pa_camp-terms'),
-            'course_day' => $slug($event_data['course_day'] ?? '', 'pa_course-day'),
-            'times' => $times,
-            'season' => $slug($event_data['season'] ?? '', 'pa_program-season'),
-            'girls_only' => !empty($event_data['girls_only']) ? '1' : '0',
-            'city' => $slug($event_data['city'] ?? '', 'pa_city'),
-            'canton_region' => $slug($event_data['canton_region'] ?? '', 'pa_canton-region'),
-            'product_id' => $product_id,
-        ];
-        $activity_kind = strtolower(trim((string) ($normalized_components['activity_type'] ?? '')));
-        if ($activity_kind === 'camp') {
-            $normalized_components['course_day'] = '';
-            $normalized_components['canton_region'] = '';
-        } elseif ($activity_kind === 'course') {
-            $normalized_components['camp_terms'] = '';
-            $normalized_components['canton_region'] = '';
-        } elseif ($activity_kind === 'tournament') {
-            $normalized_components['course_day'] = '';
-            $normalized_components['camp_terms'] = '';
-        }
-        $activity_type = strtolower($normalized_components['activity_type'] ?? '');
-        if ($activity_type === 'tournament' && !empty($event_data['start_date'])) {
-            $normalized_components['start_date'] = $event_data['start_date'];
-        }
-        $signature_string = implode('|', array_map(static function ($key, $value) {
-            return $key . ':' . trim(strtolower((string) $value));
-        }, array_keys($normalized_components), $normalized_components));
-
-        return md5($signature_string);
+        parent::tearDown();
     }
 
-    public function test_generate_event_signature_matches_master_reference_shapes(): void {
-        if (!function_exists('intersoccer_generate_event_signature')) {
-            $this->fail('intersoccer_generate_event_signature must be loaded');
+    public function test_signatures_match_frozen_master_hashes(): void {
+        if (!function_exists('intersoccer_generate_event_signature')
+            || !function_exists('intersoccer_event_signature_from_event_data')) {
+            $this->fail('Signature helpers must be loaded');
         }
-
-        $base = [
-            'venue' => 'geneva-venue',
-            'age_group' => '5-12',
-            'camp_terms' => 'summer-week-1',
-            'course_day' => 'monday',
-            'times' => '0900-1200',
-            'season' => 'Summer 2026',
-            'city' => 'geneva',
-            'canton_region' => 'ge',
-            'product_id' => 4242,
-            'girls_only' => 0,
-        ];
 
         $shapes = [
-            'EN composite girls-only camp' => [
+            'en_composite' => [
                 'activity_type' => 'Camp, Girls Only',
                 'girls_only' => 0,
-                'camp_terms' => 'summer-week-1',
-                'course_day' => 'monday',
             ],
-            'FR composite' => [
+            'fr_composite' => [
                 'activity_type' => 'Camp, Filles uniquement',
-                'girls_only' => 0,
-                'camp_terms' => 'summer-week-1',
                 'course_day' => '',
             ],
-            'DE composite' => [
+            'de_composite' => [
                 'activity_type' => 'Camp, Nur Mädchen',
                 'girls_only' => 1,
-                'camp_terms' => 'summer-week-1',
                 'course_day' => '',
             ],
-            'lower-case camp girls only' => [
+            'lower_composite' => [
                 'activity_type' => 'camp girls only',
-                'girls_only' => 0,
-                'camp_terms' => 'summer-week-1',
                 'course_day' => '',
             ],
-            'Girls Only alone' => [
+            'girls_only_alone' => [
                 'activity_type' => 'Girls Only',
                 'girls_only' => 1,
                 'camp_terms' => 'N/A',
                 'course_day' => 'N/A',
             ],
-            'Course composite' => [
+            'course_composite' => [
                 'activity_type' => 'Course, Girls Only',
-                'girls_only' => 0,
                 'camp_terms' => '',
                 'course_day' => 'wednesday',
             ],
-            'Tournament with date' => [
+            'tournament_iso' => [
                 'activity_type' => 'Tournament',
-                'girls_only' => 0,
                 'camp_terms' => '',
                 'course_day' => '',
                 'start_date' => '2026-06-14',
             ],
-            'Modern Camp flag' => [
+            'camp_flag' => [
                 'activity_type' => 'Camp',
                 'girls_only' => 1,
-                'camp_terms' => 'summer-week-1',
+                'course_day' => '',
+            ],
+            'apostrophe_composite' => [
+                'activity_type' => "Camp, Girls' only",
+                'girls_only' => 0,
+                'course_day' => '',
+            ],
+            'tournament_non_iso' => [
+                'activity_type' => 'Tournament',
+                'camp_terms' => '',
+                'course_day' => '',
+                'start_date' => 'Dimanche 14 juin 2026',
+            ],
+            'tournament_no_date' => [
+                'activity_type' => 'Tournament',
+                'camp_terms' => '',
                 'course_day' => '',
             ],
         ];
 
-        foreach ($shapes as $label => $overrides) {
-            $payload = array_merge($base, $overrides);
-            $master = self::masterReferenceSignature($payload);
-            $branch = intersoccer_generate_event_signature($payload);
-            $this->assertSame($master, $branch, 'Signature parity failed for shape: ' . $label);
+        foreach ($shapes as $key => $overrides) {
+            $payload = array_merge(self::BASE, $overrides);
+            $frozen = self::MASTER_HASHES_80BF153[$key];
+            $generate = intersoccer_generate_event_signature($payload);
+            $from_event = intersoccer_event_signature_from_event_data($payload);
+            $this->assertSame($frozen['generate'], $generate, "generate hash for {$key}");
+            $this->assertSame($frozen['from_event_data'], $from_event, "from_event_data hash for {$key}");
         }
     }
 }

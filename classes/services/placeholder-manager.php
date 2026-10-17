@@ -497,8 +497,8 @@ class PlaceholderManager {
                 'Friday' => 'No'
             ]),
             'age_group' => $event_data['age_group'],
-            'start_date' => '1970-01-01',
-            'end_date' => '1970-01-01',
+            'start_date' => null,
+            'end_date' => null,
             'event_dates' => 'N/A',
             'product_name' => $parent_product ? $parent_product->get_name() : 'Unknown Product',
             'activity_type' => $event_data['activity_type'],
