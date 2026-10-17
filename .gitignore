@@ -33,6 +33,7 @@ vendor/mockery/**
 vendor/brain/**
 todo.list
 .phpunit.result.cache
+.deploy-dryrun/
 .DS_Store
 *.swp
 *~

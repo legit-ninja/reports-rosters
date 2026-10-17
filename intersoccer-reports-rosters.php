@@ -132,6 +132,11 @@ if (file_exists($intersoccer_roster_canonical)) {
     require_once $intersoccer_roster_canonical;
 }
 
+$intersoccer_local_admin_assets = plugin_dir_path(__FILE__) . 'includes/local-admin-assets.php';
+if (file_exists($intersoccer_local_admin_assets)) {
+    require_once $intersoccer_local_admin_assets;
+}
+
 // Load OOP adapter/compat layer (kept small and will be further reduced).
 $intersoccer_oop_adapter = plugin_dir_path(__FILE__) . 'includes/oop-adapter.php';
 if (file_exists($intersoccer_oop_adapter)) {

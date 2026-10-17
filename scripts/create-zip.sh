@@ -41,7 +41,7 @@ rsync -a \
     --exclude='.git' \
     --exclude='.gitignore' \
     --exclude='node_modules' \
-    --exclude='vendor' \
+    --exclude='/vendor' \
     --exclude='tests' \
     --exclude='cypress' \
     --exclude='docs' \
@@ -52,6 +52,8 @@ rsync -a \
     --exclude='*.log' \
     --exclude='debug.log' \
     --exclude='*.sh' \
+    --include='js/vendor/**/LICENSE.md' \
+    --include='css/vendor/**/LICENSE.md' \
     --exclude='*.md' \
     --exclude='*.list' \
     --exclude='*.zip' \

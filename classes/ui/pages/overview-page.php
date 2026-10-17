@@ -755,20 +755,13 @@ class OverviewPage extends AbstractPage {
      * Enqueue page-specific assets
      */
     public function enqueue_assets() {
-        // Chart.js for dashboard charts
-        wp_enqueue_script(
-            'chart-js',
-            'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js',
-            [],
-            '3.9.1',
-            true
-        );
+        wp_enqueue_script('intersoccer-rr-chart-js');
         
         // Overview page specific JavaScript
         wp_enqueue_script(
             'intersoccer-overview',
             plugin_dir_url(__FILE__) . '../../../assets/js/overview-charts.js',
-            ['chart-js', 'jquery'],
+            ['intersoccer-rr-chart-js', 'jquery'],
             '1.5.0',
             true
         );

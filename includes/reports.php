@@ -30,7 +30,7 @@ use PhpOffice\PhpSpreadsheet\Cell\DataType;
 function intersoccer_enqueue_datepicker() {
     if (isset($_GET['page']) && $_GET['page'] === 'intersoccer-reports') {
         wp_enqueue_script('jquery-ui-datepicker');
-        wp_enqueue_style('jquery-ui-css', '//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
+        wp_enqueue_style('intersoccer-rr-jquery-ui-css');
         wp_enqueue_script('intersoccer-reports', plugin_dir_url(__FILE__) . '../js/reports.js', ['jquery'], '1.4.0', true);
         wp_localize_script('intersoccer-reports', 'intersoccer_reports_ajax', [
             'ajaxurl' => admin_url('admin-ajax.php'),
@@ -305,7 +305,7 @@ function intersoccer_enqueue_datepicker() {
         ');
         
         // Add custom CSS for better UX
-        wp_add_inline_style('jquery-ui-css', '
+        wp_add_inline_style('intersoccer-rr-jquery-ui-css', '
             .intersoccer-filters {
                 background: #f9f9f9;
                 border: 1px solid #ddd;
