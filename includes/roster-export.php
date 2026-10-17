@@ -512,7 +512,7 @@ function intersoccer_export_roster() {
         $rosters = $wpdb->get_results($wpdb->prepare($query, $query_params), ARRAY_A);
         // Only log query execution details if debugging
         if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('InterSoccer Export: After prepare - Executed query: ' . $wpdb->last_query . ' | Results count: ' . count($rosters) . ' | Last error: ' . $wpdb->last_error);
+            error_log('InterSoccer Export: After prepare - Results count: ' . count($rosters) . ' | Last error: ' . $wpdb->last_error);
             error_log('InterSoccer Export: Post-execution params applied - First row activity_type: ' . ($rosters[0]['activity_type'] ?? 'N/A'));
             error_log('InterSoccer Export: Expected placeholders - ' . implode(',', array_fill(0, count($query_params), '%s')));
         }
@@ -551,7 +551,6 @@ function intersoccer_export_roster() {
         if ($using_oop_export) {
             error_log('InterSoccer Export (OOP): Retrieved ' . count($rosters) . ' rows for export.');
         } else {
-            error_log('InterSoccer: Export roster query: ' . $wpdb->last_query);
             error_log('InterSoccer: Export roster results count: ' . count($rosters));
             error_log('InterSoccer: Last SQL error: ' . $wpdb->last_error);
         }
