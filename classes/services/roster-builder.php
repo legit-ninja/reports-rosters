@@ -748,18 +748,13 @@ class RosterBuilder {
             try {
                 $roster_data = $this->buildRosterData($order_data, $player, $customer_data);
 
-                // Validate roster data
+                // Advisory validation on write paths — Roster::validate remains the hard gate.
                 if ($options['validate_data']) {
                     $validation = $this->validator->validateRosterData($roster_data, [
                         'skip_age_group_validation' => !empty($options['skip_age_group_validation']),
                     ]);
                     if (empty($validation['valid'])) {
-                        $this->recordOrderItemRosterWriteFailure(
-                            $order,
-                            (int) $item_id,
-                            $this->summarizeValidationResult($validation)
-                        );
-                        break;
+                        $this->logAdvisoryRosterDataValidationWarning($order, (int) $item_id, $validation);
                     }
                 }
                 
@@ -795,15 +790,45 @@ class RosterBuilder {
     }
 
     /**
-     * @param array{valid?:bool,errors?:array} $validation
+     * Log advisory validateRosterData failures (does not block the write).
+     *
+     * @param array{valid?:bool,failed_rules?:array<string,array<int,string>>} $validation
      */
-    private function summarizeValidationResult(array $validation): string {
-        $errors = $validation['errors'] ?? [];
-        if ($errors === []) {
-            return 'Roster data validation failed';
+    private function logAdvisoryRosterDataValidationWarning(\WC_Order $order, int $item_id, array $validation): void {
+        $order_id = (int) $order->get_id();
+        $rules = $this->formatValidationRuleIdentifiers($validation);
+
+        $this->logger->warning('Roster data validation advisory failure on write path', [
+            'order_id' => $order_id,
+            'item_id' => $item_id,
+            'rules' => $rules,
+        ]);
+    }
+
+    /**
+     * @param array{failed_rules?:array<string,array<int,string>>,field_errors?:array<string,mixed>} $validation
+     * @return string Comma-separated field/rule identifiers (no error message text).
+     */
+    private function formatValidationRuleIdentifiers(array $validation): string {
+        $parts = [];
+        foreach ($validation['failed_rules'] ?? [] as $field => $rules) {
+            if ($field === '_cross_field') {
+                foreach ((array) $rules as $rule) {
+                    $parts[] = (string) $rule;
+                }
+                continue;
+            }
+            foreach ((array) $rules as $rule) {
+                $parts[] = $field . '/' . $rule;
+            }
+        }
+        if ($parts === []) {
+            foreach (array_keys($validation['field_errors'] ?? []) as $field) {
+                $parts[] = (string) $field;
+            }
         }
 
-        return implode('; ', array_map('strval', $errors));
+        return implode(', ', array_unique($parts));
     }
 
     /**

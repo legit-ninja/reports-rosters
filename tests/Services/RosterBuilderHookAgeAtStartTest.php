@@ -201,14 +201,6 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         return $order;
     }
 
-    /** Etoy meta with season cleared so PHPUnit normalization does not break season_format. */
-    private function etoyItemMetaForDataValidator(string $uuid, string $dob): array {
-        $meta = $this->etoyItemMeta($uuid, $dob);
-        $meta['Season'] = '';
-        unset($meta['Year']);
-        return $meta;
-    }
-
     /** Etoy Autumn 2026 course line, EN order (missing case A and its control). */
     private function etoyItemMeta(string $uuid, string $dob): array {
         return [
@@ -308,7 +300,7 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
 
     public function test_real_validator_hook_options_with_skip_creates_under_age_row() {
         $uuid = '00000000-0000-4000-8000-000000000511';
-        $item = $this->item(52636, 52637, $this->etoyItemMetaForDataValidator($uuid, '2023-08-31'));
+        $item = $this->item(52636, 52637, $this->etoyItemMeta($uuid, '2023-08-31'));
         $this->order(1011, 211, 511, $item);
         $b = $this->makeBuilderWithRealValidator($this->player(211, $uuid, '2023-08-31'));
 
@@ -321,7 +313,7 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
 
     public function test_real_validator_without_skip_rejects_under_age_at_start() {
         $uuid = '00000000-0000-4000-8000-000000000512';
-        $item = $this->item(52636, 52637, $this->etoyItemMetaForDataValidator($uuid, '2023-08-31'));
+        $item = $this->item(52636, 52637, $this->etoyItemMeta($uuid, '2023-08-31'));
         $this->order(1012, 212, 512, $item);
         $b = $this->makeBuilderWithRealValidator($this->player(212, $uuid, '2023-08-31'));
 
