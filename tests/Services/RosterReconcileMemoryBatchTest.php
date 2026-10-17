@@ -54,6 +54,7 @@ class RosterReconcileMemoryBatchTest extends TestCase {
 
         $rosterRepository = Mockery::mock(RosterRepository::class);
         $rosterRepository->shouldReceive('deleteByOrderItemId')->andReturn(0);
+        $rosterRepository->shouldReceive('syncOrderStatusForKeptRows')->andReturn(0);
 
         $this->builder = new RosterBuilder(
             $logger,

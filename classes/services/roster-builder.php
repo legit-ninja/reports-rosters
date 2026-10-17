@@ -110,6 +110,20 @@ class RosterBuilder {
     private $build_stats = [];
 
     /**
+     * Order IDs already status-synced during the current reconcile delete_obsolete pass.
+     *
+     * @var array<int,bool>
+     */
+    private $obsolete_reconcile_synced_order_ids = [];
+
+    /**
+     * Rows updated via syncOrderStatusForKeptRows in the current reconcile run.
+     *
+     * @var int
+     */
+    private $reconcile_status_synced_total = 0;
+
+    /**
      * Canonical mapping between order item metadata keys and roster fields.
      *
      * @return array<string,string>
@@ -320,6 +334,7 @@ class RosterBuilder {
             'end_time' => null,
             'duration' => 0,
             'newly_created_item_ids' => [],
+            'status_synced' => 0,
         ];
 
         $this->logger->info('Starting roster reconciliation', $options);
@@ -462,6 +477,8 @@ class RosterBuilder {
             ]);
 
             if ($options['delete_obsolete'] && !empty($existing_item_map)) {
+                $this->obsolete_reconcile_synced_order_ids = [];
+                $this->reconcile_status_synced_total = 0;
                 $obsolete_ids = array_keys($existing_item_map);
                 $delete_chunk_size = max(1, (int) ($options['delete_batch_size'] ?? 200));
 
@@ -494,6 +511,7 @@ class RosterBuilder {
                         wp_cache_flush();
                     }
                 }
+                $results['status_synced'] = $this->reconcile_status_synced_total;
             }
 
             $results['end_time'] = current_time('mysql');
@@ -711,6 +729,25 @@ class RosterBuilder {
      * uncertainty (missing helper, invalid stored id, lookup failure, unreadable line items),
      * returns false (keep).
      */
+    private function syncKeptObsoleteOrderStatus(int $order_id, string $woo_status): void {
+        if ($order_id <= 0 || isset($this->obsolete_reconcile_synced_order_ids[$order_id])) {
+            return;
+        }
+
+        $normalized = RosterRefundService::normalizeWooOrderStatus($woo_status);
+        if ($normalized === 'refunded') {
+            $roster_status = Roster::STATUS_REFUNDED;
+        } elseif ($normalized === 'cancelled') {
+            $roster_status = Roster::STATUS_CANCELLED;
+        } else {
+            return;
+        }
+
+        $this->obsolete_reconcile_synced_order_ids[$order_id] = true;
+        $updated = $this->roster_repository->syncOrderStatusForKeptRows($order_id, $roster_status);
+        $this->reconcile_status_synced_total += $updated;
+    }
+
     private function shouldDeleteObsoleteReconcileRow(int $order_item_id, int $stored_order_id): bool {
         try {
             if ($order_item_id <= 0 || $stored_order_id <= 0) {
@@ -728,12 +765,14 @@ class RosterBuilder {
 
             $status = (string) $order->get_status();
             if (RosterRefundService::isFlaggedRowStatus($status)) {
+                $this->syncKeptObsoleteOrderStatus($stored_order_id, $status);
                 unset($order);
                 return false;
             }
 
             $normalized = RosterRefundService::normalizeWooOrderStatus($status);
             if (in_array($normalized, ['refunded', 'cancelled'], true)) {
+                $this->syncKeptObsoleteOrderStatus($stored_order_id, $status);
                 unset($order);
                 return false;
             }

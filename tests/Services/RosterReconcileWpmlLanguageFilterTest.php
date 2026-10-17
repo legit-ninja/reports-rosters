@@ -104,6 +104,7 @@ class RosterReconcileWpmlLanguageFilterTest extends TestCase {
             $this->deletedItemIds[] = $order_item_id;
             return 1;
         });
+        $rosterRepository->shouldReceive('syncOrderStatusForKeptRows')->andReturn(0);
 
         $this->builder = new RosterBuilder(
             $logger,

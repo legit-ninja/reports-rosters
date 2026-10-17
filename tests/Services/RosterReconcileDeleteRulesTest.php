@@ -14,12 +14,17 @@ use InterSoccer\ReportsRosters\Data\Repositories\RosterRepository;
 use InterSoccer\ReportsRosters\Services\DataValidator;
 use InterSoccer\ReportsRosters\Services\EventMatcher;
 use InterSoccer\ReportsRosters\Services\PlayerMatcher;
+use InterSoccer\ReportsRosters\Services\RosterRefundService;
+use InterSoccer\ReportsRosters\Data\Models\Roster;
 use Mockery;
 
 class RosterReconcileDeleteRulesTest extends TestCase {
 
     /** @var int[] */
     private $deletedItemIds = [];
+
+    /** @var int[] */
+    private $statusSyncOrderIds = [];
 
     /** @var RosterBuilder */
     private $builder;
@@ -34,6 +39,7 @@ class RosterReconcileDeleteRulesTest extends TestCase {
         $logger->shouldReceive('info', 'debug', 'warning', 'error')->andReturn(null);
 
         $this->deletedItemIds = [];
+        $this->statusSyncOrderIds = [];
 
         $database = Mockery::mock(Database::class);
         $database->shouldReceive('get_wpdb')->andReturnUsing(function () {
@@ -44,6 +50,10 @@ class RosterReconcileDeleteRulesTest extends TestCase {
         $rosterRepository->shouldReceive('deleteByOrderItemId')->andReturnUsing(function (int $order_item_id) {
             $this->deletedItemIds[] = $order_item_id;
             return 1;
+        });
+        $rosterRepository->shouldReceive('syncOrderStatusForKeptRows')->andReturnUsing(function (int $order_id, string $status) {
+            $this->statusSyncOrderIds[] = $order_id;
+            return $this->applySyncOrderStatusForKeptRows($order_id, $status);
         });
 
         $this->playerMatcher = Mockery::mock(PlayerMatcher::class);
@@ -76,15 +86,47 @@ class RosterReconcileDeleteRulesTest extends TestCase {
         };
     }
 
-    private function runReconcile(array $rows, callable $ordersCallback, callable $orderCallback): void {
+    /**
+     * @return array<string,mixed>
+     */
+    private function runReconcile(array $rows, callable $ordersCallback, callable $orderCallback): array {
         $this->currentRows = $rows;
         $this->deletedItemIds = [];
+        $this->statusSyncOrderIds = [];
 
         global $intersoccer_test_wc_get_orders_callback, $intersoccer_test_wc_get_order_callback;
         $intersoccer_test_wc_get_orders_callback = $ordersCallback;
         $intersoccer_test_wc_get_order_callback = $orderCallback;
 
-        $this->builder->reconcile(['delete_obsolete' => true, 'batch_size' => 50]);
+        return $this->builder->reconcile(['delete_obsolete' => true, 'batch_size' => 50]);
+    }
+
+    private function applySyncOrderStatusForKeptRows(int $order_id, string $status): int {
+        $changed = 0;
+        foreach ($this->currentRows as $index => $row) {
+            if ((int) ($row['order_id'] ?? 0) !== $order_id) {
+                continue;
+            }
+            $row_status = isset($row['order_status']) ? (string) $row['order_status'] : null;
+            if ($row_status !== null && $row_status !== '' && RosterRefundService::isFlaggedRowStatus($row_status)) {
+                continue;
+            }
+            if (($row['order_status'] ?? null) === $status) {
+                continue;
+            }
+            $this->currentRows[$index]['order_status'] = $status;
+            $changed++;
+        }
+        return $changed;
+    }
+
+    private function rowStatus(int $itemId): ?string {
+        foreach ($this->currentRows as $row) {
+            if ((int) ($row['order_item_id'] ?? 0) === $itemId) {
+                return isset($row['order_status']) ? (string) $row['order_status'] : null;
+            }
+        }
+        return null;
     }
 
     protected function tearDown(): void {
@@ -439,5 +481,219 @@ class RosterReconcileDeleteRulesTest extends TestCase {
 
         $this->assertNotContains(8101, $this->deletedItemIds);
         $this->assertNotContains(8102, $this->deletedItemIds);
+    }
+
+    public function test_completed_row_on_refunded_order_syncs_status_and_is_not_deleted(): void {
+        $orderId = 5201;
+        $itemId = 8201;
+        $results = $this->runReconcile(
+            [
+                [
+                    'order_item_id' => (string) $itemId,
+                    'order_id' => (string) $orderId,
+                    'order_status' => 'completed',
+                ],
+            ],
+            static function (array $args): array {
+                return [];
+            },
+            static function ($order_id) use ($orderId, $itemId) {
+                if ((int) $order_id !== $orderId) {
+                    return false;
+                }
+                return new class($orderId, $itemId) {
+                    private $id;
+                    private $itemId;
+                    public function __construct($id, $itemId) { $this->id = $id; $this->itemId = $itemId; }
+                    public function get_id() { return $this->id; }
+                    public function get_type() { return 'shop_order'; }
+                    public function get_status() { return 'refunded'; }
+                    public function get_customer_id() { return 0; }
+                    public function get_items() { return [$this->itemId => new \stdClass()]; }
+                };
+            }
+        );
+
+        $this->assertNotContains($itemId, $this->deletedItemIds);
+        $this->assertSame(Roster::STATUS_REFUNDED, $this->rowStatus($itemId));
+        $this->assertSame(1, $results['status_synced']);
+    }
+
+    public function test_completed_row_on_cancelled_order_syncs_status_and_is_not_deleted(): void {
+        $orderId = 5202;
+        $itemId = 8202;
+        $results = $this->runReconcile(
+            [
+                [
+                    'order_item_id' => (string) $itemId,
+                    'order_id' => (string) $orderId,
+                    'order_status' => 'completed',
+                ],
+            ],
+            static function (array $args): array {
+                return [];
+            },
+            static function ($order_id) use ($orderId, $itemId) {
+                if ((int) $order_id !== $orderId) {
+                    return false;
+                }
+                return new class($orderId, $itemId) {
+                    private $id;
+                    private $itemId;
+                    public function __construct($id, $itemId) { $this->id = $id; $this->itemId = $itemId; }
+                    public function get_id() { return $this->id; }
+                    public function get_type() { return 'shop_order'; }
+                    public function get_status() { return 'cancelled'; }
+                    public function get_customer_id() { return 0; }
+                    public function get_items() { return [$this->itemId => new \stdClass()]; }
+                };
+            }
+        );
+
+        $this->assertNotContains($itemId, $this->deletedItemIds);
+        $this->assertSame(Roster::STATUS_CANCELLED, $this->rowStatus($itemId));
+        $this->assertSame(1, $results['status_synced']);
+    }
+
+    public function test_item_level_refunded_row_on_completed_order_unchanged_without_status_sync(): void {
+        $orderId = 5203;
+        $itemId = 8203;
+        $this->runReconcile(
+            [
+                [
+                    'order_item_id' => (string) $itemId,
+                    'order_id' => (string) $orderId,
+                    'order_status' => Roster::STATUS_REFUNDED,
+                ],
+            ],
+            static function (array $args) use ($orderId): array {
+                return [$orderId];
+            },
+            static function ($order_id) use ($orderId, $itemId) {
+                if ((int) $order_id !== $orderId) {
+                    return false;
+                }
+                return self::makeEligibleOrder($orderId, $itemId, [$itemId]);
+            }
+        );
+
+        $this->assertNotContains($itemId, $this->deletedItemIds);
+        $this->assertSame(Roster::STATUS_REFUNDED, $this->rowStatus($itemId));
+        $this->assertSame([], $this->statusSyncOrderIds);
+    }
+
+    public function test_flagged_sibling_unchanged_while_non_flagged_row_syncs_on_refunded_order(): void {
+        $orderId = 5204;
+        $flaggedItemId = 8204;
+        $openItemId = 8205;
+        $this->runReconcile(
+            [
+                [
+                    'order_item_id' => (string) $flaggedItemId,
+                    'order_id' => (string) $orderId,
+                    'order_status' => Roster::STATUS_CANCELLED,
+                ],
+                [
+                    'order_item_id' => (string) $openItemId,
+                    'order_id' => (string) $orderId,
+                    'order_status' => 'completed',
+                ],
+            ],
+            static function (array $args): array {
+                return [];
+            },
+            static function ($order_id) use ($orderId, $flaggedItemId, $openItemId) {
+                if ((int) $order_id !== $orderId) {
+                    return false;
+                }
+                return new class($orderId, $flaggedItemId, $openItemId) {
+                    private $id;
+                    /** @var int[] */
+                    private $itemIds;
+                    public function __construct($id, ...$itemIds) {
+                        $this->id = $id;
+                        $this->itemIds = $itemIds;
+                    }
+                    public function get_id() { return $this->id; }
+                    public function get_type() { return 'shop_order'; }
+                    public function get_status() { return 'refunded'; }
+                    public function get_customer_id() { return 0; }
+                    public function get_items() {
+                        $items = [];
+                        foreach ($this->itemIds as $iid) {
+                            $items[$iid] = new \stdClass();
+                        }
+                        return $items;
+                    }
+                };
+            }
+        );
+
+        $this->assertNotContains($flaggedItemId, $this->deletedItemIds);
+        $this->assertNotContains($openItemId, $this->deletedItemIds);
+        $this->assertSame(Roster::STATUS_CANCELLED, $this->rowStatus($flaggedItemId));
+        $this->assertSame(Roster::STATUS_REFUNDED, $this->rowStatus($openItemId));
+        $this->assertSame([$orderId], $this->statusSyncOrderIds);
+    }
+
+    public function test_second_reconcile_after_status_sync_is_idempotent(): void {
+        $orderId = 5205;
+        $itemId = 8206;
+        $first = $this->runReconcile(
+            [
+                [
+                    'order_item_id' => (string) $itemId,
+                    'order_id' => (string) $orderId,
+                    'order_status' => 'completed',
+                ],
+            ],
+            static function (array $args): array {
+                return [];
+            },
+            static function ($order_id) use ($orderId, $itemId) {
+                if ((int) $order_id !== $orderId) {
+                    return false;
+                }
+                return new class($orderId, $itemId) {
+                    private $id;
+                    private $itemId;
+                    public function __construct($id, $itemId) { $this->id = $id; $this->itemId = $itemId; }
+                    public function get_id() { return $this->id; }
+                    public function get_type() { return 'shop_order'; }
+                    public function get_status() { return 'refunded'; }
+                    public function get_customer_id() { return 0; }
+                    public function get_items() { return [$this->itemId => new \stdClass()]; }
+                };
+            }
+        );
+
+        $this->assertSame(1, $first['status_synced']);
+        $statusAfterFirst = $this->rowStatus($itemId);
+
+        $second = $this->runReconcile(
+            $this->currentRows,
+            static function (array $args): array {
+                return [];
+            },
+            static function ($order_id) use ($orderId, $itemId) {
+                if ((int) $order_id !== $orderId) {
+                    return false;
+                }
+                return new class($orderId, $itemId) {
+                    private $id;
+                    private $itemId;
+                    public function __construct($id, $itemId) { $this->id = $id; $this->itemId = $itemId; }
+                    public function get_id() { return $this->id; }
+                    public function get_type() { return 'shop_order'; }
+                    public function get_status() { return 'refunded'; }
+                    public function get_customer_id() { return 0; }
+                    public function get_items() { return [$this->itemId => new \stdClass()]; }
+                };
+            }
+        );
+
+        $this->assertSame(0, $second['status_synced']);
+        $this->assertSame($statusAfterFirst, $this->rowStatus($itemId));
+        $this->assertNotContains($itemId, $this->deletedItemIds);
     }
 }

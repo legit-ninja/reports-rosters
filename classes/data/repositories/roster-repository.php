@@ -18,6 +18,7 @@ use InterSoccer\ReportsRosters\Data\Collections\RostersCollection;
 use InterSoccer\ReportsRosters\Core\Logger;
 use InterSoccer\ReportsRosters\Core\Database;
 use InterSoccer\ReportsRosters\Services\CacheManager;
+use InterSoccer\ReportsRosters\Services\RosterRefundService;
 use InterSoccer\ReportsRosters\Exceptions\ValidationException;
 use InterSoccer\ReportsRosters\Exceptions\DatabaseException;
 
@@ -801,6 +802,46 @@ class RosterRepository implements RepositoryInterface {
      * @param int $order_item_id
      * @return int Number of deleted rows
      */
+    /**
+     * Sync non-flagged roster rows for a refunded/cancelled order kept during reconcile.
+     *
+     * @return int Rows updated (0 if none or on failure).
+     */
+    public function syncOrderStatusForKeptRows(int $order_id, string $status): int {
+        if ($order_id <= 0) {
+            return 0;
+        }
+        if (!in_array($status, [Roster::STATUS_REFUNDED, Roster::STATUS_CANCELLED], true)) {
+            return 0;
+        }
+
+        $wpdb = $this->database->get_wpdb();
+        if (!isset($wpdb) || !is_object($wpdb)) {
+            return 0;
+        }
+
+        $table = $wpdb->prefix . $this->table;
+        $fragment = RosterRefundService::getSqlExcludeFlaggedRowStatuses('order_status');
+        $sql = "UPDATE {$table} SET order_status = %s WHERE order_id = %d AND {$fragment['clause']}";
+        $params = array_merge([$status, $order_id], $fragment['params']);
+        $prepared = $wpdb->prepare($sql, ...$params);
+        $updated = $wpdb->query($prepared);
+
+        if ($updated === false) {
+            $this->logger->warning('Failed to sync order_status for kept reconcile rows', [
+                'order_id' => $order_id,
+            ]);
+            return 0;
+        }
+
+        $updated = (int) $updated;
+        if ($updated > 0) {
+            $this->clearRelatedCaches();
+        }
+
+        return $updated;
+    }
+
     public function deleteByOrderItemId(int $order_item_id): int {
         if ($order_item_id <= 0) {
             return 0;
