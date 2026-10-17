@@ -116,6 +116,8 @@ class RosterBuilder {
      */
     private $last_build_call_item_write_failures = 0;
 
+    private const ORDER_META_ROSTER_FAILURE_NOTES = '_intersoccer_roster_failure_notes';
+
     /**
      * Canonical mapping between order item metadata keys and roster fields.
      *
@@ -761,6 +763,7 @@ class RosterBuilder {
                 if ($roster) {
                     $rosters->add($roster);
                     $this->build_stats['players_processed']++;
+                    $this->clearItemWriteFailureNoteMarker($order, (int) $item_id);
                     // One roster row per order line item (uniq_order_item_id).
                     break;
                 }
@@ -852,6 +855,55 @@ class RosterBuilder {
     }
 
     /**
+     * @return array<int|string,string>
+     */
+    private function getItemWriteFailureNoteMarkers(\WC_Order $order): array {
+        if (!method_exists($order, 'get_meta')) {
+            return [];
+        }
+        $markers = $order->get_meta(self::ORDER_META_ROSTER_FAILURE_NOTES, true);
+        return is_array($markers) ? $markers : [];
+    }
+
+    private function failureReasonHash(string $reason): string {
+        return substr(md5($reason), 0, 8);
+    }
+
+    private function orderItemWriteFailureWasAlreadyNoted(\WC_Order $order, int $item_id, string $reason): bool {
+        $markers = $this->getItemWriteFailureNoteMarkers($order);
+        $key = (string) $item_id;
+        if (!isset($markers[$key])) {
+            return false;
+        }
+
+        return (string) $markers[$key] === $this->failureReasonHash($reason);
+    }
+
+    private function markItemWriteFailureNoted(\WC_Order $order, int $item_id, string $reason): void {
+        if (!method_exists($order, 'update_meta_data') || !method_exists($order, 'save')) {
+            return;
+        }
+        $markers = $this->getItemWriteFailureNoteMarkers($order);
+        $markers[(string) $item_id] = $this->failureReasonHash($reason);
+        $order->update_meta_data(self::ORDER_META_ROSTER_FAILURE_NOTES, $markers);
+        $order->save();
+    }
+
+    private function clearItemWriteFailureNoteMarker(\WC_Order $order, int $item_id): void {
+        if (!method_exists($order, 'get_meta') || !method_exists($order, 'update_meta_data') || !method_exists($order, 'save')) {
+            return;
+        }
+        $markers = $this->getItemWriteFailureNoteMarkers($order);
+        $key = (string) $item_id;
+        if (!isset($markers[$key])) {
+            return;
+        }
+        unset($markers[$key]);
+        $order->update_meta_data(self::ORDER_META_ROSTER_FAILURE_NOTES, $markers);
+        $order->save();
+    }
+
+    /**
      * Log, note, and count a failed roster write for one order line (no player PII in logs).
      */
     private function recordOrderItemRosterWriteFailure(\WC_Order $order, int $item_id, string $reason): void {
@@ -859,6 +911,15 @@ class RosterBuilder {
         $reason = trim($reason);
         if ($reason === '') {
             $reason = 'Unknown error';
+        }
+
+        if ($this->orderItemWriteFailureWasAlreadyNoted($order, $item_id, $reason)) {
+            $this->logger->error('Order line roster write failed (duplicate note suppressed)', [
+                'order_id' => $order_id,
+                'item_id' => $item_id,
+                'reason' => $reason,
+            ]);
+            return;
         }
 
         $this->build_stats['item_write_failures']++;
@@ -883,6 +944,7 @@ class RosterBuilder {
                 $reason
             );
             $order->add_order_note($note, false, false);
+            $this->markItemWriteFailureNoted($order, $item_id, $reason);
         }
     }
     
