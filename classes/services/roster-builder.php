@@ -110,6 +110,20 @@ class RosterBuilder {
     private $build_stats = [];
 
     /**
+     * Order IDs already status-synced during the current reconcile delete_obsolete pass.
+     *
+     * @var array<int,bool>
+     */
+    private $obsolete_reconcile_synced_order_ids = [];
+
+    /**
+     * Rows updated via syncOrderStatusForKeptRows in the current reconcile run.
+     *
+     * @var int
+     */
+    private $reconcile_status_synced_total = 0;
+
+    /**
      * Canonical mapping between order item metadata keys and roster fields.
      *
      * @return array<string,string>
@@ -320,6 +334,7 @@ class RosterBuilder {
             'end_time' => null,
             'duration' => 0,
             'newly_created_item_ids' => [],
+            'status_synced' => 0,
         ];
 
         $this->logger->info('Starting roster reconciliation', $options);
@@ -328,142 +343,175 @@ class RosterBuilder {
             $wpdb = $this->database->get_wpdb();
             $table = $wpdb->prefix . 'intersoccer_rosters';
 
-            $existing_item_ids = $wpdb->get_col("SELECT DISTINCT order_item_id FROM {$table}");
+            $existing_rows = $wpdb->get_results(
+                "SELECT order_item_id, order_id FROM {$table}",
+                ARRAY_A
+            );
             $existing_item_map = [];
-            foreach ($existing_item_ids as $item_id) {
-                if ($item_id !== null && $item_id !== '') {
-                    $existing_item_map[(int) $item_id] = true;
+            if (is_array($existing_rows)) {
+                foreach ($existing_rows as $row) {
+                    $item_id = isset($row['order_item_id']) ? (int) $row['order_item_id'] : 0;
+                    if ($item_id <= 0) {
+                        continue;
+                    }
+                    $existing_item_map[$item_id] = isset($row['order_id']) ? (int) $row['order_id'] : 0;
                 }
             }
 
-            $order_args = [
-                'limit' => -1,
-                'status' => $options['status'],
-                'return' => 'objects',
-            ];
             $date_from = isset($options['date_from']) ? trim((string) $options['date_from']) : '';
             $date_to = isset($options['date_to']) ? trim((string) $options['date_to']) : '';
-            if ($date_from !== '' || $date_to !== '') {
-                $from = $date_from !== '' ? date('Y-m-d', strtotime($date_from)) : '';
-                $to = $date_to !== '' ? date('Y-m-d', strtotime($date_to)) : '';
-                if ($from !== '' && $to !== '') {
-                    $order_args['date_created'] = $from . '...' . $to;
-                } elseif ($from !== '') {
-                    $order_args['date_created'] = '>=' . $from;
-                } else {
-                    $order_args['date_created'] = '<=' . $to;
-                }
-            }
-            $orders = wc_get_orders($order_args);
+            $order_query_options = [
+                'status' => $options['status'],
+                'date_from' => $date_from,
+                'date_to' => $date_to,
+            ];
 
-            $this->logger->info('Orders fetched for reconciliation', ['count' => count($orders), 'date_from' => $date_from ?: null, 'date_to' => $date_to ?: null]);
+            $batch_size = max(1, (int) ($options['batch_size'] ?? 200));
+            $offset = 0;
+            $orders_fetched = 0;
 
-            $active_order_item_ids = [];
-            foreach ($orders as $order) {
-                if (!method_exists($order, 'get_items')) {
-                    continue;
-                }
-                foreach ($order->get_items() as $item_id => $item) {
-                    $active_order_item_ids[(int) $item_id] = true;
-                }
-            }
+            do {
+                $order_ids = $this->getReconcileOrdersBatch($offset, $batch_size, $order_query_options);
+                $batch_count = is_array($order_ids) ? count($order_ids) : 0;
+                $orders_fetched += $batch_count;
 
-            foreach ($orders as $order) {
-                // Skip refunds and other non-order types that don't support get_customer_id()
-                if (!method_exists($order, 'get_customer_id')) {
-                    $this->logger->debug('Skipping non-order object in reconciliation', ['order_id' => $order->get_id()]);
-                    continue;
-                }
-
-                $order_id = $order->get_id();
-
-                try {
-                    $customer_id = $order->get_customer_id();
-                    if (!$customer_id) {
-                        throw new \Exception("Order {$order_id} has no customer ID");
+                foreach ($order_ids as $order_id) {
+                    $order = wc_get_order($order_id);
+                    if (
+                        !$order
+                        || !is_object($order)
+                        || !method_exists($order, 'get_customer_id')
+                        || (method_exists($order, 'get_type') && $order->get_type() !== 'shop_order')
+                    ) {
+                        $this->logger->debug('Skipping non-shop-order in reconciliation', ['order_id' => $order_id]);
+                        continue;
                     }
 
-                    $customer_players = $this->player_repository->getPlayersByCustomerId($customer_id);
-                    $customer_data = $this->extractCustomerData($order);
+                    if (RosterRefundService::isInactiveRebuildOrderStatus((string) $order->get_status())) {
+                        $this->logger->debug('Skipping inactive order status during reconciliation', [
+                            'order_id' => $order_id,
+                            'status' => $order->get_status(),
+                        ]);
+                        continue;
+                    }
 
-                    foreach ($order->get_items() as $item_id => $item) {
-                        try {
-                            $rows_before = (int) $wpdb->get_var($wpdb->prepare(
-                                "SELECT COUNT(*) FROM {$table} WHERE order_item_id = %d",
-                                (int) $item_id
-                            ));
+                    try {
+                        $customer_id = $order->get_customer_id();
+                        if (!$customer_id) {
+                            throw new \Exception("Order {$order_id} has no customer ID");
+                        }
 
-                            $item_rosters = $this->processOrderItem(
-                                $order,
-                                $item_id,
-                                $item,
-                                $customer_players,
-                                $customer_data,
-                                [
-                                    'validate_data' => $options['validate_data'],
-                                    'skip_duplicates' => $options['skip_duplicates'],
-                                    'update_existing' => $options['update_existing'],
-                                    'update_past_events' => true,
-                                    'skip_age_group_validation' => !empty($options['skip_age_group_validation']),
-                                ]
-                            );
+                        $customer_players = $this->player_repository->getPlayersByCustomerId($customer_id);
+                        $customer_data = $this->extractCustomerData($order);
 
-                            if ($item_rosters->count() > 0) {
-                                $rows_after = (int) $wpdb->get_var($wpdb->prepare(
+                        foreach ($order->get_items() as $item_id => $item) {
+                            try {
+                                $rows_before = (int) $wpdb->get_var($wpdb->prepare(
                                     "SELECT COUNT(*) FROM {$table} WHERE order_item_id = %d",
                                     (int) $item_id
                                 ));
-                                if ($rows_before === 0 && $rows_after > 0) {
-                                    $results['newly_created_item_ids'][] = (int) $item_id;
+
+                                $item_rosters = $this->processOrderItem(
+                                    $order,
+                                    $item_id,
+                                    $item,
+                                    $customer_players,
+                                    $customer_data,
+                                    [
+                                        'validate_data' => $options['validate_data'],
+                                        'skip_duplicates' => $options['skip_duplicates'],
+                                        'update_existing' => $options['update_existing'],
+                                        'update_past_events' => true,
+                                        'skip_age_group_validation' => !empty($options['skip_age_group_validation']),
+                                    ]
+                                );
+
+                                if ($item_rosters->count() > 0) {
+                                    $rows_after = (int) $wpdb->get_var($wpdb->prepare(
+                                        "SELECT COUNT(*) FROM {$table} WHERE order_item_id = %d",
+                                        (int) $item_id
+                                    ));
+                                    if ($rows_before === 0 && $rows_after > 0) {
+                                        $results['newly_created_item_ids'][] = (int) $item_id;
+                                    }
+                                    $results['synced'] += $item_rosters->count();
+                                    unset($existing_item_map[$item_id]);
                                 }
-                                $results['synced'] += $item_rosters->count();
-                                unset($existing_item_map[$item_id]);
+
+                            } catch (\Exception $e) {
+                                $results['errors']++;
+                                $error_msg = "Order {$order_id}, Item {$item_id}: {$e->getMessage()}";
+                                $results['error_messages'][] = $error_msg;
+                                $this->logger->error('Failed to reconcile order item', [
+                                    'order_id' => $order_id,
+                                    'item_id' => $item_id,
+                                    'error' => $e->getMessage()
+                                ]);
                             }
-
-                        } catch (\Exception $e) {
-                            $results['errors']++;
-                            $error_msg = "Order {$order_id}, Item {$item_id}: {$e->getMessage()}";
-                            $results['error_messages'][] = $error_msg;
-                            $this->logger->error('Failed to reconcile order item', [
-                                'order_id' => $order_id,
-                                'item_id' => $item_id,
-                                'error' => $e->getMessage()
-                            ]);
                         }
-                    }
 
-                } catch (\Exception $e) {
-                    $results['errors']++;
-                    $results['error_messages'][] = "Order {$order_id}: " . $e->getMessage();
-                    $this->logger->error('Failed to reconcile order', [
-                        'order_id' => $order_id,
-                        'error' => $e->getMessage()
-                    ]);
-                }
-            }
-
-            if ($options['delete_obsolete'] && !empty($existing_item_map)) {
-                foreach (array_keys($existing_item_map) as $obsolete_item_id) {
-                    // Only remove rows for line items that no longer exist on any fetched order.
-                    if (isset($active_order_item_ids[$obsolete_item_id])) {
-                        continue;
-                    }
-                    try {
-                        $deleted_count = $this->roster_repository->deleteWhere(['order_item_id' => $obsolete_item_id]);
-                        $results['deleted'] += $deleted_count;
-                        $this->logger->debug('Deleted obsolete roster entries', [
-                            'order_item_id' => $obsolete_item_id,
-                            'deleted' => $deleted_count
-                        ]);
                     } catch (\Exception $e) {
                         $results['errors']++;
-                        $results['error_messages'][] = "Failed to delete obsolete roster {$obsolete_item_id}: {$e->getMessage()}";
-                        $this->logger->error('Failed to delete obsolete roster entry', [
-                            'order_item_id' => $obsolete_item_id,
+                        $results['error_messages'][] = "Order {$order_id}: " . $e->getMessage();
+                        $this->logger->error('Failed to reconcile order', [
+                            'order_id' => $order_id,
                             'error' => $e->getMessage()
                         ]);
                     }
+
+                    unset($order);
                 }
+
+                $offset += $batch_size;
+                unset($order_ids);
+
+                if ($batch_count >= $batch_size && function_exists('wp_cache_flush')) {
+                    wp_cache_flush();
+                }
+            } while ($batch_count === $batch_size);
+
+            $this->logger->info('Orders fetched for reconciliation', [
+                'count' => $orders_fetched,
+                'date_from' => $date_from !== '' ? $date_from : null,
+                'date_to' => $date_to !== '' ? $date_to : null,
+            ]);
+
+            if ($options['delete_obsolete'] && !empty($existing_item_map)) {
+                $this->obsolete_reconcile_synced_order_ids = [];
+                $this->reconcile_status_synced_total = 0;
+                $obsolete_ids = array_keys($existing_item_map);
+                $delete_chunk_size = max(1, (int) ($options['delete_batch_size'] ?? 200));
+
+                for ($i = 0, $total = count($obsolete_ids); $i < $total; $i += $delete_chunk_size) {
+                    $chunk = array_slice($obsolete_ids, $i, $delete_chunk_size);
+                    foreach ($chunk as $obsolete_item_id) {
+                        $stored_order_id = isset($existing_item_map[$obsolete_item_id])
+                            ? (int) $existing_item_map[$obsolete_item_id]
+                            : 0;
+                        if (!$this->shouldDeleteObsoleteReconcileRow((int) $obsolete_item_id, $stored_order_id)) {
+                            continue;
+                        }
+                        try {
+                            $deleted_count = $this->roster_repository->deleteByOrderItemId((int) $obsolete_item_id);
+                            $results['deleted'] += $deleted_count;
+                            $this->logger->debug('Deleted obsolete roster entries', [
+                                'order_item_id' => $obsolete_item_id,
+                                'deleted' => $deleted_count,
+                            ]);
+                        } catch (\Exception $e) {
+                            $results['errors']++;
+                            $results['error_messages'][] = "Failed to delete obsolete roster {$obsolete_item_id}: {$e->getMessage()}";
+                            $this->logger->error('Failed to delete obsolete roster entry', [
+                                'order_item_id' => $obsolete_item_id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
+                    if ($i + $delete_chunk_size < $total && function_exists('wp_cache_flush')) {
+                        wp_cache_flush();
+                    }
+                }
+                $results['status_synced'] = $this->reconcile_status_synced_total;
             }
 
             $results['end_time'] = current_time('mysql');
@@ -624,7 +672,8 @@ class RosterBuilder {
             'type' => 'shop_order',
             'return' => 'ids',
             'orderby' => 'date',
-            'order' => 'ASC'
+            'order' => 'ASC',
+            'suppress_filters' => true,
         ];
         
         // Add date range filter if specified
@@ -633,6 +682,140 @@ class RosterBuilder {
         }
         
         return wc_get_orders($args);
+    }
+
+    /**
+     * Paged shop_order IDs for reconcile (language-independent).
+     *
+     * @param int $offset
+     * @param int $limit
+     * @param array $options status, date_from, date_to
+     * @return int[]
+     */
+    private function getReconcileOrdersBatch($offset, $limit, array $options) {
+        $args = [
+            'limit' => $limit,
+            'offset' => $offset,
+            'status' => $options['status'] ?? [],
+            'type' => 'shop_order',
+            'return' => 'ids',
+            'orderby' => 'date',
+            'order' => 'ASC',
+            'suppress_filters' => true,
+        ];
+
+        $date_from = isset($options['date_from']) ? trim((string) $options['date_from']) : '';
+        $date_to = isset($options['date_to']) ? trim((string) $options['date_to']) : '';
+        if ($date_from !== '' || $date_to !== '') {
+            $from = $date_from !== '' ? date('Y-m-d', strtotime($date_from)) : '';
+            $to = $date_to !== '' ? date('Y-m-d', strtotime($date_to)) : '';
+            if ($from !== '' && $to !== '') {
+                $args['date_created'] = $from . '...' . $to;
+            } elseif ($from !== '') {
+                $args['date_created'] = '>=' . $from;
+            } else {
+                $args['date_created'] = '<=' . $to;
+            }
+        }
+
+        $order_ids = wc_get_orders($args);
+        return is_array($order_ids) ? $order_ids : [];
+    }
+
+    /**
+     * Sync kept rows on a refunded/cancelled order to the order's status, at most once per order per reconcile run.
+     *
+     * @param int    $order_id
+     * @param string $woo_status
+     * @return void
+     */
+    private function syncKeptObsoleteOrderStatus(int $order_id, string $woo_status): void {
+        if ($order_id <= 0 || isset($this->obsolete_reconcile_synced_order_ids[$order_id])) {
+            return;
+        }
+
+        $normalized = RosterRefundService::normalizeWooOrderStatus($woo_status);
+        if ($normalized === 'refunded') {
+            $roster_status = Roster::STATUS_REFUNDED;
+        } elseif ($normalized === 'cancelled') {
+            $roster_status = Roster::STATUS_CANCELLED;
+        } else {
+            return;
+        }
+
+        $this->obsolete_reconcile_synced_order_ids[$order_id] = true;
+        $updated = $this->roster_repository->syncOrderStatusForKeptRows($order_id, $roster_status);
+        $this->reconcile_status_synced_total += $updated;
+    }
+
+    /**
+     * True only when the roster row's stored order is gone or confirmed ineligible for rebuild.
+     *
+     * Uses the row's denormalized order_id (never wc_get_order_id_by_order_item_id). On any
+     * uncertainty (missing helper, invalid stored id, lookup failure, unreadable line items),
+     * returns false (keep).
+     */
+    private function shouldDeleteObsoleteReconcileRow(int $order_item_id, int $stored_order_id): bool {
+        try {
+            if ($order_item_id <= 0 || $stored_order_id <= 0) {
+                return false;
+            }
+
+            if (!function_exists('wc_get_order')) {
+                return false;
+            }
+
+            $order = wc_get_order($stored_order_id);
+            if (!$order || !is_object($order) || !method_exists($order, 'get_status')) {
+                return true;
+            }
+
+            $status = (string) $order->get_status();
+            if (RosterRefundService::isFlaggedRowStatus($status)) {
+                $this->syncKeptObsoleteOrderStatus($stored_order_id, $status);
+                unset($order);
+                return false;
+            }
+
+            $normalized = RosterRefundService::normalizeWooOrderStatus($status);
+            if (in_array($normalized, ['refunded', 'cancelled'], true)) {
+                $this->syncKeptObsoleteOrderStatus($stored_order_id, $status);
+                unset($order);
+                return false;
+            }
+
+            if (RosterRefundService::isInactiveRebuildOrderStatus($status)) {
+                unset($order);
+                return true;
+            }
+
+            if (!method_exists($order, 'get_items')) {
+                unset($order);
+                $this->logger->warning('Keeping obsolete reconcile row; order line items unreadable', [
+                    'order_id' => $stored_order_id,
+                ]);
+                return false;
+            }
+
+            $items = $order->get_items();
+            unset($order);
+
+            if (!is_array($items) || $items === []) {
+                $this->logger->warning('Keeping obsolete reconcile row; order line items unreadable', [
+                    'order_id' => $stored_order_id,
+                ]);
+                return false;
+            }
+
+            $line_still_on_order = array_key_exists($order_item_id, $items);
+
+            return !$line_still_on_order;
+        } catch (\Throwable $e) {
+            $this->logger->warning('Keeping obsolete reconcile row; order line items unreadable', [
+                'order_id' => $stored_order_id,
+            ]);
+            return false;
+        }
     }
     
     /**

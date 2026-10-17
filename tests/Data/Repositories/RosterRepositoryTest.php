@@ -8,6 +8,8 @@ namespace InterSoccer\ReportsRosters\Tests\Data\Repositories;
 use InterSoccer\ReportsRosters\Tests\TestCase;
 use InterSoccer\ReportsRosters\Data\Repositories\RosterRepository;
 use InterSoccer\ReportsRosters\Data\Collections\RostersCollection;
+use InterSoccer\ReportsRosters\Data\Models\Roster;
+use InterSoccer\ReportsRosters\Services\RosterRefundService;
 use Mockery;
 
 class RosterRepositoryTest extends TestCase {
@@ -113,6 +115,24 @@ class RosterRepositoryTest extends TestCase {
         $collection = $this->repository->find_girls_only();
 
         $this->assertSame(2, $collection->count());
+    }
+
+    public function test_sync_order_status_for_kept_rows_builds_scoped_update_and_rejects_other_statuses(): void {
+        $captured_sql = '';
+        $this->wpdb->shouldReceive('prepare')->once()->andReturnUsing(function ($sql, ...$params) use (&$captured_sql) {
+            $captured_sql = $sql . ' /*' . implode(',', $params) . '*/';
+            return $sql;
+        });
+        $this->wpdb->shouldReceive('query')->once()->andReturn(2);
+
+        $updated = $this->repository->syncOrderStatusForKeptRows(77, Roster::STATUS_REFUNDED);
+
+        $this->assertSame(2, $updated);
+        $this->assertStringContainsString('WHERE order_id = %d', $captured_sql);
+        $fragment = RosterRefundService::getSqlExcludeFlaggedRowStatuses('order_status');
+        $this->assertStringContainsString($fragment['clause'], $captured_sql);
+
+        $this->assertSame(0, $this->repository->syncOrderStatusForKeptRows(77, 'completed'));
     }
 }
 

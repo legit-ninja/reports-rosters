@@ -18,6 +18,7 @@ use InterSoccer\ReportsRosters\Data\Collections\RostersCollection;
 use InterSoccer\ReportsRosters\Core\Logger;
 use InterSoccer\ReportsRosters\Core\Database;
 use InterSoccer\ReportsRosters\Services\CacheManager;
+use InterSoccer\ReportsRosters\Services\RosterRefundService;
 use InterSoccer\ReportsRosters\Exceptions\ValidationException;
 use InterSoccer\ReportsRosters\Exceptions\DatabaseException;
 
@@ -796,8 +797,82 @@ class RosterRepository implements RepositoryInterface {
     }
     
     /**
+     * Sync non-flagged roster rows for a refunded/cancelled order kept during reconcile.
+     *
+     * @param int    $order_id
+     * @param string $status
+     * @return int Rows updated (0 if none or on failure).
+     */
+    public function syncOrderStatusForKeptRows(int $order_id, string $status): int {
+        if ($order_id <= 0) {
+            return 0;
+        }
+        if (!in_array($status, [Roster::STATUS_REFUNDED, Roster::STATUS_CANCELLED], true)) {
+            return 0;
+        }
+
+        $wpdb = $this->database->get_wpdb();
+        if (!isset($wpdb) || !is_object($wpdb)) {
+            return 0;
+        }
+
+        $table = $wpdb->prefix . $this->table;
+        $fragment = RosterRefundService::getSqlExcludeFlaggedRowStatuses('order_status');
+        $sql = "UPDATE {$table} SET order_status = %s WHERE order_id = %d AND {$fragment['clause']}";
+        $params = array_merge([$status, $order_id], $fragment['params']);
+        $prepared = $wpdb->prepare($sql, ...$params);
+        $updated = $wpdb->query($prepared);
+
+        if ($updated === false) {
+            $this->logger->warning('Failed to sync order_status for kept reconcile rows', [
+                'order_id' => $order_id,
+            ]);
+            return 0;
+        }
+
+        $updated = (int) $updated;
+        if ($updated > 0) {
+            $this->clearRelatedCaches();
+        }
+
+        return $updated;
+    }
+
+    /**
+     * Delete roster rows for a Woo line item without loading full models (reconcile hot path).
+     *
+     * @param int $order_item_id
+     * @return int Number of deleted rows
+     */
+    public function deleteByOrderItemId(int $order_item_id): int {
+        if ($order_item_id <= 0) {
+            return 0;
+        }
+
+        try {
+            $this->logger->debug('Deleting roster entries by order_item_id', ['order_item_id' => $order_item_id]);
+
+            $deleted_count = $this->database->transaction(function () use ($order_item_id) {
+                return (int) $this->database->delete_roster_entries(['order_item_id' => $order_item_id]);
+            });
+
+            if ($deleted_count > 0) {
+                $this->clearRelatedCaches();
+            }
+
+            return $deleted_count;
+        } catch (\Exception $e) {
+            $this->logger->error('Failed to delete roster entries by order_item_id', [
+                'order_item_id' => $order_item_id,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
      * Delete roster entries matching criteria
-     * 
+     *
      * @param array $criteria Search criteria
      * @return int Number of deleted roster entries
      */

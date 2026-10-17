@@ -879,6 +879,16 @@ if (!function_exists('wc_get_order')) {
     }
 }
 
+if (!function_exists('wc_get_order_id_by_order_item_id')) {
+    function wc_get_order_id_by_order_item_id($order_item_id) {
+        global $intersoccer_test_wc_get_order_id_by_order_item_id_callback;
+        if (is_callable($intersoccer_test_wc_get_order_id_by_order_item_id_callback)) {
+            return call_user_func($intersoccer_test_wc_get_order_id_by_order_item_id_callback, $order_item_id);
+        }
+        return 0;
+    }
+}
+
 if (!function_exists('wc_get_orders')) {
     function wc_get_orders($args = []) {
         global $intersoccer_test_wc_get_orders_callback;
