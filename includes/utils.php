@@ -8,6 +8,188 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+if (!function_exists('intersoccer_rr_debug_enabled')) {
+    /**
+     * Whether verbose Reports & Rosters debug logging is enabled.
+     *
+     * Requires WP_DEBUG and an explicit INTERSOCCER_RR_DEBUG_LOG constant (not defined by default).
+     */
+    function intersoccer_rr_debug_enabled(): bool {
+        return defined('WP_DEBUG') && WP_DEBUG
+            && defined('INTERSOCCER_RR_DEBUG_LOG') && INTERSOCCER_RR_DEBUG_LOG;
+    }
+}
+
+if (!function_exists('intersoccer_rr_debug_log')) {
+    /**
+     * Write a message to the PHP error log only when RR debug logging is enabled.
+     */
+    function intersoccer_rr_debug_log(string $message): void {
+        if (intersoccer_rr_debug_enabled()) {
+            error_log($message);
+        }
+    }
+}
+
+if (!function_exists('intersoccer_rr_debug_allowlisted_request_fields')) {
+    /**
+     * Extract non-sensitive request fields safe for debug logs (IDs and action names only).
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    function intersoccer_rr_debug_allowlisted_request_fields(array $data): array {
+        $allow = [
+            'action',
+            'nonce',
+            'order_id',
+            'order_item_id',
+            'order_item_ids',
+            'target_variation_id',
+            'product_id',
+            'variation_id',
+            'allow_cross_gender',
+        ];
+        $out = [];
+        foreach ($allow as $key) {
+            if (!array_key_exists($key, $data)) {
+                continue;
+            }
+            $value = $data[$key];
+            if ($key === 'order_item_ids') {
+                $out[$key] = array_map('intval', (array) $value);
+                continue;
+            }
+            if (in_array($key, ['order_id', 'order_item_id', 'target_variation_id', 'product_id', 'variation_id'], true)) {
+                $out[$key] = (int) $value;
+                continue;
+            }
+            if ($key === 'allow_cross_gender') {
+                $out[$key] = ($value === '1' || $value === 1 || $value === true) ? 1 : 0;
+                continue;
+            }
+            $out[$key] = is_scalar($value) ? $value : null;
+        }
+        return $out;
+    }
+}
+
+if (!function_exists('intersoccer_rr_debug_summarize_order_item_meta')) {
+    /**
+     * Summarize order item meta for logs without player or contact fields.
+     *
+     * @param array<string, mixed> $meta
+     * @return array<string, mixed>
+     */
+    function intersoccer_rr_debug_summarize_order_item_meta(array $meta): array {
+        $summary = [
+            'meta_key_count' => count($meta),
+            'meta_keys' => array_keys($meta),
+        ];
+        $id_keys = [
+            'assigned_player_id',
+            'assigned_player',
+            'Variation ID',
+            'Product ID',
+            'product_id',
+            'variation_id',
+        ];
+        foreach ($id_keys as $key) {
+            if (!array_key_exists($key, $meta)) {
+                continue;
+            }
+            $val = $meta[$key];
+            if (is_array($val)) {
+                $val = $val[0] ?? reset($val);
+            }
+            if ($val !== '' && $val !== null) {
+                $summary[$key] = $val;
+            }
+        }
+        return $summary;
+    }
+}
+
+if (!function_exists('intersoccer_rr_debug_summarize_players_meta')) {
+    /**
+     * Summarize stored players meta for logs (counts and player IDs only).
+     *
+     * @param mixed $players
+     * @return array<string, mixed>
+     */
+    function intersoccer_rr_debug_summarize_players_meta($players): array {
+        if (!is_array($players)) {
+            return ['player_count' => 0, 'player_ids' => []];
+        }
+        $ids = [];
+        foreach ($players as $index => $player) {
+            if (!is_array($player)) {
+                $ids[] = 'index:' . $index;
+                continue;
+            }
+            if (!empty($player['id'])) {
+                $ids[] = (string) $player['id'];
+            } elseif (!empty($player['player_id'])) {
+                $ids[] = (string) $player['player_id'];
+            } else {
+                $ids[] = 'index:' . $index;
+            }
+        }
+        return [
+            'player_count' => count($players),
+            'player_ids' => $ids,
+        ];
+    }
+}
+
+if (!function_exists('intersoccer_rr_debug_summarize_roster_normalized')) {
+    /**
+     * Allowlisted roster row fields for migration debug logs.
+     *
+     * @param array<string, mixed> $normalized
+     * @return array<string, mixed>
+     */
+    function intersoccer_rr_debug_summarize_roster_normalized(array $normalized): array {
+        $allow = [
+            'order_id',
+            'order_item_id',
+            'product_id',
+            'variation_id',
+            'event_signature',
+            'activity_type',
+            'girls_only',
+        ];
+        $out = [];
+        foreach ($allow as $key) {
+            if (array_key_exists($key, $normalized)) {
+                $out[$key] = $normalized[$key];
+            }
+        }
+        return $out;
+    }
+}
+
+if (!function_exists('intersoccer_rr_debug_summarize_order_item_meta_rows')) {
+    /**
+     * Summarize woocommerce_order_itemmeta rows without values.
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<string, mixed>
+     */
+    function intersoccer_rr_debug_summarize_order_item_meta_rows(array $rows): array {
+        $keys = [];
+        foreach ($rows as $row) {
+            if (!empty($row['meta_key'])) {
+                $keys[] = (string) $row['meta_key'];
+            }
+        }
+        return [
+            'meta_row_count' => count($rows),
+            'meta_keys' => array_values(array_unique($keys)),
+        ];
+    }
+}
+
 if (!function_exists('intersoccer_normalize_attribute')) {
     /**
      * Normalize attribute values for comparison, preserving "Activity Type" as-is.
@@ -2924,7 +3106,10 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
 
     // Get item metadata - use same robust method as prepare_roster_entry
     $raw_order_item_meta = wc_get_order_item_meta($item_id, '', true);
-    error_log('InterSoccer: Raw order item meta for order ' . $order_id . ', item ' . $item_id . ': ' . print_r($raw_order_item_meta, true));
+    intersoccer_rr_debug_log(
+        'InterSoccer: Order item meta summary for order ' . $order_id . ', item ' . $item_id . ': '
+        . wp_json_encode(intersoccer_rr_debug_summarize_order_item_meta($raw_order_item_meta))
+    );
 
     $item_meta = array_combine(
         array_keys($raw_order_item_meta),
@@ -2938,7 +3123,10 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
 
     // Day-related log for debugging
     $day_related_keys = array_filter($item_meta, function($k) { return stripos($k, 'course') !== false || stripos($k, 'day') !== false; }, ARRAY_FILTER_USE_KEY);
-    error_log('InterSoccer: Day-related meta keys for item ' . $item_id . ': ' . print_r($day_related_keys, true));
+    intersoccer_rr_debug_log(
+        'InterSoccer: Day-related meta key names for item ' . $item_id . ': '
+        . wp_json_encode(array_keys($day_related_keys))
+    );
 
     // Assigned Attendee
     $assigned_attendee = isset($item_meta['Assigned Attendee']) ? trim($item_meta['Assigned Attendee']) : '';
@@ -2964,7 +3152,10 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     $players = function_exists('intersoccer_get_user_players')
         ? intersoccer_get_user_players($user_id)
         : (maybe_unserialize(get_user_meta($user_id, 'intersoccer_players', true)) ?: []);
-    error_log('InterSoccer: User ' . $user_id . ' players meta: ' . print_r($players, true));
+    intersoccer_rr_debug_log(
+        'InterSoccer: User ' . $user_id . ' players meta summary: '
+        . wp_json_encode(intersoccer_rr_debug_summarize_players_meta($players))
+    );
     $player_index = $item_meta['assigned_player'] ?? false;
     $assigned_player_id = $item_meta['assigned_player_id'] ?? '';
     $age = isset($item_meta['Player Age']) ? (int)$item_meta['Player Age'] : null;
@@ -3258,7 +3449,10 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
             }
         }
     } elseif ($product_type === 'course' && !empty($start_date) && !empty($end_date)) {
-        error_log('InterSoccer: Processing course dates for item ' . $item_id . ' in order ' . $order_id . ' - start_date: ' . var_export($start_date, true) . ', end_date: ' . var_export($end_date, true));
+        intersoccer_rr_debug_log(
+            'InterSoccer: Processing course dates for item ' . $item_id . ' in order ' . $order_id
+            . ' - has_start: ' . ($start_date ? 'yes' : 'no') . ', has_end: ' . ($end_date ? 'yes' : 'no')
+        );
         
         $context = "order $order_id, item $item_id";
         $parsed_start = intersoccer_parse_date_unified($start_date, $context . ' (start)');
@@ -3455,15 +3649,20 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     // Insert or update
     $result = $wpdb->replace($table_name, $data);
     $insert_id = $wpdb->insert_id;
-    error_log('InterSoccer: Upsert result for order ' . $order_id . ', item ' . $item_id . ': ' . var_export($result, true) . ' | Insert ID: ' . $insert_id . ' | Last DB error: ' . $wpdb->last_error . ' | Last query: ' . $wpdb->last_query);
-
     if ($result) {
-        error_log('InterSoccer: Successfully upserted roster entry for order ' . $order_id . ', item ' . $item_id . ' (ID: ' . $insert_id . ') with event_signature: ' . $data['event_signature']);
+        error_log(
+            'InterSoccer: Successfully upserted roster entry for order ' . $order_id . ', item ' . $item_id
+            . ' (ID: ' . $insert_id . ') with event_signature: ' . $data['event_signature']
+        );
         return true;
-    } else {
-        error_log('InterSoccer: Failed to upsert roster entry for order ' . $order_id . ', item ' . $item_id . ' - Check DB error');
-        return false;
     }
+
+    error_log('InterSoccer: Failed to upsert roster entry for order ' . $order_id . ', item ' . $item_id);
+    intersoccer_rr_debug_log(
+        'InterSoccer: Upsert debug for order ' . $order_id . ', item ' . $item_id
+        . ' | db_error: ' . $wpdb->last_error
+    );
+    return false;
 }
 
 if (!function_exists('intersoccer_rebuild_event_signature_for_order_item')) {
@@ -4217,12 +4416,12 @@ function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
 function intersoccer_manual_product_type_detection($product_id, $variation_id = null) {
     $check_id = $variation_id && $variation_id > 0 ? $variation_id : $product_id;
     
-    error_log('InterSoccer: Manual product type detection for ID: ' . $check_id);
+    intersoccer_rr_debug_log('InterSoccer: Manual product type detection for ID: ' . $check_id);
     
     // Check existing meta first
     $product_type = get_post_meta($check_id, '_intersoccer_product_type', true);
     if ($product_type) {
-        error_log('InterSoccer: Found product type in meta: ' . $product_type);
+        intersoccer_rr_debug_log('InterSoccer: Found product type in meta: ' . $product_type);
         return $product_type;
     }
     
@@ -4230,7 +4429,7 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
     if ($variation_id && $variation_id > 0) {
         $product_type = get_post_meta($product_id, '_intersoccer_product_type', true);
         if ($product_type) {
-            error_log('InterSoccer: Found product type in parent meta: ' . $product_type);
+            intersoccer_rr_debug_log('InterSoccer: Found product type in parent meta: ' . $product_type);
             return $product_type;
         }
     }
@@ -4240,7 +4439,9 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
     $categories = wp_get_post_terms($cat_check_id, 'product_cat', array('fields' => 'slugs'));
     
     if (!is_wp_error($categories) && !empty($categories)) {
-        error_log('InterSoccer: Categories for product ' . $cat_check_id . ': ' . print_r($categories, true));
+        intersoccer_rr_debug_log(
+            'InterSoccer: Categories for product ' . $cat_check_id . ': ' . wp_json_encode($categories)
+        );
         
         if (in_array('camps', $categories, true)) {
             $product_type = 'camp';
@@ -4262,7 +4463,9 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
     $product = wc_get_product($check_id);
     if ($product) {
         $activity_type_attr = $product->get_attribute('pa_activity-type');
-        error_log('InterSoccer: Activity type attribute: ' . var_export($activity_type_attr, true));
+        intersoccer_rr_debug_log(
+            'InterSoccer: Activity type attribute present for product ' . $check_id . ': ' . (empty($activity_type_attr) ? 'no' : 'yes')
+        );
         
         if (!empty($activity_type_attr)) {
             $normalized = strtolower(trim($activity_type_attr));
@@ -4286,7 +4489,10 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
             $parent_product = wc_get_product($product_id);
             if ($parent_product) {
                 $parent_activity_type = $parent_product->get_attribute('pa_activity-type');
-                error_log('InterSoccer: Parent activity type attribute: ' . var_export($parent_activity_type, true));
+                intersoccer_rr_debug_log(
+                    'InterSoccer: Parent activity type attribute present for product ' . $product_id . ': '
+                    . (empty($parent_activity_type) ? 'no' : 'yes')
+                );
                 
                 if (!empty($parent_activity_type)) {
                     $normalized = strtolower(trim($parent_activity_type));
@@ -4321,7 +4527,10 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
 // 4. Debug function to test specific problematic products
 function intersoccer_debug_specific_products() {
     if (!current_user_can('manage_options')) return;
-    
+    if (!intersoccer_rr_debug_enabled()) {
+        return;
+    }
+
     error_log('=== DEBUG SPECIFIC PRODUCTS ===');
     
     // Test the problematic products from your logs
@@ -4337,24 +4546,24 @@ function intersoccer_debug_specific_products() {
         // Test original function if available
         if (function_exists('intersoccer_get_product_type')) {
             $original_result = intersoccer_get_product_type($test['variation_id']);
-            error_log('Original function result for variation: ' . var_export($original_result, true));
+            error_log('Original function result for variation: ' . (string) $original_result);
             
             $original_parent = intersoccer_get_product_type($test['product_id']);
-            error_log('Original function result for parent: ' . var_export($original_parent, true));
+            error_log('Original function result for parent: ' . (string) $original_parent);
         }
         
         // Test safe function
         $safe_result = intersoccer_get_product_type_safe($test['product_id'], $test['variation_id']);
-        error_log('Safe function result: ' . var_export($safe_result, true));
+        error_log('Safe function result: ' . (string) $safe_result);
         
         // Check meta and categories directly
         $variation_meta = get_post_meta($test['variation_id'], '_intersoccer_product_type', true);
         $parent_meta = get_post_meta($test['product_id'], '_intersoccer_product_type', true);
         $categories = wp_get_post_terms($test['product_id'], 'product_cat', array('fields' => 'slugs'));
         
-        error_log('Variation meta: ' . var_export($variation_meta, true));
-        error_log('Parent meta: ' . var_export($parent_meta, true));
-        error_log('Parent categories: ' . print_r($categories, true));
+        error_log('Variation meta product_type: ' . (string) $variation_meta);
+        error_log('Parent meta product_type: ' . (string) $parent_meta);
+        error_log('Parent categories: ' . wp_json_encode($categories));
         
         error_log('---');
     }

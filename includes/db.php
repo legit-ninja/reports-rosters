@@ -94,7 +94,9 @@ function intersoccer_create_rosters_table() {
     dbDelta($sql);
     error_log('InterSoccer: Rosters table created/verified on activation (no rebuild).');
     $describe = $wpdb->get_results("DESCRIBE $rosters_table", ARRAY_A);
-    error_log('InterSoccer: Post-rebuild DESCRIBE: ' . print_r($describe, true));
+    if (function_exists('intersoccer_rr_debug_enabled') && intersoccer_rr_debug_enabled()) {
+        error_log('InterSoccer: Post-rebuild DESCRIBE column count: ' . count($describe));
+    }
 
     // Migrate existing tables to add event_signature column if it doesn't exist
     intersoccer_migrate_rosters_table();
@@ -783,7 +785,13 @@ if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exis
                 ob_clean();
                 wp_send_json_error(['message' => __('You do not have permission to rebuild rosters.', 'intersoccer-reports-rosters')]);
             }
-            error_log('InterSoccer: AJAX rebuild request received with data: ' . print_r($_POST, true));
+            if (function_exists('intersoccer_rr_debug_log')) {
+                intersoccer_rr_debug_log(
+                    'InterSoccer: AJAX rebuild request context: ' . wp_json_encode(
+                        intersoccer_rr_debug_allowlisted_request_fields($_POST)
+                    )
+                );
+            }
 
             try {
                 $result = intersoccer_rebuild_rosters_and_reports();
@@ -824,7 +832,13 @@ if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exis
                 ob_clean();
                 wp_send_json_error(['message' => __('You do not have permission to reconcile rosters.', 'intersoccer-reports-rosters')]);
             }
-            error_log('InterSoccer: AJAX reconcile request received with data: ' . print_r($_POST, true));
+            if (function_exists('intersoccer_rr_debug_log')) {
+                intersoccer_rr_debug_log(
+                    'InterSoccer: AJAX reconcile request context: ' . wp_json_encode(
+                        intersoccer_rr_debug_allowlisted_request_fields($_POST)
+                    )
+                );
+            }
 
             try {
                 $result = intersoccer_reconcile_rosters();
@@ -863,15 +877,30 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
     $parent_product = wc_get_product($product_id);
 
     $raw_order_item_meta = wc_get_order_item_meta($order_item_id, '', true);
-    error_log("InterSoccer: Raw order item meta for order $order_id, item $order_item_id: " . print_r($raw_order_item_meta, true));
+    if (function_exists('intersoccer_rr_debug_log')) {
+        intersoccer_rr_debug_log(
+            "InterSoccer: Order item meta summary for order $order_id, item $order_item_id: "
+            . wp_json_encode(intersoccer_rr_debug_summarize_order_item_meta($raw_order_item_meta))
+        );
+    }
 
     // Activity type logic (same as rebuild)
     $activity_type = $raw_order_item_meta['Activity Type'][0] ?? null;
-    error_log("InterSoccer: Raw Activity Type from meta for order $order_id, item $order_item_id: " . print_r($activity_type, true));
+    if (function_exists('intersoccer_rr_debug_log')) {
+        intersoccer_rr_debug_log(
+            "InterSoccer: Activity type present for order $order_id, item $order_item_id: "
+            . ($activity_type ? 'yes' : 'no')
+        );
+    }
     if ($activity_type) {
         $activity_type = trim(strtolower(html_entity_decode($activity_type, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
         $activity_types = array_map('trim', explode(',', $activity_type));
-        error_log("InterSoccer: Processed activity_types from meta for order $order_id, item $order_item_id: " . print_r($activity_types, true));
+        if (function_exists('intersoccer_rr_debug_log')) {
+            intersoccer_rr_debug_log(
+                "InterSoccer: Processed activity_types count for order $order_id, item $order_item_id: "
+                . count($activity_types)
+            );
+        }
         if (in_array('girls only', $activity_types) || in_array('camp, girls\' only', $activity_types) || in_array('camp, girls only', $activity_types)) {
             $activity_type = 'Girls Only';
         } else {
@@ -973,7 +1002,11 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                         $gender = $player['gender'] ?? $gender;
                         $medical_conditions = $player['medical_conditions'] ?? $medical_conditions;
                         $avs_number = $player['avs_number'] ?? 'N/A';
-                        error_log("InterSoccer: Fallback first-name match for attendee $assigned_attendee in rebuild order $order_id item $order_item_id");
+                        if (function_exists('intersoccer_rr_debug_log')) {
+                            intersoccer_rr_debug_log(
+                                "InterSoccer: Fallback first-name match for order $order_id item $order_item_id"
+                            );
+                        }
                         break;
                     }
                 }
@@ -1133,7 +1166,12 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                         $order_item_id
                     ), ARRAY_A);
                     if ($all_date_meta) {
-                        error_log("InterSoccer: Found Date-related metadata in database for order_item_id $order_item_id: " . json_encode($all_date_meta));
+                        if (function_exists('intersoccer_rr_debug_log')) {
+                            intersoccer_rr_debug_log(
+                                "InterSoccer: Found Date-related metadata in database for order_item_id $order_item_id: "
+                                . wp_json_encode(intersoccer_rr_debug_summarize_order_item_meta_rows($all_date_meta))
+                            );
+                        }
                         // Try each found key - prioritize 'Date' key
                         $date_keys = [];
                         foreach ($all_date_meta as $meta_row) {
@@ -1239,8 +1277,13 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             }
         } elseif ($activity_type === 'Course' && !empty($order_item_meta['Start Date']) && !empty($order_item_meta['End Date'])) {
             // Log raw date values for debugging
-            error_log("InterSoccer: Raw Start Date for order $order_id, item $order_item_id: " . print_r($order_item_meta['Start Date'], true));
-            error_log("InterSoccer: Raw End Date for order $order_id, item $order_item_id: " . print_r($order_item_meta['End Date'], true));
+            if (function_exists('intersoccer_rr_debug_log')) {
+                intersoccer_rr_debug_log(
+                    "InterSoccer: Start/End Date meta present for order $order_id, item $order_item_id: "
+                    . 'start=' . (empty($order_item_meta['Start Date']) ? 'no' : 'yes')
+                    . ', end=' . (empty($order_item_meta['End Date']) ? 'no' : 'yes')
+                );
+            }
 
             // Use unified date parser
             $context = "order $order_id, item $order_item_id";
@@ -1606,7 +1649,7 @@ function intersoccer_upgrade_database() {
             if ($meta_first_norm === $first_name_norm && $meta_last_norm === $last_name_norm && isset($player['avs_number'])) {
                 $avs_number = $player['avs_number'];
                 $wpdb->update($rosters_table, ['avs_number' => $avs_number], ['id' => $row->id]);
-                error_log('InterSoccer: Backfilled avs_number for order ' . $row->order_id . ': ' . $avs_number);
+                error_log('InterSoccer: Backfilled avs_number for roster id ' . $row->id . ', order ' . $row->order_id);
                 break;
             }
         }
@@ -1878,7 +1921,9 @@ function intersoccer_validate_rosters_table() {
     foreach ($actual_columns_raw as $col) {
         $actual_columns[$col['Field']] = strtolower(preg_replace('/\s*\(.*?\)/', '', $col['Type']));
     }
-    error_log('InterSoccer: Rosters table DESCRIBE result: ' . print_r($actual_columns, true));
+    if (function_exists('intersoccer_rr_debug_enabled') && intersoccer_rr_debug_enabled()) {
+        error_log('InterSoccer: Rosters table DESCRIBE column count: ' . count($actual_columns));
+    }
 
     $mismatch = array_diff_key($expected_columns, $actual_columns) || array_diff_key($actual_columns, $expected_columns);
     if ($mismatch) {

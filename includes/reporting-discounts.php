@@ -757,7 +757,16 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
                 
                 // Ensure it's an array
                 if (!is_array($item_discount_breakdown)) {
-                    error_log("InterSoccer Financial Report: Order {$row->order_id}, Item {$row->order_item_id} - Discount breakdown is not an array. Type: " . gettype($item_discount_breakdown) . ", Value: " . print_r($raw_breakdown, true));
+                    error_log(
+                        "InterSoccer Financial Report: Order {$row->order_id}, Item {$row->order_item_id} - Discount breakdown is not an array. Type: "
+                        . gettype($item_discount_breakdown)
+                    );
+                    if (function_exists('intersoccer_rr_debug_log')) {
+                        intersoccer_rr_debug_log(
+                            "InterSoccer Financial Report: Order {$row->order_id}, Item {$row->order_item_id} - raw breakdown type: "
+                            . gettype($raw_breakdown)
+                        );
+                    }
                     $item_discount_breakdown = [];
                 }
             }

@@ -81,8 +81,8 @@ function intersoccer_normalize_phone_number($phone) {
     }
     if ($reason !== 'unknown') {
         // Only log invalid numbers if debugging
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("InterSoccer: Invalid phone number format: {$phone} (Reason: {$reason})");
+        if (function_exists('intersoccer_rr_debug_log')) {
+            intersoccer_rr_debug_log("InterSoccer: Invalid phone number format (Reason: {$reason})");
         }
         return (string)$phone; // Return as string
     }
@@ -125,7 +125,9 @@ function intersoccer_normalize_phone_number($phone) {
         // Validate country code
         $valid_country_codes = ['33', '44', '40', '49', '39', '34', '31', '32', '971', '354', '1', '46'];
         if (!in_array($matches[1], $valid_country_codes)) {
-            error_log("InterSoccer: Invalid country code for phone: {$phone}, assuming Swiss");
+            if (function_exists('intersoccer_rr_debug_log')) {
+                intersoccer_rr_debug_log('InterSoccer: Invalid country code for phone normalization, assuming Swiss');
+            }
             $country_code = '+41';
             $local_number = $matches[1] . $matches[2]; // Treat entire number as local part
         }
@@ -137,8 +139,8 @@ function intersoccer_normalize_phone_number($phone) {
         }
         $normalized = $country_code . $local_number;
         // Only log if debugging
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("InterSoccer: Normalized phone number: {$phone} -> {$normalized} (country code match)");
+        if (function_exists('intersoccer_rr_debug_log')) {
+            intersoccer_rr_debug_log('InterSoccer: Normalized phone number (country code match)');
         }
         return (string)$normalized; // Ensure string type
     }
@@ -154,14 +156,16 @@ function intersoccer_normalize_phone_number($phone) {
             $local_number = str_pad($local_number, 9, '0', STR_PAD_RIGHT); // Pad with zeros
         }
         $normalized = $country_code . $local_number;
-        error_log("InterSoccer: Normalized phone number: {$phone} -> {$normalized} (ambiguous match)");
+        if (function_exists('intersoccer_rr_debug_log')) {
+            intersoccer_rr_debug_log('InterSoccer: Normalized phone number (ambiguous match)');
+        }
         return (string)$normalized; // Ensure string type
     }
 
     // Fallback for any unhandled cases
     // Only log if debugging
-    if (defined('WP_DEBUG') && WP_DEBUG) {
-        error_log("InterSoccer: Invalid phone number format: {$phone} (Reason: unhandled format)");
+    if (function_exists('intersoccer_rr_debug_log')) {
+        intersoccer_rr_debug_log('InterSoccer: Invalid phone number format (Reason: unhandled format)');
     }
     return (string)$phone; // Return as string
 }
@@ -726,7 +730,13 @@ function intersoccer_export_roster() {
                 if ($date_obj) {
                     $formatted_birth_date = $date_obj->format('d/m/Y');
                 } else {
-                    error_log("InterSoccer: Could not parse date of birth: $birth_date for player: " . ($player['player_name'] ?? 'Unknown'));
+                    $player_log_id = $player['id'] ?? $player['player_id'] ?? 'unknown';
+                    error_log('InterSoccer: Could not parse date of birth for player id: ' . $player_log_id);
+                    if (function_exists('intersoccer_rr_debug_log')) {
+                        intersoccer_rr_debug_log(
+                            'InterSoccer: DOB parse debug for player id ' . $player_log_id . ' on order_item context'
+                        );
+                    }
                     $formatted_birth_date = $birth_date; // Use original if parsing fails
                 }
             }

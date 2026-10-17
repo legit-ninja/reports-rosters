@@ -1212,7 +1212,12 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
 function intersoccer_move_players_ajax() {
     // Log start of migration request
     error_log('InterSoccer Migration: Starting player migration request');
-    error_log('InterSoccer Migration: POST data: ' . print_r($_POST, true));
+    if (function_exists('intersoccer_rr_debug_log')) {
+        intersoccer_rr_debug_log(
+            'InterSoccer Migration: Request context: '
+            . wp_json_encode(intersoccer_rr_debug_allowlisted_request_fields($_POST))
+        );
+    }
     
     check_ajax_referer('intersoccer_move_nonce', 'nonce');
     if (!current_user_can('manage_options')) {
@@ -1322,7 +1327,7 @@ function intersoccer_move_players_ajax() {
             error_log('  - Original product: ' . $original_product_id);
             error_log('  - Original subtotal: ' . $original_subtotal);
             error_log('  - Original total: ' . $original_total);
-            error_log('  - Assigned attendee: ' . $assigned_attendee);
+            error_log('  - Assigned attendee present: ' . ($assigned_attendee !== '' ? 'yes' : 'no'));
             // Get target product information
             $new_product_id = $variation->get_parent_id();
             $new_attributes = $variation->get_variation_attributes();
@@ -1343,7 +1348,11 @@ function intersoccer_move_players_ajax() {
             error_log('InterSoccer Migration: Target variation details:');
             error_log('  - New product ID: ' . $new_product_id);
             error_log('  - New product type: ' . ($new_product_type ?: 'unknown'));
-            error_log('  - New attributes: ' . print_r($new_attributes, true));
+            if (function_exists('intersoccer_rr_debug_log')) {
+                intersoccer_rr_debug_log(
+                    '  - New attribute keys: ' . wp_json_encode(array_keys($new_attributes))
+                );
+            }
 
             // Start transaction-like approach
             $migration_success = true;
@@ -1686,7 +1695,7 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
         ['%d']
     );
 
-    error_log('InterSoccer Migration: Roster update rows affected for item ' . $item_id . ': ' . var_export($update_result, true));
+    error_log('InterSoccer Migration: Roster update rows affected for item ' . $item_id . ': ' . (int) $update_result);
 
     if ($update_result === false) {
         throw new Exception('Database update failed for roster entry');
@@ -1728,7 +1737,12 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
         error_log('InterSoccer Migration: Roster row already matched target for item ' . $item_id);
     }
 
-    error_log('InterSoccer Migration: Updated roster entry with normalized data: ' . print_r($normalized, true));
+    if (function_exists('intersoccer_rr_debug_log')) {
+        intersoccer_rr_debug_log(
+            'InterSoccer Migration: Updated roster entry summary for item ' . $item_id . ': '
+            . wp_json_encode(intersoccer_rr_debug_summarize_roster_normalized($normalized))
+        );
+    }
 }
 
 /**
