@@ -147,6 +147,10 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
 
     /** Same wiring as makeBuilder but exercises DataValidator cross-field age rules. */
     private function makeBuilderWithRealValidator(Player $player): RosterBuilder {
+        return $this->makeBuilderWithRealValidatorAndLogger($player, $this->logger());
+    }
+
+    private function makeBuilderWithRealValidatorAndLogger(Player $player, Logger $logger): RosterBuilder {
         $players = new PlayersCollection();
         $players->add($player);
         $playerRepo = Mockery::mock(PlayerRepository::class);
@@ -154,11 +158,11 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         $matcher = Mockery::mock(PlayerMatcher::class);
         $matcher->shouldReceive('getAssignedPlayers')->andReturn($players);
         return new RosterBuilder(
-            $this->logger(),
+            $logger,
             Mockery::mock(Database::class),
             $playerRepo,
             $this->rosterRepository(),
-            new DataValidator($this->logger()),
+            new DataValidator($logger),
             Mockery::mock(EventMatcher::class),
             $matcher
         );
@@ -312,13 +316,27 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         $this->assertSame(1, $rows->count(), 'errors: ' . json_encode($this->buildErrors($b)));
         $this->assertCount(1, $this->inserted);
         $this->assertFalse($b->hadOrderItemWriteFailures());
+        $ed = $this->inserted[0]['event_details'] ?? [];
+        if (is_string($ed)) {
+            $ed = json_decode($ed, true) ?: [];
+        }
+        $this->assertTrue(!empty($ed['under_age_at_start']));
     }
 
     public function test_real_validator_without_skip_rejects_under_age_at_start() {
         $uuid = '00000000-0000-4000-8000-000000000512';
         $item = $this->item(52636, 52637, $this->etoyItemMeta($uuid, '2023-08-31'));
         $this->order(1012, 212, 512, $item);
-        $b = $this->makeBuilderWithRealValidator($this->player(212, $uuid, '2023-08-31'));
+        $advisory_rules = '';
+        $logger = Mockery::mock(Logger::class);
+        $logger->shouldReceive('info', 'debug', 'error')->andReturn(null);
+        $logger->shouldReceive('warning')->andReturnUsing(function ($message, $context = []) use (&$advisory_rules) {
+            if ($message === 'Roster data validation advisory failure on write path' && !empty($context['rules'])) {
+                $advisory_rules = (string) $context['rules'];
+            }
+            return null;
+        });
+        $b = $this->makeBuilderWithRealValidatorAndLogger($this->player(212, $uuid, '2023-08-31'), $logger);
 
         $rows = $b->buildRosterFromOrder(1012, [
             'validate_data' => true,
@@ -331,6 +349,7 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         $errors = $this->buildErrors($b);
         $this->assertNotEmpty($errors);
         $this->assertStringContainsString('not eligible for age group', implode(' ', $errors));
+        $this->assertStringContainsString('age_group_eligibility', $advisory_rules);
     }
 
     public function test_case_a_etoy_live_hook_options_create_one_row() {

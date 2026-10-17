@@ -1600,12 +1600,6 @@ class RosterBuilder {
     }
 
     /**
-     * Build event details JSON from roster data
-     * 
-     * @param array $roster_data Roster data
-     * @return array Event details
-     */
-    /**
      * @param array $roster_data
      * @return array|string|null
      */
@@ -1646,6 +1640,12 @@ class RosterBuilder {
         return $player->isBelowMinAgeForAgeGroupAt($age_group, $start_date);
     }
 
+    /**
+     * Build event details JSON from roster data
+     *
+     * @param array $roster_data Roster data
+     * @return array Event details
+     */
     private function buildEventDetails(array $roster_data) {
         $details = [];
         
