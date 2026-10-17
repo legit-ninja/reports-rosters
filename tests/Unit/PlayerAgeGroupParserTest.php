@@ -30,6 +30,8 @@ class PlayerAgeGroupParserTest extends TestCase {
             'de jahre half-day qualifier' => ['3-5 Jahre (halbtags)', 3, 5],
             'slug fr suffix' => ['5-12-fr', 5, 12],
             'slug y full-day' => ['5-13y-full-day', 5, 13],
+            'de jahre alt' => ['3-11 Jahre alt', 3, 11],
+            'de jahre alt with qualifier' => ['5-13 Jahre alt (ganztägig)', 5, 13],
         ];
     }
 

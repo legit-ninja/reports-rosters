@@ -969,7 +969,7 @@ class ValidationHelper {
         $normalized = self::normalizeAgeGroupLabel($parse_label);
 
         if (preg_match(
-            '/^(\d+)\s*-\s*(\d+)(?:\s*(?:y|years?|ans|jahre?))?(?:\s*\([^)]+\))?$/iu',
+            '/^(\d+)\s*-\s*(\d+)(?:\s*(?:y|years?|ans|jahre?))?(?:\s+alt(?:\s*\([^)]+\))?|\s*\([^)]+\)(?:\s+alt)?)?$/iu',
             $normalized,
             $matches
         )) {
@@ -992,6 +992,10 @@ class ValidationHelper {
                 'min' => (int) $matches[1],
                 'max' => (int) $matches[2],
             ];
+        }
+
+        if (self::isGradeAgeGroup($age_group)) {
+            return null;
         }
 
         self::logUnparseableAgeGroupOnce($age_group);
