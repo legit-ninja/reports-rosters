@@ -133,6 +133,10 @@ if (!function_exists('do_action')) {
 
 if (!function_exists('apply_filters')) {
     function apply_filters($hook, $value, ...$args) {
+        if (!empty($GLOBALS['intersoccer_test_apply_filters_callback'])
+            && is_callable($GLOBALS['intersoccer_test_apply_filters_callback'])) {
+            $value = $GLOBALS['intersoccer_test_apply_filters_callback']($hook, $value, ...$args);
+        }
         return intersoccer_test_run_wp_hooks('filters', $hook, $value, $args);
     }
 }

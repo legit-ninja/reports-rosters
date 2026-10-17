@@ -5753,42 +5753,66 @@ if (!function_exists('intersoccer_product_girls_only_values')) {
         if (!$product || !is_object($product)) {
             return [];
         }
-        $values = [];
-        if (method_exists($product, 'get_attribute')) {
-            foreach (['pa_girls-only', 'girls-only'] as $attr_name) {
-                $attr_value = $product->get_attribute($attr_name);
-                if ($attr_value === '') {
-                    continue;
-                }
-                foreach (explode(',', (string) $attr_value) as $piece) {
-                    $piece = trim($piece);
-                    if ($piece !== '') {
-                        $values[] = $piece;
-                    }
-                }
-            }
-        }
+        $attributes_by_name = [];
         if (method_exists($product, 'get_attributes')) {
-            $attributes = $product->get_attributes();
-            foreach ($attributes as $attr_name => $attribute) {
+            foreach ((array) $product->get_attributes() as $attr_name => $attribute) {
                 if (strpos((string) $attr_name, 'girls') === false) {
                     continue;
                 }
-                if (is_object($attribute) && method_exists($attribute, 'get_options')) {
-                    foreach ((array) $attribute->get_options() as $option) {
-                        if ($option === '' || $option === null) {
-                            continue;
+                $attributes_by_name[(string) $attr_name] = $attribute;
+            }
+        }
+        foreach (['pa_girls-only', 'girls-only'] as $attr_name) {
+            if (!isset($attributes_by_name[$attr_name])
+                && method_exists($product, 'get_attribute')
+                && $product->get_attribute($attr_name) !== '') {
+                $attributes_by_name[$attr_name] = null;
+            }
+        }
+
+        $values = [];
+        foreach ($attributes_by_name as $attr_name => $attribute) {
+            $pieces = [];
+            if (method_exists($product, 'get_attribute')) {
+                $attr_value = $product->get_attribute($attr_name);
+                if ($attr_value !== '') {
+                    foreach (explode(',', (string) $attr_value) as $piece) {
+                        $piece = trim($piece);
+                        if ($piece !== '') {
+                            $pieces[] = $piece;
                         }
-                        $values[] = $option;
                     }
                 }
             }
-        }
-        $unique = [];
-        foreach ($values as $value) {
-            if (!in_array($value, $unique, true)) {
-                $unique[] = $value;
+            if ($pieces === [] && is_object($attribute) && method_exists($attribute, 'get_options')) {
+                foreach ((array) $attribute->get_options() as $option) {
+                    if ($option === '' || $option === null) {
+                        continue;
+                    }
+                    if (is_numeric($option) && function_exists('get_term')) {
+                        $term = get_term((int) $option);
+                        if ($term && !is_wp_error($term) && isset($term->slug)) {
+                            $pieces[] = $term->slug;
+                            continue;
+                        }
+                    }
+                    $pieces[] = $option;
+                }
             }
+            foreach ($pieces as $piece) {
+                $values[] = $piece;
+            }
+        }
+
+        $unique = [];
+        $seen = [];
+        foreach ($values as $value) {
+            $dedupe_key = is_string($value) ? strtolower($value) : (string) $value;
+            if (isset($seen[$dedupe_key])) {
+                continue;
+            }
+            $seen[$dedupe_key] = true;
+            $unique[] = $value;
         }
         return $unique;
     }
@@ -5834,6 +5858,31 @@ if (!function_exists('intersoccer_product_girls_only_from_pa_attribute')) {
             }
         }
         return $found_girls_attribute ? 0 : null;
+    }
+}
+
+if (!function_exists('intersoccer_girls_only_attribute_source_product_id')) {
+    /**
+     * Default-language product ID for reading pa_girls-only (WPML translated parents store localized terms).
+     *
+     * @param int $id Product or parent product ID from order context.
+     * @return int
+     */
+    function intersoccer_girls_only_attribute_source_product_id(int $id): int {
+        if ($id <= 0 || !function_exists('apply_filters')) {
+            return $id;
+        }
+        $original_id = apply_filters(
+            'wpml_object_id',
+            $id,
+            'product',
+            true,
+            apply_filters('wpml_default_language', null)
+        );
+        if (is_int($original_id) && $original_id > 0) {
+            return $original_id;
+        }
+        return $id;
     }
 }
 
@@ -5941,7 +5990,9 @@ if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
                     $parent_id = (int) $variation->get_parent_id();
                 }
                 if ($parent_id > 0) {
-                    $parent = wc_get_product($parent_id);
+                    $parent = wc_get_product(
+                        intersoccer_girls_only_attribute_source_product_id($parent_id)
+                    );
                     if ($parent) {
                         $parent_values = intersoccer_product_girls_only_values($parent);
                         if (count($parent_values) === 1) {
@@ -5954,7 +6005,9 @@ if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
                     }
                 }
             } else {
-                $product = wc_get_product($product_id);
+                $product = wc_get_product(
+                    intersoccer_girls_only_attribute_source_product_id($product_id)
+                );
                 if ($product) {
                     $product_values = intersoccer_product_girls_only_values($product);
                     if ($product_values !== []) {
