@@ -70,7 +70,11 @@ foreach ($cases as [$label, $oid, $iid, $override]) {
         $c_ok = ($data['start_date'] ?? null) === '2026-10-19';
         echo '   (c) ' . ($c_ok ? 'PASS' : 'FAIL') . ': start_date expected "2026-10-19", got ' . json_encode($data['start_date'] ?? null)
             . ' (model toArray: ' . json_encode($stored) . '; DB column default is 1970-01-01)' . "\n";
-        $fail += (int) !$b_ok + (int) !$bt_ok + (int) !$c_ok;
+        $expected_girls_only = str_starts_with($label, 'DE ') ? 1 : 0;
+        $g_ok = (int) ($data['girls_only'] ?? 0) === $expected_girls_only;
+        echo '   (g) ' . ($g_ok ? 'PASS' : 'FAIL') . ': girls_only expected ' . $expected_girls_only
+            . ', got ' . json_encode($data['girls_only'] ?? null) . "\n";
+        $fail += (int) !$b_ok + (int) !$bt_ok + (int) !$c_ok + (int) !$g_ok;
     } catch (Throwable $t) {
         $fail++;
         echo "   ERROR " . get_class($t) . ': ' . $t->getMessage() . "\n";
@@ -81,6 +85,9 @@ foreach ([['EN', 62465, 7885], ['FR', 62466, 7886]] as [$lg, $oid, $iid]) {
     [, $data] = repro_build_row($oid, $iid, $call, $prop);
     $data['girls_only'] = 1;
     $data['activity_type'] = intersoccer_canonical_activity_type_for_roster('Camp, Girls Only');
+    $g_storage = (int) ($data['girls_only'] ?? 0) === 1;
+    echo '   (g) ' . ($g_storage ? 'PASS' : 'FAIL') . ": $lg girls-only storage girls_only=1, got " . json_encode($data['girls_only'] ?? null) . "\n";
+    $fail += (int) !$g_storage;
     try { (new Roster($data))->validate(); echo "   PASS $lg girls-only row validates\n"; }
     catch (ValidationException $e) { $fail++; echo "   FAIL $lg girls-only (activity_type=" . json_encode($data['activity_type']) . "): " . $e->getMessage() . ' ' . json_encode($e->getValidationErrors()) . "\n"; }
 }
