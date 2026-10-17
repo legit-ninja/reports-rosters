@@ -745,20 +745,29 @@ class RosterBuilder {
 
             if (!method_exists($order, 'get_items')) {
                 unset($order);
+                $this->logger->warning('Keeping obsolete reconcile row; order line items unreadable', [
+                    'order_id' => $stored_order_id,
+                ]);
                 return false;
             }
 
             $items = $order->get_items();
-            if (!is_array($items)) {
-                unset($order);
+            unset($order);
+
+            if (!is_array($items) || $items === []) {
+                $this->logger->warning('Keeping obsolete reconcile row; order line items unreadable', [
+                    'order_id' => $stored_order_id,
+                ]);
                 return false;
             }
 
             $line_still_on_order = array_key_exists($order_item_id, $items);
-            unset($order);
 
             return !$line_still_on_order;
         } catch (\Throwable $e) {
+            $this->logger->warning('Keeping obsolete reconcile row; order line items unreadable', [
+                'order_id' => $stored_order_id,
+            ]);
             return false;
         }
     }

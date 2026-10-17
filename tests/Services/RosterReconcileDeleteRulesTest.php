@@ -243,6 +243,140 @@ class RosterReconcileDeleteRulesTest extends TestCase {
         $this->assertNotContains($itemId, $this->deletedItemIds);
     }
 
+    public function test_empty_order_items_array_keeps_row(): void {
+        $orderId = 5008;
+        $itemId = 8008;
+        $this->runReconcile(
+            [['order_item_id' => (string) $itemId, 'order_id' => (string) $orderId]],
+            static function (array $args): array {
+                return [];
+            },
+            static function ($order_id) use ($orderId, $itemId) {
+                if ((int) $order_id !== $orderId) {
+                    return false;
+                }
+                return new class($orderId) {
+                    private $id;
+                    public function __construct($id) { $this->id = $id; }
+                    public function get_id() { return $this->id; }
+                    public function get_type() { return 'shop_order'; }
+                    public function get_status() { return 'processing'; }
+                    public function get_customer_id() { return 0; }
+                    public function get_items() { return []; }
+                };
+            }
+        );
+
+        $this->assertNotContains($itemId, $this->deletedItemIds);
+    }
+
+    public function test_partial_line_item_removal_deletes_only_missing_row(): void {
+        $orderId = 5009;
+        $removedItemId = 8009;
+        $keptItemId = 8010;
+        $this->runReconcile(
+            [
+                ['order_item_id' => (string) $removedItemId, 'order_id' => (string) $orderId],
+                ['order_item_id' => (string) $keptItemId, 'order_id' => (string) $orderId],
+            ],
+            static function (array $args): array {
+                return [];
+            },
+            static function ($order_id) use ($orderId, $keptItemId) {
+                if ((int) $order_id === $orderId) {
+                    return self::makeEligibleOrder($orderId, $keptItemId, [$keptItemId]);
+                }
+                return false;
+            }
+        );
+
+        $this->assertContains($removedItemId, $this->deletedItemIds);
+        $this->assertNotContains($keptItemId, $this->deletedItemIds);
+    }
+
+    public function test_false_order_items_keeps_row(): void {
+        $orderId = 5010;
+        $itemId = 8011;
+        $this->runReconcile(
+            [['order_item_id' => (string) $itemId, 'order_id' => (string) $orderId]],
+            static function (array $args): array {
+                return [];
+            },
+            static function ($order_id) use ($orderId, $itemId) {
+                if ((int) $order_id !== $orderId) {
+                    return false;
+                }
+                return new class($orderId) {
+                    private $id;
+                    public function __construct($id) { $this->id = $id; }
+                    public function get_id() { return $this->id; }
+                    public function get_type() { return 'shop_order'; }
+                    public function get_status() { return 'completed'; }
+                    public function get_customer_id() { return 0; }
+                    public function get_items() { return false; }
+                };
+            }
+        );
+
+        $this->assertNotContains($itemId, $this->deletedItemIds);
+    }
+
+    public function test_non_array_order_items_keeps_row(): void {
+        $orderId = 5011;
+        $itemId = 8012;
+        $this->runReconcile(
+            [['order_item_id' => (string) $itemId, 'order_id' => (string) $orderId]],
+            static function (array $args): array {
+                return [];
+            },
+            static function ($order_id) use ($orderId, $itemId) {
+                if ((int) $order_id !== $orderId) {
+                    return false;
+                }
+                return new class($orderId) {
+                    private $id;
+                    public function __construct($id) { $this->id = $id; }
+                    public function get_id() { return $this->id; }
+                    public function get_type() { return 'shop_order'; }
+                    public function get_status() { return 'completed'; }
+                    public function get_customer_id() { return 0; }
+                    public function get_items() { return 'not-an-array'; }
+                };
+            }
+        );
+
+        $this->assertNotContains($itemId, $this->deletedItemIds);
+    }
+
+    public function test_get_items_exception_keeps_row(): void {
+        $orderId = 5012;
+        $itemId = 8013;
+        $this->runReconcile(
+            [['order_item_id' => (string) $itemId, 'order_id' => (string) $orderId]],
+            static function (array $args): array {
+                return [];
+            },
+            static function ($order_id) use ($orderId, $itemId) {
+                if ((int) $order_id !== $orderId) {
+                    return false;
+                }
+                return new class($orderId) {
+                    private $id;
+                    public function __construct($id) { $this->id = $id; }
+                    public function get_id() { return $this->id; }
+                    public function get_type() { return 'shop_order'; }
+                    public function get_status() { return 'processing'; }
+                    public function get_customer_id() { return 0; }
+                    public function get_items() {
+                        throw new \RuntimeException('simulated get_items failure');
+                    }
+                };
+            }
+        );
+
+        $this->assertNotContains($itemId, $this->deletedItemIds);
+    }
+
     public function test_lookup_exception_keeps_row(): void {
         $itemId = 8006;
         $this->runReconcile(
