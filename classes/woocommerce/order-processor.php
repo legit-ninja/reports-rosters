@@ -212,6 +212,13 @@ class OrderProcessor {
                 ]);
             }
 
+            if ($this->roster_builder->hadOrderItemWriteFailures()) {
+                $this->logger->error('OrderProcessor: Roster build had order line write failures', [
+                    'order_id' => $wc_order->get_id(),
+                ]);
+                return false;
+            }
+
             return true;
         } catch (\Throwable $e) {
             $this->logger->error('OrderProcessor: Failed to process order', [

@@ -110,6 +110,13 @@ class RosterBuilder {
     private $build_stats = [];
 
     /**
+     * Order-line write failures recorded during the last buildRosterFromOrder() call only.
+     *
+     * @var int
+     */
+    private $last_build_call_item_write_failures = 0;
+
+    /**
      * Canonical mapping between order item metadata keys and roster fields.
      *
      * @return array<string,string>
@@ -225,6 +232,7 @@ class RosterBuilder {
             'rosters_updated' => 0,
             'players_processed' => 0,
             'validation_errors' => 0,
+            'item_write_failures' => 0,
             'skipped_orders' => 0,
             'start_time' => microtime(true),
             'end_time' => null,
@@ -497,6 +505,8 @@ class RosterBuilder {
      */
     public function buildRosterFromOrder($order_id, array $options = []) {
         try {
+            $this->last_build_call_item_write_failures = 0;
+
             $this->logger->debug('Building roster from single order', [
                 'order_id' => $order_id,
                 'options' => $options
@@ -740,7 +750,15 @@ class RosterBuilder {
 
                 // Validate roster data
                 if ($options['validate_data']) {
-                    $this->validator->validateRosterData($roster_data);
+                    $validation = $this->validator->validateRosterData($roster_data);
+                    if (empty($validation['valid'])) {
+                        $this->recordOrderItemRosterWriteFailure(
+                            $order,
+                            (int) $item_id,
+                            $this->summarizeValidationResult($validation)
+                        );
+                        break;
+                    }
                 }
                 
                 // Create or update roster entry
@@ -751,20 +769,74 @@ class RosterBuilder {
                     // One roster row per order line item (uniq_order_item_id).
                     break;
                 }
+
+                $this->recordOrderItemRosterWriteFailure(
+                    $order,
+                    (int) $item_id,
+                    'Roster row was not persisted'
+                );
+                break;
                 
             } catch (\Exception $e) {
-                $this->build_stats['validation_errors']++;
-                $this->build_stats['errors'][] = "Player {$player->getFullName()}: " . $e->getMessage();
-
-                $this->logger->error('Failed to create roster for player', [
-                    'order_id' => $order->get_id(),
-                    'player' => $player->getLogSummary(),
-                    'error' => $e->getMessage()
-                ]);
+                $this->recordOrderItemRosterWriteFailure($order, (int) $item_id, $e->getMessage());
             }
         }
 
         return $rosters;
+    }
+
+    /**
+     * Whether the current/last build recorded any order-line roster write failures.
+     */
+    public function hadOrderItemWriteFailures(): bool {
+        return $this->last_build_call_item_write_failures > 0;
+    }
+
+    /**
+     * @param array{valid?:bool,errors?:array} $validation
+     */
+    private function summarizeValidationResult(array $validation): string {
+        $errors = $validation['errors'] ?? [];
+        if ($errors === []) {
+            return 'Roster data validation failed';
+        }
+
+        return implode('; ', array_map('strval', $errors));
+    }
+
+    /**
+     * Log, note, and count a failed roster write for one order line (no player PII in logs).
+     */
+    private function recordOrderItemRosterWriteFailure(\WC_Order $order, int $item_id, string $reason): void {
+        $order_id = (int) $order->get_id();
+        $reason = trim($reason);
+        if ($reason === '') {
+            $reason = 'Unknown error';
+        }
+
+        $this->build_stats['item_write_failures']++;
+        $this->last_build_call_item_write_failures++;
+        $this->build_stats['validation_errors']++;
+        $this->build_stats['errors'][] = "Order {$order_id}, Item {$item_id}: {$reason}";
+
+        $this->logger->error('Order line roster write failed', [
+            'order_id' => $order_id,
+            'item_id' => $item_id,
+            'reason' => $reason,
+        ]);
+
+        if (is_callable([$order, 'add_order_note'])) {
+            $note = sprintf(
+                /* translators: 1: order line item ID, 2: failure reason */
+                \__(
+                    'InterSoccer rosters: booking line item %1$d could not be added to the roster. Reason: %2$s',
+                    'intersoccer-reports-rosters'
+                ),
+                $item_id,
+                $reason
+            );
+            $order->add_order_note($note, false, false);
+        }
     }
     
     /**
