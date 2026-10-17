@@ -723,11 +723,11 @@ class RosterBuilder {
     }
 
     /**
-     * True only when the roster row's stored order is gone or confirmed ineligible for rebuild.
+     * Sync kept rows on a refunded/cancelled order to the order's status, at most once per order per reconcile run.
      *
-     * Uses the row's denormalized order_id (never wc_get_order_id_by_order_item_id). On any
-     * uncertainty (missing helper, invalid stored id, lookup failure, unreadable line items),
-     * returns false (keep).
+     * @param int    $order_id
+     * @param string $woo_status
+     * @return void
      */
     private function syncKeptObsoleteOrderStatus(int $order_id, string $woo_status): void {
         if ($order_id <= 0 || isset($this->obsolete_reconcile_synced_order_ids[$order_id])) {
@@ -748,6 +748,13 @@ class RosterBuilder {
         $this->reconcile_status_synced_total += $updated;
     }
 
+    /**
+     * True only when the roster row's stored order is gone or confirmed ineligible for rebuild.
+     *
+     * Uses the row's denormalized order_id (never wc_get_order_id_by_order_item_id). On any
+     * uncertainty (missing helper, invalid stored id, lookup failure, unreadable line items),
+     * returns false (keep).
+     */
     private function shouldDeleteObsoleteReconcileRow(int $order_item_id, int $stored_order_id): bool {
         try {
             if ($order_item_id <= 0 || $stored_order_id <= 0) {

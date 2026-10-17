@@ -797,14 +797,10 @@ class RosterRepository implements RepositoryInterface {
     }
     
     /**
-     * Delete roster rows for a Woo line item without loading full models (reconcile hot path).
-     *
-     * @param int $order_item_id
-     * @return int Number of deleted rows
-     */
-    /**
      * Sync non-flagged roster rows for a refunded/cancelled order kept during reconcile.
      *
+     * @param int    $order_id
+     * @param string $status
      * @return int Rows updated (0 if none or on failure).
      */
     public function syncOrderStatusForKeptRows(int $order_id, string $status): int {
@@ -842,6 +838,12 @@ class RosterRepository implements RepositoryInterface {
         return $updated;
     }
 
+    /**
+     * Delete roster rows for a Woo line item without loading full models (reconcile hot path).
+     *
+     * @param int $order_item_id
+     * @return int Number of deleted rows
+     */
     public function deleteByOrderItemId(int $order_item_id): int {
         if ($order_item_id <= 0) {
             return 0;
