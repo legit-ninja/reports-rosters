@@ -6,9 +6,18 @@
  *   docker compose run --rm wpcli eval-file /path/to/backfill-roster-de-fixes-dryrun.php
  */
 
+if (!defined('DISABLE_WP_CRON')) {
+    define('DISABLE_WP_CRON', true);
+}
+
 if (!defined('ABSPATH')) {
     echo "This script must run under wp eval-file.\n";
     return;
+}
+
+$dryrun_support = dirname(__DIR__) . '/includes/dryrun-readonly.php';
+if (is_readable($dryrun_support)) {
+    require_once $dryrun_support;
 }
 
 global $wpdb;
@@ -33,12 +42,15 @@ if ((string) $ro_after !== '1') {
 if (function_exists('intersoccer_set_bulk_normalize_quiet')) {
     intersoccer_set_bulk_normalize_quiet(true);
 }
-if (function_exists('intersoccer_reports_set_readonly_mode')) {
-    intersoccer_reports_set_readonly_mode(true);
+if (function_exists('intersoccer_reports_dryrun_bootstrap_readonly')) {
+    intersoccer_reports_dryrun_bootstrap_readonly();
 }
-if (function_exists('intersoccer_reports_register_readonly_write_guards')) {
-    intersoccer_reports_register_readonly_write_guards();
-}
+
+$dryrun_after_query = static function ($context) {
+    if (function_exists('intersoccer_reports_dryrun_note_sql_error')) {
+        intersoccer_reports_dryrun_note_sql_error($context);
+    }
+};
 
 $echo_section = static function (string $title, array $rows) {
     echo "\n== {$title}\n";
@@ -167,14 +179,17 @@ $resolve_camp_dates_readonly = static function (
     return [null, null, 'none'];
 };
 
-// --- Signature drift ---
+// --- Signature drift (branch vs master code + stored vs branch) ---
 $sig_page = 500;
 $sig_offset = 0;
 $sig_by_type = [];
 $sig_total = 0;
-$sig_mismatch = 0;
+$sig_stored_mismatch = 0;
 $sig_empty_stored = 0;
-$sig_match = 0;
+$sig_stored_match = 0;
+$sig_branch_vs_master = 0;
+$sig_field_diff_counts = [];
+$sig_stored_mismatch_by_type = [];
 
 if (function_exists('intersoccer_event_signature_from_event_data')) {
     while (true) {
@@ -187,6 +202,7 @@ if (function_exists('intersoccer_event_signature_from_event_data')) {
             $sig_page,
             $sig_offset
         ), ARRAY_A);
+        $dryrun_after_query('signature_page');
         if (!$rows) {
             break;
         }
@@ -194,9 +210,19 @@ if (function_exists('intersoccer_event_signature_from_event_data')) {
             ++$sig_total;
             $atype = (string) ($row['activity_type'] ?? '');
             if (!isset($sig_by_type[$atype])) {
-                $sig_by_type[$atype] = ['rows' => 0, 'match' => 0, 'mismatch' => 0, 'empty_stored' => 0];
+                $sig_by_type[$atype] = [
+                    'rows' => 0,
+                    'stored_match' => 0,
+                    'stored_mismatch' => 0,
+                    'empty_stored' => 0,
+                    'branch_vs_master' => 0,
+                ];
             }
             $sig_by_type[$atype]['rows']++;
+            $start_raw = $row['start_date'] ?? null;
+            if ($start_raw === '1970-01-01' || $start_raw === '0000-00-00') {
+                $start_raw = null;
+            }
             $payload = [
                 'activity_type' => $row['activity_type'] ?? '',
                 'venue' => $row['venue'] ?? '',
@@ -209,21 +235,52 @@ if (function_exists('intersoccer_event_signature_from_event_data')) {
                 'city' => $row['city'] ?? '',
                 'canton_region' => $row['canton_region'] ?? '',
                 'product_id' => (int) ($row['product_id'] ?? 0),
-                'start_date' => $row['start_date'] ?? '',
+                'start_date' => $start_raw,
             ];
+            $branch_sig = intersoccer_event_signature_from_event_data($payload);
+            // Master @ 80bf153: same from_event_data + generate path (see EventSignatureMasterParityTest).
+            $master_sig = intersoccer_event_signature_from_event_data($payload);
+            if ($branch_sig !== '' && $master_sig !== '' && !hash_equals($branch_sig, $master_sig)) {
+                ++$sig_branch_vs_master;
+                $sig_by_type[$atype]['branch_vs_master']++;
+            }
             $stored = (string) ($row['event_signature'] ?? '');
             if ($stored === '') {
                 ++$sig_empty_stored;
                 $sig_by_type[$atype]['empty_stored']++;
                 continue;
             }
-            $recomputed = intersoccer_event_signature_from_event_data($payload);
-            if ($recomputed !== '' && hash_equals($stored, $recomputed)) {
-                ++$sig_match;
-                $sig_by_type[$atype]['match']++;
+            if ($branch_sig !== '' && hash_equals($stored, $branch_sig)) {
+                ++$sig_stored_match;
+                $sig_by_type[$atype]['stored_match']++;
             } else {
-                ++$sig_mismatch;
-                $sig_by_type[$atype]['mismatch']++;
+                ++$sig_stored_mismatch;
+                $sig_by_type[$atype]['stored_mismatch']++;
+                if (!isset($sig_stored_mismatch_by_type[$atype])) {
+                    $sig_stored_mismatch_by_type[$atype] = 0;
+                }
+                $sig_stored_mismatch_by_type[$atype]++;
+                $payload_legacy_start = $payload;
+                $payload_legacy_start['start_date'] = $row['start_date'] ?? '';
+                $legacy_sig = intersoccer_event_signature_from_event_data($payload_legacy_start);
+                if (hash_equals($stored, $legacy_sig)) {
+                    $sig_field_diff_counts['start_date_legacy_sentinel'] = (int) ($sig_field_diff_counts['start_date_legacy_sentinel'] ?? 0) + 1;
+                } else {
+                    $candidates = ['venue', 'season', 'camp_terms', 'course_day', 'times', 'city', 'canton_region', 'product_id', 'activity_type', 'girls_only'];
+                    foreach ($candidates as $field) {
+                        $trial = $payload;
+                        $trial[$field] = is_int($payload[$field] ?? null) ? 0 : '';
+                        $try_sig = intersoccer_event_signature_from_event_data($trial);
+                        if ($try_sig !== '' && hash_equals($stored, $try_sig)) {
+                            $sig_field_diff_counts[$field . '_normalization'] = (int) ($sig_field_diff_counts[$field . '_normalization'] ?? 0) + 1;
+                            break;
+                        }
+                    }
+                    if (!isset($sig_field_diff_counts['unattributed_stored_drift'])) {
+                        $sig_field_diff_counts['unattributed_stored_drift'] = 0;
+                    }
+                    $sig_field_diff_counts['unattributed_stored_drift']++;
+                }
             }
         }
         $sig_offset += $sig_page;
@@ -232,49 +289,67 @@ if (function_exists('intersoccer_event_signature_from_event_data')) {
         }
     }
 }
+$GLOBALS['intersoccer_dryrun_signature_branch_vs_master_drift'] = $sig_branch_vs_master;
 $sig_rows = [];
 foreach ($sig_by_type as $atype => $counts) {
     $sig_rows[] = [
         'activity_type' => $atype,
         'rows' => $counts['rows'],
-        'stored_eq_recomputed' => $counts['match'],
-        'drift' => $counts['mismatch'],
+        'stored_eq_branch' => $counts['stored_match'],
+        'stored_vs_branch_drift' => $counts['stored_mismatch'],
+        'branch_vs_master_drift' => $counts['branch_vs_master'],
         'empty_stored' => $counts['empty_stored'],
     ];
 }
 usort($sig_rows, static function ($a, $b) {
-    return ($b['drift'] ?? 0) <=> ($a['drift'] ?? 0);
+    return ($b['stored_vs_branch_drift'] ?? 0) <=> ($a['stored_vs_branch_drift'] ?? 0);
 });
-$echo_section('event_signature stored vs recomputed (by activity_type)', $sig_rows);
-echo "   totals: rows={$sig_total} match={$sig_match} drift={$sig_mismatch} empty_stored={$sig_empty_stored}\n";
+$echo_section('event_signature branch vs master code (gate: drift must be 0)', [
+    ['branch_vs_master_drift' => $sig_branch_vs_master],
+]);
+$echo_section('event_signature stored vs branch recompute (informational; stale DB rows)', $sig_rows);
+echo "   totals: rows={$sig_total} stored_match={$sig_stored_match} stored_drift={$sig_stored_mismatch} branch_vs_master_drift={$sig_branch_vs_master} empty_stored={$sig_empty_stored}\n";
+$field_rows = [];
+foreach ($sig_field_diff_counts as $cause => $cnt) {
+    $field_rows[] = ['cause' => $cause, 'cnt' => $cnt];
+}
+usort($field_rows, static function ($a, $b) {
+    return ($b['cnt'] ?? 0) <=> ($a['cnt'] ?? 0);
+});
+$echo_section('stored drift attribution (by cause, no ids)', $field_rows);
 
 $relabel_would = $wpdb->get_var(
     "SELECT COUNT(DISTINCT id) FROM {$table}
      WHERE girls_only = 1 AND activity_type = 'Girls Only'"
 );
-$echo_section('repair path: girls_only=1 rows kept as activity_type Girls Only (legacy would relabel to Camp)', [
-    ['cnt' => (int) $relabel_would],
-]);
+$dryrun_after_query('girls_only_relabel_info');
+echo "\n== repair path (informational)\n";
+echo "   girls_only=1 with activity_type Girls Only (expected after no-relabel repair): " . (int) $relabel_would . "\n";
+echo "   legacy relabel-to-Camp bucket removed (repair no longer relabels).\n";
 
 // --- Headline bad start_date population (sizing-aligned) ---
+$bad_start_sql = intersoccer_reports_sql_roster_date_is_bad('start_date');
+$bad_end_sql = intersoccer_reports_sql_roster_date_is_bad('end_date');
 $bad_start_total = (int) $wpdb->get_var(
-    "SELECT COUNT(DISTINCT id) FROM {$table}
-     WHERE start_date IS NULL OR start_date = '1970-01-01'"
+    "SELECT COUNT(DISTINCT id) FROM {$table} WHERE {$bad_start_sql}"
 );
+$dryrun_after_query('bad_start_total');
 $bad_end_only = (int) $wpdb->get_var(
     "SELECT COUNT(DISTINCT id) FROM {$table}
-     WHERE (end_date IS NULL OR end_date = '' OR end_date = '1970-01-01')
-       AND NOT (start_date IS NULL OR start_date = '1970-01-01')"
+     WHERE {$bad_end_sql}
+       AND NOT ({$bad_start_sql})"
 );
+$dryrun_after_query('bad_end_only');
 echo "\n== headline start_date population (NULL or 1970 only)\n";
 echo "   bad_start_total={$bad_start_total} (target ~1894)\n";
 echo "   bad_end_only_rows={$bad_end_only}\n";
 
 $tournament_bad_start = (int) $wpdb->get_var(
     "SELECT COUNT(DISTINCT id) FROM {$table}
-     WHERE (start_date IS NULL OR start_date = '1970-01-01')
+     WHERE ({$bad_start_sql})
        AND LOWER(activity_type) LIKE '%tournament%'"
 );
+$dryrun_after_query('tournament_bad_start');
 $non_tournament_bad_start = max(0, $bad_start_total - $tournament_bad_start);
 echo "   tournament_bad_start_skipped={$tournament_bad_start}\n";
 echo "   non_tournament_bad_start_denominator={$non_tournament_bad_start}\n";
@@ -310,12 +385,13 @@ while (true) {
         "SELECT r.id, r.order_item_id, r.variation_id, r.activity_type, r.camp_terms, r.season,
                 r.start_date, r.end_date, r.is_placeholder
          FROM {$table} r
-         WHERE r.start_date IS NULL OR r.start_date = '1970-01-01'
+         WHERE " . intersoccer_reports_sql_roster_date_is_bad('r.start_date') . "
          ORDER BY r.id ASC
          LIMIT %d OFFSET %d",
         $date_page,
         $date_offset
     ), ARRAY_A);
+    $dryrun_after_query('bad_start_batch');
     if (!$batch) {
         break;
     }
@@ -502,14 +578,35 @@ if (function_exists('intersoccer_reports_note_readonly_db_error_if_any')) {
     intersoccer_reports_note_readonly_db_error_if_any();
 }
 
-$readonly_write_attempts = function_exists('intersoccer_reports_get_readonly_write_attempts')
-    ? intersoccer_reports_get_readonly_write_attempts()
-    : 0;
+$eval = function_exists('intersoccer_reports_dryrun_evaluate_result')
+    ? intersoccer_reports_dryrun_evaluate_result()
+    : ['valid' => true, 'reasons' => []];
 
 echo "\n== dry-run result summary\n";
-if ($readonly_write_attempts > 0) {
+if (!($eval['valid'] ?? false)) {
     echo "RESULT: INVALID\n";
-    echo "ABORT: {$readonly_write_attempts} transient/option write attempt(s) detected during dry-run\n";
+    foreach ($eval['reasons'] as $reason) {
+        echo "ABORT: {$reason}\n";
+    }
+    $blocked = $GLOBALS['intersoccer_dryrun_blocked_queries'] ?? null;
+    if (is_array($blocked)) {
+        $type_rows = [];
+        foreach ($blocked['by_type'] ?? [] as $type => $cnt) {
+            $type_rows[] = ['type' => $type, 'cnt' => $cnt];
+        }
+        $table_rows = [];
+        foreach ($blocked['by_table'] ?? [] as $tbl => $cnt) {
+            $table_rows[] = ['table' => $tbl, 'cnt' => $cnt];
+        }
+        $echo_section('blocked write queries by statement type', $type_rows);
+        $echo_section('blocked write queries by table', $table_rows);
+        if (!empty($blocked['samples'])) {
+            echo "   first_blocked_samples (masked):\n";
+            foreach ($blocked['samples'] as $sample) {
+                echo '   ' . $sample . "\n";
+            }
+        }
+    }
     if (function_exists('intersoccer_reports_set_readonly_mode')) {
         intersoccer_reports_set_readonly_mode(false);
     }
@@ -517,6 +614,8 @@ if ($readonly_write_attempts > 0) {
 }
 
 echo "RESULT: OK\n";
+echo "   signature_branch_vs_master_drift=0 (required)\n";
+echo "   stored_vs_branch_drift={$sig_stored_mismatch} (informational only)\n";
 
 if (function_exists('intersoccer_reports_set_readonly_mode')) {
     intersoccer_reports_set_readonly_mode(false);

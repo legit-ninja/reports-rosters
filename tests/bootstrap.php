@@ -263,6 +263,15 @@ if (!function_exists('get_transient')) {
     function get_transient($transient) { return false; }
 }
 
+if (!function_exists('wp_using_ext_object_cache')) {
+    function wp_using_ext_object_cache($using = null) {
+        if ($using !== null) {
+            $GLOBALS['intersoccer_test_using_ext_object_cache'] = (bool) $using;
+        }
+        return !empty($GLOBALS['intersoccer_test_using_ext_object_cache']);
+    }
+}
+
 if (!function_exists('set_transient')) {
     function set_transient($transient, $value, $expiration = 0) {
         do_action('setted_transient', $transient, $value, $expiration);
