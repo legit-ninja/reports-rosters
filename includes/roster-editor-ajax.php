@@ -479,6 +479,9 @@ function intersoccer_sanitize_roster_field($field_name, $value) {
         if (strpos($value, 'T') !== false) {
             $value = str_replace('T', ' ', $value);
         }
+        if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/', $value)) {
+            $value .= ':00';
+        }
         // Validate MySQL datetime format
         if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $value)) {
             return sanitize_text_field($value);
