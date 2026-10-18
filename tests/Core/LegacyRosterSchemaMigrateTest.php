@@ -286,7 +286,7 @@ class LegacyRosterSchemaMigrateTest extends TestCase {
             }
             $this->assertTrue(function_exists('intersoccer_oop_migrate_rosters_table'));
             $result = intersoccer_oop_migrate_rosters_table();
-            $this->assertIsBool($result);
+            $this->assertIsString($result);
         } catch (\Throwable $e) {
             $this->fail('intersoccer_oop_migrate_rosters_table must not fatal: ' . $e->getMessage());
         } finally {

@@ -196,10 +196,99 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
             }
         };
 
-        $this->assertTrue($migrator->migrate());
+        $this->assertSame(DatabaseMigrator::RESULT_ALREADY_CURRENT, $migrator->migrate());
+    }
+
+    public function test_migrate_returns_upgraded_when_pending_migration_succeeds(): void {
+        $logger = Mockery::mock(Logger::class);
+        $logger->shouldReceive('info')->andReturnNull();
+        $logger->shouldReceive('error')->andReturnNull();
+
+        $wpdb = $this->mockWpdbForMigrate24();
+        $table = 'wp_intersoccer_rosters';
+        $backup = $table . '_bak_2_4_0';
+        $GLOBALS['intersoccer_test_option_store'][DatabaseMigrator::VERSION_OPTION] = '2.3.0';
+        $wpdb->shouldReceive('get_var')->andReturnUsing(function ($sql) use ($backup, $table) {
+            if (strpos((string) $sql, 'SHOW TABLES') !== false) {
+                return null;
+            }
+            if (strpos((string) $sql, 'COUNT') !== false) {
+                return '2';
+            }
+            return null;
+        });
+        $wpdb->shouldReceive('get_col')->with("DESCRIBE {$table}", 0)->andReturn(['event_type', 'times']);
+        $wpdb->shouldReceive('query')->andReturn(0);
+
+        $migrator = new DatabaseMigrator($logger);
+        $this->assertSame(DatabaseMigrator::RESULT_UPGRADED, $migrator->migrate());
+        unset($GLOBALS['intersoccer_test_option_store'][DatabaseMigrator::VERSION_OPTION]);
+    }
+
+    public function test_migrate_returns_failed_when_migration_aborts(): void {
+        $logger = Mockery::mock(Logger::class);
+        $logger->shouldReceive('info')->andReturnNull();
+        $logger->shouldReceive('error')->andReturnNull();
+
+        $wpdb = $this->mockWpdbForMigrate24();
+        $table = 'wp_intersoccer_rosters';
+        $GLOBALS['intersoccer_test_option_store'][DatabaseMigrator::VERSION_OPTION] = '2.3.0';
+        $wpdb->last_error = 'insert failed';
+        $wpdb->shouldReceive('get_var')->andReturn(null);
+        $wpdb->shouldReceive('query')->andReturnUsing(function ($sql) {
+            if (strpos((string) $sql, 'INSERT INTO') !== false) {
+                return false;
+            }
+            return 0;
+        });
+
+        $migrator = new DatabaseMigrator($logger);
+        $this->assertSame(DatabaseMigrator::RESULT_FAILED, $migrator->migrate());
+        unset($GLOBALS['intersoccer_test_option_store'][DatabaseMigrator::VERSION_OPTION]);
+    }
+
+    public function test_migrate_returns_already_running_when_lock_held(): void {
+        delete_option(DatabaseMigrator::MIGRATION_LOCK_OPTION);
+        $logger = Mockery::mock(Logger::class);
+        $logger->shouldReceive('info')->andReturnNull();
+        $migrator = new DatabaseMigrator($logger);
+        $this->assertTrue($migrator->acquireMigrationLock());
+        $this->assertSame(DatabaseMigrator::RESULT_ALREADY_RUNNING, $migrator->migrate());
+        $migrator->releaseMigrationLock();
+    }
+
+    public function test_migrate_returns_skipped_unrecognised_backup(): void {
+        $stamp_option = intersoccer_rosters_bak_2_4_0_created_option_name();
+        unset($GLOBALS['intersoccer_test_option_store'][$stamp_option]);
+
+        $logger = Mockery::mock(Logger::class);
+        $logger->shouldReceive('info')->andReturnNull();
+        $logger->shouldReceive('warning')->andReturnNull();
+
+        $wpdb = $this->mockWpdbForMigrate24();
+        $table = 'wp_intersoccer_rosters';
+        $backup = $table . '_bak_2_4_0';
+        $GLOBALS['intersoccer_test_option_store'][DatabaseMigrator::VERSION_OPTION] = '2.3.0';
+        $wpdb->shouldReceive('get_results')->andReturn([
+            ['Field' => 'times', 'Type' => 'varchar(50)'],
+        ]);
+        $wpdb->shouldReceive('get_var')->andReturnUsing(function ($sql) use ($backup) {
+            if (strpos((string) $sql, 'SHOW TABLES') !== false) {
+                return $backup;
+            }
+            return null;
+        });
+        $wpdb->shouldReceive('query')->never();
+
+        $migrator = new DatabaseMigrator($logger);
+        $this->assertSame(DatabaseMigrator::RESULT_SKIPPED_UNRECOGNISED_BACKUP, $migrator->migrate());
+        unset($GLOBALS['intersoccer_test_option_store'][DatabaseMigrator::VERSION_OPTION]);
     }
 
     public function test_migrate_2_4_0_rejects_pre_existing_backup_without_alter(): void {
+        $stamp_option = intersoccer_rosters_bak_2_4_0_created_option_name();
+        unset($GLOBALS['intersoccer_test_option_store'][$stamp_option]);
+
         $wpdb = $this->mockWpdbForMigrate24();
         $table = 'wp_intersoccer_rosters';
         $backup = $table . '_bak_2_4_0';
