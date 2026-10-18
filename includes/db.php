@@ -246,51 +246,109 @@ function intersoccer_db_redact_wpdb_error_for_log($last_error) {
 }
 
 /**
+ * Parse varchar(N) width from a DESCRIBE Type string.
+ *
+ * @param string $type_sql
+ * @return int 0 when not varchar.
+ */
+function intersoccer_rosters_schema_2_4_0_varchar_width_from_type($type_sql) {
+    if (preg_match('/varchar\((\d+)\)/i', (string) $type_sql, $matches)) {
+        return (int) $matches[1];
+    }
+    return 0;
+}
+
+/**
+ * @param \wpdb  $wpdb
+ * @param string $rosters_table
+ * @return bool True when any present widen column is narrower than 191.
+ */
+function intersoccer_rosters_schema_2_4_0_columns_need_widen($wpdb, $rosters_table) {
+    $describe = $wpdb->get_results("DESCRIBE {$rosters_table}", ARRAY_A);
+    if (!is_array($describe)) {
+        return true;
+    }
+    $watch = ['event_type', 'camp_times', 'times'];
+    foreach ($describe as $column) {
+        $name = $column['Field'] ?? '';
+        if (!in_array($name, $watch, true)) {
+            continue;
+        }
+        $width = intersoccer_rosters_schema_2_4_0_varchar_width_from_type($column['Type'] ?? '');
+        if ($width > 0 && $width < 191) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @param \wpdb  $wpdb
+ * @param string $rosters_table
+ * @param string $backup
+ * @return bool
+ */
+function intersoccer_rosters_schema_2_4_0_backup_counts_match($wpdb, $rosters_table, $backup) {
+    $live_count = $wpdb->get_var("SELECT COUNT(*) FROM {$rosters_table}");
+    $backup_count = $wpdb->get_var("SELECT COUNT(*) FROM {$backup}");
+    if ($live_count === null || $backup_count === null) {
+        return false;
+    }
+    return (int) $live_count === (int) $backup_count;
+}
+
+/**
  * Legacy roster table migration: widen event_type, times and camp_times with backup-before-ALTER.
  *
  * @param \wpdb  $wpdb
  * @param string $rosters_table
- * @return bool False when snapshot fails (no ALTER performed).
+ * @return bool|string False when snapshot fails; skipped_unrecognised_backup when foreign backup exists.
  */
 function intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table) {
     $backup = $rosters_table . '_bak_2_4_0';
+    $stamp_option = intersoccer_rosters_bak_2_4_0_created_option_name();
+    $skipped_backup = class_exists(\InterSoccer\ReportsRosters\Core\DatabaseMigrator::class)
+        ? \InterSoccer\ReportsRosters\Core\DatabaseMigrator::RESULT_SKIPPED_UNRECOGNISED_BACKUP
+        : 'skipped_unrecognised_backup';
+
+    if (!intersoccer_rosters_schema_2_4_0_columns_need_widen($wpdb, $rosters_table)) {
+        error_log('InterSoccer: schema 2.4.0 skipped — varchar columns already >= 191');
+        return true;
+    }
+
     $backup_exists = $wpdb->get_var(
         $wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($backup))
     );
-    if (!empty($backup_exists)) {
-        error_log('InterSoccer: pre-existing roster backup table blocks schema 2.4.0 until an admin drops it');
-        return false;
-    }
-
     $created_backup_this_run = false;
-    $created = $wpdb->query("CREATE TABLE {$backup} LIKE {$rosters_table}");
-    if ($created === false) {
-        error_log('InterSoccer: Failed roster backup CREATE before schema 2.4.0: ' . $wpdb->last_error);
-        return false;
-    }
-    $created_backup_this_run = true;
-    $copied = $wpdb->query("INSERT INTO {$backup} SELECT * FROM {$rosters_table}");
-    if ($copied === false) {
-        error_log('InterSoccer: Failed roster backup INSERT before schema 2.4.0: ' . $wpdb->last_error);
-        $wpdb->query("DROP TABLE IF EXISTS {$backup}");
-        return false;
-    }
 
-    $live_count = $wpdb->get_var("SELECT COUNT(*) FROM {$rosters_table}");
-    $backup_count = $wpdb->get_var("SELECT COUNT(*) FROM {$backup}");
-    if ($live_count === null || $backup_count === null) {
-        error_log('InterSoccer: roster backup COUNT failed before schema 2.4.0; skipping ALTER');
-        if ($created_backup_this_run) {
-            $wpdb->query("DROP TABLE IF EXISTS {$backup}");
+    if (!empty($backup_exists)) {
+        if ((int) get_option($stamp_option, 0) <= 0) {
+            error_log('InterSoccer: unrecognised roster backup table present; schema 2.4.0 skipped');
+            return $skipped_backup;
         }
-        return false;
-    }
-    if ((int) $live_count !== (int) $backup_count) {
-        error_log('InterSoccer: roster backup row count mismatch before schema 2.4.0; skipping ALTER');
-        if ($created_backup_this_run) {
-            $wpdb->query("DROP TABLE IF EXISTS {$backup}");
+        error_log('InterSoccer: reusing roster backup for schema 2.4.0 after count verification');
+        if (!intersoccer_rosters_schema_2_4_0_backup_counts_match($wpdb, $rosters_table, $backup)) {
+            error_log('InterSoccer: roster backup row count mismatch before schema 2.4.0; skipping ALTER');
+            return false;
         }
-        return false;
+    } else {
+        $created = $wpdb->query("CREATE TABLE {$backup} LIKE {$rosters_table}");
+        if ($created === false) {
+            error_log('InterSoccer: Failed roster backup CREATE before schema 2.4.0: ' . intersoccer_db_redact_wpdb_error_for_log($wpdb->last_error));
+            return false;
+        }
+        $created_backup_this_run = true;
+        $copied = $wpdb->query("INSERT INTO {$backup} SELECT * FROM {$rosters_table}");
+        if ($copied === false) {
+            error_log('InterSoccer: Failed roster backup INSERT before schema 2.4.0: ' . intersoccer_db_redact_wpdb_error_for_log($wpdb->last_error));
+            $wpdb->query("DROP TABLE IF EXISTS {$backup}");
+            return false;
+        }
+        if (!intersoccer_rosters_schema_2_4_0_backup_counts_match($wpdb, $rosters_table, $backup)) {
+            error_log('InterSoccer: roster backup row count mismatch before schema 2.4.0; skipping ALTER');
+            $wpdb->query("DROP TABLE IF EXISTS {$backup}");
+            return false;
+        }
     }
 
     $columns = $wpdb->get_col("DESCRIBE $rosters_table", 0);

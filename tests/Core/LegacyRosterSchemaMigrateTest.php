@@ -26,6 +26,9 @@ class LegacyRosterSchemaMigrateTest extends TestCase {
             return (string) $s;
         });
         $wpdb->shouldReceive('get_var')->andReturn(null);
+        $wpdb->shouldReceive('get_results')->with("DESCRIBE {$table}", ARRAY_A)->andReturn([
+            ['Field' => 'event_type', 'Type' => 'varchar(50)'],
+        ]);
         $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($sql) {
             return (string) $sql;
         });
@@ -39,7 +42,6 @@ class LegacyRosterSchemaMigrateTest extends TestCase {
             }
             return 0;
         });
-        $wpdb->shouldReceive('get_col')->never();
 
         $this->assertFalse(intersoccer_migrate_rosters_schema_2_4_0($wpdb, $table));
         $joined = implode("\n", $queries);
@@ -55,13 +57,16 @@ class LegacyRosterSchemaMigrateTest extends TestCase {
         $wpdb->shouldReceive('esc_like')->andReturnUsing(static function ($s) {
             return (string) $s;
         });
+        $wpdb->shouldReceive('get_results')->with("DESCRIBE {$table}", ARRAY_A)->andReturn([
+            ['Field' => 'times', 'Type' => 'varchar(50)'],
+        ]);
         $wpdb->shouldReceive('get_var')->andReturn('wp_intersoccer_rosters_bak_2_4_0');
         $wpdb->shouldReceive('query')->never();
         $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($sql) {
             return (string) $sql;
         });
 
-        $this->assertFalse(intersoccer_migrate_rosters_schema_2_4_0($wpdb, $table));
+        $this->assertSame('skipped_unrecognised_backup', intersoccer_migrate_rosters_schema_2_4_0($wpdb, $table));
     }
 
     public function test_legacy_2_4_0_alters_when_fresh_backup_counts_match(): void {
@@ -85,6 +90,10 @@ class LegacyRosterSchemaMigrateTest extends TestCase {
             }
             return null;
         });
+        $wpdb->shouldReceive('get_results')->with("DESCRIBE {$table}", ARRAY_A)->andReturn([
+            ['Field' => 'event_type', 'Type' => 'varchar(50)'],
+            ['Field' => 'camp_times', 'Type' => 'varchar(50)'],
+        ]);
         $wpdb->shouldReceive('get_col')->with("DESCRIBE {$table}", 0)->andReturn(['event_type', 'camp_times']);
         $wpdb->shouldReceive('query')->andReturnUsing(function ($sql) use (&$queries) {
             $queries[] = (string) $sql;
@@ -109,6 +118,9 @@ class LegacyRosterSchemaMigrateTest extends TestCase {
         $wpdb->shouldReceive('esc_like')->andReturnUsing(static function ($s) {
             return (string) $s;
         });
+        $wpdb->shouldReceive('get_results')->with("DESCRIBE {$table}", ARRAY_A)->andReturn([
+            ['Field' => 'event_type', 'Type' => 'varchar(50)'],
+        ]);
         $wpdb->shouldReceive('get_var')->andReturnUsing(function ($sql) use ($backup, $table) {
             if (strpos((string) $sql, 'SHOW TABLES') !== false) {
                 return null;
@@ -143,6 +155,9 @@ class LegacyRosterSchemaMigrateTest extends TestCase {
         $wpdb->shouldReceive('esc_like')->andReturnUsing(static function ($s) {
             return (string) $s;
         });
+        $wpdb->shouldReceive('get_results')->with("DESCRIBE {$table}", ARRAY_A)->andReturn([
+            ['Field' => 'event_type', 'Type' => 'varchar(50)'],
+        ]);
         $wpdb->shouldReceive('get_var')->andReturnUsing(function ($sql) use ($backup, $table) {
             if (strpos((string) $sql, 'SHOW TABLES') !== false) {
                 return null;

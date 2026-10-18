@@ -27,6 +27,7 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
     }
 
     protected function tearDown(): void {
+        delete_option(DatabaseMigrator::MIGRATION_LOCK_OPTION);
         global $wpdb;
         $wpdb = $this->previous_wpdb;
         parent::tearDown();
@@ -42,6 +43,16 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
         $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($sql) {
             return (string) $sql;
         });
+        $wpdb->shouldReceive('get_results')->andReturnUsing(static function ($sql) {
+            if (strpos((string) $sql, 'DESCRIBE') !== false) {
+                return [
+                    ['Field' => 'event_type', 'Type' => 'varchar(50)'],
+                    ['Field' => 'camp_times', 'Type' => 'varchar(50)'],
+                    ['Field' => 'times', 'Type' => 'varchar(50)'],
+                ];
+            }
+            return [];
+        })->byDefault();
         return $wpdb;
     }
 
@@ -193,6 +204,9 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
         $table = 'wp_intersoccer_rosters';
         $backup = $table . '_bak_2_4_0';
 
+        $wpdb->shouldReceive('get_results')->andReturn([
+            ['Field' => 'times', 'Type' => 'varchar(50)'],
+        ]);
         $wpdb->shouldReceive('get_var')->andReturnUsing(function ($sql) use ($backup) {
             if (strpos((string) $sql, 'SHOW TABLES') !== false) {
                 return $backup;
@@ -208,7 +222,69 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
         $migrator = new DatabaseMigrator($logger);
         $method = new \ReflectionMethod(DatabaseMigrator::class, 'migrate_2_4_0');
         $method->setAccessible(true);
-        $this->assertFalse($method->invoke($migrator));
+        $this->assertSame(DatabaseMigrator::RESULT_SKIPPED_UNRECOGNISED_BACKUP, $method->invoke($migrator));
+    }
+
+    public function test_migrate_2_4_0_succeeds_without_backup_when_columns_already_wide(): void {
+        $wpdb = $this->mockWpdbForMigrate24();
+        $table = 'wp_intersoccer_rosters';
+        $wpdb->shouldReceive('get_results')->andReturn([
+            ['Field' => 'event_type', 'Type' => 'varchar(191)'],
+            ['Field' => 'times', 'Type' => 'varchar(191)'],
+        ]);
+        $wpdb->shouldReceive('get_var')->never();
+        $wpdb->shouldReceive('query')->never();
+
+        $this->assertTrue(intersoccer_migrate_rosters_schema_2_4_0($wpdb, $table));
+    }
+
+    public function test_migrate_2_4_0_reuses_stamped_backup_when_present(): void {
+        $wpdb = $this->mockWpdbForMigrate24();
+        $table = 'wp_intersoccer_rosters';
+        $backup = $table . '_bak_2_4_0';
+        $GLOBALS['intersoccer_test_option_store'][intersoccer_rosters_bak_2_4_0_created_option_name()] = time();
+        $queries = [];
+        $wpdb->shouldReceive('get_var')->andReturnUsing(function ($sql) use ($backup) {
+            if (strpos((string) $sql, 'SHOW TABLES') !== false) {
+                return $backup;
+            }
+            if (strpos((string) $sql, 'COUNT') !== false) {
+                return '3';
+            }
+            return null;
+        });
+        $wpdb->shouldReceive('get_col')->with("DESCRIBE {$table}", 0)->andReturn(['event_type', 'times']);
+        $wpdb->shouldReceive('query')->andReturnUsing(function ($sql) use (&$queries) {
+            $queries[] = (string) $sql;
+            return 0;
+        });
+
+        $this->assertTrue(intersoccer_migrate_rosters_schema_2_4_0($wpdb, $table));
+        $joined = implode("\n", $queries);
+        $this->assertStringNotContainsString("CREATE TABLE {$backup}", $joined);
+        $this->assertStringContainsString('MODIFY event_type', $joined);
+        unset($GLOBALS['intersoccer_test_option_store'][intersoccer_rosters_bak_2_4_0_created_option_name()]);
+    }
+
+    public function test_migration_lock_blocks_second_acquire_until_released(): void {
+        delete_option(DatabaseMigrator::MIGRATION_LOCK_OPTION);
+        $logger = Mockery::mock(Logger::class);
+        $logger->shouldReceive('info')->andReturnNull();
+        $migrator = new DatabaseMigrator($logger);
+        $this->assertTrue($migrator->acquireMigrationLock());
+        $this->assertFalse($migrator->acquireMigrationLock());
+        $migrator->releaseMigrationLock();
+        $this->assertTrue($migrator->acquireMigrationLock());
+        $migrator->releaseMigrationLock();
+    }
+
+    public function test_migration_lock_stale_is_taken_over(): void {
+        delete_option(DatabaseMigrator::MIGRATION_LOCK_OPTION);
+        $logger = Mockery::mock(Logger::class);
+        $migrator = new DatabaseMigrator($logger);
+        update_option(DatabaseMigrator::MIGRATION_LOCK_OPTION, time() - (DatabaseMigrator::MIGRATION_LOCK_STALE_SECONDS + 5), '', 'no');
+        $this->assertTrue($migrator->acquireMigrationLock());
+        $migrator->releaseMigrationLock();
     }
 
     public function test_migrate_2_4_0_aborts_when_backup_insert_fails_and_drops_backup(): void {
@@ -218,7 +294,6 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
         $queries = [];
         $wpdb->last_error = 'insert failed';
         $wpdb->shouldReceive('get_var')->andReturn(null);
-        $wpdb->shouldReceive('get_col')->never();
         $wpdb->shouldReceive('query')->andReturnUsing(function ($sql) use (&$queries) {
             $queries[] = (string) $sql;
             if (strpos((string) $sql, 'CREATE TABLE') !== false) {
@@ -297,6 +372,7 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
         $table = 'wp_intersoccer_rosters';
         $backup = $table . '_bak_2_4_0';
         $queries = [];
+        $GLOBALS['intersoccer_test_option_store'][intersoccer_rosters_bak_2_4_0_created_option_name()] = time();
         $wpdb->shouldReceive('get_var')->andReturnUsing(function ($sql) use ($backup, $table) {
             if (strpos((string) $sql, 'SHOW TABLES') !== false) {
                 return $backup;
@@ -312,7 +388,6 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
             return null;
         });
         $wpdb->shouldReceive('query')->never();
-        $wpdb->shouldReceive('get_col')->never();
 
         $logger = Mockery::mock(Logger::class);
         $logger->shouldReceive('info')->andReturnNull();
@@ -325,5 +400,6 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
 
         $joined = implode("\n", $queries);
         $this->assertStringNotContainsString('MODIFY event_type', $joined);
+        unset($GLOBALS['intersoccer_test_option_store'][intersoccer_rosters_bak_2_4_0_created_option_name()]);
     }
 }
