@@ -72,6 +72,7 @@ class OrderFinancialAttributionService {
         $summary = $this->persistItemDiscounts($order, $item_discounts);
         $order->update_meta_data(self::META_ORDER_DISCOUNT_SUMMARY, $summary);
         $order->update_meta_data(self::META_ORDER_ATTRIBUTION_AT, current_time('mysql'));
+        $this->clearAttributionSkippedMarker($order);
         $order->save_meta_data();
 
         $this->logReconciliation($order, $line_items);
@@ -247,6 +248,7 @@ class OrderFinancialAttributionService {
         }
 
         $order->update_meta_data(self::META_ORDER_ATTRIBUTION_AT, current_time('mysql'));
+        $this->clearAttributionSkippedMarker($order);
         $order->save_meta_data();
 
         return true;
@@ -307,6 +309,39 @@ class OrderFinancialAttributionService {
              ORDER BY p.post_date ASC",
             self::META_ORDER_ATTRIBUTION_AT,
             self::META_ATTRIBUTION_SKIPPED,
+            $start,
+            $end
+        ));
+
+        return array_map('intval', (array) $order_ids);
+    }
+
+    /**
+     * Orders in a date range marked skipped but still lacking attribution metadata.
+     *
+     * @return array<int,int>
+     */
+    public function findSkippedAttributionOrderIds(string $start_date, string $end_date): array {
+        global $wpdb;
+
+        $start = $start_date . (strpos($start_date, ' ') !== false ? '' : ' 00:00:00');
+        $end = $end_date . (strpos($end_date, ' ') !== false ? '' : ' 23:59:59');
+
+        $order_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT p.ID
+             FROM {$wpdb->posts} p
+             INNER JOIN {$wpdb->postmeta} pm_skip ON p.ID = pm_skip.post_id AND pm_skip.meta_key = %s
+             LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = %s
+             WHERE p.post_type = 'shop_order'
+             AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold', 'wc-refunded')
+             AND p.post_date >= %s
+             AND p.post_date <= %s
+             AND pm_skip.meta_value IS NOT NULL
+             AND pm_skip.meta_value != ''
+             AND (pm.meta_value IS NULL OR pm.meta_value = '')
+             ORDER BY p.post_date ASC",
+            self::META_ATTRIBUTION_SKIPPED,
+            self::META_ORDER_ATTRIBUTION_AT,
             $start,
             $end
         ));
@@ -407,6 +442,99 @@ class OrderFinancialAttributionService {
             } catch (\Throwable $e) {
                 $failed_count++;
                 $this->logger->error('OrderFinancialAttributionService apply backfill error', [
+                    'order_id' => $order_id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return [
+            'applied_count' => $applied_count,
+            'skipped_count' => $skipped_count,
+            'failed_count' => $failed_count,
+            'skipped_reasons' => $skipped_reasons,
+            'processed_count' => $applied_count,
+            'error_count' => $failed_count,
+        ];
+    }
+
+    /**
+     * Dry-run summary for orders previously marked skipped (re-evaluates live skip reasons).
+     *
+     * @return array{
+     *   order_count:int,
+     *   applied_count:int,
+     *   skipped_count:int,
+     *   previously_skipped_count:int,
+     *   failed_count:int,
+     *   gross_chf:float,
+     *   net_chf:float,
+     *   skipped_reasons:array<string,int>
+     * }
+     */
+    public function summarizeRetrySkippedInDateRange(string $start_date, string $end_date): array {
+        $order_ids = $this->findSkippedAttributionOrderIds($start_date, $end_date);
+        $split = $this->splitPendingOrdersByAttributability($order_ids);
+
+        $gross = 0.0;
+        $net = 0.0;
+        foreach ($split['applied_ids'] as $order_id) {
+            if (!function_exists('wc_get_order')) {
+                break;
+            }
+            $order = wc_get_order($order_id);
+            if (!$order) {
+                continue;
+            }
+            $gross += (float) $order->get_subtotal();
+            $net += (float) $order->get_total();
+        }
+
+        return [
+            'order_count' => count($order_ids),
+            'applied_count' => count($split['applied_ids']),
+            'skipped_count' => count($split['skipped']),
+            'previously_skipped_count' => count($order_ids),
+            'failed_count' => 0,
+            'gross_chf' => round($gross, 2),
+            'net_chf' => round($net, 2),
+            'skipped_reasons' => $split['skipped_reason_counts'],
+        ];
+    }
+
+    /**
+     * Re-evaluate skipped orders: clear marker and attribute when now eligible.
+     *
+     * @return array{
+     *   applied_count:int,
+     *   skipped_count:int,
+     *   failed_count:int,
+     *   skipped_reasons:array<string,int>,
+     *   processed_count:int,
+     *   error_count:int
+     * }
+     */
+    public function applyRetrySkippedInDateRange(string $start_date, string $end_date): array {
+        $applied_count = 0;
+        $skipped_count = 0;
+        $failed_count = 0;
+        $skipped_reasons = [];
+
+        foreach ($this->findSkippedAttributionOrderIds($start_date, $end_date) as $order_id) {
+            try {
+                $outcome = $this->applyRetrySkippedToOrderId((int) $order_id);
+                if ($outcome['status'] === 'applied') {
+                    $applied_count++;
+                } elseif ($outcome['status'] === 'skipped') {
+                    $skipped_count++;
+                    $reason = (string) $outcome['reason'];
+                    $skipped_reasons[$reason] = ($skipped_reasons[$reason] ?? 0) + 1;
+                } else {
+                    $failed_count++;
+                }
+            } catch (\Throwable $e) {
+                $failed_count++;
+                $this->logger->error('OrderFinancialAttributionService retry-skipped error', [
                     'order_id' => $order_id,
                     'message' => $e->getMessage(),
                 ]);
@@ -564,6 +692,44 @@ class OrderFinancialAttributionService {
             : $this->attributeOrderDiscounts($order);
 
         return $ok ? ['status' => 'applied'] : ['status' => 'failed'];
+    }
+
+    /**
+     * @return array{status:string,reason?:string}
+     */
+    private function applyRetrySkippedToOrderId(int $order_id): array {
+        $order = function_exists('wc_get_order') ? wc_get_order($order_id) : null;
+        if (!$order) {
+            return ['status' => 'failed'];
+        }
+
+        $skip_reason = $this->getAttributionSkipReason($order);
+        if ($skip_reason !== null) {
+            $this->markOrderAttributionSkipped($order, $skip_reason);
+            return ['status' => 'skipped', 'reason' => $skip_reason];
+        }
+
+        $this->clearAttributionSkippedMarker($order);
+        $order->save_meta_data();
+
+        $had_refunds = (float) $order->get_total_refunded() > 0.01;
+        $ok = $had_refunds
+            ? $this->reattributeFullOrder($order)
+            : $this->attributeOrderDiscounts($order);
+
+        return $ok ? ['status' => 'applied'] : ['status' => 'failed'];
+    }
+
+    private function clearAttributionSkippedMarker(\WC_Order $order): void {
+        if (method_exists($order, 'meta_exists') && $order->meta_exists(self::META_ATTRIBUTION_SKIPPED)) {
+            $order->delete_meta_data(self::META_ATTRIBUTION_SKIPPED);
+            return;
+        }
+
+        $existing = $order->get_meta(self::META_ATTRIBUTION_SKIPPED, true);
+        if ($existing !== '' && $existing !== null) {
+            $order->delete_meta_data(self::META_ATTRIBUTION_SKIPPED);
+        }
     }
 
     private function markOrderAttributionSkipped(\WC_Order $order, string $reason): void {
