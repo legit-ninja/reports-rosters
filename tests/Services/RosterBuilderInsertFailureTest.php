@@ -156,4 +156,39 @@ class RosterBuilderInsertFailureTest extends TestCase {
         $this->assertStringNotContainsString('Sensitive Name', $reason);
         $this->assertStringContainsString("Duplicate entry '?'", $reason);
     }
+
+    public function test_build_player_loop_database_exception_passes_redacted_wpdb_error(): void {
+        global $wpdb;
+        $wpdb = new \stdClass();
+        $wpdb->last_error = "Duplicate entry 'Leaked Player Name' for key 'uniq_order_item_id'";
+
+        $exception = new DatabaseException('Sensitive validation detail must not appear in stats');
+        $db_error = '';
+        if ($exception instanceof DatabaseException
+            && isset($wpdb)
+            && is_object($wpdb)
+            && isset($wpdb->last_error)
+            && $wpdb->last_error !== ''
+        ) {
+            $db_error = (string) $wpdb->last_error;
+        }
+
+        $builder = new RosterBuilder(
+            Mockery::mock(Logger::class),
+            Mockery::mock(Database::class),
+            Mockery::mock(PlayerRepository::class),
+            Mockery::mock(RosterRepository::class),
+            Mockery::mock(DataValidator::class),
+            Mockery::mock(EventMatcher::class),
+            Mockery::mock(PlayerMatcher::class)
+        );
+        $format = new \ReflectionMethod(RosterBuilder::class, 'formatRosterFailureReason');
+        $format->setAccessible(true);
+        $reason = $format->invoke($builder, $exception, $db_error);
+
+        $this->assertStringContainsString('DatabaseException', $reason);
+        $this->assertStringContainsString("Duplicate entry '?'", $reason);
+        $this->assertStringNotContainsString('Leaked Player Name', $reason);
+        $this->assertStringNotContainsString('Sensitive validation detail', $reason);
+    }
 }

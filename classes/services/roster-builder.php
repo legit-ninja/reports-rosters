@@ -936,8 +936,18 @@ class RosterBuilder {
                 }
                 
             } catch (\Exception $e) {
+                global $wpdb;
+                $db_error = '';
+                if ($e instanceof DatabaseException
+                    && isset($wpdb)
+                    && is_object($wpdb)
+                    && isset($wpdb->last_error)
+                    && $wpdb->last_error !== ''
+                ) {
+                    $db_error = (string) $wpdb->last_error;
+                }
                 $this->build_stats['validation_errors']++;
-                $reason = $this->formatRosterFailureReason($e);
+                $reason = $this->formatRosterFailureReason($e, $db_error);
                 $this->build_stats['errors'][] = "Order {$order->get_id()}, item {$item_id}: {$reason}";
 
                 $this->logger->error('Failed to create roster for player', [
