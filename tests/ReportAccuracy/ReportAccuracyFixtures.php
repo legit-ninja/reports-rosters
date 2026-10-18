@@ -65,6 +65,40 @@ namespace {
             return $service;
         }
     }
+
+    if (!class_exists('BackfillMissingAttributionWpdb', false)) {
+        /**
+         * Minimal wpdb stub: findMissingAttributionOrderIds() only needs get_col() after prepare().
+         */
+        class BackfillMissingAttributionWpdb {
+            public $posts = 'wp_posts';
+            public $postmeta = 'wp_postmeta';
+            public $prefix = 'wp_';
+
+            /** @var array<int,int> */
+            private $order_ids;
+
+            /** @param array<int,int> $order_ids */
+            public function __construct(array $order_ids) {
+                $this->order_ids = $order_ids;
+            }
+
+            public function prepare($query, ...$args) {
+                return 'BACKFILL_MISSING_ATTRIBUTION';
+            }
+
+            public function get_col($query) {
+                if ($query === 'BACKFILL_MISSING_ATTRIBUTION') {
+                    return array_map('strval', $this->order_ids);
+                }
+                return [];
+            }
+
+            public function get_var($query) {
+                return '0';
+            }
+        }
+    }
 }
 
 namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy {
@@ -219,6 +253,24 @@ namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy {
         public function save() {
             ReportAccuracyStore::$writes[] = ['op' => 'save', 'object' => 'order', 'id' => $this->id, 'key' => '(save)'];
             return $this->id;
+        }
+
+        public function save_meta_data() {
+            ReportAccuracyStore::$writes[] = ['op' => 'save_meta', 'object' => 'order', 'id' => $this->id, 'key' => '(save_meta_data)'];
+            return true;
+        }
+
+        public function get_meta($key, $single = true) {
+            if (!array_key_exists($key, $this->meta_data)) {
+                return $single ? '' : [];
+            }
+            $value = $this->meta_data[$key];
+            return $single ? $value : [$value];
+        }
+
+        /** @return string[] */
+        public function metaKeys(): array {
+            return array_keys($this->meta_data ?? []);
         }
     }
 

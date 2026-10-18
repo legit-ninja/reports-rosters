@@ -22,7 +22,11 @@ class AttributionBackfillCliRegistrationTest extends TestCase {
             eval(<<<'PHP'
 class WP_CLI {
     public static $add_command_callback;
-    public static function log($msg) {}
+    public static function log($msg) {
+        if (isset($GLOBALS['intersoccer_test_wp_cli_log']) && is_array($GLOBALS['intersoccer_test_wp_cli_log'])) {
+            $GLOBALS['intersoccer_test_wp_cli_log'][] = $msg;
+        }
+    }
     public static function success($msg) {}
     public static function error($msg) { throw new \RuntimeException((string) $msg); }
     public static function confirm($msg) {}

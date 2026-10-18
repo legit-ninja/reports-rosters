@@ -95,7 +95,16 @@ class AttributionBackfillAjaxTest extends TestCase {
         $service->expects($this->never())->method('backfillBatch');
         $service->expects($this->never())->method('applyMissingAttributionInDateRange');
         $service->expects($this->once())->method('summarizeMissingAttributionInDateRange')
-            ->willReturn(['order_count' => 2, 'gross_chf' => 400.0, 'net_chf' => 360.0]);
+            ->willReturn([
+                'order_count' => 2,
+                'applied_count' => 2,
+                'skipped_count' => 0,
+                'previously_skipped_count' => 0,
+                'failed_count' => 0,
+                'gross_chf' => 400.0,
+                'net_chf' => 360.0,
+                'skipped_reasons' => [],
+            ]);
         $GLOBALS['intersoccer_test_attribution_service_override'] = $service;
 
         $response = $this->invokeBackfillAjax($post);
@@ -122,7 +131,16 @@ class AttributionBackfillAjaxTest extends TestCase {
         $service = $this->createMock(Attr::class);
         $service->expects($this->never())->method('backfillBatch');
         $service->expects($this->once())->method('summarizeMissingAttributionInDateRange')
-            ->willReturn(['order_count' => 0, 'gross_chf' => 0.0, 'net_chf' => 0.0]);
+            ->willReturn([
+                'order_count' => 0,
+                'applied_count' => 0,
+                'skipped_count' => 0,
+                'previously_skipped_count' => 0,
+                'failed_count' => 0,
+                'gross_chf' => 0.0,
+                'net_chf' => 0.0,
+                'skipped_reasons' => [],
+            ]);
         $GLOBALS['intersoccer_test_attribution_service_override'] = $service;
 
         $response = $this->invokeBackfillAjax(['apply' => 'true']);
