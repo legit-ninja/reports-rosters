@@ -21,6 +21,74 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
  * @param string                                         $cell  e.g. K2.
  * @param string                                         $band  Urgency CSS class.
  */
+/**
+ * Write camp grand TOTAL + All registrations rows to a worksheet (shared column map with data rows).
+ *
+ * @param object $sheet       PhpSpreadsheet worksheet or test double with setCellValue/getStyle.
+ * @param int    $row_index   First row (column header labels).
+ * @param array  $grand       intersoccer_reports_camp_grand_totals() result.
+ * @return int Row index after the last written row.
+ */
+function intersoccer_reports_camp_export_write_grand_summary_rows($sheet, $row_index, array $grand) {
+    if (!function_exists('intersoccer_reports_camp_export_metric_columns')) {
+        require_once plugin_dir_path(__FILE__) . 'final-reports-aggregation.php';
+    }
+    $fd_cols = intersoccer_reports_camp_export_metric_columns('C');
+    $mini_cols = intersoccer_reports_camp_export_metric_columns('N');
+    $place_keys = ['full_week', 'buyclub', 'unknown_booking_type', 'days_unknown', 'single_day_places'];
+
+    $sheet->setCellValue('C' . $row_index, 'Full Week');
+    $sheet->setCellValue('D' . $row_index, 'BuyClub');
+    $sheet->setCellValue('E' . $row_index, 'Unknown type');
+    $sheet->setCellValue('F' . $row_index, 'Days unknown');
+    $sheet->setCellValue('G' . $row_index, 'Single-day places');
+    $sheet->setCellValue($fd_cols['day_slots'] . $row_index, 'Day slots (not summed)');
+    $sheet->setCellValue('N' . $row_index, 'Full Week');
+    $sheet->setCellValue('O' . $row_index, 'BuyClub');
+    $sheet->setCellValue('P' . $row_index, 'Unknown type');
+    $sheet->setCellValue('Q' . $row_index, 'Days unknown');
+    $sheet->setCellValue('R' . $row_index, 'Single-day places');
+    $sheet->setCellValue($mini_cols['day_slots'] . $row_index, 'Day slots (not summed)');
+    $sheet->getStyle('C' . $row_index . ':' . $mini_cols['day_slots'] . $row_index)->getFont()->setBold(true);
+    $row_index++;
+
+    $sheet->setCellValue('B' . $row_index, 'TOTAL');
+    foreach ($fd_cols['place'] as $i => $col) {
+        $key = $place_keys[$i];
+        $sheet->setCellValue($col . $row_index, (int) ($grand['full_day'][$key] ?? 0));
+    }
+    $sheet->setCellValue($fd_cols['day_slots'] . $row_index, (int) $grand['full_day']['individual_day_slots']);
+    foreach ($mini_cols['place'] as $i => $col) {
+        $key = $place_keys[$i];
+        $sheet->setCellValue($col . $row_index, (int) ($grand['mini'][$key] ?? 0));
+    }
+    $sheet->setCellValue($mini_cols['day_slots'] . $row_index, (int) $grand['mini']['individual_day_slots']);
+    $sheet->getStyle('B' . $row_index . ':' . $mini_cols['day_slots'] . $row_index)->getFont()->setBold(true);
+    $row_index++;
+
+    $sheet->setCellValue('B' . $row_index, 'All registrations');
+    $sheet->setCellValue(
+        $fd_cols['all_registrations'] . $row_index,
+        (int) ($grand['full_day']['all_registrations'] ?? 0)
+    );
+    $sheet->setCellValue(
+        $fd_cols['day_slots'] . $row_index,
+        (int) $grand['full_day']['individual_day_slots']
+    );
+    $sheet->setCellValue(
+        $mini_cols['all_registrations'] . $row_index,
+        (int) ($grand['mini']['all_registrations'] ?? 0)
+    );
+    $sheet->setCellValue(
+        $mini_cols['day_slots'] . $row_index,
+        (int) $grand['mini']['individual_day_slots']
+    );
+    $sheet->getStyle('B' . $row_index . ':' . $mini_cols['day_slots'] . $row_index)->getFont()->setBold(true);
+    $row_index++;
+
+    return $row_index;
+}
+
 function intersoccer_reports_excel_apply_urgency_fill($sheet, $cell, $band) {
     $argb = function_exists('intersoccer_reports_urgency_band_argb')
         ? intersoccer_reports_urgency_band_argb($band)
@@ -109,26 +177,21 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
 
         $row_index = 5;
         $write_metrics = static function ($sheet, $row, $start_col, array $m) {
-            $row_values = function_exists('intersoccer_reports_camp_export_metric_row_values')
-                ? intersoccer_reports_camp_export_metric_row_values($m)
-                : intersoccer_reports_camp_export_metric_place_values($m);
-            $cols = [];
-            $ord = ord($start_col);
-            for ($i = 0; $i < 11; $i++) {
-                $cols[] = chr($ord + $i);
+            $map = intersoccer_reports_camp_export_metric_columns($start_col);
+            $row_values = intersoccer_reports_camp_export_metric_row_values($m);
+            foreach ($map['place'] as $i => $col) {
+                $sheet->setCellValue($col . $row, $row_values[$i] ?? 0);
             }
-            foreach ($row_values as $i => $val) {
-                if (!isset($cols[$i])) {
-                    break;
-                }
-                $sheet->setCellValue($cols[$i] . $row, $val);
+            for ($d = 0; $d < 5; $d++) {
+                $col = chr(ord($map['day_slots']) + $d);
+                $sheet->setCellValue($col . $row, $row_values[5 + $d] ?? 0);
             }
-            $sheet->setCellValue($cols[10] . $row, (string) (
+            $sheet->setCellValue($map['min_max'] . $row, (string) (
                 function_exists('intersoccer_reports_normalize_camp_metrics')
                     ? (intersoccer_reports_normalize_camp_metrics($m)['min_max'] ?? '0-0')
                     : ($m['min_max'] ?? '0-0')
             ));
-            return $cols[10];
+            return $map['min_max'];
         };
 
         foreach ($report_data as $week_name => $cantons) {
@@ -181,44 +244,7 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
             ? intersoccer_reports_camp_grand_totals($report_data, $urgency_only)
             : null;
         if (is_array($grand)) {
-            $sheet->setCellValue('C' . $row_index, 'Full Week');
-            $sheet->setCellValue('D' . $row_index, 'BuyClub');
-            $sheet->setCellValue('E' . $row_index, 'Unknown type');
-            $sheet->setCellValue('F' . $row_index, 'Days unknown');
-            $sheet->setCellValue('G' . $row_index, 'Single-day places');
-            $sheet->setCellValue('H' . $row_index, 'Day slots (not summed)');
-            $sheet->setCellValue('N' . $row_index, 'Full Week');
-            $sheet->setCellValue('O' . $row_index, 'BuyClub');
-            $sheet->setCellValue('P' . $row_index, 'Unknown type');
-            $sheet->setCellValue('Q' . $row_index, 'Days unknown');
-            $sheet->setCellValue('R' . $row_index, 'Single-day places');
-            $sheet->setCellValue('S' . $row_index, 'Day slots (not summed)');
-            $sheet->getStyle('C' . $row_index . ':S' . $row_index)->getFont()->setBold(true);
-            $row_index++;
-
-            $sheet->setCellValue('B' . $row_index, 'TOTAL');
-            $sheet->setCellValue('C' . $row_index, (int) $grand['full_day']['full_week']);
-            $sheet->setCellValue('D' . $row_index, (int) $grand['full_day']['buyclub']);
-            $sheet->setCellValue('E' . $row_index, (int) ($grand['full_day']['unknown_booking_type'] ?? 0));
-            $sheet->setCellValue('F' . $row_index, (int) ($grand['full_day']['days_unknown'] ?? 0));
-            $sheet->setCellValue('G' . $row_index, (int) ($grand['full_day']['single_day_places'] ?? 0));
-            $sheet->setCellValue('H' . $row_index, (int) $grand['full_day']['individual_day_slots']);
-            $sheet->setCellValue('N' . $row_index, (int) $grand['mini']['full_week']);
-            $sheet->setCellValue('O' . $row_index, (int) $grand['mini']['buyclub']);
-            $sheet->setCellValue('P' . $row_index, (int) ($grand['mini']['unknown_booking_type'] ?? 0));
-            $sheet->setCellValue('Q' . $row_index, (int) ($grand['mini']['days_unknown'] ?? 0));
-            $sheet->setCellValue('R' . $row_index, (int) ($grand['mini']['single_day_places'] ?? 0));
-            $sheet->setCellValue('S' . $row_index, (int) $grand['mini']['individual_day_slots']);
-            $sheet->getStyle('B' . $row_index . ':S' . $row_index)->getFont()->setBold(true);
-            $row_index++;
-
-            $sheet->setCellValue('B' . $row_index, 'All registrations');
-            $sheet->setCellValue('C' . $row_index, (int) $grand['full_day']['all_registrations']);
-            $sheet->setCellValue('G' . $row_index, (int) $grand['full_day']['individual_day_slots']);
-            $sheet->setCellValue('M' . $row_index, (int) $grand['mini']['all_registrations']);
-            $sheet->setCellValue('Q' . $row_index, (int) $grand['mini']['individual_day_slots']);
-            $sheet->getStyle('B' . $row_index . ':Q' . $row_index)->getFont()->setBold(true);
-            $row_index++;
+            $row_index = intersoccer_reports_camp_export_write_grand_summary_rows($sheet, $row_index, $grand);
 
             if ($camp_player_registration_totals !== null && !empty($camp_player_registration_totals['not_on_roster'])) {
                 $sheet->setCellValue('B' . $row_index, 'Not on roster');

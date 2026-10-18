@@ -228,4 +228,41 @@ class FinalCampGridColumnsTest extends TestCase {
         }
         $this->assertSame((string) $fixture['mini_place'], $mini_all_reg[1]);
     }
+
+    public function test_camp_export_grand_footer_all_registrations_uses_metric_column_map(): void {
+        require_once dirname(__DIR__, 2) . '/includes/reports-export.php';
+        $fixture = $this->campGrandTotalsFixtureForReview8();
+        $grand = $fixture['camp_grand'];
+        $place_total = $fixture['place_total'];
+        $fd = $fixture['fd'];
+
+        $sheet = new class {
+            /** @var array<string, mixed> */
+            public $cells = [];
+
+            public function setCellValue($coord, $value) {
+                $this->cells[$coord] = $value;
+            }
+
+            public function getStyle($range) {
+                return new class {
+                    public function getFont() {
+                        return $this;
+                    }
+
+                    public function setBold($bold) {
+                        return $this;
+                    }
+                };
+            }
+        };
+        $start_row = 20;
+        $after = intersoccer_reports_camp_export_write_grand_summary_rows($sheet, $start_row, $grand);
+        $this->assertSame($start_row + 3, $after);
+        $all_reg_row = $start_row + 2;
+        $this->assertSame($place_total, (int) $sheet->cells['C' . $all_reg_row]);
+        $this->assertSame((int) $fd['individual_day_slots'], (int) $sheet->cells['H' . $all_reg_row]);
+        $this->assertSame($fixture['mini_place'], (int) $sheet->cells['N' . $all_reg_row]);
+        $this->assertSame((int) $grand['mini']['individual_day_slots'], (int) $sheet->cells['S' . $all_reg_row]);
+    }
 }

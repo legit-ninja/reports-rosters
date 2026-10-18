@@ -1354,6 +1354,28 @@ if (!function_exists('intersoccer_reports_camp_export_metric_row_values')) {
     }
 }
 
+if (!function_exists('intersoccer_reports_camp_export_metric_columns')) {
+    /**
+     * Excel column letters for one camp grid block (11 cells: 5 place + 5 day slots + min-max).
+     *
+     * @param string $start_col e.g. C or N
+     * @return array{place:string[],day_slots:string,min_max:string,all_registrations:string}
+     */
+    function intersoccer_reports_camp_export_metric_columns($start_col) {
+        $cols = [];
+        $ord = ord($start_col);
+        for ($i = 0; $i < 11; $i++) {
+            $cols[] = chr($ord + $i);
+        }
+        return [
+            'place' => array_slice($cols, 0, 5),
+            'day_slots' => $cols[5],
+            'min_max' => $cols[10],
+            'all_registrations' => $cols[0],
+        ];
+    }
+}
+
 if (!function_exists('intersoccer_reports_normalize_camp_metrics')) {
     /**
      * Ensure camp metrics include pitchside/buyclub keys for UI/export.
