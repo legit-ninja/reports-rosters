@@ -30,6 +30,19 @@ class MarkerTestWpdb extends DeletedProductWpdb {
     }
 }
 
+class FailingCatalogBatchWpdb extends MarkerTestWpdb {
+    public $fail_catalog_batch = false;
+
+    public function get_results($query = null, $output = OBJECT) {
+        if ($this->fail_catalog_batch && preg_match('/SELECT ID, post_type FROM \S+posts WHERE ID IN/', (string) $query)) {
+            $this->queries[] = (string) $query;
+            $this->last_error = 'simulated_catalog_lookup_failure';
+            return null;
+        }
+        return parent::get_results($query, $output);
+    }
+}
+
 class FinalNumbersDeletedProductMarkerTest extends TestCase {
 
     /** @var MarkerTestWpdb */
@@ -90,6 +103,50 @@ class FinalNumbersDeletedProductMarkerTest extends TestCase {
         $data = $this->finalReportsData('Camp');
         $this->assertTrue($this->campReportHasDeletedMarker($data));
         $this->assertSame(1, $this->campTotalPlaces($data));
+    }
+
+    public function test_catalogue_batch_lookup_failure_shows_no_deleted_markers(): void {
+        $wpdb = new FailingCatalogBatchWpdb();
+        $wpdb->fail_catalog_batch = true;
+        $GLOBALS['wpdb'] = $wpdb;
+        $row = $this->courseRosterRow(DeletedProductFixture::DELETED_PID, DeletedProductFixture::DELETED_VID, null);
+        $wpdb->roster_rows = [$row];
+
+        $log = tempnam(sys_get_temp_dir(), 'rr_catalog_fail_');
+        $previous_log = ini_set('error_log', $log);
+        try {
+            $data = intersoccer_get_final_reports_data(2026, 'Course');
+        } finally {
+            ini_set('error_log', (string) $previous_log);
+        }
+        $data = is_array($data) ? $data : [];
+
+        $this->assertFalse($this->courseReportHasDeletedMarker($data));
+        $this->assertTrue(intersoccer_reports_catalog_lookup_failed());
+        $logged = is_readable($log) ? (string) file_get_contents($log) : '';
+        if (is_readable($log)) {
+            unlink($log);
+        }
+        $this->assertMatchesRegularExpression(
+            '/\[intersoccer-reports-rosters\] Final Numbers catalogue lookup failed: query_failed/',
+            $logged
+        );
+    }
+
+    public function test_catalogue_batch_failure_does_not_clobber_existing_join_columns(): void {
+        $wpdb = new FailingCatalogBatchWpdb();
+        $wpdb->fail_catalog_batch = true;
+        $GLOBALS['wpdb'] = $wpdb;
+        $needs_batch = $this->courseRosterRow(DeletedProductFixture::DELETED_PID, DeletedProductFixture::DELETED_VID, null);
+        $with_joins = $this->courseRosterRow(DeletedProductFixture::LIVE_PID, DeletedProductFixture::LIVE_VID, null);
+        $with_joins['order_item_id'] = 62003;
+        $with_joins['catalog_product_post_id'] = DeletedProductFixture::LIVE_PID;
+        $with_joins['catalog_variation_post_id'] = DeletedProductFixture::LIVE_VID;
+        $rows = [$needs_batch, $with_joins];
+        intersoccer_reports_apply_final_rows_deleted_product_read_time($rows);
+        $this->assertSame(DeletedProductFixture::LIVE_PID, $rows[1]['catalog_product_post_id']);
+        $this->assertSame(DeletedProductFixture::LIVE_VID, $rows[1]['catalog_variation_post_id']);
+        $this->assertFalse(intersoccer_reports_final_row_is_deleted_product_grid_row($rows[0]));
     }
 
     public function test_deleted_marker_does_not_change_course_registration_totals(): void {

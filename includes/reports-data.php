@@ -286,6 +286,15 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         );
         
         $rosters_from_table = $wpdb->get_results($rosters_query, ARRAY_A);
+        if (!is_array($rosters_from_table)) {
+            if (function_exists('intersoccer_reports_log_catalog_lookup_failure')) {
+                intersoccer_reports_log_catalog_lookup_failure('rosters_query_failed');
+            }
+            if (function_exists('intersoccer_reports_set_catalog_lookup_failed')) {
+                intersoccer_reports_set_catalog_lookup_failed(true);
+            }
+            $rosters_from_table = [];
+        }
         
         // Track filtering stages
         $initial_count = count($rosters_from_table);
@@ -884,6 +893,15 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         );
 
         $rosters = $wpdb->get_results($rosters_query, ARRAY_A);
+        if (!is_array($rosters)) {
+            if (function_exists('intersoccer_reports_log_catalog_lookup_failure')) {
+                intersoccer_reports_log_catalog_lookup_failure('rosters_query_failed');
+            }
+            if (function_exists('intersoccer_reports_set_catalog_lookup_failed')) {
+                intersoccer_reports_set_catalog_lookup_failed(true);
+            }
+            $rosters = [];
+        }
 
         if (function_exists('intersoccer_reports_enrich_and_normalize_final_report_rows')) {
             intersoccer_reports_enrich_and_normalize_final_report_rows($rosters);

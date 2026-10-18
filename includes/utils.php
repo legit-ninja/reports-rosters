@@ -2540,6 +2540,24 @@ if (!function_exists('intersoccer_reports_final_row_counts_as_not_on_roster')) {
     }
 }
 
+if (!function_exists('intersoccer_reports_catalog_lookup_failed')) {
+    function intersoccer_reports_catalog_lookup_failed(): bool {
+        return !empty($GLOBALS['intersoccer_reports_catalog_lookup_failed']);
+    }
+}
+
+if (!function_exists('intersoccer_reports_set_catalog_lookup_failed')) {
+    function intersoccer_reports_set_catalog_lookup_failed(bool $failed): void {
+        $GLOBALS['intersoccer_reports_catalog_lookup_failed'] = $failed;
+    }
+}
+
+if (!function_exists('intersoccer_reports_log_catalog_lookup_failure')) {
+    function intersoccer_reports_log_catalog_lookup_failure(string $reason): void {
+        error_log('[intersoccer-reports-rosters] Final Numbers catalogue lookup failed: ' . $reason);
+    }
+}
+
 if (!function_exists('intersoccer_reports_final_row_is_catalog_product_missing')) {
     /**
      * Read-time catalogue check (matches RosterBuilder::orderLineProductDeletedFromCatalog).
@@ -2547,6 +2565,9 @@ if (!function_exists('intersoccer_reports_final_row_is_catalog_product_missing')
      * @param array<string,mixed> $row Row with optional catalog_* join columns from Final Numbers SQL.
      */
     function intersoccer_reports_final_row_is_catalog_product_missing(array $row): bool {
+        if (intersoccer_reports_catalog_lookup_failed()) {
+            return false;
+        }
         $product_id = (int) ($row['product_id'] ?? 0);
         $variation_id = (int) ($row['variation_id'] ?? 0);
         if ($product_id <= 0 && $variation_id <= 0) {
@@ -2570,8 +2591,9 @@ if (!function_exists('intersoccer_reports_final_row_is_catalog_product_missing')
 if (!function_exists('intersoccer_reports_batch_attach_catalog_post_join_columns')) {
     /**
      * @param array<int,array<string,mixed>> $rows
+     * @return bool False when lookup failed (rows are not modified).
      */
-    function intersoccer_reports_batch_attach_catalog_post_join_columns(array &$rows): void {
+    function intersoccer_reports_batch_attach_catalog_post_join_columns(array &$rows): bool {
         global $wpdb;
         $ids = [];
         foreach ($rows as $row) {
@@ -2585,19 +2607,30 @@ if (!function_exists('intersoccer_reports_batch_attach_catalog_post_join_columns
             }
         }
         if (empty($ids)) {
-            return;
+            return true;
         }
         $posts_table = $wpdb->posts;
         $placeholders = implode(',', array_fill(0, count($ids), '%d'));
         $sql = "SELECT ID, post_type FROM {$posts_table} WHERE ID IN ({$placeholders})";
-        $results = $wpdb->get_results($wpdb->prepare($sql, ...array_values($ids)), ARRAY_A);
+        $prepared = $wpdb->prepare($sql, ...array_values($ids));
+        if ($prepared === false || $prepared === null) {
+            intersoccer_reports_log_catalog_lookup_failure('prepare_failed');
+            return false;
+        }
+        $results = $wpdb->get_results($prepared, ARRAY_A);
+        if (!is_array($results)) {
+            intersoccer_reports_log_catalog_lookup_failure('query_failed');
+            return false;
+        }
+        if ($results === [] && !empty($wpdb->last_error)) {
+            intersoccer_reports_log_catalog_lookup_failure('query_failed');
+            return false;
+        }
         $by_id = [];
-        if (is_array($results)) {
-            foreach ($results as $post_row) {
-                $id = (int) ($post_row['ID'] ?? 0);
-                if ($id > 0) {
-                    $by_id[$id] = (string) ($post_row['post_type'] ?? '');
-                }
+        foreach ($results as $post_row) {
+            $id = (int) ($post_row['ID'] ?? 0);
+            if ($id > 0) {
+                $by_id[$id] = (string) ($post_row['post_type'] ?? '');
             }
         }
         foreach ($rows as &$row) {
@@ -2615,6 +2648,7 @@ if (!function_exists('intersoccer_reports_batch_attach_catalog_post_join_columns
             }
         }
         unset($row);
+        return true;
     }
 }
 
@@ -2628,6 +2662,7 @@ if (!function_exists('intersoccer_reports_apply_final_rows_deleted_product_read_
         if (empty($rows)) {
             return;
         }
+        intersoccer_reports_set_catalog_lookup_failed(false);
         $needs_batch = false;
         foreach ($rows as $row) {
             if (!array_key_exists('catalog_product_post_id', $row) && !array_key_exists('catalog_variation_post_id', $row)) {
@@ -2636,7 +2671,10 @@ if (!function_exists('intersoccer_reports_apply_final_rows_deleted_product_read_
             }
         }
         if ($needs_batch && function_exists('intersoccer_reports_batch_attach_catalog_post_join_columns')) {
-            intersoccer_reports_batch_attach_catalog_post_join_columns($rows);
+            if (!intersoccer_reports_batch_attach_catalog_post_join_columns($rows)) {
+                intersoccer_reports_set_catalog_lookup_failed(true);
+                return;
+            }
         }
         foreach ($rows as &$row) {
             $details = $row['event_details'] ?? null;
@@ -2665,6 +2703,9 @@ if (!function_exists('intersoccer_reports_final_row_is_deleted_product_grid_row'
      * Deleted catalogue lines with enough stored booking data stay in the Final Numbers grid (not not-on-roster).
      */
     function intersoccer_reports_final_row_is_deleted_product_grid_row(array $row): bool {
+        if (intersoccer_reports_catalog_lookup_failed()) {
+            return false;
+        }
         if (function_exists('intersoccer_reports_final_row_is_undated_event')
             && intersoccer_reports_final_row_is_undated_event($row)) {
             return false;
