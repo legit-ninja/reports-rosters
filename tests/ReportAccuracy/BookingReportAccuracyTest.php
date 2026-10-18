@@ -225,7 +225,8 @@ class BookingReportAccuracyTest extends TestCase {
 
     // ---------------------------------------------------------------- S11 (qty > 1)
 
-    public function test_S11_multi_place_line_counts_each_place(): void {
+    /** S11: Booking Report counts one booking per listed row; Final Numbers counts line quantity as places. */
+    public function test_S11_qty_two_line_counts_one_booking_per_listed_row(): void {
         ReportAccuracyStore::addOrder($this->attributedOrder(112)->addLine(
             new FakeLineItem(1121, ['subtotal' => 480.0, 'total' => 480.0, 'quantity' => 2])
         ));
@@ -234,6 +235,21 @@ class BookingReportAccuracyTest extends TestCase {
 
         $this->assertSame(1, $result['totals']['bookings'],
             'S11: expected 1 listed row for a qty-2 line; report bookings ' . $result['totals']['bookings']);
+
+        if (!function_exists('intersoccer_reports_compute_camp_registration_totals')) {
+            require_once dirname(__DIR__, 2) . '/includes/final-reports-totals.php';
+            require_once dirname(__DIR__, 2) . '/includes/final-reports-aggregation.php';
+        }
+        $line = [
+            'order_item_id' => 1121,
+            'booking_type' => 'Full Week',
+            'is_buyclub' => false,
+            'line_subtotal' => 480.0,
+            'line_total' => 480.0,
+            'line_quantity' => 2,
+        ];
+        $places = intersoccer_reports_compute_camp_registration_totals([$line], false)['all'];
+        $this->assertSame(2, $places, 'S11: Final Numbers should count 2 places for qty-2 line');
     }
 
     // ---------------------------------------------------------------- S15a (localized label)
