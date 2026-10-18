@@ -1839,10 +1839,13 @@ class RosterBuilder {
      */
     private function formatRosterFailureReason(\Throwable $e, string $db_error = ''): string {
         $class = (new \ReflectionClass($e))->getShortName();
-        if ($db_error === '') {
+        if ($db_error !== '') {
+            return $class . ': ' . $this->sanitizeMysqlErrorForLog($db_error);
+        }
+        if ($e instanceof DatabaseException) {
             return $class;
         }
-        return $class . ': ' . $this->sanitizeMysqlErrorForLog($db_error);
+        return $class;
     }
 
     private function sanitizeMysqlErrorForLog(string $db_error): string {

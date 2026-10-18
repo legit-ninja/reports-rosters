@@ -9,6 +9,7 @@ use InterSoccer\ReportsRosters\Data\Repositories\RosterRepository;
 use InterSoccer\ReportsRosters\Services\DataValidator;
 use InterSoccer\ReportsRosters\Services\EventMatcher;
 use InterSoccer\ReportsRosters\Services\PlayerMatcher;
+use InterSoccer\ReportsRosters\Exceptions\DatabaseException;
 use InterSoccer\ReportsRosters\Services\RosterBuilder;
 use InterSoccer\ReportsRosters\Tests\TestCase;
 use Mockery;
@@ -131,5 +132,28 @@ class RosterBuilderInsertFailureTest extends TestCase {
         $this->assertIsArray($captured);
         $this->assertStringNotContainsString('Leaked Player Name', (string) $captured['reason']);
         $this->assertStringContainsString("Duplicate entry '?'", (string) $captured['reason']);
+    }
+
+    public function test_format_roster_failure_reason_never_includes_exception_message_text(): void {
+        $builder = new RosterBuilder(
+            Mockery::mock(Logger::class),
+            Mockery::mock(Database::class),
+            Mockery::mock(PlayerRepository::class),
+            Mockery::mock(RosterRepository::class),
+            Mockery::mock(DataValidator::class),
+            Mockery::mock(EventMatcher::class),
+            Mockery::mock(PlayerMatcher::class)
+        );
+        $method = new \ReflectionMethod(RosterBuilder::class, 'formatRosterFailureReason');
+        $method->setAccessible(true);
+        $reason = $method->invoke(
+            $builder,
+            new DatabaseException("Sensitive roster row detail in message"),
+            "Duplicate entry 'Sensitive Name' for key 'uniq'"
+        );
+        $this->assertStringContainsString('DatabaseException', $reason);
+        $this->assertStringNotContainsString('Sensitive roster row detail', $reason);
+        $this->assertStringNotContainsString('Sensitive Name', $reason);
+        $this->assertStringContainsString("Duplicate entry '?'", $reason);
     }
 }
