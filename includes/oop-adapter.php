@@ -653,15 +653,22 @@ function intersoccer_oop_attribute_order_financials($order_id) {
         return;
     }
 
-    $order = wc_get_order($order_id);
+    if (is_object($order_id) && method_exists($order_id, 'get_id')) {
+        $order = $order_id;
+    } else {
+        $order = wc_get_order($order_id);
+    }
+
     if (!$order) {
         return;
     }
 
+    $resolved_order_id = (int) $order->get_id();
+
     try {
         intersoccer_oop_get_order_financial_attribution_service()->attributeOrderDiscounts($order);
     } catch (\Throwable $e) {
-        error_log('InterSoccer OOP: Financial attribution failed for order ' . $order_id . ' - ' . $e->getMessage());
+        error_log('InterSoccer OOP: Financial attribution failed for order ' . $resolved_order_id . ' - ' . $e->getMessage());
     }
 }
 }
@@ -698,28 +705,69 @@ function intersoccer_oop_backfill_financial_attribution_ajax() {
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
+        return;
     }
 
     $start_date = isset($_POST['start_date']) ? sanitize_text_field(wp_unslash($_POST['start_date'])) : '2024-01-01';
     $batch_size = isset($_POST['batch_size']) ? (int) $_POST['batch_size'] : 100;
+    $end_date = gmdate('Y-m-d');
+
+    $apply_param = isset($_POST['apply']) ? wp_unslash($_POST['apply']) : null;
+    $confirm_param = isset($_POST['confirm']) ? wp_unslash($_POST['confirm']) : null;
+    $apply_requested = ($apply_param === true || $apply_param === 'true');
+    $confirm_requested = ($confirm_param === true || $confirm_param === 'true');
+    $do_apply = $apply_requested && $confirm_requested;
 
     try {
-        $result = intersoccer_oop_get_order_financial_attribution_service()->backfillBatch($start_date, $batch_size);
+        $service = intersoccer_oop_get_order_financial_attribution_service();
+
+        if (!$do_apply) {
+            $summary = $service->summarizeMissingAttributionInDateRange($start_date, $end_date);
+            wp_send_json_success([
+                'message' => sprintf(
+                    __('Dry run: would apply %1$d, skipped %2$d (no attributable line items), previously skipped %3$d.', 'intersoccer-reports-rosters'),
+                    (int) $summary['applied_count'],
+                    (int) $summary['skipped_count'],
+                    (int) $summary['previously_skipped_count']
+                ),
+                'dry_run' => true,
+                'summary' => $summary,
+                'order_count' => (int) $summary['order_count'],
+                'applied_count' => (int) $summary['applied_count'],
+                'skipped_count' => (int) $summary['skipped_count'],
+                'previously_skipped_count' => (int) $summary['previously_skipped_count'],
+                'failed_count' => (int) $summary['failed_count'],
+                'gross_chf' => (float) $summary['gross_chf'],
+                'net_chf' => (float) $summary['net_chf'],
+            ]);
+            return;
+        }
+
+        $result = $service->backfillBatch($start_date, $batch_size);
         wp_send_json_success([
             'message' => sprintf(
-                __('Backfilled %1$d orders. %2$d remaining.', 'intersoccer-reports-rosters'),
-                (int) $result['migrated_count'],
+                __('Applied %1$d, skipped %2$d (no attributable line items), failed %3$d. %4$d remaining.', 'intersoccer-reports-rosters'),
+                (int) ($result['applied_count'] ?? $result['migrated_count']),
+                (int) ($result['skipped_count'] ?? 0),
+                (int) ($result['failed_count'] ?? 0),
                 (int) $result['remaining_count']
             ),
             'result' => $result,
+            'dry_run' => false,
+            'applied_count' => (int) ($result['applied_count'] ?? $result['migrated_count']),
+            'skipped_count' => (int) ($result['skipped_count'] ?? 0),
+            'failed_count' => (int) ($result['failed_count'] ?? 0),
         ]);
+        return;
     } catch (\Throwable $e) {
         wp_send_json_error(['message' => $e->getMessage()]);
+        return;
     }
 }
 }
 
 add_action('woocommerce_checkout_order_processed', 'intersoccer_oop_attribute_order_financials', 25, 1);
+add_action('woocommerce_store_api_checkout_order_processed', 'intersoccer_oop_attribute_order_financials', 25, 1);
 add_action('woocommerce_order_refunded', 'intersoccer_oop_attribute_order_refund', 10, 2);
 add_action('wp_ajax_intersoccer_backfill_financial_attribution', 'intersoccer_oop_backfill_financial_attribution_ajax');
 
