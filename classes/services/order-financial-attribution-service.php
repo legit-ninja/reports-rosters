@@ -1002,12 +1002,13 @@ class OrderFinancialAttributionService {
 
             if (!isset($warned_buckets[$bucket])) {
                 $warned_buckets[$bucket] = true;
-                $this->logger->warning('OrderFinancialAttributionService legacy bucket mismatch', [
-                    'order_id' => $order_id,
-                    'bucket' => $bucket,
-                    'legacy_line_count' => $legacy_line_count,
-                    'fee_count' => count($fees_by_index),
-                ]);
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    $this->logger->warning('OrderFinancialAttributionService legacy bucket mismatch', [
+                        'bucket' => $bucket,
+                        'legacy_line_count' => $legacy_line_count,
+                        'fee_count' => count($fees_by_index),
+                    ]);
+                }
             }
         }
 

@@ -533,7 +533,7 @@ class DeletedProductRosterTest extends TestCase {
             'Variation deleted: stored variation id should be kept; master writes ' . (int) ($row['variation_id'] ?? 0));
     }
 
-    public function test_deleted_product_build_logs_error_with_order_ids(): void {
+    public function test_deleted_product_build_logs_error_with_catalogue_ids_only(): void {
         $logger = $this->createMock(Logger::class);
         $logger->expects($this->atLeastOnce())
             ->method('error')
@@ -541,9 +541,8 @@ class DeletedProductRosterTest extends TestCase {
                 $this->equalTo('Roster row built for deleted catalogue product'),
                 $this->callback(static function ($context) {
                     return is_array($context)
-                        && isset($context['order_id'], $context['order_item_id'])
-                        && (int) $context['order_id'] === 9401
-                        && (int) $context['order_item_id'] === 5401;
+                        && !isset($context['order_id'], $context['order_item_id'])
+                        && isset($context['product_id'], $context['variation_id']);
                 })
             );
 
