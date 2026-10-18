@@ -503,7 +503,13 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                                 ?>
                                 <tr>
                                     <td class="intersoccer-sticky-col intersoccer-sticky-col-canton intersoccer-camp-canton-cell<?php echo $is_repeat_canton ? ' canton-repeat' : ' intersoccer-camp-canton-cell--first'; ?>"><?php echo esc_html($canton); ?></td>
-                                    <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php echo esc_html($venue); ?></td>
+                                    <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php
+                                        echo esc_html($venue);
+                                        if (function_exists('intersoccer_reports_camp_venue_metrics_has_deleted_product')
+                                            && intersoccer_reports_camp_venue_metrics_has_deleted_product($data)) {
+                                            intersoccer_reports_echo_final_deleted_product_marker();
+                                        }
+                                    ?></td>
                                     <?php intersoccer_reports_echo_camp_metrics_cells($full_day); ?>
                                 </tr>
                                 <?php $previous_canton = $canton; ?>
@@ -592,7 +598,13 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                                 ?>
                                 <tr>
                                     <td class="intersoccer-sticky-col intersoccer-sticky-col-canton intersoccer-camp-canton-cell<?php echo $is_repeat_canton ? ' canton-repeat' : ' intersoccer-camp-canton-cell--first'; ?>"><?php echo esc_html($canton); ?></td>
-                                    <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php echo esc_html($venue); ?></td>
+                                    <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php
+                                        echo esc_html($venue);
+                                        if (function_exists('intersoccer_reports_camp_venue_metrics_has_deleted_product')
+                                            && intersoccer_reports_camp_venue_metrics_has_deleted_product($data)) {
+                                            intersoccer_reports_echo_final_deleted_product_marker();
+                                        }
+                                    ?></td>
                                     <?php intersoccer_reports_echo_camp_metrics_cells($mini); ?>
                                 </tr>
                                 <?php $previous_canton = $canton; ?>
@@ -703,7 +715,12 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                                     <tr>
                                         <td class="intersoccer-sticky-col intersoccer-sticky-col-region"></td>
                                         <td class="intersoccer-sticky-col intersoccer-sticky-col-venue"><?php echo esc_html($venue_display); ?></td>
-                                        <td><?php echo esc_html($course_data['course_name'] ?? 'Unknown'); ?></td>
+                                        <td><?php
+                                            echo esc_html($course_data['course_name'] ?? 'Unknown');
+                                            if (!empty($course_data['has_deleted_product'])) {
+                                                intersoccer_reports_echo_final_deleted_product_marker();
+                                            }
+                                        ?></td>
                                         <td><?php echo esc_html($course_data['course_day'] ?? 'Unknown'); ?></td>
                                         <td><?php echo esc_html($course_data['times'] ?? '-'); ?></td>
                                         <?php intersoccer_reports_render_urgency_heat_cell((string) $regs, $band); ?>
@@ -985,6 +1002,18 @@ function intersoccer_reports_echo_camp_grand_footer_rows(array $camp_grand, $buc
         <td></td>
     </tr>
     <?php
+}
+
+/**
+ * Echo a small Final Numbers marker for deleted catalogue product rows.
+ */
+function intersoccer_reports_echo_final_deleted_product_marker(): void {
+    if (!function_exists('intersoccer_reports_final_row_deleted_product_marker_label')) {
+        return;
+    }
+    echo ' <span class="intersoccer-final-deleted-product-marker">('
+        . esc_html(intersoccer_reports_final_row_deleted_product_marker_label())
+        . ')</span>';
 }
 
 /**

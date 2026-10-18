@@ -220,6 +220,7 @@ if (!function_exists('intersoccer_reports_empty_camp_metrics')) {
             'unique_records' => 0,
             'variation_ids' => [],
             'product_ids' => [],
+            'has_deleted_product' => false,
         ];
     }
 }
@@ -251,6 +252,7 @@ if (!function_exists('intersoccer_reports_aggregate_camp_location_group')) {
         $counted_order_items = [];
         $variation_ids = [];
         $product_ids = [];
+        $has_deleted_product = false;
 
         foreach ($group as $entry) {
             if (!is_array($entry)) {
@@ -278,6 +280,11 @@ if (!function_exists('intersoccer_reports_aggregate_camp_location_group')) {
             }
             if ($pid > 0) {
                 $product_ids[$pid] = $pid;
+            }
+            if (!$has_deleted_product
+                && function_exists('intersoccer_reports_final_row_is_deleted_product_grid_row')
+                && intersoccer_reports_final_row_is_deleted_product_grid_row($entry)) {
+                $has_deleted_product = true;
             }
 
             // BuyClub is a separate column (additive), not folded into Full Week / days.
@@ -336,6 +343,7 @@ if (!function_exists('intersoccer_reports_aggregate_camp_location_group')) {
             'unique_records' => $processed_count,
             'variation_ids' => array_values($variation_ids),
             'product_ids' => array_values($product_ids),
+            'has_deleted_product' => $has_deleted_product,
         ];
     }
 }
@@ -900,7 +908,13 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
                     'variation_id' => $variation_id,
                     'product_id' => $product_id,
                     'girls_only' => $is_girls ? 1 : 0,
+                    'has_deleted_product' => false,
                 ];
+            }
+
+            if (function_exists('intersoccer_reports_final_row_is_deleted_product_grid_row')
+                && intersoccer_reports_final_row_is_deleted_product_grid_row($entry)) {
+                $report_data[$season][$entry_region][$row_key]['has_deleted_product'] = true;
             }
 
             $times_disp = isset($entry['times']) ? trim((string) $entry['times']) : '';
@@ -1403,7 +1417,30 @@ if (!function_exists('intersoccer_reports_normalize_camp_metrics')) {
             'unique_records' => (int) ($data['unique_records'] ?? 0),
             'variation_ids' => array_values(array_filter(array_map('intval', $data['variation_ids'] ?? []))),
             'product_ids' => array_values(array_filter(array_map('intval', $data['product_ids'] ?? []))),
+            'has_deleted_product' => !empty($data['has_deleted_product']),
         ];
+    }
+}
+
+if (!function_exists('intersoccer_reports_camp_venue_metrics_has_deleted_product')) {
+    /**
+     * Whether any camp type bucket for a venue row includes a deleted-product grid line.
+     *
+     * @param array $venue_data Full Day / Mini metrics keyed by camp type.
+     */
+    function intersoccer_reports_camp_venue_metrics_has_deleted_product(array $venue_data): bool {
+        foreach (['Full Day', 'Mini - Half Day'] as $type_key) {
+            if (!isset($venue_data[$type_key])) {
+                continue;
+            }
+            $m = function_exists('intersoccer_reports_normalize_camp_metrics')
+                ? intersoccer_reports_normalize_camp_metrics($venue_data[$type_key])
+                : $venue_data[$type_key];
+            if (!empty($m['has_deleted_product'])) {
+                return true;
+            }
+        }
+        return false;
     }
 }
 
