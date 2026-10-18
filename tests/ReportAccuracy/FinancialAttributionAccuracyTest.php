@@ -113,6 +113,30 @@ class FinancialAttributionAccuracyTest extends TestCase {
     }
 
     /**
+     * CRS cart fee labels (EN msgid -> FR/DE msgstr from customer-referral-system languages/*.po).
+     *
+     * @dataProvider crsCartFeeLabelProvider
+     */
+    public function test_crs_cart_fee_label_maps_to_canonical_type(string $label, string $expected): void {
+        $this->assertSame($expected, intersoccer_classify_discount_fee($label));
+    }
+
+    /** @return array<string,array{0:string,1:string}> */
+    public static function crsCartFeeLabelProvider(): array {
+        return [
+            'EN Referral Credits Discount' => ['Referral Credits Discount', 'referral_points'],
+            'FR Referral Credits Discount' => ['Réduction de crédits de parrainage', 'referral_points'],
+            'DE Referral Credits Discount' => ['Empfehlungscredits-Rabatt', 'referral_points'],
+            'EN Referral Discount' => ['Referral Discount', 'referral_first_order'],
+            'FR Referral Discount' => ['Réduction de parrainage', 'referral_first_order'],
+            'DE Referral Discount' => ['Empfehlungsrabatt', 'referral_first_order'],
+            'EN Points Discount' => ['Points Discount', 'referral_points'],
+            'FR Points Discount' => ['Réduction de points', 'referral_points'],
+            'DE Points Discount' => ['Punkte-Rabatt', 'referral_points'],
+        ];
+    }
+
+    /**
      * S09a: FR points fee (-34) plus _intersoccer_points_redeemed = 34. The FR label is classified "other", so the
      * order-meta points are added again: 68 instead of 34 on (re-)attribution.
      */

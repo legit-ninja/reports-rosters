@@ -29,7 +29,10 @@ function intersoccer_canonical_discount_type_from_label(string $label): string {
         || strpos($normalized, 'points discount') !== false
         || strpos($normalized, 'crédits de parrainage') !== false
         || strpos($normalized, 'credits de parrainage') !== false
+        || strpos($normalized, 'réduction de points') !== false
+        || strpos($normalized, 'reduction de points') !== false
         || strpos($normalized, 'empfehlungscredits') !== false
+        || strpos($normalized, 'punkte-rabatt') !== false
         || $normalized === 'referral credits discount'
     ) {
         return 'referral_points';
@@ -39,6 +42,8 @@ function intersoccer_canonical_discount_type_from_label(string $label): string {
         || strpos($normalized, 'referral discount') !== false
         || strpos($normalized, 'réduction de parrainage') !== false
         || strpos($normalized, 'reduction de parrainage') !== false
+        || $normalized === 'empfehlungsrabatt'
+        || strpos($normalized, 'empfehlungsrabatt') !== false
     ) {
         return 'referral_first_order';
     }
