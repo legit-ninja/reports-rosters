@@ -113,8 +113,13 @@ final class Intersoccer_Rr_Wp_Cli {
         if ($apply) {
             if (!$yes) {
                 $prompt = 'Apply financial attribution backfill for the selected date range? [y/n] ';
-                $filtered = apply_filters('intersoccer_rr_cli_confirm', false, $prompt, 'attribution-backfill');
-                $answer = is_string($filtered) ? $filtered : '';
+                $answer = '';
+                if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
+                    $filtered = apply_filters('intersoccer_rr_cli_confirm', false, $prompt, 'attribution-backfill');
+                    if (is_string($filtered)) {
+                        $answer = $filtered;
+                    }
+                }
                 if ($answer === '' && defined('STDIN') && is_resource(STDIN)) {
                     \WP_CLI::log(rtrim($prompt));
                     $answer = (string) fgets(STDIN);

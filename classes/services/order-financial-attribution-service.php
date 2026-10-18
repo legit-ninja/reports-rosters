@@ -709,9 +709,6 @@ class OrderFinancialAttributionService {
             return ['status' => 'skipped', 'reason' => $skip_reason];
         }
 
-        $this->clearAttributionSkippedMarker($order);
-        $order->save_meta_data();
-
         $had_refunds = (float) $order->get_total_refunded() > 0.01;
         $ok = $had_refunds
             ? $this->reattributeFullOrder($order)
@@ -733,6 +730,11 @@ class OrderFinancialAttributionService {
     }
 
     private function markOrderAttributionSkipped(\WC_Order $order, string $reason): void {
+        $existing = (string) $order->get_meta(self::META_ATTRIBUTION_SKIPPED, true);
+        if ($existing === $reason) {
+            return;
+        }
+
         $order->update_meta_data(self::META_ATTRIBUTION_SKIPPED, $reason);
         $order->save_meta_data();
     }

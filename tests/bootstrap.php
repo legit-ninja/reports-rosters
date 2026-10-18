@@ -13,6 +13,7 @@ if (!defined('ABSPATH')) {
     define('WPINC', 'wp-includes');
     define('WP_DEBUG', true);
     define('INTERSOCCER_TESTING', true);
+    define('INTERSOCCER_RR_TESTING', true);
     
     // WordPress time constants
     define('MINUTE_IN_SECONDS', 60);
