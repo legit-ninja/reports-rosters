@@ -83,6 +83,9 @@ final class Intersoccer_Rr_Wp_Cli {
      * [--yes]
      * : Skip the confirmation prompt when using --apply. Does nothing without --apply.
      *
+     * [--retry-skipped]
+     * : Re-evaluate orders marked _intersoccer_attribution_skipped (dry-run unless --apply).
+     *
      * ## EXAMPLES
      *
      *     wp intersoccer-rr attribution-backfill --from=2025-01-01 --to=2026-10-12
@@ -103,15 +106,15 @@ final class Intersoccer_Rr_Wp_Cli {
         $to = isset($assoc_args['to']) ? (string) $assoc_args['to'] : gmdate('Y-m-d');
         $apply = \WP_CLI\Utils\get_flag_value($assoc_args, 'apply', false) === true;
         $yes = \WP_CLI\Utils\get_flag_value($assoc_args, 'yes', false) === true;
+        $retry_skipped = \WP_CLI\Utils\get_flag_value($assoc_args, 'retry-skipped', false) === true;
 
         $service = intersoccer_oop_get_order_financial_attribution_service();
 
         if ($apply) {
             if (!$yes) {
                 $prompt = 'Apply financial attribution backfill for the selected date range? [y/n] ';
-                $answer = isset($GLOBALS['intersoccer_test_cli_confirm_answer'])
-                    ? (string) $GLOBALS['intersoccer_test_cli_confirm_answer']
-                    : '';
+                $filtered = apply_filters('intersoccer_rr_cli_confirm', false, $prompt, 'attribution-backfill');
+                $answer = is_string($filtered) ? $filtered : '';
                 if ($answer === '' && defined('STDIN') && is_resource(STDIN)) {
                     \WP_CLI::log(rtrim($prompt));
                     $answer = (string) fgets(STDIN);
@@ -121,9 +124,19 @@ final class Intersoccer_Rr_Wp_Cli {
                     return;
                 }
             }
-            $result = $service->applyMissingAttributionInDateRange($from, $to);
+            $result = $retry_skipped
+                ? $service->applyRetrySkippedInDateRange($from, $to)
+                : $service->applyMissingAttributionInDateRange($from, $to);
             \WP_CLI::log($this->formatBackfillOutcomeLine($result, true));
-            \WP_CLI::success('Backfill apply complete.');
+            \WP_CLI::success($retry_skipped ? 'Retry-skipped apply complete.' : 'Backfill apply complete.');
+            return;
+        }
+
+        if ($retry_skipped) {
+            $summary = $service->summarizeRetrySkippedInDateRange($from, $to);
+            \WP_CLI::log($this->formatBackfillOutcomeLine($summary, false));
+            \WP_CLI::log(sprintf('Dry run (retry-skipped): %d orders marked skipped still pending attribution.', (int) $summary['order_count']));
+            \WP_CLI::success('Dry run complete (no writes).');
             return;
         }
 

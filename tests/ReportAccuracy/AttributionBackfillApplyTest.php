@@ -37,7 +37,7 @@ class AttributionBackfillApplyTest extends TestCase {
     public function test_mixed_batch_dry_run_and_apply_report_applied_and_skipped(): void {
         $this->seedMixedPendingBatch();
         global $wpdb;
-        $wpdb = new \BackfillMissingAttributionWpdb([801, 802, 803]);
+        $wpdb = new \BackfillMissingAttributionWpdb();
 
         $dry = $this->service->summarizeMissingAttributionInDateRange('2025-01-01', '2026-12-31');
         $this->assertSame(1, $dry['applied_count']);
@@ -57,21 +57,20 @@ class AttributionBackfillApplyTest extends TestCase {
     public function test_second_apply_finds_zero_pending_for_skipped_orders(): void {
         $this->seedMixedPendingBatch();
         global $wpdb;
-        $wpdb = new \BackfillMissingAttributionWpdb([801, 802, 803]);
+        $wpdb = new \BackfillMissingAttributionWpdb();
         $this->service->applyMissingAttributionInDateRange('2025-01-01', '2026-12-31');
 
-        $wpdb = new \BackfillMissingAttributionWpdb([]);
         $summary = $this->service->summarizeMissingAttributionInDateRange('2025-01-01', '2026-12-31');
         $this->assertSame(0, $summary['order_count']);
         $this->assertSame(0, $summary['applied_count']);
         $this->assertSame(0, $summary['skipped_count']);
     }
 
-    public function test_apply_does_not_fire_order_save_hooks(): void {
+    public function test_apply_does_not_call_fake_order_save_method(): void {
         ReportAccuracyStore::addOrder((new FakeOrder(811))
             ->addLine(new FakeLineItem(8111, ['subtotal' => 120.0, 'total' => 120.0])));
         global $wpdb;
-        $wpdb = new \BackfillMissingAttributionWpdb([811]);
+        $wpdb = new \BackfillMissingAttributionWpdb();
 
         $fires = 0;
         $GLOBALS['intersoccer_test_order_save_hook_fires'] = &$fires;
@@ -95,7 +94,7 @@ class AttributionBackfillApplyTest extends TestCase {
         ReportAccuracyStore::addOrder((new FakeOrder(821))
             ->addLine(new FakeLineItem(8211, ['subtotal' => 90.0, 'total' => 90.0], ['Discount' => 'Promo'])));
         global $wpdb;
-        $wpdb = new \BackfillMissingAttributionWpdb([821]);
+        $wpdb = new \BackfillMissingAttributionWpdb();
 
         $order_meta_before = ReportAccuracyStore::$orders[821]->metaKeys();
         $item_meta_before = array_keys(ReportAccuracyStore::$item_meta[8211] ?? []);
@@ -132,6 +131,72 @@ class AttributionBackfillApplyTest extends TestCase {
                 $this->fail('unexpected item meta key written: ' . $key);
             }
         }
+    }
+
+    public function test_findMissingAttributionOrderIds_sql_excludes_attributed_and_skipped_orders(): void {
+        ReportAccuracyStore::addOrder((new FakeOrder(901))
+            ->addLine(new FakeLineItem(9011, ['subtotal' => 10.0, 'total' => 10.0])));
+        ReportAccuracyStore::addOrder((new FakeOrder(902))
+            ->addLine(new FakeLineItem(9021, ['subtotal' => 20.0, 'total' => 20.0]))
+            ->setMeta(Attr::META_ORDER_ATTRIBUTION_AT, '2026-07-01 10:00:00'));
+        ReportAccuracyStore::addOrder((new FakeOrder(903))
+            ->setMeta(Attr::META_ATTRIBUTION_SKIPPED, Attr::SKIP_REASON_NO_LINE_ITEMS));
+
+        global $wpdb;
+        $wpdb = new \BackfillMissingAttributionWpdb();
+
+        $ids = $this->service->findMissingAttributionOrderIds('2025-01-01', '2026-12-31');
+        $this->assertSame([901], $ids);
+
+        $pending_sql = '';
+        foreach ($wpdb->preparedQueries() as $entry) {
+            if (strpos($entry['query'], 'pm_skip.meta_id IS NULL') !== false) {
+                $pending_sql = $entry['query'];
+                break;
+            }
+        }
+        $this->assertStringContainsString('pm_skip.meta_id IS NULL', $pending_sql);
+        $this->assertStringContainsString('pm_skip.meta_value IS NULL', $pending_sql);
+    }
+
+    public function test_successful_attribution_clears_skip_marker(): void {
+        $order = (new FakeOrder(905))
+            ->addLine(new FakeLineItem(9051, ['subtotal' => 40.0, 'total' => 40.0]))
+            ->setMeta(Attr::META_ATTRIBUTION_SKIPPED, Attr::SKIP_REASON_NO_ATTRIBUTABLE_ITEMS);
+        ReportAccuracyStore::addOrder($order);
+
+        $this->assertTrue($this->service->attributeOrderDiscounts($order, true));
+        $this->assertNotSame('', $order->get_meta(Attr::META_ORDER_ATTRIBUTION_AT));
+        $this->assertFalse($order->meta_exists(Attr::META_ATTRIBUTION_SKIPPED));
+    }
+
+    public function test_stale_skip_marker_excluded_from_pending_backfill_query(): void {
+        ReportAccuracyStore::addOrder((new FakeOrder(907))
+            ->addLine(new FakeLineItem(9071, ['subtotal' => 15.0, 'total' => 15.0]))
+            ->setMeta(Attr::META_ATTRIBUTION_SKIPPED, Attr::SKIP_REASON_NO_ATTRIBUTABLE_ITEMS));
+        global $wpdb;
+        $wpdb = new \BackfillMissingAttributionWpdb();
+
+        $this->assertSame([], $this->service->findMissingAttributionOrderIds('2025-01-01', '2026-12-31'));
+    }
+
+    public function test_retry_skipped_apply_clears_marker_when_order_becomes_attributable(): void {
+        $order = (new FakeOrder(906))
+            ->setMeta(Attr::META_ATTRIBUTION_SKIPPED, Attr::SKIP_REASON_NO_LINE_ITEMS);
+        ReportAccuracyStore::addOrder($order);
+        $order->addLine(new FakeLineItem(9061, ['subtotal' => 55.0, 'total' => 55.0]));
+
+        global $wpdb;
+        $wpdb = new \BackfillMissingAttributionWpdb();
+
+        $dry = $this->service->summarizeRetrySkippedInDateRange('2025-01-01', '2026-12-31');
+        $this->assertSame(1, $dry['order_count']);
+        $this->assertSame(1, $dry['applied_count']);
+
+        $apply = $this->service->applyRetrySkippedInDateRange('2025-01-01', '2026-12-31');
+        $this->assertSame(1, $apply['applied_count']);
+        $this->assertFalse(ReportAccuracyStore::$orders[906]->meta_exists(Attr::META_ATTRIBUTION_SKIPPED));
+        $this->assertNotSame('', ReportAccuracyStore::$orders[906]->get_meta(Attr::META_ORDER_ATTRIBUTION_AT));
     }
 
     private function seedMixedPendingBatch(): void {

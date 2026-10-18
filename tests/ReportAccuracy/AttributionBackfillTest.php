@@ -42,7 +42,7 @@ class AttributionBackfillTest extends TestCase {
             ->setMeta(Attr::META_ORDER_ATTRIBUTION_AT, '2026-07-01 10:00:05'));
 
         global $wpdb;
-        $wpdb = new \BackfillMissingAttributionWpdb([601]);
+        $wpdb = new \BackfillMissingAttributionWpdb();
 
         $summary = $this->service->summarizeMissingAttributionInDateRange('2025-01-01', '2026-12-31');
 
@@ -90,8 +90,11 @@ class AttributionBackfillTest extends TestCase {
     }
 
     public function test_attribution_backfill_cli_aborts_when_confirm_declined(): void {
-        $GLOBALS['intersoccer_test_cli_confirm_answer'] = 'n';
         $GLOBALS['intersoccer_test_wp_cli_log'] = [];
+        $decline_confirm = static function () {
+            return 'n';
+        };
+        add_filter('intersoccer_rr_cli_confirm', $decline_confirm, 10, 3);
         $this->bootAttributionBackfillCli();
         $service = $this->createMock(Attr::class);
         $service->expects($this->never())->method('applyMissingAttributionInDateRange');
@@ -100,7 +103,8 @@ class AttributionBackfillTest extends TestCase {
         $cli = new \Intersoccer_Rr_Wp_Cli();
         $cli->attribution_backfill([], ['apply' => true]);
         $this->assertContains('Aborted, nothing written.', $GLOBALS['intersoccer_test_wp_cli_log']);
-        unset($GLOBALS['intersoccer_test_cli_confirm_answer'], $GLOBALS['intersoccer_test_attribution_service_override'], $GLOBALS['intersoccer_test_wp_cli_log']);
+        remove_filter('intersoccer_rr_cli_confirm', $decline_confirm, 10);
+        unset($GLOBALS['intersoccer_test_attribution_service_override'], $GLOBALS['intersoccer_test_wp_cli_log']);
     }
 
     private function bootAttributionBackfillCli(): void {
