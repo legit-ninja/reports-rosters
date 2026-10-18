@@ -209,7 +209,7 @@ function intersoccer_migrate_rosters_table() {
 
     if (version_compare($db_version, '2.4.0', '<') && version_compare($db_version, '2.3.0', '>=')) {
         if (function_exists('intersoccer_migrate_rosters_schema_2_4_0')
-            && intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table)) {
+            && intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table) === true) {
             update_option('intersoccer_db_version', '2.4.0');
             error_log('InterSoccer: Widened event_type, times and camp_times (schema 2.4.0)');
         }
@@ -331,6 +331,7 @@ function intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table) {
             error_log('InterSoccer: roster backup row count mismatch before schema 2.4.0; skipping ALTER');
             return false;
         }
+        update_option($stamp_option, time());
     } else {
         $created = $wpdb->query("CREATE TABLE {$backup} LIKE {$rosters_table}");
         if ($created === false) {
@@ -382,10 +383,7 @@ function intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table) {
         }
     }
 
-    $option = intersoccer_rosters_bak_2_4_0_created_option_name();
-    if (!get_option($option, 0)) {
-        update_option($option, time());
-    }
+    update_option(intersoccer_rosters_bak_2_4_0_created_option_name(), time());
 
     return true;
 }
