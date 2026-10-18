@@ -107,20 +107,20 @@ function intersoccer_office365_generate_final_reports_xlsx($year, $activity_type
 
         $row_index = 5;
         $write_metrics = static function ($sheet, $row, $start_col, array $m) {
+            $place_values = intersoccer_reports_camp_export_metric_place_values($m);
             $cols = [];
             $ord = ord($start_col);
             for ($i = 0; $i < 10; $i++) {
                 $cols[] = chr($ord + $i);
             }
-            $sheet->setCellValue($cols[0] . $row, (int) $m['full_week']);
-            $sheet->setCellValue($cols[1] . $row, (int) $m['buyclub']);
-            $sheet->setCellValue($cols[2] . $row, (int) ($m['unknown_booking_type'] ?? 0));
-            $sheet->setCellValue($cols[3] . $row, (int) ($m['days_unknown'] ?? 0));
-            $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-            foreach ($days as $i => $day) {
-                $sheet->setCellValue($cols[4 + $i] . $row, (int) ($m['individual_days'][$day] ?? 0));
+            foreach ($place_values as $i => $val) {
+                $sheet->setCellValue($cols[$i] . $row, $val);
             }
-            $sheet->setCellValue($cols[9] . $row, (string) ($m['min_max'] ?? '0-0'));
+            $sheet->setCellValue($cols[9] . $row, (string) (
+                function_exists('intersoccer_reports_normalize_camp_metrics')
+                    ? (intersoccer_reports_normalize_camp_metrics($m)['min_max'] ?? '0-0')
+                    : ($m['min_max'] ?? '0-0')
+            ));
             return $cols[9];
         };
 

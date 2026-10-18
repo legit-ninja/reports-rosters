@@ -1310,6 +1310,30 @@ if (!function_exists('intersoccer_reports_camp_metrics_visible_place_sum')) {
     }
 }
 
+if (!function_exists('intersoccer_reports_camp_export_metric_place_values')) {
+    /**
+     * Camp grid place columns for export (Full Week … Friday); min-max is separate.
+     *
+     * @param array $metrics Normalized or raw camp metrics block.
+     * @return int[]
+     */
+    function intersoccer_reports_camp_export_metric_place_values(array $metrics) {
+        $m = function_exists('intersoccer_reports_normalize_camp_metrics')
+            ? intersoccer_reports_normalize_camp_metrics($metrics)
+            : $metrics;
+        $values = [
+            (int) ($m['full_week'] ?? 0),
+            (int) ($m['buyclub'] ?? 0),
+            (int) ($m['unknown_booking_type'] ?? 0),
+            (int) ($m['days_unknown'] ?? 0),
+        ];
+        foreach (['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as $day) {
+            $values[] = (int) ($m['individual_days'][$day] ?? 0);
+        }
+        return $values;
+    }
+}
+
 if (!function_exists('intersoccer_reports_normalize_camp_metrics')) {
     /**
      * Ensure camp metrics include pitchside/buyclub keys for UI/export.
