@@ -1161,25 +1161,32 @@ if (!function_exists('intersoccer_reports_row_product_type_slug')) {
     function intersoccer_reports_row_product_type_slug(array $row) {
         $product_id = isset($row['product_id']) ? (int) $row['product_id'] : 0;
         $variation_id = isset($row['variation_id']) ? (int) $row['variation_id'] : 0;
-        if ($product_id <= 0 && !empty($row['order_item_id']) && function_exists('wc_get_order_item_meta')) {
-            $product_id = (int) wc_get_order_item_meta((int) $row['order_item_id'], '_product_id', true);
+        $order_item_id = isset($row['order_item_id']) ? (int) $row['order_item_id'] : 0;
+        if ($order_item_id > 0 && function_exists('wc_get_order_item_meta')) {
+            if ($product_id <= 0) {
+                $product_id = (int) wc_get_order_item_meta($order_item_id, '_product_id', true);
+            }
+            if ($variation_id <= 0) {
+                $variation_id = (int) wc_get_order_item_meta($order_item_id, '_variation_id', true);
+            }
         }
         if ($product_id <= 0) {
             return '';
         }
-        if (!function_exists('intersoccer_get_product_type') && function_exists('intersoccer_manual_product_type_detection')) {
-            return strtolower(trim((string) intersoccer_manual_product_type_detection(
-                $product_id,
-                $variation_id > 0 ? $variation_id : null
-            )));
+        $read_cached = static function ($post_id) {
+            if ($post_id <= 0 || !function_exists('get_post_meta')) {
+                return '';
+            }
+            $type = trim((string) get_post_meta($post_id, '_intersoccer_product_type', true));
+            return $type !== '' ? strtolower($type) : '';
+        };
+        if ($variation_id > 0) {
+            $from_variation = $read_cached($variation_id);
+            if ($from_variation !== '') {
+                return $from_variation;
+            }
         }
-        if (!function_exists('intersoccer_get_product_type_safe')) {
-            return '';
-        }
-        return strtolower(trim((string) intersoccer_get_product_type_safe(
-            $product_id,
-            $variation_id > 0 ? $variation_id : null
-        )));
+        return $read_cached($product_id);
     }
 }
 
@@ -1216,14 +1223,7 @@ function intersoccer_reports_merge_row_matches_activity_scope(array $row, $activ
         : ['Camp'];
     $at = trim((string) ($row['activity_type'] ?? ''));
     if ($at === '') {
-        $ptype = intersoccer_reports_row_product_type_slug($row);
-        if ($ptype === 'course') {
-            return false;
-        }
-        if ($ptype === 'camp') {
-            return true;
-        }
-        return false;
+        return intersoccer_reports_row_product_type_slug($row) !== 'course';
     }
     foreach ($types as $type) {
         if (strcasecmp($at, (string) $type) === 0) {

@@ -105,14 +105,24 @@ class FinalCampGridColumnsTest extends TestCase {
         $this->assertFalse(intersoccer_reports_merge_row_matches_activity_scope($course_row, 'camp'));
     }
 
-    public function test_empty_activity_type_course_product_scoped_by_product_type(): void {
-        if (!function_exists('intersoccer_get_product_type_safe')) {
-            require_once dirname(__DIR__, 2) . '/includes/utils.php';
-        }
+    public function test_empty_activity_type_scoped_by_cached_product_meta_without_writes(): void {
         require_once dirname(__DIR__, 2) . '/includes/reports-data.php';
         \InterSoccerRRTestMeta::$data[9001]['_intersoccer_product_type'] = 'course';
-        $row = ['activity_type' => '', 'product_id' => 9001, 'order_item_id' => 0];
-        $this->assertFalse(intersoccer_reports_merge_row_matches_activity_scope($row, 'camp'));
-        $this->assertTrue(intersoccer_reports_merge_row_matches_activity_scope($row, 'course'));
+        \InterSoccerRRTestMeta::$data[9002]['_intersoccer_product_type'] = 'camp';
+        $meta_after_fixture = json_encode(\InterSoccerRRTestMeta::$data);
+
+        $course_row = ['activity_type' => '', 'product_id' => 9001, 'order_item_id' => 0];
+        $this->assertFalse(intersoccer_reports_merge_row_matches_activity_scope($course_row, 'camp'));
+        $this->assertTrue(intersoccer_reports_merge_row_matches_activity_scope($course_row, 'course'));
+
+        $camp_row = ['activity_type' => '', 'product_id' => 9002, 'order_item_id' => 0];
+        $this->assertTrue(intersoccer_reports_merge_row_matches_activity_scope($camp_row, 'camp'));
+        $this->assertFalse(intersoccer_reports_merge_row_matches_activity_scope($camp_row, 'course'));
+
+        $unknown_row = ['activity_type' => '', 'product_id' => 9003, 'order_item_id' => 0];
+        $this->assertTrue(intersoccer_reports_merge_row_matches_activity_scope($unknown_row, 'camp'));
+        $this->assertFalse(intersoccer_reports_merge_row_matches_activity_scope($unknown_row, 'course'));
+
+        $this->assertSame($meta_after_fixture, json_encode(\InterSoccerRRTestMeta::$data));
     }
 }
