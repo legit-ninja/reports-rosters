@@ -1240,9 +1240,23 @@ if (!function_exists('intersoccer_roster_sync_product_ids_from_order_line')) {
         $line_product_id = (int) $item->get_product_id();
         if ($line_variation_id > 0) {
             $row['variation_id'] = $line_variation_id;
+        } elseif ((int) ($row['variation_id'] ?? 0) <= 0) {
+            $meta_vid = function_exists('wc_get_order_item_meta')
+                ? (int) wc_get_order_item_meta($order_item_id, '_variation_id', true)
+                : (int) (is_callable([$item, 'get_meta']) ? $item->get_meta('_variation_id', true) : 0);
+            if ($meta_vid > 0) {
+                $row['variation_id'] = $meta_vid;
+            }
         }
         if ($line_product_id > 0) {
             $row['product_id'] = $line_product_id;
+        } elseif ((int) ($row['product_id'] ?? 0) <= 0) {
+            $meta_pid = function_exists('wc_get_order_item_meta')
+                ? (int) wc_get_order_item_meta($order_item_id, '_product_id', true)
+                : (int) (is_callable([$item, 'get_meta']) ? $item->get_meta('_product_id', true) : 0);
+            if ($meta_pid > 0) {
+                $row['product_id'] = $meta_pid;
+            }
         }
         return $row;
     }
@@ -2340,6 +2354,193 @@ if (!function_exists('intersoccer_reports_region_matches_filter')) {
     }
 }
 
+if (!function_exists('intersoccer_reports_row_place_count')) {
+    /**
+     * Paid places represented by one roster / order line (qty-aware).
+     *
+     * @param array $row Report or roster row with optional line_quantity / quantity.
+     * @return int
+     */
+    function intersoccer_reports_row_place_count(array $row) {
+        foreach (['line_quantity', 'quantity', 'qty'] as $key) {
+            if (isset($row[$key]) && $row[$key] !== '' && is_numeric($row[$key])) {
+                $n = (int) $row[$key];
+                if ($n > 0) {
+                    return $n;
+                }
+            }
+        }
+        return 1;
+    }
+}
+
+if (!function_exists('intersoccer_reports_order_billing_company_is_buyclub')) {
+    /**
+     * Whether the order billing company name indicates BuyClub (Booking Report row suppression).
+     *
+     * @param int $order_id
+     */
+    function intersoccer_reports_order_billing_company_is_buyclub($order_id) {
+        $order_id = (int) $order_id;
+        if ($order_id <= 0 || !function_exists('get_post_meta')) {
+            return false;
+        }
+        $company = (string) get_post_meta($order_id, '_billing_company', true);
+        return $company !== '' && stripos($company, 'buyclub') !== false;
+    }
+}
+
+if (!function_exists('intersoccer_reports_line_is_buyclub')) {
+    /**
+     * Unified BuyClub classification for Final Numbers, Booking counts, and roster labelling.
+     *
+     * @param float|int|string $line_subtotal
+     * @param float|int|string $line_total
+     * @param int              $order_id
+     */
+    function intersoccer_reports_line_is_buyclub($line_subtotal, $line_total, $order_id = 0) {
+        $sub = (float) $line_subtotal;
+        $tot = (float) $line_total;
+        if ($sub > 0 && $tot === 0.0) {
+            return true;
+        }
+        $order_id = (int) $order_id;
+        if ($order_id > 0) {
+            if (function_exists('intersoccer_reports_order_billing_company_is_buyclub')
+                && intersoccer_reports_order_billing_company_is_buyclub($order_id)) {
+                return true;
+            }
+            if (function_exists('intersoccer_reports_order_has_buyclub_coupon')
+                && intersoccer_reports_order_has_buyclub_coupon($order_id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+if (!function_exists('intersoccer_reports_camp_row_effective_selected_days')) {
+    /**
+     * Camp days for Final Numbers grid (selected_days with days_selected fallback).
+     *
+     * @param array $entry Report row.
+     * @return string Comma-separated English weekday tokens when known.
+     */
+    function intersoccer_reports_camp_row_effective_selected_days(array $entry) {
+        $sd = $entry['selected_days'] ?? '';
+        if (is_array($sd)) {
+            $sd = implode(', ', $sd);
+        }
+        $sd = trim((string) $sd);
+        if ($sd !== '') {
+            return $sd;
+        }
+        $ds = $entry['days_selected'] ?? '';
+        if (is_array($ds)) {
+            $ds = implode(', ', $ds);
+        }
+        return trim((string) $ds);
+    }
+}
+
+if (!function_exists('intersoccer_reports_final_row_is_undated_event')) {
+    /**
+     * Activity type Event with no usable start/end dates.
+     */
+    function intersoccer_reports_final_row_is_undated_event(array $row) {
+        $at = strtolower(trim((string) ($row['activity_type'] ?? '')));
+        if ($at !== 'event') {
+            return false;
+        }
+        foreach (['start_date', 'end_date', 'event_start_date', 'event_end_date'] as $key) {
+            $v = trim((string) ($row[$key] ?? ''));
+            if ($v !== '' && $v !== '1970-01-01' && $v !== '0000-00-00' && strcasecmp($v, 'N/A') !== 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
+if (!function_exists('intersoccer_reports_final_row_is_thin_line')) {
+    /**
+     * Roster row with too little facet data to place on the camp/course grid.
+     */
+    function intersoccer_reports_final_row_is_thin_line(array $row) {
+        $ed = $row['event_details'] ?? null;
+        if (is_string($ed)) {
+            $decoded = json_decode($ed, true);
+            $ed = is_array($decoded) ? $decoded : [];
+        }
+        if (is_array($ed) && !empty($ed['thin_line'])) {
+            return true;
+        }
+        return false;
+    }
+}
+
+if (!function_exists('intersoccer_reports_final_row_counts_as_not_on_roster')) {
+    function intersoccer_reports_final_row_counts_as_not_on_roster(array $row) {
+        return (function_exists('intersoccer_reports_final_row_is_undated_event')
+                && intersoccer_reports_final_row_is_undated_event($row))
+            || (function_exists('intersoccer_reports_final_row_is_thin_line')
+                && intersoccer_reports_final_row_is_thin_line($row));
+    }
+}
+
+if (!function_exists('intersoccer_reports_index_canonical_booking_product_names')) {
+    /**
+     * Prefer the default-language product line name for each canonical product id.
+     *
+     * @param iterable $order_rows Rows with product_id and order_item_name.
+     * @return array<int,string> Map of product_id => display label.
+     */
+    function intersoccer_reports_index_canonical_booking_product_names($order_rows) {
+        $canon_names = [];
+        $fallback = [];
+        foreach ($order_rows as $row) {
+            $pid = (int) (is_object($row) ? ($row->product_id ?? 0) : ($row['product_id'] ?? 0));
+            if ($pid <= 0) {
+                continue;
+            }
+            $name = trim((string) (is_object($row) ? ($row->order_item_name ?? '') : ($row['order_item_name'] ?? '')));
+            if ($name === '') {
+                continue;
+            }
+            $canon = function_exists('intersoccer_wpml_canonical_product_id')
+                ? (int) intersoccer_wpml_canonical_product_id($pid)
+                : $pid;
+            if ($canon <= 0) {
+                $canon = $pid;
+            }
+            if ($pid === $canon) {
+                $canon_names[$canon] = $name;
+            } elseif (!isset($fallback[$canon])) {
+                $fallback[$canon] = $name;
+            }
+        }
+        $out = [];
+        foreach ($order_rows as $row) {
+            $pid = (int) (is_object($row) ? ($row->product_id ?? 0) : ($row['product_id'] ?? 0));
+            if ($pid <= 0) {
+                continue;
+            }
+            $canon = function_exists('intersoccer_wpml_canonical_product_id')
+                ? (int) intersoccer_wpml_canonical_product_id($pid)
+                : $pid;
+            if ($canon <= 0) {
+                $canon = $pid;
+            }
+            if (isset($canon_names[$canon])) {
+                $out[$pid] = $canon_names[$canon];
+            } elseif (isset($fallback[$canon])) {
+                $out[$pid] = $fallback[$canon];
+            }
+        }
+        return $out;
+    }
+}
+
 if (!function_exists('intersoccer_reports_order_has_buyclub_coupon')) {
     /**
      * Whether the order used a BuyClub-style coupon (substring match, filterable patterns).
@@ -2360,7 +2561,7 @@ if (!function_exists('intersoccer_reports_order_has_buyclub_coupon')) {
         $codes = [];
         if (function_exists('wc_get_order')) {
             $order = wc_get_order($order_id);
-            if ($order) {
+            if ($order && is_callable([$order, 'get_coupon_codes'])) {
                 $codes = $order->get_coupon_codes();
             }
         }
