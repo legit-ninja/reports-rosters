@@ -20,6 +20,10 @@ class OrderFinancialAttributionService {
     public const META_ITEM_VERSION = '_intersoccer_financial_attribution_version';
     public const META_ORDER_ATTRIBUTION_AT = '_intersoccer_financial_attribution_at';
     public const META_ORDER_DISCOUNT_SUMMARY = '_intersoccer_order_discount_summary';
+    public const META_ATTRIBUTION_SKIPPED = '_intersoccer_attribution_skipped';
+
+    public const SKIP_REASON_NO_LINE_ITEMS = 'no_line_items';
+    public const SKIP_REASON_NO_ATTRIBUTABLE_ITEMS = 'no_attributable_items';
 
     /** @var Logger */
     private $logger;
@@ -68,7 +72,7 @@ class OrderFinancialAttributionService {
         $summary = $this->persistItemDiscounts($order, $item_discounts);
         $order->update_meta_data(self::META_ORDER_DISCOUNT_SUMMARY, $summary);
         $order->update_meta_data(self::META_ORDER_ATTRIBUTION_AT, current_time('mysql'));
-        $order->save();
+        $order->save_meta_data();
 
         $this->logReconciliation($order, $line_items);
 
@@ -243,7 +247,7 @@ class OrderFinancialAttributionService {
         }
 
         $order->update_meta_data(self::META_ORDER_ATTRIBUTION_AT, current_time('mysql'));
-        $order->save();
+        $order->save_meta_data();
 
         return true;
     }
@@ -259,11 +263,17 @@ class OrderFinancialAttributionService {
             return false;
         }
 
+        if ($this->getAttributionSkipReason($order) !== null) {
+            return false;
+        }
+
         foreach ($this->getProductLineItems($order) as $item_id => $item) {
             wc_delete_order_item_meta($item_id, self::META_ITEM_REFUND);
         }
 
-        $this->attributeOrderDiscounts($order, true);
+        if (!$this->attributeOrderDiscounts($order, true)) {
+            return false;
+        }
 
         foreach ($order->get_refunds() as $refund) {
             $this->attributeOrderRefunds($order, $refund);
@@ -287,13 +297,16 @@ class OrderFinancialAttributionService {
             "SELECT p.ID
              FROM {$wpdb->posts} p
              LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = %s
+             LEFT JOIN {$wpdb->postmeta} pm_skip ON p.ID = pm_skip.post_id AND pm_skip.meta_key = %s
              WHERE p.post_type = 'shop_order'
              AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold', 'wc-refunded')
              AND p.post_date >= %s
              AND p.post_date <= %s
              AND (pm.meta_value IS NULL OR pm.meta_value = '')
+             AND (pm_skip.meta_id IS NULL OR pm_skip.meta_value IS NULL OR pm_skip.meta_value = '')
              ORDER BY p.post_date ASC",
             self::META_ORDER_ATTRIBUTION_AT,
+            self::META_ATTRIBUTION_SKIPPED,
             $start,
             $end
         ));
@@ -302,62 +315,97 @@ class OrderFinancialAttributionService {
     }
 
     /**
+     * @return string|null self::SKIP_REASON_* when the order cannot be attributed.
+     */
+    public function getAttributionSkipReason(\WC_Order $order): ?string {
+        $line_items = $order->get_items('line_item');
+        if (empty($line_items)) {
+            return self::SKIP_REASON_NO_LINE_ITEMS;
+        }
+
+        if (empty($this->getProductLineItems($order))) {
+            return self::SKIP_REASON_NO_ATTRIBUTABLE_ITEMS;
+        }
+
+        return null;
+    }
+
+    /**
      * Aggregate counts and CHF totals for orders missing attribution (no PII).
      *
-     * @return array{order_count:int,gross_chf:float,net_chf:float}
+     * @return array{
+     *   order_count:int,
+     *   applied_count:int,
+     *   skipped_count:int,
+     *   previously_skipped_count:int,
+     *   failed_count:int,
+     *   gross_chf:float,
+     *   net_chf:float,
+     *   skipped_reasons:array<string,int>
+     * }
      */
     public function summarizeMissingAttributionInDateRange(string $start_date, string $end_date): array {
         $order_ids = $this->findMissingAttributionOrderIds($start_date, $end_date);
+        $split = $this->splitPendingOrdersByAttributability($order_ids);
+
         $gross = 0.0;
         $net = 0.0;
-
-        foreach ($order_ids as $order_id) {
+        foreach ($split['applied_ids'] as $order_id) {
             if (!function_exists('wc_get_order')) {
                 break;
             }
-
             $order = wc_get_order($order_id);
             if (!$order) {
                 continue;
             }
-
             $gross += (float) $order->get_subtotal();
             $net += (float) $order->get_total();
         }
 
         return [
             'order_count' => count($order_ids),
+            'applied_count' => count($split['applied_ids']),
+            'skipped_count' => count($split['skipped']),
+            'previously_skipped_count' => $this->countPreviouslySkippedAttributionInDateRange($start_date, $end_date),
+            'failed_count' => 0,
             'gross_chf' => round($gross, 2),
             'net_chf' => round($net, 2),
+            'skipped_reasons' => $split['skipped_reason_counts'],
         ];
     }
 
     /**
      * Apply attribution to orders missing metadata in a date range (idempotent).
      *
-     * @return array{processed_count:int,error_count:int}
+     * @return array{
+     *   applied_count:int,
+     *   skipped_count:int,
+     *   failed_count:int,
+     *   skipped_reasons:array<string,int>,
+     *   processed_count:int,
+     *   error_count:int
+     * }
      */
     public function applyMissingAttributionInDateRange(string $start_date, string $end_date): array {
-        $processed_count = 0;
-        $error_count = 0;
+        $applied_count = 0;
+        $skipped_count = 0;
+        $failed_count = 0;
+        $skipped_reasons = [];
 
         foreach ($this->findMissingAttributionOrderIds($start_date, $end_date) as $order_id) {
             try {
-                $order = function_exists('wc_get_order') ? wc_get_order($order_id) : null;
-                if (!$order) {
-                    $error_count++;
-                    continue;
-                }
-
-                $had_refunds = (float) $order->get_total_refunded() > 0.01;
-                if ($had_refunds) {
-                    $this->reattributeFullOrder($order);
+                $outcome = $this->applyAttributionBackfillToOrderId((int) $order_id);
+                if ($outcome['status'] === 'applied') {
+                    $applied_count++;
+                } elseif ($outcome['status'] === 'skipped') {
+                    $skipped_count++;
+                    $reason = (string) $outcome['reason'];
+                    $skipped_reasons[$reason] = ($skipped_reasons[$reason] ?? 0) + 1;
                 } else {
-                    $this->attributeOrderDiscounts($order);
+                    $failed_count++;
                 }
-                $processed_count++;
             } catch (\Throwable $e) {
-                $error_count++;
+                $failed_count++;
                 $this->logger->error('OrderFinancialAttributionService apply backfill error', [
                     'order_id' => $order_id,
                     'message' => $e->getMessage(),
@@ -366,8 +414,12 @@ class OrderFinancialAttributionService {
         }
 
         return [
-            'processed_count' => $processed_count,
-            'error_count' => $error_count,
+            'applied_count' => $applied_count,
+            'skipped_count' => $skipped_count,
+            'failed_count' => $failed_count,
+            'skipped_reasons' => $skipped_reasons,
+            'processed_count' => $applied_count,
+            'error_count' => $failed_count,
         ];
     }
 
@@ -384,26 +436,41 @@ class OrderFinancialAttributionService {
             "SELECT p.ID
              FROM {$wpdb->posts} p
              LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = %s
+             LEFT JOIN {$wpdb->postmeta} pm_skip ON p.ID = pm_skip.post_id AND pm_skip.meta_key = %s
              WHERE p.post_type = 'shop_order'
              AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold', 'wc-refunded')
              AND p.post_date >= %s
              AND (pm.meta_value IS NULL OR pm.meta_value = '')
+             AND (pm_skip.meta_id IS NULL OR pm_skip.meta_value IS NULL OR pm_skip.meta_value = '')
              ORDER BY p.post_date DESC
              LIMIT %d",
             self::META_ORDER_ATTRIBUTION_AT,
+            self::META_ATTRIBUTION_SKIPPED,
             $start_date . ' 00:00:00',
             $batch_size
         ));
 
-        $migrated_count = 0;
+        $applied_count = 0;
+        $skipped_count = 0;
+        $failed_count = 0;
+        $skipped_reasons = [];
         $errors = [];
 
         foreach ((array) $order_ids as $order_id) {
             try {
-                if ($this->reattributeFullOrder((int) $order_id)) {
-                    $migrated_count++;
+                $outcome = $this->applyAttributionBackfillToOrderId((int) $order_id);
+                if ($outcome['status'] === 'applied') {
+                    $applied_count++;
+                } elseif ($outcome['status'] === 'skipped') {
+                    $skipped_count++;
+                    $reason = (string) $outcome['reason'];
+                    $skipped_reasons[$reason] = ($skipped_reasons[$reason] ?? 0) + 1;
+                } else {
+                    $failed_count++;
+                    $errors[] = sprintf('Order %d: attribution failed', (int) $order_id);
                 }
             } catch (\Throwable $e) {
+                $failed_count++;
                 $errors[] = sprintf('Order %d: %s', (int) $order_id, $e->getMessage());
                 $this->logger->error('OrderFinancialAttributionService backfill error', [
                     'order_id' => (int) $order_id,
@@ -416,20 +483,117 @@ class OrderFinancialAttributionService {
             "SELECT COUNT(*)
              FROM {$wpdb->posts} p
              LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = %s
+             LEFT JOIN {$wpdb->postmeta} pm_skip ON p.ID = pm_skip.post_id AND pm_skip.meta_key = %s
              WHERE p.post_type = 'shop_order'
              AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold', 'wc-refunded')
              AND p.post_date >= %s
-             AND (pm.meta_value IS NULL OR pm.meta_value = '')",
+             AND (pm.meta_value IS NULL OR pm.meta_value = '')
+             AND (pm_skip.meta_id IS NULL OR pm_skip.meta_value IS NULL OR pm_skip.meta_value = '')",
             self::META_ORDER_ATTRIBUTION_AT,
+            self::META_ATTRIBUTION_SKIPPED,
             $start_date . ' 00:00:00'
         ));
 
         return [
-            'migrated_count' => $migrated_count,
+            'migrated_count' => $applied_count,
+            'applied_count' => $applied_count,
+            'skipped_count' => $skipped_count,
+            'failed_count' => $failed_count,
+            'skipped_reasons' => $skipped_reasons,
             'remaining_count' => $remaining_count,
             'more_remaining' => $remaining_count > 0,
             'errors' => $errors,
         ];
+    }
+
+    /**
+     * @param array<int,int> $order_ids
+     * @return array{
+     *   applied_ids:array<int,int>,
+     *   skipped:array<int,string>,
+     *   skipped_reason_counts:array<string,int>
+     * }
+     */
+    private function splitPendingOrdersByAttributability(array $order_ids): array {
+        $applied_ids = [];
+        $skipped = [];
+        $skipped_reason_counts = [];
+
+        foreach ($order_ids as $order_id) {
+            if (!function_exists('wc_get_order')) {
+                break;
+            }
+            $order = wc_get_order($order_id);
+            if (!$order) {
+                continue;
+            }
+            $reason = $this->getAttributionSkipReason($order);
+            if ($reason !== null) {
+                $skipped[(int) $order_id] = $reason;
+                $skipped_reason_counts[$reason] = ($skipped_reason_counts[$reason] ?? 0) + 1;
+            } else {
+                $applied_ids[] = (int) $order_id;
+            }
+        }
+
+        return [
+            'applied_ids' => $applied_ids,
+            'skipped' => $skipped,
+            'skipped_reason_counts' => $skipped_reason_counts,
+        ];
+    }
+
+    /**
+     * @return array{status:string,reason?:string}
+     */
+    private function applyAttributionBackfillToOrderId(int $order_id): array {
+        $order = function_exists('wc_get_order') ? wc_get_order($order_id) : null;
+        if (!$order) {
+            return ['status' => 'failed'];
+        }
+
+        $skip_reason = $this->getAttributionSkipReason($order);
+        if ($skip_reason !== null) {
+            $this->markOrderAttributionSkipped($order, $skip_reason);
+            return ['status' => 'skipped', 'reason' => $skip_reason];
+        }
+
+        $had_refunds = (float) $order->get_total_refunded() > 0.01;
+        $ok = $had_refunds
+            ? $this->reattributeFullOrder($order)
+            : $this->attributeOrderDiscounts($order);
+
+        return $ok ? ['status' => 'applied'] : ['status' => 'failed'];
+    }
+
+    private function markOrderAttributionSkipped(\WC_Order $order, string $reason): void {
+        $order->update_meta_data(self::META_ATTRIBUTION_SKIPPED, $reason);
+        $order->save_meta_data();
+    }
+
+    private function countPreviouslySkippedAttributionInDateRange(string $start_date, string $end_date): int {
+        global $wpdb;
+
+        $start = $start_date . (strpos($start_date, ' ') !== false ? '' : ' 00:00:00');
+        $end = $end_date . (strpos($end_date, ' ') !== false ? '' : ' 23:59:59');
+
+        return (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(DISTINCT p.ID)
+             FROM {$wpdb->posts} p
+             INNER JOIN {$wpdb->postmeta} pm_skip ON p.ID = pm_skip.post_id AND pm_skip.meta_key = %s
+             LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = %s
+             WHERE p.post_type = 'shop_order'
+             AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold', 'wc-refunded')
+             AND p.post_date >= %s
+             AND p.post_date <= %s
+             AND pm_skip.meta_value IS NOT NULL
+             AND pm_skip.meta_value != ''
+             AND (pm.meta_value IS NULL OR pm.meta_value = '')",
+            self::META_ATTRIBUTION_SKIPPED,
+            self::META_ORDER_ATTRIBUTION_AT,
+            $start,
+            $end
+        ));
     }
 
     /**
