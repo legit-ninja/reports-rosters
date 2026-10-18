@@ -24,23 +24,30 @@ if (!function_exists('intersoccer_reports_compute_camp_registration_totals')) {
             if (!isset($row['is_buyclub'])) {
                 $line_subtotal = floatval($row['line_subtotal'] ?? 0);
                 $line_total = floatval($row['line_total'] ?? 0);
-                $row['is_buyclub'] = $line_subtotal > 0 && $line_total === 0.0;
+                $order_id = isset($row['order_id']) ? (int) $row['order_id'] : 0;
+                $row['is_buyclub'] = function_exists('intersoccer_reports_line_is_buyclub')
+                    ? intersoccer_reports_line_is_buyclub($line_subtotal, $line_total, $order_id)
+                    : ($line_subtotal > 0 && $line_total === 0.0);
             }
             if (function_exists('intersoccer_reports_row_should_exclude_for_buyclub_option')
                 && intersoccer_reports_row_should_exclude_for_buyclub_option($row, $exclude_buyclub)) {
                 continue;
             }
 
+            $places = function_exists('intersoccer_reports_row_place_count')
+                ? intersoccer_reports_row_place_count($row)
+                : 1;
+
             $age_group = $row['age_group'] ?? '';
             $is_mini = !empty($age_group)
                 && (stripos($age_group, '3-5y') !== false || stripos($age_group, 'half-day') !== false);
 
             if ($is_mini) {
-                $totals['mini']++;
+                $totals['mini'] += $places;
             } else {
-                $totals['full_day']++;
+                $totals['full_day'] += $places;
             }
-            $totals['all']++;
+            $totals['all'] += $places;
         }
 
         return $totals;
@@ -64,12 +71,19 @@ if (!function_exists('intersoccer_reports_compute_course_registration_total')) {
             if (!isset($row['is_buyclub'])) {
                 $line_subtotal = floatval($row['line_subtotal'] ?? 0);
                 $line_total = floatval($row['line_total'] ?? 0);
-                $row['is_buyclub'] = $line_subtotal > 0 && $line_total === 0.0;
+                $order_id = isset($row['order_id']) ? (int) $row['order_id'] : 0;
+                $row['is_buyclub'] = function_exists('intersoccer_reports_line_is_buyclub')
+                    ? intersoccer_reports_line_is_buyclub($line_subtotal, $line_total, $order_id)
+                    : ($line_subtotal > 0 && $line_total === 0.0);
             }
             if (function_exists('intersoccer_reports_row_should_exclude_for_buyclub_option')
                 && intersoccer_reports_row_should_exclude_for_buyclub_option($row, $exclude_buyclub)) {
                 continue;
             }
+
+            $places = function_exists('intersoccer_reports_row_place_count')
+                ? intersoccer_reports_row_place_count($row)
+                : 1;
 
             $rrid = isset($row['roster_row_id']) ? (int) $row['roster_row_id'] : 0;
             if ($rrid > 0) {
@@ -87,7 +101,7 @@ if (!function_exists('intersoccer_reports_compute_course_registration_total')) {
                 }
             }
 
-            $count++;
+            $count += $places;
         }
 
         return $count;

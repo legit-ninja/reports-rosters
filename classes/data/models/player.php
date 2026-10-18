@@ -220,6 +220,18 @@ class Player extends AbstractModel {
         $age = $this->getAgeAt($event_date);
         return $age >= $age_range['min'] && $age <= $age_range['max'];
     }
+
+    /**
+     * Whether the player is below the minimum age for the group on the event date.
+     */
+    public function isBelowMinAgeForAgeGroupAt(string $age_group, ?string $event_date = null): bool {
+        $age_range = $this->parseAgeGroup($age_group);
+        if (!$age_range || empty($this->dob) || empty($event_date)) {
+            return false;
+        }
+
+        return $this->getAgeAt($event_date) < $age_range['min'];
+    }
     
     /**
      * Parse age group string to min/max ages

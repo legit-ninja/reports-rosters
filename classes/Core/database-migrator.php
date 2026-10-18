@@ -52,7 +52,28 @@ class DatabaseMigrator {
      * 
      * @var string
      */
-    const CURRENT_VERSION = '2.3.0';
+    const CURRENT_VERSION = '2.4.0';
+
+    /** Migration mutex option (autoload=no). */
+    const MIGRATION_LOCK_OPTION = 'intersoccer_rr_migration_lock';
+
+    /** Stale lock threshold (seconds). */
+    const MIGRATION_LOCK_STALE_SECONDS = 600;
+
+    /** migrate() return: another upgrade request is in progress. */
+    const RESULT_ALREADY_RUNNING = 'already_running';
+
+    /** migrate() return: pre-existing backup without our retention stamp. */
+    const RESULT_SKIPPED_UNRECOGNISED_BACKUP = 'skipped_unrecognised_backup';
+
+    /** migrate() return: schema migrations ran successfully. */
+    const RESULT_UPGRADED = 'upgraded';
+
+    /** migrate() return: stored version already at CURRENT_VERSION; no work done. */
+    const RESULT_ALREADY_CURRENT = 'already_current';
+
+    /** migrate() return: migration failed. */
+    const RESULT_FAILED = 'failed';
     
     /**
      * Constructor
@@ -69,9 +90,14 @@ class DatabaseMigrator {
     /**
      * Run database migrations
      * 
-     * @return bool Success status
+     * @return string One of RESULT_* constants.
      */
     public function migrate() {
+        if (!$this->acquireMigrationLock()) {
+            $this->logger->info('Database migration skipped: lock held by another run');
+            return self::RESULT_ALREADY_RUNNING;
+        }
+
         try {
             $current_version = $this->getCurrentVersion();
             $target_version = self::CURRENT_VERSION;
@@ -84,11 +110,12 @@ class DatabaseMigrator {
             // If already at current version, skip
             if (version_compare($current_version, $target_version, '>=')) {
                 $this->logger->info('Database already at current version');
-                return true;
+                return self::RESULT_ALREADY_CURRENT;
             }
             
             // Run migrations in order
             $migrations = $this->getMigrations();
+            $migrations_applied = false;
             
             foreach ($migrations as $version => $migration) {
                 // Skip if already at or past this version
@@ -101,12 +128,18 @@ class DatabaseMigrator {
                 try {
                     $result = call_user_func($migration);
                     
+                    if ($result === self::RESULT_SKIPPED_UNRECOGNISED_BACKUP) {
+                        $this->logger->warning('Migration stopped: unrecognised roster backup table present');
+                        return self::RESULT_SKIPPED_UNRECOGNISED_BACKUP;
+                    }
+
                     if ($result === false) {
                         throw new DatabaseException("Migration {$version} failed");
                     }
                     
                     // Update version after successful migration
                     $this->updateVersion($version);
+                    $migrations_applied = true;
                     
                     $this->logger->info("Migration {$version} completed successfully");
                     
@@ -123,15 +156,60 @@ class DatabaseMigrator {
             
             $this->logger->info('All database migrations completed successfully');
             
-            return true;
+            return $migrations_applied ? self::RESULT_UPGRADED : self::RESULT_ALREADY_CURRENT;
             
         } catch (\Exception $e) {
             $this->logger->error('Database migration failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            return false;
+            return self::RESULT_FAILED;
+        } finally {
+            $this->releaseMigrationLock();
         }
+    }
+
+    /**
+     * Acquire migration mutex (stale locks after MIGRATION_LOCK_STALE_SECONDS may be taken over).
+     *
+     * @return bool
+     */
+    public function acquireMigrationLock() {
+        $existing = get_option(self::MIGRATION_LOCK_OPTION, false);
+        if ($existing !== false) {
+            $age = time() - (int) $existing;
+            if ($age < self::MIGRATION_LOCK_STALE_SECONDS) {
+                return false;
+            }
+            $this->releaseMigrationLock();
+        }
+
+        $now = time();
+        if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING) {
+            if (!isset($GLOBALS['intersoccer_test_option_store']) || !is_array($GLOBALS['intersoccer_test_option_store'])) {
+                $GLOBALS['intersoccer_test_option_store'] = [];
+            }
+            if (array_key_exists(self::MIGRATION_LOCK_OPTION, $GLOBALS['intersoccer_test_option_store'])) {
+                return false;
+            }
+            $GLOBALS['intersoccer_test_option_store'][self::MIGRATION_LOCK_OPTION] = $now;
+            return true;
+        }
+
+        return add_option(self::MIGRATION_LOCK_OPTION, $now, '', 'no');
+    }
+
+    /**
+     * Release migration mutex.
+     *
+     * @return void
+     */
+    public function releaseMigrationLock() {
+        if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING
+            && isset($GLOBALS['intersoccer_test_option_store'][self::MIGRATION_LOCK_OPTION])) {
+            unset($GLOBALS['intersoccer_test_option_store'][self::MIGRATION_LOCK_OPTION]);
+        }
+        delete_option(self::MIGRATION_LOCK_OPTION);
     }
     
     /**
@@ -164,6 +242,7 @@ class DatabaseMigrator {
             '2.1.0' => [$this, 'migrate_2_1_0'],
             '2.2.0' => [$this, 'migrate_2_2_0'],
             '2.3.0' => [$this, 'migrate_2_3_0'],
+            '2.4.0' => [$this, 'migrate_2_4_0'],
         ];
     }
     
@@ -312,6 +391,42 @@ class DatabaseMigrator {
             return true;
         } catch (\Exception $e) {
             $this->logger->error('Migration 2.3.0 failed', [
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Migration for version 2.4.0
+     * Widen event_type, times and camp_times (where present) with verified backup-before-ALTER.
+     *
+     * @return bool Success status
+     */
+    private function migrate_2_4_0() {
+        $table = $this->wpdb->prefix . 'intersoccer_rosters';
+        if (!function_exists('intersoccer_migrate_rosters_schema_2_4_0')) {
+            $db_file = dirname(__DIR__, 2) . '/includes/db.php';
+            if (is_readable($db_file)) {
+                require_once $db_file;
+            }
+        }
+        if (!function_exists('intersoccer_migrate_rosters_schema_2_4_0')) {
+            $this->logger->error('Migration 2.4.0 failed: schema helper not loaded');
+            return false;
+        }
+        try {
+            $this->logger->info('Running roster schema 2.4.0 varchar widen with backup verification');
+            $ok = intersoccer_migrate_rosters_schema_2_4_0($this->wpdb, $table);
+            if ($ok === self::RESULT_SKIPPED_UNRECOGNISED_BACKUP) {
+                return self::RESULT_SKIPPED_UNRECOGNISED_BACKUP;
+            }
+            if (!$ok) {
+                throw new DatabaseException('Roster schema 2.4.0 migration aborted');
+            }
+            return true;
+        } catch (\Exception $e) {
+            $this->logger->error('Migration 2.4.0 failed', [
                 'error' => $e->getMessage(),
             ]);
             return false;

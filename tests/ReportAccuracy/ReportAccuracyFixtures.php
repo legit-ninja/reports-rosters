@@ -39,6 +39,13 @@ namespace {
     use InterSoccer\ReportsRosters\Services\OrderFinancialAttributionService;
 
     require_once dirname(__DIR__, 2) . '/includes/financial-attribution-helpers.php';
+    if (!function_exists('intersoccer_reports_line_is_buyclub')) {
+        $report_accuracy_utils_log = ini_set('error_log', '/dev/null');
+        require_once dirname(__DIR__, 2) . '/includes/utils.php';
+        if ($report_accuracy_utils_log !== false) {
+            ini_set('error_log', $report_accuracy_utils_log);
+        }
+    }
 
     if (!function_exists('maybe_unserialize')) {
         function maybe_unserialize($data) {

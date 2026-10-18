@@ -328,20 +328,29 @@ class Activator {
             $this->logger->debug('Setting default plugin options');
             
             foreach ($this->default_options as $option_name => $default_value) {
-                // Only set if option doesn't exist (preserve existing settings)
-                if (get_option($option_name) === false) {
-                    $value = $default_value;
-                    
-                    // Set dynamic default values
+                $value = $this->resolve_activation_default_value($option_name, $default_value);
+                $existing = get_option($option_name, false);
+
+                if ($existing === false) {
                     if ($option_name === 'intersoccer_activation_time') {
                         $value = current_time('mysql');
                     }
-                    
                     add_option($option_name, $value);
-                    
                     $this->logger->debug("Set default option: {$option_name}", [
                         'value' => $value
                     ]);
+                    continue;
+                }
+
+                if ($option_name === 'intersoccer_db_version' || $option_name === 'intersoccer_plugin_version') {
+                    $kept = version_compare((string) $existing, (string) $value, '>') ? $existing : $value;
+                    if ((string) $kept !== (string) $existing) {
+                        update_option($option_name, $kept);
+                        $this->logger->debug("Bumped option without downgrade: {$option_name}", [
+                            'from' => $existing,
+                            'to' => $kept,
+                        ]);
+                    }
                 }
             }
             
@@ -354,6 +363,37 @@ class Activator {
             ]);
             throw $e;
         }
+    }
+
+    /**
+     * Resolve activation default for versioned options (never invent an older plugin version).
+     *
+     * @param string $option_name
+     * @param mixed  $default_value
+     * @return mixed
+     */
+    private function resolve_activation_default_value($option_name, $default_value) {
+        if ($option_name === 'intersoccer_plugin_version') {
+            return $this->get_running_plugin_header_version();
+        }
+        return $default_value;
+    }
+
+    /**
+     * @return string
+     */
+    private function get_running_plugin_header_version() {
+        $main = dirname(__DIR__, 2) . '/intersoccer-reports-rosters.php';
+        if (!is_readable($main) || !function_exists('get_file_data')) {
+            if (!function_exists('get_file_data') && defined('ABSPATH') && is_readable(ABSPATH . 'wp-admin/includes/plugin.php')) {
+                require_once ABSPATH . 'wp-admin/includes/plugin.php';
+            }
+            if (!function_exists('get_file_data')) {
+                return (string) $this->default_options['intersoccer_plugin_version'];
+            }
+        }
+        $data = get_file_data($main, ['Version' => 'Version'], 'plugin');
+        return !empty($data['Version']) ? (string) $data['Version'] : (string) $this->default_options['intersoccer_plugin_version'];
     }
     
     /**
@@ -555,8 +595,12 @@ class Activator {
         try {
             $this->logger->warning('Starting activation rollback');
             
-            // Remove created options
+            // Remove created options (never drop schema/plugin version on rollback)
+            $preserve_on_rollback = ['intersoccer_db_version', 'intersoccer_plugin_version'];
             foreach (array_keys($this->default_options) as $option_name) {
+                if (in_array($option_name, $preserve_on_rollback, true)) {
+                    continue;
+                }
                 delete_option($option_name);
             }
             
