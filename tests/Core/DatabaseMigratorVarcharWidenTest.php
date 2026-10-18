@@ -106,26 +106,18 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
         $this->assertTrue($migrator->migrate());
     }
 
-    public function test_migrate_2_4_0_uses_existing_backup_when_counts_match(): void {
+    public function test_migrate_2_4_0_rejects_pre_existing_backup_without_alter(): void {
         $wpdb = $this->mockWpdbForMigrate24();
         $table = 'wp_intersoccer_rosters';
         $backup = $table . '_bak_2_4_0';
 
-        $queries = [];
         $wpdb->shouldReceive('get_var')->andReturnUsing(function ($sql) use ($backup) {
             if (strpos((string) $sql, 'SHOW TABLES') !== false) {
                 return $backup;
             }
-            if (strpos((string) $sql, 'COUNT') !== false) {
-                return '3';
-            }
             return null;
         });
-        $wpdb->shouldReceive('get_col')->with("DESCRIBE {$table}", 0)->andReturn(['event_type', 'camp_times']);
-        $wpdb->shouldReceive('query')->andReturnUsing(function ($sql) use (&$queries) {
-            $queries[] = (string) $sql;
-            return 0;
-        });
+        $wpdb->shouldReceive('query')->never();
 
         $logger = Mockery::mock(Logger::class);
         $logger->shouldReceive('info')->andReturnNull();
@@ -134,12 +126,7 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
         $migrator = new DatabaseMigrator($logger);
         $method = new \ReflectionMethod(DatabaseMigrator::class, 'migrate_2_4_0');
         $method->setAccessible(true);
-        $this->assertTrue($method->invoke($migrator));
-
-        $joined = implode("\n", $queries);
-        $this->assertStringNotContainsString("CREATE TABLE {$backup}", $joined);
-        $this->assertStringNotContainsString("INSERT INTO {$backup}", $joined);
-        $this->assertStringContainsString('MODIFY event_type', $joined);
+        $this->assertFalse($method->invoke($migrator));
     }
 
     public function test_migrate_2_4_0_aborts_when_backup_insert_fails_and_drops_backup(): void {

@@ -196,11 +196,15 @@ function intersoccer_migrate_rosters_table() {
     }
 
     if (version_compare($db_version, '2.3.0', '<')) {
-        $wpdb->query("UPDATE {$rosters_table} SET start_date = NULL WHERE start_date = '1970-01-01'");
-        $wpdb->query("UPDATE {$rosters_table} SET end_date = NULL WHERE end_date = '1970-01-01'");
-        update_option('intersoccer_db_version', '2.3.0');
-        $db_version = '2.3.0';
-        error_log('InterSoccer: Normalized legacy roster dates to NULL (schema 2.3.0)');
+        $start_update = $wpdb->query("UPDATE {$rosters_table} SET start_date = NULL WHERE start_date = '1970-01-01'");
+        $end_update = $wpdb->query("UPDATE {$rosters_table} SET end_date = NULL WHERE end_date = '1970-01-01'");
+        if ($start_update === false || $end_update === false) {
+            error_log('InterSoccer: Failed roster date normalization before schema 2.3.0: ' . $wpdb->last_error);
+        } else {
+            update_option('intersoccer_db_version', '2.3.0');
+            $db_version = '2.3.0';
+            error_log('InterSoccer: Normalized legacy roster dates to NULL (schema 2.3.0)');
+        }
     }
 
     if (version_compare($db_version, '2.4.0', '<') && version_compare($db_version, '2.3.0', '>=')) {
@@ -242,24 +246,39 @@ function intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table) {
     $backup_exists = $wpdb->get_var(
         $wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($backup))
     );
-    if (empty($backup_exists)) {
-        $created = $wpdb->query("CREATE TABLE {$backup} LIKE {$rosters_table}");
-        if ($created === false) {
-            error_log('InterSoccer: Failed roster backup CREATE before schema 2.4.0: ' . $wpdb->last_error);
-            return false;
-        }
-        $copied = $wpdb->query("INSERT INTO {$backup} SELECT * FROM {$rosters_table}");
-        if ($copied === false) {
-            error_log('InterSoccer: Failed roster backup INSERT before schema 2.4.0: ' . $wpdb->last_error);
-            $wpdb->query("DROP TABLE IF EXISTS {$backup}");
-            return false;
-        }
+    if (!empty($backup_exists)) {
+        error_log('InterSoccer: pre-existing roster backup table blocks schema 2.4.0 until an admin drops it');
+        return false;
     }
 
-    $live_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$rosters_table}");
-    $backup_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$backup}");
-    if ($live_count !== $backup_count) {
+    $created_backup_this_run = false;
+    $created = $wpdb->query("CREATE TABLE {$backup} LIKE {$rosters_table}");
+    if ($created === false) {
+        error_log('InterSoccer: Failed roster backup CREATE before schema 2.4.0: ' . $wpdb->last_error);
+        return false;
+    }
+    $created_backup_this_run = true;
+    $copied = $wpdb->query("INSERT INTO {$backup} SELECT * FROM {$rosters_table}");
+    if ($copied === false) {
+        error_log('InterSoccer: Failed roster backup INSERT before schema 2.4.0: ' . $wpdb->last_error);
+        $wpdb->query("DROP TABLE IF EXISTS {$backup}");
+        return false;
+    }
+
+    $live_count = $wpdb->get_var("SELECT COUNT(*) FROM {$rosters_table}");
+    $backup_count = $wpdb->get_var("SELECT COUNT(*) FROM {$backup}");
+    if ($live_count === null || $backup_count === null) {
+        error_log('InterSoccer: roster backup COUNT failed before schema 2.4.0; skipping ALTER');
+        if ($created_backup_this_run) {
+            $wpdb->query("DROP TABLE IF EXISTS {$backup}");
+        }
+        return false;
+    }
+    if ((int) $live_count !== (int) $backup_count) {
         error_log('InterSoccer: roster backup row count mismatch before schema 2.4.0; skipping ALTER');
+        if ($created_backup_this_run) {
+            $wpdb->query("DROP TABLE IF EXISTS {$backup}");
+        }
         return false;
     }
 
@@ -291,7 +310,8 @@ function intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table) {
 }
 
 /**
- * Drop roster PII backup table 14+ days after successful schema 2.4.0 (admin only, not on report view).
+ * Drop roster PII backup table 14+ days after successful schema 2.4.0.
+ * Runs only on non-AJAX admin requests by users with manage_options.
  */
 function intersoccer_maybe_cleanup_rosters_bak_2_4_0() {
     if ((defined('DOING_AJAX') && DOING_AJAX)

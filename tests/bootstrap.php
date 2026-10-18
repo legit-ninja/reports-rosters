@@ -261,7 +261,14 @@ if (!function_exists('register_deactivation_hook')) {
 
 // Options API
 if (!function_exists('get_option')) {
-    function get_option($option, $default = false) { return $default; }
+    function get_option($option, $default = false) {
+        if (isset($GLOBALS['intersoccer_test_option_store'])
+            && is_array($GLOBALS['intersoccer_test_option_store'])
+            && array_key_exists($option, $GLOBALS['intersoccer_test_option_store'])) {
+            return $GLOBALS['intersoccer_test_option_store'][$option];
+        }
+        return $default;
+    }
 }
 
 if (!function_exists('add_option')) {
@@ -273,6 +280,9 @@ if (!function_exists('add_option')) {
 
 if (!function_exists('update_option')) {
     function update_option($option, $value, $autoload = null) {
+        if (isset($GLOBALS['intersoccer_test_option_store']) && is_array($GLOBALS['intersoccer_test_option_store'])) {
+            $GLOBALS['intersoccer_test_option_store'][$option] = $value;
+        }
         $old = get_option($option, null);
         do_action('update_option', $option, $old, $value);
         return true;
