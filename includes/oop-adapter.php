@@ -720,6 +720,7 @@ function intersoccer_oop_backfill_financial_attribution_ajax() {
 }
 
 add_action('woocommerce_checkout_order_processed', 'intersoccer_oop_attribute_order_financials', 25, 1);
+add_action('woocommerce_store_api_checkout_order_processed', 'intersoccer_oop_attribute_order_financials', 25, 1);
 add_action('woocommerce_order_refunded', 'intersoccer_oop_attribute_order_refund', 10, 2);
 add_action('wp_ajax_intersoccer_backfill_financial_attribution', 'intersoccer_oop_backfill_financial_attribution_ajax');
 
