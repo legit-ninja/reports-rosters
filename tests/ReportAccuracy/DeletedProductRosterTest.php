@@ -638,6 +638,19 @@ class DeletedProductRosterTest extends TestCase {
         unset($GLOBALS['intersoccer_test_apply_filters_callback']);
     }
 
+    public function test_deleted_product_empty_stored_name_uses_placeholder_and_flags_not_english(): void {
+        $builder = $this->builder();
+        $method = new \ReflectionMethod($builder, 'resolveEnglishProductNameForDeletedLine');
+        $method->setAccessible(true);
+        $resolved = $method->invoke($builder, [
+            'product_name' => '',
+            'product_id' => 4242,
+            'variation_id' => 0,
+        ]);
+        $this->assertSame('Deleted product #4242', $resolved['product_name']);
+        $this->assertTrue($resolved['name_not_english']);
+    }
+
     public function test_deleted_product_without_wpml_flags_name_not_english_on_fallback(): void {
         $prev_filters = $GLOBALS['intersoccer_test_apply_filters_callback'] ?? null;
         unset($GLOBALS['intersoccer_test_apply_filters_callback']);

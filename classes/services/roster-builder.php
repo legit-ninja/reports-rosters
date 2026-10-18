@@ -1786,7 +1786,22 @@ class RosterBuilder {
         $variation_id = (int) ($roster_data['variation_id'] ?? 0);
         $product_id = (int) ($roster_data['product_id'] ?? 0);
         $lookup_id = $variation_id > 0 ? $variation_id : $product_id;
-        if ($stored === '' && $lookup_id <= 0) {
+        if ($stored === '' && $lookup_id <= 0 && $product_id <= 0) {
+            return ['product_name' => '', 'name_not_english' => true];
+        }
+        if ($stored === '') {
+            if (function_exists('intersoccer_get_english_product_name')) {
+                $english = trim((string) intersoccer_get_english_product_name('', $lookup_id));
+                if ($english !== '' && $english !== 'N/A') {
+                    return ['product_name' => $english, 'name_not_english' => false];
+                }
+            }
+            if ($product_id > 0) {
+                return [
+                    'product_name' => 'Deleted product #' . $product_id,
+                    'name_not_english' => true,
+                ];
+            }
             return ['product_name' => '', 'name_not_english' => true];
         }
         if (function_exists('intersoccer_get_english_product_name')) {
