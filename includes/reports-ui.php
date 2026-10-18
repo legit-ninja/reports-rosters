@@ -528,13 +528,6 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                                 <td colspan="5"><?php echo esc_html((string) (int) $camp_grand['full_day']['individual_day_slots']); ?></td>
                                 <td></td>
                             </tr>
-                            <?php if ($camp_player_registration_totals !== null && !empty($camp_player_registration_totals['not_on_roster'])): ?>
-                            <tr class="not-on-roster-total">
-                                <td class="intersoccer-sticky-col intersoccer-sticky-col-canton"></td>
-                                <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php esc_html_e('Not on roster', 'intersoccer-reports-rosters'); ?></td>
-                                <td colspan="10"><?php echo esc_html((string) (int) $camp_player_registration_totals['not_on_roster']); ?></td>
-                            </tr>
-                            <?php endif; ?>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -640,18 +633,22 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                                 <td colspan="5"><?php echo esc_html((string) (int) $camp_grand['mini']['individual_day_slots']); ?></td>
                                 <td></td>
                             </tr>
-                            <?php if ($camp_player_registration_totals !== null && !empty($camp_player_registration_totals['not_on_roster'])): ?>
-                            <tr class="not-on-roster-total">
-                                <td class="intersoccer-sticky-col intersoccer-sticky-col-canton"></td>
-                                <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php esc_html_e('Not on roster', 'intersoccer-reports-rosters'); ?></td>
-                                <td colspan="10"><?php echo esc_html((string) (int) $camp_player_registration_totals['not_on_roster']); ?></td>
-                            </tr>
-                            <?php endif; ?>
                         <?php endif; ?>
                     </tbody>
                 </table>
                 </div>
                 </div>
+                <?php if ($camp_player_registration_totals !== null && !empty($camp_player_registration_totals['not_on_roster'])): ?>
+                <table class="widefat striped camp-reports-table intersoccer-camp-not-on-roster-total">
+                    <tbody>
+                        <tr class="not-on-roster-total">
+                            <td class="intersoccer-sticky-col intersoccer-sticky-col-canton"></td>
+                            <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php esc_html_e('Not on roster', 'intersoccer-reports-rosters'); ?></td>
+                            <td colspan="10"><?php echo esc_html((string) (int) $camp_player_registration_totals['not_on_roster']); ?></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <?php endif; ?>
             <?php else: ?>
                 <!-- Course Report Table: season → region → Mon–Sun -->
                 <div class="table-responsive">
