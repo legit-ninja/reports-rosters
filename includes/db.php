@@ -61,7 +61,7 @@ function intersoccer_create_rosters_table() {
         parent_last_name varchar(100) NOT NULL,
         emergency_contact varchar(20) DEFAULT '',
         term varchar(200) DEFAULT '',
-        times varchar(191) DEFAULT '',
+        times varchar(50) DEFAULT '',
         days_selected varchar(200) DEFAULT '',
         season varchar(50) DEFAULT '',
         canton_region varchar(100) DEFAULT '',
@@ -211,7 +211,7 @@ function intersoccer_migrate_rosters_table() {
         if (function_exists('intersoccer_migrate_rosters_schema_2_4_0')
             && intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table)) {
             update_option('intersoccer_db_version', '2.4.0');
-            error_log('InterSoccer: Widened event_type / camp_times (schema 2.4.0)');
+            error_log('InterSoccer: Widened event_type, times and camp_times (schema 2.4.0)');
         }
     }
 }
@@ -235,7 +235,7 @@ function intersoccer_rosters_bak_2_4_0_retention_seconds() {
 }
 
 /**
- * Legacy roster table migration: widen event_type / camp_times with backup-before-ALTER.
+ * Legacy roster table migration: widen event_type, times and camp_times with backup-before-ALTER.
  *
  * @param \wpdb  $wpdb
  * @param string $rosters_table
@@ -294,7 +294,8 @@ function intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table) {
             error_log('InterSoccer: Failed to widen camp_times (schema 2.4.0): ' . $wpdb->last_error);
             return false;
         }
-    } elseif (in_array('times', $columns, true)) {
+    }
+    if (in_array('times', $columns, true)) {
         if ($wpdb->query("ALTER TABLE $rosters_table MODIFY times varchar(191) DEFAULT ''") === false) {
             error_log('InterSoccer: Failed to widen times (schema 2.4.0): ' . $wpdb->last_error);
             return false;

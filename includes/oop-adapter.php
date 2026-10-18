@@ -195,6 +195,22 @@ function intersoccer_oop_create_rosters_table() {
 }
 
 /**
+ * Adapter: Run roster schema migrations via OOP DatabaseMigrator (Upgrade database button path).
+ *
+ * @return bool
+ */
+if (!function_exists('intersoccer_oop_migrate_rosters_table')) {
+function intersoccer_oop_migrate_rosters_table() {
+    try {
+        return intersoccer_oop_get_database_migrator()->migrate();
+    } catch (\Exception $e) {
+        error_log('InterSoccer OOP: Error migrating rosters table - ' . $e->getMessage());
+        return false;
+    }
+}
+}
+
+/**
  * Adapter: Validate rosters table using OOP
  * 
  * @return bool Validation passed
@@ -1105,4 +1121,6 @@ function intersoccer_oop_get_campaign_booking_source() {
 // Note: db.php has a guarded call that checks function_exists() first, so
 // double-registration is not a concern — the RosterAjaxHandler::register()
 // method uses add_action() which is idempotent for the same callback.
-intersoccer_oop_register_roster_ajax_handlers();
+if (!defined('INTERSOCCER_TESTING') || !INTERSOCCER_TESTING) {
+    intersoccer_oop_register_roster_ajax_handlers();
+}

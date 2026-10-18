@@ -759,15 +759,20 @@ function intersoccer_office365_build_booking_report_xlsx($report_data, $start_da
             $discount_effectiveness = is_finite($discount_effectiveness) ? $discount_effectiveness : 0;
         }
         
-        $booking_rows = (int) ($report_data['totals']['bookings'] ?? 0);
-        $booking_places = (int) ($report_data['totals']['places'] ?? $booking_rows);
-        $bookings_places_value = function_exists('intersoccer_reports_booking_footer_bookings_places_display')
-            ? intersoccer_reports_booking_footer_bookings_places_display($booking_rows, $booking_places)
-            : $booking_rows . ' (' . $booking_places . ' places)';
+        if (!function_exists('intersoccer_reports_booking_xlsx_summary_count_rows')) {
+            require_once plugin_dir_path(__FILE__) . 'reporting-discounts.php';
+        }
+        $booking_count_rows = function_exists('intersoccer_reports_booking_xlsx_summary_count_rows')
+            ? intersoccer_reports_booking_xlsx_summary_count_rows($report_data['totals'])
+            : [
+                ['Total Bookings:', (int) ($report_data['totals']['bookings'] ?? 0), 'Listed rows'],
+                ['Total places:', (int) ($report_data['totals']['places'] ?? 0), 'Sum of line quantities'],
+            ];
 
         $summary_data = [
             ['Metric', 'Value', 'Notes'],
-            ['Total Bookings:', $bookings_places_value, 'Listed rows; places = sum of line quantities'],
+            $booking_count_rows[0],
+            $booking_count_rows[1],
             [
                 function_exists('intersoccer_reports_zero_total_buyclub_bookings_footer_label')
                     ? intersoccer_reports_zero_total_buyclub_bookings_footer_label(

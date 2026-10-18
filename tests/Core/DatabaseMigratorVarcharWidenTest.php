@@ -5,6 +5,7 @@
 
 namespace InterSoccer\ReportsRosters\Tests\Core;
 
+use InterSoccer\ReportsRosters\Core\Database;
 use InterSoccer\ReportsRosters\Core\DatabaseMigrator;
 use InterSoccer\ReportsRosters\Core\Logger;
 use InterSoccer\ReportsRosters\Tests\TestCase;
@@ -65,7 +66,7 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
             }
             return null;
         });
-        $wpdb->shouldReceive('get_col')->with("DESCRIBE {$table}", 0)->andReturn(['event_type', 'camp_times']);
+        $wpdb->shouldReceive('get_col')->with("DESCRIBE {$table}", 0)->andReturn(['event_type', 'camp_times', 'times']);
         $wpdb->shouldReceive('query')->andReturnUsing(function ($sql) use (&$queries) {
             $queries[] = (string) $sql;
             return 0;
@@ -86,6 +87,68 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
         $this->assertNotFalse($snapshot_pos);
         $this->assertNotFalse($alter_pos);
         $this->assertLessThan($alter_pos, $snapshot_pos);
+        $this->assertStringContainsString('MODIFY camp_times', $joined);
+        $this->assertStringContainsString('MODIFY times', $joined);
+    }
+
+    public function test_migrate_2_4_0_widens_times_when_camp_times_absent(): void {
+        $wpdb = $this->mockWpdbForMigrate24();
+        $table = 'wp_intersoccer_rosters';
+        $backup = $table . '_bak_2_4_0';
+        $queries = [];
+        $wpdb->shouldReceive('get_var')->andReturnUsing(function ($sql) use ($backup, $table) {
+            if (strpos((string) $sql, 'SHOW TABLES') !== false) {
+                return null;
+            }
+            if (strpos((string) $sql, 'COUNT') !== false) {
+                return '2';
+            }
+            return null;
+        });
+        $wpdb->shouldReceive('get_col')->with("DESCRIBE {$table}", 0)->andReturn(['event_type', 'times']);
+        $wpdb->shouldReceive('query')->andReturnUsing(function ($sql) use (&$queries) {
+            $queries[] = (string) $sql;
+            return 0;
+        });
+
+        $this->assertTrue(intersoccer_migrate_rosters_schema_2_4_0($wpdb, $table));
+
+        $joined = implode("\n", $queries);
+        $this->assertStringContainsString('MODIFY event_type', $joined);
+        $this->assertStringContainsString('MODIFY times', $joined);
+        $this->assertStringNotContainsString('MODIFY camp_times', $joined);
+    }
+
+    public function test_create_tables_schema_keeps_varchar_50_for_migration_widen_columns(): void {
+        global $wpdb;
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $wpdb->shouldReceive('get_charset_collate')->andReturn('');
+        $logger = Mockery::mock(Logger::class);
+        $logger->shouldReceive('debug')->andReturnNull();
+        $database = new Database($logger);
+        $reflection = new \ReflectionProperty(Database::class, 'table_schemas');
+        $reflection->setAccessible(true);
+        $schemas = $reflection->getValue($database);
+        $columns = $schemas['intersoccer_rosters']['columns'];
+        $this->assertStringContainsString('varchar(50)', $columns['event_type']);
+        $this->assertStringContainsString('varchar(50)', $columns['camp_times']);
+        $this->assertStringNotContainsString('varchar(191)', $columns['event_type']);
+        $this->assertStringNotContainsString('varchar(191)', $columns['camp_times']);
+    }
+
+    public function test_legacy_create_rosters_table_sql_keeps_times_varchar_50(): void {
+        $src = file_get_contents(dirname(__DIR__, 2) . '/includes/db.php');
+        $this->assertIsString($src);
+        $this->assertMatchesRegularExpression(
+            '/CREATE TABLE \$rosters_table\s*\([^;]+;/s',
+            $src,
+            'Legacy CREATE TABLE SQL not found in db.php'
+        );
+        preg_match('/CREATE TABLE \$rosters_table\s*\([^;]+;/s', $src, $matches);
+        $create = $matches[0];
+        $this->assertStringContainsString('times varchar(50)', $create);
+        $this->assertStringNotContainsString('varchar(191)', $create);
     }
 
     public function test_migrate_skips_when_stored_version_is_current(): void {

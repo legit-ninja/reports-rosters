@@ -2,6 +2,7 @@
 
 namespace InterSoccer\ReportsRosters\Tests\Core;
 
+use InterSoccer\ReportsRosters\Core\Plugin;
 use InterSoccer\ReportsRosters\Tests\TestCase;
 use Mockery;
 
@@ -221,6 +222,36 @@ class LegacyRosterSchemaMigrateTest extends TestCase {
 
         $this->assertSame('2.2.0', $GLOBALS['intersoccer_test_option_store']['intersoccer_db_version']);
         unset($GLOBALS['intersoccer_test_option_store']);
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_oop_migrate_rosters_table_wrapper_does_not_fatal_when_oop_helpers_exist(): void {
+        $error_log_before = ini_set('error_log', '/dev/null');
+        try {
+            if (!defined('INTERSOCCER_OOP_ACTIVE')) {
+                define('INTERSOCCER_OOP_ACTIVE', true);
+            }
+            $GLOBALS['intersoccer_test_option_store']['intersoccer_db_version'] = '2.4.0';
+            $plugin_file = dirname(__DIR__, 2) . '/intersoccer-reports-rosters.php';
+            Plugin::get_instance($plugin_file);
+            $adapter = dirname(__DIR__, 2) . '/includes/oop-adapter.php';
+            if (file_exists($adapter) && !function_exists('intersoccer_oop_migrate_rosters_table')) {
+                require_once $adapter;
+            }
+            $this->assertTrue(function_exists('intersoccer_oop_migrate_rosters_table'));
+            $result = intersoccer_oop_migrate_rosters_table();
+            $this->assertIsBool($result);
+        } catch (\Throwable $e) {
+            $this->fail('intersoccer_oop_migrate_rosters_table must not fatal: ' . $e->getMessage());
+        } finally {
+            unset($GLOBALS['intersoccer_test_option_store']['intersoccer_db_version']);
+            if ($error_log_before !== false) {
+                ini_set('error_log', (string) $error_log_before);
+            }
+        }
     }
 
     public function test_legacy_gate_skips_2_4_when_version_is_2_2(): void {

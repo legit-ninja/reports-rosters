@@ -321,7 +321,7 @@ class DatabaseMigrator {
 
     /**
      * Migration for version 2.4.0
-     * Widen event_type / camp_times (or legacy times) with verified backup-before-ALTER.
+     * Widen event_type, times and camp_times (where present) with verified backup-before-ALTER.
      *
      * @return bool Success status
      */

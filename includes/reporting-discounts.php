@@ -623,6 +623,42 @@ if (!function_exists('intersoccer_reports_booking_footer_bookings_places_display
     }
 }
 
+if (!function_exists('intersoccer_reports_booking_report_row_place_count')) {
+    /**
+     * Places for one Booking Report row (delegates to Final Numbers qty rule).
+     *
+     * @param array $row Report row or context with quantity / line_quantity.
+     */
+    function intersoccer_reports_booking_report_row_place_count(array $row): int {
+        if (!function_exists('intersoccer_reports_row_place_count')) {
+            $utils = dirname(__FILE__) . '/utils.php';
+            if (is_readable($utils)) {
+                require_once $utils;
+            }
+        }
+        return function_exists('intersoccer_reports_row_place_count')
+            ? intersoccer_reports_row_place_count($row)
+            : 1;
+    }
+}
+
+if (!function_exists('intersoccer_reports_booking_xlsx_summary_count_rows')) {
+    /**
+     * Numeric Booking Report XLSX summary rows for listed rows and places.
+     *
+     * @param array $totals Booking report totals.
+     * @return array<int, array{0:string,1:int|string,2:string}>
+     */
+    function intersoccer_reports_booking_xlsx_summary_count_rows(array $totals): array {
+        $booking_rows = (int) ($totals['bookings'] ?? 0);
+        $booking_places = (int) ($totals['places'] ?? $booking_rows);
+        return [
+            ['Total Bookings:', $booking_rows, 'Listed rows'],
+            ['Total places:', $booking_places, 'Sum of line quantities'],
+        ];
+    }
+}
+
 /**
  * Get simplified booking report data for financial reporting
  * Focuses on revenue per participant by querying WooCommerce orders directly
@@ -693,8 +729,6 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
         'final_price' => 0,
         'reimbursement' => 0
     ];
-
-    $places_total = 0;
 
     foreach ($results as $row) {
         // Skip if no product_id (this would be a coupon or other non-product item)
@@ -924,13 +958,11 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
         $stripe_fee = $final_price > 0 ? ($final_price * 0.029) + 0.30 : 0;
 
         $line_qty = (int) ($row->quantity ?? 0);
-        if ($line_qty < 1) {
-            $line_qty = 1;
-        }
-        $places_total += $line_qty;
 
         $data[] = [
             'ref' => $row->order_id . '-' . $row->order_item_id,
+            'line_quantity' => $line_qty,
+            'quantity' => $line_qty,
             'booked' => date('Y-m-d', strtotime($row->order_date)),
             'base_price' => number_format($base_price, 2),
             'discount_amount' => number_format($discount_amount, 2),
@@ -966,7 +998,12 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
     // Set bookings to the count of records (each order item = 1 booking)
     // This ensures "Total Bookings" matches "records found"
     $totals['bookings'] = count($data);
-    $totals['places'] = $places_total;
+    $totals['places'] = 0;
+    foreach ($data as $report_row) {
+        $totals['places'] += function_exists('intersoccer_reports_booking_report_row_place_count')
+            ? intersoccer_reports_booking_report_row_place_count($report_row)
+            : 1;
+    }
 
     error_log("=== InterSoccer Financial Report: Returning " . count($data) . " records with totals: " . json_encode($totals) . " ===");
     return ['data' => $data, 'totals' => $totals];

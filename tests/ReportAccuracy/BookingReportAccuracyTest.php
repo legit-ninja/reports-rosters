@@ -255,6 +255,15 @@ class BookingReportAccuracyTest extends TestCase {
         $html = (string) ob_get_clean();
         $this->assertStringContainsString('1 (2 places)', $html);
 
+        if (!function_exists('intersoccer_reports_booking_xlsx_summary_count_rows')) {
+            require_once dirname(__DIR__, 2) . '/includes/reporting-discounts.php';
+        }
+        $xlsx_rows = intersoccer_reports_booking_xlsx_summary_count_rows($result['totals']);
+        $this->assertSame('Total Bookings:', $xlsx_rows[0][0]);
+        $this->assertSame(1, $xlsx_rows[0][1]);
+        $this->assertSame('Total places:', $xlsx_rows[1][0]);
+        $this->assertSame(2, $xlsx_rows[1][1]);
+
         if (!function_exists('intersoccer_reports_compute_camp_registration_totals')) {
             require_once dirname(__DIR__, 2) . '/includes/final-reports-totals.php';
             require_once dirname(__DIR__, 2) . '/includes/final-reports-aggregation.php';

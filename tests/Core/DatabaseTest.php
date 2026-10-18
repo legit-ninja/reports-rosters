@@ -80,7 +80,7 @@ class DatabaseTest extends TestCase {
         $table_name = $this->database->get_table_name('intersoccer_rosters');
         $this->assertEquals('wp_intersoccer_rosters', $table_name);
     }
-    
+
     public function test_transaction_start() {
         $this->wpdb->shouldReceive('query')
             ->with('START TRANSACTION')

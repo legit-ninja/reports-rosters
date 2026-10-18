@@ -144,7 +144,6 @@ class FinancialReportService {
             : [];
 
         $zero_total_buyclub_bookings = 0;
-        $places_total = 0;
 
         foreach ((array) $order_rows as $row) {
             $order_id = (int) $row->order_id;
@@ -245,12 +244,9 @@ class FinancialReportService {
             $stripe_fee = $final_price > 0 ? ($final_price * 0.029) + 0.30 : 0.0;
 
             $line_qty = (int) ($row->quantity ?? 0);
-            if ($line_qty < 1) {
-                $line_qty = 1;
-            }
-            $places_total += $line_qty;
 
             $data[] = [
+                'line_quantity' => $line_qty,
                 'ref' => $order_id . '-' . $row->order_item_id,
                 'booked' => date('Y-m-d', strtotime($row->order_date)),
                 'base_price' => number_format($base_price, 2),
@@ -287,7 +283,12 @@ class FinancialReportService {
         }
 
         $totals['bookings'] = count($data);
-        $totals['places'] = $places_total;
+        $totals['places'] = 0;
+        foreach ($data as $report_row) {
+            $totals['places'] += function_exists('intersoccer_reports_booking_report_row_place_count')
+                ? intersoccer_reports_booking_report_row_place_count($report_row)
+                : max(1, (int) ($report_row['line_quantity'] ?? 1));
+        }
         $totals['zero_total_buyclub_bookings'] = $zero_total_buyclub_bookings;
 
         // Round revenue by type values and calculate percentages
