@@ -325,4 +325,24 @@ class BookingReportAccuracyTest extends TestCase {
             'S19 parity: expected final 250.00; report final ' . $row['final_price']);
         $this->assertSame([], ReportAccuracyStore::writtenKeys());
     }
+
+    /**
+     * S19 parity: refund-only in-memory attribution still uses subtotal-minus-total for discount on first view.
+     */
+    public function test_S19_unattributed_line_with_refund_uses_discount_fallback_and_in_memory_reimbursement(): void {
+        $order = (new FakeOrder(119))
+            ->addLine(new FakeLineItem(1191, ['subtotal' => 300.0, 'total' => 250.0]));
+        $order->addRefund(new FakeRefund(1199, 50.0, [new FakeRefundLine(1191, -50.0)]));
+        ReportAccuracyStore::addOrder($order);
+
+        $row = $this->report()['by_ref']['119-1191'];
+
+        $this->assertSame(50.0, self::money($row['discount_amount']),
+            'S19 parity: expected discount 50.00 from subtotal-total fallback; report discount ' . $row['discount_amount']);
+        $this->assertSame(250.0, self::money($row['final_price']),
+            'S19 parity: expected final 250.00; report final ' . $row['final_price']);
+        $this->assertSame(50.0, self::money($row['reimbursement']),
+            'S19 parity: expected reimbursement 50.00; report reimbursement ' . $row['reimbursement']);
+        $this->assertSame([], ReportAccuracyStore::writtenKeys());
+    }
 }
