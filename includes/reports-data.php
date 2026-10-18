@@ -265,6 +265,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 oi.order_id,
                 om_line_subtotal.meta_value AS line_subtotal,
                 om_line_total.meta_value AS line_total,
+                om_qty.meta_value AS line_quantity,
                 COALESCE(om_year.meta_value, om_year_alt.meta_value) AS program_year,
                 p.post_date
              FROM $rosters_table r
@@ -272,6 +273,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
              JOIN $posts_table p ON oi.order_id = p.ID
              LEFT JOIN $order_itemmeta_table om_line_subtotal ON oi.order_item_id = om_line_subtotal.order_item_id AND om_line_subtotal.meta_key = '_line_subtotal'
              LEFT JOIN $order_itemmeta_table om_line_total ON oi.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
+             LEFT JOIN $order_itemmeta_table om_qty ON oi.order_item_id = om_qty.order_item_id AND om_qty.meta_key = '_qty'
              LEFT JOIN $order_itemmeta_table om_year ON oi.order_item_id = om_year.order_item_id AND om_year.meta_key = 'Year'
              LEFT JOIN $order_itemmeta_table om_year_alt ON oi.order_item_id = om_year_alt.order_item_id AND om_year_alt.meta_key = 'pa_program-year'
              WHERE $where_clause",
@@ -767,7 +769,10 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             // Now using data from main query (line_subtotal and line_total already fetched)
             $line_subtotal = floatval($roster['line_subtotal'] ?? 0);
             $line_total = floatval($roster['line_total'] ?? 0);
-            $roster['is_buyclub'] = $line_subtotal > 0 && $line_total === 0.0;
+            $order_id = isset($roster['order_id']) ? (int) $roster['order_id'] : 0;
+            $roster['is_buyclub'] = function_exists('intersoccer_reports_line_is_buyclub')
+                ? intersoccer_reports_line_is_buyclub($line_subtotal, $line_total, $order_id)
+                : ($line_subtotal > 0 && $line_total === 0.0);
             if ($roster['is_buyclub']) {
                 $buyclub_count++;
             }
@@ -841,12 +846,14 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 oi.order_item_name AS order_item_name,
                 p.post_date,
                 om_line_subtotal.meta_value AS line_subtotal,
-                om_line_total.meta_value AS line_total
+                om_line_total.meta_value AS line_total,
+                om_qty.meta_value AS line_quantity
              FROM {$rosters_table} r
              JOIN {$wpdb->prefix}woocommerce_order_items oi ON r.order_item_id = oi.order_item_id
              JOIN {$posts_table} p ON r.order_id = p.ID
              LEFT JOIN {$order_itemmeta_table} om_line_subtotal ON r.order_item_id = om_line_subtotal.order_item_id AND om_line_subtotal.meta_key = '_line_subtotal'
              LEFT JOIN {$order_itemmeta_table} om_line_total ON r.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
+             LEFT JOIN {$order_itemmeta_table} om_qty ON r.order_item_id = om_qty.order_item_id AND om_qty.meta_key = '_qty'
              WHERE {$where_clause}",
             ...$prepare_values
         );
@@ -940,7 +947,10 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             // Now using data from main query (line_subtotal and line_total already fetched)
             $line_subtotal = floatval($roster['line_subtotal'] ?? 0);
             $line_total = floatval($roster['line_total'] ?? 0);
-            $roster['is_buyclub'] = $line_subtotal > 0 && $line_total === 0.0;
+            $order_id = isset($roster['order_id']) ? (int) $roster['order_id'] : 0;
+            $roster['is_buyclub'] = function_exists('intersoccer_reports_line_is_buyclub')
+                ? intersoccer_reports_line_is_buyclub($line_subtotal, $line_total, $order_id)
+                : ($line_subtotal > 0 && $line_total === 0.0);
 
             // Course Day: from pa_course-day attribute (empty string is not null — do not use ?? alone).
             $cd_row = isset($roster['course_day']) ? trim((string) $roster['course_day']) : '';
