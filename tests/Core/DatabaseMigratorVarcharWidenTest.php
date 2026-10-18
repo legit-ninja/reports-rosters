@@ -119,7 +119,7 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
         $this->assertStringNotContainsString('MODIFY camp_times', $joined);
     }
 
-    public function test_create_tables_schema_keeps_varchar_50_for_migration_widen_columns(): void {
+    public function test_create_tables_schema_uses_varchar_191_so_dbdelta_does_not_shrink(): void {
         global $wpdb;
         $wpdb = Mockery::mock('wpdb');
         $wpdb->prefix = 'wp_';
@@ -131,13 +131,32 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
         $reflection->setAccessible(true);
         $schemas = $reflection->getValue($database);
         $columns = $schemas['intersoccer_rosters']['columns'];
-        $this->assertStringContainsString('varchar(50)', $columns['event_type']);
-        $this->assertStringContainsString('varchar(50)', $columns['camp_times']);
-        $this->assertStringNotContainsString('varchar(191)', $columns['event_type']);
-        $this->assertStringNotContainsString('varchar(191)', $columns['camp_times']);
+        $this->assertStringContainsString('varchar(191)', $columns['event_type']);
+        $this->assertStringContainsString('varchar(191)', $columns['camp_times']);
+        $this->assertStringNotContainsString('varchar(50)', $columns['event_type']);
+        $this->assertStringNotContainsString('varchar(50)', $columns['camp_times']);
     }
 
-    public function test_legacy_create_rosters_table_sql_keeps_times_varchar_50(): void {
+    public function test_oop_create_table_sql_requests_varchar_191_for_widen_columns(): void {
+        global $wpdb;
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $logger = Mockery::mock(Logger::class);
+        $logger->shouldReceive('debug')->andReturnNull();
+        $database = new Database($logger);
+        $method = new \ReflectionMethod(Database::class, 'build_create_table_sql');
+        $method->setAccessible(true);
+        $schema_prop = new \ReflectionProperty(Database::class, 'table_schemas');
+        $schema_prop->setAccessible(true);
+        $schema = $schema_prop->getValue($database)['intersoccer_rosters'];
+        $sql = $method->invoke($database, 'wp_intersoccer_rosters', $schema, '');
+        $this->assertStringContainsString('event_type varchar(191)', $sql);
+        $this->assertStringContainsString('camp_times varchar(191)', $sql);
+        $this->assertStringNotContainsString('event_type varchar(50)', $sql);
+        $this->assertStringNotContainsString('camp_times varchar(50)', $sql);
+    }
+
+    public function test_legacy_create_rosters_table_sql_uses_times_varchar_191(): void {
         $src = file_get_contents(dirname(__DIR__, 2) . '/includes/db.php');
         $this->assertIsString($src);
         $this->assertMatchesRegularExpression(
@@ -147,8 +166,8 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
         );
         preg_match('/CREATE TABLE \$rosters_table\s*\([^;]+;/s', $src, $matches);
         $create = $matches[0];
-        $this->assertStringContainsString('times varchar(50)', $create);
-        $this->assertStringNotContainsString('varchar(191)', $create);
+        $this->assertStringContainsString('times varchar(191)', $create);
+        $this->assertStringNotContainsString('times varchar(50)', $create);
     }
 
     public function test_migrate_skips_when_stored_version_is_current(): void {
