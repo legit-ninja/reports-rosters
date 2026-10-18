@@ -55,7 +55,7 @@ class OrderFinancialAttributionService {
 
         $item_discounts = [];
         foreach ($line_items as $item_id => $item) {
-            $item_discounts[$item_id] = $force ? [] : $this->readLegacyItemDiscounts($item);
+            $item_discounts[$item_id] = $this->readLegacyItemDiscounts($item);
         }
 
         foreach ($this->collectOrderDiscountSources($order) as $source) {
@@ -469,7 +469,10 @@ class OrderFinancialAttributionService {
      *   failed_count:int,
      *   gross_chf:float,
      *   net_chf:float,
-     *   skipped_reasons:array<string,int>
+     *   skipped_reasons:array<string,int>,
+     *   retry_skipped_orders:array<int,array{order_id:int,stored_reason:string,live_reason:?string}>,
+     *   stored_reason_totals:array<string,int>,
+     *   live_reason_totals:array<string,int>
      * }
      */
     public function summarizeRetrySkippedInDateRange(string $start_date, string $end_date): array {
@@ -490,6 +493,36 @@ class OrderFinancialAttributionService {
             $net += (float) $order->get_total();
         }
 
+        $retry_skipped_orders = [];
+        $stored_reason_totals = [];
+        $live_reason_totals = [];
+
+        foreach ($order_ids as $order_id) {
+            if (!function_exists('wc_get_order')) {
+                break;
+            }
+            $order = wc_get_order($order_id);
+            if (!$order) {
+                continue;
+            }
+
+            $stored_reason = (string) $order->get_meta(self::META_ATTRIBUTION_SKIPPED, true);
+            $live_reason = $this->getAttributionSkipReason($order);
+
+            $retry_skipped_orders[] = [
+                'order_id' => (int) $order_id,
+                'stored_reason' => $stored_reason,
+                'live_reason' => $live_reason,
+            ];
+
+            if ($stored_reason !== '') {
+                $stored_reason_totals[$stored_reason] = ($stored_reason_totals[$stored_reason] ?? 0) + 1;
+            }
+
+            $live_key = $live_reason ?? 'eligible';
+            $live_reason_totals[$live_key] = ($live_reason_totals[$live_key] ?? 0) + 1;
+        }
+
         return [
             'order_count' => count($order_ids),
             'applied_count' => count($split['applied_ids']),
@@ -499,6 +532,9 @@ class OrderFinancialAttributionService {
             'gross_chf' => round($gross, 2),
             'net_chf' => round($net, 2),
             'skipped_reasons' => $split['skipped_reason_counts'],
+            'retry_skipped_orders' => $retry_skipped_orders,
+            'stored_reason_totals' => $stored_reason_totals,
+            'live_reason_totals' => $live_reason_totals,
         ];
     }
 
@@ -979,6 +1015,12 @@ class OrderFinancialAttributionService {
                     'allocation_method' => isset($discount['allocation_method']) ? (string) $discount['allocation_method'] : 'direct',
                 ];
                 $total += $amount;
+            }
+
+            if ($normalized !== [] && function_exists('intersoccer_reconcile_stale_persisted_item_discount')) {
+                $reconciled = intersoccer_reconcile_stale_persisted_item_discount($total, $normalized);
+                $total = (float) $reconciled['amount'];
+                $normalized = $reconciled['breakdown'];
             }
 
             $normalized_by_item[(int) $item_id] = [

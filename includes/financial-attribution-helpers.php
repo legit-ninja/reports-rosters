@@ -201,6 +201,43 @@ function intersoccer_reconcile_stale_persisted_item_discount(float $amount, arra
         $adjusted[$fee_index]['type'] = $canonical_type;
     }
 
+    foreach ($adjusted as $legacy_index => $entry) {
+        if (!is_array($entry) || (string) ($entry['source'] ?? '') !== 'legacy_item_meta') {
+            continue;
+        }
+
+        $legacy_bucket = intersoccer_map_discount_type_to_report_bucket((string) ($entry['type'] ?? ''));
+        $legacy_amount = round((float) ($entry['amount'] ?? 0.0), 2);
+        if ($legacy_amount <= 0.0) {
+            continue;
+        }
+
+        foreach ($adjusted as $other_index => $other) {
+            if ($legacy_index === $other_index || !is_array($other)) {
+                continue;
+            }
+
+            $other_source = (string) ($other['source'] ?? '');
+            if ($other_source !== 'order_fee' && $other_source !== 'woocommerce_coupon') {
+                continue;
+            }
+
+            $other_bucket = intersoccer_map_discount_type_to_report_bucket((string) ($other['type'] ?? ''));
+            if ($other_bucket !== $legacy_bucket) {
+                continue;
+            }
+
+            $other_amount = round((float) ($other['amount'] ?? 0.0), 2);
+            if (abs($other_amount - $legacy_amount) > 0.01) {
+                continue;
+            }
+
+            $removed += $legacy_amount;
+            unset($adjusted[$legacy_index]);
+            break;
+        }
+    }
+
     $changed = $removed > 0.0;
     foreach ($adjusted as $index => $entry) {
         if (!is_array($entry) || (string) ($entry['source'] ?? '') !== 'order_fee') {
