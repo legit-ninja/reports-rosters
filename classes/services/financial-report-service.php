@@ -359,8 +359,6 @@ class FinancialReportService {
             $discount_amount = max(0.0, $base_price - $line_total);
             if ($discount_amount > 0.01) {
                 $this->logger->debug('FinancialReportService: Using fallback discount calculation', [
-                    'order_id' => $order_id,
-                    'item_id' => $item_id,
                     'discount_amount' => $discount_amount,
                 ]);
             }
