@@ -336,6 +336,12 @@ class FinancialReportService {
             }
         }
 
+        if ($item_discount_breakdown !== []) {
+            $reconciled = intersoccer_reconcile_stale_persisted_item_discount($discount_amount, $item_discount_breakdown);
+            $discount_amount = $reconciled['amount'];
+            $item_discount_breakdown = $reconciled['breakdown'];
+        }
+
         return [
             'amount' => $discount_amount,
             'breakdown' => $item_discount_breakdown,

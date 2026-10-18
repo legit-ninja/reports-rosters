@@ -156,6 +156,62 @@ function intersoccer_parse_legacy_discount_amount($value): float {
 }
 
 /**
+ * Correct persisted item discount meta that double-counted FR/DE referral/points fees (order_fee + referral_order_meta).
+ *
+ * Read-only at report time: adjusts the in-memory total and breakdown only.
+ *
+ * @param array<int,array<string,mixed>> $breakdown
+ * @return array{amount:float,breakdown:array<int,array<string,mixed>>}
+ */
+function intersoccer_reconcile_stale_persisted_item_discount(float $amount, array $breakdown): array {
+    if ($breakdown === []) {
+        return ['amount' => $amount, 'breakdown' => $breakdown];
+    }
+
+    $adjusted = $breakdown;
+    $removed = 0.0;
+
+    foreach (['referral_points', 'referral_first_order'] as $canonical_type) {
+        $fee_index = null;
+        $meta_index = null;
+
+        foreach ($adjusted as $index => $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $source = (string) ($entry['source'] ?? '');
+            $type = (string) ($entry['type'] ?? '');
+            $name = (string) ($entry['name'] ?? '');
+
+            if ($source === 'order_fee' && intersoccer_classify_discount_fee($name) === $canonical_type) {
+                $fee_index = $index;
+            }
+            if ($source === 'referral_order_meta' && $type === $canonical_type) {
+                $meta_index = $index;
+            }
+        }
+
+        if ($fee_index === null || $meta_index === null) {
+            continue;
+        }
+
+        $removed += (float) ($adjusted[$meta_index]['amount'] ?? 0.0);
+        unset($adjusted[$meta_index]);
+        $adjusted[$fee_index]['type'] = $canonical_type;
+    }
+
+    if ($removed <= 0.0) {
+        return ['amount' => $amount, 'breakdown' => $breakdown];
+    }
+
+    return [
+        'amount' => max(0.0, round($amount - $removed, 2)),
+        'breakdown' => array_values($adjusted),
+    ];
+}
+
+/**
  * Calculate discount type breakdown from booking report data.
  */
 function intersoccer_calculate_discount_type_breakdown($report_data) {
