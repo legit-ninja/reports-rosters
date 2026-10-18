@@ -258,6 +258,10 @@ class AttributionBackfillApplyTest extends TestCase {
         $dry = $this->service->summarizeRetrySkippedInDateRange('2025-01-01', '2026-12-31');
         $this->assertSame(1, $dry['order_count']);
         $this->assertSame(1, $dry['applied_count']);
+        $this->assertCount(1, $dry['retry_skipped_orders']);
+        $this->assertSame(906, $dry['retry_skipped_orders'][0]['order_id']);
+        $this->assertSame(Attr::SKIP_REASON_NO_LINE_ITEMS, $dry['retry_skipped_orders'][0]['stored_reason']);
+        $this->assertNull($dry['retry_skipped_orders'][0]['live_reason']);
 
         $apply = $this->service->applyRetrySkippedInDateRange('2025-01-01', '2026-12-31');
         $this->assertSame(1, $apply['applied_count']);
