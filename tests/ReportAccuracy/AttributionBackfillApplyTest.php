@@ -133,6 +133,10 @@ class AttributionBackfillApplyTest extends TestCase {
         }
     }
 
+    /**
+     * The wpdb double mirrors skip/attribution predicates in PHP; production uses LEFT JOIN + IS NULL OR,
+     * not NOT EXISTS. Real-SQL behaviour is verified on the sandbox, not in this unit test.
+     */
     public function test_findMissingAttributionOrderIds_sql_excludes_attributed_and_skipped_orders(): void {
         ReportAccuracyStore::addOrder((new FakeOrder(901))
             ->addLine(new FakeLineItem(9011, ['subtotal' => 10.0, 'total' => 10.0])));
@@ -180,6 +184,68 @@ class AttributionBackfillApplyTest extends TestCase {
         $this->assertSame([], $this->service->findMissingAttributionOrderIds('2025-01-01', '2026-12-31'));
     }
 
+    public function test_retry_skipped_dry_run_writes_nothing(): void {
+        $order = (new FakeOrder(908))
+            ->setMeta(Attr::META_ATTRIBUTION_SKIPPED, Attr::SKIP_REASON_NO_LINE_ITEMS);
+        ReportAccuracyStore::addOrder($order);
+        $order->addLine(new FakeLineItem(9081, ['subtotal' => 30.0, 'total' => 30.0]));
+        global $wpdb;
+        $wpdb = new \BackfillMissingAttributionWpdb();
+
+        ReportAccuracyStore::$writes = [];
+        $this->service->summarizeRetrySkippedInDateRange('2025-01-01', '2026-12-31');
+
+        $this->assertSame([], ReportAccuracyStore::writtenKeys());
+        $this->assertTrue($order->meta_exists(Attr::META_ATTRIBUTION_SKIPPED));
+    }
+
+    public function test_retry_skipped_still_ineligible_order_keeps_marker_without_rewrite(): void {
+        ReportAccuracyStore::addOrder((new FakeOrder(909))
+            ->addLine(new FakeLineItem(9091, ['product_id' => 0, 'subtotal' => 10.0, 'total' => 10.0]))
+            ->setMeta(Attr::META_ATTRIBUTION_SKIPPED, Attr::SKIP_REASON_NO_ATTRIBUTABLE_ITEMS));
+        global $wpdb;
+        $wpdb = new \BackfillMissingAttributionWpdb();
+
+        $before_writes = count(ReportAccuracyStore::$writes);
+        $this->service->applyRetrySkippedInDateRange('2025-01-01', '2026-12-31');
+        $this->service->applyRetrySkippedInDateRange('2025-01-01', '2026-12-31');
+
+        $this->assertSame(
+            Attr::SKIP_REASON_NO_ATTRIBUTABLE_ITEMS,
+            ReportAccuracyStore::$orders[909]->get_meta(Attr::META_ATTRIBUTION_SKIPPED)
+        );
+        $this->assertSame($before_writes, count(ReportAccuracyStore::$writes));
+    }
+
+    public function test_retry_skipped_does_not_touch_unmarked_orders(): void {
+        $unmarked = (new FakeOrder(911))
+            ->addLine(new FakeLineItem(9111, ['subtotal' => 12.0, 'total' => 12.0]));
+        ReportAccuracyStore::addOrder($unmarked);
+        ReportAccuracyStore::addOrder((new FakeOrder(912))
+            ->setMeta(Attr::META_ATTRIBUTION_SKIPPED, Attr::SKIP_REASON_NO_LINE_ITEMS));
+        global $wpdb;
+        $wpdb = new \BackfillMissingAttributionWpdb();
+
+        $unmarked_writes_before = $this->countOrderWritesFor($unmarked->get_id());
+        $this->service->applyRetrySkippedInDateRange('2025-01-01', '2026-12-31');
+
+        $this->assertSame('', $unmarked->get_meta(Attr::META_ORDER_ATTRIBUTION_AT));
+        $this->assertFalse($unmarked->meta_exists(Attr::META_ATTRIBUTION_SKIPPED));
+        $this->assertSame($unmarked_writes_before, $this->countOrderWritesFor($unmarked->get_id()));
+    }
+
+    public function test_attribute_order_refunds_clears_skip_marker(): void {
+        $order = (new FakeOrder(910))
+            ->addLine(new FakeLineItem(9101, ['subtotal' => 80.0, 'total' => 80.0]))
+            ->setMeta(Attr::META_ATTRIBUTION_SKIPPED, Attr::SKIP_REASON_NO_ATTRIBUTABLE_ITEMS);
+        ReportAccuracyStore::addOrder($order);
+        $refund = new FakeRefund(91001, 20.0, [new FakeRefundLine(9101, 20.0)]);
+
+        $this->assertTrue($this->service->attributeOrderRefunds($order, $refund));
+        $this->assertFalse($order->meta_exists(Attr::META_ATTRIBUTION_SKIPPED));
+        $this->assertNotSame('', $order->get_meta(Attr::META_ORDER_ATTRIBUTION_AT));
+    }
+
     public function test_retry_skipped_apply_clears_marker_when_order_becomes_attributable(): void {
         $order = (new FakeOrder(906))
             ->setMeta(Attr::META_ATTRIBUTION_SKIPPED, Attr::SKIP_REASON_NO_LINE_ITEMS);
@@ -205,6 +271,17 @@ class AttributionBackfillApplyTest extends TestCase {
         ReportAccuracyStore::addOrder((new FakeOrder(802))
             ->addLine(new FakeLineItem(8021, ['product_id' => 0, 'subtotal' => 50.0, 'total' => 50.0])));
         ReportAccuracyStore::addOrder(new FakeOrder(803));
+    }
+
+    private function countOrderWritesFor(int $order_id): int {
+        $count = 0;
+        foreach (ReportAccuracyStore::$writes as $write) {
+            if ($write['object'] === 'order' && $write['id'] === $order_id) {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     private function orderWritesIncludeFullSave(int $order_id): bool {

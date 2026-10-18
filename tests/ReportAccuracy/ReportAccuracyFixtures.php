@@ -311,6 +311,7 @@ namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy {
         public function addFee(FakeFee $fee): self { $this->typed_items['fee'][] = $fee; return $this; }
         public function addCoupon(FakeCoupon $c): self { $this->typed_items['coupon'][] = $c; return $this; }
         public function addRefund(FakeRefund $r): self { $this->refunds[] = $r; $this->total_refunded += abs($r->get_total()); return $this; }
+        public function get_refunds() { return $this->refunds ?? []; }
         public function setMeta(string $key, $value): self { $this->meta_data[$key] = $value; return $this; }
 
         public function get_status() { return $this->status; }
