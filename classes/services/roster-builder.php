@@ -941,6 +941,7 @@ class RosterBuilder {
 
                 $this->logger->error('Failed to create roster for player', [
                     'order_id' => $order->get_id(),
+                    'order_item_id' => $item_id,
                     'player' => $player->getLogSummary(),
                     'error' => $e->getMessage()
                 ]);
@@ -970,17 +971,27 @@ class RosterBuilder {
             'variation_id' => $variation_id ?: 0,
             'customer_id' => $order->get_customer_id(),
             'order_status' => $order->get_status(),
-            'product_name' => $product ? $product->get_name() : '',
+            'product_name' => ($product && is_object($product) && method_exists($product, 'get_name'))
+                ? (string) $product->get_name()
+                : (
+                    !$product && (int) $item->get_product_id() <= 0 && is_callable([$item, 'get_name'])
+                        ? (string) $item->get_name()
+                        : ''
+                ),
         ];
         // Recover missing product/variation ids from line-item meta for legacy/deleted product cases.
         if ((int) ($order_data['product_id'] ?? 0) <= 0) {
-            $meta_product_id = (int) $item->get_meta('_product_id', true);
+            $meta_product_id = function_exists('wc_get_order_item_meta')
+                ? (int) wc_get_order_item_meta($item_id, '_product_id', true)
+                : (int) $item->get_meta('_product_id', true);
             if ($meta_product_id > 0) {
                 $order_data['product_id'] = $meta_product_id;
             }
         }
         if ((int) ($order_data['variation_id'] ?? 0) <= 0) {
-            $meta_variation_id = (int) $item->get_meta('_variation_id', true);
+            $meta_variation_id = function_exists('wc_get_order_item_meta')
+                ? (int) wc_get_order_item_meta($item_id, '_variation_id', true)
+                : (int) $item->get_meta('_variation_id', true);
             if ($meta_variation_id > 0) {
                 $order_data['variation_id'] = $meta_variation_id;
             }
@@ -1507,8 +1518,11 @@ class RosterBuilder {
             }
         }
         
+        $roster_data['product_deleted'] = $this->orderLineProductDeletedFromCatalog($roster_data);
+
         // Parse event details from various sources
         $roster_data['event_details'] = $this->buildEventDetails($roster_data);
+        $roster_data['event_details'] = $this->applyUnderAgeAtStartToEventDetails($roster_data);
 
         if (function_exists('intersoccer_roster_backfill_player_name_fields')) {
             $roster_data = intersoccer_roster_backfill_player_name_fields($roster_data);
@@ -1656,8 +1670,80 @@ class RosterBuilder {
         $details['region'] = $roster_data['region'] ?? null;
         $details['city'] = $roster_data['city'] ?? null;
         $details['discount_applied'] = $roster_data['discount_applied'] ?? null;
+
+        if (!empty($roster_data['product_deleted'])) {
+            $details['product_deleted'] = true;
+        }
         
         return array_filter($details); // Remove null values
+    }
+
+    /**
+     * Whether the catalogue no longer has the product/variation stored on the order line.
+     */
+    private function orderLineProductDeletedFromCatalog(array $roster_data): bool {
+        $product_id = (int) ($roster_data['product_id'] ?? 0);
+        $variation_id = (int) ($roster_data['variation_id'] ?? 0);
+        if ($product_id <= 0 && $variation_id <= 0) {
+            return false;
+        }
+        if (!function_exists('wc_get_product')) {
+            return false;
+        }
+        if ($variation_id > 0) {
+            $variation = wc_get_product($variation_id);
+            if ($variation) {
+                return false;
+            }
+        }
+        if ($product_id > 0) {
+            $product = wc_get_product($product_id);
+            if ($product) {
+                return $variation_id > 0 && !wc_get_product($variation_id);
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @param array $roster_data
+     * @return array|string|null
+     */
+    private function applyUnderAgeAtStartToEventDetails(array $roster_data) {
+        $details = $roster_data['event_details'] ?? [];
+        if (is_string($details)) {
+            $decoded = json_decode($details, true);
+            $details = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($details)) {
+            $details = [];
+        }
+        if (!$this->rosterRowIsUnderMinAgeAtStart($roster_data)) {
+            return $details;
+        }
+        $details['under_age_at_start'] = true;
+
+        return $details;
+    }
+
+    private function rosterRowIsUnderMinAgeAtStart(array $roster_data): bool {
+        $dob = trim((string) ($roster_data['player_dob'] ?? $roster_data['dob'] ?? ''));
+        $age_group = trim((string) ($roster_data['age_group'] ?? ''));
+        $start_date = trim((string) ($roster_data['start_date'] ?? ''));
+        if ($dob === '' || $age_group === '' || $start_date === '') {
+            return false;
+        }
+
+        $player = new Player([
+            'customer_id' => (int) ($roster_data['customer_id'] ?? 0),
+            'player_index' => (int) ($roster_data['player_index'] ?? 0),
+            'first_name' => (string) ($roster_data['player_first_name'] ?? $roster_data['first_name'] ?? ''),
+            'last_name' => (string) ($roster_data['player_last_name'] ?? $roster_data['last_name'] ?? ''),
+            'dob' => $dob,
+            'gender' => (string) ($roster_data['player_gender'] ?? $roster_data['gender'] ?? ''),
+        ]);
+
+        return $player->isBelowMinAgeForAgeGroupAt($age_group, $start_date);
     }
     
     /**
