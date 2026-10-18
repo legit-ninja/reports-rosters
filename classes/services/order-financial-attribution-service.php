@@ -76,6 +76,111 @@ class OrderFinancialAttributionService {
     }
 
     /**
+     * Compute per-line discount attribution without persisting (read-only report path).
+     *
+     * @param \WC_Order|int $order
+     * @return array<int,array{discount_total:float,breakdown:array<int,array<string,mixed>>}>
+     */
+    public function computeItemDiscountsForOrder($order): array {
+        $order = $this->resolveOrder($order);
+        if (!$order) {
+            return [];
+        }
+
+        $line_items = $this->getProductLineItems($order);
+        if (empty($line_items)) {
+            return [];
+        }
+
+        $item_discounts = [];
+        foreach ($line_items as $item_id => $item) {
+            $item_discounts[$item_id] = $this->readLegacyItemDiscounts($item);
+        }
+
+        foreach ($this->collectOrderDiscountSources($order) as $source) {
+            $this->allocateAmountToItems(
+                $item_discounts,
+                $line_items,
+                (float) $source['amount'],
+                (string) $source['name'],
+                (string) $source['type'],
+                (string) $source['source']
+            );
+        }
+
+        return $this->normalizeItemDiscounts($item_discounts);
+    }
+
+    /**
+     * Compute per-line refund attribution without persisting (read-only report path).
+     *
+     * @param \WC_Order|int $order
+     * @return array<int,float>
+     */
+    public function computeItemRefundsForOrder($order): array {
+        $order = $this->resolveOrder($order);
+        if (!$order) {
+            return [];
+        }
+
+        $line_items = $this->getProductLineItems($order);
+        if (empty($line_items)) {
+            return [];
+        }
+
+        $allocations = [];
+
+        foreach ($order->get_refunds() as $refund) {
+            if (!is_object($refund)) {
+                continue;
+            }
+
+            $refund_items = $refund->get_items('line_item');
+            if (!empty($refund_items)) {
+                foreach ($refund_items as $refund_item) {
+                    if (!is_object($refund_item) || !method_exists($refund_item, 'get_meta')) {
+                        continue;
+                    }
+
+                    $original_item_id = (int) $refund_item->get_meta('_refunded_item_id', true);
+                    if ($original_item_id <= 0 || !isset($line_items[$original_item_id])) {
+                        continue;
+                    }
+
+                    $amount = abs((float) $refund_item->get_total());
+                    if ($amount <= 0) {
+                        continue;
+                    }
+
+                    if (!isset($allocations[$original_item_id])) {
+                        $allocations[$original_item_id] = 0.0;
+                    }
+                    $allocations[$original_item_id] += $amount;
+                }
+                continue;
+            }
+
+            $refund_total = abs((float) $refund->get_total());
+            if ($refund_total <= 0) {
+                continue;
+            }
+
+            foreach ($this->buildProportionalAllocations($line_items, $refund_total, 'line_total') as $item_id => $amount) {
+                if (!isset($allocations[$item_id])) {
+                    $allocations[$item_id] = 0.0;
+                }
+                $allocations[$item_id] += $amount;
+            }
+        }
+
+        foreach ($allocations as $item_id => $amount) {
+            $allocations[$item_id] = round($amount, 2);
+        }
+
+        return $allocations;
+    }
+
+    /**
      * Attribute a refund to original product line items.
      *
      * @param \WC_Order|\WC_Order_Refund|int $order
@@ -415,17 +520,10 @@ class OrderFinancialAttributionService {
 
     /**
      * @param array<int,array<int,array<string,mixed>>> $item_discounts
-     * @return array<string,float>
+     * @return array<int,array{discount_total:float,breakdown:array<int,array<string,mixed>>}>
      */
-    private function persistItemDiscounts(\WC_Order $order, array $item_discounts): array {
-        $summary = [
-            'sibling' => 0.0,
-            'same_season' => 0.0,
-            'coupon' => 0.0,
-            'referral_first_order' => 0.0,
-            'referral_points' => 0.0,
-            'other' => 0.0,
-        ];
+    private function normalizeItemDiscounts(array $item_discounts): array {
+        $normalized_by_item = [];
 
         foreach ($item_discounts as $item_id => $discounts) {
             $normalized = [];
@@ -450,15 +548,44 @@ class OrderFinancialAttributionService {
                     'allocation_method' => isset($discount['allocation_method']) ? (string) $discount['allocation_method'] : 'direct',
                 ];
                 $total += $amount;
+            }
 
-                $bucket = intersoccer_map_discount_type_to_report_bucket($type);
+            $normalized_by_item[(int) $item_id] = [
+                'discount_total' => round($total, 2),
+                'breakdown' => $normalized,
+            ];
+        }
+
+        return $normalized_by_item;
+    }
+
+    /**
+     * @param array<int,array<int,array<string,mixed>>> $item_discounts
+     * @return array<string,float>
+     */
+    private function persistItemDiscounts(\WC_Order $order, array $item_discounts): array {
+        $summary = [
+            'sibling' => 0.0,
+            'same_season' => 0.0,
+            'coupon' => 0.0,
+            'referral_first_order' => 0.0,
+            'referral_points' => 0.0,
+            'other' => 0.0,
+        ];
+
+        $normalized_by_item = $this->normalizeItemDiscounts($item_discounts);
+
+        foreach ($normalized_by_item as $item_id => $payload) {
+            $normalized = $payload['breakdown'];
+            $total = $payload['discount_total'];
+
+            foreach ($normalized as $discount) {
+                $bucket = intersoccer_map_discount_type_to_report_bucket((string) $discount['type']);
                 if (!isset($summary[$bucket])) {
                     $summary[$bucket] = 0.0;
                 }
-                $summary[$bucket] += $amount;
+                $summary[$bucket] += (float) $discount['amount'];
             }
-
-            $total = round($total, 2);
 
             if (!empty($normalized)) {
                 wc_update_order_item_meta((int) $item_id, self::META_ITEM_DISCOUNTS, $normalized);

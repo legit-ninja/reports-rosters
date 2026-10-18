@@ -39,6 +39,11 @@ class FinancialReportService {
     private $productTypeClassifier;
 
     /**
+     * @var array<int,array{items:array<int,array{discount_total:float,breakdown:array<int,array<string,mixed>>,refund:float}>}|null>
+     */
+    private $inMemoryAttributionCache = [];
+
+    /**
      * Constructor.
      */
     public function __construct(Logger $logger = null, Database $database = null, ProductTypeClassifierService $productTypeClassifier = null) {
@@ -110,8 +115,6 @@ class FinancialReportService {
         ";
 
         $order_rows = $this->wpdb->get_results($query);
-
-        $this->ensureOrdersAttributed((array) $order_rows);
 
         $data = [];
         $totals = [
@@ -185,13 +188,21 @@ class FinancialReportService {
 
             $base_price = (float) $row->line_subtotal;
             $line_total = (float) $row->line_total;
-            $discount_data = $this->resolveItemDiscountData($meta_map, $base_price, $line_total, $order_id, (int) $row->order_item_id);
+            $item_id = (int) $row->order_item_id;
+            $has_persisted_discount = isset($meta_map[OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL])
+                && $meta_map[OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL] !== '';
+            $computed = $has_persisted_discount ? null : $this->getInMemoryItemAttribution($order_id, $item_id);
+            $discount_data = $this->resolveItemDiscountData($meta_map, $base_price, $line_total, $order_id, $item_id, $computed);
             $discount_amount = $discount_data['amount'];
             $item_discount_breakdown = $discount_data['breakdown'];
 
             $reimbursement = 0.0;
-            if (isset($meta_map[OrderFinancialAttributionService::META_ITEM_REFUND]) && $meta_map[OrderFinancialAttributionService::META_ITEM_REFUND] !== '') {
+            $has_persisted_refund = isset($meta_map[OrderFinancialAttributionService::META_ITEM_REFUND])
+                && $meta_map[OrderFinancialAttributionService::META_ITEM_REFUND] !== '';
+            if ($has_persisted_refund) {
                 $reimbursement = (float) $meta_map[OrderFinancialAttributionService::META_ITEM_REFUND];
+            } elseif ($computed !== null && ($computed['refund'] ?? 0) > 0.01) {
+                $reimbursement = (float) $computed['refund'];
             }
 
             // Final = Gross - attributed line discounts (NO refund)
@@ -271,7 +282,21 @@ class FinancialReportService {
     /**
      * @return array{amount:float,breakdown:array<int,array<string,mixed>>}
      */
-    private function resolveItemDiscountData(array $meta_map, float $base_price, float $line_total, int $order_id, int $item_id): array {
+    private function resolveItemDiscountData(
+        array $meta_map,
+        float $base_price,
+        float $line_total,
+        int $order_id,
+        int $item_id,
+        ?array $computed = null
+    ): array {
+        if ($computed !== null) {
+            return [
+                'amount' => (float) ($computed['discount_total'] ?? 0.0),
+                'breakdown' => is_array($computed['breakdown'] ?? null) ? $computed['breakdown'] : [],
+            ];
+        }
+
         $discount_amount = 0.0;
         $item_discount_breakdown = [];
 
@@ -390,48 +415,56 @@ class FinancialReportService {
     }
 
     /**
-     * Attribute discounts/refunds for orders in the report that predate the attribution hook.
-     *
-     * @param array<int,object> $order_rows
+     * @return array{discount_total:float,breakdown:array<int,array<string,mixed>>,refund:float}|null
      */
-    private function ensureOrdersAttributed(array $order_rows): void {
+    private function getInMemoryItemAttribution(int $order_id, int $item_id): ?array {
         if (!function_exists('intersoccer_oop_get_order_financial_attribution_service') || !function_exists('wc_get_order')) {
-            return;
+            return null;
         }
 
-        $service = intersoccer_oop_get_order_financial_attribution_service();
-        $seen = [];
-
-        foreach ($order_rows as $row) {
-            $order_id = (int) ($row->order_id ?? 0);
-            if ($order_id <= 0 || isset($seen[$order_id])) {
-                continue;
-            }
-            $seen[$order_id] = true;
-
+        if (!array_key_exists($order_id, $this->inMemoryAttributionCache)) {
             $order = wc_get_order($order_id);
-            if (!$order) {
-                continue;
-            }
-
-            if ($order->get_meta(OrderFinancialAttributionService::META_ORDER_ATTRIBUTION_AT, true)) {
-                continue;
-            }
-
-            $had_refunds = (float) $order->get_total_refunded() > 0.01;
-            try {
-                if ($had_refunds) {
-                    $service->reattributeFullOrder($order);
-                } else {
-                    $service->attributeOrderDiscounts($order);
+            if (!$order || $order->get_meta(OrderFinancialAttributionService::META_ORDER_ATTRIBUTION_AT, true)) {
+                $this->inMemoryAttributionCache[$order_id] = null;
+            } else {
+                try {
+                    $service = intersoccer_oop_get_order_financial_attribution_service();
+                    $discounts = $service->computeItemDiscountsForOrder($order);
+                    $refunds = $service->computeItemRefundsForOrder($order);
+                    $items = [];
+                    foreach ($discounts as $disc_item_id => $payload) {
+                        $items[(int) $disc_item_id] = [
+                            'discount_total' => (float) $payload['discount_total'],
+                            'breakdown' => $payload['breakdown'],
+                            'refund' => (float) ($refunds[(int) $disc_item_id] ?? 0.0),
+                        ];
+                    }
+                    foreach ($refunds as $refund_item_id => $amount) {
+                        $refund_item_id = (int) $refund_item_id;
+                        if (!isset($items[$refund_item_id])) {
+                            $items[$refund_item_id] = [
+                                'discount_total' => 0.0,
+                                'breakdown' => [],
+                                'refund' => (float) $amount,
+                            ];
+                        }
+                    }
+                    $this->inMemoryAttributionCache[$order_id] = ['items' => $items];
+                } catch (\Throwable $e) {
+                    $this->logger->error('FinancialReportService: In-memory attribution failed', [
+                        'order_id' => $order_id,
+                        'message' => $e->getMessage(),
+                    ]);
+                    $this->inMemoryAttributionCache[$order_id] = null;
                 }
-            } catch (\Throwable $e) {
-                $this->logger->error('FinancialReportService: Lazy attribution failed', [
-                    'order_id' => $order_id,
-                    'message' => $e->getMessage(),
-                ]);
-                continue;
             }
         }
+
+        $cache = $this->inMemoryAttributionCache[$order_id];
+        if ($cache === null) {
+            return null;
+        }
+
+        return $cache['items'][$item_id] ?? null;
     }
 }
