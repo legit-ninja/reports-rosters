@@ -265,7 +265,10 @@ class DeletedProductRosterTest extends TestCase {
             DeletedProductFixture::LIVE_PID, DeletedProductFixture::LIVE_VID, DeletedProductFixture::courseMeta(), true, 300.0);
     }
 
-    private function logger(): Logger {
+    private function logger(?Logger $override = null): Logger {
+        if ($override !== null) {
+            return $override;
+        }
         $logger = $this->createMock(Logger::class);
         if (getenv('DP_DEBUG')) {
             foreach (['error', 'warning', 'info', 'debug'] as $lvl) {
@@ -526,6 +529,85 @@ class DeletedProductRosterTest extends TestCase {
         $this->assertSame([DeletedProductFixture::LIVE_PID, DeletedProductFixture::DELETED_VARIATION_ONLY],
             [(int) $row['product_id'], (int) ($row['variation_id'] ?? 0)],
             'Variation deleted: stored variation id should be kept; master writes ' . (int) ($row['variation_id'] ?? 0));
+    }
+
+    public function test_deleted_product_build_logs_error_with_order_ids(): void {
+        $logger = $this->createMock(Logger::class);
+        $logger->expects($this->atLeastOnce())
+            ->method('error')
+            ->with(
+                $this->equalTo('Roster row built for deleted catalogue product'),
+                $this->callback(static function ($context) {
+                    return is_array($context)
+                        && isset($context['order_id'], $context['order_item_id'])
+                        && (int) $context['order_id'] === 9401
+                        && (int) $context['order_item_id'] === 5401;
+                })
+            );
+
+        $order = $this->order(9401, $this->deletedLine(5401));
+        $this->processor($this->builderWithLogger($logger))->processOrder($order);
+        $this->assertCount(1, $this->created, 'expected row despite deleted product' . $this->why());
+    }
+
+    public function test_failed_roster_insert_logs_error_and_build_stats(): void {
+        $logger = $this->createMock(Logger::class);
+        $logger->expects($this->atLeastOnce())
+            ->method('error')
+            ->with(
+                $this->equalTo('Roster insert failed'),
+                $this->callback(static function ($context) {
+                    return is_array($context)
+                        && (int) ($context['order_id'] ?? 0) === 9501
+                        && (int) ($context['order_item_id'] ?? 0) === 5501;
+                })
+            );
+
+        $builder = $this->builderWithLogger($logger, static function () {
+            return null;
+        });
+        $order = $this->order(9501, $this->liveLine(5501));
+        $this->processor($builder)->processOrder($order);
+        $this->assertSame(0, count($this->created));
+        $prop = new \ReflectionProperty(RosterBuilder::class, 'build_stats');
+        $prop->setAccessible(true);
+        $stats = $prop->getValue($builder);
+        $this->assertNotEmpty($stats['errors'] ?? []);
+    }
+
+    private function builderWithLogger(Logger $logger, ?callable $create_callback = null): RosterBuilder {
+        $database = $this->createMock(Database::class);
+        $database->method('get_wpdb')->willReturn($this->wpdb);
+
+        $player = new Player([
+            'customer_id' => 1, 'player_index' => 0, 'first_name' => 'Synthetic', 'last_name' => 'Player',
+            'dob' => '2018-03-01', 'gender' => 'male', 'medical_conditions' => '', 'dietary_needs' => '',
+        ]);
+        $players = new PlayersCollection([$player]);
+        $player_repo = $this->createMock(PlayerRepository::class);
+        $player_repo->method('getPlayersByCustomerId')->willReturn($players);
+        $matcher = $this->createMock(PlayerMatcher::class);
+        $matcher->method('getAssignedPlayers')->willReturn($players);
+        $validator = $this->createMock(DataValidator::class);
+        $validator->method('validateRosterData')->willReturn(['valid' => true, 'errors' => []]);
+
+        $repo = $this->createMock(RosterRepository::class);
+        $repo->method('first')->willReturn(null);
+        $repo->method('count')->willReturn(0);
+        $repo->method('where')->willReturn(new RostersCollection());
+        if ($create_callback !== null) {
+            $repo->method('create')->willReturnCallback($create_callback);
+        } else {
+            $repo->method('create')->willReturnCallback(function (array $data) {
+                $roster = new Roster($data);
+                $roster->setKey(count($this->created) + 1);
+                $this->created[] = $roster->toArray();
+                return $roster;
+            });
+        }
+
+        return new RosterBuilder($logger, $database, $player_repo, $repo, $validator,
+            $this->createMock(EventMatcher::class), $matcher);
     }
 
     // ------------------------------------------------------------------ (6) control
