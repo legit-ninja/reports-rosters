@@ -375,6 +375,71 @@ class BookingReportAccuracyTest extends TestCase {
         ];
     }
 
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    private static function staleFeeOnlyOtherBreakdown(string $fee_label, float $amount): array {
+        return [[
+            'name' => $fee_label,
+            'type' => 'other',
+            'amount' => $amount,
+            'source' => 'order_fee',
+            'allocation_method' => 'proportional',
+        ]];
+    }
+
+    /** S09a: FR points fee-only persisted as other — reclassify to referral_points at read, amount unchanged. */
+    public function test_S09a_booking_report_fr_fee_only_other_reclassified_to_points(): void {
+        $amount = 34.0;
+        $order = $this->attributedOrder(125)->addLine(new FakeLineItem(1251, ['subtotal' => 405.0, 'total' => 371.0], [
+            Attr::META_ITEM_DISCOUNT_TOTAL => (string) $amount,
+            Attr::META_ITEM_DISCOUNTS => self::staleFeeOnlyOtherBreakdown('Réduction de points', $amount),
+        ]));
+        ReportAccuracyStore::addOrder($order);
+
+        $row = $this->report()['by_ref']['125-1251'];
+
+        $this->assertSame($amount, self::money($row['discount_amount']));
+        $this->assertSame(371.0, self::money($row['final_price']));
+        $this->assertSame('referral_points', $row['discount_type']);
+        $this->assertSame('referral_points', $row['discount_breakdown'][0]['type']);
+        $this->assertSame([], ReportAccuracyStore::writtenKeys());
+    }
+
+    /** S09a: DE points fee-only persisted as other — reclassify to referral_points at read. */
+    public function test_S09a_booking_report_de_fee_only_other_reclassified_to_points(): void {
+        $amount = 34.0;
+        $order = $this->attributedOrder(126)->addLine(new FakeLineItem(1261, ['subtotal' => 405.0, 'total' => 371.0], [
+            Attr::META_ITEM_DISCOUNT_TOTAL => (string) $amount,
+            Attr::META_ITEM_DISCOUNTS => self::staleFeeOnlyOtherBreakdown('Punkte-Rabatt', $amount),
+        ]));
+        ReportAccuracyStore::addOrder($order);
+
+        $row = $this->report()['by_ref']['126-1261'];
+
+        $this->assertSame($amount, self::money($row['discount_amount']));
+        $this->assertSame('referral_points', $row['discount_type']);
+        $this->assertNotSame('referral_first_order', $row['discount_type']);
+        $this->assertSame([], ReportAccuracyStore::writtenKeys());
+    }
+
+    /** S09a: FR first-order referral fee-only as other — referral_first_order, not points. */
+    public function test_S09a_booking_report_fee_only_referral_reclassified_not_points(): void {
+        $amount = 31.0;
+        $order = $this->attributedOrder(127)->addLine(new FakeLineItem(1271, ['subtotal' => 310.0, 'total' => 279.0], [
+            Attr::META_ITEM_DISCOUNT_TOTAL => (string) $amount,
+            Attr::META_ITEM_DISCOUNTS => self::staleFeeOnlyOtherBreakdown('Réduction de parrainage', $amount),
+        ]));
+        ReportAccuracyStore::addOrder($order);
+
+        $row = $this->report()['by_ref']['127-1271'];
+
+        $this->assertSame($amount, self::money($row['discount_amount']));
+        $this->assertSame('referral_first_order', $row['discount_type']);
+        $this->assertNotSame('referral_points', $row['discount_type']);
+        $this->assertSame([], ReportAccuracyStore::writtenKeys());
+    }
+
     /** S09: FR points fee persisted as "other" plus duplicate referral_order_meta — count once on read. */
     public function test_S09_booking_report_fr_stale_persisted_points_counted_once(): void {
         $amount = 34.0;
