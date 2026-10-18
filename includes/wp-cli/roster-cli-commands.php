@@ -114,8 +114,14 @@ final class Intersoccer_Rr_Wp_Cli {
 
         $summary = $service->summarizeMissingAttributionInDateRange($from, $to);
         \WP_CLI::log(sprintf('Dry run: %d orders missing attribution.', (int) $summary['order_count']));
-        \WP_CLI::log(sprintf('Gross CHF: %s', number_format((float) $summary['gross_chf'], 2, '.', '')));
-        \WP_CLI::log(sprintf('Net CHF: %s', number_format((float) $summary['net_chf'], 2, '.', '')));
+        \WP_CLI::log(sprintf(
+            'Order subtotal CHF (sum of line subtotals): %s',
+            number_format((float) $summary['gross_chf'], 2, '.', '')
+        ));
+        \WP_CLI::log(sprintf(
+            'Order total CHF (incl. tax, shipping, fees): %s',
+            number_format((float) $summary['net_chf'], 2, '.', '')
+        ));
         \WP_CLI::success('Dry run complete (no writes).');
     }
 }
