@@ -201,6 +201,13 @@ namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy {
             foreach ($this->typed_items['fee'] as $f) { $t += (float) $f->get_total(); }
             return $t;
         }
+        public function get_subtotal() {
+            $t = 0.0;
+            foreach ($this->typed_items['line_item'] as $i) {
+                $t += (float) $i->get_subtotal();
+            }
+            return $t;
+        }
         public function get_total_refunded() { return $this->total_refunded; }
         public function update_meta_data($key, $value) {
             $this->meta_data[$key] = $value;
