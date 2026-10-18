@@ -58,7 +58,10 @@ class OrderFinancialAttributionService {
             $item_discounts[$item_id] = $this->readLegacyItemDiscounts($item);
         }
 
-        foreach ($this->collectOrderDiscountSources($order) as $source) {
+        $sources = $this->collectOrderDiscountSources($order);
+        $sources = $this->filterOrderDiscountSourcesAgainstLegacyBuckets($item_discounts, $sources);
+
+        foreach ($sources as $source) {
             $this->allocateAmountToItems(
                 $item_discounts,
                 $line_items,
@@ -102,7 +105,10 @@ class OrderFinancialAttributionService {
             $item_discounts[$item_id] = $this->readLegacyItemDiscounts($item);
         }
 
-        foreach ($this->collectOrderDiscountSources($order) as $source) {
+        $sources = $this->collectOrderDiscountSources($order);
+        $sources = $this->filterOrderDiscountSourcesAgainstLegacyBuckets($item_discounts, $sources);
+
+        foreach ($sources as $source) {
             $this->allocateAmountToItems(
                 $item_discounts,
                 $line_items,
@@ -923,6 +929,85 @@ class OrderFinancialAttributionService {
     }
 
     /**
+     * Skip order-level fee/coupon allocation when legacy line meta already sums to the same bucket total.
+     *
+     * @param array<int,array<int,array<string,mixed>>> $item_discounts
+     * @param array<int,array{name:string,type:string,amount:float,source:string}> $sources
+     * @return array<int,array{name:string,type:string,amount:float,source:string}>
+     */
+    private function filterOrderDiscountSourcesAgainstLegacyBuckets(array $item_discounts, array $sources): array {
+        $legacy_sum_by_bucket = [];
+        $legacy_line_count_by_bucket = [];
+
+        foreach ($item_discounts as $discounts) {
+            foreach ((array) $discounts as $entry) {
+                if (!is_array($entry) || (string) ($entry['source'] ?? '') !== 'legacy_item_meta') {
+                    continue;
+                }
+
+                $amount = round((float) ($entry['amount'] ?? 0.0), 2);
+                if ($amount <= 0.0) {
+                    continue;
+                }
+
+                $bucket = intersoccer_map_discount_type_to_report_bucket((string) ($entry['type'] ?? ''));
+                $legacy_sum_by_bucket[$bucket] = ($legacy_sum_by_bucket[$bucket] ?? 0.0) + $amount;
+                $legacy_line_count_by_bucket[$bucket] = ($legacy_line_count_by_bucket[$bucket] ?? 0) + 1;
+            }
+        }
+
+        $fee_count_by_bucket = [];
+        foreach ($sources as $source) {
+            $source_key = (string) ($source['source'] ?? '');
+            if ($source_key !== 'order_fee' && $source_key !== 'woocommerce_coupon') {
+                continue;
+            }
+            $bucket = intersoccer_map_discount_type_to_report_bucket((string) ($source['type'] ?? ''));
+            $fee_count_by_bucket[$bucket] = ($fee_count_by_bucket[$bucket] ?? 0) + 1;
+        }
+
+        $warned_buckets = [];
+        $filtered = [];
+
+        foreach ($sources as $source) {
+            $source_key = (string) ($source['source'] ?? '');
+            if ($source_key !== 'order_fee' && $source_key !== 'woocommerce_coupon') {
+                $filtered[] = $source;
+                continue;
+            }
+
+            $bucket = intersoccer_map_discount_type_to_report_bucket((string) ($source['type'] ?? ''));
+            if ($bucket === 'other') {
+                $filtered[] = $source;
+                continue;
+            }
+
+            $legacy_sum = (float) ($legacy_sum_by_bucket[$bucket] ?? 0.0);
+            if ($legacy_sum <= 0.01) {
+                $filtered[] = $source;
+                continue;
+            }
+
+            $order_level = round((float) ($source['amount'] ?? 0.0), 2);
+            if (abs($legacy_sum - $order_level) <= 0.01) {
+                continue;
+            }
+
+            $filtered[] = $source;
+            if (!isset($warned_buckets[$bucket])) {
+                $warned_buckets[$bucket] = true;
+                $this->logger->warning('OrderFinancialAttributionService legacy bucket mismatch', [
+                    'bucket' => $bucket,
+                    'legacy_line_count' => (int) ($legacy_line_count_by_bucket[$bucket] ?? 0),
+                    'fee_or_coupon_count' => (int) ($fee_count_by_bucket[$bucket] ?? 0),
+                ]);
+            }
+        }
+
+        return $filtered;
+    }
+
+    /**
      * @param array<int,array<int,array<string,mixed>>> $item_discounts
      * @param array<int,\WC_Order_Item_Product>        $line_items
      */
@@ -1015,12 +1100,6 @@ class OrderFinancialAttributionService {
                     'allocation_method' => isset($discount['allocation_method']) ? (string) $discount['allocation_method'] : 'direct',
                 ];
                 $total += $amount;
-            }
-
-            if ($normalized !== [] && function_exists('intersoccer_reconcile_stale_persisted_item_discount')) {
-                $reconciled = intersoccer_reconcile_stale_persisted_item_discount($total, $normalized);
-                $total = (float) $reconciled['amount'];
-                $normalized = $reconciled['breakdown'];
             }
 
             $normalized_by_item[(int) $item_id] = [
