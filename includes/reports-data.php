@@ -1153,6 +1153,36 @@ function intersoccer_reports_merge_final_numbers_not_on_roster_rows(
     }
 }
 
+if (!function_exists('intersoccer_reports_row_product_type_slug')) {
+    /**
+     * @param array $row
+     * @return string Lowercase camp|course|tournament|birthday|unknown|''
+     */
+    function intersoccer_reports_row_product_type_slug(array $row) {
+        $product_id = isset($row['product_id']) ? (int) $row['product_id'] : 0;
+        $variation_id = isset($row['variation_id']) ? (int) $row['variation_id'] : 0;
+        if ($product_id <= 0 && !empty($row['order_item_id']) && function_exists('wc_get_order_item_meta')) {
+            $product_id = (int) wc_get_order_item_meta((int) $row['order_item_id'], '_product_id', true);
+        }
+        if ($product_id <= 0) {
+            return '';
+        }
+        if (!function_exists('intersoccer_get_product_type') && function_exists('intersoccer_manual_product_type_detection')) {
+            return strtolower(trim((string) intersoccer_manual_product_type_detection(
+                $product_id,
+                $variation_id > 0 ? $variation_id : null
+            )));
+        }
+        if (!function_exists('intersoccer_get_product_type_safe')) {
+            return '';
+        }
+        return strtolower(trim((string) intersoccer_get_product_type_safe(
+            $product_id,
+            $variation_id > 0 ? $variation_id : null
+        )));
+    }
+}
+
 /**
  * Whether a merged not-on-roster candidate belongs on the camp or course Final Numbers view.
  *
@@ -1167,8 +1197,11 @@ function intersoccer_reports_merge_row_matches_activity_scope(array $row, $activ
             ? intersoccer_roster_listing_activity_types('course')
             : ['Course'];
         $at = trim((string) ($row['activity_type'] ?? ''));
+        if ($at === '') {
+            return intersoccer_reports_row_product_type_slug($row) === 'course';
+        }
         foreach ($types as $type) {
-            if ($at !== '' && strcasecmp($at, (string) $type) === 0) {
+            if (strcasecmp($at, (string) $type) === 0) {
                 return true;
             }
         }
@@ -1183,7 +1216,14 @@ function intersoccer_reports_merge_row_matches_activity_scope(array $row, $activ
         : ['Camp'];
     $at = trim((string) ($row['activity_type'] ?? ''));
     if ($at === '') {
-        return true;
+        $ptype = intersoccer_reports_row_product_type_slug($row);
+        if ($ptype === 'course') {
+            return false;
+        }
+        if ($ptype === 'camp') {
+            return true;
+        }
+        return false;
     }
     foreach ($types as $type) {
         if (strcasecmp($at, (string) $type) === 0) {
