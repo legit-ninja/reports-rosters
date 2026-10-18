@@ -125,6 +125,54 @@ class ParseDateUnifiedDebugPrivacyTest extends TestCase {
         );
     }
 
+    public function test_name_and_data_quality_log_messages_exclude_pii_and_ids(): void {
+        $db = (string) file_get_contents(dirname(__DIR__, 2) . '/includes/db.php');
+        $utils = (string) file_get_contents(dirname(__DIR__, 2) . '/includes/utils.php');
+        $this->assertNotEmpty($db);
+        $this->assertNotEmpty($utils);
+
+        $this->assertStringContainsString(
+            "error_log('InterSoccer: Fallback first-name match used during roster rebuild');",
+            $db
+        );
+        $this->assertStringContainsString(
+            "error_log('InterSoccer: No matching player meta for attendee - Using order meta defaults');",
+            $utils
+        );
+        $this->assertStringNotContainsString('Billing last name', $db);
+        $this->assertDoesNotMatchRegularExpression(
+            '/Order object type during roster rebuild[^\\n]*get_billing_last_name/',
+            $db
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/Fallback first-name match[^\\n]*\\$assigned_attendee/',
+            $db
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/No matching player meta[^\\n]*\\$assigned_attendee/',
+            $utils
+        );
+
+        $fallback_pos = (int) strpos($db, 'Fallback first-name match used during roster rebuild');
+        $this->assertGreaterThan(0, $fallback_pos);
+        $fallback_context = substr($db, max(0, $fallback_pos - 120), 120);
+        $this->assertStringNotContainsString('WP_DEBUG', $fallback_context);
+
+        $meta_pos = (int) strpos($utils, 'No matching player meta for attendee - Using order meta defaults');
+        $this->assertGreaterThan(0, $meta_pos);
+        $meta_context = substr($utils, max(0, $meta_pos - 120), 120);
+        $this->assertStringNotContainsString('WP_DEBUG', $meta_context);
+
+        $this->assertStringContainsString(
+            "error_log('InterSoccer: Generated event_signature=' . \$roster_entry['event_signature'] . ' using normalized values');",
+            $db
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/Generated event_signature=[^\\n]*Order=/',
+            $db
+        );
+    }
+
     public function test_tournament_and_course_date_block_logs_exclude_order_and_item_ids(): void {
         $utils = (string) file_get_contents(dirname(__DIR__, 2) . '/includes/utils.php');
         $db = (string) file_get_contents(dirname(__DIR__, 2) . '/includes/db.php');

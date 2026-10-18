@@ -3189,13 +3189,13 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
 
     $order = wc_get_order($order_id);
     if (!$order) {
-        error_log('InterSoccer: Invalid order ID ' . $order_id . ' in upsert_roster_entry');
+        error_log('InterSoccer: Invalid order in upsert_roster_entry');
         return false;
     }
 
     $item = $order->get_item($item_id);
     if (!$item) {
-        error_log('InterSoccer: Invalid item ID ' . $item_id . ' in order ' . $order_id . ' for upsert_roster_entry');
+        error_log('InterSoccer: Invalid order item in upsert_roster_entry');
         return false;
     }
 
@@ -3203,17 +3203,21 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     $variation_id = $item->get_variation_id();
     $type_id = $variation_id ?: $product_id;
     $product_type = intersoccer_get_product_type_safe($product_id, $variation_id);
-    error_log('InterSoccer: Item ' . $item_id . ' product_type: ' . $product_type . ' (using ID: ' . $type_id . ', parent: ' . $product_id . ', variation: ' . $variation_id . ')');
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer: upsert_roster_entry product_type: ' . $product_type);
+    }
 
     if (!in_array($product_type, ['camp', 'course', 'birthday', 'tournament'])) {
-        error_log('InterSoccer: Skipping item ' . $item_id . ' in order ' . $order_id . ' - Reason: Non-event product type (' . $product_type . ')');
+        error_log('InterSoccer: Skipping roster upsert - Reason: Non-event product type (' . $product_type . ')');
         return false;
     }
 
     // Get item metadata - use same robust method as prepare_roster_entry
     $raw_order_item_meta = wc_get_order_item_meta($item_id, '', true);
     $meta_keys = is_array($raw_order_item_meta) ? array_keys($raw_order_item_meta) : [];
-    error_log('InterSoccer: Order item meta keys for order ' . $order_id . ', item ' . $item_id . ': ' . implode(', ', $meta_keys));
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer: Order item meta keys: ' . implode(', ', $meta_keys));
+    }
 
     $item_meta = array_combine(
         array_keys($raw_order_item_meta),
@@ -3227,12 +3231,14 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
 
     // Day-related log for debugging
     $day_related_keys = array_filter($item_meta, function($k) { return stripos($k, 'course') !== false || stripos($k, 'day') !== false; }, ARRAY_FILTER_USE_KEY);
-    error_log('InterSoccer: Day-related meta keys for item ' . $item_id . ': ' . print_r($day_related_keys, true));
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer: Day-related meta keys: ' . print_r($day_related_keys, true));
+    }
 
     // Assigned Attendee
     $assigned_attendee = isset($item_meta['Assigned Attendee']) ? trim($item_meta['Assigned Attendee']) : '';
     if (empty($assigned_attendee)) {
-        error_log('InterSoccer: Skipping item ' . $item_id . ' in order ' . $order_id . ' - Reason: No Assigned Attendee found');
+        error_log('InterSoccer: Skipping roster upsert - Reason: No Assigned Attendee found');
         return false;
     }
 
@@ -3254,7 +3260,9 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         ? intersoccer_get_user_players($user_id)
         : (maybe_unserialize(get_user_meta($user_id, 'intersoccer_players', true)) ?: []);
     $player_count = is_array($players) ? count($players) : 0;
-    error_log('InterSoccer: User ' . $user_id . ' players meta count: ' . $player_count);
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer: Guardian players meta count: ' . $player_count);
+    }
     $player_index = $item_meta['assigned_player'] ?? false;
     $assigned_player_id = $item_meta['assigned_player_id'] ?? '';
     $age = isset($item_meta['Player Age']) ? (int)$item_meta['Player Age'] : null;
@@ -3299,7 +3307,7 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         }
     }
     if (!$matched) {
-        error_log('InterSoccer: No matching player meta for attendee ' . $assigned_attendee . ' in order ' . $order_id . ', item ' . $item_id . ' - Using order meta defaults');
+        error_log('InterSoccer: No matching player meta for attendee - Using order meta defaults');
         $dob = $item_meta['Attendee DOB'] ?? null;
         $dob_obj = $dob ? DateTime::createFromFormat('Y-m-d', $dob) : null;
         $age = $dob_obj ? $dob_obj->diff(new DateTime())->y : $age;
@@ -3418,7 +3426,9 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     }
     // Set activity_type based on product_type
     $activity_type = $product_type === 'camp' ? 'Camp' : ($product_type === 'course' ? 'Course' : ucfirst($product_type));
-    error_log('InterSoccer: Set activity_type to ' . $activity_type . ' for order ' . $order_id . ', item ' . $item_id);
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer: Set activity_type to ' . $activity_type);
+    }
 
     // Parse dates using unified parser
     if ($product_type === 'camp' && function_exists('intersoccer_reports_resolve_camp_schedule')) {
@@ -3450,7 +3460,9 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
                 if ($default_variation) {
                     $tournament_date = $default_variation->get_attribute('pa_date') ?: $default_variation->get_attribute('Date');
                     if ($tournament_date) {
-                        error_log('InterSoccer: Found tournament date in default language variation ' . $default_variation_id . ' attributes: ' . $tournament_date . ' (order ' . $order_id . ', item ' . $item_id . ')');
+                        if (defined('WP_DEBUG') && WP_DEBUG) {
+                            error_log('InterSoccer: Found tournament date in default language variation attributes: ' . $tournament_date);
+                        }
                     }
                 }
             }
@@ -3473,7 +3485,9 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         }
         
         if ($tournament_date) {
-            error_log('InterSoccer: Found tournament date attribute for order ' . $order_id . ', item ' . $item_id . ': ' . $tournament_date);
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer: Found tournament date attribute: ' . $tournament_date);
+            }
             
             // Clean up the date string (remove extra whitespace, handle slug format)
             $tournament_date = trim($tournament_date);
@@ -3494,7 +3508,9 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
                     $month_name = $french_months[$month_lower];
                 }
                 $tournament_date = $day_name . ' ' . $day_num . ' ' . $month_name;
-                error_log('InterSoccer: Converted slug format date to readable format: ' . $tournament_date . ' (order ' . $order_id . ', item ' . $item_id . ')');
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('InterSoccer: Converted slug format date to readable format: ' . $tournament_date);
+                }
             }
             
             // If the date doesn't have a year, try to extract it from the season
