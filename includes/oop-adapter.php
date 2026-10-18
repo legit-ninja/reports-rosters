@@ -653,15 +653,22 @@ function intersoccer_oop_attribute_order_financials($order_id) {
         return;
     }
 
-    $order = wc_get_order($order_id);
+    if (is_object($order_id) && method_exists($order_id, 'get_id')) {
+        $order = $order_id;
+    } else {
+        $order = wc_get_order($order_id);
+    }
+
     if (!$order) {
         return;
     }
 
+    $resolved_order_id = (int) $order->get_id();
+
     try {
         intersoccer_oop_get_order_financial_attribution_service()->attributeOrderDiscounts($order);
     } catch (\Throwable $e) {
-        error_log('InterSoccer OOP: Financial attribution failed for order ' . $order_id . ' - ' . $e->getMessage());
+        error_log('InterSoccer OOP: Financial attribution failed for order ' . $resolved_order_id . ' - ' . $e->getMessage());
     }
 }
 }

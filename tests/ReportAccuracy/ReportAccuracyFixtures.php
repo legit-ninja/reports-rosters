@@ -55,6 +55,9 @@ namespace {
     // Same contract as includes/oop-adapter.php (not loaded by the bootstrap).
     if (!function_exists('intersoccer_oop_get_order_financial_attribution_service')) {
         function intersoccer_oop_get_order_financial_attribution_service() {
+            if (isset($GLOBALS['intersoccer_test_attribution_service_override'])) {
+                return $GLOBALS['intersoccer_test_attribution_service_override'];
+            }
             static $service = null;
             if ($service === null) {
                 $service = new OrderFinancialAttributionService(new \InterSoccer\ReportsRosters\Core\Logger());
