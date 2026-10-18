@@ -41,7 +41,9 @@ class FinalNumbersAccuracyTest extends TestCase {
         $n = 0;
         foreach ($group as $r) {
             $agg = intersoccer_reports_aggregate_camp_location_group([$r], false);
-            if ($agg['full_week'] + $agg['buyclub'] + array_sum($agg['individual_days']) > 0) {
+            $in_grid = $agg['full_week'] + $agg['buyclub'] + array_sum($agg['individual_days'])
+                + (int) ($agg['unknown_booking_type'] ?? 0) + (int) ($agg['days_unknown'] ?? 0);
+            if ($in_grid > 0) {
                 $n++;
             }
         }
@@ -50,7 +52,6 @@ class FinalNumbersAccuracyTest extends TestCase {
 
     /** S14a: booking type 'other' / empty is counted in the header but in no column. */
     public function test_S14a_unknown_booking_type_row_appears_in_a_column(): void {
-        $this->markTestIncomplete('Pending fix F: Final Numbers unknown booking type column.');
         $group = [self::row(1, 'other'), self::row(2, '')];
 
         $header = intersoccer_reports_compute_camp_registration_totals($group, false)['all'];
@@ -62,7 +63,6 @@ class FinalNumbersAccuracyTest extends TestCase {
 
     /** S14b: single-day row whose days are only in days_selected (selected_days empty) gets no day slot. */
     public function test_S14b_single_day_row_counts_days_from_days_selected(): void {
-        $this->markTestIncomplete('Pending fix F: Final Numbers days_selected backfill.');
         $group = [self::row(3, 'Single Day(s)', '', 'Monday, Tuesday')];
 
         $agg = intersoccer_reports_aggregate_camp_location_group($group, false);
@@ -76,5 +76,30 @@ class FinalNumbersAccuracyTest extends TestCase {
     public function test_S14b_control_selected_days_counted(): void {
         $agg = intersoccer_reports_aggregate_camp_location_group([self::row(4, 'Single Day(s)', 'Monday, Tuesday')], false);
         $this->assertSame([1, 1], [$agg['individual_days']['Monday'], $agg['individual_days']['Tuesday']]);
+    }
+
+    public function test_not_on_roster_line_counts_undated_event_and_thin_rows(): void {
+        $entries = [
+            self::row(10, 'Full Week') + ['activity_type' => 'Camp', 'venue' => 'Venue A', 'season' => 'Summer 2026'],
+            ['order_item_id' => 11, 'booking_type' => '', 'selected_days' => '', 'days_selected' => '', 'age_group' => '5-13y Full Day',
+                'activity_type' => 'Event', 'start_date' => '', 'end_date' => '', 'line_subtotal' => 100, 'line_total' => 100, 'is_buyclub' => false],
+            ['order_item_id' => 12, 'booking_type' => '', 'selected_days' => '', 'days_selected' => '', 'age_group' => '',
+                'activity_type' => 'Camp', 'venue' => '', 'season' => '', 'line_subtotal' => 50, 'line_total' => 50, 'is_buyclub' => false,
+                'event_details' => json_encode(['thin_line' => true])],
+        ];
+        $report = intersoccer_reports_build_camp_report_from_entries($entries, false, 2026);
+        $this->assertSame(1, $report['__player_registration_totals__']['all']);
+        $this->assertSame(2, $report['__player_registration_totals__']['not_on_roster']);
+    }
+
+    public function test_under_age_flagged_row_still_counts_in_registration_totals(): void {
+        $row = self::row(20, 'Full Week') + [
+            'activity_type' => 'Camp',
+            'venue' => 'Venue B',
+            'season' => 'Summer 2026',
+            'event_details' => json_encode(['under_age_at_start' => true]),
+        ];
+        $totals = intersoccer_reports_compute_camp_registration_totals([$row], false);
+        $this->assertSame(1, $totals['all']);
     }
 }

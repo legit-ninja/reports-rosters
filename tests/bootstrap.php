@@ -168,6 +168,12 @@ if (!function_exists('get_bloginfo')) {
     function get_bloginfo($show = '', $filter = 'raw') { return '6.0'; }
 }
 
+if (!function_exists('wpml_get_default_language')) {
+    function wpml_get_default_language() {
+        return apply_filters('wpml_default_language', 'en');
+    }
+}
+
 // URL functions
 if (!function_exists('admin_url')) {
     function admin_url($path = '', $scheme = 'admin') {
