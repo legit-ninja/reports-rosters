@@ -42,11 +42,13 @@ class AttributionBackfillTest extends TestCase {
             ->setMeta(Attr::META_ORDER_ATTRIBUTION_AT, '2026-07-01 10:00:05'));
 
         global $wpdb;
-        $wpdb = new BackfillMissingAttributionWpdb([601]);
+        $wpdb = new \BackfillMissingAttributionWpdb([601]);
 
         $summary = $this->service->summarizeMissingAttributionInDateRange('2025-01-01', '2026-12-31');
 
         $this->assertSame(1, $summary['order_count']);
+        $this->assertSame(1, $summary['applied_count']);
+        $this->assertSame(0, $summary['skipped_count']);
         $this->assertSame(400.0, $summary['gross_chf']);
         $this->assertSame(360.0, $summary['net_chf']);
         $this->assertSame([], ReportAccuracyStore::writtenKeys());
@@ -63,8 +65,13 @@ class AttributionBackfillTest extends TestCase {
         $service->expects($this->never())->method('applyMissingAttributionInDateRange');
         $service->method('summarizeMissingAttributionInDateRange')->willReturn([
             'order_count' => 0,
+            'applied_count' => 0,
+            'skipped_count' => 0,
+            'previously_skipped_count' => 0,
+            'failed_count' => 0,
             'gross_chf' => 0.0,
             'net_chf' => 0.0,
+            'skipped_reasons' => [],
         ]);
         $GLOBALS['intersoccer_test_attribution_service_override'] = $service;
 
@@ -82,6 +89,20 @@ class AttributionBackfillTest extends TestCase {
         ];
     }
 
+    public function test_attribution_backfill_cli_aborts_when_confirm_declined(): void {
+        $GLOBALS['intersoccer_test_cli_confirm_answer'] = 'n';
+        $GLOBALS['intersoccer_test_wp_cli_log'] = [];
+        $this->bootAttributionBackfillCli();
+        $service = $this->createMock(Attr::class);
+        $service->expects($this->never())->method('applyMissingAttributionInDateRange');
+        $GLOBALS['intersoccer_test_attribution_service_override'] = $service;
+
+        $cli = new \Intersoccer_Rr_Wp_Cli();
+        $cli->attribution_backfill([], ['apply' => true]);
+        $this->assertContains('Aborted, nothing written.', $GLOBALS['intersoccer_test_wp_cli_log']);
+        unset($GLOBALS['intersoccer_test_cli_confirm_answer'], $GLOBALS['intersoccer_test_attribution_service_override'], $GLOBALS['intersoccer_test_wp_cli_log']);
+    }
+
     private function bootAttributionBackfillCli(): void {
         if (!defined('WP_CLI')) {
             define('WP_CLI', true);
@@ -89,7 +110,11 @@ class AttributionBackfillTest extends TestCase {
         if (!class_exists('WP_CLI')) {
             eval(<<<'PHP'
 class WP_CLI {
-    public static function log($msg) {}
+    public static function log($msg) {
+        if (isset($GLOBALS['intersoccer_test_wp_cli_log']) && is_array($GLOBALS['intersoccer_test_wp_cli_log'])) {
+            $GLOBALS['intersoccer_test_wp_cli_log'][] = $msg;
+        }
+    }
     public static function success($msg) {}
     public static function error($msg) { throw new \RuntimeException((string) $msg); }
     public static function confirm($msg) { throw new \RuntimeException('confirm should not run in dry-run test'); }
@@ -114,33 +139,5 @@ PHP
         if (!class_exists('Intersoccer_Rr_Wp_Cli', false)) {
             require_once dirname(__DIR__, 2) . '/includes/wp-cli/roster-cli-commands.php';
         }
-    }
-}
-
-/**
- * Minimal wpdb stub: findMissingAttributionOrderIds() only needs get_col() after prepare().
- */
-class BackfillMissingAttributionWpdb {
-    public $posts = 'wp_posts';
-    public $postmeta = 'wp_postmeta';
-    public $prefix = 'wp_';
-
-    /** @var array<int,int> */
-    private $order_ids;
-
-    /** @param array<int,int> $order_ids */
-    public function __construct(array $order_ids) {
-        $this->order_ids = $order_ids;
-    }
-
-    public function prepare($query, ...$args) {
-        return 'BACKFILL_MISSING_ATTRIBUTION';
-    }
-
-    public function get_col($query) {
-        if ($query === 'BACKFILL_MISSING_ATTRIBUTION') {
-            return array_map('strval', $this->order_ids);
-        }
-        return [];
     }
 }

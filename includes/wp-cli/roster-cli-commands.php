@@ -108,20 +108,28 @@ final class Intersoccer_Rr_Wp_Cli {
 
         if ($apply) {
             if (!$yes) {
-                \WP_CLI::confirm('Apply financial attribution backfill for the selected date range?');
+                $prompt = 'Apply financial attribution backfill for the selected date range? [y/n] ';
+                $answer = isset($GLOBALS['intersoccer_test_cli_confirm_answer'])
+                    ? (string) $GLOBALS['intersoccer_test_cli_confirm_answer']
+                    : '';
+                if ($answer === '' && defined('STDIN') && is_resource(STDIN)) {
+                    \WP_CLI::log(rtrim($prompt));
+                    $answer = (string) fgets(STDIN);
+                }
+                if (strtolower(trim($answer)) !== 'y') {
+                    \WP_CLI::log('Aborted, nothing written.');
+                    return;
+                }
             }
             $result = $service->applyMissingAttributionInDateRange($from, $to);
-            \WP_CLI::log(sprintf(
-                'Applied attribution to %d orders (%d errors).',
-                (int) $result['processed_count'],
-                (int) $result['error_count']
-            ));
+            \WP_CLI::log($this->formatBackfillOutcomeLine($result, true));
             \WP_CLI::success('Backfill apply complete.');
             return;
         }
 
         $summary = $service->summarizeMissingAttributionInDateRange($from, $to);
-        \WP_CLI::log(sprintf('Dry run: %d orders missing attribution.', (int) $summary['order_count']));
+        \WP_CLI::log($this->formatBackfillOutcomeLine($summary, false));
+        \WP_CLI::log(sprintf('Dry run: %d orders pending attribution (excludes previously skipped).', (int) $summary['order_count']));
         \WP_CLI::log(sprintf(
             'Order subtotal CHF (sum of line subtotals): %s',
             number_format((float) $summary['gross_chf'], 2, '.', '')
@@ -131,6 +139,26 @@ final class Intersoccer_Rr_Wp_Cli {
             number_format((float) $summary['net_chf'], 2, '.', '')
         ));
         \WP_CLI::success('Dry run complete (no writes).');
+    }
+
+    /**
+     * @param array<string,mixed> $counts
+     */
+    private function formatBackfillOutcomeLine(array $counts, bool $is_apply): string {
+        $applied = (int) ($counts['applied_count'] ?? $counts['processed_count'] ?? 0);
+        $skipped = (int) ($counts['skipped_count'] ?? 0);
+        $failed = (int) ($counts['failed_count'] ?? $counts['error_count'] ?? 0);
+        $previously_skipped = (int) ($counts['previously_skipped_count'] ?? 0);
+
+        $line = $is_apply
+            ? sprintf('applied %d, skipped %d (no attributable line items), failed %d', $applied, $skipped, $failed)
+            : sprintf('would apply %d, skipped %d (no attributable line items), failed %d', $applied, $skipped, $failed);
+
+        if ($previously_skipped > 0) {
+            $line .= sprintf(', previously skipped %d', $previously_skipped);
+        }
+
+        return $line;
     }
 }
 

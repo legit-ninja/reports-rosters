@@ -725,12 +725,18 @@ function intersoccer_oop_backfill_financial_attribution_ajax() {
             $summary = $service->summarizeMissingAttributionInDateRange($start_date, $end_date);
             wp_send_json_success([
                 'message' => sprintf(
-                    __('Dry run: %d orders missing attribution.', 'intersoccer-reports-rosters'),
-                    (int) $summary['order_count']
+                    __('Dry run: would apply %1$d, skipped %2$d (no attributable line items), previously skipped %3$d.', 'intersoccer-reports-rosters'),
+                    (int) $summary['applied_count'],
+                    (int) $summary['skipped_count'],
+                    (int) $summary['previously_skipped_count']
                 ),
                 'dry_run' => true,
                 'summary' => $summary,
                 'order_count' => (int) $summary['order_count'],
+                'applied_count' => (int) $summary['applied_count'],
+                'skipped_count' => (int) $summary['skipped_count'],
+                'previously_skipped_count' => (int) $summary['previously_skipped_count'],
+                'failed_count' => (int) $summary['failed_count'],
                 'gross_chf' => (float) $summary['gross_chf'],
                 'net_chf' => (float) $summary['net_chf'],
             ]);
@@ -740,12 +746,17 @@ function intersoccer_oop_backfill_financial_attribution_ajax() {
         $result = $service->backfillBatch($start_date, $batch_size);
         wp_send_json_success([
             'message' => sprintf(
-                __('Backfilled %1$d orders. %2$d remaining.', 'intersoccer-reports-rosters'),
-                (int) $result['migrated_count'],
+                __('Applied %1$d, skipped %2$d (no attributable line items), failed %3$d. %4$d remaining.', 'intersoccer-reports-rosters'),
+                (int) ($result['applied_count'] ?? $result['migrated_count']),
+                (int) ($result['skipped_count'] ?? 0),
+                (int) ($result['failed_count'] ?? 0),
                 (int) $result['remaining_count']
             ),
             'result' => $result,
             'dry_run' => false,
+            'applied_count' => (int) ($result['applied_count'] ?? $result['migrated_count']),
+            'skipped_count' => (int) ($result['skipped_count'] ?? 0),
+            'failed_count' => (int) ($result['failed_count'] ?? 0),
         ]);
         return;
     } catch (\Throwable $e) {
