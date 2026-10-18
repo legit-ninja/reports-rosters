@@ -25,6 +25,40 @@ class FinalCampGridColumnsTest extends TestCase {
         $this->assertSame($header, $visible);
     }
 
+    public function test_multi_day_single_day_places_reconcile_header_helper_ui_and_export(): void {
+        require_once dirname(__DIR__, 2) . '/includes/reports-ui.php';
+        $group = [
+            ['order_item_id' => 10, 'booking_type' => 'Full Week', 'is_buyclub' => false, 'line_subtotal' => 100, 'line_total' => 100, 'line_quantity' => 1],
+            ['order_item_id' => 11, 'booking_type' => 'Single Day(s)', 'selected_days' => 'Monday, Tuesday', 'is_buyclub' => false, 'line_subtotal' => 100, 'line_total' => 100],
+            ['order_item_id' => 12, 'booking_type' => 'Full Week', 'is_buyclub' => false, 'line_subtotal' => 200, 'line_total' => 200, 'line_quantity' => 2],
+        ];
+        $header = intersoccer_reports_compute_camp_registration_totals($group, false)['all'];
+        $metrics = intersoccer_reports_aggregate_camp_location_group($group, false);
+        $helper_sum = intersoccer_reports_camp_metrics_visible_place_sum($metrics);
+        $this->assertSame(4, $header);
+        $this->assertSame(4, $helper_sum);
+        $this->assertSame(1, (int) $metrics['single_day_places']);
+        $this->assertSame(1, (int) $metrics['individual_days']['Monday']);
+        $this->assertSame(1, (int) $metrics['individual_days']['Tuesday']);
+
+        ob_start();
+        intersoccer_reports_echo_camp_metrics_cells($metrics);
+        $html = (string) ob_get_clean();
+        if (!preg_match_all('/<td[^>]*>([^<]*)<\/td>/', $html, $matches)) {
+            $this->fail('Expected camp metric cells in rendered output');
+        }
+        $place_cells = array_slice($matches[1], 0, 5);
+        $slot_cells = array_slice($matches[1], 5, 5);
+        $this->assertSame($header, array_sum(array_map('intval', $place_cells)));
+        $this->assertSame(2, array_sum(array_map('intval', $slot_cells)));
+
+        $export_places = intersoccer_reports_camp_export_metric_place_values($metrics);
+        $this->assertSame($header, array_sum($export_places));
+        $export_row = intersoccer_reports_camp_export_metric_row_values($metrics);
+        $this->assertSame($header, array_sum(array_slice($export_row, 0, 5)));
+        $this->assertSame(2, array_sum(array_slice($export_row, 5, 5)));
+    }
+
     public function test_echo_camp_metrics_cells_place_sum_matches_header(): void {
         require_once dirname(__DIR__, 2) . '/includes/reports-ui.php';
         $group = [
@@ -41,7 +75,7 @@ class FinalCampGridColumnsTest extends TestCase {
         if (!preg_match_all('/<td[^>]*>([^<]*)<\/td>/', $html, $matches)) {
             $this->fail('Expected camp metric cells in rendered output');
         }
-        $place_cells = array_slice($matches[1], 0, 9);
+        $place_cells = array_slice($matches[1], 0, 5);
         $rendered_sum = array_sum(array_map('intval', $place_cells));
         $this->assertSame($header, $rendered_sum);
     }
@@ -69,5 +103,16 @@ class FinalCampGridColumnsTest extends TestCase {
         $this->assertFalse(intersoccer_reports_merge_row_matches_activity_scope($camp_row, 'course'));
         $this->assertTrue(intersoccer_reports_merge_row_matches_activity_scope($course_row, 'course'));
         $this->assertFalse(intersoccer_reports_merge_row_matches_activity_scope($course_row, 'camp'));
+    }
+
+    public function test_empty_activity_type_course_product_scoped_by_product_type(): void {
+        if (!function_exists('intersoccer_get_product_type_safe')) {
+            require_once dirname(__DIR__, 2) . '/includes/utils.php';
+        }
+        require_once dirname(__DIR__, 2) . '/includes/reports-data.php';
+        \InterSoccerRRTestMeta::$data[9001]['_intersoccer_product_type'] = 'course';
+        $row = ['activity_type' => '', 'product_id' => 9001, 'order_item_id' => 0];
+        $this->assertFalse(intersoccer_reports_merge_row_matches_activity_scope($row, 'camp'));
+        $this->assertTrue(intersoccer_reports_merge_row_matches_activity_scope($row, 'course'));
     }
 }

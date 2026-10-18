@@ -208,6 +208,7 @@ if (!function_exists('intersoccer_reports_empty_camp_metrics')) {
             'buyclub' => 0,
             'unknown_booking_type' => 0,
             'days_unknown' => 0,
+            'single_day_places' => 0,
             'individual_days' => [
                 'Monday' => 0,
                 'Tuesday' => 0,
@@ -244,6 +245,7 @@ if (!function_exists('intersoccer_reports_aggregate_camp_location_group')) {
         $buyclub = 0;
         $unknown_booking_type = 0;
         $days_unknown = 0;
+        $single_day_places = 0;
         $individual_days = ['Monday' => 0, 'Tuesday' => 0, 'Wednesday' => 0, 'Thursday' => 0, 'Friday' => 0];
         $processed_count = 0;
         $counted_order_items = [];
@@ -294,6 +296,7 @@ if (!function_exists('intersoccer_reports_aggregate_camp_location_group')) {
                     ? intersoccer_reports_camp_row_effective_selected_days($entry)
                     : (string) ($entry['selected_days'] ?? '');
                 if ($sd !== '') {
+                    $single_day_places += $places;
                     $days = array_map('trim', explode(',', $sd));
                     foreach ($days as $day) {
                         if ($day === '') {
@@ -327,6 +330,7 @@ if (!function_exists('intersoccer_reports_aggregate_camp_location_group')) {
             'buyclub' => $buyclub,
             'unknown_booking_type' => $unknown_booking_type,
             'days_unknown' => $days_unknown,
+            'single_day_places' => $single_day_places,
             'individual_days' => $individual_days,
             'min_max' => "$min-$max",
             'unique_records' => $processed_count,
@@ -1306,13 +1310,13 @@ if (!function_exists('intersoccer_reports_camp_metrics_visible_place_sum')) {
             + (int) ($m['buyclub'] ?? 0)
             + (int) ($m['unknown_booking_type'] ?? 0)
             + (int) ($m['days_unknown'] ?? 0)
-            + (int) array_sum(is_array($m['individual_days'] ?? null) ? $m['individual_days'] : []);
+            + (int) ($m['single_day_places'] ?? 0);
     }
 }
 
 if (!function_exists('intersoccer_reports_camp_export_metric_place_values')) {
     /**
-     * Camp grid place columns for export (Full Week … Friday); min-max is separate.
+     * Summable place columns only (excludes per-day slot breakdown).
      *
      * @param array $metrics Normalized or raw camp metrics block.
      * @return int[]
@@ -1321,16 +1325,32 @@ if (!function_exists('intersoccer_reports_camp_export_metric_place_values')) {
         $m = function_exists('intersoccer_reports_normalize_camp_metrics')
             ? intersoccer_reports_normalize_camp_metrics($metrics)
             : $metrics;
-        $values = [
+        return [
             (int) ($m['full_week'] ?? 0),
             (int) ($m['buyclub'] ?? 0),
             (int) ($m['unknown_booking_type'] ?? 0),
             (int) ($m['days_unknown'] ?? 0),
+            (int) ($m['single_day_places'] ?? 0),
         ];
+    }
+}
+
+if (!function_exists('intersoccer_reports_camp_export_metric_row_values')) {
+    /**
+     * Full camp grid row for export: place columns then day-slot columns (min-max separate).
+     *
+     * @param array $metrics Normalized or raw camp metrics block.
+     * @return int[]
+     */
+    function intersoccer_reports_camp_export_metric_row_values(array $metrics) {
+        $m = function_exists('intersoccer_reports_normalize_camp_metrics')
+            ? intersoccer_reports_normalize_camp_metrics($metrics)
+            : $metrics;
+        $row = intersoccer_reports_camp_export_metric_place_values($m);
         foreach (['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as $day) {
-            $values[] = (int) ($m['individual_days'][$day] ?? 0);
+            $row[] = (int) ($m['individual_days'][$day] ?? 0);
         }
-        return $values;
+        return $row;
     }
 }
 
@@ -1352,6 +1372,7 @@ if (!function_exists('intersoccer_reports_normalize_camp_metrics')) {
             'buyclub' => (int) ($data['buyclub'] ?? 0),
             'unknown_booking_type' => (int) ($data['unknown_booking_type'] ?? 0),
             'days_unknown' => (int) ($data['days_unknown'] ?? 0),
+            'single_day_places' => (int) ($data['single_day_places'] ?? 0),
             'individual_days' => array_merge(
                 $empty['individual_days'],
                 is_array($data['individual_days'] ?? null) ? $data['individual_days'] : []
@@ -1382,6 +1403,7 @@ if (!function_exists('intersoccer_reports_camp_grand_totals')) {
             'buyclub' => 0,
             'unknown_booking_type' => 0,
             'days_unknown' => 0,
+            'single_day_places' => 0,
             'individual_day_slots' => 0,
         ];
         $out = [
@@ -1411,6 +1433,7 @@ if (!function_exists('intersoccer_reports_camp_grand_totals')) {
                         $out[$bucket]['buyclub'] += $m['buyclub'];
                         $out[$bucket]['unknown_booking_type'] += $m['unknown_booking_type'];
                         $out[$bucket]['days_unknown'] += $m['days_unknown'];
+                        $out[$bucket]['single_day_places'] += $m['single_day_places'];
                         $out[$bucket]['individual_day_slots'] += (int) array_sum($m['individual_days']);
                     }
                 }
