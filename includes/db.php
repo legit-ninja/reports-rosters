@@ -195,24 +195,55 @@ function intersoccer_migrate_rosters_table() {
     }
 
     if (version_compare($db_version, '2.4.0', '<')) {
-        $backup = $rosters_table . '_bak_2_4_0';
-        $backup_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $backup));
-        if (empty($backup_exists)) {
-            $wpdb->query("CREATE TABLE {$backup} LIKE {$rosters_table}");
-            $wpdb->query("INSERT INTO {$backup} SELECT * FROM {$rosters_table}");
+        if (function_exists('intersoccer_migrate_rosters_schema_2_4_0')
+            && intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table)) {
+            update_option('intersoccer_db_version', '2.4.0');
+            error_log('InterSoccer: Widened event_type / camp_times (schema 2.4.0)');
         }
-        $columns = $wpdb->get_col("DESCRIBE $rosters_table", 0);
-        if (in_array('event_type', $columns, true)) {
-            $wpdb->query("ALTER TABLE $rosters_table MODIFY event_type varchar(191) DEFAULT NULL");
-        }
-        if (in_array('camp_times', $columns, true)) {
-            $wpdb->query("ALTER TABLE $rosters_table MODIFY camp_times varchar(191) DEFAULT NULL");
-        } elseif (in_array('times', $columns, true)) {
-            $wpdb->query("ALTER TABLE $rosters_table MODIFY times varchar(191) DEFAULT ''");
-        }
-        update_option('intersoccer_db_version', '2.4.0');
-        error_log('InterSoccer: Widened event_type / camp_times (schema 2.4.0)');
     }
+}
+
+/**
+ * Legacy roster table migration: widen event_type / camp_times with backup-before-ALTER.
+ *
+ * @param \wpdb  $wpdb
+ * @param string $rosters_table
+ * @return bool False when snapshot fails (no ALTER performed).
+ */
+function intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table) {
+    $backup = $rosters_table . '_bak_2_4_0';
+    $backup_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $backup));
+    if (empty($backup_exists)) {
+        $created = $wpdb->query("CREATE TABLE {$backup} LIKE {$rosters_table}");
+        if ($created === false) {
+            error_log('InterSoccer: Failed roster backup CREATE before schema 2.4.0: ' . $wpdb->last_error);
+            return false;
+        }
+        $copied = $wpdb->query("INSERT INTO {$backup} SELECT * FROM {$rosters_table}");
+        if ($copied === false) {
+            error_log('InterSoccer: Failed roster backup INSERT before schema 2.4.0: ' . $wpdb->last_error);
+            return false;
+        }
+    }
+    $columns = $wpdb->get_col("DESCRIBE $rosters_table", 0);
+    if (in_array('event_type', $columns, true)) {
+        if ($wpdb->query("ALTER TABLE $rosters_table MODIFY event_type varchar(191) DEFAULT NULL") === false) {
+            error_log('InterSoccer: Failed to widen event_type (schema 2.4.0): ' . $wpdb->last_error);
+            return false;
+        }
+    }
+    if (in_array('camp_times', $columns, true)) {
+        if ($wpdb->query("ALTER TABLE $rosters_table MODIFY camp_times varchar(191) DEFAULT NULL") === false) {
+            error_log('InterSoccer: Failed to widen camp_times (schema 2.4.0): ' . $wpdb->last_error);
+            return false;
+        }
+    } elseif (in_array('times', $columns, true)) {
+        if ($wpdb->query("ALTER TABLE $rosters_table MODIFY times varchar(191) DEFAULT ''") === false) {
+            error_log('InterSoccer: Failed to widen times (schema 2.4.0): ' . $wpdb->last_error);
+            return false;
+        }
+    }
+    return true;
 }
 
 /**
