@@ -937,13 +937,13 @@ class RosterBuilder {
                 
             } catch (\Exception $e) {
                 $this->build_stats['validation_errors']++;
-                $this->build_stats['errors'][] = "Player {$player->getFullName()}: " . $e->getMessage();
+                $reason = $e->getMessage();
+                $this->build_stats['errors'][] = "Order {$order->get_id()}, item {$item_id}: {$reason}";
 
                 $this->logger->error('Failed to create roster for player', [
                     'order_id' => $order->get_id(),
                     'order_item_id' => $item_id,
-                    'player' => $player->getLogSummary(),
-                    'error' => $e->getMessage()
+                    'reason' => $reason,
                 ]);
             }
         }
@@ -1560,6 +1560,13 @@ class RosterBuilder {
                 'order_id' => (int) ($roster_data['order_id'] ?? 0),
                 'order_item_id' => (int) ($roster_data['order_item_id'] ?? 0),
             ]);
+            $english = $this->resolveEnglishProductNameForDeletedLine($roster_data);
+            if (!empty($english['product_name'])) {
+                $roster_data['product_name'] = $english['product_name'];
+            }
+            if (!empty($english['name_not_english'])) {
+                $roster_data['_name_not_english'] = true;
+            }
         }
 
         // Parse event details from various sources
@@ -1727,6 +1734,9 @@ class RosterBuilder {
         if (!empty($roster_data['product_deleted'])) {
             $details['product_deleted'] = true;
         }
+        if (!empty($roster_data['_name_not_english'])) {
+            $details['name_not_english'] = true;
+        }
 
         return array_filter($details); // Remove null values
     }
@@ -1756,20 +1766,56 @@ class RosterBuilder {
         return $details;
     }
 
-    private function recordRosterInsertFailure(int $order_id, int $order_item_id, string $message): void {
-        global $wpdb;
-        $db_error = (isset($wpdb) && is_object($wpdb) && !empty($wpdb->last_error))
-            ? (string) $wpdb->last_error
-            : '';
-        $summary = $message . ($db_error !== '' ? (': ' . $db_error) : '');
+    private function recordRosterInsertFailure(int $order_id, int $order_item_id, string $reason): void {
         $this->build_stats['validation_errors']++;
-        $this->build_stats['errors'][] = "Order {$order_id}, item {$order_item_id}: {$summary}";
+        $this->build_stats['errors'][] = "Order {$order_id}, item {$order_item_id}: {$reason}";
         $this->logger->error('Roster insert failed', [
             'order_id' => $order_id,
             'order_item_id' => $order_item_id,
-            'db_error' => $db_error,
-            'message' => $message,
+            'reason' => $reason,
         ]);
+    }
+
+    /**
+     * Prefer English / default-language product title for deleted catalogue lines.
+     *
+     * @return array{product_name:string,name_not_english:bool}
+     */
+    private function resolveEnglishProductNameForDeletedLine(array $roster_data): array {
+        $stored = trim((string) ($roster_data['product_name'] ?? ''));
+        $variation_id = (int) ($roster_data['variation_id'] ?? 0);
+        $product_id = (int) ($roster_data['product_id'] ?? 0);
+        $lookup_id = $variation_id > 0 ? $variation_id : $product_id;
+        if ($stored === '' && $lookup_id <= 0) {
+            return ['product_name' => '', 'name_not_english' => true];
+        }
+        if (function_exists('intersoccer_get_english_product_name')) {
+            $english = trim((string) intersoccer_get_english_product_name($stored, $lookup_id));
+            if ($english !== '' && $english !== 'N/A' && $english !== $stored) {
+                return ['product_name' => $english, 'name_not_english' => false];
+            }
+        }
+        $default_lang = function_exists('apply_filters') ? apply_filters('wpml_default_language', null) : null;
+        $wpml_resolved = false;
+        if ($lookup_id > 0 && !empty($default_lang) && function_exists('apply_filters')) {
+            $canon = (int) apply_filters('wpml_object_id', $lookup_id, 'product', true, $default_lang);
+            if ($canon > 0 && function_exists('wc_get_product')) {
+                $product = wc_get_product($canon);
+                if ($product && method_exists($product, 'get_name')) {
+                    $title = trim((string) $product->get_name());
+                    if ($title !== '') {
+                        $wpml_resolved = true;
+                        if ($title !== $stored) {
+                            return ['product_name' => $title, 'name_not_english' => false];
+                        }
+                    }
+                }
+            }
+        }
+        return [
+            'product_name' => $stored,
+            'name_not_english' => $stored !== '' && !empty($default_lang) && !$wpml_resolved,
+        ];
     }
 
     /**
@@ -2074,7 +2120,14 @@ class RosterBuilder {
         if (!empty($options['skip_age_group_validation'])) {
             $roster_data['_skip_age_group_validation'] = true;
         }
+        global $wpdb;
+        if (isset($wpdb) && is_object($wpdb)) {
+            $wpdb->last_error = '';
+        }
         $roster = $this->roster_repository->create($roster_data);
+        $db_error = (isset($wpdb) && is_object($wpdb) && !empty($wpdb->last_error))
+            ? (string) $wpdb->last_error
+            : '';
         if (!$roster && !empty($options['update_existing'])) {
             $existing_on_conflict = $this->findExistingRoster($roster_data);
             if ($existing_on_conflict) {
@@ -2099,10 +2152,14 @@ class RosterBuilder {
                 'order_id' => $roster_data['order_id']
             ]);
         } else {
+            $reason = 'Roster repository create returned no row';
+            if ($db_error !== '') {
+                $reason .= ': ' . $db_error;
+            }
             $this->recordRosterInsertFailure(
                 (int) ($roster_data['order_id'] ?? 0),
                 (int) ($roster_data['order_item_id'] ?? 0),
-                'Roster repository create returned no row'
+                $reason
             );
         }
         

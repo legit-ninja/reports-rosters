@@ -112,6 +112,7 @@ class FakeVariation extends \WC_Product_Variation {
     }
     public function get_meta($key, $single = true) { return $single ? '' : []; }
     public function get_title() { return $this->data['name']; }
+    public function get_name() { return $this->data['name']; }
 }
 
 class FakeSimpleProduct extends \WC_Product {
@@ -122,6 +123,7 @@ class FakeSimpleProduct extends \WC_Product {
     public function is_type($t) { return $t === 'variable'; }
     public function get_meta($key, $single = true) { return $single ? '' : []; }
     public function get_title() { return $this->data['name']; }
+    public function get_name() { return $this->data['name']; }
 }
 
 final class DeletedProductFixture {
@@ -611,6 +613,54 @@ class DeletedProductRosterTest extends TestCase {
     }
 
     // ------------------------------------------------------------------ (6) control
+
+    public function test_deleted_product_uses_english_name_when_wpml_resolves(): void {
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$rest) {
+            if ($hook === 'wpml_default_language') {
+                return 'en';
+            }
+            if ($hook === 'wpml_object_id') {
+                return DeletedProductFixture::LIVE_VID;
+            }
+            return $value;
+        };
+        $french = 'Cours dominical synthétique - Site A - Hiver 2026';
+        $builder = $this->builder();
+        $method = new \ReflectionMethod($builder, 'resolveEnglishProductNameForDeletedLine');
+        $method->setAccessible(true);
+        $resolved = $method->invoke($builder, [
+            'product_name' => $french,
+            'product_id' => DeletedProductFixture::DELETED_PID,
+            'variation_id' => DeletedProductFixture::DELETED_VID,
+        ]);
+        $this->assertSame('Synthetic Sunday Course - Venue A', $resolved['product_name']);
+        $this->assertFalse($resolved['name_not_english']);
+        unset($GLOBALS['intersoccer_test_apply_filters_callback']);
+    }
+
+    public function test_deleted_product_french_fallback_sets_name_not_english_flag(): void {
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$rest) {
+            if ($hook === 'wpml_default_language') {
+                return 'en';
+            }
+            if ($hook === 'wpml_object_id') {
+                return DeletedProductFixture::DELETED_VID;
+            }
+            return $value;
+        };
+        $french = 'Cours dominical synthétique - Site A - Hiver 2026';
+        $builder = $this->builder();
+        $method = new \ReflectionMethod($builder, 'resolveEnglishProductNameForDeletedLine');
+        $method->setAccessible(true);
+        $resolved = $method->invoke($builder, [
+            'product_name' => $french,
+            'product_id' => DeletedProductFixture::DELETED_PID,
+            'variation_id' => DeletedProductFixture::DELETED_VID,
+        ]);
+        $this->assertSame($french, $resolved['product_name']);
+        $this->assertTrue($resolved['name_not_english']);
+        unset($GLOBALS['intersoccer_test_apply_filters_callback']);
+    }
 
     /** (6) Control: same line with the product present -> 1 row, live ids, same shape, no product_deleted flag. */
     public function test_control_existing_product_line_same_shape_without_flag(): void {
