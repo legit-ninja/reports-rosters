@@ -119,6 +119,7 @@ class FinancialReportService {
         $data = [];
         $totals = [
             'bookings' => 0,
+            'zero_total_buyclub_bookings' => 0,
             'base_price' => 0.0,
             'discount_amount' => 0.0,
             'final_price' => 0.0,
@@ -141,7 +142,7 @@ class FinancialReportService {
             ? intersoccer_reports_index_canonical_booking_product_names((array) $order_rows)
             : [];
 
-        $booking_place_count = 0;
+        $zero_total_buyclub_bookings = 0;
 
         foreach ((array) $order_rows as $row) {
             $order_id = (int) $row->order_id;
@@ -226,9 +227,8 @@ class FinancialReportService {
             $revenueByType[$productType]['net'] += $net_price;
             $revenueByType[$productType]['count']++;
 
-            $qty = isset($row->quantity) && is_numeric($row->quantity) ? max(1, (int) $row->quantity) : 1;
-            if (!$line_is_buyclub) {
-                $booking_place_count += $qty;
+            if ($line_is_buyclub && $final_price <= 0.0) {
+                $zero_total_buyclub_bookings++;
             }
 
             $coupons = $this->wpdb->get_col($this->wpdb->prepare(
@@ -278,7 +278,8 @@ class FinancialReportService {
             $totals['reimbursement'] += $reimbursement;
         }
 
-        $totals['bookings'] = $booking_place_count;
+        $totals['bookings'] = count($data);
+        $totals['zero_total_buyclub_bookings'] = $zero_total_buyclub_bookings;
 
         // Round revenue by type values and calculate percentages
         $totalNet = $totals['final_price'] - $totals['reimbursement'];

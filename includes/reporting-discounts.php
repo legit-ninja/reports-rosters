@@ -592,6 +592,20 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
     return array('data' => $data, 'totals' => $totals);
 }
 
+if (!function_exists('intersoccer_reports_zero_total_buyclub_bookings_footer_label')) {
+    /**
+     * Booking Report footer line for zero-total BuyClub rows (UI + export).
+     *
+     * @param int $count Listed rows that are BuyClub with final price 0.
+     */
+    function intersoccer_reports_zero_total_buyclub_bookings_footer_label(int $count): string {
+        return sprintf(
+            __('of which zero-total BuyClub bookings: %d', 'intersoccer-reports-rosters'),
+            $count
+        );
+    }
+}
+
 /**
  * Get simplified booking report data for financial reporting
  * Focuses on revenue per participant by querying WooCommerce orders directly

@@ -232,8 +232,8 @@ class BookingReportAccuracyTest extends TestCase {
 
         $result = $this->report();
 
-        $this->assertSame(2, $result['totals']['bookings'],
-            'S11: expected 2 bookings for a qty-2 line; report bookings ' . $result['totals']['bookings']);
+        $this->assertSame(1, $result['totals']['bookings'],
+            'S11: expected 1 listed row for a qty-2 line; report bookings ' . $result['totals']['bookings']);
     }
 
     // ---------------------------------------------------------------- S15a (localized label)
@@ -270,9 +270,7 @@ class BookingReportAccuracyTest extends TestCase {
     // ---------------------------------------------------------------- S16b (BuyClub definition mismatch)
 
     /**
-     * S16b: subtotal > 0, total 0, no "BuyClub" billing company. Final Numbers classifies it as BuyClub
-     * (reports-data.php:766-770: subtotal > 0 && total == 0). The Booking Report only skips billing company
-     * "buyclub" and keeps it as a CHF 0.00 booking. Expected: the same rule in both reports (excluded here).
+     * S16b: zero-total BuyClub-style line stays listed; totals.bookings counts it with a separate footer metric.
      */
     public function test_S16b_zero_total_line_follows_final_numbers_buyclub_rule(): void {
         ReportAccuracyStore::addOrder($this->attributedOrder(115)->addLine(new FakeLineItem(1151, ['subtotal' => 495.0, 'total' => 0.0])));
@@ -283,9 +281,51 @@ class BookingReportAccuracyTest extends TestCase {
 
         $this->assertArrayHasKey('115-1151', $result['by_ref'], 'precondition: no-company zero-total line is in Booking');
         $this->assertArrayNotHasKey('116-1161', $result['by_ref'], 'precondition: company=BuyClub line excluded');
-        $this->assertSame(0, $result['totals']['bookings'],
-            'S16b: expected 0 Booking rows (Final Numbers counts both lines as BuyClub); report bookings '
-            . $result['totals']['bookings'] . ' (no-company line kept at CHF ' . $result['by_ref']['115-1151']['final_price'] . ')');
+        $this->assertSame(1, $result['totals']['bookings'],
+            'S16b: expected 1 listed Booking row; report bookings ' . $result['totals']['bookings']);
+        $this->assertSame(1, $result['totals']['zero_total_buyclub_bookings']);
+    }
+
+    public function test_booking_totals_count_every_listed_row_and_zero_total_buyclub_footer(): void {
+        ReportAccuracyStore::addOrder(
+            $this->attributedOrder(201)->addLine(new FakeLineItem(2011, ['subtotal' => 200.0, 'total' => 200.0]))
+        );
+        ReportAccuracyStore::addOrder(
+            $this->attributedOrder(202)
+                ->addCoupon(new FakeCoupon('buyclub-partner', 20.0))
+                ->addLine(new FakeLineItem(2021, ['subtotal' => 100.0, 'total' => 80.0]))
+        );
+        ReportAccuracyStore::addOrder(
+            $this->attributedOrder(203)->addLine(new FakeLineItem(2031, ['subtotal' => 495.0, 'total' => 0.0]))
+        );
+        ReportAccuracyStore::addOrder(
+            $this->attributedOrder(204)->addLine(new FakeLineItem(2041, ['subtotal' => 150.0, 'total' => 150.0]))
+        );
+
+        $result = $this->report();
+        $row_count = count($result['data']);
+
+        $this->assertSame(4, $row_count);
+        $this->assertSame($row_count, $result['totals']['bookings']);
+        $this->assertSame(1, $result['totals']['zero_total_buyclub_bookings']);
+
+        if (!function_exists('intersoccer_reports_zero_total_buyclub_bookings_footer_label')) {
+            require_once dirname(__DIR__, 2) . '/includes/reporting-discounts.php';
+        }
+        $label = intersoccer_reports_zero_total_buyclub_bookings_footer_label(
+            (int) $result['totals']['zero_total_buyclub_bookings']
+        );
+        $this->assertStringContainsString('zero-total BuyClub', $label);
+        $this->assertStringContainsString('1', $label);
+
+        if (!function_exists('intersoccer_render_enhanced_booking_totals')) {
+            require_once dirname(__DIR__, 2) . '/includes/reports-ajax.php';
+        }
+        ob_start();
+        intersoccer_render_enhanced_booking_totals($result['totals'], $result['data']);
+        $html = (string) ob_get_clean();
+        $this->assertStringContainsString('zero-total BuyClub', $html);
+        $this->assertStringContainsString('1', $html);
     }
 
     // ---------------------------------------------------------------- S19 (report writes on view)
