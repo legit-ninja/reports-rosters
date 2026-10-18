@@ -96,7 +96,7 @@ final class Intersoccer_Rr_Wp_Cli {
 
         $from = isset($assoc_args['from']) ? (string) $assoc_args['from'] : '2025-01-01';
         $to = isset($assoc_args['to']) ? (string) $assoc_args['to'] : gmdate('Y-m-d');
-        $apply = isset($assoc_args['apply']);
+        $apply = \WP_CLI\Utils\get_flag_value($assoc_args, 'apply', false) === true;
 
         $service = intersoccer_oop_get_order_financial_attribution_service();
 
