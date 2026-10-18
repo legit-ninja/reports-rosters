@@ -937,7 +937,7 @@ class RosterBuilder {
                 
             } catch (\Exception $e) {
                 $this->build_stats['validation_errors']++;
-                $reason = $e->getMessage();
+                $reason = $this->formatRosterFailureReason($e);
                 $this->build_stats['errors'][] = "Order {$order->get_id()}, item {$item_id}: {$reason}";
 
                 $this->logger->error('Failed to create roster for player', [
@@ -1820,6 +1820,26 @@ class RosterBuilder {
     }
 
     /**
+     * Safe roster failure reason for logs/stats (no row values or exception message text).
+     */
+    private function formatRosterFailureReason(\Throwable $e, string $db_error = ''): string {
+        $class = (new \ReflectionClass($e))->getShortName();
+        if ($db_error === '') {
+            return $class;
+        }
+        return $class . ': ' . $this->sanitizeMysqlErrorForLog($db_error);
+    }
+
+    private function sanitizeMysqlErrorForLog(string $db_error): string {
+        $sanitized = preg_replace("/'[^']*'/", "'?'", $db_error);
+        if ($sanitized === null) {
+            return 'database_error';
+        }
+        $sanitized = preg_replace('/"[^"]*"/', '"?"', $sanitized);
+        return $sanitized !== null && $sanitized !== '' ? $sanitized : 'database_error';
+    }
+
+    /**
      * Whether the catalogue no longer has the product/variation stored on the order line.
      */
     private function orderLineProductDeletedFromCatalog(array $roster_data): bool {
@@ -2153,10 +2173,10 @@ class RosterBuilder {
                 'order_id' => $roster_data['order_id']
             ]);
         } else {
-            $reason = 'Roster repository create returned no row';
-            if ($db_error !== '') {
-                $reason .= ': ' . $db_error;
-            }
+            $reason = $this->formatRosterFailureReason(
+                new \RuntimeException('roster_insert_failed'),
+                $db_error
+            );
             $this->recordRosterInsertFailure(
                 (int) ($roster_data['order_id'] ?? 0),
                 (int) ($roster_data['order_item_id'] ?? 0),
