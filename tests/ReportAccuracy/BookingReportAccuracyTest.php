@@ -331,8 +331,7 @@ class BookingReportAccuracyTest extends TestCase {
         $label = intersoccer_reports_zero_total_buyclub_bookings_footer_label(
             (int) $result['totals']['zero_total_buyclub_bookings']
         );
-        $this->assertStringContainsString('zero-total BuyClub', $label);
-        $this->assertStringContainsString('1', $label);
+        $this->assertSame('of which zero-total BuyClub bookings: 1', $label);
 
         if (!function_exists('intersoccer_render_enhanced_booking_totals')) {
             require_once dirname(__DIR__, 2) . '/includes/reports-ajax.php';
@@ -340,8 +339,7 @@ class BookingReportAccuracyTest extends TestCase {
         ob_start();
         intersoccer_render_enhanced_booking_totals($result['totals'], $result['data']);
         $html = (string) ob_get_clean();
-        $this->assertStringContainsString('zero-total BuyClub', $html);
-        $this->assertStringContainsString('1', $html);
+        $this->assertStringContainsString('of which zero-total BuyClub bookings: 1', $html);
     }
 
     // ---------------------------------------------------------------- S19 (report writes on view)
