@@ -705,13 +705,39 @@ function intersoccer_oop_backfill_financial_attribution_ajax() {
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
+        return;
     }
 
     $start_date = isset($_POST['start_date']) ? sanitize_text_field(wp_unslash($_POST['start_date'])) : '2024-01-01';
     $batch_size = isset($_POST['batch_size']) ? (int) $_POST['batch_size'] : 100;
+    $end_date = gmdate('Y-m-d');
+
+    $apply_param = isset($_POST['apply']) ? wp_unslash($_POST['apply']) : null;
+    $confirm_param = isset($_POST['confirm']) ? wp_unslash($_POST['confirm']) : null;
+    $apply_requested = ($apply_param === true || $apply_param === 'true');
+    $confirm_requested = ($confirm_param === true || $confirm_param === 'true');
+    $do_apply = $apply_requested && $confirm_requested;
 
     try {
-        $result = intersoccer_oop_get_order_financial_attribution_service()->backfillBatch($start_date, $batch_size);
+        $service = intersoccer_oop_get_order_financial_attribution_service();
+
+        if (!$do_apply) {
+            $summary = $service->summarizeMissingAttributionInDateRange($start_date, $end_date);
+            wp_send_json_success([
+                'message' => sprintf(
+                    __('Dry run: %d orders missing attribution.', 'intersoccer-reports-rosters'),
+                    (int) $summary['order_count']
+                ),
+                'dry_run' => true,
+                'summary' => $summary,
+                'order_count' => (int) $summary['order_count'],
+                'gross_chf' => (float) $summary['gross_chf'],
+                'net_chf' => (float) $summary['net_chf'],
+            ]);
+            return;
+        }
+
+        $result = $service->backfillBatch($start_date, $batch_size);
         wp_send_json_success([
             'message' => sprintf(
                 __('Backfilled %1$d orders. %2$d remaining.', 'intersoccer-reports-rosters'),
@@ -719,9 +745,12 @@ function intersoccer_oop_backfill_financial_attribution_ajax() {
                 (int) $result['remaining_count']
             ),
             'result' => $result,
+            'dry_run' => false,
         ]);
+        return;
     } catch (\Throwable $e) {
         wp_send_json_error(['message' => $e->getMessage()]);
+        return;
     }
 }
 }
