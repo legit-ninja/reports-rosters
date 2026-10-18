@@ -515,6 +515,78 @@ class RosterAjaxHandler {
     }
     
     /**
+     * Map DatabaseMigrator::migrate() result to AJAX payload (testable without wp_send_json_*).
+     *
+     * @param string|bool $result One of DatabaseMigrator::RESULT_* (legacy false => failed).
+     * @return array{success:bool,data:array{message:string,status:string,version:string}}
+     */
+    public static function buildUpgradeDatabaseAjaxPayload($result) {
+        $version = get_option(DatabaseMigrator::VERSION_OPTION, '1.0.0');
+        $schema_label = DatabaseMigrator::CURRENT_VERSION;
+
+        if ($result === DatabaseMigrator::RESULT_ALREADY_RUNNING) {
+            return [
+                'success' => true,
+                'data' => [
+                    'message' => __('Migration already running. Please wait and refresh.', 'intersoccer-reports-rosters'),
+                    'status' => DatabaseMigrator::RESULT_ALREADY_RUNNING,
+                    'version' => $version,
+                ],
+            ];
+        }
+
+        if ($result === DatabaseMigrator::RESULT_SKIPPED_UNRECOGNISED_BACKUP) {
+            return [
+                'success' => true,
+                'data' => [
+                    'message' => __('Skipped: unrecognised backup table present. Drop the foreign roster backup or contact support before retrying.', 'intersoccer-reports-rosters'),
+                    'status' => DatabaseMigrator::RESULT_SKIPPED_UNRECOGNISED_BACKUP,
+                    'version' => $version,
+                ],
+            ];
+        }
+
+        if ($result === DatabaseMigrator::RESULT_ALREADY_CURRENT) {
+            return [
+                'success' => true,
+                'data' => [
+                    'message' => sprintf(
+                        /* translators: %s: schema version */
+                        __('Database is already up to date (schema %s). No changes were made.', 'intersoccer-reports-rosters'),
+                        $schema_label
+                    ),
+                    'status' => DatabaseMigrator::RESULT_ALREADY_CURRENT,
+                    'version' => $version,
+                ],
+            ];
+        }
+
+        if ($result === DatabaseMigrator::RESULT_UPGRADED) {
+            return [
+                'success' => true,
+                'data' => [
+                    'message' => sprintf(
+                        /* translators: %s: schema version */
+                        __('Database upgrade completed. Schema version is now %s.', 'intersoccer-reports-rosters'),
+                        $version
+                    ),
+                    'status' => DatabaseMigrator::RESULT_UPGRADED,
+                    'version' => $version,
+                ],
+            ];
+        }
+
+        return [
+            'success' => false,
+            'data' => [
+                'message' => __('Database upgrade failed. Check logs for details.', 'intersoccer-reports-rosters'),
+                'status' => DatabaseMigrator::RESULT_FAILED,
+                'version' => $version,
+            ],
+        ];
+    }
+
+    /**
      * Handle upgrade database AJAX request
      * 
      * @return void
@@ -531,19 +603,12 @@ class RosterAjaxHandler {
             
             $this->logger->info('AJAX: Upgrade database request started');
             
-            // Run migration
-            $success = $this->database_migrator->migrate();
-            
-            if ($success) {
-                wp_send_json_success([
-                    'message' => __('Database upgraded successfully', 'intersoccer-reports-rosters'),
-                    'version' => DatabaseMigrator::CURRENT_VERSION
-                ]);
-            } else {
-                wp_send_json_error([
-                    'message' => __('Database upgrade failed', 'intersoccer-reports-rosters')
-                ]);
+            $result = $this->database_migrator->migrate();
+            $payload = self::buildUpgradeDatabaseAjaxPayload($result);
+            if (!empty($payload['success'])) {
+                wp_send_json_success($payload['data']);
             }
+            wp_send_json_error($payload['data']);
             
         } catch (\Exception $e) {
             $this->logger->error('AJAX: Upgrade database failed', [

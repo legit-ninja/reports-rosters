@@ -936,13 +936,24 @@ class RosterBuilder {
                 }
                 
             } catch (\Exception $e) {
+                global $wpdb;
+                $db_error = '';
+                if ($e instanceof DatabaseException
+                    && isset($wpdb)
+                    && is_object($wpdb)
+                    && isset($wpdb->last_error)
+                    && $wpdb->last_error !== ''
+                ) {
+                    $db_error = (string) $wpdb->last_error;
+                }
                 $this->build_stats['validation_errors']++;
-                $this->build_stats['errors'][] = "Player {$player->getFullName()}: " . $e->getMessage();
+                $reason = $this->formatRosterFailureReason($e, $db_error);
+                $this->build_stats['errors'][] = "Order {$order->get_id()}, item {$item_id}: {$reason}";
 
                 $this->logger->error('Failed to create roster for player', [
                     'order_id' => $order->get_id(),
-                    'player' => $player->getLogSummary(),
-                    'error' => $e->getMessage()
+                    'order_item_id' => $item_id,
+                    'reason' => $reason,
                 ]);
             }
         }
@@ -970,17 +981,54 @@ class RosterBuilder {
             'variation_id' => $variation_id ?: 0,
             'customer_id' => $order->get_customer_id(),
             'order_status' => $order->get_status(),
-            'product_name' => $product ? $product->get_name() : '',
+            'product_name' => ($product && is_object($product) && method_exists($product, 'get_name'))
+                ? (string) $product->get_name()
+                : (
+                    !$product && (int) $item->get_product_id() <= 0 && is_callable([$item, 'get_name'])
+                        ? (string) $item->get_name()
+                        : ''
+                ),
         ];
+        $order_data['line_subtotal'] = 0.0;
+        $order_data['line_total'] = 0.0;
+        if (function_exists('wc_get_order_item_meta')) {
+            $meta_sub = wc_get_order_item_meta($item_id, '_line_subtotal', true);
+            $meta_tot = wc_get_order_item_meta($item_id, '_line_total', true);
+            if ($meta_sub !== '' && $meta_sub !== null) {
+                $order_data['line_subtotal'] = (float) $meta_sub;
+            }
+            if ($meta_tot !== '' && $meta_tot !== null) {
+                $order_data['line_total'] = (float) $meta_tot;
+            }
+        }
+        if ($order_data['line_subtotal'] === 0.0 && method_exists($item, 'get_subtotal')) {
+            try {
+                $order_data['line_subtotal'] = (float) $item->get_subtotal();
+            } catch (\Throwable $e) {
+                // Woo line mocks in unit tests may omit subtotal expectations.
+            }
+        }
+        if ($order_data['line_total'] === 0.0 && method_exists($item, 'get_total')) {
+            try {
+                $order_data['line_total'] = (float) $item->get_total();
+            } catch (\Throwable $e) {
+                // Woo line mocks in unit tests may omit total expectations.
+            }
+        }
+        $order_data['_catalog_product_resolved'] = (bool) ($product && is_object($product));
         // Recover missing product/variation ids from line-item meta for legacy/deleted product cases.
         if ((int) ($order_data['product_id'] ?? 0) <= 0) {
-            $meta_product_id = (int) $item->get_meta('_product_id', true);
+            $meta_product_id = function_exists('wc_get_order_item_meta')
+                ? (int) wc_get_order_item_meta($item_id, '_product_id', true)
+                : (int) $item->get_meta('_product_id', true);
             if ($meta_product_id > 0) {
                 $order_data['product_id'] = $meta_product_id;
             }
         }
         if ((int) ($order_data['variation_id'] ?? 0) <= 0) {
-            $meta_variation_id = (int) $item->get_meta('_variation_id', true);
+            $meta_variation_id = function_exists('wc_get_order_item_meta')
+                ? (int) wc_get_order_item_meta($item_id, '_variation_id', true)
+                : (int) $item->get_meta('_variation_id', true);
             if ($meta_variation_id > 0) {
                 $order_data['variation_id'] = $meta_variation_id;
             }
@@ -1507,8 +1555,44 @@ class RosterBuilder {
             }
         }
         
+        if (empty($roster_data['_catalog_product_resolved']) && function_exists('wc_get_product')) {
+            $pid = (int) ($roster_data['product_id'] ?? 0);
+            $vid = (int) ($roster_data['variation_id'] ?? 0);
+            $roster_data['_catalog_product_resolved'] = (bool) (($vid > 0 && wc_get_product($vid))
+                || ($pid > 0 && wc_get_product($pid)));
+        }
+        $catalog_resolved = !empty($roster_data['_catalog_product_resolved']);
+        $roster_data['product_deleted'] = $catalog_resolved
+            ? false
+            : $this->orderLineProductDeletedFromCatalog($roster_data);
+        if (!empty($roster_data['product_deleted'])) {
+            $this->logger->error('Roster row built for deleted catalogue product', [
+                'order_id' => (int) ($roster_data['order_id'] ?? 0),
+                'order_item_id' => (int) ($roster_data['order_item_id'] ?? 0),
+            ]);
+            $english = $this->resolveEnglishProductNameForDeletedLine($roster_data);
+            if (!empty($english['product_name'])) {
+                $roster_data['product_name'] = $english['product_name'];
+            }
+            if (!empty($english['name_not_english'])) {
+                $roster_data['_name_not_english'] = true;
+            }
+        }
+
         // Parse event details from various sources
         $roster_data['event_details'] = $this->buildEventDetails($roster_data);
+        $roster_data['event_details'] = $this->applyUnderAgeAtStartToEventDetails($roster_data);
+        $roster_data['event_details'] = $this->applyBuyClubToEventDetails($roster_data, $roster_data);
+        if (empty($roster_data['product_deleted'])) {
+            $ed = $roster_data['event_details'];
+            if (is_string($ed)) {
+                $ed = json_decode($ed, true) ?: [];
+            }
+            if (is_array($ed)) {
+                unset($ed['product_deleted']);
+                $roster_data['event_details'] = $ed;
+            }
+        }
 
         if (function_exists('intersoccer_roster_backfill_player_name_fields')) {
             $roster_data = intersoccer_roster_backfill_player_name_fields($roster_data);
@@ -1656,8 +1740,202 @@ class RosterBuilder {
         $details['region'] = $roster_data['region'] ?? null;
         $details['city'] = $roster_data['city'] ?? null;
         $details['discount_applied'] = $roster_data['discount_applied'] ?? null;
-        
+
+        if (!empty($roster_data['product_deleted'])) {
+            $details['product_deleted'] = true;
+        }
+        if (!empty($roster_data['_name_not_english'])) {
+            $details['name_not_english'] = true;
+        }
+
         return array_filter($details); // Remove null values
+    }
+
+    /**
+     * Flag BuyClub lines on event_details using the shared reports helper.
+     *
+     * @param array|string|null $details
+     * @return array|string|null
+     */
+    private function applyBuyClubToEventDetails($details, array $roster_data) {
+        if (is_string($details)) {
+            $decoded = json_decode($details, true);
+            $details = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($details)) {
+            $details = [];
+        }
+        $line_subtotal = (float) ($roster_data['line_subtotal'] ?? 0);
+        $line_total = (float) ($roster_data['line_total'] ?? 0);
+        $order_id = (int) ($roster_data['order_id'] ?? 0);
+        if (function_exists('intersoccer_reports_line_is_buyclub')
+            && intersoccer_reports_line_is_buyclub($line_subtotal, $line_total, $order_id)) {
+            $details['is_buyclub'] = true;
+        }
+
+        return $details;
+    }
+
+    private function recordRosterInsertFailure(int $order_id, int $order_item_id, string $reason): void {
+        $this->build_stats['validation_errors']++;
+        $this->build_stats['errors'][] = "Order {$order_id}, item {$order_item_id}: {$reason}";
+        $this->logger->error('Roster insert failed', [
+            'order_id' => $order_id,
+            'order_item_id' => $order_item_id,
+            'reason' => $reason,
+        ]);
+    }
+
+    /**
+     * Prefer English / default-language product title for deleted catalogue lines.
+     *
+     * @return array{product_name:string,name_not_english:bool}
+     */
+    private function resolveEnglishProductNameForDeletedLine(array $roster_data): array {
+        $stored = trim((string) ($roster_data['product_name'] ?? ''));
+        $variation_id = (int) ($roster_data['variation_id'] ?? 0);
+        $product_id = (int) ($roster_data['product_id'] ?? 0);
+        $lookup_id = $variation_id > 0 ? $variation_id : $product_id;
+        if ($stored === '' && $lookup_id <= 0 && $product_id <= 0) {
+            return ['product_name' => '', 'name_not_english' => true];
+        }
+        if ($stored === '') {
+            if (function_exists('intersoccer_get_english_product_name')) {
+                $english = trim((string) intersoccer_get_english_product_name('', $lookup_id));
+                if ($english !== '' && $english !== 'N/A') {
+                    return ['product_name' => $english, 'name_not_english' => false];
+                }
+            }
+            if ($product_id > 0) {
+                return [
+                    'product_name' => 'Deleted product #' . $product_id,
+                    'name_not_english' => true,
+                ];
+            }
+            return ['product_name' => '', 'name_not_english' => true];
+        }
+        if (function_exists('intersoccer_get_english_product_name')) {
+            $english = trim((string) intersoccer_get_english_product_name($stored, $lookup_id));
+            if ($english !== '' && $english !== 'N/A' && $english !== $stored) {
+                return ['product_name' => $english, 'name_not_english' => false];
+            }
+        }
+        $default_lang = function_exists('apply_filters') ? apply_filters('wpml_default_language', null) : null;
+        $wpml_resolved = false;
+        if ($lookup_id > 0 && !empty($default_lang) && function_exists('apply_filters')) {
+            $canon = (int) apply_filters('wpml_object_id', $lookup_id, 'product', true, $default_lang);
+            if ($canon > 0 && function_exists('wc_get_product')) {
+                $product = wc_get_product($canon);
+                if ($product && method_exists($product, 'get_name')) {
+                    $title = trim((string) $product->get_name());
+                    if ($title !== '') {
+                        $wpml_resolved = true;
+                        if ($title !== $stored) {
+                            return ['product_name' => $title, 'name_not_english' => false];
+                        }
+                    }
+                }
+            }
+        }
+        $english_confirmed = $wpml_resolved && $stored !== '';
+        return [
+            'product_name' => $stored,
+            'name_not_english' => $stored !== '' && !$english_confirmed,
+        ];
+    }
+
+    /**
+     * Safe roster failure reason for logs/stats (no row values or exception message text).
+     */
+    private function formatRosterFailureReason(\Throwable $e, string $db_error = ''): string {
+        $class = (new \ReflectionClass($e))->getShortName();
+        if ($db_error !== '') {
+            return $class . ': ' . $this->sanitizeMysqlErrorForLog($db_error);
+        }
+        if ($e instanceof DatabaseException) {
+            return $class;
+        }
+        return $class;
+    }
+
+    private function sanitizeMysqlErrorForLog(string $db_error): string {
+        $sanitized = preg_replace("/'[^']*'/", "'?'", $db_error);
+        if ($sanitized === null) {
+            return 'database_error';
+        }
+        $sanitized = preg_replace('/"[^"]*"/', '"?"', $sanitized);
+        return $sanitized !== null && $sanitized !== '' ? $sanitized : 'database_error';
+    }
+
+    /**
+     * Whether the catalogue no longer has the product/variation stored on the order line.
+     */
+    private function orderLineProductDeletedFromCatalog(array $roster_data): bool {
+        if (!empty($roster_data['_catalog_product_resolved'])) {
+            return false;
+        }
+        $product_id = (int) ($roster_data['product_id'] ?? 0);
+        $variation_id = (int) ($roster_data['variation_id'] ?? 0);
+        if ($product_id <= 0 && $variation_id <= 0) {
+            return false;
+        }
+        if (!function_exists('wc_get_product')) {
+            return false;
+        }
+        if ($variation_id > 0) {
+            $variation = wc_get_product($variation_id);
+            if ($variation) {
+                return false;
+            }
+        }
+        if ($product_id > 0) {
+            $product = wc_get_product($product_id);
+            if ($product) {
+                return $variation_id > 0 && !wc_get_product($variation_id);
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @param array $roster_data
+     * @return array|string|null
+     */
+    private function applyUnderAgeAtStartToEventDetails(array $roster_data) {
+        $details = $roster_data['event_details'] ?? [];
+        if (is_string($details)) {
+            $decoded = json_decode($details, true);
+            $details = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($details)) {
+            $details = [];
+        }
+        if (!$this->rosterRowIsUnderMinAgeAtStart($roster_data)) {
+            return $details;
+        }
+        $details['under_age_at_start'] = true;
+
+        return $details;
+    }
+
+    private function rosterRowIsUnderMinAgeAtStart(array $roster_data): bool {
+        $dob = trim((string) ($roster_data['player_dob'] ?? $roster_data['dob'] ?? ''));
+        $age_group = trim((string) ($roster_data['age_group'] ?? ''));
+        $start_date = trim((string) ($roster_data['start_date'] ?? ''));
+        if ($dob === '' || $age_group === '' || $start_date === '') {
+            return false;
+        }
+
+        $player = new Player([
+            'customer_id' => (int) ($roster_data['customer_id'] ?? 0),
+            'player_index' => (int) ($roster_data['player_index'] ?? 0),
+            'first_name' => (string) ($roster_data['player_first_name'] ?? $roster_data['first_name'] ?? ''),
+            'last_name' => (string) ($roster_data['player_last_name'] ?? $roster_data['last_name'] ?? ''),
+            'dob' => $dob,
+            'gender' => (string) ($roster_data['player_gender'] ?? $roster_data['gender'] ?? ''),
+        ]);
+
+        return $player->isBelowMinAgeForAgeGroupAt($age_group, $start_date);
     }
     
     /**
@@ -1891,7 +2169,14 @@ class RosterBuilder {
         if (!empty($options['skip_age_group_validation'])) {
             $roster_data['_skip_age_group_validation'] = true;
         }
+        global $wpdb;
+        if (isset($wpdb) && is_object($wpdb)) {
+            $wpdb->last_error = '';
+        }
         $roster = $this->roster_repository->create($roster_data);
+        $db_error = (isset($wpdb) && is_object($wpdb) && !empty($wpdb->last_error))
+            ? (string) $wpdb->last_error
+            : '';
         if (!$roster && !empty($options['update_existing'])) {
             $existing_on_conflict = $this->findExistingRoster($roster_data);
             if ($existing_on_conflict) {
@@ -1915,6 +2200,16 @@ class RosterBuilder {
                 'id' => $roster->id,
                 'order_id' => $roster_data['order_id']
             ]);
+        } else {
+            $reason = $this->formatRosterFailureReason(
+                new \RuntimeException('roster_insert_failed'),
+                $db_error
+            );
+            $this->recordRosterInsertFailure(
+                (int) ($roster_data['order_id'] ?? 0),
+                (int) ($roster_data['order_item_id'] ?? 0),
+                $reason
+            );
         }
         
         return $roster;

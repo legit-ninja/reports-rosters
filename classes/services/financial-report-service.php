@@ -119,6 +119,8 @@ class FinancialReportService {
         $data = [];
         $totals = [
             'bookings' => 0,
+            'places' => 0,
+            'zero_total_buyclub_bookings' => 0,
             'base_price' => 0.0,
             'discount_amount' => 0.0,
             'final_price' => 0.0,
@@ -137,6 +139,12 @@ class FinancialReportService {
             ];
         }
 
+        $canonical_product_names = function_exists('intersoccer_reports_index_canonical_booking_product_names')
+            ? intersoccer_reports_index_canonical_booking_product_names((array) $order_rows)
+            : [];
+
+        $zero_total_buyclub_bookings = 0;
+
         foreach ((array) $order_rows as $row) {
             $order_id = (int) $row->order_id;
 
@@ -144,10 +152,14 @@ class FinancialReportService {
                 continue;
             }
 
-            $billing_company = get_post_meta($order_id, '_billing_company', true);
-            if (!empty($billing_company) && stripos($billing_company, 'buyclub') !== false) {
+            $line_subtotal_pre = (float) $row->line_subtotal;
+            $line_total_pre = (float) $row->line_total;
+            if (function_exists('intersoccer_reports_order_billing_company_is_buyclub')
+                && intersoccer_reports_order_billing_company_is_buyclub($order_id)) {
                 continue;
             }
+            $line_is_buyclub = function_exists('intersoccer_reports_line_is_buyclub')
+                && intersoccer_reports_line_is_buyclub($line_subtotal_pre, $line_total_pre, $order_id);
 
             $item_meta = $this->wpdb->get_results($this->wpdb->prepare(
                 "SELECT meta_key, meta_value FROM {$this->wpdb->prefix}woocommerce_order_itemmeta WHERE order_item_id = %d",
@@ -216,6 +228,10 @@ class FinancialReportService {
             $revenueByType[$productType]['net'] += $net_price;
             $revenueByType[$productType]['count']++;
 
+            if ($line_is_buyclub && $final_price <= 0.0) {
+                $zero_total_buyclub_bookings++;
+            }
+
             $coupons = $this->wpdb->get_col($this->wpdb->prepare(
                 "SELECT order_item_name FROM {$this->wpdb->prefix}woocommerce_order_items
                  WHERE order_id = %d AND order_item_type = 'coupon'",
@@ -227,7 +243,10 @@ class FinancialReportService {
 
             $stripe_fee = $final_price > 0 ? ($final_price * 0.029) + 0.30 : 0.0;
 
+            $line_qty = (int) ($row->quantity ?? 0);
+
             $data[] = [
+                'line_quantity' => $line_qty,
                 'ref' => $order_id . '-' . $row->order_item_id,
                 'booked' => date('Y-m-d', strtotime($row->order_date)),
                 'base_price' => number_format($base_price, 2),
@@ -239,7 +258,11 @@ class FinancialReportService {
                 'stripe_fee' => number_format($stripe_fee, 2),
                 'final_price' => number_format($final_price, 2),
                 'discount_codes' => implode(', ', $coupons),
-                'class_name' => $row->order_item_name,
+                'class_name' => $canonical_product_names[(int) $row->product_id] ?? (
+                    function_exists('intersoccer_get_english_product_name')
+                        ? intersoccer_get_english_product_name((string) $row->order_item_name, (int) $row->product_id)
+                        : (string) $row->order_item_name
+                ),
                 'venue' => $venue ?: 'N/A',
                 'booker_email' => get_post_meta($order_id, '_billing_email', true) ?: 'N/A',
                 'booker_phone' => get_post_meta($order_id, '_billing_phone', true) ?: 'N/A',
@@ -260,6 +283,13 @@ class FinancialReportService {
         }
 
         $totals['bookings'] = count($data);
+        $totals['places'] = 0;
+        foreach ($data as $report_row) {
+            $totals['places'] += function_exists('intersoccer_reports_booking_report_row_place_count')
+                ? intersoccer_reports_booking_report_row_place_count($report_row)
+                : max(1, (int) ($report_row['line_quantity'] ?? 1));
+        }
+        $totals['zero_total_buyclub_bookings'] = $zero_total_buyclub_bookings;
 
         // Round revenue by type values and calculate percentages
         $totalNet = $totals['final_price'] - $totals['reimbursement'];

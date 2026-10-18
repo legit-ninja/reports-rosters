@@ -464,7 +464,7 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
 
     if ($wpdb->last_error) {
         error_log('InterSoccer WooCommerce Fallback: Query error: ' . $wpdb->last_error);
-        return array('data' => array(), 'totals' => array('bookings' => 0, 'base_price' => 0, 'discount_amount' => 0, 'final_price' => 0, 'reimbursement' => 0));
+        return array('data' => array(), 'totals' => array('bookings' => 0, 'places' => 0, 'base_price' => 0, 'discount_amount' => 0, 'final_price' => 0, 'reimbursement' => 0));
     }
 
     // Add missing fields to match roster table structure
@@ -592,6 +592,96 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
     return array('data' => $data, 'totals' => $totals);
 }
 
+if (!function_exists('intersoccer_reports_zero_total_buyclub_bookings_footer_label')) {
+    /**
+     * Booking Report footer line for zero-total BuyClub rows (UI + export).
+     *
+     * @param int $count Listed rows that are BuyClub with final price 0.
+     */
+    function intersoccer_reports_zero_total_buyclub_bookings_footer_label(int $count): string {
+        return sprintf(
+            __('of which zero-total BuyClub bookings: %d', 'intersoccer-reports-rosters'),
+            $count
+        );
+    }
+}
+
+if (!function_exists('intersoccer_reports_booking_footer_bookings_places_display')) {
+    /**
+     * Booking Report footer: listed row count with places total (sum of line qty).
+     *
+     * @param int $bookings Listed rows.
+     * @param int $places   Sum of line quantities.
+     */
+    function intersoccer_reports_booking_footer_bookings_places_display(int $bookings, int $places): string {
+        return sprintf(
+            /* translators: 1: booking row count, 2: place count */
+            __('%1$s (%2$s places)', 'intersoccer-reports-rosters'),
+            number_format($bookings),
+            number_format($places)
+        );
+    }
+}
+
+if (!function_exists('intersoccer_reports_booking_report_row_place_count')) {
+    /**
+     * Places for one Booking Report row (delegates to Final Numbers qty rule).
+     *
+     * @param array $row Report row or context with quantity / line_quantity.
+     */
+    function intersoccer_reports_booking_report_row_place_count(array $row): int {
+        if (!function_exists('intersoccer_reports_row_place_count')) {
+            $utils = dirname(__FILE__) . '/utils.php';
+            if (is_readable($utils)) {
+                require_once $utils;
+            }
+        }
+        return function_exists('intersoccer_reports_row_place_count')
+            ? intersoccer_reports_row_place_count($row)
+            : 1;
+    }
+}
+
+if (!function_exists('intersoccer_reports_booking_xlsx_summary_count_rows')) {
+    /**
+     * Numeric Booking Report XLSX summary rows for listed rows and places.
+     *
+     * @param array $totals Booking report totals.
+     * @return array<int, array{0:string,1:int|string,2:string}>
+     */
+    function intersoccer_reports_booking_xlsx_summary_count_rows(array $totals): array {
+        $booking_rows = (int) ($totals['bookings'] ?? 0);
+        $booking_places = (int) ($totals['places'] ?? $booking_rows);
+        return [
+            ['Total Bookings:', $booking_rows, 'Listed rows'],
+            ['Total places:', $booking_places, 'Sum of line quantities'],
+        ];
+    }
+}
+
+if (!function_exists('intersoccer_reports_booking_xlsx_summary_uses_chf_currency_format')) {
+    /**
+     * Whether an enhanced Booking Report XLSX summary row should use CHF number format in column B.
+     *
+     * @param string $label Summary row label (column A).
+     * @param mixed  $value Summary row value (column B).
+     */
+    function intersoccer_reports_booking_xlsx_summary_uses_chf_currency_format(string $label, $value): bool {
+        if (!is_numeric($value) || (float) $value <= 0) {
+            return false;
+        }
+        $lower = strtolower($label);
+        if (strpos($lower, 'rate') !== false
+            || strpos($lower, 'bookings') !== false
+            || strpos($lower, 'average') !== false
+            || strpos($lower, 'effectiveness') !== false
+            || strpos($lower, 'places') !== false) {
+            return false;
+        }
+        return true;
+    }
+}
+
 /**
  * Get simplified booking report data for financial reporting
  * Focuses on revenue per participant by querying WooCommerce orders directly
@@ -656,6 +746,7 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
     $data = [];
     $totals = [
         'bookings' => 0, // Will be set to count($data) at the end
+        'places' => 0,
         'base_price' => 0,
         'discount_amount' => 0,
         'final_price' => 0,
@@ -889,8 +980,12 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
         // Calculate Stripe fee (approximate 2.9% + 0.30 CHF)
         $stripe_fee = $final_price > 0 ? ($final_price * 0.029) + 0.30 : 0;
 
+        $line_qty = (int) ($row->quantity ?? 0);
+
         $data[] = [
             'ref' => $row->order_id . '-' . $row->order_item_id,
+            'line_quantity' => $line_qty,
+            'quantity' => $line_qty,
             'booked' => date('Y-m-d', strtotime($row->order_date)),
             'base_price' => number_format($base_price, 2),
             'discount_amount' => number_format($discount_amount, 2),
@@ -926,6 +1021,12 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
     // Set bookings to the count of records (each order item = 1 booking)
     // This ensures "Total Bookings" matches "records found"
     $totals['bookings'] = count($data);
+    $totals['places'] = 0;
+    foreach ($data as $report_row) {
+        $totals['places'] += function_exists('intersoccer_reports_booking_report_row_place_count')
+            ? intersoccer_reports_booking_report_row_place_count($report_row)
+            : 1;
+    }
 
     error_log("=== InterSoccer Financial Report: Returning " . count($data) . " records with totals: " . json_encode($totals) . " ===");
     return ['data' => $data, 'totals' => $totals];

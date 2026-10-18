@@ -339,12 +339,13 @@ jQuery(document).ready(function($) {
         var successText = strings.upgrade_success || 'Database upgrade completed successfully.';
         var failureText = strings.upgrade_failed || 'Database upgrade failed.';
         var networkText = strings.upgrade_failed_network || 'Database upgrade failed due to a network error.';
+        var runningText = strings.upgrade_running || 'Migration already running. Please wait and refresh.';
 
         $form.on('submit', function(event) {
             event.preventDefault();
 
             $button.prop('disabled', true).val(upgradingText);
-            $status.removeClass('notice notice-success notice-error').hide().text('');
+            $status.removeClass('notice notice-success notice-error notice-info').hide().text('');
 
             $.ajax({
                 url: $form.attr('action'),
@@ -353,11 +354,16 @@ jQuery(document).ready(function($) {
                 dataType: 'json'
             }).done(function(response) {
                 var message = (response && response.data && response.data.message) ? response.data.message : '';
+                var statusKind = (response && response.data && response.data.status) ? response.data.status : '';
 
                 if (response && response.success) {
-                    $status.removeClass('notice-error').addClass('notice notice-success').text(message || successText).show();
+                    if (statusKind === 'upgraded' || statusKind === '' || statusKind === 'success') {
+                        $status.removeClass('notice-error notice-info').addClass('notice notice-success').text(message || successText).show();
+                    } else {
+                        $status.removeClass('notice-error notice-success').addClass('notice notice-info').text(message || runningText).show();
+                    }
                 } else {
-                    $status.removeClass('notice-success').addClass('notice notice-error').text(message || failureText).show();
+                    $status.removeClass('notice-success notice-info').addClass('notice notice-error').text(message || failureText).show();
                 }
             }).fail(function() {
                 $status.removeClass('notice-success').addClass('notice notice-error').text(networkText).show();

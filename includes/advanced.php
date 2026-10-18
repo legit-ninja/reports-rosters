@@ -141,6 +141,7 @@ function intersoccer_render_advanced_page() {
                         <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
                         <input type="submit" name="upgrade_database" class="button button-primary" value="<?php _e('Upgrade Database', 'intersoccer-reports-rosters'); ?>" onclick="return confirm('<?php echo esc_js(__('This will modify the database structure and backfill data. Are you sure?', 'intersoccer-reports-rosters')); ?>');">
                     </form>
+                    <div id="intersoccer-rebuild-status" class="intersoccer-upgrade-status" role="status" aria-live="polite" style="display:none;margin-top:8px;"></div>
                     <p><?php _e('Note: This action adds new columns (e.g., financial fields, girls_only) and backfills data. Use with caution.', 'intersoccer-reports-rosters'); ?></p>
                 </div>
                 <div class="rebuild-options">
@@ -736,36 +737,6 @@ function intersoccer_render_advanced_page() {
                             var errorMsg = extractAjaxErrorMessage(xhr, status, error);
                             showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
                             $button.prop('disabled', false).text('<?php echo esc_js(__('Process Orders', 'intersoccer-reports-rosters')); ?>');
-                            console.error('AJAX Error: ', status, error, xhr.responseText);
-                        }
-                    });
-                });
-                
-                // Upgrade Database
-                $('#intersoccer-upgrade-form').on('submit', function(e) {
-                    e.preventDefault();
-                    var $form = $(this);
-                    var $button = $form.find('input[type="submit"]');
-                    
-                    showAdminNotice('<?php echo esc_js(__('Starting: Upgrading database...', 'intersoccer-reports-rosters')); ?>', 'info');
-                    $button.prop('disabled', true).val('<?php echo esc_js(__('Running...', 'intersoccer-reports-rosters')); ?>');
-                    
-                    $.ajax({
-                        url: ajaxurl,
-                        type: 'POST',
-                        data: $form.serialize(),
-                        success: function(response) {
-                            if (response.success) {
-                                showAdminNotice('<?php echo esc_js(__('Finished: Database upgrade completed successfully.', 'intersoccer-reports-rosters')); ?>', 'success');
-                            } else {
-                                showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>'), 'error');
-                            }
-                            $button.prop('disabled', false).val('<?php echo esc_js(__('Upgrade Database', 'intersoccer-reports-rosters')); ?>');
-                        },
-                        error: function(xhr, status, error) {
-                            var errorMsg = extractAjaxErrorMessage(xhr, status, error);
-                            showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
-                            $button.prop('disabled', false).val('<?php echo esc_js(__('Upgrade Database', 'intersoccer-reports-rosters')); ?>');
                             console.error('AJAX Error: ', status, error, xhr.responseText);
                         }
                     });

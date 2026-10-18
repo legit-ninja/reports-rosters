@@ -206,6 +206,9 @@ if (!function_exists('intersoccer_reports_empty_camp_metrics')) {
             'full_week' => 0,
             'pitchside' => 0,
             'buyclub' => 0,
+            'unknown_booking_type' => 0,
+            'days_unknown' => 0,
+            'single_day_places' => 0,
             'individual_days' => [
                 'Monday' => 0,
                 'Tuesday' => 0,
@@ -217,6 +220,7 @@ if (!function_exists('intersoccer_reports_empty_camp_metrics')) {
             'unique_records' => 0,
             'variation_ids' => [],
             'product_ids' => [],
+            'has_deleted_product' => false,
         ];
     }
 }
@@ -240,11 +244,15 @@ if (!function_exists('intersoccer_reports_aggregate_camp_location_group')) {
         $full_week = 0;
         $pitchside = 0; // Reserved — pitchside tooling is out of scope (see reports-rosters-accuracy rule).
         $buyclub = 0;
+        $unknown_booking_type = 0;
+        $days_unknown = 0;
+        $single_day_places = 0;
         $individual_days = ['Monday' => 0, 'Tuesday' => 0, 'Wednesday' => 0, 'Thursday' => 0, 'Friday' => 0];
         $processed_count = 0;
         $counted_order_items = [];
         $variation_ids = [];
         $product_ids = [];
+        $has_deleted_product = false;
 
         foreach ($group as $entry) {
             if (!is_array($entry)) {
@@ -261,7 +269,10 @@ if (!function_exists('intersoccer_reports_aggregate_camp_location_group')) {
             if ($oid > 0) {
                 $counted_order_items[$oid] = true;
             }
-            $processed_count++;
+            $places = function_exists('intersoccer_reports_row_place_count')
+                ? intersoccer_reports_row_place_count($entry)
+                : 1;
+            $processed_count += $places;
             $vid = isset($entry['variation_id']) ? (int) $entry['variation_id'] : 0;
             $pid = isset($entry['product_id']) ? (int) $entry['product_id'] : 0;
             if ($vid > 0) {
@@ -270,10 +281,15 @@ if (!function_exists('intersoccer_reports_aggregate_camp_location_group')) {
             if ($pid > 0) {
                 $product_ids[$pid] = $pid;
             }
+            if (!$has_deleted_product
+                && function_exists('intersoccer_reports_final_row_is_deleted_product_grid_row')
+                && intersoccer_reports_final_row_is_deleted_product_grid_row($entry)) {
+                $has_deleted_product = true;
+            }
 
             // BuyClub is a separate column (additive), not folded into Full Week / days.
             if (!empty($entry['is_buyclub'])) {
-                $buyclub++;
+                $buyclub += $places;
                 continue;
             }
 
@@ -281,14 +297,13 @@ if (!function_exists('intersoccer_reports_aggregate_camp_location_group')) {
                 ? intersoccer_normalize_booking_type_slug_for_reports($entry['booking_type'] ?? '')
                 : 'other';
             if ($slug === 'full-week') {
-                $full_week++;
+                $full_week += $places;
             } elseif ($slug === 'single-days') {
-                $sd = $entry['selected_days'] ?? '';
-                if (is_array($sd)) {
-                    $sd = implode(', ', $sd);
-                }
-                $sd = (string) $sd;
+                $sd = function_exists('intersoccer_reports_camp_row_effective_selected_days')
+                    ? intersoccer_reports_camp_row_effective_selected_days($entry)
+                    : (string) ($entry['selected_days'] ?? '');
                 if ($sd !== '') {
+                    $single_day_places += $places;
                     $days = array_map('trim', explode(',', $sd));
                     foreach ($days as $day) {
                         if ($day === '') {
@@ -298,10 +313,15 @@ if (!function_exists('intersoccer_reports_aggregate_camp_location_group')) {
                             ? intersoccer_normalize_weekday_token($day)
                             : null;
                         if ($canon !== null && isset($individual_days[$canon])) {
-                            $individual_days[$canon]++;
+                            $individual_days[$canon] += $places;
                         }
                     }
+                } elseif (function_exists('intersoccer_roster_days_unknown')
+                    && intersoccer_roster_days_unknown($entry['booking_type'] ?? '', '')) {
+                    $days_unknown += $places;
                 }
+            } else {
+                $unknown_booking_type += $places;
             }
         }
 
@@ -315,11 +335,15 @@ if (!function_exists('intersoccer_reports_aggregate_camp_location_group')) {
             'full_week' => $full_week,
             'pitchside' => $pitchside,
             'buyclub' => $buyclub,
+            'unknown_booking_type' => $unknown_booking_type,
+            'days_unknown' => $days_unknown,
+            'single_day_places' => $single_day_places,
             'individual_days' => $individual_days,
             'min_max' => "$min-$max",
             'unique_records' => $processed_count,
             'variation_ids' => array_values($variation_ids),
             'product_ids' => array_values($product_ids),
+            'has_deleted_product' => $has_deleted_product,
         ];
     }
 }
@@ -388,6 +412,28 @@ if (!function_exists('intersoccer_reports_build_camp_report_from_entries')) {
         }
         $year = intval($year);
 
+        $not_on_roster_count = 0;
+        $grid_entries = [];
+        foreach ($entries as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            if (function_exists('intersoccer_reports_final_row_counts_as_not_on_roster')
+                && intersoccer_reports_final_row_counts_as_not_on_roster($entry)) {
+                $not_on_roster_count += function_exists('intersoccer_reports_row_place_count')
+                    ? intersoccer_reports_row_place_count($entry)
+                    : 1;
+                if (function_exists('intersoccer_reports_final_row_is_thin_line')
+                    && intersoccer_reports_final_row_is_thin_line($entry)) {
+                    error_log('InterSoccer Final Numbers: thin roster line excluded from camp grid (order_item_id '
+                        . (int) ($entry['order_item_id'] ?? 0) . ')');
+                }
+                continue;
+            }
+            $grid_entries[] = $entry;
+        }
+        $entries = $grid_entries;
+
         // Ensure camp_type / is_buyclub for registration totals + grouping.
         foreach ($entries as &$roster) {
             if (!is_array($roster)) {
@@ -402,7 +448,10 @@ if (!function_exists('intersoccer_reports_build_camp_report_from_entries')) {
             if (!isset($roster['is_buyclub'])) {
                 $line_subtotal = floatval($roster['line_subtotal'] ?? 0);
                 $line_total = floatval($roster['line_total'] ?? 0);
-                $roster['is_buyclub'] = $line_subtotal > 0 && $line_total === 0.0;
+                $order_id = isset($roster['order_id']) ? (int) $roster['order_id'] : 0;
+                $roster['is_buyclub'] = function_exists('intersoccer_reports_line_is_buyclub')
+                    ? intersoccer_reports_line_is_buyclub($line_subtotal, $line_total, $order_id)
+                    : ($line_subtotal > 0 && $line_total === 0.0);
             }
         }
         unset($roster);
@@ -410,6 +459,7 @@ if (!function_exists('intersoccer_reports_build_camp_report_from_entries')) {
         $player_registration_totals = function_exists('intersoccer_reports_compute_camp_registration_totals')
             ? intersoccer_reports_compute_camp_registration_totals($entries, $exclude_buyclub)
             : ['full_day' => 0, 'mini' => 0, 'all' => 0];
+        $player_registration_totals['not_on_roster'] = $not_on_roster_count;
 
         $report_data = [];
         $date_groups = [];
@@ -702,6 +752,28 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
      * @return array
      */
     function intersoccer_reports_build_course_report_from_entries(array $entries, $exclude_buyclub = false) {
+        $not_on_roster_count = 0;
+        $grid_entries = [];
+        foreach ($entries as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            if (function_exists('intersoccer_reports_final_row_counts_as_not_on_roster')
+                && intersoccer_reports_final_row_counts_as_not_on_roster($entry)) {
+                $not_on_roster_count += function_exists('intersoccer_reports_row_place_count')
+                    ? intersoccer_reports_row_place_count($entry)
+                    : 1;
+                if (function_exists('intersoccer_reports_final_row_is_thin_line')
+                    && intersoccer_reports_final_row_is_thin_line($entry)) {
+                    error_log('InterSoccer Final Numbers: thin roster line excluded from course grid (order_item_id '
+                        . (int) ($entry['order_item_id'] ?? 0) . ')');
+                }
+                continue;
+            }
+            $grid_entries[] = $entry;
+        }
+        $entries = $grid_entries;
+
         foreach ($entries as &$roster) {
             if (!is_array($roster)) {
                 continue;
@@ -709,7 +781,10 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
             if (!isset($roster['is_buyclub'])) {
                 $line_subtotal = floatval($roster['line_subtotal'] ?? 0);
                 $line_total = floatval($roster['line_total'] ?? 0);
-                $roster['is_buyclub'] = $line_subtotal > 0 && $line_total === 0.0;
+                $order_id = isset($roster['order_id']) ? (int) $roster['order_id'] : 0;
+                $roster['is_buyclub'] = function_exists('intersoccer_reports_line_is_buyclub')
+                    ? intersoccer_reports_line_is_buyclub($line_subtotal, $line_total, $order_id)
+                    : ($line_subtotal > 0 && $line_total === 0.0);
             }
             $cd_row = isset($roster['course_day']) ? trim((string) $roster['course_day']) : '';
             $roster['course_day'] = ($cd_row === '') ? 'Unknown' : $cd_row;
@@ -720,6 +795,7 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
             'all' => function_exists('intersoccer_reports_compute_course_registration_total')
                 ? intersoccer_reports_compute_course_registration_total($entries, $exclude_buyclub)
                 : 0,
+            'not_on_roster' => $not_on_roster_count,
         ];
 
         $report_data = [];
@@ -832,7 +908,13 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
                     'variation_id' => $variation_id,
                     'product_id' => $product_id,
                     'girls_only' => $is_girls ? 1 : 0,
+                    'has_deleted_product' => false,
                 ];
+            }
+
+            if (function_exists('intersoccer_reports_final_row_is_deleted_product_grid_row')
+                && intersoccer_reports_final_row_is_deleted_product_grid_row($entry)) {
+                $report_data[$season][$entry_region][$row_key]['has_deleted_product'] = true;
             }
 
             $times_disp = isset($entry['times']) ? trim((string) $entry['times']) : '';
@@ -844,7 +926,9 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
                 $report_data[$season][$entry_region][$row_key]['times'][$times_key] = true;
             }
 
-            $report_data[$season][$entry_region][$row_key]['registrations']++;
+            $report_data[$season][$entry_region][$row_key]['registrations'] += function_exists('intersoccer_reports_row_place_count')
+                ? intersoccer_reports_row_place_count($entry)
+                : 1;
         }
 
         foreach ($report_data as $season_key => $regions_data) {
@@ -1225,6 +1309,87 @@ if (!function_exists('intersoccer_reports_distressed_variation_ids')) {
 	}
 }
 
+if (!function_exists('intersoccer_reports_camp_metrics_visible_place_sum')) {
+    /**
+     * Places shown in Final Camp grid columns (must reconcile with registration header rows).
+     *
+     * @param array $metrics Normalized or raw camp metrics block.
+     * @return int
+     */
+    function intersoccer_reports_camp_metrics_visible_place_sum(array $metrics) {
+        $m = function_exists('intersoccer_reports_normalize_camp_metrics')
+            ? intersoccer_reports_normalize_camp_metrics($metrics)
+            : $metrics;
+        return (int) ($m['full_week'] ?? 0)
+            + (int) ($m['buyclub'] ?? 0)
+            + (int) ($m['unknown_booking_type'] ?? 0)
+            + (int) ($m['days_unknown'] ?? 0)
+            + (int) ($m['single_day_places'] ?? 0);
+    }
+}
+
+if (!function_exists('intersoccer_reports_camp_export_metric_place_values')) {
+    /**
+     * Summable place columns only (excludes per-day slot breakdown).
+     *
+     * @param array $metrics Normalized or raw camp metrics block.
+     * @return int[]
+     */
+    function intersoccer_reports_camp_export_metric_place_values(array $metrics) {
+        $m = function_exists('intersoccer_reports_normalize_camp_metrics')
+            ? intersoccer_reports_normalize_camp_metrics($metrics)
+            : $metrics;
+        return [
+            (int) ($m['full_week'] ?? 0),
+            (int) ($m['buyclub'] ?? 0),
+            (int) ($m['unknown_booking_type'] ?? 0),
+            (int) ($m['days_unknown'] ?? 0),
+            (int) ($m['single_day_places'] ?? 0),
+        ];
+    }
+}
+
+if (!function_exists('intersoccer_reports_camp_export_metric_row_values')) {
+    /**
+     * Full camp grid row for export: place columns then day-slot columns (min-max separate).
+     *
+     * @param array $metrics Normalized or raw camp metrics block.
+     * @return int[]
+     */
+    function intersoccer_reports_camp_export_metric_row_values(array $metrics) {
+        $m = function_exists('intersoccer_reports_normalize_camp_metrics')
+            ? intersoccer_reports_normalize_camp_metrics($metrics)
+            : $metrics;
+        $row = intersoccer_reports_camp_export_metric_place_values($m);
+        foreach (['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as $day) {
+            $row[] = (int) ($m['individual_days'][$day] ?? 0);
+        }
+        return $row;
+    }
+}
+
+if (!function_exists('intersoccer_reports_camp_export_metric_columns')) {
+    /**
+     * Excel column letters for one camp grid block (11 cells: 5 place + 5 day slots + min-max).
+     *
+     * @param string $start_col e.g. C or N
+     * @return array{place:string[],day_slots:string,min_max:string,all_registrations:string}
+     */
+    function intersoccer_reports_camp_export_metric_columns($start_col) {
+        $cols = [];
+        $ord = ord($start_col);
+        for ($i = 0; $i < 11; $i++) {
+            $cols[] = chr($ord + $i);
+        }
+        return [
+            'place' => array_slice($cols, 0, 5),
+            'day_slots' => $cols[5],
+            'min_max' => $cols[10],
+            'all_registrations' => $cols[0],
+        ];
+    }
+}
+
 if (!function_exists('intersoccer_reports_normalize_camp_metrics')) {
     /**
      * Ensure camp metrics include pitchside/buyclub keys for UI/export.
@@ -1241,6 +1406,9 @@ if (!function_exists('intersoccer_reports_normalize_camp_metrics')) {
             'full_week' => (int) ($data['full_week'] ?? 0),
             'pitchside' => (int) ($data['pitchside'] ?? 0),
             'buyclub' => (int) ($data['buyclub'] ?? 0),
+            'unknown_booking_type' => (int) ($data['unknown_booking_type'] ?? 0),
+            'days_unknown' => (int) ($data['days_unknown'] ?? 0),
+            'single_day_places' => (int) ($data['single_day_places'] ?? 0),
             'individual_days' => array_merge(
                 $empty['individual_days'],
                 is_array($data['individual_days'] ?? null) ? $data['individual_days'] : []
@@ -1249,7 +1417,30 @@ if (!function_exists('intersoccer_reports_normalize_camp_metrics')) {
             'unique_records' => (int) ($data['unique_records'] ?? 0),
             'variation_ids' => array_values(array_filter(array_map('intval', $data['variation_ids'] ?? []))),
             'product_ids' => array_values(array_filter(array_map('intval', $data['product_ids'] ?? []))),
+            'has_deleted_product' => !empty($data['has_deleted_product']),
         ];
+    }
+}
+
+if (!function_exists('intersoccer_reports_camp_venue_metrics_has_deleted_product')) {
+    /**
+     * Whether any camp type bucket for a venue row includes a deleted-product grid line.
+     *
+     * @param array $venue_data Full Day / Mini metrics keyed by camp type.
+     */
+    function intersoccer_reports_camp_venue_metrics_has_deleted_product(array $venue_data): bool {
+        foreach (['Full Day', 'Mini - Half Day'] as $type_key) {
+            if (!isset($venue_data[$type_key])) {
+                continue;
+            }
+            $m = function_exists('intersoccer_reports_normalize_camp_metrics')
+                ? intersoccer_reports_normalize_camp_metrics($venue_data[$type_key])
+                : $venue_data[$type_key];
+            if (!empty($m['has_deleted_product'])) {
+                return true;
+            }
+        }
+        return false;
     }
 }
 
@@ -1269,6 +1460,9 @@ if (!function_exists('intersoccer_reports_camp_grand_totals')) {
         $blank = [
             'full_week' => 0,
             'buyclub' => 0,
+            'unknown_booking_type' => 0,
+            'days_unknown' => 0,
+            'single_day_places' => 0,
             'individual_day_slots' => 0,
         ];
         $out = [
@@ -1296,14 +1490,17 @@ if (!function_exists('intersoccer_reports_camp_grand_totals')) {
                         $m = intersoccer_reports_normalize_camp_metrics($camp_types[$type_key] ?? null);
                         $out[$bucket]['full_week'] += $m['full_week'];
                         $out[$bucket]['buyclub'] += $m['buyclub'];
+                        $out[$bucket]['unknown_booking_type'] += $m['unknown_booking_type'];
+                        $out[$bucket]['days_unknown'] += $m['days_unknown'];
+                        $out[$bucket]['single_day_places'] += $m['single_day_places'];
                         $out[$bucket]['individual_day_slots'] += (int) array_sum($m['individual_days']);
                     }
                 }
             }
         }
 
-        $out['full_day']['all_registrations'] = $out['full_day']['full_week'] + $out['full_day']['buyclub'];
-        $out['mini']['all_registrations'] = $out['mini']['full_week'] + $out['mini']['buyclub'];
+        $out['full_day']['all_registrations'] = intersoccer_reports_camp_metrics_visible_place_sum($out['full_day']);
+        $out['mini']['all_registrations'] = intersoccer_reports_camp_metrics_visible_place_sum($out['mini']);
 
         return $out;
     }

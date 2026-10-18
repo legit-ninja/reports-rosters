@@ -112,6 +112,7 @@ class FakeVariation extends \WC_Product_Variation {
     }
     public function get_meta($key, $single = true) { return $single ? '' : []; }
     public function get_title() { return $this->data['name']; }
+    public function get_name() { return $this->data['name']; }
 }
 
 class FakeSimpleProduct extends \WC_Product {
@@ -122,6 +123,7 @@ class FakeSimpleProduct extends \WC_Product {
     public function is_type($t) { return $t === 'variable'; }
     public function get_meta($key, $single = true) { return $single ? '' : []; }
     public function get_title() { return $this->data['name']; }
+    public function get_name() { return $this->data['name']; }
 }
 
 final class DeletedProductFixture {
@@ -265,7 +267,10 @@ class DeletedProductRosterTest extends TestCase {
             DeletedProductFixture::LIVE_PID, DeletedProductFixture::LIVE_VID, DeletedProductFixture::courseMeta(), true, 300.0);
     }
 
-    private function logger(): Logger {
+    private function logger(?Logger $override = null): Logger {
+        if ($override !== null) {
+            return $override;
+        }
         $logger = $this->createMock(Logger::class);
         if (getenv('DP_DEBUG')) {
             foreach (['error', 'warning', 'info', 'debug'] as $lvl) {
@@ -368,7 +373,6 @@ class DeletedProductRosterTest extends TestCase {
      * -> RosterBuilder::buildRosterFromOrder -> processOrderItems -> processOrderItem creates 1 row.
      */
     public function test_live_hook_path_creates_one_row_for_deleted_product_line(): void {
-        $this->markTestIncomplete('Pending fix E: deleted-product roster rows.');
         $order = $this->order(9101, $this->deletedLine());
 
         $this->processor($this->builder())->processOrder($order);
@@ -380,7 +384,6 @@ class DeletedProductRosterTest extends TestCase {
     // ------------------------------------------------------------------ (2) reconcile path
 
     public function test_reconcile_path_creates_one_row_for_deleted_product_line(): void {
-        $this->markTestIncomplete('Pending fix E: deleted-product roster rows.');
         $this->order(9102, $this->deletedLine(5102));
         $GLOBALS['intersoccer_test_wc_get_orders_callback'] = static function ($args) {
             return (int) ($args['offset'] ?? 0) === 0 ? [9102] : [];
@@ -396,7 +399,6 @@ class DeletedProductRosterTest extends TestCase {
     // ------------------------------------------------------------------ (3) stored ids + item data
 
     public function test_row_keeps_stored_product_and_variation_ids(): void {
-        $this->markTestIncomplete('Pending fix E: deleted-product roster rows.');
         $order = $this->order(9103, $this->deletedLine(5103));
         $this->processor($this->builder())->processOrder($order);
 
@@ -408,7 +410,6 @@ class DeletedProductRosterTest extends TestCase {
     }
 
     public function test_row_event_fields_come_from_item_data(): void {
-        $this->markTestIncomplete('Pending fix E: deleted-product roster rows.');
         $control = self::shape($this->buildControlRow());
 
         $order = $this->order(9104, $this->deletedLine(5104));
@@ -425,7 +426,6 @@ class DeletedProductRosterTest extends TestCase {
     // ------------------------------------------------------------------ (4) flag
 
     public function test_event_details_flags_product_deleted(): void {
-        $this->markTestIncomplete('Pending fix E: deleted-product roster rows.');
         $order = $this->order(9105, $this->deletedLine(5105));
         $this->processor($this->builder())->processOrder($order);
         $row = $this->created[0] ?? null;
@@ -468,7 +468,6 @@ class DeletedProductRosterTest extends TestCase {
 
     /** (5a) End to end: the deleted-product line is a place in Final Numbers (via the row the build path writes). */
     public function test_final_numbers_counts_deleted_product_place(): void {
-        $this->markTestIncomplete('Pending fix E: deleted-product roster rows.');
         $order = $this->order(9106, $this->deletedLine(5106));
         $this->processor($this->builder())->processOrder($order);
         $rows = [];
@@ -522,7 +521,6 @@ class DeletedProductRosterTest extends TestCase {
      * variation id instead of 0.
      */
     public function test_variation_deleted_row_keeps_stored_variation_id(): void {
-        $this->markTestIncomplete('Pending fix E: deleted-product roster rows.');
         $item = new StoredLineItem(5301, 'Synthetic Sunday Course - Venue A - Winter 2026',
             DeletedProductFixture::LIVE_PID, DeletedProductFixture::DELETED_VARIATION_ONLY, DeletedProductFixture::courseMeta(), true, 300.0, false);
         $order = $this->order(9301, $item);
@@ -535,7 +533,166 @@ class DeletedProductRosterTest extends TestCase {
             'Variation deleted: stored variation id should be kept; master writes ' . (int) ($row['variation_id'] ?? 0));
     }
 
+    public function test_deleted_product_build_logs_error_with_order_ids(): void {
+        $logger = $this->createMock(Logger::class);
+        $logger->expects($this->atLeastOnce())
+            ->method('error')
+            ->with(
+                $this->equalTo('Roster row built for deleted catalogue product'),
+                $this->callback(static function ($context) {
+                    return is_array($context)
+                        && isset($context['order_id'], $context['order_item_id'])
+                        && (int) $context['order_id'] === 9401
+                        && (int) $context['order_item_id'] === 5401;
+                })
+            );
+
+        $order = $this->order(9401, $this->deletedLine(5401));
+        $this->processor($this->builderWithLogger($logger))->processOrder($order);
+        $this->assertCount(1, $this->created, 'expected row despite deleted product' . $this->why());
+    }
+
+    public function test_failed_roster_insert_logs_error_and_build_stats(): void {
+        $logger = $this->createMock(Logger::class);
+        $logger->expects($this->atLeastOnce())
+            ->method('error')
+            ->with(
+                $this->equalTo('Roster insert failed'),
+                $this->callback(static function ($context) {
+                    return is_array($context)
+                        && (int) ($context['order_id'] ?? 0) === 9501
+                        && (int) ($context['order_item_id'] ?? 0) === 5501;
+                })
+            );
+
+        $builder = $this->builderWithLogger($logger, static function () {
+            return null;
+        });
+        $order = $this->order(9501, $this->liveLine(5501));
+        $this->processor($builder)->processOrder($order);
+        $this->assertSame(0, count($this->created));
+        $prop = new \ReflectionProperty(RosterBuilder::class, 'build_stats');
+        $prop->setAccessible(true);
+        $stats = $prop->getValue($builder);
+        $this->assertNotEmpty($stats['errors'] ?? []);
+    }
+
+    private function builderWithLogger(Logger $logger, ?callable $create_callback = null): RosterBuilder {
+        $database = $this->createMock(Database::class);
+        $database->method('get_wpdb')->willReturn($this->wpdb);
+
+        $player = new Player([
+            'customer_id' => 1, 'player_index' => 0, 'first_name' => 'Synthetic', 'last_name' => 'Player',
+            'dob' => '2018-03-01', 'gender' => 'male', 'medical_conditions' => '', 'dietary_needs' => '',
+        ]);
+        $players = new PlayersCollection([$player]);
+        $player_repo = $this->createMock(PlayerRepository::class);
+        $player_repo->method('getPlayersByCustomerId')->willReturn($players);
+        $matcher = $this->createMock(PlayerMatcher::class);
+        $matcher->method('getAssignedPlayers')->willReturn($players);
+        $validator = $this->createMock(DataValidator::class);
+        $validator->method('validateRosterData')->willReturn(['valid' => true, 'errors' => []]);
+
+        $repo = $this->createMock(RosterRepository::class);
+        $repo->method('first')->willReturn(null);
+        $repo->method('count')->willReturn(0);
+        $repo->method('where')->willReturn(new RostersCollection());
+        if ($create_callback !== null) {
+            $repo->method('create')->willReturnCallback($create_callback);
+        } else {
+            $repo->method('create')->willReturnCallback(function (array $data) {
+                $roster = new Roster($data);
+                $roster->setKey(count($this->created) + 1);
+                $this->created[] = $roster->toArray();
+                return $roster;
+            });
+        }
+
+        return new RosterBuilder($logger, $database, $player_repo, $repo, $validator,
+            $this->createMock(EventMatcher::class), $matcher);
+    }
+
     // ------------------------------------------------------------------ (6) control
+
+    public function test_deleted_product_uses_english_name_when_wpml_resolves(): void {
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$rest) {
+            if ($hook === 'wpml_default_language') {
+                return 'en';
+            }
+            if ($hook === 'wpml_object_id') {
+                return DeletedProductFixture::LIVE_VID;
+            }
+            return $value;
+        };
+        $french = 'Cours dominical synthétique - Site A - Hiver 2026';
+        $builder = $this->builder();
+        $method = new \ReflectionMethod($builder, 'resolveEnglishProductNameForDeletedLine');
+        $method->setAccessible(true);
+        $resolved = $method->invoke($builder, [
+            'product_name' => $french,
+            'product_id' => DeletedProductFixture::DELETED_PID,
+            'variation_id' => DeletedProductFixture::DELETED_VID,
+        ]);
+        $this->assertSame('Synthetic Sunday Course - Venue A', $resolved['product_name']);
+        $this->assertFalse($resolved['name_not_english']);
+        unset($GLOBALS['intersoccer_test_apply_filters_callback']);
+    }
+
+    public function test_deleted_product_empty_stored_name_uses_placeholder_and_flags_not_english(): void {
+        $builder = $this->builder();
+        $method = new \ReflectionMethod($builder, 'resolveEnglishProductNameForDeletedLine');
+        $method->setAccessible(true);
+        $resolved = $method->invoke($builder, [
+            'product_name' => '',
+            'product_id' => 4242,
+            'variation_id' => 0,
+        ]);
+        $this->assertSame('Deleted product #4242', $resolved['product_name']);
+        $this->assertTrue($resolved['name_not_english']);
+    }
+
+    public function test_deleted_product_without_wpml_flags_name_not_english_on_fallback(): void {
+        $prev_filters = $GLOBALS['intersoccer_test_apply_filters_callback'] ?? null;
+        unset($GLOBALS['intersoccer_test_apply_filters_callback']);
+        $german = 'Einzelner Tage Camp - Testort';
+        $builder = $this->builder();
+        $method = new \ReflectionMethod($builder, 'resolveEnglishProductNameForDeletedLine');
+        $method->setAccessible(true);
+        $resolved = $method->invoke($builder, [
+            'product_name' => $german,
+            'product_id' => DeletedProductFixture::DELETED_PID,
+            'variation_id' => DeletedProductFixture::DELETED_VID,
+        ]);
+        $this->assertSame($german, $resolved['product_name']);
+        $this->assertTrue($resolved['name_not_english']);
+        if ($prev_filters !== null) {
+            $GLOBALS['intersoccer_test_apply_filters_callback'] = $prev_filters;
+        }
+    }
+
+    public function test_deleted_product_french_fallback_sets_name_not_english_flag(): void {
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$rest) {
+            if ($hook === 'wpml_default_language') {
+                return 'en';
+            }
+            if ($hook === 'wpml_object_id') {
+                return DeletedProductFixture::DELETED_VID;
+            }
+            return $value;
+        };
+        $french = 'Cours dominical synthétique - Site A - Hiver 2026';
+        $builder = $this->builder();
+        $method = new \ReflectionMethod($builder, 'resolveEnglishProductNameForDeletedLine');
+        $method->setAccessible(true);
+        $resolved = $method->invoke($builder, [
+            'product_name' => $french,
+            'product_id' => DeletedProductFixture::DELETED_PID,
+            'variation_id' => DeletedProductFixture::DELETED_VID,
+        ]);
+        $this->assertSame($french, $resolved['product_name']);
+        $this->assertTrue($resolved['name_not_english']);
+        unset($GLOBALS['intersoccer_test_apply_filters_callback']);
+    }
 
     /** (6) Control: same line with the product present -> 1 row, live ids, same shape, no product_deleted flag. */
     public function test_control_existing_product_line_same_shape_without_flag(): void {

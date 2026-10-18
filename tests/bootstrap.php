@@ -169,6 +169,12 @@ if (!function_exists('get_bloginfo')) {
     function get_bloginfo($show = '', $filter = 'raw') { return '6.0'; }
 }
 
+if (!function_exists('wpml_get_default_language')) {
+    function wpml_get_default_language() {
+        return apply_filters('wpml_default_language', 'en');
+    }
+}
+
 // URL functions
 if (!function_exists('admin_url')) {
     function admin_url($path = '', $scheme = 'admin') {
@@ -256,7 +262,14 @@ if (!function_exists('register_deactivation_hook')) {
 
 // Options API
 if (!function_exists('get_option')) {
-    function get_option($option, $default = false) { return $default; }
+    function get_option($option, $default = false) {
+        if (isset($GLOBALS['intersoccer_test_option_store'])
+            && is_array($GLOBALS['intersoccer_test_option_store'])
+            && array_key_exists($option, $GLOBALS['intersoccer_test_option_store'])) {
+            return $GLOBALS['intersoccer_test_option_store'][$option];
+        }
+        return $default;
+    }
 }
 
 if (!function_exists('add_option')) {
@@ -268,6 +281,9 @@ if (!function_exists('add_option')) {
 
 if (!function_exists('update_option')) {
     function update_option($option, $value, $autoload = null) {
+        if (isset($GLOBALS['intersoccer_test_option_store']) && is_array($GLOBALS['intersoccer_test_option_store'])) {
+            $GLOBALS['intersoccer_test_option_store'][$option] = $value;
+        }
         $old = get_option($option, null);
         do_action('update_option', $option, $old, $value);
         return true;
@@ -780,7 +796,9 @@ if (!function_exists('wp_send_json_error')) {
 }
 
 if (!function_exists('wp_doing_ajax')) {
-    function wp_doing_ajax() { return false; }
+    function wp_doing_ajax() {
+        return !empty($GLOBALS['intersoccer_test_wp_doing_ajax']);
+    }
 }
 
 // Database functions

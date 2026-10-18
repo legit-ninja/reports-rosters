@@ -61,7 +61,7 @@ function intersoccer_create_rosters_table() {
         parent_last_name varchar(100) NOT NULL,
         emergency_contact varchar(20) DEFAULT '',
         term varchar(200) DEFAULT '',
-        times varchar(50) DEFAULT '',
+        times varchar(191) DEFAULT '',
         days_selected varchar(200) DEFAULT '',
         season varchar(50) DEFAULT '',
         canton_region varchar(100) DEFAULT '',
@@ -191,9 +191,230 @@ function intersoccer_migrate_rosters_table() {
         $wpdb->query("ALTER TABLE $rosters_table MODIFY start_date date DEFAULT NULL");
         $wpdb->query("ALTER TABLE $rosters_table MODIFY end_date date DEFAULT NULL");
         update_option('intersoccer_db_version', '2.2.0');
+        $db_version = '2.2.0';
         error_log('InterSoccer: Rosters start_date/end_date defaults set to NULL (schema 2.2.0)');
     }
+
+    if (version_compare($db_version, '2.3.0', '<')) {
+        $start_update = $wpdb->query("UPDATE {$rosters_table} SET start_date = NULL WHERE start_date = '1970-01-01'");
+        $end_update = $wpdb->query("UPDATE {$rosters_table} SET end_date = NULL WHERE end_date = '1970-01-01'");
+        if ($start_update === false || $end_update === false) {
+            error_log('InterSoccer: Failed roster date normalization before schema 2.3.0: ' . $wpdb->last_error);
+        } else {
+            update_option('intersoccer_db_version', '2.3.0');
+            $db_version = '2.3.0';
+            error_log('InterSoccer: Normalized legacy roster dates to NULL (schema 2.3.0)');
+        }
+    }
+
+    if (version_compare($db_version, '2.4.0', '<') && version_compare($db_version, '2.3.0', '>=')) {
+        if (function_exists('intersoccer_migrate_rosters_schema_2_4_0')
+            && intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table) === true) {
+            update_option('intersoccer_db_version', '2.4.0');
+            error_log('InterSoccer: Widened event_type, times and camp_times (schema 2.4.0)');
+        }
+    }
 }
+
+/**
+ * Option storing unix timestamp when schema 2.4.0 migration completed (backup retention).
+ *
+ * @return string
+ */
+function intersoccer_rosters_bak_2_4_0_created_option_name() {
+    return 'intersoccer_rosters_bak_2_4_0_created_at';
+}
+
+/**
+ * Retention period before the schema 2.4.0 roster backup table may be dropped.
+ *
+ * @return int Seconds (14 days).
+ */
+function intersoccer_rosters_bak_2_4_0_retention_seconds() {
+    return defined('DAY_IN_SECONDS') ? (14 * DAY_IN_SECONDS) : (14 * 86400);
+}
+
+/**
+ * Redact quoted literals from wpdb errors before writing to error_log.
+ *
+ * @param string $last_error
+ * @return string
+ */
+function intersoccer_db_redact_wpdb_error_for_log($last_error) {
+    $sanitized = preg_replace("/'[^']*'/", "'?'", (string) $last_error);
+    return $sanitized !== '' ? $sanitized : 'database error';
+}
+
+/**
+ * Parse varchar(N) width from a DESCRIBE Type string.
+ *
+ * @param string $type_sql
+ * @return int 0 when not varchar.
+ */
+function intersoccer_rosters_schema_2_4_0_varchar_width_from_type($type_sql) {
+    if (preg_match('/varchar\((\d+)\)/i', (string) $type_sql, $matches)) {
+        return (int) $matches[1];
+    }
+    return 0;
+}
+
+/**
+ * @param \wpdb  $wpdb
+ * @param string $rosters_table
+ * @return bool True when any present widen column is narrower than 191.
+ */
+function intersoccer_rosters_schema_2_4_0_columns_need_widen($wpdb, $rosters_table) {
+    $describe = $wpdb->get_results("DESCRIBE {$rosters_table}", ARRAY_A);
+    if (!is_array($describe)) {
+        return true;
+    }
+    $watch = ['event_type', 'camp_times', 'times'];
+    foreach ($describe as $column) {
+        $name = $column['Field'] ?? '';
+        if (!in_array($name, $watch, true)) {
+            continue;
+        }
+        $width = intersoccer_rosters_schema_2_4_0_varchar_width_from_type($column['Type'] ?? '');
+        if ($width > 0 && $width < 191) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @param \wpdb  $wpdb
+ * @param string $rosters_table
+ * @param string $backup
+ * @return bool
+ */
+function intersoccer_rosters_schema_2_4_0_backup_counts_match($wpdb, $rosters_table, $backup) {
+    $live_count = $wpdb->get_var("SELECT COUNT(*) FROM {$rosters_table}");
+    $backup_count = $wpdb->get_var("SELECT COUNT(*) FROM {$backup}");
+    if ($live_count === null || $backup_count === null) {
+        return false;
+    }
+    return (int) $live_count === (int) $backup_count;
+}
+
+/**
+ * Legacy roster table migration: widen event_type, times and camp_times with backup-before-ALTER.
+ *
+ * @param \wpdb  $wpdb
+ * @param string $rosters_table
+ * @return bool|string False when snapshot fails; skipped_unrecognised_backup when foreign backup exists.
+ */
+function intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table) {
+    $backup = $rosters_table . '_bak_2_4_0';
+    $stamp_option = intersoccer_rosters_bak_2_4_0_created_option_name();
+    $skipped_backup = class_exists(\InterSoccer\ReportsRosters\Core\DatabaseMigrator::class)
+        ? \InterSoccer\ReportsRosters\Core\DatabaseMigrator::RESULT_SKIPPED_UNRECOGNISED_BACKUP
+        : 'skipped_unrecognised_backup';
+
+    if (!intersoccer_rosters_schema_2_4_0_columns_need_widen($wpdb, $rosters_table)) {
+        error_log('InterSoccer: schema 2.4.0 skipped — varchar columns already >= 191');
+        return true;
+    }
+
+    $backup_exists = $wpdb->get_var(
+        $wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($backup))
+    );
+    $created_backup_this_run = false;
+
+    if (!empty($backup_exists)) {
+        if ((int) get_option($stamp_option, 0) <= 0) {
+            error_log('InterSoccer: unrecognised roster backup table present; schema 2.4.0 skipped');
+            return $skipped_backup;
+        }
+        error_log('InterSoccer: reusing roster backup for schema 2.4.0 after count verification');
+        if (!intersoccer_rosters_schema_2_4_0_backup_counts_match($wpdb, $rosters_table, $backup)) {
+            error_log('InterSoccer: roster backup row count mismatch before schema 2.4.0; skipping ALTER');
+            return false;
+        }
+        update_option($stamp_option, time());
+    } else {
+        $created = $wpdb->query("CREATE TABLE {$backup} LIKE {$rosters_table}");
+        if ($created === false) {
+            error_log('InterSoccer: Failed roster backup CREATE before schema 2.4.0: ' . intersoccer_db_redact_wpdb_error_for_log($wpdb->last_error));
+            return false;
+        }
+        $created_backup_this_run = true;
+        $copied = $wpdb->query("INSERT INTO {$backup} SELECT * FROM {$rosters_table}");
+        if ($copied === false) {
+            error_log('InterSoccer: Failed roster backup INSERT before schema 2.4.0: ' . intersoccer_db_redact_wpdb_error_for_log($wpdb->last_error));
+            $wpdb->query("DROP TABLE IF EXISTS {$backup}");
+            return false;
+        }
+        if (!intersoccer_rosters_schema_2_4_0_backup_counts_match($wpdb, $rosters_table, $backup)) {
+            error_log('InterSoccer: roster backup row count mismatch before schema 2.4.0; skipping ALTER');
+            $wpdb->query("DROP TABLE IF EXISTS {$backup}");
+            return false;
+        }
+    }
+
+    $columns = $wpdb->get_col("DESCRIBE $rosters_table", 0);
+    $drop_fresh_backup_after_failed_alter = function () use ($wpdb, $backup, &$created_backup_this_run) {
+        if (!$created_backup_this_run) {
+            return;
+        }
+        $wpdb->query("DROP TABLE IF EXISTS {$backup}");
+        $created_backup_this_run = false;
+        error_log('InterSoccer: Dropped roster backup after failed schema 2.4.0 ALTER (retry allowed)');
+    };
+    if (in_array('event_type', $columns, true)) {
+        if ($wpdb->query("ALTER TABLE $rosters_table MODIFY event_type varchar(191) DEFAULT NULL") === false) {
+            error_log('InterSoccer: Failed to widen event_type (schema 2.4.0): ' . intersoccer_db_redact_wpdb_error_for_log($wpdb->last_error));
+            $drop_fresh_backup_after_failed_alter();
+            return false;
+        }
+    }
+    if (in_array('camp_times', $columns, true)) {
+        if ($wpdb->query("ALTER TABLE $rosters_table MODIFY camp_times varchar(191) DEFAULT NULL") === false) {
+            error_log('InterSoccer: Failed to widen camp_times (schema 2.4.0): ' . intersoccer_db_redact_wpdb_error_for_log($wpdb->last_error));
+            $drop_fresh_backup_after_failed_alter();
+            return false;
+        }
+    }
+    if (in_array('times', $columns, true)) {
+        if ($wpdb->query("ALTER TABLE $rosters_table MODIFY times varchar(191) DEFAULT ''") === false) {
+            error_log('InterSoccer: Failed to widen times (schema 2.4.0): ' . intersoccer_db_redact_wpdb_error_for_log($wpdb->last_error));
+            $drop_fresh_backup_after_failed_alter();
+            return false;
+        }
+    }
+
+    update_option(intersoccer_rosters_bak_2_4_0_created_option_name(), time());
+
+    return true;
+}
+
+/**
+ * Drop roster PII backup table 14+ days after successful schema 2.4.0.
+ * Runs only on non-AJAX admin requests by users with manage_options.
+ */
+function intersoccer_maybe_cleanup_rosters_bak_2_4_0() {
+    if ((defined('DOING_AJAX') && DOING_AJAX)
+        || (function_exists('wp_doing_ajax') && wp_doing_ajax())) {
+        return;
+    }
+    if (function_exists('current_user_can') && !current_user_can('manage_options')) {
+        return;
+    }
+    global $wpdb;
+    $option = intersoccer_rosters_bak_2_4_0_created_option_name();
+    $created_at = (int) get_option($option, 0);
+    if ($created_at <= 0) {
+        return;
+    }
+    if (time() - $created_at < intersoccer_rosters_bak_2_4_0_retention_seconds()) {
+        return;
+    }
+    $backup = $wpdb->prefix . 'intersoccer_rosters_bak_2_4_0';
+    $wpdb->query("DROP TABLE IF EXISTS {$backup}");
+    delete_option($option);
+}
+
+add_action('admin_init', 'intersoccer_maybe_cleanup_rosters_bak_2_4_0', 99);
 
 /**
  * Rebuild event signatures for all existing roster records
@@ -1868,7 +2089,7 @@ function intersoccer_validate_rosters_table() {
         'parent_last_name' => 'varchar(100)',
         'emergency_contact' => 'varchar(20)',
         'term' => 'varchar(200)',
-        'times' => 'varchar(50)',
+        'times' => 'varchar(191)',
         'days_selected' => 'varchar(200)',
         'season' => 'varchar(50)',
         'canton_region' => 'varchar(100)',
