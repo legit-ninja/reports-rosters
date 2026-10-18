@@ -61,7 +61,7 @@ function intersoccer_create_rosters_table() {
         parent_last_name varchar(100) NOT NULL,
         emergency_contact varchar(20) DEFAULT '',
         term varchar(200) DEFAULT '',
-        times varchar(50) DEFAULT '',
+        times varchar(191) DEFAULT '',
         days_selected varchar(200) DEFAULT '',
         season varchar(50) DEFAULT '',
         canton_region varchar(100) DEFAULT '',
@@ -192,6 +192,26 @@ function intersoccer_migrate_rosters_table() {
         $wpdb->query("ALTER TABLE $rosters_table MODIFY end_date date DEFAULT NULL");
         update_option('intersoccer_db_version', '2.2.0');
         error_log('InterSoccer: Rosters start_date/end_date defaults set to NULL (schema 2.2.0)');
+    }
+
+    if (version_compare($db_version, '2.4.0', '<')) {
+        $backup = $rosters_table . '_bak_2_4_0';
+        $backup_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $backup));
+        if (empty($backup_exists)) {
+            $wpdb->query("CREATE TABLE {$backup} LIKE {$rosters_table}");
+            $wpdb->query("INSERT INTO {$backup} SELECT * FROM {$rosters_table}");
+        }
+        $columns = $wpdb->get_col("DESCRIBE $rosters_table", 0);
+        if (in_array('event_type', $columns, true)) {
+            $wpdb->query("ALTER TABLE $rosters_table MODIFY event_type varchar(191) DEFAULT NULL");
+        }
+        if (in_array('camp_times', $columns, true)) {
+            $wpdb->query("ALTER TABLE $rosters_table MODIFY camp_times varchar(191) DEFAULT NULL");
+        } elseif (in_array('times', $columns, true)) {
+            $wpdb->query("ALTER TABLE $rosters_table MODIFY times varchar(191) DEFAULT ''");
+        }
+        update_option('intersoccer_db_version', '2.4.0');
+        error_log('InterSoccer: Widened event_type / camp_times (schema 2.4.0)');
     }
 }
 

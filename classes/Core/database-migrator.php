@@ -52,7 +52,7 @@ class DatabaseMigrator {
      * 
      * @var string
      */
-    const CURRENT_VERSION = '2.3.0';
+    const CURRENT_VERSION = '2.4.0';
     
     /**
      * Constructor
@@ -164,6 +164,7 @@ class DatabaseMigrator {
             '2.1.0' => [$this, 'migrate_2_1_0'],
             '2.2.0' => [$this, 'migrate_2_2_0'],
             '2.3.0' => [$this, 'migrate_2_3_0'],
+            '2.4.0' => [$this, 'migrate_2_4_0'],
         ];
     }
     
@@ -295,6 +296,51 @@ class DatabaseMigrator {
      *
      * @return bool Success status
      */
+    private function migrate_2_4_0() {
+        $table = $this->wpdb->prefix . 'intersoccer_rosters';
+        $backup = $table . '_bak_2_4_0';
+
+        try {
+            $backup_exists = $this->wpdb->get_var($this->wpdb->prepare('SHOW TABLES LIKE %s', $backup));
+            if (empty($backup_exists)) {
+                $this->logger->info('Creating roster table backup before varchar widen', ['backup' => $backup]);
+                $created = $this->wpdb->query("CREATE TABLE {$backup} LIKE {$table}");
+                if ($created === false) {
+                    throw new DatabaseException('Failed to create roster backup table before migration 2.4.0');
+                }
+                $copied = $this->wpdb->query("INSERT INTO {$backup} SELECT * FROM {$table}");
+                if ($copied === false) {
+                    throw new DatabaseException('Failed to copy roster rows into backup table before migration 2.4.0');
+                }
+            }
+
+            $this->logger->info('Widening event_type and camp_times columns to varchar(191)');
+            $event_type_sql = "ALTER TABLE {$table} MODIFY event_type varchar(191) DEFAULT NULL";
+            $camp_times_sql = "ALTER TABLE {$table} MODIFY camp_times varchar(191) DEFAULT NULL";
+            if ($this->columnExists($table, 'event_type')) {
+                if ($this->wpdb->query($event_type_sql) === false) {
+                    throw new DatabaseException('Failed to widen event_type column');
+                }
+            }
+            if ($this->columnExists($table, 'camp_times')) {
+                if ($this->wpdb->query($camp_times_sql) === false) {
+                    throw new DatabaseException('Failed to widen camp_times column');
+                }
+            } elseif ($this->columnExists($table, 'times')) {
+                if ($this->wpdb->query("ALTER TABLE {$table} MODIFY times varchar(191) DEFAULT ''") === false) {
+                    throw new DatabaseException('Failed to widen times column');
+                }
+            }
+
+            return true;
+        } catch (\Exception $e) {
+            $this->logger->error('Migration 2.4.0 failed', [
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
     private function migrate_2_3_0() {
         $table = $this->wpdb->prefix . 'intersoccer_rosters';
 
