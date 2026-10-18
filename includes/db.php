@@ -191,16 +191,43 @@ function intersoccer_migrate_rosters_table() {
         $wpdb->query("ALTER TABLE $rosters_table MODIFY start_date date DEFAULT NULL");
         $wpdb->query("ALTER TABLE $rosters_table MODIFY end_date date DEFAULT NULL");
         update_option('intersoccer_db_version', '2.2.0');
+        $db_version = '2.2.0';
         error_log('InterSoccer: Rosters start_date/end_date defaults set to NULL (schema 2.2.0)');
     }
 
-    if (version_compare($db_version, '2.4.0', '<')) {
+    if (version_compare($db_version, '2.3.0', '<')) {
+        $wpdb->query("UPDATE {$rosters_table} SET start_date = NULL WHERE start_date = '1970-01-01'");
+        $wpdb->query("UPDATE {$rosters_table} SET end_date = NULL WHERE end_date = '1970-01-01'");
+        update_option('intersoccer_db_version', '2.3.0');
+        $db_version = '2.3.0';
+        error_log('InterSoccer: Normalized legacy roster dates to NULL (schema 2.3.0)');
+    }
+
+    if (version_compare($db_version, '2.4.0', '<') && version_compare($db_version, '2.3.0', '>=')) {
         if (function_exists('intersoccer_migrate_rosters_schema_2_4_0')
             && intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table)) {
             update_option('intersoccer_db_version', '2.4.0');
             error_log('InterSoccer: Widened event_type / camp_times (schema 2.4.0)');
         }
     }
+}
+
+/**
+ * Option storing unix timestamp when schema 2.4.0 migration completed (backup retention).
+ *
+ * @return string
+ */
+function intersoccer_rosters_bak_2_4_0_created_option_name() {
+    return 'intersoccer_rosters_bak_2_4_0_created_at';
+}
+
+/**
+ * Retention period before the schema 2.4.0 roster backup table may be dropped.
+ *
+ * @return int Seconds (14 days).
+ */
+function intersoccer_rosters_bak_2_4_0_retention_seconds() {
+    return defined('DAY_IN_SECONDS') ? (14 * DAY_IN_SECONDS) : (14 * 86400);
 }
 
 /**
@@ -212,7 +239,9 @@ function intersoccer_migrate_rosters_table() {
  */
 function intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table) {
     $backup = $rosters_table . '_bak_2_4_0';
-    $backup_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $backup));
+    $backup_exists = $wpdb->get_var(
+        $wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($backup))
+    );
     if (empty($backup_exists)) {
         $created = $wpdb->query("CREATE TABLE {$backup} LIKE {$rosters_table}");
         if ($created === false) {
@@ -222,9 +251,18 @@ function intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table) {
         $copied = $wpdb->query("INSERT INTO {$backup} SELECT * FROM {$rosters_table}");
         if ($copied === false) {
             error_log('InterSoccer: Failed roster backup INSERT before schema 2.4.0: ' . $wpdb->last_error);
+            $wpdb->query("DROP TABLE IF EXISTS {$backup}");
             return false;
         }
     }
+
+    $live_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$rosters_table}");
+    $backup_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$backup}");
+    if ($live_count !== $backup_count) {
+        error_log('InterSoccer: roster backup row count mismatch before schema 2.4.0; skipping ALTER');
+        return false;
+    }
+
     $columns = $wpdb->get_col("DESCRIBE $rosters_table", 0);
     if (in_array('event_type', $columns, true)) {
         if ($wpdb->query("ALTER TABLE $rosters_table MODIFY event_type varchar(191) DEFAULT NULL") === false) {
@@ -243,8 +281,34 @@ function intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table) {
             return false;
         }
     }
+
+    $option = intersoccer_rosters_bak_2_4_0_created_option_name();
+    if (!get_option($option, 0)) {
+        update_option($option, time());
+    }
+
     return true;
 }
+
+/**
+ * Drop roster PII backup table 14+ days after successful schema 2.4.0 (admin only, not on report view).
+ */
+function intersoccer_maybe_cleanup_rosters_bak_2_4_0() {
+    global $wpdb;
+    $option = intersoccer_rosters_bak_2_4_0_created_option_name();
+    $created_at = (int) get_option($option, 0);
+    if ($created_at <= 0) {
+        return;
+    }
+    if (time() - $created_at < intersoccer_rosters_bak_2_4_0_retention_seconds()) {
+        return;
+    }
+    $backup = $wpdb->prefix . 'intersoccer_rosters_bak_2_4_0';
+    $wpdb->query("DROP TABLE IF EXISTS {$backup}");
+    delete_option($option);
+}
+
+add_action('admin_init', 'intersoccer_maybe_cleanup_rosters_bak_2_4_0', 99);
 
 /**
  * Rebuild event signatures for all existing roster records

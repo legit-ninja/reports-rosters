@@ -296,51 +296,6 @@ class DatabaseMigrator {
      *
      * @return bool Success status
      */
-    private function migrate_2_4_0() {
-        $table = $this->wpdb->prefix . 'intersoccer_rosters';
-        $backup = $table . '_bak_2_4_0';
-
-        try {
-            $backup_exists = $this->wpdb->get_var($this->wpdb->prepare('SHOW TABLES LIKE %s', $backup));
-            if (empty($backup_exists)) {
-                $this->logger->info('Creating roster table backup before varchar widen', ['backup' => $backup]);
-                $created = $this->wpdb->query("CREATE TABLE {$backup} LIKE {$table}");
-                if ($created === false) {
-                    throw new DatabaseException('Failed to create roster backup table before migration 2.4.0');
-                }
-                $copied = $this->wpdb->query("INSERT INTO {$backup} SELECT * FROM {$table}");
-                if ($copied === false) {
-                    throw new DatabaseException('Failed to copy roster rows into backup table before migration 2.4.0');
-                }
-            }
-
-            $this->logger->info('Widening event_type and camp_times columns to varchar(191)');
-            $event_type_sql = "ALTER TABLE {$table} MODIFY event_type varchar(191) DEFAULT NULL";
-            $camp_times_sql = "ALTER TABLE {$table} MODIFY camp_times varchar(191) DEFAULT NULL";
-            if ($this->columnExists($table, 'event_type')) {
-                if ($this->wpdb->query($event_type_sql) === false) {
-                    throw new DatabaseException('Failed to widen event_type column');
-                }
-            }
-            if ($this->columnExists($table, 'camp_times')) {
-                if ($this->wpdb->query($camp_times_sql) === false) {
-                    throw new DatabaseException('Failed to widen camp_times column');
-                }
-            } elseif ($this->columnExists($table, 'times')) {
-                if ($this->wpdb->query("ALTER TABLE {$table} MODIFY times varchar(191) DEFAULT ''") === false) {
-                    throw new DatabaseException('Failed to widen times column');
-                }
-            }
-
-            return true;
-        } catch (\Exception $e) {
-            $this->logger->error('Migration 2.4.0 failed', [
-                'error' => $e->getMessage(),
-            ]);
-            return false;
-        }
-    }
-
     private function migrate_2_3_0() {
         $table = $this->wpdb->prefix . 'intersoccer_rosters';
 
@@ -358,6 +313,39 @@ class DatabaseMigrator {
             return true;
         } catch (\Exception $e) {
             $this->logger->error('Migration 2.3.0 failed', [
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Migration for version 2.4.0
+     * Widen event_type / camp_times (or legacy times) with verified backup-before-ALTER.
+     *
+     * @return bool Success status
+     */
+    private function migrate_2_4_0() {
+        $table = $this->wpdb->prefix . 'intersoccer_rosters';
+        if (!function_exists('intersoccer_migrate_rosters_schema_2_4_0')) {
+            $db_file = dirname(__DIR__, 2) . '/includes/db.php';
+            if (is_readable($db_file)) {
+                require_once $db_file;
+            }
+        }
+        if (!function_exists('intersoccer_migrate_rosters_schema_2_4_0')) {
+            $this->logger->error('Migration 2.4.0 failed: schema helper not loaded');
+            return false;
+        }
+        try {
+            $this->logger->info('Running roster schema 2.4.0 varchar widen with backup verification');
+            $ok = intersoccer_migrate_rosters_schema_2_4_0($this->wpdb, $table);
+            if (!$ok) {
+                throw new DatabaseException('Roster schema 2.4.0 migration aborted');
+            }
+            return true;
+        } catch (\Exception $e) {
+            $this->logger->error('Migration 2.4.0 failed', [
                 'error' => $e->getMessage(),
             ]);
             return false;

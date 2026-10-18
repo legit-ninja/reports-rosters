@@ -21,11 +21,14 @@ class LegacyRosterSchemaMigrateTest extends TestCase {
         $backup = $table . '_bak_2_4_0';
         $queries = [];
         $wpdb->last_error = 'insert failed';
+        $wpdb->shouldReceive('esc_like')->andReturnUsing(static function ($s) {
+            return (string) $s;
+        });
         $wpdb->shouldReceive('get_var')->andReturn(null);
         $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($sql) {
             return (string) $sql;
         });
-        $wpdb->shouldReceive('query')->andReturnUsing(function ($sql) use (&$queries) {
+        $wpdb->shouldReceive('query')->andReturnUsing(function ($sql) use (&$queries, $backup) {
             $queries[] = (string) $sql;
             if (strpos((string) $sql, 'CREATE TABLE') !== false) {
                 return 0;
@@ -40,16 +43,31 @@ class LegacyRosterSchemaMigrateTest extends TestCase {
         $this->assertFalse(intersoccer_migrate_rosters_schema_2_4_0($wpdb, $table));
         $joined = implode("\n", $queries);
         $this->assertStringContainsString("CREATE TABLE {$backup}", $joined);
+        $this->assertStringContainsString("DROP TABLE IF EXISTS {$backup}", $joined);
         $this->assertStringNotContainsString('MODIFY event_type', $joined);
     }
 
-    public function test_legacy_2_4_0_noop_when_backup_already_exists(): void {
+    public function test_legacy_2_4_0_alters_when_backup_exists_and_counts_match(): void {
         $wpdb = Mockery::mock('wpdb');
         $table = 'wp_intersoccer_rosters';
         $backup = $table . '_bak_2_4_0';
         $queries = [];
         $wpdb->last_error = '';
-        $wpdb->shouldReceive('get_var')->andReturn($backup);
+        $wpdb->shouldReceive('esc_like')->andReturnUsing(static function ($s) {
+            return (string) $s;
+        });
+        $wpdb->shouldReceive('get_var')->andReturnUsing(function ($sql) use ($backup, $table) {
+            if (strpos((string) $sql, 'SHOW TABLES') !== false) {
+                return $backup;
+            }
+            if (strpos((string) $sql, "FROM {$table}") !== false) {
+                return '4';
+            }
+            if (strpos((string) $sql, "FROM {$backup}") !== false) {
+                return '4';
+            }
+            return null;
+        });
         $wpdb->shouldReceive('get_col')->with("DESCRIBE {$table}", 0)->andReturn(['event_type', 'camp_times']);
         $wpdb->shouldReceive('query')->andReturnUsing(function ($sql) use (&$queries) {
             $queries[] = (string) $sql;
@@ -63,5 +81,57 @@ class LegacyRosterSchemaMigrateTest extends TestCase {
         $joined = implode("\n", $queries);
         $this->assertStringNotContainsString("CREATE TABLE {$backup}", $joined);
         $this->assertStringContainsString('MODIFY event_type', $joined);
+    }
+
+    public function test_legacy_2_4_0_skips_alter_on_count_mismatch(): void {
+        $wpdb = Mockery::mock('wpdb');
+        $table = 'wp_intersoccer_rosters';
+        $backup = $table . '_bak_2_4_0';
+        $wpdb->shouldReceive('esc_like')->andReturnUsing(static function ($s) {
+            return (string) $s;
+        });
+        $wpdb->shouldReceive('get_var')->andReturnUsing(function ($sql) use ($backup, $table) {
+            if (strpos((string) $sql, 'SHOW TABLES') !== false) {
+                return $backup;
+            }
+            if (strpos((string) $sql, 'COUNT') !== false) {
+                if (strpos((string) $sql, $backup) !== false) {
+                    return '1';
+                }
+                if (strpos((string) $sql, $table) !== false) {
+                    return '2';
+                }
+            }
+            return null;
+        });
+        $wpdb->shouldReceive('query')->never();
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($sql) {
+            return (string) $sql;
+        });
+
+        $this->assertFalse(intersoccer_migrate_rosters_schema_2_4_0($wpdb, $table));
+    }
+
+    public function test_cleanup_retention_is_fourteen_days(): void {
+        $this->assertSame(14 * 86400, intersoccer_rosters_bak_2_4_0_retention_seconds());
+    }
+
+    public function test_cleanup_would_drop_when_created_at_is_old_enough(): void {
+        $created_at = time() - intersoccer_rosters_bak_2_4_0_retention_seconds() - 1;
+        $this->assertTrue(time() - $created_at >= intersoccer_rosters_bak_2_4_0_retention_seconds());
+    }
+
+    public function test_cleanup_would_not_drop_when_created_at_is_recent(): void {
+        $created_at = time() - (5 * 86400);
+        $this->assertFalse(time() - $created_at >= intersoccer_rosters_bak_2_4_0_retention_seconds());
+    }
+
+    public function test_legacy_gate_skips_2_4_when_version_is_2_2(): void {
+        $this->assertTrue(version_compare('2.2.0', '2.4.0', '<'));
+        $this->assertFalse(version_compare('2.2.0', '2.3.0', '>='));
+        $this->assertTrue(
+            version_compare('2.2.0', '2.4.0', '<') && version_compare('2.2.0', '2.3.0', '>=') === false,
+            'Legacy 2.4.0 path must not run until 2.3.0 has been applied'
+        );
     }
 }
