@@ -65,6 +65,15 @@ class DatabaseMigrator {
 
     /** migrate() return: pre-existing backup without our retention stamp. */
     const RESULT_SKIPPED_UNRECOGNISED_BACKUP = 'skipped_unrecognised_backup';
+
+    /** migrate() return: schema migrations ran successfully. */
+    const RESULT_UPGRADED = 'upgraded';
+
+    /** migrate() return: stored version already at CURRENT_VERSION; no work done. */
+    const RESULT_ALREADY_CURRENT = 'already_current';
+
+    /** migrate() return: migration failed. */
+    const RESULT_FAILED = 'failed';
     
     /**
      * Constructor
@@ -81,7 +90,7 @@ class DatabaseMigrator {
     /**
      * Run database migrations
      * 
-     * @return bool Success status
+     * @return string One of RESULT_* constants.
      */
     public function migrate() {
         if (!$this->acquireMigrationLock()) {
@@ -101,11 +110,12 @@ class DatabaseMigrator {
             // If already at current version, skip
             if (version_compare($current_version, $target_version, '>=')) {
                 $this->logger->info('Database already at current version');
-                return true;
+                return self::RESULT_ALREADY_CURRENT;
             }
             
             // Run migrations in order
             $migrations = $this->getMigrations();
+            $migrations_applied = false;
             
             foreach ($migrations as $version => $migration) {
                 // Skip if already at or past this version
@@ -129,6 +139,7 @@ class DatabaseMigrator {
                     
                     // Update version after successful migration
                     $this->updateVersion($version);
+                    $migrations_applied = true;
                     
                     $this->logger->info("Migration {$version} completed successfully");
                     
@@ -145,14 +156,14 @@ class DatabaseMigrator {
             
             $this->logger->info('All database migrations completed successfully');
             
-            return true;
+            return $migrations_applied ? self::RESULT_UPGRADED : self::RESULT_ALREADY_CURRENT;
             
         } catch (\Exception $e) {
             $this->logger->error('Database migration failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            return false;
+            return self::RESULT_FAILED;
         } finally {
             $this->releaseMigrationLock();
         }
