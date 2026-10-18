@@ -1431,11 +1431,13 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                             // Format: "14 décembre" - add year at the end
                             $tournament_date = $tournament_date . ' ' . $year;
                         }
-                        error_log("InterSoccer: Adding year $year from season \"$season\" to date \"$tournament_date\" (order $order_id, item $order_item_id)");
+                        if (defined('WP_DEBUG') && WP_DEBUG) {
+                            error_log("InterSoccer: Adding year $year from season \"$season\" to date \"$tournament_date\"");
+                        }
                     }
                 }
                 
-                $context = "order $order_id, item $order_item_id (tournament date)";
+                $context = 'tournament date';
                 $parsed_date = intersoccer_parse_date_unified($tournament_date, $context);
                 
                 if ($parsed_date) {
@@ -1445,7 +1447,7 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                     $event_dates = $start_date;
                     error_log("InterSoccer: Parsed tournament date: $start_date");
                 } else {
-                    error_log("InterSoccer: Failed to parse tournament date '$tournament_date' for order $order_id, item $order_item_id");
+                    error_log("InterSoccer: Failed to parse tournament date '$tournament_date'");
                     $start_date = null;
                     $end_date = null;
                     $event_dates = 'N/A';
@@ -1454,14 +1456,13 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                 // Fallback to Start Date/End Date from order item metadata if available
                 if (!empty($order_item_meta['Start Date']) && !empty($order_item_meta['End Date'])) {
                     error_log("InterSoccer: Tournament date attribute not found, trying Start Date/End Date from metadata for order $order_id, item $order_item_id");
-                    $context = "order $order_id, item $order_item_id";
-                    $start_date = intersoccer_parse_date_unified($order_item_meta['Start Date'], $context . ' (start)');
-                    $end_date = intersoccer_parse_date_unified($order_item_meta['End Date'], $context . ' (end)');
+                    $start_date = intersoccer_parse_date_unified($order_item_meta['Start Date'], 'metadata (start)');
+                    $end_date = intersoccer_parse_date_unified($order_item_meta['End Date'], 'metadata (end)');
                     
                     if ($start_date && $end_date) {
                         $event_dates = "$start_date to $end_date";
                     } else {
-                        error_log("InterSoccer: Date parsing failed for order $order_id, item $order_item_id. Using default dates.");
+                        error_log('InterSoccer: Date parsing failed for metadata start/end. Using default dates.');
                         $start_date = null;
                         $end_date = null;
                         $event_dates = 'N/A';
@@ -1479,13 +1480,12 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             error_log("InterSoccer: Raw End Date for order $order_id, item $order_item_id: " . print_r($order_item_meta['End Date'], true));
 
             // Use unified date parser
-            $context = "order $order_id, item $order_item_id";
-            $start_date = intersoccer_parse_date_unified($order_item_meta['Start Date'], $context . ' (start)');
-            $end_date = intersoccer_parse_date_unified($order_item_meta['End Date'], $context . ' (end)');
+            $start_date = intersoccer_parse_date_unified($order_item_meta['Start Date'], 'course (start)');
+            $end_date = intersoccer_parse_date_unified($order_item_meta['End Date'], 'course (end)');
 
             // Fallback if parsing fails
             if (!$start_date || !$end_date) {
-                error_log("InterSoccer: Date parsing failed for order $order_id, item $order_item_id. Using default dates.");
+                error_log('InterSoccer: Date parsing failed for course start/end. Using default dates.');
                 $start_date = null;
                 $end_date = null;
                 $event_dates = 'N/A';

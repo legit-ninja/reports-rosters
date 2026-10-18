@@ -3511,11 +3511,13 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
                         // Format: "14 décembre" - add year at the end
                         $tournament_date = $tournament_date . ' ' . $year;
                     }
-                    error_log('InterSoccer: Adding year ' . $year . ' from season "' . $season . '" to date "' . $tournament_date . '" (order ' . $order_id . ', item ' . $item_id . ')');
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('InterSoccer: Adding year ' . $year . ' from season "' . $season . '" to date "' . $tournament_date . '"');
+                    }
                 }
             }
             
-            $context = "order $order_id, item $item_id (tournament date)";
+            $context = 'tournament date';
             $parsed_date = intersoccer_parse_date_unified($tournament_date, $context);
             
             if ($parsed_date) {
@@ -3525,7 +3527,7 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
                 $event_dates = $start_date;
                 error_log('InterSoccer: Parsed tournament date: ' . $start_date);
             } else {
-                error_log('InterSoccer: Failed to parse tournament date "' . $tournament_date . '" for order ' . $order_id . ', item ' . $item_id);
+                error_log('InterSoccer: Failed to parse tournament date "' . $tournament_date . '"');
                 $start_date = null;
                 $end_date = null;
                 $event_dates = 'N/A';
@@ -3534,16 +3536,15 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
             // Fallback to Start Date/End Date from order item metadata if available
             if (!empty($start_date) && !empty($end_date)) {
                 error_log('InterSoccer: Tournament date attribute not found, trying Start Date/End Date from metadata for order ' . $order_id . ', item ' . $item_id);
-                $context = "order $order_id, item $item_id";
-                $parsed_start = intersoccer_parse_date_unified($start_date, $context . ' (start)');
-                $parsed_end = intersoccer_parse_date_unified($end_date, $context . ' (end)');
+                $parsed_start = intersoccer_parse_date_unified($start_date, 'metadata (start)');
+                $parsed_end = intersoccer_parse_date_unified($end_date, 'metadata (end)');
                 
                 if ($parsed_start && $parsed_end) {
                     $start_date = $parsed_start;
                     $end_date = $parsed_end;
                     $event_dates = "$start_date to $end_date";
                 } else {
-                    error_log('InterSoccer: Date parsing failed for order ' . $order_id . ', item ' . $item_id . ' - leaving dates empty');
+                    error_log('InterSoccer: Date parsing failed for metadata start/end - leaving dates empty');
                     $start_date = null;
                     $end_date = null;
                     $event_dates = 'N/A';
@@ -3558,16 +3559,15 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     } elseif ($product_type === 'course' && !empty($start_date) && !empty($end_date)) {
         error_log('InterSoccer: Processing course dates for item ' . $item_id . ' in order ' . $order_id . ' - start_date: ' . var_export($start_date, true) . ', end_date: ' . var_export($end_date, true));
         
-        $context = "order $order_id, item $item_id";
-        $parsed_start = intersoccer_parse_date_unified($start_date, $context . ' (start)');
-        $parsed_end = intersoccer_parse_date_unified($end_date, $context . ' (end)');
+        $parsed_start = intersoccer_parse_date_unified($start_date, 'course (start)');
+        $parsed_end = intersoccer_parse_date_unified($end_date, 'course (end)');
         
         if ($parsed_start && $parsed_end) {
             $start_date = $parsed_start;
             $end_date = $parsed_end;
             $event_dates = "$start_date to $end_date";
         } else {
-            error_log('InterSoccer: Invalid course date format for item ' . $item_id . ' in order ' . $order_id . ' - leaving dates empty');
+            error_log('InterSoccer: Invalid course date format - leaving dates empty');
             $start_date = null;
             $end_date = null;
             $event_dates = 'N/A';
@@ -3634,16 +3634,18 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         'start_date' => $start_date, // Include date for tournament signature generation
     ];
     
-    // Log original event data before normalization
-    error_log('InterSoccer: Original event data (Order: ' . $order_id . ', Item: ' . $item_id . '): ' . json_encode($original_event_data));
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer: Original event data captured before signature normalization');
+    }
     
     $normalized_event_data = intersoccer_normalize_event_data_for_signature($original_event_data);
     
     // Add start_date back to normalized data for signature generation (normalization doesn't modify dates)
     $normalized_event_data['start_date'] = $start_date;
     
-    // Log normalized event data after normalization
-    error_log('InterSoccer: Normalized event data (Order: ' . $order_id . ', Item: ' . $item_id . '): ' . json_encode($normalized_event_data));
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer: Normalized event data ready for signature generation');
+    }
 
     // Use normalized values for storage
     $normalized_venue = $normalized_event_data['venue'] ?? $venue;
@@ -3720,8 +3722,13 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     // This ensures consistency between stored data and event signature
     $data['event_signature'] = intersoccer_event_signature_from_event_data($original_event_data);
     
-    // Log final signature with key identifying info
-    error_log('InterSoccer Signature: Generated event_signature=' . $data['event_signature'] . ' for Order=' . $order_id . ', Item=' . $item_id . ', Product=' . $product_id . ', Venue=' . $venue . ', Camp/Course=' . ($camp_terms ?: $course_day));
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log(
+            'InterSoccer Signature: Generated event_signature=' . $data['event_signature']
+            . ', venue=' . $venue
+            . ', camp/course=' . ($camp_terms ?: $course_day)
+        );
+    }
 
     // Delete any placeholder roster with the same event_signature before inserting real roster
     if (function_exists('intersoccer_delete_placeholder_by_signature')) {
@@ -3758,10 +3765,9 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
 
     // Insert or update
     $result = $wpdb->replace($table_name, $data);
-    $insert_id = $wpdb->insert_id;
     $rows_affected = ($result === false) ? 0 : (int) $result;
     if (defined('WP_DEBUG') && WP_DEBUG) {
-        error_log('InterSoccer: Upsert roster entry: rows_affected=' . $rows_affected . ' insert_id=' . $insert_id);
+        error_log('InterSoccer: Upsert roster entry: rows_affected=' . $rows_affected);
     }
 
     if ($result) {
@@ -3769,12 +3775,10 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
             error_log('InterSoccer: Successfully upserted roster entry with event_signature: ' . $data['event_signature']);
         }
         return true;
-    } else {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('InterSoccer: Failed to upsert roster entry - Check DB error');
-        }
-        return false;
     }
+
+    error_log('InterSoccer: Failed to upsert roster entry - Check DB error');
+    return false;
 }
 
 if (!function_exists('intersoccer_rebuild_event_signature_for_order_item')) {
