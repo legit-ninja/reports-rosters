@@ -357,10 +357,10 @@ jQuery(document).ready(function($) {
                 var statusKind = (response && response.data && response.data.status) ? response.data.status : '';
 
                 if (response && response.success) {
-                    if (statusKind === 'info') {
-                        $status.removeClass('notice-error notice-success').addClass('notice notice-info').text(message || runningText).show();
-                    } else {
+                    if (statusKind === 'upgraded' || statusKind === '' || statusKind === 'success') {
                         $status.removeClass('notice-error notice-info').addClass('notice notice-success').text(message || successText).show();
+                    } else {
+                        $status.removeClass('notice-error notice-success').addClass('notice notice-info').text(message || runningText).show();
                     }
                 } else {
                     $status.removeClass('notice-success notice-info').addClass('notice notice-error').text(message || failureText).show();
