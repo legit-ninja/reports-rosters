@@ -64,7 +64,9 @@ class LegacyItemDiscountAttributionTest extends TestCase {
         $this->assertSame(67.0, (float) ($summary['sibling'] ?? 0.0));
     }
 
-    /** Non-matching sibling fee still allocates (67 legacy + 50 fee → 117). */
+    /**
+     * Sibling fees 67 + 50 with legacy 67: skip the 67 fee (near L), allocate 50 → 117.
+     */
     public function test_non_matching_sibling_fee_adds_to_legacy_total(): void {
         $order = (new FakeOrder(705))
             ->addLine(new FakeLineItem(7051, ['subtotal' => 335.0, 'total' => 335.0]))
@@ -123,6 +125,66 @@ class LegacyItemDiscountAttributionTest extends TestCase {
 
         $this->assertSame($first_total, $second_total);
         $this->assertSame($first_discounts, $second_discounts);
+    }
+
+    /** Multi-child: legacy 67 + 83.75, fees 67 + 83.75 → 150.75 (full bucket fee sum matches L). */
+    public function test_multi_child_legacy_and_fees_sum_skips_all_fee_allocation(): void {
+        $order = (new FakeOrder(708))
+            ->addLine(new FakeLineItem(7081, ['subtotal' => 300.0, 'total' => 233.0], [
+                'Discount' => 'Sibling Discount',
+                'Discount Amount' => '67.00',
+            ]))
+            ->addLine(new FakeLineItem(7082, ['subtotal' => 280.0, 'total' => 196.25], [
+                'Discount' => 'Sibling Discount',
+                'Discount Amount' => '83.75',
+            ]))
+            ->addFee(new FakeFee('2nd child Sibling', -67.0))
+            ->addFee(new FakeFee('3rd child Sibling', -83.75));
+        ReportAccuracyStore::addOrder($order);
+
+        $this->assertTrue($this->service->attributeOrderDiscounts($order, true));
+
+        $total = (float) ReportAccuracyStore::getItemMeta(7081, Attr::META_ITEM_DISCOUNT_TOTAL)
+            + (float) ReportAccuracyStore::getItemMeta(7082, Attr::META_ITEM_DISCOUNT_TOTAL);
+        $this->assertSame(150.75, round($total, 2));
+
+        $summary = $order->get_meta(Attr::META_ORDER_DISCOUNT_SUMMARY, true);
+        $this->assertSame(150.75, (float) ($summary['sibling'] ?? 0.0));
+    }
+
+    /** Duplicate sibling fees 67 + 67 with legacy 67 → 134 (skip one near-match fee, allocate the other). */
+    public function test_duplicate_sibling_fees_allocate_one_when_sum_exceeds_legacy(): void {
+        $order = (new FakeOrder(709))
+            ->addLine(new FakeLineItem(7091, ['subtotal' => 268.0, 'total' => 201.0], [
+                'Discount' => 'Sibling Discount',
+                'Discount Amount' => '67.00',
+            ]))
+            ->addFee(new FakeFee('Sibling fee A', -67.0))
+            ->addFee(new FakeFee('Sibling fee B', -67.0));
+        ReportAccuracyStore::addOrder($order);
+
+        $this->assertTrue($this->service->attributeOrderDiscounts($order, true));
+
+        $this->assertSame(134.0, (float) ReportAccuracyStore::getItemMeta(7091, Attr::META_ITEM_DISCOUNT_TOTAL));
+    }
+
+    /** Coupons are never skipped even when amount equals legacy bucket total. */
+    public function test_coupon_equal_to_legacy_sum_is_still_allocated(): void {
+        $order = (new FakeOrder(710))
+            ->addLine(new FakeLineItem(7101, ['subtotal' => 200.0, 'total' => 133.0], [
+                'Discount' => 'Sibling Discount',
+                'Discount Amount' => '67.00',
+            ]))
+            ->addCoupon(new FakeCoupon('SYNTH67', 67.0));
+        ReportAccuracyStore::addOrder($order);
+
+        $this->assertTrue($this->service->attributeOrderDiscounts($order, true));
+
+        $this->assertSame(134.0, (float) ReportAccuracyStore::getItemMeta(7101, Attr::META_ITEM_DISCOUNT_TOTAL));
+        $breakdown = ReportAccuracyStore::getItemMeta(7101, Attr::META_ITEM_DISCOUNTS);
+        $sources = array_column($breakdown, 'source');
+        $this->assertContains('legacy_item_meta', $sources);
+        $this->assertContains('woocommerce_coupon', $sources);
     }
 
     public function test_legacy_item_discount_merges_with_distinct_same_type_order_fee(): void {
