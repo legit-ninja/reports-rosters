@@ -225,8 +225,8 @@ class BookingReportAccuracyTest extends TestCase {
 
     // ---------------------------------------------------------------- S11 (qty > 1)
 
-    /** S11: Booking Report counts one booking per listed row; Final Numbers counts line quantity as places. */
-    public function test_S11_qty_two_line_counts_one_booking_per_listed_row(): void {
+    /** S11: one listed Booking row, two places in footer totals, two places in Final Numbers. */
+    public function test_S11_qty_two_line_one_row_two_places_in_booking_footer(): void {
         ReportAccuracyStore::addOrder($this->attributedOrder(112)->addLine(
             new FakeLineItem(1121, ['subtotal' => 480.0, 'total' => 480.0, 'quantity' => 2])
         ));
@@ -235,6 +235,25 @@ class BookingReportAccuracyTest extends TestCase {
 
         $this->assertSame(1, $result['totals']['bookings'],
             'S11: expected 1 listed row for a qty-2 line; report bookings ' . $result['totals']['bookings']);
+        $this->assertSame(2, (int) ($result['totals']['places'] ?? 0),
+            'S11: expected 2 places in Booking Report totals; report places ' . ($result['totals']['places'] ?? 'missing'));
+
+        if (!function_exists('intersoccer_reports_booking_footer_bookings_places_display')) {
+            require_once dirname(__DIR__, 2) . '/includes/reporting-discounts.php';
+        }
+        $footer_count_label = intersoccer_reports_booking_footer_bookings_places_display(
+            (int) $result['totals']['bookings'],
+            (int) $result['totals']['places']
+        );
+        $this->assertSame('1 (2 places)', $footer_count_label);
+
+        if (!function_exists('intersoccer_render_enhanced_booking_totals')) {
+            require_once dirname(__DIR__, 2) . '/includes/reports-ajax.php';
+        }
+        ob_start();
+        intersoccer_render_enhanced_booking_totals($result['totals'], $result['data']);
+        $html = (string) ob_get_clean();
+        $this->assertStringContainsString('1 (2 places)', $html);
 
         if (!function_exists('intersoccer_reports_compute_camp_registration_totals')) {
             require_once dirname(__DIR__, 2) . '/includes/final-reports-totals.php';

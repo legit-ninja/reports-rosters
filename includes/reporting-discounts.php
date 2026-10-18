@@ -617,8 +617,8 @@ if (!function_exists('intersoccer_reports_booking_footer_bookings_places_display
         return sprintf(
             /* translators: 1: booking row count, 2: place count */
             __('%1$s (%2$s places)', 'intersoccer-reports-rosters'),
-            number_format_i18n($bookings),
-            number_format_i18n($places)
+            number_format($bookings),
+            number_format($places)
         );
     }
 }
