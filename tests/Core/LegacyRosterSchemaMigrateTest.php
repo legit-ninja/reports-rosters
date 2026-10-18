@@ -112,6 +112,17 @@ class LegacyRosterSchemaMigrateTest extends TestCase {
         $this->assertFalse(intersoccer_migrate_rosters_schema_2_4_0($wpdb, $table));
     }
 
+    public function test_cleanup_skips_during_ajax(): void {
+        global $wpdb;
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $wpdb->shouldReceive('query')->never();
+        $GLOBALS['intersoccer_test_wp_doing_ajax'] = true;
+        intersoccer_maybe_cleanup_rosters_bak_2_4_0();
+        unset($GLOBALS['intersoccer_test_wp_doing_ajax']);
+        $this->assertTrue(true);
+    }
+
     public function test_cleanup_retention_is_fourteen_days(): void {
         $this->assertSame(14 * 86400, intersoccer_rosters_bak_2_4_0_retention_seconds());
     }

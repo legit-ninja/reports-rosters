@@ -294,6 +294,13 @@ function intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table) {
  * Drop roster PII backup table 14+ days after successful schema 2.4.0 (admin only, not on report view).
  */
 function intersoccer_maybe_cleanup_rosters_bak_2_4_0() {
+    if ((defined('DOING_AJAX') && DOING_AJAX)
+        || (function_exists('wp_doing_ajax') && wp_doing_ajax())) {
+        return;
+    }
+    if (function_exists('current_user_can') && !current_user_can('manage_options')) {
+        return;
+    }
     global $wpdb;
     $option = intersoccer_rosters_bak_2_4_0_created_option_name();
     $created_at = (int) get_option($option, 0);

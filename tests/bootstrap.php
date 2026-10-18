@@ -785,7 +785,9 @@ if (!function_exists('wp_send_json_error')) {
 }
 
 if (!function_exists('wp_doing_ajax')) {
-    function wp_doing_ajax() { return false; }
+    function wp_doing_ajax() {
+        return !empty($GLOBALS['intersoccer_test_wp_doing_ajax']);
+    }
 }
 
 // Database functions
