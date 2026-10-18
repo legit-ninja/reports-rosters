@@ -216,6 +216,34 @@ class LegacyRosterSchemaMigrateTest extends TestCase {
         $this->assertFalse(time() - $created_at >= intersoccer_rosters_bak_2_4_0_retention_seconds());
     }
 
+    public function test_legacy_migrate_rosters_table_does_not_bump_version_on_unrecognised_backup(): void {
+        global $wpdb;
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $table = 'wp_intersoccer_rosters';
+        $GLOBALS['intersoccer_test_option_store'] = ['intersoccer_db_version' => '2.3.0'];
+        $wpdb->shouldReceive('get_col')->with("DESCRIBE {$table}", 0)->andReturn([
+            'event_signature', 'is_placeholder', 'event_completed', 'start_date', 'end_date', 'event_type', 'times',
+        ]);
+        $wpdb->last_error = '';
+        $wpdb->shouldReceive('esc_like')->andReturnUsing(static function ($s) {
+            return (string) $s;
+        });
+        $wpdb->shouldReceive('get_results')->with("DESCRIBE {$table}", ARRAY_A)->andReturn([
+            ['Field' => 'times', 'Type' => 'varchar(50)'],
+        ]);
+        $wpdb->shouldReceive('get_var')->andReturn('wp_intersoccer_rosters_bak_2_4_0');
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($sql) {
+            return (string) $sql;
+        });
+        $wpdb->shouldReceive('query')->never();
+
+        intersoccer_migrate_rosters_table();
+
+        $this->assertSame('2.3.0', $GLOBALS['intersoccer_test_option_store']['intersoccer_db_version']);
+        unset($GLOBALS['intersoccer_test_option_store']);
+    }
+
     public function test_legacy_2_3_0_leaves_version_when_start_date_update_fails(): void {
         global $wpdb;
         $wpdb = Mockery::mock('wpdb');

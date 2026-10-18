@@ -242,7 +242,9 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
         $wpdb = $this->mockWpdbForMigrate24();
         $table = 'wp_intersoccer_rosters';
         $backup = $table . '_bak_2_4_0';
-        $GLOBALS['intersoccer_test_option_store'][intersoccer_rosters_bak_2_4_0_created_option_name()] = time();
+        $stamp_option = intersoccer_rosters_bak_2_4_0_created_option_name();
+        $stale_stamp = time() - 100000;
+        $GLOBALS['intersoccer_test_option_store'][$stamp_option] = $stale_stamp;
         $queries = [];
         $wpdb->shouldReceive('get_var')->andReturnUsing(function ($sql) use ($backup) {
             if (strpos((string) $sql, 'SHOW TABLES') !== false) {
@@ -263,7 +265,9 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
         $joined = implode("\n", $queries);
         $this->assertStringNotContainsString("CREATE TABLE {$backup}", $joined);
         $this->assertStringContainsString('MODIFY event_type', $joined);
-        unset($GLOBALS['intersoccer_test_option_store'][intersoccer_rosters_bak_2_4_0_created_option_name()]);
+        $refreshed = (int) ($GLOBALS['intersoccer_test_option_store'][$stamp_option] ?? 0);
+        $this->assertGreaterThan($stale_stamp, $refreshed);
+        unset($GLOBALS['intersoccer_test_option_store'][$stamp_option]);
     }
 
     public function test_migration_lock_blocks_second_acquire_until_released(): void {
