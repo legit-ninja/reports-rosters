@@ -139,15 +139,14 @@ final class Intersoccer_Rr_Wp_Cli {
 
         if ($retry_skipped) {
             $summary = $service->summarizeRetrySkippedInDateRange($from, $to);
-            \WP_CLI::log($this->formatBackfillOutcomeLine($summary, false));
-            \WP_CLI::log(sprintf('Dry run (retry-skipped): %d orders marked skipped still pending attribution.', (int) $summary['order_count']));
+            \WP_CLI::log($this->formatDryRunCandidateLine($summary, true));
+            $this->logRetrySkippedOrderDetails($summary);
             \WP_CLI::success('Dry run complete (no writes).');
             return;
         }
 
         $summary = $service->summarizeMissingAttributionInDateRange($from, $to);
-        \WP_CLI::log($this->formatBackfillOutcomeLine($summary, false));
-        \WP_CLI::log(sprintf('Dry run: %d orders pending attribution (excludes previously skipped).', (int) $summary['order_count']));
+        \WP_CLI::log($this->formatDryRunCandidateLine($summary, false));
         \WP_CLI::log(sprintf(
             'Order subtotal CHF (sum of line subtotals): %s',
             number_format((float) $summary['gross_chf'], 2, '.', '')
@@ -167,16 +166,120 @@ final class Intersoccer_Rr_Wp_Cli {
         $skipped = (int) ($counts['skipped_count'] ?? 0);
         $failed = (int) ($counts['failed_count'] ?? $counts['error_count'] ?? 0);
         $previously_skipped = (int) ($counts['previously_skipped_count'] ?? 0);
+        $skipped_detail = $this->formatSkippedReasonsDetail($counts['skipped_reasons'] ?? []);
 
         $line = $is_apply
-            ? sprintf('applied %d, skipped %d (no attributable line items), failed %d', $applied, $skipped, $failed)
-            : sprintf('would apply %d, skipped %d (no attributable line items), failed %d', $applied, $skipped, $failed);
+            ? sprintf('applied %d, skipped %d%s, failed %d', $applied, $skipped, $skipped_detail, $failed)
+            : sprintf('would apply %d, skipped %d%s, failed %d', $applied, $skipped, $skipped_detail, $failed);
 
         if ($previously_skipped > 0) {
             $line .= sprintf(', previously skipped %d', $previously_skipped);
         }
 
         return $line;
+    }
+
+    /**
+     * @param array<string,mixed> $summary
+     */
+    private function formatDryRunCandidateLine(array $summary, bool $retry_skipped): string {
+        $candidates = (int) ($summary['order_count'] ?? 0);
+        $applied = (int) ($summary['applied_count'] ?? 0);
+        $skipped = (int) ($summary['skipped_count'] ?? 0);
+        $failed = (int) ($summary['failed_count'] ?? 0);
+        $previously_skipped = (int) ($summary['previously_skipped_count'] ?? 0);
+        $skipped_detail = $this->formatSkippedReasonsDetail($summary['skipped_reasons'] ?? []);
+
+        $prefix = $retry_skipped ? 'Dry run (retry-skipped)' : 'Dry run';
+        $line = sprintf(
+            '%s candidates %d: would apply %d, skipped %d%s, failed %d',
+            $prefix,
+            $candidates,
+            $applied,
+            $skipped,
+            $skipped_detail,
+            $failed
+        );
+
+        if (!$retry_skipped && $previously_skipped > 0) {
+            $line .= sprintf(', previously skipped %d', $previously_skipped);
+        }
+
+        return $line;
+    }
+
+    /**
+     * @param array<string,int> $reasons
+     */
+    private function formatSkippedReasonsDetail(array $reasons): string {
+        if ($reasons === []) {
+            return '';
+        }
+
+        $parts = [];
+        foreach ($reasons as $reason => $count) {
+            $parts[] = sprintf('%d %s', (int) $count, $this->humanizeSkipReason((string) $reason));
+        }
+
+        return ' (' . implode(', ', $parts) . ')';
+    }
+
+    private function humanizeSkipReason(string $reason): string {
+        if ($reason === \InterSoccer\ReportsRosters\Services\OrderFinancialAttributionService::SKIP_REASON_NO_LINE_ITEMS) {
+            return 'no line items';
+        }
+        if ($reason === \InterSoccer\ReportsRosters\Services\OrderFinancialAttributionService::SKIP_REASON_NO_ATTRIBUTABLE_ITEMS) {
+            return 'no attributable line items';
+        }
+
+        return $reason;
+    }
+
+    /**
+     * @param array<string,mixed> $summary
+     */
+    private function logRetrySkippedOrderDetails(array $summary): void {
+        $orders = $summary['retry_skipped_orders'] ?? [];
+        if (!is_array($orders)) {
+            return;
+        }
+
+        foreach ($orders as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $order_id = (int) ($row['order_id'] ?? 0);
+            $stored = (string) ($row['stored_reason'] ?? '');
+            $live = array_key_exists('live_reason', $row) ? $row['live_reason'] : null;
+            $line = sprintf('Order %d: stored %s', $order_id, $this->humanizeSkipReason($stored));
+            if ($live === null) {
+                if ($stored !== '') {
+                    $line .= ', live eligible';
+                }
+            } elseif ((string) $live !== $stored) {
+                $line .= ', live ' . $this->humanizeSkipReason((string) $live);
+            }
+            \WP_CLI::log($line);
+        }
+
+        $stored_totals = $summary['stored_reason_totals'] ?? [];
+        if (is_array($stored_totals) && $stored_totals !== []) {
+            $parts = [];
+            foreach ($stored_totals as $reason => $count) {
+                $parts[] = sprintf('%s %d', $this->humanizeSkipReason((string) $reason), (int) $count);
+            }
+            \WP_CLI::log('Totals (stored): ' . implode(', ', $parts));
+        }
+
+        $live_totals = $summary['live_reason_totals'] ?? [];
+        if (is_array($live_totals) && $live_totals !== []) {
+            $parts = [];
+            foreach ($live_totals as $reason => $count) {
+                $label = $reason === 'eligible' ? 'eligible' : $this->humanizeSkipReason((string) $reason);
+                $parts[] = sprintf('%s %d', $label, (int) $count);
+            }
+            \WP_CLI::log('Totals (live): ' . implode(', ', $parts));
+        }
     }
 }
 

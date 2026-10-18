@@ -158,7 +158,9 @@ function intersoccer_parse_legacy_discount_amount($value): float {
 /**
  * Correct persisted item discount meta that double-counted FR/DE referral/points fees (order_fee + referral_order_meta).
  *
- * Read-only at report time: adjusts the in-memory total and breakdown only.
+ * **Read path only** — FinancialReportService calls this when loading persisted line breakdowns.
+ * Legacy PV line meta vs order-level fees is handled at attribution write time (order-level bucket
+ * matching in OrderFinancialAttributionService), not here.
  *
  * @param array<int,array<string,mixed>> $breakdown
  * @return array{amount:float,breakdown:array<int,array<string,mixed>>}

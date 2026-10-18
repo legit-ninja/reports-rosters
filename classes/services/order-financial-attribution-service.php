@@ -55,10 +55,13 @@ class OrderFinancialAttributionService {
 
         $item_discounts = [];
         foreach ($line_items as $item_id => $item) {
-            $item_discounts[$item_id] = $force ? [] : $this->readLegacyItemDiscounts($item);
+            $item_discounts[$item_id] = $this->readLegacyItemDiscounts($item);
         }
 
-        foreach ($this->collectOrderDiscountSources($order) as $source) {
+        $sources = $this->collectOrderDiscountSources($order);
+        $sources = $this->filterOrderDiscountSourcesAgainstLegacyBuckets($order, $item_discounts, $sources);
+
+        foreach ($sources as $source) {
             $this->allocateAmountToItems(
                 $item_discounts,
                 $line_items,
@@ -102,7 +105,10 @@ class OrderFinancialAttributionService {
             $item_discounts[$item_id] = $this->readLegacyItemDiscounts($item);
         }
 
-        foreach ($this->collectOrderDiscountSources($order) as $source) {
+        $sources = $this->collectOrderDiscountSources($order);
+        $sources = $this->filterOrderDiscountSourcesAgainstLegacyBuckets($order, $item_discounts, $sources);
+
+        foreach ($sources as $source) {
             $this->allocateAmountToItems(
                 $item_discounts,
                 $line_items,
@@ -469,7 +475,10 @@ class OrderFinancialAttributionService {
      *   failed_count:int,
      *   gross_chf:float,
      *   net_chf:float,
-     *   skipped_reasons:array<string,int>
+     *   skipped_reasons:array<string,int>,
+     *   retry_skipped_orders:array<int,array{order_id:int,stored_reason:string,live_reason:?string}>,
+     *   stored_reason_totals:array<string,int>,
+     *   live_reason_totals:array<string,int>
      * }
      */
     public function summarizeRetrySkippedInDateRange(string $start_date, string $end_date): array {
@@ -490,6 +499,36 @@ class OrderFinancialAttributionService {
             $net += (float) $order->get_total();
         }
 
+        $retry_skipped_orders = [];
+        $stored_reason_totals = [];
+        $live_reason_totals = [];
+
+        foreach ($order_ids as $order_id) {
+            if (!function_exists('wc_get_order')) {
+                break;
+            }
+            $order = wc_get_order($order_id);
+            if (!$order) {
+                continue;
+            }
+
+            $stored_reason = (string) $order->get_meta(self::META_ATTRIBUTION_SKIPPED, true);
+            $live_reason = $this->getAttributionSkipReason($order);
+
+            $retry_skipped_orders[] = [
+                'order_id' => (int) $order_id,
+                'stored_reason' => $stored_reason,
+                'live_reason' => $live_reason,
+            ];
+
+            if ($stored_reason !== '') {
+                $stored_reason_totals[$stored_reason] = ($stored_reason_totals[$stored_reason] ?? 0) + 1;
+            }
+
+            $live_key = $live_reason ?? 'eligible';
+            $live_reason_totals[$live_key] = ($live_reason_totals[$live_key] ?? 0) + 1;
+        }
+
         return [
             'order_count' => count($order_ids),
             'applied_count' => count($split['applied_ids']),
@@ -499,6 +538,9 @@ class OrderFinancialAttributionService {
             'gross_chf' => round($gross, 2),
             'net_chf' => round($net, 2),
             'skipped_reasons' => $split['skipped_reason_counts'],
+            'retry_skipped_orders' => $retry_skipped_orders,
+            'stored_reason_totals' => $stored_reason_totals,
+            'live_reason_totals' => $live_reason_totals,
         ];
     }
 
@@ -884,6 +926,100 @@ class OrderFinancialAttributionService {
         }
 
         return $sources;
+    }
+
+    /**
+     * Skip order-level fee allocation when legacy line meta matches bucket fee totals (coupons always allocate).
+     *
+     * @param array<int,array<int,array<string,mixed>>> $item_discounts
+     * @param array<int,array{name:string,type:string,amount:float,source:string}> $sources
+     * @return array<int,array{name:string,type:string,amount:float,source:string}>
+     */
+    private function filterOrderDiscountSourcesAgainstLegacyBuckets(\WC_Order $order, array $item_discounts, array $sources): array {
+        $order_id = (int) $order->get_id();
+        $legacy_sum_by_bucket = [];
+        $legacy_line_count_by_bucket = [];
+
+        foreach ($item_discounts as $discounts) {
+            foreach ((array) $discounts as $entry) {
+                if (!is_array($entry) || (string) ($entry['source'] ?? '') !== 'legacy_item_meta') {
+                    continue;
+                }
+
+                $amount = round((float) ($entry['amount'] ?? 0.0), 2);
+                if ($amount <= 0.0) {
+                    continue;
+                }
+
+                $bucket = intersoccer_map_discount_type_to_report_bucket((string) ($entry['type'] ?? ''));
+                $legacy_sum_by_bucket[$bucket] = ($legacy_sum_by_bucket[$bucket] ?? 0.0) + $amount;
+                $legacy_line_count_by_bucket[$bucket] = ($legacy_line_count_by_bucket[$bucket] ?? 0) + 1;
+            }
+        }
+
+        /** @var array<int,array<int,float>> $fee_amount_by_index_by_bucket */
+        $fee_amount_by_index_by_bucket = [];
+        foreach ($sources as $index => $source) {
+            if ((string) ($source['source'] ?? '') !== 'order_fee') {
+                continue;
+            }
+            $bucket = intersoccer_map_discount_type_to_report_bucket((string) ($source['type'] ?? ''));
+            if ($bucket === 'other') {
+                continue;
+            }
+            $fee_amount_by_index_by_bucket[$bucket][$index] = round((float) ($source['amount'] ?? 0.0), 2);
+        }
+
+        $skip_fee_indices = [];
+        $warned_buckets = [];
+
+        foreach ($fee_amount_by_index_by_bucket as $bucket => $fees_by_index) {
+            $legacy_sum = (float) ($legacy_sum_by_bucket[$bucket] ?? 0.0);
+            if ($legacy_sum <= 0.01 || $fees_by_index === []) {
+                continue;
+            }
+
+            $legacy_line_count = (int) ($legacy_line_count_by_bucket[$bucket] ?? 0);
+            $tolerance = 0.01 * max(1, $legacy_line_count);
+            $fee_sum = 0.0;
+            foreach ($fees_by_index as $amount) {
+                $fee_sum += $amount;
+            }
+
+            if (abs($fee_sum - $legacy_sum) <= $tolerance) {
+                foreach (array_keys($fees_by_index) as $index) {
+                    $skip_fee_indices[$index] = true;
+                }
+                continue;
+            }
+
+            foreach ($fees_by_index as $index => $amount) {
+                if (abs($amount - $legacy_sum) <= $tolerance) {
+                    $skip_fee_indices[$index] = true;
+                    break;
+                }
+            }
+
+            if (!isset($warned_buckets[$bucket])) {
+                $warned_buckets[$bucket] = true;
+                $this->logger->warning('OrderFinancialAttributionService legacy bucket mismatch', [
+                    'order_id' => $order_id,
+                    'bucket' => $bucket,
+                    'legacy_line_count' => $legacy_line_count,
+                    'fee_count' => count($fees_by_index),
+                ]);
+            }
+        }
+
+        $filtered = [];
+        foreach ($sources as $index => $source) {
+            if ((string) ($source['source'] ?? '') === 'order_fee' && isset($skip_fee_indices[$index])) {
+                continue;
+            }
+            $filtered[] = $source;
+        }
+
+        return $filtered;
     }
 
     /**
