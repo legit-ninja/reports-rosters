@@ -96,7 +96,7 @@ final class Intersoccer_Rr_Wp_Cli {
 
         $from = isset($assoc_args['from']) ? (string) $assoc_args['from'] : '2025-01-01';
         $to = isset($assoc_args['to']) ? (string) $assoc_args['to'] : gmdate('Y-m-d');
-        $apply = isset($assoc_args['apply']);
+        $apply = \WP_CLI\Utils\get_flag_value($assoc_args, 'apply', false) === true;
 
         $service = intersoccer_oop_get_order_financial_attribution_service();
 
@@ -114,8 +114,14 @@ final class Intersoccer_Rr_Wp_Cli {
 
         $summary = $service->summarizeMissingAttributionInDateRange($from, $to);
         \WP_CLI::log(sprintf('Dry run: %d orders missing attribution.', (int) $summary['order_count']));
-        \WP_CLI::log(sprintf('Gross CHF: %s', number_format((float) $summary['gross_chf'], 2, '.', '')));
-        \WP_CLI::log(sprintf('Net CHF: %s', number_format((float) $summary['net_chf'], 2, '.', '')));
+        \WP_CLI::log(sprintf(
+            'Order subtotal CHF (sum of line subtotals): %s',
+            number_format((float) $summary['gross_chf'], 2, '.', '')
+        ));
+        \WP_CLI::log(sprintf(
+            'Order total CHF (incl. tax, shipping, fees): %s',
+            number_format((float) $summary['net_chf'], 2, '.', '')
+        ));
         \WP_CLI::success('Dry run complete (no writes).');
     }
 }

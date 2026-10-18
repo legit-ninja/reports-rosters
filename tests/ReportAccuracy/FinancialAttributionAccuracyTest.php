@@ -32,13 +32,13 @@ class FinancialAttributionAccuracyTest extends TestCase {
 
     /** S02: the legacy parser takes the first digit run, which is the "67" of the CHF entity. */
     public function test_S02_parse_legacy_discount_amount_with_html_entity_currency(): void {
-        $this->markTestIncomplete('Pending fix C: legacy HTML discount amount parsing.');
+        $this->markTestIncomplete('Pending fix D: legacy HTML discount amount parsing.');
         $parsed = intersoccer_parse_legacy_discount_amount('&#67;&#72;&#70;105.00');
         $this->assertSame(105.0, $parsed, 'S02: expected 105.00; parser returns ' . number_format($parsed, 2));
     }
 
     public function test_S02_parse_legacy_discount_amount_with_wc_price_markup(): void {
-        $this->markTestIncomplete('Pending fix C: legacy HTML discount amount parsing.');
+        $this->markTestIncomplete('Pending fix D: legacy HTML discount amount parsing.');
         $html = '<span class="woocommerce-Price-amount amount"><bdi><span class="woocommerce-Price-currencySymbol">&#67;&#72;&#70;</span>&nbsp;105.00</bdi></span>';
         $parsed = intersoccer_parse_legacy_discount_amount($html);
         $this->assertSame(105.0, $parsed, 'S02: expected 105.00; parser returns ' . number_format($parsed, 2));
@@ -48,7 +48,7 @@ class FinancialAttributionAccuracyTest extends TestCase {
 
     /** S18 (a): attribution copies the misparsed legacy amount into _intersoccer_total_item_discount. */
     public function test_S18_attribution_copies_legacy_html_amount_correctly(): void {
-        $this->markTestIncomplete('Pending fix C: attribution after legacy discount parse fix.');
+        $this->markTestIncomplete('Pending fix D: attribution after legacy discount parse fix.');
         $order = (new FakeOrder(201))->addLine(new FakeLineItem(2011, ['subtotal' => 420.0, 'total' => 420.0], [
             'Discount' => 'Sibling Discount',
             'Discount Amount' => '&#67;&#72;&#70;105.00',
@@ -66,7 +66,7 @@ class FinancialAttributionAccuracyTest extends TestCase {
      * Expected per-line attribution = the line's own subtotal - total (A 50, B 0).
      */
     public function test_S18_coupon_attributed_to_the_line_it_discounted(): void {
-        $this->markTestIncomplete('Pending fix C: per-line coupon attribution.');
+        $this->markTestIncomplete('Pending fix D: per-line coupon attribution.');
         $order = (new FakeOrder(202))
             ->addLine(new FakeLineItem(2021, ['subtotal' => 200.0, 'total' => 150.0]))
             ->addLine(new FakeLineItem(2022, ['subtotal' => 200.0, 'total' => 200.0]))
@@ -87,7 +87,7 @@ class FinancialAttributionAccuracyTest extends TestCase {
      * (re-fired hook, retry, or any second caller) doubles the reimbursement.
      */
     public function test_S05a_refund_attribution_is_idempotent_per_refund(): void {
-        $this->markTestIncomplete('Pending fix D: idempotent refund reimbursement.');
+        $this->markTestIncomplete('Pending fix C: idempotent refund reimbursement.');
         $order = (new FakeOrder(203))->addLine(new FakeLineItem(2031, ['subtotal' => 530.0, 'total' => 450.5]));
         $refund = new FakeRefund(2039, 90.0, [new FakeRefundLine(2031, -90.0)]);
         $order->addRefund($refund);

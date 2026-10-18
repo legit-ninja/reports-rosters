@@ -143,7 +143,7 @@ class BookingReportAccuracyTest extends TestCase {
      * S02 (direct read): line without attribution item meta, legacy 'Discount Amount' stored as HTML entities.
      */
     public function test_S02_legacy_html_discount_amount_read_by_report(): void {
-        $this->markTestIncomplete('Pending fix C: legacy HTML discount amount parsing.');
+        $this->markTestIncomplete('Pending fix D: legacy HTML discount amount on Booking Report.');
         $order = $this->attributedOrder(105)->addLine(new FakeLineItem(1051, ['subtotal' => 420.0, 'total' => 420.0], [
             'Discount' => 'Sibling Discount',
             'Discount Amount' => '&#67;&#72;&#70;105.00',
@@ -159,7 +159,7 @@ class BookingReportAccuracyTest extends TestCase {
     // ---------------------------------------------------------------- S03 (end date excludes its own day)
 
     public function test_S03_order_on_end_date_is_included(): void {
-        $this->markTestIncomplete('Pending fix F: inclusive Booking Report end date.');
+        $this->markTestIncomplete('Pending fix D: inclusive Booking Report end date.');
         ReportAccuracyStore::addOrder($this->attributedOrder(106, 'completed', '2026-10-12 09:38:00')
             ->addLine(new FakeLineItem(1061, ['subtotal' => 525.0, 'total' => 525.0])));
 
@@ -177,7 +177,7 @@ class BookingReportAccuracyTest extends TestCase {
      * The report reads reimbursement only from that meta, and the lazy path skips attributed orders.
      */
     public function test_S05b_refund_without_item_refund_meta_shows_in_reimbursement(): void {
-        $this->markTestIncomplete('Pending fix D: idempotent refund reimbursement.');
+        $this->markTestIncomplete('Pending fix C: idempotent refund reimbursement.');
         $order = $this->attributedOrder(107)->addLine(new FakeLineItem(1071, ['subtotal' => 195.0, 'total' => 195.0]));
         $order->addRefund(new FakeRefund(1079, 65.0, [new FakeRefundLine(1071, -65.0)]));
         ReportAccuracyStore::addOrder($order);
@@ -193,7 +193,7 @@ class BookingReportAccuracyTest extends TestCase {
      * Report (final 500, reimbursement 0). Expected net 0.
      */
     public function test_S06b_refunded_status_order_nets_to_zero(): void {
-        $this->markTestIncomplete('Pending fix D: refunded-status order net revenue.');
+        $this->markTestIncomplete('Pending fix C: refunded-status order net revenue.');
         $order = $this->attributedOrder(108, 'refunded')->addLine(new FakeLineItem(1081, ['subtotal' => 500.0, 'total' => 500.0]));
         $order->addRefund(new FakeRefund(1089, 500.0, [new FakeRefundLine(1081, -500.0)]));
         ReportAccuracyStore::addOrder($order);
@@ -304,5 +304,42 @@ class BookingReportAccuracyTest extends TestCase {
 
         $this->assertSame([], $writes, 'S19: expected 0 writes on view; report wrote ' . count(ReportAccuracyStore::$writes)
             . ' times: ' . implode(', ', $writes));
+    }
+
+    /**
+     * S19 parity: unattributed line with subtotal/total gap uses subtotal-minus-total fallback on first view
+     * (same figures as after persisted attribution would delete empty breakdown meta).
+     */
+    public function test_S19_unattributed_line_uses_subtotal_minus_total_fallback_on_view(): void {
+        ReportAccuracyStore::addOrder((new FakeOrder(118))
+            ->addLine(new FakeLineItem(1181, ['subtotal' => 300.0, 'total' => 250.0])));
+
+        $row = $this->report()['by_ref']['118-1181'];
+
+        $this->assertSame(50.0, self::money($row['discount_amount']),
+            'S19 parity: expected discount 50.00 from subtotal-total fallback; report discount ' . $row['discount_amount']);
+        $this->assertSame(250.0, self::money($row['final_price']),
+            'S19 parity: expected final 250.00; report final ' . $row['final_price']);
+        $this->assertSame([], ReportAccuracyStore::writtenKeys());
+    }
+
+    /**
+     * S19 parity: refund-only in-memory attribution still uses subtotal-minus-total for discount on first view.
+     */
+    public function test_S19_unattributed_line_with_refund_uses_discount_fallback_and_in_memory_reimbursement(): void {
+        $order = (new FakeOrder(119))
+            ->addLine(new FakeLineItem(1191, ['subtotal' => 300.0, 'total' => 250.0]));
+        $order->addRefund(new FakeRefund(1199, 50.0, [new FakeRefundLine(1191, -50.0)]));
+        ReportAccuracyStore::addOrder($order);
+
+        $row = $this->report()['by_ref']['119-1191'];
+
+        $this->assertSame(50.0, self::money($row['discount_amount']),
+            'S19 parity: expected discount 50.00 from subtotal-total fallback; report discount ' . $row['discount_amount']);
+        $this->assertSame(250.0, self::money($row['final_price']),
+            'S19 parity: expected final 250.00; report final ' . $row['final_price']);
+        $this->assertSame(50.0, self::money($row['reimbursement']),
+            'S19 parity: expected reimbursement 50.00; report reimbursement ' . $row['reimbursement']);
+        $this->assertSame([], ReportAccuracyStore::writtenKeys());
     }
 }

@@ -309,7 +309,7 @@ class FinancialReportService {
         int $item_id,
         ?array $computed = null
     ): array {
-        if ($computed !== null) {
+        if ($computed !== null && !empty($computed['breakdown'])) {
             return [
                 'amount' => (float) ($computed['discount_total'] ?? 0.0),
                 'breakdown' => is_array($computed['breakdown'] ?? null) ? $computed['breakdown'] : [],
@@ -484,6 +484,19 @@ class FinancialReportService {
             return null;
         }
 
-        return $cache['items'][$item_id] ?? null;
+        $item = $cache['items'][$item_id] ?? null;
+        if ($item === null) {
+            return null;
+        }
+
+        if (empty($item['breakdown'])) {
+            if (($item['refund'] ?? 0) > 0.01) {
+                return $item;
+            }
+
+            return null;
+        }
+
+        return $item;
     }
 }

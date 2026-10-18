@@ -22,7 +22,9 @@ function intersoccer_canonical_discount_type_from_label(string $label): string {
         return 'other';
     }
 
-    $normalized = strtolower(trim($label));
+    $normalized = function_exists('mb_strtolower')
+        ? mb_strtolower(trim($label), 'UTF-8')
+        : strtolower(trim($label));
 
     if (strpos($normalized, 'referral credits') !== false
         || strpos($normalized, 'loyalty points') !== false
