@@ -2540,6 +2540,126 @@ if (!function_exists('intersoccer_reports_final_row_counts_as_not_on_roster')) {
     }
 }
 
+if (!function_exists('intersoccer_reports_final_row_is_catalog_product_missing')) {
+    /**
+     * Read-time catalogue check (matches RosterBuilder::orderLineProductDeletedFromCatalog).
+     *
+     * @param array<string,mixed> $row Row with optional catalog_* join columns from Final Numbers SQL.
+     */
+    function intersoccer_reports_final_row_is_catalog_product_missing(array $row): bool {
+        $product_id = (int) ($row['product_id'] ?? 0);
+        $variation_id = (int) ($row['variation_id'] ?? 0);
+        if ($product_id <= 0 && $variation_id <= 0) {
+            return false;
+        }
+        if (!array_key_exists('catalog_variation_post_id', $row) && !array_key_exists('catalog_product_post_id', $row)) {
+            return !empty($row['product_missing']);
+        }
+        $has_var = $variation_id > 0 && !empty($row['catalog_variation_post_id']);
+        $has_prod = $product_id > 0 && !empty($row['catalog_product_post_id']);
+        if ($variation_id > 0 && $has_var) {
+            return false;
+        }
+        if ($product_id > 0 && $has_prod) {
+            return $variation_id > 0 && !$has_var;
+        }
+        return true;
+    }
+}
+
+if (!function_exists('intersoccer_reports_batch_attach_catalog_post_join_columns')) {
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     */
+    function intersoccer_reports_batch_attach_catalog_post_join_columns(array &$rows): void {
+        global $wpdb;
+        $ids = [];
+        foreach ($rows as $row) {
+            $pid = (int) ($row['product_id'] ?? 0);
+            $vid = (int) ($row['variation_id'] ?? 0);
+            if ($pid > 0) {
+                $ids[$pid] = $pid;
+            }
+            if ($vid > 0) {
+                $ids[$vid] = $vid;
+            }
+        }
+        if (empty($ids)) {
+            return;
+        }
+        $posts_table = $wpdb->posts;
+        $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+        $sql = "SELECT ID, post_type FROM {$posts_table} WHERE ID IN ({$placeholders})";
+        $results = $wpdb->get_results($wpdb->prepare($sql, ...array_values($ids)), ARRAY_A);
+        $by_id = [];
+        if (is_array($results)) {
+            foreach ($results as $post_row) {
+                $id = (int) ($post_row['ID'] ?? 0);
+                if ($id > 0) {
+                    $by_id[$id] = (string) ($post_row['post_type'] ?? '');
+                }
+            }
+        }
+        foreach ($rows as &$row) {
+            $pid = (int) ($row['product_id'] ?? 0);
+            $vid = (int) ($row['variation_id'] ?? 0);
+            if ($vid > 0) {
+                $row['catalog_variation_post_id'] = (isset($by_id[$vid]) && $by_id[$vid] === 'product_variation')
+                    ? $vid
+                    : null;
+            }
+            if ($pid > 0) {
+                $row['catalog_product_post_id'] = (isset($by_id[$pid]) && $by_id[$pid] === 'product')
+                    ? $pid
+                    : null;
+            }
+        }
+        unset($row);
+    }
+}
+
+if (!function_exists('intersoccer_reports_apply_final_rows_deleted_product_read_time')) {
+    /**
+     * UI-only: mark rows whose catalogue product/variation is gone (in-memory; no DB writes).
+     *
+     * @param array<int,array<string,mixed>> $rows
+     */
+    function intersoccer_reports_apply_final_rows_deleted_product_read_time(array &$rows): void {
+        if (empty($rows)) {
+            return;
+        }
+        $needs_batch = false;
+        foreach ($rows as $row) {
+            if (!array_key_exists('catalog_product_post_id', $row) && !array_key_exists('catalog_variation_post_id', $row)) {
+                $needs_batch = true;
+                break;
+            }
+        }
+        if ($needs_batch && function_exists('intersoccer_reports_batch_attach_catalog_post_join_columns')) {
+            intersoccer_reports_batch_attach_catalog_post_join_columns($rows);
+        }
+        foreach ($rows as &$row) {
+            $details = $row['event_details'] ?? null;
+            if (is_string($details)) {
+                $decoded = json_decode($details, true);
+                $details = is_array($decoded) ? $decoded : [];
+            } elseif (!is_array($details)) {
+                $details = [];
+            }
+            if (!empty($details['product_deleted'])) {
+                continue;
+            }
+            if (!intersoccer_reports_final_row_is_catalog_product_missing($row)) {
+                continue;
+            }
+            $row['product_missing'] = true;
+            $details['product_deleted'] = true;
+            $row['event_details'] = json_encode($details);
+        }
+        unset($row);
+    }
+}
+
 if (!function_exists('intersoccer_reports_final_row_is_deleted_product_grid_row')) {
     /**
      * Deleted catalogue lines with enough stored booking data stay in the Final Numbers grid (not not-on-roster).
@@ -2558,7 +2678,14 @@ if (!function_exists('intersoccer_reports_final_row_is_deleted_product_grid_row'
             $decoded = json_decode($details, true);
             $details = is_array($decoded) ? $decoded : [];
         }
-        return is_array($details) && !empty($details['product_deleted']);
+        if (is_array($details) && !empty($details['product_deleted'])) {
+            return true;
+        }
+        if (!empty($row['product_missing'])) {
+            return true;
+        }
+        return function_exists('intersoccer_reports_final_row_is_catalog_product_missing')
+            && intersoccer_reports_final_row_is_catalog_product_missing($row);
     }
 }
 
