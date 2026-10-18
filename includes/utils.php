@@ -2529,10 +2529,42 @@ if (!function_exists('intersoccer_reports_final_row_is_thin_line')) {
 
 if (!function_exists('intersoccer_reports_final_row_counts_as_not_on_roster')) {
     function intersoccer_reports_final_row_counts_as_not_on_roster(array $row) {
+        if (function_exists('intersoccer_reports_final_row_is_deleted_product_grid_row')
+            && intersoccer_reports_final_row_is_deleted_product_grid_row($row)) {
+            return false;
+        }
         return (function_exists('intersoccer_reports_final_row_is_undated_event')
                 && intersoccer_reports_final_row_is_undated_event($row))
             || (function_exists('intersoccer_reports_final_row_is_thin_line')
                 && intersoccer_reports_final_row_is_thin_line($row));
+    }
+}
+
+if (!function_exists('intersoccer_reports_final_row_is_deleted_product_grid_row')) {
+    /**
+     * Deleted catalogue lines with enough stored booking data stay in the Final Numbers grid (not not-on-roster).
+     */
+    function intersoccer_reports_final_row_is_deleted_product_grid_row(array $row): bool {
+        if (function_exists('intersoccer_reports_final_row_is_undated_event')
+            && intersoccer_reports_final_row_is_undated_event($row)) {
+            return false;
+        }
+        if (function_exists('intersoccer_reports_final_row_is_thin_line')
+            && intersoccer_reports_final_row_is_thin_line($row)) {
+            return false;
+        }
+        $details = $row['event_details'] ?? null;
+        if (is_string($details)) {
+            $decoded = json_decode($details, true);
+            $details = is_array($decoded) ? $decoded : [];
+        }
+        return is_array($details) && !empty($details['product_deleted']);
+    }
+}
+
+if (!function_exists('intersoccer_reports_final_row_deleted_product_marker_label')) {
+    function intersoccer_reports_final_row_deleted_product_marker_label(): string {
+        return __('deleted product', 'intersoccer-reports-rosters');
     }
 }
 
