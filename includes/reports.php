@@ -847,7 +847,10 @@ function intersoccer_office365_build_booking_report_xlsx($report_data, $start_da
             
             // Format currency values
             try {
-                if (is_numeric($summary_row[1]) && $summary_row[1] > 0 && !strpos($summary_row[0], 'Rate') && !strpos($summary_row[0], 'Bookings') && !strpos($summary_row[0], 'Average') && !strpos($summary_row[0], 'Effectiveness')) {
+                $use_chf = function_exists('intersoccer_reports_booking_xlsx_summary_uses_chf_currency_format')
+                    ? intersoccer_reports_booking_xlsx_summary_uses_chf_currency_format((string) $summary_row[0], $summary_row[1])
+                    : (is_numeric($summary_row[1]) && $summary_row[1] > 0 && !strpos($summary_row[0], 'Rate') && !strpos($summary_row[0], 'Bookings') && !strpos($summary_row[0], 'Average') && !strpos($summary_row[0], 'Effectiveness') && stripos($summary_row[0], 'places') === false);
+                if ($use_chf) {
                     $sheet->getStyle('B' . $current_row)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
                 }
                 // Format percentage values

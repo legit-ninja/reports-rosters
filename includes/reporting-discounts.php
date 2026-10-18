@@ -659,6 +659,29 @@ if (!function_exists('intersoccer_reports_booking_xlsx_summary_count_rows')) {
     }
 }
 
+if (!function_exists('intersoccer_reports_booking_xlsx_summary_uses_chf_currency_format')) {
+    /**
+     * Whether an enhanced Booking Report XLSX summary row should use CHF number format in column B.
+     *
+     * @param string $label Summary row label (column A).
+     * @param mixed  $value Summary row value (column B).
+     */
+    function intersoccer_reports_booking_xlsx_summary_uses_chf_currency_format(string $label, $value): bool {
+        if (!is_numeric($value) || (float) $value <= 0) {
+            return false;
+        }
+        $lower = strtolower($label);
+        if (strpos($lower, 'rate') !== false
+            || strpos($lower, 'bookings') !== false
+            || strpos($lower, 'average') !== false
+            || strpos($lower, 'effectiveness') !== false
+            || strpos($lower, 'places') !== false) {
+            return false;
+        }
+        return true;
+    }
+}
+
 /**
  * Get simplified booking report data for financial reporting
  * Focuses on revenue per participant by querying WooCommerce orders directly

@@ -263,6 +263,10 @@ class BookingReportAccuracyTest extends TestCase {
         $this->assertSame(1, $xlsx_rows[0][1]);
         $this->assertSame('Total places:', $xlsx_rows[1][0]);
         $this->assertSame(2, $xlsx_rows[1][1]);
+        $this->assertFalse(
+            intersoccer_reports_booking_xlsx_summary_uses_chf_currency_format('Total places:', 2),
+            'S11: place totals must not use CHF currency format in XLSX column B'
+        );
 
         if (!function_exists('intersoccer_reports_compute_camp_registration_totals')) {
             require_once dirname(__DIR__, 2) . '/includes/final-reports-totals.php';
