@@ -273,11 +273,6 @@ class OrderFinancialAttributionService {
     }
 
     /**
-     * Backfill orders missing attribution metadata.
-     *
-     * @return array{migrated_count:int,remaining_count:int,more_remaining:bool,errors:array<int,string>}
-     */
-    /**
      * Orders in a date range that lack financial attribution metadata.
      *
      * @return array<int,int>
@@ -376,6 +371,11 @@ class OrderFinancialAttributionService {
         ];
     }
 
+    /**
+     * Backfill orders missing attribution metadata.
+     *
+     * @return array{migrated_count:int,remaining_count:int,more_remaining:bool,errors:array<int,string>}
+     */
     public function backfillBatch(string $start_date = '2024-01-01', int $batch_size = 100): array {
         global $wpdb;
 
