@@ -1812,9 +1812,10 @@ class RosterBuilder {
                 }
             }
         }
+        $english_confirmed = $wpml_resolved && $stored !== '';
         return [
             'product_name' => $stored,
-            'name_not_english' => $stored !== '' && !empty($default_lang) && !$wpml_resolved,
+            'name_not_english' => $stored !== '' && !$english_confirmed,
         ];
     }
 

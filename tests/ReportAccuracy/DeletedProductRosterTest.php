@@ -638,6 +638,25 @@ class DeletedProductRosterTest extends TestCase {
         unset($GLOBALS['intersoccer_test_apply_filters_callback']);
     }
 
+    public function test_deleted_product_without_wpml_flags_name_not_english_on_fallback(): void {
+        $prev_filters = $GLOBALS['intersoccer_test_apply_filters_callback'] ?? null;
+        unset($GLOBALS['intersoccer_test_apply_filters_callback']);
+        $german = 'Einzelner Tage Camp - Testort';
+        $builder = $this->builder();
+        $method = new \ReflectionMethod($builder, 'resolveEnglishProductNameForDeletedLine');
+        $method->setAccessible(true);
+        $resolved = $method->invoke($builder, [
+            'product_name' => $german,
+            'product_id' => DeletedProductFixture::DELETED_PID,
+            'variation_id' => DeletedProductFixture::DELETED_VID,
+        ]);
+        $this->assertSame($german, $resolved['product_name']);
+        $this->assertTrue($resolved['name_not_english']);
+        if ($prev_filters !== null) {
+            $GLOBALS['intersoccer_test_apply_filters_callback'] = $prev_filters;
+        }
+    }
+
     public function test_deleted_product_french_fallback_sets_name_not_english_flag(): void {
         $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$rest) {
             if ($hook === 'wpml_default_language') {
