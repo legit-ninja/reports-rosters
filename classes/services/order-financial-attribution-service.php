@@ -277,6 +277,105 @@ class OrderFinancialAttributionService {
      *
      * @return array{migrated_count:int,remaining_count:int,more_remaining:bool,errors:array<int,string>}
      */
+    /**
+     * Orders in a date range that lack financial attribution metadata.
+     *
+     * @return array<int,int>
+     */
+    public function findMissingAttributionOrderIds(string $start_date, string $end_date): array {
+        global $wpdb;
+
+        $start = $start_date . (strpos($start_date, ' ') !== false ? '' : ' 00:00:00');
+        $end = $end_date . (strpos($end_date, ' ') !== false ? '' : ' 23:59:59');
+
+        $order_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT p.ID
+             FROM {$wpdb->posts} p
+             LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = %s
+             WHERE p.post_type = 'shop_order'
+             AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold', 'wc-refunded')
+             AND p.post_date >= %s
+             AND p.post_date <= %s
+             AND (pm.meta_value IS NULL OR pm.meta_value = '')
+             ORDER BY p.post_date ASC",
+            self::META_ORDER_ATTRIBUTION_AT,
+            $start,
+            $end
+        ));
+
+        return array_map('intval', (array) $order_ids);
+    }
+
+    /**
+     * Aggregate counts and CHF totals for orders missing attribution (no PII).
+     *
+     * @return array{order_count:int,gross_chf:float,net_chf:float}
+     */
+    public function summarizeMissingAttributionInDateRange(string $start_date, string $end_date): array {
+        $order_ids = $this->findMissingAttributionOrderIds($start_date, $end_date);
+        $gross = 0.0;
+        $net = 0.0;
+
+        foreach ($order_ids as $order_id) {
+            if (!function_exists('wc_get_order')) {
+                break;
+            }
+
+            $order = wc_get_order($order_id);
+            if (!$order) {
+                continue;
+            }
+
+            $gross += (float) $order->get_subtotal();
+            $net += (float) $order->get_total();
+        }
+
+        return [
+            'order_count' => count($order_ids),
+            'gross_chf' => round($gross, 2),
+            'net_chf' => round($net, 2),
+        ];
+    }
+
+    /**
+     * Apply attribution to orders missing metadata in a date range (idempotent).
+     *
+     * @return array{processed_count:int,error_count:int}
+     */
+    public function applyMissingAttributionInDateRange(string $start_date, string $end_date): array {
+        $processed_count = 0;
+        $error_count = 0;
+
+        foreach ($this->findMissingAttributionOrderIds($start_date, $end_date) as $order_id) {
+            try {
+                $order = function_exists('wc_get_order') ? wc_get_order($order_id) : null;
+                if (!$order) {
+                    $error_count++;
+                    continue;
+                }
+
+                $had_refunds = (float) $order->get_total_refunded() > 0.01;
+                if ($had_refunds) {
+                    $this->reattributeFullOrder($order);
+                } else {
+                    $this->attributeOrderDiscounts($order);
+                }
+                $processed_count++;
+            } catch (\Throwable $e) {
+                $error_count++;
+                $this->logger->error('OrderFinancialAttributionService apply backfill error', [
+                    'order_id' => $order_id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return [
+            'processed_count' => $processed_count,
+            'error_count' => $error_count,
+        ];
+    }
+
     public function backfillBatch(string $start_date = '2024-01-01', int $batch_size = 100): array {
         global $wpdb;
 
