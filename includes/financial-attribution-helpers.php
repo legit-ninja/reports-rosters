@@ -201,7 +201,34 @@ function intersoccer_reconcile_stale_persisted_item_discount(float $amount, arra
         $adjusted[$fee_index]['type'] = $canonical_type;
     }
 
-    if ($removed <= 0.0) {
+    $changed = $removed > 0.0;
+    foreach ($adjusted as $index => $entry) {
+        if (!is_array($entry) || (string) ($entry['source'] ?? '') !== 'order_fee') {
+            continue;
+        }
+
+        $name = (string) ($entry['name'] ?? '');
+        $canonical = intersoccer_classify_discount_fee($name);
+        if ($canonical !== 'referral_points' && $canonical !== 'referral_first_order') {
+            continue;
+        }
+
+        foreach ($adjusted as $other) {
+            if (is_array($other)
+                && (string) ($other['source'] ?? '') === 'referral_order_meta'
+                && (string) ($other['type'] ?? '') === $canonical
+            ) {
+                continue 2;
+            }
+        }
+
+        if ((string) ($entry['type'] ?? '') !== $canonical) {
+            $adjusted[$index]['type'] = $canonical;
+            $changed = true;
+        }
+    }
+
+    if (!$changed) {
         return ['amount' => $amount, 'breakdown' => $breakdown];
     }
 
