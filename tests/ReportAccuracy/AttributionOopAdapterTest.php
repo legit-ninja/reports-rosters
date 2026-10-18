@@ -3,7 +3,7 @@
  * Regression: OOP adapter checkout attribution (classic + Store API).
  */
 
-namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy;
+namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy {
 
 use InterSoccer\ReportsRosters\Services\OrderFinancialAttributionService as Attr;
 use InterSoccer\ReportsRosters\Tests\TestCase;
@@ -12,15 +12,26 @@ require_once __DIR__ . '/ReportAccuracyFixtures.php';
 
 class AttributionOopAdapterTest extends TestCase {
 
+    /** @var string|false|null */
+    private $errorLogIniBeforeAdapterLoad;
+
     protected function setUp(): void {
         parent::setUp();
         ReportAccuracyStore::reset();
-        unset($GLOBALS['intersoccer_test_attribution_service_override']);
+        unset($GLOBALS['intersoccer_test_attribution_service_override'], $GLOBALS['intersoccer_test_emit_wp_hooks']);
+        $this->errorLogIniBeforeAdapterLoad = ini_set('error_log', '/dev/null');
         self::ensureOopAdapterLoaded();
     }
 
     protected function tearDown(): void {
-        unset($GLOBALS['intersoccer_test_attribution_service_override']);
+        unset(
+            $GLOBALS['intersoccer_test_attribution_service_override'],
+            $GLOBALS['intersoccer_test_emit_wp_hooks']
+        );
+        if ($this->errorLogIniBeforeAdapterLoad !== null) {
+            ini_set('error_log', (string) $this->errorLogIniBeforeAdapterLoad);
+            $this->errorLogIniBeforeAdapterLoad = null;
+        }
         parent::tearDown();
     }
 
@@ -33,12 +44,13 @@ class AttributionOopAdapterTest extends TestCase {
             define('INTERSOCCER_OOP_ACTIVE', true);
         }
 
-        $plugin_file = dirname(__DIR__, 2) . '/intersoccer-reports-rosters.php';
-        \InterSoccer\ReportsRosters\Core\Plugin::get_instance($plugin_file);
-
         require_once dirname(__DIR__, 2) . '/includes/oop-adapter.php';
     }
 
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
     public function test_attribute_order_financials_logs_numeric_order_id_when_passed_order_object(): void {
         $order = (new FakeOrder(80999))->addLine(new FakeLineItem(809991, ['subtotal' => 100.0, 'total' => 100.0]));
         ReportAccuracyStore::addOrder($order);
@@ -64,6 +76,10 @@ class AttributionOopAdapterTest extends TestCase {
         }
     }
 
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
     public function test_store_api_checkout_hook_fired_twice_leaves_attribution_unchanged(): void {
         $order = (new FakeOrder(81001))
             ->addLine(new FakeLineItem(810011, ['subtotal' => 405.0, 'total' => 371.0]))
@@ -90,4 +106,15 @@ class AttributionOopAdapterTest extends TestCase {
         $this->assertSame('34', (string) $after_first['total']);
         $this->assertSame($after_first, $after_second);
     }
+}
+
+}
+
+namespace {
+
+    if (!function_exists('intersoccer_oop_register_roster_ajax_handlers')) {
+        function intersoccer_oop_register_roster_ajax_handlers() {
+        }
+    }
+
 }
