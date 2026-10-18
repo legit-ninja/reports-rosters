@@ -510,27 +510,9 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                             <?php endforeach; ?>
                         <?php endforeach; ?>
 
-                        <?php if (is_array($camp_grand)): ?>
-                            <tr class="grand-total">
-                                <td class="intersoccer-sticky-col intersoccer-sticky-col-canton"></td>
-                                <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php esc_html_e('TOTAL', 'intersoccer-reports-rosters'); ?></td>
-                                <td><?php echo esc_html((string) (int) $camp_grand['full_day']['full_week']); ?></td>
-                                <td><?php echo esc_html((string) (int) $camp_grand['full_day']['buyclub']); ?></td>
-                                <td><?php echo esc_html((string) (int) ($camp_grand['full_day']['unknown_booking_type'] ?? 0)); ?></td>
-                                <td><?php echo esc_html((string) (int) ($camp_grand['full_day']['days_unknown'] ?? 0)); ?></td>
-                                <td><?php echo esc_html((string) (int) ($camp_grand['full_day']['single_day_places'] ?? 0)); ?></td>
-                                <td colspan="5"><?php echo esc_html((string) (int) $camp_grand['full_day']['individual_day_slots']); ?></td>
-                                <td></td>
-                            </tr>
-                            <tr class="all-reg">
-                                <td class="intersoccer-sticky-col intersoccer-sticky-col-canton"></td>
-                                <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php esc_html_e('All registrations', 'intersoccer-reports-rosters'); ?></td>
-                                <td colspan="2"><?php echo esc_html((string) (int) $camp_grand['full_day']['all_registrations']); ?></td>
-                                <td colspan="3"></td>
-                                <td colspan="5"><?php echo esc_html((string) (int) $camp_grand['full_day']['individual_day_slots']); ?></td>
-                                <td></td>
-                            </tr>
-                        <?php endif; ?>
+                        <?php if (is_array($camp_grand)) {
+                            intersoccer_reports_echo_camp_grand_footer_rows($camp_grand, 'full_day');
+                        } ?>
                     </tbody>
                 </table>
                 </div>
@@ -617,27 +599,9 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                             <?php endforeach; ?>
                         <?php endforeach; ?>
 
-                        <?php if (is_array($camp_grand)): ?>
-                            <tr class="grand-total">
-                                <td class="intersoccer-sticky-col intersoccer-sticky-col-canton"></td>
-                                <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php esc_html_e('TOTAL', 'intersoccer-reports-rosters'); ?></td>
-                                <td><?php echo esc_html((string) (int) $camp_grand['mini']['full_week']); ?></td>
-                                <td><?php echo esc_html((string) (int) $camp_grand['mini']['buyclub']); ?></td>
-                                <td><?php echo esc_html((string) (int) ($camp_grand['mini']['unknown_booking_type'] ?? 0)); ?></td>
-                                <td><?php echo esc_html((string) (int) ($camp_grand['mini']['days_unknown'] ?? 0)); ?></td>
-                                <td><?php echo esc_html((string) (int) ($camp_grand['mini']['single_day_places'] ?? 0)); ?></td>
-                                <td colspan="5"><?php echo esc_html((string) (int) $camp_grand['mini']['individual_day_slots']); ?></td>
-                                <td></td>
-                            </tr>
-                            <tr class="all-reg">
-                                <td class="intersoccer-sticky-col intersoccer-sticky-col-canton"></td>
-                                <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php esc_html_e('All registrations', 'intersoccer-reports-rosters'); ?></td>
-                                <td colspan="2"><?php echo esc_html((string) (int) $camp_grand['mini']['all_registrations']); ?></td>
-                                <td colspan="3"></td>
-                                <td colspan="5"><?php echo esc_html((string) (int) $camp_grand['mini']['individual_day_slots']); ?></td>
-                                <td></td>
-                            </tr>
-                        <?php endif; ?>
+                        <?php if (is_array($camp_grand)) {
+                            intersoccer_reports_echo_camp_grand_footer_rows($camp_grand, 'mini');
+                        } ?>
                     </tbody>
                 </table>
                 </div>
@@ -988,6 +952,39 @@ function intersoccer_get_rowspan_for_canton($canton_data) {
         $count += count($venues);
     }
     return $count;
+}
+
+/**
+ * Echo TOTAL + All registrations footer rows for one camp table (Full Day or Mini).
+ *
+ * @param array  $camp_grand From intersoccer_reports_camp_grand_totals().
+ * @param string $bucket     full_day|mini
+ */
+function intersoccer_reports_echo_camp_grand_footer_rows(array $camp_grand, $bucket) {
+    if (!isset($camp_grand[$bucket]) || !is_array($camp_grand[$bucket])) {
+        return;
+    }
+    $b = $camp_grand[$bucket];
+    ?>
+    <tr class="grand-total">
+        <td class="intersoccer-sticky-col intersoccer-sticky-col-canton"></td>
+        <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php esc_html_e('TOTAL', 'intersoccer-reports-rosters'); ?></td>
+        <td><?php echo esc_html((string) (int) $b['full_week']); ?></td>
+        <td><?php echo esc_html((string) (int) $b['buyclub']); ?></td>
+        <td><?php echo esc_html((string) (int) ($b['unknown_booking_type'] ?? 0)); ?></td>
+        <td><?php echo esc_html((string) (int) ($b['days_unknown'] ?? 0)); ?></td>
+        <td><?php echo esc_html((string) (int) ($b['single_day_places'] ?? 0)); ?></td>
+        <td colspan="5"><?php echo esc_html((string) (int) $b['individual_day_slots']); ?></td>
+        <td></td>
+    </tr>
+    <tr class="all-reg">
+        <td class="intersoccer-sticky-col intersoccer-sticky-col-canton"></td>
+        <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php esc_html_e('All registrations', 'intersoccer-reports-rosters'); ?></td>
+        <td colspan="5"><?php echo esc_html((string) (int) ($b['all_registrations'] ?? 0)); ?></td>
+        <td colspan="5"><?php echo esc_html((string) (int) $b['individual_day_slots']); ?></td>
+        <td></td>
+    </tr>
+    <?php
 }
 
 /**

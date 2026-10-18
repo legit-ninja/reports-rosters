@@ -1440,8 +1440,8 @@ if (!function_exists('intersoccer_reports_camp_grand_totals')) {
             }
         }
 
-        $out['full_day']['all_registrations'] = $out['full_day']['full_week'] + $out['full_day']['buyclub'];
-        $out['mini']['all_registrations'] = $out['mini']['full_week'] + $out['mini']['buyclub'];
+        $out['full_day']['all_registrations'] = intersoccer_reports_camp_metrics_visible_place_sum($out['full_day']);
+        $out['mini']['all_registrations'] = intersoccer_reports_camp_metrics_visible_place_sum($out['mini']);
 
         return $out;
     }

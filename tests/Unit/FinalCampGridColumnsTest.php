@@ -125,4 +125,107 @@ class FinalCampGridColumnsTest extends TestCase {
 
         $this->assertSame($meta_after_fixture, json_encode(\InterSoccerRRTestMeta::$data));
     }
+
+    /**
+     * @return array{camp_grand: array, place_total: int, fd: array, mini_place: int}
+     */
+    private function campGrandTotalsFixtureForReview8(): array {
+        $group1 = [
+            ['order_item_id' => 1, 'booking_type' => 'Full Week', 'is_buyclub' => false, 'line_subtotal' => 100, 'line_total' => 100],
+            ['order_item_id' => 2, 'booking_type' => 'other', 'is_buyclub' => false, 'line_subtotal' => 100, 'line_total' => 100],
+            [
+                'order_item_id' => 3,
+                'booking_type' => 'Single Day(s)',
+                'selected_days' => 'Monday, Tuesday',
+                'is_buyclub' => false,
+                'line_subtotal' => 100,
+                'line_total' => 100,
+            ],
+        ];
+        $group2 = [
+            [
+                'order_item_id' => 4,
+                'booking_type' => 'Full Week',
+                'is_buyclub' => false,
+                'line_subtotal' => 200,
+                'line_total' => 200,
+                'line_quantity' => 2,
+            ],
+            [
+                'order_item_id' => 5,
+                'booking_type' => 'Single Day(s)',
+                'selected_days' => '',
+                'is_buyclub' => false,
+                'line_subtotal' => 100,
+                'line_total' => 100,
+            ],
+        ];
+        $m1 = intersoccer_reports_aggregate_camp_location_group($group1, false);
+        $m2 = intersoccer_reports_aggregate_camp_location_group($group2, false);
+        $empty = intersoccer_reports_empty_camp_metrics();
+        $report = [
+            'Week A' => [
+                'Canton A' => [
+                    'Venue A' => [
+                        'Full Day' => $m1,
+                        'Mini - Half Day' => $empty,
+                    ],
+                ],
+            ],
+            'Week B' => [
+                'Canton B' => [
+                    'Venue B' => [
+                        'Full Day' => $m2,
+                        'Mini - Half Day' => $empty,
+                    ],
+                ],
+            ],
+        ];
+        $camp_grand = intersoccer_reports_camp_grand_totals($report, false);
+        $fd = $camp_grand['full_day'];
+        $place_total = (int) $fd['full_week']
+            + (int) $fd['buyclub']
+            + (int) ($fd['unknown_booking_type'] ?? 0)
+            + (int) ($fd['days_unknown'] ?? 0)
+            + (int) ($fd['single_day_places'] ?? 0);
+
+        return [
+            'camp_grand' => $camp_grand,
+            'place_total' => $place_total,
+            'fd' => $fd,
+            'mini_place' => intersoccer_reports_camp_metrics_visible_place_sum($camp_grand['mini']),
+        ];
+    }
+
+    public function test_camp_grand_all_registrations_matches_place_buckets_and_ui_footers(): void {
+        require_once dirname(__DIR__, 2) . '/includes/reports-ui.php';
+        $fixture = $this->campGrandTotalsFixtureForReview8();
+        $grand = $fixture['camp_grand'];
+        $place_total = $fixture['place_total'];
+        $fd = $fixture['fd'];
+
+        $this->assertSame($place_total, intersoccer_reports_camp_metrics_visible_place_sum($fd));
+        $this->assertSame($place_total, (int) ($fd['all_registrations'] ?? 0));
+
+        ob_start();
+        intersoccer_reports_echo_camp_grand_footer_rows($grand, 'full_day');
+        $html_fd = (string) ob_get_clean();
+        $this->assertStringContainsString('class="all-reg"', $html_fd);
+        if (!preg_match('/class="all-reg"[\s\S]*?<td colspan="5">(\d+)<\/td>/', $html_fd, $all_reg_match)) {
+            $this->fail('Expected All registrations place total in full-day footer');
+        }
+        $this->assertSame((string) $place_total, $all_reg_match[1]);
+        if (!preg_match('/class="grand-total"[\s\S]*?<td>(\d+)<\/td>\s*<td>(\d+)<\/td>\s*<td>(\d+)<\/td>\s*<td>(\d+)<\/td>\s*<td>(\d+)<\/td>/', $html_fd, $total_match)) {
+            $this->fail('Expected TOTAL place bucket cells in full-day footer');
+        }
+        $this->assertSame($place_total, array_sum(array_map('intval', array_slice($total_match, 1))));
+
+        ob_start();
+        intersoccer_reports_echo_camp_grand_footer_rows($grand, 'mini');
+        $html_mini = (string) ob_get_clean();
+        if (!preg_match('/class="all-reg"[\s\S]*?<td colspan="5">(\d+)<\/td>/', $html_mini, $mini_all_reg)) {
+            $this->fail('Expected All registrations in mini footer');
+        }
+        $this->assertSame((string) $fixture['mini_place'], $mini_all_reg[1]);
+    }
 }
