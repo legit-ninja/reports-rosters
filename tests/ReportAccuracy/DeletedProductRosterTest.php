@@ -209,6 +209,19 @@ class DeletedProductWpdb extends FakeBookingWpdb {
         if (preg_match("/SELECT order_item_id, order_id FROM \\S*intersoccer_rosters/", (string) $query)) {
             return [];
         }
+        if (preg_match('/SELECT ID, post_type FROM \\S+posts WHERE ID IN \\(([^)]+)\\)/', (string) $query, $m)) {
+            $this->queries[] = (string) $query;
+            $rows = [];
+            foreach (array_map('intval', explode(',', $m[1])) as $id) {
+                $obj = DeletedProductFixture::$catalogue[$id] ?? null;
+                if (!$obj) {
+                    continue;
+                }
+                $type = $obj instanceof \WC_Product_Variation ? 'product_variation' : 'product';
+                $rows[] = ['ID' => $id, 'post_type' => $type];
+            }
+            return $output === ARRAY_A ? $rows : array_map(static function ($r) { return (object) $r; }, $rows);
+        }
         return parent::get_results($query, $output);
     }
 }
@@ -438,6 +451,16 @@ class DeletedProductRosterTest extends TestCase {
     // ------------------------------------------------------------------ (5) Final Numbers + Booking Report count it
 
     private function finalNumbersCourseRegistrations(array $rows): int {
+        $data = $this->finalNumbersCourseReport($rows);
+        $totals = intersoccer_calculate_final_reports_totals(is_array($data) ? $data : [], 'Course');
+        return (int) ($totals['all']['registrations'] ?? 0);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @return array<string,mixed>
+     */
+    private function finalNumbersCourseReport(array $rows): array {
         $this->wpdb->roster_rows = $rows;
         $previous_log = ini_set('error_log', '/dev/null');
         try {
@@ -445,14 +468,70 @@ class DeletedProductRosterTest extends TestCase {
         } finally {
             ini_set('error_log', (string) $previous_log);
         }
-        $totals = intersoccer_calculate_final_reports_totals(is_array($data) ? $data : [], 'Course');
-        return (int) ($totals['all']['registrations'] ?? 0);
+        return is_array($data) ? $data : [];
+    }
+
+    private function courseReportHasDeletedProductMarker(array $data): bool {
+        foreach ($data as $season => $regions) {
+            if ($season === '__player_registration_totals__' || !is_array($regions)) {
+                continue;
+            }
+            foreach ($regions as $region_rows) {
+                if (!is_array($region_rows)) {
+                    continue;
+                }
+                foreach ($region_rows as $row) {
+                    if (is_array($row) && !empty($row['has_deleted_product'])) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @return array<string,mixed>
+     */
+    private function finalNumbersCampReport(array $rows): array {
+        $this->wpdb->roster_rows = $rows;
+        $previous_log = ini_set('error_log', '/dev/null');
+        try {
+            $data = intersoccer_get_final_reports_data(2026, 'Camp');
+        } finally {
+            ini_set('error_log', (string) $previous_log);
+        }
+        return is_array($data) ? $data : [];
+    }
+
+    private function campReportHasDeletedProductMarker(array $data): bool {
+        foreach ($data as $week => $cantons) {
+            if ($week === '__player_registration_totals__' || !is_array($cantons)) {
+                continue;
+            }
+            foreach ($cantons as $venues) {
+                if (!is_array($venues)) {
+                    continue;
+                }
+                foreach ($venues as $venue_data) {
+                    if (!is_array($venue_data)) {
+                        continue;
+                    }
+                    if (function_exists('intersoccer_reports_camp_venue_metrics_has_deleted_product')
+                        && intersoccer_reports_camp_venue_metrics_has_deleted_product($venue_data)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /** Final Numbers query row (reports-data.php course SELECT) for a stored roster row. */
     private static function finalRow(array $r, int $id): array {
         $d = static function ($v) { return $v instanceof \DateTimeInterface ? $v->format('Y-m-d') : $v; };
-        return [
+        $out = [
             'roster_row_id' => $id, 'order_item_id' => $r['order_item_id'], 'order_id' => $r['order_id'],
             'product_id' => $r['product_id'], 'variation_id' => $r['variation_id'] ?? 0, 'product_name' => $r['product_name'] ?? '',
             'canton' => $r['canton_region'] ?? ($r['region'] ?? ''), 'venue' => $r['venue'] ?? '', 'course_day' => $r['course_day'] ?? '',
@@ -464,6 +543,35 @@ class DeletedProductRosterTest extends TestCase {
             'order_item_name' => 'Synthetic Sunday Course - Venue A - Winter 2026', 'post_date' => '2026-01-12 10:00:00',
             'line_subtotal' => '300', 'line_total' => '300',
         ];
+        if (array_key_exists('event_details', $r)) {
+            $out['event_details'] = $r['event_details'];
+        }
+        return $out;
+    }
+
+    /** @param array<string,mixed> $overrides */
+    private static function finalCampRow(array $overrides = []): array {
+        return array_merge([
+            'order_item_id' => 6201,
+            'order_id' => 62001,
+            'activity_type' => 'Camp',
+            'canton' => 'Geneva',
+            'venue' => 'Placement Venue',
+            'season' => 'Summer 2026',
+            'camp_terms' => 'Week 1',
+            'booking_type' => 'Full Week',
+            'selected_days' => '',
+            'age_group' => '5-13y Full Day',
+            'product_id' => DeletedProductFixture::DELETED_PID,
+            'variation_id' => DeletedProductFixture::DELETED_VID,
+            'product_name' => 'Synthetic Camp Fixture',
+            'start_date' => '2026-07-06',
+            'end_date' => '2026-07-10',
+            'line_subtotal' => '250',
+            'line_total' => '250',
+            'post_date' => '2026-06-01 10:00:00',
+            'program_year' => '2026',
+        ], $overrides);
     }
 
     /** (5a) End to end: the deleted-product line is a place in Final Numbers (via the row the build path writes). */
@@ -494,6 +602,50 @@ class DeletedProductRosterTest extends TestCase {
         $n = $this->finalNumbersCourseRegistrations([self::finalRow($row, 7)]);
 
         $this->assertSame(1, $n, 'Final Numbers: a flagged deleted-product row must still count; counted ' . $n);
+    }
+
+    public function test_final_numbers_marker_when_catalog_missing_without_stored_flag(): void {
+        $row = $this->buildControlRow();
+        $row['product_id'] = DeletedProductFixture::DELETED_PID;
+        $row['variation_id'] = DeletedProductFixture::DELETED_VID;
+        unset($row['event_details']);
+
+        $data = $this->finalNumbersCourseReport([self::finalRow($row, 71)]);
+        $this->assertTrue($this->courseReportHasDeletedProductMarker($data));
+        $this->assertSame(1, $this->finalNumbersCourseRegistrations([self::finalRow($row, 71)]));
+    }
+
+    public function test_final_numbers_marker_when_event_details_flag_set(): void {
+        $row = $this->buildControlRow();
+        $row['event_details'] = json_encode(['product_deleted' => true]);
+
+        $data = $this->finalNumbersCourseReport([self::finalRow($row, 72)]);
+        $this->assertTrue($this->courseReportHasDeletedProductMarker($data));
+    }
+
+    public function test_final_numbers_no_marker_for_live_catalog_product(): void {
+        $row = $this->buildControlRow();
+        $data = $this->finalNumbersCourseReport([self::finalRow($row, 73)]);
+        $this->assertFalse($this->courseReportHasDeletedProductMarker($data));
+    }
+
+    public function test_final_numbers_camp_marker_when_catalog_missing(): void {
+        $data = $this->finalNumbersCampReport([self::finalCampRow()]);
+        $this->assertTrue($this->campReportHasDeletedProductMarker($data));
+    }
+
+    public function test_final_numbers_totals_unchanged_by_deleted_product_marker(): void {
+        $missing = $this->buildControlRow();
+        $missing['product_id'] = DeletedProductFixture::DELETED_PID;
+        $missing['variation_id'] = DeletedProductFixture::DELETED_VID;
+        $live = $this->buildControlRow();
+        $live['order_item_id'] = 5174;
+        $live['order_id'] = 9174;
+
+        $missing_regs = $this->finalNumbersCourseRegistrations([self::finalRow($missing, 74)]);
+        $live_regs = $this->finalNumbersCourseRegistrations([self::finalRow($live, 75)]);
+        $this->assertSame($live_regs, $missing_regs);
+        $this->assertSame(1, $missing_regs);
     }
 
     /** (5b) Booking Report counts the place (reads _product_id from item meta, not the catalogue). */
@@ -533,7 +685,7 @@ class DeletedProductRosterTest extends TestCase {
             'Variation deleted: stored variation id should be kept; master writes ' . (int) ($row['variation_id'] ?? 0));
     }
 
-    public function test_deleted_product_build_logs_error_with_order_ids(): void {
+    public function test_deleted_product_build_logs_error_with_catalogue_ids_only(): void {
         $logger = $this->createMock(Logger::class);
         $logger->expects($this->atLeastOnce())
             ->method('error')
@@ -541,9 +693,8 @@ class DeletedProductRosterTest extends TestCase {
                 $this->equalTo('Roster row built for deleted catalogue product'),
                 $this->callback(static function ($context) {
                     return is_array($context)
-                        && isset($context['order_id'], $context['order_item_id'])
-                        && (int) $context['order_id'] === 9401
-                        && (int) $context['order_item_id'] === 5401;
+                        && !isset($context['order_id'], $context['order_item_id'])
+                        && isset($context['product_id'], $context['variation_id']);
                 })
             );
 

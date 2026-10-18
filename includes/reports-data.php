@@ -260,8 +260,11 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 r.variation_id,
                 r.product_name,
                 r.girls_only,
+                r.event_details,
                 r.start_date,
                 r.end_date,
+                catalog_var.ID AS catalog_variation_post_id,
+                catalog_prod.ID AS catalog_product_post_id,
                 oi.order_id,
                 om_line_subtotal.meta_value AS line_subtotal,
                 om_line_total.meta_value AS line_total,
@@ -276,11 +279,22 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
              LEFT JOIN $order_itemmeta_table om_qty ON oi.order_item_id = om_qty.order_item_id AND om_qty.meta_key = '_qty'
              LEFT JOIN $order_itemmeta_table om_year ON oi.order_item_id = om_year.order_item_id AND om_year.meta_key = 'Year'
              LEFT JOIN $order_itemmeta_table om_year_alt ON oi.order_item_id = om_year_alt.order_item_id AND om_year_alt.meta_key = 'pa_program-year'
+             LEFT JOIN $posts_table catalog_var ON catalog_var.ID = r.variation_id AND r.variation_id > 0 AND catalog_var.post_type = 'product_variation'
+             LEFT JOIN $posts_table catalog_prod ON catalog_prod.ID = r.product_id AND r.product_id > 0 AND catalog_prod.post_type = 'product'
              WHERE $where_clause",
             ...$prepare_values
         );
         
         $rosters_from_table = $wpdb->get_results($rosters_query, ARRAY_A);
+        if (!is_array($rosters_from_table)) {
+            if (function_exists('intersoccer_reports_log_catalog_lookup_failure')) {
+                intersoccer_reports_log_catalog_lookup_failure('rosters_query_failed');
+            }
+            if (function_exists('intersoccer_reports_set_catalog_lookup_failed')) {
+                intersoccer_reports_set_catalog_lookup_failed(true);
+            }
+            $rosters_from_table = [];
+        }
         
         // Track filtering stages
         $initial_count = count($rosters_from_table);
@@ -770,6 +784,10 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             return [];
         }
 
+        if (function_exists('intersoccer_reports_apply_final_rows_deleted_product_read_time')) {
+            intersoccer_reports_apply_final_rows_deleted_product_read_time($rosters);
+        }
+
         // Determine camp type and BuyClub (using data from main query - no additional queries needed)
         $buyclub_count = 0;
         foreach ($rosters as &$roster) {
@@ -854,6 +872,9 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 r.girls_only,
                 r.booking_type,
                 r.age_group,
+                r.event_details,
+                catalog_var.ID AS catalog_variation_post_id,
+                catalog_prod.ID AS catalog_product_post_id,
                 oi.order_item_name AS order_item_name,
                 p.post_date,
                 om_line_subtotal.meta_value AS line_subtotal,
@@ -865,11 +886,22 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
              LEFT JOIN {$order_itemmeta_table} om_line_subtotal ON r.order_item_id = om_line_subtotal.order_item_id AND om_line_subtotal.meta_key = '_line_subtotal'
              LEFT JOIN {$order_itemmeta_table} om_line_total ON r.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
              LEFT JOIN {$order_itemmeta_table} om_qty ON r.order_item_id = om_qty.order_item_id AND om_qty.meta_key = '_qty'
+             LEFT JOIN {$posts_table} catalog_var ON catalog_var.ID = r.variation_id AND r.variation_id > 0 AND catalog_var.post_type = 'product_variation'
+             LEFT JOIN {$posts_table} catalog_prod ON catalog_prod.ID = r.product_id AND r.product_id > 0 AND catalog_prod.post_type = 'product'
              WHERE {$where_clause}",
             ...$prepare_values
         );
 
         $rosters = $wpdb->get_results($rosters_query, ARRAY_A);
+        if (!is_array($rosters)) {
+            if (function_exists('intersoccer_reports_log_catalog_lookup_failure')) {
+                intersoccer_reports_log_catalog_lookup_failure('rosters_query_failed');
+            }
+            if (function_exists('intersoccer_reports_set_catalog_lookup_failed')) {
+                intersoccer_reports_set_catalog_lookup_failed(true);
+            }
+            $rosters = [];
+        }
 
         if (function_exists('intersoccer_reports_enrich_and_normalize_final_report_rows')) {
             intersoccer_reports_enrich_and_normalize_final_report_rows($rosters);
@@ -996,6 +1028,10 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 $status_mode,
                 'course'
             );
+        }
+
+        if (function_exists('intersoccer_reports_apply_final_rows_deleted_product_read_time')) {
+            intersoccer_reports_apply_final_rows_deleted_product_read_time($rosters);
         }
 
         return intersoccer_reports_build_course_report_from_entries($rosters, $exclude_buyclub);

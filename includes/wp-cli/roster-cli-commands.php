@@ -86,6 +86,10 @@ final class Intersoccer_Rr_Wp_Cli {
      * [--retry-skipped]
      * : Re-evaluate orders marked _intersoccer_attribution_skipped (dry-run unless --apply).
      *
+     * [--list-orders]
+     * : With --retry-skipped dry-run, print per-order stored vs live skip reasons (default: reason counts only).
+     *   Stored reasons come from order meta; live reasons are from a fresh attribution evaluation.
+     *
      * ## EXAMPLES
      *
      *     wp intersoccer-rr attribution-backfill --from=2025-01-01 --to=2026-10-12
@@ -107,6 +111,7 @@ final class Intersoccer_Rr_Wp_Cli {
         $apply = \WP_CLI\Utils\get_flag_value($assoc_args, 'apply', false) === true;
         $yes = \WP_CLI\Utils\get_flag_value($assoc_args, 'yes', false) === true;
         $retry_skipped = \WP_CLI\Utils\get_flag_value($assoc_args, 'retry-skipped', false) === true;
+        $list_orders = \WP_CLI\Utils\get_flag_value($assoc_args, 'list-orders', false) === true;
 
         $service = intersoccer_oop_get_order_financial_attribution_service();
 
@@ -140,7 +145,7 @@ final class Intersoccer_Rr_Wp_Cli {
         if ($retry_skipped) {
             $summary = $service->summarizeRetrySkippedInDateRange($from, $to);
             \WP_CLI::log($this->formatDryRunCandidateLine($summary, true));
-            $this->logRetrySkippedOrderDetails($summary);
+            $this->logRetrySkippedOrderDetails($summary, $list_orders);
             \WP_CLI::success('Dry run complete (no writes).');
             return;
         }
@@ -238,28 +243,30 @@ final class Intersoccer_Rr_Wp_Cli {
     /**
      * @param array<string,mixed> $summary
      */
-    private function logRetrySkippedOrderDetails(array $summary): void {
-        $orders = $summary['retry_skipped_orders'] ?? [];
-        if (!is_array($orders)) {
-            return;
-        }
+    private function logRetrySkippedOrderDetails(array $summary, bool $list_orders = false): void {
+        if ($list_orders) {
+            $orders = $summary['retry_skipped_orders'] ?? [];
+            if (!is_array($orders)) {
+                $orders = [];
+            }
 
-        foreach ($orders as $row) {
-            if (!is_array($row)) {
-                continue;
-            }
-            $order_id = (int) ($row['order_id'] ?? 0);
-            $stored = (string) ($row['stored_reason'] ?? '');
-            $live = array_key_exists('live_reason', $row) ? $row['live_reason'] : null;
-            $line = sprintf('Order %d: stored %s', $order_id, $this->humanizeSkipReason($stored));
-            if ($live === null) {
-                if ($stored !== '') {
-                    $line .= ', live eligible';
+            foreach ($orders as $row) {
+                if (!is_array($row)) {
+                    continue;
                 }
-            } elseif ((string) $live !== $stored) {
-                $line .= ', live ' . $this->humanizeSkipReason((string) $live);
+                $order_id = (int) ($row['order_id'] ?? 0);
+                $stored = (string) ($row['stored_reason'] ?? '');
+                $live = array_key_exists('live_reason', $row) ? $row['live_reason'] : null;
+                $line = sprintf('Order %d: stored %s', $order_id, $this->humanizeSkipReason($stored));
+                if ($live === null) {
+                    if ($stored !== '') {
+                        $line .= ', live eligible';
+                    }
+                } elseif ((string) $live !== $stored) {
+                    $line .= ', live ' . $this->humanizeSkipReason((string) $live);
+                }
+                \WP_CLI::log($line);
             }
-            \WP_CLI::log($line);
         }
 
         $stored_totals = $summary['stored_reason_totals'] ?? [];
