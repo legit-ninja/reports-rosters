@@ -34,6 +34,41 @@ class AttributionBackfillTest extends TestCase {
         parent::tearDown();
     }
 
+    public function test_retry_skipped_cli_dry_run_lists_order_reasons(): void {
+        $GLOBALS['intersoccer_test_wp_cli_log'] = [];
+        $this->bootAttributionBackfillCli();
+
+        $service = $this->createMock(Attr::class);
+        $service->method('summarizeRetrySkippedInDateRange')->willReturn([
+            'order_count' => 2,
+            'applied_count' => 1,
+            'skipped_count' => 1,
+            'previously_skipped_count' => 2,
+            'failed_count' => 0,
+            'gross_chf' => 0.0,
+            'net_chf' => 0.0,
+            'skipped_reasons' => [Attr::SKIP_REASON_NO_ATTRIBUTABLE_ITEMS => 1],
+            'retry_skipped_orders' => [
+                ['order_id' => 801, 'stored_reason' => Attr::SKIP_REASON_NO_LINE_ITEMS, 'live_reason' => null],
+                ['order_id' => 802, 'stored_reason' => Attr::SKIP_REASON_NO_ATTRIBUTABLE_ITEMS, 'live_reason' => Attr::SKIP_REASON_NO_ATTRIBUTABLE_ITEMS],
+            ],
+            'stored_reason_totals' => [
+                Attr::SKIP_REASON_NO_LINE_ITEMS => 1,
+                Attr::SKIP_REASON_NO_ATTRIBUTABLE_ITEMS => 1,
+            ],
+            'live_reason_totals' => ['eligible' => 1, Attr::SKIP_REASON_NO_ATTRIBUTABLE_ITEMS => 1],
+        ]);
+        $GLOBALS['intersoccer_test_attribution_service_override'] = $service;
+
+        $cli = new \Intersoccer_Rr_Wp_Cli();
+        $cli->attribution_backfill([], ['retry-skipped' => true]);
+
+        $this->assertContains('Order 801: stored no_line_items, live eligible', $GLOBALS['intersoccer_test_wp_cli_log']);
+        $this->assertContains('Order 802: stored no_attributable_items', $GLOBALS['intersoccer_test_wp_cli_log']);
+        $this->assertContains('Totals (stored): no line items 1, no attributable line items 1', $GLOBALS['intersoccer_test_wp_cli_log']);
+        unset($GLOBALS['intersoccer_test_attribution_service_override'], $GLOBALS['intersoccer_test_wp_cli_log']);
+    }
+
     public function test_backfill_dry_run_summary_counts_and_chf_without_writes(): void {
         ReportAccuracyStore::addOrder((new FakeOrder(601))
             ->addLine(new FakeLineItem(6011, ['subtotal' => 400.0, 'total' => 360.0])));

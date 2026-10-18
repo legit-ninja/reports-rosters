@@ -725,9 +725,12 @@ function intersoccer_oop_backfill_financial_attribution_ajax() {
             $summary = $service->summarizeMissingAttributionInDateRange($start_date, $end_date);
             wp_send_json_success([
                 'message' => sprintf(
-                    __('Dry run: would apply %1$d, skipped %2$d (no attributable line items), previously skipped %3$d.', 'intersoccer-reports-rosters'),
+                    /* translators: 1: candidate order count, 2: would apply, 3: skipped, 4: failed, 5: previously skipped */
+                    __('Dry run candidates %1$d: would apply %2$d, skipped %3$d, failed %4$d, previously skipped %5$d.', 'intersoccer-reports-rosters'),
+                    (int) $summary['order_count'],
                     (int) $summary['applied_count'],
                     (int) $summary['skipped_count'],
+                    (int) $summary['failed_count'],
                     (int) $summary['previously_skipped_count']
                 ),
                 'dry_run' => true,
