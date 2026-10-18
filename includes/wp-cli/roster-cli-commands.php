@@ -80,10 +80,15 @@ final class Intersoccer_Rr_Wp_Cli {
      * [--apply]
      * : Persist attribution (requires explicit flag). Idempotent.
      *
+     * [--yes]
+     * : Skip the confirmation prompt when using --apply. Does nothing without --apply.
+     *
      * ## EXAMPLES
      *
      *     wp intersoccer-rr attribution-backfill --from=2025-01-01 --to=2026-10-12
      *
+     * @subcommand attribution-backfill
+     * @alias attribution_backfill
      * @when after_wp_load
      *
      * @param list<string> $args
@@ -97,11 +102,14 @@ final class Intersoccer_Rr_Wp_Cli {
         $from = isset($assoc_args['from']) ? (string) $assoc_args['from'] : '2025-01-01';
         $to = isset($assoc_args['to']) ? (string) $assoc_args['to'] : gmdate('Y-m-d');
         $apply = \WP_CLI\Utils\get_flag_value($assoc_args, 'apply', false) === true;
+        $yes = \WP_CLI\Utils\get_flag_value($assoc_args, 'yes', false) === true;
 
         $service = intersoccer_oop_get_order_financial_attribution_service();
 
         if ($apply) {
-            \WP_CLI::confirm('Apply financial attribution backfill for the selected date range?');
+            if (!$yes) {
+                \WP_CLI::confirm('Apply financial attribution backfill for the selected date range?');
+            }
             $result = $service->applyMissingAttributionInDateRange($from, $to);
             \WP_CLI::log(sprintf(
                 'Applied attribution to %d orders (%d errors).',
