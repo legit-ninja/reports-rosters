@@ -226,7 +226,6 @@ class BookingReportAccuracyTest extends TestCase {
     // ---------------------------------------------------------------- S11 (qty > 1)
 
     public function test_S11_multi_place_line_counts_each_place(): void {
-        $this->markTestIncomplete('Pending fix F: qty>1 booking and roster places.');
         ReportAccuracyStore::addOrder($this->attributedOrder(112)->addLine(
             new FakeLineItem(1121, ['subtotal' => 480.0, 'total' => 480.0, 'quantity' => 2])
         ));
@@ -244,7 +243,6 @@ class BookingReportAccuracyTest extends TestCase {
      * so the same event shows under two names. Expected both under the default-language (EN) name.
      */
     public function test_S15a_translated_line_labelled_with_canonical_product_name(): void {
-        $this->markTestIncomplete('Pending fix F: WPML-canonical Booking Report labels.');
         ReportAccuracyStore::addOrder($this->attributedOrder(113)->addLine(
             new FakeLineItem(1131, ['subtotal' => 250.0, 'total' => 250.0, 'product_id' => 2000, 'name' => 'Venue A Autumn Camps 2026'])
         ));
@@ -277,7 +275,6 @@ class BookingReportAccuracyTest extends TestCase {
      * "buyclub" and keeps it as a CHF 0.00 booking. Expected: the same rule in both reports (excluded here).
      */
     public function test_S16b_zero_total_line_follows_final_numbers_buyclub_rule(): void {
-        $this->markTestIncomplete('Pending fix F: shared BuyClub rule with Final Numbers.');
         ReportAccuracyStore::addOrder($this->attributedOrder(115)->addLine(new FakeLineItem(1151, ['subtotal' => 495.0, 'total' => 0.0])));
         ReportAccuracyStore::addOrder($this->attributedOrder(116)->addLine(new FakeLineItem(1161, ['subtotal' => 495.0, 'total' => 0.0])));
         \InterSoccerRRTestMeta::$data[116]['_billing_company'] = 'BuyClub';
