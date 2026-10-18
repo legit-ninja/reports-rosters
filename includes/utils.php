@@ -424,6 +424,21 @@ if (!function_exists('intersoccer_reports_final_course_display_name')) {
     return $variation_id;
 }
 
+if (!function_exists('intersoccer_parse_date_unified_debug_log')) {
+    /**
+     * WP_DEBUG-only date-parse tracing (no order or line-item identifiers in messages).
+     *
+     * @param string $message Log message without context suffix.
+     * @param string $context Optional caller context (must not contain order/item ids).
+     */
+    function intersoccer_parse_date_unified_debug_log(string $message, string $context = ''): void {
+        if ($context === '' || !defined('WP_DEBUG') || !WP_DEBUG) {
+            return;
+        }
+        error_log($message . ' (' . $context . ')');
+    }
+}
+
 /**
  * Unified date parser that handles all date formats found in order item metadata.
  * 
@@ -439,7 +454,7 @@ if (!function_exists('intersoccer_reports_final_course_display_name')) {
  * - strtotime() fallback for other formats
  * 
  * @param string $date_string The date string to parse
- * @param string $context Optional context for logging (e.g., "order 12345, item 678")
+ * @param string $context Optional context for logging (no order or line-item identifiers).
  * @return string|null Parsed date in Y-m-d format, or null if parsing fails
  */
 function intersoccer_parse_date_unified($date_string, $context = '') {
@@ -448,6 +463,9 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
     }
     
     $date_string = trim($date_string);
+    $log_date_parse = static function (string $message) use ($context): void {
+        intersoccer_parse_date_unified_debug_log($message, $context);
+    };
     
     // Format priority order (most specific/unambiguous first)
     // 1. F j, Y - "August 17, 2025" (most common, unambiguous)
@@ -499,17 +517,13 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
                         if ($corrected_year >= 2000 && $corrected_year <= 2099) {
                             $date->setDate($corrected_year, (int)$date->format('m'), (int)$date->format('d'));
                             $parsed_date = $date->format('Y-m-d');
-                            if (!empty($context)) {
-                                error_log("InterSoccer: Parsed date '$date_string' with format '$format' (2-digit year) to '$parsed_date' ($context)");
-                            }
+                            $log_date_parse("InterSoccer: Parsed date '$date_string' with format '$format' (2-digit year) to '$parsed_date'");
                             return $parsed_date;
                         }
                     } elseif ($parsed_year >= 1900 && $parsed_year <= 2100) {
                         // Year was already parsed correctly as 4-digit
                         $parsed_date = $date->format('Y-m-d');
-                        if (!empty($context)) {
-                            error_log("InterSoccer: Parsed date '$date_string' with format '$format' to '$parsed_date' ($context)");
-                        }
+                        $log_date_parse("InterSoccer: Parsed date '$date_string' with format '$format' to '$parsed_date'");
                         return $parsed_date;
                     }
                 }
@@ -519,14 +533,10 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
                     // Validate year is reasonable
                     if ($parsed_year >= 1900 && $parsed_year <= 2100) {
                         $parsed_date = $date->format('Y-m-d');
-                        if (!empty($context)) {
-                            error_log("InterSoccer: Parsed date '$date_string' with format '$format' to '$parsed_date' ($context)");
-                        }
+                        $log_date_parse("InterSoccer: Parsed date '$date_string' with format '$format' to '$parsed_date'");
                         return $parsed_date;
                     } else {
-                        if (!empty($context)) {
-                            error_log("InterSoccer: Parsed date '$date_string' has invalid year $parsed_year ($context)");
-                        }
+                        $log_date_parse("InterSoccer: Parsed date '$date_string' has invalid year $parsed_year");
                     }
                 }
             }
@@ -598,9 +608,7 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
                     if ($date_part === $input_date_part || $formatted === $english_date_string) {
                         if ($parsed_year >= 1900 && $parsed_year <= 2100) {
                             $parsed_date = $date->format('Y-m-d');
-                            if (!empty($context)) {
-                                error_log("InterSoccer: Parsed French date '$date_string' (translated to '$english_date_string') with format '$format' to '$parsed_date' ($context)");
-                            }
+                            $log_date_parse("InterSoccer: Parsed French date '$date_string' (translated to '$english_date_string') with format '$format' to '$parsed_date'");
                             return $parsed_date;
                         }
                     } else {
@@ -612,9 +620,7 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
                             $parsed_day = (int)$date->format('d');
                             if ($expected_day === $parsed_day) {
                                 $parsed_date = $date->format('Y-m-d');
-                                if (!empty($context)) {
-                                    error_log("InterSoccer: Parsed French date '$date_string' (translated to '$english_date_string') with format '$format' to '$parsed_date' (lenient match) ($context)");
-                                }
+                                $log_date_parse("InterSoccer: Parsed French date '$date_string' (translated to '$english_date_string') with format '$format' to '$parsed_date' (lenient match)");
                                 return $parsed_date;
                             }
                         }
@@ -625,9 +631,7 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
                         $parsed_year = (int)$date->format('Y');
                         if ($parsed_year >= 1900 && $parsed_year <= 2100) {
                             $parsed_date = $date->format('Y-m-d');
-                            if (!empty($context)) {
-                                error_log("InterSoccer: Parsed French date '$date_string' (translated to '$english_date_string') with format '$format' to '$parsed_date' ($context)");
-                            }
+                            $log_date_parse("InterSoccer: Parsed French date '$date_string' (translated to '$english_date_string') with format '$format' to '$parsed_date'");
                             return $parsed_date;
                         }
                     }
@@ -646,21 +650,15 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
         
         // Validate year is reasonable
         if ($year >= 1900 && $year <= 2100) {
-            if (!empty($context)) {
-                error_log("InterSoccer: Parsed date '$date_string' with strtotime() to '$parsed_date' ($context)");
-            }
+            $log_date_parse("InterSoccer: Parsed date '$date_string' with strtotime() to '$parsed_date'");
             return $parsed_date;
         } else {
-            if (!empty($context)) {
-                error_log("InterSoccer: strtotime() parsed date '$date_string' has invalid year $year ($context)");
-            }
+            $log_date_parse("InterSoccer: strtotime() parsed date '$date_string' has invalid year $year");
         }
     }
     
     // All parsing attempts failed
-    if (!empty($context)) {
-        error_log("InterSoccer: Failed to parse date '$date_string' ($context)");
-    }
+    $log_date_parse("InterSoccer: Failed to parse date '$date_string'");
     return null;
 }
 
@@ -3750,7 +3748,9 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     // If entry exists and is marked as completed, or if any roster with same event_signature is completed, preserve that status
     if (($existing_entry && isset($existing_entry->event_completed) && $existing_entry->event_completed == 1) || $event_signature_completed) {
         $data['event_completed'] = 1;
-        error_log('InterSoccer: Preserving event_completed=1 for roster entry (order_item_id: ' . $item_id . ', event_signature: ' . $data['event_signature'] . ')');
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer: Preserving event_completed=1 for roster entry (event_signature: ' . $data['event_signature'] . ')');
+        }
     } else {
         // For new entries or entries that aren't completed, ensure event_completed is set to 0
         $data['event_completed'] = 0;

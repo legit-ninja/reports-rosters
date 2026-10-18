@@ -892,7 +892,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 $end_date_str = isset($roster['roster_end_date']) ? trim((string) $roster['roster_end_date']) : '';
             }
 
-            $context = 'Final Reports Course (order_item_id: ' . ($roster['order_item_id'] ?? 'unknown') . ')';
+            $context = 'Final Reports Course';
             $parsed_start_date = null;
             $parsed_end_date = null;
 

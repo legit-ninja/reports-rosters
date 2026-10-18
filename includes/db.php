@@ -1093,15 +1093,21 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
 
     $raw_order_item_meta = wc_get_order_item_meta($order_item_id, '', true);
     $meta_keys = is_array($raw_order_item_meta) ? array_keys($raw_order_item_meta) : [];
-    error_log("InterSoccer: Order item meta keys for order $order_id, item $order_item_id: " . implode(', ', $meta_keys));
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer: Order item meta keys: ' . implode(', ', $meta_keys));
+    }
 
     // Activity type logic (same as rebuild)
     $activity_type = $raw_order_item_meta['Activity Type'][0] ?? null;
-    error_log("InterSoccer: Raw Activity Type from meta for order $order_id, item $order_item_id: " . print_r($activity_type, true));
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer: Raw Activity Type from meta: ' . print_r($activity_type, true));
+    }
     if ($activity_type) {
         $activity_type = trim(strtolower(html_entity_decode($activity_type, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
         $activity_types = array_map('trim', explode(',', $activity_type));
-        error_log("InterSoccer: Processed activity_types from meta for order $order_id, item $order_item_id: " . print_r($activity_types, true));
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer: Processed activity_types from meta: ' . print_r($activity_types, true));
+        }
         if (in_array('girls only', $activity_types) || in_array('camp, girls\' only', $activity_types) || in_array('camp, girls only', $activity_types)) {
             $activity_type = 'Girls Only';
         } else {
