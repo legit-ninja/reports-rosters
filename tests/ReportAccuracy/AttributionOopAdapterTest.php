@@ -63,4 +63,31 @@ class AttributionOopAdapterTest extends TestCase {
             }
         }
     }
+
+    public function test_store_api_checkout_hook_fired_twice_leaves_attribution_unchanged(): void {
+        $order = (new FakeOrder(81001))
+            ->addLine(new FakeLineItem(810011, ['subtotal' => 405.0, 'total' => 371.0]))
+            ->addFee(new FakeFee('Réduction de crédits de parrainage', -34.0))
+            ->setMeta('_intersoccer_points_redeemed', '34');
+        ReportAccuracyStore::addOrder($order);
+
+        $GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
+        intersoccer_test_run_wp_hooks('actions', 'woocommerce_store_api_checkout_order_processed', null, [$order]);
+        $after_first = [
+            'total' => ReportAccuracyStore::getItemMeta(810011, Attr::META_ITEM_DISCOUNT_TOTAL),
+            'discounts' => ReportAccuracyStore::getItemMeta(810011, Attr::META_ITEM_DISCOUNTS),
+            'attribution_at' => $order->get_meta(Attr::META_ORDER_ATTRIBUTION_AT),
+        ];
+
+        intersoccer_test_run_wp_hooks('actions', 'woocommerce_store_api_checkout_order_processed', null, [$order]);
+        $after_second = [
+            'total' => ReportAccuracyStore::getItemMeta(810011, Attr::META_ITEM_DISCOUNT_TOTAL),
+            'discounts' => ReportAccuracyStore::getItemMeta(810011, Attr::META_ITEM_DISCOUNTS),
+            'attribution_at' => $order->get_meta(Attr::META_ORDER_ATTRIBUTION_AT),
+        ];
+        unset($GLOBALS['intersoccer_test_emit_wp_hooks']);
+
+        $this->assertSame('34', (string) $after_first['total']);
+        $this->assertSame($after_first, $after_second);
+    }
 }
