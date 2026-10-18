@@ -979,6 +979,33 @@ class RosterBuilder {
                         : ''
                 ),
         ];
+        $order_data['line_subtotal'] = 0.0;
+        $order_data['line_total'] = 0.0;
+        if (function_exists('wc_get_order_item_meta')) {
+            $meta_sub = wc_get_order_item_meta($item_id, '_line_subtotal', true);
+            $meta_tot = wc_get_order_item_meta($item_id, '_line_total', true);
+            if ($meta_sub !== '' && $meta_sub !== null) {
+                $order_data['line_subtotal'] = (float) $meta_sub;
+            }
+            if ($meta_tot !== '' && $meta_tot !== null) {
+                $order_data['line_total'] = (float) $meta_tot;
+            }
+        }
+        if ($order_data['line_subtotal'] === 0.0 && method_exists($item, 'get_subtotal')) {
+            try {
+                $order_data['line_subtotal'] = (float) $item->get_subtotal();
+            } catch (\Throwable $e) {
+                // Woo line mocks in unit tests may omit subtotal expectations.
+            }
+        }
+        if ($order_data['line_total'] === 0.0 && method_exists($item, 'get_total')) {
+            try {
+                $order_data['line_total'] = (float) $item->get_total();
+            } catch (\Throwable $e) {
+                // Woo line mocks in unit tests may omit total expectations.
+            }
+        }
+        $order_data['_catalog_product_resolved'] = (bool) ($product && is_object($product));
         // Recover missing product/variation ids from line-item meta for legacy/deleted product cases.
         if ((int) ($order_data['product_id'] ?? 0) <= 0) {
             $meta_product_id = function_exists('wc_get_order_item_meta')
@@ -1518,11 +1545,37 @@ class RosterBuilder {
             }
         }
         
-        $roster_data['product_deleted'] = $this->orderLineProductDeletedFromCatalog($roster_data);
+        if (empty($roster_data['_catalog_product_resolved']) && function_exists('wc_get_product')) {
+            $pid = (int) ($roster_data['product_id'] ?? 0);
+            $vid = (int) ($roster_data['variation_id'] ?? 0);
+            $roster_data['_catalog_product_resolved'] = (bool) (($vid > 0 && wc_get_product($vid))
+                || ($pid > 0 && wc_get_product($pid)));
+        }
+        $catalog_resolved = !empty($roster_data['_catalog_product_resolved']);
+        $roster_data['product_deleted'] = $catalog_resolved
+            ? false
+            : $this->orderLineProductDeletedFromCatalog($roster_data);
+        if (!empty($roster_data['product_deleted'])) {
+            $this->logger->error('Roster row built for deleted catalogue product', [
+                'order_id' => (int) ($roster_data['order_id'] ?? 0),
+                'order_item_id' => (int) ($roster_data['order_item_id'] ?? 0),
+            ]);
+        }
 
         // Parse event details from various sources
         $roster_data['event_details'] = $this->buildEventDetails($roster_data);
         $roster_data['event_details'] = $this->applyUnderAgeAtStartToEventDetails($roster_data);
+        $roster_data['event_details'] = $this->applyBuyClubToEventDetails($roster_data, $roster_data);
+        if (empty($roster_data['product_deleted'])) {
+            $ed = $roster_data['event_details'];
+            if (is_string($ed)) {
+                $ed = json_decode($ed, true) ?: [];
+            }
+            if (is_array($ed)) {
+                unset($ed['product_deleted']);
+                $roster_data['event_details'] = $ed;
+            }
+        }
 
         if (function_exists('intersoccer_roster_backfill_player_name_fields')) {
             $roster_data = intersoccer_roster_backfill_player_name_fields($roster_data);
@@ -1674,14 +1727,58 @@ class RosterBuilder {
         if (!empty($roster_data['product_deleted'])) {
             $details['product_deleted'] = true;
         }
-        
+
         return array_filter($details); // Remove null values
+    }
+
+    /**
+     * Flag BuyClub lines on event_details using the shared reports helper.
+     *
+     * @param array|string|null $details
+     * @return array|string|null
+     */
+    private function applyBuyClubToEventDetails($details, array $roster_data) {
+        if (is_string($details)) {
+            $decoded = json_decode($details, true);
+            $details = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($details)) {
+            $details = [];
+        }
+        $line_subtotal = (float) ($roster_data['line_subtotal'] ?? 0);
+        $line_total = (float) ($roster_data['line_total'] ?? 0);
+        $order_id = (int) ($roster_data['order_id'] ?? 0);
+        if (function_exists('intersoccer_reports_line_is_buyclub')
+            && intersoccer_reports_line_is_buyclub($line_subtotal, $line_total, $order_id)) {
+            $details['is_buyclub'] = true;
+        }
+
+        return $details;
+    }
+
+    private function recordRosterInsertFailure(int $order_id, int $order_item_id, string $message): void {
+        global $wpdb;
+        $db_error = (isset($wpdb) && is_object($wpdb) && !empty($wpdb->last_error))
+            ? (string) $wpdb->last_error
+            : '';
+        $summary = $message . ($db_error !== '' ? (': ' . $db_error) : '');
+        $this->build_stats['validation_errors']++;
+        $this->build_stats['errors'][] = "Order {$order_id}, item {$order_item_id}: {$summary}";
+        $this->logger->error('Roster insert failed', [
+            'order_id' => $order_id,
+            'order_item_id' => $order_item_id,
+            'db_error' => $db_error,
+            'message' => $message,
+        ]);
     }
 
     /**
      * Whether the catalogue no longer has the product/variation stored on the order line.
      */
     private function orderLineProductDeletedFromCatalog(array $roster_data): bool {
+        if (!empty($roster_data['_catalog_product_resolved'])) {
+            return false;
+        }
         $product_id = (int) ($roster_data['product_id'] ?? 0);
         $variation_id = (int) ($roster_data['variation_id'] ?? 0);
         if ($product_id <= 0 && $variation_id <= 0) {
@@ -2001,6 +2098,12 @@ class RosterBuilder {
                 'id' => $roster->id,
                 'order_id' => $roster_data['order_id']
             ]);
+        } else {
+            $this->recordRosterInsertFailure(
+                (int) ($roster_data['order_id'] ?? 0),
+                (int) ($roster_data['order_item_id'] ?? 0),
+                'Roster repository create returned no row'
+            );
         }
         
         return $roster;
