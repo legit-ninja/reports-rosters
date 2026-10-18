@@ -546,8 +546,8 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
             $total_discount = floatval($row['base_price']) - floatval($row['final_price']);
             
             // Log when using fallback for debugging
-            if ($total_discount > 0.01) {
-                error_log("InterSoccer Enhanced Report: Order {$row['order_id']}, Item {$row['order_item_id']} - Using fallback discount calculation. Calculated: {$total_discount} CHF");
+            if ($total_discount > 0.01 && defined('WP_DEBUG') && WP_DEBUG) {
+                error_log("InterSoccer Enhanced Report: Using fallback discount calculation. Calculated: {$total_discount} CHF");
             }
         }
         
@@ -886,8 +886,8 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
             $discount_amount = $base_price - $final_price;
             
             // Log when we're using fallback calculation for debugging
-            if ($discount_amount > 0.01) {
-                error_log("InterSoccer Financial Report: Order {$row->order_id}, Item {$row->order_item_id} - Using fallback discount calculation (no discount metadata found). Calculated: {$discount_amount} CHF");
+            if ($discount_amount > 0.01 && defined('WP_DEBUG') && WP_DEBUG) {
+                error_log("InterSoccer Financial Report: Using fallback discount calculation (no discount metadata found). Calculated: {$discount_amount} CHF");
             }
         }
 
