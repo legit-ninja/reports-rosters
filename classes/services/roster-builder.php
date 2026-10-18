@@ -1567,8 +1567,8 @@ class RosterBuilder {
             : $this->orderLineProductDeletedFromCatalog($roster_data);
         if (!empty($roster_data['product_deleted'])) {
             $this->logger->error('Roster row built for deleted catalogue product', [
-                'order_id' => (int) ($roster_data['order_id'] ?? 0),
-                'order_item_id' => (int) ($roster_data['order_item_id'] ?? 0),
+                'product_id' => (int) ($roster_data['product_id'] ?? 0),
+                'variation_id' => (int) ($roster_data['variation_id'] ?? 0),
             ]);
             $english = $this->resolveEnglishProductNameForDeletedLine($roster_data);
             if (!empty($english['product_name'])) {
