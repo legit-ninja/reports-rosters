@@ -465,6 +465,19 @@ class FinancialReportService {
             return null;
         }
 
-        return $cache['items'][$item_id] ?? null;
+        $item = $cache['items'][$item_id] ?? null;
+        if ($item === null) {
+            return null;
+        }
+
+        if (empty($item['breakdown'])) {
+            if (($item['refund'] ?? 0) > 0.01) {
+                return $item;
+            }
+
+            return null;
+        }
+
+        return $item;
     }
 }

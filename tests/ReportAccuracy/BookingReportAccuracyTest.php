@@ -308,4 +308,21 @@ class BookingReportAccuracyTest extends TestCase {
         $this->assertSame([], $writes, 'S19: expected 0 writes on view; report wrote ' . count(ReportAccuracyStore::$writes)
             . ' times: ' . implode(', ', $writes));
     }
+
+    /**
+     * S19 parity: unattributed line with subtotal/total gap uses subtotal-minus-total fallback on first view
+     * (same figures as after persisted attribution would delete empty breakdown meta).
+     */
+    public function test_S19_unattributed_line_uses_subtotal_minus_total_fallback_on_view(): void {
+        ReportAccuracyStore::addOrder((new FakeOrder(118))
+            ->addLine(new FakeLineItem(1181, ['subtotal' => 300.0, 'total' => 250.0])));
+
+        $row = $this->report()['by_ref']['118-1181'];
+
+        $this->assertSame(50.0, self::money($row['discount_amount']),
+            'S19 parity: expected discount 50.00 from subtotal-total fallback; report discount ' . $row['discount_amount']);
+        $this->assertSame(250.0, self::money($row['final_price']),
+            'S19 parity: expected final 250.00; report final ' . $row['final_price']);
+        $this->assertSame([], ReportAccuracyStore::writtenKeys());
+    }
 }
