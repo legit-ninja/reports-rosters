@@ -3535,7 +3535,9 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         } else {
             // Fallback to Start Date/End Date from order item metadata if available
             if (!empty($start_date) && !empty($end_date)) {
-                error_log('InterSoccer: Tournament date attribute not found, trying Start Date/End Date from metadata for order ' . $order_id . ', item ' . $item_id);
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('InterSoccer: Tournament date attribute not found, trying Start Date/End Date from metadata');
+                }
                 $parsed_start = intersoccer_parse_date_unified($start_date, 'metadata (start)');
                 $parsed_end = intersoccer_parse_date_unified($end_date, 'metadata (end)');
                 
@@ -3550,14 +3552,18 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
                     $event_dates = 'N/A';
                 }
             } else {
-                error_log('InterSoccer: No tournament date found (checked pa_date, Date attribute, and Start Date/End Date metadata) for order ' . $order_id . ', item ' . $item_id . ' - leaving dates empty');
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('InterSoccer: No tournament date found (checked pa_date, Date attribute, and Start Date/End Date metadata) - leaving dates empty');
+                }
                 $start_date = null;
                 $end_date = null;
                 $event_dates = 'N/A';
             }
         }
     } elseif ($product_type === 'course' && !empty($start_date) && !empty($end_date)) {
-        error_log('InterSoccer: Processing course dates for item ' . $item_id . ' in order ' . $order_id . ' - start_date: ' . var_export($start_date, true) . ', end_date: ' . var_export($end_date, true));
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer: Processing course dates - start_date: ' . var_export($start_date, true) . ', end_date: ' . var_export($end_date, true));
+        }
         
         $parsed_start = intersoccer_parse_date_unified($start_date, 'course (start)');
         $parsed_end = intersoccer_parse_date_unified($end_date, 'course (end)');

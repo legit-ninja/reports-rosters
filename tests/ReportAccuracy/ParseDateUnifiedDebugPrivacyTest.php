@@ -125,6 +125,38 @@ class ParseDateUnifiedDebugPrivacyTest extends TestCase {
         );
     }
 
+    public function test_tournament_and_course_date_block_logs_exclude_order_and_item_ids(): void {
+        $utils = (string) file_get_contents(dirname(__DIR__, 2) . '/includes/utils.php');
+        $db = (string) file_get_contents(dirname(__DIR__, 2) . '/includes/db.php');
+        $this->assertNotEmpty($utils);
+        $this->assertNotEmpty($db);
+
+        $this->assertStringContainsString(
+            "error_log('InterSoccer: Tournament date attribute not found, trying Start Date/End Date from metadata');",
+            $utils
+        );
+        $this->assertStringContainsString(
+            "error_log('InterSoccer: Processing course dates - start_date:",
+            $utils
+        );
+        $this->assertStringContainsString(
+            "error_log('InterSoccer: Raw Start Date: '",
+            $db
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/Tournament date attribute not found[^\\n]*for order /',
+            $utils . $db
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/Processing course dates for item /',
+            $utils
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/Raw Start Date for order /',
+            $db
+        );
+    }
+
     public function test_parse_date_unified_callers_use_id_free_context_strings(): void {
         foreach (['utils.php', 'db.php'] as $file) {
             $path = dirname(__DIR__, 2) . '/includes/' . $file;

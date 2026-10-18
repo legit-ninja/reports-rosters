@@ -1455,7 +1455,9 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             } else {
                 // Fallback to Start Date/End Date from order item metadata if available
                 if (!empty($order_item_meta['Start Date']) && !empty($order_item_meta['End Date'])) {
-                    error_log("InterSoccer: Tournament date attribute not found, trying Start Date/End Date from metadata for order $order_id, item $order_item_id");
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('InterSoccer: Tournament date attribute not found, trying Start Date/End Date from metadata');
+                    }
                     $start_date = intersoccer_parse_date_unified($order_item_meta['Start Date'], 'metadata (start)');
                     $end_date = intersoccer_parse_date_unified($order_item_meta['End Date'], 'metadata (end)');
                     
@@ -1468,16 +1470,19 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                         $event_dates = 'N/A';
                     }
                 } else {
-                    error_log("InterSoccer: No tournament date found (checked pa_date, Date attribute, and Start Date/End Date metadata) for order $order_id, item $order_item_id. Using defaults.");
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('InterSoccer: No tournament date found (checked pa_date, Date attribute, and Start Date/End Date metadata). Using defaults.');
+                    }
                     $start_date = null;
                     $end_date = null;
                     $event_dates = 'N/A';
                 }
             }
         } elseif ($activity_type === 'Course' && !empty($order_item_meta['Start Date']) && !empty($order_item_meta['End Date'])) {
-            // Log raw date values for debugging
-            error_log("InterSoccer: Raw Start Date for order $order_id, item $order_item_id: " . print_r($order_item_meta['Start Date'], true));
-            error_log("InterSoccer: Raw End Date for order $order_id, item $order_item_id: " . print_r($order_item_meta['End Date'], true));
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer: Raw Start Date: ' . print_r($order_item_meta['Start Date'], true));
+                error_log('InterSoccer: Raw End Date: ' . print_r($order_item_meta['End Date'], true));
+            }
 
             // Use unified date parser
             $start_date = intersoccer_parse_date_unified($order_item_meta['Start Date'], 'course (start)');
