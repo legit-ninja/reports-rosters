@@ -35,6 +35,7 @@ class AttributionBackfillTest extends TestCase {
     }
 
     public function test_retry_skipped_cli_dry_run_lists_order_reasons(): void {
+        ReportAccuracyStore::reset();
         $GLOBALS['intersoccer_test_wp_cli_log'] = [];
         $this->bootAttributionBackfillCli();
 
@@ -63,9 +64,10 @@ class AttributionBackfillTest extends TestCase {
         $cli = new \Intersoccer_Rr_Wp_Cli();
         $cli->attribution_backfill([], ['retry-skipped' => true]);
 
-        $this->assertContains('Order 801: stored no_line_items, live eligible', $GLOBALS['intersoccer_test_wp_cli_log']);
-        $this->assertContains('Order 802: stored no_attributable_items', $GLOBALS['intersoccer_test_wp_cli_log']);
+        $this->assertContains('Order 801: stored no line items, live eligible', $GLOBALS['intersoccer_test_wp_cli_log']);
+        $this->assertContains('Order 802: stored no attributable line items', $GLOBALS['intersoccer_test_wp_cli_log']);
         $this->assertContains('Totals (stored): no line items 1, no attributable line items 1', $GLOBALS['intersoccer_test_wp_cli_log']);
+        $this->assertSame([], ReportAccuracyStore::writtenKeys());
         unset($GLOBALS['intersoccer_test_attribution_service_override'], $GLOBALS['intersoccer_test_wp_cli_log']);
     }
 
