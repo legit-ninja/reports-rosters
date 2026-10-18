@@ -439,11 +439,13 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                             <th rowspan="2" class="intersoccer-sticky-col intersoccer-sticky-col-venue"><?php esc_html_e('Venue / Week', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php esc_html_e('Full Week', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php esc_html_e('BuyClub', 'intersoccer-reports-rosters'); ?></th>
+                            <th><?php esc_html_e('Unknown type', 'intersoccer-reports-rosters'); ?></th>
+                            <th><?php esc_html_e('Days unknown', 'intersoccer-reports-rosters'); ?></th>
                             <th colspan="5"><?php esc_html_e('Individual days', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php esc_html_e('Total min-max', 'intersoccer-reports-rosters'); ?></th>
                         </tr>
                         <tr class="intersoccer-camp-header-subrow">
-                            <th></th><th></th>
+                            <th></th><th></th><th></th><th></th>
                             <th title="<?php esc_attr_e('Monday', 'intersoccer-reports-rosters'); ?>">Mon</th>
                             <th title="<?php esc_attr_e('Tuesday', 'intersoccer-reports-rosters'); ?>">Tue</th>
                             <th title="<?php esc_attr_e('Wednesday', 'intersoccer-reports-rosters'); ?>">Wed</th>
@@ -485,7 +487,7 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                             <tr class="week-header">
                                 <td class="intersoccer-sticky-col intersoccer-sticky-col-canton"></td>
                                 <td class="intersoccer-sticky-col intersoccer-sticky-col-venue"><?php echo esc_html($week); ?></td>
-                                <td colspan="8"></td>
+                                <td colspan="10"></td>
                             </tr>
                             <?php
                             $previous_canton = null;
@@ -513,6 +515,8 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                                 <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php esc_html_e('TOTAL', 'intersoccer-reports-rosters'); ?></td>
                                 <td><?php echo esc_html((string) (int) $camp_grand['full_day']['full_week']); ?></td>
                                 <td><?php echo esc_html((string) (int) $camp_grand['full_day']['buyclub']); ?></td>
+                                <td><?php echo esc_html((string) (int) ($camp_grand['full_day']['unknown_booking_type'] ?? 0)); ?></td>
+                                <td><?php echo esc_html((string) (int) ($camp_grand['full_day']['days_unknown'] ?? 0)); ?></td>
                                 <td colspan="5"><?php echo esc_html((string) (int) $camp_grand['full_day']['individual_day_slots']); ?></td>
                                 <td></td>
                             </tr>
@@ -520,9 +524,17 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                                 <td class="intersoccer-sticky-col intersoccer-sticky-col-canton"></td>
                                 <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php esc_html_e('All registrations', 'intersoccer-reports-rosters'); ?></td>
                                 <td colspan="2"><?php echo esc_html((string) (int) $camp_grand['full_day']['all_registrations']); ?></td>
+                                <td colspan="2"></td>
                                 <td colspan="5"><?php echo esc_html((string) (int) $camp_grand['full_day']['individual_day_slots']); ?></td>
                                 <td></td>
                             </tr>
+                            <?php if ($camp_player_registration_totals !== null && !empty($camp_player_registration_totals['not_on_roster'])): ?>
+                            <tr class="not-on-roster-total">
+                                <td class="intersoccer-sticky-col intersoccer-sticky-col-canton"></td>
+                                <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php esc_html_e('Not on roster', 'intersoccer-reports-rosters'); ?></td>
+                                <td colspan="10"><?php echo esc_html((string) (int) $camp_player_registration_totals['not_on_roster']); ?></td>
+                            </tr>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -539,11 +551,13 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                             <th rowspan="2" class="intersoccer-sticky-col intersoccer-sticky-col-venue"><?php esc_html_e('Venue / Week', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php esc_html_e('Full Week', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php esc_html_e('BuyClub', 'intersoccer-reports-rosters'); ?></th>
+                            <th><?php esc_html_e('Unknown type', 'intersoccer-reports-rosters'); ?></th>
+                            <th><?php esc_html_e('Days unknown', 'intersoccer-reports-rosters'); ?></th>
                             <th colspan="5"><?php esc_html_e('Individual days', 'intersoccer-reports-rosters'); ?></th>
                             <th><?php esc_html_e('Total min-max', 'intersoccer-reports-rosters'); ?></th>
                         </tr>
                         <tr class="intersoccer-camp-header-subrow">
-                            <th></th><th></th>
+                            <th></th><th></th><th></th><th></th>
                             <th title="<?php esc_attr_e('Monday', 'intersoccer-reports-rosters'); ?>">Mon</th>
                             <th title="<?php esc_attr_e('Tuesday', 'intersoccer-reports-rosters'); ?>">Tue</th>
                             <th title="<?php esc_attr_e('Wednesday', 'intersoccer-reports-rosters'); ?>">Wed</th>
@@ -585,7 +599,7 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                             <tr class="week-header">
                                 <td class="intersoccer-sticky-col intersoccer-sticky-col-canton"></td>
                                 <td class="intersoccer-sticky-col intersoccer-sticky-col-venue"><?php echo esc_html($week); ?></td>
-                                <td colspan="8"></td>
+                                <td colspan="10"></td>
                             </tr>
                             <?php
                             $previous_canton = null;
@@ -613,6 +627,8 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                                 <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php esc_html_e('TOTAL', 'intersoccer-reports-rosters'); ?></td>
                                 <td><?php echo esc_html((string) (int) $camp_grand['mini']['full_week']); ?></td>
                                 <td><?php echo esc_html((string) (int) $camp_grand['mini']['buyclub']); ?></td>
+                                <td><?php echo esc_html((string) (int) ($camp_grand['mini']['unknown_booking_type'] ?? 0)); ?></td>
+                                <td><?php echo esc_html((string) (int) ($camp_grand['mini']['days_unknown'] ?? 0)); ?></td>
                                 <td colspan="5"><?php echo esc_html((string) (int) $camp_grand['mini']['individual_day_slots']); ?></td>
                                 <td></td>
                             </tr>
@@ -620,9 +636,17 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                                 <td class="intersoccer-sticky-col intersoccer-sticky-col-canton"></td>
                                 <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php esc_html_e('All registrations', 'intersoccer-reports-rosters'); ?></td>
                                 <td colspan="2"><?php echo esc_html((string) (int) $camp_grand['mini']['all_registrations']); ?></td>
+                                <td colspan="2"></td>
                                 <td colspan="5"><?php echo esc_html((string) (int) $camp_grand['mini']['individual_day_slots']); ?></td>
                                 <td></td>
                             </tr>
+                            <?php if ($camp_player_registration_totals !== null && !empty($camp_player_registration_totals['not_on_roster'])): ?>
+                            <tr class="not-on-roster-total">
+                                <td class="intersoccer-sticky-col intersoccer-sticky-col-canton"></td>
+                                <td class="intersoccer-sticky-col intersoccer-sticky-col-venue intersoccer-camp-venue-cell"><?php esc_html_e('Not on roster', 'intersoccer-reports-rosters'); ?></td>
+                                <td colspan="10"><?php echo esc_html((string) (int) $camp_player_registration_totals['not_on_roster']); ?></td>
+                            </tr>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -752,6 +776,12 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
                                     echo esc_html($course_all_disp);
                                 ?></td>
                             </tr>
+                            <?php if ($course_player_registration_totals !== null && !empty($course_player_registration_totals['not_on_roster'])): ?>
+                            <tr class="intersoccer-course-totals-row">
+                                <td><?php esc_html_e('Not on roster', 'intersoccer-reports-rosters'); ?></td>
+                                <td><?php echo esc_html((string) (int) $course_player_registration_totals['not_on_roster']); ?></td>
+                            </tr>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
@@ -973,6 +1003,8 @@ function intersoccer_reports_echo_camp_metrics_cells(array $metrics) {
         : 'count-critical';
     echo '<td class="intersoccer-camp-cell">' . esc_html((string) (int) $m['full_week']) . '</td>';
     echo '<td class="intersoccer-camp-cell">' . esc_html((string) (int) $m['buyclub']) . '</td>';
+    echo '<td class="intersoccer-camp-cell">' . esc_html((string) (int) ($m['unknown_booking_type'] ?? 0)) . '</td>';
+    echo '<td class="intersoccer-camp-cell">' . esc_html((string) (int) ($m['days_unknown'] ?? 0)) . '</td>';
     foreach (['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as $day) {
         echo '<td class="intersoccer-camp-cell">' . esc_html((string) (int) ($m['individual_days'][$day] ?? 0)) . '</td>';
     }

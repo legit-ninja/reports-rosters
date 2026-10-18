@@ -1291,6 +1291,25 @@ if (!function_exists('intersoccer_reports_distressed_variation_ids')) {
 	}
 }
 
+if (!function_exists('intersoccer_reports_camp_metrics_visible_place_sum')) {
+    /**
+     * Places shown in Final Camp grid columns (must reconcile with registration header rows).
+     *
+     * @param array $metrics Normalized or raw camp metrics block.
+     * @return int
+     */
+    function intersoccer_reports_camp_metrics_visible_place_sum(array $metrics) {
+        $m = function_exists('intersoccer_reports_normalize_camp_metrics')
+            ? intersoccer_reports_normalize_camp_metrics($metrics)
+            : $metrics;
+        return (int) ($m['full_week'] ?? 0)
+            + (int) ($m['buyclub'] ?? 0)
+            + (int) ($m['unknown_booking_type'] ?? 0)
+            + (int) ($m['days_unknown'] ?? 0)
+            + (int) array_sum(is_array($m['individual_days'] ?? null) ? $m['individual_days'] : []);
+    }
+}
+
 if (!function_exists('intersoccer_reports_normalize_camp_metrics')) {
     /**
      * Ensure camp metrics include pitchside/buyclub keys for UI/export.
@@ -1337,6 +1356,8 @@ if (!function_exists('intersoccer_reports_camp_grand_totals')) {
         $blank = [
             'full_week' => 0,
             'buyclub' => 0,
+            'unknown_booking_type' => 0,
+            'days_unknown' => 0,
             'individual_day_slots' => 0,
         ];
         $out = [
@@ -1364,6 +1385,8 @@ if (!function_exists('intersoccer_reports_camp_grand_totals')) {
                         $m = intersoccer_reports_normalize_camp_metrics($camp_types[$type_key] ?? null);
                         $out[$bucket]['full_week'] += $m['full_week'];
                         $out[$bucket]['buyclub'] += $m['buyclub'];
+                        $out[$bucket]['unknown_booking_type'] += $m['unknown_booking_type'];
+                        $out[$bucket]['days_unknown'] += $m['days_unknown'];
                         $out[$bucket]['individual_day_slots'] += (int) array_sum($m['individual_days']);
                     }
                 }

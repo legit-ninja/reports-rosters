@@ -761,7 +761,8 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 $year_int,
                 $season_type,
                 $region,
-                $status_mode
+                $status_mode,
+                'camp'
             );
         }
         
@@ -992,7 +993,8 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 $year_int,
                 $season_type,
                 $region,
-                $status_mode
+                $status_mode,
+                'course'
             );
         }
 
@@ -1007,14 +1009,16 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
  * @param int         $year_int     Program year filter.
  * @param string|null $season_type  Optional season type filter.
  * @param string|null $region       Optional region filter.
- * @param string      $status_mode  final|live order status set.
+ * @param string      $status_mode      final|live order status set.
+ * @param string      $activity_scope   camp|course — thin / event rows only on matching Final Numbers page.
  */
 function intersoccer_reports_merge_final_numbers_not_on_roster_rows(
     array &$rows,
     $year_int,
     $season_type = null,
     $region = null,
-    $status_mode = 'final'
+    $status_mode = 'final',
+    $activity_scope = 'camp'
 ) {
     global $wpdb;
     $year_int = (int) $year_int;
@@ -1055,6 +1059,10 @@ function intersoccer_reports_merge_final_numbers_not_on_roster_rows(
     foreach ((array) $event_rows as $event_row) {
         $item_id = (int) ($event_row['order_item_id'] ?? 0);
         if ($item_id <= 0 || isset($existing[$item_id])) {
+            continue;
+        }
+        if (!function_exists('intersoccer_reports_merge_row_matches_activity_scope')
+            || !intersoccer_reports_merge_row_matches_activity_scope($event_row, $activity_scope)) {
             continue;
         }
         if (!function_exists('intersoccer_reports_final_row_is_undated_event')
@@ -1113,6 +1121,10 @@ function intersoccer_reports_merge_final_numbers_not_on_roster_rows(
         if ($item_id <= 0 || isset($existing[$item_id])) {
             continue;
         }
+        if (!function_exists('intersoccer_reports_merge_row_matches_activity_scope')
+            || !intersoccer_reports_merge_row_matches_activity_scope($candidate, $activity_scope)) {
+            continue;
+        }
         if (!function_exists('intersoccer_reports_order_line_too_thin_to_build_roster')
             || !intersoccer_reports_order_line_too_thin_to_build_roster($candidate)) {
             continue;
@@ -1132,8 +1144,52 @@ function intersoccer_reports_merge_final_numbers_not_on_roster_rows(
         $formatted['_final_numbers_thin_order_line'] = true;
         $rows[] = $formatted;
         $existing[$item_id] = true;
-        error_log('InterSoccer Final Numbers: thin order line without roster row (order_item_id ' . $item_id . ')');
+        static $thin_line_logged = false;
+        if (!$thin_line_logged) {
+            error_log('InterSoccer Final Numbers: thin order line without roster row (order_item_id ' . $item_id . ')');
+            $thin_line_logged = true;
+        }
     }
+}
+
+/**
+ * Whether a merged not-on-roster candidate belongs on the camp or course Final Numbers view.
+ *
+ * @param array  $row
+ * @param string $activity_scope camp|course
+ * @return bool
+ */
+function intersoccer_reports_merge_row_matches_activity_scope(array $row, $activity_scope) {
+    $scope = strtolower(trim((string) $activity_scope));
+    if ($scope === 'course') {
+        $types = function_exists('intersoccer_roster_listing_activity_types')
+            ? intersoccer_roster_listing_activity_types('course')
+            : ['Course'];
+        $at = trim((string) ($row['activity_type'] ?? ''));
+        foreach ($types as $type) {
+            if ($at !== '' && strcasecmp($at, (string) $type) === 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (function_exists('intersoccer_reports_final_row_is_undated_event')
+        && intersoccer_reports_final_row_is_undated_event($row)) {
+        return true;
+    }
+    $types = function_exists('intersoccer_roster_listing_activity_types')
+        ? intersoccer_roster_listing_activity_types('camp')
+        : ['Camp'];
+    $at = trim((string) ($row['activity_type'] ?? ''));
+    if ($at === '') {
+        return true;
+    }
+    foreach ($types as $type) {
+        if (strcasecmp($at, (string) $type) === 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
