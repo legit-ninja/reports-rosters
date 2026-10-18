@@ -251,7 +251,7 @@ final class Intersoccer_Rr_Wp_Cli {
             $order_id = (int) ($row['order_id'] ?? 0);
             $stored = (string) ($row['stored_reason'] ?? '');
             $live = array_key_exists('live_reason', $row) ? $row['live_reason'] : null;
-            $line = sprintf('Order %d: stored %s', $order_id, $stored);
+            $line = sprintf('Order %d: stored %s', $order_id, $this->humanizeSkipReason($stored));
             if ($live === null) {
                 if ($stored !== '') {
                     $line .= ', live eligible';
