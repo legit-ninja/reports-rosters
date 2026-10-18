@@ -1144,6 +1144,7 @@ function intersoccer_reports_merge_final_numbers_not_on_roster_rows(
         $formatted['_final_numbers_thin_order_line'] = true;
         $rows[] = $formatted;
         $existing[$item_id] = true;
+        // At most one diagnostic line per request (avoid log noise on large merges).
         static $thin_line_logged = false;
         if (!$thin_line_logged) {
             error_log('InterSoccer Final Numbers: thin order line without roster row (order_item_id ' . $item_id . ')');
