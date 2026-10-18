@@ -15,21 +15,68 @@ function intersoccer_financial_attribution_version(): string {
 }
 
 /**
- * Classify a cart/order fee name into a canonical discount type.
+ * Map EN/FR/DE fee or discount labels to a canonical discount type.
  */
-function intersoccer_classify_discount_fee(string $fee_name): string {
-    $normalized = strtolower(trim($fee_name));
+function intersoccer_canonical_discount_type_from_label(string $label): string {
+    if ($label === '') {
+        return 'other';
+    }
 
-    if ($normalized === 'referral discount' || strpos($normalized, 'referral discount') !== false) {
+    $normalized = strtolower(trim($label));
+
+    if (strpos($normalized, 'referral credits') !== false
+        || strpos($normalized, 'loyalty points') !== false
+        || strpos($normalized, 'points discount') !== false
+        || strpos($normalized, 'crédits de parrainage') !== false
+        || strpos($normalized, 'credits de parrainage') !== false
+        || strpos($normalized, 'empfehlungscredits') !== false
+        || $normalized === 'referral credits discount'
+    ) {
+        return 'referral_points';
+    }
+
+    if ($normalized === 'referral discount'
+        || strpos($normalized, 'referral discount') !== false
+        || strpos($normalized, 'réduction de parrainage') !== false
+        || strpos($normalized, 'reduction de parrainage') !== false
+    ) {
         return 'referral_first_order';
     }
 
-    if ($normalized === 'referral credits discount'
-        || strpos($normalized, 'referral credits') !== false
-        || strpos($normalized, 'loyalty points') !== false
-        || strpos($normalized, 'points discount') !== false
+    if (strpos($normalized, 'sibling') !== false
+        || strpos($normalized, 'multi-child') !== false
+        || strpos($normalized, '2nd child') !== false
+        || strpos($normalized, '3rd child') !== false
+        || strpos($normalized, '2nd+ child') !== false
     ) {
-        return 'referral_points';
+        return 'sibling';
+    }
+
+    if (strpos($normalized, 'same season') !== false
+        || strpos($normalized, 'même saison') !== false
+        || strpos($normalized, 'second course') !== false
+        || (strpos($normalized, '50%') !== false && strpos($normalized, 'season') !== false)
+    ) {
+        return 'same_season';
+    }
+
+    if (strpos($normalized, 'coupon') !== false
+        || strpos($normalized, 'promo') !== false
+        || strpos($normalized, 'promotional') !== false
+    ) {
+        return 'coupon';
+    }
+
+    return 'other';
+}
+
+/**
+ * Classify a cart/order fee name into a canonical discount type.
+ */
+function intersoccer_classify_discount_fee(string $fee_name): string {
+    $canonical = intersoccer_canonical_discount_type_from_label($fee_name);
+    if ($canonical !== 'other') {
+        return $canonical;
     }
 
     if (function_exists('intersoccer_determine_precise_discount_type')) {
@@ -47,44 +94,7 @@ function intersoccer_determine_discount_type_from_name($discount_name) {
         return 'other';
     }
 
-    $name_lower = strtolower($discount_name);
-
-    if ($name_lower === 'referral discount' || strpos($name_lower, 'referral discount') !== false) {
-        return 'referral_first_order';
-    }
-
-    if (strpos($name_lower, 'referral credits') !== false
-        || strpos($name_lower, 'loyalty points') !== false
-        || strpos($name_lower, 'points discount') !== false
-    ) {
-        return 'referral_points';
-    }
-
-    if (strpos($name_lower, 'sibling') !== false
-        || strpos($name_lower, 'multi-child') !== false
-        || strpos($name_lower, '2nd child') !== false
-        || strpos($name_lower, '3rd child') !== false
-        || strpos($name_lower, '2nd+ child') !== false
-    ) {
-        return 'sibling';
-    }
-
-    if (strpos($name_lower, 'same season') !== false
-        || strpos($name_lower, 'même saison') !== false
-        || strpos($name_lower, 'second course') !== false
-        || (strpos($name_lower, '50%') !== false && strpos($name_lower, 'season') !== false)
-    ) {
-        return 'same_season';
-    }
-
-    if (strpos($name_lower, 'coupon') !== false
-        || strpos($name_lower, 'promo') !== false
-        || strpos($name_lower, 'promotional') !== false
-    ) {
-        return 'coupon';
-    }
-
-    return 'other';
+    return intersoccer_canonical_discount_type_from_label((string) $discount_name);
 }
 
 /**
