@@ -3242,7 +3242,9 @@ function intersoccer_get_course_day_from_order_item($order_item_id) {
         ));
         
         if (!empty($course_day)) {
-            error_log("InterSoccer: Retrieved course_day '$course_day' using meta_key '$meta_key' for order_item_id $order_item_id");
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log("InterSoccer: Retrieved course_day '$course_day' using meta_key '$meta_key'");
+            }
             return $course_day;
         }
     }
@@ -3255,7 +3257,10 @@ function intersoccer_get_course_day_from_order_item($order_item_id) {
         $order_item_id
     ), ARRAY_A);
     
-    error_log("InterSoccer: Could not find course_day. All metadata for order_item_id $order_item_id: " . json_encode($all_meta));
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        $meta_key_names = array_column($all_meta, 'meta_key');
+        error_log('InterSoccer: Could not find course_day. Meta keys present: ' . implode(', ', $meta_key_names));
+    }
     
     return null;
 }
