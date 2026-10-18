@@ -237,6 +237,61 @@ class DatabaseMigratorVarcharWidenTest extends TestCase {
         $this->assertStringNotContainsString('MODIFY event_type', $joined);
     }
 
+    public function test_migrate_2_4_0_drops_backup_on_alter_failure_and_allows_retry(): void {
+        $table = 'wp_intersoccer_rosters';
+        $backup = $table . '_bak_2_4_0';
+
+        $run_failed_alter = function () use ($table, $backup) {
+            $wpdb = $this->mockWpdbForMigrate24();
+            $queries = [];
+            $wpdb->last_error = "Duplicate column name 'foo'";
+            $wpdb->shouldReceive('get_var')->andReturnUsing(function ($sql) {
+                if (strpos((string) $sql, 'SHOW TABLES') !== false) {
+                    return null;
+                }
+                if (strpos((string) $sql, 'COUNT') !== false) {
+                    return '1';
+                }
+                return null;
+            });
+            $wpdb->shouldReceive('get_col')->with("DESCRIBE {$table}", 0)->andReturn(['event_type']);
+            $wpdb->shouldReceive('query')->andReturnUsing(function ($sql) use (&$queries) {
+                $queries[] = (string) $sql;
+                if (strpos((string) $sql, 'MODIFY event_type') !== false) {
+                    return false;
+                }
+                return 0;
+            });
+            $this->assertFalse(intersoccer_migrate_rosters_schema_2_4_0($wpdb, $table));
+            return $queries;
+        };
+
+        $failed_queries = $run_failed_alter();
+        $joined = implode("\n", $failed_queries);
+        $this->assertStringContainsString("DROP TABLE IF EXISTS {$backup}", $joined);
+
+        $wpdb = $this->mockWpdbForMigrate24();
+        $retry_queries = [];
+        $wpdb->shouldReceive('get_var')->andReturnUsing(function ($sql) {
+            if (strpos((string) $sql, 'SHOW TABLES') !== false) {
+                return null;
+            }
+            if (strpos((string) $sql, 'COUNT') !== false) {
+                return '1';
+            }
+            return null;
+        });
+        $wpdb->shouldReceive('get_col')->with("DESCRIBE {$table}", 0)->andReturn(['event_type']);
+        $wpdb->shouldReceive('query')->andReturnUsing(function ($sql) use (&$retry_queries) {
+            $retry_queries[] = (string) $sql;
+            return 0;
+        });
+        $this->assertTrue(intersoccer_migrate_rosters_schema_2_4_0($wpdb, $table));
+        $retry_joined = implode("\n", $retry_queries);
+        $this->assertStringContainsString("CREATE TABLE {$backup}", $retry_joined);
+        $this->assertStringContainsString('MODIFY event_type', $retry_joined);
+    }
+
     public function test_migrate_2_4_0_skips_alter_when_backup_count_mismatch(): void {
         $wpdb = $this->mockWpdbForMigrate24();
         $table = 'wp_intersoccer_rosters';

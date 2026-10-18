@@ -235,6 +235,17 @@ function intersoccer_rosters_bak_2_4_0_retention_seconds() {
 }
 
 /**
+ * Redact quoted literals from wpdb errors before writing to error_log.
+ *
+ * @param string $last_error
+ * @return string
+ */
+function intersoccer_db_redact_wpdb_error_for_log($last_error) {
+    $sanitized = preg_replace("/'[^']*'/", "'?'", (string) $last_error);
+    return $sanitized !== '' ? $sanitized : 'database error';
+}
+
+/**
  * Legacy roster table migration: widen event_type, times and camp_times with backup-before-ALTER.
  *
  * @param \wpdb  $wpdb
@@ -283,21 +294,32 @@ function intersoccer_migrate_rosters_schema_2_4_0($wpdb, $rosters_table) {
     }
 
     $columns = $wpdb->get_col("DESCRIBE $rosters_table", 0);
+    $drop_fresh_backup_after_failed_alter = function () use ($wpdb, $backup, &$created_backup_this_run) {
+        if (!$created_backup_this_run) {
+            return;
+        }
+        $wpdb->query("DROP TABLE IF EXISTS {$backup}");
+        $created_backup_this_run = false;
+        error_log('InterSoccer: Dropped roster backup after failed schema 2.4.0 ALTER (retry allowed)');
+    };
     if (in_array('event_type', $columns, true)) {
         if ($wpdb->query("ALTER TABLE $rosters_table MODIFY event_type varchar(191) DEFAULT NULL") === false) {
-            error_log('InterSoccer: Failed to widen event_type (schema 2.4.0): ' . $wpdb->last_error);
+            error_log('InterSoccer: Failed to widen event_type (schema 2.4.0): ' . intersoccer_db_redact_wpdb_error_for_log($wpdb->last_error));
+            $drop_fresh_backup_after_failed_alter();
             return false;
         }
     }
     if (in_array('camp_times', $columns, true)) {
         if ($wpdb->query("ALTER TABLE $rosters_table MODIFY camp_times varchar(191) DEFAULT NULL") === false) {
-            error_log('InterSoccer: Failed to widen camp_times (schema 2.4.0): ' . $wpdb->last_error);
+            error_log('InterSoccer: Failed to widen camp_times (schema 2.4.0): ' . intersoccer_db_redact_wpdb_error_for_log($wpdb->last_error));
+            $drop_fresh_backup_after_failed_alter();
             return false;
         }
     }
     if (in_array('times', $columns, true)) {
         if ($wpdb->query("ALTER TABLE $rosters_table MODIFY times varchar(191) DEFAULT ''") === false) {
-            error_log('InterSoccer: Failed to widen times (schema 2.4.0): ' . $wpdb->last_error);
+            error_log('InterSoccer: Failed to widen times (schema 2.4.0): ' . intersoccer_db_redact_wpdb_error_for_log($wpdb->last_error));
+            $drop_fresh_backup_after_failed_alter();
             return false;
         }
     }
