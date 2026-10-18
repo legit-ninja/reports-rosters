@@ -754,6 +754,16 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
         }
         unset($roster); // Break the reference
         $rosters = $filtered_rosters;
+
+        if (function_exists('intersoccer_reports_merge_final_numbers_not_on_roster_rows')) {
+            intersoccer_reports_merge_final_numbers_not_on_roster_rows(
+                $rosters,
+                $year_int,
+                $season_type,
+                $region,
+                $status_mode
+            );
+        }
         
         if (empty($rosters)) {
             return [];
@@ -976,7 +986,153 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             }));
         }
 
+        if (function_exists('intersoccer_reports_merge_final_numbers_not_on_roster_rows')) {
+            intersoccer_reports_merge_final_numbers_not_on_roster_rows(
+                $rosters,
+                $year_int,
+                $season_type,
+                $region,
+                $status_mode
+            );
+        }
+
         return intersoccer_reports_build_course_report_from_entries($rosters, $exclude_buyclub);
+    }
+}
+
+/**
+ * Append undated Event roster rows and thin order lines (no roster row) for Final Numbers not-on-roster counts.
+ *
+ * @param array       $rows         Camp/course row set (by reference).
+ * @param int         $year_int     Program year filter.
+ * @param string|null $season_type  Optional season type filter.
+ * @param string|null $region       Optional region filter.
+ * @param string      $status_mode  final|live order status set.
+ */
+function intersoccer_reports_merge_final_numbers_not_on_roster_rows(
+    array &$rows,
+    $year_int,
+    $season_type = null,
+    $region = null,
+    $status_mode = 'final'
+) {
+    global $wpdb;
+    $year_int = (int) $year_int;
+    $existing = [];
+    foreach ($rows as $row) {
+        $id = (int) ($row['order_item_id'] ?? 0);
+        if ($id > 0) {
+            $existing[$id] = true;
+        }
+    }
+
+    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+    $order_items_table = $wpdb->prefix . 'woocommerce_order_items';
+    $order_itemmeta_table = $wpdb->prefix . 'woocommerce_order_itemmeta';
+    $posts_table = $wpdb->prefix . 'posts';
+
+    $statuses = function_exists('intersoccer_reports_final_report_order_statuses')
+        ? intersoccer_reports_final_report_order_statuses($status_mode)
+        : ['wc-completed'];
+    $status_sql = function_exists('intersoccer_reports_sql_in_placeholders')
+        ? intersoccer_reports_sql_in_placeholders($statuses)
+        : '%s';
+
+    $event_query = $wpdb->prepare(
+        "SELECT r.order_item_id, r.activity_type, r.start_date, r.end_date, r.season, r.venue, r.canton_region AS canton,
+                oi.order_id, om_line_subtotal.meta_value AS line_subtotal, om_line_total.meta_value AS line_total,
+                om_qty.meta_value AS line_quantity, p.post_date
+         FROM {$rosters_table} r
+         JOIN {$order_items_table} oi ON r.order_item_id = oi.order_item_id
+         JOIN {$posts_table} p ON oi.order_id = p.ID
+         LEFT JOIN {$order_itemmeta_table} om_line_subtotal ON oi.order_item_id = om_line_subtotal.order_item_id AND om_line_subtotal.meta_key = '_line_subtotal'
+         LEFT JOIN {$order_itemmeta_table} om_line_total ON oi.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
+         LEFT JOIN {$order_itemmeta_table} om_qty ON oi.order_item_id = om_qty.order_item_id AND om_qty.meta_key = '_qty'
+         WHERE r.activity_type = %s AND r.order_item_id > 0 AND p.post_type = 'shop_order' AND p.post_status IN ({$status_sql})",
+        array_merge(['Event'], $statuses)
+    );
+    $event_rows = $wpdb->get_results($event_query, ARRAY_A);
+    foreach ((array) $event_rows as $event_row) {
+        $item_id = (int) ($event_row['order_item_id'] ?? 0);
+        if ($item_id <= 0 || isset($existing[$item_id])) {
+            continue;
+        }
+        if (!function_exists('intersoccer_reports_final_row_is_undated_event')
+            || !intersoccer_reports_final_row_is_undated_event($event_row)) {
+            continue;
+        }
+        $season_year = function_exists('intersoccer_reports_resolve_program_year')
+            ? intersoccer_reports_resolve_program_year($event_row)
+            : (!empty($event_row['season']) ? intersoccer_extract_year_from_season($event_row['season']) : null);
+        if ($season_year === null && !empty($event_row['post_date'])) {
+            $season_year = (int) date('Y', strtotime($event_row['post_date']));
+        }
+        if ($season_year !== null && (int) $season_year !== $year_int) {
+            continue;
+        }
+        if (!empty($season_type) && function_exists('intersoccer_reports_entry_matches_season_type')
+            && !intersoccer_reports_entry_matches_season_type($event_row, $season_type)) {
+            continue;
+        }
+        if (!empty($region) && function_exists('intersoccer_reports_region_matches_filter')
+            && !intersoccer_reports_region_matches_filter($event_row['canton'] ?? '', $region)) {
+            continue;
+        }
+        $rows[] = $event_row;
+        $existing[$item_id] = true;
+    }
+
+    $thin_query = $wpdb->prepare(
+        "SELECT oi.order_item_id, p.ID AS order_id, om_product.meta_value AS product_id,
+                COALESCE(om_activity.meta_value, '') AS activity_type,
+                om_line_subtotal.meta_value AS line_subtotal, om_line_total.meta_value AS line_total,
+                om_qty.meta_value AS line_quantity, om_venue.meta_value AS venue,
+                COALESCE(om_season.meta_value, om_season_alt.meta_value) AS season,
+                COALESCE(om_player.meta_value, om_player_id.meta_value) AS assigned_player_id,
+                p.post_date
+         FROM {$posts_table} p
+         JOIN {$order_items_table} oi ON p.ID = oi.order_id AND oi.order_item_type = 'line_item'
+         LEFT JOIN {$rosters_table} r ON r.order_item_id = oi.order_item_id
+         LEFT JOIN {$order_itemmeta_table} om_product ON oi.order_item_id = om_product.order_item_id AND om_product.meta_key = '_product_id'
+         LEFT JOIN {$order_itemmeta_table} om_activity ON oi.order_item_id = om_activity.order_item_id AND om_activity.meta_key = 'Activity Type'
+         LEFT JOIN {$order_itemmeta_table} om_line_subtotal ON oi.order_item_id = om_line_subtotal.order_item_id AND om_line_subtotal.meta_key = '_line_subtotal'
+         LEFT JOIN {$order_itemmeta_table} om_line_total ON oi.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
+         LEFT JOIN {$order_itemmeta_table} om_qty ON oi.order_item_id = om_qty.order_item_id AND om_qty.meta_key = '_qty'
+         LEFT JOIN {$order_itemmeta_table} om_venue ON oi.order_item_id = om_venue.order_item_id AND om_venue.meta_key = 'pa_intersoccer-venues'
+         LEFT JOIN {$order_itemmeta_table} om_season ON oi.order_item_id = om_season.order_item_id AND om_season.meta_key = 'Season'
+         LEFT JOIN {$order_itemmeta_table} om_season_alt ON oi.order_item_id = om_season_alt.order_item_id AND om_season_alt.meta_key = 'pa_program-season'
+         LEFT JOIN {$order_itemmeta_table} om_player ON oi.order_item_id = om_player.order_item_id AND om_player.meta_key = 'Assigned Attendee'
+         LEFT JOIN {$order_itemmeta_table} om_player_id ON oi.order_item_id = om_player_id.order_item_id AND om_player_id.meta_key = 'assigned_player_id'
+         WHERE p.post_type = 'shop_order' AND p.post_status IN ({$status_sql}) AND r.order_item_id IS NULL
+           AND om_product.meta_value IS NOT NULL AND om_product.meta_value != '' AND om_product.meta_value != '0'",
+        $statuses
+    );
+    $thin_candidates = $wpdb->get_results($thin_query, ARRAY_A);
+    foreach ((array) $thin_candidates as $candidate) {
+        $item_id = (int) ($candidate['order_item_id'] ?? 0);
+        if ($item_id <= 0 || isset($existing[$item_id])) {
+            continue;
+        }
+        if (!function_exists('intersoccer_reports_order_line_too_thin_to_build_roster')
+            || !intersoccer_reports_order_line_too_thin_to_build_roster($candidate)) {
+            continue;
+        }
+        $season_year = function_exists('intersoccer_reports_resolve_program_year')
+            ? intersoccer_reports_resolve_program_year($candidate)
+            : (!empty($candidate['season']) ? intersoccer_extract_year_from_season($candidate['season']) : null);
+        if ($season_year === null && !empty($candidate['post_date'])) {
+            $season_year = (int) date('Y', strtotime($candidate['post_date']));
+        }
+        if ($season_year !== null && (int) $season_year !== $year_int) {
+            continue;
+        }
+        $formatted = function_exists('intersoccer_reports_format_thin_order_line_final_row')
+            ? intersoccer_reports_format_thin_order_line_final_row($candidate)
+            : $candidate;
+        $formatted['_final_numbers_thin_order_line'] = true;
+        $rows[] = $formatted;
+        $existing[$item_id] = true;
+        error_log('InterSoccer Final Numbers: thin order line without roster row (order_item_id ' . $item_id . ')');
     }
 }
 

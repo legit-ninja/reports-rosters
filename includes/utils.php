@@ -2462,6 +2462,51 @@ if (!function_exists('intersoccer_reports_final_row_is_undated_event')) {
     }
 }
 
+if (!function_exists('intersoccer_reports_order_line_too_thin_to_build_roster')) {
+    /**
+     * Completed order line with too little booking meta to build a roster row.
+     *
+     * @param array $row Keys: activity_type, venue, season, assigned_player_id|player_id, product_id.
+     */
+    function intersoccer_reports_order_line_too_thin_to_build_roster(array $row) {
+        $product_id = (int) ($row['product_id'] ?? 0);
+        if ($product_id <= 0) {
+            return false;
+        }
+        $activity = trim((string) ($row['activity_type'] ?? ''));
+        if ($activity !== '' && strcasecmp($activity, 'N/A') !== 0) {
+            return false;
+        }
+        $has_player = trim((string) ($row['assigned_player_id'] ?? $row['player_id'] ?? '')) !== '';
+        $has_venue = trim((string) ($row['venue'] ?? '')) !== '';
+        $has_season = trim((string) ($row['season'] ?? '')) !== '';
+        return !$has_player && !$has_venue && !$has_season;
+    }
+}
+
+if (!function_exists('intersoccer_reports_format_thin_order_line_final_row')) {
+    /**
+     * Synthetic Final Numbers row for a thin order line (no roster projection).
+     */
+    function intersoccer_reports_format_thin_order_line_final_row(array $line_row) {
+        $qty = 1;
+        if (isset($line_row['line_quantity']) && is_numeric($line_row['line_quantity'])) {
+            $qty = max(1, (int) $line_row['line_quantity']);
+        } elseif (isset($line_row['quantity']) && is_numeric($line_row['quantity'])) {
+            $qty = max(1, (int) $line_row['quantity']);
+        }
+        return [
+            'order_item_id' => (int) ($line_row['order_item_id'] ?? 0),
+            'order_id' => (int) ($line_row['order_id'] ?? 0),
+            'activity_type' => trim((string) ($line_row['activity_type'] ?? '')),
+            'line_subtotal' => (float) ($line_row['line_subtotal'] ?? 0),
+            'line_total' => (float) ($line_row['line_total'] ?? 0),
+            'line_quantity' => $qty,
+            'event_details' => wp_json_encode(['thin_line' => true]),
+        ];
+    }
+}
+
 if (!function_exists('intersoccer_reports_final_row_is_thin_line')) {
     /**
      * Roster row with too little facet data to place on the camp/course grid.
@@ -2473,6 +2518,9 @@ if (!function_exists('intersoccer_reports_final_row_is_thin_line')) {
             $ed = is_array($decoded) ? $decoded : [];
         }
         if (is_array($ed) && !empty($ed['thin_line'])) {
+            return true;
+        }
+        if (!empty($row['_final_numbers_thin_order_line'])) {
             return true;
         }
         return false;

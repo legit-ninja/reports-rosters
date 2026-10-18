@@ -87,9 +87,19 @@ class FinalNumbersAccuracyTest extends TestCase {
                 'activity_type' => 'Camp', 'venue' => '', 'season' => '', 'line_subtotal' => 50, 'line_total' => 50, 'is_buyclub' => false,
                 'event_details' => json_encode(['thin_line' => true])],
         ];
+        if (function_exists('intersoccer_reports_format_thin_order_line_final_row')) {
+            $entries[] = intersoccer_reports_format_thin_order_line_final_row([
+                'order_item_id' => 13,
+                'order_id' => 501,
+                'product_id' => 9001,
+                'activity_type' => '',
+                'line_subtotal' => 25,
+                'line_total' => 25,
+            ]);
+        }
         $report = intersoccer_reports_build_camp_report_from_entries($entries, false, 2026);
         $this->assertSame(1, $report['__player_registration_totals__']['all']);
-        $this->assertSame(2, $report['__player_registration_totals__']['not_on_roster']);
+        $this->assertSame(3, $report['__player_registration_totals__']['not_on_roster']);
     }
 
     public function test_under_age_flagged_row_still_counts_in_registration_totals(): void {
