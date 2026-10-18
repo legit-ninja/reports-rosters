@@ -3760,13 +3760,19 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     $result = $wpdb->replace($table_name, $data);
     $insert_id = $wpdb->insert_id;
     $rows_affected = ($result === false) ? 0 : (int) $result;
-    error_log('InterSoccer: Upsert for order ' . $order_id . ', item ' . $item_id . ': rows_affected=' . $rows_affected . ' insert_id=' . $insert_id);
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer: Upsert roster entry: rows_affected=' . $rows_affected . ' insert_id=' . $insert_id);
+    }
 
     if ($result) {
-        error_log('InterSoccer: Successfully upserted roster entry for order ' . $order_id . ', item ' . $item_id . ' (ID: ' . $insert_id . ') with event_signature: ' . $data['event_signature']);
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer: Successfully upserted roster entry with event_signature: ' . $data['event_signature']);
+        }
         return true;
     } else {
-        error_log('InterSoccer: Failed to upsert roster entry for order ' . $order_id . ', item ' . $item_id . ' - Check DB error');
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer: Failed to upsert roster entry - Check DB error');
+        }
         return false;
     }
 }
