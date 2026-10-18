@@ -236,7 +236,16 @@ function intersoccer_render_enhanced_booking_totals($totals, $report_data = null
         <h3 style="margin-top: 0; color: #0073aa;">Financial Summary</h3>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
             <div class="summary-item">
-                <strong>Total Bookings:</strong> <?php echo number_format($totals['bookings']); ?>
+                <strong><?php esc_html_e('Total Bookings:', 'intersoccer-reports-rosters'); ?></strong>
+                <?php
+                $booking_rows = (int) ($totals['bookings'] ?? 0);
+                $booking_places = (int) ($totals['places'] ?? $booking_rows);
+                echo esc_html(
+                    function_exists('intersoccer_reports_booking_footer_bookings_places_display')
+                        ? intersoccer_reports_booking_footer_bookings_places_display($booking_rows, $booking_places)
+                        : number_format($booking_rows) . ' (' . number_format($booking_places) . ' places)'
+                );
+                ?>
             </div>
             <div class="summary-item">
                 <?php

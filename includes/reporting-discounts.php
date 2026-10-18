@@ -464,7 +464,7 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
 
     if ($wpdb->last_error) {
         error_log('InterSoccer WooCommerce Fallback: Query error: ' . $wpdb->last_error);
-        return array('data' => array(), 'totals' => array('bookings' => 0, 'base_price' => 0, 'discount_amount' => 0, 'final_price' => 0, 'reimbursement' => 0));
+        return array('data' => array(), 'totals' => array('bookings' => 0, 'places' => 0, 'base_price' => 0, 'discount_amount' => 0, 'final_price' => 0, 'reimbursement' => 0));
     }
 
     // Add missing fields to match roster table structure
@@ -606,6 +606,23 @@ if (!function_exists('intersoccer_reports_zero_total_buyclub_bookings_footer_lab
     }
 }
 
+if (!function_exists('intersoccer_reports_booking_footer_bookings_places_display')) {
+    /**
+     * Booking Report footer: listed row count with places total (sum of line qty).
+     *
+     * @param int $bookings Listed rows.
+     * @param int $places   Sum of line quantities.
+     */
+    function intersoccer_reports_booking_footer_bookings_places_display(int $bookings, int $places): string {
+        return sprintf(
+            /* translators: 1: booking row count, 2: place count */
+            __('%1$s (%2$s places)', 'intersoccer-reports-rosters'),
+            number_format_i18n($bookings),
+            number_format_i18n($places)
+        );
+    }
+}
+
 /**
  * Get simplified booking report data for financial reporting
  * Focuses on revenue per participant by querying WooCommerce orders directly
@@ -670,11 +687,14 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
     $data = [];
     $totals = [
         'bookings' => 0, // Will be set to count($data) at the end
+        'places' => 0,
         'base_price' => 0,
         'discount_amount' => 0,
         'final_price' => 0,
         'reimbursement' => 0
     ];
+
+    $places_total = 0;
 
     foreach ($results as $row) {
         // Skip if no product_id (this would be a coupon or other non-product item)
@@ -903,6 +923,12 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
         // Calculate Stripe fee (approximate 2.9% + 0.30 CHF)
         $stripe_fee = $final_price > 0 ? ($final_price * 0.029) + 0.30 : 0;
 
+        $line_qty = (int) ($row->quantity ?? 0);
+        if ($line_qty < 1) {
+            $line_qty = 1;
+        }
+        $places_total += $line_qty;
+
         $data[] = [
             'ref' => $row->order_id . '-' . $row->order_item_id,
             'booked' => date('Y-m-d', strtotime($row->order_date)),
@@ -940,6 +966,7 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
     // Set bookings to the count of records (each order item = 1 booking)
     // This ensures "Total Bookings" matches "records found"
     $totals['bookings'] = count($data);
+    $totals['places'] = $places_total;
 
     error_log("=== InterSoccer Financial Report: Returning " . count($data) . " records with totals: " . json_encode($totals) . " ===");
     return ['data' => $data, 'totals' => $totals];

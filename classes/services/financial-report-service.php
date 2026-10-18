@@ -119,6 +119,7 @@ class FinancialReportService {
         $data = [];
         $totals = [
             'bookings' => 0,
+            'places' => 0,
             'zero_total_buyclub_bookings' => 0,
             'base_price' => 0.0,
             'discount_amount' => 0.0,
@@ -143,6 +144,7 @@ class FinancialReportService {
             : [];
 
         $zero_total_buyclub_bookings = 0;
+        $places_total = 0;
 
         foreach ((array) $order_rows as $row) {
             $order_id = (int) $row->order_id;
@@ -242,6 +244,12 @@ class FinancialReportService {
 
             $stripe_fee = $final_price > 0 ? ($final_price * 0.029) + 0.30 : 0.0;
 
+            $line_qty = (int) ($row->quantity ?? 0);
+            if ($line_qty < 1) {
+                $line_qty = 1;
+            }
+            $places_total += $line_qty;
+
             $data[] = [
                 'ref' => $order_id . '-' . $row->order_item_id,
                 'booked' => date('Y-m-d', strtotime($row->order_date)),
@@ -279,6 +287,7 @@ class FinancialReportService {
         }
 
         $totals['bookings'] = count($data);
+        $totals['places'] = $places_total;
         $totals['zero_total_buyclub_bookings'] = $zero_total_buyclub_bookings;
 
         // Round revenue by type values and calculate percentages
