@@ -531,19 +531,39 @@ class RosterAjaxHandler {
             
             $this->logger->info('AJAX: Upgrade database request started');
             
-            // Run migration
-            $success = $this->database_migrator->migrate();
-            
-            if ($success) {
+            $result = $this->database_migrator->migrate();
+            $version = get_option(DatabaseMigrator::VERSION_OPTION, '1.0.0');
+
+            if ($result === DatabaseMigrator::RESULT_ALREADY_RUNNING) {
                 wp_send_json_success([
-                    'message' => __('Database upgraded successfully', 'intersoccer-reports-rosters'),
-                    'version' => DatabaseMigrator::CURRENT_VERSION
-                ]);
-            } else {
-                wp_send_json_error([
-                    'message' => __('Database upgrade failed', 'intersoccer-reports-rosters')
+                    'message' => __('Migration already running. Please wait and refresh.', 'intersoccer-reports-rosters'),
+                    'status' => 'info',
+                    'version' => $version,
                 ]);
             }
+
+            if ($result === DatabaseMigrator::RESULT_SKIPPED_UNRECOGNISED_BACKUP) {
+                wp_send_json_success([
+                    'message' => __('Skipped: unrecognised backup table present. Drop the foreign roster backup or contact support before retrying.', 'intersoccer-reports-rosters'),
+                    'status' => 'info',
+                    'version' => $version,
+                ]);
+            }
+
+            if ($result === true) {
+                wp_send_json_success([
+                    'message' => sprintf(
+                        /* translators: %s: schema version */
+                        __('Database upgrade completed. Schema version is now %s.', 'intersoccer-reports-rosters'),
+                        $version
+                    ),
+                    'version' => $version,
+                ]);
+            }
+
+            wp_send_json_error([
+                'message' => __('Database upgrade failed. Check logs for details.', 'intersoccer-reports-rosters'),
+            ]);
             
         } catch (\Exception $e) {
             $this->logger->error('AJAX: Upgrade database failed', [

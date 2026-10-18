@@ -740,36 +740,6 @@ function intersoccer_render_advanced_page() {
                         }
                     });
                 });
-                
-                // Upgrade Database
-                $('#intersoccer-upgrade-form').on('submit', function(e) {
-                    e.preventDefault();
-                    var $form = $(this);
-                    var $button = $form.find('input[type="submit"]');
-                    
-                    showAdminNotice('<?php echo esc_js(__('Starting: Upgrading database...', 'intersoccer-reports-rosters')); ?>', 'info');
-                    $button.prop('disabled', true).val('<?php echo esc_js(__('Running...', 'intersoccer-reports-rosters')); ?>');
-                    
-                    $.ajax({
-                        url: ajaxurl,
-                        type: 'POST',
-                        data: $form.serialize(),
-                        success: function(response) {
-                            if (response.success) {
-                                showAdminNotice('<?php echo esc_js(__('Finished: Database upgrade completed successfully.', 'intersoccer-reports-rosters')); ?>', 'success');
-                            } else {
-                                showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>'), 'error');
-                            }
-                            $button.prop('disabled', false).val('<?php echo esc_js(__('Upgrade Database', 'intersoccer-reports-rosters')); ?>');
-                        },
-                        error: function(xhr, status, error) {
-                            var errorMsg = extractAjaxErrorMessage(xhr, status, error);
-                            showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + errorMsg, 'error');
-                            $button.prop('disabled', false).val('<?php echo esc_js(__('Upgrade Database', 'intersoccer-reports-rosters')); ?>');
-                            console.error('AJAX Error: ', status, error, xhr.responseText);
-                        }
-                    });
-                });
             });
         </script>
     </div>

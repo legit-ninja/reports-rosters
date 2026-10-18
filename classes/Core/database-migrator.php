@@ -53,6 +53,18 @@ class DatabaseMigrator {
      * @var string
      */
     const CURRENT_VERSION = '2.4.0';
+
+    /** Migration mutex option (autoload=no). */
+    const MIGRATION_LOCK_OPTION = 'intersoccer_rr_migration_lock';
+
+    /** Stale lock threshold (seconds). */
+    const MIGRATION_LOCK_STALE_SECONDS = 600;
+
+    /** migrate() return: another upgrade request is in progress. */
+    const RESULT_ALREADY_RUNNING = 'already_running';
+
+    /** migrate() return: pre-existing backup without our retention stamp. */
+    const RESULT_SKIPPED_UNRECOGNISED_BACKUP = 'skipped_unrecognised_backup';
     
     /**
      * Constructor
@@ -72,6 +84,11 @@ class DatabaseMigrator {
      * @return bool Success status
      */
     public function migrate() {
+        if (!$this->acquireMigrationLock()) {
+            $this->logger->info('Database migration skipped: lock held by another run');
+            return self::RESULT_ALREADY_RUNNING;
+        }
+
         try {
             $current_version = $this->getCurrentVersion();
             $target_version = self::CURRENT_VERSION;
@@ -101,6 +118,11 @@ class DatabaseMigrator {
                 try {
                     $result = call_user_func($migration);
                     
+                    if ($result === self::RESULT_SKIPPED_UNRECOGNISED_BACKUP) {
+                        $this->logger->warning('Migration stopped: unrecognised roster backup table present');
+                        return self::RESULT_SKIPPED_UNRECOGNISED_BACKUP;
+                    }
+
                     if ($result === false) {
                         throw new DatabaseException("Migration {$version} failed");
                     }
@@ -131,7 +153,52 @@ class DatabaseMigrator {
                 'trace' => $e->getTraceAsString()
             ]);
             return false;
+        } finally {
+            $this->releaseMigrationLock();
         }
+    }
+
+    /**
+     * Acquire migration mutex (stale locks after MIGRATION_LOCK_STALE_SECONDS may be taken over).
+     *
+     * @return bool
+     */
+    public function acquireMigrationLock() {
+        $existing = get_option(self::MIGRATION_LOCK_OPTION, false);
+        if ($existing !== false) {
+            $age = time() - (int) $existing;
+            if ($age < self::MIGRATION_LOCK_STALE_SECONDS) {
+                return false;
+            }
+            $this->releaseMigrationLock();
+        }
+
+        $now = time();
+        if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING) {
+            if (!isset($GLOBALS['intersoccer_test_option_store']) || !is_array($GLOBALS['intersoccer_test_option_store'])) {
+                $GLOBALS['intersoccer_test_option_store'] = [];
+            }
+            if (array_key_exists(self::MIGRATION_LOCK_OPTION, $GLOBALS['intersoccer_test_option_store'])) {
+                return false;
+            }
+            $GLOBALS['intersoccer_test_option_store'][self::MIGRATION_LOCK_OPTION] = $now;
+            return true;
+        }
+
+        return add_option(self::MIGRATION_LOCK_OPTION, $now, '', 'no');
+    }
+
+    /**
+     * Release migration mutex.
+     *
+     * @return void
+     */
+    public function releaseMigrationLock() {
+        if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING
+            && isset($GLOBALS['intersoccer_test_option_store'][self::MIGRATION_LOCK_OPTION])) {
+            unset($GLOBALS['intersoccer_test_option_store'][self::MIGRATION_LOCK_OPTION]);
+        }
+        delete_option(self::MIGRATION_LOCK_OPTION);
     }
     
     /**
@@ -340,6 +407,9 @@ class DatabaseMigrator {
         try {
             $this->logger->info('Running roster schema 2.4.0 varchar widen with backup verification');
             $ok = intersoccer_migrate_rosters_schema_2_4_0($this->wpdb, $table);
+            if ($ok === self::RESULT_SKIPPED_UNRECOGNISED_BACKUP) {
+                return self::RESULT_SKIPPED_UNRECOGNISED_BACKUP;
+            }
             if (!$ok) {
                 throw new DatabaseException('Roster schema 2.4.0 migration aborted');
             }
