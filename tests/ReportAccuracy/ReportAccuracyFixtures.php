@@ -68,34 +68,128 @@ namespace {
 
     if (!class_exists('BackfillMissingAttributionWpdb', false)) {
         /**
-         * Minimal wpdb stub: findMissingAttributionOrderIds() only needs get_col() after prepare().
+         * wpdb stub that evaluates pending / skipped backfill SQL against ReportAccuracyStore orders.
          */
         class BackfillMissingAttributionWpdb {
             public $posts = 'wp_posts';
             public $postmeta = 'wp_postmeta';
             public $prefix = 'wp_';
 
-            /** @var array<int,int> */
-            private $order_ids;
+            /** @var array<string,array{query:string,args:array<int,mixed>}> */
+            private $prepared = [];
 
-            /** @param array<int,int> $order_ids */
-            public function __construct(array $order_ids) {
-                $this->order_ids = $order_ids;
+            /** @var array<int,int>|null When set, get_col for pending query returns only these ids (legacy shortcut). */
+            private $force_pending_ids;
+
+            /** @param array<int,int>|null $force_pending_ids */
+            public function __construct(?array $force_pending_ids = null) {
+                $this->force_pending_ids = $force_pending_ids;
             }
 
             public function prepare($query, ...$args) {
-                return 'BACKFILL_MISSING_ATTRIBUTION';
+                $token = 'prep_' . count($this->prepared);
+                $this->prepared[$token] = ['query' => (string) $query, 'args' => $args];
+                return $token;
             }
 
-            public function get_col($query) {
-                if ($query === 'BACKFILL_MISSING_ATTRIBUTION') {
-                    return array_map('strval', $this->order_ids);
+            public function get_col($token) {
+                $entry = $this->prepared[$token] ?? null;
+                if ($entry === null) {
+                    return [];
                 }
+
+                $query = $entry['query'];
+                if (strpos($query, 'pm_skip.meta_id IS NULL') !== false && strpos($query, 'post_date <=') !== false) {
+                    if ($this->force_pending_ids !== null) {
+                        return array_map('strval', $this->force_pending_ids);
+                    }
+                    return array_map('strval', $this->filterMissingAttributionIds($entry['args']));
+                }
+
+                if (strpos($query, 'pm_skip.meta_value IS NOT NULL') !== false && strpos($query, 'INNER JOIN') !== false) {
+                    return array_map('strval', $this->filterSkippedAttributionIds($entry['args']));
+                }
+
                 return [];
             }
 
-            public function get_var($query) {
+            public function get_var($token) {
+                $entry = $this->prepared[$token] ?? null;
+                if ($entry === null) {
+                    return '0';
+                }
+
+                $query = $entry['query'];
+                if (strpos($query, 'SELECT COUNT(*)') !== false && strpos($query, 'pm_skip.meta_id IS NULL') !== false) {
+                    if ($this->force_pending_ids !== null) {
+                        return (string) count($this->force_pending_ids);
+                    }
+                    return (string) count($this->filterMissingAttributionIds($entry['args']));
+                }
+
+                if (strpos($query, 'SELECT COUNT(DISTINCT p.ID)') !== false && strpos($query, 'INNER JOIN') !== false) {
+                    return (string) count($this->filterSkippedAttributionIds($entry['args']));
+                }
+
                 return '0';
+            }
+
+            /** @return array<int,int> */
+            private function filterMissingAttributionIds(array $args): array {
+                $attr_key = (string) ($args[0] ?? '');
+                $skip_key = (string) ($args[1] ?? '');
+                $start = (string) ($args[2] ?? '');
+                $end = (string) ($args[3] ?? '');
+
+                $ids = [];
+                foreach (\InterSoccer\ReportsRosters\Tests\ReportAccuracy\ReportAccuracyStore::$orders as $order) {
+                    if (!$this->orderInDateRange($order, $start, $end)) {
+                        continue;
+                    }
+                    $attribution = (string) $order->get_meta($attr_key, true);
+                    $skip = (string) $order->get_meta($skip_key, true);
+                    if ($attribution !== '' || $skip !== '') {
+                        continue;
+                    }
+                    $ids[] = (int) $order->get_id();
+                }
+                sort($ids);
+
+                return $ids;
+            }
+
+            /** @return array<int,int> */
+            private function filterSkippedAttributionIds(array $args): array {
+                $skip_key = (string) ($args[0] ?? '');
+                $attr_key = (string) ($args[1] ?? '');
+                $start = (string) ($args[2] ?? '');
+                $end = (string) ($args[3] ?? '');
+
+                $ids = [];
+                foreach (\InterSoccer\ReportsRosters\Tests\ReportAccuracy\ReportAccuracyStore::$orders as $order) {
+                    if (!$this->orderInDateRange($order, $start, $end)) {
+                        continue;
+                    }
+                    $attribution = (string) $order->get_meta($attr_key, true);
+                    $skip = (string) $order->get_meta($skip_key, true);
+                    if ($attribution !== '' || $skip === '') {
+                        continue;
+                    }
+                    $ids[] = (int) $order->get_id();
+                }
+                sort($ids);
+
+                return $ids;
+            }
+
+            private function orderInDateRange($order, string $start, string $end): bool {
+                $date = (string) $order->date;
+                return strcmp($date, $start) >= 0 && strcmp($date, $end) <= 0;
+            }
+
+            /** @return array<string,array{query:string,args:array<int,mixed>}> */
+            public function preparedQueries(): array {
+                return $this->prepared;
             }
         }
     }
@@ -266,6 +360,15 @@ namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy {
             }
             $value = $this->meta_data[$key];
             return $single ? $value : [$value];
+        }
+
+        public function meta_exists($key): bool {
+            return array_key_exists($key, $this->meta_data ?? []);
+        }
+
+        public function delete_meta_data($key): void {
+            unset($this->meta_data[$key]);
+            ReportAccuracyStore::$writes[] = ['op' => 'delete', 'object' => 'order', 'id' => $this->id, 'key' => (string) $key];
         }
 
         /** @return string[] */
