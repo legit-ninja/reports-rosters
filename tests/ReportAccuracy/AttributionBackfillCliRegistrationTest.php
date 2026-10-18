@@ -55,6 +55,7 @@ PHP
         $this->assertStringContainsString('[--apply]', $doc);
         $this->assertStringContainsString('[--from=<date>]', $doc);
         $this->assertStringContainsString('[--to=<date>]', $doc);
+        $this->assertStringContainsString('[--retry-skipped]', $doc);
     }
 
     public function test_attribution_backfill_registered_on_intersoccer_rr_command(): void {
