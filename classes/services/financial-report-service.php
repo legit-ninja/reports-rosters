@@ -217,8 +217,8 @@ class FinancialReportService {
                 $reimbursement = (float) $computed['refund'];
             }
 
-            // Final = Gross - attributed line discounts (NO refund)
-            $final_price = max(0.0, $base_price - $discount_amount);
+            // Final = post-discount line total (do not subtract attributed discount twice)
+            $final_price = intersoccer_financial_line_final_price($base_price, $line_total, $discount_amount);
             // Net = Final - attributed line refund (once)
             $net_price = max(0.0, $final_price - $reimbursement);
 
