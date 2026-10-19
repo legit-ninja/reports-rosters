@@ -253,7 +253,7 @@ Then run via WordPress:
 wp eval-file /path/to/wp-content/plugins/test-plugin-read.php
 ```
 
-Or navigate to: `https://staging.intersoccer.ch/wp-content/plugins/test-plugin-read.php`
+Or navigate to: `https://staging.example/wp-content/plugins/test-plugin-read.php`
 
 ---
 
