@@ -53,7 +53,18 @@ if (!function_exists('current_time')) {
 }
 
 if (!function_exists('is_admin')) {
-    function is_admin() { return false; }
+    function is_admin() {
+        if (isset($GLOBALS['intersoccer_test_is_admin'])) {
+            return (bool) $GLOBALS['intersoccer_test_is_admin'];
+        }
+        return false;
+    }
+}
+
+if (!function_exists('is_locale_switched')) {
+    function is_locale_switched() {
+        return !empty($GLOBALS['intersoccer_test_is_locale_switched']);
+    }
 }
 
 if (!function_exists('intersoccer_test_store_wp_hook_callback')) {
@@ -116,6 +127,11 @@ if (!function_exists('add_filter')) {
         intersoccer_test_store_wp_hook_callback('filters', $hook, $callback, $priority, $accepted_args);
         return true;
     }
+}
+
+$i18n_bootstrap = dirname(__DIR__) . '/includes/i18n.php';
+if (is_readable($i18n_bootstrap)) {
+    require_once $i18n_bootstrap;
 }
 
 if (!function_exists('remove_action')) {

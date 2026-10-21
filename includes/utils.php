@@ -8,6 +8,13 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+if (!defined('INTERSOCCER_RR_ORDER_META_SELECTED_DAYS')) {
+    $intersoccer_rr_i18n_utils = dirname(__FILE__) . '/i18n.php';
+    if (is_readable($intersoccer_rr_i18n_utils)) {
+        require_once $intersoccer_rr_i18n_utils;
+    }
+}
+
 if (!function_exists('intersoccer_normalize_attribute')) {
     /**
      * Normalize attribute values for comparison, preserving "Activity Type" as-is.
@@ -928,7 +935,7 @@ if (!function_exists('intersoccer_read_order_item_booking_fields')) {
                 'Days Selected',
                 'Jours sélectionnés',
                 'Ausgewählte Tage',
-                'Selected Days',
+                INTERSOCCER_RR_ORDER_META_SELECTED_DAYS,
             ]),
             'late_pickup_days' => $read(['Late Pickup Days', 'Jours de garde prolongée']),
         ];
@@ -1021,7 +1028,7 @@ if (!function_exists('intersoccer_renormalize_order_item_booking_meta')) {
         }
 
         if (array_key_exists('selected_days', $booking)) {
-            foreach (['Days Selected', 'Jours sélectionnés', 'Ausgewählte Tage', 'Selected Days'] as $key) {
+            foreach (['Days Selected', 'Jours sélectionnés', 'Ausgewählte Tage', INTERSOCCER_RR_ORDER_META_SELECTED_DAYS] as $key) {
                 $item->delete_meta_data($key);
             }
             if ($booking['selected_days'] !== '') {

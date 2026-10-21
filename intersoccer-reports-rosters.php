@@ -85,6 +85,11 @@ if (!file_exists($autoloader)) {
 
 require_once $autoloader;
 
+$intersoccer_rr_i18n = __DIR__ . '/includes/i18n.php';
+if (is_readable($intersoccer_rr_i18n)) {
+    require_once $intersoccer_rr_i18n;
+}
+
 if (!defined('INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK')) {
     define('INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK', 'intersoccer_auto_complete_orders');
 }

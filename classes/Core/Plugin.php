@@ -458,9 +458,14 @@ final class Plugin {
      * @return void
      */
     private function load_textdomain() {
+        if (function_exists('intersoccer_rr_load_plugin_textdomain')) {
+            intersoccer_rr_load_plugin_textdomain($this->plugin_file);
+            return;
+        }
+
         $locale = determine_locale();
         $mo_file = $this->plugin_path . 'languages/' . self::TEXT_DOMAIN . '-' . $locale . '.mo';
-        
+
         load_textdomain(self::TEXT_DOMAIN, $mo_file);
         load_plugin_textdomain(self::TEXT_DOMAIN, false, dirname(plugin_basename($this->plugin_file)) . '/languages');
     }
