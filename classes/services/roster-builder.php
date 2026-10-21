@@ -124,6 +124,29 @@ class RosterBuilder {
     private $reconcile_status_synced_total = 0;
 
     /**
+     * Active reconcile dry-run (no writes).
+     *
+     * @var bool
+     */
+    private $reconcile_dry_run = false;
+
+    /**
+     * Active reconcile only-missing scope.
+     *
+     * @var bool
+     */
+    private $reconcile_only_missing = false;
+
+    /**
+     * Capped dry-run / reconcile report buckets.
+     *
+     * @var array<string,mixed>
+     */
+    private $reconcile_report = [];
+
+    private const RECONCILE_REPORT_SAMPLE_LIMIT = 25;
+
+    /**
      * Canonical mapping between order item metadata keys and roster fields.
      *
      * @return array<string,string>
@@ -294,6 +317,89 @@ class RosterBuilder {
     }
     
     /**
+     * @return array<string,mixed>
+     */
+    private function emptyReconcileReport(): array {
+        return [
+            'would_insert' => 0,
+            'would_update' => 0,
+            'would_delete' => 0,
+            'ambiguous_player' => ['count' => 0, 'sample' => []],
+            'deletes' => ['count' => 0, 'sample' => []],
+            'updates' => ['count' => 0, 'sample' => []],
+            'inserts' => ['count' => 0, 'sample' => []],
+            'woo_meta_writes' => ['count' => 0, 'sample' => []],
+            'quarantine_copies' => ['count' => 0, 'sample' => []],
+        ];
+    }
+
+    /**
+     * @param string $bucket
+     * @param array<string,mixed> $entry
+     */
+    private function appendReconcileReportSample(string $bucket, array $entry): void {
+        if (!isset($this->reconcile_report[$bucket]['sample']) || !is_array($this->reconcile_report[$bucket]['sample'])) {
+            $this->reconcile_report[$bucket]['sample'] = [];
+        }
+        if (count($this->reconcile_report[$bucket]['sample']) >= self::RECONCILE_REPORT_SAMPLE_LIMIT) {
+            return;
+        }
+        $this->reconcile_report[$bucket]['sample'][] = $entry;
+    }
+
+    /**
+     * @param array<string,mixed> $existing
+     * @param array<string,mixed> $incoming
+     * @return array<string,array{old:mixed,new:mixed}>
+     */
+    private function diffReconcileRosterFields(array $existing, array $incoming): array {
+        $track = [
+            'event_signature',
+            'event_completed',
+            'player_first_name',
+            'player_last_name',
+            'player_id',
+            'venue',
+            'season',
+            'age_group',
+            'booking_type',
+            'activity_type',
+            'times',
+            'event_name',
+        ];
+        $changes = [];
+        foreach ($track as $field) {
+            $old = $existing[$field] ?? null;
+            $new = $incoming[$field] ?? null;
+            if ((string) $old !== (string) $new) {
+                $changes[$field] = ['old' => $old, 'new' => $new];
+            }
+        }
+        return $changes;
+    }
+
+    /**
+     * @param Roster $existing
+     * @return array<string,mixed>
+     */
+    private function rosterModelToArray(Roster $existing): array {
+        return [
+            'event_signature' => $existing->event_signature ?? null,
+            'event_completed' => $existing->event_completed ?? null,
+            'player_first_name' => $existing->player_first_name ?? null,
+            'player_last_name' => $existing->player_last_name ?? null,
+            'player_id' => $existing->player_id ?? null,
+            'venue' => $existing->venue ?? null,
+            'season' => $existing->season ?? null,
+            'age_group' => $existing->age_group ?? null,
+            'booking_type' => $existing->booking_type ?? null,
+            'activity_type' => $existing->activity_type ?? null,
+            'times' => $existing->times ?? null,
+            'event_name' => $existing->event_name ?? null,
+        ];
+    }
+
+    /**
      * Reconcile rosters with current WooCommerce orders
      *
      * Syncs existing roster entries with current orders, adds missing entries,
@@ -318,11 +424,29 @@ class RosterBuilder {
             'skip_age_group_validation' => true,
             'date_from' => '',
             'date_to' => '',
+            'dry_run' => false,
+            'only_missing' => false,
         ];
         $options = array_merge($defaults, $options);
+        if (!empty($options['only_missing'])) {
+            $options['update_existing'] = false;
+            $options['delete_obsolete'] = false;
+        }
         // When a date range is set, do not delete obsolete (only sync orders in range)
         if (!empty($options['date_from']) || !empty($options['date_to'])) {
             $options['delete_obsolete'] = false;
+        }
+
+        $this->reconcile_dry_run = !empty($options['dry_run']);
+        $this->reconcile_only_missing = !empty($options['only_missing']);
+        $this->reconcile_report = $this->emptyReconcileReport();
+
+        $product_type_filter = null;
+        if ($this->reconcile_dry_run) {
+            $product_type_filter = static function () {
+                return false;
+            };
+            add_filter('intersoccer_rr_allow_product_type_meta_write', $product_type_filter, 10000);
         }
 
         $results = [
@@ -335,6 +459,8 @@ class RosterBuilder {
             'duration' => 0,
             'newly_created_item_ids' => [],
             'status_synced' => 0,
+            'dry_run' => $this->reconcile_dry_run,
+            'only_missing' => $this->reconcile_only_missing,
         ];
 
         $this->logger->info('Starting roster reconciliation', $options);
@@ -423,16 +549,25 @@ class RosterBuilder {
                                         'update_existing' => $options['update_existing'],
                                         'update_past_events' => true,
                                         'skip_age_group_validation' => !empty($options['skip_age_group_validation']),
+                                        'dry_run' => $this->reconcile_dry_run,
+                                        'only_missing' => $this->reconcile_only_missing,
+                                        'reconcile_mode' => true,
                                     ]
                                 );
 
                                 if ($item_rosters->count() > 0) {
-                                    $rows_after = (int) $wpdb->get_var($wpdb->prepare(
-                                        "SELECT COUNT(*) FROM {$table} WHERE order_item_id = %d",
-                                        (int) $item_id
-                                    ));
-                                    if ($rows_before === 0 && $rows_after > 0) {
-                                        $results['newly_created_item_ids'][] = (int) $item_id;
+                                    if ($this->reconcile_dry_run) {
+                                        if ($rows_before === 0) {
+                                            $results['newly_created_item_ids'][] = (int) $item_id;
+                                        }
+                                    } else {
+                                        $rows_after = (int) $wpdb->get_var($wpdb->prepare(
+                                            "SELECT COUNT(*) FROM {$table} WHERE order_item_id = %d",
+                                            (int) $item_id
+                                        ));
+                                        if ($rows_before === 0 && $rows_after > 0) {
+                                            $results['newly_created_item_ids'][] = (int) $item_id;
+                                        }
                                     }
                                     $results['synced'] += $item_rosters->count();
                                     unset($existing_item_map[$item_id]);
@@ -465,7 +600,7 @@ class RosterBuilder {
                 $offset += $batch_size;
                 unset($order_ids);
 
-                if ($batch_count >= $batch_size && function_exists('wp_cache_flush')) {
+                if (!$this->reconcile_dry_run && $batch_count >= $batch_size && function_exists('wp_cache_flush')) {
                     wp_cache_flush();
                 }
             } while ($batch_count === $batch_size);
@@ -488,7 +623,19 @@ class RosterBuilder {
                         $stored_order_id = isset($existing_item_map[$obsolete_item_id])
                             ? (int) $existing_item_map[$obsolete_item_id]
                             : 0;
-                        if (!$this->shouldDeleteObsoleteReconcileRow((int) $obsolete_item_id, $stored_order_id)) {
+                        $delete_reason = $this->getObsoleteReconcileDeleteReason((int) $obsolete_item_id, $stored_order_id);
+                        if ($delete_reason === null) {
+                            continue;
+                        }
+                        if ($this->reconcile_dry_run) {
+                            $results['deleted']++;
+                            $this->reconcile_report['would_delete']++;
+                            $this->reconcile_report['deletes']['count']++;
+                            $this->appendReconcileReportSample('deletes', [
+                                'order_item_id' => (int) $obsolete_item_id,
+                                'order_id' => $stored_order_id,
+                                'reason' => $delete_reason,
+                            ]);
                             continue;
                         }
                         try {
@@ -507,7 +654,7 @@ class RosterBuilder {
                             ]);
                         }
                     }
-                    if ($i + $delete_chunk_size < $total && function_exists('wp_cache_flush')) {
+                    if (!$this->reconcile_dry_run && $i + $delete_chunk_size < $total && function_exists('wp_cache_flush')) {
                         wp_cache_flush();
                     }
                 }
@@ -516,8 +663,15 @@ class RosterBuilder {
 
             $results['end_time'] = current_time('mysql');
             $results['duration'] = round(microtime(true) - $start_time, 2);
+            $results['report'] = $this->reconcile_report;
 
             $this->logger->info('Roster reconciliation completed', $results);
+
+            if ($product_type_filter !== null) {
+                remove_filter('intersoccer_rr_allow_product_type_meta_write', $product_type_filter, 10000);
+            }
+            $this->reconcile_dry_run = false;
+            $this->reconcile_only_missing = false;
 
             return $results;
 
@@ -526,6 +680,13 @@ class RosterBuilder {
             $results['duration'] = round(microtime(true) - $start_time, 2);
             $results['errors']++;
             $results['error_messages'][] = 'Reconciliation failed: ' . $e->getMessage();
+            $results['report'] = $this->reconcile_report;
+
+            if ($product_type_filter !== null) {
+                remove_filter('intersoccer_rr_allow_product_type_meta_write', $product_type_filter, 10000);
+            }
+            $this->reconcile_dry_run = false;
+            $this->reconcile_only_missing = false;
 
             $this->logger->error('Roster reconciliation failed', [
                 'error' => $e->getMessage(),
@@ -730,6 +891,9 @@ class RosterBuilder {
      * @return void
      */
     private function syncKeptObsoleteOrderStatus(int $order_id, string $woo_status): void {
+        if ($this->reconcile_dry_run) {
+            return;
+        }
         if ($order_id <= 0 || isset($this->obsolete_reconcile_synced_order_ids[$order_id])) {
             return;
         }
@@ -756,37 +920,44 @@ class RosterBuilder {
      * returns false (keep).
      */
     private function shouldDeleteObsoleteReconcileRow(int $order_item_id, int $stored_order_id): bool {
+        return $this->getObsoleteReconcileDeleteReason($order_item_id, $stored_order_id) !== null;
+    }
+
+    /**
+     * @return string|null Machine-readable delete reason when the row would be removed.
+     */
+    private function getObsoleteReconcileDeleteReason(int $order_item_id, int $stored_order_id): ?string {
         try {
             if ($order_item_id <= 0 || $stored_order_id <= 0) {
-                return false;
+                return null;
             }
 
             if (!function_exists('wc_get_order')) {
-                return false;
+                return null;
             }
 
             $order = wc_get_order($stored_order_id);
             if (!$order || !is_object($order) || !method_exists($order, 'get_status')) {
-                return true;
+                return 'order_missing';
             }
 
             $status = (string) $order->get_status();
             if (RosterRefundService::isFlaggedRowStatus($status)) {
                 $this->syncKeptObsoleteOrderStatus($stored_order_id, $status);
                 unset($order);
-                return false;
+                return null;
             }
 
             $normalized = RosterRefundService::normalizeWooOrderStatus($status);
             if (in_array($normalized, ['refunded', 'cancelled'], true)) {
                 $this->syncKeptObsoleteOrderStatus($stored_order_id, $status);
                 unset($order);
-                return false;
+                return null;
             }
 
             if (RosterRefundService::isInactiveRebuildOrderStatus($status)) {
                 unset($order);
-                return true;
+                return 'failed';
             }
 
             if (!method_exists($order, 'get_items')) {
@@ -794,7 +965,7 @@ class RosterBuilder {
                 $this->logger->warning('Keeping obsolete reconcile row; order line items unreadable', [
                     'order_id' => $stored_order_id,
                 ]);
-                return false;
+                return null;
             }
 
             $items = $order->get_items();
@@ -804,17 +975,17 @@ class RosterBuilder {
                 $this->logger->warning('Keeping obsolete reconcile row; order line items unreadable', [
                     'order_id' => $stored_order_id,
                 ]);
-                return false;
+                return null;
             }
 
             $line_still_on_order = array_key_exists($order_item_id, $items);
 
-            return !$line_still_on_order;
+            return $line_still_on_order ? null : 'item_gone';
         } catch (\Throwable $e) {
             $this->logger->warning('Keeping obsolete reconcile row; order line items unreadable', [
                 'order_id' => $stored_order_id,
             ]);
-            return false;
+            return null;
         }
     }
     
@@ -895,6 +1066,15 @@ class RosterBuilder {
         array $options
     ) {
         $rosters = new RostersCollection();
+        $dry_run = !empty($options['dry_run']);
+        $only_missing = !empty($options['only_missing']);
+
+        if ($only_missing) {
+            $existing_only_missing = $this->findExistingRoster(['order_item_id' => (int) $item_id]);
+            if ($existing_only_missing) {
+                return $rosters;
+            }
+        }
         
         // Extract order item data
         $order_data = $this->extractOrderItemData($order, $item_id, $item);
@@ -904,8 +1084,25 @@ class RosterBuilder {
             throw new ValidationException("Order item missing activity type");
         }
         
-        // Get assigned players for this item (skip age/gender validation so explicit customer assignment is honoured on roster)
-        $assigned_players = $this->player_matcher->getAssignedPlayers($item, $customer_players, ['skip_age_gender_validation' => true]);
+        $resolution = $this->player_matcher->resolveAssignedPlayers(
+            $item,
+            $customer_players,
+            ['skip_age_gender_validation' => true]
+        );
+        if (!empty($resolution['ambiguous'])) {
+            if (!empty($options['reconcile_mode'])) {
+                $this->reconcile_report['ambiguous_player']['count']++;
+                $this->appendReconcileReportSample('ambiguous_player', [
+                    'order_item_id' => (int) $item_id,
+                    'order_id' => (int) $order->get_id(),
+                    'strategy' => (string) ($resolution['strategy'] ?? ''),
+                    'candidate_count' => (int) ($resolution['fallback_candidate_count'] ?? 0),
+                ]);
+            }
+            return $rosters;
+        }
+
+        $assigned_players = $resolution['players'];
         $assigned_count = $assigned_players->count();
         if ($assigned_players->isEmpty()) {
             $this->build_stats['warnings'][] = "Order {$order->get_id()}, Item {$item_id}: No assigned players found";
@@ -2086,11 +2283,52 @@ class RosterBuilder {
      */
     private function createOrUpdateRoster(array $roster_data, array $options) {
         $roster_data = $this->ensureRosterProductIds($roster_data);
+        $dry_run = !empty($options['dry_run']);
 
         // Check for existing roster
         $existing_roster = null;
         if ($options['skip_duplicates'] || $options['update_existing']) {
             $existing_roster = $this->findExistingRoster($roster_data);
+        }
+
+        if ($dry_run) {
+            if ($existing_roster && (!$options['update_existing'] || !empty($options['only_missing']))) {
+                return null;
+            }
+            if ($existing_roster && $options['update_existing']) {
+                $merged = $this->preserveExistingRosterFields($existing_roster, $roster_data);
+                $changes = $this->diffReconcileRosterFields($this->rosterModelToArray($existing_roster), $merged);
+                if ($changes === []) {
+                    return null;
+                }
+                $this->reconcile_report['would_update']++;
+                $this->reconcile_report['updates']['count']++;
+                $sample = [
+                    'order_item_id' => (int) ($roster_data['order_item_id'] ?? 0),
+                    'order_id' => (int) ($roster_data['order_id'] ?? 0),
+                    'changes' => $changes,
+                ];
+                if (isset($changes['event_signature'])) {
+                    $sample['event_signature_changed'] = true;
+                }
+                if (isset($changes['event_completed'])) {
+                    $sample['event_completed_flip'] = true;
+                }
+                $this->appendReconcileReportSample('updates', $sample);
+                $placeholder = new Roster();
+                $placeholder->order_item_id = (int) ($roster_data['order_item_id'] ?? 0);
+                return $placeholder;
+            }
+            $this->reconcile_report['would_insert']++;
+            $this->reconcile_report['inserts']['count']++;
+            $this->appendReconcileReportSample('inserts', [
+                'order_item_id' => (int) ($roster_data['order_item_id'] ?? 0),
+                'order_id' => (int) ($roster_data['order_id'] ?? 0),
+                'placeholder' => !empty($roster_data['is_placeholder']),
+            ]);
+            $placeholder = new Roster();
+            $placeholder->order_item_id = (int) ($roster_data['order_item_id'] ?? 0);
+            return $placeholder;
         }
         
         if ($existing_roster) {
