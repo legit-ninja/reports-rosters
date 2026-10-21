@@ -13,6 +13,13 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
+if (!function_exists('intersoccer_rr_label_selected_days')) {
+    $intersoccer_rr_i18n_details = plugin_dir_path(dirname(__FILE__)) . 'includes/i18n.php';
+    if (is_readable($intersoccer_rr_i18n_details)) {
+        require_once $intersoccer_rr_i18n_details;
+    }
+}
+
 require_once plugin_dir_path(dirname(__FILE__)) . 'includes/roster-data.php';
 
 if (!function_exists('intersoccer_user_can_view_roster_admin')) {
@@ -938,7 +945,7 @@ function intersoccer_render_roster_details_page() {
         echo '<th style="width: 100px;">' . esc_html__('Late Pickup', 'intersoccer-reports-rosters') . '</th>';
         echo '<th style="width: 120px;">' . esc_html__('Late Pickup Days', 'intersoccer-reports-rosters') . '</th>';
         echo '<th style="width: 120px;">' . esc_html__('Booking Type', 'intersoccer-reports-rosters') . '</th>';
-        echo '<th style="width: 140px;">' . esc_html__('Selected days', 'intersoccer-reports-rosters') . '</th>';
+        echo '<th style="width: 140px;">' . esc_html(intersoccer_rr_label_selected_days()) . '</th>';
         echo '<th style="width: 70px;">' . esc_html__('Monday', 'intersoccer-reports-rosters') . '</th>';
         echo '<th style="width: 70px;">' . esc_html__('Tuesday', 'intersoccer-reports-rosters') . '</th>';
         echo '<th style="width: 70px;">' . esc_html__('Wednesday', 'intersoccer-reports-rosters') . '</th>';

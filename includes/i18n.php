@@ -82,7 +82,7 @@ function intersoccer_rr_is_admin_english_context(): bool {
         return false;
     }
 
-    if (function_exists('is_locale_switched') && is_locale_switched()) {
+    if (intersoccer_rr_is_locale_switched()) {
         return false;
     }
 
@@ -91,6 +91,18 @@ function intersoccer_rr_is_admin_english_context(): bool {
     }
 
     return true;
+}
+
+/**
+ * Whether the locale is temporarily switched (e.g. customer emails from admin).
+ * Safe before WordPress creates $GLOBALS['wp_locale_switcher'] (plugins_loaded).
+ */
+function intersoccer_rr_is_locale_switched(): bool {
+    if (!isset($GLOBALS['wp_locale_switcher'])) {
+        return false;
+    }
+
+    return function_exists('is_locale_switched') && is_locale_switched();
 }
 
 /**

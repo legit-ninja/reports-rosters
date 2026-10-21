@@ -11,6 +11,12 @@ namespace InterSoccer\ReportsRosters\Ajax;
 
 defined('ABSPATH') or die('Restricted access');
 
+if (!function_exists('intersoccer_rr_label_selected_days')) {
+    $intersoccer_rr_i18n_ajax = dirname(__DIR__, 2) . '/includes/i18n.php';
+    if (is_readable($intersoccer_rr_i18n_ajax)) {
+        require_once $intersoccer_rr_i18n_ajax;
+    }
+}
 
 if (!function_exists('intersoccer_user_can_view_roster_admin')) {
     /**
@@ -147,7 +153,7 @@ class RostersTabsAjaxHandler {
                     <th><?php esc_html_e('Age', 'intersoccer-reports-rosters'); ?></th>
                     <th><?php esc_html_e('Gender', 'intersoccer-reports-rosters'); ?></th>
                     <th><?php esc_html_e('Booking', 'intersoccer-reports-rosters'); ?></th>
-                    <th><?php esc_html_e('Selected days', 'intersoccer-reports-rosters'); ?></th>
+                    <th><?php echo esc_html(\intersoccer_rr_label_selected_days()); ?></th>
                 </tr>
                 </thead>
                 <tbody>
