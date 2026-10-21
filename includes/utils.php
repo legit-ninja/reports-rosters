@@ -4691,15 +4691,59 @@ if (defined('INTERSOCCER_RUN_TEST_PROCESS_ORDERS') && INTERSOCCER_RUN_TEST_PROCE
     add_action('admin_init', 'intersoccer_test_process_orders');
 }
 
+/**
+ * Read stored product type meta only (no Product Variations get_product_type calls).
+ *
+ * @param int $product_id
+ * @param int|null $variation_id
+ * @return string
+ */
+function intersoccer_read_stored_product_type_meta_only($product_id, $variation_id = null) {
+    $product_id = (int) $product_id;
+    $variation_id = $variation_id ? (int) $variation_id : 0;
+    $check_id = $variation_id > 0 ? $variation_id : $product_id;
+
+    $product_type = get_post_meta($check_id, '_intersoccer_product_type', true);
+    if (!empty($product_type)) {
+        return (string) $product_type;
+    }
+
+    if ($variation_id > 0) {
+        $product_type = get_post_meta($product_id, '_intersoccer_product_type', true);
+        if (!empty($product_type)) {
+            return (string) $product_type;
+        }
+    }
+
+    return '';
+}
+
+function intersoccer_read_stored_product_type_for_reconcile($product_id, $variation_id = null) {
+    $stored = intersoccer_read_stored_product_type_meta_only($product_id, $variation_id);
+    if ($stored !== '') {
+        return $stored;
+    }
+
+    return intersoccer_manual_product_type_detection($product_id, $variation_id);
+}
+
 function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
+    if (!intersoccer_rr_allow_product_type_meta_write()) {
+        return intersoccer_read_stored_product_type_for_reconcile($product_id, $variation_id);
+    }
+
     // Check if the Product Variations plugin function exists
     if (!function_exists('intersoccer_get_product_type')) {
         if (defined('WP_DEBUG') && WP_DEBUG) {
             error_log('InterSoccer: CRITICAL - intersoccer_get_product_type function not found from Product Variations plugin');
         }
+        $stored = intersoccer_read_stored_product_type_meta_only($product_id, $variation_id);
+        if ($stored !== '') {
+            return $stored;
+        }
         return 'unknown';
     }
-    
+
     // Try variation ID first if provided
     if ($variation_id && $variation_id > 0) {
         $type = intersoccer_get_product_type($variation_id);
@@ -4707,19 +4751,22 @@ function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
             return $type;
         }
     }
-    
+
     // Try parent product ID
     $type = intersoccer_get_product_type($product_id);
     if (!empty($type)) {
         return $type;
     }
-    
+
     // Manual fallback if the function fails
     return intersoccer_manual_product_type_detection($product_id, $variation_id);
 }
 
 // 2. Manual fallback function based on the Product Variations logic
 function intersoccer_rr_allow_product_type_meta_write(): bool {
+    if (!empty($GLOBALS['intersoccer_rr_reconcile_block_product_type_meta_write'])) {
+        return false;
+    }
     return (bool) apply_filters('intersoccer_rr_allow_product_type_meta_write', true);
 }
 

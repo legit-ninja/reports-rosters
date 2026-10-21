@@ -443,6 +443,7 @@ class RosterBuilder {
 
         $product_type_filter = null;
         if ($this->reconcile_dry_run) {
+            $GLOBALS['intersoccer_rr_reconcile_block_product_type_meta_write'] = true;
             $product_type_filter = static function () {
                 return false;
             };
@@ -669,6 +670,7 @@ class RosterBuilder {
 
             if ($product_type_filter !== null) {
                 remove_filter('intersoccer_rr_allow_product_type_meta_write', $product_type_filter, 10000);
+                unset($GLOBALS['intersoccer_rr_reconcile_block_product_type_meta_write']);
             }
             $this->reconcile_dry_run = false;
             $this->reconcile_only_missing = false;
@@ -684,6 +686,7 @@ class RosterBuilder {
 
             if ($product_type_filter !== null) {
                 remove_filter('intersoccer_rr_allow_product_type_meta_write', $product_type_filter, 10000);
+                unset($GLOBALS['intersoccer_rr_reconcile_block_product_type_meta_write']);
             }
             $this->reconcile_dry_run = false;
             $this->reconcile_only_missing = false;
