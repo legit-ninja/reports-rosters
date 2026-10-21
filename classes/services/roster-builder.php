@@ -668,13 +668,6 @@ class RosterBuilder {
 
             $this->logger->info('Roster reconciliation completed', $results);
 
-            if ($product_type_filter !== null) {
-                remove_filter('intersoccer_rr_allow_product_type_meta_write', $product_type_filter, 10000);
-                unset($GLOBALS['intersoccer_rr_reconcile_block_product_type_meta_write']);
-            }
-            $this->reconcile_dry_run = false;
-            $this->reconcile_only_missing = false;
-
             return $results;
 
         } catch (\Exception $e) {
@@ -684,19 +677,19 @@ class RosterBuilder {
             $results['error_messages'][] = 'Reconciliation failed: ' . $e->getMessage();
             $results['report'] = $this->reconcile_report;
 
-            if ($product_type_filter !== null) {
-                remove_filter('intersoccer_rr_allow_product_type_meta_write', $product_type_filter, 10000);
-                unset($GLOBALS['intersoccer_rr_reconcile_block_product_type_meta_write']);
-            }
-            $this->reconcile_dry_run = false;
-            $this->reconcile_only_missing = false;
-
             $this->logger->error('Roster reconciliation failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
 
             return $results;
+        } finally {
+            if ($product_type_filter !== null) {
+                remove_filter('intersoccer_rr_allow_product_type_meta_write', $product_type_filter, 10000);
+            }
+            unset($GLOBALS['intersoccer_rr_reconcile_block_product_type_meta_write']);
+            $this->reconcile_dry_run = false;
+            $this->reconcile_only_missing = false;
         }
     }
 

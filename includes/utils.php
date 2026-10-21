@@ -4737,10 +4737,6 @@ function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
         if (defined('WP_DEBUG') && WP_DEBUG) {
             error_log('InterSoccer: CRITICAL - intersoccer_get_product_type function not found from Product Variations plugin');
         }
-        $stored = intersoccer_read_stored_product_type_meta_only($product_id, $variation_id);
-        if ($stored !== '') {
-            return $stored;
-        }
         return 'unknown';
     }
 
