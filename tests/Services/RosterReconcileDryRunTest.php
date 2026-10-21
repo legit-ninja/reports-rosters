@@ -50,7 +50,20 @@ class RosterReconcileDryRunTest extends TestCase {
     /** @var array<int,PlayersCollection> */
     private $playersByCustomerId = [];
 
+    /** @var string|null */
+    private $capturedErrorLogPath;
+
+    /** @var string|false|null */
+    private $previousErrorLogIni;
+
     protected function setUp(): void {
+        $this->capturedErrorLogPath = tempnam(sys_get_temp_dir(), 'rr_reconcile_dry_');
+        if ($this->capturedErrorLogPath !== false) {
+            $this->previousErrorLogIni = ini_set('error_log', $this->capturedErrorLogPath);
+        }
+        if (class_exists(Monkey::class)) {
+            Monkey\setUp();
+        }
         parent::setUp();
 
         $order_meta_keys = dirname(__DIR__, 2) . '/includes/order-meta-keys.php';
@@ -138,9 +151,20 @@ class RosterReconcileDryRunTest extends TestCase {
         global $intersoccer_test_wc_get_orders_callback, $intersoccer_test_wc_get_order_callback;
         $intersoccer_test_wc_get_orders_callback = null;
         $intersoccer_test_wc_get_order_callback = null;
+        unset($GLOBALS['intersoccer_rr_reconcile_block_product_type_meta_write']);
+        $GLOBALS['intersoccer_test_pv_get_product_type_called'] = false;
         if (class_exists(Monkey::class)) {
             Monkey\tearDown();
         }
+        Mockery::close();
+        if ($this->previousErrorLogIni !== null) {
+            ini_set('error_log', (string) $this->previousErrorLogIni);
+        }
+        if (is_string($this->capturedErrorLogPath) && is_file($this->capturedErrorLogPath)) {
+            unlink($this->capturedErrorLogPath);
+        }
+        $this->capturedErrorLogPath = null;
+        $this->previousErrorLogIni = null;
         parent::tearDown();
     }
 
@@ -148,10 +172,9 @@ class RosterReconcileDryRunTest extends TestCase {
      * @param int[] $orderIds
      */
     private function primeWcOrderMocks(array $orderIds): void {
-        if (!class_exists(Monkey::class)) {
+        if (!class_exists(Functions::class)) {
             return;
         }
-        Monkey\setUp();
         Functions\when('wc_get_orders')->justReturn($orderIds);
         Functions\when('wc_get_order')->alias(function ($order_id) {
             global $intersoccer_test_wc_get_order_callback;
@@ -208,6 +231,10 @@ class RosterReconcileDryRunTest extends TestCase {
         };
     }
 
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
     public function test_dry_run_reconcile_reports_insert_update_delete_without_writes(): void {
         $this->rows = [
             [
@@ -344,6 +371,10 @@ class RosterReconcileDryRunTest extends TestCase {
         $this->assertSame('Child', $this->rows[0]['player_last_name']);
     }
 
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
     public function test_only_missing_inserts_missing_row_without_update_or_delete(): void {
         $this->rows = [
             [
@@ -411,6 +442,10 @@ class RosterReconcileDryRunTest extends TestCase {
         }
     }
 
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
     public function test_get_product_type_safe_read_only_skips_pv_and_post_meta_writes(): void {
         if (!function_exists('intersoccer_get_product_type_safe')) {
             require_once dirname(__DIR__, 2) . '/includes/utils.php';
