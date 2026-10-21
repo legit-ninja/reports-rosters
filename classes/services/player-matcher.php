@@ -126,7 +126,7 @@ class PlayerMatcher {
             }
 
             $validated_players = $this->validatePlayerAssignments($assigned_players, $item, $options);
-            $ambiguous = $this->isAmbiguousFallbackAssignment($winning_strategy, $customer_players);
+            $ambiguous = $this->isAmbiguousFallbackAssignment($winning_strategy, $customer_players, $validated_players, $item);
 
             $resolved = [
                 'players' => $validated_players,
@@ -158,12 +158,22 @@ class PlayerMatcher {
     /**
      * True when assignment relied on a quantity/customer fallback and multiple players could match.
      */
-    public function isAmbiguousFallbackAssignment(string $strategy, PlayersCollection $customer_players): bool {
-        if ($customer_players->count() <= 1) {
-            return false;
+    public function isAmbiguousFallbackAssignment(
+        string $strategy,
+        PlayersCollection $customer_players,
+        PlayersCollection $assigned_players,
+        \WC_Order_Item_Product $item
+    ): bool {
+        if ($strategy === 'customer_players') {
+            return $customer_players->count() > 1;
         }
 
-        return in_array($strategy, ['order_quantity', 'customer_players'], true);
+        if ($strategy === 'order_quantity') {
+            $qty = max(1, (int) $item->get_quantity());
+            return $customer_players->count() > $qty;
+        }
+
+        return false;
     }
     
     /**
