@@ -117,23 +117,23 @@ msgstr ""
 
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:272
 msgid "Monday"
-msgstr ""
+msgstr "Montag"
 
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:273
 msgid "Tuesday"
-msgstr ""
+msgstr "Dienstag"
 
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:274
 msgid "Wednesday"
-msgstr ""
+msgstr "Mittwoch"
 
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:275
 msgid "Thursday"
-msgstr ""
+msgstr "Donnerstag"
 
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:276
 msgid "Friday"
-msgstr ""
+msgstr "Freitag"
 
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:279
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1962
@@ -1810,3 +1810,10 @@ msgstr "Alle Veranstaltungen"
 #, php-format
 msgid "Event type: %s"
 msgstr "Veranstaltungstyp: %s"
+#: includes/i18n.php:20
+msgid "Selected Days"
+msgstr "Ausgewählte Tage"
+
+#: includes/i18n.php:27
+msgid "Days Selected"
+msgstr "Ausgewählte Tage"
