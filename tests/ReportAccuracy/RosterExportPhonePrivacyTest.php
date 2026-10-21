@@ -26,9 +26,14 @@ class RosterExportPhonePrivacyTest extends TestCase {
     }
 
     public function test_redact_phone_for_log_returns_length_and_last_two_digits_only(): void {
-        $this->assertSame('len=11 ..71', intersoccer_redact_phone_for_log('+41 78 402 70 71'));
+        $this->assertSame('len=11 ..71', intersoccer_redact_phone_for_log('+41 79 000 00 71'));
         $this->assertSame('len=10 ..99', intersoccer_redact_phone_for_log('0784027099'));
         $this->assertStringNotContainsString('784027099', intersoccer_redact_phone_for_log('0784027099'));
+    }
+
+    public function test_redact_phone_for_log_omits_tail_when_fewer_than_six_digits(): void {
+        $this->assertSame('len=2', intersoccer_redact_phone_for_log('12'));
+        $this->assertSame('len=5', intersoccer_redact_phone_for_log('12345'));
     }
 
     public function test_normalize_phone_runtime_log_excludes_full_number_when_wp_debug(): void {
@@ -61,11 +66,13 @@ class RosterExportPhonePrivacyTest extends TestCase {
         $previous_log = ini_set('error_log', $log_file);
 
         try {
-            intersoccer_normalize_phone_number('12');
+            intersoccer_normalize_phone_number($secret . 'x');
             $log = (string) file_get_contents($log_file);
+            $this->assertNotSame('', trim($log), 'Expected invalid phone normalization to write a debug log line');
             $this->assertStringContainsString('Invalid phone number format', $log);
             $this->assertStringNotContainsString($secret, $log);
-            $this->assertStringContainsString('len=2 ..12', $log);
+            $this->assertStringContainsString('len=10', $log);
+            $this->assertStringContainsString('..67', $log);
         } finally {
             ini_set('error_log', (string) $previous_log);
             if (is_string($log_file) && file_exists($log_file)) {

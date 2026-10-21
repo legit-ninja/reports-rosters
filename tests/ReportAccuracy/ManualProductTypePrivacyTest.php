@@ -48,8 +48,8 @@ class ManualProductTypePrivacyTest extends TestCase {
         $this->assertSame('unknown', intersoccer_manual_product_type_detection(88001, null));
 
         $cache = intersoccer_manual_product_type_lookup_cache();
-        $this->assertArrayHasKey(88001, $cache);
-        $this->assertSame('unknown', $cache[88001]);
+        $this->assertArrayHasKey('88001:', $cache);
+        $this->assertSame('unknown', $cache['88001:']);
 
         global $intersoccer_test_get_post_meta_call_count;
         $this->assertSame(1, $intersoccer_test_get_post_meta_call_count);
@@ -63,6 +63,25 @@ class ManualProductTypePrivacyTest extends TestCase {
 
         global $intersoccer_test_get_post_meta_call_count;
         $this->assertSame(1, $intersoccer_test_get_post_meta_call_count);
+    }
+
+    public function test_manual_product_type_cache_distinguishes_variation_only_from_parent_and_variation(): void {
+        $variation_id = 88100;
+        $parent_id = 88101;
+        \InterSoccerRRTestMeta::$data[$parent_id]['_intersoccer_product_type'] = 'course';
+
+        $this->assertSame('unknown', intersoccer_manual_product_type_detection($variation_id, null));
+        global $intersoccer_test_get_post_meta_call_count;
+        $this->assertSame(1, $intersoccer_test_get_post_meta_call_count);
+
+        $this->assertSame('course', intersoccer_manual_product_type_detection($parent_id, $variation_id));
+        $this->assertSame(3, $intersoccer_test_get_post_meta_call_count);
+
+        $cache = intersoccer_manual_product_type_lookup_cache();
+        $this->assertArrayHasKey($variation_id . ':', $cache);
+        $this->assertSame('unknown', $cache[$variation_id . ':']);
+        $this->assertArrayHasKey($parent_id . ':' . $variation_id, $cache);
+        $this->assertSame('course', $cache[$parent_id . ':' . $variation_id]);
     }
 
     public function test_manual_product_type_runtime_log_excludes_numeric_ids_when_wp_debug(): void {

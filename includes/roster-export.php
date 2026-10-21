@@ -98,7 +98,7 @@ function intersoccer_normalize_phone_number($phone) {
         $cleaned = '+' . substr($cleaned, 2);
     }
 
-    // Handle Swiss numbers starting with 07 (e.g., 0784027071 -> +41784027071)
+    // Handle Swiss numbers starting with 07 (e.g., 0790000071 -> +41790000071)
     if (preg_match('/^0?7(\d{7,10})$/', $cleaned, $matches)) {
         $local_number = $matches[1];
         // Normalize to 9 digits

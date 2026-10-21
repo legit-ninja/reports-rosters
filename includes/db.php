@@ -1020,7 +1020,12 @@ if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exis
                 ob_clean();
                 wp_send_json_error(['message' => __('You do not have permission to rebuild rosters.', 'intersoccer-reports-rosters')]);
             }
-            error_log('InterSoccer: AJAX rebuild request received with data: ' . print_r($_POST, true));
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log(
+                    'InterSoccer: AJAX rebuild request received with POST keys: '
+                    . implode(',', array_keys($_POST))
+                );
+            }
 
             try {
                 $result = intersoccer_rebuild_rosters_and_reports();
@@ -1061,7 +1066,12 @@ if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exis
                 ob_clean();
                 wp_send_json_error(['message' => __('You do not have permission to reconcile rosters.', 'intersoccer-reports-rosters')]);
             }
-            error_log('InterSoccer: AJAX reconcile request received with data: ' . print_r($_POST, true));
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log(
+                    'InterSoccer: AJAX reconcile request received with POST keys: '
+                    . implode(',', array_keys($_POST))
+                );
+            }
 
             try {
                 $result = intersoccer_reconcile_rosters();

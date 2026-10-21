@@ -456,6 +456,9 @@ if (!function_exists('intersoccer_redact_phone_for_log')) {
             return 'empty';
         }
         $len = strlen($digits);
+        if ($len < 6) {
+            return 'len=' . $len;
+        }
         $last_two = substr($digits, -2);
 
         return 'len=' . $len . ' ..' . $last_two;
@@ -4744,7 +4747,7 @@ function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
 /**
  * Per-request memo for manual product type detection (includes negative "unknown" results).
  *
- * @return array<int, string>
+ * @return array<string, string>
  */
 function &intersoccer_manual_product_type_lookup_cache() {
     static $cache = [];
@@ -4761,10 +4764,13 @@ function intersoccer_reset_product_type_cache(): void {
 
 // 2. Manual fallback function based on the Product Variations logic
 function intersoccer_manual_product_type_detection($product_id, $variation_id = null) {
-    $check_id = $variation_id && $variation_id > 0 ? (int) $variation_id : (int) $product_id;
+    $product_id = (int) $product_id;
+    $variation_id = $variation_id && $variation_id > 0 ? (int) $variation_id : null;
+    $check_id = $variation_id ? $variation_id : $product_id;
+    $cache_key = $product_id . ':' . ($variation_id ? (string) $variation_id : '');
     $cache = &intersoccer_manual_product_type_lookup_cache();
-    if (array_key_exists($check_id, $cache)) {
-        return $cache[$check_id];
+    if (array_key_exists($cache_key, $cache)) {
+        return $cache[$cache_key];
     }
 
     $debug = defined('WP_DEBUG') && WP_DEBUG;
@@ -4772,15 +4778,13 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
         error_log('InterSoccer: Manual product type detection');
     }
 
-    $product_type = '';
-
     // Check existing meta first
     $product_type = get_post_meta($check_id, '_intersoccer_product_type', true);
     if ($product_type) {
         if ($debug) {
             error_log('InterSoccer: Found product type in meta: ' . $product_type);
         }
-        $cache[$check_id] = $product_type;
+        $cache[$cache_key] = $product_type;
         return $product_type;
     }
 
@@ -4791,7 +4795,7 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
             if ($debug) {
                 error_log('InterSoccer: Found product type in parent meta: ' . $product_type);
             }
-            $cache[$check_id] = $product_type;
+            $cache[$cache_key] = $product_type;
             return $product_type;
         }
     }
@@ -4819,7 +4823,7 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
             }
             // Save to meta for future use
             update_post_meta($check_id, '_intersoccer_product_type', $product_type);
-            $cache[$check_id] = $product_type;
+            $cache[$cache_key] = $product_type;
             return $product_type;
         }
     }
@@ -4847,7 +4851,7 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
                     error_log('InterSoccer: Product type from attributes: ' . $product_type);
                 }
                 update_post_meta($check_id, '_intersoccer_product_type', $product_type);
-                $cache[$check_id] = $product_type;
+                $cache[$cache_key] = $product_type;
                 return $product_type;
             }
         }
@@ -4876,7 +4880,7 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
                             error_log('InterSoccer: Product type from parent attributes: ' . $product_type);
                         }
                         update_post_meta($check_id, '_intersoccer_product_type', $product_type);
-                        $cache[$check_id] = $product_type;
+                        $cache[$cache_key] = $product_type;
                         return $product_type;
                     }
                 }
@@ -4887,7 +4891,7 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
     if ($debug) {
         error_log('InterSoccer: Could not determine product type manually');
     }
-    $cache[$check_id] = 'unknown';
+    $cache[$cache_key] = 'unknown';
     return 'unknown';
 }
 
