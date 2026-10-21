@@ -354,7 +354,7 @@ class ReportsRostersDiagnosticsService {
      * @param int $order_item_id
      * @return array
      */
-    public function runSafeFixForOrderItem(int $order_item_id): array {
+    public function runSafeFixForOrderItem(int $order_item_id, array $options = []): array {
         $order_item_id = (int) $order_item_id;
         if ($order_item_id <= 0) {
             return [
@@ -362,6 +362,10 @@ class ReportsRostersDiagnosticsService {
                 'message' => __('Invalid order item ID.', 'intersoccer-reports-rosters'),
                 'order_item_id' => $order_item_id,
             ];
+        }
+
+        if (!empty($options['dry_run'])) {
+            return $this->previewSafeFixForOrderItem($order_item_id);
         }
 
         $started = microtime(true);
@@ -540,6 +544,72 @@ class ReportsRostersDiagnosticsService {
             'trace_after' => $trace_after,
             'fix_results' => $results,
             'elapsed_ms' => (int) round((microtime(true) - $started) * 1000),
+        ];
+    }
+
+    /**
+     * Dry-run preview for per-item Fix Sync (no writes).
+     *
+     * @param int $order_item_id
+     * @return array<string,mixed>
+     */
+    private function previewSafeFixForOrderItem(int $order_item_id): array {
+        $trace_before = $this->traceItem(['order_item_id' => $order_item_id]);
+        $woo = $this->fetchWooRowByOrderItemId($order_item_id);
+        $roster_rows = isset($trace_before['roster_rows']) && is_array($trace_before['roster_rows']) ? $trace_before['roster_rows'] : [];
+        $roster = null;
+        foreach ($roster_rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if ($roster === null || $this->rowCompletenessRank($row) > $this->rowCompletenessRank($roster)) {
+                $roster = $row;
+            }
+        }
+
+        $reasons_before = self::computeItemMismatchReasons($woo, $roster, $roster_rows);
+        $would = [
+            'roster_insert' => 0,
+            'roster_rebuild' => 0,
+            'woo_meta' => 0,
+            'quarantine' => 0,
+        ];
+
+        if (in_array('missing_in_rosters', $reasons_before, true) && $woo !== null) {
+            $would['roster_insert'] = 1;
+        }
+        foreach ($roster_rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if (function_exists('intersoccer_roster_row_needs_order_resync')
+                && intersoccer_roster_row_needs_order_resync($row)) {
+                $would['roster_rebuild'] = 1;
+            }
+        }
+        if ($woo !== null && $roster !== null && in_array('missing_in_woo_meta', $reasons_before, true)) {
+            $would['woo_meta'] = 1;
+        }
+        if (in_array('missing_in_woo', $reasons_before, true) && $roster !== null && !$this->woocommerceLineItemExists($order_item_id)) {
+            $would['quarantine'] = 1;
+        }
+
+        $action_count = $would['roster_insert'] + $would['roster_rebuild'] + $would['woo_meta'] + $would['quarantine'];
+        $status = 'in_sync';
+        if ($action_count > 0 && empty($reasons_before)) {
+            $status = 'would_fix';
+        } elseif ($action_count > 0) {
+            $status = 'would_fix_partial';
+        } elseif (!empty($reasons_before)) {
+            $status = 'would_mismatch';
+        }
+
+        return [
+            'status' => $status,
+            'order_item_id' => $order_item_id,
+            'reasons_before' => $reasons_before,
+            'would' => $would,
+            'dry_run' => true,
         ];
     }
 
@@ -2207,13 +2277,15 @@ class ReportsRostersDiagnosticsService {
      * @param array<int,int> $order_item_ids
      * @return array<string,mixed>
      */
-    public function alignOrderItemsById(array $order_item_ids): array {
+    public function alignOrderItemsById(array $order_item_ids, array $options = []): array {
         $results = [
             'candidate_count' => 0,
             'fixed' => 0,
             'partial' => 0,
             'still_mismatch' => 0,
             'errors' => 0,
+            'dry_run' => !empty($options['dry_run']),
+            'preview' => [],
         ];
 
         foreach ($order_item_ids as $order_item_id) {
@@ -2222,7 +2294,7 @@ class ReportsRostersDiagnosticsService {
                 continue;
             }
             $results['candidate_count']++;
-            $fix = $this->runSafeFixForOrderItem($order_item_id);
+            $fix = $this->runSafeFixForOrderItem($order_item_id, $options);
             $status = (string) ($fix['status'] ?? '');
             if ($status === 'in_sync' || $status === 'fixed') {
                 $results['fixed']++;
@@ -2245,9 +2317,17 @@ class ReportsRostersDiagnosticsService {
      * @param array $filters
      * @return array<string,mixed>
      */
-    public function startReconcileAlignmentQueue(array $filters): array {
+    public function startReconcileAlignmentQueue(array $filters, array $options = []): array {
         $filters = $this->sanitizeFilters($filters);
         $ids = $this->collectMismatchOrderItemIds($filters);
+        if (!empty($options['dry_run'])) {
+            return [
+                'queue_key' => '',
+                'total' => count($ids),
+                'batch_size' => 25,
+                'dry_run' => true,
+            ];
+        }
         $user_id = function_exists('get_current_user_id') ? (int) get_current_user_id() : 0;
         $queue_key = 'intersoccer_reconcile_align_' . max(0, $user_id);
 
@@ -2281,10 +2361,66 @@ class ReportsRostersDiagnosticsService {
      * @param int $batch_size
      * @return array<string,mixed>
      */
-    public function processReconcileAlignmentBatch(string $queue_key, int $batch_size = 25): array {
+    public function processReconcileAlignmentBatch(string $queue_key, int $batch_size = 25, array $options = []): array {
         $started = microtime(true);
-        $queue_key = sanitize_key($queue_key);
         $batch_size = max(1, min(50, (int) $batch_size));
+        $dry_run = !empty($options['dry_run']);
+
+        if ($dry_run) {
+            $filters = is_array($options['filters'] ?? null) ? $options['filters'] : ['year' => (string) date('Y')];
+            $filters = $this->sanitizeFilters($filters);
+            $ids = $this->collectMismatchOrderItemIds($filters);
+            $offset = max(0, (int) ($options['offset'] ?? 0));
+            $total = count($ids);
+            $batch_ids = array_slice($ids, $offset, $batch_size);
+            $stats = [
+                'fixed' => 0,
+                'partial' => 0,
+                'still_mismatch' => 0,
+                'errors' => 0,
+                'would_quarantine' => 0,
+                'would_woo_meta' => 0,
+                'would_roster_insert' => 0,
+                'would_roster_rebuild' => 0,
+            ];
+            $preview = [];
+            foreach ($batch_ids as $order_item_id) {
+                $fix = $this->runSafeFixForOrderItem((int) $order_item_id, ['dry_run' => true]);
+                $preview[] = $fix;
+                $would = is_array($fix['would'] ?? null) ? $fix['would'] : [];
+                $stats['would_quarantine'] += (int) ($would['quarantine'] ?? 0);
+                $stats['would_woo_meta'] += (int) ($would['woo_meta'] ?? 0);
+                $stats['would_roster_insert'] += (int) ($would['roster_insert'] ?? 0);
+                $stats['would_roster_rebuild'] += (int) ($would['roster_rebuild'] ?? 0);
+                $status = (string) ($fix['status'] ?? '');
+                if ($status === 'in_sync') {
+                    continue;
+                }
+                if ($status === 'would_fix') {
+                    $stats['fixed']++;
+                } elseif ($status === 'would_fix_partial') {
+                    $stats['partial']++;
+                } elseif ($status === 'would_mismatch') {
+                    $stats['still_mismatch']++;
+                } elseif ($status === 'error') {
+                    $stats['errors']++;
+                }
+            }
+            $offset += count($batch_ids);
+            return [
+                'status' => 'ok',
+                'complete' => $offset >= $total,
+                'processed' => $offset,
+                'total' => $total,
+                'batch_count' => count($batch_ids),
+                'stats' => $stats,
+                'dry_run' => true,
+                'preview' => $preview,
+                'elapsed_ms' => (int) round((microtime(true) - $started) * 1000),
+            ];
+        }
+
+        $queue_key = sanitize_key($queue_key);
         $queue = get_transient($queue_key);
         if (!is_array($queue) || empty($queue['ids']) || !is_array($queue['ids'])) {
             return [

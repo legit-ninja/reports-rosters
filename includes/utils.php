@@ -4719,6 +4719,10 @@ function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
 }
 
 // 2. Manual fallback function based on the Product Variations logic
+function intersoccer_rr_allow_product_type_meta_write(): bool {
+    return (bool) apply_filters('intersoccer_rr_allow_product_type_meta_write', true);
+}
+
 function intersoccer_manual_product_type_detection($product_id, $variation_id = null) {
     $check_id = $variation_id && $variation_id > 0 ? $variation_id : $product_id;
     
@@ -4757,8 +4761,9 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
         
         if ($product_type) {
             error_log('InterSoccer: Product type from categories: ' . $product_type);
-            // Save to meta for future use
-            update_post_meta($check_id, '_intersoccer_product_type', $product_type);
+            if (intersoccer_rr_allow_product_type_meta_write()) {
+                update_post_meta($check_id, '_intersoccer_product_type', $product_type);
+            }
             return $product_type;
         }
     }
@@ -4781,7 +4786,9 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
             
             if ($product_type) {
                 error_log('InterSoccer: Product type from attributes: ' . $product_type);
-                update_post_meta($check_id, '_intersoccer_product_type', $product_type);
+                if (intersoccer_rr_allow_product_type_meta_write()) {
+                    update_post_meta($check_id, '_intersoccer_product_type', $product_type);
+                }
                 return $product_type;
             }
         }
@@ -4805,7 +4812,9 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
                     
                     if ($product_type) {
                         error_log('InterSoccer: Product type from parent attributes: ' . $product_type);
-                        update_post_meta($check_id, '_intersoccer_product_type', $product_type);
+                        if (intersoccer_rr_allow_product_type_meta_write()) {
+                            update_post_meta($check_id, '_intersoccer_product_type', $product_type);
+                        }
                         return $product_type;
                     }
                 }

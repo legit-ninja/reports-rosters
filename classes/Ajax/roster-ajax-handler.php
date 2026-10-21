@@ -194,7 +194,13 @@ class RosterAjaxHandler {
                 @set_time_limit(0);
             }
 
-            $options = ['delete_obsolete' => true];
+            $apply = isset($_POST['apply']) && (string) $_POST['apply'] === '1';
+            $only_missing = !empty($_POST['only_missing']);
+            $options = [
+                'delete_obsolete' => true,
+                'dry_run' => !$apply,
+                'only_missing' => $only_missing,
+            ];
             if (!empty($_POST['date_from'])) {
                 $options['date_from'] = sanitize_text_field($_POST['date_from']);
             }
@@ -226,12 +232,13 @@ class RosterAjaxHandler {
 
             $alignment_queue = null;
             $newly_created_alignment = null;
-            if ($diag_service !== null) {
+            $diag_opts = ['dry_run' => !$apply];
+            if ($diag_service !== null && !$only_missing) {
                 $newly_created = is_array($results['newly_created_item_ids'] ?? null)
                     ? array_map('intval', $results['newly_created_item_ids'])
                     : [];
                 if (!empty($newly_created)) {
-                    $newly_created_alignment = $diag_service->alignOrderItemsById($newly_created);
+                    $newly_created_alignment = $diag_service->alignOrderItemsById($newly_created, $diag_opts);
                     $results['newly_created_alignment'] = $newly_created_alignment;
                 }
 
@@ -242,16 +249,33 @@ class RosterAjaxHandler {
                     'total' => $mismatch_before,
                     'batch_size' => 25,
                     'queue_key' => '',
+                    'dry_run' => !$apply,
                 ];
                 $results['alignment_queue'] = $alignment_queue;
             }
 
-            $message = sprintf(
-                __('Reconciliation completed. Synced: %d, Deleted: %d, Errors: %d', 'intersoccer-reports-rosters'),
-                $results['synced'],
-                $results['deleted'],
-                $results['errors']
-            );
+            $report = is_array($results['report'] ?? null) ? $results['report'] : [];
+            $would_insert = (int) ($report['would_insert'] ?? 0);
+            $would_update = (int) ($report['would_update'] ?? 0);
+            $would_delete = (int) ($report['would_delete'] ?? 0);
+            $ambiguous = (int) ($report['ambiguous_player']['count'] ?? 0);
+
+            if (!$apply) {
+                $message = sprintf(
+                    __('Dry run: would sync %1$d, delete %2$d, ambiguous player skips %3$d, errors %4$d.', 'intersoccer-reports-rosters'),
+                    $would_insert + $would_update,
+                    $would_delete,
+                    $ambiguous,
+                    (int) ($results['errors'] ?? 0)
+                );
+            } else {
+                $message = sprintf(
+                    __('Reconciliation completed. Synced: %d, Deleted: %d, Errors: %d', 'intersoccer-reports-rosters'),
+                    $results['synced'],
+                    $results['deleted'],
+                    $results['errors']
+                );
+            }
             if (is_array($alignment_queue) && (int) ($alignment_queue['total'] ?? 0) > 0) {
                 $message .= sprintf(
                     __(' Sync queue alignment will run in batches for ~%d items.', 'intersoccer-reports-rosters'),
@@ -261,8 +285,10 @@ class RosterAjaxHandler {
 
             wp_send_json_success([
                 'message' => $message,
+                'dry_run' => !$apply,
                 'results' => $results,
                 'alignment_queue' => $alignment_queue,
+                'report' => $report,
             ]);
             
         } catch (\Exception $e) {
@@ -294,9 +320,11 @@ class RosterAjaxHandler {
             }
 
             $prepare = !empty($_POST['prepare']);
+            $dry_run = !empty($_POST['dry_run']);
             $year = sanitize_text_field($_POST['year'] ?? (string) (int) date('Y'));
             $queue_key = sanitize_text_field($_POST['queue_key'] ?? '');
             $batch_size = isset($_POST['batch_size']) ? (int) $_POST['batch_size'] : 25;
+            $offset = isset($_POST['offset']) ? (int) $_POST['offset'] : 0;
 
             if (!class_exists(ReportsRostersDiagnosticsService::class)) {
                 wp_send_json_error(['message' => __('Diagnostics service unavailable.', 'intersoccer-reports-rosters')]);
@@ -304,14 +332,35 @@ class RosterAjaxHandler {
 
             $diag_service = new ReportsRostersDiagnosticsService();
             $queue_info = null;
+            $alignment_filters = [
+                'year' => $year,
+                'limit' => 500,
+                'offset' => 0,
+            ];
+
+            if ($dry_run) {
+                if ($prepare || $offset === 0) {
+                    $queue_info = $diag_service->startReconcileAlignmentQueue($alignment_filters, ['dry_run' => true]);
+                }
+                $batch = $diag_service->processReconcileAlignmentBatch('', $batch_size, [
+                    'dry_run' => true,
+                    'filters' => $alignment_filters,
+                    'offset' => $offset,
+                ]);
+                $batch['queue_key'] = '';
+                $batch['dry_run'] = true;
+                if (is_array($queue_info)) {
+                    $batch['total'] = (int) ($queue_info['total'] ?? ($batch['total'] ?? 0));
+                }
+                if (($batch['status'] ?? '') === 'error') {
+                    wp_send_json_error(['message' => (string) ($batch['message'] ?? __('Alignment batch failed.', 'intersoccer-reports-rosters'))]);
+                }
+                wp_send_json_success($batch);
+            }
 
             if ($prepare || $queue_key === '') {
                 $this->logger->info('AJAX: Preparing reconcile alignment queue', ['year' => $year]);
-                $queue_info = $diag_service->startReconcileAlignmentQueue([
-                    'year' => $year,
-                    'limit' => 500,
-                    'offset' => 0,
-                ]);
+                $queue_info = $diag_service->startReconcileAlignmentQueue($alignment_filters);
                 $queue_key = (string) ($queue_info['queue_key'] ?? '');
             }
 

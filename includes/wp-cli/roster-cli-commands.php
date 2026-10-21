@@ -164,6 +164,103 @@ final class Intersoccer_Rr_Wp_Cli {
     }
 
     /**
+     * Reconcile rosters against WooCommerce orders (dry-run by default).
+     *
+     * ## OPTIONS
+     *
+     * [--apply]
+     * : Persist reconcile changes (requires explicit flag).
+     *
+     * [--only-missing]
+     * : Insert missing roster rows only (no updates or deletes).
+     *
+     * [--from=<date>]
+     * : Optional order date from (Y-m-d).
+     *
+     * [--to=<date>]
+     * : Optional order date to (Y-m-d).
+     *
+     * ## EXAMPLES
+     *
+     *     wp intersoccer-rr reconcile-rosters
+     *     wp intersoccer-rr reconcile-rosters --apply --yes
+     *
+     * @subcommand reconcile-rosters
+     * @alias reconcile_rosters
+     * @when after_wp_load
+     *
+     * @param list<string> $args
+     * @param array<string,mixed> $assoc_args
+     */
+    public function reconcile_rosters(array $args, array $assoc_args): void {
+        if (!function_exists('intersoccer_oop_reconcile_rosters')) {
+            \WP_CLI::error('OOP roster reconcile is not available.');
+        }
+
+        $apply = \WP_CLI\Utils\get_flag_value($assoc_args, 'apply', false) === true;
+        $yes = \WP_CLI\Utils\get_flag_value($assoc_args, 'yes', false) === true;
+        $only_missing = \WP_CLI\Utils\get_flag_value($assoc_args, 'only-missing', false) === true;
+
+        if ($apply && !$yes) {
+            $prompt = 'Apply roster reconcile? [y/n] ';
+            $answer = '';
+            if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
+                $filtered = apply_filters('intersoccer_rr_cli_confirm', false, $prompt, 'reconcile-rosters');
+                if (is_string($filtered)) {
+                    $answer = $filtered;
+                }
+            }
+            if ($answer === '' && defined('STDIN') && is_resource(STDIN)) {
+                \WP_CLI::log(rtrim($prompt));
+                $answer = (string) fgets(STDIN);
+            }
+            if (strtolower(trim($answer)) !== 'y') {
+                \WP_CLI::log('Aborted, nothing written.');
+                return;
+            }
+        }
+
+        $options = [
+            'dry_run' => !$apply,
+            'only_missing' => $only_missing,
+            'delete_obsolete' => true,
+        ];
+        if (!empty($assoc_args['from'])) {
+            $options['date_from'] = (string) $assoc_args['from'];
+        }
+        if (!empty($assoc_args['to'])) {
+            $options['date_to'] = (string) $assoc_args['to'];
+        }
+        if (!empty($options['date_from']) || !empty($options['date_to'])) {
+            $options['delete_obsolete'] = false;
+        }
+
+        $result = intersoccer_oop_reconcile_rosters($options);
+        $report = is_array($result['report'] ?? null) ? $result['report'] : [];
+
+        if (!$apply) {
+            \WP_CLI::log(sprintf(
+                'Dry run: would insert %d, update %d, delete %d, ambiguous player skips %d, errors %d',
+                (int) ($report['would_insert'] ?? 0),
+                (int) ($report['would_update'] ?? 0),
+                (int) ($report['would_delete'] ?? 0),
+                (int) ($report['ambiguous_player']['count'] ?? 0),
+                (int) ($result['errors'] ?? 0)
+            ));
+            \WP_CLI::success('Dry run complete (no writes).');
+            return;
+        }
+
+        \WP_CLI::log(sprintf(
+            'Applied: synced %d, deleted %d, errors %d',
+            (int) ($result['synced'] ?? 0),
+            (int) ($result['deleted'] ?? 0),
+            (int) ($result['errors'] ?? 0)
+        ));
+        \WP_CLI::success('Reconcile apply complete.');
+    }
+
+    /**
      * @param array<string,mixed> $counts
      */
     private function formatBackfillOutcomeLine(array $counts, bool $is_apply): string {
