@@ -51,7 +51,7 @@ class AttributionOopAdapterTest extends TestCase {
      * @runInSeparateProcess
      * @preserveGlobalState disabled
      */
-    public function test_attribute_order_financials_logs_numeric_order_id_when_passed_order_object(): void {
+    public function test_attribute_order_financials_failure_log_excludes_order_id_when_passed_order_object(): void {
         $order = (new FakeOrder(80999))->addLine(new FakeLineItem(809991, ['subtotal' => 100.0, 'total' => 100.0]));
         ReportAccuracyStore::addOrder($order);
 
@@ -66,8 +66,9 @@ class AttributionOopAdapterTest extends TestCase {
         try {
             intersoccer_oop_attribute_order_financials($order);
             $log = (string) file_get_contents($log_file);
-            $this->assertStringContainsString('80999', $log);
+            $this->assertStringContainsString('Financial attribution failed', $log);
             $this->assertStringContainsString('synthetic failure', $log);
+            $this->assertStringNotContainsString('80999', $log);
         } finally {
             ini_set('error_log', (string) $previous_log);
             if (is_string($log_file) && file_exists($log_file)) {

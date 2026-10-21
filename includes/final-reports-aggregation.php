@@ -425,8 +425,9 @@ if (!function_exists('intersoccer_reports_build_camp_report_from_entries')) {
                     : 1;
                 if (function_exists('intersoccer_reports_final_row_is_thin_line')
                     && intersoccer_reports_final_row_is_thin_line($entry)) {
-                    error_log('InterSoccer Final Numbers: thin roster line excluded from camp grid (order_item_id '
-                        . (int) ($entry['order_item_id'] ?? 0) . ')');
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('InterSoccer Final Numbers: thin roster line excluded from camp grid');
+                    }
                 }
                 continue;
             }
@@ -765,8 +766,9 @@ if (!function_exists('intersoccer_reports_build_course_report_from_entries')) {
                     : 1;
                 if (function_exists('intersoccer_reports_final_row_is_thin_line')
                     && intersoccer_reports_final_row_is_thin_line($entry)) {
-                    error_log('InterSoccer Final Numbers: thin roster line excluded from course grid (order_item_id '
-                        . (int) ($entry['order_item_id'] ?? 0) . ')');
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('InterSoccer Final Numbers: thin roster line excluded from course grid');
+                    }
                 }
                 continue;
             }

@@ -329,10 +329,20 @@ if (!class_exists('InterSoccerRRTestMeta')) {
 
 if (!function_exists('get_post_meta')) {
     function get_post_meta($post_id, $key = '', $single = false) {
+        global $intersoccer_test_get_post_meta_call_count;
+        if (isset($intersoccer_test_get_post_meta_call_count)) {
+            $intersoccer_test_get_post_meta_call_count++;
+        }
         if ($key !== '' && isset(InterSoccerRRTestMeta::$data[$post_id][$key])) {
             return $single ? InterSoccerRRTestMeta::$data[$post_id][$key] : [InterSoccerRRTestMeta::$data[$post_id][$key]];
         }
         return $single ? '' : [];
+    }
+}
+
+if (!function_exists('wp_get_post_terms')) {
+    function wp_get_post_terms($post_id, $taxonomy, $args = []) {
+        return [];
     }
 }
 

@@ -82,7 +82,13 @@ function intersoccer_normalize_phone_number($phone) {
     if ($reason !== 'unknown') {
         // Only log invalid numbers if debugging
         if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("InterSoccer: Invalid phone number format: {$phone} (Reason: {$reason})");
+            error_log(
+                'InterSoccer: Invalid phone number format: '
+                . intersoccer_redact_phone_for_log($phone)
+                . ' (Reason: '
+                . $reason
+                . ')'
+            );
         }
         return (string)$phone; // Return as string
     }
@@ -92,7 +98,7 @@ function intersoccer_normalize_phone_number($phone) {
         $cleaned = '+' . substr($cleaned, 2);
     }
 
-    // Handle Swiss numbers starting with 07 (e.g., 0784027071 -> +41784027071)
+    // Handle Swiss numbers starting with 07 (e.g., 0790000071 -> +41790000071)
     if (preg_match('/^0?7(\d{7,10})$/', $cleaned, $matches)) {
         $local_number = $matches[1];
         // Normalize to 9 digits
@@ -125,7 +131,13 @@ function intersoccer_normalize_phone_number($phone) {
         // Validate country code
         $valid_country_codes = ['33', '44', '40', '49', '39', '34', '31', '32', '971', '354', '1', '46'];
         if (!in_array($matches[1], $valid_country_codes)) {
-            error_log("InterSoccer: Invalid country code for phone: {$phone}, assuming Swiss");
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log(
+                    'InterSoccer: Invalid country code for phone: '
+                    . intersoccer_redact_phone_for_log($phone)
+                    . ', assuming Swiss'
+                );
+            }
             $country_code = '+41';
             $local_number = $matches[1] . $matches[2]; // Treat entire number as local part
         }
@@ -138,7 +150,13 @@ function intersoccer_normalize_phone_number($phone) {
         $normalized = $country_code . $local_number;
         // Only log if debugging
         if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("InterSoccer: Normalized phone number: {$phone} -> {$normalized} (country code match)");
+            error_log(
+                'InterSoccer: Normalized phone number: '
+                . intersoccer_redact_phone_for_log($phone)
+                . ' -> '
+                . intersoccer_redact_phone_for_log($normalized)
+                . ' (country code match)'
+            );
         }
         return (string)$normalized; // Ensure string type
     }
@@ -154,14 +172,26 @@ function intersoccer_normalize_phone_number($phone) {
             $local_number = str_pad($local_number, 9, '0', STR_PAD_RIGHT); // Pad with zeros
         }
         $normalized = $country_code . $local_number;
-        error_log("InterSoccer: Normalized phone number: {$phone} -> {$normalized} (ambiguous match)");
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log(
+                'InterSoccer: Normalized phone number: '
+                . intersoccer_redact_phone_for_log($phone)
+                . ' -> '
+                . intersoccer_redact_phone_for_log($normalized)
+                . ' (ambiguous match)'
+            );
+        }
         return (string)$normalized; // Ensure string type
     }
 
     // Fallback for any unhandled cases
     // Only log if debugging
     if (defined('WP_DEBUG') && WP_DEBUG) {
-        error_log("InterSoccer: Invalid phone number format: {$phone} (Reason: unhandled format)");
+        error_log(
+            'InterSoccer: Invalid phone number format: '
+            . intersoccer_redact_phone_for_log($phone)
+            . ' (Reason: unhandled format)'
+        );
     }
     return (string)$phone; // Return as string
 }
@@ -214,9 +244,7 @@ if (!function_exists('intersoccer_rr_single_roster_export_sensitive_personal_val
                 if ($date_obj) {
                     $formatted_birth_date = $date_obj->format('d/m/Y');
                 } else {
-                    $row_id = isset($player['id']) ? (int) $player['id'] : 0;
-                    $order_item_id = isset($player['order_item_id']) ? (int) $player['order_item_id'] : 0;
-                    error_log('InterSoccer Export: Could not parse date of birth for roster row id ' . $row_id . ' order_item_id ' . $order_item_id);
+                    error_log('InterSoccer Export: Could not parse date of birth for a roster row');
                     $formatted_birth_date = 'N/A';
                 }
             }
@@ -446,14 +474,14 @@ function intersoccer_export_roster() {
             $where_clauses[] = $wpdb->prepare("variation_id = %d", $variation_id);
             $query_params[] = $variation_id;
             if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('InterSoccer Export: variation_id filter added: ' . $variation_id);
+                error_log('InterSoccer Export: variation_id filter added');
             }
         } elseif (!empty($order_item_ids)) {
             $placeholders = implode(',', array_fill(0, count($order_item_ids), '%d'));
             $where_clauses[] = "order_item_id IN ($placeholders)";
             $query_params = array_merge($query_params, $order_item_ids);
             if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('InterSoccer Export: order_item_ids filter added: ' . implode(',', $order_item_ids));
+                error_log('InterSoccer Export: order_item_ids filter added');
             }
         } elseif (!empty($event_signature)) {
             $where_clauses[] = "event_signature = %s";
@@ -468,7 +496,7 @@ function intersoccer_export_roster() {
             $query_params = array_merge($query_params, $variation_ids);
             // Only log if debugging
             if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('InterSoccer Export: variation_ids filter added: ' . implode(',', $variation_ids));
+                error_log('InterSoccer Export: variation_ids filter added');
             }
             // When using specific variation_ids, skip additional field-based filtering to avoid including players from other events
         } else {

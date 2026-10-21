@@ -439,6 +439,32 @@ if (!function_exists('intersoccer_parse_date_unified_debug_log')) {
     }
 }
 
+if (!function_exists('intersoccer_redact_phone_for_log')) {
+    /**
+     * Redact a phone value for error_log (digit length + last two digits only).
+     *
+     * @param mixed $phone Raw phone input.
+     * @return string e.g. "len=10 ..34" or "empty".
+     */
+    function intersoccer_redact_phone_for_log($phone): string {
+        $phone = is_scalar($phone) ? trim((string) $phone) : '';
+        if ($phone === '') {
+            return 'empty';
+        }
+        $digits = preg_replace('/\D+/', '', $phone);
+        if ($digits === null || $digits === '') {
+            return 'empty';
+        }
+        $len = strlen($digits);
+        if ($len < 6) {
+            return 'len=' . $len;
+        }
+        $last_two = substr($digits, -2);
+
+        return 'len=' . $len . ' ..' . $last_two;
+    }
+}
+
 /**
  * Unified date parser that handles all date formats found in order item metadata.
  * 
@@ -1720,7 +1746,7 @@ if (!function_exists('intersoccer_attempt_roster_build_for_order_item_ids')) {
                     }
                 }
             } catch (\Throwable $e) {
-                error_log('InterSoccer: attempt_roster_build failed for order ' . $order_id . ': ' . $e->getMessage());
+                error_log('InterSoccer: attempt_roster_build failed: ' . $e->getMessage());
             }
         }
 
@@ -3991,7 +4017,7 @@ if (!function_exists('intersoccer_rebuild_event_signature_for_order_item')) {
         );
 
         if (!$record) {
-            error_log('InterSoccer: No roster entry found for order item ' . $order_item_id . ' when rebuilding event signature.');
+            error_log('InterSoccer: No roster entry found when rebuilding event signature.');
             return false;
         }
 
@@ -4718,35 +4744,71 @@ function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
     return intersoccer_manual_product_type_detection($product_id, $variation_id);
 }
 
+/**
+ * Per-request memo for manual product type detection (includes negative "unknown" results).
+ *
+ * @return array<string, string>
+ */
+function &intersoccer_manual_product_type_lookup_cache() {
+    static $cache = [];
+    return $cache;
+}
+
+/**
+ * Reset manual product type lookup cache (for tests).
+ */
+function intersoccer_reset_product_type_cache(): void {
+    $cache = &intersoccer_manual_product_type_lookup_cache();
+    $cache = [];
+}
+
 // 2. Manual fallback function based on the Product Variations logic
 function intersoccer_manual_product_type_detection($product_id, $variation_id = null) {
-    $check_id = $variation_id && $variation_id > 0 ? $variation_id : $product_id;
-    
-    error_log('InterSoccer: Manual product type detection for ID: ' . $check_id);
-    
+    $product_id = (int) $product_id;
+    $variation_id = $variation_id && $variation_id > 0 ? (int) $variation_id : null;
+    $check_id = $variation_id ? $variation_id : $product_id;
+    $cache_key = $product_id . ':' . ($variation_id ? (string) $variation_id : '');
+    $cache = &intersoccer_manual_product_type_lookup_cache();
+    if (array_key_exists($cache_key, $cache)) {
+        return $cache[$cache_key];
+    }
+
+    $debug = defined('WP_DEBUG') && WP_DEBUG;
+    if ($debug) {
+        error_log('InterSoccer: Manual product type detection');
+    }
+
     // Check existing meta first
     $product_type = get_post_meta($check_id, '_intersoccer_product_type', true);
     if ($product_type) {
-        error_log('InterSoccer: Found product type in meta: ' . $product_type);
+        if ($debug) {
+            error_log('InterSoccer: Found product type in meta: ' . $product_type);
+        }
+        $cache[$cache_key] = $product_type;
         return $product_type;
     }
-    
+
     // Check parent meta if this is a variation
     if ($variation_id && $variation_id > 0) {
         $product_type = get_post_meta($product_id, '_intersoccer_product_type', true);
         if ($product_type) {
-            error_log('InterSoccer: Found product type in parent meta: ' . $product_type);
+            if ($debug) {
+                error_log('InterSoccer: Found product type in parent meta: ' . $product_type);
+            }
+            $cache[$cache_key] = $product_type;
             return $product_type;
         }
     }
-    
+
     // Check categories (use parent product for variations)
     $cat_check_id = $variation_id && $variation_id > 0 ? $product_id : $check_id;
     $categories = wp_get_post_terms($cat_check_id, 'product_cat', array('fields' => 'slugs'));
-    
+
     if (!is_wp_error($categories) && !empty($categories)) {
-        error_log('InterSoccer: Categories for product ' . $cat_check_id . ': ' . print_r($categories, true));
-        
+        if ($debug) {
+            error_log('InterSoccer: Product categories resolved for manual type detection');
+        }
+
         if (in_array('camps', $categories, true)) {
             $product_type = 'camp';
         } elseif (in_array('courses', $categories, true)) {
@@ -4754,21 +4816,26 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
         } elseif (in_array('birthdays', $categories, true)) {
             $product_type = 'birthday';
         }
-        
+
         if ($product_type) {
-            error_log('InterSoccer: Product type from categories: ' . $product_type);
+            if ($debug) {
+                error_log('InterSoccer: Product type from categories: ' . $product_type);
+            }
             // Save to meta for future use
             update_post_meta($check_id, '_intersoccer_product_type', $product_type);
+            $cache[$cache_key] = $product_type;
             return $product_type;
         }
     }
-    
+
     // Check product attributes
     $product = wc_get_product($check_id);
     if ($product) {
         $activity_type_attr = $product->get_attribute('pa_activity-type');
-        error_log('InterSoccer: Activity type attribute: ' . var_export($activity_type_attr, true));
-        
+        if ($debug) {
+            error_log('InterSoccer: Activity type attribute inspected for manual type detection');
+        }
+
         if (!empty($activity_type_attr)) {
             $normalized = strtolower(trim($activity_type_attr));
             if (strpos($normalized, 'camp') !== false) {
@@ -4778,21 +4845,26 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
             } elseif (strpos($normalized, 'birthday') !== false) {
                 $product_type = 'birthday';
             }
-            
+
             if ($product_type) {
-                error_log('InterSoccer: Product type from attributes: ' . $product_type);
+                if ($debug) {
+                    error_log('InterSoccer: Product type from attributes: ' . $product_type);
+                }
                 update_post_meta($check_id, '_intersoccer_product_type', $product_type);
+                $cache[$cache_key] = $product_type;
                 return $product_type;
             }
         }
-        
+
         // Try parent product attributes if this is a variation
         if ($variation_id && $variation_id > 0) {
             $parent_product = wc_get_product($product_id);
             if ($parent_product) {
                 $parent_activity_type = $parent_product->get_attribute('pa_activity-type');
-                error_log('InterSoccer: Parent activity type attribute: ' . var_export($parent_activity_type, true));
-                
+                if ($debug) {
+                    error_log('InterSoccer: Parent activity type attribute inspected for manual type detection');
+                }
+
                 if (!empty($parent_activity_type)) {
                     $normalized = strtolower(trim($parent_activity_type));
                     if (strpos($normalized, 'camp') !== false) {
@@ -4802,18 +4874,24 @@ function intersoccer_manual_product_type_detection($product_id, $variation_id = 
                     } elseif (strpos($normalized, 'birthday') !== false) {
                         $product_type = 'birthday';
                     }
-                    
+
                     if ($product_type) {
-                        error_log('InterSoccer: Product type from parent attributes: ' . $product_type);
+                        if ($debug) {
+                            error_log('InterSoccer: Product type from parent attributes: ' . $product_type);
+                        }
                         update_post_meta($check_id, '_intersoccer_product_type', $product_type);
+                        $cache[$cache_key] = $product_type;
                         return $product_type;
                     }
                 }
             }
         }
     }
-    
-    error_log('InterSoccer: Could not determine product type manually for ID: ' . $check_id);
+
+    if ($debug) {
+        error_log('InterSoccer: Could not determine product type manually');
+    }
+    $cache[$cache_key] = 'unknown';
     return 'unknown';
 }
 
@@ -6766,7 +6844,9 @@ function intersoccer_generate_event_signature($event_data) {
                 $parent_id = $product->get_parent_id();
                 if ($parent_id > 0) {
                     // Use parent product ID instead of variation ID
-                    error_log('InterSoccer: Using parent product ID for variation - variation_id: ' . $product_id . ', parent_id: ' . $parent_id);
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('InterSoccer: Using parent product ID for variation during signature generation');
+                    }
                     $product_id = $parent_id;
                 }
             }
@@ -6775,13 +6855,17 @@ function intersoccer_generate_event_signature($event_data) {
             // Try with return_original_if_missing = false first to see if translation exists
             $original_product_id = apply_filters('wpml_object_id', $product_id, 'product', false, $default_lang);
             if ($original_product_id && $original_product_id != $product_id) {
-                error_log('InterSoccer: Normalizing product_id in signature generation from ' . $product_id . ' to ' . $original_product_id . ' (default_lang: ' . $default_lang . ')');
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('InterSoccer: Normalizing product_id in signature generation');
+                }
                 $product_id = $original_product_id;
             } else {
                 // If no translation found, try with return_original_if_missing = true
                 $original_product_id = apply_filters('wpml_object_id', $product_id, 'product', true, $default_lang);
                 if ($original_product_id && $original_product_id != $product_id) {
-                    error_log('InterSoccer: Normalizing product_id in signature generation from ' . $product_id . ' to ' . $original_product_id . ' (default_lang: ' . $default_lang . ', fallback)');
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('InterSoccer: Normalizing product_id in signature generation (fallback)');
+                    }
                     $product_id = $original_product_id;
                 } else {
                     // Check if this product might be a translation by checking element type
@@ -6795,7 +6879,9 @@ function intersoccer_generate_event_signature($event_data) {
                                     if ($lang_code === $default_lang && isset($translation->element_id)) {
                                         $default_product_id = (int)$translation->element_id;
                                         if ($default_product_id != $product_id) {
-                                            error_log('InterSoccer: Found default language product via TRID lookup: ' . $product_id . ' -> ' . $default_product_id . ' (default_lang: ' . $default_lang . ')');
+                                            if (defined('WP_DEBUG') && WP_DEBUG) {
+                                                error_log('InterSoccer: Found default language product via TRID lookup during signature generation');
+                                            }
                                             $product_id = $default_product_id;
                                             break;
                                         }
@@ -6805,7 +6891,9 @@ function intersoccer_generate_event_signature($event_data) {
                         }
                     }
                     if ($product_id == ($event_data['product_id'] ?? '')) {
-                        error_log('InterSoccer: Product ID ' . $product_id . ' - no translation found or already in default language (' . $default_lang . ')');
+                        if (defined('WP_DEBUG') && WP_DEBUG) {
+                            error_log('InterSoccer: No WPML translation found or product already in default language during signature generation');
+                        }
                     }
                 }
             }
@@ -7300,10 +7388,9 @@ function intersoccer_reports_resolve_camp_schedule($variation_id, $order_item_id
                     } else {
                         set_transient($bucket, $count + 1, HOUR_IN_SECONDS);
                     }
-                    error_log(sprintf(
-                        'InterSoccer RR: DEPRECATED camp-terms date parse (variation=%d). Prefer _camp_start_date.',
-                        $variation_id
-                    ));
+                    error_log(
+                        'InterSoccer RR: DEPRECATED camp-terms date parse. Prefer _camp_start_date.'
+                    );
                 }
             }
             return [$start, $end, $event_dates ?? 'N/A', $source];
