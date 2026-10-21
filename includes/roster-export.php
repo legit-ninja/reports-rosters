@@ -214,9 +214,7 @@ if (!function_exists('intersoccer_rr_single_roster_export_sensitive_personal_val
                 if ($date_obj) {
                     $formatted_birth_date = $date_obj->format('d/m/Y');
                 } else {
-                    $row_id = isset($player['id']) ? (int) $player['id'] : 0;
-                    $order_item_id = isset($player['order_item_id']) ? (int) $player['order_item_id'] : 0;
-                    error_log('InterSoccer Export: Could not parse date of birth for roster row id ' . $row_id . ' order_item_id ' . $order_item_id);
+                    error_log('InterSoccer Export: Could not parse date of birth for a roster row');
                     $formatted_birth_date = 'N/A';
                 }
             }
@@ -446,14 +444,14 @@ function intersoccer_export_roster() {
             $where_clauses[] = $wpdb->prepare("variation_id = %d", $variation_id);
             $query_params[] = $variation_id;
             if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('InterSoccer Export: variation_id filter added: ' . $variation_id);
+                error_log('InterSoccer Export: variation_id filter added');
             }
         } elseif (!empty($order_item_ids)) {
             $placeholders = implode(',', array_fill(0, count($order_item_ids), '%d'));
             $where_clauses[] = "order_item_id IN ($placeholders)";
             $query_params = array_merge($query_params, $order_item_ids);
             if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('InterSoccer Export: order_item_ids filter added: ' . implode(',', $order_item_ids));
+                error_log('InterSoccer Export: order_item_ids filter added');
             }
         } elseif (!empty($event_signature)) {
             $where_clauses[] = "event_signature = %s";
@@ -468,7 +466,7 @@ function intersoccer_export_roster() {
             $query_params = array_merge($query_params, $variation_ids);
             // Only log if debugging
             if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('InterSoccer Export: variation_ids filter added: ' . implode(',', $variation_ids));
+                error_log('InterSoccer Export: variation_ids filter added');
             }
             // When using specific variation_ids, skip additional field-based filtering to avoid including players from other events
         } else {

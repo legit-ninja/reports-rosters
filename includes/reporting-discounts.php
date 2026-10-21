@@ -298,7 +298,7 @@ function intersoccer_reporting_allocate_discounts_to_order_items($order_id, $ord
             update_post_meta($item_id, '_intersoccer_item_total_discount', $total_item_discount);
         }
     } catch (Exception $e) {
-        error_log("InterSoccer Reporting: Error allocating discounts to order items for order {$order_id}: " . $e->getMessage());
+        error_log('InterSoccer Reporting: Error allocating discounts to order items: ' . $e->getMessage());
     }
 }
 
@@ -848,7 +848,9 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
                 
                 // Ensure it's an array
                 if (!is_array($item_discount_breakdown)) {
-                    error_log("InterSoccer Financial Report: Order {$row->order_id}, Item {$row->order_item_id} - Discount breakdown is not an array. Type: " . gettype($item_discount_breakdown) . ", Value: " . print_r($raw_breakdown, true));
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('InterSoccer Financial Report: Discount breakdown is not an array. Type: ' . gettype($item_discount_breakdown));
+                    }
                     $item_discount_breakdown = [];
                 }
             }
@@ -945,7 +947,7 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
         
         // Debug logging for discount detection
         if (defined('WP_DEBUG') && WP_DEBUG && $discount_amount > 0.01) {
-            error_log("InterSoccer Financial Report: Order {$row->order_id}, Item {$row->order_item_id} - Discounts detected: " . $discounts_applied_str . " (Total: {$discount_amount} CHF)");
+            error_log('InterSoccer Financial Report: Discounts detected on line item: ' . $discounts_applied_str . ' (Total: ' . $discount_amount . ' CHF)');
         }
         
         // Store discount breakdown for enhanced reporting

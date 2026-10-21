@@ -265,7 +265,7 @@ if (!function_exists('intersoccer_oop_process_order')) {
 function intersoccer_oop_process_order($order_id) {
     try {
         if (intersoccer_oop_verbose_log()) {
-            error_log('InterSoccer OOP: Processing order ' . $order_id . ' via OOP adapter');
+            error_log('InterSoccer OOP: Processing order via OOP adapter');
         }
         $processor = intersoccer_oop_get_order_processor();
         $result = $processor->processOrder($order_id);
@@ -273,27 +273,27 @@ function intersoccer_oop_process_order($order_id) {
         if (intersoccer_oop_verbose_log()) {
             if ($result) {
                 $was_completed = $processor->wasLastOrderCompleted();
-                error_log('InterSoccer OOP: Order ' . $order_id . ' processed. Completed: ' . ($was_completed ? 'yes' : 'no'));
+                error_log('InterSoccer OOP: Order processed via OOP adapter. Completed: ' . ($was_completed ? 'yes' : 'no'));
             } else {
-                error_log('InterSoccer OOP: Order ' . $order_id . ' processing returned false');
+                error_log('InterSoccer OOP: Order processing via OOP adapter returned false');
             }
         }
         
         return $result;
     } catch (\Exception $e) {
         if (intersoccer_oop_verbose_log()) {
-            error_log('InterSoccer OOP: Exception processing order ' . $order_id . ' - ' . $e->getMessage());
+            error_log('InterSoccer OOP: Exception processing order via OOP adapter - ' . $e->getMessage());
             error_log('InterSoccer OOP: Stack trace: ' . $e->getTraceAsString());
         } else {
-            error_log('InterSoccer OOP: Order ' . $order_id . ' failed: ' . $e->getMessage());
+            error_log('InterSoccer OOP: Order processing failed via OOP adapter: ' . $e->getMessage());
         }
         return false;
     } catch (\Throwable $e) {
         if (intersoccer_oop_verbose_log()) {
-            error_log('InterSoccer OOP: Throwable processing order ' . $order_id . ' - ' . $e->getMessage());
+            error_log('InterSoccer OOP: Throwable processing order via OOP adapter - ' . $e->getMessage());
             error_log('InterSoccer OOP: Stack trace: ' . $e->getTraceAsString());
         } else {
-            error_log('InterSoccer OOP: Order ' . $order_id . ' failed: ' . $e->getMessage());
+            error_log('InterSoccer OOP: Order processing failed via OOP adapter: ' . $e->getMessage());
         }
         return false;
     }
@@ -684,7 +684,7 @@ function intersoccer_oop_attribute_order_financials($order_id) {
     try {
         intersoccer_oop_get_order_financial_attribution_service()->attributeOrderDiscounts($order);
     } catch (\Throwable $e) {
-        error_log('InterSoccer OOP: Financial attribution failed for order ' . $resolved_order_id . ' - ' . $e->getMessage());
+        error_log('InterSoccer OOP: Financial attribution failed - ' . $e->getMessage());
     }
 }
 }
@@ -707,7 +707,7 @@ function intersoccer_oop_attribute_order_refund($order_id, $refund_id) {
     try {
         intersoccer_oop_get_order_financial_attribution_service()->attributeOrderRefunds($order, $refund);
     } catch (\Throwable $e) {
-        error_log('InterSoccer OOP: Refund attribution failed for order ' . $order_id . ' - ' . $e->getMessage());
+        error_log('InterSoccer OOP: Refund attribution failed - ' . $e->getMessage());
     }
 }
 }

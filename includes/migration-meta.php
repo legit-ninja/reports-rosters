@@ -302,7 +302,9 @@ if (!function_exists('intersoccer_migration_restore_canonical_meta')) {
         intersoccer_migration_cleanup_item_meta($item_id, $human_alias_map, $human_lookup);
         intersoccer_migration_prune_meta_rows($item_id, $human_alias_map, $human_lookup);
 
-        error_log('InterSoccer: Restored canonical metadata for item ' . $item_id);
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer: Restored canonical metadata for order item');
+        }
     }
 }
 

@@ -1183,7 +1183,9 @@ function intersoccer_reports_merge_final_numbers_not_on_roster_rows(
         // At most one diagnostic line per request (avoid log noise on large merges).
         static $thin_line_logged = false;
         if (!$thin_line_logged) {
-            error_log('InterSoccer Final Numbers: thin order line without roster row (order_item_id ' . $item_id . ')');
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer Final Numbers: thin order line without roster row');
+            }
             $thin_line_logged = true;
         }
     }

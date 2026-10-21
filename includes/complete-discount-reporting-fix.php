@@ -18,7 +18,9 @@ if (!defined('ABSPATH')) {
 add_action('woocommerce_checkout_order_processed', 'intersoccer_capture_discount_data', 10, 3);
 function intersoccer_capture_discount_data($order_id, $posted_data, $order) {
     try {
-        error_log("InterSoccer Precise: Processing order {$order_id} for precise discount allocation");
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer Precise: Processing order for precise discount allocation');
+        }
         
         // Get cart data before it's cleared
         $cart_items = WC()->cart->get_cart();
@@ -37,10 +39,12 @@ function intersoccer_capture_discount_data($order_id, $posted_data, $order) {
         // Allocate discounts to specific order items with precision
         intersoccer_allocate_discounts($order_id, $order, $cart_context, $discount_sources);
         
-        error_log("InterSoccer Precise: Successfully processed order {$order_id} with precise discount allocation");
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer Precise: Successfully processed order with precise discount allocation');
+        }
         
     } catch (Exception $e) {
-        error_log("InterSoccer Precise: Error processing order {$order_id}: " . $e->getMessage());
+        error_log('InterSoccer Precise: Error processing order for precise discount allocation: ' . $e->getMessage());
     }
 }
 
@@ -59,7 +63,9 @@ function intersoccer_extract_combo_discounts($cart_fees) {
                 'type' => intersoccer_determine_precise_discount_type($fee->name),
                 'source' => 'combo_fee'
             );
-            error_log("InterSoccer Precise: Found combo discount: {$fee->name} = " . abs($fee->amount) . " CHF");
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer Precise: Found combo discount: ' . $fee->name . ' = ' . abs($fee->amount) . ' CHF');
+            }
         }
     }
     
@@ -81,7 +87,9 @@ function intersoccer_extract_coupon_discounts($order) {
                 'type' => 'coupon',
                 'source' => 'woocommerce_coupon'
             );
-            error_log("InterSoccer Precise: Found coupon discount: {$coupon_code} = {$coupon_amount} CHF");
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer Precise: Found coupon discount: ' . $coupon_code . ' = ' . $coupon_amount . ' CHF');
+            }
         }
     }
     
@@ -106,7 +114,9 @@ function intersoccer_extract_line_item_discounts($order) {
                 'type' => 'line_item',
                 'source' => 'woocommerce_line_item'
             );
-            error_log("InterSoccer Precise: Found line item discount on item {$item_id}: {$line_discount} CHF");
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer Precise: Found line item discount: ' . $line_discount . ' CHF');
+            }
         }
     }
     
@@ -117,7 +127,9 @@ function intersoccer_extract_line_item_discounts($order) {
  * CORE FUNCTION: Allocate discounts precisely to specific line items
  */
 function intersoccer_allocate_discounts($order_id, $order, $cart_context, $discount_sources) {
-    error_log("InterSoccer Precise: Starting precise discount allocation for order {$order_id}");
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer Precise: Starting precise discount allocation');
+    }
     
     // Initialize tracking
     $item_discount_allocations = array();
@@ -142,7 +154,9 @@ function intersoccer_allocate_discounts($order_id, $order, $cart_context, $disco
                 );
                 $total_allocated += $allocation['amount'];
                 
-                error_log("InterSoccer Precise: Allocated {$allocation['amount']} CHF from {$combo_discount['name']} to item {$item_id} using {$allocation['method']}");
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('InterSoccer Precise: Allocated combo discount using ' . $allocation['method']);
+                }
             }
         }
     }
@@ -166,7 +180,9 @@ function intersoccer_allocate_discounts($order_id, $order, $cart_context, $disco
                 );
                 $total_allocated += $allocation['amount'];
                 
-                error_log("InterSoccer Precise: Allocated {$allocation['amount']} CHF from coupon {$coupon_discount['name']} to item {$item_id}");
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('InterSoccer Precise: Allocated coupon discount to line item');
+                }
             }
         }
     }
@@ -186,7 +202,9 @@ function intersoccer_allocate_discounts($order_id, $order, $cart_context, $disco
         );
         $total_allocated += $line_discount['amount'];
         
-        error_log("InterSoccer Precise: Allocated {$line_discount['amount']} CHF line item discount to item {$item_id}");
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer Precise: Allocated line item discount');
+        }
     }
     
     // Store precise allocations to order items
@@ -196,7 +214,9 @@ function intersoccer_allocate_discounts($order_id, $order, $cart_context, $disco
         wc_update_order_item_meta($item_id, '_intersoccer_item_discounts', $discounts);
         wc_update_order_item_meta($item_id, '_intersoccer_total_item_discount', round($total_item_discount, 2));
         
-        error_log("InterSoccer Precise: Stored " . count($discounts) . " discount allocations totaling {$total_item_discount} CHF for item {$item_id}");
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer Precise: Stored discount allocations for line item');
+        }
     }
     
     // Store order-level summary
@@ -207,7 +227,9 @@ function intersoccer_allocate_discounts($order_id, $order, $cart_context, $disco
     update_post_meta($order_id, '_intersoccer_all_discounts', $all_discounts);
     update_post_meta($order_id, '_intersoccer_precise_allocation', true);
     
-    error_log("InterSoccer Precise Migration: Successfully migrated order {$order_id} with {$total_discounts} CHF total discounts allocated precisely");
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer Precise Migration: Successfully migrated order discount allocations');
+    }
 }
 
 /**
@@ -297,7 +319,7 @@ function intersoccer_migrate_discount_data_batch($batch_size = 100) {
             
         } catch (Exception $e) {
             $errors[] = "Order {$order_id}: " . $e->getMessage();
-            error_log("InterSoccer Migration: Error migrating order {$order_id}: " . $e->getMessage());
+            error_log('InterSoccer Migration: Error migrating order discounts: ' . $e->getMessage());
         }
     }
     
@@ -325,7 +347,9 @@ function intersoccer_migrate_discount_data_batch($batch_size = 100) {
  * Migrate a single order
  */
 function intersoccer_migrate_single_order($order_id, $order) {
-    error_log("InterSoccer Migration: Processing order {$order_id}");
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer Migration: Processing order for discount migration');
+    }
     
     $total_discounts = 0;
     $all_discounts = array();
@@ -389,7 +413,9 @@ function intersoccer_migrate_single_order($order_id, $order) {
         update_post_meta($order_id, '_intersoccer_coupon_discounts', $coupon_discounts);
         update_post_meta($order_id, '_intersoccer_all_discounts', $all_discounts);
         
-        error_log("InterSoccer Migration: Successfully migrated order {$order_id} with {$total_discounts} CHF total discounts");
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer Migration: Successfully migrated order discounts');
+        }
     } else {
         // Store zero discount data to mark as processed
         update_post_meta($order_id, '_intersoccer_total_discounts', 0);

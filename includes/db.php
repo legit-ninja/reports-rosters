@@ -246,6 +246,18 @@ function intersoccer_db_redact_wpdb_error_for_log($last_error) {
 }
 
 /**
+ * WP_DEBUG-only tracing for event signature rebuild (no roster/order/product identifiers).
+ *
+ * @param string $message
+ */
+function intersoccer_db_event_signature_rebuild_debug_log(string $message): void {
+    if (!defined('WP_DEBUG') || !WP_DEBUG) {
+        return;
+    }
+    error_log($message);
+}
+
+/**
  * Parse varchar(N) width from a DESCRIBE Type string.
  *
  * @param string $type_sql
@@ -459,7 +471,7 @@ function intersoccer_rebuild_event_signatures() {
                 $parent_id = $product->get_parent_id();
                 if ($parent_id > 0) {
                     // Use parent product ID instead of variation ID
-                    error_log('InterSoccer: Using parent product ID for variation - variation_id: ' . $record['product_id'] . ', parent_id: ' . $parent_id . ' (record id: ' . $record['id'] . ')');
+                    intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Using parent product ID for variation during signature rebuild');
                     $product_id_to_use = $parent_id;
                 }
             }
@@ -467,12 +479,12 @@ function intersoccer_rebuild_event_signatures() {
             // Get the original product_id for WPML translations (normalize to default language)
             if (function_exists('apply_filters')) {
                 $original_product_id = apply_filters('wpml_object_id', $product_id_to_use, 'product', true, $default_lang);
-                error_log('InterSoccer: WPML lookup for product_id ' . $product_id_to_use . ' returned ' . $original_product_id . ' (default_lang: ' . $default_lang . ', record id: ' . $record['id'] . ')');
+                intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: WPML product lookup during signature rebuild');
                 if ($original_product_id && $original_product_id != $product_id_to_use) {
-                    error_log('InterSoccer: Found WPML translation - normalizing product_id from ' . $product_id_to_use . ' to ' . $original_product_id . ' (record id: ' . $record['id'] . ')');
+                    intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Found WPML translation - normalizing product_id during signature rebuild');
                     $product_id_to_use = $original_product_id;
                 } else {
-                    error_log('InterSoccer: Product ID ' . $product_id_to_use . ' already in default language or no translation found (record id: ' . $record['id'] . ')');
+                    intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Product ID already in default language or no WPML translation found');
                 }
             }
             
@@ -484,9 +496,9 @@ function intersoccer_rebuild_event_signatures() {
             $product = wc_get_product($product_id_to_use);
             if ($product) {
                 $normalized_product_name = $product->get_name();
-                error_log('InterSoccer: Normalized product_name from "' . $record['product_name'] . '" to "' . $normalized_product_name . '" (record id: ' . $record['id'] . ')');
+                intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Normalized product_name during signature rebuild');
             } else {
-                error_log('InterSoccer: Warning - Product not found for product_id ' . $product_id_to_use . ' (record id: ' . $record['id'] . ')');
+                intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Warning - Product not found during signature rebuild');
             }
             
             // Switch back to original language
@@ -498,7 +510,7 @@ function intersoccer_rebuild_event_signatures() {
         // If date is invalid (1970-01-01, NULL, or empty), try to re-extract from order item
         if (($start_date === '1970-01-01' || empty($start_date)) && !empty($record['order_item_id'])) {
             $order_item_id = $record['order_item_id'];
-            error_log('InterSoccer: Attempting to re-extract date for invalid entry (id: ' . $record['id'] . ', order_item_id: ' . $order_item_id . ')');
+            intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Attempting to re-extract date for invalid roster entry during signature rebuild');
             
             // Get order item metadata
             $item_meta = wc_get_order_item_meta($order_item_id, '', true);
@@ -510,7 +522,9 @@ function intersoccer_rebuild_event_signatures() {
                     }, array_values($item_meta), array_keys($item_meta))
                 );
                 
-                error_log('InterSoccer: Found order item metadata keys: ' . implode(', ', array_keys($item_meta_flat)) . ' (record id: ' . $record['id'] . ')');
+                intersoccer_db_event_signature_rebuild_debug_log(
+                    'InterSoccer: Found order item metadata keys: ' . implode(', ', array_keys($item_meta_flat))
+                );
                 
                 // Try to get date from product attribute or metadata
                 // Use normalized product_id for attribute lookup
@@ -525,7 +539,7 @@ function intersoccer_rebuild_event_signatures() {
                     if ($variation) {
                         $tournament_date = $variation->get_attribute('pa_date') ?: $variation->get_attribute('Date');
                         if ($tournament_date) {
-                            error_log('InterSoccer: Found tournament date in variation attributes: ' . $tournament_date . ' (record id: ' . $record['id'] . ')');
+                            intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Found tournament date in variation attributes during signature rebuild');
                         }
                     }
                     // If not found in original variation, try default language variation
@@ -536,7 +550,7 @@ function intersoccer_rebuild_event_signatures() {
                             if ($default_variation) {
                                 $tournament_date = $default_variation->get_attribute('pa_date') ?: $default_variation->get_attribute('Date');
                                 if ($tournament_date) {
-                                    error_log('InterSoccer: Found tournament date in default language variation ' . $default_variation_id . ' attributes: ' . $tournament_date . ' (record id: ' . $record['id'] . ')');
+                                    intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Found tournament date in default language variation attributes during signature rebuild');
                                 }
                             }
                         }
@@ -544,7 +558,7 @@ function intersoccer_rebuild_event_signatures() {
                     if (!$tournament_date && $parent_product) {
                         $tournament_date = $parent_product->get_attribute('pa_date') ?: $parent_product->get_attribute('Date');
                         if ($tournament_date) {
-                            error_log('InterSoccer: Found tournament date in parent product attributes: ' . $tournament_date . ' (record id: ' . $record['id'] . ')');
+                            intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Found tournament date in parent product attributes during signature rebuild');
                         }
                     }
                     if (!$tournament_date) {
@@ -553,7 +567,7 @@ function intersoccer_rebuild_event_signatures() {
                         foreach ($possible_keys as $key) {
                             if (isset($item_meta_flat[$key]) && !empty($item_meta_flat[$key])) {
                                 $tournament_date = $item_meta_flat[$key];
-                                error_log('InterSoccer: Found tournament date in order item metadata using key "' . $key . '": ' . $tournament_date . ' (record id: ' . $record['id'] . ')');
+                                intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Found tournament date in order item metadata during signature rebuild');
                                 break;
                             }
                         }
@@ -562,7 +576,7 @@ function intersoccer_rebuild_event_signatures() {
                             $raw_date = is_array($item_meta['Date']) ? ($item_meta['Date'][0] ?? null) : $item_meta['Date'];
                             if (!empty($raw_date)) {
                                 $tournament_date = trim($raw_date);
-                                error_log('InterSoccer: Found tournament date in raw order item metadata: ' . $tournament_date . ' (record id: ' . $record['id'] . ')');
+                                intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Found tournament date in raw order item metadata during signature rebuild');
                             }
                         }
                     }
@@ -587,7 +601,7 @@ function intersoccer_rebuild_event_signatures() {
                                 $month_name = $french_months[$month_lower];
                             }
                             $tournament_date = $day_name . ' ' . $day_num . ' ' . $month_name;
-                            error_log('InterSoccer: Converted slug format date to readable format: ' . $tournament_date . ' (record id: ' . $record['id'] . ')');
+                            intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Converted slug format tournament date during signature rebuild');
                         }
                         
                         // If the date doesn't have a year, try to extract it from the season
@@ -606,41 +620,41 @@ function intersoccer_rebuild_event_signatures() {
                                     // Format: "14 décembre" - add year at the end
                                     $tournament_date_with_year = $tournament_date . ' ' . $year;
                                 }
-                                error_log('InterSoccer: Adding year ' . $year . ' from season "' . $season . '" to date "' . $tournament_date . '" -> "' . $tournament_date_with_year . '" (record id: ' . $record['id'] . ')');
+                                intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Adding year from season to tournament date during signature rebuild');
                                 $tournament_date = $tournament_date_with_year;
                             } else {
-                                error_log('InterSoccer: Could not extract year from season "' . $season . '" for date "' . $tournament_date . '" (record id: ' . $record['id'] . ')');
+                                error_log('InterSoccer: Could not extract year from season for tournament date during signature rebuild');
                             }
                         }
                         
-                        $parsed_date = intersoccer_parse_date_unified($tournament_date, 'rebuild event signatures (record id: ' . $record['id'] . ')');
+                        $parsed_date = intersoccer_parse_date_unified($tournament_date, 'rebuild event signatures (tournament)');
                         if ($parsed_date) {
                             $start_date = $parsed_date;
                             $end_date = $parsed_date; // Tournaments are typically one day
-                            error_log('InterSoccer: Successfully re-extracted tournament date: ' . $start_date . ' (record id: ' . $record['id'] . ')');
+                            intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Successfully re-extracted tournament date during signature rebuild');
                         } else {
-                            error_log('InterSoccer: Failed to parse tournament date "' . $tournament_date . '" (record id: ' . $record['id'] . ')');
+                            error_log('InterSoccer: Failed to parse tournament date during signature rebuild');
                         }
                     } else {
-                        error_log('InterSoccer: No tournament date found in product attributes or order item metadata (record id: ' . $record['id'] . ')');
+                        error_log('InterSoccer: No tournament date found in product attributes or order item metadata during signature rebuild');
                     }
                 } else {
                     // For other types, try Start Date/End Date from metadata
                     $meta_start = $item_meta_flat['Start Date'] ?? null;
                     if ($meta_start && function_exists('intersoccer_parse_date_unified')) {
-                        $parsed_date = intersoccer_parse_date_unified($meta_start, 'rebuild event signatures (record id: ' . $record['id'] . ')');
+                        $parsed_date = intersoccer_parse_date_unified($meta_start, 'rebuild event signatures (start)');
                         if ($parsed_date) {
                             $start_date = $parsed_date;
-                            error_log('InterSoccer: Successfully re-extracted start date: ' . $start_date . ' (record id: ' . $record['id'] . ')');
+                            intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Successfully re-extracted start date during signature rebuild');
                         } else {
-                            error_log('InterSoccer: Failed to parse start date "' . $meta_start . '" (record id: ' . $record['id'] . ')');
+                            error_log('InterSoccer: Failed to parse start date from order item metadata during signature rebuild');
                         }
                     } else {
-                        error_log('InterSoccer: No Start Date found in order item metadata (record id: ' . $record['id'] . ')');
+                        error_log('InterSoccer: No Start Date found in order item metadata during signature rebuild');
                     }
                 }
             } else {
-                error_log('InterSoccer: No order item metadata found for order_item_id ' . $order_item_id . ' (record id: ' . $record['id'] . ')');
+                error_log('InterSoccer: No order item metadata found during signature rebuild');
             }
         }
         
@@ -666,19 +680,7 @@ function intersoccer_rebuild_event_signatures() {
 
         $normalized_data['start_date'] = $start_date;
 
-        error_log('InterSoccer: Signature components for record id ' . $record['id'] . ': ' . json_encode([
-            'original_product_id' => $record['product_id'],
-            'normalized_product_id' => $product_id_to_use,
-            'start_date' => $start_date,
-            'activity_type' => $normalized_data['activity_type'] ?? $record['activity_type'],
-            'venue' => $normalized_data['venue'] ?? $record['venue'],
-            'age_group' => $normalized_data['age_group'] ?? $record['age_group'],
-            'course_day' => $normalized_data['course_day'] ?? $record['course_day'],
-            'times' => $normalized_data['times'] ?? $record['times'],
-            'season' => $normalized_data['season'] ?? $record['season'],
-            'city' => $normalized_data['city'] ?? ($record['city'] ?? ''),
-            'canton_region' => $normalized_data['canton_region'] ?? ($record['canton_region'] ?? ''),
-        ]));
+        intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Signature components computed during event signature rebuild');
 
         $update_data = function_exists('intersoccer_build_roster_facet_db_update')
             ? intersoccer_build_roster_facet_db_update(
@@ -700,12 +702,12 @@ function intersoccer_rebuild_event_signatures() {
                 'product_name' => substr((string) ($normalized_product_name ?: $record['product_name'] ?? ''), 0, 255),
             ];
 
-        error_log('InterSoccer: Generated signature ' . ($update_data['event_signature'] ?? '') . ' for record id ' . $record['id']);
+        intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Generated event signature during rebuild');
         
         // Update product_id to normalized value if it changed (for WPML translations)
         if ($product_id_to_use != $record['product_id']) {
             $update_data['product_id'] = $product_id_to_use;
-            error_log('InterSoccer: Updating stored product_id from ' . $record['product_id'] . ' to ' . $product_id_to_use . ' (record id: ' . $record['id'] . ')');
+            intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Updating stored product_id during event signature rebuild');
         }
         
         // If we re-extracted the date, update it
@@ -834,7 +836,9 @@ function intersoccer_rebuild_rosters_and_reports() {
     foreach ($orders as $order) {
         wp_cache_flush();
         $order_id = $order->get_id();
-        error_log('InterSoccer: Processing order ' . $order_id . ' for rebuild');
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer: Processing order for forced roster rebuild');
+        }
 
         foreach ($order->get_items() as $item_id => $item) {
             $result = intersoccer_update_roster_entry($order_id, $item_id);
@@ -940,7 +944,9 @@ function intersoccer_reconcile_rosters($options = []) {
 
         foreach ($orders as $order) {
             $order_id = $order->get_id();
-            error_log('InterSoccer: Reconciling order ' . $order_id);
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer: Reconciling order during roster reconciliation');
+            }
 
             foreach ($order->get_items() as $item_id => $item) {
                 $result = intersoccer_update_roster_entry($order_id, $item_id);
@@ -957,7 +963,9 @@ function intersoccer_reconcile_rosters($options = []) {
         foreach ($existing_items as $obsolete_item_id) {
             $wpdb->delete($rosters_table, ['order_item_id' => $obsolete_item_id]);
             $deleted++;
-            error_log('InterSoccer: Deleted obsolete roster entry for order_item_id ' . $obsolete_item_id);
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('InterSoccer: Deleted obsolete roster entry during reconciliation');
+            }
         }
 
         error_log('InterSoccer: Reconciliation completed. Synced: ' . $synced . ', Deleted: ' . $deleted);
@@ -1867,7 +1875,9 @@ function intersoccer_upgrade_database() {
             ],
             ['order_item_id' => $row->order_item_id]
         );
-        error_log('InterSoccer: Backfilled financial data, girls_only, activity_type, and late pickup data for order_item_id ' . $row->order_item_id . ' (girls_only: ' . $girls_only . ', activity_type: ' . $activity_type . ', late_pickup: ' . $late_pickup . ', late_pickup_days: ' . $late_pickup_days . ')');
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('InterSoccer: Backfilled financial data, girls_only, activity_type, and late pickup data for a roster row');
+        }
     }
 
     // Backfill avs_number
@@ -1887,7 +1897,9 @@ function intersoccer_upgrade_database() {
             if ($meta_first_norm === $first_name_norm && $meta_last_norm === $last_name_norm && isset($player['avs_number'])) {
                 $avs_number = $player['avs_number'];
                 $wpdb->update($rosters_table, ['avs_number' => $avs_number], ['id' => $row->id]);
-                error_log('InterSoccer: Backfilled avs_number for order ' . $row->order_id . ': ' . $avs_number);
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('InterSoccer: Backfilled avs_number for a roster row');
+                }
                 break;
             }
         }
