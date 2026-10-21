@@ -878,9 +878,10 @@ function intersoccer_reconcile_rosters($options = []) {
         try {
             $result = intersoccer_oop_reconcile_rosters($oop_options);
 
-            $girls_only_backfilled = function_exists('intersoccer_reconcile_backfill_girls_only_flags')
-                ? intersoccer_reconcile_backfill_girls_only_flags()
-                : 0;
+            $girls_only_backfilled = 0;
+            if (empty($oop_options['dry_run']) && function_exists('intersoccer_reconcile_backfill_girls_only_flags')) {
+                $girls_only_backfilled = intersoccer_reconcile_backfill_girls_only_flags();
+            }
 
             $message = sprintf(
                 __('Reconciled rosters via OOP engine: Synced %1$d entries, deleted %2$d obsolete ones.', 'intersoccer-reports-rosters'),

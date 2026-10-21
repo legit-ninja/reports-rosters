@@ -435,7 +435,7 @@ class RosterReconcileDeleteRulesTest extends TestCase {
     }
 
     public function test_refunded_and_cancelled_orders_are_not_resynced(): void {
-        $this->playerMatcher->shouldReceive('getAssignedPlayers')->never();
+        $this->playerMatcher->shouldReceive('resolveAssignedPlayers')->never();
 
         $cases = [
             ['order_id' => 5101, 'item_id' => 8101, 'status' => 'refunded'],

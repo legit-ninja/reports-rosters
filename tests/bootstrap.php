@@ -24,6 +24,13 @@ if (!defined('ABSPATH')) {
     define('YEAR_IN_SECONDS', 365 * DAY_IN_SECONDS);
 }
 
+if (!function_exists('sanitize_title')) {
+    function sanitize_title($title) {
+        $title = strtolower((string) $title);
+        return trim((string) preg_replace('~[^a-z0-9_-]+~', '-', $title), '-');
+    }
+}
+
 // Database output format constants
 if (!defined('ARRAY_A')) {
     define('ARRAY_A', 'ARRAY_A');

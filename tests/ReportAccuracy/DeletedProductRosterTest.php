@@ -308,7 +308,12 @@ class DeletedProductRosterTest extends TestCase {
         $player_repo = $this->createMock(PlayerRepository::class);
         $player_repo->method('getPlayersByCustomerId')->willReturn($players);
         $matcher = $this->createMock(PlayerMatcher::class);
-        $matcher->method('getAssignedPlayers')->willReturn($players);
+        $matcher->method('resolveAssignedPlayers')->willReturn([
+            'players' => $players,
+            'strategy' => 'metadata_uuid',
+            'ambiguous' => false,
+            'fallback_candidate_count' => 0,
+        ]);
         $validator = $this->createMock(DataValidator::class);
         $validator->method('validateRosterData')->willReturn(['valid' => true, 'errors' => []]);
 
@@ -740,7 +745,12 @@ class DeletedProductRosterTest extends TestCase {
         $player_repo = $this->createMock(PlayerRepository::class);
         $player_repo->method('getPlayersByCustomerId')->willReturn($players);
         $matcher = $this->createMock(PlayerMatcher::class);
-        $matcher->method('getAssignedPlayers')->willReturn($players);
+        $matcher->method('resolveAssignedPlayers')->willReturn([
+            'players' => $players,
+            'strategy' => 'metadata_uuid',
+            'ambiguous' => false,
+            'fallback_candidate_count' => 0,
+        ]);
         $validator = $this->createMock(DataValidator::class);
         $validator->method('validateRosterData')->willReturn(['valid' => true, 'errors' => []]);
 

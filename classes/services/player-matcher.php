@@ -74,64 +74,106 @@ class PlayerMatcher {
      * @return PlayersCollection Assigned players
      */
     public function getAssignedPlayers(\WC_Order_Item_Product $item, PlayersCollection $customer_players, array $options = []) {
+        $resolved = $this->resolveAssignedPlayers($item, $customer_players, $options);
+        return $resolved['players'];
+    }
+
+    /**
+     * Resolve player assignment with strategy metadata (for reconcile reporting).
+     *
+     * @param \WC_Order_Item_Product $item
+     * @param PlayersCollection $customer_players
+     * @param array $options
+     * @return array{players:PlayersCollection,strategy:string,ambiguous:bool,fallback_candidate_count:int}
+     */
+    public function resolveAssignedPlayers(\WC_Order_Item_Product $item, PlayersCollection $customer_players, array $options = []) {
+        $empty = [
+            'players' => new PlayersCollection(),
+            'strategy' => '',
+            'ambiguous' => false,
+            'fallback_candidate_count' => 0,
+        ];
+
         try {
-            $cache_key = $this->buildCacheKey($item, $customer_players, $options);
-            
+            $cache_key = $this->buildCacheKey($item, $customer_players, $options) . '|resolved';
+
             if (isset($this->assignment_cache[$cache_key])) {
-                $this->logger->debug('Retrieved player assignment from cache', [
-                    'item_id' => $item->get_id(),
-                    'cache_key' => $cache_key
-                ]);
                 return $this->assignment_cache[$cache_key];
             }
-            
+
             $this->logger->debug('Matching players to order item', [
                 'item_id' => $item->get_id(),
                 'available_players' => $customer_players->count(),
-                'product_id' => $item->get_product_id()
+                'product_id' => $item->get_product_id(),
             ]);
-            
+
             $assigned_players = new PlayersCollection();
             $winning_strategy = '';
-            
-            // Try each assignment strategy in order
+
             foreach ($this->assignment_strategies as $strategy) {
                 $strategy_players = $this->applyAssignmentStrategy($strategy, $item, $customer_players);
-                
+
                 if ($strategy_players->isNotEmpty()) {
                     $assigned_players = $strategy_players;
                     $winning_strategy = $strategy;
                     $this->logger->debug('Successfully assigned players using strategy', [
                         'strategy' => $strategy,
                         'assigned_count' => $assigned_players->count(),
-                        'item_id' => $item->get_id()
+                        'item_id' => $item->get_id(),
                     ]);
                     break;
                 }
             }
 
-            // Validate player assignments (age/gender can be skipped for roster build)
             $validated_players = $this->validatePlayerAssignments($assigned_players, $item, $options);
-            
-            // Cache the result
-            $this->assignment_cache[$cache_key] = $validated_players;
-            
+            $ambiguous = $this->isAmbiguousFallbackAssignment($winning_strategy, $customer_players, $validated_players, $item);
+
+            $resolved = [
+                'players' => $validated_players,
+                'strategy' => $winning_strategy,
+                'ambiguous' => $ambiguous,
+                'fallback_candidate_count' => $ambiguous ? $customer_players->count() : 0,
+            ];
+
+            $this->assignment_cache[$cache_key] = $resolved;
+
             $this->logger->info('Player assignment completed', [
                 'item_id' => $item->get_id(),
                 'assigned_players' => $validated_players->count(),
-                'player_names' => $validated_players->pluck('first_name')->values()
+                'strategy' => $winning_strategy,
+                'ambiguous' => $ambiguous,
             ]);
-            
-            return $validated_players;
-            
+
+            return $resolved;
         } catch (\Exception $e) {
             $this->logger->error('Failed to assign players to order item', [
                 'item_id' => $item->get_id(),
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
-            
-            return new PlayersCollection();
+
+            return $empty;
         }
+    }
+
+    /**
+     * True when assignment relied on a quantity/customer fallback and multiple players could match.
+     */
+    public function isAmbiguousFallbackAssignment(
+        string $strategy,
+        PlayersCollection $customer_players,
+        PlayersCollection $assigned_players,
+        \WC_Order_Item_Product $item
+    ): bool {
+        if ($strategy === 'customer_players') {
+            return $customer_players->count() > 1;
+        }
+
+        if ($strategy === 'order_quantity') {
+            $qty = max(1, (int) $item->get_quantity());
+            return $customer_players->count() > $qty;
+        }
+
+        return false;
     }
     
     /**
