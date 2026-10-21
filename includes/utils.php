@@ -439,6 +439,29 @@ if (!function_exists('intersoccer_parse_date_unified_debug_log')) {
     }
 }
 
+if (!function_exists('intersoccer_redact_phone_for_log')) {
+    /**
+     * Redact a phone value for error_log (digit length + last two digits only).
+     *
+     * @param mixed $phone Raw phone input.
+     * @return string e.g. "len=10 ..34" or "empty".
+     */
+    function intersoccer_redact_phone_for_log($phone): string {
+        $phone = is_scalar($phone) ? trim((string) $phone) : '';
+        if ($phone === '') {
+            return 'empty';
+        }
+        $digits = preg_replace('/\D+/', '', $phone);
+        if ($digits === null || $digits === '') {
+            return 'empty';
+        }
+        $len = strlen($digits);
+        $last_two = substr($digits, -2);
+
+        return 'len=' . $len . ' ..' . $last_two;
+    }
+}
+
 /**
  * Unified date parser that handles all date formats found in order item metadata.
  * 
