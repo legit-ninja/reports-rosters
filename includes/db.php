@@ -492,7 +492,7 @@ function intersoccer_rebuild_event_signatures() {
             if ($current_lang !== $default_lang) {
                 do_action('wpml_switch_language', $default_lang);
             }
-            
+
             $product = wc_get_product($product_id_to_use);
             if ($product) {
                 $normalized_product_name = $product->get_name();
@@ -500,7 +500,7 @@ function intersoccer_rebuild_event_signatures() {
             } else {
                 intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Warning - Product not found during signature rebuild');
             }
-            
+
             // Switch back to original language
             if ($current_lang !== $default_lang && !empty($current_lang)) {
                 do_action('wpml_switch_language', $current_lang);
@@ -703,6 +703,14 @@ function intersoccer_rebuild_event_signatures() {
             ];
 
         intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Generated event signature during rebuild');
+
+        // Store the order-line name as booked; the signature above stays built from the English catalogue name.
+        $line_name_for_storage = function_exists('intersoccer_roster_order_line_name_by_item_id')
+            ? trim((string) intersoccer_roster_order_line_name_by_item_id((int) ($record['order_item_id'] ?? 0)))
+            : '';
+        if ($line_name_for_storage !== '') {
+            $update_data['product_name'] = substr($line_name_for_storage, 0, 255);
+        }
         
         // Update product_id to normalized value if it changed (for WPML translations)
         if ($product_id_to_use != $record['product_id']) {
@@ -1566,23 +1574,18 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             $late_pickup_days = $order_item_meta['Late Pickup Days'] ?? '';
         }
 
-        // Get product name and normalize to English if WPML is active
-        $product_name = $product->get_name();
-        if (function_exists('wpml_get_default_language') && function_exists('wpml_get_current_language')) {
-            $current_lang = wpml_get_current_language();
-            $default_lang = wpml_get_default_language();
-            
-            if ($current_lang !== $default_lang) {
-                // Switch to default language to get English product name
-                do_action('wpml_switch_language', $default_lang);
-                $product_english = wc_get_product($product_id);
-                if ($product_english) {
-                    $product_name = $product_english->get_name();
-                }
-                // Switch back to original language
-                do_action('wpml_switch_language', $current_lang);
-            }
-        }
+        $catalog_name = function_exists('intersoccer_roster_catalog_product_name')
+            ? intersoccer_roster_catalog_product_name((int) $product_id, (int) $variation_id)
+            : (string) $product->get_name();
+        $resolved_name = function_exists('intersoccer_roster_resolve_product_name_for_storage')
+            ? intersoccer_roster_resolve_product_name_for_storage([
+                'order_line_name' => $item->get_name(),
+                'product_id' => (int) $product_id,
+                'variation_id' => (int) $variation_id,
+                'catalog_product_name' => $catalog_name,
+            ])
+            : ['product_name' => (string) $product->get_name()];
+        $product_name = (string) ($resolved_name['product_name'] ?? $product->get_name());
 
         $girls_only = function_exists('intersoccer_resolve_roster_girls_only_flag')
             ? intersoccer_resolve_roster_girls_only_flag([

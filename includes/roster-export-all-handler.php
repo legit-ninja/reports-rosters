@@ -104,7 +104,7 @@ function intersoccer_export_all_rosters_signatures_sql(array $filter, array $con
 /**
  * @param string[] $signatures
  */
-function intersoccer_export_stream_csv_from_signatures(array $signatures, string $slug): void {
+function intersoccer_export_stream_csv_from_signatures(array $signatures, string $slug, array $filter = []): void {
     if ($signatures === []) {
         wp_die(esc_html__('No roster data found for export.', 'intersoccer-reports-rosters'));
     }
@@ -117,11 +117,15 @@ function intersoccer_export_stream_csv_from_signatures(array $signatures, string
     $chunks = array_chunk($signatures, $chunk_size);
     $all_rows = [];
     foreach ($chunks as $chunk) {
-        $part = $export_service->getExportRows([
+        $export_filters = [
             'use_fields' => true,
             'event_signatures' => $chunk,
             'activity_types' => $activity_types,
-        ]);
+        ];
+        if (!empty($filter['season'])) {
+            $export_filters['season'] = (string) $filter['season'];
+        }
+        $part = $export_service->getExportRows($export_filters);
         if (is_array($part) && $part !== []) {
             $all_rows = array_merge($all_rows, $part);
         }
@@ -323,7 +327,7 @@ function intersoccer_export_all_rosters_handler(): void {
         wp_die(esc_html__('No roster groups match the current filters for export.', 'intersoccer-reports-rosters'));
     }
 
-    intersoccer_export_stream_csv_from_signatures($signatures, $export_type);
+    intersoccer_export_stream_csv_from_signatures($signatures, $export_type, $filter);
 }
 
 add_action('wp_ajax_intersoccer_export_all_rosters', 'intersoccer_export_all_rosters_handler');
