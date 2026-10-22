@@ -973,6 +973,11 @@ class RosterBuilder {
         $product = $item->get_product();
         $variation_id = $item->get_variation_id();
         
+        $order_line_name = is_callable([$item, 'get_name']) ? trim((string) $item->get_name()) : '';
+        $order_wpml_language = method_exists($order, 'get_meta')
+            ? trim((string) $order->get_meta('wpml_language'))
+            : '';
+
         // Base order data
         $order_data = [
             'order_id' => $order->get_id(),
@@ -981,13 +986,9 @@ class RosterBuilder {
             'variation_id' => $variation_id ?: 0,
             'customer_id' => $order->get_customer_id(),
             'order_status' => $order->get_status(),
-            'product_name' => ($product && is_object($product) && method_exists($product, 'get_name'))
-                ? (string) $product->get_name()
-                : (
-                    !$product && (int) $item->get_product_id() <= 0 && is_callable([$item, 'get_name'])
-                        ? (string) $item->get_name()
-                        : ''
-                ),
+            'order_line_name' => $order_line_name,
+            'order_wpml_language' => $order_wpml_language,
+            'product_name' => $order_line_name,
         ];
         $order_data['line_subtotal'] = 0.0;
         $order_data['line_total'] = 0.0;
@@ -1475,6 +1476,21 @@ class RosterBuilder {
             $roster_data = intersoccer_roster_backfill_facets_from_order_item_meta($roster_data);
         }
 
+        $season_from_order_line = '';
+        if (function_exists('intersoccer_roster_season_from_order_item_meta')) {
+            $season_from_order_line = intersoccer_roster_season_from_order_item_meta((int) ($roster_data['order_item_id'] ?? 0));
+        }
+        if ($season_from_order_line === ''
+            && function_exists('intersoccer_roster_is_empty_season')
+            && !intersoccer_roster_is_empty_season($roster_data['season'] ?? '')
+            && function_exists('intersoccer_roster_normalize_season_value_for_storage')) {
+            $season_from_order_line = intersoccer_roster_normalize_season_value_for_storage($roster_data['season'] ?? '');
+        }
+
+        if (function_exists('intersoccer_roster_apply_product_name_for_storage')) {
+            $roster_data = intersoccer_roster_apply_product_name_for_storage($roster_data);
+        }
+
         // Normalize event data to English for consistent storage
         // This ensures all roster entries are stored in English regardless of order language
         if (!empty($roster_data['activity_type'])) {
@@ -1513,6 +1529,11 @@ class RosterBuilder {
             $roster_data['course_day'] = $this->termNameForStorage($normalized_event_data['course_day'] ?? $roster_data['course_day'] ?? '', 'pa_course-day');
             $roster_data['times'] = $this->termNameForStorage($normalized_event_data['times'] ?? $roster_data['times'] ?? '', 'pa_camp-times', 'pa_course-times');
             $roster_data['season'] = $normalized_event_data['season'] ?? $roster_data['season'] ?? '';
+            if ($season_from_order_line !== '') {
+                $roster_data['season'] = $season_from_order_line;
+            } elseif (function_exists('intersoccer_roster_normalize_season_value_for_storage')) {
+                $roster_data['season'] = intersoccer_roster_normalize_season_value_for_storage($roster_data['season'] ?? '');
+            }
             $roster_data['city'] = $this->termNameForStorage($normalized_event_data['city'] ?? $roster_data['city'] ?? '', 'pa_city');
             $roster_data['canton_region'] = $this->termNameForStorage($normalized_event_data['canton_region'] ?? $roster_data['canton_region'] ?? '', 'pa_canton-region');
             $raw_activity = $normalized_event_data['activity_type'] ?? $roster_data['activity_type'] ?? '';
@@ -1607,6 +1628,8 @@ class RosterBuilder {
             if (function_exists('intersoccer_roster_apply_canonical_write_fields')) {
                 $roster_data = intersoccer_roster_apply_canonical_write_fields($roster_data);
             }
+
+        unset($roster_data['order_line_name'], $roster_data['order_wpml_language']);
 
         return $roster_data;
     }
@@ -1813,6 +1836,14 @@ class RosterBuilder {
                 ];
             }
             return ['product_name' => '', 'name_not_english' => true];
+        }
+        $order_lang = trim((string) ($roster_data['order_wpml_language'] ?? ''));
+        if ($order_lang === '' && !empty($roster_data['order_id']) && function_exists('intersoccer_roster_order_wpml_language')) {
+            $order_lang = intersoccer_roster_order_wpml_language((int) $roster_data['order_id']);
+        }
+        if (function_exists('intersoccer_roster_order_language_is_english_or_unknown')
+            && intersoccer_roster_order_language_is_english_or_unknown($order_lang)) {
+            return ['product_name' => $stored, 'name_not_english' => false];
         }
         if (function_exists('intersoccer_get_english_product_name')) {
             $english = trim((string) intersoccer_get_english_product_name($stored, $lookup_id));
@@ -2315,14 +2346,8 @@ class RosterBuilder {
             }
         }
 
-        if (trim((string) ($roster_data['product_name'] ?? '')) === '' && $product_id > 0 && function_exists('wc_get_product')) {
-            $product = wc_get_product($product_id);
-            if ($product && method_exists($product, 'get_name')) {
-                $name = trim((string) $product->get_name());
-                if ($name !== '') {
-                    $roster_data['product_name'] = $name;
-                }
-            }
+        if (trim((string) ($roster_data['product_name'] ?? '')) === '' && function_exists('intersoccer_roster_apply_product_name_for_storage')) {
+            $roster_data = intersoccer_roster_apply_product_name_for_storage($roster_data);
         }
 
         return $roster_data;
