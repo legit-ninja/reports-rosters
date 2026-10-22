@@ -703,6 +703,14 @@ function intersoccer_rebuild_event_signatures() {
             ];
 
         intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Generated event signature during rebuild');
+
+        // Store the order-line name as booked; the signature above stays built from the English catalogue name.
+        $line_name_for_storage = function_exists('intersoccer_roster_order_line_name_by_item_id')
+            ? trim((string) intersoccer_roster_order_line_name_by_item_id((int) ($record['order_item_id'] ?? 0)))
+            : '';
+        if ($line_name_for_storage !== '') {
+            $update_data['product_name'] = substr($line_name_for_storage, 0, 255);
+        }
         
         // Update product_id to normalized value if it changed (for WPML translations)
         if ($product_id_to_use != $record['product_id']) {
