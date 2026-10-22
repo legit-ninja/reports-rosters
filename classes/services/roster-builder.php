@@ -1582,7 +1582,7 @@ class RosterBuilder {
         // Parse event details from various sources
         $roster_data['event_details'] = $this->buildEventDetails($roster_data);
         $roster_data['event_details'] = $this->applyUnderAgeAtStartToEventDetails($roster_data);
-        $roster_data['event_details'] = $this->applyBuyClubToEventDetails($roster_data, $roster_data);
+        $roster_data['event_details'] = $this->applyBuyClubToEventDetails($roster_data['event_details'], $roster_data);
         if (empty($roster_data['product_deleted'])) {
             $ed = $roster_data['event_details'];
             if (is_string($ed)) {
