@@ -1021,6 +1021,10 @@ if (!function_exists('wc_get_product')) {
 
 if (!function_exists('wc_get_order_item_meta')) {
     function wc_get_order_item_meta($item_id, $key, $single = true) {
+        if (isset($GLOBALS['intersoccer_test_wc_get_order_item_meta'])
+            && is_callable($GLOBALS['intersoccer_test_wc_get_order_item_meta'])) {
+            return call_user_func($GLOBALS['intersoccer_test_wc_get_order_item_meta'], $item_id, $key, $single);
+        }
         return $single ? '' : [];
     }
 }
