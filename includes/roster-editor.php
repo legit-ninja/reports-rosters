@@ -11,6 +11,13 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+if (!function_exists('intersoccer_rr_label_selected_days')) {
+    $intersoccer_rr_i18n = dirname(__FILE__) . '/i18n.php';
+    if (is_readable($intersoccer_rr_i18n)) {
+        require_once $intersoccer_rr_i18n;
+    }
+}
+
 /**
  * Output shared roster editor CSS styles (called once per page load).
  */
@@ -1051,8 +1058,8 @@ function intersoccer_render_roster_edit_form() {
                         <?php intersoccer_render_form_field_select($roster, 'activity_type', 'Activity Type', ['', 'Camp', 'Course', 'Tournament', 'Other']); ?>
                         <?php intersoccer_render_form_field($roster, 'venue', 'Venue', 'text'); ?>
                         <?php intersoccer_render_form_field($roster, 'booking_type', 'Booking Type', 'text'); ?>
-                        <?php intersoccer_render_form_field($roster, 'selected_days', 'Selected Days', 'text'); ?>
-                        <?php intersoccer_render_form_field($roster, 'days_selected', 'Days Selected', 'text'); ?>
+                        <?php intersoccer_render_form_field($roster, 'selected_days', intersoccer_rr_label_selected_days(), 'text'); ?>
+                        <?php intersoccer_render_form_field($roster, 'days_selected', intersoccer_rr_label_days_selected(), 'text'); ?>
                         <?php intersoccer_render_form_field($roster, 'course_day', 'Course Day', 'text'); ?>
                         <?php intersoccer_render_form_field($roster, 'camp_terms', 'Camp Terms', 'text'); ?>
                         <?php intersoccer_render_form_field($roster, 'age_group', 'Age Group', 'text'); ?>

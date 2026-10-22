@@ -373,7 +373,7 @@ class Dependencies {
         }
         
         try {
-            $plugin_data = get_plugin_data(WP_PLUGIN_DIR . '/' . $plugin_path);
+            $plugin_data = get_plugin_data(WP_PLUGIN_DIR . '/' . $plugin_path, false, false);
             $current_version = $plugin_data['Version'] ?? '0.0.0';
             
             $adequate = version_compare($current_version, $plugin_info['version'], '>=');

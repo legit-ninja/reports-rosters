@@ -625,7 +625,7 @@ class Roster extends AbstractModel {
             'End Date' => $this->end_date,
             'Duration' => $this->getFormattedDuration(),
             'Booking Type' => $this->booking_type,
-            'Selected Days' => $this->getFormattedSelectedDays(),
+            INTERSOCCER_RR_EXPORT_FIELD_SELECTED_DAYS => $this->getFormattedSelectedDays(),
             'Event Times' => $this->getEventTimes(),
             'Season' => $this->season,
             'Region' => $this->region,

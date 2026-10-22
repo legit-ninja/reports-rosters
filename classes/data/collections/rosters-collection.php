@@ -734,7 +734,7 @@ class RostersCollection extends AbstractCollection {
             switch ($export_type) {
                 case 'camp':
                     $fields = array_merge($base_fields, [
-                        'Camp Terms', 'Camp Times', 'Booking Type', 'Selected Days',
+                        'Camp Terms', 'Camp Times', 'Booking Type', INTERSOCCER_RR_EXPORT_FIELD_SELECTED_DAYS,
                         'Season', 'Medical Conditions', 'Dietary Needs', 
                         'Parent Email', 'Parent Phone', 'Emergency Contact', 'Order Status'
                     ]);
