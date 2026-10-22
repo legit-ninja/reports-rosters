@@ -9,8 +9,18 @@ use InterSoccer\ReportsRosters\Tests\TestCase;
 
 class RosterOrderLineSeasonFacetTest extends TestCase {
 
+    protected function tearDown(): void {
+        unset(
+            $GLOBALS['intersoccer_roster_enable_order_item_meta_seam'],
+            $GLOBALS['intersoccer_test_wc_get_order_item_meta'],
+            $GLOBALS['intersoccer_test_wc_get_product_callback']
+        );
+        parent::tearDown();
+    }
+
     protected function setUp(): void {
         parent::setUp();
+        $GLOBALS['intersoccer_roster_enable_order_item_meta_seam'] = true;
         foreach (['utils.php', 'order-meta-keys.php'] as $file) {
             $path = dirname(__DIR__, 2) . '/includes/' . $file;
             if (file_exists($path)) {
@@ -49,13 +59,13 @@ class RosterOrderLineSeasonFacetTest extends TestCase {
             };
         };
 
-        $row = intersoccer_roster_backfill_facets_from_variation([
+        $row = intersoccer_roster_apply_order_line_season_for_storage([
             'variation_id' => 88002,
             'order_item_id' => $item_id,
-            'season' => '',
+            'season' => 'synth-summer-2026',
         ]);
 
-        $this->assertSame('SYNTH Winter 2025', $row['season']);
+        $this->assertSame('Synth Winter 2025', $row['season']);
         unset($GLOBALS['intersoccer_test_wc_get_order_item_meta'], $GLOBALS['intersoccer_test_wc_get_product_callback']);
     }
 
@@ -80,7 +90,7 @@ class RosterOrderLineSeasonFacetTest extends TestCase {
             return $map[$key] ?? ($single ? '' : []);
         };
 
-        $row = intersoccer_roster_backfill_facets_from_variation([
+        $row = intersoccer_roster_backfill_facets_from_missing_variation_order_meta([
             'variation_id' => 88012,
             'order_item_id' => $item_id,
             'venue' => '',

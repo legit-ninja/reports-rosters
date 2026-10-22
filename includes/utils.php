@@ -440,6 +440,57 @@ if (!function_exists('intersoccer_roster_catalog_product_name')) {
     }
 }
 
+if (!function_exists('intersoccer_roster_resolve_order_line_name')) {
+    /**
+     * @param array<string,mixed> $row
+     */
+    function intersoccer_roster_resolve_order_line_name(array $row) {
+        $line = trim((string) ($row['order_line_name'] ?? ''));
+        if ($line !== '') {
+            return $line;
+        }
+        $order_id = (int) ($row['order_id'] ?? 0);
+        $order_item_id = (int) ($row['order_item_id'] ?? 0);
+        if ($order_id <= 0 || $order_item_id <= 0 || !function_exists('wc_get_order')) {
+            return '';
+        }
+        $order = wc_get_order($order_id);
+        if (!$order || !method_exists($order, 'get_item')) {
+            return '';
+        }
+        $item = $order->get_item($order_item_id);
+        if (!$item || !method_exists($item, 'get_name')) {
+            return '';
+        }
+        try {
+            return trim((string) $item->get_name());
+        } catch (\Throwable $e) {
+            return '';
+        }
+    }
+}
+
+if (!function_exists('intersoccer_roster_wc_get_order_item_meta')) {
+    /**
+     * Test seam for order-item meta (PHPUnit sets $GLOBALS['intersoccer_test_wc_get_order_item_meta']).
+     *
+     * @param int|string $item_id
+     * @param string     $key
+     * @param bool       $single
+     * @return mixed
+     */
+    function intersoccer_roster_wc_get_order_item_meta($item_id, $key, $single = true) {
+        if (!empty($GLOBALS['intersoccer_roster_enable_order_item_meta_seam'])
+            && isset($GLOBALS['intersoccer_test_wc_get_order_item_meta'])
+            && is_callable($GLOBALS['intersoccer_test_wc_get_order_item_meta'])) {
+            return call_user_func($GLOBALS['intersoccer_test_wc_get_order_item_meta'], $item_id, $key, $single);
+        }
+        return function_exists('wc_get_order_item_meta')
+            ? wc_get_order_item_meta($item_id, $key, $single)
+            : ($single ? '' : []);
+    }
+}
+
 if (!function_exists('intersoccer_roster_apply_product_name_for_storage')) {
     /**
      * @param array<string,mixed> $row
@@ -447,7 +498,7 @@ if (!function_exists('intersoccer_roster_apply_product_name_for_storage')) {
      */
     function intersoccer_roster_apply_product_name_for_storage(array $row) {
         $resolved = intersoccer_roster_resolve_product_name_for_storage([
-            'order_line_name' => $row['order_line_name'] ?? '',
+            'order_line_name' => intersoccer_roster_resolve_order_line_name($row),
             'order_wpml_language' => $row['order_wpml_language'] ?? '',
             'product_id' => (int) ($row['product_id'] ?? 0),
             'variation_id' => (int) ($row['variation_id'] ?? 0),
@@ -459,6 +510,72 @@ if (!function_exists('intersoccer_roster_apply_product_name_for_storage')) {
         ]);
         if (!empty($resolved['product_name'])) {
             $row['product_name'] = $resolved['product_name'];
+        }
+        return $row;
+    }
+}
+
+if (!function_exists('intersoccer_roster_apply_order_line_season_for_storage')) {
+    /**
+     * Prefer order-line Season meta for stored roster season (after signature generation).
+     *
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>
+     */
+    function intersoccer_roster_apply_order_line_season_for_storage(array $row) {
+        $order_item_id = (int) ($row['order_item_id'] ?? 0);
+        if ($order_item_id <= 0 || !function_exists('intersoccer_roster_season_from_order_item_meta')) {
+            return $row;
+        }
+        $line_season = intersoccer_roster_season_from_order_item_meta($order_item_id);
+        if ($line_season === '') {
+            return $row;
+        }
+        $row['season'] = function_exists('intersoccer_roster_normalize_season_value_for_storage')
+            ? intersoccer_roster_normalize_season_value_for_storage($line_season)
+            : $line_season;
+        return $row;
+    }
+}
+
+if (!function_exists('intersoccer_roster_backfill_facets_from_missing_variation_order_meta')) {
+    /**
+     * When the catalogue variation is gone, backfill facets from order line meta (storage only).
+     *
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>
+     */
+    function intersoccer_roster_backfill_facets_from_missing_variation_order_meta(array $row) {
+        $variation_id = (int) ($row['variation_id'] ?? 0);
+        if ($variation_id <= 0 || !function_exists('wc_get_product')) {
+            return $row;
+        }
+        if (wc_get_product($variation_id)) {
+            return $row;
+        }
+        if (function_exists('intersoccer_roster_backfill_facets_from_order_item_meta')) {
+            return intersoccer_roster_backfill_facets_from_order_item_meta($row);
+        }
+        return $row;
+    }
+}
+
+if (!function_exists('intersoccer_roster_apply_post_signature_roster_storage_fields')) {
+    /**
+     * Order-line product name, season, and missing-variation facets — must run after event_signature.
+     *
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>
+     */
+    function intersoccer_roster_apply_post_signature_roster_storage_fields(array $row) {
+        if (function_exists('intersoccer_roster_apply_product_name_for_storage')) {
+            $row = intersoccer_roster_apply_product_name_for_storage($row);
+        }
+        if (function_exists('intersoccer_roster_apply_order_line_season_for_storage')) {
+            $row = intersoccer_roster_apply_order_line_season_for_storage($row);
+        }
+        if (function_exists('intersoccer_roster_backfill_facets_from_missing_variation_order_meta')) {
+            $row = intersoccer_roster_backfill_facets_from_missing_variation_order_meta($row);
         }
         return $row;
     }
@@ -478,7 +595,7 @@ if (!function_exists('intersoccer_roster_season_from_order_item_meta')) {
         }
         $meta_keys = ['Season', 'pa_program-season', 'program-season', 'season'];
         foreach ($meta_keys as $meta_key) {
-            $val = wc_get_order_item_meta($order_item_id, $meta_key, true);
+            $val = intersoccer_roster_wc_get_order_item_meta($order_item_id, $meta_key, true);
             if (is_array($val)) {
                 $val = $val[0] ?? implode(', ', array_map('trim', $val));
             }
@@ -1548,24 +1665,11 @@ if (!function_exists('intersoccer_roster_backfill_facets_from_variation')) {
      */
     function intersoccer_roster_backfill_facets_from_variation(array $row) {
         $variation_id = (int) ($row['variation_id'] ?? 0);
-        $order_item_id = (int) ($row['order_item_id'] ?? 0);
-        if ($order_item_id > 0 && function_exists('intersoccer_roster_season_from_order_item_meta')) {
-            $line_season = intersoccer_roster_season_from_order_item_meta($order_item_id);
-            if ($line_season !== '') {
-                $row['season'] = $line_season;
-            }
-        }
         if ($variation_id <= 0 || !function_exists('wc_get_product')) {
-            if ($order_item_id > 0 && function_exists('intersoccer_roster_backfill_facets_from_order_item_meta')) {
-                return intersoccer_roster_backfill_facets_from_order_item_meta($row);
-            }
             return $row;
         }
         $variation = wc_get_product($variation_id);
         if (!$variation) {
-            if ($order_item_id > 0 && function_exists('intersoccer_roster_backfill_facets_from_order_item_meta')) {
-                return intersoccer_roster_backfill_facets_from_order_item_meta($row);
-            }
             return $row;
         }
         $attr_map = [
@@ -1579,9 +1683,6 @@ if (!function_exists('intersoccer_roster_backfill_facets_from_variation')) {
             'pa_camp-terms' => 'camp_terms',
         ];
         foreach ($attr_map as $taxonomy => $field) {
-            if ($field === 'season' && !intersoccer_roster_is_empty_season($row['season'] ?? '')) {
-                continue;
-            }
             $current = isset($row[$field]) ? trim((string) $row[$field]) : '';
             if ($current !== '' && strcasecmp($current, 'N/A') !== 0) {
                 continue;

@@ -845,8 +845,12 @@ if (!function_exists('intersoccer_apply_order_item_attribute_meta_to_data')) {
                     $raw[$key] = $meta_data['value'] ?? '';
                 }
             }
-        } elseif (is_numeric($item_or_item_id) && (int) $item_or_item_id > 0 && function_exists('wc_get_order_item_meta')) {
-            $raw = wc_get_order_item_meta((int) $item_or_item_id, '', false);
+        } elseif (is_numeric($item_or_item_id) && (int) $item_or_item_id > 0) {
+            $raw = function_exists('intersoccer_roster_wc_get_order_item_meta')
+                ? intersoccer_roster_wc_get_order_item_meta((int) $item_or_item_id, '', false)
+                : (function_exists('wc_get_order_item_meta')
+                    ? wc_get_order_item_meta((int) $item_or_item_id, '', false)
+                    : []);
             if (!is_array($raw)) {
                 $raw = [];
             }
