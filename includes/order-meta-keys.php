@@ -900,6 +900,13 @@ if (!function_exists('intersoccer_apply_order_item_attribute_meta_to_data')) {
             $data = intersoccer_apply_canonical_order_item_meta_to_data($data, $raw);
         }
 
+        if ($is_empty($data['times'] ?? '') && !$is_empty($data['course_times'] ?? '')) {
+            $data['times'] = $data['course_times'];
+        }
+        if ($is_empty($data['times'] ?? '') && !$is_empty($data['camp_times'] ?? '')) {
+            $data['times'] = $data['camp_times'];
+        }
+
         return $data;
     }
 }
