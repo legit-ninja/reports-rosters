@@ -7,6 +7,11 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+$event_details_cleanup = __DIR__ . '/../event-details-cleanup-service.php';
+if (file_exists($event_details_cleanup)) {
+    require_once $event_details_cleanup;
+}
+
 if (!defined('WP_CLI') || !WP_CLI) {
     return;
 }
@@ -55,6 +60,77 @@ final class Intersoccer_Rosters_Wp_Cli {
         $res = $svc->scanChunk(['int_cursor' => 0, 'chunk' => $chunk, 'max_drifts' => 20]);
         \WP_CLI::log(sprintf('Scanned: %d, drifts returned: %d, exhausted: %s', $res['scanned'], count($res['drifts']), $res['exhausted'] ? 'yes' : 'no'));
         \WP_CLI::success('Sample scan complete.');
+    }
+
+    /**
+     * Remove roster-row keys mistakenly stored inside event_details (dry-run by default).
+     *
+     * ## OPTIONS
+     *
+     * [--apply]
+     * : Persist cleaned event_details JSON (requires explicit flag). Idempotent.
+     *
+     * [--id-cursor=<n>]
+     * : Start scanning after this roster row id (default 0).
+     *
+     * [--chunk=<n>]
+     * : Rows per batch (default 500, max 2000).
+     *
+     * ## EXAMPLES
+     *
+     *     wp intersoccer-rosters event-details-cleanup
+     *     wp intersoccer-rosters event-details-cleanup --apply
+     *
+     * @subcommand event-details-cleanup
+     * @alias event_details_cleanup
+     * @when after_wp_load
+     *
+     * @param list<string> $args
+     * @param array<string,mixed> $assoc_args
+     */
+    public function event_details_cleanup(array $args, array $assoc_args): void {
+        if (!class_exists(\InterSoccer\ReportsRosters\Services\EventDetailsCleanupService::class)) {
+            \WP_CLI::error('EventDetailsCleanupService is not available.');
+        }
+        $apply = \WP_CLI\Utils\get_flag_value($assoc_args, 'apply', false) === true;
+        $cursor = (int) \WP_CLI\Utils\get_flag_value($assoc_args, 'id-cursor', 0);
+        $chunk = (int) \WP_CLI\Utils\get_flag_value($assoc_args, 'chunk', 500);
+
+        $svc = new \InterSoccer\ReportsRosters\Services\EventDetailsCleanupService();
+        $total_scanned = 0;
+        $total_would_change = 0;
+        $total_changed = 0;
+        $removed_totals = [];
+
+        do {
+            $batch = $svc->processBatch([
+                'int_cursor' => $cursor,
+                'chunk' => $chunk,
+                'apply' => $apply,
+            ]);
+            $total_scanned += $batch['scanned'];
+            $total_would_change += $batch['rows_would_change'];
+            $total_changed += $batch['rows_changed'];
+            foreach ($batch['removed_key_counts'] as $key => $count) {
+                if (!isset($removed_totals[$key])) {
+                    $removed_totals[$key] = 0;
+                }
+                $removed_totals[$key] += $count;
+            }
+            $cursor = (int) $batch['next_cursor'];
+            $exhausted = !empty($batch['exhausted']);
+        } while (!$exhausted && $batch['scanned'] > 0);
+
+        ksort($removed_totals);
+        \WP_CLI::log(sprintf('Rows scanned: %d', $total_scanned));
+        \WP_CLI::log(sprintf('Rows that would change: %d', $total_would_change));
+        if ($apply) {
+            \WP_CLI::log(sprintf('Rows changed: %d', $total_changed));
+        }
+        foreach ($removed_totals as $key => $count) {
+            \WP_CLI::log(sprintf('Removed key count (%s): %d', $key, $count));
+        }
+        \WP_CLI::success($apply ? 'Apply complete.' : 'Dry run complete (no writes).');
     }
 }
 
