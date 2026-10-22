@@ -1,6 +1,6 @@
 <?php
 /**
- * One-off backfill: closed roster rows product_name from order line (English orders only).
+ * One-off backfill: closed roster rows product_name from order line as booked.
  *
  * @package InterSoccer_Reports_Rosters
  */
@@ -23,7 +23,7 @@ if (!class_exists('Intersoccer_Roster_Closed_Line_Product_Name_Backfill_Service'
 
         /**
          * @param callable $fetch_rows (int $id_cursor, int $chunk): array<int,array<string,mixed>>
-         * @param callable $fetch_line_context (int $order_item_id): ?array{order_item_name:string,order_wpml_language:string}
+         * @param callable $fetch_line_context (int $order_item_id): ?array{order_item_name:string}
          * @param callable|null $persist_name (int $roster_id, string $product_name): void
          */
         public function __construct(callable $fetch_rows, callable $fetch_line_context, callable $persist_name = null) {
@@ -45,7 +45,6 @@ if (!class_exists('Intersoccer_Roster_Closed_Line_Product_Name_Backfill_Service'
                 'rows_scanned' => 0,
                 'would_change' => 0,
                 'changed' => 0,
-                'skipped_non_english' => 0,
                 'skipped_no_line_name' => 0,
             ];
 
@@ -77,20 +76,13 @@ if (!class_exists('Intersoccer_Roster_Closed_Line_Product_Name_Backfill_Service'
                         continue;
                     }
                     $line_name = trim((string) ($context['order_item_name'] ?? ''));
-                    $order_lang = trim((string) ($context['order_wpml_language'] ?? ''));
                     if ($line_name === '') {
                         $summary['skipped_no_line_name']++;
-                        continue;
-                    }
-                    if (!function_exists('intersoccer_roster_order_language_is_english_or_unknown')
-                        || !intersoccer_roster_order_language_is_english_or_unknown($order_lang)) {
-                        $summary['skipped_non_english']++;
                         continue;
                     }
                     $target = function_exists('intersoccer_roster_resolve_product_name_for_storage')
                         ? intersoccer_roster_resolve_product_name_for_storage([
                             'order_line_name' => $line_name,
-                            'order_wpml_language' => $order_lang,
                             'product_id' => (int) ($row['product_id'] ?? 0),
                             'variation_id' => (int) ($row['variation_id'] ?? 0),
                             'catalog_product_name' => (string) ($row['product_name'] ?? ''),
@@ -157,7 +149,6 @@ if (!class_exists('Intersoccer_Roster_Closed_Line_Product_Name_Backfill_Service'
                 }
                 return [
                     'order_item_name' => (string) $item->get_name(),
-                    'order_wpml_language' => trim((string) $order->get_meta('wpml_language')),
                 ];
             };
 

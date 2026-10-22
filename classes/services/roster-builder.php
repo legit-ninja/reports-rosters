@@ -973,15 +973,6 @@ class RosterBuilder {
         $product = $item->get_product();
         $variation_id = $item->get_variation_id();
         
-        $order_wpml_language = '';
-        if (is_object($order) && method_exists($order, 'get_meta')) {
-            try {
-                $order_wpml_language = trim((string) $order->get_meta('wpml_language'));
-            } catch (\Throwable $e) {
-                $order_wpml_language = '';
-            }
-        }
-
         // Base order data
         $order_data = [
             'order_id' => $order->get_id(),
@@ -990,7 +981,6 @@ class RosterBuilder {
             'variation_id' => $variation_id ?: 0,
             'customer_id' => $order->get_customer_id(),
             'order_status' => $order->get_status(),
-            'order_wpml_language' => $order_wpml_language,
             'product_name' => ($product && is_object($product) && method_exists($product, 'get_name'))
                 ? (string) $product->get_name()
                 : (
@@ -1628,7 +1618,7 @@ class RosterBuilder {
                 $roster_data = intersoccer_roster_apply_canonical_write_fields($roster_data);
             }
 
-        unset($roster_data['order_line_name'], $roster_data['order_wpml_language']);
+        unset($roster_data['order_line_name']);
 
         return $roster_data;
     }

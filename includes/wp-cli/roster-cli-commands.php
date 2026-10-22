@@ -98,11 +98,10 @@ final class Intersoccer_Rosters_Wp_Cli {
         ]);
 
         \WP_CLI::log(sprintf(
-            'rows_scanned=%d would_change=%d changed=%d skipped_non_english=%d skipped_no_line_name=%d',
+            'rows_scanned=%d would_change=%d changed=%d skipped_no_line_name=%d',
             (int) $summary['rows_scanned'],
             (int) $summary['would_change'],
             (int) $summary['changed'],
-            (int) $summary['skipped_non_english'],
             (int) $summary['skipped_no_line_name']
         ));
         \WP_CLI::success($apply ? 'Apply complete.' : 'Dry run complete.');

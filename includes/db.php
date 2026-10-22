@@ -463,30 +463,6 @@ function intersoccer_rebuild_event_signatures() {
         // This ensures French and English versions of the same product generate the same signature
         $product_id_to_use = $record['product_id'];
         $normalized_product_name = $record['product_name'] ?? '';
-        $order_item_id_for_name = (int) ($record['order_item_id'] ?? 0);
-        $order_lang = '';
-        if ($order_item_id_for_name > 0 && function_exists('intersoccer_roster_resolve_product_name_for_storage')) {
-            $line_name = function_exists('intersoccer_roster_order_line_name_by_item_id')
-                ? intersoccer_roster_order_line_name_by_item_id($order_item_id_for_name)
-                : '';
-            $order_id_for_lang = 0;
-            if (function_exists('wc_get_order_id_by_order_item_id')) {
-                $order_id_for_lang = (int) wc_get_order_id_by_order_item_id($order_item_id_for_name);
-            }
-            $order_lang = function_exists('intersoccer_roster_order_wpml_language')
-                ? intersoccer_roster_order_wpml_language($order_id_for_lang)
-                : '';
-            $resolved_line_name = intersoccer_roster_resolve_product_name_for_storage([
-                'order_line_name' => $line_name,
-                'order_wpml_language' => $order_lang,
-                'product_id' => (int) ($record['product_id'] ?? 0),
-                'variation_id' => (int) ($record['variation_id'] ?? 0),
-                'catalog_product_name' => $normalized_product_name,
-            ]);
-            if (!empty($resolved_line_name['product_name'])) {
-                $normalized_product_name = $resolved_line_name['product_name'];
-            }
-        }
         
         if (!empty($record['product_id']) && function_exists('wpml_get_default_language')) {
             // First, ensure we have the parent product ID (in case product_id is a variation)
@@ -512,24 +488,22 @@ function intersoccer_rebuild_event_signatures() {
                 }
             }
             
-            if ($order_item_id_for_name <= 0 || !function_exists('intersoccer_roster_order_language_is_english_or_unknown')
-                || !intersoccer_roster_order_language_is_english_or_unknown($order_lang ?? '')) {
-                // Switch to default language to get English product name (non-English orders / no line snapshot).
-                if ($current_lang !== $default_lang) {
-                    do_action('wpml_switch_language', $default_lang);
-                }
+            // Switch to default language to get English product name
+            if ($current_lang !== $default_lang) {
+                do_action('wpml_switch_language', $default_lang);
+            }
 
-                $product = wc_get_product($product_id_to_use);
-                if ($product) {
-                    $normalized_product_name = $product->get_name();
-                    intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Normalized product_name during signature rebuild');
-                } else {
-                    intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Warning - Product not found during signature rebuild');
-                }
+            $product = wc_get_product($product_id_to_use);
+            if ($product) {
+                $normalized_product_name = $product->get_name();
+                intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Normalized product_name during signature rebuild');
+            } else {
+                intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Warning - Product not found during signature rebuild');
+            }
 
-                if ($current_lang !== $default_lang && !empty($current_lang)) {
-                    do_action('wpml_switch_language', $current_lang);
-                }
+            // Switch back to original language
+            if ($current_lang !== $default_lang && !empty($current_lang)) {
+                do_action('wpml_switch_language', $current_lang);
             }
         }
         
@@ -1592,14 +1566,12 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             $late_pickup_days = $order_item_meta['Late Pickup Days'] ?? '';
         }
 
-        $order_wpml_language = method_exists($order, 'get_meta') ? trim((string) $order->get_meta('wpml_language')) : '';
         $catalog_name = function_exists('intersoccer_roster_catalog_product_name')
             ? intersoccer_roster_catalog_product_name((int) $product_id, (int) $variation_id)
             : (string) $product->get_name();
         $resolved_name = function_exists('intersoccer_roster_resolve_product_name_for_storage')
             ? intersoccer_roster_resolve_product_name_for_storage([
                 'order_line_name' => $item->get_name(),
-                'order_wpml_language' => $order_wpml_language,
                 'product_id' => (int) $product_id,
                 'variation_id' => (int) $variation_id,
                 'catalog_product_name' => $catalog_name,
