@@ -125,8 +125,6 @@ if (!class_exists('Intersoccer_Roster_Closed_Line_Product_Name_Backfill_Service'
         public static function from_wpdb(): self {
             global $wpdb;
             $table = $wpdb->prefix . 'intersoccer_rosters';
-            $items = $wpdb->prefix . 'woocommerce_order_items';
-            $orders = $wpdb->prefix . 'posts';
 
             $fetch_rows = static function (int $id_cursor, int $chunk) use ($wpdb, $table) {
                 return $wpdb->get_results(
@@ -143,25 +141,23 @@ if (!class_exists('Intersoccer_Roster_Closed_Line_Product_Name_Backfill_Service'
                 ) ?: [];
             };
 
-            $fetch_line = static function (int $order_item_id) use ($wpdb, $items, $orders) {
-                $row = $wpdb->get_row(
-                    $wpdb->prepare(
-                        "SELECT oi.order_item_name, pm.meta_value AS order_wpml_language
-                         FROM {$items} oi
-                         INNER JOIN {$orders} p ON p.ID = oi.order_id AND p.post_type = 'shop_order'
-                         LEFT JOIN {$wpdb->postmeta} pm ON pm.post_id = oi.order_id AND pm.meta_key = 'wpml_language'
-                         WHERE oi.order_item_id = %d
-                         LIMIT 1",
-                        $order_item_id
-                    ),
-                    ARRAY_A
-                );
-                if (!$row) {
+            // Read the line and order through WooCommerce so this works with and without HPOS.
+            $fetch_line = static function (int $order_item_id) {
+                if (!class_exists('WC_Order_Item_Product') || !function_exists('wc_get_order')) {
+                    return null;
+                }
+                try {
+                    $item = new \WC_Order_Item_Product($order_item_id);
+                } catch (\Throwable $e) {
+                    return null;
+                }
+                $order = $item->get_id() > 0 ? wc_get_order($item->get_order_id()) : null;
+                if (!$order) {
                     return null;
                 }
                 return [
-                    'order_item_name' => (string) ($row['order_item_name'] ?? ''),
-                    'order_wpml_language' => (string) ($row['order_wpml_language'] ?? ''),
+                    'order_item_name' => (string) $item->get_name(),
+                    'order_wpml_language' => trim((string) $order->get_meta('wpml_language')),
                 ];
             };
 
