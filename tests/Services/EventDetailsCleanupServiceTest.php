@@ -30,11 +30,13 @@ class EventDetailsCleanupServiceTest extends TestCase {
     public function test_clean_decoded_removes_only_copied_row_keys_and_keeps_legit_keys(): void {
         $svc = new EventDetailsCleanupService();
         $raw = [
-            'season' => 'SYNTH_KEEP_SEASON',
+            'season' => 'SYNTH_ROW_SEASON',
+            'camp_terms' => 'SYNTH_ROW_CAMP_TERMS',
             'is_buyclub' => true,
             'order_id' => 111,
             'player_first_name' => 'SYNTH_SHOULD_DROP',
             'event_details' => [
+                'camp_terms' => 'SYNTH_KEEP_CAMP_TERMS',
                 'region' => 'SYNTH_KEEP_REGION',
                 'customer_id' => 222,
             ],
@@ -43,7 +45,7 @@ class EventDetailsCleanupServiceTest extends TestCase {
         $this->assertTrue($result['changed']);
         $this->assertSame(
             [
-                'season' => 'SYNTH_KEEP_SEASON',
+                'camp_terms' => 'SYNTH_KEEP_CAMP_TERMS',
                 'region' => 'SYNTH_KEEP_REGION',
                 'is_buyclub' => true,
             ],

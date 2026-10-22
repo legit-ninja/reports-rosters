@@ -128,11 +128,13 @@ class EventDetailsCleanupService {
             return ['cleaned' => [], 'removed_keys' => [], 'changed' => false];
         }
 
-        $nested = [];
+        // Affected rows hold the copied roster row at top level and the real event details
+        // nested under 'event_details'; only is_buyclub was added on top after the copy.
         if (isset($details['event_details']) && is_array($details['event_details'])) {
-            $nested = $details['event_details'];
+            $merged = array_merge($details['event_details'], array_intersect_key($details, ['is_buyclub' => true]));
+        } else {
+            $merged = $details;
         }
-        $merged = array_merge($nested, $details);
 
         $cleaned = [];
         foreach (self::legitimateEventDetailKeys() as $key) {
