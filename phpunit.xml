@@ -90,6 +90,7 @@
             <file>tests/Unit/RosterSingleExportSplitPermissionsTest.php</file>
             <file>tests/Unit/MedicalRosterEditorDobGateTest.php</file>
             <file>tests/Unit/PlayerCampStatusDobGatingTest.php</file>
+            <directory>tests/ReportAccuracy</directory>
         </testsuite>
         <testsuite name="Complete">
             <directory>tests</directory>
