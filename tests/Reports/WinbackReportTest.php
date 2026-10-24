@@ -73,6 +73,34 @@ class WinbackReportTest extends TestCase {
 		if (function_exists('intersoccer_winback_reset_unmapped_facets')) {
 			intersoccer_winback_reset_unmapped_facets();
 		}
+		if (function_exists('intersoccer_roster_report_reset_live_order_status_memo')) {
+			intersoccer_roster_report_reset_live_order_status_memo();
+		}
+		if (function_exists('intersoccer_roster_report_reset_order_customer_id_cache')) {
+			intersoccer_roster_report_reset_order_customer_id_cache();
+		}
+		if (function_exists('intersoccer_roster_report_reset_fake_customer_cache')) {
+			intersoccer_roster_report_reset_fake_customer_cache();
+		}
+		if (function_exists('intersoccer_roster_report_reset_line_refund_check_state')) {
+			intersoccer_roster_report_reset_line_refund_check_state();
+		}
+		if (function_exists('intersoccer_winback_reset_order_created_date_cache')) {
+			intersoccer_winback_reset_order_created_date_cache();
+		}
+		if (function_exists('intersoccer_winback_reset_catalogue_target_cache')) {
+			intersoccer_winback_reset_catalogue_target_cache();
+		}
+		if (function_exists('intersoccer_winback_reset_catalogue_enumeration_memo')) {
+			intersoccer_winback_reset_catalogue_enumeration_memo();
+		}
+		if (function_exists('intersoccer_winback_reset_j8_lookup_cache')) {
+			intersoccer_winback_reset_j8_lookup_cache();
+		}
+		unset(
+			$GLOBALS['intersoccer_test_get_userdata'],
+			$GLOBALS['intersoccer_test_fake_customer_map']
+		);
 	}
 
 	public function test_live_order_status_overrides_stale_roster_for_policy() {
@@ -862,6 +890,73 @@ class WinbackReportTest extends TestCase {
 				null
 			)
 		);
+	}
+
+	public function test_resolved_age_missing_from_catalogue_registers_unmapped_slug(): void {
+		intersoccer_winback_reset_unmapped_facets();
+		$catalogue = [
+			'camp|geneva-lake|5-13y' => [
+				[
+					'product_name' => 'Camp',
+					'start_date' => '2026-08-01',
+					'age_group_slug' => '5-13y',
+					'product_id' => 1,
+					'source_variation_id' => 1,
+					'variation_id' => 1,
+				],
+			],
+		];
+		intersoccer_winback_register_unmapped_age_if_not_catalogue_band('5-12y', $catalogue, 'camp', 'geneva-lake');
+		$unmapped = intersoccer_winback_get_unmapped_facets();
+		$this->assertArrayHasKey('5-12y', $unmapped['age_group']);
+		$this->assertSame(1, $unmapped['age_group']['5-12y']);
+	}
+
+	public function test_more_targets_dedupes_product_week_and_prefers_full_week(): void {
+		intersoccer_winback_reset_catalogue_target_cache();
+		$catalogue = [
+			'camp|geneva|5-13y' => [
+				[
+					'product_name' => 'Easter Camp',
+					'product_id' => 62554,
+					'start_date' => '2026-04-05',
+					'age_group_slug' => '5-13y',
+					'booking_type_slug' => 'single-days',
+					'source_variation_id' => 2002,
+					'variation_id' => 2002,
+				],
+				[
+					'product_name' => 'Easter Camp',
+					'product_id' => 62554,
+					'start_date' => '2026-04-05',
+					'age_group_slug' => '5-13y',
+					'booking_type_slug' => 'full-week',
+					'source_variation_id' => 2001,
+					'variation_id' => 2001,
+				],
+				[
+					'product_name' => 'Summer Camp',
+					'product_id' => 62555,
+					'start_date' => '2026-07-01',
+					'age_group_slug' => '5-13y',
+					'booking_type_slug' => 'full-week',
+					'source_variation_id' => 3001,
+					'variation_id' => 3001,
+				],
+			],
+		];
+		$resolved = intersoccer_winback_resolve_catalogue_target_and_more(
+			$catalogue,
+			'camp',
+			'geneva',
+			'5-13y',
+			'2015-06-01'
+		);
+		$this->assertNotNull($resolved['target']);
+		$this->assertSame('Easter Camp', $resolved['target']['product']);
+		$this->assertSame('2026-04-05', $resolved['target']['start_date']);
+		$this->assertCount(1, $resolved['more_targets']);
+		$this->assertSame('Summer Camp', $resolved['more_targets'][0]['product']);
 	}
 }
 
