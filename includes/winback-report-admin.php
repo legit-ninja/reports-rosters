@@ -542,6 +542,78 @@ function intersoccer_winback_report_unmapped_notice_items(array $unmapped) {
 }
 
 /**
+ * Read-only table of EN variations that are off in English and on sale in FR/DE.
+ *
+ * Empty when the list is missing, not an array, or has no rows. Not used by Excel.
+ *
+ * @param mixed $items Engine `en_unpublished_variations`.
+ * @return string
+ */
+function intersoccer_winback_report_admin_en_unpublished_html($items) {
+	if (!is_array($items) || $items === []) {
+		return '';
+	}
+
+	$rows = [];
+	foreach ($items as $item) {
+		if (!is_array($item)) {
+			continue;
+		}
+		$ids = [];
+		$raw_ids = $item['translation_variation_ids'] ?? [];
+		if (is_array($raw_ids)) {
+			foreach ($raw_ids as $id) {
+				$ids[] = (string) (int) $id;
+			}
+		}
+		$en_id = (int) ($item['en_variation_id'] ?? 0);
+		$status = trim((string) ($item['en_variation_status'] ?? ''));
+		if ($en_id > 0) {
+			$status = $status === '' ? '#' . $en_id : $status . ' #' . $en_id;
+		}
+		$rows[] = [
+			'date' => (string) ($item['start_date'] ?? ''),
+			'product' => (string) ($item['product'] ?? ''),
+			'venue' => (string) ($item['venue'] ?? ''),
+			'kind' => (string) ($item['kind'] ?? ''),
+			'status' => $status,
+			'ids' => implode(', ', $ids),
+		];
+	}
+	if ($rows === []) {
+		return '';
+	}
+
+	$headings = [
+		__('Date', 'intersoccer-reports-rosters'),
+		__('Product', 'intersoccer-reports-rosters'),
+		__('Venue', 'intersoccer-reports-rosters'),
+		__('Kind', 'intersoccer-reports-rosters'),
+		__('EN status', 'intersoccer-reports-rosters'),
+		__('FR/DE variation IDs', 'intersoccer-reports-rosters'),
+	];
+	$html = '<h2>' . esc_html__('Dates switched off in English but on sale in FR/DE', 'intersoccer-reports-rosters') . '</h2>';
+	$html .= '<table class="widefat striped"><thead><tr>';
+	foreach ($headings as $heading) {
+		$html .= '<th>' . esc_html($heading) . '</th>';
+	}
+	$html .= '</tr></thead><tbody>';
+	foreach ($rows as $row) {
+		$html .= '<tr>';
+		$html .= '<td>' . esc_html($row['date']) . '</td>';
+		$html .= '<td>' . esc_html($row['product']) . '</td>';
+		$html .= '<td>' . esc_html($row['venue']) . '</td>';
+		$html .= '<td>' . esc_html($row['kind']) . '</td>';
+		$html .= '<td>' . esc_html($row['status']) . '</td>';
+		$html .= '<td>' . esc_html($row['ids']) . '</td>';
+		$html .= '</tr>';
+	}
+	$html .= '</tbody></table>';
+
+	return $html;
+}
+
+/**
  * Run the win-back engine with request filters.
  *
  * @return array{
@@ -802,6 +874,12 @@ function intersoccer_render_winback_report_page() {
 				</ul>
 			</div>
 		<?php endif; ?>
+
+		<?php
+		echo intersoccer_winback_report_admin_en_unpublished_html(
+			is_array($result['en_unpublished_variations'] ?? null) ? $result['en_unpublished_variations'] : null
+		);
+		?>
 
 		<h2 class="nav-tab-wrapper">
 			<?php foreach (intersoccer_winback_report_tab_labels() as $slug => $label) : ?>

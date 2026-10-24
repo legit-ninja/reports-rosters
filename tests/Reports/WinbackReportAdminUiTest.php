@@ -265,6 +265,50 @@ class WinbackReportAdminUiTest extends TestCase {
 		$this->assertSame('', intersoccer_winback_report_format_more_targets_html(null, $venue_labels, $age_labels));
 	}
 
+	public function test_en_unpublished_section_renders_rows_and_escapes_once() {
+		$this->assertSame('', intersoccer_winback_report_admin_en_unpublished_html([]));
+		$this->assertSame('', intersoccer_winback_report_admin_en_unpublished_html(null));
+
+		$html = intersoccer_winback_report_admin_en_unpublished_html([
+			[
+				'en_variation_id' => 12002,
+				'en_variation_status' => 'draft',
+				'translation_variation_ids' => [12012, 12013],
+				'product' => "Kids\u{2019} <script> O'Brien",
+				'start_date' => '2026-10-01',
+				'venue' => 'zurich-test',
+				'kind' => 'camp',
+			],
+			[
+				'en_variation_id' => 12003,
+				'en_variation_status' => 'private',
+				'translation_variation_ids' => [99],
+				'product' => 'Winter Camp',
+				'start_date' => '2026-11-01',
+				'venue' => 'basel-hall',
+				'kind' => 'course',
+			],
+		]);
+
+		$this->assertStringContainsString('Dates switched off in English but on sale in FR/DE', $html);
+		$this->assertStringContainsString('class="widefat striped"', $html);
+		$this->assertSame(3, substr_count($html, '<tr>'));
+		$this->assertStringContainsString('2026-10-01', $html);
+		$this->assertStringContainsString('2026-11-01', $html);
+		$this->assertStringContainsString("Kids\u{2019} &lt;script&gt; O&#039;Brien", $html);
+		$this->assertStringContainsString('zurich-test', $html);
+		$this->assertStringContainsString('>camp<', $html);
+		$this->assertStringContainsString('draft #12002', $html);
+		$this->assertStringContainsString('12012, 12013', $html);
+		$this->assertStringContainsString('Winter Camp', $html);
+		$this->assertStringContainsString('private #12003', $html);
+		$this->assertStringContainsString('>99<', $html);
+		$this->assertStringNotContainsString('<script>', $html);
+		$this->assertStringNotContainsString('&amp;#8217;', $html);
+		$this->assertStringNotContainsString('&amp;lt;', $html);
+		$this->assertStringNotContainsString('&#8217;', $html);
+	}
+
 	public function test_unmapped_notice_lists_venue_and_age_group() {
 		$items = intersoccer_winback_report_unmapped_notice_items([
 			'venue' => ['zurich---fc-langnau' => 14],
