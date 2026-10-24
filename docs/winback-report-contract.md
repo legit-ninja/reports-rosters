@@ -56,6 +56,10 @@ Each element of `rows` is an associative array:
 
 `roster_start_date`, `variation_camp_start`, `order_item_camp_start`, `camp_terms_parse`, `variation_course_start`, `order_date`, `unknown`
 
+When no roster start, variation meta, or parseable `camp_terms` path yields a date but the row has a Woo order, `intersoccer_winback_resolve_row_event_date()` uses the order created date with `date_source` **`order_date`**.
+
+Yearless `camp_terms` week slugs (no year in the label) get their calendar year inside `intersoccer_parse_camp_dates_fixed()` from a four-digit year in `season` when present; otherwise **`date('Y')` at parse time** — not from the order date. Win-back exposes that as `camp_terms_parse` only when `intersoccer_reports_resolve_camp_schedule()` returns a parsed start (normally when `variation_id` is set).
+
 ### Optional extra keys (stable but not required for UI v1)
 
 `dob`, `age`, `account_email` (duplicate of `contact.account_email`), `events_in_lookback`
