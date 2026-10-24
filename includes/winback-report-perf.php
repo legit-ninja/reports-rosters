@@ -164,75 +164,51 @@ if (!function_exists('intersoccer_rr_winback_prime_product_types_from_rows')) {
 	}
 }
 
-if (!function_exists('intersoccer_winback_report_engine_history_row_column_names')) {
+if (!function_exists('intersoccer_winback_report_engine_history_row_bulk_column_names')) {
 	/**
-	 * Roster columns read by win-back history load, priming, identity map, and output (narrow SELECT).
+	 * Bulky roster columns stripped after SELECT * on win-back history load.
+	 *
+	 * Not read by identity map, facet/event-date resolution, aggregation, J8, or output
+	 * for rows on the win-back history path. Unknown or new columns are kept.
 	 *
 	 * @return string[]
 	 */
-	function intersoccer_winback_report_engine_history_row_column_names() {
+	function intersoccer_winback_report_engine_history_row_bulk_column_names() {
 		return [
-			'id',
-			'order_id',
-			'order_item_id',
-			'customer_id',
-			'order_status',
-			'product_id',
-			'variation_id',
-			'player_index',
-			'player_first_name',
-			'player_last_name',
-			'first_name',
-			'last_name',
-			'player_dob',
-			'dob',
-			'parent_first_name',
-			'parent_last_name',
-			'parent_email',
-			'parent_phone',
-			'product_name',
-			'venue',
-			'age_group',
-			'start_date',
-			'end_date',
-			'camp_terms',
-			'season',
-			'course_day',
-			'activity_type',
+			'medical_conditions',
+			'player_medical',
+			'player_dietary',
+			'emergency_contact',
+			'shirt_size',
+			'shorts_size',
+			'discount_codes',
+			'discount_amount',
+			'reimbursement',
+			'base_price',
+			'final_price',
+			'late_pickup',
+			'late_pickup_days',
+			'registration_timestamp',
+			'created_at',
+			'updated_at',
+			'day_presence',
 		];
 	}
 }
 
 if (!function_exists('intersoccer_winback_report_engine_project_history_row')) {
 	/**
-	 * Keep only win-back history columns (drops unused wide-row fields from SELECT * fixtures).
+	 * Drop bulky unused columns from a loaded history row (SELECT * → in-memory deny-list).
 	 *
 	 * @param array<string,mixed> $row
 	 * @return array<string,mixed>
 	 */
 	function intersoccer_winback_report_engine_project_history_row(array $row) {
-		$out = [];
-		foreach (intersoccer_winback_report_engine_history_row_column_names() as $column) {
-			if (array_key_exists($column, $row)) {
-				$out[ $column ] = $row[ $column ];
-			}
+		foreach (intersoccer_winback_report_engine_history_row_bulk_column_names() as $column) {
+			unset($row[ $column ]);
 		}
 
-		return $out;
-	}
-}
-
-if (!function_exists('intersoccer_winback_report_engine_history_row_columns_sql')) {
-	/**
-	 * @return string Comma-separated escaped column list for SQL SELECT.
-	 */
-	function intersoccer_winback_report_engine_history_row_columns_sql() {
-		$parts = [];
-		foreach (intersoccer_winback_report_engine_history_row_column_names() as $column) {
-			$parts[] = '`' . $column . '`';
-		}
-
-		return implode(', ', $parts);
+		return $row;
 	}
 }
 

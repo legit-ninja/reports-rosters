@@ -81,12 +81,19 @@ class WinbackReportMemoryTest extends TestCase {
 			'season' => '2026',
 			'course_day' => '',
 		];
+		$bulky = [
+			'medical_conditions' => str_repeat('m', 500),
+			'player_medical' => str_repeat('m', 500),
+			'emergency_contact' => str_repeat('e', 200),
+			'discount_codes' => str_repeat('d', 200),
+			'day_presence' => str_repeat('p', 200),
+		];
 		$noise = [];
 		for ($i = 0; $i < 40; $i++) {
 			$noise[ 'unused_col_' . $i ] = str_repeat('x', 80);
 		}
 
-		return $base + $noise;
+		return $base + $bulky + $noise;
 	}
 
 	/**
@@ -153,14 +160,30 @@ class WinbackReportMemoryTest extends TestCase {
 
 	public function test_history_row_projection_retains_required_columns(): void {
 		$row = $this->wide_history_row(1, 42);
+		$row['player_name'] = 'Player C42';
+		$row['girls_only'] = 1;
+		$row['times'] = 'full-day';
+		$row['avs_number'] = '756.1234.5678.90';
+		$row['event_signature'] = 'abc123sig';
 		$projected = intersoccer_winback_report_engine_project_history_row($row);
-		foreach (intersoccer_winback_report_engine_history_row_column_names() as $column) {
+		foreach (
+			[
+				'customer_id',
+				'player_name',
+				'girls_only',
+				'times',
+				'avs_number',
+				'event_signature',
+				'player_first_name',
+				'venue',
+			] as $column
+		) {
 			$this->assertArrayHasKey($column, $projected, 'Projected row missing column: ' . $column);
 		}
-		foreach (array_keys($projected) as $key) {
-			$this->assertContains($key, intersoccer_winback_report_engine_history_row_column_names());
+		foreach (intersoccer_winback_report_engine_history_row_bulk_column_names() as $column) {
+			$this->assertArrayNotHasKey($column, $projected, 'Bulky column should be stripped: ' . $column);
 		}
-		$this->assertArrayNotHasKey('unused_col_0', $projected);
+		$this->assertArrayHasKey('unused_col_0', $projected, 'Unknown columns should be kept');
 	}
 
 	public function test_aggregation_retains_o_players_not_o_rows(): void {

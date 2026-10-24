@@ -181,6 +181,14 @@ class WinbackReportRuntimeCacheFlushTest extends TestCase {
 		$this->assertLessThanOrEqual(3, $flush_300, 'Expected phase-boundary flushes only, not per-row history/output loops');
 		$this->assertSame($flush_300, $flush_600, 'Flush count should not grow with row volume');
 	}
+
+	public function test_engine_generate_flush_count_constant_across_multi_chunk_history(): void {
+		$flush_small = $this->run_generate_and_count_flushes(300);
+		$flush_multi_chunk = $this->run_generate_and_count_flushes(2500);
+
+		$this->assertSame(2, $flush_small, 'Phase-boundary flushes only (after aggregation and after output)');
+		$this->assertSame($flush_small, $flush_multi_chunk, 'Flush count must not grow with chunked history volume');
+	}
 }
 
 }

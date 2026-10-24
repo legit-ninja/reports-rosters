@@ -104,9 +104,6 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		if (function_exists('intersoccer_winback_prime_row_event_dates_from_rows')) {
 			intersoccer_winback_prime_row_event_dates_from_rows($history_rows);
 		}
-		if (function_exists('intersoccer_winback_report_engine_runtime_cache_flush')) {
-			intersoccer_winback_report_engine_runtime_cache_flush();
-		}
 		$uuid_map = intersoccer_winback_report_engine_load_assigned_player_ids($history_rows);
 		$identity_map = new Intersoccer_Roster_Report_Player_Identity_Map();
 
@@ -427,10 +424,7 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 		$where = ['(is_placeholder = 0 OR is_placeholder IS NULL)', 'order_item_id > 0'];
 		$params = [];
 
-		$column_sql = function_exists('intersoccer_winback_report_engine_history_row_columns_sql')
-			? intersoccer_winback_report_engine_history_row_columns_sql()
-			: '*';
-		$sql = 'SELECT ' . $column_sql . ' FROM ' . $table . ' WHERE ' . implode(' AND ', $where);
+		$sql = 'SELECT * FROM ' . $table . ' WHERE ' . implode(' AND ', $where);
 		if (!empty($params)) {
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 			$rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
