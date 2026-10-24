@@ -94,8 +94,69 @@ class WinbackReportTest extends TestCase {
 		$this->assertSame('idx:3:2', $idx_key['key']);
 
 		$row['player_index'] = 0;
-		$name_key = intersoccer_roster_report_build_player_key($row, '');
-		$this->assertSame('name', $name_key['tier']);
+		$idx_zero = intersoccer_roster_report_build_player_key($row, '');
+		$this->assertSame('idx', $idx_zero['tier']);
+		$this->assertSame('idx:3:0', $idx_zero['key']);
+	}
+
+	public function test_legacy_stored_customer_zero_skips_idx_tier() {
+		$GLOBALS['intersoccer_test_wc_get_order_callback'] = static function ($order_id) {
+			return new class() {
+				public function get_customer_id() {
+					return 99;
+				}
+			};
+		};
+		$row = intersoccer_roster_report_row_with_resolved_customer([
+			'customer_id' => 0,
+			'player_index' => 0,
+			'order_id' => 9001,
+			'player_first_name' => 'Legacy',
+			'player_last_name' => 'Child',
+		]);
+		$key = intersoccer_roster_report_build_player_key($row, '');
+		$this->assertSame('name', $key['tier']);
+		$this->assertStringStartsWith('name:99:', $key['key']);
+		$this->assertStringNotContainsString('idx:', $key['key']);
+		unset($GLOBALS['intersoccer_test_wc_get_order_callback']);
+	}
+
+	public function test_cross_tier_uuid_upcoming_matches_idx_history_as_rebooked() {
+		$map = new \Intersoccer_Roster_Report_Player_Identity_Map();
+		$history_row = [
+			'customer_id' => 12,
+			'player_index' => 0,
+			'player_first_name' => 'Mia',
+			'player_last_name' => 'Test',
+			'activity_type' => 'Camp',
+		];
+		$upcoming_row = [
+			'customer_id' => 12,
+			'player_index' => 0,
+			'player_first_name' => 'Mia',
+			'player_last_name' => 'Test',
+			'activity_type' => 'Camp',
+		];
+		$uuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+		$map->register_row($history_row, '');
+		$map->register_row($upcoming_row, $uuid);
+
+		$history_key = intersoccer_roster_report_build_player_key($history_row, '');
+		$upcoming_key = intersoccer_roster_report_build_player_key($upcoming_row, $uuid);
+		$this->assertSame('idx', $history_key['tier']);
+		$this->assertSame('uuid', $upcoming_key['tier']);
+		$this->assertTrue($map->same_player($history_key['key'], $upcoming_key['key']));
+		$this->assertSame('uuid', $map->best_tier($history_key['key']));
+
+		$upcoming = [
+			[
+				'player_key' => $upcoming_key['key'],
+				'kind' => 'camp',
+				'venue_slug' => 'zurich-lake',
+			],
+		];
+		$flags = intersoccer_winback_detect_rebooked_flags($history_key['key'], 'camp', 'zurich-lake', $upcoming, $map);
+		$this->assertTrue($flags['same_venue']);
 	}
 
 	public function test_aged_up_picks_next_eligible_slug() {

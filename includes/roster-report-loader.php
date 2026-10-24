@@ -227,6 +227,9 @@ if (!function_exists('intersoccer_roster_report_resolve_row_customer_id')) {
 if (!function_exists('intersoccer_roster_report_cleanup_audit_table_exists')) {
 	function intersoccer_roster_report_cleanup_audit_table_exists() {
 		global $wpdb;
+		if (!is_object($wpdb) || !isset($wpdb->prefix) || $wpdb->prefix === '') {
+			return false;
+		}
 		$table = $wpdb->prefix . 'intersoccer_cleanup_audit';
 		$found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
 
@@ -252,6 +255,9 @@ if (!function_exists('intersoccer_roster_report_is_fake_customer')) {
 			return false;
 		}
 		global $wpdb;
+		if (!is_object($wpdb) || !isset($wpdb->prefix) || $wpdb->prefix === '') {
+			return false;
+		}
 		$table = $wpdb->prefix . 'intersoccer_cleanup_audit';
 		$col = $wpdb->get_results("DESCRIBE {$table}", ARRAY_A);
 		if (!is_array($col)) {
@@ -299,29 +305,121 @@ if (!function_exists('intersoccer_roster_report_player_last_name')) {
 	}
 }
 
+if (!function_exists('intersoccer_roster_report_stored_customer_id')) {
+	/**
+	 * Roster column customer_id before order fallback (legacy rows may be 0).
+	 *
+	 * @param array<string,mixed> $row
+	 */
+	function intersoccer_roster_report_stored_customer_id(array $row) {
+		if (isset($row['_rr_stored_customer_id'])) {
+			return (int) $row['_rr_stored_customer_id'];
+		}
+
+		return (int) ( $row['customer_id'] ?? 0 );
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_row_with_resolved_customer')) {
+	/**
+	 * Preserve roster customer_id for idx rules while exposing resolved customer on the row.
+	 *
+	 * @param array<string,mixed> $row
+	 * @return array<string,mixed>
+	 */
+	function intersoccer_roster_report_row_with_resolved_customer(array $row) {
+		$row['_rr_stored_customer_id'] = intersoccer_roster_report_stored_customer_id($row);
+		$row['customer_id'] = intersoccer_roster_report_resolve_row_customer_id($row);
+
+		return $row;
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_player_key_tier_rank')) {
+	/**
+	 * @param string $tier uuid|idx|name
+	 */
+	function intersoccer_roster_report_player_key_tier_rank($tier) {
+		switch ($tier) {
+			case 'uuid':
+				return 3;
+			case 'idx':
+				return 2;
+			default:
+				return 1;
+		}
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_row_assigned_uuid')) {
+	/**
+	 * @param array<string,mixed> $row
+	 */
+	function intersoccer_roster_report_row_assigned_uuid(array $row, $assigned_player_uuid = '') {
+		$uuid = trim((string) $assigned_player_uuid);
+		if ($uuid === '' && !empty($row['assigned_player_id'])) {
+			$uuid = trim((string) $row['assigned_player_id']);
+		}
+
+		return $uuid;
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_collect_player_alias_keys')) {
+	/**
+	 * All lookup keys for one roster row (uuid, idx, name tiers combined).
+	 *
+	 * @param array<string,mixed> $row
+	 * @return string[]
+	 */
+	function intersoccer_roster_report_collect_player_alias_keys(array $row, $assigned_player_uuid = '') {
+		$aliases = [];
+		$uuid = intersoccer_roster_report_row_assigned_uuid($row, $assigned_player_uuid);
+		if ($uuid !== '') {
+			$aliases[] = 'uuid:' . $uuid;
+		}
+
+		$stored_cid = intersoccer_roster_report_stored_customer_id($row);
+		$customer_id = intersoccer_roster_report_resolve_row_customer_id($row);
+		$player_index = isset($row['player_index']) ? (int) $row['player_index'] : 0;
+
+		if ($stored_cid > 0 && $customer_id > 0) {
+			$aliases[] = 'idx:' . $customer_id . ':' . $player_index;
+		}
+
+		$first = intersoccer_roster_report_normalize_name(intersoccer_roster_report_player_first_name($row));
+		$last = intersoccer_roster_report_normalize_name(intersoccer_roster_report_player_last_name($row));
+		if ($customer_id > 0 && $first !== '' && $last !== '') {
+			$aliases[] = 'name:' . $customer_id . ':' . $first . '|' . $last;
+		}
+
+		return array_values(array_unique($aliases));
+	}
+}
+
 if (!function_exists('intersoccer_roster_report_build_player_key')) {
 	/**
-	 * Build player key and tier for a roster/history row.
+	 * Build primary player key and tier for a roster/history row.
 	 *
-	 * Never returns idx:0:0. Legacy rows with player_index 0 use name tier when names exist.
+	 * idx tier applies when the stored roster customer_id was > 0 (player_index 0 is valid).
+	 * Legacy rows with stored customer_id 0 never use idx (name tier after order resolve).
+	 * Never returns idx:0:*.
 	 *
 	 * @param array<string,mixed> $row
 	 * @param string              $assigned_player_uuid From order item meta when known.
 	 * @return array{key:string,tier:string}
 	 */
 	function intersoccer_roster_report_build_player_key(array $row, $assigned_player_uuid = '') {
-		$uuid = trim((string) $assigned_player_uuid);
-		if ($uuid === '' && !empty($row['assigned_player_id'])) {
-			$uuid = trim((string) $row['assigned_player_id']);
-		}
+		$uuid = intersoccer_roster_report_row_assigned_uuid($row, $assigned_player_uuid);
 		if ($uuid !== '') {
 			return ['key' => 'uuid:' . $uuid, 'tier' => 'uuid'];
 		}
 
+		$stored_cid = intersoccer_roster_report_stored_customer_id($row);
 		$customer_id = intersoccer_roster_report_resolve_row_customer_id($row);
 		$player_index = isset($row['player_index']) ? (int) $row['player_index'] : 0;
 
-		if ($customer_id > 0 && $player_index > 0) {
+		if ($stored_cid > 0 && $customer_id > 0) {
 			return [
 				'key' => 'idx:' . $customer_id . ':' . $player_index,
 				'tier' => 'idx',
@@ -338,6 +436,183 @@ if (!function_exists('intersoccer_roster_report_build_player_key')) {
 		}
 
 		return ['key' => '', 'tier' => 'name'];
+	}
+}
+
+if (!class_exists('Intersoccer_Roster_Report_Player_Identity_Map')) {
+	/**
+	 * Union uuid / idx / name keys and cross-row customer+index / customer+name links.
+	 */
+	class Intersoccer_Roster_Report_Player_Identity_Map {
+		/** @var array<string,string> */
+		private $parent = [];
+
+		/** @var array<string,string> */
+		private $signature_anchor = [];
+
+		/** @var array<string,string> */
+		private $alias_tier = [];
+
+		/** @var array<string,string> */
+		private $group_best_key = [];
+
+		/** @var array<string,int> */
+		private $group_tier_rank = [];
+
+		/**
+		 * @param array<string,mixed> $row
+		 */
+		public function register_row(array $row, $assigned_player_uuid = '') {
+			$aliases = intersoccer_roster_report_collect_player_alias_keys($row, $assigned_player_uuid);
+			if (empty($aliases)) {
+				return;
+			}
+
+			$primary = intersoccer_roster_report_build_player_key($row, $assigned_player_uuid);
+			foreach ($aliases as $alias) {
+				$tier = 'name';
+				if (strpos($alias, 'uuid:') === 0) {
+					$tier = 'uuid';
+				} elseif (strpos($alias, 'idx:') === 0) {
+					$tier = 'idx';
+				}
+				$this->alias_tier[ $alias ] = $tier;
+				$this->union( $alias, $aliases[0] );
+			}
+
+			$stored_cid = intersoccer_roster_report_stored_customer_id($row);
+			$customer_id = intersoccer_roster_report_resolve_row_customer_id($row);
+			$player_index = isset($row['player_index']) ? (int) $row['player_index'] : 0;
+			$signatures = [];
+			if ($stored_cid > 0 && $customer_id > 0) {
+				$signatures[] = 'ci:' . $customer_id . ':' . $player_index;
+			}
+			$first = intersoccer_roster_report_normalize_name(intersoccer_roster_report_player_first_name($row));
+			$last = intersoccer_roster_report_normalize_name(intersoccer_roster_report_player_last_name($row));
+			if ($customer_id > 0 && $first !== '' && $last !== '') {
+				$signatures[] = 'cn:' . $customer_id . ':' . $first . '|' . $last;
+			}
+
+			foreach ($signatures as $signature) {
+				if (isset($this->signature_anchor[ $signature ])) {
+					$this->union( $aliases[0], $this->signature_anchor[ $signature ] );
+				} else {
+					$this->signature_anchor[ $signature ] = $aliases[0];
+				}
+			}
+
+			if ($primary['key'] !== '') {
+				$this->note_group_key($aliases[0], $primary['key'], $primary['tier']);
+			}
+			foreach ($aliases as $alias) {
+				$this->note_group_key($aliases[0], $alias, $this->alias_tier[ $alias ] ?? 'name');
+			}
+		}
+
+		public function same_player($alias_a, $alias_b) {
+			$alias_a = (string) $alias_a;
+			$alias_b = (string) $alias_b;
+			if ($alias_a === '' || $alias_b === '') {
+				return false;
+			}
+
+			return $this->find($alias_a) === $this->find($alias_b);
+		}
+
+		/**
+		 * @return string Stable group id for indexing (root alias).
+		 */
+		public function group_id($alias) {
+			$alias = (string) $alias;
+			if ($alias === '') {
+				return '';
+			}
+			if (!isset($this->parent[ $alias ])) {
+				$this->parent[ $alias ] = $alias;
+			}
+
+			return $this->find($alias);
+		}
+
+		/**
+		 * Strongest-tier key for output (uuid > idx > name).
+		 */
+		public function best_key($alias) {
+			$root = $this->group_id($alias);
+
+			return $this->group_best_key[ $root ] ?? (string) $alias;
+		}
+
+		/**
+		 * @return string uuid|idx|name
+		 */
+		public function best_tier($alias) {
+			$root = $this->group_id($alias);
+			$rank = $this->group_tier_rank[ $root ] ?? 1;
+			if ($rank >= 3) {
+				return 'uuid';
+			}
+			if ($rank >= 2) {
+				return 'idx';
+			}
+
+			return 'name';
+		}
+
+		private function note_group_key($anchor_alias, $key, $tier) {
+			$root = $this->group_id($anchor_alias);
+			$rank = intersoccer_roster_report_player_key_tier_rank($tier);
+			if (!isset($this->group_tier_rank[ $root ]) || $rank > $this->group_tier_rank[ $root ]) {
+				$this->group_tier_rank[ $root ] = $rank;
+				$this->group_best_key[ $root ] = $key;
+			} elseif ($rank === ($this->group_tier_rank[ $root ] ?? 0)) {
+				$current = $this->group_best_key[ $root ] ?? '';
+				if ($current === '' || strlen($key) < strlen($current)) {
+					$this->group_best_key[ $root ] = $key;
+				}
+			}
+		}
+
+		private function find($alias) {
+			if (!isset($this->parent[ $alias ])) {
+				$this->parent[ $alias ] = $alias;
+			}
+			if ($this->parent[ $alias ] !== $alias) {
+				$this->parent[ $alias ] = $this->find($this->parent[ $alias ]);
+			}
+
+			return $this->parent[ $alias ];
+		}
+
+		private function union($a, $b) {
+			$root_a = $this->find($a);
+			$root_b = $this->find($b);
+			if ($root_a === $root_b) {
+				return;
+			}
+			$rank_a = $this->group_tier_rank[ $root_a ] ?? 1;
+			$rank_b = $this->group_tier_rank[ $root_b ] ?? 1;
+			if ($rank_a >= $rank_b) {
+				$this->parent[ $root_b ] = $root_a;
+				$this->merge_group_meta($root_a, $root_b);
+			} else {
+				$this->parent[ $root_a ] = $root_b;
+				$this->merge_group_meta($root_b, $root_a);
+			}
+		}
+
+		private function merge_group_meta($keep, $drop) {
+			if (!isset($this->group_tier_rank[ $drop ])) {
+				return;
+			}
+			$keep_rank = $this->group_tier_rank[ $keep ] ?? 1;
+			$drop_rank = $this->group_tier_rank[ $drop ];
+			if ($drop_rank > $keep_rank) {
+				$this->group_tier_rank[ $keep ] = $drop_rank;
+				$this->group_best_key[ $keep ] = $this->group_best_key[ $drop ] ?? $this->group_best_key[ $keep ];
+			}
+			unset($this->group_tier_rank[ $drop ], $this->group_best_key[ $drop ]);
+		}
 	}
 }
 
