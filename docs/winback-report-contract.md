@@ -63,11 +63,11 @@ Each element of `rows` is an associative array:
 ## Player key tiers
 
 1. `uuid:{assigned_player_id}` — tier `uuid`
-2. `idx:{customer_id}:{player_index}` — tier `idx` only when `customer_id > 0` and `player_index > 0` (never `idx:0:0`)
-3. `name:{customer_id}:{first}|{last}` — normalized lowercase names — tier `name`
+2. `idx:{customer_id}:{player_index}` — tier `idx` when the roster row has a **stored** `customer_id > 0` (including `player_index` **0**). Never `idx:0:*`.
+3. `name:{customer_id}:{first}|{last}` — normalized lowercase names — tier `name` for legacy rows with stored `customer_id = 0` (customer resolved from the order before keying).
 
 Customer ID is resolved from the order when roster `customer_id` is 0 before keying and fake-user checks.
 
 ## Shared loader
 
-`includes/roster-report-loader.php` — order-status policy, customer resolution, fake-user proxy, player keys. Player camp status reuses status exclusion for “booked” rows.
+`includes/roster-report-loader.php` — live Woo order status (batched from `posts` or HPOS `wc_orders`), order-status policy, customer resolution, fake-user proxy, player keys. Player camp status and win-back apply live status before “booked” / history / rebook rules (roster `order_status` is fallback when the order row is missing).
