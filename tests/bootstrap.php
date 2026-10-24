@@ -672,11 +672,49 @@ if (!function_exists('wp_cache_flush_runtime')) {
 
 // Scheduling
 if (!function_exists('wp_schedule_event')) {
-    function wp_schedule_event($timestamp, $recurrence, $hook, $args = [], $wp_error = false) { return true; }
+    function wp_schedule_event($timestamp, $recurrence, $hook, $args = [], $wp_error = false) {
+        if (!isset($GLOBALS['intersoccer_test_wp_schedule_event_log']) || !is_array($GLOBALS['intersoccer_test_wp_schedule_event_log'])) {
+            $GLOBALS['intersoccer_test_wp_schedule_event_log'] = [];
+        }
+        $GLOBALS['intersoccer_test_wp_schedule_event_log'][] = [
+            'timestamp' => (int) $timestamp,
+            'recurrence' => (string) $recurrence,
+            'hook' => (string) $hook,
+            'args' => $args,
+        ];
+
+        return true;
+    }
 }
 
 if (!function_exists('wp_next_scheduled')) {
-    function wp_next_scheduled($hook, $args = []) { return false; }
+    function wp_next_scheduled($hook, $args = []) {
+        if (!isset($GLOBALS['intersoccer_test_wp_next_scheduled']) || !is_array($GLOBALS['intersoccer_test_wp_next_scheduled'])) {
+            return false;
+        }
+        $key = $hook . '|' . maybe_serialize($args);
+        return $GLOBALS['intersoccer_test_wp_next_scheduled'][ $key ] ?? false;
+    }
+}
+
+if (!function_exists('wp_schedule_single_event')) {
+    function wp_schedule_single_event($timestamp, $hook, $args = [], $wp_error = false) {
+        if (!isset($GLOBALS['intersoccer_test_wp_schedule_single_event_log']) || !is_array($GLOBALS['intersoccer_test_wp_schedule_single_event_log'])) {
+            $GLOBALS['intersoccer_test_wp_schedule_single_event_log'] = [];
+        }
+        $GLOBALS['intersoccer_test_wp_schedule_single_event_log'][] = [
+            'timestamp' => (int) $timestamp,
+            'hook' => (string) $hook,
+            'args' => $args,
+        ];
+        if (!isset($GLOBALS['intersoccer_test_wp_next_scheduled']) || !is_array($GLOBALS['intersoccer_test_wp_next_scheduled'])) {
+            $GLOBALS['intersoccer_test_wp_next_scheduled'] = [];
+        }
+        $key = (string) $hook . '|' . maybe_serialize($args);
+        $GLOBALS['intersoccer_test_wp_next_scheduled'][ $key ] = (int) $timestamp;
+
+        return true;
+    }
 }
 
 if (!function_exists('wp_unschedule_event')) {
