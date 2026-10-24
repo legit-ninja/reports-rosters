@@ -7,6 +7,11 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+$__rr_loader = dirname( __FILE__ ) . '/roster-report-loader.php';
+if ( file_exists( $__rr_loader ) ) {
+	require_once $__rr_loader;
+}
+
 if ( ! function_exists( 'intersoccer_roster_field_player_first_name' ) ) {
 	$__cf = dirname( __FILE__ ) . '/roster-canonical-fields.php';
 	if ( file_exists( $__cf ) ) {
@@ -288,6 +293,10 @@ function intersoccer_player_camp_status_build_roster_index(array $rows) {
 		if (!is_array($row)) {
 			continue;
 		}
+		if (function_exists('intersoccer_roster_report_status_counts_as_booked')
+			&& !intersoccer_roster_report_status_counts_as_booked($row['order_status'] ?? '')) {
+			continue;
+		}
 		$summary = intersoccer_player_camp_status_booking_summary($row);
 		$customer_id = (int) ($row['customer_id'] ?? 0);
 		$player_index = isset($row['player_index']) ? (int) $row['player_index'] : null;
@@ -544,6 +553,9 @@ function intersoccer_player_camp_status_load_camp_roster_rows($year, $season_typ
 		'start_date',
 		'activity_type',
 	];
+	if (in_array('order_status', (array) $columns, true)) {
+		$select[] = 'order_status';
+	}
 	if ($has_customer) {
 		$select[] = 'customer_id';
 	}
@@ -562,6 +574,15 @@ function intersoccer_player_camp_status_load_camp_roster_rows($year, $season_typ
 
 	if ($has_placeholder) {
 		$sql .= ' AND (is_placeholder = 0 OR is_placeholder IS NULL)';
+	}
+
+	$has_order_status = in_array('order_status', (array) $columns, true);
+	if ($has_order_status && function_exists('intersoccer_roster_report_append_sql_exclude_inactive_statuses')) {
+		$sql_status_parts = [];
+		intersoccer_roster_report_append_sql_exclude_inactive_statuses($sql_status_parts, $params);
+		if (!empty($sql_status_parts)) {
+			$sql .= ' AND ' . implode(' AND ', $sql_status_parts);
+		}
 	}
 
 	$year = (string) $year;
@@ -590,12 +611,8 @@ function intersoccer_player_camp_status_load_camp_roster_rows($year, $season_typ
 	}
 
 	foreach ($rows as &$row) {
-		$cid = (int) ($row['customer_id'] ?? 0);
-		if ($cid <= 0 && !empty($row['order_id']) && function_exists('wc_get_order')) {
-			$order = wc_get_order((int) $row['order_id']);
-			if ($order) {
-				$row['customer_id'] = (int) $order->get_user_id();
-			}
+		if (function_exists('intersoccer_roster_report_resolve_row_customer_id')) {
+			$row['customer_id'] = intersoccer_roster_report_resolve_row_customer_id($row);
 		}
 		if (!isset($row['player_index'])) {
 			$row['player_index'] = 0;

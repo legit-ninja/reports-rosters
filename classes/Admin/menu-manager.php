@@ -68,6 +68,25 @@ class MenuManager {
         }
     }
 
+    public function maybe_export_winback_report(): void {
+        if (empty($_GET['export_excel'])) {
+            return;
+        }
+        $page = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
+        if ($page !== 'intersoccer-winback-report') {
+            return;
+        }
+
+        $this->require_include('roster-report-loader.php');
+        $this->require_include('winback-report-facets.php');
+        $this->require_include('winback-catalogue.php');
+        $this->require_include('winback-report-engine.php');
+        $this->require_include('winback-report-admin.php');
+        if (function_exists('intersoccer_winback_report_maybe_export_excel')) {
+            intersoccer_winback_report_maybe_export_excel();
+        }
+    }
+
     /**
      * Register Campaign Analytics under WooCommerce → Analytics.
      *
@@ -147,6 +166,7 @@ class MenuManager {
         // Plugin invokes register_menus() directly (not init()); must register export here
         // so admin_init/load-* fire before admin-header HTML contaminates the .xlsx.
         add_action('admin_init', [$this, 'maybe_export_player_camp_status'], 1);
+        add_action('admin_init', [$this, 'maybe_export_winback_report'], 1);
         add_action('admin_init', [$this, 'maybe_redirect_legacy_admin_pages'], 1);
 
         add_menu_page(
@@ -187,6 +207,18 @@ class MenuManager {
         );
         if (is_string($player_camp_status_hook) && $player_camp_status_hook !== '') {
             add_action('load-' . $player_camp_status_hook, [$this, 'maybe_export_player_camp_status']);
+        }
+
+        $winback_hook = add_submenu_page(
+            null,
+            __('Win-back report', 'intersoccer-reports-rosters'),
+            __('Win-back report', 'intersoccer-reports-rosters'),
+            'manage_options',
+            'intersoccer-winback-report',
+            [$this, 'render_winback_report']
+        );
+        if (is_string($winback_hook) && $winback_hook !== '') {
+            add_action('load-' . $winback_hook, [$this, 'maybe_export_winback_report']);
         }
 
         add_submenu_page(
@@ -387,6 +419,19 @@ class MenuManager {
             return;
         }
         wp_die(__('Player camp status page is not available.', 'intersoccer-reports-rosters'));
+    }
+
+    public function render_winback_report(): void {
+        $this->require_include('roster-report-loader.php');
+        $this->require_include('winback-report-facets.php');
+        $this->require_include('winback-catalogue.php');
+        $this->require_include('winback-report-engine.php');
+        $this->require_include('winback-report-admin.php');
+        if (function_exists('intersoccer_render_winback_report_page')) {
+            intersoccer_render_winback_report_page();
+            return;
+        }
+        wp_die(__('Win-back report page is not available.', 'intersoccer-reports-rosters'));
     }
 
     public function render_reports(): void {

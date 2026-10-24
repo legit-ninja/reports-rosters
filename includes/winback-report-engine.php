@@ -1,0 +1,533 @@
+<?php
+/**
+ * Win-back report engine (camps + courses).
+ *
+ * Stable contract: docs/winback-report-contract.md
+ *
+ * @package InterSoccer_Reports_Rosters
+ */
+
+defined('ABSPATH') or die('Restricted access');
+
+/**
+ * Generates win-back rows from roster history and the upcoming catalogue.
+ *
+ * Filters (accepted directly by this function):
+ * - kind: camp|course|all (default all)
+ * - venue: EN venue slug filter (empty = all)
+ * - age_group: EN age-group slug filter (empty = all)
+ * - lookback_months: int (default 12)
+ *
+ * @param array<string,mixed> $filters See docs/winback-report-contract.md.
+ * @return array{rows:array<int,array<string,mixed>>,unmapped_facets:array<string,array<string,int>>}
+ */
+function intersoccer_winback_report_engine_generate(array $filters) {
+	intersoccer_winback_report_engine_load_dependencies();
+
+		$kind_filter = isset($filters['kind']) ? strtolower((string) $filters['kind']) : 'all';
+		if (!in_array($kind_filter, ['camp', 'course', 'all'], true)) {
+			$kind_filter = 'all';
+		}
+		$venue_filter = isset($filters['venue']) ? sanitize_title((string) $filters['venue']) : '';
+		$age_filter = isset($filters['age_group']) ? sanitize_title((string) $filters['age_group']) : '';
+		$lookback_months = isset($filters['lookback_months']) ? max(1, (int) $filters['lookback_months']) : 12;
+
+		$today = function_exists('wp_date') ? wp_date('Y-m-d') : gmdate('Y-m-d');
+		$lookback_start = intersoccer_winback_report_engine_subtract_months($today, $lookback_months);
+
+		intersoccer_winback_reset_unmapped_facets();
+		$catalogue = intersoccer_winback_enumerate_upcoming_catalogue($today);
+		$history_rows = intersoccer_winback_report_engine_load_history_rows($lookback_start, $today, $kind_filter);
+		$uuid_map = intersoccer_winback_report_engine_load_assigned_player_ids($history_rows);
+
+		$by_player_kind = [];
+		$all_rows_by_key = [];
+
+		foreach ($history_rows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$customer_id = intersoccer_roster_report_resolve_row_customer_id($row);
+			if (intersoccer_roster_report_is_fake_customer($customer_id)) {
+				continue;
+			}
+			$row['customer_id'] = $customer_id;
+
+			if (!intersoccer_roster_report_status_counts_as_history($row['order_status'] ?? '')) {
+				continue;
+			}
+
+			$kind = intersoccer_winback_report_engine_row_kind($row);
+			if ($kind === '' || ($kind_filter !== 'all' && $kind_filter !== $kind)) {
+				continue;
+			}
+
+			$date_bits = intersoccer_winback_resolve_row_event_date($row);
+			$event_date = $date_bits['date'];
+			$date_source = $date_bits['source'];
+			if ($date_source !== 'unknown' && $event_date !== null) {
+				if ($event_date < $lookback_start || $event_date > $today) {
+					continue;
+				}
+			}
+
+			$order_item_id = (int) ($row['order_item_id'] ?? 0);
+			$uuid = $order_item_id > 0 ? (string) ($uuid_map[$order_item_id] ?? '') : '';
+			$key_bits = intersoccer_roster_report_build_player_key($row, $uuid);
+			if ($key_bits['key'] === '') {
+				continue;
+			}
+
+			$venue_slug = intersoccer_winback_normalize_facet_slug(
+				(string) ($row['venue'] ?? ''),
+				'pa_intersoccer-venues',
+				'venue'
+			);
+			$age_slug = intersoccer_winback_normalize_facet_slug(
+				(string) ($row['age_group'] ?? ''),
+				'pa_age-group',
+				'age_group'
+			);
+
+			if ($venue_filter !== '' && $venue_slug !== $venue_filter) {
+				continue;
+			}
+			if ($age_filter !== '' && $age_slug !== $age_filter) {
+				continue;
+			}
+
+			$entry = [
+				'row' => $row,
+				'kind' => $kind,
+				'event_date' => $event_date,
+				'date_source' => $date_source,
+				'venue_slug' => $venue_slug,
+				'age_slug' => $age_slug,
+				'key' => $key_bits['key'],
+				'tier' => $key_bits['tier'],
+			];
+
+			$pk = $key_bits['key'] . '|' . $kind;
+			if (!isset($by_player_kind[$pk]) || intersoccer_winback_report_engine_is_later_history($entry, $by_player_kind[$pk])) {
+				$by_player_kind[$pk] = $entry;
+			}
+			$all_rows_by_key[$key_bits['key']][] = $entry;
+		}
+
+		$upcoming = intersoccer_winback_report_engine_load_upcoming_roster_rows($today, $kind_filter, $uuid_map);
+		$output = [];
+
+		foreach ($by_player_kind as $pk => $history) {
+			$row = $history['row'];
+			$kind = $history['kind'];
+			$key = $history['key'];
+			$customer_id = (int) $row['customer_id'];
+
+			$rebooked_elsewhere = false;
+			$sibling_booked = false;
+			$full = false;
+			$target = null;
+			$status = 'actionable';
+
+			if ($history['date_source'] === 'unknown' || $history['event_date'] === null) {
+				$status = 'date_unknown';
+			}
+
+			$rebook_bits = intersoccer_winback_detect_rebooked_flags($key, $kind, $history['venue_slug'], $upcoming);
+			$rebooked_elsewhere = $rebook_bits['elsewhere'];
+			if ($rebook_bits['same_venue']) {
+				continue;
+			}
+
+			if ($kind === 'course' && intersoccer_winback_report_engine_player_in_current_course_term($key, $kind, $today, $upcoming)) {
+				continue;
+			}
+
+			$available_ages = intersoccer_winback_report_engine_catalogue_age_slugs_for_venue($catalogue, $kind, $history['venue_slug']);
+			$target_pick = null;
+			if ($history['venue_slug'] !== '' && $history['age_slug'] !== '') {
+				$pick = intersoccer_winback_pick_target_age_slug(
+					$history['age_slug'],
+					intersoccer_winback_report_engine_row_dob($row),
+					$today,
+					$available_ages
+				);
+				$target_row = intersoccer_winback_find_earliest_catalogue_match(
+					$catalogue,
+					$kind,
+					$history['venue_slug'],
+					$pick['slug']
+				);
+				if ($target_row) {
+					$target = [
+						'product' => (string) ($target_row['product_name'] ?? ''),
+						'venue' => (string) $history['venue_slug'],
+						'age_group' => (string) $pick['slug'],
+						'start_date' => (string) ($target_row['start_date'] ?? ''),
+					];
+					$full = !empty($target_row['full']);
+					$target_pick = $pick;
+				}
+			}
+
+			if ($target === null && $status !== 'date_unknown') {
+				$status = 'no_upcoming';
+			}
+
+			$sibling_booked = intersoccer_winback_report_engine_sibling_has_upcoming($customer_id, $key, $kind, $upcoming);
+
+			$contact = intersoccer_winback_report_engine_build_contact($customer_id, $row);
+			$events_in_lookback = intersoccer_winback_report_engine_count_history_events($key, $kind, $all_rows_by_key);
+
+			$output[] = [
+				'player' => [
+					'name' => trim(intersoccer_roster_report_player_first_name($row) . ' ' . intersoccer_roster_report_player_last_name($row)),
+					'key' => $key,
+					'tier' => $history['tier'],
+				],
+				'parent' => [
+					'name' => trim((string) ($row['parent_first_name'] ?? '') . ' ' . (string) ($row['parent_last_name'] ?? '')),
+					'id' => $customer_id,
+				],
+				'contact' => $contact,
+				'last_event' => [
+					'product' => (string) ($row['product_name'] ?? ''),
+					'venue' => $history['venue_slug'] !== '' ? $history['venue_slug'] : (string) ($row['venue'] ?? ''),
+					'age_group' => $history['age_slug'] !== '' ? $history['age_slug'] : (string) ($row['age_group'] ?? ''),
+					'date' => $history['event_date'],
+					'date_source' => $history['date_source'],
+				],
+				'target' => $target,
+				'aged_up' => $target_pick ? (bool) $target_pick['aged_up'] : false,
+				'sibling_booked' => $sibling_booked,
+				'rebooked_elsewhere' => $rebooked_elsewhere,
+				'full' => $full,
+				'status' => $status,
+				'dob' => intersoccer_winback_report_engine_row_dob($row),
+				'age' => intersoccer_winback_compute_age_at_date(intersoccer_winback_report_engine_row_dob($row), $today),
+				'account_email' => $contact['account_email'] ?? '',
+				'events_in_lookback' => $events_in_lookback,
+			];
+		}
+
+		return [
+			'rows' => $output,
+			'unmapped_facets' => intersoccer_winback_get_unmapped_facets(),
+		];
+	}
+
+if (!function_exists('intersoccer_winback_report_engine_load_dependencies')) {
+	function intersoccer_winback_report_engine_load_dependencies() {
+		$base = dirname(__FILE__) . '/';
+		foreach (['roster-report-loader.php', 'winback-report-facets.php', 'winback-catalogue.php'] as $file) {
+			$path = $base . $file;
+			if (file_exists($path)) {
+				require_once $path;
+			}
+		}
+		if (!function_exists('intersoccer_roster_row_matches_listing_kind')) {
+			$utils = $base . 'utils.php';
+			if (file_exists($utils)) {
+				require_once $utils;
+			}
+		}
+	}
+}
+
+if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
+	/**
+	 * @return array<int,array<string,mixed>>
+	 */
+	function intersoccer_winback_report_engine_load_history_rows($lookback_start, $today, $kind_filter) {
+		global $wpdb;
+		$table = $wpdb->prefix . 'intersoccer_rosters';
+		$exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+		if ($exists !== $table) {
+			return [];
+		}
+
+		$where = ['(is_placeholder = 0 OR is_placeholder IS NULL)', 'order_item_id > 0'];
+		$params = [];
+		intersoccer_roster_report_append_sql_exclude_inactive_statuses($where, $params);
+
+		$sql = 'SELECT * FROM ' . $table . ' WHERE ' . implode(' AND ', $where);
+		if (!empty($params)) {
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+		} else {
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$rows = $wpdb->get_results($sql, ARRAY_A);
+		}
+
+		return is_array($rows) ? $rows : [];
+	}
+
+	/**
+	 * @param array<int,array<string,mixed>> $history_rows
+	 * @return array<int,string> order_item_id => uuid
+	 */
+	function intersoccer_winback_report_engine_load_assigned_player_ids(array $history_rows) {
+		$ids = [];
+		foreach ($history_rows as $row) {
+			$oid = (int) ($row['order_item_id'] ?? 0);
+			if ($oid > 0) {
+				$ids[$oid] = $oid;
+			}
+		}
+		if (empty($ids)) {
+			return [];
+		}
+		global $wpdb;
+		$placeholders = implode(',', array_fill(0, count($ids), '%d'));
+		$sql = "SELECT order_item_id, meta_value FROM {$wpdb->prefix}woocommerce_order_itemmeta
+			WHERE meta_key = 'assigned_player_id' AND order_item_id IN ({$placeholders})";
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$results = $wpdb->get_results($wpdb->prepare($sql, array_values($ids)), ARRAY_A);
+		$map = [];
+		foreach ((array) $results as $r) {
+			$val = trim((string) ($r['meta_value'] ?? ''));
+			if ($val !== '') {
+				$map[(int) $r['order_item_id']] = $val;
+			}
+		}
+
+		return $map;
+	}
+
+	/**
+	 * @param array<string,mixed> $row
+	 */
+	function intersoccer_winback_report_engine_row_kind(array $row) {
+		if (function_exists('intersoccer_roster_row_matches_listing_kind')) {
+			if (intersoccer_roster_row_matches_listing_kind($row, 'course')) {
+				return 'course';
+			}
+			if (intersoccer_roster_row_matches_listing_kind($row, 'camp')) {
+				return 'camp';
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * @param array<string,mixed> $a
+	 * @param array<string,mixed> $b
+	 */
+	function intersoccer_winback_report_engine_is_later_history(array $a, array $b) {
+		$da = $a['event_date'] ?? '';
+		$db = $b['event_date'] ?? '';
+		if ($da === $db) {
+			return (int) ($a['row']['id'] ?? 0) > (int) ($b['row']['id'] ?? 0);
+		}
+		if ($da === '' || $da === null) {
+			return false;
+		}
+		if ($db === '' || $db === null) {
+			return true;
+		}
+
+		return strcmp((string) $da, (string) $db) > 0;
+	}
+
+	/**
+	 * @return array<int,array<string,mixed>>
+	 */
+	function intersoccer_winback_report_engine_load_upcoming_roster_rows($today, $kind_filter, array $uuid_map) {
+		global $wpdb;
+		$table = $wpdb->prefix . 'intersoccer_rosters';
+		$where = ['(is_placeholder = 0 OR is_placeholder IS NULL)', 'order_item_id > 0', 'start_date > %s'];
+		$params = [$today];
+		intersoccer_roster_report_append_sql_exclude_inactive_statuses($where, $params);
+		$sql = 'SELECT * FROM ' . $table . ' WHERE ' . implode(' AND ', $where);
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+		$out = [];
+		foreach ((array) $rows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$customer_id = intersoccer_roster_report_resolve_row_customer_id($row);
+			if (intersoccer_roster_report_is_fake_customer($customer_id)) {
+				continue;
+			}
+			if (!intersoccer_roster_report_status_counts_as_upcoming_rebooked($row['order_status'] ?? '')) {
+				continue;
+			}
+			$kind = intersoccer_winback_report_engine_row_kind($row);
+			if ($kind === '' || ($kind_filter !== 'all' && $kind_filter !== $kind)) {
+				continue;
+			}
+			$oid = (int) ($row['order_item_id'] ?? 0);
+			$key_bits = intersoccer_roster_report_build_player_key($row, (string) ($uuid_map[$oid] ?? ''));
+			if ($key_bits['key'] === '') {
+				continue;
+			}
+			$row['customer_id'] = $customer_id;
+			$row['player_key'] = $key_bits['key'];
+			$row['kind'] = $kind;
+			$row['venue_slug'] = intersoccer_winback_normalize_facet_slug(
+				(string) ($row['venue'] ?? ''),
+				'pa_intersoccer-venues',
+				'venue'
+			);
+			$out[] = $row;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * @param array<int,array<string,mixed>> $upcoming
+	 */
+	/**
+	 * J8: skip win-back when the player is in a currently running course term.
+	 *
+	 * @param array<int,array<string,mixed>> $upcoming
+	 */
+	function intersoccer_winback_report_engine_player_in_current_course_term($player_key, $kind, $today, array $upcoming) {
+		if ($kind !== 'course') {
+			return false;
+		}
+		global $wpdb;
+		$table = $wpdb->prefix . 'intersoccer_rosters';
+		$sql = "SELECT * FROM {$table} WHERE (is_placeholder = 0 OR is_placeholder IS NULL) AND order_item_id > 0
+			AND start_date <= %s AND (end_date IS NULL OR end_date = '' OR end_date >= %s)";
+		$params = [$today, $today];
+		$where_extra = [];
+		intersoccer_roster_report_append_sql_exclude_inactive_statuses($where_extra, $params);
+		if (!empty($where_extra)) {
+			$sql .= ' AND ' . implode(' AND ', $where_extra);
+		}
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+		foreach ((array) $rows as $row) {
+			if (!function_exists('intersoccer_roster_row_matches_listing_kind')
+				|| !intersoccer_roster_row_matches_listing_kind($row, 'course')) {
+				continue;
+			}
+			if (!intersoccer_roster_report_status_counts_as_upcoming_rebooked($row['order_status'] ?? '')) {
+				continue;
+			}
+			$customer_id = intersoccer_roster_report_resolve_row_customer_id($row);
+			$key_bits = intersoccer_roster_report_build_player_key($row, '');
+			if ($key_bits['key'] === $player_key) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * @param array<int,array<string,mixed>> $upcoming
+	 */
+	function intersoccer_winback_report_engine_sibling_has_upcoming($customer_id, $player_key, $kind, array $upcoming) {
+		$customer_id = (int) $customer_id;
+		if ($customer_id <= 0) {
+			return false;
+		}
+		foreach ($upcoming as $row) {
+			if ((int) ($row['customer_id'] ?? 0) !== $customer_id) {
+				continue;
+			}
+			if (($row['player_key'] ?? '') === $player_key) {
+				continue;
+			}
+			if (($row['kind'] ?? '') === $kind) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * @param array<string,array<int,array<string,mixed>>> $catalogue
+	 * @return string[]
+	 */
+	function intersoccer_winback_report_engine_catalogue_age_slugs_for_venue(array $catalogue, $kind, $venue_slug) {
+		$slugs = [];
+		foreach ($catalogue as $key => $list) {
+			if (strpos($key, $kind . '|' . $venue_slug . '|') !== 0) {
+				continue;
+			}
+			foreach ($list as $row) {
+				$slugs[] = (string) ($row['age_group_slug'] ?? '');
+			}
+		}
+
+		return array_values(array_unique(array_filter($slugs)));
+	}
+
+	/**
+	 * @param array<string,mixed> $row
+	 * @return array{email:string,phone:string,contact_differs:bool,account_email:string}
+	 */
+	function intersoccer_winback_report_engine_build_contact($customer_id, array $row) {
+		$billing_email = trim((string) ($row['parent_email'] ?? ''));
+		$billing_phone = trim((string) ($row['parent_phone'] ?? ''));
+		$account_email = '';
+		if ($customer_id > 0 && function_exists('get_userdata')) {
+			$user = get_userdata($customer_id);
+			if ($user) {
+				$account_email = (string) $user->user_email;
+			}
+		}
+		$billing_phone_meta = '';
+		if ($customer_id > 0) {
+			$billing_phone_meta = trim((string) get_user_meta($customer_id, 'billing_phone', true));
+		}
+		if ($billing_phone === '' && $billing_phone_meta !== '') {
+			$billing_phone = $billing_phone_meta;
+		}
+		$differs = $account_email !== '' && $billing_email !== '' && strcasecmp($account_email, $billing_email) !== 0;
+
+		return [
+			'email' => $billing_email,
+			'phone' => $billing_phone,
+			'contact_differs' => $differs,
+			'account_email' => $account_email,
+		];
+	}
+
+	/**
+	 * @param array<string,array<int,array<string,mixed>>> $all_rows_by_key
+	 */
+	function intersoccer_winback_report_engine_count_history_events($player_key, $kind, array $all_rows_by_key) {
+		if (empty($all_rows_by_key[$player_key])) {
+			return 0;
+		}
+		$n = 0;
+		foreach ($all_rows_by_key[$player_key] as $entry) {
+			if (($entry['kind'] ?? '') === $kind) {
+				$n++;
+			}
+		}
+
+		return $n;
+	}
+
+	/**
+	 * @param array<string,mixed> $row
+	 */
+	function intersoccer_winback_report_engine_row_dob(array $row) {
+		$dob = trim((string) ($row['player_dob'] ?? $row['dob'] ?? ''));
+		if (!intersoccer_roster_report_has_real_date($dob)) {
+			return '';
+		}
+
+		return $dob;
+	}
+
+	function intersoccer_winback_report_engine_subtract_months($ymd, $months) {
+		try {
+			$dt = new \DateTimeImmutable($ymd);
+			$dt = $dt->modify('-' . (int) $months . ' months');
+
+			return $dt->format('Y-m-d');
+		} catch (\Exception $e) {
+			return $ymd;
+		}
+	}
+}
