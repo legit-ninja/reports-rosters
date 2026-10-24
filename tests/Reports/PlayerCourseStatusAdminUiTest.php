@@ -10,6 +10,7 @@ use InterSoccer\ReportsRosters\Tests\TestCase;
 class PlayerCourseStatusAdminUiTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
+		require_once __DIR__ . '/player-course-status-wc-status-stub.php';
 		$includes = dirname(__DIR__, 2) . '/includes';
 		foreach (['medical-access.php', 'player-course-status.php', 'player-course-status-admin.php'] as $file) {
 			require_once $includes . '/' . $file;
@@ -30,6 +31,18 @@ class PlayerCourseStatusAdminUiTest extends TestCase {
 		]);
 
 		$this->assertSame('Déjà réservé', $text);
+	}
+
+	public function test_empty_booking_status_label_falls_back_to_helper(): void {
+		$this->assertSame('Booked', intersoccer_player_course_status_admin_status_text([
+			'booked' => false,
+			'booking_status' => 'booked',
+			'booking_status_label' => '',
+		]));
+		$this->assertSame('Pending payment', intersoccer_player_course_status_admin_status_text([
+			'booking_status' => 'pending_payment',
+			'booking_status_label' => '',
+		]));
 	}
 
 	public function test_status_text_falls_back_to_helper_for_four_statuses(): void {
@@ -325,6 +338,82 @@ class PlayerCourseStatusAdminUiTest extends TestCase {
 		$_GET['booking_status'] = 'cancelled';
 		$filters = intersoccer_player_course_status_request_filters();
 		$this->assertSame('', $filters['booking_status']);
+	}
+
+	public function test_warning_notice_is_shown_above_the_table_and_hidden_when_empty(): void {
+		$shown = intersoccer_player_course_status_admin_warnings_html([
+			['code' => 'roster_query_failed', 'message' => 'Roster query failed <b>badly</b>'],
+			['code' => 'other', 'message' => 'Second warning'],
+		]);
+		$rows = intersoccer_player_course_status_admin_rows_html([
+			$this->player_row(['player' => ['name' => 'Ada', 'tier' => 'uuid']]),
+		]);
+		$page = $shown . '<table class="widefat striped"><tbody>' . $rows . '</tbody></table>';
+
+		$this->assertStringContainsString('class="notice notice-warning"', $shown);
+		$this->assertStringContainsString('Roster query failed &lt;b&gt;badly&lt;/b&gt;', $shown);
+		$this->assertStringContainsString('Second warning', $shown);
+		$this->assertStringNotContainsString('<b>', $shown);
+		$this->assertStringNotContainsString('&amp;lt;', $shown);
+		$this->assertLessThan(strpos($page, '<table'), strpos($page, 'notice notice-warning'));
+
+		$this->assertSame('', intersoccer_player_course_status_admin_warnings_html([]));
+		$this->assertSame('', intersoccer_player_course_status_admin_warnings_html(null));
+		$this->assertSame('', intersoccer_player_course_status_admin_warnings_html([
+			['code' => 'roster_query_failed', 'message' => ''],
+		]));
+	}
+
+	public function test_export_button_is_blocked_when_warnings_exist_and_linked_when_clear(): void {
+		$filters = [
+			'year' => 2026,
+			'booking_status' => 'booked',
+		];
+		$clear = intersoccer_player_course_status_admin_export_control_html($filters, []);
+		$missing = intersoccer_player_course_status_admin_export_control_html($filters, null);
+		$blocked = intersoccer_player_course_status_admin_export_control_html($filters, [
+			['code' => 'roster_query_failed', 'message' => 'The course roster query failed.'],
+		]);
+
+		$this->assertStringContainsString('<a class="button" href="', $clear);
+		$this->assertStringContainsString('export_excel=1', $clear);
+		$this->assertStringContainsString('Export to Excel', $clear);
+		$this->assertStringNotContainsString('unavailable', $clear);
+		$this->assertStringContainsString('export_excel=1', $missing);
+		$this->assertStringNotContainsString('unavailable', $missing);
+
+		$this->assertStringNotContainsString('<a ', $blocked);
+		$this->assertStringNotContainsString('export_excel', $blocked);
+		$this->assertStringNotContainsString('href=', $blocked);
+		$this->assertStringContainsString('class="button disabled"', $blocked);
+		$this->assertStringContainsString('Export to Excel', $blocked);
+		$this->assertStringContainsString('Export is unavailable until the warning clears.', $blocked);
+	}
+
+	public function test_order_status_uses_wc_name_when_available_and_raw_value_otherwise(): void {
+		$this->assertTrue(function_exists('wc_get_order_status_name'));
+		$this->assertSame('On hold <b>named</b>', intersoccer_player_course_status_admin_order_status_text('wc-on-hold'));
+		$this->assertSame('pending', intersoccer_player_course_status_admin_order_status_text('pending'));
+		$this->assertSame('empty-name', intersoccer_player_course_status_admin_order_status_text('empty-name'));
+
+		$pending = intersoccer_player_course_status_admin_pending_lines_html([
+			['label' => 'Sunday course', 'order_status' => 'wc-on-hold'],
+			['label' => 'Monday course', 'order_status' => 'pending'],
+		]);
+		$unmatched = intersoccer_player_course_status_admin_unmatched_html([[
+			'player_name' => 'Ada',
+			'customer_id' => 9,
+			'label' => 'Sunday course',
+			'order_status' => 'wc-on-hold',
+		]]);
+
+		$this->assertStringContainsString('Pending: Sunday course (On hold &lt;b&gt;named&lt;/b&gt;)', $pending);
+		$this->assertStringContainsString('Pending: Monday course (pending)', $pending);
+		$this->assertStringContainsString('On hold &lt;b&gt;named&lt;/b&gt;', $unmatched);
+		$this->assertStringNotContainsString('<b>', $pending . $unmatched);
+		$this->assertStringNotContainsString('&amp;lt;', $pending . $unmatched);
+		$this->assertStringNotContainsString('(wc-on-hold)', $pending);
+		$this->assertStringNotContainsString('>wc-on-hold<', $unmatched);
 	}
 
 	public function test_export_status_column_stays_after_booked(): void {

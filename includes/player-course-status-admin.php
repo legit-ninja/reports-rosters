@@ -45,7 +45,7 @@ if (!function_exists('intersoccer_player_course_status_admin_status_text')) {
 	 * @return string
 	 */
 	function intersoccer_player_course_status_admin_status_text(array $row) {
-		if (array_key_exists('booking_status_label', $row) && $row['booking_status_label'] !== null) {
+		if (array_key_exists('booking_status_label', $row) && $row['booking_status_label'] !== null && $row['booking_status_label'] !== '') {
 			return (string) $row['booking_status_label'];
 		}
 		if (!array_key_exists('booking_status', $row) || $row['booking_status'] === null || $row['booking_status'] === '') {
@@ -55,6 +55,31 @@ if (!function_exists('intersoccer_player_course_status_admin_status_text')) {
 		}
 
 		return intersoccer_player_course_status_admin_status_label((string) $row['booking_status']);
+	}
+}
+
+if (!function_exists('intersoccer_player_course_status_admin_order_status_text')) {
+	/**
+	 * Readable order status. Uses WooCommerce when it is loaded; otherwise the raw slug.
+	 *
+	 * The caller escapes the result once.
+	 *
+	 * @param mixed $status
+	 * @return string
+	 */
+	function intersoccer_player_course_status_admin_order_status_text($status) {
+		$status = (string) $status;
+		if ($status === '') {
+			return '';
+		}
+		if (function_exists('wc_get_order_status_name')) {
+			$name = wc_get_order_status_name($status);
+			if (is_string($name) && $name !== '') {
+				return $name;
+			}
+		}
+
+		return $status;
 	}
 }
 
@@ -79,7 +104,7 @@ if (!function_exists('intersoccer_player_course_status_admin_pending_lines_html'
 				continue;
 			}
 			$label = (string) ($booking['label'] ?? '');
-			$order_status = (string) ($booking['order_status'] ?? '');
+			$order_status = intersoccer_player_course_status_admin_order_status_text($booking['order_status'] ?? '');
 			if ($order_status !== '') {
 				$text = sprintf(
 					/* translators: 1: booking label, 2: order status */
@@ -249,7 +274,7 @@ if (!function_exists('intersoccer_player_course_status_admin_unmatched_html')) {
 				. '<td>' . esc_html((string) ($booking['player_name'] ?? '')) . '</td>'
 				. '<td>' . esc_html((string) ($booking['customer_id'] ?? '')) . '</td>'
 				. '<td>' . esc_html((string) ($booking['label'] ?? '')) . '</td>'
-				. '<td>' . esc_html((string) ($booking['order_status'] ?? '')) . '</td>'
+				. '<td>' . esc_html(intersoccer_player_course_status_admin_order_status_text($booking['order_status'] ?? '')) . '</td>'
 				. '</tr>';
 		}
 		if ($rows === '') {
@@ -633,6 +658,73 @@ if (!function_exists('intersoccer_player_course_status_admin_filters_html')) {
 	}
 }
 
+if (!function_exists('intersoccer_player_course_status_admin_warning_messages')) {
+	/**
+	 * Translated warning messages. Empty when warnings is missing or has nothing to show.
+	 *
+	 * @param mixed $warnings
+	 * @return string[]
+	 */
+	function intersoccer_player_course_status_admin_warning_messages($warnings) {
+		if (!is_array($warnings) || $warnings === []) {
+			return [];
+		}
+		$messages = [];
+		foreach ($warnings as $warning) {
+			if (!is_array($warning)) {
+				continue;
+			}
+			$message = isset($warning['message']) ? (string) $warning['message'] : '';
+			if ($message === '') {
+				continue;
+			}
+			$messages[] = $message;
+		}
+
+		return $messages;
+	}
+}
+
+if (!function_exists('intersoccer_player_course_status_admin_warnings_html')) {
+	/**
+	 * Admin notices for warnings[].message. Hidden when there is nothing to show.
+	 *
+	 * @param mixed $warnings
+	 * @return string
+	 */
+	function intersoccer_player_course_status_admin_warnings_html($warnings) {
+		$html = '';
+		foreach (intersoccer_player_course_status_admin_warning_messages($warnings) as $message) {
+			$html .= '<div class="notice notice-warning"><p>' . esc_html($message) . '</p></div>';
+		}
+
+		return $html;
+	}
+}
+
+if (!function_exists('intersoccer_player_course_status_admin_export_control_html')) {
+	/**
+	 * Export button. A non-empty warning list disables it; the engine refuses the file too.
+	 *
+	 * @param array<string,mixed> $filters
+	 * @param mixed               $warnings
+	 * @return string
+	 */
+	function intersoccer_player_course_status_admin_export_control_html(array $filters, $warnings) {
+		if (intersoccer_player_course_status_admin_warning_messages($warnings) !== []) {
+			return '<span class="button disabled" aria-disabled="true">'
+				. esc_html__('Export to Excel', 'intersoccer-reports-rosters')
+				. '</span> <span class="description">'
+				. esc_html__('Export is unavailable until the warning clears.', 'intersoccer-reports-rosters')
+				. '</span>';
+		}
+
+		return '<a class="button" href="' . esc_url(intersoccer_player_course_status_admin_export_url($filters)) . '">'
+			. esc_html__('Export to Excel', 'intersoccer-reports-rosters')
+			. '</a>';
+	}
+}
+
 if (!function_exists('intersoccer_player_course_status_admin_render_page')) {
 	/**
 	 * Office page. Calls the engine with the request filters and renders the result.
@@ -650,7 +742,7 @@ if (!function_exists('intersoccer_player_course_status_admin_render_page')) {
 		$slice = intersoccer_player_course_status_admin_page_slice($rows, (int) ($filters['paged'] ?? 1));
 		$totals = is_array($result['totals'] ?? null) ? $result['totals'] : [];
 		$filter_options = is_array($result['filter_options'] ?? null) ? $result['filter_options'] : [];
-		$excel_url = intersoccer_player_course_status_admin_export_url($filters);
+		$warnings = $result['warnings'] ?? null;
 		?>
 		<div class="wrap intersoccer-player-course-status">
 			<h1><?php esc_html_e('Player course status', 'intersoccer-reports-rosters'); ?></h1>
@@ -665,7 +757,7 @@ if (!function_exists('intersoccer_player_course_status_admin_render_page')) {
 				<?php echo intersoccer_player_course_status_admin_filters_html($filters, $filter_options); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 
 				<button type="submit" class="button button-primary"><?php esc_html_e('Filter', 'intersoccer-reports-rosters'); ?></button>
-				<a class="button" href="<?php echo esc_url($excel_url); ?>"><?php esc_html_e('Export to Excel', 'intersoccer-reports-rosters'); ?></a>
+				<?php echo intersoccer_player_course_status_admin_export_control_html($filters, $warnings); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 			</form>
 
 			<?php if ((int) $slice['total_pages'] > 1) : ?>
@@ -686,6 +778,8 @@ if (!function_exists('intersoccer_player_course_status_admin_render_page')) {
 					</div>
 				</div>
 			<?php endif; ?>
+
+			<?php echo intersoccer_player_course_status_admin_warnings_html($warnings); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 
 			<?php if (empty($slice['rows'])) : ?>
 				<p><?php esc_html_e('No players matched the selected filters.', 'intersoccer-reports-rosters'); ?></p>
