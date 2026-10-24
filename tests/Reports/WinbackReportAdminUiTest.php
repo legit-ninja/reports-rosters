@@ -224,8 +224,8 @@ class WinbackReportAdminUiTest extends TestCase {
 		if (function_exists('intersoccer_player_camp_status_reset_dob_gate_cache')) {
 			intersoccer_player_camp_status_reset_dob_gate_cache();
 		}
-		$hidden = intersoccer_winback_report_dob_for_display($row);
-		$this->assertSame('', $hidden);
+		$hidden = intersoccer_winback_report_format_dob_for_export($row['dob']);
+		$this->assertSame('Restricted', $hidden);
 		$this->assertStringNotContainsString('2015-06-01', $hidden);
 		$this->assertSame('11', intersoccer_winback_report_age_text($row));
 
@@ -233,7 +233,7 @@ class WinbackReportAdminUiTest extends TestCase {
 		if (function_exists('intersoccer_player_camp_status_reset_dob_gate_cache')) {
 			intersoccer_player_camp_status_reset_dob_gate_cache();
 		}
-		$this->assertSame('2015-06-01', intersoccer_winback_report_dob_for_display($row));
+		$this->assertSame('2015-06-01', intersoccer_winback_report_format_dob_for_export($row['dob']));
 	}
 
 	public function test_events_column_only_when_the_key_is_present() {

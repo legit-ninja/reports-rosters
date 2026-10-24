@@ -284,39 +284,6 @@ function intersoccer_winback_report_age_text(array $row) {
 }
 
 /**
- * Load the Player camp status DOB gate (same function the camp page uses).
- */
-function intersoccer_winback_report_load_dob_gate() {
-	if (function_exists('intersoccer_player_camp_status_user_can_view_dob')) {
-		return;
-	}
-	$path = dirname(__FILE__) . '/player-camp-status.php';
-	if (file_exists($path)) {
-		require_once $path;
-	}
-}
-
-/**
- * DOB for the Age cell. Empty when the Player camp status gate denies it.
- *
- * @param array<string,mixed> $row
- * @return string
- */
-function intersoccer_winback_report_dob_for_display(array $row) {
-	intersoccer_winback_report_load_dob_gate();
-	if (!function_exists('intersoccer_player_camp_status_user_can_view_dob')
-		|| intersoccer_player_camp_status_user_can_view_dob() !== true) {
-		return '';
-	}
-	$dob = isset($row['dob']) ? (string) $row['dob'] : '';
-	if (function_exists('intersoccer_player_camp_status_format_dob_for_display')) {
-		return (string) intersoccer_player_camp_status_format_dob_for_display($dob);
-	}
-
-	return $dob;
-}
-
-/**
  * @param array<int,array<string,mixed>> $rows
  * @return bool
  */
@@ -814,7 +781,7 @@ function intersoccer_render_winback_report_page() {
 							$email = (string) ($contact['email'] ?? '');
 							$phone = (string) ($contact['phone'] ?? '');
 							$account_email = (string) ($contact['account_email'] ?? ($row['account_email'] ?? ''));
-							$dob = intersoccer_winback_report_dob_for_display($row);
+							$dob = intersoccer_winback_report_format_dob_for_export(isset($row['dob']) ? (string) $row['dob'] : '');
 							?>
 							<tr>
 								<td>
