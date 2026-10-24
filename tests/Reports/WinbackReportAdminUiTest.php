@@ -273,6 +273,8 @@ class WinbackReportAdminUiTest extends TestCase {
 			[
 				'en_variation_id' => 12002,
 				'en_variation_status' => 'draft',
+				'en_parent_status' => 'draft',
+				'reason' => 'parent',
 				'translation_variation_ids' => [12012, 12013],
 				'product' => "Kids\u{2019} <script> O'Brien",
 				'start_date' => '2026-10-01',
@@ -282,31 +284,47 @@ class WinbackReportAdminUiTest extends TestCase {
 			[
 				'en_variation_id' => 12003,
 				'en_variation_status' => 'private',
+				'reason' => 'variation',
 				'translation_variation_ids' => [99],
 				'product' => 'Winter Camp',
 				'start_date' => '2026-11-01',
 				'venue' => 'basel-hall',
 				'kind' => 'course',
 			],
+			[
+				'en_variation_id' => 12004,
+				'en_variation_status' => 'draft',
+				'reason' => 'bad <script>',
+				'translation_variation_ids' => [7],
+				'product' => 'Spring Camp',
+				'start_date' => '2026-12-01',
+				'venue' => 'nyon-hall',
+				'kind' => 'camp',
+			],
 		]);
 
 		$this->assertStringContainsString('Dates switched off in English but on sale in FR/DE', $html);
 		$this->assertStringContainsString('class="widefat striped"', $html);
-		$this->assertSame(3, substr_count($html, '<tr>'));
+		$this->assertSame(4, substr_count($html, '<tr>'));
 		$this->assertStringContainsString('2026-10-01', $html);
 		$this->assertStringContainsString('2026-11-01', $html);
 		$this->assertStringContainsString("Kids\u{2019} &lt;script&gt; O&#039;Brien", $html);
 		$this->assertStringContainsString('zurich-test', $html);
 		$this->assertStringContainsString('>camp<', $html);
-		$this->assertStringContainsString('draft #12002', $html);
+		$this->assertStringContainsString('English course is a draft', $html);
+		$this->assertStringContainsString('<td>draft</td><td>draft #12002</td>', $html);
 		$this->assertStringContainsString('12012, 12013', $html);
+		$this->assertStringContainsString('English date switched off', $html);
+		$this->assertStringContainsString('<td>English date switched off</td><td></td><td>private #12003</td>', $html);
 		$this->assertStringContainsString('Winter Camp', $html);
-		$this->assertStringContainsString('private #12003', $html);
 		$this->assertStringContainsString('>99<', $html);
+		$this->assertStringContainsString('bad &lt;script&gt;', $html);
 		$this->assertStringNotContainsString('<script>', $html);
 		$this->assertStringNotContainsString('&amp;#8217;', $html);
 		$this->assertStringNotContainsString('&amp;lt;', $html);
 		$this->assertStringNotContainsString('&#8217;', $html);
+		$this->assertStringNotContainsString('>parent<', $html);
+		$this->assertStringNotContainsString('>variation<', $html);
 	}
 
 	public function test_unmapped_notice_lists_venue_and_age_group() {

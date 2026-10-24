@@ -571,11 +571,21 @@ function intersoccer_winback_report_admin_en_unpublished_html($items) {
 		if ($en_id > 0) {
 			$status = $status === '' ? '#' . $en_id : $status . ' #' . $en_id;
 		}
+		$reason_raw = trim((string) ($item['reason'] ?? ''));
+		if ($reason_raw === 'parent') {
+			$reason = __('English course is a draft', 'intersoccer-reports-rosters');
+		} elseif ($reason_raw === 'variation') {
+			$reason = __('English date switched off', 'intersoccer-reports-rosters');
+		} else {
+			$reason = $reason_raw;
+		}
 		$rows[] = [
 			'date' => (string) ($item['start_date'] ?? ''),
 			'product' => (string) ($item['product'] ?? ''),
 			'venue' => (string) ($item['venue'] ?? ''),
 			'kind' => (string) ($item['kind'] ?? ''),
+			'reason' => $reason,
+			'parent_status' => trim((string) ($item['en_parent_status'] ?? '')),
 			'status' => $status,
 			'ids' => implode(', ', $ids),
 		];
@@ -589,6 +599,8 @@ function intersoccer_winback_report_admin_en_unpublished_html($items) {
 		__('Product', 'intersoccer-reports-rosters'),
 		__('Venue', 'intersoccer-reports-rosters'),
 		__('Kind', 'intersoccer-reports-rosters'),
+		__('Reason', 'intersoccer-reports-rosters'),
+		__('EN parent status', 'intersoccer-reports-rosters'),
 		__('EN status', 'intersoccer-reports-rosters'),
 		__('FR/DE variation IDs', 'intersoccer-reports-rosters'),
 	];
@@ -604,6 +616,8 @@ function intersoccer_winback_report_admin_en_unpublished_html($items) {
 		$html .= '<td>' . esc_html($row['product']) . '</td>';
 		$html .= '<td>' . esc_html($row['venue']) . '</td>';
 		$html .= '<td>' . esc_html($row['kind']) . '</td>';
+		$html .= '<td>' . esc_html($row['reason']) . '</td>';
+		$html .= '<td>' . esc_html($row['parent_status']) . '</td>';
 		$html .= '<td>' . esc_html($row['status']) . '</td>';
 		$html .= '<td>' . esc_html($row['ids']) . '</td>';
 		$html .= '</tr>';
