@@ -72,6 +72,23 @@ Yearless `camp_terms` week slugs (no four-digit year in `camp_terms` or `season`
 
 Customer ID is resolved from the order when roster `customer_id` is 0 before keying and fake-user checks.
 
+When the same resolved `customer_id` + `player_index` would map to **different** normalized player names, the engine does **not** merge those children: idx-tier union is skipped, rows key on the **name** tier, and output `player.tier` reflects the tier used (`name`).
+
+## Order status and refunds (win-back)
+
+- Live Woo order `post_status` (or HPOS equivalent) overrides roster `order_status` when the order row exists.
+- History and upcoming counts use **completed** and **processing** only; **pending** / **on-hold** count as upcoming rebooked, not history (J10).
+- **Wholly refunded** orders (`refunded` / `wc-refunded`) drop out.
+- **Partial refunds:** an order with refunds but an active status stays eligible; a roster line is excluded only when that **order line is fully refunded** (same qty/total rule as `RosterRefundService::isOrderItemFullyRefunded()`). Partially refunded lines still count as booked.
+
+## Excel export (DOB)
+
+Win-back Excel uses `intersoccer_winback_report_format_dob_for_export()` → `intersoccer_player_camp_status_format_dob_for_display()` after `intersoccer_winback_report_load_dob_gate()`. When the gate cannot load, the restricted label is used (never raw DOB). Age column is always included.
+
+## Age-group aliases (catalogue)
+
+German `pa_age-group` slugs on EN source variations (e.g. `5-12-jahre`) normalize via the static alias map, the rule `N-M-jahre` → `N-My`, and the filter `intersoccer_winback_age_group_aliases`.
+
 ## Shared loader
 
-`includes/roster-report-loader.php` — live Woo order status (batched from `posts` or HPOS `wc_orders`), order-status policy, customer resolution, fake-user proxy, player keys. Player camp status and win-back apply live status before “booked” / history / rebook rules (roster `order_status` is fallback when the order row is missing).
+`includes/roster-report-loader.php` — live Woo order status (batched from `posts` or HPOS `wc_orders`), order-status policy, line-level full refund checks, customer resolution, fake-user proxy, player keys. Player camp status and win-back apply live status before “booked” / history / rebook rules (roster `order_status` is fallback when the order row is missing).

@@ -33,7 +33,32 @@ if (!function_exists('intersoccer_winback_facet_alias_maps')) {
 			],
 		];
 
+		$maps['age_group'] = apply_filters('intersoccer_winback_age_group_aliases', $maps['age_group']);
+
 		return $maps;
+	}
+}
+
+if (!function_exists('intersoccer_winback_apply_age_group_slug_alias')) {
+	/**
+	 * Map DE catalogue slugs (e.g. 5-12-jahre) to EN equivalents when known.
+	 *
+	 * @param string $slug Lowercase slug-like token.
+	 */
+	function intersoccer_winback_apply_age_group_slug_alias($slug) {
+		$slug = strtolower(trim((string) $slug));
+		if ($slug === '') {
+			return '';
+		}
+		$maps = intersoccer_winback_facet_alias_maps();
+		if (isset($maps['age_group'][ $slug ])) {
+			return (string) $maps['age_group'][ $slug ];
+		}
+		if (preg_match('/^(\d+)-(\d+)-jahre$/', $slug, $m)) {
+			return $m[1] . '-' . $m[2] . 'y';
+		}
+
+		return $slug;
 	}
 }
 
@@ -152,7 +177,12 @@ if (!function_exists('intersoccer_winback_normalize_facet_slug')) {
 			return (string) $maps[$kind][$alias_key];
 		}
 		if (preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/', strtolower($raw))) {
-			return strtolower($raw);
+			$slug = strtolower($raw);
+			if ($kind === 'age_group') {
+				return intersoccer_winback_apply_age_group_slug_alias($slug);
+			}
+
+			return $slug;
 		}
 		if (is_callable($slug_resolver)) {
 			$slug = (string) $slug_resolver($raw, $taxonomy);

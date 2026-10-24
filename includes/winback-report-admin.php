@@ -10,6 +10,37 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+if (!function_exists('intersoccer_winback_report_load_dob_gate')) {
+	/**
+	 * Ensure player camp status DOB gate helpers are loaded (export + page parity).
+	 */
+	function intersoccer_winback_report_load_dob_gate() {
+		if (function_exists('intersoccer_player_camp_status_user_can_view_dob')) {
+			return;
+		}
+		$path = dirname(__FILE__) . '/player-camp-status.php';
+		if (file_exists($path)) {
+			require_once $path;
+		}
+	}
+}
+
+if (!function_exists('intersoccer_winback_report_format_dob_for_export')) {
+	/**
+	 * @param string $dob Raw DOB (Y-m-d).
+	 */
+	function intersoccer_winback_report_format_dob_for_export($dob) {
+		intersoccer_winback_report_load_dob_gate();
+		if (function_exists('intersoccer_player_camp_status_format_dob_for_display')) {
+			return intersoccer_player_camp_status_format_dob_for_display((string) $dob);
+		}
+
+		return function_exists('intersoccer_rr_medical_restricted_label')
+			? intersoccer_rr_medical_restricted_label()
+			: 'Restricted';
+	}
+}
+
 /**
  * Scalar GET value, or null when missing or not a string.
  *
@@ -492,6 +523,8 @@ function intersoccer_winback_report_run() {
  * @param array<int,array<string,mixed>> $rows
  */
 function intersoccer_winback_report_stream_excel(array $rows) {
+	intersoccer_winback_report_load_dob_gate();
+
 	$autoload = dirname(__DIR__) . '/vendor/autoload.php';
 	if (file_exists($autoload)) {
 		require_once $autoload;
@@ -571,9 +604,7 @@ function intersoccer_winback_report_stream_excel(array $rows) {
 			!empty($row['rebooked_elsewhere']) ? 'Yes' : 'No',
 			!empty($row['full']) ? 'Yes' : 'No',
 			(string) ($row['status'] ?? ''),
-			function_exists('intersoccer_player_camp_status_format_dob_for_display')
-				? intersoccer_player_camp_status_format_dob_for_display((string) ($row['dob'] ?? ''))
-				: (string) ($row['dob'] ?? ''),
+			intersoccer_winback_report_format_dob_for_export((string) ($row['dob'] ?? '')),
 			$row['age'] ?? '',
 			(int) ($row['events_in_lookback'] ?? 0),
 		];
