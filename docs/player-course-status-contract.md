@@ -25,9 +25,10 @@ Request parser: `intersoccer_player_course_status_request_filters()` (adds `page
 | `year` | int | current calendar year | Course year rule below |
 | `season_type` | string | `''` | `Summer` / `Winter` / `Autumn` / `Spring`; empty = all |
 | `girls_mode` | string | `all` | `all` \| `mixed` \| `girls_only` |
-| `booked` | string | `all` | `all` \| `booked` \| `not_booked` — filters **players** after join |
+| `booked` | string | `all` | `all` \| `booked` \| `not_booked` — filters **players** after join. `not_booked` includes players whose `booking_status` is `pending_payment`, `on_hold`, or plain `not_booked`. |
+| `booking_status` | string | `''` | `''` (all) \| `booked` \| `pending_payment` \| `on_hold` \| `not_booked` — applied **after** `booked`. Here `not_booked` means plain not-booked only (excludes pending/on-hold). |
 | `search` | string | `''` | Player name or parent email (normalized) |
-| `venue` | string | `''` | EN venue slug; narrows which bookings count as “booked” |
+| `venue` | string | `''` | EN venue slug; narrows which bookings count toward `booked` / `booking_status` |
 | `course_day` | string | `''` | EN weekday slug, lowercase (e.g. `sunday`) |
 | `age_group` | string | `''` | EN age-group slug |
 
@@ -49,10 +50,14 @@ Pagination is **not** applied in the engine; the QA page slices `rows` (50 per p
     'players' => int,
     'booked' => int,
     'not_booked' => int,
+    'pending_payment' => int,
+    'on_hold' => int,
     'unmatched_bookings' => int,
   ],
 ]
 ```
+
+`not_booked` total counts every player who is not facet-booked, **including** those labelled `pending_payment` or `on_hold`. The `pending_payment` and `on_hold` totals count players whose resolved `booking_status` is that label (same facet rules as `booked`).
 
 ### Player row
 
@@ -68,11 +73,16 @@ Pagination is **not** applied in the engine; the QA page slices `rows` (50 per p
   'dob' => 'Y-m-d'|null,
   'dob_restricted' => bool,
   'age' => int|null,
-  'booked' => bool,
-  'bookings' => list<booking>,
-  'bookings_label' => string, // labels joined "; "
+  'booked' => bool,  // true only when facet-matched completed/processing booking exists
+  'booking_status' => 'booked'|'pending_payment'|'on_hold'|'not_booked',
+  'booking_status_label' => string,  // translated via intersoccer_player_course_status_booking_status_label()
+  'bookings' => list<booking>,       // in-scope active (completed/processing) lines only
+  'pending_bookings' => list<booking>, // in-scope pending/on-hold lines (all for player, not facet-filtered)
+  'bookings_label' => string, // labels from bookings[] joined "; "
 ]
 ```
+
+**Tier / key:** Taken from the **booked** index match when that match produced any `bookings`. When the player has no booked index hits, `tier` and `key` come from the pending/on-hold index match (if any).
 
 ### Booking object
 
@@ -93,11 +103,14 @@ Label format: `product · venue · course_day · times · season · start–end`
 ### Status / booked rules
 
 - Live order status from posts/HPOS batch loader (`intersoccer_roster_report_rows_apply_live_order_status`).
-- **Booked** (PCS parity via `intersoccer_roster_report_status_counts_as_booked`): `completed` and `processing` only.
-- **Not booked** and **not** listed in `unmatched_bookings`: `pending`, `on-hold`, `cancelled`, `refunded`, `failed`, and wholly refunded orders.
+- Normalize with `intersoccer_roster_report_normalize_order_status()` (`pending`, `on-hold`, `wc-*` stripped).
+- **`booked` bool** and **`bookings[]`**: `completed` and `processing` only (`intersoccer_roster_report_status_counts_as_booked`).
+- **`booking_status` precedence** (facet-matched lines only): `booked` > `pending_payment` > `on_hold` > `not_booked`. Among pending/on-hold facet matches, any `pending` wins over `on-hold`.
+- **`pending_bookings[]`**: all in-scope pending/on-hold lines for the player (like `bookings[]` lists all in-scope booked lines regardless of facet filters). Pending/on-hold lines are **not** in `bookings[]`, `bookings_label`, or `unmatched_bookings`.
+- **Plain `not_booked`**: `cancelled`, `refunded`, `failed`, wholly refunded orders, fully refunded lines, or no qualifying line.
 - Line fully refunded excluded (`intersoccer_roster_report_row_line_is_fully_refunded` after refund priming).
-- Partial refunds on completed/processing still count.
-- Facet filters (`venue`, `course_day`, `age_group`) apply only to whether `booked` is true; player list remains all PM players.
+- Partial refunds on completed/processing still count as booked.
+- Facet filters (`venue`, `course_day`, `age_group`) apply to whether `booked` and `booking_status` are set from booked vs pending intent; player list remains all PM players.
 
 ### Year rule
 
@@ -116,9 +129,9 @@ SQL prefilter: `start_date` / `end_date` year in `[Y-1, Y+1]` or null/empty date
 
 Reuse `intersoccer_player_camp_status_load_players()` (batched `cache_users()` after DISTINCT `user_id` query).
 
-**Tier union:** For each PM player, collect bookings from **all** alias keys (`uuid`, then `idx`, then `name` — same key strings as `intersoccer_roster_report_collect_player_alias_keys`). Dedupe by `order_item_id`, sort bookings by `start_date`. Set `tier` / `key` to the **best-ranked** tier that had hits (`intersoccer_roster_report_player_key_tier_rank`: uuid > idx > name).
+**Tier union:** For each PM player, collect bookings from **all** alias keys (`uuid`, then `idx`, then `name` — same key strings as `intersoccer_roster_report_collect_player_alias_keys`). Dedupe by `order_item_id`, sort bookings by `start_date`. Set `tier` / `key` to the **best-ranked** tier that had hits (`intersoccer_roster_report_player_key_tier_rank`: uuid > idx > name). Separate indexes for booked vs pending/on-hold rows share the same key logic and idx-collision priming.
 
-**Idx collision guard:** Before building the booking index, reset and feed collision detection (`intersoccer_roster_report_reset_idx_name_collision_state()` + `intersoccer_roster_report_note_idx_name_for_collision_detection($row)` over scoped rows) so `collect_player_alias_keys()` drops `idx` keys when the same `(customer_id, player_index)` carries two different names.
+**Idx collision guard:** Before building each booking index, reset and feed collision detection (`intersoccer_roster_report_reset_idx_name_collision_state()` + `intersoccer_roster_report_note_idx_name_for_collision_detection($row)` over scoped rows) so `collect_player_alias_keys()` drops `idx` keys when the same `(customer_id, player_index)` carries two different names.
 
 Legacy `customer_id = 0` rows resolve customer from order before keying; index 0 does not steal siblings.
 
@@ -133,6 +146,8 @@ Same gate as PCS: `intersoccer_player_course_status_user_can_view_dob()` (wraps 
 | Nonce action | `intersoccer_player_course_status_excel` |
 | Filename | `player-course-status-{year}.xlsx` |
 | Sheet title | `Player Course Status` |
-| Headers | `Player Name`, `Parent Email`, `User ID`, `DOB` (if allowed), `Age`, `Booked`, `Course Bookings`, `Match Tier` |
+| Headers | `Player Name`, `Parent Email`, `User ID`, `DOB` (if allowed), `Age`, `Booked`, `Status`, `Course Bookings`, `Match Tier` |
+
+`Booked` remains Yes/No. `Status` is the translated `booking_status_label`. Pending lines are not included in `Course Bookings`.
 
 Export uses the same `generate()` rows as the screen (no separate query path).

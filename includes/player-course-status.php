@@ -72,10 +72,29 @@ function intersoccer_player_course_status_export_headers() {
 	}
 	$headers[] = 'Age';
 	$headers[] = 'Booked';
+	$headers[] = 'Status';
 	$headers[] = 'Course Bookings';
 	$headers[] = 'Match Tier';
 
 	return $headers;
+}
+
+/**
+ * Translated label for a player row booking_status slug.
+ *
+ * @param string $status booked|pending_payment|on_hold|not_booked
+ */
+function intersoccer_player_course_status_booking_status_label($status) {
+	switch ((string) $status) {
+		case 'booked':
+			return __('Booked', 'intersoccer-reports-rosters');
+		case 'pending_payment':
+			return __('Pending payment', 'intersoccer-reports-rosters');
+		case 'on_hold':
+			return __('On hold', 'intersoccer-reports-rosters');
+		default:
+			return __('Not booked', 'intersoccer-reports-rosters');
+	}
 }
 
 /**
@@ -134,6 +153,117 @@ function intersoccer_player_course_status_row_is_active_booking(array $row) {
 
 	return function_exists('intersoccer_roster_report_status_counts_as_booked')
 		&& intersoccer_roster_report_status_counts_as_booked($status);
+}
+
+/**
+ * Whether refund gates allow treating a row as a live pending/on-hold intent line.
+ *
+ * @param array<string,mixed> $row
+ */
+function intersoccer_player_course_status_row_passes_refund_gates(array $row) {
+	$status = (string) ( $row['order_status'] ?? '' );
+	if (function_exists('intersoccer_roster_report_order_status_is_wholly_refunded')
+		&& intersoccer_roster_report_order_status_is_wholly_refunded($status)) {
+		return false;
+	}
+	if (function_exists('intersoccer_roster_report_row_line_is_fully_refunded')
+		&& intersoccer_roster_report_row_line_is_fully_refunded($row)) {
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * Normalized pending intent: pending_payment or on_hold, or empty when not applicable.
+ *
+ * @param array<string,mixed> $row
+ * @return string ''|'pending_payment'|'on_hold'
+ */
+function intersoccer_player_course_status_row_pending_intent_kind(array $row) {
+	if (!intersoccer_player_course_status_row_passes_refund_gates($row)) {
+		return '';
+	}
+	$norm = function_exists('intersoccer_roster_report_normalize_order_status')
+		? intersoccer_roster_report_normalize_order_status($row['order_status'] ?? '')
+		: strtolower(trim((string) ( $row['order_status'] ?? '' )));
+	if ($norm === 'pending') {
+		return 'pending_payment';
+	}
+	if ($norm === 'on-hold') {
+		return 'on_hold';
+	}
+
+	return '';
+}
+
+/**
+ * @param array<string,mixed> $row
+ */
+function intersoccer_player_course_status_row_is_pending_intent_booking(array $row) {
+	return intersoccer_player_course_status_row_pending_intent_kind($row) !== '';
+}
+
+/**
+ * @param array<int,array<string,mixed>> $scoped_rows
+ * @return array<string,array<int,array<string,mixed>>>
+ */
+function intersoccer_player_course_status_build_pending_booking_index(array $scoped_rows) {
+	if (function_exists('intersoccer_roster_report_reset_idx_name_collision_state')) {
+		intersoccer_roster_report_reset_idx_name_collision_state();
+	}
+	foreach ($scoped_rows as $row) {
+		if (!is_array($row)) {
+			continue;
+		}
+		if (function_exists('intersoccer_roster_report_note_idx_name_for_collision_detection')) {
+			intersoccer_roster_report_note_idx_name_for_collision_detection($row);
+		}
+	}
+
+	$index = [];
+	foreach ($scoped_rows as $row) {
+		if (!is_array($row) || !intersoccer_player_course_status_row_is_pending_intent_booking($row)) {
+			continue;
+		}
+		$booking = intersoccer_player_course_status_build_booking_record($row);
+		$keys = function_exists('intersoccer_roster_report_collect_player_alias_keys')
+			? intersoccer_roster_report_collect_player_alias_keys($row)
+			: [];
+		foreach ($keys as $key) {
+			if ($key === '') {
+				continue;
+			}
+			$index[ $key ][] = $booking;
+		}
+	}
+
+	return $index;
+}
+
+/**
+ * @param array<int,array<string,mixed>> $pending_active Facet-matched pending/on-hold bookings.
+ * @return string pending_payment|on_hold
+ */
+function intersoccer_player_course_status_booking_status_from_pending_matches(array $pending_active) {
+	foreach ($pending_active as $booking) {
+		$norm = function_exists('intersoccer_roster_report_normalize_order_status')
+			? intersoccer_roster_report_normalize_order_status($booking['order_status'] ?? '')
+			: '';
+		if ($norm === 'pending') {
+			return 'pending_payment';
+		}
+	}
+	foreach ($pending_active as $booking) {
+		$norm = function_exists('intersoccer_roster_report_normalize_order_status')
+			? intersoccer_roster_report_normalize_order_status($booking['order_status'] ?? '')
+			: '';
+		if ($norm === 'on-hold') {
+			return 'on_hold';
+		}
+	}
+
+	return 'not_booked';
 }
 
 /**
@@ -659,12 +789,17 @@ function intersoccer_player_course_status_normalize_filters(array $filters) {
 	if (!in_array($booked, ['all', 'booked', 'not_booked'], true)) {
 		$booked = 'all';
 	}
+	$booking_status = isset($filters['booking_status']) ? (string) $filters['booking_status'] : '';
+	if (!in_array($booking_status, ['', 'booked', 'pending_payment', 'on_hold', 'not_booked'], true)) {
+		$booking_status = '';
+	}
 
 	return [
 		'year' => $year,
 		'season_type' => isset($filters['season_type']) ? sanitize_text_field((string) $filters['season_type']) : '',
 		'girls_mode' => $girls_mode,
 		'booked' => $booked,
+		'booking_status' => $booking_status,
 		'search' => isset($filters['search']) ? sanitize_text_field((string) $filters['search']) : '',
 		'venue' => isset($filters['venue']) ? sanitize_text_field((string) $filters['venue']) : '',
 		'course_day' => isset($filters['course_day']) ? sanitize_text_field((string) $filters['course_day']) : '',
@@ -722,11 +857,14 @@ function intersoccer_player_course_status_generate(array $filters) {
 
 	$filter_options = intersoccer_player_course_status_build_filter_options($scoped_rows);
 	$index = intersoccer_player_course_status_build_booking_index($scoped_rows);
+	$pending_index = intersoccer_player_course_status_build_pending_booking_index($scoped_rows);
 
 	$matched_item_ids = [];
 	$output_rows = [];
 	$booked_total = 0;
 	$not_booked_total = 0;
+	$pending_payment_total = 0;
+	$on_hold_total = 0;
 	$can_view_dob = intersoccer_player_course_status_user_can_view_dob();
 
 	foreach ($players as $player) {
@@ -734,7 +872,9 @@ function intersoccer_player_course_status_generate(array $filters) {
 			continue;
 		}
 		$match = intersoccer_player_course_status_match_player_bookings($player, $index);
+		$pending_match = intersoccer_player_course_status_match_player_bookings($player, $pending_index);
 		$bookings = $match['bookings'];
+		$pending_bookings = $pending_match['bookings'];
 		foreach ($bookings as $booking) {
 			$oid = (int) ($booking['order_item_id'] ?? 0);
 			if ($oid > 0) {
@@ -751,10 +891,38 @@ function intersoccer_player_course_status_generate(array $filters) {
 		}
 		$is_booked = !empty($active_for_filters);
 
+		$pending_active_for_filters = [];
+		foreach ($pending_bookings as $booking) {
+			if (!intersoccer_player_course_status_booking_matches_filters($booking, $filters)) {
+				continue;
+			}
+			$pending_active_for_filters[] = $booking;
+		}
+
+		if ($is_booked) {
+			$booking_status = 'booked';
+		} elseif (!empty($pending_active_for_filters)) {
+			$booking_status = intersoccer_player_course_status_booking_status_from_pending_matches($pending_active_for_filters);
+		} else {
+			$booking_status = 'not_booked';
+		}
+
 		if ($is_booked) {
 			$booked_total++;
 		} else {
 			$not_booked_total++;
+		}
+		if ($booking_status === 'pending_payment') {
+			$pending_payment_total++;
+		} elseif ($booking_status === 'on_hold') {
+			$on_hold_total++;
+		}
+
+		$tier = $match['tier'];
+		$key_used = $match['key'];
+		if ($tier === '' && $key_used === '' && !empty($pending_bookings)) {
+			$tier = $pending_match['tier'];
+			$key_used = $pending_match['key'];
 		}
 
 		$user_id = (int) ($player['user_id'] ?? 0);
@@ -781,8 +949,8 @@ function intersoccer_player_course_status_generate(array $filters) {
 				'first_name' => (string) ($player['first_name'] ?? ''),
 				'last_name' => (string) ($player['last_name'] ?? ''),
 				'player_index' => isset($player['player_index']) ? (int) $player['player_index'] : null,
-				'key' => $match['key'],
-				'tier' => $match['tier'],
+				'key' => $key_used,
+				'tier' => $tier,
 			],
 			'parent' => [
 				'id' => $user_id,
@@ -792,7 +960,10 @@ function intersoccer_player_course_status_generate(array $filters) {
 			'dob_restricted' => !$can_view_dob,
 			'age' => $age,
 			'booked' => $is_booked,
+			'booking_status' => $booking_status,
+			'booking_status_label' => intersoccer_player_course_status_booking_status_label($booking_status),
 			'bookings' => $bookings,
+			'pending_bookings' => $pending_bookings,
 			'bookings_label' => implode('; ', $labels),
 		];
 
@@ -800,6 +971,9 @@ function intersoccer_player_course_status_generate(array $filters) {
 			continue;
 		}
 		if ($filters['booked'] === 'not_booked' && $is_booked) {
+			continue;
+		}
+		if ($filters['booking_status'] !== '' && $booking_status !== $filters['booking_status']) {
 			continue;
 		}
 
@@ -850,6 +1024,8 @@ function intersoccer_player_course_status_generate(array $filters) {
 			'players' => count($players),
 			'booked' => $booked_total,
 			'not_booked' => $not_booked_total,
+			'pending_payment' => $pending_payment_total,
+			'on_hold' => $on_hold_total,
 			'unmatched_bookings' => count($unmatched),
 		],
 	];
@@ -863,6 +1039,7 @@ function intersoccer_player_course_status_request_filters() {
 	$season_type = isset($_GET['season_type']) ? sanitize_text_field(wp_unslash($_GET['season_type'])) : '';
 	$girls_mode = isset($_GET['girls_mode']) ? sanitize_text_field(wp_unslash($_GET['girls_mode'])) : 'all';
 	$booked = isset($_GET['booked']) ? sanitize_text_field(wp_unslash($_GET['booked'])) : 'all';
+	$booking_status = isset($_GET['booking_status']) ? sanitize_text_field(wp_unslash($_GET['booking_status'])) : '';
 	$search = isset($_GET['search']) ? sanitize_text_field(wp_unslash($_GET['search'])) : '';
 	$venue = isset($_GET['venue']) ? sanitize_text_field(wp_unslash($_GET['venue'])) : '';
 	$course_day = isset($_GET['course_day']) ? sanitize_text_field(wp_unslash($_GET['course_day'])) : '';
@@ -874,6 +1051,7 @@ function intersoccer_player_course_status_request_filters() {
 		'season_type' => $season_type,
 		'girls_mode' => $girls_mode,
 		'booked' => $booked,
+		'booking_status' => $booking_status,
 		'search' => $search,
 		'venue' => $venue,
 		'course_day' => $course_day,
@@ -898,6 +1076,7 @@ function intersoccer_player_course_status_export_row(array $row) {
 	}
 	$out[] = $row['age'] ?? '';
 	$out[] = !empty($row['booked']) ? 'Yes' : 'No';
+	$out[] = (string) ($row['booking_status_label'] ?? intersoccer_player_course_status_booking_status_label('not_booked'));
 	$out[] = (string) ($row['bookings_label'] ?? '');
 	$out[] = (string) ($player['tier'] ?? '');
 
@@ -992,6 +1171,7 @@ function intersoccer_render_player_course_status_page() {
 		'season_type' => $filters['season_type'],
 		'girls_mode' => $filters['girls_mode'],
 		'booked' => $filters['booked'],
+		'booking_status' => $filters['booking_status'],
 		'search' => $filters['search'],
 		'venue' => $filters['venue'],
 		'course_day' => $filters['course_day'],
@@ -1010,10 +1190,12 @@ function intersoccer_render_player_course_status_page() {
 		<p class="description" style="margin-bottom:16px;">
 			<?php
 			printf(
-				esc_html__('Players: %1$d · Booked: %2$d · Not booked: %3$d · Unmatched bookings: %4$d · Showing: %5$d', 'intersoccer-reports-rosters'),
+				esc_html__('Players: %1$d · Booked: %2$d · Not booked: %3$d · Pending payment: %4$d · On hold: %5$d · Unmatched bookings: %6$d · Showing: %7$d', 'intersoccer-reports-rosters'),
 				(int) ($result['totals']['players'] ?? 0),
 				(int) ($result['totals']['booked'] ?? 0),
 				(int) ($result['totals']['not_booked'] ?? 0),
+				(int) ($result['totals']['pending_payment'] ?? 0),
+				(int) ($result['totals']['on_hold'] ?? 0),
 				(int) ($result['totals']['unmatched_bookings'] ?? 0),
 				$total_rows
 			);
@@ -1112,6 +1294,7 @@ function intersoccer_render_player_course_status_page() {
 						<th><?php esc_html_e('Parent email', 'intersoccer-reports-rosters'); ?></th>
 						<th><?php esc_html_e('Age', 'intersoccer-reports-rosters'); ?></th>
 						<th><?php esc_html_e('Booked', 'intersoccer-reports-rosters'); ?></th>
+						<th><?php esc_html_e('Status', 'intersoccer-reports-rosters'); ?></th>
 						<th><?php esc_html_e('Course bookings', 'intersoccer-reports-rosters'); ?></th>
 						<th><?php esc_html_e('Match tier', 'intersoccer-reports-rosters'); ?></th>
 					</tr>
@@ -1126,6 +1309,7 @@ function intersoccer_render_player_course_status_page() {
 							<td><?php echo esc_html((string) ($parent['email'] ?? '')); ?></td>
 							<td><?php echo esc_html($row['age'] !== null && $row['age'] !== '' ? (string) $row['age'] : '—'); ?></td>
 							<td><?php echo !empty($row['booked']) ? esc_html__('Yes', 'intersoccer-reports-rosters') : esc_html__('No', 'intersoccer-reports-rosters'); ?></td>
+							<td><?php echo esc_html((string) ($row['booking_status_label'] ?? '')); ?></td>
 							<td><?php echo esc_html((string) ($row['bookings_label'] ?? '—')); ?></td>
 							<td><?php echo esc_html((string) ($player['tier'] ?? '')); ?></td>
 						</tr>
