@@ -71,6 +71,7 @@
             <file>tests/Reports/WinbackReportTest.php</file>
             <file>tests/Reports/WinbackCatalogueWpmlTest.php</file>
             <file>tests/Reports/WinbackCatalogueFu11Test.php</file>
+            <file>tests/Reports/WinbackCatalogueFu12Test.php</file>
             <file>tests/Reports/WinbackReportQueryCountTest.php</file>
             <file>tests/Reports/WinbackReportRuntimeCacheFlushTest.php</file>
             <file>tests/Reports/WinbackReportMemoryTest.php</file>
