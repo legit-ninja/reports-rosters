@@ -726,6 +726,15 @@ function intersoccer_winback_report_run() {
 	if (!function_exists('intersoccer_winback_report_engine_generate')) {
 		require_once dirname(__FILE__) . '/winback-report-engine.php';
 	}
+	if (!function_exists('intersoccer_winback_report_engine_generate_cached')) {
+		$cache = dirname(__FILE__) . '/winback-report-cache.php';
+		if (file_exists($cache)) {
+			require_once $cache;
+		}
+	}
+	if (function_exists('intersoccer_winback_report_engine_generate_cached')) {
+		return intersoccer_winback_report_engine_generate_cached(intersoccer_winback_report_request_filters());
+	}
 
 	return intersoccer_winback_report_engine_generate(intersoccer_winback_report_request_filters());
 }
