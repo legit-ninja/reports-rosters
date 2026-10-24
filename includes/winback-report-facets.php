@@ -531,6 +531,66 @@ if (!function_exists('intersoccer_winback_register_unmapped_facet')) {
 	}
 }
 
+if (!function_exists('intersoccer_winback_age_group_slug_is_known_catalogue_band')) {
+	/**
+	 * Whether a normalized EN age slug exists in the upcoming catalogue or as pa_age-group.
+	 *
+	 * @param array<string,array<int,array<string,mixed>>> $catalogue_index
+	 */
+	function intersoccer_winback_age_group_slug_is_known_catalogue_band($slug, array $catalogue_index, $kind, $venue_slug) {
+		$slug = trim((string) $slug);
+		if ($slug === '') {
+			return true;
+		}
+		$venue_slug = (string) $venue_slug;
+		if ($venue_slug !== '' && function_exists('intersoccer_winback_catalogue_venue_cache_bucket')) {
+			$bucket = intersoccer_winback_catalogue_venue_cache_bucket($catalogue_index, $kind, $venue_slug);
+			if (in_array($slug, $bucket['available_ages'], true)) {
+				return true;
+			}
+		} else {
+			$prefix = strtolower((string) $kind) . '|';
+			foreach ($catalogue_index as $key => $list) {
+				if (strpos((string) $key, $prefix) !== 0) {
+					continue;
+				}
+				foreach ((array) $list as $row) {
+					if (is_array($row) && (string) ( $row['age_group_slug'] ?? '' ) === $slug) {
+						return true;
+					}
+				}
+			}
+		}
+		if (function_exists('get_term_by')) {
+			$term = get_term_by('slug', $slug, 'pa_age-group');
+			if ($term && !is_wp_error($term)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
+if (!function_exists('intersoccer_winback_register_unmapped_age_if_not_catalogue_band')) {
+	/**
+	 * Count alias-resolved age slugs that have no matching catalogue band (admin notice).
+	 *
+	 * Registers the normalized EN slug (not the raw roster value).
+	 *
+	 * @param array<string,array<int,array<string,mixed>>> $catalogue_index
+	 */
+	function intersoccer_winback_register_unmapped_age_if_not_catalogue_band($age_slug, array $catalogue_index, $kind, $venue_slug) {
+		$age_slug = trim((string) $age_slug);
+		if ($age_slug === '') {
+			return;
+		}
+		if (!intersoccer_winback_age_group_slug_is_known_catalogue_band($age_slug, $catalogue_index, $kind, $venue_slug)) {
+			intersoccer_winback_register_unmapped_facet('age_group', $age_slug);
+		}
+	}
+}
+
 if (!function_exists('intersoccer_winback_parse_age_group_bounds')) {
 	/**
 	 * Parse min/max child age from a label or slug. Unparseable bands return null.

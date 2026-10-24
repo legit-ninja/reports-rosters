@@ -149,6 +149,27 @@ if (!function_exists('intersoccer_roster_report_status_counts_as_booked')) {
 	}
 }
 
+if (!function_exists('intersoccer_roster_report_batch_chunk_size')) {
+	/**
+	 * Chunk size for batched order lookups (filterable for tests).
+	 */
+	function intersoccer_roster_report_batch_chunk_size() {
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING
+			&& isset($GLOBALS['intersoccer_test_batch_chunk_size'])) {
+			return max(1, (int) $GLOBALS['intersoccer_test_batch_chunk_size']);
+		}
+		$size = 500;
+		if (function_exists('apply_filters')) {
+			$filtered = (int) apply_filters('intersoccer_rr_batch_chunk_size', $size);
+			if ($filtered > 0) {
+				$size = $filtered;
+			}
+		}
+
+		return $size;
+	}
+}
+
 if (!function_exists('intersoccer_roster_report_uses_hpos_orders_table')) {
 	/**
 	 * Whether WooCommerce order data should be read from the HPOS orders table.
@@ -158,15 +179,25 @@ if (!function_exists('intersoccer_roster_report_uses_hpos_orders_table')) {
 			&& array_key_exists('intersoccer_test_hpos_orders_enabled', $GLOBALS)) {
 			return (bool) $GLOBALS['intersoccer_test_hpos_orders_enabled'];
 		}
+		static $memo = null;
+		if ($memo !== null) {
+			return $memo;
+		}
 		if (class_exists('\Automattic\WooCommerce\Utilities\OrderUtil')
 			&& method_exists('\Automattic\WooCommerce\Utilities\OrderUtil', 'custom_orders_table_usage_is_enabled')) {
-			return (bool) \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
+			$memo = (bool) \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
+
+			return $memo;
 		}
 		if (function_exists('get_option')) {
-			return get_option('woocommerce_custom_orders_table_enabled') === 'yes';
+			$memo = get_option('woocommerce_custom_orders_table_enabled') === 'yes';
+
+			return $memo;
 		}
 
-		return false;
+		$memo = false;
+
+		return $memo;
 	}
 }
 
@@ -300,7 +331,7 @@ if (!function_exists('intersoccer_roster_report_batch_load_order_customer_ids'))
 		}
 
 		$map = [];
-		$chunks = array_chunk($order_ids, 500);
+		$chunks = array_chunk($order_ids, intersoccer_roster_report_batch_chunk_size());
 		$use_hpos = intersoccer_roster_report_uses_hpos_orders_table();
 
 		foreach ($chunks as $chunk) {
@@ -321,10 +352,10 @@ if (!function_exists('intersoccer_roster_report_batch_load_order_customer_ids'))
 				}
 				$missing = array_values(array_diff($chunk, array_keys($map)));
 				if (!empty($missing)) {
-					$map = array_merge($map, intersoccer_roster_report_batch_load_order_customer_ids_from_postmeta($missing));
+					$map += intersoccer_roster_report_batch_load_order_customer_ids_from_postmeta($missing);
 				}
 			} else {
-				$map = array_merge($map, intersoccer_roster_report_batch_load_order_customer_ids_from_postmeta($chunk));
+				$map += intersoccer_roster_report_batch_load_order_customer_ids_from_postmeta($chunk);
 			}
 		}
 
@@ -347,7 +378,7 @@ if (!function_exists('intersoccer_roster_report_batch_load_order_customer_ids_fr
 			return [];
 		}
 		$map = [];
-		$chunks = array_chunk($order_ids, 500);
+		$chunks = array_chunk($order_ids, intersoccer_roster_report_batch_chunk_size());
 		foreach ($chunks as $chunk) {
 			$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
 			$sql = "SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = '_customer_user' AND post_id IN ({$placeholders})";
@@ -599,7 +630,7 @@ if (!function_exists('intersoccer_roster_report_batch_load_order_ids_with_refund
 		}
 
 		$with_refunds = [];
-		$chunks = array_chunk($order_ids, 500);
+		$chunks = array_chunk($order_ids, intersoccer_roster_report_batch_chunk_size());
 		$use_hpos = intersoccer_roster_report_uses_hpos_orders_table();
 
 		foreach ($chunks as $chunk) {
@@ -671,7 +702,7 @@ if (!function_exists('intersoccer_roster_report_batch_load_live_order_statuses_f
 			return [];
 		}
 		$map = [];
-		$chunks = array_chunk($order_ids, 500);
+		$chunks = array_chunk($order_ids, intersoccer_roster_report_batch_chunk_size());
 		foreach ($chunks as $chunk) {
 			$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
 			$sql = "SELECT ID, post_status FROM {$wpdb->posts} WHERE post_type = 'shop_order' AND ID IN ({$placeholders})";
@@ -728,7 +759,7 @@ if (!function_exists('intersoccer_roster_report_batch_load_live_order_statuses')
 
 		$map = [];
 		$use_hpos = intersoccer_roster_report_uses_hpos_orders_table();
-		$chunks = array_chunk($order_ids, 500);
+		$chunks = array_chunk($order_ids, intersoccer_roster_report_batch_chunk_size());
 
 		foreach ($chunks as $chunk) {
 			$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
@@ -749,16 +780,10 @@ if (!function_exists('intersoccer_roster_report_batch_load_live_order_statuses')
 				}
 				$missing = array_values(array_diff($chunk, array_keys($map)));
 				if (!empty($missing)) {
-					$map = array_merge(
-						$map,
-						intersoccer_roster_report_batch_load_live_order_statuses_from_posts($missing)
-					);
+					$map += intersoccer_roster_report_batch_load_live_order_statuses_from_posts($missing);
 				}
 			} else {
-				$map = array_merge(
-					$map,
-					intersoccer_roster_report_batch_load_live_order_statuses_from_posts($chunk)
-				);
+				$map += intersoccer_roster_report_batch_load_live_order_statuses_from_posts($chunk);
 			}
 		}
 
@@ -781,7 +806,7 @@ if (!function_exists('intersoccer_roster_report_batch_load_order_created_dates_f
 			return [];
 		}
 		$map = [];
-		$chunks = array_chunk($order_ids, 500);
+		$chunks = array_chunk($order_ids, intersoccer_roster_report_batch_chunk_size());
 		foreach ($chunks as $chunk) {
 			$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
 			$sql = "SELECT ID, post_date FROM {$wpdb->posts} WHERE post_type = 'shop_order' AND ID IN ({$placeholders})";
@@ -840,7 +865,7 @@ if (!function_exists('intersoccer_roster_report_batch_load_order_created_dates')
 
 		$map = [];
 		$use_hpos = intersoccer_roster_report_uses_hpos_orders_table();
-		$chunks = array_chunk($order_ids, 500);
+		$chunks = array_chunk($order_ids, intersoccer_roster_report_batch_chunk_size());
 
 		foreach ($chunks as $chunk) {
 			$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
@@ -864,16 +889,10 @@ if (!function_exists('intersoccer_roster_report_batch_load_order_created_dates')
 				}
 				$missing = array_values(array_diff($chunk, array_keys($map)));
 				if (!empty($missing)) {
-					$map = array_merge(
-						$map,
-						intersoccer_roster_report_batch_load_order_created_dates_from_posts($missing)
-					);
+					$map += intersoccer_roster_report_batch_load_order_created_dates_from_posts($missing);
 				}
 			} else {
-				$map = array_merge(
-					$map,
-					intersoccer_roster_report_batch_load_order_created_dates_from_posts($chunk)
-				);
+				$map += intersoccer_roster_report_batch_load_order_created_dates_from_posts($chunk);
 			}
 		}
 

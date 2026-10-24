@@ -46,7 +46,7 @@ Each element of `rows` is an associative array:
 | `contact` | array | `email` (string billing), `phone` (string), `contact_differs` (bool), `account_email` (string) |
 | `last_event` | array | `product`, `venue`, `age_group` (EN slugs where resolved), `date` (`Y-m-d` or null), `date_source` (see below) |
 | `target` | array \| null | `product`, `venue`, `age_group`, `start_date` — earliest upcoming catalogue match at the resolved target age band, or null |
-| `more_targets` | array | Up to **3** further upcoming catalogue matches (same kind, venue, and target age group as `target`), same shape as `target`, ordered by `start_date`. Empty array when `target` is null or no additional matches exist. Does not repeat `target`. |
+| `more_targets` | array | Up to **3** further upcoming catalogue matches (same kind, venue, and target age group as `target`), same shape as `target`, ordered by `start_date`. Empty array when `target` is null or no additional matches exist. Does not repeat `target`. `target` and `more_targets` are deduped together by **(product ID, week start date `start_date`)**: at most one entry per product per week; when multiple variations share that key, keep the **full-week** booking type (`pa_booking-type` normalized to `full-week`) over **single-days**, then lowest `source_variation_id`. The chosen `target` week is never repeated in `more_targets`. |
 | `aged_up` | bool | True when the target age band differs from the last booked band because the child is older than the booked band’s max at **that target’s** `start_date` (J1). False when there is no catalogue target. |
 | `sibling_booked` | bool | Another child on same account has upcoming booking same kind (J3) |
 | `rebooked_elsewhere` | bool | Upcoming booking same kind at a different venue (J2b) |
@@ -114,6 +114,8 @@ Detection: `intersoccer_winback_facet_is_multi_value()` — venue values contain
 Resolution: `intersoccer_winback_normalize_roster_facet_slug()` loads the order line / variation attribute (`attribute_pa_*`, `pa_*`, `_intersoccer_canonical_*`) and normalizes that value with the same EN-slug rules. The engine uses this for history and upcoming venue slugs.
 
 When resolution fails: the facet slug is left empty, the raw value is counted in `unmapped_facets`, and the row does not match venue/age filters or catalogue targeting (`target` stays null via the existing `no_upcoming` path). No new `status` value was added.
+
+When a roster age value **does** normalize to an EN slug (including static aliases such as `5-12` / `5-12-jahre` → `5-12y`) but that slug is **not** an upcoming catalogue age band at the player’s venue for that kind **and** is not an existing `pa_age-group` term slug, the engine registers the **normalized EN slug** in `unmapped_facets['age_group']` when the row ends `no_upcoming` (one count per output row, same counter rules as other unmapped facets). Status stays `no_upcoming`; do not invent alias→catalogue band mappings.
 
 ## History aggregation and filters
 

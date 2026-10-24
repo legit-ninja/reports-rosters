@@ -253,6 +253,14 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 
 			if ($target === null && $status !== 'date_unknown') {
 				$status = 'no_upcoming';
+				if ($history['age_slug'] !== '' && function_exists('intersoccer_winback_register_unmapped_age_if_not_catalogue_band')) {
+					intersoccer_winback_register_unmapped_age_if_not_catalogue_band(
+						$history['age_slug'],
+						$catalogue,
+						$kind,
+						$history['venue_slug']
+					);
+				}
 			}
 
 			$sibling_booked = intersoccer_winback_report_engine_sibling_has_upcoming($customer_id, $key, $kind, $upcoming, $identity_map);

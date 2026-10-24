@@ -106,6 +106,210 @@ if (!function_exists('intersoccer_winback_reset_catalogue_target_cache')) {
 	}
 }
 
+if (!function_exists('intersoccer_winback_reset_catalogue_enumeration_memo')) {
+	function intersoccer_winback_reset_catalogue_enumeration_memo() {
+		unset(
+			$GLOBALS['intersoccer_winback_memo_wpml_product'],
+			$GLOBALS['intersoccer_winback_memo_wpml_variation']
+		);
+	}
+}
+
+if (!function_exists('intersoccer_winback_memo_default_language_product_id')) {
+	function intersoccer_winback_memo_default_language_product_id($product_id) {
+		$product_id = (int) $product_id;
+		if ($product_id <= 0) {
+			return 0;
+		}
+		if (!isset($GLOBALS['intersoccer_winback_memo_wpml_product'])
+			|| !is_array($GLOBALS['intersoccer_winback_memo_wpml_product'])) {
+			$GLOBALS['intersoccer_winback_memo_wpml_product'] = [];
+		}
+		if (array_key_exists($product_id, $GLOBALS['intersoccer_winback_memo_wpml_product'])) {
+			return (int) $GLOBALS['intersoccer_winback_memo_wpml_product'][ $product_id ];
+		}
+		$resolved = $product_id;
+		if (function_exists('intersoccer_get_default_language_product_id')) {
+			$resolved = (int) intersoccer_get_default_language_product_id($product_id);
+		} elseif (function_exists('apply_filters') && function_exists('wpml_get_default_language')) {
+			$default_lang = (string) wpml_get_default_language();
+			$mapped = (int) apply_filters('wpml_object_id', $product_id, 'product', true, $default_lang);
+			if ($mapped > 0) {
+				$resolved = $mapped;
+			}
+		}
+		$GLOBALS['intersoccer_winback_memo_wpml_product'][ $product_id ] = $resolved;
+
+		return $resolved;
+	}
+}
+
+if (!function_exists('intersoccer_winback_memo_default_language_variation_id')) {
+	function intersoccer_winback_memo_default_language_variation_id($variation_id) {
+		$variation_id = (int) $variation_id;
+		if ($variation_id <= 0) {
+			return 0;
+		}
+		if (!isset($GLOBALS['intersoccer_winback_memo_wpml_variation'])
+			|| !is_array($GLOBALS['intersoccer_winback_memo_wpml_variation'])) {
+			$GLOBALS['intersoccer_winback_memo_wpml_variation'] = [];
+		}
+		if (array_key_exists($variation_id, $GLOBALS['intersoccer_winback_memo_wpml_variation'])) {
+			return (int) $GLOBALS['intersoccer_winback_memo_wpml_variation'][ $variation_id ];
+		}
+		$resolved = $variation_id;
+		if (function_exists('intersoccer_get_default_language_variation_id')) {
+			$resolved = (int) intersoccer_get_default_language_variation_id($variation_id);
+		}
+		$GLOBALS['intersoccer_winback_memo_wpml_variation'][ $variation_id ] = $resolved;
+
+		return $resolved;
+	}
+}
+
+if (!function_exists('intersoccer_winback_catalogue_batch_variation_posts')) {
+	/**
+	 * @param int[] $parent_ids
+	 * @return array<int,array{ID:int,post_parent:int,post_status:string}>
+	 */
+	function intersoccer_winback_catalogue_batch_variation_posts(array $parent_ids) {
+		$parent_ids = array_values(array_unique(array_filter(array_map('intval', $parent_ids))));
+		if (empty($parent_ids)) {
+			return [];
+		}
+		global $wpdb;
+		if (!is_object($wpdb) || !isset($wpdb->prefix)) {
+			return [];
+		}
+		$chunk_size = function_exists('intersoccer_roster_report_batch_chunk_size')
+			? intersoccer_roster_report_batch_chunk_size()
+			: 500;
+		$rows = [];
+		foreach (array_chunk($parent_ids, $chunk_size) as $chunk) {
+			$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+			$sql = "SELECT ID, post_parent, post_status FROM {$wpdb->posts} WHERE post_type = 'product_variation' AND post_status = 'publish' AND post_parent IN ({$placeholders})";
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$results = $wpdb->get_results($wpdb->prepare($sql, $chunk), ARRAY_A);
+			foreach ((array) $results as $result) {
+				if (!is_array($result)) {
+					continue;
+				}
+				$id = (int) ( $result['ID'] ?? 0 );
+				if ($id <= 0) {
+					continue;
+				}
+				$rows[] = [
+					'ID' => $id,
+					'post_parent' => (int) ( $result['post_parent'] ?? 0 ),
+					'post_status' => (string) ( $result['post_status'] ?? '' ),
+				];
+			}
+		}
+
+		return $rows;
+	}
+}
+
+if (!function_exists('intersoccer_winback_catalogue_read_pa_attribute_from_meta')) {
+	function intersoccer_winback_catalogue_read_pa_attribute_from_meta($variation_id, $taxonomy) {
+		$variation_id = (int) $variation_id;
+		$taxonomy = (string) $taxonomy;
+		if ($variation_id <= 0 || $taxonomy === '') {
+			return '';
+		}
+		$meta_key = 'attribute_' . $taxonomy;
+		$val = get_post_meta($variation_id, $meta_key, true);
+		if (is_string($val) && $val !== '') {
+			return $val;
+		}
+
+		return '';
+	}
+}
+
+if (!function_exists('intersoccer_winback_catalogue_booking_type_slug_from_meta')) {
+	function intersoccer_winback_catalogue_booking_type_slug_from_meta($variation_id) {
+		$raw = intersoccer_winback_catalogue_read_pa_attribute_from_meta($variation_id, 'pa_booking-type');
+		if ($raw === '') {
+			return 'other';
+		}
+		if (function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
+			return (string) intersoccer_normalize_booking_type_slug_for_reports($raw);
+		}
+
+		return 'other';
+	}
+}
+
+if (!function_exists('intersoccer_winback_catalogue_product_week_key')) {
+	function intersoccer_winback_catalogue_product_week_key(array $row) {
+		$product_id = (int) ( $row['product_id'] ?? 0 );
+		$start = (string) ( $row['start_date'] ?? '' );
+
+		return $product_id . '|' . $start;
+	}
+}
+
+if (!function_exists('intersoccer_winback_catalogue_booking_type_pref_rank')) {
+	/**
+	 * Prefer full-week catalogue rows over single-day when deduping the same product/week.
+	 */
+	function intersoccer_winback_catalogue_booking_type_pref_rank(array $row) {
+		$slug = (string) ( $row['booking_type_slug'] ?? '' );
+		if ($slug === 'full-week') {
+			return 2;
+		}
+		if ($slug === 'single-days') {
+			return 1;
+		}
+
+		return 0;
+	}
+}
+
+if (!function_exists('intersoccer_winback_catalogue_pick_preferred_catalogue_row')) {
+	function intersoccer_winback_catalogue_pick_preferred_catalogue_row(array $a, array $b) {
+		$ra = intersoccer_winback_catalogue_booking_type_pref_rank($a);
+		$rb = intersoccer_winback_catalogue_booking_type_pref_rank($b);
+		if ($ra !== $rb) {
+			return $ra > $rb ? $a : $b;
+		}
+		$va = (int) ( $a['source_variation_id'] ?? $a['variation_id'] ?? 0 );
+		$vb = (int) ( $b['source_variation_id'] ?? $b['variation_id'] ?? 0 );
+
+		return $va <= $vb ? $a : $b;
+	}
+}
+
+if (!function_exists('intersoccer_winback_catalogue_dedupe_rows_by_product_week')) {
+	/**
+	 * One catalogue row per (product_id, start_date); full-week beats single-day.
+	 *
+	 * @param array<int,array<string,mixed>> $rows
+	 * @return array<int,array<string,mixed>>
+	 */
+	function intersoccer_winback_catalogue_dedupe_rows_by_product_week(array $rows) {
+		$by_key = [];
+		foreach ($rows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$key = intersoccer_winback_catalogue_product_week_key($row);
+			if (!isset($by_key[ $key ])) {
+				$by_key[ $key ] = $row;
+				continue;
+			}
+			$by_key[ $key ] = intersoccer_winback_catalogue_pick_preferred_catalogue_row($by_key[ $key ], $row);
+		}
+		$out = array_values($by_key);
+		usort($out, static function ($a, $b) {
+			return strcmp((string) ( $a['start_date'] ?? '' ), (string) ( $b['start_date'] ?? '' ));
+		});
+
+		return $out;
+	}
+}
+
 if (!function_exists('intersoccer_winback_catalogue_venue_cache_bucket')) {
 	/**
 	 * @return array{available_ages:array<int,string>,entries:array<int,array<string,mixed>>}
@@ -298,24 +502,42 @@ if (!function_exists('intersoccer_winback_catalogue_read_variation_facets')) {
 	 */
 	function intersoccer_winback_catalogue_read_variation_facets($variation_id, $kind) {
 		$variation_id = (int) $variation_id;
-		$product = function_exists('wc_get_product') ? wc_get_product($variation_id) : null;
-		$venue = '';
-		$age = '';
+		$venue = intersoccer_winback_catalogue_read_pa_attribute_from_meta($variation_id, 'pa_intersoccer-venues');
+		$age = intersoccer_winback_catalogue_read_pa_attribute_from_meta($variation_id, 'pa_age-group');
 		$course_day = '';
 		$times = '';
-		if ($product) {
-			$venue = (string) $product->get_attribute('pa_intersoccer-venues');
-			$age = (string) $product->get_attribute('pa_age-group');
-			if ($kind === 'course') {
-				$course_day = (string) $product->get_attribute('pa_course-day');
-				$times = (string) $product->get_attribute('pa_course-times');
-			}
+		if ($kind === 'course') {
+			$course_day = intersoccer_winback_catalogue_read_pa_attribute_from_meta($variation_id, 'pa_course-day');
+			$times = intersoccer_winback_catalogue_read_pa_attribute_from_meta($variation_id, 'pa_course-times');
 		}
 		$girls_only = 0;
-		if ($product && method_exists($product, 'get_parent_id')) {
-			$parent_id = (int) $product->get_parent_id();
-			if ($parent_id > 0 && function_exists('intersoccer_resolve_roster_girls_only_product_attribute')) {
-				$girls_only = intersoccer_resolve_roster_girls_only_product_attribute($parent_id) ? 1 : 0;
+		$parent_id = (int) wp_get_post_parent_id($variation_id);
+		if ($parent_id > 0 && function_exists('intersoccer_resolve_roster_girls_only_product_attribute')) {
+			$girls_only = intersoccer_resolve_roster_girls_only_product_attribute($parent_id) ? 1 : 0;
+		}
+		if ($venue === '' || $age === '') {
+			$product = function_exists('wc_get_product') ? wc_get_product($variation_id) : null;
+			if ($product) {
+				if ($venue === '') {
+					$venue = (string) $product->get_attribute('pa_intersoccer-venues');
+				}
+				if ($age === '') {
+					$age = (string) $product->get_attribute('pa_age-group');
+				}
+				if ($kind === 'course') {
+					if ($course_day === '') {
+						$course_day = (string) $product->get_attribute('pa_course-day');
+					}
+					if ($times === '') {
+						$times = (string) $product->get_attribute('pa_course-times');
+					}
+				}
+				if ($parent_id <= 0 && method_exists($product, 'get_parent_id')) {
+					$parent_id = (int) $product->get_parent_id();
+					if ($parent_id > 0 && function_exists('intersoccer_resolve_roster_girls_only_product_attribute')) {
+						$girls_only = intersoccer_resolve_roster_girls_only_product_attribute($parent_id) ? 1 : 0;
+					}
+				}
 			}
 		}
 
@@ -325,6 +547,7 @@ if (!function_exists('intersoccer_winback_catalogue_read_variation_facets')) {
 			'course_day' => $course_day,
 			'times' => $times,
 			'girls_only' => $girls_only,
+			'booking_type_slug' => intersoccer_winback_catalogue_booking_type_slug_from_meta($variation_id),
 		];
 	}
 }
@@ -336,10 +559,25 @@ if (!function_exists('intersoccer_winback_is_variation_full')) {
 	 * @param int $variation_id
 	 */
 	function intersoccer_winback_is_variation_full($variation_id) {
+		$variation_id = (int) $variation_id;
+		if ($variation_id <= 0) {
+			return false;
+		}
+		$status = get_post_meta($variation_id, '_stock_status', true);
+		if ($status === 'outofstock') {
+			return true;
+		}
+		$manage = get_post_meta($variation_id, '_manage_stock', true);
+		if ($manage === 'yes') {
+			$qty = get_post_meta($variation_id, '_stock', true);
+			if ($qty !== '' && $qty !== null && (int) $qty <= 0) {
+				return true;
+			}
+		}
 		if (!function_exists('wc_get_product')) {
 			return false;
 		}
-		$product = wc_get_product((int) $variation_id);
+		$product = wc_get_product($variation_id);
 		if (!$product) {
 			return false;
 		}
@@ -370,7 +608,7 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 			$today = function_exists('wp_date') ? wp_date('Y-m-d') : gmdate('Y-m-d');
 		}
 
-		$default_lang = function_exists('wpml_get_default_language') ? (string) wpml_get_default_language() : 'en';
+		intersoccer_winback_reset_catalogue_enumeration_memo();
 		$raw_variations = [];
 
 		$parent_ids = get_posts([
@@ -387,61 +625,75 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 			],
 		]);
 
-		if (!empty($parent_ids) && function_exists('update_meta_cache')) {
-			update_meta_cache('post', array_map('intval', (array) $parent_ids));
+		$parent_ids = array_values(array_filter(array_map('intval', (array) $parent_ids)));
+		if (empty($parent_ids)) {
+			return [];
 		}
 
-		foreach ((array) $parent_ids as $parent_id) {
-			$parent_id = (int) $parent_id;
-			if ($parent_id <= 0) {
+		if (function_exists('update_meta_cache')) {
+			update_meta_cache('post', $parent_ids);
+		}
+
+		$parent_kind_map = [];
+		$resolved_parent_ids = [];
+		foreach ($parent_ids as $original_parent_id) {
+			$resolved_parent_id = intersoccer_winback_memo_default_language_product_id($original_parent_id);
+			if ($resolved_parent_id <= 0 || get_post_status($resolved_parent_id) !== 'publish') {
 				continue;
 			}
-			$ptype = get_post_meta($parent_id, '_intersoccer_product_type', true);
+			$ptype = get_post_meta($resolved_parent_id, '_intersoccer_product_type', true);
 			$kind = strtolower((string) $ptype) === 'course' ? 'course' : 'camp';
-			if (function_exists('intersoccer_get_default_language_product_id')) {
-				$parent_id = (int) intersoccer_get_default_language_product_id($parent_id);
-			} elseif (function_exists('apply_filters') && function_exists('wpml_get_default_language')) {
-				$mapped = (int) apply_filters('wpml_object_id', $parent_id, 'product', true, $default_lang);
-				if ($mapped > 0) {
-					$parent_id = $mapped;
-				}
-			}
-			if (get_post_status($parent_id) !== 'publish') {
+			$parent_kind_map[ $original_parent_id ] = [
+				'resolved_parent_id' => $resolved_parent_id,
+				'kind' => $kind,
+			];
+			$resolved_parent_ids[ $resolved_parent_id ] = $resolved_parent_id;
+		}
+
+		if (empty($parent_kind_map)) {
+			return [];
+		}
+
+		$variation_posts = intersoccer_winback_catalogue_batch_variation_posts(array_keys($parent_kind_map));
+		$prime_ids = array_keys($resolved_parent_ids);
+		foreach ($variation_posts as $vp) {
+			$prime_ids[] = (int) $vp['ID'];
+		}
+		$prime_ids = array_values(array_unique(array_filter($prime_ids)));
+		if (function_exists('update_meta_cache')) {
+			update_meta_cache('post', $prime_ids);
+		}
+		if (function_exists('_prime_post_caches')) {
+			_prime_post_caches($prime_ids, true, false);
+		}
+		if (function_exists('update_object_term_cache') && !empty($resolved_parent_ids)) {
+			update_object_term_cache(array_values($resolved_parent_ids), 'product');
+		}
+
+		$variations_by_parent = [];
+		foreach ($variation_posts as $vp) {
+			$parent = (int) $vp['post_parent'];
+			if ($parent <= 0) {
 				continue;
 			}
-
-			$children = get_posts([
-				'post_type' => 'product_variation',
-				'post_parent' => $parent_id,
-				'post_status' => 'publish',
-				'posts_per_page' => -1,
-				'fields' => 'ids',
-			]);
-
-			$prime_ids = [(int) $parent_id];
-			foreach ((array) $children as $child_id) {
-				$child_id = (int) $child_id;
-				if ($child_id > 0) {
-					$prime_ids[] = $child_id;
-				}
+			if (!isset($variations_by_parent[ $parent ])) {
+				$variations_by_parent[ $parent ] = [];
 			}
-			if (function_exists('update_meta_cache')) {
-				update_meta_cache('post', array_values(array_unique($prime_ids)));
-			}
-			if (function_exists('_prime_post_caches')) {
-				_prime_post_caches(array_values(array_unique($prime_ids)), false, false);
-			}
+			$variations_by_parent[ $parent ][] = (int) $vp['ID'];
+		}
 
-			foreach ((array) $children as $variation_id) {
-				$variation_id = (int) $variation_id;
-				$source_id = $variation_id;
-				if (function_exists('intersoccer_get_default_language_variation_id')) {
-					$source_id = (int) intersoccer_get_default_language_variation_id($variation_id);
-				}
-				if ($source_id <= 0) {
-					continue;
-				}
-				if (get_post_status($source_id) !== 'publish') {
+		foreach ($parent_kind_map as $original_parent_id => $parent_bits) {
+			$parent_id = (int) $parent_bits['resolved_parent_id'];
+			$kind = (string) $parent_bits['kind'];
+			$children = $variations_by_parent[ $original_parent_id ] ?? [];
+			if (empty($children)) {
+				continue;
+			}
+			$product_name = get_the_title($parent_id);
+
+			foreach ($children as $variation_id) {
+				$source_id = intersoccer_winback_memo_default_language_variation_id($variation_id);
+				if ($source_id <= 0 || get_post_status($source_id) !== 'publish') {
 					continue;
 				}
 
@@ -466,18 +718,22 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 					'source_variation_id' => $source_id,
 					'product_id' => $parent_id,
 					'start_date' => $start,
-					'product_name' => get_the_title($parent_id),
+					'product_name' => $product_name,
 					'venue_slug' => $facets['venue_slug'],
 					'age_group_slug' => $facets['age_group_slug'],
 					'course_day' => $facets['course_day'],
 					'times' => $facets['times'],
 					'girls_only' => (int) $facets['girls_only'],
+					'booking_type_slug' => (string) ( $facets['booking_type_slug'] ?? 'other' ),
 					'full' => intersoccer_winback_is_variation_full($source_id),
 				];
 			}
 		}
 
+		unset($variation_posts, $variations_by_parent, $parent_kind_map, $resolved_parent_ids);
+
 		$deduped = intersoccer_winback_dedupe_catalogue_variations($raw_variations);
+		unset($raw_variations);
 		$index = [];
 		foreach ($deduped as $row) {
 			$key = intersoccer_winback_catalogue_index_key(
@@ -490,6 +746,7 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 			}
 			$index[$key][] = $row;
 		}
+		unset($deduped);
 		foreach ($index as &$list) {
 			usort($list, static function ($a, $b) {
 				return strcmp((string) $a['start_date'], (string) $b['start_date']);
@@ -619,7 +876,7 @@ if (!function_exists('intersoccer_winback_resolve_catalogue_target_and_more')) {
 			return $empty;
 		}
 
-		$entries = $venue_bucket['entries'];
+		$entries = intersoccer_winback_catalogue_dedupe_rows_by_product_week($venue_bucket['entries']);
 		$target_row = null;
 		$target_pick = null;
 		foreach ($entries as $row) {
@@ -644,11 +901,12 @@ if (!function_exists('intersoccer_winback_resolve_catalogue_target_and_more')) {
 
 		$target_age = (string) $target_pick['slug'];
 		$target = intersoccer_winback_catalogue_row_to_target_shape($target_row, $venue_slug, $target_age);
-		$target_source_id = (int) ( $target_row['source_variation_id'] ?? $target_row['variation_id'] ?? 0 );
 		$target_start = (string) ($target_row['start_date'] ?? '');
 
 		$more_targets = [];
-		$seen_source = [ $target_source_id => true ];
+		$seen_product_week = [];
+		$target_week_key = intersoccer_winback_catalogue_product_week_key($target_row);
+		$seen_product_week[ $target_week_key ] = true;
 		foreach ($entries as $row) {
 			if ((string) ($row['age_group_slug'] ?? '') !== $target_age) {
 				continue;
@@ -657,13 +915,11 @@ if (!function_exists('intersoccer_winback_resolve_catalogue_target_and_more')) {
 			if ($start === '' || $start <= $target_start) {
 				continue;
 			}
-			$source_id = (int) ( $row['source_variation_id'] ?? $row['variation_id'] ?? 0 );
-			if ($source_id > 0 && isset($seen_source[ $source_id ])) {
+			$week_key = intersoccer_winback_catalogue_product_week_key($row);
+			if (isset($seen_product_week[ $week_key ])) {
 				continue;
 			}
-			if ($source_id > 0) {
-				$seen_source[ $source_id ] = true;
-			}
+			$seen_product_week[ $week_key ] = true;
 			$more_targets[] = intersoccer_winback_catalogue_row_to_target_shape($row, $venue_slug, $target_age);
 			if (count($more_targets) >= 3) {
 				break;
