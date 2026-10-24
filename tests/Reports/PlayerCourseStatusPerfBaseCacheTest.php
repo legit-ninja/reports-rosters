@@ -24,7 +24,7 @@ class PlayerCourseStatusPerfBaseCacheTest extends TestCase {
 		$wpdb = $this->counting_wpdb;
 
 		$includes = dirname(__DIR__, 2) . '/includes';
-		foreach (['reports-data.php', 'final-reports-aggregation.php', 'utils.php', 'roster-report-loader.php', 'winback-report-facets.php', 'player-camp-status.php', 'player-course-status.php', 'player-course-status-warmup.php'] as $file) {
+		foreach (['reports-data.php', 'final-reports-aggregation.php', 'utils.php', 'roster-report-loader.php', 'winback-report-facets.php', 'winback-report-cache.php', 'player-camp-status.php', 'player-course-status.php', 'player-course-status-warmup.php'] as $file) {
 			require_once $includes . '/' . $file;
 		}
 		$this->reset_state();
@@ -113,7 +113,7 @@ class PlayerCourseStatusPerfBaseCacheTest extends TestCase {
 	}
 
 	public function test_schema_version_is_v3_and_legacy_v2_blob_is_not_used(): void {
-		$this->assertSame(3, intersoccer_player_course_status_cache_schema_version());
+		$this->assertSame(4, intersoccer_player_course_status_cache_schema_version());
 		$key = intersoccer_player_course_status_cache_transient_key(['year' => 2026]);
 		$legacy_payload = base64_encode((string) gzcompress(maybe_serialize(['rows' => []]), 6));
 		$GLOBALS['intersoccer_test_pcs_transient_store'][ $key ] = $legacy_payload;
@@ -123,8 +123,12 @@ class PlayerCourseStatusPerfBaseCacheTest extends TestCase {
 	public function test_default_ttl_is_twelve_hours_and_filter_overrides(): void {
 		$expected = defined('HOUR_IN_SECONDS') ? 12 * HOUR_IN_SECONDS : 43200;
 		$this->assertSame($expected, intersoccer_player_course_status_cache_ttl());
-		$GLOBALS['intersoccer_test_pcs_cache_ttl_override'] = 99;
+		$GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
+		add_filter('intersoccer_player_course_status_cache_ttl', static function () {
+			return 99;
+		});
 		$this->assertSame(99, intersoccer_player_course_status_cache_ttl());
+		unset($GLOBALS['intersoccer_test_emit_wp_hooks']);
 	}
 
 	public function test_summer_filter_excludes_spring_summer_compound_rows(): void {
@@ -146,39 +150,20 @@ class PlayerCourseStatusPerfBaseCacheTest extends TestCase {
 		$this->assertSame(1, (int) $GLOBALS['intersoccer_test_pcs_generate_inner_call_count']);
 	}
 
-	public function test_filter_from_base_matches_full_generate_for_filter_matrix(): void {
-		$this->seed_dual_season_fixture();
-		$base = intersoccer_player_course_status_build_year_base_dataset(2026, false);
-		$matrix = [
-			['year' => 2026],
-			['year' => 2026, 'season_type' => 'Summer'],
-			['year' => 2026, 'season_type' => 'Spring/Summer 2026'],
-			['year' => 2026, 'season_type' => 'Autumn'],
-			['year' => 2026, 'girls_mode' => 'mixed'],
-			['year' => 2026, 'booked' => 'booked'],
-			['year' => 2026, 'booked' => 'not_booked'],
-			['year' => 2026, 'booking_status' => 'not_booked'],
-			['year' => 2026, 'search' => 'kid'],
-			['year' => 2026, 'venue' => 'geneva-centre'],
-		];
-		foreach ($matrix as $raw_filters) {
-			$filters = intersoccer_player_course_status_normalize_filters($raw_filters);
-			$from_base = intersoccer_player_course_status_apply_filters_to_base($base, $filters);
-			$full = intersoccer_player_course_status_apply_filters_to_base(
-				intersoccer_player_course_status_build_year_base_dataset(2026, false),
-				$filters
-			);
-			$this->assertSame(maybe_serialize($full), maybe_serialize($from_base), 'filter set ' . json_encode($raw_filters));
-			$export_base = [];
-			$export_full = [];
-			foreach ($from_base['rows'] as $row) {
-				$export_base[] = intersoccer_player_course_status_export_row($row);
-			}
-			foreach ($full['rows'] as $row) {
-				$export_full[] = intersoccer_player_course_status_export_row($row);
-			}
-			$this->assertSame($export_full, $export_base);
+	public function test_warm_generate_does_zero_wpdb_and_api_lookups(): void {
+		if (!$this->counting_wpdb instanceof PlayerCourseStatusCountingWpdb) {
+			$this->markTestSkipped('Counting wpdb missing');
 		}
+		$this->seed_dual_season_fixture();
+		intersoccer_player_course_status_generate(['year' => 2026]);
+		$GLOBALS['intersoccer_rr_test_api_counting_enabled'] = true;
+		$GLOBALS['intersoccer_rr_test_api_call_counts'] = [];
+		$this->counting_wpdb->query_count = 0;
+		intersoccer_player_course_status_generate(['year' => 2026, 'season_type' => 'Autumn', 'booked' => 'booked']);
+		$this->assertSame(0, (int) $this->counting_wpdb->query_count);
+		$api_total = array_sum($GLOBALS['intersoccer_rr_test_api_call_counts'] ?? []);
+		$this->assertSame(0, $api_total);
+		unset($GLOBALS['intersoccer_rr_test_api_counting_enabled'], $GLOBALS['intersoccer_rr_test_api_call_counts']);
 	}
 
 	public function test_cold_build_query_count_bounded_across_player_volume(): void {
@@ -207,15 +192,39 @@ class PlayerCourseStatusPerfBaseCacheTest extends TestCase {
 		$this->assertLessThanOrEqual(12, $delta, "query delta {$delta} (small={$small}, large={$large}) must stay within constant bound");
 	}
 
-	public function test_order_touch_schedules_one_debounced_event_without_inline_build(): void {
-		$GLOBALS['intersoccer_test_pcs_warmup_allow_schedule'] = true;
+	public function test_order_touch_schedules_one_pcs_and_one_winback_event_without_inline_build(): void {
+		$GLOBALS['intersoccer_test_pcs_cache_force_enabled'] = true;
+		$GLOBALS['intersoccer_test_winback_cache_force_enabled'] = true;
+		$GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
+		intersoccer_rr_pcs_warmup_bootstrap();
 		$GLOBALS['intersoccer_test_pcs_generate_inner_call_count'] = 0;
-		intersoccer_rr_pcs_warmup_on_order_touch(101);
-		intersoccer_rr_pcs_warmup_on_order_touch(102);
+		$GLOBALS['intersoccer_test_winback_engine_generate_call_count'] = 0;
+		if ($this->counting_wpdb instanceof PlayerCourseStatusCountingWpdb) {
+			$this->counting_wpdb->query_count = 0;
+		}
+		for ($i = 0; $i < 5; $i++) {
+			do_action('woocommerce_order_status_changed', 100 + $i, 'pending', 'completed', null);
+			do_action('woocommerce_update_order', 200 + $i, null);
+		}
 		$this->assertSame(0, (int) $GLOBALS['intersoccer_test_pcs_generate_inner_call_count']);
+		$this->assertSame(0, (int) ($GLOBALS['intersoccer_test_winback_engine_generate_call_count'] ?? 0));
+		if ($this->counting_wpdb instanceof PlayerCourseStatusCountingWpdb) {
+			$this->assertSame(0, (int) $this->counting_wpdb->query_count);
+		}
 		$log = $GLOBALS['intersoccer_test_wp_schedule_single_event_log'] ?? [];
-		$this->assertCount(1, $log);
-		$this->assertSame(intersoccer_rr_pcs_warmup_year_event_hook(), $log[0]['hook']);
+		$pcs = 0;
+		$wb = 0;
+		foreach ($log as $entry) {
+			if (($entry['hook'] ?? '') === intersoccer_rr_pcs_warmup_year_event_hook()) {
+				$pcs++;
+			}
+			if (($entry['hook'] ?? '') === intersoccer_rr_winback_warmup_event_hook()) {
+				$wb++;
+			}
+		}
+		$this->assertSame(1, $pcs);
+		$this->assertSame(1, $wb);
+		unset($GLOBALS['intersoccer_test_emit_wp_hooks']);
 	}
 
 	public function test_daily_warmup_cron_registered_on_bootstrap(): void {

@@ -79,6 +79,7 @@
             <file>tests/Reports/PlayerCourseStatusSeasonLabelTest.php</file>
             <file>tests/Reports/PlayerCourseStatusCacheTest.php</file>
             <file>tests/Reports/PlayerCourseStatusPerfBaseCacheTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusLegacyEquivalenceTest.php</file>
             <file>tests/Reports/WinbackReportCacheTest.php</file>
             <file>tests/Reports/PlayerCampStatusLoadPlayersQueryCountTest.php</file>
             <file>tests/Reports/WinbackReportTest.php</file>

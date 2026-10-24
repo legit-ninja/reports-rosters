@@ -61,7 +61,7 @@ class WinbackReportCacheTest extends TestCase {
 
 	public function test_cache_hit_avoids_engine_regeneration(): void {
 		$filters = ['kind' => 'all', 'venue' => '', 'age_group' => '', 'lookback_months' => 12];
-		$key = intersoccer_winback_report_cache_transient_key($filters);
+		$key = intersoccer_winback_report_cache_transient_key(12);
 		$stored = intersoccer_winback_report_cache_encode_payload($this->minimal_engine_result());
 		$this->assertIsString($stored);
 		$GLOBALS['intersoccer_test_winback_transient_store'][ $key ] = $stored;
@@ -72,24 +72,33 @@ class WinbackReportCacheTest extends TestCase {
 	}
 
 	public function test_marker_change_invalidates_cached_payload(): void {
-		$filters = ['kind' => 'all', 'venue' => '', 'age_group' => '', 'lookback_months' => 12];
-		$key_before = intersoccer_winback_report_cache_transient_key($filters);
-		intersoccer_winback_report_cache_write($filters, $this->minimal_engine_result());
-		$GLOBALS['intersoccer_test_winback_cache_data_version'] = 'mutated-marker';
-		$key_after = intersoccer_winback_report_cache_transient_key($filters);
+		$key_before = intersoccer_winback_report_cache_transient_key(12);
+		intersoccer_winback_report_cache_write(12, $this->minimal_engine_result());
+		$GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
+		add_filter('intersoccer_winback_report_cache_data_version', static function () {
+			return 'mutated-marker';
+		});
+		$key_after = intersoccer_winback_report_cache_transient_key(12);
 		$this->assertNotSame($key_before, $key_after);
-		$this->assertNull(intersoccer_winback_report_cache_read($filters));
-		unset($GLOBALS['intersoccer_test_winback_cache_data_version']);
+		$this->assertNull(intersoccer_winback_report_cache_read(12));
+		unset($GLOBALS['intersoccer_test_emit_wp_hooks']);
 	}
 
 	public function test_refresh_rebuilds_and_rewrites_cache(): void {
 		$filters = ['kind' => 'course', 'venue' => '', 'age_group' => '', 'lookback_months' => 6];
-		$GLOBALS['intersoccer_test_winback_engine_stub_result'] = $this->minimal_engine_result();
+		$GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
+		add_filter('intersoccer_test_winback_engine_stub_result', static function () {
+			return [
+				'rows' => [],
+				'unmapped_facets' => [],
+				'en_unpublished_variations' => [],
+			];
+		});
 		intersoccer_winback_report_engine_generate_cached($filters, ['force_cache_refresh' => true]);
 		$this->assertSame(1, (int) $GLOBALS['intersoccer_test_winback_engine_generate_call_count']);
-		$key = intersoccer_winback_report_cache_transient_key($filters);
+		$key = intersoccer_winback_report_cache_transient_key(6);
 		$this->assertArrayHasKey($key, $GLOBALS['intersoccer_test_winback_transient_store']);
-		unset($GLOBALS['intersoccer_test_winback_engine_stub_result']);
+		unset($GLOBALS['intersoccer_test_emit_wp_hooks']);
 	}
 
 	public function test_export_bytes_identical_cached_vs_uncached(): void {
