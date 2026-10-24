@@ -69,6 +69,7 @@
             <file>tests/Reports/DistressedVariationIdsTest.php</file>
             <file>tests/Reports/PlayerCampStatusTest.php</file>
             <file>tests/Reports/WinbackReportTest.php</file>
+            <file>tests/Reports/WinbackReportQueryCountTest.php</file>
             <file>tests/Reports/FinalReportsMetaTest.php</file>
             <file>tests/Campaign/Final15CampaignFixtureTest.php</file>
             <file>tests/Campaign/CampaignMomentumTest.php</file>

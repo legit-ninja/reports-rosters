@@ -39,6 +39,22 @@ class WinbackReportTest extends TestCase {
 		if (function_exists('intersoccer_roster_report_reset_line_refund_check_state')) {
 			intersoccer_roster_report_reset_line_refund_check_state();
 		}
+		if (function_exists('intersoccer_roster_report_reset_live_order_status_memo')) {
+			intersoccer_roster_report_reset_live_order_status_memo();
+		}
+		if (function_exists('intersoccer_roster_report_reset_order_customer_id_cache')) {
+			intersoccer_roster_report_reset_order_customer_id_cache();
+		}
+		if (function_exists('intersoccer_roster_report_reset_fake_customer_cache')) {
+			intersoccer_roster_report_reset_fake_customer_cache();
+		}
+		if (function_exists('intersoccer_winback_reset_catalogue_target_cache')) {
+			intersoccer_winback_reset_catalogue_target_cache();
+		}
+		if (function_exists('intersoccer_winback_reset_j8_lookup_cache')) {
+			intersoccer_winback_reset_j8_lookup_cache();
+		}
+		unset($GLOBALS['intersoccer_rr_user_billing_phone_cache']);
 		if (function_exists('intersoccer_player_camp_status_reset_dob_gate_cache')) {
 			intersoccer_player_camp_status_reset_dob_gate_cache();
 		}
@@ -131,17 +147,10 @@ class WinbackReportTest extends TestCase {
 	}
 
 	public function test_customer_zero_resolves_before_keying_and_never_idx_zero_zero() {
-		$GLOBALS['intersoccer_test_wc_get_order_callback'] = static function ($order_id) {
-			$order_id = (int) $order_id;
-			if ($order_id !== 9001) {
-				return false;
-			}
-			return new class() {
-				public function get_customer_id() {
-					return 42;
-				}
-			};
-		};
+		$GLOBALS['intersoccer_test_order_customer_id_map'] = [9001 => 42];
+		if (function_exists('intersoccer_roster_report_reset_order_customer_id_cache')) {
+			intersoccer_roster_report_reset_order_customer_id_cache();
+		}
 
 		$row = [
 			'customer_id' => 0,
@@ -155,7 +164,7 @@ class WinbackReportTest extends TestCase {
 		$this->assertSame('name', $key['tier']);
 		$this->assertStringStartsWith('name:42:', $key['key']);
 		$this->assertNotSame('idx:0:0', $key['key']);
-		unset($GLOBALS['intersoccer_test_wc_get_order_callback']);
+		unset($GLOBALS['intersoccer_test_order_customer_id_map']);
 	}
 
 	public function test_fake_customer_proxy_after_resolution() {
@@ -188,13 +197,10 @@ class WinbackReportTest extends TestCase {
 	}
 
 	public function test_legacy_stored_customer_zero_skips_idx_tier() {
-		$GLOBALS['intersoccer_test_wc_get_order_callback'] = static function ($order_id) {
-			return new class() {
-				public function get_customer_id() {
-					return 99;
-				}
-			};
-		};
+		$GLOBALS['intersoccer_test_order_customer_id_map'] = [9001 => 99];
+		if (function_exists('intersoccer_roster_report_reset_order_customer_id_cache')) {
+			intersoccer_roster_report_reset_order_customer_id_cache();
+		}
 		$row = intersoccer_roster_report_row_with_resolved_customer([
 			'customer_id' => 0,
 			'player_index' => 0,
@@ -206,7 +212,7 @@ class WinbackReportTest extends TestCase {
 		$this->assertSame('name', $key['tier']);
 		$this->assertStringStartsWith('name:99:', $key['key']);
 		$this->assertStringNotContainsString('idx:', $key['key']);
-		unset($GLOBALS['intersoccer_test_wc_get_order_callback']);
+		unset($GLOBALS['intersoccer_test_order_customer_id_map']);
 	}
 
 	public function test_cross_tier_uuid_upcoming_matches_idx_history_as_rebooked() {
@@ -445,17 +451,8 @@ class WinbackReportTest extends TestCase {
 
 	public function test_yearless_camp_terms_use_order_year_july_after_march_order() {
 		$camp_terms = 'july-week-1-july-7-july-11-5-days';
-		$GLOBALS['intersoccer_test_wc_get_order_callback'] = static function () {
-			return new class() {
-				public function get_date_created() {
-					return new class() {
-						public function date($format) {
-							return '2025-03-15';
-						}
-					};
-				}
-			};
-		};
+		$GLOBALS['intersoccer_test_order_created_date_map'] = [7101 => '2025-03-15'];
+		intersoccer_winback_reset_order_created_date_cache();
 		$row = $this->winback_camp_row_for_terms_parse($camp_terms, '', 7101);
 		$bits = intersoccer_winback_resolve_row_event_date($row);
 		$this->assertSame('camp_terms_parse', $bits['source']);
@@ -464,17 +461,8 @@ class WinbackReportTest extends TestCase {
 
 	public function test_yearless_camp_terms_book_ahead_february_after_november_order() {
 		$camp_terms = 'february-week-1-february-3-february-7-5-days';
-		$GLOBALS['intersoccer_test_wc_get_order_callback'] = static function () {
-			return new class() {
-				public function get_date_created() {
-					return new class() {
-						public function date($format) {
-							return '2025-11-20';
-						}
-					};
-				}
-			};
-		};
+		$GLOBALS['intersoccer_test_order_created_date_map'] = [7102 => '2025-11-20'];
+		intersoccer_winback_reset_order_created_date_cache();
 		$row = $this->winback_camp_row_for_terms_parse($camp_terms, '', 7102);
 		$bits = intersoccer_winback_resolve_row_event_date($row);
 		$this->assertSame('camp_terms_parse', $bits['source']);
@@ -483,17 +471,8 @@ class WinbackReportTest extends TestCase {
 
 	public function test_season_year_wins_over_order_year_for_camp_terms_parse() {
 		$camp_terms = 'july-week-1-july-7-july-11-5-days';
-		$GLOBALS['intersoccer_test_wc_get_order_callback'] = static function () {
-			return new class() {
-				public function get_date_created() {
-					return new class() {
-						public function date($format) {
-							return '2025-06-01';
-						}
-					};
-				}
-			};
-		};
+		$GLOBALS['intersoccer_test_order_created_date_map'] = [7103 => '2025-06-01'];
+		intersoccer_winback_reset_order_created_date_cache();
 		$row = $this->winback_camp_row_for_terms_parse($camp_terms, 'Summer Camps 2024', 7103);
 		$bits = intersoccer_winback_resolve_row_event_date($row);
 		$this->assertSame('camp_terms_parse', $bits['source']);
@@ -511,17 +490,8 @@ class WinbackReportTest extends TestCase {
 	}
 
 	public function test_order_date_source_when_only_order_date_available() {
-		$GLOBALS['intersoccer_test_wc_get_order_callback'] = static function ($order_id) {
-			return new class() {
-				public function get_date_created() {
-					return new class() {
-						public function date($format) {
-							return '2022-06-01';
-						}
-					};
-				}
-			};
-		};
+		$GLOBALS['intersoccer_test_order_created_date_map'] = [6001 => '2022-06-01'];
+		intersoccer_winback_reset_order_created_date_cache();
 		$row = [
 			'start_date' => null,
 			'variation_id' => 0,

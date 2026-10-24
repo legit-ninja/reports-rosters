@@ -35,6 +35,25 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		$today = function_exists('wp_date') ? wp_date('Y-m-d') : gmdate('Y-m-d');
 		$lookback_start = intersoccer_winback_report_engine_subtract_months($today, $lookback_months);
 
+		if (function_exists('intersoccer_roster_report_reset_live_order_status_memo')) {
+			intersoccer_roster_report_reset_live_order_status_memo();
+		}
+		if (function_exists('intersoccer_roster_report_reset_order_customer_id_cache')) {
+			intersoccer_roster_report_reset_order_customer_id_cache();
+		}
+		if (function_exists('intersoccer_roster_report_reset_fake_customer_cache')) {
+			intersoccer_roster_report_reset_fake_customer_cache();
+		}
+		if (function_exists('intersoccer_roster_report_reset_line_refund_check_state')) {
+			intersoccer_roster_report_reset_line_refund_check_state();
+		}
+		unset($GLOBALS['intersoccer_rr_user_billing_phone_cache'], $GLOBALS['intersoccer_rr_user_account_email_cache']);
+		if (function_exists('intersoccer_winback_reset_catalogue_target_cache')) {
+			intersoccer_winback_reset_catalogue_target_cache();
+		}
+		if (function_exists('intersoccer_winback_reset_j8_lookup_cache')) {
+			intersoccer_winback_reset_j8_lookup_cache();
+		}
 		if (function_exists('intersoccer_winback_reset_current_course_term_cache')) {
 			intersoccer_winback_reset_current_course_term_cache();
 		}
@@ -42,6 +61,12 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		intersoccer_winback_reset_unmapped_facets();
 		$catalogue = intersoccer_winback_enumerate_upcoming_catalogue($today);
 		$history_rows = intersoccer_winback_report_engine_load_history_rows($lookback_start, $today, $kind_filter);
+		if (function_exists('intersoccer_roster_report_prime_order_customer_ids_from_rows')) {
+			intersoccer_roster_report_prime_order_customer_ids_from_rows($history_rows);
+		}
+		if (function_exists('intersoccer_roster_report_prime_line_refund_checks_from_rows')) {
+			intersoccer_roster_report_prime_line_refund_checks_from_rows($history_rows);
+		}
 		if (function_exists('intersoccer_winback_reset_facet_resolution_cache')) {
 			intersoccer_winback_reset_facet_resolution_cache();
 		}
@@ -53,6 +78,11 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		}
 		if (function_exists('intersoccer_winback_prime_order_created_dates_from_rows')) {
 			intersoccer_winback_prime_order_created_dates_from_rows($history_rows);
+		}
+		if (function_exists('intersoccer_roster_report_prime_fake_customer_checks')) {
+			intersoccer_roster_report_prime_fake_customer_checks(
+				intersoccer_roster_report_collect_resolved_customer_ids_from_rows($history_rows)
+			);
 		}
 		$uuid_map = intersoccer_winback_report_engine_load_assigned_player_ids($history_rows);
 		$identity_map = new Intersoccer_Roster_Report_Player_Identity_Map();
@@ -71,6 +101,21 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		}
 
 		$upcoming = intersoccer_winback_report_engine_load_upcoming_roster_rows($today, $kind_filter, $uuid_map, $identity_map);
+		if (function_exists('intersoccer_roster_report_prime_order_customer_ids_from_rows')) {
+			intersoccer_roster_report_prime_order_customer_ids_from_rows($upcoming);
+		}
+		if (function_exists('intersoccer_roster_report_prime_line_refund_checks_from_rows')) {
+			intersoccer_roster_report_prime_line_refund_checks_from_rows($upcoming);
+		}
+		if (function_exists('intersoccer_winback_prime_order_created_dates_from_rows')) {
+			intersoccer_winback_prime_order_created_dates_from_rows($upcoming);
+		}
+		if (function_exists('intersoccer_roster_report_prime_fake_customer_checks')) {
+			intersoccer_roster_report_prime_fake_customer_checks(
+				intersoccer_roster_report_collect_resolved_customer_ids_from_rows($upcoming)
+			);
+		}
+		intersoccer_winback_report_engine_build_j8_lookup($today, $identity_map);
 
 		$by_player_kind = [];
 		$all_rows_by_group = [];
@@ -141,6 +186,19 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 				$by_player_kind[$pk] = $entry;
 			}
 			$all_rows_by_group[ $group_id ][] = $entry;
+		}
+
+		unset($history_rows, $uuid_map);
+
+		$output_customer_ids = [];
+		foreach ($by_player_kind as $history_entry) {
+			$cid = (int) ( $history_entry['row']['customer_id'] ?? 0 );
+			if ($cid > 0) {
+				$output_customer_ids[ $cid ] = $cid;
+			}
+		}
+		if (!empty($output_customer_ids) && function_exists('intersoccer_winback_prime_contact_users')) {
+			intersoccer_winback_prime_contact_users(array_values($output_customer_ids));
 		}
 
 		$output = [];
@@ -234,6 +292,8 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 				'events_in_lookback' => $events_in_lookback,
 			];
 		}
+
+		unset($by_player_kind, $all_rows_by_group, $upcoming, $catalogue);
 
 		return [
 			'rows' => $output,
@@ -438,6 +498,63 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 		unset($GLOBALS['intersoccer_winback_current_course_term_cache']);
 	}
 
+	function intersoccer_winback_reset_j8_lookup_cache() {
+		unset($GLOBALS['intersoccer_winback_j8_lookup_built_for']);
+		unset($GLOBALS['intersoccer_winback_j8_active_keys']);
+		unset($GLOBALS['intersoccer_winback_j8_active_group_ids']);
+	}
+
+	/**
+	 * Precompute J8 running-course player keys and identity groups (once per engine run).
+	 *
+	 * @param Intersoccer_Roster_Report_Player_Identity_Map|null $identity_map
+	 */
+	function intersoccer_winback_report_engine_build_j8_lookup($today, $identity_map = null) {
+		$today = (string) $today;
+		if (isset($GLOBALS['intersoccer_winback_j8_lookup_built_for'])
+			&& $GLOBALS['intersoccer_winback_j8_lookup_built_for'] === $today) {
+			return;
+		}
+		$GLOBALS['intersoccer_winback_j8_active_keys'] = [];
+		$GLOBALS['intersoccer_winback_j8_active_group_ids'] = [];
+		$rows = intersoccer_winback_report_engine_load_current_course_term_rows($today);
+		if (function_exists('intersoccer_roster_report_prime_order_customer_ids_from_rows')) {
+			intersoccer_roster_report_prime_order_customer_ids_from_rows($rows);
+		}
+		if (function_exists('intersoccer_roster_report_prime_line_refund_checks_from_rows')) {
+			intersoccer_roster_report_prime_line_refund_checks_from_rows($rows);
+		}
+		foreach ($rows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			if (!function_exists('intersoccer_roster_row_matches_listing_kind')
+				|| !intersoccer_roster_row_matches_listing_kind($row, 'course')) {
+				continue;
+			}
+			if (!intersoccer_roster_report_row_counts_for_winback($row, 'upcoming_rebooked')) {
+				continue;
+			}
+			$row = intersoccer_roster_report_row_with_resolved_customer($row);
+			if ($identity_map instanceof Intersoccer_Roster_Report_Player_Identity_Map) {
+				$identity_map->register_row($row, '');
+			}
+			$key_bits = intersoccer_roster_report_build_player_key($row, '');
+			$candidate = $key_bits['key'];
+			if ($candidate === '') {
+				continue;
+			}
+			$GLOBALS['intersoccer_winback_j8_active_keys'][ $candidate ] = true;
+			if ($identity_map instanceof Intersoccer_Roster_Report_Player_Identity_Map) {
+				$group_id = $identity_map->group_id($candidate);
+				if ($group_id !== '') {
+					$GLOBALS['intersoccer_winback_j8_active_group_ids'][ $group_id ] = true;
+				}
+			}
+		}
+		$GLOBALS['intersoccer_winback_j8_lookup_built_for'] = $today;
+	}
+
 	/**
 	 * SQL for roster rows that may overlap "today" for J8 (placeholders for start/end Y-m-d).
 	 *
@@ -514,31 +631,104 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 	 * @param array<int,array<string,mixed>> $upcoming
 	 */
 	function intersoccer_winback_report_engine_player_in_current_course_term($player_key, $kind, $today, array $upcoming, $identity_map = null) {
-		if ($kind !== 'course') {
+		if ($kind !== 'course' || $player_key === '') {
 			return false;
 		}
-		$rows = intersoccer_winback_report_engine_load_current_course_term_rows($today);
-		foreach ($rows as $row) {
-			if (!function_exists('intersoccer_roster_row_matches_listing_kind')
-				|| !intersoccer_roster_row_matches_listing_kind($row, 'course')) {
-				continue;
-			}
-			if (!intersoccer_roster_report_row_counts_for_winback($row, 'upcoming_rebooked')) {
-				continue;
-			}
-			$row = intersoccer_roster_report_row_with_resolved_customer($row);
-			$key_bits = intersoccer_roster_report_build_player_key($row, '');
-			$candidate = $key_bits['key'];
-			if ($candidate === $player_key) {
-				return true;
-			}
-			if ($identity_map instanceof Intersoccer_Roster_Report_Player_Identity_Map
-				&& $identity_map->same_player($candidate, $player_key)) {
+		intersoccer_winback_report_engine_build_j8_lookup($today, $identity_map);
+		$active_keys = $GLOBALS['intersoccer_winback_j8_active_keys'] ?? [];
+		if (!empty($active_keys[ $player_key ])) {
+			return true;
+		}
+		if ($identity_map instanceof Intersoccer_Roster_Report_Player_Identity_Map) {
+			$group_id = $identity_map->group_id($player_key);
+			$active_groups = $GLOBALS['intersoccer_winback_j8_active_group_ids'] ?? [];
+			if ($group_id !== '' && !empty($active_groups[ $group_id ])) {
 				return true;
 			}
 		}
 
 		return false;
+	}
+
+	function intersoccer_winback_prime_contact_users(array $customer_ids) {
+		$customer_ids = array_values(array_unique(array_filter(array_map('intval', $customer_ids))));
+		if (empty($customer_ids)) {
+			return;
+		}
+		if (function_exists('cache_users')) {
+			cache_users($customer_ids);
+		}
+		if (function_exists('update_meta_cache')) {
+			update_meta_cache('user', $customer_ids);
+		}
+		if (!isset($GLOBALS['intersoccer_rr_user_billing_phone_cache'])
+			|| !is_array($GLOBALS['intersoccer_rr_user_billing_phone_cache'])) {
+			$GLOBALS['intersoccer_rr_user_billing_phone_cache'] = [];
+		}
+		if (!isset($GLOBALS['intersoccer_rr_user_account_email_cache'])
+			|| !is_array($GLOBALS['intersoccer_rr_user_account_email_cache'])) {
+			$GLOBALS['intersoccer_rr_user_account_email_cache'] = [];
+		}
+		$pending = [];
+		foreach ($customer_ids as $customer_id) {
+			if (!array_key_exists($customer_id, $GLOBALS['intersoccer_rr_user_billing_phone_cache'])) {
+				$pending[] = $customer_id;
+			}
+		}
+		if (empty($pending)) {
+			return;
+		}
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
+			foreach ($pending as $customer_id) {
+				$seeded = $GLOBALS['intersoccer_test_user_meta'][ $customer_id ]['billing_phone'] ?? '';
+				$GLOBALS['intersoccer_rr_user_billing_phone_cache'][ $customer_id ] = trim((string) $seeded);
+			}
+
+			return;
+		}
+		global $wpdb;
+		if (!is_object($wpdb) || !isset($wpdb->prefix)) {
+			return;
+		}
+		foreach (array_chunk($pending, 500) as $chunk) {
+			$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+			$sql = "SELECT user_id, meta_value FROM {$wpdb->usermeta} WHERE meta_key = 'billing_phone' AND user_id IN ({$placeholders})";
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$results = $wpdb->get_results($wpdb->prepare($sql, $chunk), ARRAY_A);
+			foreach ((array) $results as $result) {
+				if (!is_array($result)) {
+					continue;
+				}
+				$uid = (int) ( $result['user_id'] ?? 0 );
+				if ($uid > 0) {
+					$GLOBALS['intersoccer_rr_user_billing_phone_cache'][ $uid ] = trim((string) ( $result['meta_value'] ?? '' ));
+				}
+			}
+		}
+		foreach ($pending as $customer_id) {
+			if (!array_key_exists($customer_id, $GLOBALS['intersoccer_rr_user_billing_phone_cache'])) {
+				$GLOBALS['intersoccer_rr_user_billing_phone_cache'][ $customer_id ] = '';
+			}
+		}
+		foreach ($customer_ids as $customer_id) {
+			if (array_key_exists($customer_id, $GLOBALS['intersoccer_rr_user_account_email_cache'])) {
+				continue;
+			}
+			$account_email = '';
+			if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING
+				&& isset($GLOBALS['intersoccer_test_get_userdata'][ $customer_id ])) {
+				$user = $GLOBALS['intersoccer_test_get_userdata'][ $customer_id ];
+				if ($user && !empty($user->user_email)) {
+					$account_email = (string) $user->user_email;
+				}
+			} elseif (function_exists('get_userdata')) {
+				$user = get_userdata($customer_id);
+				if ($user && !empty($user->user_email)) {
+					$account_email = (string) $user->user_email;
+				}
+			}
+			$GLOBALS['intersoccer_rr_user_account_email_cache'][ $customer_id ] = $account_email;
+		}
 	}
 
 	/**
@@ -595,15 +785,23 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 		$billing_email = trim((string) ($row['parent_email'] ?? ''));
 		$billing_phone = trim((string) ($row['parent_phone'] ?? ''));
 		$account_email = '';
-		if ($customer_id > 0 && function_exists('get_userdata')) {
-			$user = get_userdata($customer_id);
-			if ($user) {
-				$account_email = (string) $user->user_email;
+		if ($customer_id > 0) {
+			if (isset($GLOBALS['intersoccer_rr_user_account_email_cache'][ $customer_id ])) {
+				$account_email = (string) $GLOBALS['intersoccer_rr_user_account_email_cache'][ $customer_id ];
+			} elseif (function_exists('get_userdata')) {
+				$user = get_userdata($customer_id);
+				if ($user) {
+					$account_email = (string) $user->user_email;
+				}
 			}
 		}
 		$billing_phone_meta = '';
 		if ($customer_id > 0) {
-			$billing_phone_meta = trim((string) get_user_meta($customer_id, 'billing_phone', true));
+			if (isset($GLOBALS['intersoccer_rr_user_billing_phone_cache'][ $customer_id ])) {
+				$billing_phone_meta = (string) $GLOBALS['intersoccer_rr_user_billing_phone_cache'][ $customer_id ];
+			} else {
+				$billing_phone_meta = trim((string) get_user_meta($customer_id, 'billing_phone', true));
+			}
 		}
 		if ($billing_phone === '' && $billing_phone_meta !== '') {
 			$billing_phone = $billing_phone_meta;

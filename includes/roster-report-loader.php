@@ -191,6 +191,470 @@ if (!function_exists('intersoccer_roster_report_collect_order_ids_from_rows')) {
 	}
 }
 
+if (!function_exists('intersoccer_roster_report_reset_live_order_status_memo')) {
+	/**
+	 * @internal Tests and win-back engine — clear shared live status cache.
+	 */
+	function intersoccer_roster_report_reset_live_order_status_memo() {
+		unset($GLOBALS['intersoccer_rr_live_order_status_memo']);
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_live_order_status_memo')) {
+	/**
+	 * @return array<int,string>
+	 */
+	function &intersoccer_roster_report_live_order_status_memo() {
+		if (!isset($GLOBALS['intersoccer_rr_live_order_status_memo'])
+			|| !is_array($GLOBALS['intersoccer_rr_live_order_status_memo'])) {
+			$GLOBALS['intersoccer_rr_live_order_status_memo'] = [];
+		}
+
+		return $GLOBALS['intersoccer_rr_live_order_status_memo'];
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_prime_live_order_statuses')) {
+	/**
+	 * Merge batched live statuses into the per-request memo (one query per missing chunk).
+	 *
+	 * @param int[] $order_ids
+	 */
+	function intersoccer_roster_report_prime_live_order_statuses(array $order_ids) {
+		$order_ids = array_values(array_unique(array_filter(array_map('intval', $order_ids))));
+		if (empty($order_ids)) {
+			return;
+		}
+		$memo = &intersoccer_roster_report_live_order_status_memo();
+		$missing = [];
+		foreach ($order_ids as $order_id) {
+			if (!array_key_exists($order_id, $memo)) {
+				$missing[] = $order_id;
+			}
+		}
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
+			$missing = $order_ids;
+		}
+		if (empty($missing)) {
+			return;
+		}
+		$loaded = intersoccer_roster_report_batch_load_live_order_statuses($missing);
+		foreach ($loaded as $id => $status) {
+			$memo[ (int) $id ] = (string) $status;
+		}
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_reset_order_customer_id_cache')) {
+	/**
+	 * @internal Tests and win-back engine.
+	 */
+	function intersoccer_roster_report_reset_order_customer_id_cache() {
+		unset($GLOBALS['intersoccer_rr_order_customer_id_cache']);
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_order_customer_id_cache')) {
+	/**
+	 * @return array<int,int>
+	 */
+	function &intersoccer_roster_report_order_customer_id_cache() {
+		if (!isset($GLOBALS['intersoccer_rr_order_customer_id_cache'])
+			|| !is_array($GLOBALS['intersoccer_rr_order_customer_id_cache'])) {
+			$GLOBALS['intersoccer_rr_order_customer_id_cache'] = [];
+		}
+
+		return $GLOBALS['intersoccer_rr_order_customer_id_cache'];
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_batch_load_order_customer_ids')) {
+	/**
+	 * Batch-resolve Woo customer user IDs for orders (HPOS or postmeta, no wc_get_order).
+	 *
+	 * @param int[] $order_ids
+	 * @return array<int,int> order_id => customer user id (0 when unknown).
+	 */
+	function intersoccer_roster_report_batch_load_order_customer_ids(array $order_ids) {
+		$order_ids = array_values(array_unique(array_filter(array_map('intval', $order_ids))));
+		if (empty($order_ids)) {
+			return [];
+		}
+
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING
+			&& isset($GLOBALS['intersoccer_test_order_customer_id_map'])
+			&& is_array($GLOBALS['intersoccer_test_order_customer_id_map'])) {
+			$out = [];
+			foreach ($order_ids as $order_id) {
+				if (array_key_exists($order_id, $GLOBALS['intersoccer_test_order_customer_id_map'])) {
+					$out[ $order_id ] = (int) $GLOBALS['intersoccer_test_order_customer_id_map'][ $order_id ];
+				}
+			}
+
+			return $out;
+		}
+
+		global $wpdb;
+		if (!is_object($wpdb) || !isset($wpdb->prefix)) {
+			return [];
+		}
+
+		$map = [];
+		$chunks = array_chunk($order_ids, 500);
+		$use_hpos = intersoccer_roster_report_uses_hpos_orders_table();
+
+		foreach ($chunks as $chunk) {
+			$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+			if ($use_hpos) {
+				$table = $wpdb->prefix . 'wc_orders';
+				$sql = "SELECT id, customer_id FROM {$table} WHERE id IN ({$placeholders})";
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$results = $wpdb->get_results($wpdb->prepare($sql, $chunk), ARRAY_A);
+				foreach ((array) $results as $result) {
+					if (!is_array($result)) {
+						continue;
+					}
+					$id = (int) ( $result['id'] ?? 0 );
+					if ($id > 0) {
+						$map[ $id ] = (int) ( $result['customer_id'] ?? 0 );
+					}
+				}
+				$missing = array_values(array_diff($chunk, array_keys($map)));
+				if (!empty($missing)) {
+					$map = array_merge($map, intersoccer_roster_report_batch_load_order_customer_ids_from_postmeta($missing));
+				}
+			} else {
+				$map = array_merge($map, intersoccer_roster_report_batch_load_order_customer_ids_from_postmeta($chunk));
+			}
+		}
+
+		return $map;
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_batch_load_order_customer_ids_from_postmeta')) {
+	/**
+	 * @param int[] $order_ids
+	 * @return array<int,int>
+	 */
+	function intersoccer_roster_report_batch_load_order_customer_ids_from_postmeta(array $order_ids) {
+		$order_ids = array_values(array_unique(array_filter(array_map('intval', $order_ids))));
+		if (empty($order_ids)) {
+			return [];
+		}
+		global $wpdb;
+		if (!is_object($wpdb) || !isset($wpdb->prefix)) {
+			return [];
+		}
+		$map = [];
+		$chunks = array_chunk($order_ids, 500);
+		foreach ($chunks as $chunk) {
+			$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+			$sql = "SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = '_customer_user' AND post_id IN ({$placeholders})";
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$results = $wpdb->get_results($wpdb->prepare($sql, $chunk), ARRAY_A);
+			foreach ((array) $results as $result) {
+				if (!is_array($result)) {
+					continue;
+				}
+				$id = (int) ( $result['post_id'] ?? 0 );
+				if ($id > 0) {
+					$map[ $id ] = (int) ( $result['meta_value'] ?? 0 );
+				}
+			}
+		}
+
+		return $map;
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_prime_order_customer_ids')) {
+	/**
+	 * @param int[] $order_ids
+	 */
+	function intersoccer_roster_report_prime_order_customer_ids(array $order_ids) {
+		$loaded = intersoccer_roster_report_batch_load_order_customer_ids($order_ids);
+		if (empty($loaded)) {
+			return;
+		}
+		$cache = &intersoccer_roster_report_order_customer_id_cache();
+		foreach ($loaded as $order_id => $customer_id) {
+			$cache[ (int) $order_id ] = (int) $customer_id;
+		}
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_prime_order_customer_ids_from_rows')) {
+	/**
+	 * @param array<int,array<string,mixed>> $rows
+	 */
+	function intersoccer_roster_report_prime_order_customer_ids_from_rows(array $rows) {
+		intersoccer_roster_report_prime_order_customer_ids(
+			intersoccer_roster_report_collect_order_ids_from_rows($rows)
+		);
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_reset_fake_customer_cache')) {
+	/**
+	 * @internal Tests and win-back engine.
+	 */
+	function intersoccer_roster_report_reset_fake_customer_cache() {
+		unset($GLOBALS['intersoccer_rr_fake_customer_cache']);
+		unset($GLOBALS['intersoccer_rr_cleanup_audit_id_column']);
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_cleanup_audit_id_column')) {
+	/**
+	 * Memoized cleanup_audit user id column name (user_id or customer_id).
+	 */
+	function intersoccer_roster_report_cleanup_audit_id_column() {
+		if (array_key_exists('intersoccer_rr_cleanup_audit_id_column', $GLOBALS)) {
+			return $GLOBALS['intersoccer_rr_cleanup_audit_id_column'];
+		}
+		if (!intersoccer_roster_report_cleanup_audit_table_exists()) {
+			$GLOBALS['intersoccer_rr_cleanup_audit_id_column'] = null;
+
+			return null;
+		}
+		global $wpdb;
+		if (!is_object($wpdb) || !isset($wpdb->prefix) || $wpdb->prefix === '') {
+			$GLOBALS['intersoccer_rr_cleanup_audit_id_column'] = null;
+
+			return null;
+		}
+		$table = $wpdb->prefix . 'intersoccer_cleanup_audit';
+		$col = $wpdb->get_results("DESCRIBE {$table}", ARRAY_A);
+		if (!is_array($col)) {
+			$GLOBALS['intersoccer_rr_cleanup_audit_id_column'] = null;
+
+			return null;
+		}
+		$fields = array_column($col, 'Field');
+		$id_column = in_array('user_id', $fields, true) ? 'user_id' : (in_array('customer_id', $fields, true) ? 'customer_id' : null);
+		$GLOBALS['intersoccer_rr_cleanup_audit_id_column'] = $id_column;
+
+		return $id_column;
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_prime_fake_customer_checks')) {
+	/**
+	 * Batch user existence + cleanup-audit membership for many customer IDs.
+	 *
+	 * @param int[] $customer_ids
+	 */
+	function intersoccer_roster_report_prime_fake_customer_checks(array $customer_ids) {
+		$customer_ids = array_values(array_unique(array_filter(array_map('intval', $customer_ids))));
+		if (empty($customer_ids)) {
+			return;
+		}
+		if (!isset($GLOBALS['intersoccer_rr_fake_customer_cache']) || !is_array($GLOBALS['intersoccer_rr_fake_customer_cache'])) {
+			$GLOBALS['intersoccer_rr_fake_customer_cache'] = [];
+		}
+		$cache = &$GLOBALS['intersoccer_rr_fake_customer_cache'];
+		$pending = [];
+		foreach ($customer_ids as $customer_id) {
+			if (!array_key_exists($customer_id, $cache)) {
+				$pending[] = $customer_id;
+			}
+		}
+		if (empty($pending)) {
+			return;
+		}
+
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING
+			&& isset($GLOBALS['intersoccer_test_fake_customer_map'])
+			&& is_array($GLOBALS['intersoccer_test_fake_customer_map'])) {
+			foreach ($pending as $customer_id) {
+				if (array_key_exists($customer_id, $GLOBALS['intersoccer_test_fake_customer_map'])) {
+					$cache[ $customer_id ] = (bool) $GLOBALS['intersoccer_test_fake_customer_map'][ $customer_id ];
+				}
+			}
+			$pending = array_values(array_filter($pending, static function ($id) use ($cache) {
+				return !array_key_exists($id, $cache);
+			}));
+			if (empty($pending)) {
+				return;
+			}
+		}
+
+		global $wpdb;
+		$existing_users = [];
+		if (is_object($wpdb) && isset($wpdb->prefix) && $wpdb->prefix !== '') {
+			foreach (array_chunk($pending, 500) as $chunk) {
+				$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+				$sql = "SELECT ID FROM {$wpdb->users} WHERE ID IN ({$placeholders})";
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$results = $wpdb->get_results($wpdb->prepare($sql, $chunk), ARRAY_A);
+				foreach ((array) $results as $result) {
+					if (!is_array($result)) {
+						continue;
+					}
+					$uid = (int) ( $result['ID'] ?? 0 );
+					if ($uid > 0) {
+						$existing_users[ $uid ] = true;
+					}
+				}
+			}
+		}
+
+		$audit_hits = [];
+		$id_column = intersoccer_roster_report_cleanup_audit_id_column();
+		if ($id_column !== null && is_object($wpdb) && isset($wpdb->prefix)) {
+			$table = $wpdb->prefix . 'intersoccer_cleanup_audit';
+			foreach (array_chunk($pending, 500) as $chunk) {
+				$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+				$sql = "SELECT {$id_column} FROM {$table} WHERE {$id_column} IN ({$placeholders})";
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$results = $wpdb->get_results($wpdb->prepare($sql, $chunk), ARRAY_A);
+				foreach ((array) $results as $result) {
+					if (!is_array($result)) {
+						continue;
+					}
+					$uid = (int) ( $result[ $id_column ] ?? 0 );
+					if ($uid > 0) {
+						$audit_hits[ $uid ] = true;
+					}
+				}
+			}
+		}
+
+		foreach ($pending as $customer_id) {
+			if ($customer_id <= 0) {
+				$cache[ $customer_id ] = true;
+				continue;
+			}
+			$user_exists = isset($existing_users[ $customer_id ]);
+			if (!$user_exists && defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING
+				&& function_exists('get_userdata')) {
+				$user_exists = (bool) get_userdata($customer_id);
+			}
+			if (!$user_exists) {
+				$cache[ $customer_id ] = true;
+				continue;
+			}
+			$cache[ $customer_id ] = isset($audit_hits[ $customer_id ]);
+		}
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_collect_resolved_customer_ids_from_rows')) {
+	/**
+	 * Customer IDs after order fallback (for fake-customer batch priming).
+	 *
+	 * @param array<int,array<string,mixed>> $rows
+	 * @return int[]
+	 */
+	function intersoccer_roster_report_collect_resolved_customer_ids_from_rows(array $rows) {
+		$ids = [];
+		foreach ($rows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$cid = (int) ( $row['customer_id'] ?? 0 );
+			if ($cid <= 0) {
+				$cid = intersoccer_roster_report_resolve_row_customer_id($row);
+			}
+			if ($cid > 0) {
+				$ids[ $cid ] = $cid;
+			}
+		}
+
+		return array_values($ids);
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_batch_load_order_ids_with_refunds')) {
+	/**
+	 * Order IDs that have at least one refund child (no wc_get_order).
+	 *
+	 * @param int[] $order_ids
+	 * @return array<int,true>
+	 */
+	function intersoccer_roster_report_batch_load_order_ids_with_refunds(array $order_ids) {
+		$order_ids = array_values(array_unique(array_filter(array_map('intval', $order_ids))));
+		if (empty($order_ids)) {
+			return [];
+		}
+
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING
+			&& isset($GLOBALS['intersoccer_test_orders_with_refunds'])
+			&& is_array($GLOBALS['intersoccer_test_orders_with_refunds'])) {
+			$out = [];
+			foreach ($order_ids as $order_id) {
+				if (!empty($GLOBALS['intersoccer_test_orders_with_refunds'][ $order_id ])) {
+					$out[ $order_id ] = true;
+				}
+			}
+
+			return $out;
+		}
+
+		global $wpdb;
+		if (!is_object($wpdb) || !isset($wpdb->prefix)) {
+			return [];
+		}
+
+		$with_refunds = [];
+		$chunks = array_chunk($order_ids, 500);
+		$use_hpos = intersoccer_roster_report_uses_hpos_orders_table();
+
+		foreach ($chunks as $chunk) {
+			$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+			if ($use_hpos) {
+				$table = $wpdb->prefix . 'wc_orders';
+				$sql = "SELECT DISTINCT parent_order_id FROM {$table} WHERE type = 'shop_order_refund' AND parent_order_id IN ({$placeholders})";
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$results = $wpdb->get_results($wpdb->prepare($sql, $chunk), ARRAY_A);
+				foreach ((array) $results as $result) {
+					if (!is_array($result)) {
+						continue;
+					}
+					$parent = (int) ( $result['parent_order_id'] ?? 0 );
+					if ($parent > 0) {
+						$with_refunds[ $parent ] = true;
+					}
+				}
+			}
+			$sql = "SELECT DISTINCT post_parent FROM {$wpdb->posts} WHERE post_type = 'shop_order_refund' AND post_parent IN ({$placeholders})";
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$results = $wpdb->get_results($wpdb->prepare($sql, $chunk), ARRAY_A);
+			foreach ((array) $results as $result) {
+				if (!is_array($result)) {
+					continue;
+				}
+				$parent = (int) ( $result['post_parent'] ?? 0 );
+				if ($parent > 0) {
+					$with_refunds[ $parent ] = true;
+				}
+			}
+		}
+
+		return $with_refunds;
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_prime_line_refund_checks_from_rows')) {
+	/**
+	 * @param array<int,array<string,mixed>> $rows
+	 */
+	function intersoccer_roster_report_prime_line_refund_checks_from_rows(array $rows) {
+		$order_ids = intersoccer_roster_report_collect_order_ids_from_rows($rows);
+		if (empty($order_ids)) {
+			return;
+		}
+		if (!isset($GLOBALS['intersoccer_rr_orders_with_refunds']) || !is_array($GLOBALS['intersoccer_rr_orders_with_refunds'])) {
+			$GLOBALS['intersoccer_rr_orders_with_refunds'] = [];
+		}
+		$loaded = intersoccer_roster_report_batch_load_order_ids_with_refunds($order_ids);
+		foreach ($loaded as $order_id => $_flag) {
+			$GLOBALS['intersoccer_rr_orders_with_refunds'][ (int) $order_id ] = true;
+		}
+	}
+}
+
 if (!function_exists('intersoccer_roster_report_batch_load_live_order_statuses_from_posts')) {
 	/**
 	 * @param int[] $order_ids
@@ -439,9 +903,10 @@ if (!function_exists('intersoccer_roster_report_rows_apply_live_order_status')) 
 	 */
 	function intersoccer_roster_report_rows_apply_live_order_status(array $rows, $live_status_map = null) {
 		if ($live_status_map === null) {
-			$live_status_map = intersoccer_roster_report_batch_load_live_order_statuses(
+			intersoccer_roster_report_prime_live_order_statuses(
 				intersoccer_roster_report_collect_order_ids_from_rows($rows)
 			);
+			$live_status_map = intersoccer_roster_report_live_order_status_memo();
 		}
 		foreach ($rows as &$row) {
 			if (!is_array($row)) {
@@ -559,6 +1024,8 @@ if (!function_exists('intersoccer_roster_report_reset_line_refund_check_state'))
 	 */
 	function intersoccer_roster_report_reset_line_refund_check_state() {
 		unset($GLOBALS['intersoccer_rr_line_refund_order_cache']);
+		unset($GLOBALS['intersoccer_rr_line_refund_item_result_cache']);
+		unset($GLOBALS['intersoccer_rr_orders_with_refunds']);
 	}
 }
 
@@ -594,25 +1061,48 @@ if (!function_exists('intersoccer_roster_report_row_line_is_fully_refunded')) {
 			return false;
 		}
 
-		if (!function_exists('wc_get_order')) {
+		if (!isset($GLOBALS['intersoccer_rr_line_refund_item_result_cache'])
+			|| !is_array($GLOBALS['intersoccer_rr_line_refund_item_result_cache'])) {
+			$GLOBALS['intersoccer_rr_line_refund_item_result_cache'] = [];
+		}
+		$item_cache = &$GLOBALS['intersoccer_rr_line_refund_item_result_cache'];
+		if (array_key_exists($order_item_id, $item_cache)) {
+			return (bool) $item_cache[ $order_item_id ];
+		}
+
+		if (!isset($GLOBALS['intersoccer_rr_orders_with_refunds'])
+			|| !is_array($GLOBALS['intersoccer_rr_orders_with_refunds'])) {
+			$GLOBALS['intersoccer_rr_orders_with_refunds'] = intersoccer_roster_report_batch_load_order_ids_with_refunds([$order_id]);
+		} elseif (!array_key_exists($order_id, $GLOBALS['intersoccer_rr_orders_with_refunds'])) {
+			$loaded = intersoccer_roster_report_batch_load_order_ids_with_refunds([$order_id]);
+			foreach ($loaded as $oid => $_flag) {
+				$GLOBALS['intersoccer_rr_orders_with_refunds'][ (int) $oid ] = true;
+			}
+		}
+		$orders_with_refunds = $GLOBALS['intersoccer_rr_orders_with_refunds'];
+		if (empty($orders_with_refunds[ $order_id ])) {
+			$item_cache[ $order_item_id ] = false;
+
 			return false;
 		}
 
-		if (!isset($GLOBALS['intersoccer_rr_line_refund_order_cache']) || !is_array($GLOBALS['intersoccer_rr_line_refund_order_cache'])) {
-			$GLOBALS['intersoccer_rr_line_refund_order_cache'] = [];
+		if (!function_exists('wc_get_order')) {
+			$item_cache[ $order_item_id ] = false;
+
+			return false;
 		}
-		$cache = &$GLOBALS['intersoccer_rr_line_refund_order_cache'];
-		if (!array_key_exists($order_id, $cache)) {
-			$cache[ $order_id ] = wc_get_order($order_id);
-		}
-		$order = $cache[ $order_id ];
+
+		$order = wc_get_order($order_id);
 		if (!$order) {
+			$item_cache[ $order_item_id ] = false;
+
 			return false;
 		}
 
 		$service = new RosterRefundService();
+		$item_cache[ $order_item_id ] = $service->isOrderItemFullyRefunded($order, $order_item_id);
 
-		return $service->isOrderItemFullyRefunded($order, $order_item_id);
+		return (bool) $item_cache[ $order_item_id ];
 	}
 }
 
@@ -674,22 +1164,21 @@ if (!function_exists('intersoccer_roster_report_resolve_order_customer_id')) {
 		if ($order_id <= 0) {
 			return 0;
 		}
-		if (function_exists('wc_get_order')) {
-			$order = wc_get_order($order_id);
-			if ($order) {
-				return (int) $order->get_customer_id();
-			}
+		$cache = &intersoccer_roster_report_order_customer_id_cache();
+		if (array_key_exists($order_id, $cache)) {
+			return (int) $cache[ $order_id ];
 		}
-		global $wpdb;
-		$val = $wpdb->get_var(
-			$wpdb->prepare(
-				"SELECT meta_value FROM {$wpdb->postmeta} WHERE post_id = %d AND meta_key = %s LIMIT 1",
-				$order_id,
-				'_customer_user'
-			)
-		);
 
-		return (int) $val;
+		$loaded = intersoccer_roster_report_batch_load_order_customer_ids([$order_id]);
+		if (isset($loaded[ $order_id ])) {
+			$cache[ $order_id ] = (int) $loaded[ $order_id ];
+
+			return (int) $cache[ $order_id ];
+		}
+
+		$cache[ $order_id ] = 0;
+
+		return 0;
 	}
 }
 
@@ -738,10 +1227,22 @@ if (!function_exists('intersoccer_roster_report_is_fake_customer')) {
 		if ($customer_id <= 0) {
 			return true;
 		}
+		if (isset($GLOBALS['intersoccer_rr_fake_customer_cache'])
+			&& is_array($GLOBALS['intersoccer_rr_fake_customer_cache'])
+			&& array_key_exists($customer_id, $GLOBALS['intersoccer_rr_fake_customer_cache'])) {
+			return (bool) $GLOBALS['intersoccer_rr_fake_customer_cache'][ $customer_id ];
+		}
+
+		intersoccer_roster_report_prime_fake_customer_checks([$customer_id]);
+		if (isset($GLOBALS['intersoccer_rr_fake_customer_cache'][ $customer_id ])) {
+			return (bool) $GLOBALS['intersoccer_rr_fake_customer_cache'][ $customer_id ];
+		}
+
 		if (!function_exists('get_userdata') || !get_userdata($customer_id)) {
 			return true;
 		}
-		if (!intersoccer_roster_report_cleanup_audit_table_exists()) {
+		$id_column = intersoccer_roster_report_cleanup_audit_id_column();
+		if ($id_column === null) {
 			return false;
 		}
 		global $wpdb;
@@ -749,15 +1250,6 @@ if (!function_exists('intersoccer_roster_report_is_fake_customer')) {
 			return false;
 		}
 		$table = $wpdb->prefix . 'intersoccer_cleanup_audit';
-		$col = $wpdb->get_results("DESCRIBE {$table}", ARRAY_A);
-		if (!is_array($col)) {
-			return false;
-		}
-		$fields = array_column($col, 'Field');
-		$id_column = in_array('user_id', $fields, true) ? 'user_id' : (in_array('customer_id', $fields, true) ? 'customer_id' : null);
-		if ($id_column === null) {
-			return false;
-		}
 		$hit = $wpdb->get_var(
 			$wpdb->prepare(
 				"SELECT {$id_column} FROM {$table} WHERE {$id_column} = %d LIMIT 1",

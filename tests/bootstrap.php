@@ -327,10 +327,19 @@ if (!class_exists('InterSoccerRRTestMeta')) {
     }
 }
 
+if (!function_exists('get_term_by')) {
+    function get_term_by($field, $value, $taxonomy = '') {
+        if (isset($GLOBALS['intersoccer_test_get_term_by_call_count'])) {
+            $GLOBALS['intersoccer_test_get_term_by_call_count']++;
+        }
+        return false;
+    }
+}
+
 if (!function_exists('get_post_meta')) {
     function get_post_meta($post_id, $key = '', $single = false) {
         global $intersoccer_test_get_post_meta_call_count;
-        if (isset($intersoccer_test_get_post_meta_call_count)) {
+        if (isset($GLOBALS['intersoccer_test_get_post_meta_call_count'])) {
             $intersoccer_test_get_post_meta_call_count++;
         }
         if ($key !== '' && isset(InterSoccerRRTestMeta::$data[$post_id][$key])) {
@@ -372,6 +381,9 @@ if (!function_exists('add_post_meta')) {
 // User meta functions
 if (!function_exists('get_user_meta')) {
     function get_user_meta($user_id, $key = '', $single = false) {
+        if (isset($GLOBALS['intersoccer_test_get_user_meta_call_count'])) {
+            $GLOBALS['intersoccer_test_get_user_meta_call_count']++;
+        }
         // Tests may seed synthetic user meta: $GLOBALS['intersoccer_test_user_meta'][$user_id][$key] = value.
         $seeded = $GLOBALS['intersoccer_test_user_meta'][(int) $user_id] ?? null;
         if (is_array($seeded) && $key !== '' && array_key_exists($key, $seeded)) {
@@ -981,6 +993,9 @@ if (!class_exists('WC_Order_Refund')) {
 // WooCommerce functions
 if (!function_exists('wc_get_order')) {
     function wc_get_order($order_id) {
+        if (isset($GLOBALS['intersoccer_test_wc_get_order_call_count'])) {
+            $GLOBALS['intersoccer_test_wc_get_order_call_count']++;
+        }
         global $intersoccer_test_wc_get_order_callback;
         if (is_callable($intersoccer_test_wc_get_order_callback)) {
             return call_user_func($intersoccer_test_wc_get_order_callback, $order_id);
@@ -1021,6 +1036,9 @@ if (!function_exists('wc_get_product')) {
 
 if (!function_exists('wc_get_order_item_meta')) {
     function wc_get_order_item_meta($item_id, $key, $single = true) {
+        if (isset($GLOBALS['intersoccer_test_wc_get_order_item_meta_call_count'])) {
+            $GLOBALS['intersoccer_test_wc_get_order_item_meta_call_count']++;
+        }
         return $single ? '' : [];
     }
 }
