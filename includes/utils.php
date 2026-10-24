@@ -4718,30 +4718,67 @@ if (defined('INTERSOCCER_RUN_TEST_PROCESS_ORDERS') && INTERSOCCER_RUN_TEST_PROCE
 }
 
 function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
+    $product_id = (int) $product_id;
+    $variation_id = $variation_id && $variation_id > 0 ? (int) $variation_id : null;
+    $memo_key = $product_id . ':' . ( $variation_id ? (string) $variation_id : '0' );
+    $memo_active = function_exists('intersoccer_rr_product_type_memo_scope_active')
+        && intersoccer_rr_product_type_memo_scope_active();
+    if ($memo_active) {
+        if (!isset($GLOBALS['intersoccer_rr_product_type_safe_cache'])
+            || !is_array($GLOBALS['intersoccer_rr_product_type_safe_cache'])) {
+            $GLOBALS['intersoccer_rr_product_type_safe_cache'] = [];
+        }
+        if (array_key_exists($memo_key, $GLOBALS['intersoccer_rr_product_type_safe_cache'])) {
+            return $GLOBALS['intersoccer_rr_product_type_safe_cache'][ $memo_key ];
+        }
+    }
+
     // Check if the Product Variations plugin function exists
     if (!function_exists('intersoccer_get_product_type')) {
         if (defined('WP_DEBUG') && WP_DEBUG) {
             error_log('InterSoccer: CRITICAL - intersoccer_get_product_type function not found from Product Variations plugin');
         }
-        return 'unknown';
+        $resolved = 'unknown';
+        if ($memo_active) {
+            $GLOBALS['intersoccer_rr_product_type_safe_cache'][ $memo_key ] = $resolved;
+        }
+
+        return $resolved;
     }
-    
+
+    $pv_lookup = function_exists('intersoccer_rr_memoized_get_product_type')
+        ? 'intersoccer_rr_memoized_get_product_type'
+        : 'intersoccer_get_product_type';
+
     // Try variation ID first if provided
     if ($variation_id && $variation_id > 0) {
-        $type = intersoccer_get_product_type($variation_id);
+        $type = $pv_lookup($variation_id);
         if (!empty($type)) {
+            if ($memo_active) {
+                $GLOBALS['intersoccer_rr_product_type_safe_cache'][ $memo_key ] = $type;
+            }
+
             return $type;
         }
     }
-    
+
     // Try parent product ID
-    $type = intersoccer_get_product_type($product_id);
+    $type = $pv_lookup($product_id);
     if (!empty($type)) {
+        if ($memo_active) {
+            $GLOBALS['intersoccer_rr_product_type_safe_cache'][ $memo_key ] = $type;
+        }
+
         return $type;
     }
-    
+
     // Manual fallback if the function fails
-    return intersoccer_manual_product_type_detection($product_id, $variation_id);
+    $resolved = intersoccer_manual_product_type_detection($product_id, $variation_id);
+    if ($memo_active) {
+        $GLOBALS['intersoccer_rr_product_type_safe_cache'][ $memo_key ] = $resolved;
+    }
+
+    return $resolved;
 }
 
 /**
@@ -7410,11 +7447,12 @@ function intersoccer_reports_resolve_camp_schedule($variation_id, $order_item_id
  *
  * @deprecated since RR 2.7.17 / PV 2.7.18 Remove in next major after camp meta migration — prefer intersoccer_reports_resolve_camp_schedule().
  *
- * @param string $camp_terms The camp terms string
- * @param string $season The season/year
+ * @param string   $camp_terms    The camp terms string
+ * @param string   $season        The season/year
+ * @param int|null $fallback_year Optional year when season has no four-digit year (null = current calendar year).
  * @return array [$start_date, $end_date, $event_dates]
  */
-function intersoccer_parse_camp_dates_fixed($camp_terms, $season) {
+function intersoccer_parse_camp_dates_fixed($camp_terms, $season, $fallback_year = null) {
     $start_date = null;
     $end_date = null;
     $event_dates = 'N/A';
@@ -7436,7 +7474,11 @@ function intersoccer_parse_camp_dates_fixed($camp_terms, $season) {
         }
     }
     if (!$year) {
-        $year = (int) date('Y');
+        if ($fallback_year !== null && $fallback_year !== '') {
+            $year = (int) $fallback_year;
+        } else {
+            $year = (int) date('Y');
+        }
     }
 
     // Try first regex pattern: month-week-X-month-day-month-day-days (English slug)
