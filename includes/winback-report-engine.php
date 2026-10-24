@@ -39,19 +39,35 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		$catalogue = intersoccer_winback_enumerate_upcoming_catalogue($today);
 		$history_rows = intersoccer_winback_report_engine_load_history_rows($lookback_start, $today, $kind_filter);
 		$uuid_map = intersoccer_winback_report_engine_load_assigned_player_ids($history_rows);
-
-		$by_player_kind = [];
-		$all_rows_by_key = [];
+		$identity_map = new Intersoccer_Roster_Report_Player_Identity_Map();
 
 		foreach ($history_rows as $row) {
 			if (!is_array($row)) {
 				continue;
 			}
-			$customer_id = intersoccer_roster_report_resolve_row_customer_id($row);
+			$row = intersoccer_roster_report_row_with_resolved_customer($row);
+			if (intersoccer_roster_report_is_fake_customer((int) $row['customer_id'])) {
+				continue;
+			}
+			$order_item_id = (int) ( $row['order_item_id'] ?? 0 );
+			$uuid = $order_item_id > 0 ? (string) ( $uuid_map[ $order_item_id ] ?? '' ) : '';
+			$identity_map->register_row($row, $uuid);
+		}
+
+		$upcoming = intersoccer_winback_report_engine_load_upcoming_roster_rows($today, $kind_filter, $uuid_map, $identity_map);
+
+		$by_player_kind = [];
+		$all_rows_by_group = [];
+
+		foreach ($history_rows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$row = intersoccer_roster_report_row_with_resolved_customer($row);
+			$customer_id = (int) $row['customer_id'];
 			if (intersoccer_roster_report_is_fake_customer($customer_id)) {
 				continue;
 			}
-			$row['customer_id'] = $customer_id;
 
 			if (!intersoccer_roster_report_status_counts_as_history($row['order_status'] ?? '')) {
 				continue;
@@ -96,6 +112,7 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 				continue;
 			}
 
+			$group_id = $identity_map->group_id($key_bits['key']);
 			$entry = [
 				'row' => $row,
 				'kind' => $kind,
@@ -105,16 +122,16 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 				'age_slug' => $age_slug,
 				'key' => $key_bits['key'],
 				'tier' => $key_bits['tier'],
+				'group_id' => $group_id,
 			];
 
-			$pk = $key_bits['key'] . '|' . $kind;
+			$pk = $group_id . '|' . $kind;
 			if (!isset($by_player_kind[$pk]) || intersoccer_winback_report_engine_is_later_history($entry, $by_player_kind[$pk])) {
 				$by_player_kind[$pk] = $entry;
 			}
-			$all_rows_by_key[$key_bits['key']][] = $entry;
+			$all_rows_by_group[ $group_id ][] = $entry;
 		}
 
-		$upcoming = intersoccer_winback_report_engine_load_upcoming_roster_rows($today, $kind_filter, $uuid_map);
 		$output = [];
 
 		foreach ($by_player_kind as $pk => $history) {
@@ -133,13 +150,13 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 				$status = 'date_unknown';
 			}
 
-			$rebook_bits = intersoccer_winback_detect_rebooked_flags($key, $kind, $history['venue_slug'], $upcoming);
+			$rebook_bits = intersoccer_winback_detect_rebooked_flags($key, $kind, $history['venue_slug'], $upcoming, $identity_map);
 			$rebooked_elsewhere = $rebook_bits['elsewhere'];
 			if ($rebook_bits['same_venue']) {
 				continue;
 			}
 
-			if ($kind === 'course' && intersoccer_winback_report_engine_player_in_current_course_term($key, $kind, $today, $upcoming)) {
+			if ($kind === 'course' && intersoccer_winback_report_engine_player_in_current_course_term($key, $kind, $today, $upcoming, $identity_map)) {
 				continue;
 			}
 
@@ -174,16 +191,17 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 				$status = 'no_upcoming';
 			}
 
-			$sibling_booked = intersoccer_winback_report_engine_sibling_has_upcoming($customer_id, $key, $kind, $upcoming);
+			$sibling_booked = intersoccer_winback_report_engine_sibling_has_upcoming($customer_id, $key, $kind, $upcoming, $identity_map);
 
 			$contact = intersoccer_winback_report_engine_build_contact($customer_id, $row);
-			$events_in_lookback = intersoccer_winback_report_engine_count_history_events($key, $kind, $all_rows_by_key);
+			$group_id = (string) ( $history['group_id'] ?? $identity_map->group_id($key) );
+			$events_in_lookback = intersoccer_winback_report_engine_count_history_events($group_id, $kind, $all_rows_by_group);
 
 			$output[] = [
 				'player' => [
 					'name' => trim(intersoccer_roster_report_player_first_name($row) . ' ' . intersoccer_roster_report_player_last_name($row)),
-					'key' => $key,
-					'tier' => $history['tier'],
+					'key' => $identity_map->best_key($key),
+					'tier' => $identity_map->best_tier($key),
 				],
 				'parent' => [
 					'name' => trim((string) ($row['parent_first_name'] ?? '') . ' ' . (string) ($row['parent_last_name'] ?? '')),
@@ -333,7 +351,7 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 	/**
 	 * @return array<int,array<string,mixed>>
 	 */
-	function intersoccer_winback_report_engine_load_upcoming_roster_rows($today, $kind_filter, array $uuid_map) {
+	function intersoccer_winback_report_engine_load_upcoming_roster_rows($today, $kind_filter, array $uuid_map, $identity_map = null) {
 		global $wpdb;
 		$table = $wpdb->prefix . 'intersoccer_rosters';
 		$where = ['(is_placeholder = 0 OR is_placeholder IS NULL)', 'order_item_id > 0', 'start_date > %s'];
@@ -347,7 +365,8 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 			if (!is_array($row)) {
 				continue;
 			}
-			$customer_id = intersoccer_roster_report_resolve_row_customer_id($row);
+			$row = intersoccer_roster_report_row_with_resolved_customer($row);
+			$customer_id = (int) $row['customer_id'];
 			if (intersoccer_roster_report_is_fake_customer($customer_id)) {
 				continue;
 			}
@@ -359,11 +378,14 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 				continue;
 			}
 			$oid = (int) ($row['order_item_id'] ?? 0);
-			$key_bits = intersoccer_roster_report_build_player_key($row, (string) ($uuid_map[$oid] ?? ''));
+			$uuid = (string) ( $uuid_map[ $oid ] ?? '' );
+			if ($identity_map instanceof Intersoccer_Roster_Report_Player_Identity_Map) {
+				$identity_map->register_row($row, $uuid);
+			}
+			$key_bits = intersoccer_roster_report_build_player_key($row, $uuid);
 			if ($key_bits['key'] === '') {
 				continue;
 			}
-			$row['customer_id'] = $customer_id;
 			$row['player_key'] = $key_bits['key'];
 			$row['kind'] = $kind;
 			$row['venue_slug'] = intersoccer_winback_normalize_facet_slug(
@@ -385,7 +407,7 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 	 *
 	 * @param array<int,array<string,mixed>> $upcoming
 	 */
-	function intersoccer_winback_report_engine_player_in_current_course_term($player_key, $kind, $today, array $upcoming) {
+	function intersoccer_winback_report_engine_player_in_current_course_term($player_key, $kind, $today, array $upcoming, $identity_map = null) {
 		if ($kind !== 'course') {
 			return false;
 		}
@@ -409,9 +431,14 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 			if (!intersoccer_roster_report_status_counts_as_upcoming_rebooked($row['order_status'] ?? '')) {
 				continue;
 			}
-			$customer_id = intersoccer_roster_report_resolve_row_customer_id($row);
+			$row = intersoccer_roster_report_row_with_resolved_customer($row);
 			$key_bits = intersoccer_roster_report_build_player_key($row, '');
-			if ($key_bits['key'] === $player_key) {
+			$candidate = $key_bits['key'];
+			if ($candidate === $player_key) {
+				return true;
+			}
+			if ($identity_map instanceof Intersoccer_Roster_Report_Player_Identity_Map
+				&& $identity_map->same_player($candidate, $player_key)) {
 				return true;
 			}
 		}
@@ -422,7 +449,7 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 	/**
 	 * @param array<int,array<string,mixed>> $upcoming
 	 */
-	function intersoccer_winback_report_engine_sibling_has_upcoming($customer_id, $player_key, $kind, array $upcoming) {
+	function intersoccer_winback_report_engine_sibling_has_upcoming($customer_id, $player_key, $kind, array $upcoming, $identity_map = null) {
 		$customer_id = (int) $customer_id;
 		if ($customer_id <= 0) {
 			return false;
@@ -431,7 +458,12 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 			if ((int) ($row['customer_id'] ?? 0) !== $customer_id) {
 				continue;
 			}
-			if (($row['player_key'] ?? '') === $player_key) {
+			$upcoming_key = (string) ( $row['player_key'] ?? '' );
+			if ($upcoming_key === $player_key) {
+				continue;
+			}
+			if ($identity_map instanceof Intersoccer_Roster_Report_Player_Identity_Map
+				&& $identity_map->same_player($upcoming_key, $player_key)) {
 				continue;
 			}
 			if (($row['kind'] ?? '') === $kind) {
@@ -492,14 +524,14 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 	}
 
 	/**
-	 * @param array<string,array<int,array<string,mixed>>> $all_rows_by_key
+	 * @param array<string,array<int,array<string,mixed>>> $all_rows_by_group
 	 */
-	function intersoccer_winback_report_engine_count_history_events($player_key, $kind, array $all_rows_by_key) {
-		if (empty($all_rows_by_key[$player_key])) {
+	function intersoccer_winback_report_engine_count_history_events($group_id, $kind, array $all_rows_by_group) {
+		if ($group_id === '' || empty($all_rows_by_group[ $group_id ])) {
 			return 0;
 		}
 		$n = 0;
-		foreach ($all_rows_by_key[$player_key] as $entry) {
+		foreach ($all_rows_by_group[ $group_id ] as $entry) {
 			if (($entry['kind'] ?? '') === $kind) {
 				$n++;
 			}

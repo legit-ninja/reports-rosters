@@ -209,15 +209,22 @@ if (!function_exists('intersoccer_winback_detect_rebooked_flags')) {
 	 * @param array<int,array<string,mixed>> $upcoming Rows with player_key, kind, venue_slug.
 	 * @return array{same_venue:bool,elsewhere:bool}
 	 */
-	function intersoccer_winback_detect_rebooked_flags($player_key, $kind, $history_venue_slug, array $upcoming) {
+	function intersoccer_winback_detect_rebooked_flags($player_key, $kind, $history_venue_slug, array $upcoming, $identity_map = null) {
 		$same_venue = false;
 		$elsewhere = false;
 		foreach ($upcoming as $row) {
 			if (!is_array($row)) {
 				continue;
 			}
-			if ((string) ($row['player_key'] ?? '') !== (string) $player_key
-				|| (string) ($row['kind'] ?? '') !== (string) $kind) {
+			if ((string) ($row['kind'] ?? '') !== (string) $kind) {
+				continue;
+			}
+			$upcoming_key = (string) ($row['player_key'] ?? '');
+			$same_player = $upcoming_key === (string) $player_key;
+			if (!$same_player && $identity_map instanceof \Intersoccer_Roster_Report_Player_Identity_Map) {
+				$same_player = $identity_map->same_player((string) $player_key, $upcoming_key);
+			}
+			if (!$same_player) {
 				continue;
 			}
 			$row_venue = (string) ($row['venue_slug'] ?? '');
