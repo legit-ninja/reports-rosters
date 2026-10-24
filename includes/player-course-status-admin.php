@@ -725,6 +725,26 @@ if (!function_exists('intersoccer_player_course_status_admin_export_control_html
 	}
 }
 
+if (!function_exists('intersoccer_player_course_status_admin_refresh_html')) {
+	/**
+	 * Refresh link. Hidden unless the viewer can manage options and Bay's helper exists.
+	 *
+	 * The helper takes the current filters and adds pcs_refresh plus the nonce.
+	 *
+	 * @param array<string,mixed> $filters
+	 * @return string
+	 */
+	function intersoccer_player_course_status_admin_refresh_html(array $filters) {
+		if (!current_user_can('manage_options') || !function_exists('intersoccer_player_course_status_refresh_url')) {
+			return '';
+		}
+
+		return '<a class="button button-secondary" href="'
+			. esc_url(intersoccer_player_course_status_refresh_url($filters))
+			. '">' . esc_html__('Refresh data', 'intersoccer-reports-rosters') . '</a>';
+	}
+}
+
 if (!function_exists('intersoccer_player_course_status_admin_render_page')) {
 	/**
 	 * Office page. Calls the engine with the request filters and renders the result.
@@ -758,6 +778,7 @@ if (!function_exists('intersoccer_player_course_status_admin_render_page')) {
 
 				<button type="submit" class="button button-primary"><?php esc_html_e('Filter', 'intersoccer-reports-rosters'); ?></button>
 				<?php echo intersoccer_player_course_status_admin_export_control_html($filters, $warnings); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
+				<?php echo intersoccer_player_course_status_admin_refresh_html($filters); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 			</form>
 
 			<?php if ((int) $slice['total_pages'] > 1) : ?>

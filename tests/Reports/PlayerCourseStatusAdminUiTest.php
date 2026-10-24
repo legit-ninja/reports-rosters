@@ -20,6 +20,7 @@ class PlayerCourseStatusAdminUiTest extends TestCase {
 
 	protected function tearDown(): void {
 		$_GET = [];
+		unset($GLOBALS['intersoccer_test_current_user_caps']);
 		parent::tearDown();
 	}
 
@@ -388,6 +389,47 @@ class PlayerCourseStatusAdminUiTest extends TestCase {
 		$this->assertStringContainsString('class="button disabled"', $blocked);
 		$this->assertStringContainsString('Export to Excel', $blocked);
 		$this->assertStringContainsString('Export is unavailable until the warning clears.', $blocked);
+	}
+
+	public function test_refresh_link_is_shown_for_manage_options_and_keeps_filters_and_nonce(): void {
+		$GLOBALS['intersoccer_test_current_user_caps'] = ['manage_options' => true];
+		$html = intersoccer_player_course_status_admin_refresh_html([
+			'year' => 2026,
+			'season_type' => 'Winter',
+			'girls_mode' => 'girls_only',
+			'booked' => 'not_booked',
+			'booking_status' => 'on_hold',
+			'search' => 'Ada',
+			'venue' => 'zurich',
+			'course_day' => 'sunday',
+			'age_group' => 'u8',
+		]);
+
+		$this->assertStringContainsString('class="button button-secondary"', $html);
+		$this->assertStringContainsString('>Refresh data<', $html);
+		$this->assertStringContainsString('href="', $html);
+		$this->assertStringContainsString('pcs_refresh=1', $html);
+		$this->assertStringContainsString('_pcs_nonce=test_nonce_12345', $html);
+		$this->assertStringContainsString('year=2026', $html);
+		$this->assertStringContainsString('season_type=Winter', $html);
+		$this->assertStringContainsString('girls_mode=girls_only', $html);
+		$this->assertStringContainsString('booked=not_booked', $html);
+		$this->assertStringContainsString('booking_status=on_hold', $html);
+		$this->assertStringContainsString('search=Ada', $html);
+		$this->assertStringContainsString('venue=zurich', $html);
+		$this->assertStringContainsString('course_day=sunday', $html);
+		$this->assertStringContainsString('age_group=u8', $html);
+	}
+
+	public function test_refresh_link_is_hidden_without_manage_options(): void {
+		$GLOBALS['intersoccer_test_current_user_caps'] = ['manage_options' => false];
+		$html = intersoccer_player_course_status_admin_refresh_html([
+			'year' => 2026,
+			'booking_status' => 'booked',
+			'venue' => 'zurich',
+		]);
+
+		$this->assertSame('', $html);
 	}
 
 	public function test_order_status_uses_wc_name_when_available_and_raw_value_otherwise(): void {
