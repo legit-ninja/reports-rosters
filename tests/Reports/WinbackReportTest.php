@@ -12,8 +12,12 @@ class WinbackReportTest extends TestCase {
 		unset(
 			$GLOBALS['intersoccer_test_live_order_status_map'],
 			$GLOBALS['intersoccer_test_live_order_status_batch_load_calls'],
+			$GLOBALS['intersoccer_test_order_created_date_map'],
 			$GLOBALS['intersoccer_test_wc_get_order_callback']
 		);
+		if (function_exists('intersoccer_winback_reset_order_created_date_cache')) {
+			intersoccer_winback_reset_order_created_date_cache();
+		}
 		parent::tearDown();
 	}
 
@@ -260,17 +264,93 @@ class WinbackReportTest extends TestCase {
 		$this->assertTrue($found);
 	}
 
-	public function test_yearless_camp_terms_use_season_or_current_year_not_order_date() {
-		if (!function_exists('intersoccer_parse_camp_dates_fixed')) {
-			$this->markTestSkipped('intersoccer_parse_camp_dates_fixed not loaded');
+	/**
+	 * @return array<string,mixed>
+	 */
+	private function winback_camp_row_for_terms_parse($camp_terms, $season, $order_id) {
+		$vid = 88002;
+		if (class_exists('\InterSoccerRRTestMeta')) {
+			\InterSoccerRRTestMeta::$data = [];
 		}
-		$camp_terms = 'july-week-1-july-7-july-11-5-days';
-		list($from_season,,) = intersoccer_parse_camp_dates_fixed($camp_terms, 'Summer 2024');
-		$this->assertSame('2024-07-07', $from_season);
+		delete_post_meta($vid, '_camp_start_date');
+		delete_post_meta($vid, '_camp_end_date');
 
-		list($yearless,,) = intersoccer_parse_camp_dates_fixed($camp_terms, '');
-		$this->assertStringStartsWith((string) (int) date('Y') . '-', (string) $yearless);
-		$this->assertNotSame('2024-07-07', $yearless);
+		return [
+			'start_date' => null,
+			'variation_id' => $vid,
+			'order_item_id' => 7001,
+			'order_id' => $order_id,
+			'camp_terms' => $camp_terms,
+			'season' => $season,
+			'activity_type' => 'Camp',
+		];
+	}
+
+	public function test_yearless_camp_terms_use_order_year_july_after_march_order() {
+		$camp_terms = 'july-week-1-july-7-july-11-5-days';
+		$GLOBALS['intersoccer_test_wc_get_order_callback'] = static function () {
+			return new class() {
+				public function get_date_created() {
+					return new class() {
+						public function date($format) {
+							return '2025-03-15';
+						}
+					};
+				}
+			};
+		};
+		$row = $this->winback_camp_row_for_terms_parse($camp_terms, '', 7101);
+		$bits = intersoccer_winback_resolve_row_event_date($row);
+		$this->assertSame('camp_terms_parse', $bits['source']);
+		$this->assertSame('2025-07-07', $bits['date']);
+	}
+
+	public function test_yearless_camp_terms_book_ahead_february_after_november_order() {
+		$camp_terms = 'february-week-1-february-3-february-7-5-days';
+		$GLOBALS['intersoccer_test_wc_get_order_callback'] = static function () {
+			return new class() {
+				public function get_date_created() {
+					return new class() {
+						public function date($format) {
+							return '2025-11-20';
+						}
+					};
+				}
+			};
+		};
+		$row = $this->winback_camp_row_for_terms_parse($camp_terms, '', 7102);
+		$bits = intersoccer_winback_resolve_row_event_date($row);
+		$this->assertSame('camp_terms_parse', $bits['source']);
+		$this->assertSame('2026-02-03', $bits['date']);
+	}
+
+	public function test_season_year_wins_over_order_year_for_camp_terms_parse() {
+		$camp_terms = 'july-week-1-july-7-july-11-5-days';
+		$GLOBALS['intersoccer_test_wc_get_order_callback'] = static function () {
+			return new class() {
+				public function get_date_created() {
+					return new class() {
+						public function date($format) {
+							return '2025-06-01';
+						}
+					};
+				}
+			};
+		};
+		$row = $this->winback_camp_row_for_terms_parse($camp_terms, 'Summer Camps 2024', 7103);
+		$bits = intersoccer_winback_resolve_row_event_date($row);
+		$this->assertSame('camp_terms_parse', $bits['source']);
+		$this->assertSame('2024-07-07', $bits['date']);
+	}
+
+	public function test_yearless_camp_terms_without_order_date_falls_through_not_run_year() {
+		$camp_terms = 'july-week-1-july-7-july-11-5-days';
+		$row = $this->winback_camp_row_for_terms_parse($camp_terms, '', 0);
+		$bits = intersoccer_winback_resolve_row_event_date($row);
+		$this->assertNull($bits['date']);
+		$this->assertSame('unknown', $bits['source']);
+		$run_year = (int) gmdate('Y');
+		$this->assertNotSame($run_year . '-07-07', $bits['date']);
 	}
 
 	public function test_order_date_source_when_only_order_date_available() {

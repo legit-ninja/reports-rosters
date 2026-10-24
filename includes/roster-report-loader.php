@@ -261,6 +261,85 @@ if (!function_exists('intersoccer_roster_report_batch_load_live_order_statuses')
 	}
 }
 
+if (!function_exists('intersoccer_roster_report_batch_load_order_created_dates')) {
+	/**
+	 * Order created dates (Y-m-d) for many orders — one query per chunk.
+	 *
+	 * @param int[] $order_ids
+	 * @return array<int,string>
+	 */
+	function intersoccer_roster_report_batch_load_order_created_dates(array $order_ids) {
+		$order_ids = array_values(array_unique(array_filter(array_map('intval', $order_ids))));
+		if (empty($order_ids)) {
+			return [];
+		}
+
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
+			if (isset($GLOBALS['intersoccer_test_order_created_date_map']) && is_array($GLOBALS['intersoccer_test_order_created_date_map'])) {
+				$out = [];
+				foreach ($order_ids as $order_id) {
+					if (array_key_exists($order_id, $GLOBALS['intersoccer_test_order_created_date_map'])) {
+						$raw = (string) $GLOBALS['intersoccer_test_order_created_date_map'][ $order_id ];
+						if ($raw !== '') {
+							$out[ $order_id ] = substr($raw, 0, 10);
+						}
+					}
+				}
+
+				return $out;
+			}
+		}
+
+		global $wpdb;
+		if (!is_object($wpdb) || !isset($wpdb->prefix)) {
+			return [];
+		}
+
+		$map = [];
+		$use_hpos = intersoccer_roster_report_uses_hpos_orders_table();
+		$chunks = array_chunk($order_ids, 500);
+
+		foreach ($chunks as $chunk) {
+			$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+			if ($use_hpos) {
+				$table = $wpdb->prefix . 'wc_orders';
+				$sql = "SELECT id, date_created_gmt FROM {$table} WHERE id IN ({$placeholders})";
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$results = $wpdb->get_results($wpdb->prepare($sql, $chunk), ARRAY_A);
+				foreach ((array) $results as $result) {
+					if (!is_array($result)) {
+						continue;
+					}
+					$id = (int) ( $result['id'] ?? 0 );
+					$raw = (string) ( $result['date_created_gmt'] ?? '' );
+					if ($id > 0 && $raw !== '') {
+						$ts = strtotime($raw);
+						if ($ts) {
+							$map[ $id ] = gmdate('Y-m-d', $ts);
+						}
+					}
+				}
+			} else {
+				$sql = "SELECT ID, post_date FROM {$wpdb->posts} WHERE post_type = 'shop_order' AND ID IN ({$placeholders})";
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$results = $wpdb->get_results($wpdb->prepare($sql, $chunk), ARRAY_A);
+				foreach ((array) $results as $result) {
+					if (!is_array($result)) {
+						continue;
+					}
+					$id = (int) ( $result['ID'] ?? 0 );
+					$raw = (string) ( $result['post_date'] ?? '' );
+					if ($id > 0 && $raw !== '') {
+						$map[ $id ] = substr($raw, 0, 10);
+					}
+				}
+			}
+		}
+
+		return $map;
+	}
+}
+
 if (!function_exists('intersoccer_roster_report_effective_order_status_for_row')) {
 	/**
 	 * @param array<string,mixed> $row

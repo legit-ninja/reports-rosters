@@ -7410,11 +7410,12 @@ function intersoccer_reports_resolve_camp_schedule($variation_id, $order_item_id
  *
  * @deprecated since RR 2.7.17 / PV 2.7.18 Remove in next major after camp meta migration — prefer intersoccer_reports_resolve_camp_schedule().
  *
- * @param string $camp_terms The camp terms string
- * @param string $season The season/year
+ * @param string   $camp_terms    The camp terms string
+ * @param string   $season        The season/year
+ * @param int|null $fallback_year Optional year when season has no four-digit year (null = current calendar year).
  * @return array [$start_date, $end_date, $event_dates]
  */
-function intersoccer_parse_camp_dates_fixed($camp_terms, $season) {
+function intersoccer_parse_camp_dates_fixed($camp_terms, $season, $fallback_year = null) {
     $start_date = null;
     $end_date = null;
     $event_dates = 'N/A';
@@ -7436,7 +7437,11 @@ function intersoccer_parse_camp_dates_fixed($camp_terms, $season) {
         }
     }
     if (!$year) {
-        $year = (int) date('Y');
+        if ($fallback_year !== null && $fallback_year !== '') {
+            $year = (int) $fallback_year;
+        } else {
+            $year = (int) date('Y');
+        }
     }
 
     // Try first regex pattern: month-week-X-month-day-month-day-days (English slug)

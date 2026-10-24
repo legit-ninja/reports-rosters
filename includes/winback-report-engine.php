@@ -38,6 +38,12 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		intersoccer_winback_reset_unmapped_facets();
 		$catalogue = intersoccer_winback_enumerate_upcoming_catalogue($today);
 		$history_rows = intersoccer_winback_report_engine_load_history_rows($lookback_start, $today, $kind_filter);
+		if (function_exists('intersoccer_winback_reset_order_created_date_cache')) {
+			intersoccer_winback_reset_order_created_date_cache();
+		}
+		if (function_exists('intersoccer_winback_prime_order_created_dates_from_rows')) {
+			intersoccer_winback_prime_order_created_dates_from_rows($history_rows);
+		}
 		$uuid_map = intersoccer_winback_report_engine_load_assigned_player_ids($history_rows);
 		$identity_map = new Intersoccer_Roster_Report_Player_Identity_Map();
 

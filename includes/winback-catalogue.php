@@ -7,6 +7,142 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+if (!function_exists('intersoccer_winback_reset_order_created_date_cache')) {
+	/**
+	 * Clear batched order created-date cache (call before a new engine run).
+	 */
+	function intersoccer_winback_reset_order_created_date_cache() {
+		$GLOBALS['intersoccer_winback_order_created_date_cache'] = [];
+	}
+}
+
+if (!function_exists('intersoccer_winback_prime_order_created_dates_from_rows')) {
+	/**
+	 * Batch-load order created dates for roster rows (one query per chunk).
+	 *
+	 * @param array<int,array<string,mixed>> $rows
+	 */
+	function intersoccer_winback_prime_order_created_dates_from_rows(array $rows) {
+		if (!function_exists('intersoccer_roster_report_batch_load_order_created_dates')
+			|| !function_exists('intersoccer_roster_report_collect_order_ids_from_rows')) {
+			return;
+		}
+		$ids = intersoccer_roster_report_collect_order_ids_from_rows($rows);
+		$GLOBALS['intersoccer_winback_order_created_date_cache'] = intersoccer_roster_report_batch_load_order_created_dates($ids);
+	}
+}
+
+if (!function_exists('intersoccer_winback_get_order_created_ymd')) {
+	/**
+	 * @param int $order_id
+	 */
+	function intersoccer_winback_get_order_created_ymd($order_id) {
+		$order_id = (int) $order_id;
+		if ($order_id <= 0) {
+			return '';
+		}
+		$cache = $GLOBALS['intersoccer_winback_order_created_date_cache'] ?? null;
+		if (is_array($cache) && isset($cache[ $order_id ]) && (string) $cache[ $order_id ] !== '') {
+			return substr((string) $cache[ $order_id ], 0, 10);
+		}
+		if (function_exists('wc_get_order')) {
+			$order = wc_get_order($order_id);
+			if ($order && $order->get_date_created()) {
+				return $order->get_date_created()->date('Y-m-d');
+			}
+		}
+		global $wpdb;
+		if (is_object($wpdb) && isset($wpdb->prefix)) {
+			$raw = (string) $wpdb->get_var(
+				$wpdb->prepare("SELECT post_date FROM {$wpdb->posts} WHERE ID = %d LIMIT 1", $order_id)
+			);
+			if ($raw !== '') {
+				return substr($raw, 0, 10);
+			}
+		}
+
+		return '';
+	}
+}
+
+if (!function_exists('intersoccer_winback_camp_terms_has_explicit_calendar_year')) {
+	/**
+	 * @param string $camp_terms
+	 * @param string $season
+	 */
+	function intersoccer_winback_camp_terms_has_explicit_calendar_year($camp_terms, $season) {
+		if (preg_match('/\b(19|20)\d{2}\b/', (string) $season)) {
+			return true;
+		}
+		if (preg_match('/\b(19|20)\d{2}\b/', (string) $camp_terms)) {
+			return true;
+		}
+
+		return false;
+	}
+}
+
+if (!function_exists('intersoccer_winback_camp_terms_year_from_order_created')) {
+	/**
+	 * Calendar year for yearless camp_terms parse from order created date + parsed camp month.
+	 *
+	 * @param string $order_created_ymd Y-m-d
+	 * @param string $parsed_start_ymd  Y-m-d (month/day from slug; year may be wrong)
+	 */
+	function intersoccer_winback_camp_terms_year_from_order_created($order_created_ymd, $parsed_start_ymd) {
+		$order_created_ymd = substr(trim((string) $order_created_ymd), 0, 10);
+		$parsed_start_ymd = substr(trim((string) $parsed_start_ymd), 0, 10);
+		if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $order_created_ymd)
+			|| !preg_match('/^\d{4}-\d{2}-\d{2}$/', $parsed_start_ymd)) {
+			return null;
+		}
+		$order_year = (int) substr($order_created_ymd, 0, 4);
+		$order_month = (int) substr($order_created_ymd, 5, 2);
+		$parsed_month = (int) substr($parsed_start_ymd, 5, 2);
+		$year = $order_year;
+		if ($order_month - $parsed_month > 6) {
+			$year = $order_year + 1;
+		}
+
+		return $year;
+	}
+}
+
+if (!function_exists('intersoccer_winback_apply_camp_terms_order_year')) {
+	/**
+	 * Re-parse yearless camp_terms using order-year rules (win-back only).
+	 *
+	 * @param string              $camp_terms
+	 * @param string              $season
+	 * @param string              $parsed_start From resolve_camp_schedule (terms_parse)
+	 * @param array<string,mixed> $row
+	 * @return string|null Adjusted start Y-m-d, or null to fall through the chain
+	 */
+	function intersoccer_winback_apply_camp_terms_order_year($camp_terms, $season, $parsed_start, array $row) {
+		if (intersoccer_winback_camp_terms_has_explicit_calendar_year($camp_terms, $season)) {
+			return $parsed_start;
+		}
+		$order_id = (int) ( $row['order_id'] ?? 0 );
+		$order_ymd = $order_id > 0 ? intersoccer_winback_get_order_created_ymd($order_id) : '';
+		if ($order_ymd === '') {
+			return null;
+		}
+		$year = intersoccer_winback_camp_terms_year_from_order_created($order_ymd, $parsed_start);
+		if ($year === null || !function_exists('intersoccer_parse_camp_dates_fixed')) {
+			return null;
+		}
+		if (function_exists('intersoccer_reports_normalize_camp_terms_for_dates')) {
+			$camp_terms = intersoccer_reports_normalize_camp_terms_for_dates($camp_terms);
+		}
+		list($start,,) = intersoccer_parse_camp_dates_fixed($camp_terms, $season, $year);
+		if (!is_string($start) || $start === '' || $start === '1970-01-01') {
+			return null;
+		}
+
+		return $start;
+	}
+}
+
 if (!function_exists('intersoccer_winback_resolve_row_event_date')) {
 	/**
 	 * Resolve event start date for lookback / history (J9 camp fallbacks).
@@ -35,12 +171,18 @@ if (!function_exists('intersoccer_winback_resolve_row_event_date')) {
 		}
 
 		if ($kind === 'camp' && $variation_id > 0 && function_exists('intersoccer_reports_resolve_camp_schedule')) {
+			$camp_terms = (string) ( $row['camp_terms'] ?? '' );
+			$season = (string) ( $row['season'] ?? '' );
 			list($parsed_start,,, $source) = intersoccer_reports_resolve_camp_schedule(
 				$variation_id,
-				(int) ($row['order_item_id'] ?? 0),
-				(string) ($row['camp_terms'] ?? ''),
-				(string) ($row['season'] ?? '')
+				(int) ( $row['order_item_id'] ?? 0 ),
+				$camp_terms,
+				$season
 			);
+			if ($source === 'terms_parse' && intersoccer_roster_report_has_real_date($parsed_start)) {
+				$adjusted = intersoccer_winback_apply_camp_terms_order_year($camp_terms, $season, $parsed_start, $row);
+				$parsed_start = $adjusted;
+			}
 			if (intersoccer_roster_report_has_real_date($parsed_start)) {
 				$map = [
 					'variation_meta' => 'variation_camp_start',
@@ -59,24 +201,9 @@ if (!function_exists('intersoccer_winback_resolve_row_event_date')) {
 			}
 		}
 
-		$order_id = (int) ($row['order_id'] ?? 0);
+		$order_id = (int) ( $row['order_id'] ?? 0 );
 		if ($order_id > 0) {
-			$order_date = '';
-			if (function_exists('wc_get_order')) {
-				$order = wc_get_order($order_id);
-				if ($order && $order->get_date_created()) {
-					$order_date = $order->get_date_created()->date('Y-m-d');
-				}
-			}
-			if ($order_date === '') {
-				global $wpdb;
-				$order_date = (string) $wpdb->get_var(
-					$wpdb->prepare("SELECT post_date FROM {$wpdb->posts} WHERE ID = %d LIMIT 1", $order_id)
-				);
-				if ($order_date !== '') {
-					$order_date = substr($order_date, 0, 10);
-				}
-			}
+			$order_date = intersoccer_winback_get_order_created_ymd($order_id);
 			if (intersoccer_roster_report_has_real_date($order_date)) {
 				return ['date' => $order_date, 'source' => 'order_date'];
 			}
