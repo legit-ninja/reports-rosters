@@ -19,7 +19,11 @@ defined('ABSPATH') or die('Restricted access');
  * - lookback_months: int (default 12)
  *
  * @param array<string,mixed> $filters See docs/winback-report-contract.md.
- * @return array{rows:array<int,array<string,mixed>>,unmapped_facets:array<string,array<string,int>>}
+ * @return array{
+ *   rows:array<int,array<string,mixed>>,
+ *   unmapped_facets:array<string,array<string,int>>,
+ *   en_unpublished_variations:array<int,array<string,mixed>>
+ * }
  */
 function intersoccer_winback_report_engine_generate(array $filters) {
 	intersoccer_winback_report_engine_load_dependencies();
@@ -73,6 +77,9 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		}
 
 		intersoccer_winback_reset_unmapped_facets();
+		if (function_exists('intersoccer_winback_reset_en_unpublished_variations')) {
+			intersoccer_winback_reset_en_unpublished_variations();
+		}
 		$catalogue = intersoccer_winback_enumerate_upcoming_catalogue($today);
 		$history_rows = intersoccer_winback_report_engine_load_history_rows($lookback_start, $today, $kind_filter);
 		if (function_exists('intersoccer_roster_report_prime_order_customer_ids_from_rows')) {
@@ -349,6 +356,9 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		return [
 			'rows' => $output,
 			'unmapped_facets' => intersoccer_winback_get_unmapped_facets(),
+			'en_unpublished_variations' => function_exists('intersoccer_winback_get_en_unpublished_variations')
+				? intersoccer_winback_get_en_unpublished_variations()
+				: [],
 		];
 	} finally {
 		if (function_exists('intersoccer_rr_product_type_memo_end')) {
