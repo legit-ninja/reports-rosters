@@ -436,7 +436,9 @@ if (!function_exists('intersoccer_winback_resolve_row_event_date')) {
 		}
 
 		$kind = '';
-		if (function_exists('intersoccer_roster_row_matches_listing_kind')) {
+		if (function_exists('intersoccer_rr_winback_get_row_listing_kind')) {
+			$kind = intersoccer_rr_winback_get_row_listing_kind($row);
+		} elseif (function_exists('intersoccer_roster_row_matches_listing_kind')) {
 			if (intersoccer_roster_row_matches_listing_kind($row, 'course')) {
 				$kind = 'course';
 			} elseif (intersoccer_roster_row_matches_listing_kind($row, 'camp')) {

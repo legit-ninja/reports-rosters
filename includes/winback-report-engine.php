@@ -24,6 +24,11 @@ defined('ABSPATH') or die('Restricted access');
 function intersoccer_winback_report_engine_generate(array $filters) {
 	intersoccer_winback_report_engine_load_dependencies();
 
+	if (function_exists('intersoccer_rr_product_type_memo_begin')) {
+		intersoccer_rr_product_type_memo_begin();
+	}
+	try {
+
 		$kind_filter = isset($filters['kind']) ? strtolower((string) $filters['kind']) : 'all';
 		if (!in_array($kind_filter, ['camp', 'course', 'all'], true)) {
 			$kind_filter = 'all';
@@ -60,6 +65,9 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		if (function_exists('intersoccer_winback_reset_current_course_term_cache')) {
 			intersoccer_winback_reset_current_course_term_cache();
 		}
+		if (function_exists('intersoccer_rr_product_type_memo_reset_storage')) {
+			intersoccer_rr_product_type_memo_reset_storage();
+		}
 
 		intersoccer_winback_reset_unmapped_facets();
 		$catalogue = intersoccer_winback_enumerate_upcoming_catalogue($today);
@@ -69,6 +77,9 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		}
 		if (function_exists('intersoccer_roster_report_prime_line_refund_checks_from_rows')) {
 			intersoccer_roster_report_prime_line_refund_checks_from_rows($history_rows);
+		}
+		if (function_exists('intersoccer_rr_winback_prime_product_types_from_rows')) {
+			intersoccer_rr_winback_prime_product_types_from_rows($history_rows);
 		}
 		if (function_exists('intersoccer_winback_reset_facet_resolution_cache')) {
 			intersoccer_winback_reset_facet_resolution_cache();
@@ -110,6 +121,9 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		if (function_exists('intersoccer_roster_report_prime_line_refund_checks_from_rows')) {
 			intersoccer_roster_report_prime_line_refund_checks_from_rows($upcoming);
 		}
+		if (function_exists('intersoccer_rr_winback_prime_product_types_from_rows')) {
+			intersoccer_rr_winback_prime_product_types_from_rows($upcoming);
+		}
 		if (function_exists('intersoccer_winback_prime_order_created_dates_from_rows')) {
 			intersoccer_winback_prime_order_created_dates_from_rows($upcoming);
 		}
@@ -122,6 +136,7 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 
 		$by_player_kind = [];
 		$all_rows_by_group = [];
+		$history_row_index = 0;
 
 		foreach ($history_rows as $row) {
 			if (!is_array($row)) {
@@ -189,9 +204,16 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 				$by_player_kind[$pk] = $entry;
 			}
 			$all_rows_by_group[ $group_id ][] = $entry;
+			$history_row_index++;
+			if ($history_row_index % 250 === 0 && function_exists('intersoccer_winback_report_engine_runtime_cache_flush')) {
+				intersoccer_winback_report_engine_runtime_cache_flush();
+			}
 		}
 
 		unset($history_rows, $uuid_map);
+		if (function_exists('intersoccer_winback_report_engine_runtime_cache_flush')) {
+			intersoccer_winback_report_engine_runtime_cache_flush();
+		}
 
 		$output_customer_ids = [];
 		foreach ($by_player_kind as $history_entry) {
@@ -205,6 +227,7 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		}
 
 		$output = [];
+		$output_row_index = 0;
 
 		foreach ($by_player_kind as $pk => $history) {
 			if (!intersoccer_winback_report_engine_last_event_passes_filters($history, $venue_filter, $age_filter)) {
@@ -302,15 +325,27 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 				'account_email' => $contact['account_email'] ?? '',
 				'events_in_lookback' => $events_in_lookback,
 			];
+			$output_row_index++;
+			if ($output_row_index % 100 === 0 && function_exists('intersoccer_winback_report_engine_runtime_cache_flush')) {
+				intersoccer_winback_report_engine_runtime_cache_flush();
+			}
 		}
 
 		unset($by_player_kind, $all_rows_by_group, $upcoming, $catalogue);
+		if (function_exists('intersoccer_winback_report_engine_runtime_cache_flush')) {
+			intersoccer_winback_report_engine_runtime_cache_flush();
+		}
 
 		return [
 			'rows' => $output,
 			'unmapped_facets' => intersoccer_winback_get_unmapped_facets(),
 		];
+	} finally {
+		if (function_exists('intersoccer_rr_product_type_memo_end')) {
+			intersoccer_rr_product_type_memo_end();
+		}
 	}
+}
 
 if (!function_exists('intersoccer_winback_report_engine_last_event_passes_filters')) {
 	/**
@@ -335,7 +370,7 @@ if (!function_exists('intersoccer_winback_report_engine_last_event_passes_filter
 if (!function_exists('intersoccer_winback_report_engine_load_dependencies')) {
 	function intersoccer_winback_report_engine_load_dependencies() {
 		$base = dirname(__FILE__) . '/';
-		foreach (['roster-report-loader.php', 'winback-report-facets.php', 'winback-catalogue.php'] as $file) {
+		foreach (['roster-report-loader.php', 'winback-report-perf.php', 'winback-report-facets.php', 'winback-catalogue.php'] as $file) {
 			$path = $base . $file;
 			if (file_exists($path)) {
 				require_once $path;
@@ -417,6 +452,9 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 	 * @param array<string,mixed> $row
 	 */
 	function intersoccer_winback_report_engine_row_kind(array $row) {
+		if (function_exists('intersoccer_rr_winback_get_row_listing_kind')) {
+			return intersoccer_rr_winback_get_row_listing_kind($row);
+		}
 		if (function_exists('intersoccer_roster_row_matches_listing_kind')) {
 			if (intersoccer_roster_row_matches_listing_kind($row, 'course')) {
 				return 'course';
@@ -534,6 +572,9 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 		}
 		if (function_exists('intersoccer_roster_report_prime_line_refund_checks_from_rows')) {
 			intersoccer_roster_report_prime_line_refund_checks_from_rows($rows);
+		}
+		if (function_exists('intersoccer_rr_winback_prime_product_types_from_rows')) {
+			intersoccer_rr_winback_prime_product_types_from_rows($rows);
 		}
 		foreach ($rows as $row) {
 			if (!is_array($row)) {
