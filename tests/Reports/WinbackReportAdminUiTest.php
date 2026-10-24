@@ -141,6 +141,24 @@ class WinbackReportAdminUiTest extends TestCase {
 		$this->assertSame('1', $args['export_excel']);
 	}
 
+	public function test_export_all_query_args_keep_filters_and_omit_tab() {
+		$filters = [
+			'kind' => 'course',
+			'venue' => 'basel-hall',
+			'age_group' => '5-13y-full-day',
+			'lookback_months' => 6,
+		];
+		$args = intersoccer_winback_report_export_all_query_args($filters);
+
+		$this->assertSame('intersoccer-winback-report', $args['page']);
+		$this->assertSame('course', $args['kind']);
+		$this->assertSame('basel-hall', $args['venue']);
+		$this->assertSame('5-13y-full-day', $args['age_group']);
+		$this->assertSame(6, $args['lookback_months']);
+		$this->assertSame('1', $args['export_excel']);
+		$this->assertArrayNotHasKey('tab', $args);
+	}
+
 	public function test_page_slice_is_fifty_rows() {
 		$rows = [];
 		for ($i = 0; $i < 60; $i++) {

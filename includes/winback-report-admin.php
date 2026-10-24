@@ -258,6 +258,19 @@ function intersoccer_winback_report_query_args(array $filters, $tab, array $extr
 }
 
 /**
+ * Excel link for every status. Same filters as the tab export, and no tab arg.
+ *
+ * @param array<string,mixed> $filters
+ * @return array<string,mixed>
+ */
+function intersoccer_winback_report_export_all_query_args(array $filters) {
+	$args = intersoccer_winback_report_query_args($filters, 'actionable', ['export_excel' => '1']);
+	unset($args['tab']);
+
+	return $args;
+}
+
+/**
  * Yes, or blank. Text, so the mark is readable without colour.
  *
  * @param mixed $flag
@@ -638,6 +651,13 @@ function intersoccer_render_winback_report_page() {
 		),
 		'intersoccer_winback_report_excel'
 	);
+	$excel_all_url = wp_nonce_url(
+		add_query_arg(
+			intersoccer_winback_report_export_all_query_args($filters),
+			admin_url('admin.php')
+		),
+		'intersoccer_winback_report_excel'
+	);
 	$kind_options = [
 		'camp' => __('Camp', 'intersoccer-reports-rosters'),
 		'course' => __('Course', 'intersoccer-reports-rosters'),
@@ -679,7 +699,8 @@ function intersoccer_render_winback_report_page() {
 			<input type="number" min="1" step="1" name="lookback_months" id="wb-lookback" value="<?php echo esc_attr((string) $filters['lookback_months']); ?>" />
 
 			<button type="submit" class="button button-primary"><?php esc_html_e('Filter', 'intersoccer-reports-rosters'); ?></button>
-			<a class="button" href="<?php echo esc_url($excel_url); ?>"><?php esc_html_e('Export to Excel', 'intersoccer-reports-rosters'); ?></a>
+			<a class="button" href="<?php echo esc_url($excel_url); ?>"><?php esc_html_e('Export this tab', 'intersoccer-reports-rosters'); ?></a>
+			<a class="button" href="<?php echo esc_url($excel_all_url); ?>"><?php esc_html_e('Export all statuses', 'intersoccer-reports-rosters'); ?></a>
 		</form>
 
 		<?php if ($unmapped_items !== []) : ?>
