@@ -8,6 +8,7 @@ namespace InterSoccer\ReportsRosters\Tests\Reports;
 use InterSoccer\ReportsRosters\Tests\TestCase;
 
 require_once __DIR__ . '/WinbackReportQueryCountTest.php';
+require_once __DIR__ . '/PlayerCourseStatusQueryCountTest.php';
 
 class PlayerCourseStatusPendingTest extends TestCase {
 	protected function setUp(): void {

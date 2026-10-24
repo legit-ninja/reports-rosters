@@ -140,7 +140,7 @@ SQL prefilter: `start_date` / `end_date` in `[Y-1]-01-01` … `[Y+1]-12-31`, or 
 
 ### Player matching
 
-Reuse `intersoccer_player_camp_status_load_players()` (batched `cache_users()` after DISTINCT `user_id` query).
+Players: `intersoccer_player_course_status_load_players()` — one read-only `usermeta` query (`meta_key = intersoccer_players`), batched `users` email lookup via `intersoccer_roster_report_batch_chunk_size()`, same row shape/sort as PCS but **no** `intersoccer_get_user_players()` / UUID backfill writes. Test override: `$GLOBALS['intersoccer_test_player_course_status_players']`.
 
 **Tier union:** For each PM player, collect bookings from **all** alias keys (`uuid`, then `idx`, then `name` — same key strings as `intersoccer_roster_report_collect_player_alias_keys`). Dedupe by `order_item_id`, sort bookings by `start_date`. Set `tier` / `key` to the **best-ranked** tier that had hits (`intersoccer_roster_report_player_key_tier_rank`: uuid > idx > name). Separate indexes for booked vs pending/on-hold rows share the same key logic and idx-collision priming.
 

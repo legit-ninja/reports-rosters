@@ -53,7 +53,7 @@ class PlayerCourseStatusStrictDateTest extends TestCase {
 		$wpdb = $this->wpdb_stub;
 
 		$includes = dirname(__DIR__, 2) . '/includes';
-		foreach (['final-reports-aggregation.php', 'utils.php', 'winback-report-facets.php', 'player-camp-status.php', 'player-course-status.php'] as $file) {
+		foreach (['reports-data.php', 'final-reports-aggregation.php', 'utils.php', 'winback-report-facets.php', 'player-camp-status.php', 'player-course-status.php'] as $file) {
 			require_once $includes . '/' . $file;
 		}
 		$this->reset_state();
@@ -71,19 +71,42 @@ class PlayerCourseStatusStrictDateTest extends TestCase {
 			$GLOBALS['intersoccer_test_player_course_status_players'],
 			$GLOBALS['intersoccer_test_player_course_status_roster_rows'],
 			$GLOBALS['intersoccer_test_player_course_status_error_log'],
-			$GLOBALS['intersoccer_test_live_order_status_map']
+			$GLOBALS['intersoccer_test_live_order_status_map'],
+			$GLOBALS['intersoccer_test_order_customer_id_map'],
+			$GLOBALS['intersoccer_test_order_item_meta'],
+			$GLOBALS['intersoccer_test_line_fully_refunded_item_ids'],
+			$GLOBALS['intersoccer_test_batch_chunk_size'],
+			$GLOBALS['intersoccer_rr_user_account_email_cache']
 		);
 		if ($this->wpdb_stub !== null) {
 			$this->wpdb_stub->last_error = '';
 			$this->wpdb_stub->forced_results = null;
 			$this->wpdb_stub->course_roster_rows = [];
 			$this->wpdb_stub->last_query = '';
+			$this->wpdb_stub->query_count = 0;
+			$this->wpdb_stub->write_query_count = 0;
+			$this->wpdb_stub->query_label_histogram = [];
 		}
-		if (function_exists('intersoccer_player_course_status_reset_roster_query_state')) {
-			intersoccer_player_course_status_reset_roster_query_state();
+		if (function_exists('intersoccer_player_course_status_reset_run_memos')) {
+			intersoccer_player_course_status_reset_run_memos();
 		}
 		if (function_exists('intersoccer_roster_report_reset_live_order_status_memo')) {
 			intersoccer_roster_report_reset_live_order_status_memo();
+		}
+		if (function_exists('intersoccer_roster_report_reset_order_customer_id_cache')) {
+			intersoccer_roster_report_reset_order_customer_id_cache();
+		}
+		if (function_exists('intersoccer_roster_report_reset_order_item_meta_cache')) {
+			intersoccer_roster_report_reset_order_item_meta_cache();
+		}
+		if (function_exists('intersoccer_roster_report_reset_line_refund_check_state')) {
+			intersoccer_roster_report_reset_line_refund_check_state();
+		}
+		if (function_exists('intersoccer_winback_reset_facet_resolution_cache')) {
+			intersoccer_winback_reset_facet_resolution_cache();
+		}
+		if (function_exists('intersoccer_roster_report_reset_idx_name_collision_state')) {
+			intersoccer_roster_report_reset_idx_name_collision_state();
 		}
 	}
 
@@ -160,6 +183,8 @@ class PlayerCourseStatusStrictDateTest extends TestCase {
 	}
 
 	public function test_null_1970_and_in_range_dates_still_scope_to_year(): void {
+		$GLOBALS['intersoccer_test_live_order_status_map'] = [6001 => 'wc-completed'];
+		$GLOBALS['intersoccer_test_order_customer_id_map'] = [6001 => 100];
 		$GLOBALS['intersoccer_test_player_course_status_players'] = [];
 		$GLOBALS['intersoccer_test_player_course_status_roster_rows'] = [
 			$this->roster_row(['order_item_id' => 7010, 'start_date' => null, 'end_date' => null, 'season' => 'Autumn 2026']),

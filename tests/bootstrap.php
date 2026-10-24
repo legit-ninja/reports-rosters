@@ -568,6 +568,23 @@ if (!function_exists('intersoccer_test_ensure_pm_filter_stub')) {
     }
 }
 
+if (!function_exists('maybe_unserialize')) {
+    function maybe_unserialize($data) {
+        if (is_array($data)) {
+            return $data;
+        }
+        if (!is_string($data)) {
+            return $data;
+        }
+        $unserialized = @unserialize($data);
+        if ($unserialized !== false || $data === 'b:0;') {
+            return $unserialized;
+        }
+
+        return $data;
+    }
+}
+
 if (!function_exists('sanitize_textarea_field')) {
     function sanitize_textarea_field($str) {
         return trim((string) $str);

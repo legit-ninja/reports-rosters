@@ -59,6 +59,140 @@ function intersoccer_player_course_status_user_can_view_dob() {
 }
 
 /**
+ * Reset per-run memos (facet slugs, roster query failure, win-back facet cache).
+ */
+function intersoccer_player_course_status_reset_run_memos() {
+	intersoccer_player_course_status_reset_roster_query_state();
+	intersoccer_player_course_status_reset_facet_slug_memos();
+	if (function_exists('intersoccer_winback_reset_facet_resolution_cache')) {
+		intersoccer_winback_reset_facet_resolution_cache();
+	}
+}
+
+/**
+ * Clear course-day slug memo for the current generate() run.
+ */
+function intersoccer_player_course_status_reset_facet_slug_memos() {
+	unset($GLOBALS['intersoccer_pcs_course_day_slug_memo']);
+}
+
+/**
+ * Read-only batched PM player loader (no intersoccer_get_user_players / UUID backfill writes).
+ *
+ * @return array<int,array<string,mixed>>
+ */
+function intersoccer_player_course_status_load_players() {
+	global $wpdb;
+
+	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+	$meta_rows = $wpdb->get_results(
+		"SELECT user_id, meta_value FROM {$wpdb->usermeta} WHERE meta_key = 'intersoccer_players'",
+		ARRAY_A
+	);
+	if (!is_array($meta_rows)) {
+		return [];
+	}
+
+	$user_ids = [];
+	$players_by_user = [];
+	foreach ($meta_rows as $meta_row) {
+		if (!is_array($meta_row)) {
+			continue;
+		}
+		$user_id = (int) ($meta_row['user_id'] ?? 0);
+		if ($user_id <= 0) {
+			continue;
+		}
+		$user_ids[ $user_id ] = $user_id;
+		$raw = isset($meta_row['meta_value']) ? $meta_row['meta_value'] : '';
+		$rows = is_array($raw) ? $raw : maybe_unserialize($raw);
+		if (!is_array($rows) || empty($rows)) {
+			continue;
+		}
+		$players_by_user[ $user_id ] = $rows;
+	}
+
+	$emails_by_user = [];
+	if (!empty($user_ids)) {
+		$chunk_size = function_exists('intersoccer_roster_report_batch_chunk_size')
+			? intersoccer_roster_report_batch_chunk_size()
+			: 500;
+		$id_list = array_values($user_ids);
+		foreach (array_chunk($id_list, $chunk_size) as $chunk) {
+			if (empty($chunk)) {
+				continue;
+			}
+			$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPlaceholder
+			$sql = "SELECT ID, user_email FROM {$wpdb->users} WHERE ID IN ({$placeholders})";
+			$email_rows = $wpdb->get_results($wpdb->prepare($sql, $chunk), ARRAY_A);
+			if (!is_array($email_rows)) {
+				continue;
+			}
+			foreach ($email_rows as $email_row) {
+				if (!is_array($email_row)) {
+					continue;
+				}
+				$uid = (int) ($email_row['ID'] ?? 0);
+				if ($uid <= 0) {
+					continue;
+				}
+				$emails_by_user[ $uid ] = (string) ($email_row['user_email'] ?? '');
+			}
+		}
+		if (!isset($GLOBALS['intersoccer_rr_user_account_email_cache'])
+			|| !is_array($GLOBALS['intersoccer_rr_user_account_email_cache'])) {
+			$GLOBALS['intersoccer_rr_user_account_email_cache'] = [];
+		}
+		foreach ($emails_by_user as $uid => $email) {
+			$GLOBALS['intersoccer_rr_user_account_email_cache'][ (int) $uid ] = $email;
+		}
+	}
+
+	$players = [];
+	foreach ($players_by_user as $user_id => $rows) {
+		$user_id = (int) $user_id;
+		$email = isset($emails_by_user[ $user_id ]) ? $emails_by_user[ $user_id ] : '';
+
+		foreach ($rows as $index => $player) {
+			if (!is_array($player)) {
+				continue;
+			}
+			$first = trim((string) ($player['first_name'] ?? ''));
+			$last = trim((string) ($player['last_name'] ?? ''));
+			if ($first === '' && $last === '') {
+				continue;
+			}
+			$dob = (string) ($player['dob'] ?? '');
+			$player_id = trim((string) ($player['player_id'] ?? ''));
+			$players[] = [
+				'user_id' => $user_id,
+				'user_email' => $email,
+				'player_id' => $player_id,
+				'player_index' => is_numeric($index) ? (int) $index : $index,
+				'first_name' => $first,
+				'last_name' => $last,
+				'dob' => $dob,
+				'age' => function_exists('intersoccer_player_camp_status_compute_age')
+					? intersoccer_player_camp_status_compute_age($dob)
+					: null,
+			];
+		}
+	}
+
+	usort($players, static function ($a, $b) {
+		$cmp = strcasecmp((string) ($a['last_name'] ?? ''), (string) ($b['last_name'] ?? ''));
+		if ($cmp !== 0) {
+			return $cmp;
+		}
+
+		return strcasecmp((string) ($a['first_name'] ?? ''), (string) ($b['first_name'] ?? ''));
+	});
+
+	return $players;
+}
+
+/**
  * @return string[]
  */
 function intersoccer_player_course_status_export_headers() {
@@ -208,7 +342,7 @@ function intersoccer_player_course_status_row_is_pending_intent_booking(array $r
  * @param array<int,array<string,mixed>> $scoped_rows
  * @return array<string,array<int,array<string,mixed>>>
  */
-function intersoccer_player_course_status_build_pending_booking_index(array $scoped_rows) {
+function intersoccer_player_course_status_build_pending_booking_index(array $scoped_rows, array $booking_records = []) {
 	if (function_exists('intersoccer_roster_report_reset_idx_name_collision_state')) {
 		intersoccer_roster_report_reset_idx_name_collision_state();
 	}
@@ -226,7 +360,10 @@ function intersoccer_player_course_status_build_pending_booking_index(array $sco
 		if (!is_array($row) || !intersoccer_player_course_status_row_is_pending_intent_booking($row)) {
 			continue;
 		}
-		$booking = intersoccer_player_course_status_build_booking_record($row);
+		$item_id = (int) ($row['order_item_id'] ?? 0);
+		$booking = ( $item_id > 0 && isset($booking_records[ $item_id ]) )
+			? $booking_records[ $item_id ]
+			: intersoccer_player_course_status_build_booking_record($row);
 		$keys = function_exists('intersoccer_roster_report_collect_player_alias_keys')
 			? intersoccer_roster_report_collect_player_alias_keys($row)
 			: [];
@@ -320,16 +457,32 @@ function intersoccer_player_course_status_course_day_slug($raw) {
 	if ($raw === '' || strcasecmp($raw, 'N/A') === 0) {
 		return '';
 	}
+	if (!isset($GLOBALS['intersoccer_pcs_course_day_slug_memo'])
+		|| !is_array($GLOBALS['intersoccer_pcs_course_day_slug_memo'])) {
+		$GLOBALS['intersoccer_pcs_course_day_slug_memo'] = [];
+	}
+	$memo_key = strtolower($raw);
+	if (array_key_exists($memo_key, $GLOBALS['intersoccer_pcs_course_day_slug_memo'])) {
+		return (string) $GLOBALS['intersoccer_pcs_course_day_slug_memo'][ $memo_key ];
+	}
 	if (function_exists('intersoccer_roster_facet_for_grouping')) {
-		return intersoccer_roster_facet_for_grouping($raw, 'pa_course-day');
+		$slug = intersoccer_roster_facet_for_grouping($raw, 'pa_course-day');
+		$GLOBALS['intersoccer_pcs_course_day_slug_memo'][ $memo_key ] = $slug;
+
+		return $slug;
 	}
 	if (function_exists('intersoccer_normalize_weekday_token')) {
 		$day = intersoccer_normalize_weekday_token($raw);
+		$slug = $day ? strtolower((string) $day) : strtolower($raw);
+		$GLOBALS['intersoccer_pcs_course_day_slug_memo'][ $memo_key ] = $slug;
 
-		return $day ? strtolower((string) $day) : strtolower($raw);
+		return $slug;
 	}
 
-	return strtolower($raw);
+	$slug = strtolower($raw);
+	$GLOBALS['intersoccer_pcs_course_day_slug_memo'][ $memo_key ] = $slug;
+
+	return $slug;
 }
 
 /**
@@ -424,6 +577,26 @@ function intersoccer_player_course_status_booking_label(array $row) {
 }
 
 /**
+ * @param array<int,array<string,mixed>> $scoped_rows
+ * @return array<int,array<string,mixed>>
+ */
+function intersoccer_player_course_status_build_booking_records_map(array $scoped_rows) {
+	$map = [];
+	foreach ($scoped_rows as $row) {
+		if (!is_array($row)) {
+			continue;
+		}
+		$item_id = (int) ($row['order_item_id'] ?? 0);
+		if ($item_id <= 0 || isset($map[ $item_id ])) {
+			continue;
+		}
+		$map[ $item_id ] = intersoccer_player_course_status_build_booking_record($row);
+	}
+
+	return $map;
+}
+
+/**
  * @param array<string,mixed> $row
  * @return array<string,mixed>
  */
@@ -472,6 +645,34 @@ function intersoccer_player_course_status_booking_matches_filters(array $booking
 	}
 
 	return true;
+}
+
+/**
+ * @param array<int,array<string,mixed>> $rows
+ * @return array<int,array<string,mixed>>
+ */
+/**
+ * Keep course roster rows only (before batched priming).
+ *
+ * @param array<int,array<string,mixed>> $rows
+ * @return array<int,array<string,mixed>>
+ */
+function intersoccer_player_course_status_filter_raw_course_rows(array $rows) {
+	$out = [];
+	foreach ($rows as $row) {
+		if (!is_array($row)) {
+			continue;
+		}
+		if (!empty($row['is_placeholder'])) {
+			continue;
+		}
+		if (!intersoccer_player_course_status_row_is_course($row)) {
+			continue;
+		}
+		$out[] = $row;
+	}
+
+	return $out;
 }
 
 /**
@@ -592,15 +793,11 @@ function intersoccer_player_course_status_load_course_roster_rows($year) {
 
 	$columns = $wpdb->get_col("DESCRIBE {$table}", 0);
 	$select = [
-		'id',
 		'order_id',
 		'order_item_id',
-		'first_name',
-		'last_name',
 		'player_first_name',
 		'player_last_name',
 		'product_name',
-		'product_id',
 		'variation_id',
 		'venue',
 		'course_day',
@@ -639,14 +836,17 @@ function intersoccer_player_course_status_load_course_roster_rows($year) {
 		return [];
 	}
 
-	return intersoccer_player_course_status_prepare_roster_rows($rows);
+	$course_rows = intersoccer_player_course_status_filter_raw_course_rows($rows);
+	unset($rows);
+
+	return intersoccer_player_course_status_prepare_roster_rows($course_rows);
 }
 
 /**
  * @param array<int,array<string,mixed>> $scoped_rows Active rows in year/season/girls scope.
  * @return array<string,array<int,array<string,mixed>>>
  */
-function intersoccer_player_course_status_build_booking_index(array $scoped_rows) {
+function intersoccer_player_course_status_build_booking_index(array $scoped_rows, array $booking_records = []) {
 	if (function_exists('intersoccer_roster_report_reset_idx_name_collision_state')) {
 		intersoccer_roster_report_reset_idx_name_collision_state();
 	}
@@ -664,7 +864,10 @@ function intersoccer_player_course_status_build_booking_index(array $scoped_rows
 		if (!is_array($row) || !intersoccer_player_course_status_row_is_active_booking($row)) {
 			continue;
 		}
-		$booking = intersoccer_player_course_status_build_booking_record($row);
+		$item_id = (int) ($row['order_item_id'] ?? 0);
+		$booking = ( $item_id > 0 && isset($booking_records[ $item_id ]) )
+			? $booking_records[ $item_id ]
+			: intersoccer_player_course_status_build_booking_record($row);
 		$keys = function_exists('intersoccer_roster_report_collect_player_alias_keys')
 			? intersoccer_roster_report_collect_player_alias_keys($row)
 			: [];
@@ -765,7 +968,7 @@ function intersoccer_player_course_status_match_player_bookings(array $player, a
  * @param array<int,array<string,mixed>> $scoped_rows
  * @return array{venues:array<string,string>,course_days:array<int,string>,age_groups:array<string,string>,seasons:array<int,string>}
  */
-function intersoccer_player_course_status_build_filter_options(array $scoped_rows) {
+function intersoccer_player_course_status_build_filter_options(array $scoped_rows, array $booking_records = []) {
 	$venues = [];
 	$course_days = [];
 	$age_groups = [];
@@ -775,7 +978,10 @@ function intersoccer_player_course_status_build_filter_options(array $scoped_row
 		if (!is_array($row) || !intersoccer_player_course_status_row_is_active_booking($row)) {
 			continue;
 		}
-		$booking = intersoccer_player_course_status_build_booking_record($row);
+		$item_id = (int) ($row['order_item_id'] ?? 0);
+		$booking = ( $item_id > 0 && isset($booking_records[ $item_id ]) )
+			? $booking_records[ $item_id ]
+			: intersoccer_player_course_status_build_booking_record($row);
 		if ($booking['venue_slug'] !== '') {
 			$venues[ $booking['venue_slug'] ] = $booking['venue'];
 		}
@@ -821,15 +1027,11 @@ function intersoccer_player_course_status_resolve_parent_email($user_id) {
 	if ($user_id <= 0) {
 		return '';
 	}
-	if (function_exists('intersoccer_winback_prime_contact_users')) {
-		intersoccer_winback_prime_contact_users([$user_id]);
-		if (isset($GLOBALS['intersoccer_rr_user_account_email_cache'][ $user_id ])) {
-			return (string) $GLOBALS['intersoccer_rr_user_account_email_cache'][ $user_id ];
-		}
+	if (isset($GLOBALS['intersoccer_rr_user_account_email_cache'][ $user_id ])) {
+		return (string) $GLOBALS['intersoccer_rr_user_account_email_cache'][ $user_id ];
 	}
-	$user = get_userdata($user_id);
 
-	return $user ? (string) $user->user_email : '';
+	return '';
 }
 
 /**
@@ -877,15 +1079,15 @@ function intersoccer_player_course_status_generate(array $filters) {
 	$filters = intersoccer_player_course_status_normalize_filters($filters);
 	$year = (int) $filters['year'];
 	$warnings = [];
-	intersoccer_player_course_status_reset_roster_query_state();
+	intersoccer_player_course_status_reset_run_memos();
 
 	if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING
 		&& isset($GLOBALS['intersoccer_test_player_course_status_players'])
 		&& is_array($GLOBALS['intersoccer_test_player_course_status_players'])) {
 		$players = $GLOBALS['intersoccer_test_player_course_status_players'];
 	} else {
-		$players = function_exists('intersoccer_player_camp_status_load_players')
-			? intersoccer_player_camp_status_load_players()
+		$players = function_exists('intersoccer_player_course_status_load_players')
+			? intersoccer_player_course_status_load_players()
 			: [];
 	}
 
@@ -905,7 +1107,9 @@ function intersoccer_player_course_status_generate(array $filters) {
 		&& isset($GLOBALS['intersoccer_test_player_course_status_roster_rows'])
 		&& is_array($GLOBALS['intersoccer_test_player_course_status_roster_rows'])) {
 		$raw_rows = intersoccer_player_course_status_prepare_roster_rows(
-			$GLOBALS['intersoccer_test_player_course_status_roster_rows']
+			intersoccer_player_course_status_filter_raw_course_rows(
+				$GLOBALS['intersoccer_test_player_course_status_roster_rows']
+			)
 		);
 	} else {
 		$raw_rows = intersoccer_player_course_status_load_course_roster_rows($year);
@@ -919,10 +1123,12 @@ function intersoccer_player_course_status_generate(array $filters) {
 		$filters['season_type'],
 		$filters['girls_mode']
 	);
+	unset($raw_rows);
 
-	$filter_options = intersoccer_player_course_status_build_filter_options($scoped_rows);
-	$index = intersoccer_player_course_status_build_booking_index($scoped_rows);
-	$pending_index = intersoccer_player_course_status_build_pending_booking_index($scoped_rows);
+	$booking_records = intersoccer_player_course_status_build_booking_records_map($scoped_rows);
+	$filter_options = intersoccer_player_course_status_build_filter_options($scoped_rows, $booking_records);
+	$index = intersoccer_player_course_status_build_booking_index($scoped_rows, $booking_records);
+	$pending_index = intersoccer_player_course_status_build_pending_booking_index($scoped_rows, $booking_records);
 
 	$matched_item_ids = [];
 	$output_rows = [];
@@ -1068,7 +1274,9 @@ function intersoccer_player_course_status_generate(array $filters) {
 		if ($item_id > 0 && !empty($matched_item_ids[ $item_id ])) {
 			continue;
 		}
-		$booking = intersoccer_player_course_status_build_booking_record($row);
+		$booking = isset($booking_records[ $item_id ])
+			? $booking_records[ $item_id ]
+			: intersoccer_player_course_status_build_booking_record($row);
 		$first = function_exists('intersoccer_roster_report_player_first_name')
 			? intersoccer_roster_report_player_first_name($row)
 			: trim((string) ($row['player_first_name'] ?? $row['first_name'] ?? ''));
