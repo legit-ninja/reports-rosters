@@ -75,7 +75,7 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 				continue;
 			}
 
-			if (!intersoccer_roster_report_status_counts_as_history($row['order_status'] ?? '')) {
+			if (!intersoccer_roster_report_row_counts_for_winback($row, 'history')) {
 				continue;
 			}
 
@@ -380,7 +380,7 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 			if (intersoccer_roster_report_is_fake_customer($customer_id)) {
 				continue;
 			}
-			if (!intersoccer_roster_report_status_counts_as_upcoming_rebooked($row['order_status'] ?? '')) {
+			if (!intersoccer_roster_report_row_counts_for_winback($row, 'upcoming_rebooked')) {
 				continue;
 			}
 			$kind = intersoccer_winback_report_engine_row_kind($row);
@@ -432,7 +432,7 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 				|| !intersoccer_roster_row_matches_listing_kind($row, 'course')) {
 				continue;
 			}
-			if (!intersoccer_roster_report_status_counts_as_upcoming_rebooked($row['order_status'] ?? '')) {
+			if (!intersoccer_roster_report_row_counts_for_winback($row, 'upcoming_rebooked')) {
 				continue;
 			}
 			$row = intersoccer_roster_report_row_with_resolved_customer($row);

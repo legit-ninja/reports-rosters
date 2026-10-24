@@ -13,10 +13,23 @@ class WinbackReportTest extends TestCase {
 			$GLOBALS['intersoccer_test_live_order_status_map'],
 			$GLOBALS['intersoccer_test_live_order_status_batch_load_calls'],
 			$GLOBALS['intersoccer_test_order_created_date_map'],
-			$GLOBALS['intersoccer_test_wc_get_order_callback']
+			$GLOBALS['intersoccer_test_wc_get_order_callback'],
+			$GLOBALS['intersoccer_test_line_fully_refunded_item_ids'],
+			$GLOBALS['intersoccer_rr_idx_name_by_slot'],
+			$GLOBALS['intersoccer_test_current_user_caps'],
+			$GLOBALS['intersoccer_test_current_user']
 		);
 		if (function_exists('intersoccer_winback_reset_order_created_date_cache')) {
 			intersoccer_winback_reset_order_created_date_cache();
+		}
+		if (function_exists('intersoccer_roster_report_reset_idx_name_collision_state')) {
+			intersoccer_roster_report_reset_idx_name_collision_state();
+		}
+		if (function_exists('intersoccer_roster_report_reset_line_refund_check_state')) {
+			intersoccer_roster_report_reset_line_refund_check_state();
+		}
+		if (function_exists('intersoccer_player_camp_status_reset_dob_gate_cache')) {
+			intersoccer_player_camp_status_reset_dob_gate_cache();
 		}
 		parent::tearDown();
 	}
@@ -420,6 +433,94 @@ class WinbackReportTest extends TestCase {
 	public function test_en_slug_normalization_and_german_age_alias() {
 		$slug = intersoccer_winback_normalize_facet_slug('5-12-jahre', 'pa_age-group', 'age_group');
 		$this->assertSame('5-12y', $slug);
+		$this->assertSame('6-12y', intersoccer_winback_normalize_facet_slug('6-12-jahre', 'pa_age-group', 'age_group'));
+		$this->assertSame('3-8y', intersoccer_winback_normalize_facet_slug('3-8-jahre', 'pa_age-group', 'age_group'));
+	}
+
+	public function test_winback_export_dob_gate_guarded_and_load_helper_exists() {
+		require_once dirname(__DIR__, 2) . '/includes/winback-report-admin.php';
+		$this->assertTrue(function_exists('intersoccer_winback_report_load_dob_gate'));
+		if (function_exists('intersoccer_test_ensure_pm_filter_stub')) {
+			intersoccer_test_ensure_pm_filter_stub();
+		}
+		require_once dirname(__DIR__, 2) . '/includes/medical-access.php';
+		intersoccer_player_camp_status_reset_dob_gate_cache();
+		if (function_exists('intersoccer_test_set_user_caps')) {
+			intersoccer_test_set_user_caps(['coach' => true, 'read' => true]);
+		}
+		$denied = intersoccer_winback_report_format_dob_for_export('2015-01-01');
+		$this->assertSame('Restricted', $denied);
+		$this->assertNotSame('2015-01-01', $denied);
+		if (function_exists('intersoccer_test_set_user_caps')) {
+			intersoccer_test_set_user_caps(['manage_options' => true]);
+		}
+		intersoccer_player_camp_status_reset_dob_gate_cache();
+		$this->assertSame('2015-01-01', intersoccer_winback_report_format_dob_for_export('2015-01-01'));
+	}
+
+	public function test_idx_collision_uses_name_tier_and_does_not_merge_children() {
+		$map = new \Intersoccer_Roster_Report_Player_Identity_Map();
+		$row_a = [
+			'customer_id' => 50,
+			'player_index' => 0,
+			'player_first_name' => 'Child',
+			'player_last_name' => 'One',
+		];
+		$row_b = [
+			'customer_id' => 50,
+			'player_index' => 0,
+			'player_first_name' => 'Child',
+			'player_last_name' => 'Two',
+		];
+		$map->register_row($row_a, '');
+		$map->register_row($row_b, '');
+		$key_a = intersoccer_roster_report_build_player_key($row_a, '');
+		$key_b = intersoccer_roster_report_build_player_key($row_b, '');
+		$this->assertSame('name', $key_a['tier']);
+		$this->assertSame('name', $key_b['tier']);
+		$this->assertFalse($map->same_player($key_a['key'], $key_b['key']));
+	}
+
+	public function test_same_idx_and_same_name_still_merges() {
+		$map = new \Intersoccer_Roster_Report_Player_Identity_Map();
+		$row = [
+			'customer_id' => 51,
+			'player_index' => 1,
+			'player_first_name' => 'Same',
+			'player_last_name' => 'Kid',
+		];
+		$map->register_row($row, '');
+		$map->register_row($row, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+		$idx_key = intersoccer_roster_report_build_player_key($row, '');
+		$uuid_key = intersoccer_roster_report_build_player_key($row, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+		$this->assertTrue($map->same_player($idx_key['key'], $uuid_key['key']));
+	}
+
+	public function test_fully_refunded_line_drops_from_winback_while_partial_stays() {
+		$GLOBALS['intersoccer_test_line_fully_refunded_item_ids'] = [9001 => true];
+		$full_line = [
+			'order_id' => 1,
+			'order_item_id' => 9001,
+			'order_status' => 'completed',
+		];
+		$partial_line = [
+			'order_id' => 1,
+			'order_item_id' => 9002,
+			'order_status' => 'completed',
+		];
+		$this->assertFalse(intersoccer_roster_report_row_counts_for_winback($full_line, 'history'));
+		$this->assertTrue(intersoccer_roster_report_row_counts_for_winback($partial_line, 'history'));
+		unset($GLOBALS['intersoccer_test_line_fully_refunded_item_ids']);
+	}
+
+	public function test_wholly_refunded_order_drops_even_when_roster_stale() {
+		$row = [
+			'order_id' => 2,
+			'order_item_id' => 9003,
+			'order_status' => 'wc-refunded',
+		];
+		$this->assertFalse(intersoccer_roster_report_row_counts_for_winback($row, 'history'));
+		$this->assertFalse(intersoccer_roster_report_row_counts_for_winback($row, 'upcoming_rebooked'));
 	}
 }
 

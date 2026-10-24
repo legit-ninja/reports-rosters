@@ -384,6 +384,187 @@ if (!function_exists('intersoccer_roster_report_rows_apply_live_order_status')) 
 	}
 }
 
+if (!function_exists('intersoccer_roster_report_reset_idx_name_collision_state')) {
+	/**
+	 * @internal Tests only.
+	 */
+	function intersoccer_roster_report_reset_idx_name_collision_state() {
+		$GLOBALS['intersoccer_rr_idx_name_collision_keys'] = [];
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_player_name_key')) {
+	/**
+	 * Normalized name-tier key for a roster row (customer resolved).
+	 *
+	 * @param array<string,mixed> $row
+	 */
+	function intersoccer_roster_report_player_name_key(array $row) {
+		$customer_id = intersoccer_roster_report_resolve_row_customer_id($row);
+		$first = intersoccer_roster_report_normalize_name(intersoccer_roster_report_player_first_name($row));
+		$last = intersoccer_roster_report_normalize_name(intersoccer_roster_report_player_last_name($row));
+		if ($customer_id <= 0 || $first === '' || $last === '') {
+			return '';
+		}
+
+		return 'name:' . $customer_id . ':' . $first . '|' . $last;
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_mark_idx_name_collision')) {
+	/**
+	 * @param int $customer_id Resolved customer user ID.
+	 * @param int $player_index
+	 */
+	function intersoccer_roster_report_mark_idx_name_collision($customer_id, $player_index) {
+		$customer_id = (int) $customer_id;
+		$player_index = (int) $player_index;
+		if ($customer_id <= 0) {
+			return;
+		}
+		if (!isset($GLOBALS['intersoccer_rr_idx_name_collision_keys']) || !is_array($GLOBALS['intersoccer_rr_idx_name_collision_keys'])) {
+			$GLOBALS['intersoccer_rr_idx_name_collision_keys'] = [];
+		}
+		$GLOBALS['intersoccer_rr_idx_name_collision_keys'][ $customer_id . ':' . $player_index ] = true;
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_idx_has_name_collision')) {
+	/**
+	 * Same customer + player_index maps to more than one normalized player name.
+	 *
+	 * @param int $customer_id Resolved customer user ID.
+	 * @param int $player_index
+	 */
+	function intersoccer_roster_report_idx_has_name_collision($customer_id, $player_index) {
+		$customer_id = (int) $customer_id;
+		$player_index = (int) $player_index;
+		if ($customer_id <= 0) {
+			return false;
+		}
+		$store = $GLOBALS['intersoccer_rr_idx_name_collision_keys'] ?? [];
+
+		return !empty($store[ $customer_id . ':' . $player_index ]);
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_note_idx_name_for_collision_detection')) {
+	/**
+	 * Record idx tier name; mark collision when a second distinct name appears.
+	 *
+	 * @param array<string,mixed> $row
+	 */
+	function intersoccer_roster_report_note_idx_name_for_collision_detection(array $row) {
+		$stored_cid = intersoccer_roster_report_stored_customer_id($row);
+		$customer_id = intersoccer_roster_report_resolve_row_customer_id($row);
+		if ($stored_cid <= 0 || $customer_id <= 0) {
+			return;
+		}
+		$player_index = isset($row['player_index']) ? (int) $row['player_index'] : 0;
+		$name_key = intersoccer_roster_report_player_name_key($row);
+		if ($name_key === '') {
+			return;
+		}
+		if (!isset($GLOBALS['intersoccer_rr_idx_name_by_slot']) || !is_array($GLOBALS['intersoccer_rr_idx_name_by_slot'])) {
+			$GLOBALS['intersoccer_rr_idx_name_by_slot'] = [];
+		}
+		$slot = $customer_id . ':' . $player_index;
+		if (isset($GLOBALS['intersoccer_rr_idx_name_by_slot'][ $slot ])) {
+			if ($GLOBALS['intersoccer_rr_idx_name_by_slot'][ $slot ] !== $name_key) {
+				intersoccer_roster_report_mark_idx_name_collision($customer_id, $player_index);
+			}
+		} else {
+			$GLOBALS['intersoccer_rr_idx_name_by_slot'][ $slot ] = $name_key;
+		}
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_reset_line_refund_check_state')) {
+	/**
+	 * @internal Tests only.
+	 */
+	function intersoccer_roster_report_reset_line_refund_check_state() {
+		unset($GLOBALS['intersoccer_rr_line_refund_order_cache']);
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_order_status_is_wholly_refunded')) {
+	/**
+	 * @param string|null $order_status Live or roster order status.
+	 */
+	function intersoccer_roster_report_order_status_is_wholly_refunded($order_status) {
+		$norm = intersoccer_roster_report_normalize_order_status($order_status);
+
+		return $norm === 'refunded';
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_row_line_is_fully_refunded')) {
+	/**
+	 * J11: line fully refunded on an otherwise active order (partial order refund).
+	 *
+	 * @param array<string,mixed> $row Roster row with order_id and order_item_id.
+	 */
+	function intersoccer_roster_report_row_line_is_fully_refunded(array $row) {
+		$order_item_id = (int) ( $row['order_item_id'] ?? 0 );
+		$order_id = (int) ( $row['order_id'] ?? 0 );
+		if ($order_item_id <= 0 || $order_id <= 0) {
+			return false;
+		}
+
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
+			if (isset($GLOBALS['intersoccer_test_line_fully_refunded_item_ids']) && is_array($GLOBALS['intersoccer_test_line_fully_refunded_item_ids'])) {
+				return !empty($GLOBALS['intersoccer_test_line_fully_refunded_item_ids'][ $order_item_id ]);
+			}
+
+			return false;
+		}
+
+		if (!function_exists('wc_get_order')) {
+			return false;
+		}
+
+		if (!isset($GLOBALS['intersoccer_rr_line_refund_order_cache']) || !is_array($GLOBALS['intersoccer_rr_line_refund_order_cache'])) {
+			$GLOBALS['intersoccer_rr_line_refund_order_cache'] = [];
+		}
+		$cache = &$GLOBALS['intersoccer_rr_line_refund_order_cache'];
+		if (!array_key_exists($order_id, $cache)) {
+			$cache[ $order_id ] = wc_get_order($order_id);
+		}
+		$order = $cache[ $order_id ];
+		if (!$order) {
+			return false;
+		}
+
+		$service = new RosterRefundService();
+
+		return $service->isOrderItemFullyRefunded($order, $order_item_id);
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_row_counts_for_winback')) {
+	/**
+	 * Whether a roster row counts toward win-back history / upcoming (status + line refund).
+	 *
+	 * @param array<string,mixed> $row Row with live order_status applied.
+	 * @param string              $mode history|upcoming_rebooked
+	 */
+	function intersoccer_roster_report_row_counts_for_winback(array $row, $mode = 'history') {
+		$status = (string) ( $row['order_status'] ?? '' );
+		if (intersoccer_roster_report_order_status_is_wholly_refunded($status)) {
+			return false;
+		}
+		if (intersoccer_roster_report_row_line_is_fully_refunded($row)) {
+			return false;
+		}
+		if ($mode === 'upcoming_rebooked') {
+			return intersoccer_roster_report_status_counts_as_upcoming_rebooked($status);
+		}
+
+		return intersoccer_roster_report_status_counts_as_history($status);
+	}
+}
+
 if (!function_exists('intersoccer_roster_report_append_sql_exclude_inactive_statuses')) {
 	/**
 	 * Append SQL WHERE fragments excluding cancelled/refunded/failed roster rows.
@@ -618,7 +799,7 @@ if (!function_exists('intersoccer_roster_report_collect_player_alias_keys')) {
 		$customer_id = intersoccer_roster_report_resolve_row_customer_id($row);
 		$player_index = isset($row['player_index']) ? (int) $row['player_index'] : 0;
 
-		if ($stored_cid > 0 && $customer_id > 0) {
+		if ($stored_cid > 0 && $customer_id > 0 && !intersoccer_roster_report_idx_has_name_collision($customer_id, $player_index)) {
 			$aliases[] = 'idx:' . $customer_id . ':' . $player_index;
 		}
 
@@ -655,10 +836,12 @@ if (!function_exists('intersoccer_roster_report_build_player_key')) {
 		$player_index = isset($row['player_index']) ? (int) $row['player_index'] : 0;
 
 		if ($stored_cid > 0 && $customer_id > 0) {
-			return [
-				'key' => 'idx:' . $customer_id . ':' . $player_index,
-				'tier' => 'idx',
-			];
+			if (!intersoccer_roster_report_idx_has_name_collision($customer_id, $player_index)) {
+				return [
+					'key' => 'idx:' . $customer_id . ':' . $player_index,
+					'tier' => 'idx',
+				];
+			}
 		}
 
 		$first = intersoccer_roster_report_normalize_name(intersoccer_roster_report_player_first_name($row));
@@ -685,6 +868,9 @@ if (!class_exists('Intersoccer_Roster_Report_Player_Identity_Map')) {
 		/** @var array<string,string> */
 		private $signature_anchor = [];
 
+		/** @var array<string,string> ci:… => name-tier key at anchor */
+		private $signature_name_by_ci = [];
+
 		/** @var array<string,string> */
 		private $alias_tier = [];
 
@@ -698,6 +884,8 @@ if (!class_exists('Intersoccer_Roster_Report_Player_Identity_Map')) {
 		 * @param array<string,mixed> $row
 		 */
 		public function register_row(array $row, $assigned_player_uuid = '') {
+			intersoccer_roster_report_note_idx_name_for_collision_detection($row);
+
 			$aliases = intersoccer_roster_report_collect_player_alias_keys($row, $assigned_player_uuid);
 			if (empty($aliases)) {
 				return;
@@ -729,6 +917,27 @@ if (!class_exists('Intersoccer_Roster_Report_Player_Identity_Map')) {
 			}
 
 			foreach ($signatures as $signature) {
+				if (strpos($signature, 'ci:') === 0) {
+					$name_key = intersoccer_roster_report_player_name_key($row);
+					if ($name_key === '') {
+						continue;
+					}
+					if (isset($this->signature_anchor[ $signature ])) {
+						$anchor_name = $this->signature_name_by_ci[ $signature ] ?? '';
+						if ($anchor_name !== '' && $anchor_name !== $name_key) {
+							intersoccer_roster_report_mark_idx_name_collision(
+								$customer_id,
+								$player_index
+							);
+							continue;
+						}
+						$this->union( $aliases[0], $this->signature_anchor[ $signature ] );
+					} else {
+						$this->signature_anchor[ $signature ] = $aliases[0];
+						$this->signature_name_by_ci[ $signature ] = $name_key;
+					}
+					continue;
+				}
 				if (isset($this->signature_anchor[ $signature ])) {
 					$this->union( $aliases[0], $this->signature_anchor[ $signature ] );
 				} else {
