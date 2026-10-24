@@ -382,6 +382,20 @@ if (!function_exists('wp_get_post_parent_id')) {
     }
 }
 
+if (!function_exists('get_edit_post_link')) {
+    function get_edit_post_link($id = 0, $context = 'display') {
+        $id = (int) $id;
+        if (!isset($GLOBALS['intersoccer_test_edit_post_links'][$id])) {
+            return '';
+        }
+        $url = $GLOBALS['intersoccer_test_edit_post_links'][$id];
+        if (!is_string($url) || $url === '') {
+            return '';
+        }
+        return $url;
+    }
+}
+
 if (!function_exists('update_meta_cache')) {
     function update_meta_cache($object_type, $object_ids) {
         return true;
