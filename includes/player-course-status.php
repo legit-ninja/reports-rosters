@@ -47,6 +47,13 @@ if (!function_exists('intersoccer_winback_normalize_roster_facet_slug')) {
 	}
 }
 
+if (!function_exists('intersoccer_rr_product_type_memo_begin')) {
+	$__perf = dirname(__FILE__) . '/winback-report-perf.php';
+	if (file_exists($__perf)) {
+		require_once $__perf;
+	}
+}
+
 /**
  * Whether the current user may see DOB (reuses player camp status gate).
  */
@@ -676,6 +683,43 @@ function intersoccer_player_course_status_filter_raw_course_rows(array $rows) {
 }
 
 /**
+ * Warm post caches and product-type memo before course-kind filtering.
+ *
+ * @param array<int,array<string,mixed>> $rows
+ */
+function intersoccer_player_course_status_prime_roster_product_types(array $rows) {
+	$post_ids = [];
+	foreach ($rows as $row) {
+		if (!is_array($row)) {
+			continue;
+		}
+		$product_id = (int) ( $row['product_id'] ?? 0 );
+		if ($product_id > 0) {
+			$post_ids[ $product_id ] = $product_id;
+		}
+		$variation_id = (int) ( $row['variation_id'] ?? 0 );
+		if ($variation_id > 0) {
+			$post_ids[ $variation_id ] = $variation_id;
+		}
+	}
+	if (!empty($post_ids)) {
+		$chunk_size = function_exists('intersoccer_roster_report_batch_chunk_size')
+			? intersoccer_roster_report_batch_chunk_size()
+			: 500;
+		foreach (array_chunk(array_values($post_ids), $chunk_size) as $chunk) {
+			if (function_exists('_prime_post_caches')) {
+				_prime_post_caches($chunk, false, true);
+			} elseif (function_exists('update_meta_cache')) {
+				update_meta_cache('post', $chunk);
+			}
+		}
+	}
+	if (function_exists('intersoccer_rr_winback_prime_product_types_from_rows')) {
+		intersoccer_rr_winback_prime_product_types_from_rows($rows);
+	}
+}
+
+/**
  * @param array<int,array<string,mixed>> $rows
  * @return array<int,array<string,mixed>>
  */
@@ -795,9 +839,12 @@ function intersoccer_player_course_status_load_course_roster_rows($year) {
 	$select = [
 		'order_id',
 		'order_item_id',
+		'first_name',
+		'last_name',
 		'player_first_name',
 		'player_last_name',
 		'product_name',
+		'product_id',
 		'variation_id',
 		'venue',
 		'course_day',
@@ -835,6 +882,8 @@ function intersoccer_player_course_status_load_course_roster_rows($year) {
 	if (!is_array($rows)) {
 		return [];
 	}
+
+	intersoccer_player_course_status_prime_roster_product_types($rows);
 
 	$course_rows = intersoccer_player_course_status_filter_raw_course_rows($rows);
 	unset($rows);
@@ -1076,6 +1125,25 @@ function intersoccer_player_course_status_normalize_filters(array $filters) {
  * @return array<string,mixed>
  */
 function intersoccer_player_course_status_generate(array $filters) {
+	$memo_started = false;
+	if (function_exists('intersoccer_rr_product_type_memo_begin')) {
+		intersoccer_rr_product_type_memo_begin();
+		$memo_started = true;
+	}
+	try {
+		return intersoccer_player_course_status_generate_inner($filters);
+	} finally {
+		if ($memo_started && function_exists('intersoccer_rr_product_type_memo_end')) {
+			intersoccer_rr_product_type_memo_end();
+		}
+	}
+}
+
+/**
+ * @param array<string,mixed> $filters
+ * @return array<string,mixed>
+ */
+function intersoccer_player_course_status_generate_inner(array $filters) {
 	$filters = intersoccer_player_course_status_normalize_filters($filters);
 	$year = (int) $filters['year'];
 	$warnings = [];
@@ -1106,10 +1174,10 @@ function intersoccer_player_course_status_generate(array $filters) {
 	if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING
 		&& isset($GLOBALS['intersoccer_test_player_course_status_roster_rows'])
 		&& is_array($GLOBALS['intersoccer_test_player_course_status_roster_rows'])) {
+		$fixture_rows = $GLOBALS['intersoccer_test_player_course_status_roster_rows'];
+		intersoccer_player_course_status_prime_roster_product_types($fixture_rows);
 		$raw_rows = intersoccer_player_course_status_prepare_roster_rows(
-			intersoccer_player_course_status_filter_raw_course_rows(
-				$GLOBALS['intersoccer_test_player_course_status_roster_rows']
-			)
+			intersoccer_player_course_status_filter_raw_course_rows($fixture_rows)
 		);
 	} else {
 		$raw_rows = intersoccer_player_course_status_load_course_roster_rows($year);

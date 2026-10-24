@@ -51,6 +51,25 @@ return array (
           1 => 
           array (
             'order_id' => 55001,
+            'order_item_id' => 59060,
+            'product' => 'PV Course Only',
+            'venue' => 'Geneva Centre',
+            'venue_slug' => 'geneva-centre',
+            'age_group' => '5-12y',
+            'age_group_slug' => '5-12y',
+            'course_day' => 'Sunday',
+            'course_day_slug' => 'sunday',
+            'times' => '10:00-11:30',
+            'season' => 'Autumn 2026',
+            'start_date' => '2026-09-01',
+            'end_date' => '2026-12-15',
+            'order_status' => 'wc-completed',
+            'girls_only' => false,
+            'label' => 'PV Course Only · Geneva Centre · Sunday · 10:00-11:30 · Autumn 2026 · 2026-09-01–2026-12-15',
+          ),
+          2 => 
+          array (
+            'order_id' => 55001,
             'order_item_id' => 59020,
             'product' => 'Autumn Skills',
             'venue' => 'Geneva Centre',
@@ -71,7 +90,7 @@ return array (
         'pending_bookings' => 
         array (
         ),
-        'bookings_label' => 'Autumn Skills · Geneva Centre · Sunday · 10:00-11:30 · Autumn 2026 · 2026-09-01–2026-12-15; Autumn Skills · Geneva Centre · Sunday · 10:00-11:30 · Autumn',
+        'bookings_label' => 'Autumn Skills · Geneva Centre · Sunday · 10:00-11:30 · Autumn 2026 · 2026-09-01–2026-12-15; PV Course Only · Geneva Centre · Sunday · 10:00-11:30 · Autumn 2026 · 2026-09-01–2026-12-15; Autumn Skills · Geneva Centre · Sunday · 10:00-11:30 · Autumn',
       ),
       1 => 
       array (
@@ -201,6 +220,55 @@ return array (
         ),
         'bookings_label' => '',
       ),
+      4 => 
+      array (
+        'player' => 
+        array (
+          'name' => 'Legacy Names',
+          'first_name' => 'Legacy',
+          'last_name' => 'Names',
+          'player_index' => 0,
+          'key' => 'idx:14:0',
+          'tier' => 'idx',
+        ),
+        'parent' => 
+        array (
+          'id' => 14,
+          'email' => 'legacy@test',
+        ),
+        'dob' => '2015-05-05',
+        'dob_restricted' => false,
+        'age' => 11,
+        'booked' => true,
+        'booking_status' => 'booked',
+        'booking_status_label' => 'Booked',
+        'bookings' => 
+        array (
+          0 => 
+          array (
+            'order_id' => 55001,
+            'order_item_id' => 59050,
+            'product' => 'Autumn Skills',
+            'venue' => 'Geneva Centre',
+            'venue_slug' => 'geneva-centre',
+            'age_group' => '5-12y',
+            'age_group_slug' => '5-12y',
+            'course_day' => 'Sunday',
+            'course_day_slug' => 'sunday',
+            'times' => '10:00-11:30',
+            'season' => 'Autumn 2026',
+            'start_date' => '2026-09-01',
+            'end_date' => '2026-12-15',
+            'order_status' => 'wc-completed',
+            'girls_only' => false,
+            'label' => 'Autumn Skills · Geneva Centre · Sunday · 10:00-11:30 · Autumn 2026 · 2026-09-01–2026-12-15',
+          ),
+        ),
+        'pending_bookings' => 
+        array (
+        ),
+        'bookings_label' => 'Autumn Skills · Geneva Centre · Sunday · 10:00-11:30 · Autumn 2026 · 2026-09-01–2026-12-15',
+      ),
     ),
     'unmatched_bookings' => 
     array (
@@ -247,8 +315,8 @@ return array (
     ),
     'totals' => 
     array (
-      'players' => 4,
-      'booked' => 1,
+      'players' => 5,
+      'booked' => 2,
       'not_booked' => 3,
       'pending_payment' => 1,
       'on_hold' => 1,
@@ -269,7 +337,7 @@ return array (
       4 => 11,
       5 => 'Yes',
       6 => 'Booked',
-      7 => 'Autumn Skills · Geneva Centre · Sunday · 10:00-11:30 · Autumn 2026 · 2026-09-01–2026-12-15; Autumn Skills · Geneva Centre · Sunday · 10:00-11:30 · Autumn',
+      7 => 'Autumn Skills · Geneva Centre · Sunday · 10:00-11:30 · Autumn 2026 · 2026-09-01–2026-12-15; PV Course Only · Geneva Centre · Sunday · 10:00-11:30 · Autumn 2026 · 2026-09-01–2026-12-15; Autumn Skills · Geneva Centre · Sunday · 10:00-11:30 · Autumn',
       8 => 'idx',
     ),
     1 => 
@@ -307,6 +375,18 @@ return array (
       6 => 'Not booked',
       7 => '',
       8 => '',
+    ),
+    4 => 
+    array (
+      0 => 'Legacy Names',
+      1 => 'legacy@test',
+      2 => 14,
+      3 => '2015-05-05',
+      4 => 11,
+      5 => 'Yes',
+      6 => 'Booked',
+      7 => 'Autumn Skills · Geneva Centre · Sunday · 10:00-11:30 · Autumn 2026 · 2026-09-01–2026-12-15',
+      8 => 'idx',
     ),
   ),
 );

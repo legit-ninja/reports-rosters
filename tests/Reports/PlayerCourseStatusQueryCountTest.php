@@ -27,8 +27,8 @@ class PlayerCourseStatusCountingWpdb extends WinbackReportCountingWpdb {
 
 	/** @var string[] */
 	public $roster_columns = [
-		'order_id', 'order_item_id', 'player_first_name', 'player_last_name',
-		'product_name', 'variation_id', 'venue', 'course_day', 'times', 'course_times', 'age_group',
+		'id', 'order_id', 'order_item_id', 'first_name', 'last_name', 'player_first_name', 'player_last_name',
+		'product_name', 'product_id', 'variation_id', 'venue', 'course_day', 'times', 'course_times', 'age_group',
 		'season', 'start_date', 'end_date', 'activity_type', 'order_status', 'customer_id', 'player_index',
 		'girls_only', 'is_placeholder',
 	];
@@ -36,8 +36,8 @@ class PlayerCourseStatusCountingWpdb extends WinbackReportCountingWpdb {
 	private function count_query($query = null): void {
 		$this->query_count++;
 		if ($query !== null && $query !== '') {
+			$this->last_query = (string) $query;
 			$sql = (string) $query;
-			$this->last_query = $sql;
 			if (preg_match('/^\s*(INSERT|UPDATE|DELETE|REPLACE)\b/i', $sql)) {
 				$this->write_query_count++;
 			}
@@ -151,6 +151,7 @@ class PlayerCourseStatusQueryCountTest extends TestCase {
 		foreach (['final-reports-aggregation.php', 'utils.php', 'winback-report-facets.php', 'player-camp-status.php', 'player-course-status.php'] as $file) {
 			require_once $includes . '/' . $file;
 		}
+		require_once $includes . '/winback-report-perf.php';
 		$this->reset_state();
 	}
 
@@ -168,9 +169,15 @@ class PlayerCourseStatusQueryCountTest extends TestCase {
 			$GLOBALS['intersoccer_test_live_order_status_map'],
 			$GLOBALS['intersoccer_test_order_customer_id_map'],
 			$GLOBALS['intersoccer_test_order_item_meta'],
-			$GLOBALS['intersoccer_test_batch_chunk_size'],
-			$GLOBALS['intersoccer_rr_user_account_email_cache']
+			$GLOBALS['intersoccer_test_batch_chunk_size']
 		);
+		unset(
+			$GLOBALS['intersoccer_rr_user_account_email_cache'],
+			$GLOBALS['intersoccer_test_get_product_type_calls']
+		);
+		if (function_exists('intersoccer_rr_product_type_memo_reset')) {
+			intersoccer_rr_product_type_memo_reset();
+		}
 		if ($this->counting_wpdb instanceof PlayerCourseStatusCountingWpdb) {
 			$this->counting_wpdb->course_roster_rows = [];
 			$this->counting_wpdb->usermeta_player_rows = [];
@@ -207,10 +214,12 @@ class PlayerCourseStatusQueryCountTest extends TestCase {
 		$customer_id = 1000 + ($i % 5);
 
 		return [
+			'id' => $i,
 			'order_id' => $order_id,
 			'order_item_id' => $item_id,
 			'activity_type' => 'Course',
 			'product_name' => 'Course ' . $i,
+			'product_id' => 3000,
 			'variation_id' => 4000 + $i,
 			'venue' => 'Geneva Centre',
 			'course_day' => 'sunday',
@@ -220,7 +229,7 @@ class PlayerCourseStatusQueryCountTest extends TestCase {
 			'season' => 'Autumn 2026',
 			'start_date' => '2026-09-01',
 			'end_date' => '2026-12-01',
-			'order_status' => $i % 9 === 0 ? 'pending' : ( $i % 11 === 0 ? 'on-hold' : 'completed' ),
+			'order_status' => 'completed',
 			'customer_id' => $customer_id,
 			'player_index' => 0,
 			'player_first_name' => 'Player',
@@ -228,6 +237,38 @@ class PlayerCourseStatusQueryCountTest extends TestCase {
 			'girls_only' => 0,
 			'is_placeholder' => 0,
 		];
+	}
+
+	/**
+	 * @param int $count
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function synthetic_players(int $count): array {
+		$players = [];
+		for ($i = 1; $i <= $count; $i++) {
+			$players[] = [
+				'user_id' => 1000 + ($i % 5),
+				'user_email' => 'user' . $i . '@example.test',
+				'player_id' => 'uuid-' . $i,
+				'player_index' => 0,
+				'first_name' => 'Player',
+				'last_name' => 'Number' . $i,
+				'dob' => '2015-01-01',
+			];
+		}
+
+		return $players;
+	}
+
+	/**
+	 * @return array<string,mixed>
+	 */
+	private function synthetic_row_three_product_ids(int $i): array {
+		$row = $this->synthetic_row($i);
+		$row['product_id'] = 3000 + ( $i % 3 );
+		$row['variation_id'] = 4500;
+
+		return $row;
 	}
 
 	/**
@@ -279,13 +320,27 @@ class PlayerCourseStatusQueryCountTest extends TestCase {
 			$this->markTestSkipped('Counting wpdb missing');
 		}
 		$GLOBALS['intersoccer_test_batch_chunk_size'] = 500;
+		$GLOBALS['intersoccer_test_live_order_status_map'] = [];
+		$GLOBALS['intersoccer_test_order_customer_id_map'] = [];
 
-		$this->seed_roster_rows(10);
+		$this->counting_wpdb->course_roster_rows = [];
+		for ($i = 1; $i <= 10; $i++) {
+			$row = $this->synthetic_row($i);
+			$GLOBALS['intersoccer_test_live_order_status_map'][ $row['order_id'] ] = 'wc-completed';
+			$GLOBALS['intersoccer_test_order_customer_id_map'][ $row['order_id'] ] = (int) $row['customer_id'];
+			$this->counting_wpdb->course_roster_rows[] = $row;
+		}
 		$this->counting_wpdb->query_count = 0;
 		intersoccer_player_course_status_load_course_roster_rows(2026);
 		$small_queries = $this->counting_wpdb->query_count;
 
-		$this->seed_roster_rows(100);
+		$this->counting_wpdb->course_roster_rows = [];
+		for ($i = 1; $i <= 100; $i++) {
+			$row = $this->synthetic_row($i);
+			$GLOBALS['intersoccer_test_live_order_status_map'][ $row['order_id'] ] = 'wc-completed';
+			$GLOBALS['intersoccer_test_order_customer_id_map'][ $row['order_id'] ] = (int) $row['customer_id'];
+			$this->counting_wpdb->course_roster_rows[] = $row;
+		}
 		$this->counting_wpdb->query_count = 0;
 		intersoccer_player_course_status_load_course_roster_rows(2026);
 		$large_queries = $this->counting_wpdb->query_count;
@@ -362,11 +417,11 @@ class PlayerCourseStatusQueryCountTest extends TestCase {
 			$this->markTestSkipped('Counting wpdb missing');
 		}
 		$GLOBALS['intersoccer_test_batch_chunk_size'] = 500;
+		$GLOBALS['intersoccer_test_live_order_status_map'] = [];
+		$GLOBALS['intersoccer_test_order_customer_id_map'] = [];
 
 		$run = function (int $row_count) {
 			$rows = [];
-			$GLOBALS['intersoccer_test_live_order_status_map'] = [];
-			$GLOBALS['intersoccer_test_order_customer_id_map'] = [];
 			for ($i = 1; $i <= $row_count; $i++) {
 				$row = $this->synthetic_row($i);
 				$GLOBALS['intersoccer_test_live_order_status_map'][ $row['order_id'] ] = 'wc-completed';
@@ -374,19 +429,7 @@ class PlayerCourseStatusQueryCountTest extends TestCase {
 				$rows[] = $row;
 			}
 			$GLOBALS['intersoccer_test_player_course_status_roster_rows'] = $rows;
-			$players = [];
-			for ($i = 1; $i <= $row_count; $i++) {
-				$players[] = [
-					'user_id' => 1000 + ($i % 5),
-					'user_email' => 'user' . $i . '@example.test',
-					'player_id' => 'uuid-' . $i,
-					'player_index' => 0,
-					'first_name' => 'Player',
-					'last_name' => 'Number' . $i,
-					'dob' => '2015-01-01',
-				];
-			}
-			$GLOBALS['intersoccer_test_player_course_status_players'] = $players;
+			$GLOBALS['intersoccer_test_player_course_status_players'] = $this->synthetic_players($row_count);
 			$this->counting_wpdb->query_count = 0;
 			intersoccer_player_course_status_generate(['year' => 2026]);
 
@@ -396,5 +439,45 @@ class PlayerCourseStatusQueryCountTest extends TestCase {
 		$small = $run(10);
 		$large = $run(100);
 		$this->assertSame($small, $large);
+	}
+
+	public function test_generate_query_count_independent_of_row_count_with_three_product_ids(): void {
+		if (!$this->counting_wpdb instanceof PlayerCourseStatusCountingWpdb) {
+			$this->markTestSkipped('Counting wpdb missing');
+		}
+		$GLOBALS['intersoccer_test_batch_chunk_size'] = 500;
+		$GLOBALS['intersoccer_test_get_product_type_calls'] = [];
+
+		$run = function (int $row_count) {
+			$GLOBALS['intersoccer_test_live_order_status_map'] = [];
+			$GLOBALS['intersoccer_test_order_customer_id_map'] = [];
+			$rows = [];
+			for ($i = 1; $i <= $row_count; $i++) {
+				$row = $this->synthetic_row_three_product_ids($i);
+				$GLOBALS['intersoccer_test_live_order_status_map'][ $row['order_id'] ] = 'wc-completed';
+				$GLOBALS['intersoccer_test_order_customer_id_map'][ $row['order_id'] ] = (int) $row['customer_id'];
+				$rows[] = $row;
+			}
+			$GLOBALS['intersoccer_test_player_course_status_roster_rows'] = $rows;
+			$GLOBALS['intersoccer_test_player_course_status_players'] = $this->synthetic_players(min(20, $row_count));
+			$GLOBALS['intersoccer_test_get_product_type_calls'] = [];
+			$this->counting_wpdb->query_count = 0;
+			intersoccer_player_course_status_generate(['year' => 2026]);
+
+			return [
+				'queries' => (int) $this->counting_wpdb->query_count,
+				'type_calls' => $GLOBALS['intersoccer_test_get_product_type_calls'] ?? [],
+			];
+		};
+
+		$small = $run(10);
+		$large = $run(100);
+		$this->assertSame($small['queries'], $large['queries']);
+		$this->assertGreaterThan(0, $small['queries']);
+
+		foreach ([3000, 3001, 3002] as $product_id) {
+			$count = (int) ( $small['type_calls'][ $product_id ] ?? 0 );
+			$this->assertLessThanOrEqual(1, $count, 'PV lookup should run at most once per product ID ' . $product_id);
+		}
 	}
 }

@@ -10,11 +10,12 @@ use InterSoccer\ReportsRosters\Tests\TestCase;
 class PlayerCourseStatusGoldenTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
+		require_once __DIR__ . '/player-course-status-golden-stubs.php';
 		if (function_exists('intersoccer_test_ensure_pm_filter_stub')) {
 			intersoccer_test_ensure_pm_filter_stub();
 		}
 		$includes = dirname(__DIR__, 2) . '/includes';
-		foreach (['reports-data.php', 'medical-access.php', 'final-reports-aggregation.php', 'utils.php', 'winback-report-facets.php', 'player-camp-status.php', 'player-course-status.php'] as $file) {
+		foreach (['reports-data.php', 'medical-access.php', 'final-reports-aggregation.php', 'utils.php', 'winback-report-facets.php', 'winback-report-perf.php', 'player-camp-status.php', 'player-course-status.php'] as $file) {
 			require_once $includes . '/' . $file;
 		}
 		$this->reset_fixtures();
@@ -40,7 +41,8 @@ class PlayerCourseStatusGoldenTest extends TestCase {
 			$GLOBALS['intersoccer_test_hpos_orders_enabled'],
 			$GLOBALS['intersoccer_test_wc_get_order_callback'],
 			$GLOBALS['intersoccer_rr_user_account_email_cache'],
-			$GLOBALS['intersoccer_rr_user_billing_phone_cache']
+			$GLOBALS['intersoccer_rr_user_billing_phone_cache'],
+			$GLOBALS['intersoccer_test_golden_product_type_by_id']
 		);
 		if (function_exists('intersoccer_player_course_status_reset_run_memos')) {
 			intersoccer_player_course_status_reset_run_memos();
@@ -108,6 +110,10 @@ class PlayerCourseStatusGoldenTest extends TestCase {
 	}
 
 	private function seed_golden_fixture(): void {
+		$GLOBALS['intersoccer_test_golden_product_type_by_id'] = [
+			91001 => 'course',
+			91002 => 'birthday',
+		];
 		$GLOBALS['intersoccer_test_live_order_status_map'] = [
 			55001 => 'wc-completed',
 			55002 => 'wc-pending',
@@ -129,6 +135,7 @@ class PlayerCourseStatusGoldenTest extends TestCase {
 			['user_id' => 11, 'user_email' => 'pending@test', 'player_id' => 'uuid-pend', 'player_index' => 0, 'first_name' => 'Pen', 'last_name' => 'Ding', 'dob' => '2015-02-02'],
 			['user_id' => 12, 'user_email' => 'hold@test', 'player_id' => 'uuid-hold', 'player_index' => 0, 'first_name' => 'On', 'last_name' => 'Hold', 'dob' => '2015-03-03'],
 			['user_id' => 13, 'user_email' => 'free@test', 'player_id' => 'uuid-free', 'player_index' => 0, 'first_name' => 'Not', 'last_name' => 'Booked', 'dob' => '2015-04-04'],
+			['user_id' => 14, 'user_email' => 'legacy@test', 'player_id' => 'uuid-legacy', 'player_index' => 0, 'first_name' => 'Legacy', 'last_name' => 'Names', 'dob' => '2015-05-05'],
 		];
 		$GLOBALS['intersoccer_test_player_course_status_roster_rows'] = [
 			$this->base_row(['order_item_id' => 59001, 'customer_id' => 10]),
@@ -139,6 +146,28 @@ class PlayerCourseStatusGoldenTest extends TestCase {
 			$this->base_row(['order_item_id' => 59020, 'customer_id' => 10, 'start_date' => '', 'end_date' => '', 'season' => 'Autumn']),
 			$this->base_row(['order_id' => 55005, 'order_item_id' => 59030, 'customer_id' => 0, 'player_first_name' => 'Ghost', 'player_last_name' => 'Roster']),
 			$this->base_row(['activity_type' => 'Camp', 'order_item_id' => 59040, 'product_name' => 'Camp X']),
+			$this->base_row([
+				'order_item_id' => 59050,
+				'customer_id' => 14,
+				'player_first_name' => '',
+				'player_last_name' => '',
+				'first_name' => 'Legacy',
+				'last_name' => 'Names',
+			]),
+			$this->base_row([
+				'order_item_id' => 59060,
+				'customer_id' => 10,
+				'activity_type' => '',
+				'product_id' => 91001,
+				'product_name' => 'PV Course Only',
+			]),
+			$this->base_row([
+				'order_item_id' => 59070,
+				'customer_id' => 10,
+				'activity_type' => 'Course',
+				'product_id' => 91002,
+				'product_name' => 'Birthday Party',
+			]),
 		];
 		intersoccer_test_set_user_caps(['manage_options' => true]);
 		if (function_exists('intersoccer_player_camp_status_reset_dob_gate_cache')) {
