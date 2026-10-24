@@ -743,6 +743,8 @@ if (!function_exists('intersoccer_winback_reset_en_unpublished_variations')) {
 	 * @param array{
 	 *   en_variation_id:int,
 	 *   en_variation_status:string,
+	 *   en_parent_status:string,
+	 *   reason:'variation'|'parent',
 	 *   translation_variation_id:int,
 	 *   product:string,
 	 *   start_date:string,
@@ -761,16 +763,32 @@ if (!function_exists('intersoccer_winback_reset_en_unpublished_variations')) {
 		}
 		$store = &$GLOBALS['intersoccer_winback_en_unpublished_variations'];
 		$translation_id = (int) ( $entry['translation_variation_id'] ?? 0 );
+		$reason = (string) ( $entry['reason'] ?? '' );
+		if ($reason !== 'parent' && $reason !== 'variation') {
+			$reason = 'variation';
+		}
 		if (!isset($store[ $en_id ])) {
 			$store[ $en_id ] = [
 				'en_variation_id' => $en_id,
 				'en_variation_status' => (string) ( $entry['en_variation_status'] ?? '' ),
+				'en_parent_status' => (string) ( $entry['en_parent_status'] ?? '' ),
+				'reason' => $reason,
 				'translation_variation_ids' => [],
 				'product' => (string) ( $entry['product'] ?? '' ),
 				'start_date' => (string) ( $entry['start_date'] ?? '' ),
 				'venue' => (string) ( $entry['venue'] ?? '' ),
 				'kind' => (string) ( $entry['kind'] ?? '' ),
 			];
+		} else {
+			if ($reason === 'parent' || (string) ( $store[ $en_id ]['reason'] ?? '' ) === 'parent') {
+				$store[ $en_id ]['reason'] = 'parent';
+			}
+			if (isset($entry['en_variation_status'])) {
+				$store[ $en_id ]['en_variation_status'] = (string) $entry['en_variation_status'];
+			}
+			if (isset($entry['en_parent_status'])) {
+				$store[ $en_id ]['en_parent_status'] = (string) $entry['en_parent_status'];
+			}
 		}
 		if ($translation_id > 0 && $translation_id !== $en_id) {
 			$store[ $en_id ]['translation_variation_ids'][ $translation_id ] = $translation_id;
@@ -781,6 +799,8 @@ if (!function_exists('intersoccer_winback_reset_en_unpublished_variations')) {
 	 * @return array<int,array{
 	 *   en_variation_id:int,
 	 *   en_variation_status:string,
+	 *   en_parent_status:string,
+	 *   reason:'variation'|'parent',
 	 *   translation_variation_ids:int[],
 	 *   product:string,
 	 *   start_date:string,
