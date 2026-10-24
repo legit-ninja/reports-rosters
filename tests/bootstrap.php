@@ -457,6 +457,20 @@ if (!function_exists('get_user_meta')) {
     }
 }
 
+if (!function_exists('cache_users')) {
+    /**
+     * WordPress core primes users + usermeta in batched queries; no-op stub for PHPUnit.
+     *
+     * @param int[] $user_ids
+     */
+    function cache_users($user_ids) {
+        if (!isset($GLOBALS['intersoccer_test_cache_users_calls'])) {
+            $GLOBALS['intersoccer_test_cache_users_calls'] = [];
+        }
+        $GLOBALS['intersoccer_test_cache_users_calls'][] = array_map('intval', (array) $user_ids);
+    }
+}
+
 if (!function_exists('update_user_meta')) {
     function update_user_meta($user_id, $meta_key, $meta_value, $prev_value = '') {
         return true;

@@ -115,12 +115,124 @@ class PlayerCourseStatusTest extends TestCase {
 	}
 
 	public function test_pending_and_on_hold_count_as_active_booking(): void {
-		$this->assertTrue(intersoccer_player_course_status_row_is_active_booking(
+		$this->assertFalse(intersoccer_player_course_status_row_is_active_booking(
 			$this->base_course_row(['order_status' => 'pending'])
 		));
-		$this->assertTrue(intersoccer_player_course_status_row_is_active_booking(
+		$this->assertFalse(intersoccer_player_course_status_row_is_active_booking(
 			$this->base_course_row(['order_status' => 'on-hold'])
 		));
+	}
+
+	public function test_processing_counts_as_active_booking(): void {
+		$this->assertTrue(intersoccer_player_course_status_row_is_active_booking(
+			$this->base_course_row(['order_status' => 'processing'])
+		));
+	}
+
+	public function test_pending_on_hold_not_booked_or_unmatched(): void {
+		$GLOBALS['intersoccer_test_player_course_status_players'] = [];
+		$GLOBALS['intersoccer_test_player_course_status_roster_rows'] = [
+			$this->base_course_row(['order_status' => 'pending', 'order_item_id' => 9301]),
+			$this->base_course_row(['order_status' => 'on-hold', 'order_item_id' => 9302]),
+		];
+		$result = intersoccer_player_course_status_generate(['year' => 2026]);
+		$this->assertCount(0, $result['unmatched_bookings']);
+		$this->assertSame(0, $result['totals']['unmatched_bookings']);
+	}
+
+	public function test_uuid_and_name_tier_bookings_union_on_same_player(): void {
+		$GLOBALS['intersoccer_test_player_course_status_players'] = [
+			[
+				'user_id' => 20,
+				'user_email' => 'parent@example.test',
+				'player_id' => 'uuid-same-kid',
+				'player_index' => 0,
+				'first_name' => 'Same',
+				'last_name' => 'Kid',
+				'dob' => '2015-01-01',
+			],
+		];
+		$GLOBALS['intersoccer_test_player_course_status_roster_rows'] = [
+			$this->base_course_row([
+				'customer_id' => 20,
+				'assigned_player_id' => 'uuid-same-kid',
+				'player_index' => 0,
+				'player_first_name' => 'Same',
+				'player_last_name' => 'Kid',
+				'season' => 'Autumn 2026',
+				'order_item_id' => 9401,
+			]),
+			$this->base_course_row([
+				'customer_id' => 20,
+				'player_index' => 0,
+				'player_first_name' => 'Same',
+				'player_last_name' => 'Kid',
+				'season' => 'Winter 2026',
+				'start_date' => '2026-01-10',
+				'end_date' => '2026-03-20',
+				'order_item_id' => 9402,
+			]),
+		];
+		$result = intersoccer_player_course_status_generate(['year' => 2026]);
+		$this->assertCount(1, $result['rows']);
+		$row = $result['rows'][0];
+		$this->assertTrue($row['booked']);
+		$this->assertCount(2, $row['bookings']);
+		$this->assertSame('uuid', $row['player']['tier']);
+		$this->assertCount(0, $result['unmatched_bookings']);
+	}
+
+	public function test_idx_collision_matches_only_same_name_at_index(): void {
+		if (function_exists('intersoccer_roster_report_reset_idx_name_collision_state')) {
+			intersoccer_roster_report_reset_idx_name_collision_state();
+		}
+		$GLOBALS['intersoccer_test_player_course_status_players'] = [
+			[
+				'user_id' => 50,
+				'user_email' => 'parent@example.test',
+				'player_id' => 'uuid-child-one',
+				'player_index' => 0,
+				'first_name' => 'Child',
+				'last_name' => 'One',
+				'dob' => '2015-01-01',
+			],
+			[
+				'user_id' => 50,
+				'user_email' => 'parent@example.test',
+				'player_id' => 'uuid-child-two',
+				'player_index' => 1,
+				'first_name' => 'Child',
+				'last_name' => 'Two',
+				'dob' => '2016-02-02',
+			],
+		];
+		$GLOBALS['intersoccer_test_player_course_status_roster_rows'] = [
+			$this->base_course_row([
+				'customer_id' => 50,
+				'player_index' => 0,
+				'player_first_name' => 'Child',
+				'player_last_name' => 'One',
+				'order_item_id' => 9501,
+			]),
+			$this->base_course_row([
+				'customer_id' => 50,
+				'player_index' => 0,
+				'player_first_name' => 'Child',
+				'player_last_name' => 'Two',
+				'order_item_id' => 9502,
+			]),
+		];
+		$result = intersoccer_player_course_status_generate(['year' => 2026]);
+		$by_name = [];
+		foreach ($result['rows'] as $row) {
+			$by_name[ $row['player']['last_name'] ] = $row;
+		}
+		$this->assertTrue($by_name['One']['booked']);
+		$this->assertCount(1, $by_name['One']['bookings']);
+		$this->assertSame(9501, $by_name['One']['bookings'][0]['order_item_id']);
+		$this->assertTrue($by_name['Two']['booked']);
+		$this->assertCount(1, $by_name['Two']['bookings']);
+		$this->assertSame(9502, $by_name['Two']['bookings'][0]['order_item_id']);
 	}
 
 	public function test_fully_refunded_line_excluded_partial_counts(): void {

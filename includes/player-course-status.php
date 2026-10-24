@@ -117,7 +117,7 @@ function intersoccer_player_course_status_row_in_year(array $row, $year) {
 }
 
 /**
- * Active course booking (live status + line refund rules; pending/on-hold count per PCS #141).
+ * Active course booking (PCS parity: completed/processing only; pending/on-hold excluded).
  *
  * @param array<string,mixed> $row
  */
@@ -132,8 +132,8 @@ function intersoccer_player_course_status_row_is_active_booking(array $row) {
 		return false;
 	}
 
-	return function_exists('intersoccer_roster_report_status_counts_as_upcoming_rebooked')
-		&& intersoccer_roster_report_status_counts_as_upcoming_rebooked($status);
+	return function_exists('intersoccer_roster_report_status_counts_as_booked')
+		&& intersoccer_roster_report_status_counts_as_booked($status);
 }
 
 /**
@@ -457,6 +457,18 @@ function intersoccer_player_course_status_load_course_roster_rows($year) {
  * @return array<string,array<int,array<string,mixed>>>
  */
 function intersoccer_player_course_status_build_booking_index(array $scoped_rows) {
+	if (function_exists('intersoccer_roster_report_reset_idx_name_collision_state')) {
+		intersoccer_roster_report_reset_idx_name_collision_state();
+	}
+	foreach ($scoped_rows as $row) {
+		if (!is_array($row)) {
+			continue;
+		}
+		if (function_exists('intersoccer_roster_report_note_idx_name_for_collision_detection')) {
+			intersoccer_roster_report_note_idx_name_for_collision_detection($row);
+		}
+	}
+
 	$index = [];
 	foreach ($scoped_rows as $row) {
 		if (!is_array($row) || !intersoccer_player_course_status_row_is_active_booking($row)) {
@@ -506,13 +518,23 @@ function intersoccer_player_course_status_match_player_bookings(array $player, a
 
 	$bookings = [];
 	$seen_items = [];
-	$tier = '';
+	$best_tier = '';
+	$best_tier_rank = 0;
 	$key_used = '';
 
 	foreach ($try as $attempt) {
 		$k = $attempt['key'];
 		if ($k === '' || !isset($index[ $k ])) {
 			continue;
+		}
+		$attempt_tier = (string) $attempt['tier'];
+		$attempt_rank = function_exists('intersoccer_roster_report_player_key_tier_rank')
+			? intersoccer_roster_report_player_key_tier_rank($attempt_tier)
+			: 0;
+		if ($attempt_rank > $best_tier_rank) {
+			$best_tier_rank = $attempt_rank;
+			$best_tier = $attempt_tier;
+			$key_used = $k;
 		}
 		foreach ($index[ $k ] as $booking) {
 			$item_id = (int) ($booking['order_item_id'] ?? 0);
@@ -524,16 +546,27 @@ function intersoccer_player_course_status_match_player_bookings(array $player, a
 			}
 			$bookings[] = $booking;
 		}
-		if (!empty($bookings)) {
-			$tier = (string) $attempt['tier'];
-			$key_used = $k;
-			break;
-		}
 	}
+
+	usort($bookings, static function ($a, $b) {
+		$da = (string) ($a['start_date'] ?? '');
+		$db = (string) ($b['start_date'] ?? '');
+		if ($da === $db) {
+			return 0;
+		}
+		if ($da === '') {
+			return 1;
+		}
+		if ($db === '') {
+			return -1;
+		}
+
+		return strcmp($da, $db);
+	});
 
 	return [
 		'bookings' => $bookings,
-		'tier' => $tier,
+		'tier' => $best_tier,
 		'key' => $key_used,
 	];
 }
