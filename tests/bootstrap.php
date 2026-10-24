@@ -525,6 +525,24 @@ if (!function_exists('wp_cache_delete')) {
     function wp_cache_delete($key, $group = '') { return true; }
 }
 
+if (!function_exists('wp_cache_supports')) {
+    function wp_cache_supports($feature) {
+        if (isset($GLOBALS['intersoccer_test_wp_cache_supports_map']) && is_array($GLOBALS['intersoccer_test_wp_cache_supports_map'])) {
+            return !empty($GLOBALS['intersoccer_test_wp_cache_supports_map'][ $feature ]);
+        }
+
+        return $feature === 'flush_runtime';
+    }
+}
+
+if (!function_exists('wp_cache_flush_runtime')) {
+    function wp_cache_flush_runtime() {
+        $GLOBALS['intersoccer_test_wp_cache_flush_runtime_called'] = true;
+
+        return true;
+    }
+}
+
 // Scheduling
 if (!function_exists('wp_schedule_event')) {
     function wp_schedule_event($timestamp, $recurrence, $hook, $args = [], $wp_error = false) { return true; }

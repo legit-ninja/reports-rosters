@@ -610,6 +610,14 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 			$today = function_exists('wp_date') ? wp_date('Y-m-d') : gmdate('Y-m-d');
 		}
 
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING
+			&& isset($GLOBALS['intersoccer_test_winback_upcoming_catalogue'])
+			&& is_array($GLOBALS['intersoccer_test_winback_upcoming_catalogue'])) {
+			intersoccer_winback_reset_catalogue_enumeration_memo();
+
+			return $GLOBALS['intersoccer_test_winback_upcoming_catalogue'];
+		}
+
 		intersoccer_winback_reset_catalogue_enumeration_memo();
 		$raw_variations = [];
 

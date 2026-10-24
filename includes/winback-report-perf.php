@@ -169,8 +169,15 @@ if (!function_exists('intersoccer_winback_report_engine_runtime_cache_flush')) {
 	 * Drop WP/WC runtime object cache entries (memos in $GLOBALS are unaffected).
 	 */
 	function intersoccer_winback_report_engine_runtime_cache_flush() {
-		if (function_exists('wp_cache_flush_runtime')) {
-			wp_cache_flush_runtime();
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
+			$GLOBALS['intersoccer_test_runtime_cache_flush_call_count'] = (int) ( $GLOBALS['intersoccer_test_runtime_cache_flush_call_count'] ?? 0 ) + 1;
 		}
+		if (!function_exists('wp_cache_flush_runtime')) {
+			return;
+		}
+		if (!function_exists('wp_cache_supports') || !wp_cache_supports('flush_runtime')) {
+			return;
+		}
+		wp_cache_flush_runtime();
 	}
 }
