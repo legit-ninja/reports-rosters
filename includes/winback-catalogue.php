@@ -158,7 +158,8 @@ if (!function_exists('intersoccer_winback_reset_catalogue_enumeration_memo')) {
 	function intersoccer_winback_reset_catalogue_enumeration_memo() {
 		unset(
 			$GLOBALS['intersoccer_winback_memo_wpml_product'],
-			$GLOBALS['intersoccer_winback_memo_wpml_variation']
+			$GLOBALS['intersoccer_winback_memo_wpml_variation'],
+			$GLOBALS['intersoccer_winback_wpml_en_venue_slug_cache']
 		);
 	}
 }
@@ -562,14 +563,59 @@ if (!function_exists('intersoccer_winback_resolve_row_event_date')) {
 	}
 }
 
-if (!function_exists('intersoccer_winback_catalogue_read_variation_facets')) {
+if (!function_exists('intersoccer_winback_catalogue_read_enumeration_facets')) {
 	/**
-	 * Read normalized EN slugs from a default-language variation.
+	 * Facets for catalogue enumeration (WPML fallbacks; does not affect history rows).
 	 *
-	 * @param int    $variation_id Source (default language) variation ID.
-	 * @param string $kind         camp|course.
+	 * @param int    $enumerated_variation_id Published translation variation ID.
+	 * @param int    $source_variation_id     Default-language variation ID (dedupe key).
+	 * @param string $kind                    camp|course.
 	 * @return array<string,mixed>
 	 */
+	function intersoccer_winback_catalogue_read_enumeration_facets($enumerated_variation_id, $source_variation_id, $kind) {
+		$enumerated_variation_id = (int) $enumerated_variation_id;
+		$source_variation_id = (int) $source_variation_id;
+		if ($source_variation_id <= 0) {
+			$source_variation_id = $enumerated_variation_id;
+		}
+		$facets = intersoccer_winback_catalogue_read_variation_facets($source_variation_id, $kind);
+		if ($enumerated_variation_id > 0
+			&& $enumerated_variation_id !== $source_variation_id
+			&& ($facets['venue_slug'] === '' || $facets['age_group_slug'] === '')) {
+			$fallback = intersoccer_winback_catalogue_read_variation_facets($enumerated_variation_id, $kind);
+			if ($facets['venue_slug'] === '' && $fallback['venue_slug'] !== '') {
+				$facets['venue_slug'] = $fallback['venue_slug'];
+			}
+			if ($facets['age_group_slug'] === '' && $fallback['age_group_slug'] !== '') {
+				$facets['age_group_slug'] = $fallback['age_group_slug'];
+			}
+			if ($facets['course_day'] === '' && $fallback['course_day'] !== '') {
+				$facets['course_day'] = $fallback['course_day'];
+			}
+			if ($facets['times'] === '' && $fallback['times'] !== '') {
+				$facets['times'] = $fallback['times'];
+			}
+		}
+		if ($enumerated_variation_id > 0 && $enumerated_variation_id === $source_variation_id) {
+			if ($facets['venue_slug'] !== '' && function_exists('intersoccer_winback_apply_wpml_en_venue_slug')) {
+				$mapped_venue = intersoccer_winback_apply_wpml_en_venue_slug($facets['venue_slug']);
+				if ($mapped_venue !== '') {
+					$facets['venue_slug'] = $mapped_venue;
+				}
+			}
+			if ($facets['age_group_slug'] !== '' && function_exists('intersoccer_winback_apply_wpml_en_age_group_slug')) {
+				$mapped_age = intersoccer_winback_apply_wpml_en_age_group_slug($facets['age_group_slug']);
+				if ($mapped_age !== '' && $mapped_age !== $facets['age_group_slug']) {
+					$facets['age_group_slug'] = intersoccer_winback_apply_age_group_slug_alias($mapped_age);
+				}
+			}
+		}
+
+		return $facets;
+	}
+}
+
+if (!function_exists('intersoccer_winback_catalogue_read_variation_facets')) {
 	function intersoccer_winback_catalogue_read_variation_facets($variation_id, $kind) {
 		$variation_id = (int) $variation_id;
 		$venue = intersoccer_winback_catalogue_read_pa_attribute_from_meta($variation_id, 'pa_intersoccer-venues');
@@ -694,6 +740,7 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 			'post_status' => 'publish',
 			'posts_per_page' => -1,
 			'fields' => 'ids',
+			'suppress_filters' => true,
 			'meta_query' => [
 				[
 					'key' => '_intersoccer_product_type',
@@ -716,10 +763,13 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 		$resolved_parent_ids = [];
 		foreach ($parent_ids as $original_parent_id) {
 			$resolved_parent_id = intersoccer_winback_memo_default_language_product_id($original_parent_id);
-			if ($resolved_parent_id <= 0 || get_post_status($resolved_parent_id) !== 'publish') {
+			if ($resolved_parent_id <= 0) {
 				continue;
 			}
 			$ptype = get_post_meta($resolved_parent_id, '_intersoccer_product_type', true);
+			if ($ptype === '' || $ptype === null) {
+				$ptype = get_post_meta($original_parent_id, '_intersoccer_product_type', true);
+			}
 			$kind = strtolower((string) $ptype) === 'course' ? 'course' : 'camp';
 			$parent_kind_map[ $original_parent_id ] = [
 				'resolved_parent_id' => $resolved_parent_id,
@@ -761,22 +811,29 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 		}
 
 		foreach ($parent_kind_map as $original_parent_id => $parent_bits) {
-			$parent_id = (int) $parent_bits['resolved_parent_id'];
+			$resolved_parent_id = (int) $parent_bits['resolved_parent_id'];
 			$kind = (string) $parent_bits['kind'];
 			$children = $variations_by_parent[ $original_parent_id ] ?? [];
 			if (empty($children)) {
 				continue;
 			}
-			$product_name = get_the_title($parent_id);
+			$display_parent_id = $resolved_parent_id;
+			if (get_post_status($resolved_parent_id) !== 'publish') {
+				$display_parent_id = (int) $original_parent_id;
+			}
+			$product_name = get_the_title($display_parent_id);
 
 			foreach ($children as $variation_id) {
 				$source_id = intersoccer_winback_memo_default_language_variation_id($variation_id);
-				if ($source_id <= 0 || get_post_status($source_id) !== 'publish') {
+				if ($source_id <= 0) {
 					continue;
 				}
 
 				$meta_key = $kind === 'course' ? '_course_start_date' : '_camp_start_date';
 				$start = get_post_meta($source_id, $meta_key, true);
+				if (!is_string($start) || !intersoccer_roster_report_has_real_date(trim($start))) {
+					$start = get_post_meta($variation_id, $meta_key, true);
+				}
 				if (!is_string($start) || !intersoccer_roster_report_has_real_date(trim($start))) {
 					continue;
 				}
@@ -785,7 +842,7 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 					continue;
 				}
 
-				$facets = intersoccer_winback_catalogue_read_variation_facets($source_id, $kind);
+				$facets = intersoccer_winback_catalogue_read_enumeration_facets($variation_id, $source_id, $kind);
 				if ($facets['venue_slug'] === '' || $facets['age_group_slug'] === '') {
 					continue;
 				}
@@ -794,7 +851,7 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 					'kind' => $kind,
 					'variation_id' => $variation_id,
 					'source_variation_id' => $source_id,
-					'product_id' => $parent_id,
+					'product_id' => $display_parent_id,
 					'start_date' => $start,
 					'product_name' => $product_name,
 					'venue_slug' => $facets['venue_slug'],

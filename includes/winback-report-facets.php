@@ -139,6 +139,50 @@ if (!function_exists('intersoccer_winback_apply_wpml_en_age_group_slug')) {
 	}
 }
 
+if (!function_exists('intersoccer_winback_apply_wpml_en_venue_slug')) {
+	/**
+	 * When WPML is active, map a slug to the default-language pa_intersoccer-venues slug.
+	 *
+	 * @param string $slug Lowercase slug-like token.
+	 */
+	function intersoccer_winback_apply_wpml_en_venue_slug($slug) {
+		$slug = strtolower(trim((string) $slug));
+		if ($slug === '' || !function_exists('get_term_by') || !function_exists('apply_filters')) {
+			return '';
+		}
+		if (!isset($GLOBALS['intersoccer_winback_wpml_en_venue_slug_cache'])
+			|| !is_array($GLOBALS['intersoccer_winback_wpml_en_venue_slug_cache'])) {
+			$GLOBALS['intersoccer_winback_wpml_en_venue_slug_cache'] = [];
+		}
+		if (array_key_exists($slug, $GLOBALS['intersoccer_winback_wpml_en_venue_slug_cache'])) {
+			return (string) $GLOBALS['intersoccer_winback_wpml_en_venue_slug_cache'][ $slug ];
+		}
+		$term = get_term_by('slug', $slug, 'pa_intersoccer-venues');
+		if (!$term || is_wp_error($term)) {
+			return '';
+		}
+		$default_lang = apply_filters('wpml_default_language', null);
+		if (empty($default_lang)) {
+			return '';
+		}
+		$en_term_id = (int) apply_filters('wpml_object_id', (int) $term->term_id, 'pa_intersoccer-venues', true, $default_lang);
+		if ($en_term_id <= 0) {
+			return '';
+		}
+		$en_term = get_term($en_term_id, 'pa_intersoccer-venues');
+		if (!$en_term || is_wp_error($en_term) || empty($en_term->slug)) {
+			$GLOBALS['intersoccer_winback_wpml_en_venue_slug_cache'][ $slug ] = '';
+
+			return '';
+		}
+
+		$mapped = strtolower((string) $en_term->slug);
+		$GLOBALS['intersoccer_winback_wpml_en_venue_slug_cache'][ $slug ] = $mapped;
+
+		return $mapped;
+	}
+}
+
 if (!function_exists('intersoccer_winback_facet_resolution_cache_store')) {
 	/**
 	 * @return array<string,string>
