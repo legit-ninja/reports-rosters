@@ -10,6 +10,7 @@ use InterSoccer\ReportsRosters\Tests\TestCase;
 class WinbackReportTest extends TestCase {
 	protected function tearDown(): void {
 		unset(
+			$GLOBALS['intersoccer_test_hpos_orders_enabled'],
 			$GLOBALS['intersoccer_test_live_order_status_map'],
 			$GLOBALS['intersoccer_test_live_order_status_batch_load_calls'],
 			$GLOBALS['intersoccer_test_order_created_date_map'],
@@ -43,7 +44,7 @@ class WinbackReportTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		$includes = dirname(__DIR__, 2) . '/includes';
-		foreach (['roster-report-loader.php', 'winback-report-facets.php', 'winback-catalogue.php', 'utils.php'] as $file) {
+		foreach (['roster-report-loader.php', 'winback-report-facets.php', 'winback-catalogue.php', 'winback-report-engine.php', 'utils.php'] as $file) {
 			$path = $includes . '/' . $file;
 			if (file_exists($path)) {
 				require_once $path;
@@ -253,6 +254,139 @@ class WinbackReportTest extends TestCase {
 		$this->assertSame('5-13y', $pick['slug']);
 	}
 
+	public function test_aged_up_uses_target_start_not_today() {
+		$dob = '2020-03-15';
+		$today = '2026-03-01';
+		$target_start = '2026-07-01';
+		$ages = ['3-5y', '5-13y'];
+		$pick_today = intersoccer_winback_pick_target_age_slug('3-5y', $dob, $today, $ages);
+		$this->assertFalse($pick_today['aged_up']);
+		$this->assertSame('3-5y', $pick_today['slug']);
+		$pick_target = intersoccer_winback_pick_target_age_slug('3-5y', $dob, $target_start, $ages);
+		$this->assertTrue($pick_target['aged_up']);
+		$this->assertSame('5-13y', $pick_target['slug']);
+	}
+
+	public function test_hpos_detection_false_when_option_no_even_if_test_override_off() {
+		$GLOBALS['intersoccer_test_option_store']['woocommerce_custom_orders_table_enabled'] = 'no';
+		$GLOBALS['intersoccer_test_hpos_orders_enabled'] = false;
+		$this->assertFalse(intersoccer_roster_report_uses_hpos_orders_table());
+		unset($GLOBALS['intersoccer_test_option_store']['woocommerce_custom_orders_table_enabled']);
+	}
+
+	public function test_hpos_detection_true_only_when_test_override_on() {
+		$GLOBALS['intersoccer_test_hpos_orders_enabled'] = true;
+		$this->assertTrue(intersoccer_roster_report_uses_hpos_orders_table());
+	}
+
+	public function test_live_terminal_statuses_excluded_from_history_after_apply() {
+		$statuses = ['wc-cancelled', 'wc-refunded', 'wc-failed'];
+		foreach ($statuses as $live) {
+			$GLOBALS['intersoccer_test_live_order_status_map'] = [301 => $live];
+			$row = [
+				'order_id' => 301,
+				'order_status' => 'completed',
+			];
+			$rows = intersoccer_roster_report_rows_apply_live_order_status([$row]);
+			$this->assertSame($live, $rows[0]['order_status']);
+			$this->assertFalse(intersoccer_roster_report_row_counts_for_winback($rows[0], 'history'));
+			$this->assertFalse(intersoccer_roster_report_status_counts_as_history($rows[0]['order_status']));
+		}
+	}
+
+	public function test_newer_live_cancelled_row_does_not_win_latest_history_selection() {
+		$GLOBALS['intersoccer_test_live_order_status_map'] = [
+			401 => 'wc-completed',
+			402 => 'wc-cancelled',
+		];
+		$older = [
+			'id' => 1,
+			'order_id' => 401,
+			'order_status' => 'completed',
+			'event_date' => '2025-06-01',
+			'row' => ['id' => 1],
+		];
+		$newer_stale = [
+			'id' => 2,
+			'order_id' => 402,
+			'order_status' => 'completed',
+			'event_date' => '2025-09-01',
+			'row' => ['id' => 2],
+		];
+		$best = null;
+		foreach ([$older, $newer_stale] as $entry) {
+			$row = intersoccer_roster_report_rows_apply_live_order_status([$entry['row'] + [
+				'order_id' => $entry['order_id'],
+				'order_status' => $entry['order_status'],
+			]])[0];
+			if (!intersoccer_roster_report_row_counts_for_winback($row, 'history')) {
+				continue;
+			}
+			$entry['row'] = $row;
+			if ($best === null || intersoccer_winback_report_engine_is_later_history($entry, $best)) {
+				$best = $entry;
+			}
+		}
+		$this->assertNotNull($best);
+		$this->assertSame(1, (int) ($best['row']['id'] ?? 0));
+	}
+
+	public function test_venue_filter_applies_to_latest_history_only() {
+		$older_x = [
+			'venue_slug' => 'venue-x',
+			'age_slug' => '3-5y',
+			'event_date' => '2025-01-01',
+		];
+		$newer_y = [
+			'venue_slug' => 'venue-y',
+			'age_slug' => '3-5y',
+			'event_date' => '2025-06-01',
+		];
+		$this->assertFalse(intersoccer_winback_report_engine_last_event_passes_filters($newer_y, 'venue-x', ''));
+		$this->assertTrue(intersoccer_winback_report_engine_last_event_passes_filters($newer_y, 'venue-y', ''));
+		$this->assertFalse(intersoccer_winback_report_engine_last_event_passes_filters($older_x, 'venue-y', ''));
+	}
+
+	public function test_more_targets_lists_later_same_band_matches() {
+		$catalogue = [
+			'camp|geneva|5-13y' => [
+				[
+					'product_name' => 'Feb Camp',
+					'start_date' => '2026-02-10',
+					'age_group_slug' => '5-13y',
+					'source_variation_id' => 1001,
+					'variation_id' => 1001,
+				],
+				[
+					'product_name' => 'Easter Camp',
+					'start_date' => '2026-04-05',
+					'age_group_slug' => '5-13y',
+					'source_variation_id' => 1002,
+					'variation_id' => 1002,
+				],
+				[
+					'product_name' => 'Summer Camp',
+					'start_date' => '2026-07-01',
+					'age_group_slug' => '5-13y',
+					'source_variation_id' => 1003,
+					'variation_id' => 1003,
+				],
+			],
+		];
+		$resolved = intersoccer_winback_resolve_catalogue_target_and_more(
+			$catalogue,
+			'camp',
+			'geneva',
+			'5-13y',
+			'2015-06-01'
+		);
+		$this->assertNotNull($resolved['target']);
+		$this->assertSame('Feb Camp', $resolved['target']['product']);
+		$this->assertCount(2, $resolved['more_targets']);
+		$this->assertSame('Easter Camp', $resolved['more_targets'][0]['product']);
+		$this->assertSame('Summer Camp', $resolved['more_targets'][1]['product']);
+	}
+
 	public function test_unparseable_age_band_does_not_fatal() {
 		$this->assertNull(intersoccer_winback_parse_age_group_bounds('Pre-K to G5'));
 		$bounds = intersoccer_winback_parse_age_group_bounds('5-12');
@@ -445,8 +579,12 @@ class WinbackReportTest extends TestCase {
 		$this->assertSame('5-13y-full-day', intersoccer_winback_normalize_facet_slug('5-13-jahre-ganzer-tag', 'pa_age-group', 'age_group'));
 		$this->assertSame('5-13y-half-day', intersoccer_winback_normalize_facet_slug('5-13y-demi-journee', 'pa_age-group', 'age_group'));
 		$this->assertSame('3-5y-full-day', intersoccer_winback_normalize_facet_slug('3-5y-journee-complete', 'pa_age-group', 'age_group'));
-		$this->assertSame('4-5-and-demi-journee', intersoccer_winback_normalize_facet_slug('4-5-and-demi-journee', 'pa_age-group', 'age_group'));
-		$this->assertNotSame('4-5y-half-day', intersoccer_winback_normalize_facet_slug('4-5-and-demi-journee', 'pa_age-group', 'age_group'));
+		$this->assertSame('4-5y-half-day', intersoccer_winback_normalize_facet_slug('4-5-and-demi-journee', 'pa_age-group', 'age_group'));
+		$this->assertSame('3-5y-half-day', intersoccer_winback_normalize_facet_slug('3-5-ans-demi-journee', 'pa_age-group', 'age_group'));
+		$this->assertSame('5-13y-full-day', intersoccer_winback_normalize_facet_slug('5-13-ans-journee-complete', 'pa_age-group', 'age_group'));
+		$this->assertSame('5-8y', intersoccer_winback_normalize_facet_slug('5-8-ans', 'pa_age-group', 'age_group'));
+		$this->assertSame('4-8y-half-day', intersoccer_winback_normalize_facet_slug('4-8-ans-demi-journee', 'pa_age-group', 'age_group'));
+		$this->assertSame('5-8y-full-day', intersoccer_winback_normalize_facet_slug('5-8-ans-journee-entiere', 'pa_age-group', 'age_group'));
 	}
 
 	public function test_run_together_age_group_resolves_from_order_line() {
@@ -513,7 +651,9 @@ class WinbackReportTest extends TestCase {
 			intersoccer_test_ensure_pm_filter_stub();
 		}
 		require_once dirname(__DIR__, 2) . '/includes/medical-access.php';
-		intersoccer_player_camp_status_reset_dob_gate_cache();
+		if (function_exists('intersoccer_player_camp_status_reset_dob_gate_cache')) {
+			intersoccer_player_camp_status_reset_dob_gate_cache();
+		}
 		if (function_exists('intersoccer_test_set_user_caps')) {
 			intersoccer_test_set_user_caps(['coach' => true, 'read' => true]);
 		}
@@ -523,7 +663,9 @@ class WinbackReportTest extends TestCase {
 		if (function_exists('intersoccer_test_set_user_caps')) {
 			intersoccer_test_set_user_caps(['manage_options' => true]);
 		}
-		intersoccer_player_camp_status_reset_dob_gate_cache();
+		if (function_exists('intersoccer_player_camp_status_reset_dob_gate_cache')) {
+			intersoccer_player_camp_status_reset_dob_gate_cache();
+		}
 		$this->assertSame('2015-01-01', intersoccer_winback_report_format_dob_for_export('2015-01-01'));
 	}
 

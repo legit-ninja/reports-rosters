@@ -119,13 +119,6 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 				$row
 			);
 
-			if ($venue_filter !== '' && $venue_slug !== $venue_filter) {
-				continue;
-			}
-			if ($age_filter !== '' && $age_slug !== $age_filter) {
-				continue;
-			}
-
 			$group_id = $identity_map->group_id($key_bits['key']);
 			$entry = [
 				'row' => $row,
@@ -149,6 +142,10 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		$output = [];
 
 		foreach ($by_player_kind as $pk => $history) {
+			if (!intersoccer_winback_report_engine_last_event_passes_filters($history, $venue_filter, $age_filter)) {
+				continue;
+			}
+
 			$row = $history['row'];
 			$kind = $history['kind'];
 			$key = $history['key'];
@@ -174,30 +171,21 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 				continue;
 			}
 
-			$available_ages = intersoccer_winback_report_engine_catalogue_age_slugs_for_venue($catalogue, $kind, $history['venue_slug']);
+			$more_targets = [];
 			$target_pick = null;
 			if ($history['venue_slug'] !== '' && $history['age_slug'] !== '') {
-				$pick = intersoccer_winback_pick_target_age_slug(
-					$history['age_slug'],
-					intersoccer_winback_report_engine_row_dob($row),
-					$today,
-					$available_ages
-				);
-				$target_row = intersoccer_winback_find_earliest_catalogue_match(
+				$resolved = intersoccer_winback_resolve_catalogue_target_and_more(
 					$catalogue,
 					$kind,
 					$history['venue_slug'],
-					$pick['slug']
+					$history['age_slug'],
+					intersoccer_winback_report_engine_row_dob($row)
 				);
-				if ($target_row) {
-					$target = [
-						'product' => (string) ($target_row['product_name'] ?? ''),
-						'venue' => (string) $history['venue_slug'],
-						'age_group' => (string) $pick['slug'],
-						'start_date' => (string) ($target_row['start_date'] ?? ''),
-					];
-					$full = !empty($target_row['full']);
-					$target_pick = $pick;
+				$target = $resolved['target'];
+				$more_targets = $resolved['more_targets'];
+				$full = (bool) $resolved['full'];
+				if ($target !== null) {
+					$target_pick = ['aged_up' => (bool) $resolved['aged_up']];
 				}
 			}
 
@@ -230,6 +218,7 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 					'date_source' => $history['date_source'],
 				],
 				'target' => $target,
+				'more_targets' => $more_targets,
 				'aged_up' => $target_pick ? (bool) $target_pick['aged_up'] : false,
 				'sibling_booked' => $sibling_booked,
 				'rebooked_elsewhere' => $rebooked_elsewhere,
@@ -247,6 +236,26 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 			'unmapped_facets' => intersoccer_winback_get_unmapped_facets(),
 		];
 	}
+
+if (!function_exists('intersoccer_winback_report_engine_last_event_passes_filters')) {
+	/**
+	 * Venue / age filters apply to the per-player latest history row only (plan 2.4 step 2).
+	 *
+	 * @param array<string,mixed> $history_entry Entry from by_player_kind aggregation.
+	 */
+	function intersoccer_winback_report_engine_last_event_passes_filters(array $history_entry, $venue_filter, $age_filter) {
+		$venue_filter = (string) $venue_filter;
+		$age_filter = (string) $age_filter;
+		if ($venue_filter !== '' && (string) ( $history_entry['venue_slug'] ?? '' ) !== $venue_filter) {
+			return false;
+		}
+		if ($age_filter !== '' && (string) ( $history_entry['age_slug'] ?? '' ) !== $age_filter) {
+			return false;
+		}
+
+		return true;
+	}
+}
 
 if (!function_exists('intersoccer_winback_report_engine_load_dependencies')) {
 	function intersoccer_winback_report_engine_load_dependencies() {

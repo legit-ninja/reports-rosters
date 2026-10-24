@@ -48,9 +48,7 @@ if (!function_exists('intersoccer_winback_apply_age_group_slug_alias')) {
 		if ($slug === '') {
 			return '';
 		}
-		if ($slug === '4-5-and-demi-journee') {
-			return $slug;
-		}
+		$slug = preg_replace('/-and-/', '-ans-', $slug);
 		$maps = intersoccer_winback_facet_alias_maps();
 		if (isset($maps['age_group'][ $slug ])) {
 			return (string) $maps['age_group'][ $slug ];
@@ -72,6 +70,18 @@ if (!function_exists('intersoccer_winback_apply_age_group_slug_alias')) {
 		}
 		if (preg_match('/^(\d+-\d+y)-journee-entiere$/', $slug, $m)) {
 			return $m[1] . '-full-day';
+		}
+		if (preg_match('/^(\d+)-(\d+)-ans-demi-journee$/', $slug, $m)) {
+			return $m[1] . '-' . $m[2] . 'y-half-day';
+		}
+		if (preg_match('/^(\d+)-(\d+)-ans-journee-complete$/', $slug, $m)) {
+			return $m[1] . '-' . $m[2] . 'y-full-day';
+		}
+		if (preg_match('/^(\d+)-(\d+)-ans-journee-entiere$/', $slug, $m)) {
+			return $m[1] . '-' . $m[2] . 'y-full-day';
+		}
+		if (preg_match('/^(\d+)-(\d+)-ans$/', $slug, $m)) {
+			return $m[1] . '-' . $m[2] . 'y';
 		}
 
 		if (!$skip_wpml) {

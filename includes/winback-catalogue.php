@@ -431,3 +431,152 @@ if (!function_exists('intersoccer_winback_find_earliest_catalogue_match')) {
 		return $catalogue_index[$key][0];
 	}
 }
+
+if (!function_exists('intersoccer_winback_catalogue_rows_for_venue')) {
+	/**
+	 * Flatten catalogue index rows for one kind + venue, sorted by start_date.
+	 *
+	 * @param array<string,array<int,array<string,mixed>>> $catalogue_index
+	 * @return array<int,array<string,mixed>>
+	 */
+	function intersoccer_winback_catalogue_rows_for_venue(array $catalogue_index, $kind, $venue_slug) {
+		$prefix = strtolower((string) $kind) . '|' . (string) $venue_slug . '|';
+		$rows = [];
+		foreach ($catalogue_index as $key => $list) {
+			if (strpos((string) $key, $prefix) !== 0) {
+				continue;
+			}
+			foreach ((array) $list as $row) {
+				if (is_array($row)) {
+					$rows[] = $row;
+				}
+			}
+		}
+		usort($rows, static function ($a, $b) {
+			return strcmp((string) ($a['start_date'] ?? ''), (string) ($b['start_date'] ?? ''));
+		});
+
+		return $rows;
+	}
+}
+
+if (!function_exists('intersoccer_winback_catalogue_row_to_target_shape')) {
+	/**
+	 * @param array<string,mixed> $catalogue_row
+	 * @return array{product:string,venue:string,age_group:string,start_date:string}
+	 */
+	function intersoccer_winback_catalogue_row_to_target_shape(array $catalogue_row, $venue_slug, $age_group_slug) {
+		return [
+			'product' => (string) ($catalogue_row['product_name'] ?? ''),
+			'venue' => (string) $venue_slug,
+			'age_group' => (string) $age_group_slug,
+			'start_date' => (string) ($catalogue_row['start_date'] ?? ''),
+		];
+	}
+}
+
+if (!function_exists('intersoccer_winback_resolve_catalogue_target_and_more')) {
+	/**
+	 * Earliest upcoming catalogue match using DOB at each candidate's start date (J1), plus further targets.
+	 *
+	 * @param array<string,array<int,array<string,mixed>>> $catalogue_index
+	 * @return array{
+	 *   target:array{product:string,venue:string,age_group:string,start_date:string}|null,
+	 *   more_targets:array<int,array{product:string,venue:string,age_group:string,start_date:string}>,
+	 *   aged_up:bool,
+	 *   full:bool,
+	 *   target_catalogue_row:array<string,mixed>|null
+	 * }
+	 */
+	function intersoccer_winback_resolve_catalogue_target_and_more(
+		array $catalogue_index,
+		$kind,
+		$venue_slug,
+		$booked_age_slug,
+		$dob
+	) {
+		$venue_slug = (string) $venue_slug;
+		$booked_age_slug = trim((string) $booked_age_slug);
+		$empty = [
+			'target' => null,
+			'more_targets' => [],
+			'aged_up' => false,
+			'full' => false,
+			'target_catalogue_row' => null,
+		];
+		if ($venue_slug === '' || $booked_age_slug === '') {
+			return $empty;
+		}
+
+		$available_ages = [];
+		foreach ($catalogue_index as $key => $list) {
+			if (strpos((string) $key, strtolower((string) $kind) . '|' . $venue_slug . '|') !== 0) {
+				continue;
+			}
+			foreach ((array) $list as $row) {
+				$available_ages[] = (string) ($row['age_group_slug'] ?? '');
+			}
+		}
+		$available_ages = array_values(array_unique(array_filter($available_ages)));
+		if (empty($available_ages)) {
+			return $empty;
+		}
+
+		$entries = intersoccer_winback_catalogue_rows_for_venue($catalogue_index, $kind, $venue_slug);
+		$target_row = null;
+		$target_pick = null;
+		foreach ($entries as $row) {
+			$start = (string) ($row['start_date'] ?? '');
+			if ($start === '') {
+				continue;
+			}
+			$pick = intersoccer_winback_pick_target_age_slug($booked_age_slug, $dob, $start, $available_ages);
+			$row_age = (string) ($row['age_group_slug'] ?? '');
+			if ($row_age !== '' && $row_age === $pick['slug']) {
+				$target_row = $row;
+				$target_pick = $pick;
+				break;
+			}
+		}
+
+		if ($target_row === null || $target_pick === null) {
+			return $empty;
+		}
+
+		$target_age = (string) $target_pick['slug'];
+		$target = intersoccer_winback_catalogue_row_to_target_shape($target_row, $venue_slug, $target_age);
+		$target_source_id = (int) ( $target_row['source_variation_id'] ?? $target_row['variation_id'] ?? 0 );
+		$target_start = (string) ($target_row['start_date'] ?? '');
+
+		$more_targets = [];
+		$seen_source = [ $target_source_id => true ];
+		foreach ($entries as $row) {
+			if ((string) ($row['age_group_slug'] ?? '') !== $target_age) {
+				continue;
+			}
+			$start = (string) ($row['start_date'] ?? '');
+			if ($start === '' || $start <= $target_start) {
+				continue;
+			}
+			$source_id = (int) ( $row['source_variation_id'] ?? $row['variation_id'] ?? 0 );
+			if ($source_id > 0 && isset($seen_source[ $source_id ])) {
+				continue;
+			}
+			if ($source_id > 0) {
+				$seen_source[ $source_id ] = true;
+			}
+			$more_targets[] = intersoccer_winback_catalogue_row_to_target_shape($row, $venue_slug, $target_age);
+			if (count($more_targets) >= 3) {
+				break;
+			}
+		}
+
+		return [
+			'target' => $target,
+			'more_targets' => $more_targets,
+			'aged_up' => (bool) $target_pick['aged_up'],
+			'full' => !empty($target_row['full']),
+			'target_catalogue_row' => $target_row,
+		];
+	}
+}

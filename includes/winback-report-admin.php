@@ -110,6 +110,7 @@ function intersoccer_winback_report_stream_excel(array $rows) {
 		'Target venue',
 		'Target age group',
 		'Target start',
+		'More targets',
 		'Aged up',
 		'Sibling booked',
 		'Rebooked elsewhere',
@@ -124,7 +125,7 @@ function intersoccer_winback_report_stream_excel(array $rows) {
 	$sheet = $spreadsheet->getActiveSheet();
 	$sheet->setTitle('Win-back');
 	$sheet->fromArray($headers, null, 'A1');
-	$last_col = 'Z';
+	$last_col = 'AA';
 	$sheet->getStyle('A1:' . $last_col . '1')->getFont()->setBold(true);
 
 	$row_index = 2;
@@ -134,6 +135,22 @@ function intersoccer_winback_report_stream_excel(array $rows) {
 		$contact = $row['contact'] ?? [];
 		$last = $row['last_event'] ?? [];
 		$target = $row['target'] ?? null;
+		$more_targets = $row['more_targets'] ?? [];
+		$more_labels = [];
+		if (is_array($more_targets)) {
+			foreach ($more_targets as $mt) {
+				if (!is_array($mt)) {
+					continue;
+				}
+				$label = trim((string) ( $mt['product'] ?? '' ));
+				$start = (string) ( $mt['start_date'] ?? '' );
+				if ($label !== '' && $start !== '') {
+					$more_labels[] = $label . ' (' . $start . ')';
+				} elseif ($label !== '') {
+					$more_labels[] = $label;
+				}
+			}
+		}
 		$line = [
 			(string) ($player['name'] ?? ''),
 			(string) ($player['key'] ?? ''),
@@ -153,6 +170,7 @@ function intersoccer_winback_report_stream_excel(array $rows) {
 			is_array($target) ? (string) ($target['venue'] ?? '') : '',
 			is_array($target) ? (string) ($target['age_group'] ?? '') : '',
 			is_array($target) ? (string) ($target['start_date'] ?? '') : '',
+			implode(', ', $more_labels),
 			!empty($row['aged_up']) ? 'Yes' : 'No',
 			!empty($row['sibling_booked']) ? 'Yes' : 'No',
 			!empty($row['rebooked_elsewhere']) ? 'Yes' : 'No',

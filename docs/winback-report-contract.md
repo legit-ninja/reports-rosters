@@ -29,8 +29,8 @@ The page must not implement matching logic; it calls `intersoccer_winback_report
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
 | `kind` | `camp` \| `course` \| `all` | `all` | Limit history and catalogue matching |
-| `venue` | string (EN slug) | `''` | Restrict to one venue slug; empty = all |
-| `age_group` | string (EN slug) | `''` | Restrict to one age-group slug; empty = all |
+| `venue` | string (EN slug) | `''` | Restrict to players whose **latest** history event is at this venue slug; empty = all |
+| `age_group` | string (EN slug) | `''` | Restrict to players whose **latest** history event uses this age-group slug; empty = all |
 | `lookback_months` | int | `12` | History window on resolved event start (months before today) |
 
 GET query names match these keys (`lookback_months`, etc.).
@@ -45,8 +45,9 @@ Each element of `rows` is an associative array:
 | `parent` | array | `name` (string), `id` (int customer user ID) |
 | `contact` | array | `email` (string billing), `phone` (string), `contact_differs` (bool), `account_email` (string) |
 | `last_event` | array | `product`, `venue`, `age_group` (EN slugs where resolved), `date` (`Y-m-d` or null), `date_source` (see below) |
-| `target` | array \| null | `product`, `venue`, `age_group`, `start_date` — earliest upcoming catalogue match, or null |
-| `aged_up` | bool | Child aged past last booked band (J1) |
+| `target` | array \| null | `product`, `venue`, `age_group`, `start_date` — earliest upcoming catalogue match at the resolved target age band, or null |
+| `more_targets` | array | Up to **3** further upcoming catalogue matches (same kind, venue, and target age group as `target`), same shape as `target`, ordered by `start_date`. Empty array when `target` is null or no additional matches exist. Does not repeat `target`. |
+| `aged_up` | bool | True when the target age band differs from the last booked band because the child is older than the booked band’s max at **that target’s** `start_date` (J1). False when there is no catalogue target. |
 | `sibling_booked` | bool | Another child on same account has upcoming booking same kind (J3) |
 | `rebooked_elsewhere` | bool | Upcoming booking same kind at a different venue (J2b) |
 | `full` | bool | Target variation out of stock (J12) |
@@ -76,7 +77,7 @@ When the same resolved `customer_id` + `player_index` would map to **different**
 
 ## Order status and refunds (win-back)
 
-- Live Woo order `post_status` (or HPOS equivalent) overrides roster `order_status` when the order row exists.
+- Live Woo order status overrides roster `order_status` when the order can be loaded. **HPOS is enabled only when** `OrderUtil::custom_orders_table_usage_is_enabled()` is true (or `woocommerce_custom_orders_table_enabled === 'yes'` when OrderUtil is absent). Table presence alone does **not** enable HPOS reads. When HPOS is enabled but an order id is missing from `wc_orders`, the loader falls back to `shop_order` posts for that id.
 - History and upcoming counts use **completed** and **processing** only; **pending** / **on-hold** count as upcoming rebooked, not history (J10).
 - **Wholly refunded** orders (`refunded` / `wc-refunded`) drop out.
 - **Partial refunds:** an order with refunds but an active status stays eligible; a roster line is excluded only when that **order line is fully refunded** (same qty/total rule as `RosterRefundService::isOrderItemFullyRefunded()`). Partially refunded lines still count as booked.
@@ -96,8 +97,11 @@ German and French `pa_age-group` slugs on EN source variations normalize via the
 | `N-M-jahre-ganzer-tag` | `N-My-full-day` |
 | `N-My-demi-journee` | `N-My-half-day` |
 | `N-My-journee-complete` or `N-My-journee-entiere` | `N-My-full-day` |
+| `N-M-ans` | `N-My` |
+| `N-M-ans-demi-journee` | `N-My-half-day` |
+| `N-M-ans-journee-complete` or `N-M-ans-journee-entiere` | `N-My-full-day` |
 
-French `N-M-ans-*` catalogue slugs were **not** found in repo fixtures; only suffix rules on an already `N-My` slug apply. The typo slug `4-5-and-demi-journee` is intentionally **not** mapped.
+Typo `-and-` in slugs is normalized to `-ans-` before mapping (e.g. `4-5-and-demi-journee` → `4-5y-half-day`).
 
 When WPML is active, a slug that exists in `pa_age-group` may be replaced with the default-language term slug before the regex rules run (no-op in PHPUnit / when WPML is absent).
 
@@ -111,6 +115,14 @@ Resolution: `intersoccer_winback_normalize_roster_facet_slug()` loads the order 
 
 When resolution fails: the facet slug is left empty, the raw value is counted in `unmapped_facets`, and the row does not match venue/age filters or catalogue targeting (`target` stays null via the existing `no_upcoming` path). No new `status` value was added.
 
+## History aggregation and filters
+
+Per player and kind, the engine keeps the **latest** eligible history row (by resolved event start date), then applies `venue` / `age_group` filters to that row only. `events_in_lookback` still counts all eligible history rows in the lookback window.
+
 ## Shared loader
 
-`includes/roster-report-loader.php` — live Woo order status (batched from `posts` or HPOS `wc_orders`), order-status policy, line-level full refund checks, customer resolution, fake-user proxy, player keys. Player camp status and win-back apply live status before “booked” / history / rebook rules (roster `order_status` is fallback when the order row is missing).
+`includes/roster-report-loader.php` — live Woo order status (batched from HPOS `wc_orders` when enabled, else `posts`, with per-id posts fallback when HPOS is on), order-status policy, line-level full refund checks, customer resolution, fake-user proxy, player keys. Player camp status and win-back apply live status before “booked” / history / rebook rules (roster `order_status` is fallback when the order row is missing).
+
+## Excel export
+
+Optional column **More targets**: comma-separated `product (start_date)` from `more_targets` (export stream only; HTML page unchanged).
