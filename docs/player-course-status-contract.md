@@ -54,8 +54,21 @@ Pagination is **not** applied in the engine; the QA page slices `rows` (50 per p
     'on_hold' => int,
     'unmatched_bookings' => int,
   ],
+  'warnings' => list<['code' => string, 'message' => string]>,  // always present; empty when OK
 ]
 ```
+
+### Warnings
+
+| Code | When set | UI / export |
+|------|----------|-------------|
+| `roster_query_failed` | `intersoccer_player_course_status_load_course_roster_rows()` ran against the DB and `$wpdb->last_error` was non-empty after the roster `SELECT` | QA page: `notice notice-warning` with escaped `message`. Excel export: **blocked** via `wp_die()` with the same message (no file download). PHP `error_log()` records a short line with the DB error text (no SQL parameters). |
+
+Loader memo: call `intersoccer_player_course_status_reset_roster_query_state()` before load (done in `generate()`); after load, `intersoccer_player_course_status_roster_query_failed()` is true when the memo was set. Test fixtures (`$GLOBALS['intersoccer_test_player_course_status_roster_rows']`) bypass the DB loader and never set warnings.
+
+### Strict SQL mode (DATE columns)
+
+Roster prefilter SQL must not compare `start_date` / `end_date` to non-date literals (`''`, `'N/A'`, `'0000-00-00'`) or use string functions on DATE columns. Use `IS NULL`, sentinel `1970-01-01`, and `BETWEEN` with bound `Y-m-d` bounds (`[Y-1]-01-01` … `[Y+1]-12-31`). Empty / invalid dates are handled in PHP via `intersoccer_roster_report_has_real_date()` and `intersoccer_player_course_status_row_in_year()`.
 
 `not_booked` total counts every player who is not facet-booked, **including** those labelled `pending_payment` or `on_hold`. The `pending_payment` and `on_hold` totals count players whose resolved `booking_status` is that label (same facet rules as `booked`).
 
@@ -119,7 +132,7 @@ A course row is in year **Y** when:
 1. `start_date` year or `end_date` year equals **Y**, or
 2. `intersoccer_reports_resolve_program_year()` on the row (after batch `Year` / `pa_program-year` on the line) equals **Y**.
 
-SQL prefilter: `start_date` / `end_date` year in `[Y-1, Y+1]` or null/empty dates; final decision in PHP.
+SQL prefilter: `start_date` / `end_date` in `[Y-1]-01-01` … `[Y+1]-12-31`, or `NULL` / `1970-01-01`; final year decision in PHP (see strict SQL note above).
 
 ### Course vs camp
 
@@ -150,4 +163,4 @@ Same gate as PCS: `intersoccer_player_course_status_user_can_view_dob()` (wraps 
 
 `Booked` remains Yes/No. `Status` is the translated `booking_status_label`. Pending lines are not included in `Course Bookings`.
 
-Export uses the same `generate()` rows as the screen (no separate query path).
+Export uses the same `generate()` rows as the screen (no separate query path). If `warnings` is non-empty, export stops with `wp_die()` instead of streaming a workbook.
