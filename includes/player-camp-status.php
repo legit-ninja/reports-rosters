@@ -461,6 +461,10 @@ function intersoccer_player_camp_status_load_players() {
 		)
 	);
 
+	if (!empty($user_ids) && function_exists('cache_users')) {
+		cache_users(array_map('intval', $user_ids));
+	}
+
 	$players = [];
 	foreach ((array) $user_ids as $user_id) {
 		$user_id = (int) $user_id;

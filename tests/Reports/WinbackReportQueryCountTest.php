@@ -1002,6 +1002,10 @@ namespace {
 	if (!function_exists('intersoccer_get_product_type')) {
 		function intersoccer_get_product_type($post_id) {
 			$post_id = (int) $post_id;
+			$golden_map = $GLOBALS['intersoccer_test_golden_product_type_by_id'] ?? null;
+			if (is_array($golden_map) && array_key_exists($post_id, $golden_map)) {
+				return (string) $golden_map[ $post_id ];
+			}
 			if (!isset($GLOBALS['intersoccer_test_get_product_type_calls'])) {
 				$GLOBALS['intersoccer_test_get_product_type_calls'] = [];
 			}
