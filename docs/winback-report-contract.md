@@ -127,4 +127,4 @@ Per player and kind, the engine keeps the **latest** eligible history row (by re
 
 ## Excel export
 
-Optional column **More targets**: comma-separated `product (start_date)` from `more_targets` (export stream only; HTML page unchanged).
+Optional column **More targets**: comma-separated `product (start_date)` from `more_targets` (export stream only). The HTML Target event cell lists the same `more_targets` under a small **More dates** heading (start date, product, venue label, age-group label). Nothing is shown when that list is empty or missing.

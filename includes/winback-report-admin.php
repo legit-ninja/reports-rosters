@@ -456,6 +456,61 @@ function intersoccer_winback_report_format_event_html($event, array $venue_label
 }
 
 /**
+ * Small escaped list of later catalogue dates for the Target event cell.
+ *
+ * One line per item: start date, product, venue label, age-group label.
+ * Empty when more_targets is missing, not a list, or has no displayable rows.
+ *
+ * @param mixed                $more_targets
+ * @param array<string,string> $venue_labels
+ * @param array<string,string> $age_labels
+ * @return string
+ */
+function intersoccer_winback_report_format_more_targets_html($more_targets, array $venue_labels, array $age_labels) {
+	if (!is_array($more_targets) || $more_targets === []) {
+		return '';
+	}
+
+	$lines = [];
+	foreach ($more_targets as $item) {
+		if (!is_array($item)) {
+			continue;
+		}
+		$parts = [];
+		$date = trim((string) ($item['start_date'] ?? ''));
+		if ($date !== '') {
+			$parts[] = esc_html($date);
+		}
+		$product = trim((string) ($item['product'] ?? ''));
+		if ($product !== '') {
+			$parts[] = esc_html($product);
+		}
+		$venue = trim((string) ($item['venue'] ?? ''));
+		if ($venue !== '') {
+			$parts[] = esc_html($venue_labels[$venue] ?? $venue);
+		}
+		$age = trim((string) ($item['age_group'] ?? ''));
+		if ($age !== '') {
+			$parts[] = esc_html($age_labels[$age] ?? $age);
+		}
+		if ($parts === []) {
+			continue;
+		}
+		$lines[] = implode(', ', $parts);
+	}
+	if ($lines === []) {
+		return '';
+	}
+
+	$html = '<br /><span class="description" style="font-size:12px;">' . esc_html__('More dates', 'intersoccer-reports-rosters') . '</span>';
+	foreach ($lines as $line) {
+		$html .= '<br /><span class="description" style="font-size:12px;">' . $line . '</span>';
+	}
+
+	return $html;
+}
+
+/**
  * @param array<string,mixed> $unmapped
  * @return array<int,array{facet:string,value:string,count:int}>
  */
@@ -849,7 +904,10 @@ function intersoccer_render_winback_report_page() {
 								<?php if ($show_events) : ?>
 									<td><?php echo esc_html(intersoccer_winback_report_events_text($row)); ?></td>
 								<?php endif; ?>
-								<td><?php echo intersoccer_winback_report_format_event_html($row['target'] ?? null, $venue_labels, $age_labels, false); ?></td>
+								<td><?php
+									echo intersoccer_winback_report_format_event_html($row['target'] ?? null, $venue_labels, $age_labels, false);
+									echo intersoccer_winback_report_format_more_targets_html($row['more_targets'] ?? null, $venue_labels, $age_labels);
+								?></td>
 								<td><?php echo esc_html(intersoccer_winback_report_flag_mark($row['aged_up'] ?? false)); ?></td>
 								<td><?php echo esc_html(intersoccer_winback_report_flag_mark($row['sibling_booked'] ?? false)); ?></td>
 								<td><?php echo esc_html(intersoccer_winback_report_flag_mark($row['rebooked_elsewhere'] ?? false)); ?></td>

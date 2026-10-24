@@ -218,6 +218,53 @@ class WinbackReportAdminUiTest extends TestCase {
 		$this->assertSame('&mdash;', intersoccer_winback_report_format_event_html(null, [], [], false));
 	}
 
+	public function test_more_dates_html_escapes_three_items_and_hides_empty_or_missing() {
+		$venue_labels = [
+			'basel-hall' => 'Basel Hall',
+			'geneva-hall' => 'Geneva <script>',
+		];
+		$age_labels = [
+			'5-13y-full-day' => '5-13y (Full Day)',
+			'3-5y' => '3-5y & <b>',
+		];
+		$html = intersoccer_winback_report_format_more_targets_html(
+			[
+				[
+					'start_date' => '2026-08-01',
+					'product' => 'Easter <b>',
+					'venue' => 'basel-hall',
+					'age_group' => '5-13y-full-day',
+				],
+				[
+					'start_date' => '2026-10-02<script>',
+					'product' => 'Autumn Camp',
+					'venue' => 'geneva-hall',
+					'age_group' => '3-5y',
+				],
+				[
+					'start_date' => '2026-12-14',
+					'product' => 'Winter Camp',
+					'venue' => 'unknown-venue',
+					'age_group' => 'missing-age',
+				],
+			],
+			$venue_labels,
+			$age_labels
+		);
+
+		$this->assertStringContainsString('More dates', $html);
+		$this->assertStringContainsString('2026-08-01, Easter &lt;b&gt;, Basel Hall, 5-13y (Full Day)', $html);
+		$this->assertStringContainsString('2026-10-02&lt;script&gt;, Autumn Camp, Geneva &lt;script&gt;, 3-5y &amp; &lt;b&gt;', $html);
+		$this->assertStringContainsString('2026-12-14, Winter Camp, unknown-venue, missing-age', $html);
+		$this->assertStringNotContainsString('<b>', $html);
+		$this->assertStringNotContainsString('<script>', $html);
+		$this->assertLessThan(strpos($html, '2026-10-02'), strpos($html, '2026-08-01'));
+		$this->assertLessThan(strpos($html, '2026-12-14'), strpos($html, '2026-10-02'));
+
+		$this->assertSame('', intersoccer_winback_report_format_more_targets_html([], $venue_labels, $age_labels));
+		$this->assertSame('', intersoccer_winback_report_format_more_targets_html(null, $venue_labels, $age_labels));
+	}
+
 	public function test_unmapped_notice_lists_venue_and_age_group() {
 		$items = intersoccer_winback_report_unmapped_notice_items([
 			'venue' => ['zurich---fc-langnau' => 14],
