@@ -266,7 +266,6 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 
 		$where = ['(is_placeholder = 0 OR is_placeholder IS NULL)', 'order_item_id > 0'];
 		$params = [];
-		intersoccer_roster_report_append_sql_exclude_inactive_statuses($where, $params);
 
 		$sql = 'SELECT * FROM ' . $table . ' WHERE ' . implode(' AND ', $where);
 		if (!empty($params)) {
@@ -277,7 +276,11 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 			$rows = $wpdb->get_results($sql, ARRAY_A);
 		}
 
-		return is_array($rows) ? $rows : [];
+		if (!is_array($rows)) {
+			$rows = [];
+		}
+
+		return intersoccer_roster_report_rows_apply_live_order_status($rows);
 	}
 
 	/**
@@ -356,12 +359,13 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 		$table = $wpdb->prefix . 'intersoccer_rosters';
 		$where = ['(is_placeholder = 0 OR is_placeholder IS NULL)', 'order_item_id > 0', 'start_date > %s'];
 		$params = [$today];
-		intersoccer_roster_report_append_sql_exclude_inactive_statuses($where, $params);
 		$sql = 'SELECT * FROM ' . $table . ' WHERE ' . implode(' AND ', $where);
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+		$rows = intersoccer_roster_report_rows_apply_live_order_status(
+			(array) $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A)
+		);
 		$out = [];
-		foreach ((array) $rows as $row) {
+		foreach ($rows as $row) {
 			if (!is_array($row)) {
 				continue;
 			}
@@ -400,9 +404,6 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 	}
 
 	/**
-	 * @param array<int,array<string,mixed>> $upcoming
-	 */
-	/**
 	 * J8: skip win-back when the player is in a currently running course term.
 	 *
 	 * @param array<int,array<string,mixed>> $upcoming
@@ -416,14 +417,11 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 		$sql = "SELECT * FROM {$table} WHERE (is_placeholder = 0 OR is_placeholder IS NULL) AND order_item_id > 0
 			AND start_date <= %s AND (end_date IS NULL OR end_date = '' OR end_date >= %s)";
 		$params = [$today, $today];
-		$where_extra = [];
-		intersoccer_roster_report_append_sql_exclude_inactive_statuses($where_extra, $params);
-		if (!empty($where_extra)) {
-			$sql .= ' AND ' . implode(' AND ', $where_extra);
-		}
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
-		foreach ((array) $rows as $row) {
+		$rows = intersoccer_roster_report_rows_apply_live_order_status(
+			(array) $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A)
+		);
+		foreach ($rows as $row) {
 			if (!function_exists('intersoccer_roster_row_matches_listing_kind')
 				|| !intersoccer_roster_row_matches_listing_kind($row, 'course')) {
 				continue;

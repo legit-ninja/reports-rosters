@@ -149,6 +149,162 @@ if (!function_exists('intersoccer_roster_report_status_counts_as_booked')) {
 	}
 }
 
+if (!function_exists('intersoccer_roster_report_uses_hpos_orders_table')) {
+	/**
+	 * Whether WooCommerce order data should be read from the HPOS orders table.
+	 */
+	function intersoccer_roster_report_uses_hpos_orders_table() {
+		if (function_exists('get_option')) {
+			$enabled = get_option('woocommerce_custom_orders_table_enabled');
+			if ($enabled === 'yes') {
+				return true;
+			}
+		}
+		global $wpdb;
+		if (!is_object($wpdb) || !isset($wpdb->prefix)) {
+			return false;
+		}
+		$table = $wpdb->prefix . 'wc_orders';
+		$found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+
+		return $found === $table;
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_collect_order_ids_from_rows')) {
+	/**
+	 * @param array<int,array<string,mixed>> $rows
+	 * @return int[]
+	 */
+	function intersoccer_roster_report_collect_order_ids_from_rows(array $rows) {
+		$ids = [];
+		foreach ($rows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$order_id = (int) ( $row['order_id'] ?? 0 );
+			if ($order_id > 0) {
+				$ids[ $order_id ] = $order_id;
+			}
+		}
+
+		return array_values($ids);
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_batch_load_live_order_statuses')) {
+	/**
+	 * Live Woo order statuses for many orders (one query per chunk, not per row).
+	 *
+	 * @param int[] $order_ids
+	 * @return array<int,string> order_id => status (often wc-* from posts or HPOS).
+	 */
+	function intersoccer_roster_report_batch_load_live_order_statuses(array $order_ids) {
+		$order_ids = array_values(array_unique(array_filter(array_map('intval', $order_ids))));
+		if (empty($order_ids)) {
+			return [];
+		}
+
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
+			$GLOBALS['intersoccer_test_live_order_status_batch_load_calls'] = (int) ( $GLOBALS['intersoccer_test_live_order_status_batch_load_calls'] ?? 0 ) + 1;
+			if (isset($GLOBALS['intersoccer_test_live_order_status_map']) && is_array($GLOBALS['intersoccer_test_live_order_status_map'])) {
+				$out = [];
+				foreach ($order_ids as $order_id) {
+					if (array_key_exists($order_id, $GLOBALS['intersoccer_test_live_order_status_map'])) {
+						$out[ $order_id ] = (string) $GLOBALS['intersoccer_test_live_order_status_map'][ $order_id ];
+					}
+				}
+
+				return $out;
+			}
+		}
+
+		global $wpdb;
+		if (!is_object($wpdb) || !isset($wpdb->prefix)) {
+			return [];
+		}
+
+		$map = [];
+		$use_hpos = intersoccer_roster_report_uses_hpos_orders_table();
+		$chunks = array_chunk($order_ids, 500);
+
+		foreach ($chunks as $chunk) {
+			$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+			if ($use_hpos) {
+				$table = $wpdb->prefix . 'wc_orders';
+				$sql = "SELECT id, status FROM {$table} WHERE id IN ({$placeholders})";
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$results = $wpdb->get_results($wpdb->prepare($sql, $chunk), ARRAY_A);
+			} else {
+				$sql = "SELECT ID, post_status FROM {$wpdb->posts} WHERE post_type = 'shop_order' AND ID IN ({$placeholders})";
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$results = $wpdb->get_results($wpdb->prepare($sql, $chunk), ARRAY_A);
+			}
+			foreach ((array) $results as $result) {
+				if (!is_array($result)) {
+					continue;
+				}
+				if ($use_hpos) {
+					$id = (int) ( $result['id'] ?? 0 );
+					$status = (string) ( $result['status'] ?? '' );
+				} else {
+					$id = (int) ( $result['ID'] ?? 0 );
+					$status = (string) ( $result['post_status'] ?? '' );
+				}
+				if ($id > 0 && $status !== '') {
+					$map[ $id ] = $status;
+				}
+			}
+		}
+
+		return $map;
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_effective_order_status_for_row')) {
+	/**
+	 * @param array<string,mixed> $row
+	 * @param array<int,string>   $live_status_map
+	 */
+	function intersoccer_roster_report_effective_order_status_for_row(array $row, array $live_status_map) {
+		$order_id = (int) ( $row['order_id'] ?? 0 );
+		if ($order_id > 0 && isset($live_status_map[ $order_id ]) && (string) $live_status_map[ $order_id ] !== '') {
+			return (string) $live_status_map[ $order_id ];
+		}
+
+		return (string) ( $row['order_status'] ?? '' );
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_rows_apply_live_order_status')) {
+	/**
+	 * Replace row order_status with live Woo status when the order post/HPOS row exists.
+	 *
+	 * @param array<int,array<string,mixed>> $rows
+	 * @param array<int,string>|null         $live_status_map Optional preloaded map.
+	 * @return array<int,array<string,mixed>>
+	 */
+	function intersoccer_roster_report_rows_apply_live_order_status(array $rows, $live_status_map = null) {
+		if ($live_status_map === null) {
+			$live_status_map = intersoccer_roster_report_batch_load_live_order_statuses(
+				intersoccer_roster_report_collect_order_ids_from_rows($rows)
+			);
+		}
+		foreach ($rows as &$row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			if (!array_key_exists('roster_order_status', $row)) {
+				$row['roster_order_status'] = $row['order_status'] ?? '';
+			}
+			$row['order_status'] = intersoccer_roster_report_effective_order_status_for_row($row, $live_status_map);
+		}
+		unset($row);
+
+		return $rows;
+	}
+}
+
 if (!function_exists('intersoccer_roster_report_append_sql_exclude_inactive_statuses')) {
 	/**
 	 * Append SQL WHERE fragments excluding cancelled/refunded/failed roster rows.

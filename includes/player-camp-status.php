@@ -576,15 +576,6 @@ function intersoccer_player_camp_status_load_camp_roster_rows($year, $season_typ
 		$sql .= ' AND (is_placeholder = 0 OR is_placeholder IS NULL)';
 	}
 
-	$has_order_status = in_array('order_status', (array) $columns, true);
-	if ($has_order_status && function_exists('intersoccer_roster_report_append_sql_exclude_inactive_statuses')) {
-		$sql_status_parts = [];
-		intersoccer_roster_report_append_sql_exclude_inactive_statuses($sql_status_parts, $params);
-		if (!empty($sql_status_parts)) {
-			$sql .= ' AND ' . implode(' AND ', $sql_status_parts);
-		}
-	}
-
 	$year = (string) $year;
 	if ($year !== '') {
 		$sql .= ' AND (season LIKE %s OR start_date LIKE %s)';
@@ -608,6 +599,10 @@ function intersoccer_player_camp_status_load_camp_roster_rows($year, $season_typ
 
 	if (!is_array($rows)) {
 		$rows = [];
+	}
+
+	if (function_exists('intersoccer_roster_report_rows_apply_live_order_status')) {
+		$rows = intersoccer_roster_report_rows_apply_live_order_status($rows);
 	}
 
 	foreach ($rows as &$row) {

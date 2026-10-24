@@ -8,6 +8,15 @@ namespace InterSoccer\ReportsRosters\Tests\Reports {
 use InterSoccer\ReportsRosters\Tests\TestCase;
 
 class WinbackReportTest extends TestCase {
+	protected function tearDown(): void {
+		unset(
+			$GLOBALS['intersoccer_test_live_order_status_map'],
+			$GLOBALS['intersoccer_test_live_order_status_batch_load_calls'],
+			$GLOBALS['intersoccer_test_wc_get_order_callback']
+		);
+		parent::tearDown();
+	}
+
 	protected function setUp(): void {
 		parent::setUp();
 		$includes = dirname(__DIR__, 2) . '/includes';
@@ -20,6 +29,57 @@ class WinbackReportTest extends TestCase {
 		if (function_exists('intersoccer_winback_reset_unmapped_facets')) {
 			intersoccer_winback_reset_unmapped_facets();
 		}
+	}
+
+	public function test_live_order_status_overrides_stale_roster_for_policy() {
+		$GLOBALS['intersoccer_test_live_order_status_map'] = [
+			101 => 'wc-cancelled',
+			102 => 'wc-completed',
+		];
+
+		$stale_completed = [
+			'order_id' => 101,
+			'order_status' => 'completed',
+		];
+		$rows = intersoccer_roster_report_rows_apply_live_order_status([$stale_completed]);
+		$this->assertSame('wc-cancelled', $rows[0]['order_status']);
+		$this->assertFalse(intersoccer_roster_report_status_counts_as_history($rows[0]['order_status']));
+		$this->assertFalse(intersoccer_roster_report_status_counts_as_booked($rows[0]['order_status']));
+
+		$stale_cancelled = [
+			'order_id' => 102,
+			'order_status' => 'cancelled',
+		];
+		$rows = intersoccer_roster_report_rows_apply_live_order_status([$stale_cancelled]);
+		$this->assertSame('wc-completed', $rows[0]['order_status']);
+		$this->assertTrue(intersoccer_roster_report_status_counts_as_history($rows[0]['order_status']));
+		$this->assertTrue(intersoccer_roster_report_status_counts_as_booked($rows[0]['order_status']));
+	}
+
+	public function test_live_order_status_falls_back_to_roster_when_order_missing() {
+		$GLOBALS['intersoccer_test_live_order_status_map'] = [];
+		$row = [
+			'order_id' => 99999,
+			'order_status' => 'processing',
+		];
+		$rows = intersoccer_roster_report_rows_apply_live_order_status([$row]);
+		$this->assertSame('processing', $rows[0]['order_status']);
+	}
+
+	public function test_live_order_status_batch_load_one_call_for_many_orders() {
+		$GLOBALS['intersoccer_test_live_order_status_map'] = [
+			1 => 'wc-completed',
+			2 => 'wc-completed',
+			3 => 'wc-pending',
+		];
+		$GLOBALS['intersoccer_test_live_order_status_batch_load_calls'] = 0;
+		$rows = [
+			['order_id' => 1, 'order_status' => 'cancelled'],
+			['order_id' => 2, 'order_status' => 'cancelled'],
+			['order_id' => 3, 'order_status' => 'cancelled'],
+		];
+		intersoccer_roster_report_rows_apply_live_order_status($rows);
+		$this->assertSame(1, $GLOBALS['intersoccer_test_live_order_status_batch_load_calls']);
 	}
 
 	public function test_history_status_excludes_cancelled_refunded_failed_and_pending() {
@@ -198,6 +258,45 @@ class WinbackReportTest extends TestCase {
 			}
 		}
 		$this->assertTrue($found);
+	}
+
+	public function test_yearless_camp_terms_use_season_or_current_year_not_order_date() {
+		if (!function_exists('intersoccer_parse_camp_dates_fixed')) {
+			$this->markTestSkipped('intersoccer_parse_camp_dates_fixed not loaded');
+		}
+		$camp_terms = 'july-week-1-july-7-july-11-5-days';
+		list($from_season,,) = intersoccer_parse_camp_dates_fixed($camp_terms, 'Summer 2024');
+		$this->assertSame('2024-07-07', $from_season);
+
+		list($yearless,,) = intersoccer_parse_camp_dates_fixed($camp_terms, '');
+		$this->assertStringStartsWith((string) (int) date('Y') . '-', (string) $yearless);
+		$this->assertNotSame('2024-07-07', $yearless);
+	}
+
+	public function test_order_date_source_when_only_order_date_available() {
+		$GLOBALS['intersoccer_test_wc_get_order_callback'] = static function ($order_id) {
+			return new class() {
+				public function get_date_created() {
+					return new class() {
+						public function date($format) {
+							return '2022-06-01';
+						}
+					};
+				}
+			};
+		};
+		$row = [
+			'start_date' => null,
+			'variation_id' => 0,
+			'order_id' => 6001,
+			'order_item_id' => 0,
+			'camp_terms' => '',
+			'season' => '',
+			'activity_type' => 'Camp',
+		];
+		$bits = intersoccer_winback_resolve_row_event_date($row);
+		$this->assertSame('2022-06-01', $bits['date']);
+		$this->assertSame('order_date', $bits['source']);
 	}
 
 	public function test_camp_date_fallback_chain_and_unknown() {
