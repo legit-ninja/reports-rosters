@@ -119,6 +119,8 @@ When resolution fails: the facet slug is left empty, the raw value is counted in
 
 Per player and kind, the engine keeps the **latest** eligible history row (by resolved event start date), then applies `venue` / `age_group` filters to that row only. `events_in_lookback` still counts all eligible history rows in the lookback window.
 
+**J8 (course, current term):** A course player with a live roster row whose `start_date` ≤ today and (`end_date` is NULL or a real end date ≥ today) is treated as still enrolled in the running term and is excluded from win-back output. Date sanity uses `intersoccer_roster_report_has_real_date()` in PHP; roster SQL does not compare DATE columns to `''` (MySQL strict mode). Cancelled / refunded live orders do not count as current.
+
 ## Shared loader
 
 `includes/roster-report-loader.php` — live Woo order status (batched from HPOS `wc_orders` when enabled, else `posts`, with per-id posts fallback when HPOS is on), order-status policy, line-level full refund checks, customer resolution, fake-user proxy, player keys. Player camp status and win-back apply live status before “booked” / history / rebook rules (roster `order_status` is fallback when the order row is missing).

@@ -35,6 +35,10 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		$today = function_exists('wp_date') ? wp_date('Y-m-d') : gmdate('Y-m-d');
 		$lookback_start = intersoccer_winback_report_engine_subtract_months($today, $lookback_months);
 
+		if (function_exists('intersoccer_winback_reset_current_course_term_cache')) {
+			intersoccer_winback_reset_current_course_term_cache();
+		}
+
 		intersoccer_winback_reset_unmapped_facets();
 		$catalogue = intersoccer_winback_enumerate_upcoming_catalogue($today);
 		$history_rows = intersoccer_winback_report_engine_load_history_rows($lookback_start, $today, $kind_filter);
@@ -430,6 +434,80 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 		return $out;
 	}
 
+	function intersoccer_winback_reset_current_course_term_cache() {
+		unset($GLOBALS['intersoccer_winback_current_course_term_cache']);
+	}
+
+	/**
+	 * SQL for roster rows that may overlap "today" for J8 (placeholders for start/end Y-m-d).
+	 *
+	 * @param string $table Prefixed intersoccer_rosters table name.
+	 */
+	function intersoccer_winback_report_engine_current_course_term_sql($table) {
+		return "SELECT * FROM {$table} WHERE (is_placeholder = 0 OR is_placeholder IS NULL) AND order_item_id > 0
+			AND start_date IS NOT NULL AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)";
+	}
+
+	/**
+	 * @param array<string,mixed> $row
+	 */
+	function intersoccer_winback_report_engine_row_in_current_course_term_window(array $row, $today) {
+		$start = isset($row['start_date']) ? trim((string) $row['start_date']) : '';
+		if (!intersoccer_roster_report_has_real_date($start) || $start > $today) {
+			return false;
+		}
+		$end = isset($row['end_date']) ? trim((string) $row['end_date']) : '';
+		if ($end === '' || !intersoccer_roster_report_has_real_date($end)) {
+			return true;
+		}
+
+		return $end >= $today;
+	}
+
+	/**
+	 * Running course roster candidates for J8, loaded once per engine run (cached by $today).
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	function intersoccer_winback_report_engine_load_current_course_term_rows($today) {
+		$today = (string) $today;
+		if (!isset($GLOBALS['intersoccer_winback_current_course_term_cache'])
+			|| !is_array($GLOBALS['intersoccer_winback_current_course_term_cache'])) {
+			$GLOBALS['intersoccer_winback_current_course_term_cache'] = [];
+		}
+		if (array_key_exists($today, $GLOBALS['intersoccer_winback_current_course_term_cache'])) {
+			return $GLOBALS['intersoccer_winback_current_course_term_cache'][ $today ];
+		}
+
+		if (isset($GLOBALS['intersoccer_test_winback_current_course_term_rows'])
+			&& is_array($GLOBALS['intersoccer_test_winback_current_course_term_rows'])) {
+			$raw = $GLOBALS['intersoccer_test_winback_current_course_term_rows'];
+		} else {
+			global $wpdb;
+			$table = $wpdb->prefix . 'intersoccer_rosters';
+			$sql = intersoccer_winback_report_engine_current_course_term_sql($table);
+			$params = [$today, $today];
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$raw = (array) $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+		}
+
+		$filtered = [];
+		foreach ($raw as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			if (!intersoccer_winback_report_engine_row_in_current_course_term_window($row, $today)) {
+				continue;
+			}
+			$filtered[] = $row;
+		}
+
+		$rows = intersoccer_roster_report_rows_apply_live_order_status($filtered);
+		$GLOBALS['intersoccer_winback_current_course_term_cache'][ $today ] = $rows;
+
+		return $rows;
+	}
+
 	/**
 	 * J8: skip win-back when the player is in a currently running course term.
 	 *
@@ -439,15 +517,7 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 		if ($kind !== 'course') {
 			return false;
 		}
-		global $wpdb;
-		$table = $wpdb->prefix . 'intersoccer_rosters';
-		$sql = "SELECT * FROM {$table} WHERE (is_placeholder = 0 OR is_placeholder IS NULL) AND order_item_id > 0
-			AND start_date <= %s AND (end_date IS NULL OR end_date = '' OR end_date >= %s)";
-		$params = [$today, $today];
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$rows = intersoccer_roster_report_rows_apply_live_order_status(
-			(array) $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A)
-		);
+		$rows = intersoccer_winback_report_engine_load_current_course_term_rows($today);
 		foreach ($rows as $row) {
 			if (!function_exists('intersoccer_roster_row_matches_listing_kind')
 				|| !intersoccer_roster_row_matches_listing_kind($row, 'course')) {

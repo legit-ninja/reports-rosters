@@ -21,8 +21,12 @@ class WinbackReportTest extends TestCase {
 			$GLOBALS['intersoccer_test_current_user'],
 			$GLOBALS['intersoccer_test_winback_facet_resolution'],
 			$GLOBALS['intersoccer_test_winback_facet_resolution_callback'],
-			$GLOBALS['intersoccer_test_winback_term_slugs']
+			$GLOBALS['intersoccer_test_winback_term_slugs'],
+			$GLOBALS['intersoccer_test_winback_current_course_term_rows']
 		);
+		if (function_exists('intersoccer_winback_reset_current_course_term_cache')) {
+			intersoccer_winback_reset_current_course_term_cache();
+		}
 		if (function_exists('intersoccer_winback_reset_facet_resolution_cache')) {
 			intersoccer_winback_reset_facet_resolution_cache();
 		}
@@ -44,7 +48,7 @@ class WinbackReportTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		$includes = dirname(__DIR__, 2) . '/includes';
-		foreach (['roster-report-loader.php', 'winback-report-facets.php', 'winback-catalogue.php', 'winback-report-engine.php', 'utils.php'] as $file) {
+		foreach (['roster-report-loader.php', 'winback-report-facets.php', 'winback-catalogue.php', 'utils.php', 'winback-report-engine.php'] as $file) {
 			$path = $includes . '/' . $file;
 			if (file_exists($path)) {
 				require_once $path;
@@ -732,6 +736,116 @@ class WinbackReportTest extends TestCase {
 		];
 		$this->assertFalse(intersoccer_roster_report_row_counts_for_winback($row, 'history'));
 		$this->assertFalse(intersoccer_roster_report_row_counts_for_winback($row, 'upcoming_rebooked'));
+	}
+
+	public function test_current_course_term_sql_has_no_empty_string_date_comparison() {
+		$sql = intersoccer_winback_report_engine_current_course_term_sql('wp_intersoccer_rosters');
+		$this->assertDoesNotMatchRegularExpression(
+			"/(start_date|end_date)\s*(=|<>|!=)\s*''/",
+			$sql
+		);
+		$this->assertStringContainsString('end_date IS NULL', $sql);
+		$this->assertStringContainsString('start_date IS NOT NULL', $sql);
+	}
+
+	/**
+	 * @return array<string,mixed>
+	 */
+	private function j8_course_roster_row(array $overrides = []) {
+		return array_merge([
+			'is_placeholder' => 0,
+			'order_item_id' => 91001,
+			'order_id' => 9100,
+			'order_status' => 'completed',
+			'activity_type' => 'Course',
+			'customer_id' => 88,
+			'player_index' => 1,
+			'player_first_name' => 'Course',
+			'player_last_name' => 'Current',
+		], $overrides);
+	}
+
+	public function test_j8_running_course_term_marks_player_current() {
+		$today = '2026-10-23';
+		$row = $this->j8_course_roster_row([
+			'start_date' => '2026-09-01',
+			'end_date' => '2026-12-15',
+		]);
+		$key = intersoccer_roster_report_build_player_key($row, '');
+		$GLOBALS['intersoccer_test_winback_current_course_term_rows'] = [$row];
+		intersoccer_winback_reset_current_course_term_cache();
+		$this->assertTrue(
+			intersoccer_winback_report_engine_player_in_current_course_term(
+				$key['key'],
+				'course',
+				$today,
+				[],
+				null
+			)
+		);
+	}
+
+	public function test_j8_null_end_date_running_term_marks_player_current() {
+		$today = '2026-10-23';
+		$row = $this->j8_course_roster_row([
+			'start_date' => '2026-01-01',
+			'end_date' => null,
+		]);
+		$key = intersoccer_roster_report_build_player_key($row, '');
+		$GLOBALS['intersoccer_test_winback_current_course_term_rows'] = [$row];
+		intersoccer_winback_reset_current_course_term_cache();
+		$this->assertTrue(
+			intersoccer_winback_report_engine_player_in_current_course_term(
+				$key['key'],
+				'course',
+				$today,
+				[],
+				null
+			)
+		);
+	}
+
+	public function test_j8_past_course_term_only_is_not_current() {
+		$today = '2026-10-23';
+		$row = $this->j8_course_roster_row([
+			'start_date' => '2025-01-01',
+			'end_date' => '2025-06-30',
+		]);
+		$key = intersoccer_roster_report_build_player_key($row, '');
+		$GLOBALS['intersoccer_test_winback_current_course_term_rows'] = [$row];
+		intersoccer_winback_reset_current_course_term_cache();
+		$this->assertFalse(
+			intersoccer_winback_report_engine_player_in_current_course_term(
+				$key['key'],
+				'course',
+				$today,
+				[],
+				null
+			)
+		);
+	}
+
+	public function test_j8_cancelled_live_order_for_running_term_is_not_current() {
+		$today = '2026-10-23';
+		$row = $this->j8_course_roster_row([
+			'start_date' => '2026-09-01',
+			'end_date' => '2026-12-15',
+			'order_id' => 9200,
+			'order_status' => 'completed',
+		]);
+		$key = intersoccer_roster_report_build_player_key($row, '');
+		$GLOBALS['intersoccer_test_live_order_status_map'] = [9200 => 'wc-cancelled'];
+		$GLOBALS['intersoccer_test_winback_current_course_term_rows'] = [$row];
+		intersoccer_winback_reset_current_course_term_cache();
+		$this->assertFalse(
+			intersoccer_winback_report_engine_player_in_current_course_term(
+				$key['key'],
+				'course',
+				$today,
+				[],
+				null
+			)
+		);
 	}
 }
 
