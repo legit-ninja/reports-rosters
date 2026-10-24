@@ -39,6 +39,22 @@ class WinbackReportTest extends TestCase {
 		if (function_exists('intersoccer_roster_report_reset_line_refund_check_state')) {
 			intersoccer_roster_report_reset_line_refund_check_state();
 		}
+		if (function_exists('intersoccer_roster_report_reset_live_order_status_memo')) {
+			intersoccer_roster_report_reset_live_order_status_memo();
+		}
+		if (function_exists('intersoccer_roster_report_reset_order_customer_id_cache')) {
+			intersoccer_roster_report_reset_order_customer_id_cache();
+		}
+		if (function_exists('intersoccer_roster_report_reset_fake_customer_cache')) {
+			intersoccer_roster_report_reset_fake_customer_cache();
+		}
+		if (function_exists('intersoccer_winback_reset_catalogue_target_cache')) {
+			intersoccer_winback_reset_catalogue_target_cache();
+		}
+		if (function_exists('intersoccer_winback_reset_j8_lookup_cache')) {
+			intersoccer_winback_reset_j8_lookup_cache();
+		}
+		unset($GLOBALS['intersoccer_rr_user_billing_phone_cache']);
 		if (function_exists('intersoccer_player_camp_status_reset_dob_gate_cache')) {
 			intersoccer_player_camp_status_reset_dob_gate_cache();
 		}

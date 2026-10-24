@@ -28,7 +28,17 @@ if (!function_exists('intersoccer_winback_prime_order_created_dates_from_rows'))
 			return;
 		}
 		$ids = intersoccer_roster_report_collect_order_ids_from_rows($rows);
-		$GLOBALS['intersoccer_winback_order_created_date_cache'] = intersoccer_roster_report_batch_load_order_created_dates($ids);
+		if (empty($ids)) {
+			return;
+		}
+		$loaded = intersoccer_roster_report_batch_load_order_created_dates($ids);
+		if (!isset($GLOBALS['intersoccer_winback_order_created_date_cache'])
+			|| !is_array($GLOBALS['intersoccer_winback_order_created_date_cache'])) {
+			$GLOBALS['intersoccer_winback_order_created_date_cache'] = [];
+		}
+		foreach ($loaded as $order_id => $ymd) {
+			$GLOBALS['intersoccer_winback_order_created_date_cache'][ (int) $order_id ] = (string) $ymd;
+		}
 	}
 }
 
@@ -42,13 +52,32 @@ if (!function_exists('intersoccer_winback_get_order_created_ymd')) {
 			return '';
 		}
 		$cache = $GLOBALS['intersoccer_winback_order_created_date_cache'] ?? null;
-		if (is_array($cache) && isset($cache[ $order_id ]) && (string) $cache[ $order_id ] !== '') {
-			return substr((string) $cache[ $order_id ], 0, 10);
+		if (!is_array($cache)) {
+			$cache = [];
+			$GLOBALS['intersoccer_winback_order_created_date_cache'] = &$cache;
 		}
+		if (array_key_exists($order_id, $cache)) {
+			$cached = (string) $cache[ $order_id ];
+			if ($cached !== '') {
+				return substr($cached, 0, 10);
+			}
+		}
+		if (function_exists('intersoccer_roster_report_batch_load_order_created_dates')) {
+			$loaded = intersoccer_roster_report_batch_load_order_created_dates([$order_id]);
+			if (isset($loaded[ $order_id ]) && (string) $loaded[ $order_id ] !== '') {
+				$cache[ $order_id ] = (string) $loaded[ $order_id ];
+
+				return substr((string) $cache[ $order_id ], 0, 10);
+			}
+		}
+
 		if (function_exists('wc_get_order')) {
 			$order = wc_get_order($order_id);
 			if ($order && $order->get_date_created()) {
-				return $order->get_date_created()->date('Y-m-d');
+				$ymd = $order->get_date_created()->date('Y-m-d');
+				$cache[ $order_id ] = $ymd;
+
+				return $ymd;
 			}
 		}
 		global $wpdb;
@@ -57,11 +86,57 @@ if (!function_exists('intersoccer_winback_get_order_created_ymd')) {
 				$wpdb->prepare("SELECT post_date FROM {$wpdb->posts} WHERE ID = %d LIMIT 1", $order_id)
 			);
 			if ($raw !== '') {
-				return substr($raw, 0, 10);
+				$ymd = substr($raw, 0, 10);
+				$cache[ $order_id ] = $ymd;
+
+				return $ymd;
 			}
 		}
 
+		$cache[ $order_id ] = '';
+
 		return '';
+	}
+}
+
+if (!function_exists('intersoccer_winback_reset_catalogue_target_cache')) {
+	function intersoccer_winback_reset_catalogue_target_cache() {
+		unset($GLOBALS['intersoccer_winback_catalogue_venue_cache']);
+		unset($GLOBALS['intersoccer_winback_catalogue_target_cache']);
+	}
+}
+
+if (!function_exists('intersoccer_winback_catalogue_venue_cache_bucket')) {
+	/**
+	 * @return array{available_ages:array<int,string>,entries:array<int,array<string,mixed>>}
+	 */
+	function intersoccer_winback_catalogue_venue_cache_bucket(array $catalogue_index, $kind, $venue_slug) {
+		if (!isset($GLOBALS['intersoccer_winback_catalogue_venue_cache'])
+			|| !is_array($GLOBALS['intersoccer_winback_catalogue_venue_cache'])) {
+			$GLOBALS['intersoccer_winback_catalogue_venue_cache'] = [];
+		}
+		$cache_key = strtolower((string) $kind) . '|' . (string) $venue_slug;
+		if (isset($GLOBALS['intersoccer_winback_catalogue_venue_cache'][ $cache_key ])) {
+			return $GLOBALS['intersoccer_winback_catalogue_venue_cache'][ $cache_key ];
+		}
+		$available_ages = [];
+		foreach ($catalogue_index as $key => $list) {
+			if (strpos((string) $key, strtolower((string) $kind) . '|' . $venue_slug . '|') !== 0) {
+				continue;
+			}
+			foreach ((array) $list as $row) {
+				$available_ages[] = (string) ($row['age_group_slug'] ?? '');
+			}
+		}
+		$available_ages = array_values(array_unique(array_filter($available_ages)));
+		$entries = intersoccer_winback_catalogue_rows_for_venue($catalogue_index, $kind, $venue_slug);
+		$bucket = [
+			'available_ages' => $available_ages,
+			'entries' => $entries,
+		];
+		$GLOBALS['intersoccer_winback_catalogue_venue_cache'][ $cache_key ] = $bucket;
+
+		return $bucket;
 	}
 }
 
@@ -312,6 +387,10 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 			],
 		]);
 
+		if (!empty($parent_ids) && function_exists('update_meta_cache')) {
+			update_meta_cache('post', array_map('intval', (array) $parent_ids));
+		}
+
 		foreach ((array) $parent_ids as $parent_id) {
 			$parent_id = (int) $parent_id;
 			if ($parent_id <= 0) {
@@ -338,6 +417,20 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 				'posts_per_page' => -1,
 				'fields' => 'ids',
 			]);
+
+			$prime_ids = [(int) $parent_id];
+			foreach ((array) $children as $child_id) {
+				$child_id = (int) $child_id;
+				if ($child_id > 0) {
+					$prime_ids[] = $child_id;
+				}
+			}
+			if (function_exists('update_meta_cache')) {
+				update_meta_cache('post', array_values(array_unique($prime_ids)));
+			}
+			if (function_exists('_prime_post_caches')) {
+				_prime_post_caches(array_values(array_unique($prime_ids)), false, false);
+			}
 
 			foreach ((array) $children as $variation_id) {
 				$variation_id = (int) $variation_id;
@@ -497,6 +590,7 @@ if (!function_exists('intersoccer_winback_resolve_catalogue_target_and_more')) {
 	) {
 		$venue_slug = (string) $venue_slug;
 		$booked_age_slug = trim((string) $booked_age_slug);
+		$dob = trim((string) $dob);
 		$empty = [
 			'target' => null,
 			'more_targets' => [],
@@ -508,21 +602,24 @@ if (!function_exists('intersoccer_winback_resolve_catalogue_target_and_more')) {
 			return $empty;
 		}
 
-		$available_ages = [];
-		foreach ($catalogue_index as $key => $list) {
-			if (strpos((string) $key, strtolower((string) $kind) . '|' . $venue_slug . '|') !== 0) {
-				continue;
-			}
-			foreach ((array) $list as $row) {
-				$available_ages[] = (string) ($row['age_group_slug'] ?? '');
-			}
+		if (!isset($GLOBALS['intersoccer_winback_catalogue_target_cache'])
+			|| !is_array($GLOBALS['intersoccer_winback_catalogue_target_cache'])) {
+			$GLOBALS['intersoccer_winback_catalogue_target_cache'] = [];
 		}
-		$available_ages = array_values(array_unique(array_filter($available_ages)));
+		$result_cache_key = strtolower((string) $kind) . '|' . $venue_slug . '|' . $booked_age_slug . '|' . $dob;
+		if (array_key_exists($result_cache_key, $GLOBALS['intersoccer_winback_catalogue_target_cache'])) {
+			return $GLOBALS['intersoccer_winback_catalogue_target_cache'][ $result_cache_key ];
+		}
+
+		$venue_bucket = intersoccer_winback_catalogue_venue_cache_bucket($catalogue_index, $kind, $venue_slug);
+		$available_ages = $venue_bucket['available_ages'];
 		if (empty($available_ages)) {
+			$GLOBALS['intersoccer_winback_catalogue_target_cache'][ $result_cache_key ] = $empty;
+
 			return $empty;
 		}
 
-		$entries = intersoccer_winback_catalogue_rows_for_venue($catalogue_index, $kind, $venue_slug);
+		$entries = $venue_bucket['entries'];
 		$target_row = null;
 		$target_pick = null;
 		foreach ($entries as $row) {
@@ -540,6 +637,8 @@ if (!function_exists('intersoccer_winback_resolve_catalogue_target_and_more')) {
 		}
 
 		if ($target_row === null || $target_pick === null) {
+			$GLOBALS['intersoccer_winback_catalogue_target_cache'][ $result_cache_key ] = $empty;
+
 			return $empty;
 		}
 
@@ -571,12 +670,15 @@ if (!function_exists('intersoccer_winback_resolve_catalogue_target_and_more')) {
 			}
 		}
 
-		return [
+		$result = [
 			'target' => $target,
 			'more_targets' => $more_targets,
 			'aged_up' => (bool) $target_pick['aged_up'],
 			'full' => !empty($target_row['full']),
 			'target_catalogue_row' => $target_row,
 		];
+		$GLOBALS['intersoccer_winback_catalogue_target_cache'][ $result_cache_key ] = $result;
+
+		return $result;
 	}
 }
