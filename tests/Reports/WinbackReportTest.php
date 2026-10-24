@@ -912,6 +912,91 @@ class WinbackReportTest extends TestCase {
 		$this->assertSame(1, $unmapped['age_group']['5-12y']);
 	}
 
+	public function test_catalogue_target_keeps_cross_band_rows_with_shared_product_week(): void {
+		intersoccer_winback_reset_catalogue_target_cache();
+		$shared_product = 88001;
+		$catalogue = [
+			'camp|varembe|3-5y' => [
+				[
+					'product_name' => 'Feb Half-Day 3-5',
+					'product_id' => $shared_product,
+					'start_date' => '2026-02-03',
+					'age_group_slug' => '3-5y',
+					'booking_type_slug' => 'full-week',
+					'source_variation_id' => 4101,
+					'variation_id' => 4101,
+				],
+				[
+					'product_name' => 'Spring Half-Day 3-5',
+					'product_id' => $shared_product,
+					'start_date' => '2026-04-05',
+					'age_group_slug' => '3-5y',
+					'booking_type_slug' => 'single-days',
+					'source_variation_id' => 4102,
+					'variation_id' => 4102,
+				],
+			],
+			'camp|varembe|5-13y' => [
+				[
+					'product_name' => 'Feb Full-Day 5-13',
+					'product_id' => $shared_product,
+					'start_date' => '2026-02-03',
+					'age_group_slug' => '5-13y',
+					'booking_type_slug' => 'full-week',
+					'source_variation_id' => 4201,
+					'variation_id' => 4201,
+				],
+				[
+					'product_name' => 'Easter Full-Day 5-13',
+					'product_id' => $shared_product,
+					'start_date' => '2026-04-05',
+					'age_group_slug' => '5-13y',
+					'booking_type_slug' => 'full-week',
+					'source_variation_id' => 4202,
+					'variation_id' => 4202,
+				],
+				[
+					'product_name' => 'Summer Full-Day 5-13',
+					'product_id' => $shared_product,
+					'start_date' => '2026-07-01',
+					'age_group_slug' => '5-13y',
+					'booking_type_slug' => 'full-week',
+					'source_variation_id' => 4203,
+					'variation_id' => 4203,
+				],
+			],
+		];
+		$young = intersoccer_winback_resolve_catalogue_target_and_more(
+			$catalogue,
+			'camp',
+			'varembe',
+			'3-5y',
+			'2022-06-01'
+		);
+		$this->assertNotNull($young['target']);
+		$this->assertSame('Feb Half-Day 3-5', $young['target']['product']);
+		$this->assertSame('2026-02-03', $young['target']['start_date']);
+		$this->assertSame('3-5y', $young['target']['age_group']);
+		$this->assertCount(1, $young['more_targets']);
+		$this->assertSame('Spring Half-Day 3-5', $young['more_targets'][0]['product']);
+		$this->assertSame('3-5y', $young['more_targets'][0]['age_group']);
+
+		intersoccer_winback_reset_catalogue_target_cache();
+		$older = intersoccer_winback_resolve_catalogue_target_and_more(
+			$catalogue,
+			'camp',
+			'varembe',
+			'5-13y',
+			'2014-06-01'
+		);
+		$this->assertNotNull($older['target']);
+		$this->assertSame('Feb Full-Day 5-13', $older['target']['product']);
+		$this->assertSame('2026-02-03', $older['target']['start_date']);
+		$this->assertCount(2, $older['more_targets']);
+		$this->assertSame('Easter Full-Day 5-13', $older['more_targets'][0]['product']);
+		$this->assertSame('Summer Full-Day 5-13', $older['more_targets'][1]['product']);
+	}
+
 	public function test_more_targets_dedupes_product_week_and_prefers_full_week(): void {
 		intersoccer_winback_reset_catalogue_target_cache();
 		$catalogue = [

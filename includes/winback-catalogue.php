@@ -250,6 +250,17 @@ if (!function_exists('intersoccer_winback_catalogue_product_week_key')) {
 	}
 }
 
+if (!function_exists('intersoccer_winback_catalogue_band_product_week_key')) {
+	/**
+	 * Dedupe key for catalogue rows: age band + product + week (venue/kind are fixed per bucket).
+	 */
+	function intersoccer_winback_catalogue_band_product_week_key(array $row) {
+		$age = (string) ( $row['age_group_slug'] ?? '' );
+
+		return $age . '|' . intersoccer_winback_catalogue_product_week_key($row);
+	}
+}
+
 if (!function_exists('intersoccer_winback_catalogue_booking_type_pref_rank')) {
 	/**
 	 * Prefer full-week catalogue rows over single-day when deduping the same product/week.
@@ -283,7 +294,7 @@ if (!function_exists('intersoccer_winback_catalogue_pick_preferred_catalogue_row
 
 if (!function_exists('intersoccer_winback_catalogue_dedupe_rows_by_product_week')) {
 	/**
-	 * One catalogue row per (product_id, start_date); full-week beats single-day.
+	 * One catalogue row per (age_group_slug, product_id, start_date); full-week beats single-day.
 	 *
 	 * @param array<int,array<string,mixed>> $rows
 	 * @return array<int,array<string,mixed>>
@@ -294,7 +305,7 @@ if (!function_exists('intersoccer_winback_catalogue_dedupe_rows_by_product_week'
 			if (!is_array($row)) {
 				continue;
 			}
-			$key = intersoccer_winback_catalogue_product_week_key($row);
+			$key = intersoccer_winback_catalogue_band_product_week_key($row);
 			if (!isset($by_key[ $key ])) {
 				$by_key[ $key ] = $row;
 				continue;
@@ -915,7 +926,7 @@ if (!function_exists('intersoccer_winback_resolve_catalogue_target_and_more')) {
 
 		$more_targets = [];
 		$seen_product_week = [];
-		$target_week_key = intersoccer_winback_catalogue_product_week_key($target_row);
+		$target_week_key = intersoccer_winback_catalogue_band_product_week_key($target_row);
 		$seen_product_week[ $target_week_key ] = true;
 		foreach ($entries as $row) {
 			if ((string) ($row['age_group_slug'] ?? '') !== $target_age) {
@@ -925,7 +936,7 @@ if (!function_exists('intersoccer_winback_resolve_catalogue_target_and_more')) {
 			if ($start === '' || $start <= $target_start) {
 				continue;
 			}
-			$week_key = intersoccer_winback_catalogue_product_week_key($row);
+			$week_key = intersoccer_winback_catalogue_band_product_week_key($row);
 			if (isset($seen_product_week[ $week_key ])) {
 				continue;
 			}
