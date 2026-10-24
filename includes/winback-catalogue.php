@@ -436,7 +436,9 @@ if (!function_exists('intersoccer_winback_resolve_row_event_date')) {
 		}
 
 		$kind = '';
-		if (function_exists('intersoccer_roster_row_matches_listing_kind')) {
+		if (function_exists('intersoccer_rr_winback_get_row_listing_kind')) {
+			$kind = intersoccer_rr_winback_get_row_listing_kind($row);
+		} elseif (function_exists('intersoccer_roster_row_matches_listing_kind')) {
 			if (intersoccer_roster_row_matches_listing_kind($row, 'course')) {
 				$kind = 'course';
 			} elseif (intersoccer_roster_row_matches_listing_kind($row, 'camp')) {
@@ -606,6 +608,14 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 		$today = trim((string) $today);
 		if ($today === '') {
 			$today = function_exists('wp_date') ? wp_date('Y-m-d') : gmdate('Y-m-d');
+		}
+
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING
+			&& isset($GLOBALS['intersoccer_test_winback_upcoming_catalogue'])
+			&& is_array($GLOBALS['intersoccer_test_winback_upcoming_catalogue'])) {
+			intersoccer_winback_reset_catalogue_enumeration_memo();
+
+			return $GLOBALS['intersoccer_test_winback_upcoming_catalogue'];
 		}
 
 		intersoccer_winback_reset_catalogue_enumeration_memo();

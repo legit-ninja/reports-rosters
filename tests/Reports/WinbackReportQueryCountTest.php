@@ -267,6 +267,9 @@ class WinbackReportQueryCountTest extends TestCase {
 		if (function_exists('intersoccer_winback_reset_catalogue_enumeration_memo')) {
 			intersoccer_winback_reset_catalogue_enumeration_memo();
 		}
+		if (function_exists('intersoccer_rr_product_type_memo_reset')) {
+			intersoccer_rr_product_type_memo_reset();
+		}
 	}
 
 	/**
@@ -622,6 +625,8 @@ class WinbackReportQueryCountTest extends TestCase {
 
 		$includes = dirname(__DIR__, 2) . '/includes';
 		require_once $includes . '/roster-report-loader.php';
+		require_once $includes . '/winback-report-perf.php';
+		require_once $includes . '/utils.php';
 		require_once $includes . '/winback-report-facets.php';
 		require_once $includes . '/winback-catalogue.php';
 		require_once $includes . '/winback-report-engine.php';
@@ -888,11 +893,130 @@ class WinbackReportQueryCountTest extends TestCase {
 
 		unset($GLOBALS['intersoccer_test_batch_chunk_size']);
 	}
+
+	public function test_winback_product_type_memo_limits_pv_calls_and_preserves_kinds(): void {
+		$this->reset_winback_loader_isolation_state();
+		$GLOBALS['intersoccer_test_get_product_type_calls'] = [];
+		$rows = [];
+		$parent_ids = [1001, 1002, 1003, 1004, 1005];
+		$variation_ids = [2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010];
+		for ($i = 0; $i < 200; $i++) {
+			$rows[] = [
+				'id' => $i + 1,
+				'order_item_id' => 70000 + $i,
+				'product_id' => $parent_ids[ $i % 5 ],
+				'variation_id' => $variation_ids[ $i % 10 ],
+				'activity_type' => $i % 2 === 0 ? 'Camp' : 'Course',
+				'order_id' => 80000 + $i,
+				'order_status' => 'completed',
+			];
+		}
+
+		$kinds_off = [];
+		foreach ($rows as $row) {
+			$kinds_off[] = intersoccer_winback_report_engine_row_kind($row);
+		}
+
+		$GLOBALS['intersoccer_test_get_product_type_calls'] = [];
+		intersoccer_rr_product_type_memo_begin();
+		intersoccer_rr_winback_prime_product_types_from_rows($rows);
+		$kinds_on = [];
+		foreach ($rows as $row) {
+			$kind = intersoccer_winback_report_engine_row_kind($row);
+			intersoccer_winback_resolve_row_event_date($row);
+			intersoccer_roster_report_row_counts_for_winback($row, 'history');
+			$kinds_on[] = $kind;
+		}
+		intersoccer_rr_product_type_memo_end();
+
+		$this->assertSame($kinds_off, $kinds_on);
+		foreach ($GLOBALS['intersoccer_test_get_product_type_calls'] as $id => $count) {
+			$this->assertLessThanOrEqual(1, $count, 'PV lookup should run at most once per post ID ' . $id);
+		}
+		$this->assertLessThanOrEqual(15, count($GLOBALS['intersoccer_test_get_product_type_calls']));
+	}
+
+	public function test_product_type_safe_without_memo_scope_calls_through_each_time(): void {
+		$this->reset_winback_loader_isolation_state();
+		$GLOBALS['intersoccer_test_get_product_type_calls'] = [];
+		if (function_exists('intersoccer_rr_product_type_memo_reset')) {
+			intersoccer_rr_product_type_memo_reset();
+		}
+		intersoccer_get_product_type_safe(1001, null);
+		intersoccer_get_product_type_safe(1001, null);
+		$this->assertSame(2, $GLOBALS['intersoccer_test_get_product_type_calls'][1001] ?? 0);
+	}
+
+	public function test_refund_batch_queries_bounded_after_prime_and_no_repeat_for_clean_orders(): void {
+		if (!$this->counting_wpdb instanceof WinbackReportCountingWpdb) {
+			$this->markTestSkipped('Counting wpdb not available');
+		}
+		global $wpdb;
+		$wpdb = $this->counting_wpdb;
+		$this->reset_winback_loader_isolation_state();
+		$GLOBALS['intersoccer_test_hpos_orders_enabled'] = false;
+		$GLOBALS['intersoccer_test_batch_chunk_size'] = 3;
+		$GLOBALS['intersoccer_test_wc_get_order_call_count'] = 0;
+
+		$order_ids = [62545, 70001, 81234, 90017, 95001];
+		$rows = [];
+		foreach ($order_ids as $i => $oid) {
+			$rows[] = [
+				'order_id' => $oid,
+				'order_item_id' => 60000 + $i,
+				'order_status' => 'completed',
+			];
+			$this->counting_wpdb->shop_orders[ $oid ] = [
+				'post_status' => 'wc-completed',
+				'post_date' => '2025-01-01 00:00:00',
+			];
+		}
+		$this->counting_wpdb->refund_parents[70001] = true;
+		$GLOBALS['intersoccer_test_line_fully_refunded_item_ids'] = [
+			60001 => true,
+		];
+
+		$this->counting_wpdb->query_count = 0;
+		intersoccer_roster_report_prime_line_refund_checks_from_rows($rows);
+		$prime_queries = $this->counting_wpdb->query_count;
+		$this->assertSame(2, $prime_queries);
+
+		$this->counting_wpdb->query_count = 0;
+		foreach ($rows as $row) {
+			intersoccer_roster_report_row_line_is_fully_refunded($row);
+		}
+		$this->assertSame(0, $this->counting_wpdb->query_count);
+		$this->assertTrue(intersoccer_roster_report_row_line_is_fully_refunded($rows[1]));
+		$this->assertFalse(intersoccer_roster_report_row_line_is_fully_refunded($rows[0]));
+
+		unset(
+			$GLOBALS['intersoccer_test_batch_chunk_size'],
+			$GLOBALS['intersoccer_test_line_fully_refunded_item_ids']
+		);
+	}
 }
 
 }
 
 namespace {
+	if (!function_exists('intersoccer_get_product_type')) {
+		function intersoccer_get_product_type($post_id) {
+			$post_id = (int) $post_id;
+			if (!isset($GLOBALS['intersoccer_test_get_product_type_calls'])) {
+				$GLOBALS['intersoccer_test_get_product_type_calls'] = [];
+			}
+			$GLOBALS['intersoccer_test_get_product_type_calls'][ $post_id ]
+				= (int) ( $GLOBALS['intersoccer_test_get_product_type_calls'][ $post_id ] ?? 0 ) + 1;
+			if ($post_id >= 2000 && $post_id < 3000) {
+				return '';
+			}
+			if ($post_id >= 1000 && $post_id < 2000) {
+				return ($post_id % 2 === 1) ? 'camp' : 'course';
+			}
+
+			return '';
+		}
+	}
 	if (!function_exists('get_userdata')) {
 		function get_userdata($id) {
 			if (isset($GLOBALS['intersoccer_test_get_userdata_call_count'])) {
