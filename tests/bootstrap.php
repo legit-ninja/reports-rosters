@@ -45,6 +45,19 @@ require_once dirname(__DIR__) . '/vendor/autoload.php';
 // WordPress Function Stubs - Defined BEFORE loading classes that use them
 // ============================================================================
 
+if (!function_exists('intersoccer_rr_test_api_call_count')) {
+    function intersoccer_rr_test_api_call_count($name) {
+        if (empty($GLOBALS['intersoccer_rr_test_api_counting_enabled'])) {
+            return;
+        }
+        if (!isset($GLOBALS['intersoccer_rr_test_api_call_counts']) || !is_array($GLOBALS['intersoccer_rr_test_api_call_counts'])) {
+            $GLOBALS['intersoccer_rr_test_api_call_counts'] = [];
+        }
+        $name = (string) $name;
+        $GLOBALS['intersoccer_rr_test_api_call_counts'][$name] = (int) ($GLOBALS['intersoccer_rr_test_api_call_counts'][$name] ?? 0) + 1;
+    }
+}
+
 // Core WordPress functions
 if (!function_exists('current_time')) {
     function current_time($type, $gmt = 0) {
@@ -424,6 +437,7 @@ if (!function_exists('update_object_term_cache')) {
 
 if (!function_exists('get_post_meta')) {
     function get_post_meta($post_id, $key = '', $single = false) {
+        intersoccer_rr_test_api_call_count('get_post_meta');
         global $intersoccer_test_get_post_meta_call_count;
         if (isset($GLOBALS['intersoccer_test_get_post_meta_call_count'])) {
             $intersoccer_test_get_post_meta_call_count++;
@@ -672,11 +686,49 @@ if (!function_exists('wp_cache_flush_runtime')) {
 
 // Scheduling
 if (!function_exists('wp_schedule_event')) {
-    function wp_schedule_event($timestamp, $recurrence, $hook, $args = [], $wp_error = false) { return true; }
+    function wp_schedule_event($timestamp, $recurrence, $hook, $args = [], $wp_error = false) {
+        if (!isset($GLOBALS['intersoccer_test_wp_schedule_event_log']) || !is_array($GLOBALS['intersoccer_test_wp_schedule_event_log'])) {
+            $GLOBALS['intersoccer_test_wp_schedule_event_log'] = [];
+        }
+        $GLOBALS['intersoccer_test_wp_schedule_event_log'][] = [
+            'timestamp' => (int) $timestamp,
+            'recurrence' => (string) $recurrence,
+            'hook' => (string) $hook,
+            'args' => $args,
+        ];
+
+        return true;
+    }
 }
 
 if (!function_exists('wp_next_scheduled')) {
-    function wp_next_scheduled($hook, $args = []) { return false; }
+    function wp_next_scheduled($hook, $args = []) {
+        if (!isset($GLOBALS['intersoccer_test_wp_next_scheduled']) || !is_array($GLOBALS['intersoccer_test_wp_next_scheduled'])) {
+            return false;
+        }
+        $key = $hook . '|' . maybe_serialize($args);
+        return $GLOBALS['intersoccer_test_wp_next_scheduled'][ $key ] ?? false;
+    }
+}
+
+if (!function_exists('wp_schedule_single_event')) {
+    function wp_schedule_single_event($timestamp, $hook, $args = [], $wp_error = false) {
+        if (!isset($GLOBALS['intersoccer_test_wp_schedule_single_event_log']) || !is_array($GLOBALS['intersoccer_test_wp_schedule_single_event_log'])) {
+            $GLOBALS['intersoccer_test_wp_schedule_single_event_log'] = [];
+        }
+        $GLOBALS['intersoccer_test_wp_schedule_single_event_log'][] = [
+            'timestamp' => (int) $timestamp,
+            'hook' => (string) $hook,
+            'args' => $args,
+        ];
+        if (!isset($GLOBALS['intersoccer_test_wp_next_scheduled']) || !is_array($GLOBALS['intersoccer_test_wp_next_scheduled'])) {
+            $GLOBALS['intersoccer_test_wp_next_scheduled'] = [];
+        }
+        $key = (string) $hook . '|' . maybe_serialize($args);
+        $GLOBALS['intersoccer_test_wp_next_scheduled'][ $key ] = (int) $timestamp;
+
+        return true;
+    }
 }
 
 if (!function_exists('wp_unschedule_event')) {
@@ -1142,6 +1194,7 @@ if (!class_exists('WC_Order_Refund')) {
 // WooCommerce functions
 if (!function_exists('wc_get_order')) {
     function wc_get_order($order_id) {
+        intersoccer_rr_test_api_call_count('wc_get_order');
         if (isset($GLOBALS['intersoccer_test_wc_get_order_call_count'])) {
             $GLOBALS['intersoccer_test_wc_get_order_call_count']++;
         }
@@ -1175,6 +1228,7 @@ if (!function_exists('wc_get_orders')) {
 
 if (!function_exists('wc_get_product')) {
     function wc_get_product($product_id) {
+        intersoccer_rr_test_api_call_count('wc_get_product');
         global $intersoccer_test_wc_get_product_callback;
         if (is_callable($intersoccer_test_wc_get_product_callback)) {
             return call_user_func($intersoccer_test_wc_get_product_callback, $product_id);
@@ -1185,6 +1239,7 @@ if (!function_exists('wc_get_product')) {
 
 if (!function_exists('wc_get_order_item_meta')) {
     function wc_get_order_item_meta($item_id, $key, $single = true) {
+        intersoccer_rr_test_api_call_count('wc_get_order_item_meta');
         if (isset($GLOBALS['intersoccer_test_wc_get_order_item_meta_call_count'])) {
             $GLOBALS['intersoccer_test_wc_get_order_item_meta_call_count']++;
         }

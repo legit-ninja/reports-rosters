@@ -150,6 +150,7 @@ class PlayerCourseStatusCacheTest extends TestCase {
 			$this->counting_wpdb->roster_count = 99;
 			$this->counting_wpdb->roster_max_id = 500;
 		}
+		intersoccer_player_course_status_cache_data_version(true);
 		intersoccer_player_course_status_generate($filters);
 		$this->assertSame(2, (int) $GLOBALS['intersoccer_test_pcs_generate_inner_call_count']);
 	}
@@ -207,6 +208,7 @@ class PlayerCourseStatusCacheTest extends TestCase {
 		if (!($this->counting_wpdb instanceof PlayerCourseStatusCountingWpdb)) {
 			$this->markTestSkipped('Counting wpdb required');
 		}
+		intersoccer_player_course_status_cache_data_version(true);
 		$before = $this->counting_wpdb->query_count;
 		intersoccer_player_course_status_cache_data_version();
 		$delta = $this->counting_wpdb->query_count - $before;
