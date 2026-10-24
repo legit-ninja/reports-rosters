@@ -87,7 +87,29 @@ Win-back Excel uses `intersoccer_winback_report_format_dob_for_export()` → `in
 
 ## Age-group aliases (catalogue)
 
-German `pa_age-group` slugs on EN source variations (e.g. `5-12-jahre`) normalize via the static alias map, the rule `N-M-jahre` → `N-My`, and the filter `intersoccer_winback_age_group_aliases`.
+German and French `pa_age-group` slugs on EN source variations normalize via the static alias map, regex rules, optional WPML default-language slug lookup, and the filter `intersoccer_winback_age_group_aliases`.
+
+| Pattern | EN slug |
+|---------|---------|
+| `N-M-jahre` | `N-My` |
+| `N-M-jahre-halber-tag` | `N-My-half-day` |
+| `N-M-jahre-ganzer-tag` | `N-My-full-day` |
+| `N-My-demi-journee` | `N-My-half-day` |
+| `N-My-journee-complete` or `N-My-journee-entiere` | `N-My-full-day` |
+
+French `N-M-ans-*` catalogue slugs were **not** found in repo fixtures; only suffix rules on an already `N-My` slug apply. The typo slug `4-5-and-demi-journee` is intentionally **not** mapped.
+
+When WPML is active, a slug that exists in `pa_age-group` may be replaced with the default-language term slug before the regex rules run (no-op in PHPUnit / when WPML is absent).
+
+## Multi-value roster facets (venue / age_group)
+
+Some camp roster rows store concatenated fallback strings (multi-venue slugs joined with `---`, or two age bands in one slug). These are **not** alias-mapped.
+
+Detection: `intersoccer_winback_facet_is_multi_value()` — venue values containing `---`, age values with two or more `\d+-\d+y` tokens, or (at runtime with term lookup) a slug-like value that is not a single `pa_*` term.
+
+Resolution: `intersoccer_winback_normalize_roster_facet_slug()` loads the order line / variation attribute (`attribute_pa_*`, `pa_*`, `_intersoccer_canonical_*`) and normalizes that value with the same EN-slug rules. The engine uses this for history and upcoming venue slugs.
+
+When resolution fails: the facet slug is left empty, the raw value is counted in `unmapped_facets`, and the row does not match venue/age filters or catalogue targeting (`target` stays null via the existing `no_upcoming` path). No new `status` value was added.
 
 ## Shared loader
 

@@ -22,10 +22,8 @@ if (!function_exists('intersoccer_winback_facet_alias_maps')) {
 			'venue' => [
 				'lausanne - centre sportif de rochettaz, pully' => 'lausanne-stade-de-rochettaz-pully',
 				'lausanne- stade de rochettaz, pully' => 'lausanne-stade-de-rochettaz-pully',
-				'3-5y-half-day-5-13y-full-day' => '',
 			],
 			'age_group' => [
-				'3-5y-half-day-5-13y-full-day' => '',
 				'5-12' => '5-12y',
 				'5-12-jahre' => '5-12y',
 				'6-12-jahre' => '6-12y',
@@ -45,20 +43,297 @@ if (!function_exists('intersoccer_winback_apply_age_group_slug_alias')) {
 	 *
 	 * @param string $slug Lowercase slug-like token.
 	 */
-	function intersoccer_winback_apply_age_group_slug_alias($slug) {
+	function intersoccer_winback_apply_age_group_slug_alias($slug, $skip_wpml = false) {
 		$slug = strtolower(trim((string) $slug));
 		if ($slug === '') {
 			return '';
+		}
+		if ($slug === '4-5-and-demi-journee') {
+			return $slug;
 		}
 		$maps = intersoccer_winback_facet_alias_maps();
 		if (isset($maps['age_group'][ $slug ])) {
 			return (string) $maps['age_group'][ $slug ];
 		}
+		if (preg_match('/^(\d+)-(\d+)-jahre-halber-tag$/', $slug, $m)) {
+			return $m[1] . '-' . $m[2] . 'y-half-day';
+		}
+		if (preg_match('/^(\d+)-(\d+)-jahre-ganzer-tag$/', $slug, $m)) {
+			return $m[1] . '-' . $m[2] . 'y-full-day';
+		}
 		if (preg_match('/^(\d+)-(\d+)-jahre$/', $slug, $m)) {
 			return $m[1] . '-' . $m[2] . 'y';
 		}
+		if (preg_match('/^(\d+-\d+y)-demi-journee$/', $slug, $m)) {
+			return $m[1] . '-half-day';
+		}
+		if (preg_match('/^(\d+-\d+y)-journee-complete$/', $slug, $m)) {
+			return $m[1] . '-full-day';
+		}
+		if (preg_match('/^(\d+-\d+y)-journee-entiere$/', $slug, $m)) {
+			return $m[1] . '-full-day';
+		}
+
+		if (!$skip_wpml) {
+			$wpml_slug = intersoccer_winback_apply_wpml_en_age_group_slug($slug);
+			if ($wpml_slug !== '' && $wpml_slug !== $slug) {
+				return intersoccer_winback_apply_age_group_slug_alias($wpml_slug, true);
+			}
+		}
 
 		return $slug;
+	}
+}
+
+if (!function_exists('intersoccer_winback_apply_wpml_en_age_group_slug')) {
+	/**
+	 * When WPML is active, map a slug to the default-language pa_age-group slug.
+	 *
+	 * @param string $slug Lowercase slug-like token.
+	 */
+	function intersoccer_winback_apply_wpml_en_age_group_slug($slug) {
+		$slug = strtolower(trim((string) $slug));
+		if ($slug === '' || !function_exists('get_term_by') || !function_exists('apply_filters')) {
+			return '';
+		}
+		$term = get_term_by('slug', $slug, 'pa_age-group');
+		if (!$term || is_wp_error($term)) {
+			return '';
+		}
+		$default_lang = apply_filters('wpml_default_language', null);
+		if (empty($default_lang)) {
+			return '';
+		}
+		$en_term_id = (int) apply_filters('wpml_object_id', (int) $term->term_id, 'pa_age-group', true, $default_lang);
+		if ($en_term_id <= 0) {
+			return '';
+		}
+		$en_term = get_term($en_term_id, 'pa_age-group');
+		if (!$en_term || is_wp_error($en_term) || empty($en_term->slug)) {
+			return '';
+		}
+
+		return strtolower((string) $en_term->slug);
+	}
+}
+
+if (!function_exists('intersoccer_winback_facet_resolution_cache_store')) {
+	/**
+	 * @return array<string,string>
+	 */
+	function &intersoccer_winback_facet_resolution_cache_store() {
+		static $cache = [];
+		return $cache;
+	}
+
+	function intersoccer_winback_reset_facet_resolution_cache() {
+		$cache = &intersoccer_winback_facet_resolution_cache_store();
+		$cache = [];
+	}
+}
+
+if (!function_exists('intersoccer_winback_facet_runtime_term_lookup_available')) {
+	function intersoccer_winback_facet_runtime_term_lookup_available() {
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
+			return isset($GLOBALS['intersoccer_test_winback_term_slugs']) && is_array($GLOBALS['intersoccer_test_winback_term_slugs']);
+		}
+
+		return function_exists('get_term_by');
+	}
+}
+
+if (!function_exists('intersoccer_winback_facet_slug_is_known_term')) {
+	/**
+	 * @param string $taxonomy pa_intersoccer-venues|pa_age-group
+	 */
+	function intersoccer_winback_facet_slug_is_known_term($slug, $taxonomy) {
+		$slug = strtolower(trim((string) $slug));
+		if ($slug === '') {
+			return false;
+		}
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING
+			&& isset($GLOBALS['intersoccer_test_winback_term_slugs'][ $taxonomy ])
+			&& is_array($GLOBALS['intersoccer_test_winback_term_slugs'][ $taxonomy ])) {
+			return in_array($slug, $GLOBALS['intersoccer_test_winback_term_slugs'][ $taxonomy ], true);
+		}
+		if (!function_exists('get_term_by')) {
+			return true;
+		}
+		$term = get_term_by('slug', $slug, $taxonomy);
+		return $term && !is_wp_error($term);
+	}
+}
+
+if (!function_exists('intersoccer_winback_facet_is_multi_value')) {
+	/**
+	 * Detect roster facet values that concatenate multiple catalogue terms.
+	 *
+	 * @param string $raw  Raw roster column value.
+	 * @param string $kind venue|age_group
+	 */
+	function intersoccer_winback_facet_is_multi_value($raw, $kind) {
+		$raw = trim((string) $raw);
+		if ($raw === '' || $raw === 'N/A') {
+			return false;
+		}
+		$lower = strtolower($raw);
+		if ($kind === 'venue') {
+			if (strpos($lower, '---') !== false) {
+				return true;
+			}
+		}
+		if ($kind === 'age_group') {
+			if (preg_match_all('/\d+-\d+y/', $lower, $bands) && count($bands[0]) >= 2) {
+				return true;
+			}
+		}
+		if (!preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $lower)) {
+			return false;
+		}
+		if (!intersoccer_winback_facet_runtime_term_lookup_available()) {
+			return false;
+		}
+		$taxonomy = $kind === 'age_group' ? 'pa_age-group' : 'pa_intersoccer-venues';
+
+		return !intersoccer_winback_facet_slug_is_known_term($lower, $taxonomy);
+	}
+}
+
+if (!function_exists('intersoccer_winback_resolve_roster_facet_raw')) {
+	/**
+	 * Resolve a single facet value from variation / order line attributes (not roster denorm).
+	 *
+	 * @param array<string,mixed> $row  Roster row with variation_id and/or order_item_id.
+	 * @param string              $kind venue|age_group
+	 */
+	function intersoccer_winback_resolve_roster_facet_raw(array $row, $kind) {
+		$kind = $kind === 'age_group' ? 'age_group' : 'venue';
+		$order_item_id = (int) ( $row['order_item_id'] ?? 0 );
+		$variation_id = (int) ( $row['variation_id'] ?? 0 );
+		$cache_key = $kind . '|' . $order_item_id . '|' . $variation_id;
+		$cache = &intersoccer_winback_facet_resolution_cache_store();
+		if (array_key_exists($cache_key, $cache)) {
+			return (string) $cache[ $cache_key ];
+		}
+
+		$resolved = '';
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
+			if (isset($GLOBALS['intersoccer_test_winback_facet_resolution_callback'])
+				&& is_callable($GLOBALS['intersoccer_test_winback_facet_resolution_callback'])) {
+				$resolved = (string) call_user_func($GLOBALS['intersoccer_test_winback_facet_resolution_callback'], $row, $kind);
+				$cache[ $cache_key ] = $resolved;
+
+				return $resolved;
+			}
+			if ($order_item_id > 0
+				&& isset($GLOBALS['intersoccer_test_winback_facet_resolution'][ $order_item_id ][ $kind ])) {
+				$resolved = (string) $GLOBALS['intersoccer_test_winback_facet_resolution'][ $order_item_id ][ $kind ];
+				$cache[ $cache_key ] = $resolved;
+
+				return $resolved;
+			}
+		}
+
+		$taxonomy = $kind === 'age_group' ? 'pa_age-group' : 'pa_intersoccer-venues';
+		$attr_post_key = 'attribute_' . $taxonomy;
+		$canonical_key = $kind === 'age_group' ? '_intersoccer_canonical_age_group' : '_intersoccer_canonical_venue';
+		$meta_keys = [
+			$taxonomy,
+			$attr_post_key,
+			$canonical_key,
+		];
+		if ($kind === 'venue') {
+			$meta_keys[] = 'attribute_pa_intersoccer_venues';
+			$meta_keys[] = 'pa_intersoccer_venues';
+		}
+
+		if ($variation_id > 0 && function_exists('intersoccer_get_default_language_variation_id')) {
+			$variation_id = (int) intersoccer_get_default_language_variation_id($variation_id);
+		}
+
+		if ($variation_id > 0 && function_exists('get_post_meta')) {
+			$from_variation = (string) get_post_meta($variation_id, $attr_post_key, true);
+			if ($from_variation !== '') {
+				$resolved = $from_variation;
+			}
+		}
+
+		if ($resolved === '' && $order_item_id > 0 && function_exists('wc_get_order_item_meta')) {
+			foreach ($meta_keys as $meta_key) {
+				$val = (string) wc_get_order_item_meta($order_item_id, $meta_key, true);
+				if ($val !== '') {
+					$resolved = $val;
+					break;
+				}
+			}
+		}
+
+		if ($resolved === '' && $variation_id > 0 && function_exists('wc_get_product')) {
+			$product = wc_get_product($variation_id);
+			if ($product && method_exists($product, 'get_attribute')) {
+				$resolved = (string) $product->get_attribute($taxonomy);
+			}
+		}
+
+		$cache[ $cache_key ] = $resolved;
+
+		return $resolved;
+	}
+}
+
+if (!function_exists('intersoccer_winback_prime_facet_resolution_from_rows')) {
+	/**
+	 * Warm facet resolution cache for many roster rows (one pass, shared keys).
+	 *
+	 * @param array<int,array<string,mixed>> $rows
+	 * @param string[]                       $kinds venue|age_group
+	 */
+	function intersoccer_winback_prime_facet_resolution_from_rows(array $rows, array $kinds = ['venue', 'age_group']) {
+		foreach ($rows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			foreach ($kinds as $kind) {
+				if ($kind !== 'venue' && $kind !== 'age_group') {
+					continue;
+				}
+				$field = $kind === 'age_group' ? 'age_group' : 'venue';
+				$raw = trim((string) ( $row[ $field ] ?? '' ));
+				if ($raw === '' || !intersoccer_winback_facet_is_multi_value($raw, $kind)) {
+					continue;
+				}
+				intersoccer_winback_resolve_roster_facet_raw($row, $kind);
+			}
+		}
+	}
+}
+
+if (!function_exists('intersoccer_winback_normalize_roster_facet_slug')) {
+	/**
+	 * Normalize a roster facet, resolving multi-value denorm strings from the order line when needed.
+	 *
+	 * @param string              $raw       Roster column value.
+	 * @param string              $taxonomy  Attribute taxonomy.
+	 * @param string              $kind      venue|age_group.
+	 * @param array<string,mixed> $row       Optional roster row for order/variation lookup.
+	 */
+	function intersoccer_winback_normalize_roster_facet_slug($raw, $taxonomy, $kind = 'venue', array $row = []) {
+		$raw = trim((string) $raw);
+		if ($raw === '' || $raw === 'N/A') {
+			return '';
+		}
+		if (intersoccer_winback_facet_is_multi_value($raw, $kind)) {
+			$resolved_raw = intersoccer_winback_resolve_roster_facet_raw($row, $kind);
+			if ($resolved_raw === '' || intersoccer_winback_facet_is_multi_value($resolved_raw, $kind)) {
+				intersoccer_winback_register_unmapped_facet($kind, $raw);
+
+				return '';
+			}
+
+			return intersoccer_winback_normalize_facet_slug($resolved_raw, $taxonomy, $kind);
+		}
+
+		return intersoccer_winback_normalize_facet_slug($raw, $taxonomy, $kind);
 	}
 }
 

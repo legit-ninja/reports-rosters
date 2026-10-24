@@ -17,8 +17,14 @@ class WinbackReportTest extends TestCase {
 			$GLOBALS['intersoccer_test_line_fully_refunded_item_ids'],
 			$GLOBALS['intersoccer_rr_idx_name_by_slot'],
 			$GLOBALS['intersoccer_test_current_user_caps'],
-			$GLOBALS['intersoccer_test_current_user']
+			$GLOBALS['intersoccer_test_current_user'],
+			$GLOBALS['intersoccer_test_winback_facet_resolution'],
+			$GLOBALS['intersoccer_test_winback_facet_resolution_callback'],
+			$GLOBALS['intersoccer_test_winback_term_slugs']
 		);
+		if (function_exists('intersoccer_winback_reset_facet_resolution_cache')) {
+			intersoccer_winback_reset_facet_resolution_cache();
+		}
 		if (function_exists('intersoccer_winback_reset_order_created_date_cache')) {
 			intersoccer_winback_reset_order_created_date_cache();
 		}
@@ -435,6 +441,69 @@ class WinbackReportTest extends TestCase {
 		$this->assertSame('5-12y', $slug);
 		$this->assertSame('6-12y', intersoccer_winback_normalize_facet_slug('6-12-jahre', 'pa_age-group', 'age_group'));
 		$this->assertSame('3-8y', intersoccer_winback_normalize_facet_slug('3-8-jahre', 'pa_age-group', 'age_group'));
+		$this->assertSame('4-5y-half-day', intersoccer_winback_normalize_facet_slug('4-5-jahre-halber-tag', 'pa_age-group', 'age_group'));
+		$this->assertSame('5-13y-full-day', intersoccer_winback_normalize_facet_slug('5-13-jahre-ganzer-tag', 'pa_age-group', 'age_group'));
+		$this->assertSame('5-13y-half-day', intersoccer_winback_normalize_facet_slug('5-13y-demi-journee', 'pa_age-group', 'age_group'));
+		$this->assertSame('3-5y-full-day', intersoccer_winback_normalize_facet_slug('3-5y-journee-complete', 'pa_age-group', 'age_group'));
+		$this->assertSame('4-5-and-demi-journee', intersoccer_winback_normalize_facet_slug('4-5-and-demi-journee', 'pa_age-group', 'age_group'));
+		$this->assertNotSame('4-5y-half-day', intersoccer_winback_normalize_facet_slug('4-5-and-demi-journee', 'pa_age-group', 'age_group'));
+	}
+
+	public function test_run_together_age_group_resolves_from_order_line() {
+		$GLOBALS['intersoccer_test_winback_facet_resolution'] = [
+			88001 => ['age_group' => '5-13y-full-day'],
+		];
+		$row = [
+			'order_item_id' => 88001,
+			'variation_id' => 0,
+			'age_group' => '3-5y-half-day-5-13y-full-day',
+		];
+		$this->assertTrue(intersoccer_winback_facet_is_multi_value($row['age_group'], 'age_group'));
+		$slug = intersoccer_winback_normalize_roster_facet_slug(
+			$row['age_group'],
+			'pa_age-group',
+			'age_group',
+			$row
+		);
+		$this->assertSame('5-13y-full-day', $slug);
+	}
+
+	public function test_run_together_venue_resolves_from_variation_attribute() {
+		$vid = 88002;
+		\InterSoccerRRTestMeta::$data[ $vid ] = [
+			'attribute_pa_intersoccer-venues' => 'geneva-stade-de-frontenex-cologny',
+		];
+		$row = [
+			'order_item_id' => 0,
+			'variation_id' => $vid,
+			'venue' => 'geneva---stade-chnois-thonex-geneva---stade-de-frontenex-cologny',
+		];
+		$this->assertTrue(intersoccer_winback_facet_is_multi_value($row['venue'], 'venue'));
+		$slug = intersoccer_winback_normalize_roster_facet_slug(
+			$row['venue'],
+			'pa_intersoccer-venues',
+			'venue',
+			$row
+		);
+		$this->assertSame('geneva-stade-de-frontenex-cologny', $slug);
+	}
+
+	public function test_unresolvable_run_together_facet_registers_unmapped_and_empty_slug() {
+		intersoccer_winback_reset_unmapped_facets();
+		$row = [
+			'order_item_id' => 88003,
+			'variation_id' => 0,
+			'age_group' => '3-5y-half-day-5-13y-full-day',
+		];
+		$slug = intersoccer_winback_normalize_roster_facet_slug(
+			$row['age_group'],
+			'pa_age-group',
+			'age_group',
+			$row
+		);
+		$this->assertSame('', $slug);
+		$unmapped = intersoccer_winback_get_unmapped_facets();
+		$this->assertArrayHasKey('3-5y-half-day-5-13y-full-day', $unmapped['age_group']);
 	}
 
 	public function test_winback_export_dob_gate_guarded_and_load_helper_exists() {
