@@ -675,39 +675,36 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 				$pending[] = $customer_id;
 			}
 		}
-		if (empty($pending)) {
-			return;
-		}
-		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
-			foreach ($pending as $customer_id) {
-				$seeded = $GLOBALS['intersoccer_test_user_meta'][ $customer_id ]['billing_phone'] ?? '';
-				$GLOBALS['intersoccer_rr_user_billing_phone_cache'][ $customer_id ] = trim((string) $seeded);
-			}
-
-			return;
-		}
-		global $wpdb;
-		if (!is_object($wpdb) || !isset($wpdb->prefix)) {
-			return;
-		}
-		foreach (array_chunk($pending, 500) as $chunk) {
-			$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
-			$sql = "SELECT user_id, meta_value FROM {$wpdb->usermeta} WHERE meta_key = 'billing_phone' AND user_id IN ({$placeholders})";
-			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			$results = $wpdb->get_results($wpdb->prepare($sql, $chunk), ARRAY_A);
-			foreach ((array) $results as $result) {
-				if (!is_array($result)) {
-					continue;
+		if (!empty($pending)) {
+			if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
+				foreach ($pending as $customer_id) {
+					$seeded = $GLOBALS['intersoccer_test_user_meta'][ $customer_id ]['billing_phone'] ?? '';
+					$GLOBALS['intersoccer_rr_user_billing_phone_cache'][ $customer_id ] = trim((string) $seeded);
 				}
-				$uid = (int) ( $result['user_id'] ?? 0 );
-				if ($uid > 0) {
-					$GLOBALS['intersoccer_rr_user_billing_phone_cache'][ $uid ] = trim((string) ( $result['meta_value'] ?? '' ));
+			} else {
+				global $wpdb;
+				if (is_object($wpdb) && isset($wpdb->prefix)) {
+					foreach (array_chunk($pending, 500) as $chunk) {
+						$placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+						$sql = "SELECT user_id, meta_value FROM {$wpdb->usermeta} WHERE meta_key = 'billing_phone' AND user_id IN ({$placeholders})";
+						// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+						$results = $wpdb->get_results($wpdb->prepare($sql, $chunk), ARRAY_A);
+						foreach ((array) $results as $result) {
+							if (!is_array($result)) {
+								continue;
+							}
+							$uid = (int) ( $result['user_id'] ?? 0 );
+							if ($uid > 0) {
+								$GLOBALS['intersoccer_rr_user_billing_phone_cache'][ $uid ] = trim((string) ( $result['meta_value'] ?? '' ));
+							}
+						}
+					}
 				}
-			}
-		}
-		foreach ($pending as $customer_id) {
-			if (!array_key_exists($customer_id, $GLOBALS['intersoccer_rr_user_billing_phone_cache'])) {
-				$GLOBALS['intersoccer_rr_user_billing_phone_cache'][ $customer_id ] = '';
+				foreach ($pending as $customer_id) {
+					if (!array_key_exists($customer_id, $GLOBALS['intersoccer_rr_user_billing_phone_cache'])) {
+						$GLOBALS['intersoccer_rr_user_billing_phone_cache'][ $customer_id ] = '';
+					}
+				}
 			}
 		}
 		foreach ($customer_ids as $customer_id) {

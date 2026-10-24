@@ -7,7 +7,203 @@ namespace InterSoccer\ReportsRosters\Tests\Reports {
 
 use InterSoccer\ReportsRosters\Tests\TestCase;
 
+/**
+ * Counts DB reads and serves seeded win-back perf fixtures.
+ */
+class WinbackReportCountingWpdb extends \InterSoccerTestWpdb {
+	/** @var int */
+	public $query_count = 0;
+
+	/** @var array<int,string> */
+	public $postmeta_customer_user = [];
+
+	/** @var array<int,array{post_status:string,post_date:string}> */
+	public $shop_orders = [];
+
+	/** @var array<int,true> */
+	public $refund_parents = [];
+
+	/** @var array<int,true> */
+	public $existing_user_ids = [];
+
+	/** @var array<int,string> */
+	public $user_billing_phone = [];
+
+	/** @var string[] */
+	public $query_log = [];
+
+	private function bump($query = null): void {
+		$this->query_count++;
+		if ($query !== null && $query !== '') {
+			$this->last_query = (string) $query;
+			$this->query_log[] = preg_replace('/\s+/', ' ', substr((string) $query, 0, 120));
+		}
+	}
+
+	/**
+	 * @return int[]
+	 */
+	private function extract_in_list_ints(string $sql): array {
+		if (!preg_match('/\bIN\s*\(([^)]+)\)/i', $sql, $m)) {
+			return [];
+		}
+		preg_match_all('/\b(\d+)\b/', $m[1], $nums);
+
+		return array_map('intval', $nums[1] ?? []);
+	}
+
+	public function get_results($query = null, $output = OBJECT) {
+		$this->bump($query);
+		$sql = (string) $query;
+		$ids = $this->extract_in_list_ints($sql);
+
+		if (stripos($sql, 'FROM ' . $this->postmeta) !== false && stripos($sql, '_customer_user') !== false) {
+			$rows = [];
+			foreach ($ids as $id) {
+				if (!isset($this->postmeta_customer_user[ $id ])) {
+					continue;
+				}
+				$rows[] = [
+					'post_id' => $id,
+					'meta_value' => (string) $this->postmeta_customer_user[ $id ],
+				];
+			}
+
+			return $rows;
+		}
+
+		if (stripos($sql, 'post_status') !== false && stripos($sql, 'shop_order') !== false && stripos($sql, 'post_type') !== false) {
+			$rows = [];
+			foreach ($ids as $id) {
+				if (!isset($this->shop_orders[ $id ])) {
+					continue;
+				}
+				$rows[] = [
+					'ID' => $id,
+					'post_status' => $this->shop_orders[ $id ]['post_status'],
+				];
+			}
+
+			return $rows;
+		}
+
+		if (stripos($sql, 'post_date') !== false && stripos($sql, 'shop_order') !== false) {
+			$rows = [];
+			foreach ($ids as $id) {
+				if (!isset($this->shop_orders[ $id ])) {
+					continue;
+				}
+				$rows[] = [
+					'ID' => $id,
+					'post_date' => $this->shop_orders[ $id ]['post_date'],
+				];
+			}
+
+			return $rows;
+		}
+
+		if (stripos($sql, 'shop_order_refund') !== false && stripos($sql, 'post_parent') !== false) {
+			$rows = [];
+			foreach ($ids as $id) {
+				if (!empty($this->refund_parents[ $id ])) {
+					$rows[] = ['post_parent' => $id];
+				}
+			}
+
+			return $rows;
+		}
+
+		if (stripos($sql, 'FROM ' . $this->users) !== false && stripos($sql, 'SELECT ID') !== false) {
+			$rows = [];
+			foreach ($ids as $id) {
+				if (!empty($this->existing_user_ids[ $id ])) {
+					$rows[] = ['ID' => $id];
+				}
+			}
+
+			return $rows;
+		}
+
+		if (stripos($sql, 'billing_phone') !== false && stripos($sql, $this->usermeta) !== false) {
+			$rows = [];
+			foreach ($ids as $id) {
+				if (!array_key_exists($id, $this->user_billing_phone)) {
+					continue;
+				}
+				$rows[] = [
+					'user_id' => $id,
+					'meta_value' => $this->user_billing_phone[ $id ],
+				];
+			}
+
+			return $rows;
+		}
+
+		if (stripos($sql, 'DESCRIBE') !== false) {
+			return [];
+		}
+
+		return [];
+	}
+
+	public function get_var($query = null, $x = 0, $y = 0) {
+		$this->bump($query);
+		$sql = (string) $query;
+
+		if (stripos($sql, 'SHOW TABLES LIKE') !== false) {
+			return null;
+		}
+
+		if (stripos($sql, 'post_date') !== false && stripos($sql, 'LIMIT 1') !== false) {
+			if (preg_match('/WHERE ID = (\d+)/', $sql, $m)) {
+				$id = (int) $m[1];
+				if (isset($this->shop_orders[ $id ])) {
+					return $this->shop_orders[ $id ]['post_date'];
+				}
+			}
+		}
+
+		if (stripos($sql, '_customer_user') !== false && stripos($sql, 'LIMIT 1') !== false) {
+			if (preg_match('/post_id = (\d+)/', $sql, $m)) {
+				$id = (int) $m[1];
+				if (isset($this->postmeta_customer_user[ $id ])) {
+					return $this->postmeta_customer_user[ $id ];
+				}
+			}
+		}
+
+		return null;
+	}
+
+	public function get_col($query = null, $x = 0) {
+		$this->bump($query);
+
+		return [];
+	}
+
+	public function get_row($query = null, $output = OBJECT, $y = 0) {
+		$this->bump($query);
+
+		return null;
+	}
+
+	public function query($query) {
+		$this->bump($query);
+
+		return true;
+	}
+}
+
 class WinbackReportQueryCountTest extends TestCase {
+	/** @var object|null */
+	private $saved_wpdb = null;
+
+	/** @var WinbackReportCountingWpdb|null */
+	private $counting_wpdb = null;
+
+	/** @var array<string,int> */
+	private $last_query_histogram = [];
+
 	/**
 	 * @return array<string,int>
 	 */
@@ -18,16 +214,18 @@ class WinbackReportQueryCountTest extends TestCase {
 		$GLOBALS['intersoccer_test_get_userdata_call_count'] = 0;
 		$GLOBALS['intersoccer_test_get_user_meta_call_count'] = 0;
 		$GLOBALS['intersoccer_test_wc_get_order_item_meta_call_count'] = 0;
-		$GLOBALS['intersoccer_test_live_order_status_batch_load_calls'] = 0;
+		if ($this->counting_wpdb instanceof WinbackReportCountingWpdb) {
+			$this->counting_wpdb->query_count = 0;
+		}
 
 		return [
+			'wpdb_queries' => 0,
 			'wc_get_order' => 0,
 			'get_post_meta' => 0,
 			'get_term_by' => 0,
 			'get_userdata' => 0,
 			'get_user_meta' => 0,
 			'wc_get_order_item_meta' => 0,
-			'live_status_batches' => 0,
 		];
 	}
 
@@ -35,14 +233,18 @@ class WinbackReportQueryCountTest extends TestCase {
 	 * @return array<string,int>
 	 */
 	private function read_perf_counters(): array {
+		$wpdb_queries = $this->counting_wpdb instanceof WinbackReportCountingWpdb
+			? (int) $this->counting_wpdb->query_count
+			: 0;
+
 		return [
+			'wpdb_queries' => $wpdb_queries,
 			'wc_get_order' => (int) ( $GLOBALS['intersoccer_test_wc_get_order_call_count'] ?? 0 ),
 			'get_post_meta' => (int) ( $GLOBALS['intersoccer_test_get_post_meta_call_count'] ?? 0 ),
 			'get_term_by' => (int) ( $GLOBALS['intersoccer_test_get_term_by_call_count'] ?? 0 ),
 			'get_userdata' => (int) ( $GLOBALS['intersoccer_test_get_userdata_call_count'] ?? 0 ),
 			'get_user_meta' => (int) ( $GLOBALS['intersoccer_test_get_user_meta_call_count'] ?? 0 ),
 			'wc_get_order_item_meta' => (int) ( $GLOBALS['intersoccer_test_wc_get_order_item_meta_call_count'] ?? 0 ),
-			'live_status_batches' => (int) ( $GLOBALS['intersoccer_test_live_order_status_batch_load_calls'] ?? 0 ),
 		];
 	}
 
@@ -74,6 +276,24 @@ class WinbackReportQueryCountTest extends TestCase {
 				'parent_phone' => '+410000000' . $i,
 			];
 		}
+		$rows[] = [
+			'id' => 90001,
+			'customer_id' => 3001,
+			'player_index' => 0,
+			'order_id' => 59999,
+			'order_item_id' => 69999,
+			'order_status' => 'completed',
+			'activity_type' => 'Camp',
+			'player_first_name' => 'Refund',
+			'player_last_name' => 'Line',
+			'player_dob' => '2015-06-01',
+			'venue' => 'test-venue',
+			'age_group' => '5-12y',
+			'start_date' => '2025-07-01',
+			'end_date' => '2025-07-05',
+			'parent_email' => 'refund@example.test',
+			'parent_phone' => '+4100000099',
+		];
 
 		return $rows;
 	}
@@ -81,38 +301,78 @@ class WinbackReportQueryCountTest extends TestCase {
 	/**
 	 * @param array<int,array<string,mixed>> $history_rows
 	 */
-	private function run_winback_perf_slice(array $history_rows): void {
-		$today = '2026-06-15';
-		$lookback_start = '2025-06-15';
+	private function seed_wpdb_fixtures(array $history_rows): void {
+		if (!$this->counting_wpdb instanceof WinbackReportCountingWpdb) {
+			return;
+		}
+		$db = $this->counting_wpdb;
+		$db->postmeta_customer_user = [];
+		$db->shop_orders = [];
+		$db->refund_parents = [];
+		$db->existing_user_ids = [];
+		$db->user_billing_phone = [];
 
-		$order_map = [];
-		$created_map = [];
-		$status_map = [];
+		$customer_ids = [];
 		foreach ($history_rows as $row) {
 			$oid = (int) $row['order_id'];
 			$cid = (int) $row['customer_id'];
 			if ($cid <= 0) {
 				$cid = 2000 + $oid;
 			}
-			$order_map[ $oid ] = $cid;
-			$created_map[ $oid ] = '2025-04-01';
-			$status_map[ $oid ] = 'wc-completed';
+			$db->postmeta_customer_user[ $oid ] = (string) $cid;
+			$db->shop_orders[ $oid ] = [
+				'post_status' => 'wc-completed',
+				'post_date' => '2025-04-01 10:00:00',
+			];
+			$customer_ids[ $cid ] = $cid;
 		}
-		$order_map[59999] = 3001;
-		$created_map[59999] = '2025-04-01';
-		$status_map[59999] = 'wc-completed';
-		$GLOBALS['intersoccer_test_order_customer_id_map'] = $order_map;
-		$GLOBALS['intersoccer_test_order_created_date_map'] = $created_map;
-		$GLOBALS['intersoccer_test_live_order_status_map'] = $status_map;
-		$GLOBALS['intersoccer_test_orders_with_refunds'] = [59999 => true];
-		$GLOBALS['intersoccer_test_line_fully_refunded_item_ids'] = [69999 => true];
-		$GLOBALS['intersoccer_test_get_userdata'] = [];
-		foreach (array_unique(array_values($order_map)) as $uid) {
-			$GLOBALS['intersoccer_test_get_userdata'][ (int) $uid ] = (object) [
-				'ID' => (int) $uid,
+		$db->refund_parents[59999] = true;
+
+		foreach ($customer_ids as $uid) {
+			$db->existing_user_ids[ $uid ] = true;
+			$db->user_billing_phone[ $uid ] = '+4100000' . $uid;
+			$GLOBALS['intersoccer_test_get_userdata'][ $uid ] = (object) [
+				'ID' => $uid,
 				'user_email' => 'acct' . $uid . '@example.test',
 			];
 		}
+	}
+
+	/**
+	 * @param array<int,array<string,mixed>> $history_rows
+	 * @return array<string,int>
+	 */
+	private function run_winback_perf_slice(array $history_rows): array {
+		$this->seed_wpdb_fixtures($history_rows);
+
+		unset(
+			$GLOBALS['intersoccer_test_order_customer_id_map'],
+			$GLOBALS['intersoccer_test_order_created_date_map'],
+			$GLOBALS['intersoccer_test_live_order_status_map'],
+			$GLOBALS['intersoccer_test_orders_with_refunds'],
+			$GLOBALS['intersoccer_test_line_fully_refunded_item_ids']
+		);
+		$GLOBALS['intersoccer_test_hpos_orders_enabled'] = false;
+
+		$GLOBALS['intersoccer_test_wc_get_order_callback'] = static function ($order_id) {
+			if ((int) $order_id !== 59999) {
+				return false;
+			}
+
+			return new class() {
+				public function get_customer_id() {
+					return 3001;
+				}
+
+				public function get_refunds() {
+					return [new class() {
+						public function get_id() {
+							return 1;
+						}
+					}];
+				}
+			};
+		};
 
 		$running_row = [
 			'is_placeholder' => 0,
@@ -144,6 +404,7 @@ class WinbackReportQueryCountTest extends TestCase {
 		intersoccer_winback_reset_order_created_date_cache();
 		intersoccer_winback_reset_current_course_term_cache();
 		intersoccer_winback_reset_j8_lookup_cache();
+		unset($GLOBALS['intersoccer_rr_user_billing_phone_cache'], $GLOBALS['intersoccer_rr_user_account_email_cache']);
 
 		$rows = intersoccer_roster_report_rows_apply_live_order_status($history_rows);
 		intersoccer_roster_report_prime_order_customer_ids_from_rows($rows);
@@ -177,6 +438,7 @@ class WinbackReportQueryCountTest extends TestCase {
 			];
 		}
 
+		$today = '2026-06-15';
 		intersoccer_winback_report_engine_build_j8_lookup($today, $identity_map);
 
 		$catalogue = [
@@ -228,76 +490,143 @@ class WinbackReportQueryCountTest extends TestCase {
 				);
 			}
 		}
+
+		$counters = $this->read_perf_counters();
+		if ($this->counting_wpdb instanceof WinbackReportCountingWpdb) {
+			$hist = [];
+			foreach ($this->counting_wpdb->query_log as $sql) {
+				if (stripos($sql, '_customer_user') !== false) {
+					$bucket = 'customer_user';
+				} elseif (stripos($sql, 'post_status') !== false) {
+					$bucket = 'order_status';
+				} elseif (stripos($sql, 'post_date') !== false) {
+					$bucket = 'order_created';
+				} elseif (stripos($sql, 'shop_order_refund') !== false) {
+					$bucket = 'refunds';
+				} elseif (stripos($sql, 'wp_users') !== false) {
+					$bucket = 'users';
+				} elseif (stripos($sql, 'billing_phone') !== false) {
+					$bucket = 'billing_phone';
+				} else {
+					$bucket = 'other';
+				}
+				$hist[ $bucket ] = (int) ( $hist[ $bucket ] ?? 0 ) + 1;
+			}
+			$this->last_query_histogram = $hist;
+		}
+
+		return $counters;
+	}
+
+	protected function setUp(): void {
+		parent::setUp();
+		global $wpdb;
+		$this->saved_wpdb = $wpdb;
+		$this->counting_wpdb = new WinbackReportCountingWpdb();
+		$wpdb = $this->counting_wpdb;
+
+		$includes = dirname(__DIR__, 2) . '/includes';
+		require_once $includes . '/roster-report-loader.php';
+		require_once $includes . '/winback-report-facets.php';
+		require_once $includes . '/winback-catalogue.php';
+		require_once $includes . '/winback-report-engine.php';
+
+		$GLOBALS['intersoccer_test_get_userdata'] = [];
 	}
 
 	protected function tearDown(): void {
+		global $wpdb;
+		if ($this->saved_wpdb !== null) {
+			$wpdb = $this->saved_wpdb;
+		}
 		unset(
 			$GLOBALS['intersoccer_test_order_customer_id_map'],
+			$GLOBALS['intersoccer_test_order_created_date_map'],
+			$GLOBALS['intersoccer_test_live_order_status_map'],
 			$GLOBALS['intersoccer_test_orders_with_refunds'],
+			$GLOBALS['intersoccer_test_line_fully_refunded_item_ids'],
+			$GLOBALS['intersoccer_test_hpos_orders_enabled'],
+			$GLOBALS['intersoccer_test_wc_get_order_callback'],
 			$GLOBALS['intersoccer_test_wc_get_order_call_count'],
 			$GLOBALS['intersoccer_test_get_post_meta_call_count'],
 			$GLOBALS['intersoccer_test_get_term_by_call_count'],
 			$GLOBALS['intersoccer_test_get_userdata_call_count'],
 			$GLOBALS['intersoccer_test_get_user_meta_call_count'],
 			$GLOBALS['intersoccer_test_wc_get_order_item_meta_call_count'],
-			$GLOBALS['intersoccer_test_winback_current_course_term_rows']
+			$GLOBALS['intersoccer_test_winback_current_course_term_rows'],
+			$GLOBALS['intersoccer_test_get_userdata']
 		);
+		$this->saved_wpdb = null;
+		$this->counting_wpdb = null;
 		parent::tearDown();
-	}
-
-	protected function setUp(): void {
-		parent::setUp();
-		$includes = dirname(__DIR__, 2) . '/includes';
-		require_once $includes . '/roster-report-loader.php';
-		require_once $includes . '/winback-report-facets.php';
-		require_once $includes . '/winback-catalogue.php';
-		require_once $includes . '/winback-report-engine.php';
 	}
 
 	public function test_winback_slice_query_and_heavy_calls_scale_sublinearly_with_player_count(): void {
 		$this->reset_perf_counters();
-		$this->run_winback_perf_slice($this->synthetic_history_rows(10));
-		$small = $this->read_perf_counters();
+		$small = $this->run_winback_perf_slice($this->synthetic_history_rows(10));
+		$small_hist = $this->last_query_histogram;
 
 		$this->reset_perf_counters();
-		$this->run_winback_perf_slice($this->synthetic_history_rows(100));
-		$large = $this->read_perf_counters();
+		$large = $this->run_winback_perf_slice($this->synthetic_history_rows(100));
+		$large_hist = $this->last_query_histogram;
+
+		$extra_chunks_10 = (int) max(0, intdiv(count($this->synthetic_history_rows(10)), 500));
+		$extra_chunks_100 = (int) max(0, intdiv(count($this->synthetic_history_rows(100)), 500));
+		$extra_chunk_delta = $extra_chunks_100 - $extra_chunks_10;
+
+		$delta_wpdb = $large['wpdb_queries'] - $small['wpdb_queries'];
+		$log_tail = '';
+		if ($this->counting_wpdb instanceof WinbackReportCountingWpdb && !empty($this->counting_wpdb->query_log)) {
+			$log_tail = ' sample=' . implode(' | ', array_slice($this->counting_wpdb->query_log, -5));
+		}
+		$this->assertLessThanOrEqual(
+			$extra_chunk_delta + 3,
+			$delta_wpdb,
+			'$wpdb queries should grow by chunk count only: small=' . $small['wpdb_queries']
+			. ' large=' . $large['wpdb_queries'] . ' delta=' . $delta_wpdb
+			. ' extra_chunks=' . $extra_chunk_delta
+			. ' hist_small=' . json_encode($small_hist)
+			. ' hist_large=' . json_encode($large_hist)
+			. $log_tail
+		);
 
 		$delta_wc = $large['wc_get_order'] - $small['wc_get_order'];
 		$this->assertLessThanOrEqual(
 			2,
 			$delta_wc,
-			'wc_get_order should not scale per player (only refund orders): small='
-			. $small['wc_get_order'] . ' large=' . $large['wc_get_order']
+			'wc_get_order should not scale per player: small=' . $small['wc_get_order']
+			. ' large=' . $large['wc_get_order']
 		);
 		$this->assertLessThanOrEqual(1, $small['wc_get_order']);
 		$this->assertLessThanOrEqual(1, $large['wc_get_order']);
-
-		$delta_status_batches = $large['live_status_batches'] - $small['live_status_batches'];
-		$this->assertLessThanOrEqual(
-			1,
-			$delta_status_batches,
-			'live status batch loads should differ by at most one chunk: small='
-			. $small['live_status_batches'] . ' large=' . $large['live_status_batches']
-		);
 
 		$scaling_keys = ['get_post_meta', 'get_term_by', 'wc_get_order_item_meta'];
 		foreach ($scaling_keys as $key) {
 			$delta = $large[ $key ] - $small[ $key ];
 			$this->assertLessThanOrEqual(
-				15,
+				3,
 				$delta,
-				$key . ' calls should grow by at most a small constant: small=' . $small[ $key ] . ' large=' . $large[ $key ]
+				$key . ' calls should grow by at most a small constant: small=' . $small[ $key ]
+				. ' large=' . $large[ $key ]
 			);
 		}
 
-		foreach (['get_userdata', 'get_user_meta'] as $key) {
-			$this->assertLessThanOrEqual(
-				12 * max(1, $small[ $key ]),
-				$large[ $key ],
-				$key . ' should scale roughly with player count, not per-row N+1: small=' . $small[ $key ] . ' large=' . $large[ $key ]
-			);
-		}
+		$delta_userdata = $large['get_userdata'] - $small['get_userdata'];
+		$this->assertLessThanOrEqual(
+			3,
+			$delta_userdata,
+			'get_userdata should not scale per player after priming: small=' . $small['get_userdata']
+			. ' large=' . $large['get_userdata']
+		);
+
+		$summary = 'perf_10_vs_100 wpdb=' . $small['wpdb_queries'] . '/' . $large['wpdb_queries']
+			. ' wc_get_order=' . $small['wc_get_order'] . '/' . $large['wc_get_order']
+			. ' get_post_meta=' . $small['get_post_meta'] . '/' . $large['get_post_meta']
+			. ' get_term_by=' . $small['get_term_by'] . '/' . $large['get_term_by']
+			. ' get_userdata=' . $small['get_userdata'] . '/' . $large['get_userdata']
+			. ' wc_get_order_item_meta=' . $small['wc_get_order_item_meta'] . '/' . $large['wc_get_order_item_meta'];
+		$this->assertNotEmpty($summary);
+		$GLOBALS['intersoccer_test_winback_perf_summary'] = $summary;
 	}
 }
 

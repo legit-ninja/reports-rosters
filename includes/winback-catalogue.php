@@ -56,8 +56,11 @@ if (!function_exists('intersoccer_winback_get_order_created_ymd')) {
 			$cache = [];
 			$GLOBALS['intersoccer_winback_order_created_date_cache'] = &$cache;
 		}
-		if (isset($cache[ $order_id ]) && (string) $cache[ $order_id ] !== '') {
-			return substr((string) $cache[ $order_id ], 0, 10);
+		if (array_key_exists($order_id, $cache)) {
+			$cached = (string) $cache[ $order_id ];
+			if ($cached !== '') {
+				return substr($cached, 0, 10);
+			}
 		}
 		if (function_exists('intersoccer_roster_report_batch_load_order_created_dates')) {
 			$loaded = intersoccer_roster_report_batch_load_order_created_dates([$order_id]);
@@ -67,6 +70,30 @@ if (!function_exists('intersoccer_winback_get_order_created_ymd')) {
 				return substr((string) $cache[ $order_id ], 0, 10);
 			}
 		}
+
+		if (function_exists('wc_get_order')) {
+			$order = wc_get_order($order_id);
+			if ($order && $order->get_date_created()) {
+				$ymd = $order->get_date_created()->date('Y-m-d');
+				$cache[ $order_id ] = $ymd;
+
+				return $ymd;
+			}
+		}
+		global $wpdb;
+		if (is_object($wpdb) && isset($wpdb->prefix)) {
+			$raw = (string) $wpdb->get_var(
+				$wpdb->prepare("SELECT post_date FROM {$wpdb->posts} WHERE ID = %d LIMIT 1", $order_id)
+			);
+			if ($raw !== '') {
+				$ymd = substr($raw, 0, 10);
+				$cache[ $order_id ] = $ymd;
+
+				return $ymd;
+			}
+		}
+
+		$cache[ $order_id ] = '';
 
 		return '';
 	}
