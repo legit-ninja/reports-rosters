@@ -225,6 +225,14 @@ if (!function_exists('add_query_arg')) {
     }
 }
 
+if (!function_exists('wp_nonce_url')) {
+    function wp_nonce_url($actionurl, $action = -1, $name = '_wpnonce') {
+        $nonce = wp_create_nonce($action);
+
+        return add_query_arg($name, $nonce, $actionurl);
+    }
+}
+
 // Plugin functions
 if (!function_exists('plugin_dir_path')) {
     function plugin_dir_path($file) { return dirname($file) . '/'; }
@@ -565,6 +573,16 @@ if (!function_exists('intersoccer_test_ensure_pm_filter_stub')) {
                 return $filtered === true;
             }
         }
+    }
+}
+
+if (!function_exists('maybe_serialize')) {
+    function maybe_serialize($data) {
+        if (is_scalar($data)) {
+            return $data;
+        }
+
+        return serialize($data);
     }
 }
 
