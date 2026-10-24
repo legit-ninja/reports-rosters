@@ -223,6 +223,75 @@ class WinbackReportQueryCountTest extends TestCase {
 	private $last_query_histogram = [];
 
 	/**
+	 * Clear win-back / roster-report memos and test globals that leak across PHPUnit tests.
+	 */
+	private function reset_winback_loader_isolation_state(): void {
+		unset(
+			$GLOBALS['intersoccer_test_order_customer_id_map'],
+			$GLOBALS['intersoccer_test_live_order_status_map'],
+			$GLOBALS['intersoccer_test_order_created_date_map'],
+			$GLOBALS['intersoccer_test_orders_with_refunds'],
+			$GLOBALS['intersoccer_test_line_fully_refunded_item_ids'],
+			$GLOBALS['intersoccer_test_fake_customer_map'],
+			$GLOBALS['intersoccer_test_batch_chunk_size'],
+			$GLOBALS['intersoccer_test_hpos_orders_enabled'],
+			$GLOBALS['intersoccer_test_wc_get_order_callback'],
+			$GLOBALS['intersoccer_test_winback_current_course_term_rows'],
+			$GLOBALS['intersoccer_rr_user_billing_phone_cache'],
+			$GLOBALS['intersoccer_rr_user_account_email_cache']
+		);
+		if (function_exists('intersoccer_roster_report_reset_live_order_status_memo')) {
+			intersoccer_roster_report_reset_live_order_status_memo();
+		}
+		if (function_exists('intersoccer_roster_report_reset_order_customer_id_cache')) {
+			intersoccer_roster_report_reset_order_customer_id_cache();
+		}
+		if (function_exists('intersoccer_roster_report_reset_fake_customer_cache')) {
+			intersoccer_roster_report_reset_fake_customer_cache();
+		}
+		if (function_exists('intersoccer_roster_report_reset_line_refund_check_state')) {
+			intersoccer_roster_report_reset_line_refund_check_state();
+		}
+		if (function_exists('intersoccer_winback_reset_order_created_date_cache')) {
+			intersoccer_winback_reset_order_created_date_cache();
+		}
+		if (function_exists('intersoccer_winback_reset_current_course_term_cache')) {
+			intersoccer_winback_reset_current_course_term_cache();
+		}
+		if (function_exists('intersoccer_winback_reset_j8_lookup_cache')) {
+			intersoccer_winback_reset_j8_lookup_cache();
+		}
+		if (function_exists('intersoccer_winback_reset_catalogue_target_cache')) {
+			intersoccer_winback_reset_catalogue_target_cache();
+		}
+		if (function_exists('intersoccer_winback_reset_catalogue_enumeration_memo')) {
+			intersoccer_winback_reset_catalogue_enumeration_memo();
+		}
+	}
+
+	/**
+	 * @param int[] $user_ids
+	 */
+	private function seed_test_users_exist(array $user_ids): void {
+		if (!isset($GLOBALS['intersoccer_test_get_userdata']) || !is_array($GLOBALS['intersoccer_test_get_userdata'])) {
+			$GLOBALS['intersoccer_test_get_userdata'] = [];
+		}
+		foreach ($user_ids as $user_id) {
+			$user_id = (int) $user_id;
+			if ($user_id <= 0) {
+				continue;
+			}
+			$GLOBALS['intersoccer_test_get_userdata'][ $user_id ] = (object) [
+				'ID' => $user_id,
+				'user_email' => 'user' . $user_id . '@example.test',
+			];
+			if ($this->counting_wpdb instanceof WinbackReportCountingWpdb) {
+				$this->counting_wpdb->existing_user_ids[ $user_id ] = true;
+			}
+		}
+	}
+
+	/**
 	 * @return array<string,int>
 	 */
 	private function reset_perf_counters(): array {
@@ -541,6 +610,14 @@ class WinbackReportQueryCountTest extends TestCase {
 		global $wpdb;
 		$this->saved_wpdb = $wpdb;
 		$this->counting_wpdb = new WinbackReportCountingWpdb();
+		$this->counting_wpdb->postmeta_customer_user = [];
+		$this->counting_wpdb->shop_orders = [];
+		$this->counting_wpdb->refund_parents = [];
+		$this->counting_wpdb->existing_user_ids = [];
+		$this->counting_wpdb->user_billing_phone = [];
+		$this->counting_wpdb->variation_posts_by_parent = [];
+		$this->counting_wpdb->query_count = 0;
+		$this->counting_wpdb->query_log = [];
 		$wpdb = $this->counting_wpdb;
 
 		$includes = dirname(__DIR__, 2) . '/includes';
@@ -550,9 +627,11 @@ class WinbackReportQueryCountTest extends TestCase {
 		require_once $includes . '/winback-report-engine.php';
 
 		$GLOBALS['intersoccer_test_get_userdata'] = [];
+		$this->reset_winback_loader_isolation_state();
 	}
 
 	protected function tearDown(): void {
+		$this->reset_winback_loader_isolation_state();
 		global $wpdb;
 		if ($this->saved_wpdb !== null) {
 			$wpdb = $this->saved_wpdb;
@@ -652,11 +731,9 @@ class WinbackReportQueryCountTest extends TestCase {
 		if (!$this->counting_wpdb instanceof WinbackReportCountingWpdb) {
 			$this->markTestSkipped('Counting wpdb not available');
 		}
-		unset(
-			$GLOBALS['intersoccer_test_order_customer_id_map'],
-			$GLOBALS['intersoccer_test_live_order_status_map'],
-			$GLOBALS['intersoccer_test_order_created_date_map']
-		);
+		global $wpdb;
+		$wpdb = $this->counting_wpdb;
+		$this->reset_winback_loader_isolation_state();
 		$GLOBALS['intersoccer_test_hpos_orders_enabled'] = false;
 		$order_ids = [62545, 70001, 81234, 90017];
 		foreach ($order_ids as $i => $oid) {
@@ -684,11 +761,12 @@ class WinbackReportQueryCountTest extends TestCase {
 	}
 
 	public function test_live_status_and_customer_resolution_with_non_sequential_order_ids(): void {
-		unset(
-			$GLOBALS['intersoccer_test_order_customer_id_map'],
-			$GLOBALS['intersoccer_test_live_order_status_map'],
-			$GLOBALS['intersoccer_test_order_created_date_map']
-		);
+		if (!$this->counting_wpdb instanceof WinbackReportCountingWpdb) {
+			$this->markTestSkipped('Counting wpdb not available');
+		}
+		global $wpdb;
+		$wpdb = $this->counting_wpdb;
+		$this->reset_winback_loader_isolation_state();
 		$GLOBALS['intersoccer_test_hpos_orders_enabled'] = false;
 		if ($this->counting_wpdb instanceof WinbackReportCountingWpdb) {
 			$this->counting_wpdb->postmeta_customer_user[81234] = '44201';
@@ -724,8 +802,8 @@ class WinbackReportQueryCountTest extends TestCase {
 		];
 		if ($this->counting_wpdb instanceof WinbackReportCountingWpdb) {
 			$this->counting_wpdb->postmeta_customer_user[90017] = '55009';
-			$this->counting_wpdb->existing_user_ids[55009] = true;
 		}
+		$this->seed_test_users_exist([55009]);
 		if (function_exists('intersoccer_roster_report_reset_fake_customer_cache')) {
 			intersoccer_roster_report_reset_fake_customer_cache();
 		}
@@ -740,7 +818,12 @@ class WinbackReportQueryCountTest extends TestCase {
 	}
 
 	public function test_order_created_date_prime_avoids_per_order_fallback_queries(): void {
-		unset($GLOBALS['intersoccer_test_order_created_date_map']);
+		if (!$this->counting_wpdb instanceof WinbackReportCountingWpdb) {
+			$this->markTestSkipped('Counting wpdb not available');
+		}
+		global $wpdb;
+		$wpdb = $this->counting_wpdb;
+		$this->reset_winback_loader_isolation_state();
 		$GLOBALS['intersoccer_test_hpos_orders_enabled'] = false;
 		$rows = [
 			['order_id' => 62545],
@@ -753,7 +836,6 @@ class WinbackReportQueryCountTest extends TestCase {
 			$this->counting_wpdb->shop_orders[81234] = ['post_status' => 'wc-completed', 'post_date' => '2025-04-03 10:00:00'];
 		}
 		$GLOBALS['intersoccer_test_batch_chunk_size'] = 2;
-		intersoccer_winback_reset_order_created_date_cache();
 		intersoccer_winback_prime_order_created_dates_from_rows($rows);
 		if ($this->counting_wpdb instanceof WinbackReportCountingWpdb) {
 			$this->counting_wpdb->query_count = 0;
@@ -774,6 +856,9 @@ class WinbackReportQueryCountTest extends TestCase {
 		if (!$this->counting_wpdb instanceof WinbackReportCountingWpdb) {
 			$this->markTestSkipped('Counting wpdb not available');
 		}
+		global $wpdb;
+		$wpdb = $this->counting_wpdb;
+		$this->reset_winback_loader_isolation_state();
 		$make_parents = static function (int $count): array {
 			$map = [];
 			for ($p = 1; $p <= $count; $p++) {

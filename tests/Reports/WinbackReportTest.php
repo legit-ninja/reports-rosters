@@ -73,6 +73,34 @@ class WinbackReportTest extends TestCase {
 		if (function_exists('intersoccer_winback_reset_unmapped_facets')) {
 			intersoccer_winback_reset_unmapped_facets();
 		}
+		if (function_exists('intersoccer_roster_report_reset_live_order_status_memo')) {
+			intersoccer_roster_report_reset_live_order_status_memo();
+		}
+		if (function_exists('intersoccer_roster_report_reset_order_customer_id_cache')) {
+			intersoccer_roster_report_reset_order_customer_id_cache();
+		}
+		if (function_exists('intersoccer_roster_report_reset_fake_customer_cache')) {
+			intersoccer_roster_report_reset_fake_customer_cache();
+		}
+		if (function_exists('intersoccer_roster_report_reset_line_refund_check_state')) {
+			intersoccer_roster_report_reset_line_refund_check_state();
+		}
+		if (function_exists('intersoccer_winback_reset_order_created_date_cache')) {
+			intersoccer_winback_reset_order_created_date_cache();
+		}
+		if (function_exists('intersoccer_winback_reset_catalogue_target_cache')) {
+			intersoccer_winback_reset_catalogue_target_cache();
+		}
+		if (function_exists('intersoccer_winback_reset_catalogue_enumeration_memo')) {
+			intersoccer_winback_reset_catalogue_enumeration_memo();
+		}
+		if (function_exists('intersoccer_winback_reset_j8_lookup_cache')) {
+			intersoccer_winback_reset_j8_lookup_cache();
+		}
+		unset(
+			$GLOBALS['intersoccer_test_get_userdata'],
+			$GLOBALS['intersoccer_test_fake_customer_map']
+		);
 	}
 
 	public function test_live_order_status_overrides_stale_roster_for_policy() {

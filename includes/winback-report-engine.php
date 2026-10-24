@@ -51,6 +51,9 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		if (function_exists('intersoccer_winback_reset_catalogue_target_cache')) {
 			intersoccer_winback_reset_catalogue_target_cache();
 		}
+		if (function_exists('intersoccer_winback_reset_catalogue_enumeration_memo')) {
+			intersoccer_winback_reset_catalogue_enumeration_memo();
+		}
 		if (function_exists('intersoccer_winback_reset_j8_lookup_cache')) {
 			intersoccer_winback_reset_j8_lookup_cache();
 		}
