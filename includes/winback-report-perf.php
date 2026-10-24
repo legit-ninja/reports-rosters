@@ -164,6 +164,122 @@ if (!function_exists('intersoccer_rr_winback_prime_product_types_from_rows')) {
 	}
 }
 
+if (!function_exists('intersoccer_winback_report_engine_history_row_column_names')) {
+	/**
+	 * Roster columns read by win-back history load, priming, identity map, and output (narrow SELECT).
+	 *
+	 * @return string[]
+	 */
+	function intersoccer_winback_report_engine_history_row_column_names() {
+		return [
+			'id',
+			'order_id',
+			'order_item_id',
+			'customer_id',
+			'order_status',
+			'product_id',
+			'variation_id',
+			'player_index',
+			'player_first_name',
+			'player_last_name',
+			'first_name',
+			'last_name',
+			'player_dob',
+			'dob',
+			'parent_first_name',
+			'parent_last_name',
+			'parent_email',
+			'parent_phone',
+			'product_name',
+			'venue',
+			'age_group',
+			'start_date',
+			'end_date',
+			'camp_terms',
+			'season',
+			'course_day',
+			'activity_type',
+		];
+	}
+}
+
+if (!function_exists('intersoccer_winback_report_engine_project_history_row')) {
+	/**
+	 * Keep only win-back history columns (drops unused wide-row fields from SELECT * fixtures).
+	 *
+	 * @param array<string,mixed> $row
+	 * @return array<string,mixed>
+	 */
+	function intersoccer_winback_report_engine_project_history_row(array $row) {
+		$out = [];
+		foreach (intersoccer_winback_report_engine_history_row_column_names() as $column) {
+			if (array_key_exists($column, $row)) {
+				$out[ $column ] = $row[ $column ];
+			}
+		}
+
+		return $out;
+	}
+}
+
+if (!function_exists('intersoccer_winback_report_engine_history_row_columns_sql')) {
+	/**
+	 * @return string Comma-separated escaped column list for SQL SELECT.
+	 */
+	function intersoccer_winback_report_engine_history_row_columns_sql() {
+		$parts = [];
+		foreach (intersoccer_winback_report_engine_history_row_column_names() as $column) {
+			$parts[] = '`' . $column . '`';
+		}
+
+		return implode(', ', $parts);
+	}
+}
+
+if (!function_exists('intersoccer_winback_report_engine_aggregate_history_entry')) {
+	/**
+	 * Retain latest history entry per group|kind and increment lookback event counter.
+	 *
+	 * @param array<string,array<string,mixed>> $by_player_kind
+	 * @param array<string,int>                 $event_counts  group_id|kind => count
+	 * @param array<string,mixed>               $entry         Aggregation entry (row + metadata).
+	 */
+	function intersoccer_winback_report_engine_aggregate_history_entry(
+		array &$by_player_kind,
+		array &$event_counts,
+		array $entry,
+		$group_id,
+		$kind
+	) {
+		$group_id = (string) $group_id;
+		$kind = (string) $kind;
+		$pk = $group_id . '|' . $kind;
+		$event_counts[ $pk ] = (int) ( $event_counts[ $pk ] ?? 0 ) + 1;
+		if (!isset($by_player_kind[ $pk ])
+			|| intersoccer_winback_report_engine_is_later_history($entry, $by_player_kind[ $pk ])) {
+			$by_player_kind[ $pk ] = $entry;
+		}
+	}
+}
+
+if (!function_exists('intersoccer_winback_report_engine_history_events_in_lookback')) {
+	/**
+	 * Event count for a player group and kind (counter-based aggregation path).
+	 *
+	 * @param array<string,int> $event_counts group_id|kind => count
+	 */
+	function intersoccer_winback_report_engine_history_events_in_lookback($group_id, $kind, array $event_counts) {
+		$group_id = (string) $group_id;
+		$kind = (string) $kind;
+		if ($group_id === '') {
+			return 0;
+		}
+		$pk = $group_id . '|' . $kind;
+
+		return (int) ( $event_counts[ $pk ] ?? 0 );
+	}
+}
+
 if (!function_exists('intersoccer_winback_report_engine_runtime_cache_flush')) {
 	/**
 	 * Drop WP/WC runtime object cache entries (memos in $GLOBALS are unaffected).

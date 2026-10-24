@@ -16,6 +16,54 @@ if (!function_exists('intersoccer_winback_reset_order_created_date_cache')) {
 	}
 }
 
+if (!function_exists('intersoccer_winback_reset_row_event_date_memo')) {
+	function intersoccer_winback_reset_row_event_date_memo() {
+		$GLOBALS['intersoccer_winback_row_event_date_memo'] = [];
+	}
+}
+
+if (!function_exists('intersoccer_winback_row_event_date_memo_key')) {
+	/**
+	 * @param array<string,mixed> $row
+	 */
+	function intersoccer_winback_row_event_date_memo_key(array $row) {
+		$key = (int) ( $row['order_item_id'] ?? 0 );
+		if ($key <= 0) {
+			$key = (int) ( $row['id'] ?? 0 );
+		}
+
+		return $key;
+	}
+}
+
+if (!function_exists('intersoccer_winback_prime_row_event_dates_from_rows')) {
+	/**
+	 * Warm per-line event date resolution so runtime object cache can be dropped safely.
+	 *
+	 * @param array<int,array<string,mixed>> $rows
+	 */
+	function intersoccer_winback_prime_row_event_dates_from_rows(array $rows) {
+		if (!function_exists('intersoccer_winback_resolve_row_event_date')) {
+			return;
+		}
+		if (!isset($GLOBALS['intersoccer_winback_row_event_date_memo'])
+			|| !is_array($GLOBALS['intersoccer_winback_row_event_date_memo'])) {
+			$GLOBALS['intersoccer_winback_row_event_date_memo'] = [];
+		}
+		$memo = &$GLOBALS['intersoccer_winback_row_event_date_memo'];
+		foreach ($rows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$key = intersoccer_winback_row_event_date_memo_key($row);
+			if ($key <= 0 || array_key_exists($key, $memo)) {
+				continue;
+			}
+			$memo[ $key ] = intersoccer_winback_resolve_row_event_date($row);
+		}
+	}
+}
+
 if (!function_exists('intersoccer_winback_prime_order_created_dates_from_rows')) {
 	/**
 	 * Batch-load order created dates for roster rows (one query per chunk).
@@ -441,6 +489,15 @@ if (!function_exists('intersoccer_winback_resolve_row_event_date')) {
 	 * @return array{date:?string,source:string}
 	 */
 	function intersoccer_winback_resolve_row_event_date(array $row) {
+		$memo_key = function_exists('intersoccer_winback_row_event_date_memo_key')
+			? intersoccer_winback_row_event_date_memo_key($row)
+			: 0;
+		if ($memo_key > 0
+			&& isset($GLOBALS['intersoccer_winback_row_event_date_memo'][ $memo_key ])
+			&& is_array($GLOBALS['intersoccer_winback_row_event_date_memo'][ $memo_key ])) {
+			return $GLOBALS['intersoccer_winback_row_event_date_memo'][ $memo_key ];
+		}
+
 		$start = trim((string) ($row['start_date'] ?? ''));
 		if (intersoccer_roster_report_has_real_date($start)) {
 			return ['date' => $start, 'source' => 'roster_start_date'];
