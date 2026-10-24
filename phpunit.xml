@@ -71,6 +71,7 @@
             <file>tests/Reports/PlayerCourseStatusTest.php</file>
             <file>tests/Reports/PlayerCourseStatusQueryCountTest.php</file>
             <file>tests/Reports/PlayerCourseStatusPendingTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusAdminUiTest.php</file>
             <file>tests/Reports/PlayerCampStatusLoadPlayersQueryCountTest.php</file>
             <file>tests/Reports/WinbackReportTest.php</file>
             <file>tests/Reports/WinbackCatalogueWpmlTest.php</file>
