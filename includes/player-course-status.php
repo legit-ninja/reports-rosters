@@ -513,6 +513,71 @@ function intersoccer_player_course_status_prepare_roster_rows(array $rows) {
 }
 
 /**
+ * Clears roster-query failure memo before {@see intersoccer_player_course_status_load_course_roster_rows()}.
+ */
+function intersoccer_player_course_status_reset_roster_query_state() {
+	unset($GLOBALS['intersoccer_player_course_status_roster_query_failed']);
+}
+
+/**
+ * Whether the last roster load hit a DB error (see reset/consume in generate).
+ */
+function intersoccer_player_course_status_roster_query_failed() {
+	return !empty($GLOBALS['intersoccer_player_course_status_roster_query_failed']);
+}
+
+/**
+ * @return array{code:string,message:string}
+ */
+function intersoccer_player_course_status_roster_query_failed_warning() {
+	return [
+		'code' => 'roster_query_failed',
+		'message' => __(
+			'The course roster query failed, so booked counts may be wrong. Check the PHP error log.',
+			'intersoccer-reports-rosters'
+		),
+	];
+}
+
+/**
+ * @param string $wpdb_last_error
+ */
+function intersoccer_player_course_status_log_roster_query_error($wpdb_last_error) {
+	$message = 'InterSoccer RR player course status: roster query failed: ' . (string) $wpdb_last_error;
+	if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
+		if (!isset($GLOBALS['intersoccer_test_player_course_status_error_log'])) {
+			$GLOBALS['intersoccer_test_player_course_status_error_log'] = [];
+		}
+		$GLOBALS['intersoccer_test_player_course_status_error_log'][] = $message;
+
+		return;
+	}
+	error_log($message);
+}
+
+/**
+ * Strict-mode-safe DATE prefilter for course roster SQL (year window [Y-1, Y+1]).
+ *
+ * @param int $year Report year Y.
+ * @return array{sql:string,params:list<string>}
+ */
+function intersoccer_player_course_status_course_roster_year_prefilter_clause($year) {
+	$year = (int) $year;
+	$ymin = $year - 1;
+	$ymax = $year + 1;
+	$date_min = sprintf('%d-01-01', $ymin);
+	$date_max = sprintf('%d-12-31', $ymax);
+
+	return [
+		'sql' => ' AND (
+		start_date IS NULL OR start_date = \'1970-01-01\' OR start_date BETWEEN %s AND %s
+		OR end_date IS NULL OR end_date = \'1970-01-01\' OR end_date BETWEEN %s AND %s
+	)',
+		'params' => [$date_min, $date_max, $date_min, $date_max],
+	];
+}
+
+/**
  * @param int $year
  * @return array<int,array<string,mixed>>
  */
@@ -554,27 +619,22 @@ function intersoccer_player_course_status_load_course_roster_rows($year) {
 	}
 
 	$year = (int) $year;
-	$ymin = $year - 1;
-	$ymax = $year + 1;
 
 	$sql = 'SELECT ' . implode(', ', $select) . " FROM {$table} WHERE 1=1";
 	$params = [];
 	if (in_array('is_placeholder', (array) $columns, true)) {
 		$sql .= ' AND (is_placeholder = 0 OR is_placeholder IS NULL)';
 	}
-	$sql .= ' AND (
-		start_date IS NULL OR start_date = \'\' OR start_date = \'N/A\' OR start_date = \'1970-01-01\'
-		OR LEFT(start_date, 4) BETWEEN %d AND %d
-		OR end_date IS NULL OR end_date = \'\' OR end_date = \'N/A\' OR end_date = \'1970-01-01\'
-		OR LEFT(end_date, 4) BETWEEN %d AND %d
-	)';
-	$params[] = $ymin;
-	$params[] = $ymax;
-	$params[] = $ymin;
-	$params[] = $ymax;
+	$prefilter = intersoccer_player_course_status_course_roster_year_prefilter_clause($year);
+	$sql .= $prefilter['sql'];
+	$params = array_merge($params, $prefilter['params']);
 
 	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 	$rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+	if ($wpdb->last_error !== '') {
+		$GLOBALS['intersoccer_player_course_status_roster_query_failed'] = true;
+		intersoccer_player_course_status_log_roster_query_error($wpdb->last_error);
+	}
 	if (!is_array($rows)) {
 		return [];
 	}
@@ -816,6 +876,8 @@ function intersoccer_player_course_status_normalize_filters(array $filters) {
 function intersoccer_player_course_status_generate(array $filters) {
 	$filters = intersoccer_player_course_status_normalize_filters($filters);
 	$year = (int) $filters['year'];
+	$warnings = [];
+	intersoccer_player_course_status_reset_roster_query_state();
 
 	if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING
 		&& isset($GLOBALS['intersoccer_test_player_course_status_players'])
@@ -847,6 +909,9 @@ function intersoccer_player_course_status_generate(array $filters) {
 		);
 	} else {
 		$raw_rows = intersoccer_player_course_status_load_course_roster_rows($year);
+		if (intersoccer_player_course_status_roster_query_failed()) {
+			$warnings[] = intersoccer_player_course_status_roster_query_failed_warning();
+		}
 	}
 	$scoped_rows = intersoccer_player_course_status_filter_scoped_rows(
 		$raw_rows,
@@ -1028,6 +1093,7 @@ function intersoccer_player_course_status_generate(array $filters) {
 			'on_hold' => $on_hold_total,
 			'unmatched_bookings' => count($unmatched),
 		],
+		'warnings' => $warnings,
 	];
 }
 
@@ -1147,6 +1213,25 @@ function intersoccer_player_course_status_maybe_export_excel() {
 
 	$filters = intersoccer_player_course_status_request_filters();
 	$result = intersoccer_player_course_status_generate($filters);
+	if (!empty($result['warnings']) && is_array($result['warnings'])) {
+		$messages = [];
+		foreach ($result['warnings'] as $warning) {
+			if (!is_array($warning)) {
+				continue;
+			}
+			$msg = isset($warning['message']) ? (string) $warning['message'] : '';
+			if ($msg !== '') {
+				$messages[] = $msg;
+			}
+		}
+		if (!empty($messages)) {
+			wp_die(
+				esc_html(implode(' ', $messages)),
+				esc_html__('Export blocked', 'intersoccer-reports-rosters'),
+				['response' => 500]
+			);
+		}
+	}
 	intersoccer_player_course_status_stream_excel($result['rows'], $filters['year']);
 }
 
@@ -1185,6 +1270,20 @@ function intersoccer_render_player_course_status_page() {
 	?>
 	<div class="wrap intersoccer-player-course-status">
 		<h1><?php esc_html_e('Player course status', 'intersoccer-reports-rosters'); ?></h1>
+		<?php
+		if (!empty($result['warnings']) && is_array($result['warnings'])) {
+			foreach ($result['warnings'] as $warning) {
+				if (!is_array($warning)) {
+					continue;
+				}
+				$msg = isset($warning['message']) ? (string) $warning['message'] : '';
+				if ($msg === '') {
+					continue;
+				}
+				echo '<div class="notice notice-warning"><p>' . esc_html($msg) . '</p></div>';
+			}
+		}
+		?>
 		<p><?php esc_html_e('QA view: all Player Management players with course roster bookings for the selected filters.', 'intersoccer-reports-rosters'); ?></p>
 
 		<p class="description" style="margin-bottom:16px;">
