@@ -22,7 +22,10 @@ class WinbackReportAdminUiTest extends TestCase {
 		unset(
 			$GLOBALS['intersoccer_test_current_user_caps'],
 			$GLOBALS['intersoccer_test_current_user'],
-			$GLOBALS['intersoccer_medical_access_test_filters']
+			$GLOBALS['intersoccer_medical_access_test_filters'],
+			$GLOBALS['intersoccer_test_terms_by_slug'],
+			$GLOBALS['intersoccer_test_post_parents'],
+			$GLOBALS['intersoccer_test_edit_post_links']
 		);
 		parent::tearDown();
 	}
@@ -269,6 +272,25 @@ class WinbackReportAdminUiTest extends TestCase {
 		$this->assertSame('', intersoccer_winback_report_admin_en_unpublished_html([]));
 		$this->assertSame('', intersoccer_winback_report_admin_en_unpublished_html(null));
 
+		$GLOBALS['intersoccer_test_terms_by_slug'] = [
+			'pa_intersoccer-venues' => [
+				'zurich-test' => (object) ['slug' => 'zurich-test', 'name' => 'Zurich <b>Hall'],
+			],
+		];
+		$GLOBALS['intersoccer_test_post_parents'] = [
+			12002 => 500,
+			12012 => 600,
+			12013 => 601,
+			12003 => 501,
+		];
+		$product_url = 'https://example.test/wp-admin/post.php?post=500&action=edit';
+		$fr_url = 'https://example.test/wp-admin/post.php?post=600&action=edit';
+		$GLOBALS['intersoccer_test_edit_post_links'] = [
+			500 => $product_url,
+			600 => $fr_url,
+			601 => '',
+		];
+
 		$html = intersoccer_winback_report_admin_en_unpublished_html([
 			[
 				'en_variation_id' => 12002,
@@ -303,23 +325,30 @@ class WinbackReportAdminUiTest extends TestCase {
 			],
 		]);
 
+		$product_text = "Kids\u{2019} &lt;script&gt; O&#039;Brien";
 		$this->assertStringContainsString('Dates switched off in English but on sale in FR/DE', $html);
 		$this->assertStringContainsString('class="widefat striped"', $html);
 		$this->assertSame(4, substr_count($html, '<tr>'));
 		$this->assertStringContainsString('2026-10-01', $html);
 		$this->assertStringContainsString('2026-11-01', $html);
-		$this->assertStringContainsString("Kids\u{2019} &lt;script&gt; O&#039;Brien", $html);
-		$this->assertStringContainsString('zurich-test', $html);
+		$this->assertStringContainsString($product_text, $html);
+		$this->assertStringContainsString('<td><a href="' . esc_url($product_url) . '">' . $product_text . '</a></td>', $html);
+		$this->assertStringContainsString('Zurich &lt;b&gt;Hall', $html);
+		$this->assertStringNotContainsString('zurich-test', $html);
+		$this->assertStringContainsString('>basel-hall<', $html);
+		$this->assertStringContainsString('>nyon-hall<', $html);
 		$this->assertStringContainsString('>camp<', $html);
 		$this->assertStringContainsString('English course is a draft', $html);
-		$this->assertStringContainsString('<td>draft</td><td>draft #12002</td>', $html);
-		$this->assertStringContainsString('12012, 12013', $html);
+		$this->assertStringContainsString('<td>draft</td><td>Draft (English course)</td>', $html);
+		$this->assertStringContainsString('<a href="' . esc_url($fr_url) . '">12012</a>, 12013', $html);
+		$this->assertStringNotContainsString('>12013</a>', $html);
 		$this->assertStringContainsString('English date switched off', $html);
-		$this->assertStringContainsString('<td>English date switched off</td><td></td><td>private #12003</td>', $html);
-		$this->assertStringContainsString('Winter Camp', $html);
+		$this->assertStringContainsString('<td>English date switched off</td><td></td><td>Private</td>', $html);
+		$this->assertStringContainsString('<td>Winter Camp</td>', $html);
 		$this->assertStringContainsString('>99<', $html);
 		$this->assertStringContainsString('bad &lt;script&gt;', $html);
 		$this->assertStringNotContainsString('<script>', $html);
+		$this->assertStringNotContainsString('<b>', $html);
 		$this->assertStringNotContainsString('&amp;#8217;', $html);
 		$this->assertStringNotContainsString('&amp;lt;', $html);
 		$this->assertStringNotContainsString('&#8217;', $html);

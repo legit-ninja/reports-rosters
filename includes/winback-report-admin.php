@@ -542,6 +542,91 @@ function intersoccer_winback_report_unmapped_notice_items(array $unmapped) {
 }
 
 /**
+ * Human label for a post status. Unknown values stay as stored and are escaped later.
+ *
+ * @param mixed $status
+ * @return string
+ */
+function intersoccer_winback_report_admin_status_label($status) {
+	$raw = trim((string) $status);
+	$key = strtolower($raw);
+	if ($key === 'draft') {
+		return __('Draft', 'intersoccer-reports-rosters');
+	}
+	if ($key === 'pending') {
+		return __('Pending', 'intersoccer-reports-rosters');
+	}
+	if ($key === 'private') {
+		return __('Private', 'intersoccer-reports-rosters');
+	}
+
+	return $raw;
+}
+
+/**
+ * EN venue name for a slug. Cached for this request. Falls back to the slug.
+ *
+ * @param string $slug
+ * @return string
+ */
+function intersoccer_winback_report_admin_venue_name($slug) {
+	static $cache = [];
+	$slug = trim((string) $slug);
+	if ($slug === '') {
+		return '';
+	}
+	if (array_key_exists($slug, $cache)) {
+		return $cache[$slug];
+	}
+
+	$label = $slug;
+	if (function_exists('get_term_by')) {
+		$lookup = static function () use ($slug) {
+			return get_term_by('slug', $slug, 'pa_intersoccer-venues');
+		};
+		if (function_exists('intersoccer_with_wpml_default_language')) {
+			$term = intersoccer_with_wpml_default_language($lookup);
+		} else {
+			$term = $lookup();
+		}
+		if ($term && !is_wp_error($term)) {
+			$name = is_object($term) ? trim((string) ($term->name ?? '')) : '';
+			if ($name !== '') {
+				$label = $name;
+			}
+		}
+	}
+	$cache[$slug] = $label;
+
+	return $label;
+}
+
+/**
+ * Link text to the variation's parent edit screen when the current user may edit it.
+ *
+ * @param int    $variation_id
+ * @param string $text
+ * @return string
+ */
+function intersoccer_winback_report_admin_parent_edit_link($variation_id, $text) {
+	$safe = esc_html($text);
+	$variation_id = (int) $variation_id;
+	if ($variation_id <= 0 || !function_exists('wp_get_post_parent_id') || !function_exists('get_edit_post_link')) {
+		return $safe;
+	}
+	$parent_id = (int) wp_get_post_parent_id($variation_id);
+	if ($parent_id <= 0) {
+		return $safe;
+	}
+	$url = get_edit_post_link($parent_id);
+	if (!is_string($url) || $url === '') {
+		return $safe;
+	}
+
+	return '<a href="' . esc_url($url) . '">' . $safe . '</a>';
+}
+
+/**
  * Read-only table of EN variations that are off in English and on sale in FR/DE.
  *
  * Empty when the list is missing, not an array, or has no rows. Not used by Excel.
@@ -559,35 +644,36 @@ function intersoccer_winback_report_admin_en_unpublished_html($items) {
 		if (!is_array($item)) {
 			continue;
 		}
-		$ids = [];
-		$raw_ids = $item['translation_variation_ids'] ?? [];
-		if (is_array($raw_ids)) {
-			foreach ($raw_ids as $id) {
-				$ids[] = (string) (int) $id;
-			}
-		}
 		$en_id = (int) ($item['en_variation_id'] ?? 0);
-		$status = trim((string) ($item['en_variation_status'] ?? ''));
-		if ($en_id > 0) {
-			$status = $status === '' ? '#' . $en_id : $status . ' #' . $en_id;
-		}
 		$reason_raw = trim((string) ($item['reason'] ?? ''));
 		if ($reason_raw === 'parent') {
 			$reason = __('English course is a draft', 'intersoccer-reports-rosters');
+			$human = intersoccer_winback_report_admin_status_label($item['en_parent_status'] ?? '');
+			$status = $human === '' ? '' : $human . ' (' . __('English course', 'intersoccer-reports-rosters') . ')';
 		} elseif ($reason_raw === 'variation') {
 			$reason = __('English date switched off', 'intersoccer-reports-rosters');
+			$status = intersoccer_winback_report_admin_status_label($item['en_variation_status'] ?? '');
 		} else {
 			$reason = $reason_raw;
+			$status = intersoccer_winback_report_admin_status_label($item['en_variation_status'] ?? '');
+		}
+		$id_html = [];
+		$raw_ids = $item['translation_variation_ids'] ?? [];
+		if (is_array($raw_ids)) {
+			foreach ($raw_ids as $id) {
+				$n = (int) $id;
+				$id_html[] = intersoccer_winback_report_admin_parent_edit_link($n, (string) $n);
+			}
 		}
 		$rows[] = [
 			'date' => (string) ($item['start_date'] ?? ''),
-			'product' => (string) ($item['product'] ?? ''),
-			'venue' => (string) ($item['venue'] ?? ''),
+			'product_html' => intersoccer_winback_report_admin_parent_edit_link($en_id, (string) ($item['product'] ?? '')),
+			'venue' => intersoccer_winback_report_admin_venue_name((string) ($item['venue'] ?? '')),
 			'kind' => (string) ($item['kind'] ?? ''),
 			'reason' => $reason,
 			'parent_status' => trim((string) ($item['en_parent_status'] ?? '')),
 			'status' => $status,
-			'ids' => implode(', ', $ids),
+			'ids_html' => implode(', ', $id_html),
 		];
 	}
 	if ($rows === []) {
@@ -613,13 +699,13 @@ function intersoccer_winback_report_admin_en_unpublished_html($items) {
 	foreach ($rows as $row) {
 		$html .= '<tr>';
 		$html .= '<td>' . esc_html($row['date']) . '</td>';
-		$html .= '<td>' . esc_html($row['product']) . '</td>';
+		$html .= '<td>' . $row['product_html'] . '</td>';
 		$html .= '<td>' . esc_html($row['venue']) . '</td>';
 		$html .= '<td>' . esc_html($row['kind']) . '</td>';
 		$html .= '<td>' . esc_html($row['reason']) . '</td>';
 		$html .= '<td>' . esc_html($row['parent_status']) . '</td>';
 		$html .= '<td>' . esc_html($row['status']) . '</td>';
-		$html .= '<td>' . esc_html($row['ids']) . '</td>';
+		$html .= '<td>' . $row['ids_html'] . '</td>';
 		$html .= '</tr>';
 	}
 	$html .= '</tbody></table>';
