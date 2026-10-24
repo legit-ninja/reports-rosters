@@ -35,6 +35,10 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		$today = function_exists('wp_date') ? wp_date('Y-m-d') : gmdate('Y-m-d');
 		$lookback_start = intersoccer_winback_report_engine_subtract_months($today, $lookback_months);
 
+		if (function_exists('intersoccer_winback_reset_current_course_term_cache')) {
+			intersoccer_winback_reset_current_course_term_cache();
+		}
+
 		intersoccer_winback_reset_unmapped_facets();
 		$catalogue = intersoccer_winback_enumerate_upcoming_catalogue($today);
 		$history_rows = intersoccer_winback_report_engine_load_history_rows($lookback_start, $today, $kind_filter);
@@ -119,13 +123,6 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 				$row
 			);
 
-			if ($venue_filter !== '' && $venue_slug !== $venue_filter) {
-				continue;
-			}
-			if ($age_filter !== '' && $age_slug !== $age_filter) {
-				continue;
-			}
-
 			$group_id = $identity_map->group_id($key_bits['key']);
 			$entry = [
 				'row' => $row,
@@ -149,6 +146,10 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		$output = [];
 
 		foreach ($by_player_kind as $pk => $history) {
+			if (!intersoccer_winback_report_engine_last_event_passes_filters($history, $venue_filter, $age_filter)) {
+				continue;
+			}
+
 			$row = $history['row'];
 			$kind = $history['kind'];
 			$key = $history['key'];
@@ -174,30 +175,21 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 				continue;
 			}
 
-			$available_ages = intersoccer_winback_report_engine_catalogue_age_slugs_for_venue($catalogue, $kind, $history['venue_slug']);
+			$more_targets = [];
 			$target_pick = null;
 			if ($history['venue_slug'] !== '' && $history['age_slug'] !== '') {
-				$pick = intersoccer_winback_pick_target_age_slug(
-					$history['age_slug'],
-					intersoccer_winback_report_engine_row_dob($row),
-					$today,
-					$available_ages
-				);
-				$target_row = intersoccer_winback_find_earliest_catalogue_match(
+				$resolved = intersoccer_winback_resolve_catalogue_target_and_more(
 					$catalogue,
 					$kind,
 					$history['venue_slug'],
-					$pick['slug']
+					$history['age_slug'],
+					intersoccer_winback_report_engine_row_dob($row)
 				);
-				if ($target_row) {
-					$target = [
-						'product' => (string) ($target_row['product_name'] ?? ''),
-						'venue' => (string) $history['venue_slug'],
-						'age_group' => (string) $pick['slug'],
-						'start_date' => (string) ($target_row['start_date'] ?? ''),
-					];
-					$full = !empty($target_row['full']);
-					$target_pick = $pick;
+				$target = $resolved['target'];
+				$more_targets = $resolved['more_targets'];
+				$full = (bool) $resolved['full'];
+				if ($target !== null) {
+					$target_pick = ['aged_up' => (bool) $resolved['aged_up']];
 				}
 			}
 
@@ -230,6 +222,7 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 					'date_source' => $history['date_source'],
 				],
 				'target' => $target,
+				'more_targets' => $more_targets,
 				'aged_up' => $target_pick ? (bool) $target_pick['aged_up'] : false,
 				'sibling_booked' => $sibling_booked,
 				'rebooked_elsewhere' => $rebooked_elsewhere,
@@ -247,6 +240,26 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 			'unmapped_facets' => intersoccer_winback_get_unmapped_facets(),
 		];
 	}
+
+if (!function_exists('intersoccer_winback_report_engine_last_event_passes_filters')) {
+	/**
+	 * Venue / age filters apply to the per-player latest history row only (plan 2.4 step 2).
+	 *
+	 * @param array<string,mixed> $history_entry Entry from by_player_kind aggregation.
+	 */
+	function intersoccer_winback_report_engine_last_event_passes_filters(array $history_entry, $venue_filter, $age_filter) {
+		$venue_filter = (string) $venue_filter;
+		$age_filter = (string) $age_filter;
+		if ($venue_filter !== '' && (string) ( $history_entry['venue_slug'] ?? '' ) !== $venue_filter) {
+			return false;
+		}
+		if ($age_filter !== '' && (string) ( $history_entry['age_slug'] ?? '' ) !== $age_filter) {
+			return false;
+		}
+
+		return true;
+	}
+}
 
 if (!function_exists('intersoccer_winback_report_engine_load_dependencies')) {
 	function intersoccer_winback_report_engine_load_dependencies() {
@@ -421,6 +434,80 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 		return $out;
 	}
 
+	function intersoccer_winback_reset_current_course_term_cache() {
+		unset($GLOBALS['intersoccer_winback_current_course_term_cache']);
+	}
+
+	/**
+	 * SQL for roster rows that may overlap "today" for J8 (placeholders for start/end Y-m-d).
+	 *
+	 * @param string $table Prefixed intersoccer_rosters table name.
+	 */
+	function intersoccer_winback_report_engine_current_course_term_sql($table) {
+		return "SELECT * FROM {$table} WHERE (is_placeholder = 0 OR is_placeholder IS NULL) AND order_item_id > 0
+			AND start_date IS NOT NULL AND start_date <= %s AND (end_date IS NULL OR end_date >= %s)";
+	}
+
+	/**
+	 * @param array<string,mixed> $row
+	 */
+	function intersoccer_winback_report_engine_row_in_current_course_term_window(array $row, $today) {
+		$start = isset($row['start_date']) ? trim((string) $row['start_date']) : '';
+		if (!intersoccer_roster_report_has_real_date($start) || $start > $today) {
+			return false;
+		}
+		$end = isset($row['end_date']) ? trim((string) $row['end_date']) : '';
+		if ($end === '' || !intersoccer_roster_report_has_real_date($end)) {
+			return true;
+		}
+
+		return $end >= $today;
+	}
+
+	/**
+	 * Running course roster candidates for J8, loaded once per engine run (cached by $today).
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	function intersoccer_winback_report_engine_load_current_course_term_rows($today) {
+		$today = (string) $today;
+		if (!isset($GLOBALS['intersoccer_winback_current_course_term_cache'])
+			|| !is_array($GLOBALS['intersoccer_winback_current_course_term_cache'])) {
+			$GLOBALS['intersoccer_winback_current_course_term_cache'] = [];
+		}
+		if (array_key_exists($today, $GLOBALS['intersoccer_winback_current_course_term_cache'])) {
+			return $GLOBALS['intersoccer_winback_current_course_term_cache'][ $today ];
+		}
+
+		if (isset($GLOBALS['intersoccer_test_winback_current_course_term_rows'])
+			&& is_array($GLOBALS['intersoccer_test_winback_current_course_term_rows'])) {
+			$raw = $GLOBALS['intersoccer_test_winback_current_course_term_rows'];
+		} else {
+			global $wpdb;
+			$table = $wpdb->prefix . 'intersoccer_rosters';
+			$sql = intersoccer_winback_report_engine_current_course_term_sql($table);
+			$params = [$today, $today];
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$raw = (array) $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+		}
+
+		$filtered = [];
+		foreach ($raw as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			if (!intersoccer_winback_report_engine_row_in_current_course_term_window($row, $today)) {
+				continue;
+			}
+			$filtered[] = $row;
+		}
+
+		$rows = intersoccer_roster_report_rows_apply_live_order_status($filtered);
+		$GLOBALS['intersoccer_winback_current_course_term_cache'][ $today ] = $rows;
+
+		return $rows;
+	}
+
 	/**
 	 * J8: skip win-back when the player is in a currently running course term.
 	 *
@@ -430,15 +517,7 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 		if ($kind !== 'course') {
 			return false;
 		}
-		global $wpdb;
-		$table = $wpdb->prefix . 'intersoccer_rosters';
-		$sql = "SELECT * FROM {$table} WHERE (is_placeholder = 0 OR is_placeholder IS NULL) AND order_item_id > 0
-			AND start_date <= %s AND (end_date IS NULL OR end_date = '' OR end_date >= %s)";
-		$params = [$today, $today];
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$rows = intersoccer_roster_report_rows_apply_live_order_status(
-			(array) $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A)
-		);
+		$rows = intersoccer_winback_report_engine_load_current_course_term_rows($today);
 		foreach ($rows as $row) {
 			if (!function_exists('intersoccer_roster_row_matches_listing_kind')
 				|| !intersoccer_roster_row_matches_listing_kind($row, 'course')) {
