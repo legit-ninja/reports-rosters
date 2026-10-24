@@ -25,6 +25,18 @@ class PlayerCourseStatusCountingWpdb extends WinbackReportCountingWpdb {
 	/** @var array<string,int> */
 	public $query_label_histogram = [];
 
+	/** @var int */
+	public $roster_count = 1;
+
+	/** @var int */
+	public $roster_max_id = 1;
+
+	/** @var string */
+	public $order_touch_gmt = '2026-01-01 00:00:00';
+
+	/** @var string */
+	public $simulate_roster_last_error = '';
+
 	/** @var string[] */
 	public $roster_columns = [
 		'id', 'order_id', 'order_item_id', 'first_name', 'last_name', 'player_first_name', 'player_last_name',
@@ -88,6 +100,15 @@ class PlayerCourseStatusCountingWpdb extends WinbackReportCountingWpdb {
 		if (stripos($sql, 'SHOW TABLES') !== false) {
 			return $this->prefix . 'intersoccer_rosters';
 		}
+		if (stripos($sql, 'COUNT(*)') !== false && stripos($sql, 'intersoccer_rosters') !== false) {
+			return (string) $this->roster_count;
+		}
+		if (stripos($sql, 'MAX(id)') !== false && stripos($sql, 'intersoccer_rosters') !== false) {
+			return (string) $this->roster_max_id;
+		}
+		if (stripos($sql, 'MAX(date_updated_gmt)') !== false || stripos($sql, 'MAX(post_modified_gmt)') !== false) {
+			return $this->order_touch_gmt;
+		}
 
 		return parent::get_var($query, $x, $y);
 	}
@@ -126,6 +147,12 @@ class PlayerCourseStatusCountingWpdb extends WinbackReportCountingWpdb {
 		}
 		if (stripos($sql, 'FROM ' . $this->prefix . 'intersoccer_rosters') !== false
 			&& stripos($sql, 'SELECT') !== false) {
+			if ($this->simulate_roster_last_error !== '') {
+				$this->last_error = $this->simulate_roster_last_error;
+
+				return null;
+			}
+
 			return $this->course_roster_rows;
 		}
 

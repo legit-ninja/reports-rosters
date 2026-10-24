@@ -34,6 +34,34 @@ Request parser: `intersoccer_player_course_status_request_filters()` (adds `page
 
 Pagination is **not** applied in the engine; the QA page slices `rows` (50 per page).
 
+### Season labels (courses report)
+
+Roster `season` strings are normalized only inside the player course status engine (not via shared `intersoccer_extract_season_type` / `intersoccer_normalize_season_for_display`).
+
+- Collapse repeated whitespace.
+- **Title case per word**, including segments after `/` (e.g. `Spring/summer 2026` → `Spring/Summer 2026`).
+- `filter_options['seasons']` dedupes by case-insensitive canonical label; compound labels (containing `/`) stay as the full canonical string; simple `Season YYYY` rows still expose the extracted season **type** (e.g. `Autumn`) for backward compatibility.
+- Booking `season`, `label`, and `bookings_label` use the canonical label.
+- `season_type` filter matching uses canonical comparison plus existing season-type / substring rules.
+
+### Full-result cache
+
+`intersoccer_player_course_status_generate()` caches the complete result array (same shape as below) in a WP transient so paging and Excel export reuse one run per filter set.
+
+| Item | Detail |
+|------|--------|
+| Key prefix | `intersoccer_pcs_` + MD5 of JSON: cache schema version (`intersoccer_player_course_status_cache_schema_version()`, currently `2`), normalized filters (`year`, `season_type`, `girls_mode`, `booked`, `booking_status`, `search`, `venue`, `course_day`, `age_group` — not `paged`), data marker, output context |
+| Data marker | `COUNT(*)` and `MAX(id)` on `{prefix}intersoccer_rosters`; `MAX(date_updated_gmt)` on `{prefix}wc_orders` when HPOS is active (`intersoccer_roster_report_uses_hpos_orders_table()`), else `MAX(post_modified_gmt)` on `shop_order` posts |
+| Output context (cache key) | `get_locale()` and whether `intersoccer_player_course_status_user_can_view_dob()` is true (DOB column + `dob` / `dob_restricted` on rows; translated `booking_status_label` strings) |
+| TTL | 300 seconds default; filter `intersoccer_player_course_status_cache_ttl` |
+| Stored format | Slim result (drops derivable `player.name`, `bookings_label`, `booking_status_label`, and per-booking `label`; rehydrated on read) → `serialize` → `gzcompress` → **base64** string in the transient (text-safe for `wp_options` utf8mb4) |
+| Size cap | Applied to the **stored base64 string** length after compression (default 5 MiB, filter `intersoccer_player_course_status_cache_max_bytes`). Skip write when non-empty `warnings` or stored size over cap |
+| Object cache | Persistent object caches (e.g. memcached) may refuse items over ~1 MiB; WordPress then omits the transient and the report regenerates on each request until TTL/marker would have expired anyway |
+| Corrupt / legacy blob | Base64 decode, `gzuncompress`, or `unserialize` failure → cache miss, transient deleted, regenerate |
+| Disable | Constant `INTERSOCCER_RR_PCS_CACHE_DISABLED` or filter `intersoccer_player_course_status_cache_enabled` → false; off by default when `INTERSOCCER_RR_TESTING` |
+| Bypass read | Query `pcs_refresh=1` with `_pcs_nonce` / action `intersoccer_pcs_refresh`, valid nonce and `manage_options`; regenerates and overwrites cache. Helper: `intersoccer_player_course_status_refresh_url( array $args = [] )`. Tests may pass `force_cache_refresh` in the optional second `$options` argument to `generate()` |
+| Fail-safe | Cache read/write failures fall back to uncached `generate_inner()` |
+
 ### Result shape
 
 ```php

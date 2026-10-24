@@ -76,6 +76,8 @@
             <file>tests/Reports/PlayerCourseStatusLoadPlayersQueryCountTest.php</file>
             <file>tests/Reports/PlayerCourseStatusGoldenTest.php</file>
             <file>tests/Reports/PlayerCourseStatusMemoryTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusSeasonLabelTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusCacheTest.php</file>
             <file>tests/Reports/PlayerCampStatusLoadPlayersQueryCountTest.php</file>
             <file>tests/Reports/WinbackReportTest.php</file>
             <file>tests/Reports/WinbackReportAdminUiTest.php</file>
