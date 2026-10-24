@@ -63,7 +63,11 @@ function intersoccer_winback_report_request_filters() {
 /**
  * Run the win-back engine with request filters.
  *
- * @return array{rows:array<int,array<string,mixed>>,unmapped_facets:array<string,array<string,int>>}
+ * @return array{
+ *   rows:array<int,array<string,mixed>>,
+ *   unmapped_facets:array<string,array<string,int>>,
+ *   en_unpublished_variations:array<int,array<string,mixed>>
+ * }
  */
 function intersoccer_winback_report_run() {
 	if (!function_exists('intersoccer_winback_report_engine_generate')) {

@@ -733,6 +733,9 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 		}
 
 		intersoccer_winback_reset_catalogue_enumeration_memo();
+		if (function_exists('intersoccer_winback_reset_en_unpublished_variations')) {
+			intersoccer_winback_reset_en_unpublished_variations();
+		}
 		$raw_variations = [];
 
 		$parent_ids = get_posts([
@@ -817,11 +820,10 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 			if (empty($children)) {
 				continue;
 			}
-			$display_parent_id = $resolved_parent_id;
-			if (get_post_status($resolved_parent_id) !== 'publish') {
-				$display_parent_id = (int) $original_parent_id;
-			}
-			$product_name = get_the_title($display_parent_id);
+			$catalogue_parent_id = $resolved_parent_id;
+			$product_name = function_exists('intersoccer_winback_decode_catalogue_product_title')
+				? intersoccer_winback_decode_catalogue_product_title(get_the_title($catalogue_parent_id))
+				: get_the_title($catalogue_parent_id);
 
 			foreach ($children as $variation_id) {
 				$source_id = intersoccer_winback_memo_default_language_variation_id($variation_id);
@@ -847,11 +849,25 @@ if (!function_exists('intersoccer_winback_enumerate_upcoming_catalogue')) {
 					continue;
 				}
 
+				$en_var_status = get_post_status($source_id);
+				if ($en_var_status !== 'publish'
+					&& function_exists('intersoccer_winback_register_en_unpublished_variation')) {
+					intersoccer_winback_register_en_unpublished_variation([
+						'en_variation_id' => $source_id,
+						'en_variation_status' => (string) $en_var_status,
+						'translation_variation_id' => $variation_id,
+						'product' => $product_name,
+						'start_date' => $start,
+						'venue' => (string) $facets['venue_slug'],
+						'kind' => $kind,
+					]);
+				}
+
 				$raw_variations[] = [
 					'kind' => $kind,
 					'variation_id' => $variation_id,
 					'source_variation_id' => $source_id,
-					'product_id' => $display_parent_id,
+					'product_id' => $catalogue_parent_id,
 					'start_date' => $start,
 					'product_name' => $product_name,
 					'venue_slug' => $facets['venue_slug'],

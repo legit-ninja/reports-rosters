@@ -731,6 +731,105 @@ if (!function_exists('intersoccer_winback_normalize_facet_slug')) {
 	}
 }
 
+if (!function_exists('intersoccer_winback_reset_en_unpublished_variations')) {
+	/**
+	 * @internal Tests reset via intersoccer_winback_reset_en_unpublished_variations().
+	 */
+	function intersoccer_winback_reset_en_unpublished_variations() {
+		$GLOBALS['intersoccer_winback_en_unpublished_variations'] = [];
+	}
+
+	/**
+	 * @param array{
+	 *   en_variation_id:int,
+	 *   en_variation_status:string,
+	 *   translation_variation_id:int,
+	 *   product:string,
+	 *   start_date:string,
+	 *   venue:string,
+	 *   kind:string
+	 * } $entry
+	 */
+	function intersoccer_winback_register_en_unpublished_variation(array $entry) {
+		$en_id = (int) ( $entry['en_variation_id'] ?? 0 );
+		if ($en_id <= 0) {
+			return;
+		}
+		if (!isset($GLOBALS['intersoccer_winback_en_unpublished_variations'])
+			|| !is_array($GLOBALS['intersoccer_winback_en_unpublished_variations'])) {
+			$GLOBALS['intersoccer_winback_en_unpublished_variations'] = [];
+		}
+		$store = &$GLOBALS['intersoccer_winback_en_unpublished_variations'];
+		$translation_id = (int) ( $entry['translation_variation_id'] ?? 0 );
+		if (!isset($store[ $en_id ])) {
+			$store[ $en_id ] = [
+				'en_variation_id' => $en_id,
+				'en_variation_status' => (string) ( $entry['en_variation_status'] ?? '' ),
+				'translation_variation_ids' => [],
+				'product' => (string) ( $entry['product'] ?? '' ),
+				'start_date' => (string) ( $entry['start_date'] ?? '' ),
+				'venue' => (string) ( $entry['venue'] ?? '' ),
+				'kind' => (string) ( $entry['kind'] ?? '' ),
+			];
+		}
+		if ($translation_id > 0 && $translation_id !== $en_id) {
+			$store[ $en_id ]['translation_variation_ids'][ $translation_id ] = $translation_id;
+		}
+	}
+
+	/**
+	 * @return array<int,array{
+	 *   en_variation_id:int,
+	 *   en_variation_status:string,
+	 *   translation_variation_ids:int[],
+	 *   product:string,
+	 *   start_date:string,
+	 *   venue:string,
+	 *   kind:string
+	 * }>
+	 */
+	function intersoccer_winback_get_en_unpublished_variations() {
+		$store = $GLOBALS['intersoccer_winback_en_unpublished_variations'] ?? [];
+		if (!is_array($store) || empty($store)) {
+			return [];
+		}
+		$list = array_values($store);
+		foreach ($list as &$row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$ids = array_values(array_unique(array_filter(array_map('intval', (array) ( $row['translation_variation_ids'] ?? [] )))));
+			sort($ids, SORT_NUMERIC);
+			$row['translation_variation_ids'] = $ids;
+		}
+		unset($row);
+		usort($list, static function ($a, $b) {
+			$cmp = strcmp((string) ( $a['start_date'] ?? '' ), (string) ( $b['start_date'] ?? '' ));
+			if ($cmp !== 0) {
+				return $cmp;
+			}
+
+			return (int) ( $a['en_variation_id'] ?? 0 ) <=> (int) ( $b['en_variation_id'] ?? 0 );
+		});
+
+		return $list;
+	}
+}
+
+if (!function_exists('intersoccer_winback_decode_catalogue_product_title')) {
+	function intersoccer_winback_decode_catalogue_product_title($title) {
+		$title = (string) $title;
+		if ($title === '') {
+			return '';
+		}
+		if (function_exists('wp_specialchars_decode')) {
+			$title = wp_specialchars_decode($title, ENT_QUOTES);
+		}
+
+		return html_entity_decode($title, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+	}
+}
+
 if (!function_exists('intersoccer_winback_dedupe_catalogue_variations')) {
 	/**
 	 * Dedupe WPML translation groups by default-language variation id.

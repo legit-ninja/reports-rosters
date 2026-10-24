@@ -168,8 +168,8 @@ class WinbackCatalogueWpmlTest extends TestCase {
 		$this->assertSame('basel-margarethenhalle', $row['venue_slug']);
 		$this->assertSame($age, $row['age_group_slug']);
 		$this->assertSame($en_var, (int) $row['source_variation_id']);
-		$this->assertContains((int) $row['product_id'], [$fr_parent, $de_parent]);
-		$this->assertContains($row['product_name'], ['FR Course Basel', 'DE Course Basel']);
+		$this->assertSame($en_parent, (int) $row['product_id']);
+		$this->assertSame('EN Course (draft)', $row['product_name']);
 
 		$resolved = intersoccer_winback_resolve_catalogue_target_and_more(
 			$catalogue,
