@@ -242,7 +242,7 @@ function intersoccer_player_course_status_booking_status_label($status) {
  * Schema version for the player course status full-result transient (bump when payload shape changes).
  */
 function intersoccer_player_course_status_cache_schema_version() {
-	return 2;
+	return 3;
 }
 
 /**
@@ -328,15 +328,19 @@ function intersoccer_player_course_status_season_matches_filter($row_season, $se
 	$extracted = function_exists('intersoccer_extract_season_type')
 		? intersoccer_extract_season_type($season_type)
 		: null;
-	if ($extracted !== null && $extracted === $season_type) {
+	if ($extracted !== null && $extracted === $season_type && strpos($filter_canonical, '/') === false) {
+		if (strpos($row_canonical, '/') !== false) {
+			return false;
+		}
 		$row_type = function_exists('intersoccer_extract_season_type')
 			? intersoccer_extract_season_type($row_canonical)
 			: null;
-		if ($extracted === $row_type) {
-			return true;
-		}
 
-		return stripos($row_canonical, $season_type) !== false;
+		return $row_type !== null && strcasecmp((string) $row_type, $extracted) === 0;
+	}
+
+	if (strpos($filter_canonical, '/') !== false) {
+		return $row_canonical !== '' && strcasecmp($row_canonical, $filter_canonical) === 0;
 	}
 
 	return stripos($row_canonical, $season_type) !== false;
@@ -1244,7 +1248,11 @@ function intersoccer_player_course_status_cache_enabled() {
  * Transient TTL in seconds for cached full results.
  */
 function intersoccer_player_course_status_cache_ttl() {
-	$ttl = apply_filters('intersoccer_player_course_status_cache_ttl', 300);
+	if (isset($GLOBALS['intersoccer_test_pcs_cache_ttl_override'])) {
+		return max(1, (int) $GLOBALS['intersoccer_test_pcs_cache_ttl_override']);
+	}
+	$default = defined('HOUR_IN_SECONDS') ? 12 * HOUR_IN_SECONDS : 43200;
+	$ttl = apply_filters('intersoccer_player_course_status_cache_ttl', $default);
 
 	return max(1, (int) $ttl);
 }
@@ -1294,29 +1302,19 @@ function intersoccer_player_course_status_cache_data_version() {
 }
 
 /**
- * Cache context that affects generated output (user / locale).
- *
- * @return array{locale:string,dob:int}
+ * @param int|array<string,mixed> $year_or_filters Calendar year or normalized filters (year key used).
  */
-function intersoccer_player_course_status_cache_context() {
-	$locale = function_exists('get_locale') ? (string) get_locale() : 'en_US';
-	$dob = intersoccer_player_course_status_user_can_view_dob() ? 1 : 0;
-
-	return [
-		'locale' => $locale,
-		'dob' => $dob,
-	];
-}
-
-/**
- * @param array<string,mixed> $normalized_filters From normalize_filters().
- */
-function intersoccer_player_course_status_cache_transient_key(array $normalized_filters) {
+function intersoccer_player_course_status_cache_transient_key($year_or_filters) {
+	$year = is_array($year_or_filters)
+		? (int) ( $year_or_filters['year'] ?? 0 )
+		: (int) $year_or_filters;
+	if ($year < 2000) {
+		$year = (int) date('Y');
+	}
 	$payload = [
 		'schema' => intersoccer_player_course_status_cache_schema_version(),
-		'filters' => $normalized_filters,
+		'year' => $year,
 		'data' => intersoccer_player_course_status_cache_data_version(),
-		'ctx' => intersoccer_player_course_status_cache_context(),
 	];
 	$json = function_exists('wp_json_encode') ? wp_json_encode($payload) : json_encode($payload);
 
@@ -1550,11 +1548,78 @@ function intersoccer_player_course_status_cache_decode_stored_payload($stored) {
 }
 
 /**
- * @param array<string,mixed> $normalized_filters
+ * @param array<string,mixed> $base Year-base dataset from build_year_base_dataset().
+ * @return array<string,mixed>
+ */
+function intersoccer_player_course_status_cache_slim_base(array $base) {
+	return [
+		'year' => (int) ( $base['year'] ?? 0 ),
+		'players' => isset($base['players']) && is_array($base['players']) ? $base['players'] : [],
+		'year_rows' => isset($base['year_rows']) && is_array($base['year_rows']) ? $base['year_rows'] : [],
+		'warnings' => isset($base['warnings']) && is_array($base['warnings']) ? $base['warnings'] : [],
+	];
+}
+
+/**
+ * @param array<string,mixed> $slim
+ * @return array<string,mixed>
+ */
+function intersoccer_player_course_status_cache_expand_base(array $slim) {
+	return intersoccer_player_course_status_cache_slim_base($slim);
+}
+
+/**
+ * @param array<string,mixed> $base
+ * @return string|false
+ */
+function intersoccer_player_course_status_cache_encode_base_payload(array $base) {
+	$slim = intersoccer_player_course_status_cache_slim_base($base);
+	$serialized = maybe_serialize($slim);
+	if (!function_exists('gzcompress')) {
+		return false;
+	}
+	$compressed = @gzcompress($serialized, 6);
+	if ($compressed === false) {
+		return false;
+	}
+
+	return base64_encode($compressed);
+}
+
+/**
+ * @param string $stored
  * @return array<string,mixed>|null
  */
-function intersoccer_player_course_status_cache_read(array $normalized_filters) {
-	$key = intersoccer_player_course_status_cache_transient_key($normalized_filters);
+function intersoccer_player_course_status_cache_decode_base_payload($stored) {
+	if (!is_string($stored) || $stored === '') {
+		return null;
+	}
+	$binary = base64_decode($stored, true);
+	if ($binary === false || !function_exists('gzuncompress')) {
+		return null;
+	}
+	$unpacked = @gzuncompress($binary);
+	if ($unpacked === false) {
+		return null;
+	}
+	$decoded = maybe_unserialize($unpacked);
+	if (!is_array($decoded)) {
+		return null;
+	}
+	$year = (int) ( $decoded['year'] ?? 0 );
+	if ($year < 2000) {
+		return null;
+	}
+
+	return intersoccer_player_course_status_cache_expand_base($decoded);
+}
+
+/**
+ * @param int $year
+ * @return array<string,mixed>|null
+ */
+function intersoccer_player_course_status_cache_read_base($year) {
+	$key = intersoccer_player_course_status_cache_transient_key((int) $year);
 	$raw = intersoccer_player_course_status_transient_get($key);
 	if ($raw === false || $raw === null) {
 		return null;
@@ -1564,7 +1629,7 @@ function intersoccer_player_course_status_cache_read(array $normalized_filters) 
 
 		return null;
 	}
-	$decoded = intersoccer_player_course_status_cache_decode_stored_payload($raw);
+	$decoded = intersoccer_player_course_status_cache_decode_base_payload($raw);
 	if (!is_array($decoded)) {
 		intersoccer_player_course_status_transient_delete($key);
 
@@ -1575,15 +1640,15 @@ function intersoccer_player_course_status_cache_read(array $normalized_filters) 
 }
 
 /**
- * @param array<string,mixed> $normalized_filters
- * @param array<string,mixed> $result
+ * @param int                 $year
+ * @param array<string,mixed> $base
  */
-function intersoccer_player_course_status_cache_write(array $normalized_filters, array $result) {
-	if (!empty($result['warnings']) && is_array($result['warnings'])) {
+function intersoccer_player_course_status_cache_write_base($year, array $base) {
+	if (!empty($base['warnings']) && is_array($base['warnings'])) {
 		return;
 	}
-	$key = intersoccer_player_course_status_cache_transient_key($normalized_filters);
-	$stored = intersoccer_player_course_status_cache_encode_stored_payload($result);
+	$key = intersoccer_player_course_status_cache_transient_key((int) $year);
+	$stored = intersoccer_player_course_status_cache_encode_base_payload($base);
 	if ($stored === false) {
 		return;
 	}
@@ -1694,23 +1759,22 @@ function intersoccer_player_course_status_generate(array $filters, array $option
 	}
 	try {
 		$normalized = intersoccer_player_course_status_normalize_filters($filters);
+		$year = (int) $normalized['year'];
 		$force_refresh = !empty($options['force_cache_refresh'])
 			|| intersoccer_player_course_status_cache_refresh_requested();
 
+		$base = null;
 		if (intersoccer_player_course_status_cache_enabled() && !$force_refresh) {
-			$cached = intersoccer_player_course_status_cache_read($normalized);
-			if (is_array($cached)) {
-				return $cached;
+			$base = intersoccer_player_course_status_cache_read_base($year);
+		}
+		if (!is_array($base)) {
+			$base = intersoccer_player_course_status_build_year_base_dataset($year, true);
+			if (intersoccer_player_course_status_cache_enabled()) {
+				intersoccer_player_course_status_cache_write_base($year, $base);
 			}
 		}
 
-		$result = intersoccer_player_course_status_generate_inner($filters);
-
-		if (intersoccer_player_course_status_cache_enabled()) {
-			intersoccer_player_course_status_cache_write($normalized, $result);
-		}
-
-		return $result;
+		return intersoccer_player_course_status_apply_filters_to_base($base, $normalized);
 	} finally {
 		if ($memo_started && function_exists('intersoccer_rr_product_type_memo_end')) {
 			intersoccer_rr_product_type_memo_end();
@@ -1719,15 +1783,17 @@ function intersoccer_player_course_status_generate(array $filters, array $option
 }
 
 /**
- * @param array<string,mixed> $filters
- * @return array<string,mixed>
+ * Load players + prepared course roster rows for a calendar year (no season/status filters).
+ *
+ * @param int  $year
+ * @param bool $track_inner_call Increment test inner-call counter when true.
+ * @return array{year:int,players:array<int,array<string,mixed>>,year_rows:array<int,array<string,mixed>>,warnings:array<int,array<string,mixed>>}
  */
-function intersoccer_player_course_status_generate_inner(array $filters) {
-	if (isset($GLOBALS['intersoccer_test_pcs_generate_inner_call_count'])) {
+function intersoccer_player_course_status_build_year_base_dataset($year, $track_inner_call = true) {
+	if ($track_inner_call && isset($GLOBALS['intersoccer_test_pcs_generate_inner_call_count'])) {
 		$GLOBALS['intersoccer_test_pcs_generate_inner_call_count'] = (int) $GLOBALS['intersoccer_test_pcs_generate_inner_call_count'] + 1;
 	}
-	$filters = intersoccer_player_course_status_normalize_filters($filters);
-	$year = (int) $filters['year'];
+	$year = (int) $year;
 	$warnings = [];
 	intersoccer_player_course_status_reset_run_memos();
 
@@ -1758,22 +1824,46 @@ function intersoccer_player_course_status_generate_inner(array $filters) {
 		&& is_array($GLOBALS['intersoccer_test_player_course_status_roster_rows'])) {
 		$fixture_rows = $GLOBALS['intersoccer_test_player_course_status_roster_rows'];
 		intersoccer_player_course_status_prime_roster_product_types($fixture_rows);
-		$raw_rows = intersoccer_player_course_status_prepare_roster_rows(
+		$year_rows = intersoccer_player_course_status_prepare_roster_rows(
 			intersoccer_player_course_status_filter_raw_course_rows($fixture_rows)
 		);
 	} else {
-		$raw_rows = intersoccer_player_course_status_load_course_roster_rows($year);
+		$year_rows = intersoccer_player_course_status_load_course_roster_rows($year);
 		if (intersoccer_player_course_status_roster_query_failed()) {
 			$warnings[] = intersoccer_player_course_status_roster_query_failed_warning();
 		}
 	}
+
+	return [
+		'year' => $year,
+		'players' => $players,
+		'year_rows' => $year_rows,
+		'warnings' => $warnings,
+	];
+}
+
+/**
+ * Apply report filters to a year-base dataset (PHP-only; no roster reload).
+ *
+ * @param array<string,mixed> $base
+ * @param array<string,mixed> $filters Normalized filters.
+ * @return array<string,mixed>
+ */
+function intersoccer_player_course_status_apply_filters_to_base(array $base, array $filters) {
+	$filters = intersoccer_player_course_status_normalize_filters($filters);
+	$year = (int) ( $base['year'] ?? $filters['year'] );
+	$players = isset($base['players']) && is_array($base['players']) ? $base['players'] : [];
+	$year_rows = isset($base['year_rows']) && is_array($base['year_rows']) ? $base['year_rows'] : [];
+	$warnings = isset($base['warnings']) && is_array($base['warnings']) ? $base['warnings'] : [];
+
+	intersoccer_player_course_status_reset_run_memos();
+
 	$scoped_rows = intersoccer_player_course_status_filter_scoped_rows(
-		$raw_rows,
+		$year_rows,
 		$year,
 		$filters['season_type'],
 		$filters['girls_mode']
 	);
-	unset($raw_rows);
 
 	$booking_records = intersoccer_player_course_status_build_booking_records_map($scoped_rows);
 	$filter_options = intersoccer_player_course_status_build_filter_options($scoped_rows, $booking_records);
@@ -1956,6 +2046,18 @@ function intersoccer_player_course_status_generate_inner(array $filters) {
 }
 
 /**
+ * @param array<string,mixed> $filters
+ * @return array<string,mixed>
+ */
+function intersoccer_player_course_status_generate_inner(array $filters) {
+	$filters = intersoccer_player_course_status_normalize_filters($filters);
+	$year = (int) $filters['year'];
+	$base = intersoccer_player_course_status_build_year_base_dataset($year, true);
+
+	return intersoccer_player_course_status_apply_filters_to_base($base, $filters);
+}
+
+/**
  * @return array<string,mixed>
  */
 function intersoccer_player_course_status_request_filters() {
@@ -2096,4 +2198,9 @@ function intersoccer_player_course_status_maybe_export_excel() {
 function intersoccer_render_player_course_status_page() {
 	require_once __DIR__ . '/player-course-status-admin.php';
 	intersoccer_player_course_status_admin_render_page();
+}
+
+$__pcs_warmup = dirname(__FILE__) . '/player-course-status-warmup.php';
+if (file_exists($__pcs_warmup)) {
+	require_once $__pcs_warmup;
 }
