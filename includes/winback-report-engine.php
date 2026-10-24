@@ -38,6 +38,12 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		intersoccer_winback_reset_unmapped_facets();
 		$catalogue = intersoccer_winback_enumerate_upcoming_catalogue($today);
 		$history_rows = intersoccer_winback_report_engine_load_history_rows($lookback_start, $today, $kind_filter);
+		if (function_exists('intersoccer_winback_reset_facet_resolution_cache')) {
+			intersoccer_winback_reset_facet_resolution_cache();
+		}
+		if (function_exists('intersoccer_winback_prime_facet_resolution_from_rows')) {
+			intersoccer_winback_prime_facet_resolution_from_rows($history_rows);
+		}
 		if (function_exists('intersoccer_winback_reset_order_created_date_cache')) {
 			intersoccer_winback_reset_order_created_date_cache();
 		}
@@ -100,15 +106,17 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 				continue;
 			}
 
-			$venue_slug = intersoccer_winback_normalize_facet_slug(
+			$venue_slug = intersoccer_winback_normalize_roster_facet_slug(
 				(string) ($row['venue'] ?? ''),
 				'pa_intersoccer-venues',
-				'venue'
+				'venue',
+				$row
 			);
-			$age_slug = intersoccer_winback_normalize_facet_slug(
+			$age_slug = intersoccer_winback_normalize_roster_facet_slug(
 				(string) ($row['age_group'] ?? ''),
 				'pa_age-group',
-				'age_group'
+				'age_group',
+				$row
 			);
 
 			if ($venue_filter !== '' && $venue_slug !== $venue_filter) {
@@ -371,6 +379,9 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 			(array) $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A)
 		);
 		$out = [];
+		if (function_exists('intersoccer_winback_prime_facet_resolution_from_rows')) {
+			intersoccer_winback_prime_facet_resolution_from_rows($rows, ['venue']);
+		}
 		foreach ($rows as $row) {
 			if (!is_array($row)) {
 				continue;
@@ -398,10 +409,11 @@ if (!function_exists('intersoccer_winback_report_engine_load_history_rows')) {
 			}
 			$row['player_key'] = $key_bits['key'];
 			$row['kind'] = $kind;
-			$row['venue_slug'] = intersoccer_winback_normalize_facet_slug(
+			$row['venue_slug'] = intersoccer_winback_normalize_roster_facet_slug(
 				(string) ($row['venue'] ?? ''),
 				'pa_intersoccer-venues',
-				'venue'
+				'venue',
+				$row
 			);
 			$out[] = $row;
 		}
