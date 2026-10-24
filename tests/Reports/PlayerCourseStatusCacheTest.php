@@ -48,6 +48,7 @@ class PlayerCourseStatusCacheTest extends TestCase {
 		unset(
 			$GLOBALS['intersoccer_test_pcs_cache_force_enabled'],
 			$GLOBALS['intersoccer_test_pcs_cache_max_bytes'],
+			$GLOBALS['intersoccer_test_pcs_cache_last_stored_bytes'],
 			$GLOBALS['intersoccer_test_pcs_verify_refresh_nonce'],
 			$GLOBALS['intersoccer_test_current_user_caps'],
 			$GLOBALS['intersoccer_test_player_course_status_players'],
@@ -102,6 +103,15 @@ class PlayerCourseStatusCacheTest extends TestCase {
 		$GLOBALS['intersoccer_test_order_customer_id_map'] = [90001 => 10];
 
 		return ['year' => 2026];
+	}
+
+	public function test_cache_slim_expand_roundtrip_matches_full_result(): void {
+		$filters = $this->seed_minimal_fixture();
+		$GLOBALS['intersoccer_test_pcs_cache_force_enabled'] = false;
+		$full = intersoccer_player_course_status_generate($filters);
+		$slim = intersoccer_player_course_status_cache_slim_result($full);
+		$roundtrip = intersoccer_player_course_status_cache_expand_result($slim);
+		$this->assertSame(maybe_serialize($full), maybe_serialize($roundtrip));
 	}
 
 	public function test_second_generate_with_same_filters_uses_cache(): void {
@@ -210,7 +220,10 @@ class PlayerCourseStatusCacheTest extends TestCase {
 		$this->assertStringContainsString('intersoccer-player-course-status', $url);
 	}
 
-	public function test_synthetic_4100_player_fixture_serialized_size(): void {
+	/**
+	 * @return array<string,mixed>
+	 */
+	private function seed_4100_player_fixture(): array {
 		$GLOBALS['intersoccer_test_batch_chunk_size'] = 500;
 		if ($this->counting_wpdb instanceof PlayerCourseStatusCountingWpdb) {
 			for ($i = 1; $i <= 4100; $i++) {
@@ -258,10 +271,60 @@ class PlayerCourseStatusCacheTest extends TestCase {
 		unset($GLOBALS['intersoccer_test_player_course_status_players']);
 		$GLOBALS['intersoccer_test_player_course_status_roster_rows'] = $rows;
 
-		$result = intersoccer_player_course_status_generate(['year' => 2026]);
-		$size = strlen(serialize($result));
-		$GLOBALS['intersoccer_test_pcs_fixture_4100_serialized_bytes'] = $size;
-		$this->assertGreaterThan(100000, $size);
-		$this->assertGreaterThan(3 * 1024 * 1024, $size, '4100-player fixture exceeds default 3 MiB cache cap (cache write skipped)');
+		return ['year' => 2026];
+	}
+
+	public function test_synthetic_4100_player_fixture_stores_and_hits_cache(): void {
+		$filters = $this->seed_4100_player_fixture();
+		$uncached = intersoccer_player_course_status_generate($filters);
+		$this->assertSame(1, (int) $GLOBALS['intersoccer_test_pcs_generate_inner_call_count']);
+
+		$key = intersoccer_player_course_status_cache_transient_key(
+			intersoccer_player_course_status_normalize_filters($filters)
+		);
+		$this->assertArrayHasKey($key, $GLOBALS['intersoccer_test_pcs_transient_store']);
+		$stored = $GLOBALS['intersoccer_test_pcs_transient_store'][ $key ];
+		$this->assertIsString($stored);
+		$stored_bytes = strlen($stored);
+		$this->assertLessThanOrEqual(
+			intersoccer_player_course_status_cache_max_bytes(),
+			$stored_bytes,
+			'stored base64 payload must fit under default cap'
+		);
+		$raw_bytes = strlen(maybe_serialize($uncached));
+		$GLOBALS['intersoccer_test_pcs_fixture_4100_raw_serialized_bytes'] = $raw_bytes;
+		$GLOBALS['intersoccer_test_pcs_fixture_4100_stored_bytes'] = $stored_bytes;
+
+		$cached = intersoccer_player_course_status_generate($filters);
+		$this->assertSame(1, (int) $GLOBALS['intersoccer_test_pcs_generate_inner_call_count']);
+		$this->assertSame(maybe_serialize($uncached), maybe_serialize($cached));
+	}
+
+	public function test_corrupt_transient_regenerates_without_errors(): void {
+		$filters = $this->seed_minimal_fixture();
+		$key = intersoccer_player_course_status_cache_transient_key(
+			intersoccer_player_course_status_normalize_filters($filters)
+		);
+		$GLOBALS['intersoccer_test_pcs_transient_store'][ $key ] = '%%%not-base64-gzip%%%';
+		$result = intersoccer_player_course_status_generate($filters);
+		$this->assertIsArray($result);
+		$this->assertSame(1, (int) $GLOBALS['intersoccer_test_pcs_generate_inner_call_count']);
+		$this->assertArrayHasKey($key, $GLOBALS['intersoccer_test_pcs_transient_store']);
+		$this->assertIsString($GLOBALS['intersoccer_test_pcs_transient_store'][ $key ]);
+
+		$GLOBALS['intersoccer_test_pcs_transient_store'][ $key ] = base64_encode('not-gzip-data');
+		intersoccer_player_course_status_generate($filters);
+		$this->assertSame(2, (int) $GLOBALS['intersoccer_test_pcs_generate_inner_call_count']);
+	}
+
+	public function test_cap_applies_to_stored_compressed_payload(): void {
+		$GLOBALS['intersoccer_test_pcs_cache_max_bytes'] = 64;
+		$filters = $this->seed_minimal_fixture();
+		intersoccer_player_course_status_generate($filters);
+		$key = intersoccer_player_course_status_cache_transient_key(
+			intersoccer_player_course_status_normalize_filters($filters)
+		);
+		$this->assertArrayNotHasKey($key, $GLOBALS['intersoccer_test_pcs_transient_store']);
+		unset($GLOBALS['intersoccer_test_pcs_cache_max_bytes']);
 	}
 }

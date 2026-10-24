@@ -242,7 +242,7 @@ function intersoccer_player_course_status_booking_status_label($status) {
  * Schema version for the player course status full-result transient (bump when payload shape changes).
  */
 function intersoccer_player_course_status_cache_schema_version() {
-	return 1;
+	return 2;
 }
 
 /**
@@ -663,6 +663,40 @@ function intersoccer_player_course_status_booking_label(array $row) {
 	$season = intersoccer_player_course_status_canonical_season_label((string) ( $row['season'] ?? '' ));
 	$start = trim((string) ($row['start_date'] ?? ''));
 	$end = trim((string) ($row['end_date'] ?? ''));
+	if (!intersoccer_roster_report_has_real_date($start)) {
+		$start = '';
+	}
+	if (!intersoccer_roster_report_has_real_date($end)) {
+		$end = '';
+	}
+	$range = '';
+	if ($start !== '' && $end !== '' && $start !== $end) {
+		$range = $start . '–' . $end;
+	} elseif ($start !== '') {
+		$range = $start;
+	} elseif ($end !== '') {
+		$range = $end;
+	}
+	$parts = array_filter([$product, $venue, $course_day, $times, $season, $range], static function ($p) {
+		return $p !== '';
+	});
+
+	return implode(' · ', $parts);
+}
+
+/**
+ * Booking display label from a {@see intersoccer_player_course_status_build_booking_record()} array.
+ *
+ * @param array<string,mixed> $booking
+ */
+function intersoccer_player_course_status_booking_label_from_record(array $booking) {
+	$product = trim((string) ($booking['product'] ?? ''));
+	$venue = trim((string) ($booking['venue'] ?? ''));
+	$course_day = trim((string) ($booking['course_day'] ?? ''));
+	$times = trim((string) ($booking['times'] ?? ''));
+	$season = intersoccer_player_course_status_canonical_season_label((string) ( $booking['season'] ?? '' ));
+	$start = trim((string) ($booking['start_date'] ?? ''));
+	$end = trim((string) ($booking['end_date'] ?? ''));
 	if (!intersoccer_roster_report_has_real_date($start)) {
 		$start = '';
 	}
@@ -1216,13 +1250,13 @@ function intersoccer_player_course_status_cache_ttl() {
 }
 
 /**
- * Max serialized payload bytes before skipping cache write.
+ * Max stored transient payload bytes (base64 gzip blob) before skipping cache write.
  */
 function intersoccer_player_course_status_cache_max_bytes() {
 	if (isset($GLOBALS['intersoccer_test_pcs_cache_max_bytes'])) {
-		return max(1024, (int) $GLOBALS['intersoccer_test_pcs_cache_max_bytes']);
+		return max(1, (int) $GLOBALS['intersoccer_test_pcs_cache_max_bytes']);
 	}
-	$max = apply_filters('intersoccer_player_course_status_cache_max_bytes', 3 * 1024 * 1024);
+	$max = apply_filters('intersoccer_player_course_status_cache_max_bytes', 5 * 1024 * 1024);
 
 	return max(1024, (int) $max);
 }
@@ -1330,6 +1364,192 @@ function intersoccer_player_course_status_transient_delete($key) {
 }
 
 /**
+ * @param array<string,mixed> $booking
+ * @return array<string,mixed>
+ */
+function intersoccer_player_course_status_cache_restore_booking(array $booking) {
+	if (!is_array($booking)) {
+		return $booking;
+	}
+	if (!isset($booking['label']) || (string) $booking['label'] === '') {
+		$booking['label'] = intersoccer_player_course_status_booking_label_from_record($booking);
+	}
+
+	return $booking;
+}
+
+/**
+ * @param array<string,mixed> $booking
+ * @return array<string,mixed>
+ */
+function intersoccer_player_course_status_cache_slim_booking(array $booking) {
+	if (!is_array($booking)) {
+		return $booking;
+	}
+	unset($booking['label']);
+
+	return $booking;
+}
+
+/**
+ * @param array<string,mixed> $result Full generate() result.
+ * @return array<string,mixed>
+ */
+function intersoccer_player_course_status_cache_slim_result(array $result) {
+	$slim = $result;
+	if (isset($slim['rows']) && is_array($slim['rows'])) {
+		$rows = [];
+		foreach ($slim['rows'] as $row) {
+			if (!is_array($row)) {
+				$rows[] = $row;
+				continue;
+			}
+			unset($row['bookings_label'], $row['booking_status_label']);
+			if (isset($row['player']) && is_array($row['player'])) {
+				unset($row['player']['name']);
+			}
+			if (isset($row['bookings']) && is_array($row['bookings'])) {
+				$bookings = [];
+				foreach ($row['bookings'] as $booking) {
+					$bookings[] = intersoccer_player_course_status_cache_slim_booking($booking);
+				}
+				$row['bookings'] = $bookings;
+			}
+			if (isset($row['pending_bookings']) && is_array($row['pending_bookings'])) {
+				$pending = [];
+				foreach ($row['pending_bookings'] as $booking) {
+					$pending[] = intersoccer_player_course_status_cache_slim_booking($booking);
+				}
+				$row['pending_bookings'] = $pending;
+			}
+			$rows[] = $row;
+		}
+		$slim['rows'] = $rows;
+	}
+	if (isset($slim['unmatched_bookings']) && is_array($slim['unmatched_bookings'])) {
+		$unmatched = [];
+		foreach ($slim['unmatched_bookings'] as $booking) {
+			$unmatched[] = intersoccer_player_course_status_cache_slim_booking($booking);
+		}
+		$slim['unmatched_bookings'] = $unmatched;
+	}
+
+	return $slim;
+}
+
+/**
+ * @param array<string,mixed> $slim Slim stored payload.
+ * @return array<string,mixed>
+ */
+function intersoccer_player_course_status_cache_expand_result(array $slim) {
+	$full = $slim;
+	if (isset($full['rows']) && is_array($full['rows'])) {
+		$rows = [];
+		foreach ($full['rows'] as $row) {
+			if (!is_array($row)) {
+				$rows[] = $row;
+				continue;
+			}
+			$player = isset($row['player']) && is_array($row['player']) ? $row['player'] : [];
+			$first = (string) ($player['first_name'] ?? '');
+			$last = (string) ($player['last_name'] ?? '');
+			$player_out = [
+				'name' => trim($first . ' ' . $last),
+				'first_name' => $first,
+				'last_name' => $last,
+				'player_index' => isset($player['player_index']) ? (int) $player['player_index'] : null,
+				'key' => (string) ($player['key'] ?? ''),
+				'tier' => (string) ($player['tier'] ?? ''),
+			];
+			$bookings = [];
+			if (isset($row['bookings']) && is_array($row['bookings'])) {
+				foreach ($row['bookings'] as $booking) {
+					$bookings[] = intersoccer_player_course_status_cache_restore_booking($booking);
+				}
+			}
+			$pending = [];
+			if (isset($row['pending_bookings']) && is_array($row['pending_bookings'])) {
+				foreach ($row['pending_bookings'] as $booking) {
+					$pending[] = intersoccer_player_course_status_cache_restore_booking($booking);
+				}
+			}
+			$labels = [];
+			foreach ($bookings as $booking) {
+				if (is_array($booking) && !empty($booking['label'])) {
+					$labels[] = (string) $booking['label'];
+				}
+			}
+			$status = isset($row['booking_status']) ? (string) $row['booking_status'] : 'not_booked';
+			$rows[] = [
+				'player' => $player_out,
+				'parent' => isset($row['parent']) && is_array($row['parent']) ? $row['parent'] : [],
+				'dob' => array_key_exists('dob', $row) ? $row['dob'] : null,
+				'dob_restricted' => !empty($row['dob_restricted']),
+				'age' => array_key_exists('age', $row) ? $row['age'] : null,
+				'booked' => !empty($row['booked']),
+				'booking_status' => $status,
+				'booking_status_label' => intersoccer_player_course_status_booking_status_label($status),
+				'bookings' => $bookings,
+				'pending_bookings' => $pending,
+				'bookings_label' => implode('; ', $labels),
+			];
+		}
+		$full['rows'] = $rows;
+	}
+	if (isset($full['unmatched_bookings']) && is_array($full['unmatched_bookings'])) {
+		$unmatched = [];
+		foreach ($full['unmatched_bookings'] as $booking) {
+			$unmatched[] = intersoccer_player_course_status_cache_restore_booking($booking);
+		}
+		$full['unmatched_bookings'] = $unmatched;
+	}
+
+	return $full;
+}
+
+/**
+ * @param array<string,mixed> $result
+ * @return string|false Base64-encoded gzcompressed serialized slim result.
+ */
+function intersoccer_player_course_status_cache_encode_stored_payload(array $result) {
+	$slim = intersoccer_player_course_status_cache_slim_result($result);
+	$serialized = maybe_serialize($slim);
+	if (!function_exists('gzcompress')) {
+		return false;
+	}
+	$compressed = @gzcompress($serialized, 6);
+	if ($compressed === false) {
+		return false;
+	}
+
+	return base64_encode($compressed);
+}
+
+/**
+ * @param string $stored Base64 gzip blob.
+ * @return array<string,mixed>|null
+ */
+function intersoccer_player_course_status_cache_decode_stored_payload($stored) {
+	if (!is_string($stored) || $stored === '') {
+		return null;
+	}
+	$binary = base64_decode($stored, true);
+	if ($binary === false || !function_exists('gzuncompress')) {
+		return null;
+	}
+	$unpacked = @gzuncompress($binary);
+	if ($unpacked === false) {
+		return null;
+	}
+	$decoded = maybe_unserialize($unpacked);
+	if (!is_array($decoded)) {
+		return null;
+	}
+
+	return intersoccer_player_course_status_cache_expand_result($decoded);
+}
+
+/**
  * @param array<string,mixed> $normalized_filters
  * @return array<string,mixed>|null
  */
@@ -1339,22 +1559,19 @@ function intersoccer_player_course_status_cache_read(array $normalized_filters) 
 	if ($raw === false || $raw === null) {
 		return null;
 	}
-	if (!is_array($raw)) {
+	if (!is_string($raw)) {
+		intersoccer_player_course_status_transient_delete($key);
+
 		return null;
 	}
-	if (!empty($raw['gz']) && function_exists('gzuncompress') && isset($raw['payload']) && is_string($raw['payload'])) {
-		$unpacked = @gzuncompress($raw['payload']);
-		if ($unpacked === false) {
-			return null;
-		}
-		$decoded = maybe_unserialize($unpacked);
-	} elseif (isset($raw['payload'])) {
-		$decoded = is_array($raw['payload']) ? $raw['payload'] : maybe_unserialize($raw['payload']);
-	} else {
-		$decoded = $raw;
+	$decoded = intersoccer_player_course_status_cache_decode_stored_payload($raw);
+	if (!is_array($decoded)) {
+		intersoccer_player_course_status_transient_delete($key);
+
+		return null;
 	}
 
-	return is_array($decoded) ? $decoded : null;
+	return $decoded;
 }
 
 /**
@@ -1366,18 +1583,17 @@ function intersoccer_player_course_status_cache_write(array $normalized_filters,
 		return;
 	}
 	$key = intersoccer_player_course_status_cache_transient_key($normalized_filters);
-	$serialized = maybe_serialize($result);
-	$size = strlen($serialized);
+	$stored = intersoccer_player_course_status_cache_encode_stored_payload($result);
+	if ($stored === false) {
+		return;
+	}
+	$size = strlen($stored);
 	$max = intersoccer_player_course_status_cache_max_bytes();
 	if ($size > $max) {
 		return;
 	}
-	$stored = ['payload' => $result];
-	if (function_exists('gzcompress')) {
-		$compressed = gzcompress($serialized, 6);
-		if ($compressed !== false && strlen($compressed) < $size) {
-			$stored = ['gz' => 1, 'payload' => $compressed];
-		}
+	if (isset($GLOBALS['intersoccer_test_pcs_cache_last_stored_bytes'])) {
+		$GLOBALS['intersoccer_test_pcs_cache_last_stored_bytes'] = $size;
 	}
 	$ttl = intersoccer_player_course_status_cache_ttl();
 	intersoccer_player_course_status_transient_set($key, $stored, $ttl);
