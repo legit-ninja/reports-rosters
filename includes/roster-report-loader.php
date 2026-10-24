@@ -1721,3 +1721,230 @@ if (!function_exists('intersoccer_roster_report_has_real_date')) {
 		return (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', $date);
 	}
 }
+
+if (!function_exists('intersoccer_roster_report_reset_order_item_meta_cache')) {
+	/**
+	 * @internal Tests and report engines.
+	 */
+	function intersoccer_roster_report_reset_order_item_meta_cache() {
+		unset($GLOBALS['intersoccer_rr_order_item_meta_cache']);
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_order_item_meta_cache')) {
+	/**
+	 * @return array<int,array<string,string>>
+	 */
+	function &intersoccer_roster_report_order_item_meta_cache() {
+		if (!isset($GLOBALS['intersoccer_rr_order_item_meta_cache'])
+			|| !is_array($GLOBALS['intersoccer_rr_order_item_meta_cache'])) {
+			$GLOBALS['intersoccer_rr_order_item_meta_cache'] = [];
+		}
+
+		return $GLOBALS['intersoccer_rr_order_item_meta_cache'];
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_get_order_item_meta')) {
+	/**
+	 * Read primed order-item meta (no per-row query).
+	 *
+	 * @param int    $order_item_id
+	 * @param string $meta_key
+	 */
+	function intersoccer_roster_report_get_order_item_meta($order_item_id, $meta_key) {
+		$order_item_id = (int) $order_item_id;
+		$meta_key = (string) $meta_key;
+		if ($order_item_id <= 0 || $meta_key === '') {
+			return '';
+		}
+		$cache = intersoccer_roster_report_order_item_meta_cache();
+		if (!isset($cache[ $order_item_id ][ $meta_key ])) {
+			return '';
+		}
+
+		return (string) $cache[ $order_item_id ][ $meta_key ];
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_batch_prime_order_item_meta')) {
+	/**
+	 * Batch-load order item meta keys into the request cache (one IN query per chunk).
+	 *
+	 * @param int[]    $order_item_ids
+	 * @param string[] $meta_keys
+	 */
+	function intersoccer_roster_report_batch_prime_order_item_meta(array $order_item_ids, array $meta_keys) {
+		$order_item_ids = array_values(array_unique(array_filter(array_map('intval', $order_item_ids))));
+		$meta_keys = array_values(array_unique(array_filter(array_map('strval', $meta_keys))));
+		if (empty($order_item_ids) || empty($meta_keys)) {
+			return;
+		}
+		$cache = &intersoccer_roster_report_order_item_meta_cache();
+		$missing_items = [];
+		foreach ($order_item_ids as $order_item_id) {
+			foreach ($meta_keys as $meta_key) {
+				if (!array_key_exists($meta_key, $cache[ $order_item_id ] ?? [])) {
+					$missing_items[ $order_item_id ] = $order_item_id;
+				}
+			}
+		}
+		if (empty($missing_items)) {
+			return;
+		}
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
+			$seed = $GLOBALS['intersoccer_test_order_item_meta'] ?? [];
+			if (!is_array($seed)) {
+				$seed = [];
+			}
+			foreach ($missing_items as $order_item_id) {
+				if (!isset($cache[ $order_item_id ])) {
+					$cache[ $order_item_id ] = [];
+				}
+				foreach ($meta_keys as $meta_key) {
+					if (array_key_exists($meta_key, $cache[ $order_item_id ])) {
+						continue;
+					}
+					$cache[ $order_item_id ][ $meta_key ] = isset($seed[ $order_item_id ][ $meta_key ])
+						? (string) $seed[ $order_item_id ][ $meta_key ]
+						: '';
+				}
+			}
+
+			return;
+		}
+		global $wpdb;
+		if (!is_object($wpdb) || !isset($wpdb->prefix)) {
+			return;
+		}
+		$table = $wpdb->prefix . 'woocommerce_order_itemmeta';
+		$chunks = array_chunk(array_values($missing_items), intersoccer_roster_report_batch_chunk_size());
+		foreach ($chunks as $chunk) {
+			$id_placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+			$key_placeholders = implode(',', array_fill(0, count($meta_keys), '%s'));
+			$sql = "SELECT order_item_id, meta_key, meta_value FROM {$table}
+				WHERE order_item_id IN ({$id_placeholders}) AND meta_key IN ({$key_placeholders})";
+			$params = array_merge($chunk, $meta_keys);
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$results = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+			foreach ($chunk as $order_item_id) {
+				if (!isset($cache[ $order_item_id ])) {
+					$cache[ $order_item_id ] = [];
+				}
+				foreach ($meta_keys as $meta_key) {
+					if (!array_key_exists($meta_key, $cache[ $order_item_id ])) {
+						$cache[ $order_item_id ][ $meta_key ] = '';
+					}
+				}
+			}
+			foreach ((array) $results as $result) {
+				if (!is_array($result)) {
+					continue;
+				}
+				$item_id = (int) ( $result['order_item_id'] ?? 0 );
+				$key = (string) ( $result['meta_key'] ?? '' );
+				if ($item_id <= 0 || $key === '') {
+					continue;
+				}
+				if (!isset($cache[ $item_id ])) {
+					$cache[ $item_id ] = [];
+				}
+				$cache[ $item_id ][ $key ] = (string) ( $result['meta_value'] ?? '' );
+			}
+		}
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_prime_program_year_meta_from_rows')) {
+	/**
+	 * Attach Year / pa_program-year from batched order-item meta onto roster rows.
+	 *
+	 * @param array<int,array<string,mixed>> $rows
+	 * @return array<int,array<string,mixed>>
+	 */
+	function intersoccer_roster_report_prime_program_year_meta_from_rows(array $rows) {
+		$item_ids = [];
+		foreach ($rows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$oid = (int) ( $row['order_item_id'] ?? 0 );
+			if ($oid > 0) {
+				$item_ids[ $oid ] = $oid;
+			}
+		}
+		if (!empty($item_ids)) {
+			intersoccer_roster_report_batch_prime_order_item_meta(
+				array_values($item_ids),
+				['Year', 'pa_program-year']
+			);
+		}
+		foreach ($rows as &$row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$oid = (int) ( $row['order_item_id'] ?? 0 );
+			if ($oid <= 0) {
+				continue;
+			}
+			foreach (['Year', 'pa_program-year'] as $meta_key) {
+				if (!empty($row[ $meta_key ])) {
+					continue;
+				}
+				$val = intersoccer_roster_report_get_order_item_meta($oid, $meta_key);
+				if ($val !== '') {
+					$row[ $meta_key ] = $val;
+				}
+			}
+		}
+		unset($row);
+
+		return $rows;
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_prime_assigned_player_ids_from_rows')) {
+	/**
+	 * Attach assigned_player_id from batched order-item meta onto roster rows.
+	 *
+	 * @param array<int,array<string,mixed>> $rows
+	 * @return array<int,array<string,mixed>>
+	 */
+	function intersoccer_roster_report_prime_assigned_player_ids_from_rows(array $rows) {
+		$item_ids = [];
+		foreach ($rows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$oid = (int) ( $row['order_item_id'] ?? 0 );
+			if ($oid > 0) {
+				$item_ids[ $oid ] = $oid;
+			}
+		}
+		if (!empty($item_ids)) {
+			intersoccer_roster_report_batch_prime_order_item_meta(
+				array_values($item_ids),
+				['assigned_player_id']
+			);
+		}
+		foreach ($rows as &$row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			if (!empty($row['assigned_player_id'])) {
+				continue;
+			}
+			$oid = (int) ( $row['order_item_id'] ?? 0 );
+			if ($oid <= 0) {
+				continue;
+			}
+			$val = intersoccer_roster_report_get_order_item_meta($oid, 'assigned_player_id');
+			if ($val !== '') {
+				$row['assigned_player_id'] = $val;
+			}
+		}
+		unset($row);
+
+		return $rows;
+	}
+}

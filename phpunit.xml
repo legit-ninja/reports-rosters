@@ -68,6 +68,8 @@
             <file>tests/Reports/CanonicalOrderMetaPreferenceTest.php</file>
             <file>tests/Reports/DistressedVariationIdsTest.php</file>
             <file>tests/Reports/PlayerCampStatusTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusQueryCountTest.php</file>
             <file>tests/Reports/WinbackReportTest.php</file>
             <file>tests/Reports/WinbackCatalogueWpmlTest.php</file>
             <file>tests/Reports/WinbackCatalogueFu11Test.php</file>
