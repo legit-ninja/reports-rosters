@@ -242,7 +242,7 @@ function intersoccer_player_course_status_booking_status_label($status) {
  * Schema version for the player course status full-result transient (bump when payload shape changes).
  */
 function intersoccer_player_course_status_cache_schema_version() {
-	return 3;
+	return 4;
 }
 
 /**
@@ -1248,9 +1248,6 @@ function intersoccer_player_course_status_cache_enabled() {
  * Transient TTL in seconds for cached full results.
  */
 function intersoccer_player_course_status_cache_ttl() {
-	if (isset($GLOBALS['intersoccer_test_pcs_cache_ttl_override'])) {
-		return max(1, (int) $GLOBALS['intersoccer_test_pcs_cache_ttl_override']);
-	}
 	$default = defined('HOUR_IN_SECONDS') ? 12 * HOUR_IN_SECONDS : 43200;
 	$ttl = apply_filters('intersoccer_player_course_status_cache_ttl', $default);
 
@@ -1272,7 +1269,19 @@ function intersoccer_player_course_status_cache_max_bytes() {
 /**
  * Cheap data-version marker (roster volume + latest shop order touch).
  */
-function intersoccer_player_course_status_cache_data_version() {
+function intersoccer_player_course_status_cache_data_version($reset_memo = false) {
+	static $memo = null;
+	if ($reset_memo) {
+		$memo = null;
+
+		return '';
+	}
+	if (isset($GLOBALS['intersoccer_test_pcs_cache_data_version_override'])) {
+		return (string) $GLOBALS['intersoccer_test_pcs_cache_data_version_override'];
+	}
+	if ($memo !== null) {
+		return $memo;
+	}
 	global $wpdb;
 	$table = $wpdb->prefix . 'intersoccer_rosters';
 	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
@@ -1293,12 +1302,13 @@ function intersoccer_player_course_status_cache_data_version() {
 			"SELECT MAX(post_modified_gmt) FROM {$wpdb->posts} WHERE post_type = 'shop_order'"
 		);
 	}
-
-	return implode('|', [
+	$memo = implode('|', [
 		(string) $count,
 		(string) $max_id,
 		(string) $order_touch,
 	]);
+
+	return $memo;
 }
 
 /**
@@ -1552,10 +1562,21 @@ function intersoccer_player_course_status_cache_decode_stored_payload($stored) {
  * @return array<string,mixed>
  */
 function intersoccer_player_course_status_cache_slim_base(array $base) {
+	$slim_records = [];
+	if (isset($base['booking_records']) && is_array($base['booking_records'])) {
+		foreach ($base['booking_records'] as $item_id => $booking) {
+			if (!is_array($booking)) {
+				continue;
+			}
+			$slim_records[ (int) $item_id ] = intersoccer_player_course_status_cache_slim_booking($booking);
+		}
+	}
+
 	return [
 		'year' => (int) ( $base['year'] ?? 0 ),
 		'players' => isset($base['players']) && is_array($base['players']) ? $base['players'] : [],
 		'year_rows' => isset($base['year_rows']) && is_array($base['year_rows']) ? $base['year_rows'] : [],
+		'booking_records' => $slim_records,
 		'warnings' => isset($base['warnings']) && is_array($base['warnings']) ? $base['warnings'] : [],
 	];
 }
@@ -1565,7 +1586,43 @@ function intersoccer_player_course_status_cache_slim_base(array $base) {
  * @return array<string,mixed>
  */
 function intersoccer_player_course_status_cache_expand_base(array $slim) {
-	return intersoccer_player_course_status_cache_slim_base($slim);
+	$records = [];
+	if (isset($slim['booking_records']) && is_array($slim['booking_records'])) {
+		foreach ($slim['booking_records'] as $item_id => $booking) {
+			if (!is_array($booking)) {
+				continue;
+			}
+			$records[ (int) $item_id ] = intersoccer_player_course_status_cache_restore_booking($booking);
+		}
+	}
+
+	return [
+		'year' => (int) ( $slim['year'] ?? 0 ),
+		'players' => isset($slim['players']) && is_array($slim['players']) ? $slim['players'] : [],
+		'year_rows' => isset($slim['year_rows']) && is_array($slim['year_rows']) ? $slim['year_rows'] : [],
+		'booking_records' => $records,
+		'warnings' => isset($slim['warnings']) && is_array($slim['warnings']) ? $slim['warnings'] : [],
+	];
+}
+
+/**
+ * @param array<int,array<string,mixed>>     $scoped_rows
+ * @param array<int,array<string,mixed>>     $booking_records_by_item
+ * @return array<int,array<string,mixed>>
+ */
+function intersoccer_player_course_status_booking_records_for_scoped_rows(array $scoped_rows, array $booking_records_by_item) {
+	$map = [];
+	foreach ($scoped_rows as $row) {
+		if (!is_array($row)) {
+			continue;
+		}
+		$item_id = (int) ( $row['order_item_id'] ?? 0 );
+		if ($item_id > 0 && isset($booking_records_by_item[ $item_id ]) && is_array($booking_records_by_item[ $item_id ])) {
+			$map[ $item_id ] = $booking_records_by_item[ $item_id ];
+		}
+	}
+
+	return $map;
 }
 
 /**
@@ -1834,10 +1891,13 @@ function intersoccer_player_course_status_build_year_base_dataset($year, $track_
 		}
 	}
 
+	$booking_records = intersoccer_player_course_status_build_booking_records_map($year_rows);
+
 	return [
 		'year' => $year,
 		'players' => $players,
 		'year_rows' => $year_rows,
+		'booking_records' => $booking_records,
 		'warnings' => $warnings,
 	];
 }
@@ -1855,8 +1915,9 @@ function intersoccer_player_course_status_apply_filters_to_base(array $base, arr
 	$players = isset($base['players']) && is_array($base['players']) ? $base['players'] : [];
 	$year_rows = isset($base['year_rows']) && is_array($base['year_rows']) ? $base['year_rows'] : [];
 	$warnings = isset($base['warnings']) && is_array($base['warnings']) ? $base['warnings'] : [];
-
-	intersoccer_player_course_status_reset_run_memos();
+	$all_booking_records = isset($base['booking_records']) && is_array($base['booking_records'])
+		? $base['booking_records']
+		: [];
 
 	$scoped_rows = intersoccer_player_course_status_filter_scoped_rows(
 		$year_rows,
@@ -1865,7 +1926,7 @@ function intersoccer_player_course_status_apply_filters_to_base(array $base, arr
 		$filters['girls_mode']
 	);
 
-	$booking_records = intersoccer_player_course_status_build_booking_records_map($scoped_rows);
+	$booking_records = intersoccer_player_course_status_booking_records_for_scoped_rows($scoped_rows, $all_booking_records);
 	$filter_options = intersoccer_player_course_status_build_filter_options($scoped_rows, $booking_records);
 	$index = intersoccer_player_course_status_build_booking_index($scoped_rows, $booking_records);
 	$pending_index = intersoccer_player_course_status_build_pending_booking_index($scoped_rows, $booking_records);

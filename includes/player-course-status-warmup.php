@@ -42,14 +42,14 @@ function intersoccer_rr_pcs_warmup_register_order_hooks() {
  * @param mixed $order_id
  */
 function intersoccer_rr_pcs_warmup_on_order_touch($order_id = 0) {
-	if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
-		if (!empty($GLOBALS['intersoccer_test_pcs_warmup_allow_schedule'])) {
-			intersoccer_rr_pcs_warmup_schedule_current_year();
-		}
-
+	$schedule = apply_filters('intersoccer_rr_pcs_warmup_should_schedule_on_order_touch', true, $order_id);
+	if (!$schedule) {
 		return;
 	}
 	intersoccer_rr_pcs_warmup_schedule_current_year();
+	if (function_exists('intersoccer_rr_winback_warmup_schedule_default')) {
+		intersoccer_rr_winback_warmup_schedule_default();
+	}
 }
 
 /**

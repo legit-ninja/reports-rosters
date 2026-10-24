@@ -959,6 +959,9 @@ function intersoccer_render_winback_report_page() {
 			<button type="submit" class="button button-primary"><?php esc_html_e('Filter', 'intersoccer-reports-rosters'); ?></button>
 			<a class="button" href="<?php echo esc_url($excel_url); ?>"><?php esc_html_e('Export this tab', 'intersoccer-reports-rosters'); ?></a>
 			<a class="button" href="<?php echo esc_url($excel_all_url); ?>"><?php esc_html_e('Export all statuses', 'intersoccer-reports-rosters'); ?></a>
+			<?php if (current_user_can('manage_options') && function_exists('intersoccer_winback_report_refresh_url')) : ?>
+				<a class="button button-secondary" href="<?php echo esc_url(intersoccer_winback_report_refresh_url($filters)); ?>"><?php esc_html_e('Refresh data', 'intersoccer-reports-rosters'); ?></a>
+			<?php endif; ?>
 		</form>
 
 		<?php if ($unmapped_items !== []) : ?>

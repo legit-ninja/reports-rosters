@@ -11,7 +11,7 @@ defined('ABSPATH') or die('Restricted access');
  * Cache schema version (bump when payload shape changes).
  */
 function intersoccer_winback_report_cache_schema_version() {
-	return 1;
+	return 2;
 }
 
 function intersoccer_winback_report_cache_enabled() {
@@ -48,14 +48,12 @@ function intersoccer_winback_report_cache_max_bytes() {
 }
 
 function intersoccer_winback_report_cache_data_version() {
-	if (isset($GLOBALS['intersoccer_test_winback_cache_data_version'])) {
-		return (string) $GLOBALS['intersoccer_test_winback_cache_data_version'];
-	}
+	$version = '0';
 	if (function_exists('intersoccer_player_course_status_cache_data_version')) {
-		return intersoccer_player_course_status_cache_data_version();
+		$version = intersoccer_player_course_status_cache_data_version();
 	}
 
-	return '0';
+	return (string) apply_filters('intersoccer_winback_report_cache_data_version', $version);
 }
 
 /**
@@ -87,19 +85,62 @@ function intersoccer_winback_report_cache_normalize_engine_filters(array $filter
 }
 
 /**
- * @param array<string,mixed> $engine_filters
+ * @param int $lookback_months
  */
-function intersoccer_winback_report_cache_transient_key(array $engine_filters) {
+function intersoccer_winback_report_cache_transient_key($lookback_months) {
+	$lookback_months = max(1, (int) $lookback_months);
 	$today = function_exists('wp_date') ? wp_date('Y-m-d') : gmdate('Y-m-d');
 	$payload = [
 		'schema' => intersoccer_winback_report_cache_schema_version(),
-		'filters' => intersoccer_winback_report_cache_normalize_engine_filters($engine_filters),
+		'lookback_months' => $lookback_months,
 		'today' => $today,
 		'data' => intersoccer_winback_report_cache_data_version(),
 	];
 	$json = function_exists('wp_json_encode') ? wp_json_encode($payload) : json_encode($payload);
 
 	return 'intersoccer_wb_' . md5((string) $json);
+}
+
+/**
+ * @param array<string,mixed> $result Full engine result (kind=all base).
+ * @param array<string,mixed> $filters Request filters (kind, venue, age_group, lookback_months).
+ * @return array<string,mixed>
+ */
+function intersoccer_winback_report_apply_list_filters(array $result, array $filters) {
+	$normalized = intersoccer_winback_report_cache_normalize_engine_filters($filters);
+	$kind = $normalized['kind'];
+	$venue = $normalized['venue'];
+	$age = $normalized['age_group'];
+	$rows = isset($result['rows']) && is_array($result['rows']) ? $result['rows'] : [];
+	$out_rows = [];
+	foreach ($rows as $row) {
+		if (!is_array($row)) {
+			continue;
+		}
+		$row_kind = isset($row['listing_kind']) ? (string) $row['listing_kind'] : '';
+		if ($kind !== 'all' && $row_kind !== '' && $row_kind !== $kind) {
+			continue;
+		}
+		$last = isset($row['last_event']) && is_array($row['last_event']) ? $row['last_event'] : [];
+		$row_venue = (string) ( $last['venue'] ?? '' );
+		$row_age = (string) ( $last['age_group'] ?? '' );
+		if ($venue !== '') {
+			$row_venue_slug = function_exists('sanitize_title') ? sanitize_title($row_venue) : strtolower($row_venue);
+			if ($row_venue_slug !== $venue) {
+				continue;
+			}
+		}
+		if ($age !== '') {
+			$row_age_slug = function_exists('sanitize_title') ? sanitize_title($row_age) : strtolower($row_age);
+			if ($row_age_slug !== $age) {
+				continue;
+			}
+		}
+		$out_rows[] = $row;
+	}
+	$result['rows'] = $out_rows;
+
+	return $result;
 }
 
 function intersoccer_winback_report_transient_get($key) {
@@ -172,8 +213,8 @@ function intersoccer_winback_report_cache_decode_payload($stored) {
  * @param array<string,mixed> $engine_filters
  * @return array<string,mixed>|null
  */
-function intersoccer_winback_report_cache_read(array $engine_filters) {
-	$key = intersoccer_winback_report_cache_transient_key($engine_filters);
+function intersoccer_winback_report_cache_read($lookback_months) {
+	$key = intersoccer_winback_report_cache_transient_key($lookback_months);
 	$raw = intersoccer_winback_report_transient_get($key);
 	if ($raw === false || $raw === null || !is_string($raw)) {
 		return null;
@@ -192,8 +233,11 @@ function intersoccer_winback_report_cache_read(array $engine_filters) {
  * @param array<string,mixed> $engine_filters
  * @param array<string,mixed> $result
  */
-function intersoccer_winback_report_cache_write(array $engine_filters, array $result) {
-	$key = intersoccer_winback_report_cache_transient_key($engine_filters);
+function intersoccer_winback_report_cache_write($lookback_months, array $result) {
+	if (!empty($result['engine_error'])) {
+		return;
+	}
+	$key = intersoccer_winback_report_cache_transient_key($lookback_months);
 	$stored = intersoccer_winback_report_cache_encode_payload($result);
 	if ($stored === false) {
 		return;
@@ -247,31 +291,110 @@ function intersoccer_winback_report_refresh_url(array $args = []) {
  * @return array<string,mixed>
  */
 function intersoccer_winback_report_engine_generate_cached(array $filters, array $options = []) {
-	$engine_filters = intersoccer_winback_report_cache_normalize_engine_filters($filters);
+	$normalized = intersoccer_winback_report_cache_normalize_engine_filters($filters);
+	$lookback = (int) $normalized['lookback_months'];
 	$force = !empty($options['force_cache_refresh']) || intersoccer_winback_report_cache_refresh_requested();
 
+	$base = null;
 	if (intersoccer_winback_report_cache_enabled() && !$force) {
-		$cached = intersoccer_winback_report_cache_read($engine_filters);
-		if (is_array($cached)) {
-			return $cached;
+		$base = intersoccer_winback_report_cache_read($lookback);
+	}
+	if (!is_array($base)) {
+		if (isset($GLOBALS['intersoccer_test_winback_engine_generate_call_count'])) {
+			$GLOBALS['intersoccer_test_winback_engine_generate_call_count'] = (int) $GLOBALS['intersoccer_test_winback_engine_generate_call_count'] + 1;
+		}
+		$stub = apply_filters('intersoccer_test_winback_engine_stub_result', null);
+		if (is_array($stub)) {
+			$base = $stub;
+		} else {
+			$base = intersoccer_winback_report_engine_generate([
+				'kind' => 'all',
+				'venue' => '',
+				'age_group' => '',
+				'lookback_months' => $lookback,
+			]);
+		}
+		if (intersoccer_winback_report_cache_enabled()) {
+			intersoccer_winback_report_cache_write($lookback, $base);
 		}
 	}
 
-	if (isset($GLOBALS['intersoccer_test_winback_engine_generate_call_count'])) {
-		$GLOBALS['intersoccer_test_winback_engine_generate_call_count'] = (int) $GLOBALS['intersoccer_test_winback_engine_generate_call_count'] + 1;
-	}
-
-	if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING
-		&& isset($GLOBALS['intersoccer_test_winback_engine_stub_result'])
-		&& is_array($GLOBALS['intersoccer_test_winback_engine_stub_result'])) {
-		$result = $GLOBALS['intersoccer_test_winback_engine_stub_result'];
-	} else {
-		$result = intersoccer_winback_report_engine_generate($engine_filters);
-	}
-
-	if (intersoccer_winback_report_cache_enabled()) {
-		intersoccer_winback_report_cache_write($engine_filters, $result);
-	}
-
-	return $result;
+	return intersoccer_winback_report_apply_list_filters($base, $filters);
 }
+
+/**
+ * Single-event hook: debounced win-back base rebuild.
+ */
+function intersoccer_rr_winback_warmup_event_hook() {
+	return 'intersoccer_rr_winback_warmup_event';
+}
+
+/**
+ * Schedule one debounced win-back base rebuild (deduped).
+ *
+ * @param int $lookback_months
+ */
+function intersoccer_rr_winback_warmup_schedule($lookback_months = 12) {
+	if (!function_exists('intersoccer_winback_report_cache_enabled')
+		|| !intersoccer_winback_report_cache_enabled()) {
+		return;
+	}
+	$lookback_months = max(1, (int) $lookback_months);
+	$hook = intersoccer_rr_winback_warmup_event_hook();
+	$args = [ $lookback_months ];
+	if (function_exists('wp_next_scheduled') && wp_next_scheduled($hook, $args)) {
+		return;
+	}
+	if (!function_exists('wp_schedule_single_event')) {
+		return;
+	}
+	$debounce = function_exists('intersoccer_rr_pcs_warmup_debounce_seconds')
+		? intersoccer_rr_pcs_warmup_debounce_seconds()
+		: 120;
+	wp_schedule_single_event(time() + $debounce, $hook, $args);
+}
+
+function intersoccer_rr_winback_warmup_schedule_default() {
+	$lookback = 12;
+	if (function_exists('intersoccer_winback_report_request_filters')) {
+		$filters = intersoccer_winback_report_request_filters();
+		$lookback = (int) ( $filters['lookback_months'] ?? 12 );
+	}
+	intersoccer_rr_winback_warmup_schedule($lookback);
+}
+
+/**
+ * @param int $lookback_months
+ */
+function intersoccer_rr_winback_warmup_rebuild($lookback_months = 12) {
+	$lookback_months = max(1, (int) $lookback_months);
+	if (!function_exists('intersoccer_winback_report_engine_generate')
+		|| !function_exists('intersoccer_winback_report_cache_write')) {
+		return;
+	}
+	if (!intersoccer_winback_report_cache_enabled()) {
+		return;
+	}
+	$memo_started = false;
+	if (function_exists('intersoccer_rr_product_type_memo_begin')) {
+		intersoccer_rr_product_type_memo_begin();
+		$memo_started = true;
+	}
+	try {
+		$base = intersoccer_winback_report_engine_generate([
+			'kind' => 'all',
+			'venue' => '',
+			'age_group' => '',
+			'lookback_months' => $lookback_months,
+		]);
+		if (is_array($base)) {
+			intersoccer_winback_report_cache_write($lookback_months, $base);
+		}
+	} finally {
+		if ($memo_started && function_exists('intersoccer_rr_product_type_memo_end')) {
+			intersoccer_rr_product_type_memo_end();
+		}
+	}
+}
+
+add_action(intersoccer_rr_winback_warmup_event_hook(), 'intersoccer_rr_winback_warmup_rebuild', 10, 1);
