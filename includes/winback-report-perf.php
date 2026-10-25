@@ -26,6 +26,9 @@ if (!function_exists('intersoccer_rr_product_type_memo_reset_storage')) {
 		if (function_exists('intersoccer_rr_product_type_batch_reset')) {
 			intersoccer_rr_product_type_batch_reset();
 		}
+		if (function_exists('intersoccer_roster_report_reset_wc_order_object_cache')) {
+			intersoccer_roster_report_reset_wc_order_object_cache();
+		}
 	}
 }
 

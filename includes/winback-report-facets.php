@@ -361,15 +361,10 @@ if (!function_exists('intersoccer_winback_resolve_roster_facet_raw')) {
 			}
 		}
 
-		if ($resolved === '' && $variation_id > 0 && function_exists('get_post_meta')) {
-			foreach ($meta_keys as $meta_key) {
-				$val = (string) get_post_meta($variation_id, $meta_key, true);
-				if ($val !== '') {
-					$resolved = $val;
-					break;
-				}
-			}
-		}
+		// No variation post-meta fallback after attribute_* (above): WC_Product_Variation::get_attribute()
+		// only reads the variation attributes map built from attribute_* keys (see
+		// wc_get_product_variation_attributes() in WooCommerce). When attribute_{taxonomy} is empty,
+		// get_attribute() returns '' — it does not read _intersoccer_canonical_* or raw pa_* post meta.
 
 		$cache[ $cache_key ] = $resolved;
 
