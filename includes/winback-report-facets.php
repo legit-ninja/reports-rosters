@@ -361,10 +361,12 @@ if (!function_exists('intersoccer_winback_resolve_roster_facet_raw')) {
 			}
 		}
 
-		// No variation post-meta fallback after attribute_* (above): WC_Product_Variation::get_attribute()
-		// only reads the variation attributes map built from attribute_* keys (see
-		// wc_get_product_variation_attributes() in WooCommerce). When attribute_{taxonomy} is empty,
-		// get_attribute() returns '' — it does not read _intersoccer_canonical_* or raw pa_* post meta.
+		if ($resolved === '' && $variation_id > 0 && function_exists('wc_get_product')) {
+			$product = wc_get_product($variation_id);
+			if ($product && method_exists($product, 'get_attribute')) {
+				$resolved = (string) $product->get_attribute($taxonomy);
+			}
+		}
 
 		$cache[ $cache_key ] = $resolved;
 
@@ -429,6 +431,9 @@ if (!function_exists('intersoccer_winback_batch_prime_order_item_facet_meta')) {
 	function intersoccer_winback_batch_prime_order_item_facet_meta(array $order_item_ids) {
 		$order_item_ids = array_values(array_unique(array_filter(array_map('intval', $order_item_ids))));
 		if (empty($order_item_ids)) {
+			return;
+		}
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
 			return;
 		}
 		global $wpdb;

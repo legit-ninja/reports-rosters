@@ -222,136 +222,6 @@ if (!function_exists('intersoccer_roster_report_collect_order_ids_from_rows')) {
 	}
 }
 
-if (!function_exists('intersoccer_roster_report_wc_order_object_cache')) {
-	/**
-	 * @return array<int,object>
-	 */
-	function &intersoccer_roster_report_wc_order_object_cache() {
-		if (!isset($GLOBALS['intersoccer_rr_wc_order_object_cache'])
-			|| !is_array($GLOBALS['intersoccer_rr_wc_order_object_cache'])) {
-			$GLOBALS['intersoccer_rr_wc_order_object_cache'] = [];
-		}
-
-		return $GLOBALS['intersoccer_rr_wc_order_object_cache'];
-	}
-}
-
-if (!function_exists('intersoccer_roster_report_reset_wc_order_object_cache')) {
-	function intersoccer_roster_report_reset_wc_order_object_cache() {
-		unset($GLOBALS['intersoccer_rr_wc_order_object_cache']);
-	}
-}
-
-if (!function_exists('intersoccer_roster_report_prime_wc_order_objects')) {
-	/**
-	 * Batch-load WC_Order objects (one wc_get_orders include query per chunk).
-	 *
-	 * @param int[] $order_ids
-	 */
-	function intersoccer_roster_report_prime_wc_order_objects(array $order_ids) {
-		$order_ids = array_values(array_unique(array_filter(array_map('intval', $order_ids))));
-		if (empty($order_ids)) {
-			return;
-		}
-		$cache = &intersoccer_roster_report_wc_order_object_cache();
-		$missing = [];
-		foreach ($order_ids as $order_id) {
-			if (!array_key_exists($order_id, $cache)) {
-				$missing[ $order_id ] = $order_id;
-			}
-		}
-		if (empty($missing)) {
-			return;
-		}
-		if (function_exists('_prime_post_caches')) {
-			$chunk_size = function_exists('intersoccer_roster_report_batch_chunk_size')
-				? intersoccer_roster_report_batch_chunk_size()
-				: 500;
-			foreach (array_chunk(array_values($missing), $chunk_size) as $chunk) {
-				_prime_post_caches($chunk, false, true);
-			}
-		}
-		if (!function_exists('wc_get_orders')) {
-			foreach ($missing as $order_id) {
-				$cache[ $order_id ] = null;
-			}
-
-			return;
-		}
-		$chunk_size = function_exists('intersoccer_roster_report_batch_chunk_size')
-			? intersoccer_roster_report_batch_chunk_size()
-			: 500;
-		foreach (array_chunk(array_values($missing), $chunk_size) as $chunk) {
-			if (function_exists('intersoccer_rr_test_api_call_count')) {
-				intersoccer_rr_test_api_call_count('wc_get_orders');
-			}
-			$orders = wc_get_orders([
-				'type' => 'shop_order',
-				'include' => $chunk,
-				'limit' => count($chunk),
-				'return' => 'objects',
-			]);
-			$found = [];
-			if (is_array($orders)) {
-				foreach ($orders as $order) {
-					if (is_object($order) && is_callable([$order, 'get_id'])) {
-						$oid = (int) $order->get_id();
-						$cache[ $oid ] = $order;
-						$found[ $oid ] = true;
-					}
-				}
-			}
-			foreach ($chunk as $order_id) {
-				if (!empty($found[ $order_id ])) {
-					continue;
-				}
-				if (function_exists('wc_get_order')) {
-					if (function_exists('intersoccer_rr_test_api_call_count')) {
-						intersoccer_rr_test_api_call_count('wc_get_order');
-					}
-					$order = wc_get_order($order_id);
-					$cache[ $order_id ] = $order ? $order : null;
-				} else {
-					$cache[ $order_id ] = null;
-				}
-			}
-		}
-	}
-}
-
-if (!function_exists('intersoccer_roster_report_prime_wc_order_objects_from_rows')) {
-	/**
-	 * @param array<int,array<string,mixed>> $rows
-	 */
-	function intersoccer_roster_report_prime_wc_order_objects_from_rows(array $rows) {
-		intersoccer_roster_report_prime_wc_order_objects(
-			intersoccer_roster_report_collect_order_ids_from_rows($rows)
-		);
-	}
-}
-
-if (!function_exists('intersoccer_roster_report_get_wc_order_object')) {
-	/**
-	 * Cached WC_Order lookup (batch primed on cold builds).
-	 *
-	 * @param int $order_id
-	 * @return object|null
-	 */
-	function intersoccer_roster_report_get_wc_order_object($order_id) {
-		$order_id = (int) $order_id;
-		if ($order_id <= 0) {
-			return null;
-		}
-		$cache = &intersoccer_roster_report_wc_order_object_cache();
-		if (array_key_exists($order_id, $cache)) {
-			return $cache[ $order_id ];
-		}
-		intersoccer_roster_report_prime_wc_order_objects([$order_id]);
-
-		return $cache[ $order_id ] ?? null;
-	}
-}
-
 if (!function_exists('intersoccer_roster_report_reset_live_order_status_memo')) {
 	/**
 	 * @internal Tests and win-back engine — clear shared live status cache.
@@ -945,9 +815,7 @@ if (!function_exists('intersoccer_roster_report_prime_line_refund_item_results_f
 		foreach ($items_by_order as $order_id => $item_ids) {
 			$order_id = (int) $order_id;
 			$order = $orders_by_id[ $order_id ] ?? null;
-			if (!$order && function_exists('intersoccer_roster_report_get_wc_order_object')) {
-				$order = intersoccer_roster_report_get_wc_order_object($order_id);
-			} elseif (!$order && function_exists('wc_get_order')) {
+			if (!$order && function_exists('wc_get_order')) {
 				$order = wc_get_order($order_id);
 			}
 			if (!$order) {
@@ -1424,9 +1292,13 @@ if (!function_exists('intersoccer_roster_report_row_line_is_fully_refunded')) {
 			return false;
 		}
 
-		$order = function_exists('intersoccer_roster_report_get_wc_order_object')
-			? intersoccer_roster_report_get_wc_order_object($order_id)
-			: (function_exists('wc_get_order') ? wc_get_order($order_id) : null);
+		if (!function_exists('wc_get_order')) {
+			$item_cache[ $order_item_id ] = false;
+
+			return false;
+		}
+
+		$order = wc_get_order($order_id);
 		if (!$order) {
 			$item_cache[ $order_item_id ] = false;
 
@@ -1510,13 +1382,13 @@ if (!function_exists('intersoccer_roster_report_resolve_order_customer_id')) {
 			return (int) $cache[ $order_id ];
 		}
 
-		$order = function_exists('intersoccer_roster_report_get_wc_order_object')
-			? intersoccer_roster_report_get_wc_order_object($order_id)
-			: (function_exists('wc_get_order') ? wc_get_order($order_id) : null);
-		if ($order && is_callable([$order, 'get_customer_id'])) {
-			$cache[ $order_id ] = (int) $order->get_customer_id();
+		if (function_exists('wc_get_order')) {
+			$order = wc_get_order($order_id);
+			if ($order) {
+				$cache[ $order_id ] = (int) $order->get_customer_id();
 
-			return (int) $cache[ $order_id ];
+				return (int) $cache[ $order_id ];
+			}
 		}
 
 		global $wpdb;

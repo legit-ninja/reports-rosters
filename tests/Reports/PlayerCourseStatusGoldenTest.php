@@ -27,7 +27,6 @@ class PlayerCourseStatusGoldenTest extends TestCase {
 	}
 
 	private function reset_fixtures(): void {
-		\InterSoccerRRTestMeta::$data = [];
 		unset(
 			$GLOBALS['intersoccer_test_player_course_status_players'],
 			$GLOBALS['intersoccer_test_player_course_status_roster_rows'],
@@ -78,9 +77,6 @@ class PlayerCourseStatusGoldenTest extends TestCase {
 		if (function_exists('intersoccer_player_camp_status_reset_dob_gate_cache')) {
 			intersoccer_player_camp_status_reset_dob_gate_cache();
 		}
-		if (function_exists('intersoccer_roster_report_reset_wc_order_object_cache')) {
-			intersoccer_roster_report_reset_wc_order_object_cache();
-		}
 		unset(
 			$GLOBALS['intersoccer_test_current_user_caps'],
 			$GLOBALS['intersoccer_test_current_user']
@@ -118,8 +114,6 @@ class PlayerCourseStatusGoldenTest extends TestCase {
 			91001 => 'course',
 			91002 => 'birthday',
 		];
-		\InterSoccerRRTestMeta::$data[91001]['_intersoccer_product_type'] = 'course';
-		\InterSoccerRRTestMeta::$data[91002]['_intersoccer_product_type'] = 'birthday';
 		$GLOBALS['intersoccer_test_live_order_status_map'] = [
 			55001 => 'wc-completed',
 			55002 => 'wc-pending',

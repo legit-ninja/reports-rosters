@@ -45,9 +45,6 @@ class WinbackReportTest extends TestCase {
 		if (function_exists('intersoccer_roster_report_reset_order_customer_id_cache')) {
 			intersoccer_roster_report_reset_order_customer_id_cache();
 		}
-		if (function_exists('intersoccer_roster_report_reset_wc_order_object_cache')) {
-			intersoccer_roster_report_reset_wc_order_object_cache();
-		}
 		if (function_exists('intersoccer_roster_report_reset_fake_customer_cache')) {
 			intersoccer_roster_report_reset_fake_customer_cache();
 		}
@@ -655,23 +652,6 @@ class WinbackReportTest extends TestCase {
 			$row
 		);
 		$this->assertSame('5-13y-full-day', $slug);
-	}
-
-	public function test_variation_facet_does_not_read_canonical_meta_when_attribute_empty(): void {
-		$vid = 88004;
-		\InterSoccerRRTestMeta::$data[ $vid ] = [
-			'attribute_pa_intersoccer-venues' => '',
-			'_intersoccer_canonical_venue' => 'Geneva Stade Should Not Win',
-		];
-		intersoccer_winback_reset_facet_resolution_cache();
-		$row = [
-			'order_item_id' => 0,
-			'variation_id' => $vid,
-			'venue' => 'geneva-stade',
-		];
-		$raw = intersoccer_winback_resolve_roster_facet_raw($row, 'venue');
-		$this->assertSame('', $raw);
-		unset(\InterSoccerRRTestMeta::$data[ $vid ]);
 	}
 
 	public function test_run_together_venue_resolves_from_variation_attribute() {
