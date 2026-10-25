@@ -7,29 +7,16 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+$__intersoccer_winback_cache_gate = dirname(__FILE__) . '/winback-report-cache-gate.php';
+if (file_exists($__intersoccer_winback_cache_gate)) {
+	require_once $__intersoccer_winback_cache_gate;
+}
+
 /**
  * Cache schema version (bump when payload shape changes).
  */
 function intersoccer_winback_report_cache_schema_version() {
 	return 2;
-}
-
-function intersoccer_winback_report_cache_enabled() {
-	if (defined('INTERSOCCER_RR_WINBACK_CACHE_DISABLED') && INTERSOCCER_RR_WINBACK_CACHE_DISABLED) {
-		return false;
-	}
-	if (array_key_exists('intersoccer_test_winback_cache_force_enabled', $GLOBALS)) {
-		return (bool) $GLOBALS['intersoccer_test_winback_cache_force_enabled'];
-	}
-	$filtered = apply_filters('intersoccer_winback_report_cache_enabled', null);
-	if ($filtered !== null) {
-		return (bool) $filtered;
-	}
-	if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
-		return false;
-	}
-
-	return true;
 }
 
 function intersoccer_winback_report_cache_ttl() {
@@ -322,79 +309,7 @@ function intersoccer_winback_report_engine_generate_cached(array $filters, array
 	return intersoccer_winback_report_apply_list_filters($base, $filters);
 }
 
-/**
- * Single-event hook: debounced win-back base rebuild.
- */
-function intersoccer_rr_winback_warmup_event_hook() {
-	return 'intersoccer_rr_winback_warmup_event';
+$__intersoccer_winback_warmup = dirname(__FILE__) . '/winback-report-warmup.php';
+if (file_exists($__intersoccer_winback_warmup)) {
+	require_once $__intersoccer_winback_warmup;
 }
-
-/**
- * Schedule one debounced win-back base rebuild (deduped).
- *
- * @param int $lookback_months
- */
-function intersoccer_rr_winback_warmup_schedule($lookback_months = 12) {
-	if (!function_exists('intersoccer_winback_report_cache_enabled')
-		|| !intersoccer_winback_report_cache_enabled()) {
-		return;
-	}
-	$lookback_months = max(1, (int) $lookback_months);
-	$hook = intersoccer_rr_winback_warmup_event_hook();
-	$args = [ $lookback_months ];
-	if (function_exists('wp_next_scheduled') && wp_next_scheduled($hook, $args)) {
-		return;
-	}
-	if (!function_exists('wp_schedule_single_event')) {
-		return;
-	}
-	$debounce = function_exists('intersoccer_rr_pcs_warmup_debounce_seconds')
-		? intersoccer_rr_pcs_warmup_debounce_seconds()
-		: 120;
-	wp_schedule_single_event(time() + $debounce, $hook, $args);
-}
-
-function intersoccer_rr_winback_warmup_schedule_default() {
-	$lookback = 12;
-	if (function_exists('intersoccer_winback_report_request_filters')) {
-		$filters = intersoccer_winback_report_request_filters();
-		$lookback = (int) ( $filters['lookback_months'] ?? 12 );
-	}
-	intersoccer_rr_winback_warmup_schedule($lookback);
-}
-
-/**
- * @param int $lookback_months
- */
-function intersoccer_rr_winback_warmup_rebuild($lookback_months = 12) {
-	$lookback_months = max(1, (int) $lookback_months);
-	if (!function_exists('intersoccer_winback_report_engine_generate')
-		|| !function_exists('intersoccer_winback_report_cache_write')) {
-		return;
-	}
-	if (!intersoccer_winback_report_cache_enabled()) {
-		return;
-	}
-	$memo_started = false;
-	if (function_exists('intersoccer_rr_product_type_memo_begin')) {
-		intersoccer_rr_product_type_memo_begin();
-		$memo_started = true;
-	}
-	try {
-		$base = intersoccer_winback_report_engine_generate([
-			'kind' => 'all',
-			'venue' => '',
-			'age_group' => '',
-			'lookback_months' => $lookback_months,
-		]);
-		if (is_array($base)) {
-			intersoccer_winback_report_cache_write($lookback_months, $base);
-		}
-	} finally {
-		if ($memo_started && function_exists('intersoccer_rr_product_type_memo_end')) {
-			intersoccer_rr_product_type_memo_end();
-		}
-	}
-}
-
-add_action(intersoccer_rr_winback_warmup_event_hook(), 'intersoccer_rr_winback_warmup_rebuild', 10, 1);

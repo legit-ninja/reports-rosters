@@ -8,6 +8,34 @@
 defined('ABSPATH') or die('Restricted access');
 
 /**
+ * Load PCS report modules for cron/event rebuild (not loaded on every request).
+ */
+function intersoccer_rr_pcs_warmup_load_report_modules() {
+	static $loaded = false;
+	if ($loaded) {
+		return;
+	}
+	$dir = dirname(__FILE__);
+	foreach (
+		[
+			'reports-data.php',
+			'final-reports-aggregation.php',
+			'utils.php',
+			'roster-report-loader.php',
+			'winback-report-facets.php',
+			'player-camp-status.php',
+			'player-course-status.php',
+		] as $file
+	) {
+		$path = $dir . '/' . $file;
+		if (file_exists($path)) {
+			require_once $path;
+		}
+	}
+	$loaded = true;
+}
+
+/**
  * Cron hook: daily safety net rebuild for the current calendar year base.
  */
 function intersoccer_rr_pcs_warmup_daily_cron_hook() {
@@ -88,6 +116,7 @@ function intersoccer_rr_pcs_warmup_schedule_year($year) {
  * Cron callback: rebuild current year base into transient cache.
  */
 function intersoccer_rr_pcs_warmup_run_daily() {
+	intersoccer_rr_pcs_warmup_load_report_modules();
 	$year = (int) (function_exists('wp_date') ? wp_date('Y') : gmdate('Y'));
 	intersoccer_rr_pcs_warmup_rebuild_year($year);
 }
@@ -98,6 +127,7 @@ function intersoccer_rr_pcs_warmup_run_daily() {
  * @param int $year
  */
 function intersoccer_rr_pcs_warmup_rebuild_year($year) {
+	intersoccer_rr_pcs_warmup_load_report_modules();
 	$year = (int) $year;
 	if ($year < 2000) {
 		return;

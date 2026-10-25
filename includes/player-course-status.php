@@ -1223,25 +1223,9 @@ function intersoccer_player_course_status_resolve_parent_email($user_id) {
 	return '';
 }
 
-/**
- * Whether full-result caching is enabled (constant, filter, default off under INTERSOCCER_RR_TESTING).
- */
-function intersoccer_player_course_status_cache_enabled() {
-	if (defined('INTERSOCCER_RR_PCS_CACHE_DISABLED') && INTERSOCCER_RR_PCS_CACHE_DISABLED) {
-		return false;
-	}
-	if (array_key_exists('intersoccer_test_pcs_cache_force_enabled', $GLOBALS)) {
-		return (bool) $GLOBALS['intersoccer_test_pcs_cache_force_enabled'];
-	}
-	$filtered = apply_filters('intersoccer_player_course_status_cache_enabled', null);
-	if ($filtered !== null) {
-		return (bool) $filtered;
-	}
-	if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
-		return false;
-	}
-
-	return true;
+$__intersoccer_pcs_cache_gate = dirname(__FILE__) . '/player-course-status-cache-gate.php';
+if (file_exists($__intersoccer_pcs_cache_gate)) {
+	require_once $__intersoccer_pcs_cache_gate;
 }
 
 /**
@@ -2259,9 +2243,4 @@ function intersoccer_player_course_status_maybe_export_excel() {
 function intersoccer_render_player_course_status_page() {
 	require_once __DIR__ . '/player-course-status-admin.php';
 	intersoccer_player_course_status_admin_render_page();
-}
-
-$__pcs_warmup = dirname(__FILE__) . '/player-course-status-warmup.php';
-if (file_exists($__pcs_warmup)) {
-	require_once $__pcs_warmup;
 }
