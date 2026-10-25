@@ -355,6 +355,19 @@ function intersoccer_player_course_status_row_is_course(array $row) {
 }
 
 /**
+ * Course-row gate for PCS filters (uses cold-build stamp on cached year rows).
+ *
+ * @param array<string,mixed> $row
+ */
+function intersoccer_player_course_status_row_is_course_for_filter(array $row) {
+	if (!empty($row['pcs_course_row'])) {
+		return true;
+	}
+
+	return intersoccer_player_course_status_row_is_course($row);
+}
+
+/**
  * @param array<string,mixed> $row
  * @param int                 $year
  */
@@ -545,7 +558,7 @@ function intersoccer_player_course_status_filter_scoped_rows(array $rows, $year,
 		if (!empty($row['is_placeholder'])) {
 			continue;
 		}
-		if (!intersoccer_player_course_status_row_is_course($row)) {
+		if (!intersoccer_player_course_status_row_is_course_for_filter($row)) {
 			continue;
 		}
 		if ($girls_mode === 'mixed' && !empty($row['girls_only'])) {
@@ -901,6 +914,7 @@ function intersoccer_player_course_status_prepare_roster_rows(array $rows) {
 		} elseif (function_exists('intersoccer_roster_report_resolve_row_customer_id')) {
 			$row['customer_id'] = intersoccer_roster_report_resolve_row_customer_id($row);
 		}
+		$row['pcs_course_row'] = true;
 	}
 	unset($row);
 
@@ -1764,8 +1778,6 @@ function intersoccer_player_course_status_cache_write_base($year, array $base) {
 	$year = (int) $year;
 	$marker = intersoccer_player_course_status_cache_data_version();
 	$base['data_version'] = $marker;
-	$legacy_key = intersoccer_player_course_status_cache_transient_key_legacy_marker_in_key($year, $marker);
-	intersoccer_player_course_status_transient_delete($legacy_key);
 	$key = intersoccer_player_course_status_cache_transient_key($year);
 	$stored = intersoccer_player_course_status_cache_encode_base_payload($base);
 	if ($stored === false) {
@@ -1871,21 +1883,25 @@ function intersoccer_player_course_status_normalize_filters(array $filters) {
  * @return array<string,mixed>
  */
 function intersoccer_player_course_status_generate(array $filters, array $options = []) {
+	$normalized = intersoccer_player_course_status_normalize_filters($filters);
+	$year = (int) $normalized['year'];
+	$force_refresh = !empty($options['force_cache_refresh'])
+		|| intersoccer_player_course_status_cache_refresh_requested();
+
+	$base = null;
+	$base_from_cache = false;
+	if (intersoccer_player_course_status_cache_enabled() && !$force_refresh) {
+		$base = intersoccer_player_course_status_cache_read_base($year);
+		if (is_array($base)) {
+			$base_from_cache = true;
+		}
+	}
 	$memo_started = false;
-	if (function_exists('intersoccer_rr_product_type_memo_begin')) {
+	if (!$base_from_cache && function_exists('intersoccer_rr_product_type_memo_begin')) {
 		intersoccer_rr_product_type_memo_begin();
 		$memo_started = true;
 	}
 	try {
-		$normalized = intersoccer_player_course_status_normalize_filters($filters);
-		$year = (int) $normalized['year'];
-		$force_refresh = !empty($options['force_cache_refresh'])
-			|| intersoccer_player_course_status_cache_refresh_requested();
-
-		$base = null;
-		if (intersoccer_player_course_status_cache_enabled() && !$force_refresh) {
-			$base = intersoccer_player_course_status_cache_read_base($year);
-		}
 		if (!is_array($base)) {
 			$base = intersoccer_player_course_status_build_year_base_dataset($year, true);
 			if (intersoccer_player_course_status_cache_enabled()) {
@@ -1977,10 +1993,19 @@ function intersoccer_player_course_status_apply_filters_to_base(array $base, arr
 	$year = (int) ( $base['year'] ?? $filters['year'] );
 	$players = isset($base['players']) && is_array($base['players']) ? $base['players'] : [];
 	$year_rows = isset($base['year_rows']) && is_array($base['year_rows']) ? $base['year_rows'] : [];
-	if (function_exists('intersoccer_roster_report_collect_order_ids_from_rows')) {
-		$GLOBALS['intersoccer_rr_refund_presence_batch_order_ids'] = intersoccer_roster_report_collect_order_ids_from_rows($year_rows);
+	$refund_flags_complete = true;
+	foreach ($year_rows as $row) {
+		if (is_array($row) && !array_key_exists('line_fully_refunded', $row)) {
+			$refund_flags_complete = false;
+			break;
+		}
 	}
-	$year_rows = intersoccer_player_course_status_ensure_year_rows_refund_flags($year_rows);
+	if (!$refund_flags_complete) {
+		if (function_exists('intersoccer_roster_report_collect_order_ids_from_rows')) {
+			$GLOBALS['intersoccer_rr_refund_presence_batch_order_ids'] = intersoccer_roster_report_collect_order_ids_from_rows($year_rows);
+		}
+		$year_rows = intersoccer_player_course_status_ensure_year_rows_refund_flags($year_rows);
+	}
 	$warnings = isset($base['warnings']) && is_array($base['warnings']) ? $base['warnings'] : [];
 	$all_booking_records = isset($base['booking_records']) && is_array($base['booking_records'])
 		? $base['booking_records']

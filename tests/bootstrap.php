@@ -312,12 +312,18 @@ if (!function_exists('update_option')) {
 }
 
 if (!function_exists('delete_option')) {
-    function delete_option($option) { return true; }
+    function delete_option($option) {
+        intersoccer_rr_test_api_call_count('delete_option');
+        return true;
+    }
 }
 
 // Transients API
 if (!function_exists('get_transient')) {
-    function get_transient($transient) { return false; }
+    function get_transient($transient) {
+        intersoccer_rr_test_api_call_count('get_transient');
+        return false;
+    }
 }
 
 if (!function_exists('wp_using_ext_object_cache')) {
@@ -337,7 +343,10 @@ if (!function_exists('set_transient')) {
 }
 
 if (!function_exists('delete_transient')) {
-    function delete_transient($transient) { return true; }
+    function delete_transient($transient) {
+        intersoccer_rr_test_api_call_count('delete_transient');
+        return true;
+    }
 }
 
 // Post meta functions
@@ -387,6 +396,7 @@ if (!function_exists('get_post_status')) {
 
 if (!function_exists('get_the_title')) {
     function get_the_title($post_id = 0) {
+        intersoccer_rr_test_api_call_count('get_the_title');
         if (isset($GLOBALS['intersoccer_test_post_titles'][(int) $post_id])) {
             return (string) $GLOBALS['intersoccer_test_post_titles'][(int) $post_id];
         }
@@ -419,12 +429,14 @@ if (!function_exists('get_edit_post_link')) {
 
 if (!function_exists('update_meta_cache')) {
     function update_meta_cache($object_type, $object_ids) {
+        intersoccer_rr_test_api_call_count('update_meta_cache');
         return true;
     }
 }
 
 if (!function_exists('_prime_post_caches')) {
     function _prime_post_caches($ids, $update_term_cache = false, $update_meta_cache = false) {
+        intersoccer_rr_test_api_call_count('_prime_post_caches');
         return true;
     }
 }
@@ -1045,6 +1057,7 @@ if (!function_exists('wp_die')) {
 // Term functions (taxonomy)
 if (!function_exists('get_term')) {
     function get_term($term, $taxonomy = '', $output = OBJECT, $filter = 'raw') {
+        intersoccer_rr_test_api_call_count('get_term');
         if (is_numeric($term) && isset($GLOBALS['intersoccer_test_terms_by_id'][(int) $term])) {
             $row = $GLOBALS['intersoccer_test_terms_by_id'][(int) $term];
             return is_object($row) ? $row : (object) $row;
@@ -1061,6 +1074,7 @@ if (!function_exists('get_term_by')) {
 
 if (!function_exists('get_terms')) {
     function get_terms($args = [], $deprecated = '') {
+        intersoccer_rr_test_api_call_count('get_terms');
         return [];
     }
 }
@@ -1218,6 +1232,7 @@ if (!function_exists('wc_get_order_id_by_order_item_id')) {
 
 if (!function_exists('wc_get_orders')) {
     function wc_get_orders($args = []) {
+        intersoccer_rr_test_api_call_count('wc_get_orders');
         global $intersoccer_test_wc_get_orders_callback;
         if (is_callable($intersoccer_test_wc_get_orders_callback)) {
             return call_user_func($intersoccer_test_wc_get_orders_callback, $args);

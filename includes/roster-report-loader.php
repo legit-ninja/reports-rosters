@@ -795,8 +795,29 @@ if (!function_exists('intersoccer_roster_report_prime_line_refund_item_results_f
 			return;
 		}
 		$service = new RosterRefundService();
+		$order_ids = array_map('intval', array_keys($items_by_order));
+		$orders_by_id = [];
+		if (function_exists('wc_get_orders') && !empty($order_ids)) {
+			$orders = wc_get_orders([
+				'type' => 'shop_order',
+				'include' => $order_ids,
+				'limit' => count($order_ids),
+				'return' => 'objects',
+			]);
+			if (is_array($orders)) {
+				foreach ($orders as $order) {
+					if (is_object($order) && is_callable([$order, 'get_id'])) {
+						$orders_by_id[ (int) $order->get_id() ] = $order;
+					}
+				}
+			}
+		}
 		foreach ($items_by_order as $order_id => $item_ids) {
-			$order = wc_get_order($order_id);
+			$order_id = (int) $order_id;
+			$order = $orders_by_id[ $order_id ] ?? null;
+			if (!$order && function_exists('wc_get_order')) {
+				$order = wc_get_order($order_id);
+			}
 			if (!$order) {
 				foreach ($item_ids as $order_item_id) {
 					$item_cache[ $order_item_id ] = false;

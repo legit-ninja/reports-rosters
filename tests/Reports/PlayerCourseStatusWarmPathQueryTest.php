@@ -8,10 +8,17 @@ namespace InterSoccer\ReportsRosters\Tests\Reports;
 use InterSoccer\ReportsRosters\Tests\TestCase;
 
 require_once __DIR__ . '/PlayerCourseStatusQueryCountTest.php';
+require_once __DIR__ . '/PlayerCourseStatusWarmApiCountHelper.php';
 
 class PlayerCourseStatusWarmPathQueryTest extends TestCase {
 	/** @var int */
 	private const WARM_QUERY_CEILING = 40;
+
+	/** @var int */
+	private const WARM_API_TOTAL_CEILING = 0;
+
+	/** @var int */
+	private const COLD_API_TOTAL_CEILING = 120;
 
 	/** @var PlayerCourseStatusCountingWpdb|null */
 	private $counting_wpdb = null;
@@ -39,11 +46,14 @@ class PlayerCourseStatusWarmPathQueryTest extends TestCase {
 		$this->reset_state();
 		global $wpdb;
 		$wpdb = $this->saved_wpdb;
+		PlayerCourseStatusWarmApiCountHelper::disable();
 		unset(
 			$GLOBALS['intersoccer_test_pcs_cache_force_enabled'],
 			$GLOBALS['intersoccer_test_pcs_cache_data_version_override'],
 			$GLOBALS['intersoccer_test_count_pcs_transient_delete_calls'],
-			$GLOBALS['intersoccer_test_pcs_transient_delete_call_count']
+			$GLOBALS['intersoccer_test_pcs_transient_delete_call_count'],
+			$GLOBALS['intersoccer_test_line_fully_refunded_item_ids'],
+			$GLOBALS['intersoccer_test_wc_get_orders_callback']
 		);
 		parent::tearDown();
 	}
@@ -77,6 +87,9 @@ class PlayerCourseStatusWarmPathQueryTest extends TestCase {
 		$order_id = 60000 + $i;
 		$item_id = 70000 + $i;
 		$customer_id = 1000 + ( $i % 5 );
+		$venues = ['Geneva Centre', 'Lausanne Ouchy', 'Zurich North'];
+		$days = ['Sunday', 'Monday', 'Wednesday'];
+		$product_ids = [3000, 3001, 3002];
 
 		return [
 			'id' => $i,
@@ -84,10 +97,10 @@ class PlayerCourseStatusWarmPathQueryTest extends TestCase {
 			'order_item_id' => $item_id,
 			'activity_type' => 'Course',
 			'product_name' => 'Course ' . $i,
-			'product_id' => 3000,
-			'variation_id' => 4000 + $i,
-			'venue' => 'Geneva Centre',
-			'course_day' => 'sunday',
+			'product_id' => $product_ids[ $i % 3 ],
+			'variation_id' => 4000 + ( $i % 3 ),
+			'venue' => $venues[ $i % 3 ],
+			'course_day' => $days[ $i % 3 ],
 			'times' => '10:00',
 			'course_times' => '',
 			'age_group' => '5-12y',
@@ -147,13 +160,31 @@ class PlayerCourseStatusWarmPathQueryTest extends TestCase {
 		}
 	}
 
+	private function seed_refund_fixture_flags(int $row_count): void {
+		if (!$this->counting_wpdb instanceof PlayerCourseStatusCountingWpdb) {
+			return;
+		}
+		$this->counting_wpdb->refund_parents = [];
+		$GLOBALS['intersoccer_test_line_fully_refunded_item_ids'] = [];
+		for ($i = 1; $i <= $row_count; $i++) {
+			if ($i % 7 !== 0) {
+				continue;
+			}
+			$order_id = 60000 + $i;
+			$item_id = 70000 + $i;
+			$this->counting_wpdb->refund_parents[ $order_id ] = true;
+			$GLOBALS['intersoccer_test_line_fully_refunded_item_ids'][ $item_id ] = true;
+		}
+	}
+
 	/**
-	 * @return array{queries:int,inner_calls:int}
+	 * @return array{queries:int,inner_calls:int,api:array<string,int>}
 	 */
 	private function warm_filter_pass(int $row_count, int $player_count): array {
 		$GLOBALS['intersoccer_test_batch_chunk_size'] = 500;
 		$GLOBALS['intersoccer_test_live_order_status_map'] = [];
 		$GLOBALS['intersoccer_test_order_customer_id_map'] = [];
+		$this->seed_refund_fixture_flags($row_count);
 		$rows = [];
 		for ($i = 1; $i <= $row_count; $i++) {
 			$row = $this->synthetic_row($i);
@@ -170,9 +201,10 @@ class PlayerCourseStatusWarmPathQueryTest extends TestCase {
 		$this->assertSame(1, (int) $GLOBALS['intersoccer_test_pcs_generate_inner_call_count']);
 
 		if (!$this->counting_wpdb instanceof PlayerCourseStatusCountingWpdb) {
-			return ['queries' => -1, 'inner_calls' => 0];
+			return ['queries' => -1, 'inner_calls' => 0, 'api' => []];
 		}
 		$this->counting_wpdb->query_count = 0;
+		PlayerCourseStatusWarmApiCountHelper::enable();
 		$GLOBALS['intersoccer_test_count_pcs_transient_delete_calls'] = true;
 		$GLOBALS['intersoccer_test_pcs_transient_delete_call_count'] = 0;
 
@@ -185,6 +217,7 @@ class PlayerCourseStatusWarmPathQueryTest extends TestCase {
 		return [
 			'queries' => (int) $this->counting_wpdb->query_count,
 			'inner_calls' => (int) $GLOBALS['intersoccer_test_pcs_generate_inner_call_count'],
+			'api' => PlayerCourseStatusWarmApiCountHelper::counts(),
 		];
 	}
 
@@ -235,6 +268,75 @@ class PlayerCourseStatusWarmPathQueryTest extends TestCase {
 		}
 		$this->warm_filter_pass(50, 20);
 		$this->assertSame(0, (int) ($GLOBALS['intersoccer_test_pcs_transient_delete_call_count'] ?? 0));
+	}
+
+	public function test_warm_wordpress_api_calls_constant_across_volume(): void {
+		if (!$this->counting_wpdb instanceof PlayerCourseStatusCountingWpdb) {
+			$this->markTestSkipped('Counting wpdb missing');
+		}
+		$small = $this->warm_filter_pass(10, 10);
+		$large = $this->warm_filter_pass(200, 200);
+		$this->assertSame($small['api'], $large['api']);
+		$this->assertSame(0, (int) ($small['api']['delete_option'] ?? 0));
+		$this->assertSame(0, (int) ($small['api']['delete_transient'] ?? 0));
+		$this->assertSame(0, (int) ($small['api']['get_transient'] ?? 0));
+		$this->assertSame(0, (int) ($small['api']['wc_get_order'] ?? 0));
+		$this->assertSame(0, (int) ($small['api']['wc_get_product'] ?? 0));
+		$this->assertLessThanOrEqual(self::WARM_API_TOTAL_CEILING, array_sum($small['api']));
+	}
+
+	public function test_cold_wordpress_api_calls_constant_across_volume(): void {
+		if (!$this->counting_wpdb instanceof PlayerCourseStatusCountingWpdb) {
+			$this->markTestSkipped('Counting wpdb missing');
+		}
+		$run = function (int $row_count) {
+			if (function_exists('intersoccer_rr_product_type_memo_reset')) {
+				intersoccer_rr_product_type_memo_reset();
+			}
+			if (function_exists('intersoccer_player_course_status_reset_run_memos')) {
+				intersoccer_player_course_status_reset_run_memos();
+			}
+			if (function_exists('intersoccer_roster_report_reset_line_refund_check_state')) {
+				intersoccer_roster_report_reset_line_refund_check_state();
+			}
+			if (function_exists('intersoccer_winback_reset_facet_resolution_cache')) {
+				intersoccer_winback_reset_facet_resolution_cache();
+			}
+			$GLOBALS['intersoccer_test_batch_chunk_size'] = 500;
+			$GLOBALS['intersoccer_test_live_order_status_map'] = [];
+			$GLOBALS['intersoccer_test_order_customer_id_map'] = [];
+			$this->seed_refund_fixture_flags($row_count);
+			$rows = [];
+			for ($i = 1; $i <= $row_count; $i++) {
+				$row = $this->synthetic_row($i);
+				$GLOBALS['intersoccer_test_live_order_status_map'][ $row['order_id'] ] = 'wc-completed';
+				$GLOBALS['intersoccer_test_order_customer_id_map'][ $row['order_id'] ] = (int) $row['customer_id'];
+				$rows[] = $row;
+			}
+			$GLOBALS['intersoccer_test_player_course_status_roster_rows'] = $rows;
+			$this->seed_usermeta_players(max(10, $row_count));
+			unset($GLOBALS['intersoccer_test_player_course_status_players']);
+			$this->counting_wpdb->query_count = 0;
+			PlayerCourseStatusWarmApiCountHelper::enable();
+			if (function_exists('intersoccer_rr_product_type_memo_begin')) {
+				intersoccer_rr_product_type_memo_begin();
+			}
+			intersoccer_player_course_status_build_year_base_dataset(2026, false);
+			if (function_exists('intersoccer_rr_product_type_memo_end')) {
+				intersoccer_rr_product_type_memo_end();
+			}
+
+			return [
+				'queries' => (int) $this->counting_wpdb->query_count,
+				'api' => PlayerCourseStatusWarmApiCountHelper::counts(),
+			];
+		};
+		$small = $run(10);
+		$large = $run(200);
+		$this->assertSame($small['api'], $large['api']);
+		$this->assertSame($small['queries'], $large['queries']);
+		$this->assertLessThanOrEqual(self::COLD_API_TOTAL_CEILING, array_sum($small['api']));
+		$this->assertLessThanOrEqual(3, (int) ($small['api']['wc_get_orders'] ?? 0));
 	}
 
 	public function test_different_data_markers_share_one_transient_key_and_mismatch_is_stale(): void {
