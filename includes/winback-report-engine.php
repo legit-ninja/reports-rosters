@@ -87,8 +87,11 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		if (function_exists('intersoccer_roster_report_prime_order_customer_ids_from_rows')) {
 			intersoccer_roster_report_prime_order_customer_ids_from_rows($history_rows);
 		}
-		if (function_exists('intersoccer_roster_report_prime_line_refund_checks_from_rows')) {
-			intersoccer_roster_report_prime_line_refund_checks_from_rows($history_rows);
+		if (function_exists('intersoccer_roster_report_prime_wc_order_objects_from_rows')) {
+			intersoccer_roster_report_prime_wc_order_objects_from_rows($history_rows);
+		}
+		if (function_exists('intersoccer_roster_report_prime_line_refund_item_results_from_rows')) {
+			intersoccer_roster_report_prime_line_refund_item_results_from_rows($history_rows);
 		}
 		if (function_exists('intersoccer_rr_winback_prime_product_types_from_rows')) {
 			intersoccer_rr_winback_prime_product_types_from_rows($history_rows);
@@ -133,8 +136,11 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		if (function_exists('intersoccer_roster_report_prime_order_customer_ids_from_rows')) {
 			intersoccer_roster_report_prime_order_customer_ids_from_rows($upcoming);
 		}
-		if (function_exists('intersoccer_roster_report_prime_line_refund_checks_from_rows')) {
-			intersoccer_roster_report_prime_line_refund_checks_from_rows($upcoming);
+		if (function_exists('intersoccer_roster_report_prime_wc_order_objects_from_rows')) {
+			intersoccer_roster_report_prime_wc_order_objects_from_rows($upcoming);
+		}
+		if (function_exists('intersoccer_roster_report_prime_line_refund_item_results_from_rows')) {
+			intersoccer_roster_report_prime_line_refund_item_results_from_rows($upcoming);
 		}
 		if (function_exists('intersoccer_rr_winback_prime_product_types_from_rows')) {
 			intersoccer_rr_winback_prime_product_types_from_rows($upcoming);

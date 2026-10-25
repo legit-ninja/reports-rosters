@@ -15,6 +15,7 @@ class PlayerCourseStatusWarmApiCountHelper {
 		'update_object_term_cache',
 		'_prime_post_caches',
 		'wp_get_object_terms',
+		'wp_get_post_parent_id',
 		'get_transient',
 		'delete_option',
 		'delete_transient',

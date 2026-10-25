@@ -56,7 +56,8 @@ class PlayerCourseStatusColdPathBatchTest extends TestCase {
 			$GLOBALS['intersoccer_test_live_order_status_map'],
 			$GLOBALS['intersoccer_test_order_customer_id_map'],
 			$GLOBALS['intersoccer_rr_product_type_batch_load_call_count'],
-			$GLOBALS['intersoccer_rr_product_type_batch_term_read_calls']
+			$GLOBALS['intersoccer_rr_product_type_batch_term_read_calls'],
+			$GLOBALS['intersoccer_rr_test_wpml_object_id_calls']
 		);
 		if (function_exists('intersoccer_rr_product_type_memo_reset')) {
 			intersoccer_rr_product_type_memo_reset();
@@ -149,6 +150,7 @@ class PlayerCourseStatusColdPathBatchTest extends TestCase {
 			'pv' => $this->pv_call_total(),
 			'batch_load' => (int) ( $GLOBALS['intersoccer_rr_product_type_batch_load_call_count'] ?? 0 ),
 			'term_reads' => (int) ( $GLOBALS['intersoccer_rr_product_type_batch_term_read_calls'] ?? 0 ),
+			'wpml' => (int) ( $GLOBALS['intersoccer_rr_test_wpml_object_id_calls'] ?? 0 ),
 			'api' => PlayerCourseStatusWarmApiCountHelper::counts(),
 		];
 	}
@@ -159,12 +161,16 @@ class PlayerCourseStatusColdPathBatchTest extends TestCase {
 		$this->assertSame($small['pv'], $large['pv']);
 		$this->assertSame($small['batch_load'], $large['batch_load']);
 		$this->assertSame($small['term_reads'], $large['term_reads']);
+		$this->assertSame($small['wpml'], $large['wpml']);
 		$this->assertSame($small['api']['wp_get_object_terms'], $large['api']['wp_get_object_terms']);
+		$this->assertSame($small['api']['wp_get_post_parent_id'], $large['api']['wp_get_post_parent_id']);
 		$this->assertLessThanOrEqual(self::PV_CALL_CEILING, $small['pv']);
 		$this->assertSame(1, $small['batch_load']);
 		$this->assertLessThanOrEqual(self::BATCH_TERM_READ_CEILING, $small['term_reads']);
 		$this->assertSame(0, (int) ( $small['api']['wc_get_product'] ?? 0 ));
 		$this->assertLessThanOrEqual(2, (int) ( $small['api']['wp_get_object_terms'] ?? 0 ));
+		$this->assertSame(0, (int) ( $small['api']['wp_get_post_parent_id'] ?? 0 ));
+		$this->assertSame(0, $small['wpml']);
 	}
 
 	/**
@@ -207,6 +213,7 @@ class PlayerCourseStatusColdPathBatchTest extends TestCase {
 			'pv' => $this->pv_call_total(),
 			'batch_load' => (int) ( $GLOBALS['intersoccer_rr_product_type_batch_load_call_count'] ?? 0 ),
 			'term_reads' => (int) ( $GLOBALS['intersoccer_rr_product_type_batch_term_read_calls'] ?? 0 ),
+			'wpml' => (int) ( $GLOBALS['intersoccer_rr_test_wpml_object_id_calls'] ?? 0 ),
 			'api' => PlayerCourseStatusWarmApiCountHelper::counts(),
 		];
 	}
@@ -217,10 +224,14 @@ class PlayerCourseStatusColdPathBatchTest extends TestCase {
 		$this->assertSame($small['pv'], $large['pv']);
 		$this->assertSame($small['batch_load'], $large['batch_load']);
 		$this->assertSame($small['term_reads'], $large['term_reads']);
+		$this->assertSame($small['wpml'], $large['wpml']);
 		$this->assertSame($small['api']['wp_get_object_terms'], $large['api']['wp_get_object_terms']);
+		$this->assertSame($small['api']['wp_get_post_parent_id'], $large['api']['wp_get_post_parent_id']);
 		$this->assertLessThanOrEqual(self::PV_CALL_CEILING, $small['pv']);
 		$this->assertSame(1, $small['batch_load']);
 		$this->assertLessThanOrEqual(self::BATCH_TERM_READ_CEILING, $small['term_reads']);
 		$this->assertSame(0, (int) ( $small['api']['wc_get_product'] ?? 0 ));
+		$this->assertSame(0, (int) ( $small['api']['wp_get_post_parent_id'] ?? 0 ));
+		$this->assertSame(0, $small['wpml']);
 	}
 }

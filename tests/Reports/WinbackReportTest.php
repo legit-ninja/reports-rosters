@@ -45,6 +45,9 @@ class WinbackReportTest extends TestCase {
 		if (function_exists('intersoccer_roster_report_reset_order_customer_id_cache')) {
 			intersoccer_roster_report_reset_order_customer_id_cache();
 		}
+		if (function_exists('intersoccer_roster_report_reset_wc_order_object_cache')) {
+			intersoccer_roster_report_reset_wc_order_object_cache();
+		}
 		if (function_exists('intersoccer_roster_report_reset_fake_customer_cache')) {
 			intersoccer_roster_report_reset_fake_customer_cache();
 		}

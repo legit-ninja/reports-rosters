@@ -1,6 +1,6 @@
 <?php
 /**
- * Batched product-type resolution matches PV-style per-ID results on representative fixtures.
+ * Batched resolver vs frozen PV 2.10.16 read path + non-batched PV fallback.
  */
 
 namespace InterSoccer\ReportsRosters\Tests\Reports;
@@ -8,15 +8,14 @@ namespace InterSoccer\ReportsRosters\Tests\Reports;
 use InterSoccer\ReportsRosters\Tests\TestCase;
 use InterSoccerRRTestMeta;
 
+require_once dirname(__DIR__) . '/fixtures/pv-product-types-reference-2-10-16.php';
+
 class ProductTypeBatchEquivalenceTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		$includes = dirname(__DIR__, 2) . '/includes';
 		require_once $includes . '/utils.php';
 		require_once $includes . '/winback-report-perf.php';
-		if (function_exists('intersoccer_reset_product_type_cache')) {
-			intersoccer_reset_product_type_cache();
-		}
 		$this->reset_fixtures();
 	}
 
@@ -29,10 +28,11 @@ class ProductTypeBatchEquivalenceTest extends TestCase {
 		InterSoccerRRTestMeta::$data = [];
 		unset(
 			$GLOBALS['intersoccer_test_wp_get_object_terms'],
+			$GLOBALS['intersoccer_test_terms_by_id'],
 			$GLOBALS['intersoccer_test_post_parents'],
-			$GLOBALS['intersoccer_test_pv_product_type_reference'],
-			$GLOBALS['intersoccer_rr_pv_product_type_by_id'],
-			$GLOBALS['intersoccer_rr_product_type_batch_loaded']
+			$GLOBALS['intersoccer_test_get_product_type_calls'],
+			$GLOBALS['intersoccer_rr_test_wpml_object_id_calls'],
+			$GLOBALS['intersoccer_rr_test_api_call_counts']
 		);
 		if (function_exists('intersoccer_rr_product_type_memo_reset')) {
 			intersoccer_rr_product_type_memo_reset();
@@ -42,7 +42,7 @@ class ProductTypeBatchEquivalenceTest extends TestCase {
 	/**
 	 * @return object
 	 */
-	private function term($term_id, $slug, $name) {
+	private function term(int $term_id, string $slug, string $name) {
 		$t = new \stdClass();
 		$t->term_id = $term_id;
 		$t->slug = $slug;
@@ -51,116 +51,129 @@ class ProductTypeBatchEquivalenceTest extends TestCase {
 		return $t;
 	}
 
-	/**
-	 * @param array<int,array<string,array<int,object>>> $fixture
-	 */
-	private function seed_terms_fixture(array $fixture): void {
-		$GLOBALS['intersoccer_test_wp_get_object_terms'] = $fixture;
+	private function seed_wpml_map(array $map): void {
+		add_filter('wpml_default_language', static function () {
+			return 'en';
+		});
+		add_filter('wpml_object_id', static function ($id, $type, $return_original, $lang) use ($map) {
+			if ($type === 'product' && isset($map[ (int) $id ])) {
+				return (int) $map[ (int) $id ];
+			}
+
+			return (int) $id;
+		}, 10, 4);
 	}
 
 	/**
-	 * @param array<int,string> $reference post_id => expected type from PV stub
+	 * @param array<int,array<string,array<int,object>>> $terms_fixture
+	 * @param int[]                                        $post_ids
 	 */
-	private function assert_batch_matches_reference(array $post_ids, array $reference): void {
+	private function assert_batch_matches_pv_reference(array $terms_fixture, array $post_ids, array $safe_pairs = []): void {
+		$GLOBALS['intersoccer_test_wp_get_object_terms'] = $terms_fixture;
 		intersoccer_rr_product_type_memo_begin();
-		$loaded = intersoccer_rr_product_type_batch_load_for_post_ids($post_ids);
-		foreach ($reference as $id => $expected) {
-			$batch = $loaded[ $id ] ?? null;
-			$this->assertSame($expected, $batch, 'batch type for post ' . $id);
-			if (function_exists('intersoccer_get_product_type_safe')) {
-				$parent = (int) ( $GLOBALS['intersoccer_test_post_parents'][ $id ] ?? 0 );
-				$safe = intersoccer_get_product_type_safe(
-					$parent > 0 ? $parent : $id,
-					$parent > 0 ? $id : null
-				);
-				$this->assertSame((string) ( $expected ?? '' ), (string) $safe, 'safe cache for post ' . $id);
+		$batch = intersoccer_rr_product_type_batch_load_for_post_ids($post_ids);
+		foreach ($post_ids as $id) {
+			$expected = \InterSoccer_PV_Product_Types_Reference_2_10_16::get_product_type($id);
+			$this->assertSame($expected, $batch[ $id ] ?? null, 'batch vs PV reference for post ' . $id);
+		}
+		foreach ($safe_pairs as $pair) {
+			$parent = (int) $pair[0];
+			$variation = isset($pair[1]) ? (int) $pair[1] : null;
+			$expected = '';
+			if ($variation && $variation > 0) {
+				$expected = (string) ( \InterSoccer_PV_Product_Types_Reference_2_10_16::get_product_type($variation) ?? '' );
+				if ($expected === '') {
+					$expected = (string) ( \InterSoccer_PV_Product_Types_Reference_2_10_16::get_product_type($parent) ?? '' );
+				}
+			} else {
+				$expected = (string) ( \InterSoccer_PV_Product_Types_Reference_2_10_16::get_product_type($parent) ?? '' );
 			}
+			$safe = (string) intersoccer_get_product_type_safe($parent, $variation);
+			$this->assertSame($expected, $safe, 'safe pair ' . $parent . ':' . ( $variation ?? '0' ));
 		}
 		intersoccer_rr_product_type_memo_end();
 	}
 
-	public function test_batch_matches_meta_and_activity_for_each_canonical_type(): void {
-		$cases = [
-			91001 => 'camp',
-			91002 => 'course',
-			91003 => 'birthday',
-			91004 => 'tournament',
-		];
+	public function test_batch_matches_pv_reference_matrix(): void {
 		$terms = [];
-		$reference = [];
-		foreach ($cases as $id => $type) {
-			InterSoccerRRTestMeta::$data[ $id ]['_intersoccer_product_type'] = $type;
-			$terms[ $id ] = [
-				'pa_activity-type' => [ $this->term($id, $type, ucfirst($type)) ],
-				'product_cat' => [],
-			];
-			$reference[ $id ] = $type;
-		}
-		$this->seed_terms_fixture($terms);
-		$this->assert_batch_matches_reference(array_keys($reference), $reference);
-	}
+		$ids = [];
+		InterSoccerRRTestMeta::$data[96001]['_intersoccer_product_type'] = 'course';
+		$ids[] = 96001;
 
-	public function test_batch_resolves_translated_activity_slugs(): void {
-		$fr_id = 92001;
-		$de_id = 92002;
-		$this->seed_terms_fixture([
-			$fr_id => [
-				'pa_activity-type' => [ $this->term(501, 'cours', 'Cours') ],
-				'product_cat' => [],
-			],
-			$de_id => [
-				'pa_activity-type' => [ $this->term(502, 'kurs', 'Kurs') ],
-				'product_cat' => [],
+		$terms[96010] = ['pa_activity-type' => [ $this->term(101, 'cours', 'Cours') ], 'product_cat' => []];
+		$ids[] = 96010;
+		$terms[96011] = ['pa_activity-type' => [ $this->term(102, 'kurs', 'Kurs') ], 'product_cat' => []];
+		$ids[] = 96011;
+		$terms[96012] = ['pa_activity-type' => [ $this->term(103, 'lager', 'Lager') ], 'product_cat' => []];
+		$ids[] = 96012;
+		$terms[96013] = ['pa_activity-type' => [ $this->term(104, 'anniversaire', 'Anniversaire') ], 'product_cat' => []];
+		$ids[] = 96013;
+
+		InterSoccerRRTestMeta::$data[96020]['_intersoccer_product_type'] = 'camp';
+		$terms[96020] = [
+			'pa_activity-type' => [ $this->term(105, 'birthday-party', 'Birthday Party') ],
+			'product_cat' => [ $this->term(201, 'birthdays', 'Birthdays') ],
+		];
+		$ids[] = 96020;
+
+		$terms[96030] = ['pa_activity-type' => [], 'product_cat' => [ $this->term(202, 'courses', 'Courses') ]];
+		$ids[] = 96030;
+
+		InterSoccerRRTestMeta::$data[96040]['_product_attributes'] = serialize([
+			'pa_activity-type' => [
+				'name' => 'pa_activity-type',
+				'value' => '301',
+				'is_visible' => 1,
+				'is_variation' => 0,
+				'is_taxonomy' => 1,
 			],
 		]);
-		$this->assert_batch_matches_reference(
-			[ $fr_id, $de_id ],
-			[ $fr_id => 'course', $de_id => 'course' ]
-		);
-	}
+		$GLOBALS['intersoccer_test_terms_by_id'] = [
+			301 => $this->term(301, 'stage', 'Stage'),
+		];
+		$ids[] = 96040;
 
-	public function test_batch_resolves_variation_via_parent_and_variation_terms(): void {
-		$parent = 93001;
-		$variation = 93002;
+		$parent = 96050;
+		$variation = 96051;
 		$GLOBALS['intersoccer_test_post_parents'][ $variation ] = $parent;
 		InterSoccerRRTestMeta::$data[ $parent ]['_intersoccer_product_type'] = 'course';
-		$this->seed_terms_fixture([
-			$parent => [
-				'pa_activity-type' => [ $this->term(601, 'course', 'Course') ],
-				'product_cat' => [ $this->term(701, 'courses', 'Courses') ],
-			],
-			$variation => [
-				'pa_activity-type' => [],
-				'product_cat' => [],
-			],
+		$terms[ $parent ] = [
+			'pa_activity-type' => [ $this->term(401, 'course', 'Course') ],
+			'product_cat' => [],
+		];
+		$terms[ $variation ] = ['pa_activity-type' => [], 'product_cat' => []];
+		$ids[] = $parent;
+		$ids[] = $variation;
+
+		$this->seed_wpml_map([96060 => 96061]);
+		InterSoccerRRTestMeta::$data[96061]['_intersoccer_product_type'] = 'tournament';
+		$terms[96061] = [
+			'pa_activity-type' => [ $this->term(501, 'tournament', 'Tournament') ],
+			'product_cat' => [],
+		];
+		$terms[96060] = ['pa_activity-type' => [], 'product_cat' => []];
+		$ids[] = 96060;
+		$ids[] = 96061;
+
+		$terms[96070] = ['pa_activity-type' => [], 'product_cat' => []];
+		$ids[] = 96070;
+
+		$this->assert_batch_matches_pv_reference($terms, $ids, [
+			[ $parent, $variation ],
+			[ 96001, null ],
 		]);
+	}
+
+	public function test_non_batched_post_id_falls_back_to_pv_helper(): void {
+		require_once __DIR__ . '/player-course-status-golden-stubs.php';
+		$GLOBALS['intersoccer_test_golden_product_type_by_id'] = [88001 => 'camp'];
+		$GLOBALS['intersoccer_test_get_product_type_calls'] = [];
 		intersoccer_rr_product_type_memo_begin();
-		intersoccer_rr_product_type_batch_load_for_post_ids([ $parent, $variation ]);
-		$safe = intersoccer_get_product_type_safe($parent, $variation);
+		intersoccer_rr_product_type_batch_load_for_post_ids([90001]);
+		$this->assertSame('camp', intersoccer_get_product_type(88001));
+		$this->assertSame('camp', intersoccer_rr_memoized_get_product_type(88001));
+		$this->assertSame('', intersoccer_rr_memoized_get_product_type(90001));
 		intersoccer_rr_product_type_memo_end();
-		$this->assertSame('course', $safe);
-	}
-
-	public function test_batch_corrects_camp_meta_with_birthday_signals(): void {
-		$id = 94001;
-		InterSoccerRRTestMeta::$data[ $id ]['_intersoccer_product_type'] = 'camp';
-		$this->seed_terms_fixture([
-			$id => [
-				'pa_activity-type' => [ $this->term(801, 'birthday-party', 'Birthday Party') ],
-				'product_cat' => [ $this->term(802, 'birthdays', 'Birthdays') ],
-			],
-		]);
-		$this->assert_batch_matches_reference([ $id ], [ $id => 'birthday' ]);
-	}
-
-	public function test_batch_falls_back_to_product_categories(): void {
-		$id = 95001;
-		$this->seed_terms_fixture([
-			$id => [
-				'pa_activity-type' => [],
-				'product_cat' => [ $this->term(901, 'camps', 'Camps') ],
-			],
-		]);
-		$this->assert_batch_matches_reference([ $id ], [ $id => 'camp' ]);
+		unset($GLOBALS['intersoccer_test_golden_product_type_by_id']);
 	}
 }

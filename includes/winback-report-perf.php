@@ -22,7 +22,7 @@ if (!function_exists('intersoccer_rr_product_type_memo_reset_storage')) {
 	function intersoccer_rr_product_type_memo_reset_storage() {
 		$GLOBALS['intersoccer_rr_pv_product_type_by_id'] = [];
 		$GLOBALS['intersoccer_rr_product_type_safe_cache'] = [];
-		unset($GLOBALS['intersoccer_rr_winback_row_kind_memo']);
+		unset($GLOBALS['intersoccer_rr_winback_row_kind_memo'], $GLOBALS['intersoccer_rr_product_type_batch_id_set']);
 		if (function_exists('intersoccer_rr_product_type_batch_reset')) {
 			intersoccer_rr_product_type_batch_reset();
 		}
@@ -92,11 +92,6 @@ if (!function_exists('intersoccer_rr_memoized_get_product_type')) {
 		$by_id = &$GLOBALS['intersoccer_rr_pv_product_type_by_id'];
 		if (array_key_exists($post_id, $by_id)) {
 			return $by_id[ $post_id ];
-		}
-		if (!empty($GLOBALS['intersoccer_rr_product_type_batch_loaded'])) {
-			$by_id[ $post_id ] = '';
-
-			return '';
 		}
 		if (!function_exists('intersoccer_get_product_type')) {
 			$by_id[ $post_id ] = '';

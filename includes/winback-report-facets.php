@@ -361,10 +361,13 @@ if (!function_exists('intersoccer_winback_resolve_roster_facet_raw')) {
 			}
 		}
 
-		if ($resolved === '' && $variation_id > 0 && function_exists('wc_get_product')) {
-			$product = wc_get_product($variation_id);
-			if ($product && method_exists($product, 'get_attribute')) {
-				$resolved = (string) $product->get_attribute($taxonomy);
+		if ($resolved === '' && $variation_id > 0 && function_exists('get_post_meta')) {
+			foreach ($meta_keys as $meta_key) {
+				$val = (string) get_post_meta($variation_id, $meta_key, true);
+				if ($val !== '') {
+					$resolved = $val;
+					break;
+				}
 			}
 		}
 
@@ -431,9 +434,6 @@ if (!function_exists('intersoccer_winback_batch_prime_order_item_facet_meta')) {
 	function intersoccer_winback_batch_prime_order_item_facet_meta(array $order_item_ids) {
 		$order_item_ids = array_values(array_unique(array_filter(array_map('intval', $order_item_ids))));
 		if (empty($order_item_ids)) {
-			return;
-		}
-		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
 			return;
 		}
 		global $wpdb;
