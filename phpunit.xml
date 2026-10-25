@@ -81,6 +81,8 @@
             <file>tests/Reports/PlayerCourseStatusCacheTest.php</file>
             <file>tests/Reports/PlayerCourseStatusPerfBaseCacheTest.php</file>
             <file>tests/Reports/PlayerCourseStatusWarmPathQueryTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusColdPathBatchTest.php</file>
+            <file>tests/Reports/ProductTypeBatchEquivalenceTest.php</file>
             <file>tests/Reports/PlayerCourseStatusLegacyEquivalenceTest.php</file>
             <file>tests/Reports/WinbackReportCacheTest.php</file>
             <file>tests/Reports/PlayerCampStatusLoadPlayersQueryCountTest.php</file>

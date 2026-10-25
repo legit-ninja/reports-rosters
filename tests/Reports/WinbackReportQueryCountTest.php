@@ -897,6 +897,9 @@ class WinbackReportQueryCountTest extends TestCase {
 	public function test_winback_product_type_memo_limits_pv_calls_and_preserves_kinds(): void {
 		$this->reset_winback_loader_isolation_state();
 		$GLOBALS['intersoccer_test_get_product_type_calls'] = [];
+		for ($parent = 1001; $parent <= 1005; $parent++) {
+			\InterSoccerRRTestMeta::$data[ $parent ]['_intersoccer_product_type'] = ($parent % 2 === 1) ? 'camp' : 'course';
+		}
 		$rows = [];
 		$parent_ids = [1001, 1002, 1003, 1004, 1005];
 		$variation_ids = [2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010];
@@ -934,6 +937,7 @@ class WinbackReportQueryCountTest extends TestCase {
 			$this->assertLessThanOrEqual(1, $count, 'PV lookup should run at most once per post ID ' . $id);
 		}
 		$this->assertLessThanOrEqual(15, count($GLOBALS['intersoccer_test_get_product_type_calls']));
+		$this->assertSame(0, array_sum($GLOBALS['intersoccer_test_get_product_type_calls'] ?? []));
 	}
 
 	public function test_product_type_safe_without_memo_scope_calls_through_each_time(): void {

@@ -443,7 +443,53 @@ if (!function_exists('_prime_post_caches')) {
 
 if (!function_exists('update_object_term_cache')) {
     function update_object_term_cache($object_ids, $object_type) {
+        if (function_exists('intersoccer_rr_test_api_call_count')) {
+            intersoccer_rr_test_api_call_count('update_object_term_cache');
+        }
         return true;
+    }
+}
+
+if (!function_exists('wp_get_object_terms')) {
+    /**
+     * @param int[]|int $object_ids
+     * @param string[]|string $taxonomies
+     * @param array<string,mixed> $args
+     * @return array<int,object>|\WP_Error
+     */
+    function wp_get_object_terms($object_ids, $taxonomies, $args = []) {
+        if (function_exists('intersoccer_rr_test_api_call_count')) {
+            intersoccer_rr_test_api_call_count('wp_get_object_terms');
+        }
+        $object_ids = array_map('intval', (array) $object_ids);
+        $taxonomies = (array) $taxonomies;
+        $fixture = $GLOBALS['intersoccer_test_wp_get_object_terms'] ?? null;
+        if (!is_array($fixture)) {
+            return [];
+        }
+        $out = [];
+        foreach ($object_ids as $object_id) {
+            if (!isset($fixture[$object_id]) || !is_array($fixture[$object_id])) {
+                continue;
+            }
+            foreach ($taxonomies as $taxonomy) {
+                $terms = $fixture[$object_id][$taxonomy] ?? [];
+                if (!is_array($terms)) {
+                    continue;
+                }
+                foreach ($terms as $term) {
+                    if (!is_object($term)) {
+                        continue;
+                    }
+                    $clone = clone $term;
+                    $clone->object_id = $object_id;
+                    $clone->taxonomy = $taxonomy;
+                    $out[] = $clone;
+                }
+            }
+        }
+
+        return $out;
     }
 }
 

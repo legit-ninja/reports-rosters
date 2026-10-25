@@ -4731,6 +4731,16 @@ function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
         if (array_key_exists($memo_key, $GLOBALS['intersoccer_rr_product_type_safe_cache'])) {
             return $GLOBALS['intersoccer_rr_product_type_safe_cache'][ $memo_key ];
         }
+        if (!empty($GLOBALS['intersoccer_rr_product_type_batch_loaded'])
+            && function_exists('intersoccer_rr_product_type_batch_resolve_safe_pair')) {
+            $resolved = intersoccer_rr_product_type_batch_resolve_safe_pair($product_id, $variation_id);
+            if ($resolved === '' && function_exists('intersoccer_manual_product_type_detection')) {
+                $resolved = intersoccer_manual_product_type_detection($product_id, $variation_id);
+            }
+            $GLOBALS['intersoccer_rr_product_type_safe_cache'][ $memo_key ] = $resolved;
+
+            return $resolved;
+        }
     }
 
     // Check if the Product Variations plugin function exists

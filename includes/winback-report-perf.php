@@ -7,6 +7,11 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+$__intersoccer_rr_product_type_batch = dirname(__FILE__) . '/product-type-batch.php';
+if (file_exists($__intersoccer_rr_product_type_batch)) {
+	require_once $__intersoccer_rr_product_type_batch;
+}
+
 if (!function_exists('intersoccer_rr_product_type_memo_scope_active')) {
 	function intersoccer_rr_product_type_memo_scope_active() {
 		return !empty($GLOBALS['intersoccer_rr_product_type_memo_depth']);
@@ -18,6 +23,9 @@ if (!function_exists('intersoccer_rr_product_type_memo_reset_storage')) {
 		$GLOBALS['intersoccer_rr_pv_product_type_by_id'] = [];
 		$GLOBALS['intersoccer_rr_product_type_safe_cache'] = [];
 		unset($GLOBALS['intersoccer_rr_winback_row_kind_memo']);
+		if (function_exists('intersoccer_rr_product_type_batch_reset')) {
+			intersoccer_rr_product_type_batch_reset();
+		}
 	}
 }
 
@@ -67,10 +75,14 @@ if (!function_exists('intersoccer_rr_memoized_get_product_type')) {
 	 */
 	function intersoccer_rr_memoized_get_product_type($post_id) {
 		$post_id = (int) $post_id;
-		if ($post_id <= 0 || !function_exists('intersoccer_get_product_type')) {
+		if ($post_id <= 0) {
 			return '';
 		}
 		if (!intersoccer_rr_product_type_memo_scope_active()) {
+			if (!function_exists('intersoccer_get_product_type')) {
+				return '';
+			}
+
 			return intersoccer_get_product_type($post_id);
 		}
 		if (!isset($GLOBALS['intersoccer_rr_pv_product_type_by_id'])
@@ -78,9 +90,20 @@ if (!function_exists('intersoccer_rr_memoized_get_product_type')) {
 			$GLOBALS['intersoccer_rr_pv_product_type_by_id'] = [];
 		}
 		$by_id = &$GLOBALS['intersoccer_rr_pv_product_type_by_id'];
-		if (!array_key_exists($post_id, $by_id)) {
-			$by_id[ $post_id ] = intersoccer_get_product_type($post_id);
+		if (array_key_exists($post_id, $by_id)) {
+			return $by_id[ $post_id ];
 		}
+		if (!empty($GLOBALS['intersoccer_rr_product_type_batch_loaded'])) {
+			$by_id[ $post_id ] = '';
+
+			return '';
+		}
+		if (!function_exists('intersoccer_get_product_type')) {
+			$by_id[ $post_id ] = '';
+
+			return '';
+		}
+		$by_id[ $post_id ] = intersoccer_get_product_type($post_id);
 
 		return $by_id[ $post_id ];
 	}
@@ -141,25 +164,20 @@ if (!function_exists('intersoccer_rr_winback_prime_product_types_from_rows')) {
 	 * @param array<int,array<string,mixed>> $rows
 	 */
 	function intersoccer_rr_winback_prime_product_types_from_rows(array $rows) {
-		if (!intersoccer_rr_product_type_memo_scope_active()
-			|| !function_exists('intersoccer_get_product_type_safe')) {
+		if (!intersoccer_rr_product_type_memo_scope_active()) {
 			return;
 		}
-		$pairs = [];
-		foreach ($rows as $row) {
-			if (!is_array($row)) {
-				continue;
-			}
-			$product_id = (int) ( $row['product_id'] ?? 0 );
-			if ($product_id <= 0) {
-				continue;
-			}
-			$variation_id = (int) ( $row['variation_id'] ?? 0 );
-			$key = $product_id . ':' . ( $variation_id > 0 ? (string) $variation_id : '0' );
-			$pairs[ $key ] = [ $product_id, $variation_id > 0 ? $variation_id : null ];
+		if (!function_exists('intersoccer_rr_product_type_batch_collect_post_ids_from_rows')
+			|| !function_exists('intersoccer_rr_product_type_batch_load_for_post_ids')) {
+			return;
 		}
-		foreach ($pairs as $pair) {
-			intersoccer_get_product_type_safe($pair[0], $pair[1]);
+		$post_ids = intersoccer_rr_product_type_batch_collect_post_ids_from_rows($rows);
+		if (empty($post_ids)) {
+			return;
+		}
+		intersoccer_rr_product_type_batch_load_for_post_ids($post_ids);
+		if (function_exists('intersoccer_rr_product_type_batch_prime_safe_cache_from_rows')) {
+			intersoccer_rr_product_type_batch_prime_safe_cache_from_rows($rows);
 		}
 	}
 }

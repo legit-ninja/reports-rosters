@@ -862,20 +862,22 @@ function intersoccer_player_course_status_prime_roster_product_types(array $rows
 			$post_ids[ $variation_id ] = $variation_id;
 		}
 	}
-	if (!empty($post_ids)) {
+	if (function_exists('intersoccer_rr_winback_prime_product_types_from_rows')) {
+		intersoccer_rr_winback_prime_product_types_from_rows($rows);
+	} elseif (!empty($post_ids)) {
 		$chunk_size = function_exists('intersoccer_roster_report_batch_chunk_size')
 			? intersoccer_roster_report_batch_chunk_size()
 			: 500;
 		foreach (array_chunk(array_values($post_ids), $chunk_size) as $chunk) {
 			if (function_exists('_prime_post_caches')) {
-				_prime_post_caches($chunk, false, true);
+				_prime_post_caches($chunk, true, true);
 			} elseif (function_exists('update_meta_cache')) {
 				update_meta_cache('post', $chunk);
 			}
+			if (function_exists('update_object_term_cache')) {
+				update_object_term_cache($chunk, 'product');
+			}
 		}
-	}
-	if (function_exists('intersoccer_rr_winback_prime_product_types_from_rows')) {
-		intersoccer_rr_winback_prime_product_types_from_rows($rows);
 	}
 }
 
