@@ -395,7 +395,11 @@ function intersoccer_player_course_status_row_is_active_booking(array $row) {
 		&& intersoccer_roster_report_order_status_is_wholly_refunded($status)) {
 		return false;
 	}
-	if (function_exists('intersoccer_roster_report_row_line_is_fully_refunded')
+	if (array_key_exists('line_fully_refunded', $row)) {
+		if (!empty($row['line_fully_refunded'])) {
+			return false;
+		}
+	} elseif (function_exists('intersoccer_roster_report_row_line_is_fully_refunded')
 		&& intersoccer_roster_report_row_line_is_fully_refunded($row)) {
 		return false;
 	}
@@ -415,7 +419,11 @@ function intersoccer_player_course_status_row_passes_refund_gates(array $row) {
 		&& intersoccer_roster_report_order_status_is_wholly_refunded($status)) {
 		return false;
 	}
-	if (function_exists('intersoccer_roster_report_row_line_is_fully_refunded')
+	if (array_key_exists('line_fully_refunded', $row)) {
+		if (!empty($row['line_fully_refunded'])) {
+			return false;
+		}
+	} elseif (function_exists('intersoccer_roster_report_row_line_is_fully_refunded')
 		&& intersoccer_roster_report_row_line_is_fully_refunded($row)) {
 		return false;
 	}
@@ -869,8 +877,11 @@ function intersoccer_player_course_status_prepare_roster_rows(array $rows) {
 	if (function_exists('intersoccer_roster_report_prime_order_customer_ids_from_rows')) {
 		intersoccer_roster_report_prime_order_customer_ids_from_rows($rows);
 	}
-	if (function_exists('intersoccer_roster_report_prime_line_refund_checks_from_rows')) {
-		intersoccer_roster_report_prime_line_refund_checks_from_rows($rows);
+	if (function_exists('intersoccer_roster_report_prime_line_refund_item_results_from_rows')) {
+		intersoccer_roster_report_prime_line_refund_item_results_from_rows($rows);
+	}
+	if (function_exists('intersoccer_roster_report_stamp_line_fully_refunded_on_rows')) {
+		$rows = intersoccer_roster_report_stamp_line_fully_refunded_on_rows($rows);
 	}
 	if (function_exists('intersoccer_roster_report_prime_program_year_meta_from_rows')) {
 		$rows = intersoccer_roster_report_prime_program_year_meta_from_rows($rows);
@@ -1308,7 +1319,27 @@ function intersoccer_player_course_status_cache_transient_key($year_or_filters) 
 	$payload = [
 		'schema' => intersoccer_player_course_status_cache_schema_version(),
 		'year' => $year,
-		'data' => intersoccer_player_course_status_cache_data_version(),
+	];
+	$json = function_exists('wp_json_encode') ? wp_json_encode($payload) : json_encode($payload);
+
+	return 'intersoccer_pcs_' . md5((string) $json);
+}
+
+/**
+ * Legacy transient key (schema v4) that embedded the data marker in the key hash.
+ *
+ * @param int    $year
+ * @param string $data_marker Value from {@see intersoccer_player_course_status_cache_data_version()}.
+ */
+function intersoccer_player_course_status_cache_transient_key_legacy_marker_in_key($year, $data_marker) {
+	$year = (int) $year;
+	if ($year < 2000) {
+		$year = (int) date('Y');
+	}
+	$payload = [
+		'schema' => intersoccer_player_course_status_cache_schema_version(),
+		'year' => $year,
+		'data' => (string) $data_marker,
 	];
 	$json = function_exists('wp_json_encode') ? wp_json_encode($payload) : json_encode($payload);
 
@@ -1347,6 +1378,9 @@ function intersoccer_player_course_status_transient_set($key, $value, $ttl) {
  * @param string $key
  */
 function intersoccer_player_course_status_transient_delete($key) {
+	if (!empty($GLOBALS['intersoccer_test_count_pcs_transient_delete_calls'])) {
+		$GLOBALS['intersoccer_test_pcs_transient_delete_call_count'] = (int) ( $GLOBALS['intersoccer_test_pcs_transient_delete_call_count'] ?? 0 ) + 1;
+	}
 	if (isset($GLOBALS['intersoccer_test_pcs_transient_store'])
 		&& is_array($GLOBALS['intersoccer_test_pcs_transient_store'])) {
 		unset($GLOBALS['intersoccer_test_pcs_transient_store'][ $key ]);
@@ -1556,8 +1590,14 @@ function intersoccer_player_course_status_cache_slim_base(array $base) {
 		}
 	}
 
+	$data_version = isset($base['data_version']) ? (string) $base['data_version'] : '';
+	if ($data_version === '') {
+		$data_version = intersoccer_player_course_status_cache_data_version();
+	}
+
 	return [
 		'year' => (int) ( $base['year'] ?? 0 ),
+		'data_version' => $data_version,
 		'players' => isset($base['players']) && is_array($base['players']) ? $base['players'] : [],
 		'year_rows' => isset($base['year_rows']) && is_array($base['year_rows']) ? $base['year_rows'] : [],
 		'booking_records' => $slim_records,
@@ -1582,11 +1622,39 @@ function intersoccer_player_course_status_cache_expand_base(array $slim) {
 
 	return [
 		'year' => (int) ( $slim['year'] ?? 0 ),
+		'data_version' => isset($slim['data_version']) ? (string) $slim['data_version'] : '',
 		'players' => isset($slim['players']) && is_array($slim['players']) ? $slim['players'] : [],
 		'year_rows' => isset($slim['year_rows']) && is_array($slim['year_rows']) ? $slim['year_rows'] : [],
 		'booking_records' => $records,
 		'warnings' => isset($slim['warnings']) && is_array($slim['warnings']) ? $slim['warnings'] : [],
 	];
+}
+
+/**
+ * Ensure cached year rows carry stamped line refund flags (no per-row DB on warm filter pass).
+ *
+ * @param array<int,array<string,mixed>> $year_rows
+ * @return array<int,array<string,mixed>>
+ */
+function intersoccer_player_course_status_ensure_year_rows_refund_flags(array $year_rows) {
+	$needs_stamp = false;
+	foreach ($year_rows as $row) {
+		if (is_array($row) && !array_key_exists('line_fully_refunded', $row)) {
+			$needs_stamp = true;
+			break;
+		}
+	}
+	if (!$needs_stamp) {
+		return $year_rows;
+	}
+	if (function_exists('intersoccer_roster_report_prime_line_refund_item_results_from_rows')) {
+		intersoccer_roster_report_prime_line_refund_item_results_from_rows($year_rows);
+	}
+	if (function_exists('intersoccer_roster_report_stamp_line_fully_refunded_on_rows')) {
+		return intersoccer_roster_report_stamp_line_fully_refunded_on_rows($year_rows);
+	}
+
+	return $year_rows;
 }
 
 /**
@@ -1676,6 +1744,11 @@ function intersoccer_player_course_status_cache_read_base($year) {
 
 		return null;
 	}
+	$stored_marker = isset($decoded['data_version']) ? (string) $decoded['data_version'] : '';
+	$current_marker = intersoccer_player_course_status_cache_data_version();
+	if ($stored_marker === '' || $stored_marker !== $current_marker) {
+		return null;
+	}
 
 	return $decoded;
 }
@@ -1688,7 +1761,12 @@ function intersoccer_player_course_status_cache_write_base($year, array $base) {
 	if (!empty($base['warnings']) && is_array($base['warnings'])) {
 		return;
 	}
-	$key = intersoccer_player_course_status_cache_transient_key((int) $year);
+	$year = (int) $year;
+	$marker = intersoccer_player_course_status_cache_data_version();
+	$base['data_version'] = $marker;
+	$legacy_key = intersoccer_player_course_status_cache_transient_key_legacy_marker_in_key($year, $marker);
+	intersoccer_player_course_status_transient_delete($legacy_key);
+	$key = intersoccer_player_course_status_cache_transient_key($year);
 	$stored = intersoccer_player_course_status_cache_encode_base_payload($base);
 	if ($stored === false) {
 		return;
@@ -1879,6 +1957,7 @@ function intersoccer_player_course_status_build_year_base_dataset($year, $track_
 
 	return [
 		'year' => $year,
+		'data_version' => intersoccer_player_course_status_cache_data_version(),
 		'players' => $players,
 		'year_rows' => $year_rows,
 		'booking_records' => $booking_records,
@@ -1898,6 +1977,10 @@ function intersoccer_player_course_status_apply_filters_to_base(array $base, arr
 	$year = (int) ( $base['year'] ?? $filters['year'] );
 	$players = isset($base['players']) && is_array($base['players']) ? $base['players'] : [];
 	$year_rows = isset($base['year_rows']) && is_array($base['year_rows']) ? $base['year_rows'] : [];
+	if (function_exists('intersoccer_roster_report_collect_order_ids_from_rows')) {
+		$GLOBALS['intersoccer_rr_refund_presence_batch_order_ids'] = intersoccer_roster_report_collect_order_ids_from_rows($year_rows);
+	}
+	$year_rows = intersoccer_player_course_status_ensure_year_rows_refund_flags($year_rows);
 	$warnings = isset($base['warnings']) && is_array($base['warnings']) ? $base['warnings'] : [];
 	$all_booking_records = isset($base['booking_records']) && is_array($base['booking_records'])
 		? $base['booking_records']
