@@ -69,6 +69,7 @@
             <file>tests/Reports/DistressedVariationIdsTest.php</file>
             <file>tests/Reports/PlayerCampStatusTest.php</file>
             <file>tests/Reports/WinbackReportTest.php</file>
+            <file>tests/Reports/WinbackReportAdminUiTest.php</file>
             <file>tests/Reports/WinbackCatalogueWpmlTest.php</file>
             <file>tests/Reports/WinbackCatalogueFu11Test.php</file>
             <file>tests/Reports/WinbackCatalogueFu12Test.php</file>
