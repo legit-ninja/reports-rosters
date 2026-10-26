@@ -719,6 +719,146 @@ if (!function_exists('intersoccer_roster_report_prime_line_refund_checks_from_ro
 	}
 }
 
+if (!function_exists('intersoccer_roster_report_prime_line_refund_item_results_from_rows')) {
+	/**
+	 * Batch-load refund presence and per-line fully-refunded flags for many roster rows.
+	 *
+	 * @param array<int,array<string,mixed>> $rows
+	 */
+	function intersoccer_roster_report_prime_line_refund_item_results_from_rows(array $rows) {
+		intersoccer_roster_report_prime_line_refund_checks_from_rows($rows);
+		if (!isset($GLOBALS['intersoccer_rr_line_refund_item_result_cache'])
+			|| !is_array($GLOBALS['intersoccer_rr_line_refund_item_result_cache'])) {
+			$GLOBALS['intersoccer_rr_line_refund_item_result_cache'] = [];
+		}
+		$item_cache = &$GLOBALS['intersoccer_rr_line_refund_item_result_cache'];
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
+			foreach ($rows as $row) {
+				if (!is_array($row)) {
+					continue;
+				}
+				$order_item_id = (int) ( $row['order_item_id'] ?? 0 );
+				if ($order_item_id > 0) {
+					unset($item_cache[ $order_item_id ]);
+				}
+			}
+		}
+		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING
+			&& isset($GLOBALS['intersoccer_test_line_fully_refunded_item_ids'])
+			&& is_array($GLOBALS['intersoccer_test_line_fully_refunded_item_ids'])) {
+			foreach ($rows as $row) {
+				if (!is_array($row)) {
+					continue;
+				}
+				$order_item_id = (int) ( $row['order_item_id'] ?? 0 );
+				if ($order_item_id > 0 && !empty($GLOBALS['intersoccer_test_line_fully_refunded_item_ids'][ $order_item_id ])) {
+					$item_cache[ $order_item_id ] = true;
+				}
+			}
+		}
+		$orders_with_refunds = (isset($GLOBALS['intersoccer_rr_orders_with_refunds'])
+			&& is_array($GLOBALS['intersoccer_rr_orders_with_refunds']))
+			? $GLOBALS['intersoccer_rr_orders_with_refunds']
+			: [];
+		$items_by_order = [];
+		foreach ($rows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$order_id = (int) ( $row['order_id'] ?? 0 );
+			$order_item_id = (int) ( $row['order_item_id'] ?? 0 );
+			if ($order_id <= 0 || $order_item_id <= 0) {
+				continue;
+			}
+			if (array_key_exists($order_item_id, $item_cache)) {
+				continue;
+			}
+			if (empty($orders_with_refunds[ $order_id ])) {
+				$item_cache[ $order_item_id ] = false;
+				continue;
+			}
+			if (!isset($items_by_order[ $order_id ])) {
+				$items_by_order[ $order_id ] = [];
+			}
+			$items_by_order[ $order_id ][ $order_item_id ] = $order_item_id;
+		}
+		if (empty($items_by_order)) {
+			return;
+		}
+		if (!function_exists('wc_get_order')) {
+			foreach ($items_by_order as $order_id => $item_ids) {
+				foreach ($item_ids as $order_item_id) {
+					$item_cache[ $order_item_id ] = false;
+				}
+			}
+
+			return;
+		}
+		$service = new RosterRefundService();
+		$order_ids = array_map('intval', array_keys($items_by_order));
+		$orders_by_id = [];
+		if (function_exists('wc_get_orders') && !empty($order_ids)) {
+			$orders = wc_get_orders([
+				'type' => 'shop_order',
+				'include' => $order_ids,
+				'limit' => count($order_ids),
+				'return' => 'objects',
+			]);
+			if (is_array($orders)) {
+				foreach ($orders as $order) {
+					if (is_object($order) && is_callable([$order, 'get_id'])) {
+						$orders_by_id[ (int) $order->get_id() ] = $order;
+					}
+				}
+			}
+		}
+		foreach ($items_by_order as $order_id => $item_ids) {
+			$order_id = (int) $order_id;
+			$order = $orders_by_id[ $order_id ] ?? null;
+			if (!$order && function_exists('wc_get_order')) {
+				$order = wc_get_order($order_id);
+			}
+			if (!$order) {
+				foreach ($item_ids as $order_item_id) {
+					$item_cache[ $order_item_id ] = false;
+				}
+				continue;
+			}
+			foreach ($item_ids as $order_item_id) {
+				$item_cache[ $order_item_id ] = $service->isOrderItemFullyRefunded($order, (int) $order_item_id);
+			}
+		}
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_stamp_line_fully_refunded_on_rows')) {
+	/**
+	 * @param array<int,array<string,mixed>> $rows
+	 * @return array<int,array<string,mixed>>
+	 */
+	function intersoccer_roster_report_stamp_line_fully_refunded_on_rows(array $rows) {
+		if (!isset($GLOBALS['intersoccer_rr_line_refund_item_result_cache'])
+			|| !is_array($GLOBALS['intersoccer_rr_line_refund_item_result_cache'])) {
+			$GLOBALS['intersoccer_rr_line_refund_item_result_cache'] = [];
+		}
+		$item_cache = $GLOBALS['intersoccer_rr_line_refund_item_result_cache'];
+		foreach ($rows as &$row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$order_item_id = (int) ( $row['order_item_id'] ?? 0 );
+			if ($order_item_id > 0 && array_key_exists($order_item_id, $item_cache)) {
+				$row['line_fully_refunded'] = (bool) $item_cache[ $order_item_id ];
+			} elseif (!array_key_exists('line_fully_refunded', $row)) {
+				$row['line_fully_refunded'] = false;
+			}
+		}
+		unset($row);
+
+		return $rows;
+	}
+}
+
 if (!function_exists('intersoccer_roster_report_batch_load_live_order_statuses_from_posts')) {
 	/**
 	 * @param int[] $order_ids
@@ -1107,6 +1247,9 @@ if (!function_exists('intersoccer_roster_report_row_line_is_fully_refunded')) {
 		if ($order_item_id <= 0 || $order_id <= 0) {
 			return false;
 		}
+		if (array_key_exists('line_fully_refunded', $row)) {
+			return (bool) $row['line_fully_refunded'];
+		}
 
 		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
 			if (isset($GLOBALS['intersoccer_test_line_fully_refunded_item_ids']) && is_array($GLOBALS['intersoccer_test_line_fully_refunded_item_ids'])) {
@@ -1130,7 +1273,14 @@ if (!function_exists('intersoccer_roster_report_row_line_is_fully_refunded')) {
 			$GLOBALS['intersoccer_rr_orders_with_refunds'] = [];
 		}
 		if (!intersoccer_roster_report_order_refund_presence_is_checked($order_id)) {
-			$loaded = intersoccer_roster_report_batch_load_order_ids_with_refunds([$order_id]);
+			$pending = [ $order_id ];
+			if (isset($GLOBALS['intersoccer_rr_refund_presence_batch_order_ids'])
+				&& is_array($GLOBALS['intersoccer_rr_refund_presence_batch_order_ids'])
+				&& !empty($GLOBALS['intersoccer_rr_refund_presence_batch_order_ids'])) {
+				$pending = array_values($GLOBALS['intersoccer_rr_refund_presence_batch_order_ids']);
+				$GLOBALS['intersoccer_rr_refund_presence_batch_order_ids'] = [];
+			}
+			$loaded = intersoccer_roster_report_batch_load_order_ids_with_refunds($pending);
 			foreach ($loaded as $oid => $_flag) {
 				$GLOBALS['intersoccer_rr_orders_with_refunds'][ (int) $oid ] = true;
 			}

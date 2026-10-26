@@ -37,8 +37,10 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		if (!in_array($kind_filter, ['camp', 'course', 'all'], true)) {
 			$kind_filter = 'all';
 		}
-		$venue_filter = isset($filters['venue']) ? sanitize_title((string) $filters['venue']) : '';
-		$age_filter = isset($filters['age_group']) ? sanitize_title((string) $filters['age_group']) : '';
+		$venue_raw = isset($filters['venue']) ? (string) $filters['venue'] : '';
+		$age_raw = isset($filters['age_group']) ? (string) $filters['age_group'] : '';
+		$venue_filter = function_exists('sanitize_title') ? sanitize_title($venue_raw) : strtolower(trim($venue_raw));
+		$age_filter = function_exists('sanitize_title') ? sanitize_title($age_raw) : strtolower(trim($age_raw));
 		$lookback_months = isset($filters['lookback_months']) ? max(1, (int) $filters['lookback_months']) : 12;
 
 		$today = function_exists('wp_date') ? wp_date('Y-m-d') : gmdate('Y-m-d');
@@ -247,10 +249,6 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 		$output = [];
 
 		foreach ($by_player_kind as $pk => $history) {
-			if (!intersoccer_winback_report_engine_last_event_passes_filters($history, $venue_filter, $age_filter)) {
-				continue;
-			}
-
 			$row = $history['row'];
 			$kind = $history['kind'];
 			$key = $history['key'];
@@ -317,6 +315,7 @@ function intersoccer_winback_report_engine_generate(array $filters) {
 			);
 
 			$output[] = [
+				'listing_kind' => $kind,
 				'player' => [
 					'name' => trim(intersoccer_roster_report_player_first_name($row) . ' ' . intersoccer_roster_report_player_last_name($row)),
 					'key' => $identity_map->best_key($key),
