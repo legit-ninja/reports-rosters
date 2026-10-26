@@ -68,6 +68,16 @@
             <file>tests/Reports/CanonicalOrderMetaPreferenceTest.php</file>
             <file>tests/Reports/DistressedVariationIdsTest.php</file>
             <file>tests/Reports/PlayerCampStatusTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusQueryCountTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusPendingTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusStrictDateTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusLoadPlayersQueryCountTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusGoldenTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusMemoryTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusSeasonLabelTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusCacheTest.php</file>
+            <file>tests/Reports/PlayerCampStatusLoadPlayersQueryCountTest.php</file>
             <file>tests/Reports/WinbackReportTest.php</file>
             <file>tests/Reports/WinbackReportAdminUiTest.php</file>
             <file>tests/Reports/WinbackCatalogueWpmlTest.php</file>

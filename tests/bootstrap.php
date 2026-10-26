@@ -225,6 +225,14 @@ if (!function_exists('add_query_arg')) {
     }
 }
 
+if (!function_exists('wp_nonce_url')) {
+    function wp_nonce_url($actionurl, $action = -1, $name = '_wpnonce') {
+        $nonce = wp_create_nonce($action);
+
+        return add_query_arg($name, $nonce, $actionurl);
+    }
+}
+
 // Plugin functions
 if (!function_exists('plugin_dir_path')) {
     function plugin_dir_path($file) { return dirname($file) . '/'; }
@@ -471,6 +479,20 @@ if (!function_exists('get_user_meta')) {
     }
 }
 
+if (!function_exists('cache_users')) {
+    /**
+     * WordPress core primes users + usermeta in batched queries; no-op stub for PHPUnit.
+     *
+     * @param int[] $user_ids
+     */
+    function cache_users($user_ids) {
+        if (!isset($GLOBALS['intersoccer_test_cache_users_calls'])) {
+            $GLOBALS['intersoccer_test_cache_users_calls'] = [];
+        }
+        $GLOBALS['intersoccer_test_cache_users_calls'][] = array_map('intval', (array) $user_ids);
+    }
+}
+
 if (!function_exists('update_user_meta')) {
     function update_user_meta($user_id, $meta_key, $meta_value, $prev_value = '') {
         return true;
@@ -565,6 +587,33 @@ if (!function_exists('intersoccer_test_ensure_pm_filter_stub')) {
                 return $filtered === true;
             }
         }
+    }
+}
+
+if (!function_exists('maybe_serialize')) {
+    function maybe_serialize($data) {
+        if (is_scalar($data)) {
+            return $data;
+        }
+
+        return serialize($data);
+    }
+}
+
+if (!function_exists('maybe_unserialize')) {
+    function maybe_unserialize($data) {
+        if (is_array($data)) {
+            return $data;
+        }
+        if (!is_string($data)) {
+            return $data;
+        }
+        $unserialized = @unserialize($data);
+        if ($unserialized !== false || $data === 'b:0;') {
+            return $unserialized;
+        }
+
+        return $data;
     }
 }
 
