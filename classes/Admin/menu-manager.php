@@ -68,6 +68,25 @@ class MenuManager {
         }
     }
 
+    /**
+     * Stream player course status Excel before admin-header.php prints HTML.
+     */
+    public function maybe_export_player_course_status(): void {
+        if (empty($_GET['export_excel'])) {
+            return;
+        }
+        $page = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
+        if ($page !== 'intersoccer-player-course-status') {
+            return;
+        }
+
+        $this->require_include('reports-data.php');
+        $this->require_include('player-course-status.php');
+        if (function_exists('intersoccer_player_course_status_maybe_export_excel')) {
+            intersoccer_player_course_status_maybe_export_excel();
+        }
+    }
+
     public function maybe_export_winback_report(): void {
         if (empty($_GET['export_excel'])) {
             return;
@@ -166,6 +185,7 @@ class MenuManager {
         // Plugin invokes register_menus() directly (not init()); must register export here
         // so admin_init/load-* fire before admin-header HTML contaminates the .xlsx.
         add_action('admin_init', [$this, 'maybe_export_player_camp_status'], 1);
+        add_action('admin_init', [$this, 'maybe_export_player_course_status'], 1);
         add_action('admin_init', [$this, 'maybe_export_winback_report'], 1);
         add_action('admin_init', [$this, 'maybe_redirect_legacy_admin_pages'], 1);
 
@@ -219,6 +239,18 @@ class MenuManager {
         );
         if (is_string($winback_hook) && $winback_hook !== '') {
             add_action('load-' . $winback_hook, [$this, 'maybe_export_winback_report']);
+        }
+
+        $player_course_status_hook = add_submenu_page(
+            null,
+            __('Player course status', 'intersoccer-reports-rosters'),
+            __('Player course status', 'intersoccer-reports-rosters'),
+            'manage_options',
+            'intersoccer-player-course-status',
+            [$this, 'render_player_course_status']
+        );
+        if (is_string($player_course_status_hook) && $player_course_status_hook !== '') {
+            add_action('load-' . $player_course_status_hook, [$this, 'maybe_export_player_course_status']);
         }
 
         add_submenu_page(
@@ -419,6 +451,16 @@ class MenuManager {
             return;
         }
         wp_die(__('Player camp status page is not available.', 'intersoccer-reports-rosters'));
+    }
+
+    public function render_player_course_status(): void {
+        $this->require_include('reports-data.php');
+        $this->require_include('player-course-status.php');
+        if (function_exists('intersoccer_render_player_course_status_page')) {
+            intersoccer_render_player_course_status_page();
+            return;
+        }
+        wp_die(__('Player course status page is not available.', 'intersoccer-reports-rosters'));
     }
 
     public function render_winback_report(): void {

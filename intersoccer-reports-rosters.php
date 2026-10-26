@@ -145,6 +145,24 @@ if (file_exists($order_meta_repair_hook)) {
     require_once $order_meta_repair_hook;
 }
 
+// PCS / win-back cache warm-up: hook registration on every request; heavy report files load in cron/event callbacks only.
+$intersoccer_pcs_cache_gate = plugin_dir_path(__FILE__) . 'includes/player-course-status-cache-gate.php';
+if (file_exists($intersoccer_pcs_cache_gate)) {
+    require_once $intersoccer_pcs_cache_gate;
+}
+$intersoccer_winback_cache_gate = plugin_dir_path(__FILE__) . 'includes/winback-report-cache-gate.php';
+if (file_exists($intersoccer_winback_cache_gate)) {
+    require_once $intersoccer_winback_cache_gate;
+}
+$intersoccer_winback_warmup = plugin_dir_path(__FILE__) . 'includes/winback-report-warmup.php';
+if (file_exists($intersoccer_winback_warmup)) {
+    require_once $intersoccer_winback_warmup;
+}
+$intersoccer_pcs_warmup = plugin_dir_path(__FILE__) . 'includes/player-course-status-warmup.php';
+if (file_exists($intersoccer_pcs_warmup)) {
+    require_once $intersoccer_pcs_warmup;
+}
+
 // Final Numbers urgency + distressed variation-ID export (Campaign Offers calls this when present).
 $final_reports_aggregation = plugin_dir_path(__FILE__) . 'includes/final-reports-aggregation.php';
 if (file_exists($final_reports_aggregation)) {

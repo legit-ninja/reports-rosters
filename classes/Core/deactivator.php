@@ -88,7 +88,10 @@ class Deactivator {
         $hooks = [
             'intersoccer_cleanup_logs',
             'intersoccer_cache_cleanup',
-            'intersoccer_roster_rebuild'
+            'intersoccer_roster_rebuild',
+            'intersoccer_rr_pcs_warmup_daily',
+            'intersoccer_rr_pcs_warmup_year_event',
+            'intersoccer_rr_winback_warmup_event',
         ];
         
         foreach ($hooks as $hook) {
