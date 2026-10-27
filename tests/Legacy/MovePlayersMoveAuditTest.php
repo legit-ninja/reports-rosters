@@ -59,7 +59,11 @@ class MovePlayersMoveAuditTest extends TestCase {
 
         $this->assertArrayHasKey(self::ORDER_ID, $intersoccer_test_order_notes);
         $this->assertCount(1, $intersoccer_test_order_notes[self::ORDER_ID]);
-        $this->assertSame('Roster move: 30711 to 52707 by Roster Admin', $intersoccer_test_order_notes[self::ORDER_ID][0]['note']);
+        $note = $intersoccer_test_order_notes[self::ORDER_ID][0]['note'];
+        $this->assertStringContainsString('30711', $note);
+        $this->assertStringContainsString('52707', $note);
+        $this->assertStringContainsString('Roster Admin', $note);
+        $this->assertStringContainsString('2026-10-16T12:00:00Z', $note);
         $this->assertFalse($intersoccer_test_order_notes[self::ORDER_ID][0]['is_customer_note']);
         $this->assertTrue($intersoccer_test_order_notes[self::ORDER_ID][0]['added_by_user']);
     }

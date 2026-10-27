@@ -657,11 +657,15 @@ if (!function_exists('sanitize_textarea_field')) {
 
 if (!function_exists('get_userdata')) {
     function get_userdata($user_id) {
-        global $intersoccer_test_userdata_map;
         $user_id = (int) $user_id;
+        if (isset($GLOBALS['intersoccer_test_get_userdata'][ $user_id ])) {
+            return $GLOBALS['intersoccer_test_get_userdata'][ $user_id ];
+        }
+        global $intersoccer_test_userdata_map;
         if (is_array($intersoccer_test_userdata_map) && isset($intersoccer_test_userdata_map[$user_id])) {
             return $intersoccer_test_userdata_map[$user_id];
         }
+
         return false;
     }
 }
@@ -1544,6 +1548,4 @@ foreach (glob(dirname(__DIR__) . '/classes/admin/*.php') as $file) {
     require_once $file;
 }
 
-require_once __DIR__ . '/stubs/get-product-type-stub.php';
-require_once __DIR__ . '/stubs/move-players-product-type-stub.php';
 require_once __DIR__ . '/helpers/migration-meta-seed.php';

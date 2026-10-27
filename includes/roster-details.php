@@ -837,6 +837,15 @@ function intersoccer_render_roster_details_page() {
     ", $base_roster->activity_type, $base_roster_girls_only, $variation_id);
 
         $available_rosters = $wpdb->get_results($available_rosters_query, OBJECT);
+        if (function_exists('intersoccer_roster_move_merge_empty_sibling_variation_targets')) {
+            $available_rosters = intersoccer_roster_move_merge_empty_sibling_variation_targets(
+                is_array($available_rosters) ? $available_rosters : [],
+                (int) ($base_roster->product_id ?? 0),
+                (int) $variation_id,
+                (string) $base_roster->activity_type,
+                $base_roster_girls_only
+            );
+        }
 
         $cross_gender_rosters_query = $wpdb->prepare("
         SELECT DISTINCT 
@@ -1833,19 +1842,19 @@ function intersoccer_render_roster_details_page() {
 
             console.log('InterSoccer Migration: Starting AJAX request with allow_cross_gender=' + allowCrossGender);
 
-            const warningLabels = {
-                private: '<?php echo esc_js(__('Destination variation is not publicly purchasable (e.g. private).', 'intersoccer-reports-rosters')); ?>',
-                full: '<?php echo esc_js(__('Destination may be full (stock or roster capacity).', 'intersoccer-reports-rosters')); ?>',
-                past_end_date: '<?php echo esc_js(__('Destination end date is in the past.', 'intersoccer-reports-rosters')); ?>',
-                cross_gender: '<?php echo esc_js(__('Moving between Girls Only and regular rosters.', 'intersoccer-reports-rosters')); ?>'
-            };
-
-            function formatMoveWarnings(warnings) {
-                if (!warnings || !warnings.length) {
+            function formatMoveWarnings(responseData) {
+                const messages = responseData && responseData.confirm_messages;
+                if (messages && messages.length) {
+                    return messages.map(function(line) {
+                        return '• ' + line;
+                    }).join('\n');
+                }
+                const warnings = (responseData && responseData.warnings) || responseData || [];
+                if (!warnings.length) {
                     return '';
                 }
                 return warnings.map(function(code) {
-                    return '• ' + (warningLabels[code] || code);
+                    return '• ' + code;
                 }).join('\n');
             }
 
@@ -1876,9 +1885,9 @@ function intersoccer_render_roster_details_page() {
                     
                     $('#migration-progress').remove();
                     
-                    if (response.success && response.data && response.data.needs_confirmation) {
+                    if (response.success && response.data && (response.data.needs_confirm || response.data.needs_confirmation)) {
                         applyBulk.prop('disabled', false).text('Apply');
-                        const warnText = formatMoveWarnings(response.data.warnings || []);
+                        const warnText = formatMoveWarnings(response.data);
                         const confirmWarnMessage = (response.data.message || '<?php echo esc_js(__('Confirm move despite warnings?', 'intersoccer-reports-rosters')); ?>') +
                             '\n\n' + warnText + '\n\n<?php echo esc_js(__('Proceed with the move?', 'intersoccer-reports-rosters')); ?>';
                         if (confirm(confirmWarnMessage)) {

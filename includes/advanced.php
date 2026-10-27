@@ -10,6 +10,7 @@
 defined('ABSPATH') or die('Restricted access');
 
 require_once __DIR__ . '/roster-move-admin-target.php';
+require_once __DIR__ . '/roster-move-reason-messages.php';
 require_once __DIR__ . '/roster-move-audit.php';
 
 /**
@@ -1337,8 +1338,17 @@ function intersoccer_move_players_ajax() {
             'InterSoccer Migration: Target needs admin confirmation - ID: ' . $target_variation_id .
             ' warnings: ' . implode(', ', $assessment['warnings'])
         );
+        $confirm_context = $assessment['warning_context'] ?? [];
+        if (function_exists('intersoccer_roster_move_build_needs_confirm_payload')) {
+            wp_send_json_success(
+                intersoccer_roster_move_build_needs_confirm_payload($assessment['warnings'], $confirm_context)
+            );
+        }
         wp_send_json_success([
+            'needs_confirm' => true,
             'needs_confirmation' => true,
+            'reason_codes' => $assessment['warnings'],
+            'confirm_messages' => intersoccer_roster_move_reason_messages_list($assessment['warnings'], $confirm_context),
             'warnings' => $assessment['warnings'],
             'message' => __('The destination has warnings. Confirm to proceed with the move.', 'intersoccer-reports-rosters'),
         ]);
@@ -1689,11 +1699,25 @@ function intersoccer_move_players_ajax() {
                     $preserved_total == $original_total) {
                     
                     if (function_exists('intersoccer_roster_move_record_successful_move')) {
+                        $player_label = trim((string) $assigned_attendee);
+                        if ($player_label === '') {
+                            $player_label = trim((string) wc_get_order_item_meta($item_id, 'player_name', true));
+                        }
+                        $from_product = $original_variation_id ? wc_get_product((int) $original_variation_id) : null;
+                        $from_roster_label = ($from_product && method_exists($from_product, 'get_name'))
+                            ? (string) $from_product->get_name()
+                            : '';
+                        $to_roster_label = method_exists($variation, 'get_name') ? (string) $variation->get_name() : '';
                         intersoccer_roster_move_record_successful_move(
                             (int) $order_id,
                             (int) $item_id,
                             (int) $original_variation_id,
-                            (int) $target_variation_id
+                            (int) $target_variation_id,
+                            null,
+                            null,
+                            $player_label,
+                            $from_roster_label,
+                            $to_roster_label
                         );
                     }
 
@@ -1735,7 +1759,19 @@ function intersoccer_move_players_ajax() {
         if (!empty($errors)) {
             $message .= ' ' . sprintf(__('%d errors occurred.', 'intersoccer-reports-rosters'), count($errors));
         }
-        wp_send_json_success(['message' => $message]);
+        $success_payload = ['message' => $message];
+        if (!empty($assessment['warnings'])) {
+            $confirm_context = $assessment['warning_context'] ?? [];
+            $success_payload['warnings'] = $assessment['warnings'];
+            $success_payload['reason_codes'] = $assessment['warnings'];
+            if (function_exists('intersoccer_roster_move_reason_messages_list')) {
+                $success_payload['confirm_messages'] = intersoccer_roster_move_reason_messages_list(
+                    $assessment['warnings'],
+                    $confirm_context
+                );
+            }
+        }
+        wp_send_json_success($success_payload);
     } else {
         if ($same_variation_skips > 0 && $same_variation_skips === count($order_item_ids)) {
             wp_send_json_error(['message' => __('Player is already in this class', 'intersoccer-reports-rosters')]);

@@ -111,7 +111,10 @@ if (!function_exists('intersoccer_roster_move_record_successful_move')) {
         int $from_variation_id,
         int $to_variation_id,
         ?int $user_id = null,
-        ?string $moved_at_utc = null
+        ?string $moved_at_utc = null,
+        string $player_label = '',
+        string $from_roster_label = '',
+        string $to_roster_label = ''
     ): void {
         if ($order_id <= 0 || $item_id <= 0 || $to_variation_id <= 0) {
             return;
@@ -153,8 +156,12 @@ if (!function_exists('intersoccer_roster_move_record_successful_move')) {
             if ($order && method_exists($order, 'add_order_note')) {
                 $actor = intersoccer_roster_move_audit_actor_label($user_id);
                 $note = sprintf(
-                    'Roster move: %d to %d by %s',
+                    'Roster move at %s: %s from %s (variation %d) to %s (variation %d) by %s',
+                    $moved_at_utc,
+                    $player_label !== '' ? $player_label : 'attendee',
+                    $from_roster_label !== '' ? $from_roster_label : 'source roster',
                     $from_variation_id,
+                    $to_roster_label !== '' ? $to_roster_label : 'target roster',
                     $to_variation_id,
                     $actor
                 );

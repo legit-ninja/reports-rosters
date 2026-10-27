@@ -7,6 +7,8 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+require_once __DIR__ . '/roster-move-reason-messages.php';
+
 /**
  * Meta keys that mark a course/camp product or variation as cancelled (first truthy wins).
  *
@@ -627,6 +629,21 @@ function intersoccer_roster_move_variation_end_date_ymd(WC_Product_Variation $va
  *
  * @param int $order_item_id
  */
+function intersoccer_roster_move_variation_is_closed_for_sale(int $variation_id): bool {
+    global $wpdb;
+    if ($variation_id <= 0) {
+        return false;
+    }
+
+    $table = $wpdb->prefix . 'intersoccer_rosters';
+    $flag = $wpdb->get_var($wpdb->prepare(
+        "SELECT MAX(event_completed) FROM {$table} WHERE variation_id = %d",
+        $variation_id
+    ));
+
+    return (int) $flag === 1;
+}
+
 function intersoccer_roster_move_order_item_has_roster_row(int $order_item_id): bool {
     global $wpdb;
     if ($order_item_id <= 0) {
@@ -648,13 +665,14 @@ function intersoccer_roster_move_order_item_has_roster_row(int $order_item_id): 
  * @param WC_Product_Variation $variation
  * @param string               $source_activity_type Normalized slug (course, camp, …).
  *
- * @return array{block:bool,message?:string,warnings:string[],needs_confirmation:bool}
+ * @return array{block:bool,message?:string,warnings:string[],needs_confirmation:bool,warning_context?:array<string,mixed>}
  */
 function intersoccer_assess_roster_move_admin_target(WC_Product_Variation $variation, string $source_activity_type): array {
     $result = [
         'block' => false,
         'warnings' => [],
         'needs_confirmation' => false,
+        'warning_context' => [],
     ];
 
     $variation_id = (int) $variation->get_id();
@@ -697,22 +715,49 @@ function intersoccer_assess_roster_move_admin_target(WC_Product_Variation $varia
         $result['warnings'][] = 'private';
     }
 
-    if ($variation->managing_stock() && (int) $variation->get_stock_quantity() <= 0) {
-        $result['warnings'][] = 'full';
+    $parent_product = function_exists('wc_get_product') ? wc_get_product($parent_id) : null;
+    if ($parent_product && method_exists($parent_product, 'get_catalog_visibility')) {
+        $visibility = (string) $parent_product->get_catalog_visibility();
+        if ($visibility === 'hidden') {
+            $result['warnings'][] = 'hidden';
+        }
     }
 
-    $capacity = (int) $variation->get_meta('capacity', true);
-    if ($capacity <= 0 && $parent_id > 0) {
-        $parent_product = wc_get_product($parent_id);
-        if ($parent_product) {
+    if ($variation_status !== 'publish') {
+        $result['warnings'][] = 'disabled';
+    }
+
+    if ('' === (string) $variation->get_price()) {
+        $result['warnings'][] = 'no_price';
+    } elseif (method_exists($variation, 'is_purchasable') && !$variation->is_purchasable()) {
+        $result['warnings'][] = 'no_price';
+    }
+
+    if ($variation->managing_stock() && (int) $variation->get_stock_quantity() <= 0) {
+        $result['warnings'][] = 'out_of_stock';
+    }
+
+    $warning_context = function_exists('intersoccer_roster_move_warning_context_for_variation')
+        ? intersoccer_roster_move_warning_context_for_variation($variation)
+        : ['capacity_active' => 0, 'capacity_max' => 0];
+    $capacity = (int) ($warning_context['capacity_max'] ?? 0);
+    if ($capacity <= 0) {
+        $capacity = (int) $variation->get_meta('capacity', true);
+        if ($capacity <= 0 && isset($parent_product) && $parent_product) {
             $capacity = (int) $parent_product->get_meta('capacity', true);
         }
     }
     if ($capacity > 0) {
         $active = intersoccer_roster_move_active_roster_count($variation_id);
+        $warning_context['capacity_max'] = $capacity;
+        $warning_context['capacity_active'] = $active;
         if ($active >= $capacity) {
-            $result['warnings'][] = 'full';
+            $result['warnings'][] = 'at_capacity';
         }
+    }
+
+    if (intersoccer_roster_move_variation_is_closed_for_sale($variation_id)) {
+        $result['warnings'][] = 'closed_for_sale';
     }
 
     $end_ymd = intersoccer_roster_move_variation_end_date_ymd($variation);
@@ -734,7 +779,84 @@ function intersoccer_assess_roster_move_admin_target(WC_Product_Variation $varia
     }
 
     $result['warnings'] = array_values(array_unique($result['warnings']));
+    $result['warning_context'] = $warning_context;
     $result['needs_confirmation'] = !empty($result['warnings']);
 
     return $result;
+}
+
+/**
+ * Include sibling variations with zero roster rows so admins can move players back to an emptied roster.
+ *
+ * @param object[] $available_rows Rows from roster-details destination query.
+ * @param int      $product_id     Parent product ID.
+ * @param int      $exclude_variation_id Current roster variation (never list as target).
+ * @param string   $activity_type  Activity label stored on roster rows.
+ * @param int      $girls_only     0|1 girls_only facet for same-gender group.
+ *
+ * @return object[]
+ */
+function intersoccer_roster_move_merge_empty_sibling_variation_targets(
+    array $available_rows,
+    int $product_id,
+    int $exclude_variation_id,
+    string $activity_type,
+    int $girls_only
+): array {
+    if ($product_id <= 0 || !function_exists('wc_get_product')) {
+        return $available_rows;
+    }
+
+    $parent = wc_get_product($product_id);
+    if (!$parent || !method_exists($parent, 'get_children')) {
+        return $available_rows;
+    }
+
+    $indexed = [];
+    foreach ($available_rows as $row) {
+        $vid = (int) ($row->variation_id ?? 0);
+        if ($vid > 0) {
+            $indexed[$vid] = $row;
+        }
+    }
+
+    foreach ($parent->get_children() as $child_id) {
+        $child_id = (int) $child_id;
+        if ($child_id <= 0 || $child_id === $exclude_variation_id || isset($indexed[$child_id])) {
+            continue;
+        }
+
+        $variation = wc_get_product($child_id);
+        if (!$variation instanceof WC_Product_Variation) {
+            continue;
+        }
+
+        if (intersoccer_roster_move_active_roster_count($child_id) > 0) {
+            continue;
+        }
+
+        $row_girls = function_exists('intersoccer_roster_move_resolve_variation_girls_only_flag')
+            ? intersoccer_roster_move_resolve_variation_girls_only_flag($variation)
+            : 0;
+        if ((int) $girls_only !== (int) $row_girls) {
+            continue;
+        }
+
+        $indexed[$child_id] = (object) [
+            'product_id' => $product_id,
+            'variation_id' => $child_id,
+            'product_name' => method_exists($variation, 'get_name') ? $variation->get_name() : '',
+            'venue' => '',
+            'age_group' => '',
+            'activity_type' => $activity_type,
+            'camp_terms' => '',
+            'course_day' => '',
+            'times' => '',
+            'season' => '',
+            'girls_only' => $row_girls,
+            'current_players' => 0,
+        ];
+    }
+
+    return array_values($indexed);
 }
