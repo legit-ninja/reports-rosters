@@ -1,6 +1,6 @@
 <?php
 /**
- * Admin roster move: machine reason codes and translatable confirm copy (single source for PHP + AJAX).
+ * Admin roster move: reason codes, UX copy (English), and AJAX payloads.
  *
  * @package InterSoccer_Reports_Rosters
  */
@@ -8,39 +8,109 @@
 defined('ABSPATH') or die('Restricted access');
 
 /**
+ * Purchasability override reason codes (criteria + UX spec).
+ *
  * @return string[]
  */
-function intersoccer_roster_move_reason_codes(): array {
+function intersoccer_roster_move_purchasability_reason_codes(): array {
     return [
-        'private',
-        'hidden',
-        'disabled',
+        'private_or_disabled',
         'no_price',
+        'course_ended',
+        'full',
         'out_of_stock',
-        'at_capacity',
-        'closed_for_sale',
-        'past_end_date',
-        'cross_gender',
+        'hidden',
+        'closed',
+        'unknown',
     ];
 }
 
 /**
- * Build warning context used when formatting confirm messages (capacity counts, etc.).
+ * All translatable UI strings for the roster move flow (English only until DE/FR from Pixel).
  *
- * @param WC_Product_Variation $variation
+ * @return array<string,string>
+ */
+function intersoccer_roster_move_ui_strings(): array {
+    return [
+        'heading' => __('This roster isn\'t open for purchase', 'intersoccer-reports-rosters'),
+        'private_or_disabled' => __('This roster\'s variation is private or disabled.', 'intersoccer-reports-rosters'),
+        'no_price' => __('This roster has no price set.', 'intersoccer-reports-rosters'),
+        'course_ended' => __('This course has ended.', 'intersoccer-reports-rosters'),
+        /* translators: %1$d: places taken, %2$d: capacity */
+        'full' => __('This roster is full: %1$d of %2$d places taken.', 'intersoccer-reports-rosters'),
+        /* translators: %d: number of places over capacity */
+        'over_capacity' => __('Moving will put it over capacity by %d.', 'intersoccer-reports-rosters'),
+        'out_of_stock' => __('This roster is marked out of stock.', 'intersoccer-reports-rosters'),
+        'hidden' => __('This roster is hidden from the shop.', 'intersoccer-reports-rosters'),
+        'closed' => __('This roster is closed for sale.', 'intersoccer-reports-rosters'),
+        'unknown' => __('This roster can\'t be bought right now.', 'intersoccer-reports-rosters'),
+        'consequence' => __('Moving still works. The players keep their details and orders. Customers still can\'t buy this roster.', 'intersoccer-reports-rosters'),
+        'move_anyway' => __('Move anyway', 'intersoccer-reports-rosters'),
+        'cancel' => __('Cancel', 'intersoccer-reports-rosters'),
+        'checking' => __('Checking...', 'intersoccer-reports-rosters'),
+        'apply' => __('Apply', 'intersoccer-reports-rosters'),
+        'gender_block' => __('This roster is a different type (Girls Only or Regular). Tick the option above to move these players.', 'intersoccer-reports-rosters'),
+        'try_again' => __('Try again', 'intersoccer-reports-rosters'),
+        'dismiss' => __('Dismiss', 'intersoccer-reports-rosters'),
+        'select_destination' => __('Please select a destination roster.', 'intersoccer-reports-rosters'),
+        'no_players_selected' => __('No players selected.', 'intersoccer-reports-rosters'),
+        'target_missing' => __('The destination roster no longer exists or was deleted.', 'intersoccer-reports-rosters'),
+        /* translators: 1: moved count, 2: roster name */
+        'success' => __('Moved %1$s to %2$s.', 'intersoccer-reports-rosters'),
+        /* translators: 1: moved, 2: total, 3: failed count */
+        'partial' => __('%1$s of %2$s players moved. %3$s couldn\'t be moved:', 'intersoccer-reports-rosters'),
+    ];
+}
+
+/**
+ * Strings for wp_localize_script / inline JS (includes _n success forms).
  *
  * @return array<string,mixed>
  */
-function intersoccer_roster_move_warning_context_for_variation(WC_Product_Variation $variation): array {
+function intersoccer_roster_move_js_localize_strings(): array {
+    $strings = intersoccer_roster_move_ui_strings();
+    $strings['success_one'] = _n(
+        'Moved %1$s player to %2$s.',
+        'Moved %1$s players to %2$s.',
+        1,
+        'intersoccer-reports-rosters'
+    );
+    $strings['success_many'] = _n(
+        'Moved %1$s player to %2$s.',
+        'Moved %1$s players to %2$s.',
+        2,
+        'intersoccer-reports-rosters'
+    );
+
+    return $strings;
+}
+
+/**
+ * @param string              $key
+ * @param array<string,mixed> $replacements
+ */
+function intersoccer_roster_move_ui_string(string $key, array $replacements = []): string {
+    $strings = intersoccer_roster_move_ui_strings();
+    $template = $strings[$key] ?? $key;
+    if ($replacements === []) {
+        return $template;
+    }
+
+    return vsprintf($template, array_values($replacements));
+}
+
+/**
+ * Build warning context (capacity, taken, over-capacity count).
+ *
+ * @param WC_Product_Variation $variation
+ * @param int                  $moving_player_count
+ *
+ * @return array<string,mixed>
+ */
+function intersoccer_roster_move_warning_context_for_variation(WC_Product_Variation $variation, int $moving_player_count = 1): array {
     $variation_id = (int) $variation->get_id();
     $parent_id = (int) $variation->get_parent_id();
-    $context = [
-        'variation_id' => $variation_id,
-        'parent_id' => $parent_id,
-        'capacity_active' => 0,
-        'capacity_max' => 0,
-    ];
-
+    $taken = intersoccer_roster_move_active_roster_count($variation_id);
     $capacity = (int) $variation->get_meta('capacity', true);
     if ($capacity <= 0 && $parent_id > 0 && function_exists('wc_get_product')) {
         $parent_product = wc_get_product($parent_id);
@@ -48,95 +118,120 @@ function intersoccer_roster_move_warning_context_for_variation(WC_Product_Variat
             $capacity = (int) $parent_product->get_meta('capacity', true);
         }
     }
-    if ($capacity > 0) {
-        $context['capacity_max'] = $capacity;
-        $context['capacity_active'] = intersoccer_roster_move_active_roster_count($variation_id);
+    $moving_player_count = max(1, $moving_player_count);
+    $over_capacity_n = 0;
+    if ($capacity > 0 && ($taken + $moving_player_count) > $capacity) {
+        $over_capacity_n = ($taken + $moving_player_count) - $capacity;
     }
 
-    return $context;
+    return [
+        'variation_id' => $variation_id,
+        'parent_id' => $parent_id,
+        'capacity' => $capacity,
+        'taken' => $taken,
+        'moving_player_count' => $moving_player_count,
+        'over_capacity_n' => $over_capacity_n,
+    ];
 }
 
 /**
- * Human-readable confirm line for one reason code.
+ * Human-readable lines for confirm panel (one per applicable reason).
  *
- * @param string               $code
- * @param array<string,mixed>  $context From intersoccer_roster_move_warning_context_for_variation().
- */
-function intersoccer_roster_move_reason_message(string $code, array $context = []): string {
-    switch ($code) {
-        case 'private':
-            return __('This destination is not publicly available (private or unpublished status). Move anyway?', 'intersoccer-reports-rosters');
-        case 'hidden':
-            return __('This destination is hidden from the shop catalog. Move anyway?', 'intersoccer-reports-rosters');
-        case 'disabled':
-            return __('This destination variation is disabled in the product catalog. Move anyway?', 'intersoccer-reports-rosters');
-        case 'no_price':
-            return __('This destination has no price set (not purchasable on the storefront). Move anyway?', 'intersoccer-reports-rosters');
-        case 'out_of_stock':
-            return __('This destination is out of stock. Move anyway?', 'intersoccer-reports-rosters');
-        case 'at_capacity':
-            $active = (int) ($context['capacity_active'] ?? 0);
-            $max = (int) ($context['capacity_max'] ?? 0);
-            if ($max > 0) {
-                return sprintf(
-                    __('This roster is full (%1$d/%2$d). Move anyway?', 'intersoccer-reports-rosters'),
-                    $active,
-                    $max
-                );
-            }
-
-            return __('This roster is at capacity. Move anyway?', 'intersoccer-reports-rosters');
-        case 'closed_for_sale':
-            return __('This roster is closed for sale. Move anyway?', 'intersoccer-reports-rosters');
-        case 'past_end_date':
-            return __('This destination end date is in the past. Move anyway?', 'intersoccer-reports-rosters');
-        case 'cross_gender':
-            return __('You are moving between Girls Only and regular rosters. Move anyway?', 'intersoccer-reports-rosters');
-        default:
-            return sprintf(
-                __('The destination has a warning (%s). Move anyway?', 'intersoccer-reports-rosters'),
-                $code
-            );
-    }
-}
-
-/**
  * @param string[]             $reason_codes
  * @param array<string,mixed>  $context
  *
  * @return string[]
  */
-function intersoccer_roster_move_reason_messages_list(array $reason_codes, array $context = []): array {
-    $messages = [];
+function intersoccer_roster_move_reason_lines_for_codes(array $reason_codes, array $context = []): array {
+    $lines = [];
+    $taken = (int) ($context['taken'] ?? 0);
+    $capacity = (int) ($context['capacity'] ?? 0);
+    $over_n = (int) ($context['over_capacity_n'] ?? 0);
+
     foreach ($reason_codes as $code) {
-        $code = (string) $code;
-        if ($code === '') {
-            continue;
+        switch ($code) {
+            case 'private_or_disabled':
+                $lines[] = intersoccer_roster_move_ui_string('private_or_disabled');
+                break;
+            case 'no_price':
+                $lines[] = intersoccer_roster_move_ui_string('no_price');
+                break;
+            case 'course_ended':
+                $lines[] = intersoccer_roster_move_ui_string('course_ended');
+                break;
+            case 'full':
+                if ($capacity > 0) {
+                    $lines[] = intersoccer_roster_move_ui_string('full', [$taken, $capacity]);
+                    if ($over_n > 0) {
+                        $lines[] = intersoccer_roster_move_ui_string('over_capacity', [$over_n]);
+                    }
+                } else {
+                    $lines[] = intersoccer_roster_move_ui_string('out_of_stock');
+                }
+                break;
+            case 'out_of_stock':
+                $lines[] = intersoccer_roster_move_ui_string('out_of_stock');
+                break;
+            case 'hidden':
+                $lines[] = intersoccer_roster_move_ui_string('hidden');
+                break;
+            case 'closed':
+                $lines[] = intersoccer_roster_move_ui_string('closed');
+                break;
+            case 'unknown':
+                $lines[] = intersoccer_roster_move_ui_string('unknown');
+                break;
         }
-        $messages[] = intersoccer_roster_move_reason_message($code, $context);
     }
 
-    return $messages;
+    return array_values(array_unique($lines));
 }
 
 /**
- * AJAX payload fragment for confirm step (no writes).
+ * AJAX payload when admin must confirm (no writes).
  *
  * @param string[]             $reason_codes
  * @param array<string,mixed>  $context
  *
- * @return array{needs_confirm:bool,needs_confirmation:bool,reason_codes:string[],confirm_messages:string[],warnings:string[],message:string}
+ * @return array<string,mixed>
  */
 function intersoccer_roster_move_build_needs_confirm_payload(array $reason_codes, array $context = []): array {
-    $reason_codes = array_values(array_unique(array_map('strval', $reason_codes)));
-    $confirm_messages = intersoccer_roster_move_reason_messages_list($reason_codes, $context);
+    $reason_codes = array_values(array_unique(array_filter(array_map('strval', $reason_codes))));
+    $reason_lines = intersoccer_roster_move_reason_lines_for_codes($reason_codes, $context);
+    $strings = intersoccer_roster_move_ui_strings();
 
     return [
         'needs_confirm' => true,
         'needs_confirmation' => true,
+        'purchasable' => false,
         'reason_codes' => $reason_codes,
-        'confirm_messages' => $confirm_messages,
+        'reason_lines' => $reason_lines,
+        'confirm_messages' => $reason_lines,
         'warnings' => $reason_codes,
-        'message' => __('The destination has warnings. Confirm to proceed with the move.', 'intersoccer-reports-rosters'),
+        'capacity' => (int) ($context['capacity'] ?? 0),
+        'taken' => (int) ($context['taken'] ?? 0),
+        'over_capacity_n' => (int) ($context['over_capacity_n'] ?? 0),
+        'heading' => $strings['heading'],
+        'consequence' => $strings['consequence'],
+        'move_anyway' => $strings['move_anyway'],
+        'cancel' => $strings['cancel'],
     ];
+}
+
+/**
+ * @param string[]            $reason_codes
+ * @param array<string,mixed> $context
+ *
+ * @return string[]
+ */
+function intersoccer_roster_move_reason_messages_list(array $reason_codes, array $context = []): array {
+    return intersoccer_roster_move_reason_lines_for_codes($reason_codes, $context);
+}
+
+/**
+ * @param array<string,mixed> $context
+ */
+function intersoccer_roster_move_reason_message(string $reason_code, array $context = []): string {
+    $lines = intersoccer_roster_move_reason_lines_for_codes([$reason_code], $context);
+    return $lines[0] ?? '';
 }

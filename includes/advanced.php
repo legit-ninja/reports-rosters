@@ -1311,16 +1311,23 @@ function intersoccer_move_players_ajax() {
     $variation = wc_get_product($target_variation_id);
     if (!$variation || !$variation->is_type('variation')) {
         error_log('InterSoccer Migration: Invalid target variation - ID: ' . $target_variation_id . ', exists: ' . ($variation ? 'yes' : 'no') . ', type: ' . ($variation ? $variation->get_type() : 'N/A'));
-        wp_send_json_error(['message' => __('Invalid target variation.', 'intersoccer-reports-rosters')]);
+        $missing_message = function_exists('intersoccer_roster_move_ui_string')
+            ? intersoccer_roster_move_ui_string('target_missing')
+            : __('The destination roster no longer exists or was deleted.', 'intersoccer-reports-rosters');
+        wp_send_json_error(['message' => $missing_message, 'hard_block' => true]);
     }
 
     if (!$variation instanceof WC_Product_Variation) {
         error_log('InterSoccer Migration: Target is not a WC_Product_Variation - ID: ' . $target_variation_id);
-        wp_send_json_error(['message' => __('Invalid target variation.', 'intersoccer-reports-rosters')]);
+        $missing_message = function_exists('intersoccer_roster_move_ui_string')
+            ? intersoccer_roster_move_ui_string('target_missing')
+            : __('The destination roster no longer exists or was deleted.', 'intersoccer-reports-rosters');
+        wp_send_json_error(['message' => $missing_message, 'hard_block' => true]);
     }
 
+    $moving_count = count($order_item_ids);
     $source_activity_type = intersoccer_roster_move_source_activity_type($order_item_ids);
-    $assessment = intersoccer_assess_roster_move_admin_target($variation, $source_activity_type);
+    $assessment = intersoccer_assess_roster_move_admin_target($variation, $source_activity_type, $moving_count);
     $assessment = intersoccer_roster_move_apply_cross_gender_warnings(
         $assessment,
         $order_item_ids,
@@ -1330,34 +1337,37 @@ function intersoccer_move_players_ajax() {
     if (!empty($assessment['block'])) {
         $block_message = $assessment['message'] ?? __('Target variation cannot be used for this move.', 'intersoccer-reports-rosters');
         error_log('InterSoccer Migration: Target blocked - ID: ' . $target_variation_id . ' - ' . $block_message);
-        wp_send_json_error(['message' => $block_message]);
+        wp_send_json_error(['message' => $block_message, 'hard_block' => true]);
     }
 
-    if (!empty($assessment['needs_confirmation']) && !$confirm_warnings) {
-        error_log(
-            'InterSoccer Migration: Target needs admin confirmation - ID: ' . $target_variation_id .
-            ' warnings: ' . implode(', ', $assessment['warnings'])
-        );
-        $confirm_context = $assessment['warning_context'] ?? [];
-        if (function_exists('intersoccer_roster_move_build_needs_confirm_payload')) {
-            wp_send_json_success(
-                intersoccer_roster_move_build_needs_confirm_payload($assessment['warnings'], $confirm_context)
-            );
-        }
+    if (!empty($assessment['gender_block']) && !$allow_cross_gender) {
+        $gender_message = function_exists('intersoccer_roster_move_ui_string')
+            ? intersoccer_roster_move_ui_string('gender_block')
+            : __('This roster is a different type (Girls Only or Regular). Tick the option above to move these players.', 'intersoccer-reports-rosters');
         wp_send_json_success([
-            'needs_confirm' => true,
-            'needs_confirmation' => true,
-            'reason_codes' => $assessment['warnings'],
-            'confirm_messages' => intersoccer_roster_move_reason_messages_list($assessment['warnings'], $confirm_context),
-            'warnings' => $assessment['warnings'],
-            'message' => __('The destination has warnings. Confirm to proceed with the move.', 'intersoccer-reports-rosters'),
+            'gender_block' => true,
+            'message' => $gender_message,
+            'gender_message' => $gender_message,
         ]);
     }
 
-    if ($confirm_warnings && !empty($assessment['warnings'])) {
+    $reason_codes = $assessment['reason_codes'] ?? $assessment['warnings'] ?? [];
+    if (!empty($assessment['needs_confirmation']) && !$confirm_warnings) {
+        error_log(
+            'InterSoccer Migration: Target needs admin confirmation - ID: ' . $target_variation_id .
+            ' reasons: ' . implode(', ', $reason_codes)
+        );
+        $confirm_context = $assessment['warning_context'] ?? [];
+        wp_send_json_success(
+            intersoccer_roster_move_build_needs_confirm_payload($reason_codes, $confirm_context)
+        );
+    }
+
+    $confirmed_reason_codes = $confirm_warnings ? $reason_codes : [];
+    if ($confirm_warnings && $reason_codes !== []) {
         error_log(
             'InterSoccer Migration: Admin confirmed target warnings for variation ' . $target_variation_id . ': ' .
-            implode(', ', $assessment['warnings'])
+            implode(', ', $reason_codes)
         );
     }
 
@@ -1373,7 +1383,8 @@ function intersoccer_move_players_ajax() {
         &$moved_count,
         &$same_variation_skips,
         &$errors,
-        $wpdb
+        $wpdb,
+        $confirmed_reason_codes
     ) {
     foreach ($order_item_ids as $item_id) {
         error_log('InterSoccer Migration: Processing item ID: ' . $item_id);
@@ -1717,7 +1728,8 @@ function intersoccer_move_players_ajax() {
                             null,
                             $player_label,
                             $from_roster_label,
-                            $to_roster_label
+                            $to_roster_label,
+                            $confirmed_reason_codes
                         );
                     }
 
@@ -1754,22 +1766,26 @@ function intersoccer_move_players_ajax() {
     if (!empty($errors)) {
         error_log('InterSoccer Migration: Errors encountered: ' . implode('; ', $errors));
     }
+    $total_count = count($order_item_ids);
+    $target_roster_name = method_exists($variation, 'get_name') ? (string) $variation->get_name() : '';
     if ($moved_count > 0) {
         $message = sprintf(__('Successfully moved %d players.', 'intersoccer-reports-rosters'), $moved_count);
         if (!empty($errors)) {
             $message .= ' ' . sprintf(__('%d errors occurred.', 'intersoccer-reports-rosters'), count($errors));
         }
-        $success_payload = ['message' => $message];
-        if (!empty($assessment['warnings'])) {
-            $confirm_context = $assessment['warning_context'] ?? [];
-            $success_payload['warnings'] = $assessment['warnings'];
-            $success_payload['reason_codes'] = $assessment['warnings'];
-            if (function_exists('intersoccer_roster_move_reason_messages_list')) {
-                $success_payload['confirm_messages'] = intersoccer_roster_move_reason_messages_list(
-                    $assessment['warnings'],
-                    $confirm_context
-                );
-            }
+        $success_payload = [
+            'message' => $message,
+            'moved_count' => $moved_count,
+            'total_count' => $total_count,
+            'failed_count' => count($errors),
+            'target_roster_name' => $target_roster_name,
+            'failed' => array_map(static function ($err) {
+                return ['reason' => (string) $err];
+            }, $errors),
+            'partial' => $moved_count < $total_count || !empty($errors),
+        ];
+        if ($reason_codes !== []) {
+            $success_payload['reason_codes'] = $reason_codes;
         }
         wp_send_json_success($success_payload);
     } else {

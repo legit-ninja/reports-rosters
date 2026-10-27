@@ -32,6 +32,16 @@ class MovePlayersAdminTargetTest extends TestCase {
         $wpdb = $this->createWpdbMock();
         $wpdb->shouldReceive('get_var')->andReturn(null);
 
+        $parent_product = Mockery::mock('WC_Product');
+        $parent_product->shouldReceive('get_catalog_visibility')->andReturn('visible');
+        $parent_product->shouldReceive('get_meta')->with('capacity', true)->andReturn('');
+        $parent_product->shouldReceive('get_name')->andReturn('Parent product');
+        $parent_product->shouldReceive('get_attribute')->andReturn('');
+        global $intersoccer_test_wc_get_product_callback;
+        $intersoccer_test_wc_get_product_callback = static function ($id) use ($parent_product) {
+            return (int) $id === self::TEST_PARENT_ID ? $parent_product : false;
+        };
+
         require_once dirname(__DIR__, 2) . '/includes/utils.php';
         require_once dirname(__DIR__) . '/stubs/move-players-product-type-stub.php';
         require_once dirname(__DIR__, 2) . '/includes/roster-move-admin-target.php';
@@ -127,7 +137,7 @@ class MovePlayersAdminTargetTest extends TestCase {
         $assessment = intersoccer_assess_roster_move_admin_target($variation, 'course');
 
         $this->assertFalse($assessment['block']);
-        $this->assertContains('private', $assessment['warnings']);
+        $this->assertContains('private_or_disabled', $assessment['warnings']);
     }
 
     public function test_private_target_needs_confirmation_without_confirm_flag(): void {
@@ -142,7 +152,7 @@ class MovePlayersAdminTargetTest extends TestCase {
 
         $this->assertFalse($assessment['block']);
         $this->assertTrue($assessment['needs_confirmation']);
-        $this->assertContains('private', $assessment['warnings']);
+        $this->assertContains('private_or_disabled', $assessment['warnings']);
     }
 
     public function test_private_target_not_hard_blocked_for_admin(): void {
@@ -169,7 +179,7 @@ class MovePlayersAdminTargetTest extends TestCase {
         $assessment = intersoccer_assess_roster_move_admin_target($variation, 'course');
 
         $this->assertTrue($assessment['block']);
-        $this->assertStringContainsString('trash', strtolower($assessment['message']));
+        $this->assertStringContainsString('no longer exists', strtolower($assessment['message']));
     }
 
     public function test_wrong_activity_type_is_blocked(): void {
@@ -213,8 +223,8 @@ class MovePlayersAdminTargetTest extends TestCase {
         ];
         $assessment = intersoccer_roster_move_apply_cross_gender_warnings($base, [99001], $variation, false);
         $this->assertFalse($assessment['block']);
-        $this->assertContains('cross_gender', $assessment['warnings']);
-        $this->assertTrue($assessment['needs_confirmation']);
+        $this->assertTrue(!empty($assessment['gender_block']));
+        $this->assertEmpty($assessment['warnings']);
     }
 
     public function test_mixed_target_no_cross_gender_warning_or_block(): void {
@@ -225,7 +235,7 @@ class MovePlayersAdminTargetTest extends TestCase {
         $assessment = intersoccer_roster_move_apply_cross_gender_warnings($assessment, [], $variation, false);
 
         $this->assertFalse($assessment['block']);
-        $this->assertNotContains('cross_gender', $assessment['warnings']);
+        $this->assertEmpty($assessment['gender_block'] ?? null);
     }
 
     public function test_unset_target_gender_no_cross_gender_warning(): void {
@@ -234,7 +244,7 @@ class MovePlayersAdminTargetTest extends TestCase {
         $assessment = intersoccer_roster_move_apply_cross_gender_warnings($assessment, [], $variation, false);
 
         $this->assertFalse($assessment['block']);
-        $this->assertNotContains('cross_gender', $assessment['warnings']);
+        $this->assertEmpty($assessment['gender_block'] ?? null);
     }
 
     /**
@@ -265,7 +275,7 @@ class MovePlayersAdminTargetTest extends TestCase {
             'variation' => $variation,
         ]);
 
-        $this->assertNotContains('cross_gender', $assessment['warnings']);
+        $this->assertEmpty($assessment['gender_block'] ?? null);
     }
 
     public function test_parent_only_girls_only_target_counts_as_girls_only_bucket(): void {
@@ -289,7 +299,7 @@ class MovePlayersAdminTargetTest extends TestCase {
             'variation' => $variation,
         ]);
 
-        $this->assertContains('cross_gender', $assessment['warnings']);
+        $this->assertTrue(!empty($assessment['gender_block']));
     }
 
     public function test_girls_only_source_to_parent_girls_only_target_no_warning(): void {
@@ -304,7 +314,7 @@ class MovePlayersAdminTargetTest extends TestCase {
             'variation' => $variation,
         ]);
 
-        $this->assertNotContains('cross_gender', $assessment['warnings']);
+        $this->assertEmpty($assessment['gender_block'] ?? null);
     }
 
     public function test_conflicting_pa_no_and_activity_girls_only_source_is_girls_only_bucket(): void {
@@ -419,27 +429,28 @@ class MovePlayersAdminTargetTest extends TestCase {
             'variation' => $variation,
         ]);
 
-        $this->assertContains('cross_gender', $assessment['warnings']);
+        $this->assertTrue(!empty($assessment['gender_block']));
     }
 
-    public function test_cancelled_meta_blocks_target(): void {
+    public function test_cancelled_meta_adds_closed_reason_not_hard_block(): void {
         update_post_meta(self::TEST_PARENT_ID, '_course_cancelled', 'yes');
 
         $variation = $this->makeVariation([]);
         $assessment = intersoccer_assess_roster_move_admin_target($variation, 'course');
 
-        $this->assertTrue($assessment['block']);
-        $this->assertStringContainsString('cancelled', strtolower($assessment['message']));
+        $this->assertFalse($assessment['block']);
+        $this->assertContains('closed', $assessment['warnings']);
+        $this->assertTrue($assessment['needs_confirmation']);
     }
 
-    public function test_past_end_date_adds_warning_not_block(): void {
+    public function test_past_end_date_adds_course_ended_warning_not_block(): void {
         update_post_meta(self::TEST_VARIATION_ID, '_end_date', '2020-01-01');
 
         $variation = $this->makeVariation([]);
         $assessment = intersoccer_assess_roster_move_admin_target($variation, 'course');
 
         $this->assertFalse($assessment['block']);
-        $this->assertContains('past_end_date', $assessment['warnings']);
+        $this->assertContains('course_ended', $assessment['warnings']);
     }
 
     public function test_order_item_has_roster_row_false_when_missing(): void {

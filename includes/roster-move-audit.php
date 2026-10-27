@@ -114,7 +114,8 @@ if (!function_exists('intersoccer_roster_move_record_successful_move')) {
         ?string $moved_at_utc = null,
         string $player_label = '',
         string $from_roster_label = '',
-        string $to_roster_label = ''
+        string $to_roster_label = '',
+        array $confirmed_reason_codes = []
     ): void {
         if ($order_id <= 0 || $item_id <= 0 || $to_variation_id <= 0) {
             return;
@@ -155,15 +156,25 @@ if (!function_exists('intersoccer_roster_move_record_successful_move')) {
             $order = wc_get_order($order_id);
             if ($order && method_exists($order, 'add_order_note')) {
                 $actor = intersoccer_roster_move_audit_actor_label($user_id);
+                $order_number = method_exists($order, 'get_order_number')
+                    ? (string) $order->get_order_number()
+                    : (string) $order_id;
+                $moved_at_site = function_exists('current_time')
+                    ? current_time('Y-m-d H:i:s')
+                    : gmdate('Y-m-d H:i:s');
+                $reason_list = array_values(array_unique(array_filter(array_map('strval', $confirmed_reason_codes))));
+                $reason_suffix = $reason_list !== [] ? ' Override reason(s): ' . implode(', ', $reason_list) . '.' : '';
                 $note = sprintf(
-                    'Roster move at %s: %s from %s (variation %d) to %s (variation %d) by %s',
-                    $moved_at_utc,
+                    'Roster move at %s (site time): player %s, order #%s, from %s (variation %d) to %s (variation %d) by %s.%s',
+                    $moved_at_site,
                     $player_label !== '' ? $player_label : 'attendee',
+                    $order_number,
                     $from_roster_label !== '' ? $from_roster_label : 'source roster',
                     $from_variation_id,
                     $to_roster_label !== '' ? $to_roster_label : 'target roster',
                     $to_variation_id,
-                    $actor
+                    $actor,
+                    $reason_suffix
                 );
                 $order->add_order_note($note, false, true);
             }

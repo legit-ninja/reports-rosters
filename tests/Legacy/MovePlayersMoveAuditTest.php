@@ -42,7 +42,11 @@ class MovePlayersMoveAuditTest extends TestCase {
             30711,
             52707,
             42,
-            '2026-10-16T12:00:00Z'
+            '2026-10-16T12:00:00Z',
+            'Emma Test',
+            'From roster',
+            'To roster',
+            ['full', 'no_price']
         );
 
         $keys = intersoccer_roster_move_audit_latest_meta_keys();
@@ -63,7 +67,11 @@ class MovePlayersMoveAuditTest extends TestCase {
         $this->assertStringContainsString('30711', $note);
         $this->assertStringContainsString('52707', $note);
         $this->assertStringContainsString('Roster Admin', $note);
-        $this->assertStringContainsString('2026-10-16T12:00:00Z', $note);
+        $this->assertStringContainsString('site time', $note);
+        $this->assertStringContainsString('order #', strtolower($note));
+        $this->assertStringContainsString('Emma Test', $note);
+        $this->assertStringContainsString('full', $note);
+        $this->assertStringContainsString('no_price', $note);
         $this->assertFalse($intersoccer_test_order_notes[self::ORDER_ID][0]['is_customer_note']);
         $this->assertTrue($intersoccer_test_order_notes[self::ORDER_ID][0]['added_by_user']);
     }
