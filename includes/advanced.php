@@ -1276,10 +1276,12 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
 }
 
 function intersoccer_move_players_ajax() {
-    // Log start of migration request
-    error_log('InterSoccer Migration: Starting player migration request');
-    error_log('InterSoccer Migration: POST data: ' . print_r($_POST, true));
-    
+    if (function_exists('intersoccer_roster_move_log')) {
+        intersoccer_roster_move_log('InterSoccer Migration: Starting player migration request');
+    } else {
+        error_log('InterSoccer Migration: Starting player migration request');
+    }
+
     check_ajax_referer('intersoccer_move_nonce', 'nonce');
     if (!current_user_can('manage_options')) {
         error_log('InterSoccer Migration: Permission denied for user ' . get_current_user_id());
@@ -1294,16 +1296,35 @@ function intersoccer_move_players_ajax() {
             $target_variation_id = $resolved_target;
         }
     }
-    $order_item_ids = array_map('intval', (array) $_POST['order_item_ids']);
+    $raw_order_item_ids = isset($_POST['order_item_ids']) ? (array) $_POST['order_item_ids'] : [];
+    $order_item_ids = [];
+    foreach ($raw_order_item_ids as $raw_item_id) {
+        $parsed_id = (int) $raw_item_id;
+        if ($parsed_id > 0) {
+            $order_item_ids[] = $parsed_id;
+        }
+    }
+    $order_item_ids = array_values(array_unique($order_item_ids));
     $allow_cross_gender = isset($_POST['allow_cross_gender']) && $_POST['allow_cross_gender'] === '1';
     $confirm_warnings = isset($_POST['confirm_warnings']) && $_POST['confirm_warnings'] === '1';
-    error_log('InterSoccer Migration: Target variation: ' . $target_variation_id);
-    error_log('InterSoccer Migration: Order item IDs: ' . implode(', ', $order_item_ids));
-    error_log('InterSoccer Migration: Allow cross-gender: ' . ($allow_cross_gender ? 'YES' : 'NO'));
+    $log_line = static function (string $message): void {
+        if (function_exists('intersoccer_roster_move_log')) {
+            intersoccer_roster_move_log($message);
+        } else {
+            error_log($message);
+        }
+    };
+    $log_line('InterSoccer Migration: Target variation: ' . $target_variation_id);
+    $log_line('InterSoccer Migration: Order item IDs: ' . implode(', ', $order_item_ids));
+    $log_line('InterSoccer Migration: Allow cross-gender: ' . ($allow_cross_gender ? 'YES' : 'NO'));
+    $log_line('InterSoccer Migration: Confirm warnings: ' . ($confirm_warnings ? 'YES' : 'NO'));
 
     // Validation
     if (!$target_variation_id || empty($order_item_ids)) {
-        error_log('InterSoccer Migration: Invalid input - target_variation_id: ' . $target_variation_id . ', order_item_ids count: ' . count($order_item_ids));
+        $log_line(
+            'InterSoccer Migration: Invalid input - target_variation_id: ' . $target_variation_id .
+            ', order_item_ids count: ' . count($order_item_ids)
+        );
         wp_send_json_error(['message' => __('Invalid input.', 'intersoccer-reports-rosters')]);
     }
 
@@ -1374,6 +1395,7 @@ function intersoccer_move_players_ajax() {
     $moved_count = 0;
     $same_variation_skips = 0;
     $errors = [];
+    $moved_item_ids = [];
     global $wpdb;
 
     $run_migration = static function () use (
@@ -1383,9 +1405,19 @@ function intersoccer_move_players_ajax() {
         &$moved_count,
         &$same_variation_skips,
         &$errors,
+        &$moved_item_ids,
         $wpdb,
-        $confirmed_reason_codes
+        $confirmed_reason_codes,
+        $log_line
     ) {
+        $record_failure = static function (int $item_id, int $order_id, string $reason) use (&$errors): void {
+            if (function_exists('intersoccer_roster_move_append_migration_failure')) {
+                intersoccer_roster_move_append_migration_failure($errors, $item_id, $order_id, $reason);
+                return;
+            }
+            $errors[] = $reason;
+        };
+
     foreach ($order_item_ids as $item_id) {
         error_log('InterSoccer Migration: Processing item ID: ' . $item_id);
         
@@ -1398,16 +1430,16 @@ function intersoccer_move_players_ajax() {
             
             if (!$order_id) {
                 $error = 'Order not found for item ' . $item_id;
-                error_log('InterSoccer Migration: ' . $error);
-                $errors[] = $error;
+                $log_line('InterSoccer Migration: ' . $error);
+                $record_failure((int) $item_id, 0, $error);
                 continue;
             }
 
             $order = wc_get_order($order_id);
             if (!$order) {
                 $error = 'Order object not loaded for order ' . $order_id;
-                error_log('InterSoccer Migration: ' . $error);
-                $errors[] = $error;
+                $log_line('InterSoccer Migration: ' . $error);
+                $record_failure((int) $item_id, (int) $order_id, $error);
                 continue;
             }
 
@@ -1422,8 +1454,8 @@ function intersoccer_move_players_ajax() {
             
             if (!$item) {
                 $error = 'Order item not found: ' . $item_id;
-                error_log('InterSoccer Migration: ' . $error);
-                $errors[] = $error;
+                $log_line('InterSoccer Migration: ' . $error);
+                $record_failure((int) $item_id, (int) $order_id, $error);
                 continue;
             }
 
@@ -1436,13 +1468,6 @@ function intersoccer_move_players_ajax() {
             $booking_before = function_exists('intersoccer_read_order_item_booking_fields')
                 ? intersoccer_read_order_item_booking_fields($item_id)
                 : ['booking_type' => '', 'selected_days' => '', 'late_pickup_days' => ''];
-            
-            error_log('InterSoccer Migration: Item ' . $item_id . ' original state:');
-            error_log('  - Original variation: ' . $original_variation_id);
-            error_log('  - Original product: ' . $original_product_id);
-            error_log('  - Original subtotal: ' . $original_subtotal);
-            error_log('  - Original total: ' . $original_total);
-            error_log('  - Assigned attendee: ' . $assigned_attendee);
 
             if (!intersoccer_roster_move_order_item_has_roster_row($item_id)) {
                 $error = sprintf(
@@ -1450,8 +1475,8 @@ function intersoccer_move_players_ajax() {
                     __('No roster row exists for order item %d. Create or rebuild the roster before moving.', 'intersoccer-reports-rosters'),
                     $item_id
                 );
-                error_log('InterSoccer Migration: ' . $error);
-                $errors[] = $error;
+                $log_line('InterSoccer Migration: ' . $error);
+                $record_failure((int) $item_id, (int) $order_id, $error);
                 continue;
             }
 
@@ -1465,8 +1490,8 @@ function intersoccer_move_players_ajax() {
                     $item_id,
                     $target_variation_id
                 );
-                error_log('InterSoccer Migration: ' . $error);
-                $errors[] = $error;
+                $log_line('InterSoccer Migration: ' . $error);
+                $record_failure((int) $item_id, (int) $order_id, $error);
                 continue;
             }
 
@@ -1734,6 +1759,7 @@ function intersoccer_move_players_ajax() {
                     }
 
                     $moved_count++;
+                    $moved_item_ids[] = (int) $item_id;
                     error_log('InterSoccer Migration: Successfully migrated item ' . $item_id);
                     error_log('  - Verification: variation=' . $new_variation_id . ', subtotal=' . $preserved_subtotal . ', total=' . $preserved_total);
                 } else {
@@ -1742,15 +1768,16 @@ function intersoccer_move_players_ajax() {
                     error_log('  - Expected variation: ' . $target_variation_id . ', got: ' . $new_variation_id);
                     error_log('  - Expected subtotal: ' . $original_subtotal . ', got: ' . $preserved_subtotal);
                     error_log('  - Expected total: ' . $original_total . ', got: ' . $preserved_total);
-                    $errors[] = $error;
+                    $record_failure((int) $item_id, (int) $order_id, $error);
                 }
             } else {
-                $errors[] = 'Migration failed for item ' . $item_id;
+                $record_failure((int) $item_id, (int) $order_id, 'Migration failed for item ' . $item_id);
             }
         } catch (Exception $e) {
             $error = 'Exception during migration of item ' . $item_id . ': ' . $e->getMessage();
-            error_log('InterSoccer Migration: ' . $error);
-            $errors[] = $error;
+            $log_line('InterSoccer Migration: ' . $error);
+            $order_id_for_failure = isset($order_id) ? (int) $order_id : 0;
+            $record_failure((int) $item_id, $order_id_for_failure, $error);
         }
     }
     };
@@ -1762,26 +1789,54 @@ function intersoccer_move_players_ajax() {
     }
 
     // Final logging and response
-    error_log('InterSoccer Migration: Completed. Moved: ' . $moved_count . ', Errors: ' . count($errors));
+    $log_line('InterSoccer Migration: Completed. Moved: ' . $moved_count . ', Errors: ' . count($errors));
     if (!empty($errors)) {
-        error_log('InterSoccer Migration: Errors encountered: ' . implode('; ', $errors));
+        $failure_log = array_map(static function ($err) {
+            if (is_array($err)) {
+                return 'item ' . (int) ($err['order_item_id'] ?? 0) . ': ' . (string) ($err['reason'] ?? '');
+            }
+
+            return (string) $err;
+        }, $errors);
+        $log_line('InterSoccer Migration: Errors encountered: ' . implode('; ', $failure_log));
     }
     $total_count = count($order_item_ids);
-    $target_roster_name = method_exists($variation, 'get_name') ? (string) $variation->get_name() : '';
+    $target_display_name = function_exists('intersoccer_roster_move_target_display_name_for_variation')
+        ? intersoccer_roster_move_target_display_name_for_variation((int) $target_variation_id)
+        : (method_exists($variation, 'get_name') ? (string) $variation->get_name() : '');
     if ($moved_count > 0) {
-        $message = sprintf(__('Successfully moved %d players.', 'intersoccer-reports-rosters'), $moved_count);
-        if (!empty($errors)) {
-            $message .= ' ' . sprintf(__('%d errors occurred.', 'intersoccer-reports-rosters'), count($errors));
+        $message = function_exists('intersoccer_roster_move_format_success_message')
+            ? intersoccer_roster_move_format_success_message($moved_count, $target_display_name)
+            : sprintf(__('Successfully moved %d players.', 'intersoccer-reports-rosters'), $moved_count);
+        $partial_summary = '';
+        if (!empty($errors) && function_exists('intersoccer_roster_move_format_partial_summary')) {
+            $partial_summary = intersoccer_roster_move_format_partial_summary($moved_count, $total_count, count($errors));
         }
         $success_payload = [
             'message' => $message,
+            'partial_summary' => $partial_summary,
             'moved_count' => $moved_count,
             'total_count' => $total_count,
             'failed_count' => count($errors),
-            'target_roster_name' => $target_roster_name,
-            'failed' => array_map(static function ($err) {
-                return ['reason' => (string) $err];
-            }, $errors),
+            'target_roster_name' => $target_display_name,
+            'moved_order_item_ids' => array_values(array_map('intval', $moved_item_ids)),
+            'failed' => array_values(array_map(static function ($err) {
+                if (is_array($err)) {
+                    return [
+                        'order_item_id' => (int) ($err['order_item_id'] ?? 0),
+                        'order_id' => (int) ($err['order_id'] ?? 0),
+                        'player_first_name' => (string) ($err['player_first_name'] ?? ''),
+                        'reason' => (string) ($err['reason'] ?? ''),
+                    ];
+                }
+
+                return [
+                    'order_item_id' => 0,
+                    'order_id' => 0,
+                    'player_first_name' => '',
+                    'reason' => (string) $err,
+                ];
+            }, $errors)),
             'partial' => $moved_count < $total_count || !empty($errors),
         ];
         if ($reason_codes !== []) {

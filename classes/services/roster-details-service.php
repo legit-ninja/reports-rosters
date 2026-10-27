@@ -200,7 +200,11 @@ class RosterDetailsService {
             ];
         }
 
-        $availableRosters = $this->buildRosterSummaries($baseRoster, $filters['variation_id'], false);
+        $availableRosters = $this->mergeEmptySiblingVariationTargets(
+            $this->buildRosterSummaries($baseRoster, $filters['variation_id'], false),
+            $baseRoster,
+            (int) $filters['variation_id']
+        );
         $crossGenderRosters = $this->buildRosterSummaries($baseRoster, $filters['variation_id'], true);
         $unknownCount = $this->countUnknownAttendees($rosters);
 
@@ -678,6 +682,24 @@ class RosterDetailsService {
         }
 
         return strcasecmp((string) $valueA, (string) $valueB);
+    }
+
+    /**
+     * @param object[] $summaries
+     * @return object[]
+     */
+    private function mergeEmptySiblingVariationTargets(array $summaries, object $baseRoster, int $currentVariationId): array {
+        if (!function_exists('intersoccer_roster_move_merge_empty_sibling_variation_targets')) {
+            return $summaries;
+        }
+
+        return intersoccer_roster_move_merge_empty_sibling_variation_targets(
+            $summaries,
+            (int) ($baseRoster->product_id ?? 0),
+            $currentVariationId,
+            (string) ($baseRoster->activity_type ?? ''),
+            (int) ($baseRoster->girls_only ?? 0)
+        );
     }
 
     private function buildRosterSummaries(object $baseRoster, int $currentVariationId, bool $crossGender): array {

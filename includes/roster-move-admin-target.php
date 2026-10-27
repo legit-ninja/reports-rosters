@@ -791,26 +791,15 @@ function intersoccer_assess_roster_move_admin_target(
         $reasons[] = 'no_price';
     }
 
-    $stock_out = false;
-    if ($variation->managing_stock() && (int) $variation->get_stock_quantity() <= 0) {
-        $stock_out = true;
-        $reasons[] = 'out_of_stock';
-    }
-    if (method_exists($variation, 'get_stock_status') && (string) $variation->get_stock_status() === 'outofstock') {
-        $stock_out = true;
-        if (!in_array('out_of_stock', $reasons, true)) {
-            $reasons[] = 'out_of_stock';
-        }
-    }
-
     $warning_context = intersoccer_roster_move_warning_context_for_variation($variation, $moving_player_count);
     $capacity = (int) ($warning_context['capacity'] ?? 0);
     $taken = (int) ($warning_context['taken'] ?? 0);
+    $stock_status = (string) $variation->get_stock_status();
+
     if ($capacity > 0 && $taken >= $capacity) {
         $reasons[] = 'full';
-    } elseif ($capacity <= 0 && $taken > 0 && !$stock_out) {
-        // Unknown capacity but roster has players — treat as full for messaging (out_of_stock line in UI).
-        $reasons[] = 'full';
+    } elseif ($capacity <= 0 && $stock_status === 'outofstock') {
+        $reasons[] = 'out_of_stock';
     }
 
     if (intersoccer_roster_move_post_is_cancelled($variation_id) || intersoccer_roster_move_post_is_cancelled($parent_id)) {

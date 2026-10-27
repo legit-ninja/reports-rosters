@@ -81,8 +81,216 @@ function intersoccer_roster_move_js_localize_strings(): array {
         2,
         'intersoccer-reports-rosters'
     );
+    $strings['partial_one'] = _n(
+        '%1$s of %2$s player moved. %3$s couldn\'t be moved:',
+        '%1$s of %2$s players moved. %3$s couldn\'t be moved:',
+        1,
+        'intersoccer-reports-rosters'
+    );
+    $strings['partial_many'] = _n(
+        '%1$s of %2$s player moved. %3$s couldn\'t be moved:',
+        '%1$s of %2$s players moved. %3$s couldn\'t be moved:',
+        2,
+        'intersoccer-reports-rosters'
+    );
+    $strings['failed_player_line'] = __('%1$s: %2$s', 'intersoccer-reports-rosters');
+    $strings['ajax_error'] = __('An error occurred. Please try again.', 'intersoccer-reports-rosters');
+    $strings['unknown_error'] = __('Unknown error occurred.', 'intersoccer-reports-rosters');
 
     return $strings;
+}
+
+/**
+ * Test-friendly move log (captures to $GLOBALS['intersoccer_test_captured_roster_move_logs'] when set).
+ */
+function intersoccer_roster_move_log(string $message): void {
+    if (!empty($GLOBALS['intersoccer_test_capture_roster_move_logs'])) {
+        if (!isset($GLOBALS['intersoccer_test_captured_roster_move_logs'])
+            || !is_array($GLOBALS['intersoccer_test_captured_roster_move_logs'])) {
+            $GLOBALS['intersoccer_test_captured_roster_move_logs'] = [];
+        }
+        $GLOBALS['intersoccer_test_captured_roster_move_logs'][] = $message;
+
+        return;
+    }
+    error_log($message);
+}
+
+/**
+ * Resolve roster capacity for admin-move warnings.
+ *
+ * Source order:
+ * 1. Explicit `capacity` post meta on the variation, then on the parent product (Program Manager / legacy).
+ * 2. When WooCommerce manages stock on the variation: capacity = active roster places + remaining stock
+ *    (Woo stock quantity is places left, not headcount already booked).
+ *
+ * Campaign `_isrr_campaign_capacity` is not used here — it applies to marketing campaigns, not roster variations.
+ *
+ * @return int 0 when capacity is unknown.
+ */
+function intersoccer_roster_move_resolve_variation_capacity(WC_Product_Variation $variation, ?int $taken = null): int {
+    $variation_id = (int) $variation->get_id();
+    $taken = $taken ?? intersoccer_roster_move_active_roster_count($variation_id);
+
+    $capacity = (int) $variation->get_meta('capacity', true);
+    $parent_id = (int) $variation->get_parent_id();
+    if ($capacity <= 0 && $parent_id > 0 && function_exists('wc_get_product')) {
+        $parent_product = wc_get_product($parent_id);
+        if ($parent_product) {
+            $capacity = (int) $parent_product->get_meta('capacity', true);
+        }
+    }
+
+    if ($capacity <= 0 && $variation->managing_stock()) {
+        $remaining = (int) $variation->get_stock_quantity();
+        if ($remaining >= 0) {
+            $capacity = $taken + $remaining;
+        }
+    }
+
+    return max(0, $capacity);
+}
+
+/**
+ * Player first name only (roster row, then Assigned Attendee token).
+ */
+function intersoccer_roster_move_order_item_player_first_name(int $order_item_id): string {
+    global $wpdb;
+    if ($order_item_id <= 0) {
+        return '';
+    }
+
+    $table = $wpdb->prefix . 'intersoccer_rosters';
+    $first = $wpdb->get_var($wpdb->prepare(
+        "SELECT player_first_name FROM {$table} WHERE order_item_id = %d LIMIT 1",
+        $order_item_id
+    ));
+    if (is_string($first) && trim($first) !== '') {
+        return trim($first);
+    }
+
+    if (function_exists('wc_get_order_item_meta')) {
+        $assigned = wc_get_order_item_meta($order_item_id, 'Assigned Attendee', true);
+        if (is_string($assigned) && trim($assigned) !== '') {
+            $parts = preg_split('/\s+/', trim($assigned), 2);
+
+            return (string) ($parts[0] ?? '');
+        }
+    }
+
+    return '';
+}
+
+/**
+ * @param array<int,array<string,mixed>> $failures
+ */
+function intersoccer_roster_move_append_migration_failure(
+    array &$failures,
+    int $order_item_id,
+    int $order_id,
+    string $reason
+): void {
+    $failures[] = [
+        'order_item_id' => $order_item_id,
+        'order_id' => $order_id,
+        'player_first_name' => intersoccer_roster_move_order_item_player_first_name($order_item_id),
+        'reason' => $reason,
+    ];
+}
+
+/**
+ * Human destination label (product + season + schedule + venue + age + time), matching roster-details picker.
+ */
+function intersoccer_roster_move_target_display_name_for_variation(int $variation_id): string {
+    global $wpdb;
+    $variation_id = (int) $variation_id;
+    if ($variation_id <= 0) {
+        return '';
+    }
+
+    $table = $wpdb->prefix . 'intersoccer_rosters';
+    $row = $wpdb->get_row($wpdb->prepare(
+        "SELECT product_name, season, course_day, camp_terms, venue, age_group, times
+         FROM {$table} WHERE variation_id = %d LIMIT 1",
+        $variation_id
+    ), ARRAY_A);
+
+    $product = is_array($row) ? trim((string) ($row['product_name'] ?? '')) : '';
+    if ($product === '' && function_exists('wc_get_product')) {
+        $variation = wc_get_product($variation_id);
+        if ($variation && method_exists($variation, 'get_name')) {
+            $product = trim((string) $variation->get_name());
+        }
+    }
+    if ($product === '') {
+        $product = __('Untitled roster', 'intersoccer-reports-rosters');
+    }
+
+    $parts = [$product];
+    if (is_array($row)) {
+        $season = trim((string) ($row['season'] ?? ''));
+        if ($season !== '' && strcasecmp($season, 'N/A') !== 0) {
+            $parts[] = $season;
+        }
+        $schedule = trim((string) ($row['course_day'] ?? ''));
+        if ($schedule === '') {
+            $schedule = trim((string) ($row['camp_terms'] ?? ''));
+        }
+        if ($schedule !== '' && strcasecmp($schedule, 'N/A') !== 0) {
+            $parts[] = $schedule;
+        }
+        $venue = trim((string) ($row['venue'] ?? ''));
+        if ($venue !== '' && strcasecmp($venue, 'N/A') !== 0) {
+            $parts[] = $venue;
+        }
+        $age = trim((string) ($row['age_group'] ?? ''));
+        if ($age !== '' && strcasecmp($age, 'N/A') !== 0) {
+            $parts[] = $age;
+        }
+        $times = trim((string) ($row['times'] ?? ''));
+        if ($times !== '' && strcasecmp($times, 'N/A') !== 0) {
+            $parts[] = $times;
+        }
+    }
+
+    return implode(', ', $parts);
+}
+
+function intersoccer_roster_move_format_success_message(int $moved_count, string $target_display_name): string {
+    $moved_count = max(0, $moved_count);
+    $template = _n(
+        'Moved %1$s player to %2$s.',
+        'Moved %1$s players to %2$s.',
+        $moved_count,
+        'intersoccer-reports-rosters'
+    );
+
+    $count_label = function_exists('number_format_i18n')
+        ? number_format_i18n($moved_count)
+        : (string) $moved_count;
+
+    return sprintf($template, $count_label, $target_display_name);
+}
+
+function intersoccer_roster_move_format_partial_summary(int $moved, int $total, int $failed): string {
+    $total = max(1, $total);
+    $template = _n(
+        '%1$s of %2$s player moved. %3$s couldn\'t be moved:',
+        '%1$s of %2$s players moved. %3$s couldn\'t be moved:',
+        $total,
+        'intersoccer-reports-rosters'
+    );
+
+    $format_count = static function (int $value): string {
+        return function_exists('number_format_i18n') ? number_format_i18n($value) : (string) $value;
+    };
+
+    return sprintf(
+        $template,
+        $format_count($moved),
+        $format_count($total),
+        $format_count($failed)
+    );
 }
 
 /**
@@ -111,13 +319,7 @@ function intersoccer_roster_move_warning_context_for_variation(WC_Product_Variat
     $variation_id = (int) $variation->get_id();
     $parent_id = (int) $variation->get_parent_id();
     $taken = intersoccer_roster_move_active_roster_count($variation_id);
-    $capacity = (int) $variation->get_meta('capacity', true);
-    if ($capacity <= 0 && $parent_id > 0 && function_exists('wc_get_product')) {
-        $parent_product = wc_get_product($parent_id);
-        if ($parent_product) {
-            $capacity = (int) $parent_product->get_meta('capacity', true);
-        }
-    }
+    $capacity = intersoccer_roster_move_resolve_variation_capacity($variation, $taken);
     $moving_player_count = max(1, $moving_player_count);
     $over_capacity_n = 0;
     if ($capacity > 0 && ($taken + $moving_player_count) > $capacity) {
