@@ -52,6 +52,7 @@ class MovePlayersConfirmFlowTest extends TestCase {
         $variation->shouldReceive('get_variation_attributes')->andReturn($config['attributes'] ?? []);
         $variation->shouldReceive('managing_stock')->andReturn($config['managing_stock'] ?? false);
         $variation->shouldReceive('get_stock_quantity')->andReturn($config['stock_quantity'] ?? 1);
+        $variation->shouldReceive('get_stock_status')->andReturn($config['stock_status'] ?? 'instock');
         $variation->shouldReceive('get_meta')->with('capacity', true)->andReturn($config['capacity'] ?? '');
         $variation->shouldReceive('get_name')->andReturn($config['name'] ?? 'Test Variation');
         $variation->shouldReceive('get_price')->andReturn($config['price'] ?? '120');
@@ -96,8 +97,7 @@ class MovePlayersConfirmFlowTest extends TestCase {
         ];
 
         $variation = $this->makeVariation([
-            'managing_stock' => true,
-            'stock_quantity' => 0,
+            'stock_status' => 'outofstock',
         ]);
         $assessment = intersoccer_assess_roster_move_admin_target($variation, 'course');
 

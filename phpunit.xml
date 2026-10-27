@@ -67,6 +67,7 @@
             <file>tests/Legacy/MovePlayersMoveAuditTest.php</file>
             <file>tests/Legacy/MovePlayersRosterMoveUiTest.php</file>
             <file>tests/Legacy/MovePlayersAjaxAcceptanceTest.php</file>
+            <file>tests/Legacy/MovePlayersCapacityPrivacyTest.php</file>
             <file>tests/Reports/FinalReportsTotalsTest.php</file>
             <file>tests/Reports/BookingReportTotalsHtmlTest.php</file>
             <file>tests/Reports/FinalReportsAggregationAccuracyTest.php</file>

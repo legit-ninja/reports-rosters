@@ -117,6 +117,7 @@ class MovePlayersAdminTargetTest extends TestCase {
         $variation->shouldReceive('get_variation_attributes')->andReturn($config['attributes'] ?? []);
         $variation->shouldReceive('managing_stock')->andReturn($config['managing_stock'] ?? false);
         $variation->shouldReceive('get_stock_quantity')->andReturn($config['stock_quantity'] ?? 1);
+        $variation->shouldReceive('get_stock_status')->andReturn($config['stock_status'] ?? 'instock');
         $variation->shouldReceive('get_meta')->with('capacity', true)->andReturn($config['capacity'] ?? '');
         $variation->shouldReceive('get_name')->andReturn('Test Variation');
         $variation->shouldReceive('get_price')->andReturn($config['price'] ?? '100');

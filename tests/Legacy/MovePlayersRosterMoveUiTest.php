@@ -35,5 +35,7 @@ class MovePlayersRosterMoveUiTest extends TestCase {
         $this->assertStringContainsString("'status'", $source);
         $this->assertStringContainsString('rosterMoveInlinePanel', $source);
         $this->assertStringContainsString('isrrRosterMoveL10n', $source);
+        $this->assertStringContainsString('roster-move-reason-messages.php', $source);
+        $this->assertStringContainsString('rosterMoveConfirmHeading', $source);
     }
 }
