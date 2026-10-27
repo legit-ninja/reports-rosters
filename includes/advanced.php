@@ -1139,28 +1139,28 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
         }
 
         if ($product_type === 'course' && function_exists('intersoccer_get_course_meta')) {
-            $start_date = intersoccer_get_course_meta($variation->get_id(), '_course_start_date', '');
-            if (!empty($start_date)) {
-                $other_meta['Start Date'] = function_exists('intersoccer_format_roster_date_for_storage')
-                    ? intersoccer_format_roster_date_for_storage($start_date)
-                    : date('F j, Y', strtotime($start_date));
-            }
+            $format_course_date = static function ($date_string) {
+                if ($date_string === '' || $date_string === null) {
+                    return '';
+                }
+                if (function_exists('intersoccer_format_roster_date_for_storage')) {
+                    return intersoccer_format_roster_date_for_storage($date_string);
+                }
+                $timestamp = strtotime((string) $date_string);
 
-            $end_date = intersoccer_get_course_meta($variation->get_id(), '_end_date', '');
-            if (!empty($end_date)) {
-                $other_meta['End Date'] = function_exists('intersoccer_format_roster_date_for_storage')
-                    ? intersoccer_format_roster_date_for_storage($end_date)
-                    : date('F j, Y', strtotime($end_date));
-            }
+                return $timestamp !== false ? date('F j, Y', $timestamp) : '';
+            };
 
-            $holidays = intersoccer_get_course_meta($variation->get_id(), '_course_holiday_dates', []);
+            $variation_id = (int) $variation->get_id();
+            $start_date = intersoccer_get_course_meta($variation_id, '_course_start_date', '');
+            $end_date = intersoccer_get_course_meta($variation_id, '_end_date', '');
+            $holidays = intersoccer_get_course_meta($variation_id, '_course_holiday_dates', []);
+
+            // Always stamp course schedule keys from the target variation (empty clears stale source values).
+            $other_meta['Start Date'] = $format_course_date($start_date);
+            $other_meta['End Date'] = $format_course_date($end_date);
             if (!empty($holidays) && is_array($holidays)) {
-                $formatted_holidays = array_map(static function ($date) {
-                    return function_exists('intersoccer_format_roster_date_for_storage')
-                        ? intersoccer_format_roster_date_for_storage($date)
-                        : date('F j, Y', strtotime($date));
-                }, $holidays);
-                $other_meta['Holidays'] = implode(', ', $formatted_holidays);
+                $other_meta['Holidays'] = implode(', ', array_map($format_course_date, $holidays));
             } else {
                 $other_meta['Holidays'] = '';
             }
@@ -1410,16 +1410,25 @@ function intersoccer_move_players_ajax() {
         $confirmed_reason_codes,
         $log_line
     ) {
-        $record_failure = static function (int $item_id, int $order_id, string $reason) use (&$errors): void {
+        $record_failure = static function (
+            int $item_id,
+            int $order_id,
+            string $user_reason,
+            bool $retryable = true,
+            string $log_detail = ''
+        ) use (&$errors, $log_line): void {
+            if ($log_detail !== '') {
+                $log_line($log_detail);
+            }
             if (function_exists('intersoccer_roster_move_append_migration_failure')) {
-                intersoccer_roster_move_append_migration_failure($errors, $item_id, $order_id, $reason);
+                intersoccer_roster_move_append_migration_failure($errors, $item_id, $order_id, $user_reason, $retryable);
                 return;
             }
-            $errors[] = $reason;
+            $errors[] = $user_reason;
         };
 
     foreach ($order_item_ids as $item_id) {
-        error_log('InterSoccer Migration: Processing item ID: ' . $item_id);
+        $log_line('InterSoccer Migration: Processing item ID: ' . $item_id);
         
         try {
             // Get order from item
@@ -1429,17 +1438,25 @@ function intersoccer_move_players_ajax() {
             ));
             
             if (!$order_id) {
-                $error = 'Order not found for item ' . $item_id;
-                $log_line('InterSoccer Migration: ' . $error);
-                $record_failure((int) $item_id, 0, $error);
+                $record_failure(
+                    (int) $item_id,
+                    0,
+                    __('Could not find the order for this player.', 'intersoccer-reports-rosters'),
+                    true,
+                    'InterSoccer Migration: Order not found for item ' . $item_id
+                );
                 continue;
             }
 
             $order = wc_get_order($order_id);
             if (!$order) {
-                $error = 'Order object not loaded for order ' . $order_id;
-                $log_line('InterSoccer Migration: ' . $error);
-                $record_failure((int) $item_id, (int) $order_id, $error);
+                $record_failure(
+                    (int) $item_id,
+                    (int) $order_id,
+                    __('Could not load the order for this player.', 'intersoccer-reports-rosters'),
+                    true,
+                    'InterSoccer Migration: Order object not loaded for order ' . $order_id
+                );
                 continue;
             }
 
@@ -1453,9 +1470,13 @@ function intersoccer_move_players_ajax() {
             }
             
             if (!$item) {
-                $error = 'Order item not found: ' . $item_id;
-                $log_line('InterSoccer Migration: ' . $error);
-                $record_failure((int) $item_id, (int) $order_id, $error);
+                $record_failure(
+                    (int) $item_id,
+                    (int) $order_id,
+                    __('Could not find this booking line on the order.', 'intersoccer-reports-rosters'),
+                    true,
+                    'InterSoccer Migration: Order item not found: ' . $item_id
+                );
                 continue;
             }
 
@@ -1470,13 +1491,13 @@ function intersoccer_move_players_ajax() {
                 : ['booking_type' => '', 'selected_days' => '', 'late_pickup_days' => ''];
 
             if (!intersoccer_roster_move_order_item_has_roster_row($item_id)) {
-                $error = sprintf(
-                    /* translators: %d: WooCommerce order line item ID */
-                    __('No roster row exists for order item %d. Create or rebuild the roster before moving.', 'intersoccer-reports-rosters'),
-                    $item_id
+                $record_failure(
+                    (int) $item_id,
+                    (int) $order_id,
+                    __('No roster row exists for this player. Create or rebuild the roster before moving.', 'intersoccer-reports-rosters'),
+                    true,
+                    'InterSoccer Migration: No roster row for item ' . $item_id
                 );
-                $log_line('InterSoccer Migration: ' . $error);
-                $record_failure((int) $item_id, (int) $order_id, $error);
                 continue;
             }
 
@@ -1484,14 +1505,13 @@ function intersoccer_move_players_ajax() {
                 && intersoccer_roster_move_is_same_variation_target((int) $original_variation_id, (int) $target_variation_id)
             ) {
                 $same_variation_skips++;
-                $error = sprintf(
-                    /* translators: %1$d: order line item ID, %2$d: variation ID */
-                    __('Order item %1$d is already on variation %2$d.', 'intersoccer-reports-rosters'),
-                    $item_id,
-                    $target_variation_id
+                $record_failure(
+                    (int) $item_id,
+                    (int) $order_id,
+                    __('Already on this roster.', 'intersoccer-reports-rosters'),
+                    false,
+                    'InterSoccer Migration: Item ' . $item_id . ' already on variation ' . $target_variation_id
                 );
-                $log_line('InterSoccer Migration: ' . $error);
-                $record_failure((int) $item_id, (int) $order_id, $error);
                 continue;
             }
 
@@ -1562,10 +1582,10 @@ function intersoccer_move_players_ajax() {
                 $new_product_type = '';
             }
             
-            error_log('InterSoccer Migration: Target variation details:');
-            error_log('  - New product ID: ' . $new_product_id);
-            error_log('  - New product type: ' . ($new_product_type ?: 'unknown'));
-            error_log('  - New attributes: ' . print_r($new_attributes, true));
+            $log_line(
+                'InterSoccer Migration: Target variation ' . $target_variation_id .
+                ' product ' . $new_product_id . ' type ' . ($new_product_type ?: 'unknown')
+            );
 
             // Start transaction-like approach
             $migration_success = true;
@@ -1582,9 +1602,9 @@ function intersoccer_move_players_ajax() {
                 $item->set_subtotal($original_subtotal);
                 $item->set_total($original_total);
                 
-                error_log('InterSoccer Migration: Updated item variation and preserved pricing');
+                $log_line('InterSoccer Migration: Updated item variation and preserved pricing for item ' . $item_id);
             } catch (Exception $e) {
-                error_log('InterSoccer Migration: Failed to update item: ' . $e->getMessage());
+                $log_line('InterSoccer Migration: Failed to update item ' . $item_id . ': ' . $e->getMessage());
                 $migration_success = false;
             }
 
@@ -1613,7 +1633,7 @@ function intersoccer_move_players_ajax() {
                         'restoring'       => false,
                     ];
                 } catch (Exception $e) {
-                    error_log('InterSoccer Migration: Failed to clear metadata: ' . $e->getMessage());
+                    $log_line('InterSoccer Migration: Failed to clear metadata for item ' . $item_id . ': ' . $e->getMessage());
                     $migration_success = false;
                 }
             }
@@ -1664,9 +1684,9 @@ function intersoccer_move_players_ajax() {
                         );
                     }
                     
-                    error_log('InterSoccer Migration: Saved order item and order');
+                    $log_line('InterSoccer Migration: Saved order item and order for item ' . $item_id);
                 } catch (Exception $e) {
-                    error_log('InterSoccer Migration: Failed to save order: ' . $e->getMessage());
+                    $log_line('InterSoccer Migration: Failed to save order for item ' . $item_id . ': ' . $e->getMessage());
                     $migration_success = false;
                 }
             }
@@ -1677,7 +1697,7 @@ function intersoccer_move_players_ajax() {
                     // Always apply explicit target-variation roster update for migration reliability.
                     // Runtime evidence showed OOP upsert can observe stale variation IDs during this step.
                     intersoccer_manual_update_roster_entry($order_id, $item_id, $target_variation_id);
-                    error_log('InterSoccer Migration: Updated roster entry via manual method (target variation source-of-truth)');
+                    $log_line('InterSoccer Migration: Updated roster entry via manual method for item ' . $item_id);
                     if (function_exists('intersoccer_rebuild_event_signature_for_order_item')) {
                         $signature_updated = intersoccer_rebuild_event_signature_for_order_item($item_id);
                         error_log(
@@ -1694,7 +1714,7 @@ function intersoccer_move_players_ajax() {
                         }
                     }
                 } catch (Exception $e) {
-                    error_log('InterSoccer Migration: Failed to update roster: ' . $e->getMessage());
+                    $log_line('InterSoccer Migration: Failed to update roster for item ' . $item_id . ': ' . $e->getMessage());
                     $migration_success = false;
                 }
             }
@@ -1711,9 +1731,9 @@ function intersoccer_move_players_ajax() {
                         $existing_line_meta_keys,
                         $variation
                     );
-                    error_log('InterSoccer Migration: Finalized order item meta for item ' . $item_id);
+                    $log_line('InterSoccer Migration: Finalized order item meta for item ' . $item_id);
                 } catch (Exception $e) {
-                    error_log('InterSoccer Migration: Failed to finalize item meta: ' . $e->getMessage());
+                    $log_line('InterSoccer Migration: Failed to finalize item meta for item ' . $item_id . ': ' . $e->getMessage());
                     $migration_success = false;
                 }
             }
@@ -1760,24 +1780,34 @@ function intersoccer_move_players_ajax() {
 
                     $moved_count++;
                     $moved_item_ids[] = (int) $item_id;
-                    error_log('InterSoccer Migration: Successfully migrated item ' . $item_id);
-                    error_log('  - Verification: variation=' . $new_variation_id . ', subtotal=' . $preserved_subtotal . ', total=' . $preserved_total);
+                    $log_line('InterSoccer Migration: Successfully migrated item ' . $item_id);
                 } else {
-                    $error = 'Migration verification failed for item ' . $item_id;
-                    error_log('InterSoccer Migration: ' . $error);
-                    error_log('  - Expected variation: ' . $target_variation_id . ', got: ' . $new_variation_id);
-                    error_log('  - Expected subtotal: ' . $original_subtotal . ', got: ' . $preserved_subtotal);
-                    error_log('  - Expected total: ' . $original_total . ', got: ' . $preserved_total);
-                    $record_failure((int) $item_id, (int) $order_id, $error);
+                    $record_failure(
+                        (int) $item_id,
+                        (int) $order_id,
+                        __('This player could not be moved. Please try again.', 'intersoccer-reports-rosters'),
+                        true,
+                        'InterSoccer Migration: Migration verification failed for item ' . $item_id
+                    );
                 }
             } else {
-                $record_failure((int) $item_id, (int) $order_id, 'Migration failed for item ' . $item_id);
+                $record_failure(
+                    (int) $item_id,
+                    (int) $order_id,
+                    __('This player could not be moved. Please try again.', 'intersoccer-reports-rosters'),
+                    true,
+                    'InterSoccer Migration: Migration failed for item ' . $item_id
+                );
             }
         } catch (Exception $e) {
-            $error = 'Exception during migration of item ' . $item_id . ': ' . $e->getMessage();
-            $log_line('InterSoccer Migration: ' . $error);
             $order_id_for_failure = isset($order_id) ? (int) $order_id : 0;
-            $record_failure((int) $item_id, $order_id_for_failure, $error);
+            $record_failure(
+                (int) $item_id,
+                $order_id_for_failure,
+                __('This player could not be moved. Please try again.', 'intersoccer-reports-rosters'),
+                true,
+                'InterSoccer Migration: Exception during migration of item ' . $item_id . ': ' . $e->getMessage()
+            );
         }
     }
     };
@@ -1801,54 +1831,30 @@ function intersoccer_move_players_ajax() {
         $log_line('InterSoccer Migration: Errors encountered: ' . implode('; ', $failure_log));
     }
     $total_count = count($order_item_ids);
-    $target_display_name = function_exists('intersoccer_roster_move_target_display_name_for_variation')
-        ? intersoccer_roster_move_target_display_name_for_variation((int) $target_variation_id)
-        : (method_exists($variation, 'get_name') ? (string) $variation->get_name() : '');
-    if ($moved_count > 0) {
-        $message = function_exists('intersoccer_roster_move_format_success_message')
-            ? intersoccer_roster_move_format_success_message($moved_count, $target_display_name)
-            : sprintf(__('Successfully moved %d players.', 'intersoccer-reports-rosters'), $moved_count);
-        $partial_summary = '';
-        if (!empty($errors) && function_exists('intersoccer_roster_move_format_partial_summary')) {
-            $partial_summary = intersoccer_roster_move_format_partial_summary($moved_count, $total_count, count($errors));
-        }
-        $success_payload = [
-            'message' => $message,
-            'partial_summary' => $partial_summary,
-            'moved_count' => $moved_count,
-            'total_count' => $total_count,
-            'failed_count' => count($errors),
-            'target_roster_name' => $target_display_name,
-            'moved_order_item_ids' => array_values(array_map('intval', $moved_item_ids)),
-            'failed' => array_values(array_map(static function ($err) {
-                if (is_array($err)) {
-                    return [
-                        'order_item_id' => (int) ($err['order_item_id'] ?? 0),
-                        'order_id' => (int) ($err['order_id'] ?? 0),
-                        'player_first_name' => (string) ($err['player_first_name'] ?? ''),
-                        'reason' => (string) ($err['reason'] ?? ''),
-                    ];
-                }
-
-                return [
-                    'order_item_id' => 0,
-                    'order_id' => 0,
-                    'player_first_name' => '',
-                    'reason' => (string) $err,
-                ];
-            }, $errors)),
-            'partial' => $moved_count < $total_count || !empty($errors),
-        ];
-        if ($reason_codes !== []) {
-            $success_payload['reason_codes'] = $reason_codes;
-        }
-        wp_send_json_success($success_payload);
-    } else {
-        if ($same_variation_skips > 0 && $same_variation_skips === count($order_item_ids)) {
-            wp_send_json_error(['message' => __('Player is already in this class', 'intersoccer-reports-rosters')]);
-        }
-        wp_send_json_error(['message' => __('No players moved. Check logs for details.', 'intersoccer-reports-rosters')]);
+    if ($moved_count === 0
+        && $same_variation_skips > 0
+        && $same_variation_skips === $total_count
+        && count($errors) === $same_variation_skips
+    ) {
+        wp_send_json_error(['message' => __('Player is already in this class', 'intersoccer-reports-rosters')]);
     }
+
+    if ($moved_count > 0 || !empty($errors)) {
+        $success_payload = function_exists('intersoccer_roster_move_build_move_ajax_success_payload')
+            ? intersoccer_roster_move_build_move_ajax_success_payload(
+                $moved_count,
+                $total_count,
+                $errors,
+                $moved_item_ids,
+                (int) $target_variation_id,
+                $variation,
+                $reason_codes
+            )
+            : [];
+        wp_send_json_success($success_payload);
+    }
+
+    wp_send_json_error(['message' => __('No players moved. Check logs for details.', 'intersoccer-reports-rosters')]);
 }
 
 /**
@@ -1858,7 +1864,11 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
 
-    error_log('InterSoccer Migration: Manual roster update for item ' . $item_id);
+    if (function_exists('intersoccer_roster_move_log')) {
+        intersoccer_roster_move_log('InterSoccer Migration: Manual roster update for item ' . $item_id);
+    } else {
+        error_log('InterSoccer Migration: Manual roster update for item ' . $item_id);
+    }
 
     $target_variation_id = function_exists('intersoccer_resolve_variation_for_roster')
         ? intersoccer_resolve_variation_for_roster($target_variation_id)
@@ -2020,7 +2030,9 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
         ['%d']
     );
 
-    error_log('InterSoccer Migration: Roster update rows affected for item ' . $item_id . ': ' . var_export($update_result, true));
+    if (function_exists('intersoccer_roster_move_log')) {
+        intersoccer_roster_move_log('InterSoccer Migration: Roster update rows affected for item ' . $item_id . ': ' . (int) $update_result);
+    }
 
     if ($update_result === false) {
         throw new Exception('Database update failed for roster entry');
@@ -2059,11 +2071,15 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
             );
         }
 
-        error_log('InterSoccer Migration: Roster row already matched target for item ' . $item_id);
+        if (function_exists('intersoccer_roster_move_log')) {
+            intersoccer_roster_move_log('InterSoccer Migration: Roster row already matched target for item ' . $item_id);
+        }
     }
 
     $field_names = is_array($normalized) ? implode(', ', array_keys($normalized)) : '';
-    error_log('InterSoccer Migration: Updated roster entry fields for item ' . $item_id . ': ' . $field_names);
+    if (function_exists('intersoccer_roster_move_log')) {
+        intersoccer_roster_move_log('InterSoccer Migration: Updated roster entry fields for item ' . $item_id);
+    }
 }
 
 /**

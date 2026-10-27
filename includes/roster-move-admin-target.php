@@ -705,6 +705,14 @@ function intersoccer_roster_move_order_item_has_roster_row(int $order_item_id): 
         return false;
     }
 
+    if (isset($GLOBALS['intersoccer_test_roster_row_ids_by_item'])
+        && is_array($GLOBALS['intersoccer_test_roster_row_ids_by_item'])) {
+        $mapped = $GLOBALS['intersoccer_test_roster_row_ids_by_item'][(int) $order_item_id] ?? null;
+        if ($mapped !== null) {
+            return (int) $mapped > 0;
+        }
+    }
+
     $table = $wpdb->prefix . 'intersoccer_rosters';
     $id = (int) $wpdb->get_var($wpdb->prepare(
         "SELECT id FROM {$table} WHERE order_item_id = %d LIMIT 1",

@@ -1978,8 +1978,8 @@ function intersoccer_render_roster_details_page() {
                             return;
                         }
 
-                        if (response.success && response.data && (response.data.moved_count || response.data.message)) {
-                            const moved = parseInt(response.data.moved_count, 10) || selectedItems.length;
+                        if (response.success && response.data && (typeof response.data.moved_count !== 'undefined' || (response.data.failed && response.data.failed.length))) {
+                            const moved = parseInt(response.data.moved_count, 10) || 0;
                             const total = parseInt(response.data.total_count, 10) || selectedItems.length;
                             const failed = response.data.failed || [];
                             const failedCount = response.data.failed_count || failed.length;
@@ -2008,7 +2008,10 @@ function intersoccer_render_roster_details_page() {
                                     'alert',
                                     'error'
                                 );
-                                window.isrrRosterMoveLastFailedIds = failed.map(function(f) { return f.order_item_id; }).filter(Boolean);
+                                window.isrrRosterMoveLastFailedIds = failed
+                                    .filter(function(f) { return f.retryable !== false; })
+                                    .map(function(f) { return f.order_item_id; })
+                                    .filter(Boolean);
                                 $('#rosterMoveTryAgain').on('click', function() {
                                     hideRosterMovePanel();
                                     runMoveAjax(confirmFlag, true);

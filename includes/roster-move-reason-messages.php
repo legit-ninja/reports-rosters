@@ -55,10 +55,6 @@ function intersoccer_roster_move_ui_strings(): array {
         'select_destination' => __('Please select a destination roster.', 'intersoccer-reports-rosters'),
         'no_players_selected' => __('No players selected.', 'intersoccer-reports-rosters'),
         'target_missing' => __('The destination roster no longer exists or was deleted.', 'intersoccer-reports-rosters'),
-        /* translators: 1: moved count, 2: roster name */
-        'success' => __('Moved %1$s to %2$s.', 'intersoccer-reports-rosters'),
-        /* translators: 1: moved, 2: total, 3: failed count */
-        'partial' => __('%1$s of %2$s players moved. %3$s couldn\'t be moved:', 'intersoccer-reports-rosters'),
     ];
 }
 
@@ -110,7 +106,11 @@ function intersoccer_roster_move_log(string $message): void {
             $GLOBALS['intersoccer_test_captured_roster_move_logs'] = [];
         }
         $GLOBALS['intersoccer_test_captured_roster_move_logs'][] = $message;
-
+    }
+    if (!empty($GLOBALS['intersoccer_test_error_log_file']) && is_string($GLOBALS['intersoccer_test_error_log_file'])) {
+        file_put_contents($GLOBALS['intersoccer_test_error_log_file'], $message . "\n", FILE_APPEND);
+    }
+    if (!empty($GLOBALS['intersoccer_test_capture_roster_move_logs'])) {
         return;
     }
     error_log($message);
@@ -143,8 +143,9 @@ function intersoccer_roster_move_resolve_variation_capacity(WC_Product_Variation
 
     if ($capacity <= 0 && $variation->managing_stock()) {
         $remaining = (int) $variation->get_stock_quantity();
-        if ($remaining >= 0) {
-            $capacity = $taken + $remaining;
+        $derived = $taken + $remaining;
+        if ($derived > 0) {
+            $capacity = $derived;
         }
     }
 
@@ -158,6 +159,14 @@ function intersoccer_roster_move_order_item_player_first_name(int $order_item_id
     global $wpdb;
     if ($order_item_id <= 0) {
         return '';
+    }
+
+    if (isset($GLOBALS['intersoccer_test_player_first_name_by_item'])
+        && is_array($GLOBALS['intersoccer_test_player_first_name_by_item'])) {
+        $mapped = $GLOBALS['intersoccer_test_player_first_name_by_item'][(int) $order_item_id] ?? null;
+        if (is_string($mapped) && $mapped !== '') {
+            return $mapped;
+        }
     }
 
     $table = $wpdb->prefix . 'intersoccer_rosters';
@@ -188,14 +197,92 @@ function intersoccer_roster_move_append_migration_failure(
     array &$failures,
     int $order_item_id,
     int $order_id,
-    string $reason
+    string $reason,
+    bool $retryable = true
 ): void {
     $failures[] = [
         'order_item_id' => $order_item_id,
         'order_id' => $order_id,
         'player_first_name' => intersoccer_roster_move_order_item_player_first_name($order_item_id),
         'reason' => $reason,
+        'retryable' => $retryable,
     ];
+}
+
+/**
+ * @param array<int,array<string,mixed>|string> $errors
+ *
+ * @return array<int,array<string,mixed>>
+ */
+function intersoccer_roster_move_map_failures_for_ajax(array $errors): array {
+    return array_values(array_map(static function ($err) {
+        if (!is_array($err)) {
+            return [
+                'order_item_id' => 0,
+                'order_id' => 0,
+                'player_first_name' => '',
+                'reason' => (string) $err,
+                'retryable' => true,
+            ];
+        }
+
+        return [
+            'order_item_id' => (int) ($err['order_item_id'] ?? 0),
+            'order_id' => (int) ($err['order_id'] ?? 0),
+            'player_first_name' => (string) ($err['player_first_name'] ?? ''),
+            'reason' => (string) ($err['reason'] ?? ''),
+            'retryable' => !isset($err['retryable']) || (bool) $err['retryable'],
+        ];
+    }, $errors));
+}
+
+/**
+ * @param WC_Product_Variation|object $variation
+ *
+ * @return array<string,mixed>
+ */
+function intersoccer_roster_move_build_move_ajax_success_payload(
+    int $moved_count,
+    int $total_count,
+    array $errors,
+    array $moved_item_ids,
+    int $target_variation_id,
+    $variation,
+    array $reason_codes = []
+): array {
+    $failed = intersoccer_roster_move_map_failures_for_ajax($errors);
+    $failed_count = count($failed);
+    $target_display_name = intersoccer_roster_move_target_display_name_for_variation($target_variation_id);
+    if ($target_display_name === '' && is_object($variation) && method_exists($variation, 'get_name')) {
+        $target_display_name = (string) $variation->get_name();
+    }
+
+    $message = '';
+    if ($moved_count > 0 && function_exists('intersoccer_roster_move_format_success_message')) {
+        $message = intersoccer_roster_move_format_success_message($moved_count, $target_display_name);
+    }
+
+    $partial_summary = '';
+    if (($moved_count < $total_count || $failed_count > 0) && function_exists('intersoccer_roster_move_format_partial_summary')) {
+        $partial_summary = intersoccer_roster_move_format_partial_summary($moved_count, $total_count, $failed_count);
+    }
+
+    $payload = [
+        'message' => $message,
+        'partial_summary' => $partial_summary,
+        'moved_count' => $moved_count,
+        'total_count' => $total_count,
+        'failed_count' => $failed_count,
+        'target_roster_name' => $target_display_name,
+        'moved_order_item_ids' => array_values(array_map('intval', $moved_item_ids)),
+        'failed' => $failed,
+        'partial' => $moved_count < $total_count || $failed_count > 0,
+    ];
+    if ($reason_codes !== []) {
+        $payload['reason_codes'] = $reason_codes;
+    }
+
+    return $payload;
 }
 
 /**
