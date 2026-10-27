@@ -12,6 +12,8 @@ use Mockery;
 
 class MovePlayersConfirmFlowTest extends TestCase {
 
+    use MovePlayersTestIsolationTrait;
+
     private const TEST_VARIATION_ID = 881001;
     private const TEST_PARENT_ID = 881010;
 
@@ -188,6 +190,7 @@ class MovePlayersConfirmFlowTest extends TestCase {
         $parent->shouldReceive('get_name')->andReturn('Parent course');
         $parent->shouldReceive('get_id')->andReturn(self::TEST_PARENT_ID);
         $parent->shouldReceive('get_attribute')->andReturn('');
+        $parent->shouldReceive('get_attributes')->andReturn([]);
 
         global $wpdb;
         $wpdb = $this->createWpdbMock();
@@ -214,5 +217,10 @@ class MovePlayersConfirmFlowTest extends TestCase {
         $this->assertCount(1, $merged);
         $this->assertSame(881002, (int) $merged[0]->variation_id);
         $this->assertSame(0, (int) $merged[0]->current_players);
+    }
+
+    protected function tearDown(): void {
+        $this->resetMovePlayersTestGlobals();
+        parent::tearDown();
     }
 }

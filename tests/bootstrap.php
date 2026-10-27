@@ -1012,6 +1012,12 @@ if (!function_exists('wp_convert_hr_to_bytes')) {
     }
 }
 
+if (!function_exists('flush_rewrite_rules')) {
+    function flush_rewrite_rules($hard = true) {
+        return true;
+    }
+}
+
 // AJAX functions
 if (!function_exists('check_ajax_referer')) {
     function check_ajax_referer($action = -1, $query_arg = false, $die = true) { return true; }
@@ -1033,7 +1039,11 @@ if (!function_exists('wp_send_json')) {
 
 if (!function_exists('wp_send_json_success')) {
     function wp_send_json_success($data = null, $status_code = null, $flags = 0) {
-        echo json_encode(['success' => true, 'data' => $data], $flags);
+        $json = json_encode(['success' => true, 'data' => $data], $flags);
+        echo $json;
+        if (!empty($GLOBALS['intersoccer_test_json_success_throws'])) {
+            throw new \RuntimeException($json);
+        }
     }
 }
 
@@ -1135,7 +1145,10 @@ if (!class_exists('WC_Order')) {
         }
         
         public function get_id() { return $this->id; }
-        public function get_status() { return 'completed'; }
+        public function get_order_number() { return (string) $this->id; }
+        public function get_status() { return $this->data['status'] ?? 'completed'; }
+        public function get_payment_method() { return $this->data['payment_method'] ?? 'stripe'; }
+        public function get_total_tax() { return $this->data['total_tax'] ?? 0.0; }
         public function get_customer_id() { return 1; }
         public function get_billing_email() { return 'test@example.com'; }
         public function get_billing_phone() { return '+41 12 345 67 89'; }
@@ -1168,6 +1181,7 @@ if (!class_exists('WC_Order')) {
             ];
             return 0;
         }
+        public function calculate_taxes() { return true; }
         public function save() { return true; }
     }
 }
@@ -1208,8 +1222,11 @@ if (!class_exists('WC_Order_Item_Product')) {
         }
 
         protected function hydrateMetaFromTestStore(): void {
-            global $intersoccer_test_wc_order_item_meta;
+            global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_data;
             $item_id = (int) $this->id;
+            if (is_array($intersoccer_test_wc_order_item_data) && isset($intersoccer_test_wc_order_item_data[$item_id])) {
+                $this->data = array_merge($this->data, $intersoccer_test_wc_order_item_data[$item_id]);
+            }
             if (!is_array($intersoccer_test_wc_order_item_meta) || !isset($intersoccer_test_wc_order_item_meta[$item_id])) {
                 return;
             }
@@ -1219,11 +1236,15 @@ if (!class_exists('WC_Order_Item_Product')) {
         }
 
         protected function persistMetaToTestStore(): void {
-            global $intersoccer_test_wc_order_item_meta;
+            global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_data;
             if (!is_array($intersoccer_test_wc_order_item_meta)) {
                 $intersoccer_test_wc_order_item_meta = [];
             }
             $intersoccer_test_wc_order_item_meta[(int) $this->id] = $this->meta_data;
+            if (!is_array($intersoccer_test_wc_order_item_data)) {
+                $intersoccer_test_wc_order_item_data = [];
+            }
+            $intersoccer_test_wc_order_item_data[(int) $this->id] = $this->data;
         }
         
         public function get_id() { return $this->id; }
@@ -1264,6 +1285,11 @@ if (!class_exists('WC_Order_Item_Product')) {
         }
         public function set_data($data) { $this->data = $data; }
         public function set_meta_data($meta) { $this->meta_data = $meta; }
+        public function set_product_id($product_id) { $this->data['product_id'] = (int) $product_id; }
+        public function set_variation_id($variation_id) { $this->data['variation_id'] = (int) $variation_id; }
+        public function set_subtotal($amount) { $this->data['subtotal'] = $amount; }
+        public function set_total($amount) { $this->data['total'] = $amount; }
+        public function set_name($name) { $this->data['name'] = (string) $name; }
     }
 }
 

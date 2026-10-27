@@ -11,6 +11,8 @@ use InterSoccer\ReportsRosters\Tests\TestCase;
 
 class MovePlayersMoveAuditTest extends TestCase {
 
+    use MovePlayersTestIsolationTrait;
+
     private const ITEM_ID = 88001;
     private const ORDER_ID = 88010;
 
@@ -135,5 +137,10 @@ class MovePlayersMoveAuditTest extends TestCase {
         $this->assertSame(200, $history[0]['to_variation_id']);
         $this->assertSame(200, $history[1]['from_variation_id']);
         $this->assertSame(300, $history[1]['to_variation_id']);
+    }
+
+    protected function tearDown(): void {
+        $this->resetMovePlayersTestGlobals();
+        parent::tearDown();
     }
 }

@@ -12,6 +12,8 @@ use Mockery;
 
 class MovePlayersMigrationMetaTest extends TestCase {
 
+    use MovePlayersTestIsolationTrait;
+
     protected function setUp(): void {
         if (function_exists('\Patchwork\restoreAll')) {
             \Patchwork\restoreAll();
@@ -32,13 +34,11 @@ class MovePlayersMigrationMetaTest extends TestCase {
         if (file_exists(dirname(__DIR__, 2) . '/includes/advanced.php')) {
             require_once dirname(__DIR__, 2) . '/includes/advanced.php';
         }
+
     }
 
     protected function tearDown(): void {
-        global $intersoccer_test_wc_get_product_callback, $intersoccer_test_product_type_safe_callback, $intersoccer_test_get_product_type_callback;
-        $intersoccer_test_wc_get_product_callback = null;
-        $intersoccer_test_product_type_safe_callback = null;
-        $intersoccer_test_get_product_type_callback = null;
+        $this->resetMovePlayersTestGlobals();
         parent::tearDown();
     }
 

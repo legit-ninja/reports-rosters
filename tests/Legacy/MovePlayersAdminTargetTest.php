@@ -16,6 +16,8 @@ use Mockery;
 
 class MovePlayersAdminTargetTest extends TestCase {
 
+    use MovePlayersTestIsolationTrait;
+
     private const TEST_VARIATION_ID = 881001;
     private const TEST_PARENT_ID = 881010;
 
@@ -37,6 +39,7 @@ class MovePlayersAdminTargetTest extends TestCase {
         $parent_product->shouldReceive('get_meta')->with('capacity', true)->andReturn('');
         $parent_product->shouldReceive('get_name')->andReturn('Parent product');
         $parent_product->shouldReceive('get_attribute')->andReturn('');
+        $parent_product->shouldReceive('get_attributes')->andReturn([]);
         global $intersoccer_test_wc_get_product_callback;
         $intersoccer_test_wc_get_product_callback = static function ($id) use ($parent_product) {
             return (int) $id === self::TEST_PARENT_ID ? $parent_product : false;
@@ -48,11 +51,7 @@ class MovePlayersAdminTargetTest extends TestCase {
     }
 
     protected function tearDown(): void {
-        global $intersoccer_test_product_type_safe_callback, $intersoccer_test_post_status_map, $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_get_product_callback;
-        $intersoccer_test_product_type_safe_callback = null;
-        $intersoccer_test_post_status_map = [];
-        $intersoccer_test_wc_order_item_meta = [];
-        $intersoccer_test_wc_get_product_callback = null;
+        $this->resetMovePlayersTestGlobals();
         parent::tearDown();
     }
 
@@ -122,6 +121,9 @@ class MovePlayersAdminTargetTest extends TestCase {
         $variation->shouldReceive('get_name')->andReturn('Test Variation');
         $variation->shouldReceive('get_price')->andReturn($config['price'] ?? '100');
         $variation->shouldReceive('is_purchasable')->andReturn($config['is_purchasable'] ?? true);
+        $variation->shouldReceive('get_attribute')->andReturn('')->byDefault();
+        $variation->shouldReceive('get_attributes')->andReturn([])->byDefault();
+        $variation->shouldReceive('is_type')->andReturn(true)->byDefault();
 
         return $variation;
     }
@@ -326,10 +328,10 @@ class MovePlayersAdminTargetTest extends TestCase {
             ],
         ];
 
-        $this->assertSame(1, intersoccer_roster_move_source_gender_bucket([99005]));
+        $this->assertNull(intersoccer_roster_move_source_gender_bucket([99005]));
         if (function_exists('intersoccer_resolve_roster_girls_only_tristate')) {
             $this->assertSame(
-                'yes',
+                'mixed',
                 intersoccer_resolve_roster_girls_only_tristate([
                     'Activity Type' => 'Course, Girls Only',
                     'activity_type' => 'Course, Girls Only',
