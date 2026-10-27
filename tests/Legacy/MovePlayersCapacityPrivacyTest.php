@@ -127,6 +127,37 @@ class MovePlayersCapacityPrivacyTest extends TestCase {
         $this->assertSame([], $assessment['reason_codes']);
     }
 
+    public function test_capacity_meta_on_variation_reports_full_with_taken(): void {
+        global $wpdb;
+        $wpdb = $this->createWpdbMock();
+        $wpdb->shouldReceive('get_var')->andReturn('12');
+
+        $variation = $this->makeVariation(['capacity' => '12']);
+        $assessment = intersoccer_assess_roster_move_admin_target($variation, 'course', 1);
+
+        $this->assertContains('full', $assessment['warnings']);
+        $this->assertSame(12, (int) ($assessment['warning_context']['capacity'] ?? 0));
+        $this->assertSame(12, (int) ($assessment['warning_context']['taken'] ?? 0));
+    }
+
+    public function test_managed_stock_overbooked_negative_remaining_reports_full(): void {
+        global $wpdb;
+        $wpdb = $this->createWpdbMock();
+        $wpdb->shouldReceive('get_var')->andReturn('10');
+
+        $variation = $this->makeVariation([
+            'managing_stock' => true,
+            'stock_quantity' => -2,
+            'stock_status' => 'instock',
+        ]);
+        $context = intersoccer_roster_move_warning_context_for_variation($variation, 1);
+        $assessment = intersoccer_assess_roster_move_admin_target($variation, 'course', 1);
+
+        $this->assertSame(8, (int) ($context['capacity'] ?? 0));
+        $this->assertContains('full', $assessment['warnings']);
+        $this->assertGreaterThan(0, (int) ($context['over_capacity_n'] ?? 0));
+    }
+
     public function test_out_of_stock_status_without_known_capacity(): void {
         $variation = $this->makeVariation([
             'stock_status' => 'outofstock',

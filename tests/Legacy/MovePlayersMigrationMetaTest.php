@@ -1062,4 +1062,100 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertArrayNotHasKey('girls_only', $intersoccer_test_wc_order_item_meta[$item_id]);
         $this->assertArrayHasKey('pa_girls-only', $intersoccer_test_wc_order_item_meta[$item_id]);
     }
+
+    private function ensureCourseMetaStub(): void {
+        if (!function_exists('intersoccer_get_course_meta')) {
+            eval(
+                'function intersoccer_get_course_meta($variation_id, $key, $default = null) {
+                    $map = $GLOBALS["intersoccer_test_course_meta_by_variation"][(int) $variation_id] ?? [];
+                    return array_key_exists($key, $map) ? $map[$key] : $default;
+                }'
+            );
+        }
+    }
+
+    private function makeCourseVariationForScheduleMeta(int $variation_id): \Mockery\MockInterface {
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_id')->andReturn($variation_id);
+        $variation->shouldReceive('get_parent_id')->andReturn(37420);
+        $variation->shouldReceive('get_variation_attributes')->andReturn([]);
+        $variation->shouldReceive('get_name')->andReturn('Course variation');
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_attributes')->andReturn([]);
+        $variation->shouldReceive('is_type')->andReturn(true);
+
+        return $variation;
+    }
+
+    public function test_course_schedule_meta_always_reflects_target_variation(): void {
+        if (!function_exists('intersoccer_build_migration_meta_updates')) {
+            $this->markTestSkipped('intersoccer_build_migration_meta_updates not available');
+        }
+        $this->ensureCourseMetaStub();
+        $GLOBALS['intersoccer_test_course_meta_by_variation'] = [
+            37637 => [
+                '_course_start_date' => '2026-04-20',
+                '_end_date' => '2026-05-06',
+                '_course_holiday_dates' => ['2026-05-25'],
+            ],
+        ];
+
+        $variation = $this->makeCourseVariationForScheduleMeta(37637);
+        $payload = intersoccer_build_migration_meta_updates($variation);
+
+        $this->assertSame('April 20, 2026', $payload['other_meta']['Start Date'] ?? '');
+        $this->assertSame('May 6, 2026', $payload['other_meta']['End Date'] ?? '');
+        $this->assertSame('May 25, 2026', $payload['other_meta']['Holidays'] ?? '');
+    }
+
+    public function test_course_round_trip_meta_matches_variation_a_after_return_from_b(): void {
+        if (!function_exists('intersoccer_build_migration_meta_updates')) {
+            $this->markTestSkipped('intersoccer_build_migration_meta_updates not available');
+        }
+        $this->ensureCourseMetaStub();
+        $GLOBALS['intersoccer_test_course_meta_by_variation'] = [
+            37636 => [
+                '_course_start_date' => '2026-03-16',
+                '_end_date' => '2026-06-22',
+                '_course_holiday_dates' => ['2026-04-06', '2026-04-13', '2026-05-25'],
+            ],
+            37637 => [
+                '_course_start_date' => '2026-04-20',
+                '_end_date' => '2026-05-06',
+                '_course_holiday_dates' => ['2026-05-25'],
+            ],
+        ];
+
+        $variation_b = $this->makeCourseVariationForScheduleMeta(37637);
+        $after_b = intersoccer_build_migration_meta_updates($variation_b)['other_meta'];
+
+        $variation_a = $this->makeCourseVariationForScheduleMeta(37636);
+        $after_round_trip = intersoccer_build_migration_meta_updates($variation_a)['other_meta'];
+
+        $this->assertSame('March 16, 2026', $after_round_trip['Start Date'] ?? '');
+        $this->assertSame('June 22, 2026', $after_round_trip['End Date'] ?? '');
+        $this->assertSame('April 6, 2026, April 13, 2026, May 25, 2026', $after_round_trip['Holidays'] ?? '');
+        $this->assertNotSame($after_b['Start Date'] ?? '', $after_round_trip['Start Date'] ?? '');
+    }
+
+    public function test_course_target_without_schedule_meta_clears_start_end_and_holidays(): void {
+        if (!function_exists('intersoccer_build_migration_meta_updates')) {
+            $this->markTestSkipped('intersoccer_build_migration_meta_updates not available');
+        }
+        $this->ensureCourseMetaStub();
+        $GLOBALS['intersoccer_test_course_meta_by_variation'] = [
+            37637 => [
+                '_course_start_date' => '',
+                '_end_date' => '',
+                '_course_holiday_dates' => [],
+            ],
+        ];
+
+        $variation = $this->makeCourseVariationForScheduleMeta(37637);
+        $payload = intersoccer_build_migration_meta_updates($variation);
+
+        $this->assertSame('', $payload['other_meta']['Start Date'] ?? 'missing');
+        $this->assertSame('', $payload['other_meta']['End Date'] ?? 'missing');
+        $this->assertSame('', $payload['other_meta']['Holidays'] ?? 'missing');
+    }
 }
