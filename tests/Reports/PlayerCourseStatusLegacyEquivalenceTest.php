@@ -161,10 +161,14 @@ class PlayerCourseStatusLegacyEquivalenceTest extends TestCase {
 		$legacy_export = [];
 		$new_export = [];
 		foreach ($legacy['rows'] as $row) {
-			$legacy_export[] = intersoccer_player_course_status_export_row($row);
+			foreach (intersoccer_player_course_status_export_rows_for_player($row) as $line) {
+				$legacy_export[] = $line;
+			}
 		}
 		foreach ($new['rows'] as $row) {
-			$new_export[] = intersoccer_player_course_status_export_row($row);
+			foreach (intersoccer_player_course_status_export_rows_for_player($row) as $line) {
+				$new_export[] = $line;
+			}
 		}
 		$this->assertSame($legacy_export, $new_export);
 		$this->assertSame(

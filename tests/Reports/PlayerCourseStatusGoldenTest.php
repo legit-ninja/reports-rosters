@@ -190,7 +190,9 @@ class PlayerCourseStatusGoldenTest extends TestCase {
 		$result = intersoccer_player_course_status_generate(['year' => 2026]);
 		$export_rows = [];
 		foreach ($result['rows'] as $row) {
-			$export_rows[] = intersoccer_player_course_status_export_row($row);
+			foreach (intersoccer_player_course_status_export_rows_for_player($row) as $line) {
+				$export_rows[] = $line;
+			}
 		}
 
 		$this->assertSame($expected['result'], $result);
