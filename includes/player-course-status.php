@@ -200,24 +200,204 @@ function intersoccer_player_course_status_load_players() {
 }
 
 /**
+ * Documented Excel column list (one row per player booking line).
+ *
+ * @return string[]
+ */
+function intersoccer_player_course_status_export_booking_headers() {
+	return [
+		'Line Type',
+		'Product',
+		'Venue',
+		'Age Group',
+		'Course Day',
+		'Times',
+		'Season',
+		'Start Date',
+		'End Date',
+		'Order Status',
+		'Girls Only',
+		'Order ID',
+		'Parent Billing Name',
+		'Parent Billing Email',
+		'Parent Billing Phone',
+	];
+}
+
+/**
  * @return string[]
  */
 function intersoccer_player_course_status_export_headers() {
 	$headers = [
 		'Player Name',
-		'Parent Email',
+		'Account Email',
 		'User ID',
 	];
 	if (intersoccer_player_course_status_user_can_view_dob()) {
 		$headers[] = 'DOB';
 	}
-	$headers[] = 'Age';
-	$headers[] = 'Booked';
-	$headers[] = 'Status';
-	$headers[] = 'Course Bookings';
-	$headers[] = 'Match Tier';
+	$headers = array_merge($headers, [
+		'Age',
+		'Booked',
+		'Status',
+		'Match Tier',
+	]);
+	$headers = array_merge($headers, intersoccer_player_course_status_export_booking_headers());
 
 	return $headers;
+}
+
+/**
+ * Translated export label for a booking line type slug.
+ *
+ * @param string $line_type booked|pending_payment|on_hold|''
+ */
+function intersoccer_player_course_status_export_line_type_label($line_type) {
+	switch ((string) $line_type) {
+		case 'booked':
+			return __('Booked line', 'intersoccer-reports-rosters');
+		case 'pending_payment':
+			return __('Pending payment line', 'intersoccer-reports-rosters');
+		case 'on_hold':
+			return __('On hold line', 'intersoccer-reports-rosters');
+		default:
+			return '';
+	}
+}
+
+/**
+ * Pending/on-hold export line type from a booking record order_status.
+ *
+ * @param array<string,mixed> $booking
+ * @return string pending_payment|on_hold|''
+ */
+function intersoccer_player_course_status_export_pending_line_type(array $booking) {
+	$norm = function_exists('intersoccer_roster_report_normalize_order_status')
+		? intersoccer_roster_report_normalize_order_status($booking['order_status'] ?? '')
+		: strtolower(trim((string) ( $booking['order_status'] ?? '' )));
+	if ($norm === 'pending') {
+		return 'pending_payment';
+	}
+	if ($norm === 'on-hold') {
+		return 'on_hold';
+	}
+
+	return '';
+}
+
+/**
+ * @param array<string,mixed> $booking
+ * @return list<string|int>
+ */
+function intersoccer_player_course_status_export_booking_cells(array $booking, $line_type) {
+	$line_label = intersoccer_player_course_status_export_line_type_label((string) $line_type);
+	$girls = !empty($booking['girls_only']) ? 'Yes' : 'No';
+	$status = (string) ($booking['order_status'] ?? '');
+	if (function_exists('intersoccer_roster_report_normalize_order_status')) {
+		$status = intersoccer_roster_report_normalize_order_status($status);
+	}
+
+	return [
+		$line_label,
+		(string) ($booking['product'] ?? ''),
+		(string) ($booking['venue'] ?? ''),
+		(string) ($booking['age_group'] ?? ''),
+		(string) ($booking['course_day'] ?? ''),
+		(string) ($booking['times'] ?? ''),
+		(string) ($booking['season'] ?? ''),
+		(string) ($booking['start_date'] ?? ''),
+		(string) ($booking['end_date'] ?? ''),
+		$status,
+		$girls,
+		(int) ($booking['order_id'] ?? 0),
+		(string) ($booking['parent_billing_name'] ?? ''),
+		(string) ($booking['parent_billing_email'] ?? ''),
+		(string) ($booking['parent_billing_phone'] ?? ''),
+	];
+}
+
+/**
+ * Player-level columns repeated on each export row (per contract).
+ *
+ * @param array<string,mixed> $row
+ * @return list<string|int>
+ */
+function intersoccer_player_course_status_export_player_cells(array $row) {
+	$player = is_array($row['player'] ?? null) ? $row['player'] : [];
+	$parent = is_array($row['parent'] ?? null) ? $row['parent'] : [];
+	$out = [
+		(string) ($player['name'] ?? ''),
+		(string) ($parent['email'] ?? ''),
+		(int) ($parent['id'] ?? 0),
+	];
+	if (intersoccer_player_course_status_user_can_view_dob()) {
+		$out[] = (string) ($row['dob'] ?? '');
+	}
+	$out[] = $row['age'] ?? '';
+	$out[] = !empty($row['booked']) ? 'Yes' : 'No';
+	$out[] = (string) ($row['booking_status_label'] ?? intersoccer_player_course_status_booking_status_label('not_booked'));
+	$out[] = (string) ($player['tier'] ?? '');
+
+	return $out;
+}
+
+/**
+ * Expand a generate() player row into one or more Excel rows (booked + pending lines).
+ *
+ * @param array<string,mixed> $row
+ * @return list<list<string|int>>
+ */
+function intersoccer_player_course_status_export_rows_for_player(array $row) {
+	$player_cells = intersoccer_player_course_status_export_player_cells($row);
+	$lines = [];
+	$bookings = isset($row['bookings']) && is_array($row['bookings']) ? $row['bookings'] : [];
+	foreach ($bookings as $booking) {
+		if (!is_array($booking)) {
+			continue;
+		}
+		$lines[] = array_merge(
+			$player_cells,
+			intersoccer_player_course_status_export_booking_cells($booking, 'booked')
+		);
+	}
+	$pending = isset($row['pending_bookings']) && is_array($row['pending_bookings']) ? $row['pending_bookings'] : [];
+	foreach ($pending as $booking) {
+		if (!is_array($booking)) {
+			continue;
+		}
+		$kind = intersoccer_player_course_status_export_pending_line_type($booking);
+		if ($kind === '') {
+			continue;
+		}
+		$lines[] = array_merge(
+			$player_cells,
+			intersoccer_player_course_status_export_booking_cells($booking, $kind)
+		);
+	}
+	if (empty($lines)) {
+		$empty_booking = [
+			'product' => '',
+			'venue' => '',
+			'age_group' => '',
+			'course_day' => '',
+			'times' => '',
+			'season' => '',
+			'start_date' => '',
+			'end_date' => '',
+			'order_status' => '',
+			'girls_only' => false,
+			'order_id' => 0,
+			'parent_billing_name' => '',
+			'parent_billing_email' => '',
+			'parent_billing_phone' => '',
+		];
+		$lines[] = array_merge(
+			$player_cells,
+			intersoccer_player_course_status_export_booking_cells($empty_booking, '')
+		);
+	}
+
+	return $lines;
 }
 
 /**
@@ -242,7 +422,268 @@ function intersoccer_player_course_status_booking_status_label($status) {
  * Schema version for the player course status full-result transient (bump when payload shape changes).
  */
 function intersoccer_player_course_status_cache_schema_version() {
-	return 4;
+	return 5;
+}
+
+/**
+ * Order-item meta keys that may hold localized course start/end labels (batched read).
+ *
+ * @return string[]
+ */
+function intersoccer_player_course_status_order_item_course_date_meta_keys() {
+	return [
+		'Start Date',
+		'End Date',
+		'Date de début',
+		'Date de fin',
+		'Startdatum',
+		'Enddatum',
+	];
+}
+
+/**
+ * Parse a roster/order/variation date string to Y-m-d when possible.
+ *
+ * @param mixed  $raw
+ * @param string $context
+ */
+function intersoccer_player_course_status_normalize_localized_date_string($date_string) {
+	$date_string = trim((string) $date_string);
+	if ($date_string === '') {
+		return '';
+	}
+	$german_months = [
+		'januar' => 'January',
+		'februar' => 'February',
+		'märz' => 'March',
+		'maerz' => 'March',
+		'april' => 'April',
+		'mai' => 'May',
+		'juni' => 'June',
+		'juli' => 'July',
+		'august' => 'August',
+		'september' => 'September',
+		'oktober' => 'October',
+		'november' => 'November',
+		'dezember' => 'December',
+	];
+	$normalized = $date_string;
+	foreach ($german_months as $de => $en) {
+		$normalized = preg_replace('/\b' . preg_quote($de, '/') . '\b/iu', $en, $normalized);
+	}
+	$normalized = preg_replace('/^(\d{1,2})\.\s+/u', '$1 ', $normalized);
+
+	return trim($normalized);
+}
+
+function intersoccer_player_course_status_parse_resolved_date($raw, $context = 'pcs course date') {
+	$raw = trim((string) $raw);
+	if ($raw === '' || strcasecmp($raw, 'N/A') === 0) {
+		return '';
+	}
+	if (function_exists('intersoccer_roster_report_has_real_date')
+		&& intersoccer_roster_report_has_real_date($raw)) {
+		return $raw;
+	}
+	if (!function_exists('intersoccer_parse_date_unified')) {
+		return '';
+	}
+	$candidates = [$raw, intersoccer_player_course_status_normalize_localized_date_string($raw)];
+	$parsed = null;
+	foreach ($candidates as $candidate) {
+		if ($candidate === '') {
+			continue;
+		}
+		$parsed = intersoccer_parse_date_unified($candidate, $context);
+		if ($parsed !== null && $parsed !== '') {
+			break;
+		}
+	}
+	if ($parsed === '' || $parsed === null) {
+		return '';
+	}
+	$parsed = trim((string) $parsed);
+	if ($parsed === '' || $parsed === '1970-01-01' || $parsed === '0000-00-00') {
+		return '';
+	}
+	if (function_exists('intersoccer_roster_report_has_real_date')
+		&& !intersoccer_roster_report_has_real_date($parsed)) {
+		return '';
+	}
+
+	return $parsed;
+}
+
+/**
+ * First non-empty order-item meta value for start or end among localized keys.
+ *
+ * @param int    $order_item_id
+ * @param string $which start|end
+ */
+function intersoccer_player_course_status_order_item_course_date_meta_value($order_item_id, $which) {
+	$order_item_id = (int) $order_item_id;
+	if ($order_item_id <= 0) {
+		return '';
+	}
+	$keys = intersoccer_player_course_status_order_item_course_date_meta_keys();
+	if ($which === 'end') {
+		$keys = array_values(array_filter($keys, static function ($key) {
+			return stripos((string) $key, 'end') !== false
+				|| stripos((string) $key, 'fin') !== false;
+		}));
+	} else {
+		$keys = array_values(array_filter($keys, static function ($key) {
+			return stripos((string) $key, 'start') !== false
+				|| stripos((string) $key, 'début') !== false
+				|| stripos((string) $key, 'debut') !== false;
+		}));
+	}
+	foreach ($keys as $meta_key) {
+		$val = function_exists('intersoccer_roster_report_get_order_item_meta')
+			? intersoccer_roster_report_get_order_item_meta($order_item_id, $meta_key)
+			: '';
+		$val = trim((string) $val);
+		if ($val !== '') {
+			return $val;
+		}
+	}
+
+	return '';
+}
+
+/**
+ * Variation meta fallback (_course_start_date / _end_date on default-language variation).
+ *
+ * @param array<string,mixed> $row
+ * @param string              $which start|end
+ */
+function intersoccer_player_course_status_variation_course_date_from_row(array $row, $which) {
+	$variation_id = (int) ( $row['variation_id'] ?? 0 );
+	if ($variation_id <= 0) {
+		return '';
+	}
+	if (function_exists('intersoccer_get_default_language_variation_id')) {
+		$variation_id = (int) intersoccer_get_default_language_variation_id($variation_id);
+	}
+	if ($variation_id <= 0) {
+		return '';
+	}
+	$meta_key = $which === 'end' ? '_end_date' : '_course_start_date';
+	$raw = get_post_meta($variation_id, $meta_key, true);
+	$context = $which === 'end' ? 'pcs course (end)' : 'pcs course (start)';
+
+	return intersoccer_player_course_status_parse_resolved_date($raw, $context);
+}
+
+/**
+ * Resolve course start_date for filtering/display (read-time; does not write roster table).
+ *
+ * @param array<string,mixed> $row
+ */
+function intersoccer_player_course_status_resolve_row_start_date(array $row) {
+	$raw = trim((string) ( $row['start_date'] ?? '' ));
+	$parsed = intersoccer_player_course_status_parse_resolved_date($raw, 'pcs roster (start)');
+	if ($parsed !== '') {
+		return $parsed;
+	}
+	$item_id = (int) ( $row['order_item_id'] ?? 0 );
+	if ($item_id > 0) {
+		$om = intersoccer_player_course_status_order_item_course_date_meta_value($item_id, 'start');
+		$parsed = intersoccer_player_course_status_parse_resolved_date($om, 'pcs order meta (start)');
+		if ($parsed !== '') {
+			return $parsed;
+		}
+	}
+
+	return intersoccer_player_course_status_variation_course_date_from_row($row, 'start');
+}
+
+/**
+ * Resolve course end_date for filtering/display (read-time; does not write roster table).
+ *
+ * @param array<string,mixed> $row
+ */
+function intersoccer_player_course_status_resolve_row_end_date(array $row) {
+	$raw = trim((string) ( $row['end_date'] ?? '' ));
+	$parsed = intersoccer_player_course_status_parse_resolved_date($raw, 'pcs roster (end)');
+	if ($parsed !== '') {
+		return $parsed;
+	}
+	$item_id = (int) ( $row['order_item_id'] ?? 0 );
+	if ($item_id > 0) {
+		$om = intersoccer_player_course_status_order_item_course_date_meta_value($item_id, 'end');
+		$parsed = intersoccer_player_course_status_parse_resolved_date($om, 'pcs order meta (end)');
+		if ($parsed !== '') {
+			return $parsed;
+		}
+	}
+
+	return intersoccer_player_course_status_variation_course_date_from_row($row, 'end');
+}
+
+/**
+ * Batch-prime order-item and variation meta, then stamp resolved Y-m-d dates on rows in memory.
+ *
+ * @param array<int,array<string,mixed>> $rows
+ * @return array<int,array<string,mixed>>
+ */
+function intersoccer_player_course_status_apply_resolved_course_dates_to_rows(array $rows) {
+	$item_ids = [];
+	$variation_ids = [];
+	foreach ($rows as $row) {
+		if (!is_array($row)) {
+			continue;
+		}
+		$needs_meta = !intersoccer_roster_report_has_real_date($row['start_date'] ?? '')
+			|| !intersoccer_roster_report_has_real_date($row['end_date'] ?? '');
+		if ($needs_meta) {
+			$oid = (int) ( $row['order_item_id'] ?? 0 );
+			if ($oid > 0) {
+				$item_ids[ $oid ] = $oid;
+			}
+			$vid = (int) ( $row['variation_id'] ?? 0 );
+			if ($vid > 0) {
+				$variation_ids[ $vid ] = $vid;
+			}
+		}
+	}
+	if (!empty($item_ids) && function_exists('intersoccer_roster_report_batch_prime_order_item_meta')) {
+		intersoccer_roster_report_batch_prime_order_item_meta(
+			array_values($item_ids),
+			intersoccer_player_course_status_order_item_course_date_meta_keys()
+		);
+	}
+	if (!empty($variation_ids)) {
+		$prime_ids = [];
+		foreach ($variation_ids as $vid) {
+			$prime_ids[ (int) $vid ] = (int) $vid;
+			if (function_exists('intersoccer_get_default_language_variation_id')) {
+				$def = (int) intersoccer_get_default_language_variation_id((int) $vid);
+				if ($def > 0) {
+					$prime_ids[ $def ] = $def;
+				}
+			}
+		}
+		if (function_exists('update_meta_cache')) {
+			update_meta_cache('post', array_values($prime_ids));
+		}
+	}
+	foreach ($rows as &$row) {
+		if (!is_array($row)) {
+			continue;
+		}
+		$start = intersoccer_player_course_status_resolve_row_start_date($row);
+		$end = intersoccer_player_course_status_resolve_row_end_date($row);
+		if ($start !== '') {
+			$row['start_date'] = $start;
+		}
+		if ($end !== '') {
+			$row['end_date'] = $end;
+		}
+	}
+	unset($row);
+
+	return $rows;
 }
 
 /**
@@ -773,6 +1214,12 @@ function intersoccer_player_course_status_build_booking_record(array $row) {
 	$course_day = trim((string) ($row['course_day'] ?? ''));
 	$course_day_slug = intersoccer_player_course_status_course_day_slug($course_day);
 
+	$start = intersoccer_player_course_status_resolve_row_start_date($row);
+	$end = intersoccer_player_course_status_resolve_row_end_date($row);
+	$parent_first = trim((string) ($row['parent_first_name'] ?? ''));
+	$parent_last = trim((string) ($row['parent_last_name'] ?? ''));
+	$parent_billing_name = trim($parent_first . ' ' . $parent_last);
+
 	return [
 		'order_id' => (int) ($row['order_id'] ?? 0),
 		'order_item_id' => (int) ($row['order_item_id'] ?? 0),
@@ -785,11 +1232,17 @@ function intersoccer_player_course_status_build_booking_record(array $row) {
 		'course_day_slug' => $course_day_slug,
 		'times' => intersoccer_player_course_status_resolve_times($row),
 		'season' => intersoccer_player_course_status_canonical_season_label((string) ( $row['season'] ?? '' )),
-		'start_date' => intersoccer_roster_report_has_real_date($row['start_date'] ?? '') ? (string) $row['start_date'] : '',
-		'end_date' => intersoccer_roster_report_has_real_date($row['end_date'] ?? '') ? (string) $row['end_date'] : '',
+		'start_date' => $start,
+		'end_date' => $end,
 		'order_status' => (string) ($row['order_status'] ?? ''),
 		'girls_only' => !empty($row['girls_only']),
-		'label' => intersoccer_player_course_status_booking_label($row),
+		'parent_billing_name' => $parent_billing_name,
+		'parent_billing_email' => trim((string) ($row['parent_email'] ?? '')),
+		'parent_billing_phone' => trim((string) ($row['parent_phone'] ?? '')),
+		'label' => intersoccer_player_course_status_booking_label(array_merge($row, [
+			'start_date' => $start !== '' ? $start : ( $row['start_date'] ?? '' ),
+			'end_date' => $end !== '' ? $end : ( $row['end_date'] ?? '' ),
+		])),
 	];
 }
 
@@ -905,6 +1358,7 @@ function intersoccer_player_course_status_prepare_roster_rows(array $rows) {
 	if (function_exists('intersoccer_winback_prime_facet_resolution_from_rows')) {
 		intersoccer_winback_prime_facet_resolution_from_rows($rows, ['venue', 'age_group']);
 	}
+	$rows = intersoccer_player_course_status_apply_resolved_course_dates_to_rows($rows);
 	foreach ($rows as &$row) {
 		if (!is_array($row)) {
 			continue;
@@ -1020,7 +1474,7 @@ function intersoccer_player_course_status_load_course_roster_rows($year) {
 		'end_date',
 		'activity_type',
 	];
-	foreach (['order_status', 'customer_id', 'player_index', 'girls_only', 'is_placeholder'] as $col) {
+	foreach (['order_status', 'customer_id', 'player_index', 'girls_only', 'is_placeholder', 'parent_first_name', 'parent_last_name', 'parent_email', 'parent_phone'] as $col) {
 		if (in_array($col, (array) $columns, true)) {
 			$select[] = $col;
 		}
@@ -2243,23 +2697,9 @@ function intersoccer_player_course_status_request_filters() {
  * @return list<string|int>
  */
 function intersoccer_player_course_status_export_row(array $row) {
-	$player = is_array($row['player'] ?? null) ? $row['player'] : [];
-	$parent = is_array($row['parent'] ?? null) ? $row['parent'] : [];
-	$out = [
-		(string) ($player['name'] ?? ''),
-		(string) ($parent['email'] ?? ''),
-		(int) ($parent['id'] ?? 0),
-	];
-	if (intersoccer_player_course_status_user_can_view_dob()) {
-		$out[] = (string) ($row['dob'] ?? '');
-	}
-	$out[] = $row['age'] ?? '';
-	$out[] = !empty($row['booked']) ? 'Yes' : 'No';
-	$out[] = (string) ($row['booking_status_label'] ?? intersoccer_player_course_status_booking_status_label('not_booked'));
-	$out[] = (string) ($row['bookings_label'] ?? '');
-	$out[] = (string) ($player['tier'] ?? '');
+	$rows = intersoccer_player_course_status_export_rows_for_player($row);
 
-	return $out;
+	return $rows[0] ?? [];
 }
 
 /**
@@ -2291,8 +2731,13 @@ function intersoccer_player_course_status_stream_excel(array $rows, $year) {
 
 	$row_index = 2;
 	foreach ($rows as $row) {
-		$sheet->fromArray(intersoccer_player_course_status_export_row($row), null, 'A' . $row_index);
-		$row_index++;
+		if (!is_array($row)) {
+			continue;
+		}
+		foreach (intersoccer_player_course_status_export_rows_for_player($row) as $export_line) {
+			$sheet->fromArray($export_line, null, 'A' . $row_index);
+			$row_index++;
+		}
 	}
 
 	foreach (range('A', $last_col) as $col) {
