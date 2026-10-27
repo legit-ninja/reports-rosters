@@ -7,8 +7,9 @@ Stacked on win-back / PCS shared loader (`includes/roster-report-loader.php`). U
 | Item | Value |
 |------|--------|
 | Slug | `intersoccer-player-course-status` |
-| Parent | `null` (hidden menu) |
+| Parent | `intersoccer-reports-rosters` (visible submenu beside **Player camp status**) |
 | Capability | `manage_options` |
+| Office UI | `includes/player-course-status-admin.php` — warnings `notice-warning inline` directly under `<h1>`; secondary **Final course numbers** → `admin.php?page=intersoccer-final-reports&activity_type=Course&year={year}` |
 | Render | `intersoccer_render_player_course_status_page()` |
 | Export hook | `admin_init` priority 1 + `load-{hook}` → `intersoccer_player_course_status_maybe_export_excel()` |
 
@@ -23,7 +24,7 @@ Request parser: `intersoccer_player_course_status_request_filters()` (adds `page
 | Key | Type | Default | Notes |
 |-----|------|---------|--------|
 | `year` | int | current calendar year | Course year rule below |
-| `season_type` | string | `''` | `Summer` / `Winter` / `Autumn` / `Spring`; empty = all |
+| `season_type` | string | `''` in `normalize_filters()` / `generate()`; **`Autumn`** on first office page load via `request_filters()` when `season_type` is omitted from the query string | `Summer` / `Winter` / `Autumn` / `Spring`; empty string (explicit **All seasons**) = no season filter |
 | `girls_mode` | string | `all` | `all` \| `mixed` \| `girls_only` |
 | `booked` | string | `all` | `all` \| `booked` \| `not_booked` — filters **players** after join. `not_booked` includes players whose `booking_status` is `pending_payment`, `on_hold`, or plain `not_booked`. |
 | `booking_status` | string | `''` | `''` (all) \| `booked` \| `pending_payment` \| `on_hold` \| `not_booked` — applied **after** `booked`. Here `not_booked` means plain not-booked only (excludes pending/on-hold). |
@@ -70,7 +71,7 @@ Roster `season` strings are normalized only inside the player course status engi
   'unmatched_bookings' => list<booking + ['player_name','customer_id']>,
   'filter_options' => [
     'venues' => slug => label,
-    'course_days' => list<string slug>,
+    'course_days' => slug => label (weekday label for admin `<select>`; value remains slug),
     'age_groups' => slug => label,
     'seasons' => list<string>,
   ],
@@ -141,6 +142,10 @@ Roster prefilter SQL must not compare `start_date` / `end_date` to non-date lite
 ```
 
 Label format: `product · venue · course_day · times · season · start–end` (empty parts skipped).
+
+`times` on bookings uses roster `times`, falling back to `course_times` only when `times` is empty; values are normalized to a single display form (`HHMM-HHMM`, e.g. `1000-1130`) via `intersoccer_player_course_status_normalize_times_display()`.
+
+`filter_options` venues / course days / age groups / seasons are built from in-scope rows that are **completed/processing or pending/on-hold** (not cancelled/refunded/failed), so a pending-only season still appears in the season dropdown.
 
 ### Status / booked rules
 

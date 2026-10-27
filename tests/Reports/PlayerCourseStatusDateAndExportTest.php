@@ -226,6 +226,40 @@ class PlayerCourseStatusDateAndExportTest extends TestCase {
 		$this->assertContains('Parent Billing Phone', $headers);
 	}
 
+	public function test_normalize_times_display_unifies_french_hour_format(): void {
+		$this->assertSame('1000-1130', intersoccer_player_course_status_normalize_times_display('10h00-11h30'));
+		$this->assertSame('1000-1130', intersoccer_player_course_status_normalize_times_display('10:00-11:30'));
+		$this->assertSame('1000-1130', intersoccer_player_course_status_normalize_times_display('1000-1130'));
+		$row = $this->base_course_row(['times' => '', 'course_times' => '9h30-11h00']);
+		$this->assertSame('0930-1100', intersoccer_player_course_status_resolve_times($row));
+	}
+
+	public function test_filter_options_include_pending_only_season(): void {
+		$GLOBALS['intersoccer_test_player_course_status_players'] = [];
+		$rows = [
+			$this->base_course_row([
+				'order_status' => 'pending',
+				'season' => 'Winter 2027',
+				'start_date' => '2027-01-10',
+				'end_date' => '2027-03-01',
+			]),
+		];
+		$prepared = intersoccer_player_course_status_prepare_roster_rows($rows);
+		$scoped = intersoccer_player_course_status_filter_scoped_rows($prepared, 2027, '', 'all');
+		$opts = intersoccer_player_course_status_build_filter_options($scoped);
+		$this->assertContains('Winter', $opts['seasons']);
+	}
+
+	public function test_request_filters_default_season_type_to_autumn_when_omitted(): void {
+		$_GET = ['page' => 'intersoccer-player-course-status', 'year' => '2026'];
+		$filters = intersoccer_player_course_status_request_filters();
+		$this->assertSame('Autumn', $filters['season_type']);
+		$_GET = ['page' => 'intersoccer-player-course-status', 'year' => '2026', 'season_type' => ''];
+		$filters_all = intersoccer_player_course_status_request_filters();
+		$this->assertSame('', $filters_all['season_type']);
+		unset($_GET);
+	}
+
 	public function test_export_one_row_per_booking_includes_pending_line(): void {
 		intersoccer_test_set_user_caps(['manage_options' => true]);
 		intersoccer_player_camp_status_reset_dob_gate_cache();

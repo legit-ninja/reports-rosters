@@ -1106,6 +1106,45 @@ function intersoccer_player_course_status_resolve_age_group_facet(array $row) {
 /**
  * @param array<string,mixed> $row
  */
+function intersoccer_player_course_status_normalize_times_display($times) {
+	$times = trim((string) $times);
+	if ($times === '' || strcasecmp($times, 'N/A') === 0) {
+		return '';
+	}
+	$parts = preg_split('/\s*-\s*/u', $times);
+	if (!is_array($parts) || $parts === []) {
+		return $times;
+	}
+	$normalized = [];
+	foreach ($parts as $part) {
+		$part = trim((string) $part);
+		if ($part === '') {
+			continue;
+		}
+		if (preg_match('/^(\d{1,2})h(\d{2})$/iu', $part, $m)) {
+			$normalized[] = sprintf('%02d%02d', (int) $m[1], (int) $m[2]);
+			continue;
+		}
+		if (preg_match('/^(\d{1,2}):(\d{2})$/u', $part, $m)) {
+			$normalized[] = sprintf('%02d%02d', (int) $m[1], (int) $m[2]);
+			continue;
+		}
+		if (preg_match('/^\d{4}$/u', $part)) {
+			$normalized[] = $part;
+			continue;
+		}
+		$normalized[] = $part;
+	}
+	if ($normalized === []) {
+		return $times;
+	}
+
+	return implode('-', $normalized);
+}
+
+/**
+ * @param array<string,mixed> $row
+ */
 function intersoccer_player_course_status_resolve_times(array $row) {
 	$times = trim((string) ($row['times'] ?? ''));
 	if ($times === '' || strcasecmp($times, 'N/A') === 0) {
@@ -1115,7 +1154,39 @@ function intersoccer_player_course_status_resolve_times(array $row) {
 		$times = '';
 	}
 
-	return $times;
+	return intersoccer_player_course_status_normalize_times_display($times);
+}
+
+/**
+ * Default season_type for the office page when the request omits season_type (courses: Autumn, not Summer).
+ */
+function intersoccer_player_course_status_default_season_type() {
+	return 'Autumn';
+}
+
+/**
+ * Readable weekday label for course-day filter options (slug value unchanged).
+ *
+ * @param string $slug
+ * @param string $course_day_label Roster course_day when available.
+ */
+function intersoccer_player_course_status_course_day_filter_label($slug, $course_day_label = '') {
+	$label = trim((string) $course_day_label);
+	if ($label !== '' && strcasecmp($label, 'N/A') !== 0) {
+		return $label;
+	}
+	$slug = trim((string) $slug);
+	if ($slug === '') {
+		return '';
+	}
+	if (function_exists('intersoccer_normalize_weekday_token')) {
+		$day = intersoccer_normalize_weekday_token($slug);
+		if (is_string($day) && $day !== '') {
+			return $day;
+		}
+	}
+
+	return ucwords(str_replace('-', ' ', $slug));
 }
 
 /**
@@ -1642,7 +1713,12 @@ function intersoccer_player_course_status_build_filter_options(array $scoped_row
 	$seasons = [];
 
 	foreach ($scoped_rows as $row) {
-		if (!is_array($row) || !intersoccer_player_course_status_row_is_active_booking($row)) {
+		if (!is_array($row)) {
+			continue;
+		}
+		$counts_for_filters = intersoccer_player_course_status_row_is_active_booking($row)
+			|| intersoccer_player_course_status_row_is_pending_intent_booking($row);
+		if (!$counts_for_filters) {
 			continue;
 		}
 		$item_id = (int) ($row['order_item_id'] ?? 0);
@@ -1653,7 +1729,10 @@ function intersoccer_player_course_status_build_filter_options(array $scoped_row
 			$venues[ $booking['venue_slug'] ] = $booking['venue'];
 		}
 		if ($booking['course_day_slug'] !== '') {
-			$course_days[ $booking['course_day_slug'] ] = $booking['course_day_slug'];
+			$course_days[ $booking['course_day_slug'] ] = intersoccer_player_course_status_course_day_filter_label(
+				$booking['course_day_slug'],
+				(string) ($booking['course_day'] ?? '')
+			);
 		}
 		if ($booking['age_group_slug'] !== '') {
 			$age_groups[ $booking['age_group_slug'] ] = $booking['age_group'];
@@ -1672,14 +1751,13 @@ function intersoccer_player_course_status_build_filter_options(array $scoped_row
 
 	ksort($venues);
 	ksort($age_groups);
-	$course_day_list = array_values($course_days);
-	sort($course_day_list);
+	ksort($course_days);
 	$season_list = array_values($seasons);
 	sort($season_list);
 
 	return [
 		'venues' => $venues,
-		'course_days' => $course_day_list,
+		'course_days' => $course_days,
 		'age_groups' => $age_groups,
 		'seasons' => $season_list,
 	];
@@ -2669,7 +2747,11 @@ function intersoccer_player_course_status_generate_inner(array $filters) {
  */
 function intersoccer_player_course_status_request_filters() {
 	$year = isset($_GET['year']) ? absint($_GET['year']) : (int) date('Y');
-	$season_type = isset($_GET['season_type']) ? sanitize_text_field(wp_unslash($_GET['season_type'])) : '';
+	if (array_key_exists('season_type', $_GET)) {
+		$season_type = sanitize_text_field(wp_unslash($_GET['season_type']));
+	} else {
+		$season_type = intersoccer_player_course_status_default_season_type();
+	}
 	$girls_mode = isset($_GET['girls_mode']) ? sanitize_text_field(wp_unslash($_GET['girls_mode'])) : 'all';
 	$booked = isset($_GET['booked']) ? sanitize_text_field(wp_unslash($_GET['booked'])) : 'all';
 	$booking_status = isset($_GET['booking_status']) ? sanitize_text_field(wp_unslash($_GET['booking_status'])) : '';

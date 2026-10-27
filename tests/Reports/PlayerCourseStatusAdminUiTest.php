@@ -250,7 +250,7 @@ class PlayerCourseStatusAdminUiTest extends TestCase {
 			],
 			[
 				'venues' => ['zurich' => 'Zurich <b>Hall'],
-				'course_days' => ['sunday', 'monday'],
+				'course_days' => ['sunday' => 'Sunday', 'monday' => 'Monday'],
 				'age_groups' => ['u8' => 'Under 8 & Co'],
 				'seasons' => ['Winter'],
 			]
@@ -273,6 +273,7 @@ class PlayerCourseStatusAdminUiTest extends TestCase {
 		$this->assertStringContainsString('value="missing-hall" selected="selected"', $html);
 		$this->assertStringContainsString('Under 8 &amp; Co', $html);
 		$this->assertStringContainsString('value="sunday" selected="selected"', $html);
+		$this->assertStringContainsString('>Sunday<', $html);
 		$this->assertStringContainsString('value="2019" selected="selected"', $html);
 		$this->assertStringContainsString('value="Ada &lt;b&gt;"', $html);
 		$this->assertStringNotContainsString('<b>', $html);
@@ -351,7 +352,7 @@ class PlayerCourseStatusAdminUiTest extends TestCase {
 		]);
 		$page = $shown . '<table class="widefat striped"><tbody>' . $rows . '</tbody></table>';
 
-		$this->assertStringContainsString('class="notice notice-warning"', $shown);
+		$this->assertStringContainsString('class="notice notice-warning inline"', $shown);
 		$this->assertStringContainsString('Roster query failed &lt;b&gt;badly&lt;/b&gt;', $shown);
 		$this->assertStringContainsString('Second warning', $shown);
 		$this->assertStringNotContainsString('<b>', $shown);

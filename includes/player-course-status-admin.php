@@ -613,7 +613,7 @@ if (!function_exists('intersoccer_player_course_status_admin_filters_html')) {
 			. intersoccer_player_course_status_admin_select_html(
 				'course_day',
 				'pcrs-day',
-				intersoccer_player_course_status_admin_list_options(
+				intersoccer_player_course_status_admin_map_options(
 					$filter_options['course_days'] ?? [],
 					(string) ($filters['course_day'] ?? ''),
 					__('All days', 'intersoccer-reports-rosters')
@@ -695,7 +695,7 @@ if (!function_exists('intersoccer_player_course_status_admin_warnings_html')) {
 	function intersoccer_player_course_status_admin_warnings_html($warnings) {
 		$html = '';
 		foreach (intersoccer_player_course_status_admin_warning_messages($warnings) as $message) {
-			$html .= '<div class="notice notice-warning"><p>' . esc_html($message) . '</p></div>';
+			$html .= '<div class="notice notice-warning inline"><p>' . esc_html($message) . '</p></div>';
 		}
 
 		return $html;
@@ -722,6 +722,41 @@ if (!function_exists('intersoccer_player_course_status_admin_export_control_html
 		return '<a class="button" href="' . esc_url(intersoccer_player_course_status_admin_export_url($filters)) . '">'
 			. esc_html__('Export to Excel', 'intersoccer-reports-rosters')
 			. '</a>';
+	}
+}
+
+if (!function_exists('intersoccer_player_course_status_admin_final_reports_url')) {
+	/**
+	 * Final Reports course grid for the selected year (same args as MenuManager::build_final_reports_url).
+	 *
+	 * @param int $year
+	 */
+	function intersoccer_player_course_status_admin_final_reports_url($year) {
+		$year = (int) $year;
+		$args = [
+			'page' => 'intersoccer-final-reports',
+			'activity_type' => 'Course',
+		];
+		if ($year >= 2000) {
+			$args['year'] = $year;
+		}
+
+		return add_query_arg($args, admin_url('admin.php'));
+	}
+}
+
+if (!function_exists('intersoccer_player_course_status_admin_final_reports_html')) {
+	/**
+	 * Secondary link to the Final Reports course grid for the filter year.
+	 *
+	 * @param array<string,mixed> $filters
+	 */
+	function intersoccer_player_course_status_admin_final_reports_html(array $filters) {
+		$year = isset($filters['year']) ? (int) $filters['year'] : (int) date('Y');
+
+		return '<a class="button button-secondary" href="'
+			. esc_url(intersoccer_player_course_status_admin_final_reports_url($year))
+			. '">' . esc_html__('Final course numbers', 'intersoccer-reports-rosters') . '</a>';
 	}
 }
 
@@ -766,6 +801,7 @@ if (!function_exists('intersoccer_player_course_status_admin_render_page')) {
 		?>
 		<div class="wrap intersoccer-player-course-status">
 			<h1><?php esc_html_e('Player course status', 'intersoccer-reports-rosters'); ?></h1>
+			<?php echo intersoccer_player_course_status_admin_warnings_html($warnings); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 			<p><?php esc_html_e('All players from Player Management, with course roster bookings for the selected filters. Pending payment and on-hold orders count as not booked.', 'intersoccer-reports-rosters'); ?></p>
 
 			<p class="description" style="margin-bottom:16px;">
@@ -778,6 +814,7 @@ if (!function_exists('intersoccer_player_course_status_admin_render_page')) {
 
 				<button type="submit" class="button button-primary"><?php esc_html_e('Filter', 'intersoccer-reports-rosters'); ?></button>
 				<?php echo intersoccer_player_course_status_admin_export_control_html($filters, $warnings); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
+				<?php echo intersoccer_player_course_status_admin_final_reports_html($filters); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 				<?php echo intersoccer_player_course_status_admin_refresh_html($filters); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 			</form>
 
@@ -799,8 +836,6 @@ if (!function_exists('intersoccer_player_course_status_admin_render_page')) {
 					</div>
 				</div>
 			<?php endif; ?>
-
-			<?php echo intersoccer_player_course_status_admin_warnings_html($warnings); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 
 			<?php if (empty($slice['rows'])) : ?>
 				<p><?php esc_html_e('No players matched the selected filters.', 'intersoccer-reports-rosters'); ?></p>
