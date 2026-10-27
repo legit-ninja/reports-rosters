@@ -198,6 +198,65 @@ function intersoccer_roster_move_is_same_variation_target(int $current_variation
 }
 
 /**
+ * Move-only unknown tristate when parent is girls-only but variation pa is unset/mixed.
+ *
+ * Does not use WC attribute scans (master flag handles those); avoids product-attribute test regressions.
+ *
+ * @param array<string,mixed> $context
+ */
+function intersoccer_roster_move_girls_only_tristate_unknown(array $context): bool {
+    $normalize_val = static function ($val) {
+        if (is_array($val)) {
+            $val = $val[0] ?? reset($val);
+        }
+        return $val;
+    };
+
+    $variation_pa_slug = !empty($context['variation_pa_girls-only'])
+        ? strtolower(trim((string) $normalize_val($context['variation_pa_girls-only'])))
+        : '';
+    if ($variation_pa_slug === '' && !empty($context['attribute_pa_girls-only'])) {
+        $variation_pa_slug = strtolower(trim((string) $normalize_val($context['attribute_pa_girls-only'])));
+    }
+
+    $parent_pa_slug = !empty($context['parent_pa_girls-only'])
+        ? strtolower(trim((string) $normalize_val($context['parent_pa_girls-only'])))
+        : '';
+
+    if ($variation_pa_slug !== '') {
+        return false;
+    }
+
+    $parent_face = $parent_pa_slug !== '' && function_exists('intersoccer_roster_girls_only_pa_slug_to_tristate')
+        ? intersoccer_roster_girls_only_pa_slug_to_tristate($parent_pa_slug)
+        : '';
+
+    $variation_name_signal = !empty($context['product_name'])
+        && function_exists('intersoccer_text_indicates_girls_only')
+        && intersoccer_text_indicates_girls_only($context['product_name']);
+
+    $product_type_signal = false;
+    $product_type = strtolower(trim((string) ($context['product_type'] ?? '')));
+    if ($product_type !== '' && strpos($product_type, 'girls') !== false) {
+        $product_type_signal = true;
+    }
+    if (!$product_type_signal) {
+        $parent_id = (int) ($context['product_id'] ?? 0);
+        $variation_id = (int) ($context['variation_id'] ?? 0);
+        if ($parent_id > 0 && function_exists('intersoccer_get_product_type_safe')) {
+            $safe_type = strtolower((string) intersoccer_get_product_type_safe($parent_id, $variation_id > 0 ? $variation_id : null));
+            if ($safe_type !== '' && strpos($safe_type, 'girls') !== false) {
+                $product_type_signal = true;
+            }
+        }
+    }
+
+    return $parent_face === 'yes' && ($product_type_signal || (!$variation_name_signal && !empty($context['parent_product_name'])
+        && function_exists('intersoccer_text_indicates_girls_only')
+        && intersoccer_text_indicates_girls_only($context['parent_product_name'])));
+}
+
+/**
  * Whether admins should confirm moving into a girls-only (or possibly girls-only) target.
  *
  * Warn only when the target resolves to yes or unknown and the source is not girls-only.
@@ -268,7 +327,7 @@ function intersoccer_roster_move_variation_girls_only_resolver_context(WC_Produc
         }
     }
 
-    if (method_exists($variation, 'get_attribute')) {
+    if (is_callable([$variation, 'get_attribute'])) {
         foreach (['pa_girls-only', 'girls-only', 'pa_activity-type'] as $attr_name) {
             $attr_value = $variation->get_attribute($attr_name);
             if ($attr_value === '' || $attr_value === null) {
@@ -291,7 +350,7 @@ function intersoccer_roster_move_variation_girls_only_resolver_context(WC_Produc
         $parent = wc_get_product($parent_id);
         if ($parent) {
             $context['parent_product_name'] = method_exists($parent, 'get_name') ? $parent->get_name() : '';
-            if (method_exists($parent, 'get_attribute')) {
+            if (is_callable([$parent, 'get_attribute'])) {
                 foreach (['pa_girls-only', 'girls-only', 'pa_activity-type'] as $attr_name) {
                     $attr_value = $parent->get_attribute($attr_name);
                     if ($attr_value === '' || $attr_value === null) {
@@ -397,7 +456,7 @@ function intersoccer_roster_move_variation_pa_girls_only_slug(WC_Product_Variati
         }
     }
 
-    if (method_exists($variation, 'get_attribute')) {
+    if (is_callable([$variation, 'get_attribute'])) {
         foreach (['pa_girls-only', 'girls-only'] as $attr_name) {
             $attr_value = $variation->get_attribute($attr_name);
             if ($attr_value !== '' && $attr_value !== null) {
@@ -409,7 +468,7 @@ function intersoccer_roster_move_variation_pa_girls_only_slug(WC_Product_Variati
     $parent_id = (int) $variation->get_parent_id();
     if ($parent_id > 0 && function_exists('wc_get_product')) {
         $parent = wc_get_product($parent_id);
-        if ($parent && method_exists($parent, 'get_attribute')) {
+        if ($parent && is_callable([$parent, 'get_attribute'])) {
             foreach (['pa_girls-only', 'girls-only'] as $attr_name) {
                 $attr_value = $parent->get_attribute($attr_name);
                 if ($attr_value !== '' && $attr_value !== null) {
