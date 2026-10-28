@@ -121,7 +121,8 @@ class MovePlayersAjaxAcceptanceTest extends TestCase {
         $source->shouldReceive('get_price')->andReturn('100');
         $source->shouldReceive('is_purchasable')->andReturn(true);
         $source->shouldReceive('is_type')->with('variation')->andReturn(true);
-        $source->shouldReceive('managing_stock')->andReturn(false);
+        $source->shouldReceive('managing_stock')->andReturn(true);
+        $source->shouldReceive('backorders_allowed')->andReturn(false);
         $source->shouldReceive('get_stock_quantity')->andReturn(5);
         $source->shouldReceive('get_stock_status')->andReturn('instock');
         $source->shouldReceive('set_stock_quantity')->never();
@@ -139,7 +140,8 @@ class MovePlayersAjaxAcceptanceTest extends TestCase {
         $target->shouldReceive('get_price')->andReturn('');
         $target->shouldReceive('is_purchasable')->andReturn(false);
         $target->shouldReceive('is_type')->with('variation')->andReturn(true);
-        $target->shouldReceive('managing_stock')->andReturn(false);
+        $target->shouldReceive('managing_stock')->andReturn(true);
+        $target->shouldReceive('backorders_allowed')->andReturn(false);
         $target->shouldReceive('get_stock_quantity')->andReturn(0);
         $target->shouldReceive('get_stock_status')->andReturn('outofstock');
         $target->shouldReceive('set_stock_quantity')->never();
@@ -263,8 +265,19 @@ class MovePlayersAjaxAcceptanceTest extends TestCase {
         $this->assertSame($before_line_total, $GLOBALS['intersoccer_test_wc_order_item_data'][self::ITEM_ID]['total']);
     }
 
-    public function test_criterion_13_no_stock_writes_on_source_or_target_variations(): void {
+    public function test_criterion_13_managed_stock_wc_update_increase_only_when_target_capped_at_zero(): void {
         $this->installWorld(true);
+        $GLOBALS['intersoccer_test_wc_stock_calls'] = [];
+        $GLOBALS['intersoccer_test_wc_update_stock_callback'] = static function ($product, $amount, $mode) {
+            $id = is_object($product) && method_exists($product, 'get_id') ? (int) $product->get_id() : 0;
+            $GLOBALS['intersoccer_test_wc_stock_calls'][] = [
+                'variation_id' => $id,
+                'amount' => (int) $amount,
+                'mode' => (string) $mode,
+            ];
+
+            return true;
+        };
 
         $response = $this->invokeMoveAjax([
             'target_variation_id' => self::TARGET_VAR,
@@ -275,5 +288,12 @@ class MovePlayersAjaxAcceptanceTest extends TestCase {
 
         $this->assertTrue($response['success'] ?? false);
         $this->assertGreaterThan(0, (int) ($response['data']['moved_count'] ?? 0));
+        $this->assertCount(1, $GLOBALS['intersoccer_test_wc_stock_calls']);
+        $this->assertSame(self::SOURCE_VAR, (int) $GLOBALS['intersoccer_test_wc_stock_calls'][0]['variation_id']);
+        $this->assertSame('increase', $GLOBALS['intersoccer_test_wc_stock_calls'][0]['mode']);
+        $this->assertSame(1, (int) $GLOBALS['intersoccer_test_wc_stock_calls'][0]['amount']);
+        $delta = intersoccer_roster_move_read_stock_delta(self::ITEM_ID);
+        $this->assertSame(0, (int) ($delta['applied_to'] ?? -1));
+        $this->assertSame(1, (int) ($delta['applied_from'] ?? 0));
     }
 }

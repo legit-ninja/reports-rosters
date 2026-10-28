@@ -186,12 +186,15 @@ class MovePlayersRoundTripRosterDataTest extends TestCase {
     public function test_course_round_trip_preserves_booking_city_and_empty_day_fields(): void {
         $baseline = $this->baselineCourseRow();
         $this->installStatefulWorld($baseline);
+        intersoccer_rebuild_event_signature_for_order_item(self::ITEM_ID);
+        $expected_sig = (string) ($GLOBALS['intersoccer_test_roster_store'][self::ITEM_ID]['event_signature'] ?? '');
         $this->runMoveBack($baseline);
 
         $after = $GLOBALS['intersoccer_test_roster_store'][self::ITEM_ID];
         foreach (['booking_type', 'selected_days', 'days_selected', 'day_presence', 'city', 'canton_region'] as $field) {
             $this->assertSame($baseline[$field], $after[$field], $field);
         }
+        $this->assertSame($expected_sig, $after['event_signature']);
         $this->assertSame(self::SOURCE_VAR, (int) $after['variation_id']);
     }
 
@@ -224,10 +227,14 @@ class MovePlayersRoundTripRosterDataTest extends TestCase {
         $intersoccer_test_wc_order_item_meta[self::ITEM_ID]['_intersoccer_canonical_booking_type'] = 'single-days';
         unset($intersoccer_test_wc_order_item_meta[self::ITEM_ID]['Type de réservation']);
 
+        intersoccer_rebuild_event_signature_for_order_item(self::ITEM_ID);
+        $expected_sig = (string) ($GLOBALS['intersoccer_test_roster_store'][self::ITEM_ID]['event_signature'] ?? '');
+
         $this->runMoveBack($baseline);
         $after = $GLOBALS['intersoccer_test_roster_store'][self::ITEM_ID];
         $this->assertSame($baseline['selected_days'], $after['selected_days']);
         $this->assertSame($baseline['days_selected'], $after['days_selected']);
+        $this->assertSame($expected_sig, $after['event_signature']);
         $decoded = json_decode((string) $after['day_presence'], true);
         $this->assertSame('Yes', $decoded['Monday'] ?? null);
         $this->assertSame('Yes', $decoded['Wednesday'] ?? null);

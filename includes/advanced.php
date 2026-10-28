@@ -1631,8 +1631,23 @@ function intersoccer_move_players_ajax() {
             $player_meta_snapshot = [];
             if ($migration_success) {
                 try {
+                    $preserved_stock_delta = '';
+                    if (function_exists('intersoccer_roster_move_stock_delta_meta_key')) {
+                        $preserved_stock_delta = wc_get_order_item_meta(
+                            (int) $item_id,
+                            intersoccer_roster_move_stock_delta_meta_key(),
+                            true
+                        );
+                    }
                     $player_meta_snapshot = intersoccer_migration_snapshot_player_attendee_meta($item);
                     intersoccer_migration_remove_variation_meta_for_move($item, $human_lookup);
+                    if ($preserved_stock_delta !== '' && $preserved_stock_delta !== null
+                        && function_exists('intersoccer_roster_move_stock_delta_meta_key')) {
+                        $item->update_meta_data(
+                            intersoccer_roster_move_stock_delta_meta_key(),
+                            $preserved_stock_delta
+                        );
+                    }
                     error_log(
                         'InterSoccer Migration: Stripped variation metadata for item ' . $item_id .
                         ' (preserved ' . count($player_meta_snapshot) . ' player/attendee keys)'
@@ -2024,11 +2039,13 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
     if ($item_id > 0 && function_exists('intersoccer_roster_collect_event_data_from_order_item')) {
         $from_order = intersoccer_roster_collect_event_data_from_order_item($item_id);
         foreach (['city', 'canton_region'] as $facet_key) {
+            if (trim((string) ($record[$facet_key] ?? '')) !== '') {
+                $normalized[$facet_key] = $record[$facet_key];
+                continue;
+            }
             if (trim((string) ($normalized[$facet_key] ?? '')) === '') {
                 if (!empty($from_order[$facet_key])) {
                     $normalized[$facet_key] = $from_order[$facet_key];
-                } elseif (!empty($record[$facet_key])) {
-                    $normalized[$facet_key] = $record[$facet_key];
                 }
             }
         }

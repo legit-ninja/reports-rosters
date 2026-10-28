@@ -12,8 +12,12 @@ class MovePlayersStockAdjustTest extends TestCase {
 
     use MovePlayersTestIsolationTrait;
 
+    private static bool $rosterRowFilterRegistered = false;
+
     private const ORDER_ID = 93001;
     private const ITEM_ID = 93011;
+    private const ITEM_BATCH_OK = 93012;
+    private const ITEM_BATCH_BLOCK = 93013;
     private const PARENT_ID = 93000;
     private const SOURCE_VAR = 93010;
     private const TARGET_VAR = 93020;
@@ -21,6 +25,7 @@ class MovePlayersStockAdjustTest extends TestCase {
     protected function setUp(): void {
         parent::setUp();
         $this->resetMovePlayersTestGlobals();
+        $GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
         $GLOBALS['intersoccer_test_wc_stock_qty'] = [
             self::SOURCE_VAR => 2,
             self::TARGET_VAR => 3,
@@ -42,6 +47,28 @@ class MovePlayersStockAdjustTest extends TestCase {
         require_once dirname(__DIR__) . '/stubs/get-product-type-stub.php';
         require_once dirname(__DIR__, 2) . '/includes/roster-move-reason-messages.php';
         require_once dirname(__DIR__, 2) . '/includes/roster-move-admin-target.php';
+        require_once dirname(__DIR__, 2) . '/includes/roster-move-audit.php';
+        require_once dirname(__DIR__, 2) . '/includes/advanced.php';
+
+        if (!self::$rosterRowFilterRegistered) {
+            add_filter(
+                'intersoccer_roster_move_order_item_has_roster_row',
+                static function ($has, $order_item_id) {
+                    if ($has !== null) {
+                        return $has;
+                    }
+                    $map = $GLOBALS['intersoccer_test_roster_row_filter_map'] ?? null;
+                    if (!is_array($map) || !array_key_exists((int) $order_item_id, $map)) {
+                        return null;
+                    }
+
+                    return (bool) $map[(int) $order_item_id];
+                },
+                10,
+                2
+            );
+            self::$rosterRowFilterRegistered = true;
+        }
 
         global $intersoccer_test_wc_update_stock_callback;
         $intersoccer_test_wc_update_stock_callback = static function ($product, $amount, $mode) {
@@ -72,10 +99,106 @@ class MovePlayersStockAdjustTest extends TestCase {
         unset(
             $GLOBALS['intersoccer_test_wc_stock_qty'],
             $GLOBALS['intersoccer_test_wc_stock_calls'],
-            $GLOBALS['intersoccer_test_wc_update_stock_callback']
+            $GLOBALS['intersoccer_test_wc_update_stock_callback'],
+            $GLOBALS['intersoccer_test_roster_row_filter_map'],
+            $GLOBALS['intersoccer_test_wc_order_item_data'],
+            $GLOBALS['intersoccer_test_emit_wp_hooks']
         );
         $this->resetMovePlayersTestGlobals();
+        $_POST = [];
         parent::tearDown();
+    }
+
+    /**
+     * @param array<string,mixed> $options
+     */
+    private function installHandlerWorld(array $options = []): void {
+        global $wpdb, $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_data;
+        global $intersoccer_test_wc_get_order_callback, $intersoccer_test_post_status_map;
+
+        $roster_map = $options['roster_row_map'] ?? [
+            self::ITEM_ID => true,
+            self::ITEM_BATCH_OK => true,
+            self::ITEM_BATCH_BLOCK => false,
+        ];
+        $GLOBALS['intersoccer_test_roster_row_filter_map'] = $roster_map;
+
+        $item_ids = $options['order_item_ids'] ?? [self::ITEM_ID];
+        $intersoccer_test_post_status_map = [
+            self::SOURCE_VAR => 'publish',
+            self::TARGET_VAR => 'publish',
+            self::PARENT_ID => 'publish',
+        ];
+
+        $intersoccer_test_wc_order_item_meta = [];
+        $intersoccer_test_wc_order_item_data = [];
+        foreach ($item_ids as $item_id) {
+            $item_id = (int) $item_id;
+            $intersoccer_test_wc_order_item_meta[$item_id] = [
+                'Activity Type' => 'Course',
+                'Assigned Attendee' => 'Player ' . $item_id,
+            ];
+            $intersoccer_test_wc_order_item_data[$item_id] = [
+                'product_id' => self::PARENT_ID,
+                'variation_id' => self::SOURCE_VAR,
+                'subtotal' => 100.00,
+                'total' => 100.00,
+                'name' => 'Course line',
+            ];
+        }
+
+        $items = [];
+        foreach ($item_ids as $item_id) {
+            $items[(int) $item_id] = new \WC_Order_Item_Product((int) $item_id);
+        }
+        $order = new \WC_Order(self::ORDER_ID);
+        $order->set_items($items);
+
+        $intersoccer_test_wc_get_order_callback = static function ($id) use ($order) {
+            return (int) $id === self::ORDER_ID ? $order : false;
+        };
+
+        $this->bindProducts(
+            (bool) ($options['source_backorders'] ?? false),
+            (bool) ($options['target_backorders'] ?? false)
+        );
+
+        $target = wc_get_product(self::TARGET_VAR);
+        if ($target instanceof Mockery\MockInterface && array_key_exists('target_stock_quantity', $options)) {
+            $target->shouldReceive('get_stock_quantity')->andReturn((int) $options['target_stock_quantity']);
+            $target->shouldReceive('get_stock_status')->andReturn(
+                (int) $options['target_stock_quantity'] > 0 ? 'instock' : 'outofstock'
+            );
+            $target->shouldReceive('is_purchasable')->andReturn($options['target_purchasable'] ?? true);
+            $target->shouldReceive('get_price')->andReturn($options['target_price'] ?? '100');
+        }
+
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static fn ($q) => (string) $q);
+        $wpdb->shouldReceive('get_results')->andReturn([]);
+        $wpdb->shouldReceive('get_row')->andReturn(['id' => 1, 'variation_id' => self::SOURCE_VAR]);
+        $wpdb->shouldReceive('update')->andReturn(1);
+        $wpdb->shouldReceive('query')->andReturn(true);
+        $wpdb->shouldReceive('get_var')->andReturnUsing(static function ($sql) {
+            if (!is_string($sql)) {
+                return null;
+            }
+            if (strpos($sql, 'woocommerce_order_items') !== false) {
+                return (string) self::ORDER_ID;
+            }
+            if (strpos($sql, 'intersoccer_rosters') !== false && strpos($sql, 'order_item_id') !== false) {
+                return '1';
+            }
+            if (strpos($sql, 'event_completed') !== false) {
+                return '0';
+            }
+            if (strpos($sql, 'COUNT(*)') !== false) {
+                return '0';
+            }
+
+            return '0';
+        });
     }
 
     private function makeManagedVariation(int $variation_id, bool $backorders = false): Mockery\MockInterface {
@@ -297,8 +420,6 @@ class MovePlayersStockAdjustTest extends TestCase {
      * @return array<string,mixed>
      */
     private function invokeMoveAjax(array $post): array {
-        require_once dirname(__DIR__, 2) . '/includes/roster-move-audit.php';
-        require_once dirname(__DIR__, 2) . '/includes/advanced.php';
         $_POST = array_merge(
             [
                 'action' => 'intersoccer_move_players',
@@ -378,21 +499,104 @@ class MovePlayersStockAdjustTest extends TestCase {
         $this->assertSame($calls_before, count($GLOBALS['intersoccer_test_wc_stock_calls']));
     }
 
-    public function test_partial_batch_adjusts_stock_only_for_moved_order_items(): void {
-        $this->bindProducts();
-        global $intersoccer_test_wc_order_item_meta;
-        $item_moved = 93012;
-        $item_blocked = 93013;
-        $intersoccer_test_wc_order_item_meta[self::ITEM_ID] = [];
-        $intersoccer_test_wc_order_item_meta[$item_moved] = [];
-        $this->assertTrue(intersoccer_roster_move_apply_stock_for_completed_move(
-            self::ITEM_ID,
-            self::SOURCE_VAR,
-            self::TARGET_VAR
-        ));
-        $calls_after_first = count($GLOBALS['intersoccer_test_wc_stock_calls']);
-        $this->assertGreaterThan(0, $calls_after_first);
-        $this->assertNull(intersoccer_roster_move_read_stock_delta($item_blocked));
-        $this->assertNotNull(intersoccer_roster_move_read_stock_delta(self::ITEM_ID));
+    public function test_handler_partial_batch_adjusts_stock_only_for_moved_order_item(): void {
+        $this->installHandlerWorld([
+            'order_item_ids' => [self::ITEM_BATCH_OK, self::ITEM_BATCH_BLOCK],
+            'roster_row_map' => [
+                self::ITEM_BATCH_OK => true,
+                self::ITEM_BATCH_BLOCK => false,
+            ],
+        ]);
+        $calls_before = count($GLOBALS['intersoccer_test_wc_stock_calls']);
+        $baseline_qty = $GLOBALS['intersoccer_test_wc_stock_qty'];
+
+        $response = $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_BATCH_OK, self::ITEM_BATCH_BLOCK],
+            'confirm_warnings' => '1',
+        ]);
+
+        $this->assertTrue($response['success'] ?? false);
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+        $this->assertSame([self::ITEM_BATCH_OK], $response['data']['moved_order_item_ids'] ?? []);
+        $new_calls = array_slice($GLOBALS['intersoccer_test_wc_stock_calls'], $calls_before);
+        $this->assertCount(2, $new_calls);
+        $this->assertNotNull(intersoccer_roster_move_read_stock_delta(self::ITEM_BATCH_OK));
+        $this->assertNull(intersoccer_roster_move_read_stock_delta(self::ITEM_BATCH_BLOCK));
+        $this->assertSame($baseline_qty[self::SOURCE_VAR] + 1, $GLOBALS['intersoccer_test_wc_stock_qty'][self::SOURCE_VAR]);
+        $this->assertSame($baseline_qty[self::TARGET_VAR] - 1, $GLOBALS['intersoccer_test_wc_stock_qty'][self::TARGET_VAR]);
+    }
+
+    public function test_handler_failed_batch_makes_zero_wc_update_product_stock_calls_and_no_delta_records(): void {
+        $this->installHandlerWorld([
+            'order_item_ids' => [self::ITEM_BATCH_OK, self::ITEM_BATCH_BLOCK],
+            'roster_row_map' => [
+                self::ITEM_BATCH_OK => false,
+                self::ITEM_BATCH_BLOCK => false,
+            ],
+        ]);
+        $calls_before = count($GLOBALS['intersoccer_test_wc_stock_calls']);
+
+        $response = $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_BATCH_OK, self::ITEM_BATCH_BLOCK],
+            'confirm_warnings' => '1',
+        ]);
+
+        $this->assertTrue($response['success'] ?? false);
+        $this->assertSame(0, (int) ($response['data']['moved_count'] ?? -1));
+        $this->assertSame($calls_before, count($GLOBALS['intersoccer_test_wc_stock_calls']));
+        $this->assertNull(intersoccer_roster_move_read_stock_delta(self::ITEM_BATCH_OK));
+        $this->assertNull(intersoccer_roster_move_read_stock_delta(self::ITEM_BATCH_BLOCK));
+    }
+
+    public function test_handler_move_back_restores_managed_stock_baseline(): void {
+        $this->installHandlerWorld();
+        $baseline = $GLOBALS['intersoccer_test_wc_stock_qty'];
+
+        $outbound = $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_ID],
+            'confirm_warnings' => '1',
+        ]);
+        $this->assertSame(1, (int) ($outbound['data']['moved_count'] ?? 0));
+
+        $inbound = $this->invokeMoveAjax([
+            'target_variation_id' => self::SOURCE_VAR,
+            'order_item_ids' => [self::ITEM_ID],
+            'confirm_warnings' => '1',
+        ]);
+        $this->assertSame(1, (int) ($inbound['data']['moved_count'] ?? 0));
+        $this->assertSame($baseline[self::SOURCE_VAR], $GLOBALS['intersoccer_test_wc_stock_qty'][self::SOURCE_VAR]);
+        $this->assertSame($baseline[self::TARGET_VAR], $GLOBALS['intersoccer_test_wc_stock_qty'][self::TARGET_VAR]);
+        $this->assertNull(intersoccer_roster_move_read_stock_delta(self::ITEM_ID));
+    }
+
+    public function test_handler_capped_move_anyway_then_move_back_restores_stock_baseline(): void {
+        $GLOBALS['intersoccer_test_wc_stock_qty'][self::TARGET_VAR] = 0;
+        $this->installHandlerWorld([
+            'target_stock_quantity' => 0,
+            'target_purchasable' => false,
+            'target_price' => '',
+        ]);
+        $baseline = $GLOBALS['intersoccer_test_wc_stock_qty'];
+
+        $outbound = $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_ID],
+            'confirm_warnings' => '1',
+        ]);
+        $this->assertSame(1, (int) ($outbound['data']['moved_count'] ?? 0));
+        $delta = intersoccer_roster_move_read_stock_delta(self::ITEM_ID);
+        $this->assertSame(0, (int) ($delta['applied_to'] ?? -1));
+
+        $inbound = $this->invokeMoveAjax([
+            'target_variation_id' => self::SOURCE_VAR,
+            'order_item_ids' => [self::ITEM_ID],
+            'confirm_warnings' => '1',
+        ]);
+        $this->assertSame(1, (int) ($inbound['data']['moved_count'] ?? 0));
+        $this->assertSame($baseline[self::SOURCE_VAR], $GLOBALS['intersoccer_test_wc_stock_qty'][self::SOURCE_VAR]);
+        $this->assertSame($baseline[self::TARGET_VAR], $GLOBALS['intersoccer_test_wc_stock_qty'][self::TARGET_VAR]);
     }
 }

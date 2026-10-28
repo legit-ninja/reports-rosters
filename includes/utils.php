@@ -4274,11 +4274,13 @@ if (!function_exists('intersoccer_renormalize_roster_row_from_variation')) {
         if ($order_item_id > 0 && function_exists('intersoccer_roster_collect_event_data_from_order_item')) {
             $from_order = intersoccer_roster_collect_event_data_from_order_item($order_item_id);
             foreach (['city', 'canton_region'] as $facet_key) {
+                if (trim((string) ($record[$facet_key] ?? '')) !== '') {
+                    $normalized[$facet_key] = $record[$facet_key];
+                    continue;
+                }
                 if (trim((string) ($normalized[$facet_key] ?? '')) === '') {
                     if (!empty($from_order[$facet_key])) {
                         $normalized[$facet_key] = $from_order[$facet_key];
-                    } elseif (!empty($record[$facet_key])) {
-                        $normalized[$facet_key] = $record[$facet_key];
                     }
                 }
             }

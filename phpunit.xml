@@ -128,6 +128,7 @@
             <file>tests/Unit/RosterMoveRosterDataHelpersTest.php</file>
             <file>tests/Legacy/RosterMoveDestinationDisplayTest.php</file>
             <file>tests/Legacy/MovePlayersRoundTripRosterDataTest.php</file>
+            <file>tests/Legacy/MovePlayersAjaxRoundTripRosterDataTest.php</file>
             <file>tests/Legacy/MovePlayersStockAdjustTest.php</file>
             <directory>tests/ReportAccuracy</directory>
         </testsuite>
