@@ -125,6 +125,7 @@
             <file>tests/Unit/PlayerCampStatusDobGatingTest.php</file>
             <file>tests/Unit/RosterMoveTranslationsMoTest.php</file>
             <file>tests/Unit/RosterMovePartialSummaryPluralTest.php</file>
+            <file>tests/Unit/RosterMoveFullOverCapacityPluralTest.php</file>
             <directory>tests/ReportAccuracy</directory>
         </testsuite>
         <testsuite name="Complete">

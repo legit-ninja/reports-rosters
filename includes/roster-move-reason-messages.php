@@ -36,10 +36,6 @@ function intersoccer_roster_move_ui_strings(): array {
         'private_or_disabled' => __('This roster\'s variation is private or disabled.', 'intersoccer-reports-rosters'),
         'no_price' => __('This roster has no price set.', 'intersoccer-reports-rosters'),
         'course_ended' => __('This course has ended.', 'intersoccer-reports-rosters'),
-        /* translators: %1$d: places taken, %2$d: capacity */
-        'full' => __('This roster is full: %1$d of %2$d places taken.', 'intersoccer-reports-rosters'),
-        /* translators: %d: number of places over capacity */
-        'over_capacity' => __('Moving will put it over capacity by %d.', 'intersoccer-reports-rosters'),
         'out_of_stock' => __('This roster is marked out of stock.', 'intersoccer-reports-rosters'),
         'hidden' => __('This roster is hidden from the shop.', 'intersoccer-reports-rosters'),
         'closed' => __('This roster is closed for sale.', 'intersoccer-reports-rosters'),
@@ -54,7 +50,7 @@ function intersoccer_roster_move_ui_strings(): array {
         'dismiss' => __('Dismiss', 'intersoccer-reports-rosters'),
         'select_destination' => __('Please select a destination roster.', 'intersoccer-reports-rosters'),
         'no_players_selected' => __('No players selected.', 'intersoccer-reports-rosters'),
-        'target_missing' => __('This roster no longer exists, so players can\'t be moved to it.', 'intersoccer-reports-rosters'),
+        'target_missing' => __('The destination roster no longer exists or was deleted.', 'intersoccer-reports-rosters'),
         'all_failed' => __('No players were moved.', 'intersoccer-reports-rosters'),
     ];
 }
@@ -92,7 +88,7 @@ function intersoccer_roster_move_js_localize_strings(): array {
         'intersoccer-reports-rosters'
     );
     $strings['failed_player_line'] = __('%1$s: %2$s', 'intersoccer-reports-rosters');
-    $strings['ajax_error'] = __('Something went wrong. No players were moved. Try again.', 'intersoccer-reports-rosters');
+    $strings['ajax_error'] = __('An error occurred. Please try again.', 'intersoccer-reports-rosters');
     $strings['permission_denied'] = __('Permission denied. Please refresh the page and try again.', 'intersoccer-reports-rosters');
     $strings['unknown_error'] = __('Unknown error occurred.', 'intersoccer-reports-rosters');
 
@@ -383,10 +379,45 @@ function intersoccer_roster_move_format_partial_summary(int $moved, int $total, 
 }
 
 /**
+ * Full-roster reason line (pluralizes on capacity).
+ */
+function intersoccer_roster_move_format_full_line(int $taken, int $capacity): string {
+    $template = _n(
+        'This roster is full: %1$d of %2$d place taken.',
+        'This roster is full: %1$d of %2$d places taken.',
+        $capacity,
+        'intersoccer-reports-rosters'
+    );
+
+    return sprintf($template, $taken, $capacity);
+}
+
+/**
+ * Over-capacity warning line (pluralizes on places over capacity).
+ */
+function intersoccer_roster_move_format_over_capacity_line(int $over_n): string {
+    $template = _n(
+        'Moving will put it over capacity by %d place.',
+        'Moving will put it over capacity by %d places.',
+        $over_n,
+        'intersoccer-reports-rosters'
+    );
+
+    return sprintf($template, $over_n);
+}
+
+/**
  * @param string              $key
  * @param array<string,mixed> $replacements
  */
 function intersoccer_roster_move_ui_string(string $key, array $replacements = []): string {
+    if ($key === 'full' && count($replacements) >= 2) {
+        return intersoccer_roster_move_format_full_line((int) $replacements[0], (int) $replacements[1]);
+    }
+    if ($key === 'over_capacity' && $replacements !== []) {
+        return intersoccer_roster_move_format_over_capacity_line((int) $replacements[0]);
+    }
+
     $strings = intersoccer_roster_move_ui_strings();
     $template = $strings[$key] ?? $key;
     if ($replacements === []) {
@@ -452,9 +483,9 @@ function intersoccer_roster_move_reason_lines_for_codes(array $reason_codes, arr
                 break;
             case 'full':
                 if ($capacity > 0) {
-                    $lines[] = intersoccer_roster_move_ui_string('full', [$taken, $capacity]);
+                    $lines[] = intersoccer_roster_move_format_full_line($taken, $capacity);
                     if ($over_n > 0) {
-                        $lines[] = intersoccer_roster_move_ui_string('over_capacity', [$over_n]);
+                        $lines[] = intersoccer_roster_move_format_over_capacity_line($over_n);
                     }
                 } else {
                     $lines[] = intersoccer_roster_move_ui_string('out_of_stock');

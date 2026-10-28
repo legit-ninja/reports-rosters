@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-28T01:47:05+00:00\n"
+"POT-Creation-Date: 2026-10-28T01:56:17+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: intersoccer-reports-rosters\n"
@@ -177,7 +177,7 @@ msgid "No changes were needed."
 msgstr ""
 
 #: classes/Admin/asset-manager.php:296
-#: includes/roster-move-reason-messages.php:50
+#: includes/roster-move-reason-messages.php:46
 msgid "Checking..."
 msgstr ""
 
@@ -2381,7 +2381,7 @@ msgstr ""
 #: includes/advanced.php:736
 #: includes/advanced.php:2938
 #: includes/roster-details.php:2190
-#: includes/roster-move-reason-messages.php:97
+#: includes/roster-move-reason-messages.php:93
 msgid "Unknown error occurred."
 msgstr ""
 
@@ -2581,8 +2581,8 @@ msgstr ""
 
 #: includes/advanced.php:1337
 #: includes/advanced.php:1345
-#: includes/roster-move-reason-messages.php:57
-msgid "This roster no longer exists, so players can't be moved to it."
+#: includes/roster-move-reason-messages.php:53
+msgid "The destination roster no longer exists or was deleted."
 msgstr ""
 
 #: includes/advanced.php:1359
@@ -2590,7 +2590,7 @@ msgid "Target variation cannot be used for this move."
 msgstr ""
 
 #: includes/advanced.php:1367
-#: includes/roster-move-reason-messages.php:52
+#: includes/roster-move-reason-messages.php:48
 msgid "This roster is a different type (Girls Only or Regular). Tick the option above to move these players."
 msgstr ""
 
@@ -2625,7 +2625,7 @@ msgid "Player is already in this class"
 msgstr ""
 
 #: includes/advanced.php:1877
-#: includes/roster-move-reason-messages.php:58
+#: includes/roster-move-reason-messages.php:54
 msgid "No players were moved."
 msgstr ""
 
@@ -5129,7 +5129,7 @@ msgid "Select time first..."
 msgstr ""
 
 #: includes/roster-details.php:1139
-#: includes/roster-move-reason-messages.php:51
+#: includes/roster-move-reason-messages.php:47
 msgid "Apply"
 msgstr ""
 
@@ -5143,7 +5143,7 @@ msgid "Select a destination roster..."
 msgstr ""
 
 #: includes/roster-details.php:1188
-#: includes/roster-move-reason-messages.php:316
+#: includes/roster-move-reason-messages.php:312
 msgid "Untitled roster"
 msgstr ""
 
@@ -5313,6 +5313,7 @@ msgstr ""
 
 #: includes/roster-details.php:1609
 #: includes/roster-details.php:1646
+#: includes/roster-move-reason-messages.php:91
 #: includes/rosters.php:743
 #: includes/rosters.php:765
 #: includes/rosters.php:808
@@ -5506,7 +5507,7 @@ msgstr ""
 #: includes/roster-editor.php:331
 #: includes/roster-editor.php:705
 #: includes/roster-editor.php:1124
-#: includes/roster-move-reason-messages.php:49
+#: includes/roster-move-reason-messages.php:45
 msgid "Cancel"
 msgstr ""
 
@@ -5697,88 +5698,86 @@ msgstr ""
 msgid "This course has ended."
 msgstr ""
 
-#. translators: %1$d: places taken, %2$d: capacity
-#: includes/roster-move-reason-messages.php:40
-#, php-format
-msgid "This roster is full: %1$d of %2$d places taken."
-msgstr ""
-
-#. translators: %d: number of places over capacity
-#: includes/roster-move-reason-messages.php:42
-#, php-format
-msgid "Moving will put it over capacity by %d."
-msgstr ""
-
-#: includes/roster-move-reason-messages.php:43
+#: includes/roster-move-reason-messages.php:39
 msgid "This roster is marked out of stock."
 msgstr ""
 
-#: includes/roster-move-reason-messages.php:44
+#: includes/roster-move-reason-messages.php:40
 msgid "This roster is hidden from the shop."
 msgstr ""
 
-#: includes/roster-move-reason-messages.php:45
+#: includes/roster-move-reason-messages.php:41
 msgid "This roster is closed for sale."
 msgstr ""
 
-#: includes/roster-move-reason-messages.php:46
+#: includes/roster-move-reason-messages.php:42
 msgid "This roster can't be bought right now."
 msgstr ""
 
-#: includes/roster-move-reason-messages.php:47
+#: includes/roster-move-reason-messages.php:43
 msgid "Moving still works. The players keep their details and orders. Customers still can't buy this roster."
 msgstr ""
 
-#: includes/roster-move-reason-messages.php:48
+#: includes/roster-move-reason-messages.php:44
 msgid "Move anyway"
 msgstr ""
 
-#: includes/roster-move-reason-messages.php:53
+#: includes/roster-move-reason-messages.php:49
 msgid "Try again"
 msgstr ""
 
-#: includes/roster-move-reason-messages.php:54
+#: includes/roster-move-reason-messages.php:50
 msgid "Dismiss"
 msgstr ""
 
-#: includes/roster-move-reason-messages.php:55
+#: includes/roster-move-reason-messages.php:51
 msgid "Please select a destination roster."
 msgstr ""
 
-#: includes/roster-move-reason-messages.php:56
+#: includes/roster-move-reason-messages.php:52
 msgid "No players selected."
 msgstr ""
 
-#: includes/roster-move-reason-messages.php:69
-#: includes/roster-move-reason-messages.php:75
-#: includes/roster-move-reason-messages.php:351
+#: includes/roster-move-reason-messages.php:65
+#: includes/roster-move-reason-messages.php:71
+#: includes/roster-move-reason-messages.php:347
 #, php-format
 msgid "Moved %1$s player to %2$s."
 msgid_plural "Moved %1$s players to %2$s."
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/roster-move-reason-messages.php:81
-#: includes/roster-move-reason-messages.php:88
-#: includes/roster-move-reason-messages.php:367
+#: includes/roster-move-reason-messages.php:77
+#: includes/roster-move-reason-messages.php:84
+#: includes/roster-move-reason-messages.php:363
 #, php-format
 msgid "%1$s of %2$s players moved. These couldn't be moved:"
 msgid_plural "%1$s of %2$s players moved. These couldn't be moved:"
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/roster-move-reason-messages.php:94
+#: includes/roster-move-reason-messages.php:90
 #, php-format
 msgid "%1$s: %2$s"
 msgstr ""
 
-#: includes/roster-move-reason-messages.php:95
-msgid "Something went wrong. No players were moved. Try again."
-msgstr ""
-
-#: includes/roster-move-reason-messages.php:96
+#: includes/roster-move-reason-messages.php:92
 msgid "Permission denied. Please refresh the page and try again."
 msgstr ""
+
+#: includes/roster-move-reason-messages.php:385
+#, php-format
+msgid "This roster is full: %1$d of %2$d place taken."
+msgid_plural "This roster is full: %1$d of %2$d places taken."
+msgstr[0] ""
+msgstr[1] ""
+
+#: includes/roster-move-reason-messages.php:399
+#, php-format
+msgid "Moving will put it over capacity by %d place."
+msgid_plural "Moving will put it over capacity by %d places."
+msgstr[0] ""
+msgstr[1] ""
 
 #: includes/roster-times-facet.php:138
 msgid "This roster details tab may be out of date after a player was moved to a different times slot. Reopen this roster from the course listing to see the current players. You do not need to move the player again."

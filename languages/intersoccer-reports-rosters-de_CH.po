@@ -26,7 +26,7 @@ msgstr ""
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1628
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1892
 msgid "Permission denied."
-msgstr ""
+msgstr "Zugriff verweigert."
 
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:179
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/roster-details.php:205
@@ -1814,17 +1814,19 @@ msgstr "Veranstaltungstyp: %s"
 msgid "This roster isn't open for purchase"
 msgstr "Diese Gruppe ist nicht buchbar"
 
-#. translators: %1$d: places taken, %2$d: capacity
-#: includes/roster-move-reason-messages.php:40
+#: includes/roster-move-reason-messages.php:385
 #, php-format
-msgid "This roster is full: %1$d of %2$d places taken."
-msgstr "Diese Gruppe ist voll: %1$d von %2$d Plätzen belegt."
+msgid "This roster is full: %1$d of %2$d place taken."
+msgid_plural "This roster is full: %1$d of %2$d places taken."
+msgstr[0] "Diese Gruppe ist voll: %1$d von %2$d Platz belegt."
+msgstr[1] "Diese Gruppe ist voll: %1$d von %2$d Plätzen belegt."
 
-#. translators: %d: number of places over capacity
-#: includes/roster-move-reason-messages.php:42
+#: includes/roster-move-reason-messages.php:399
 #, php-format
-msgid "Moving will put it over capacity by %d."
-msgstr "Danach ist die Gruppe um %d überbucht."
+msgid "Moving will put it over capacity by %d place."
+msgid_plural "Moving will put it over capacity by %d places."
+msgstr[0] "Danach ist die Gruppe um %d Platz überbucht."
+msgstr[1] "Danach ist die Gruppe um %d Plätze überbucht."
 
 #: includes/roster-move-reason-messages.php:43
 msgid "This roster is marked out of stock."
@@ -1889,7 +1891,7 @@ msgstr[1] "%1$s Teilnehmer nach %2$s verschoben."
 #, php-format
 msgid "%1$s of %2$s players moved. These couldn't be moved:"
 msgid_plural "%1$s of %2$s players moved. These couldn't be moved:"
-msgstr[0] "%1$s von %2$s Teilnehmern verschoben. Diese konnten nicht verschoben werden:"
+msgstr[0] "%1$s von %2$s Teilnehmer verschoben. Diese konnten nicht verschoben werden:"
 msgstr[1] "%1$s von %2$s Teilnehmern verschoben. Diese konnten nicht verschoben werden:"
 
 #: includes/roster-move-reason-messages.php:93
@@ -1899,15 +1901,68 @@ msgstr "%1$s: %2$s"
 
 #: includes/advanced.php:1337
 #: includes/advanced.php:1345
-#: includes/roster-move-reason-messages.php:57
-msgid "This roster no longer exists, so players can't be moved to it."
-msgstr "Diese Gruppe existiert nicht mehr. Teilnehmer können nicht dorthin verschoben werden."
+#: includes/roster-move-reason-messages.php:53
+msgid "The destination roster no longer exists or was deleted."
+msgstr "Die neue Gruppe existiert nicht mehr oder wurde gelöscht."
 
 #: includes/advanced.php:1877
-#: includes/roster-move-reason-messages.php:58
+#: includes/roster-move-reason-messages.php:54
 msgid "No players were moved."
 msgstr "Es wurden keine Teilnehmer verschoben."
 
-#: includes/roster-move-reason-messages.php:95
-msgid "Something went wrong. No players were moved. Try again."
-msgstr "Etwas ist schiefgelaufen. Es wurden keine Teilnehmer verschoben. Bitte erneut versuchen."
+#: includes/advanced.php:309
+#: includes/advanced.php:382
+#: includes/advanced.php:479
+#: includes/advanced.php:706
+#: includes/advanced.php:736
+#: includes/advanced.php:2938
+#: includes/roster-details.php:2190
+#: includes/roster-move-reason-messages.php:93
+msgid "Unknown error occurred."
+msgstr "Ein unbekannter Fehler ist aufgetreten."
+
+#: includes/roster-details.php:1609
+#: includes/roster-details.php:1646
+#: includes/roster-move-reason-messages.php:91
+#: includes/rosters.php:743
+#: includes/rosters.php:765
+#: includes/rosters.php:808
+#: includes/rosters.php:830
+#: includes/rosters.php:869
+#: includes/rosters.php:905
+#: includes/rosters.php:976
+#: includes/rosters.php:1017
+#: includes/rosters.php:1062
+msgid "An error occurred. Please try again."
+msgstr "Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut."
+
+#: includes/roster-details.php:1139
+#: includes/roster-move-reason-messages.php:47
+msgid "Apply"
+msgstr "Anwenden"
+
+#: includes/roster-move-reason-messages.php:51
+msgid "Please select a destination roster."
+msgstr "Bitte wählen Sie eine neue Gruppe aus."
+
+#: includes/roster-move-reason-messages.php:52
+msgid "No players selected."
+msgstr "Keine Teilnehmer ausgewählt."
+
+#: includes/roster-details.php:1145
+#: includes/roster-details.php:1691
+msgid "Select a destination roster..."
+msgstr "Neue Gruppe auswählen..."
+
+#: includes/roster-details.php:1697
+msgid "No destination rosters match current filters"
+msgstr "Keine neue Gruppe passt zu den aktuellen Filtern"
+
+#: includes/roster-move-reason-messages.php:92
+msgid "Permission denied. Please refresh the page and try again."
+msgstr "Zugriff verweigert. Bitte laden Sie die Seite neu und versuchen Sie es erneut."
+
+#: includes/roster-details.php:1188
+#: includes/roster-move-reason-messages.php:312
+msgid "Untitled roster"
+msgstr "Gruppe ohne Titel"

@@ -133,20 +133,27 @@ class RosterMoveTranslationsMoTest extends TestCase {
         $success = $catalog->pluralForm('Moved %1$s player to %2$s.', 'Moved %1$s players to %2$s.', 2);
         $this->assertSame('%1$s Teilnehmer nach %2$s verschoben.', $success);
 
-        $target_missing = $catalog->translate('This roster no longer exists, so players can\'t be moved to it.');
+        $target_missing = $catalog->translate('The destination roster no longer exists or was deleted.');
         $this->assertSame(
-            'Diese Gruppe existiert nicht mehr. Teilnehmer können nicht dorthin verschoben werden.',
+            'Die neue Gruppe existiert nicht mehr oder wurde gelöscht.',
             $target_missing
         );
 
         $all_failed = $catalog->translate('No players were moved.');
         $this->assertSame('Es wurden keine Teilnehmer verschoben.', $all_failed);
 
-        $error_generic = $catalog->translate('Something went wrong. No players were moved. Try again.');
+        $error_generic = $catalog->translate('An error occurred. Please try again.');
         $this->assertSame(
-            'Etwas ist schiefgelaufen. Es wurden keine Teilnehmer verschoben. Bitte erneut versuchen.',
+            'Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut.',
             $error_generic
         );
+
+        $this->assertSame('Anwenden', $catalog->translate('Apply'));
+        $this->assertSame(
+            'Bitte wählen Sie eine neue Gruppe aus.',
+            $catalog->translate('Please select a destination roster.')
+        );
+        $this->assertSame('Gruppe ohne Titel', $catalog->translate('Untitled roster'));
 
         $ended = $catalog->translate('This course has ended.');
         $this->assertNull($ended);
@@ -165,10 +172,14 @@ class RosterMoveTranslationsMoTest extends TestCase {
         $success_singular = $catalog->pluralForm('Moved %1$s player to %2$s.', 'Moved %1$s players to %2$s.', 1);
         $this->assertSame('%1$s participant déplacé vers %2$s.', $success_singular);
 
-        $full = $catalog->translate('This roster is full: %1$d of %2$d places taken.');
-        $this->assertNotNull($full);
-        $this->assertStringContainsString('complet' . self::NBSP . ':', $full);
-        $this->assertStringNotContainsString('complet :', $full);
+        $full_plural = $catalog->pluralForm(
+            'This roster is full: %1$d of %2$d place taken.',
+            'This roster is full: %1$d of %2$d places taken.',
+            24
+        );
+        $this->assertNotNull($full_plural);
+        $this->assertStringContainsString('complet' . self::NBSP . ':', $full_plural);
+        $this->assertStringNotContainsString('complet :', $full_plural);
 
         $failed_line = $catalog->translate('%1$s: %2$s');
         $this->assertNotNull($failed_line);
@@ -181,20 +192,27 @@ class RosterMoveTranslationsMoTest extends TestCase {
         );
         $this->assertStringContainsString(self::NBSP . ':', (string) $partial);
 
-        $target_missing = $catalog->translate('This roster no longer exists, so players can\'t be moved to it.');
+        $target_missing = $catalog->translate('The destination roster no longer exists or was deleted.');
         $this->assertSame(
-            'Ce groupe n\'existe plus. Impossible d\'y déplacer des participants.',
+            'Le groupe de destination n\'existe plus ou a été supprimé.',
             $target_missing
         );
 
         $all_failed = $catalog->translate('No players were moved.');
         $this->assertSame('Aucun participant n\'a été déplacé.', $all_failed);
 
-        $error_generic = $catalog->translate('Something went wrong. No players were moved. Try again.');
+        $error_generic = $catalog->translate('An error occurred. Please try again.');
         $this->assertSame(
-            'Une erreur s\'est produite. Aucun participant n\'a été déplacé. Veuillez réessayer.',
+            'Une erreur s\'est produite. Veuillez réessayer.',
             $error_generic
         );
+
+        $this->assertSame('Appliquer', $catalog->translate('Apply'));
+        $this->assertSame(
+            'Veuillez sélectionner un groupe de destination.',
+            $catalog->translate('Please select a destination roster.')
+        );
+        $this->assertSame('Groupe sans titre', $catalog->translate('Untitled roster'));
 
         $ended = $catalog->translate('This course has ended.');
         $this->assertNull($ended);
