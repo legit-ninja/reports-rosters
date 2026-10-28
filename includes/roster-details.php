@@ -817,6 +817,24 @@ function intersoccer_render_roster_details_page() {
         $base_roster = $rosters[0];
         $base_roster_girls_only = (int) ($base_roster->girls_only ?? 0);
 
+        $page_exclude_variation_ids = function_exists('intersoccer_roster_move_page_exclude_variation_ids')
+            ? intersoccer_roster_move_page_exclude_variation_ids($rosters)
+            : [];
+        if ($page_exclude_variation_ids === [] && $variation_id > 0) {
+            $page_exclude_variation_ids = [$variation_id];
+        }
+        if (function_exists('intersoccer_roster_move_normalize_exclude_variation_ids')) {
+            $page_exclude_variation_ids = intersoccer_roster_move_normalize_exclude_variation_ids($page_exclude_variation_ids);
+        }
+
+        $exclude_sql = '';
+        $exclude_params = [];
+        if ($page_exclude_variation_ids !== []) {
+            $exclude_placeholders = implode(',', array_fill(0, count($page_exclude_variation_ids), '%d'));
+            $exclude_sql = " AND r.variation_id NOT IN ({$exclude_placeholders})";
+            $exclude_params = $page_exclude_variation_ids;
+        }
+
         $available_rosters_query = $wpdb->prepare("
         SELECT DISTINCT 
             r.product_id,
@@ -836,19 +854,28 @@ function intersoccer_render_roster_details_page() {
         WHERE p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
         AND r.activity_type = %s
         AND r.girls_only = %d
-        AND r.variation_id != %d
+        {$exclude_sql}
         GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season, r.girls_only
         ORDER BY r.product_name, r.venue, r.age_group
-    ", $base_roster->activity_type, $base_roster_girls_only, $variation_id);
+    ", array_merge([$base_roster->activity_type, $base_roster_girls_only], $exclude_params));
 
         $available_rosters = $wpdb->get_results($available_rosters_query, OBJECT);
+        if (function_exists('intersoccer_roster_move_collapse_destination_rows_by_variation')) {
+            $available_rosters = intersoccer_roster_move_collapse_destination_rows_by_variation(
+                is_array($available_rosters) ? $available_rosters : []
+            );
+        }
         if (function_exists('intersoccer_roster_move_merge_empty_sibling_variation_targets')) {
             $available_rosters = intersoccer_roster_move_merge_empty_sibling_variation_targets(
                 is_array($available_rosters) ? $available_rosters : [],
                 (int) ($base_roster->product_id ?? 0),
-                (int) $variation_id,
+                $page_exclude_variation_ids,
                 (string) $base_roster->activity_type,
                 $base_roster_girls_only
+            );
+        } elseif (function_exists('intersoccer_roster_move_apply_destination_player_counts')) {
+            $available_rosters = intersoccer_roster_move_apply_destination_player_counts(
+                is_array($available_rosters) ? $available_rosters : []
             );
         }
 
@@ -871,12 +898,22 @@ function intersoccer_render_roster_details_page() {
         WHERE p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
         AND r.activity_type = %s
         AND r.girls_only != %d
-        AND r.variation_id != %d
+        {$exclude_sql}
         GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season, r.girls_only
         ORDER BY r.product_name, r.venue, r.age_group
-    ", $base_roster->activity_type, $base_roster_girls_only, $variation_id);
+    ", array_merge([$base_roster->activity_type, $base_roster_girls_only], $exclude_params));
 
         $cross_gender_rosters = $wpdb->get_results($cross_gender_rosters_query, OBJECT);
+        if (function_exists('intersoccer_roster_move_collapse_destination_rows_by_variation')) {
+            $cross_gender_rosters = intersoccer_roster_move_collapse_destination_rows_by_variation(
+                is_array($cross_gender_rosters) ? $cross_gender_rosters : []
+            );
+        }
+        if (function_exists('intersoccer_roster_move_apply_destination_player_counts')) {
+            $cross_gender_rosters = intersoccer_roster_move_apply_destination_player_counts(
+                is_array($cross_gender_rosters) ? $cross_gender_rosters : []
+            );
+        }
 
         $unknown_count = count(array_filter($rosters, fn($row) => $row->player_name === 'Unknown Attendee'));
 

@@ -87,7 +87,7 @@ class MovePlayersServiceEmptySiblingBootstrapTest extends TestCase {
             'activity_type' => 'Course',
             'girls_only' => 0,
         ];
-        $merged = $method->invoke($service, [], $base, 881001);
+        $merged = $method->invoke($service, [], $base, [(object) ['variation_id' => 881001]]);
 
         $this->assertCount(1, $merged);
         $this->assertSame(881002, (int) $merged[0]->variation_id);

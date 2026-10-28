@@ -288,7 +288,8 @@ class MovePlayersAjaxPartialFailureTest extends TestCase {
         $variation->shouldReceive('get_price')->andReturn($overrides['price'] ?? '100');
         $variation->shouldReceive('is_purchasable')->andReturn($overrides['is_purchasable'] ?? true);
         $variation->shouldReceive('is_type')->with('variation')->andReturn(true);
-        $variation->shouldReceive('managing_stock')->andReturn($overrides['managing_stock'] ?? true);
+        $variation->shouldReceive('managing_stock')->andReturn($overrides['managing_stock'] ?? false);
+        $variation->shouldReceive('backorders_allowed')->andReturn($overrides['backorders_allowed'] ?? false);
         $variation->shouldReceive('get_stock_quantity')->andReturn($overrides['stock_quantity'] ?? 0);
         $variation->shouldReceive('get_stock_status')->andReturn($overrides['stock_status'] ?? 'outofstock');
         $variation->shouldReceive('set_stock_quantity')->never();

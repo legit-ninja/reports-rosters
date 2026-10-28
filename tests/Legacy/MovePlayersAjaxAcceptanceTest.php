@@ -121,7 +121,7 @@ class MovePlayersAjaxAcceptanceTest extends TestCase {
         $source->shouldReceive('get_price')->andReturn('100');
         $source->shouldReceive('is_purchasable')->andReturn(true);
         $source->shouldReceive('is_type')->with('variation')->andReturn(true);
-        $source->shouldReceive('managing_stock')->andReturn(true);
+        $source->shouldReceive('managing_stock')->andReturn(false);
         $source->shouldReceive('get_stock_quantity')->andReturn(5);
         $source->shouldReceive('get_stock_status')->andReturn('instock');
         $source->shouldReceive('set_stock_quantity')->never();
@@ -139,7 +139,7 @@ class MovePlayersAjaxAcceptanceTest extends TestCase {
         $target->shouldReceive('get_price')->andReturn('');
         $target->shouldReceive('is_purchasable')->andReturn(false);
         $target->shouldReceive('is_type')->with('variation')->andReturn(true);
-        $target->shouldReceive('managing_stock')->andReturn(true);
+        $target->shouldReceive('managing_stock')->andReturn(false);
         $target->shouldReceive('get_stock_quantity')->andReturn(0);
         $target->shouldReceive('get_stock_status')->andReturn('outofstock');
         $target->shouldReceive('set_stock_quantity')->never();

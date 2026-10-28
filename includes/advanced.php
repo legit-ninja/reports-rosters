@@ -1771,6 +1771,24 @@ function intersoccer_move_players_ajax() {
                 if ($new_variation_id == $target_variation_id && 
                     $preserved_subtotal == $original_subtotal && 
                     $preserved_total == $original_total) {
+
+                    if (function_exists('intersoccer_roster_move_apply_stock_for_completed_move')) {
+                        $stock_ok = intersoccer_roster_move_apply_stock_for_completed_move(
+                            (int) $item_id,
+                            (int) $original_variation_id,
+                            (int) $target_variation_id
+                        );
+                        if (!$stock_ok) {
+                            $record_failure(
+                                (int) $item_id,
+                                (int) $order_id,
+                                __('This player could not be moved. Please try again.', 'intersoccer-reports-rosters'),
+                                true,
+                                'InterSoccer Migration: Stock adjustment failed for item ' . $item_id
+                            );
+                            continue;
+                        }
+                    }
                     
                     if (function_exists('intersoccer_roster_move_record_successful_move')) {
                         $player_label = trim((string) $assigned_attendee);
@@ -1995,10 +2013,6 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
         );
     }
 
-    $product_name = function_exists('intersoccer_get_english_product_name')
-        ? intersoccer_get_english_product_name($variation->get_name(), $parent_id)
-        : $variation->get_name();
-
     $record = $wpdb->get_row(
         $wpdb->prepare(
             "SELECT * FROM {$rosters_table} WHERE order_item_id = %d LIMIT 1",
@@ -2006,6 +2020,24 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
         ),
         ARRAY_A
     ) ?: [];
+
+    if ($item_id > 0 && function_exists('intersoccer_roster_collect_event_data_from_order_item')) {
+        $from_order = intersoccer_roster_collect_event_data_from_order_item($item_id);
+        foreach (['city', 'canton_region'] as $facet_key) {
+            if (trim((string) ($normalized[$facet_key] ?? '')) === '') {
+                if (!empty($from_order[$facet_key])) {
+                    $normalized[$facet_key] = $from_order[$facet_key];
+                } elseif (!empty($record[$facet_key])) {
+                    $normalized[$facet_key] = $record[$facet_key];
+                }
+            }
+        }
+    }
+
+    $product_name = function_exists('intersoccer_get_english_product_name')
+        ? intersoccer_get_english_product_name($variation->get_name(), $parent_id)
+        : $variation->get_name();
+
     $facet_update = function_exists('intersoccer_build_roster_facet_db_update')
         ? intersoccer_build_roster_facet_db_update($normalized, $record, $product_name)
         : [
@@ -2022,7 +2054,17 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
             'girls_only'    => (int) ($normalized['girls_only'] ?? 0),
         ];
 
-    $update_data = array_merge($facet_update, [
+    $booking = function_exists('intersoccer_normalize_roster_booking_columns')
+        ? intersoccer_normalize_roster_booking_columns(
+            $record,
+            intersoccer_read_order_item_booking_fields($item_id)
+        )
+        : [];
+    $booking_update = function_exists('intersoccer_build_roster_booking_db_update')
+        ? intersoccer_build_roster_booking_db_update($booking, $record)
+        : [];
+
+    $update_data = array_merge($facet_update, $booking_update, [
         'girls_only'   => (int) ($normalized['girls_only'] ?? 0),
         'variation_id' => $target_variation_id,
         'product_id'   => $parent_id,

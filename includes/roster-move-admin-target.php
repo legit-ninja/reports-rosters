@@ -8,6 +8,7 @@
 defined('ABSPATH') or die('Restricted access');
 
 require_once __DIR__ . '/roster-move-reason-messages.php';
+require_once __DIR__ . '/roster-move-stock.php';
 
 /**
  * Meta keys that mark a course/camp product or variation as cancelled (first truthy wins).
@@ -851,11 +852,111 @@ function intersoccer_assess_roster_move_admin_target(
 }
 
 /**
+ * Canonical default-language variation IDs shown on the current roster details page.
+ *
+ * @param array<int,object|array<string,mixed>> $roster_rows
+ * @return int[]
+ */
+function intersoccer_roster_move_page_exclude_variation_ids(array $roster_rows): array {
+    $ids = [];
+    foreach ($roster_rows as $row) {
+        $vid = is_object($row) ? (int) ($row->variation_id ?? 0) : (int) ($row['variation_id'] ?? 0);
+        if ($vid <= 0) {
+            continue;
+        }
+        if (function_exists('intersoccer_resolve_variation_for_roster')) {
+            $vid = (int) intersoccer_resolve_variation_for_roster($vid);
+        }
+        if ($vid > 0) {
+            $ids[$vid] = $vid;
+        }
+    }
+
+    return array_values($ids);
+}
+
+/**
+ * @param int[] $exclude_variation_ids
+ * @return int[]
+ */
+function intersoccer_roster_move_normalize_exclude_variation_ids(array $exclude_variation_ids): array {
+    $ids = [];
+    foreach ($exclude_variation_ids as $vid) {
+        $vid = (int) $vid;
+        if ($vid <= 0) {
+            continue;
+        }
+        if (function_exists('intersoccer_resolve_variation_for_roster')) {
+            $vid = (int) intersoccer_resolve_variation_for_roster($vid);
+        }
+        if ($vid > 0) {
+            $ids[$vid] = $vid;
+        }
+    }
+
+    return array_values($ids);
+}
+
+function intersoccer_roster_move_variation_is_excluded(int $variation_id, array $exclude_variation_ids): bool {
+    if ($variation_id <= 0 || $exclude_variation_ids === []) {
+        return false;
+    }
+
+    $canonical = function_exists('intersoccer_resolve_variation_for_roster')
+        ? (int) intersoccer_resolve_variation_for_roster($variation_id)
+        : $variation_id;
+    $normalized_exclude = intersoccer_roster_move_normalize_exclude_variation_ids($exclude_variation_ids);
+
+    return in_array($canonical, $normalized_exclude, true);
+}
+
+/**
+ * Destination list player counts must match capacity checks (active rows per variation).
+ *
+ * @param object[] $rows
+ * @return object[]
+ */
+function intersoccer_roster_move_apply_destination_player_counts(array $rows): array {
+    foreach ($rows as $row) {
+        $vid = (int) ($row->variation_id ?? 0);
+        if ($vid > 0) {
+            $row->current_players = intersoccer_roster_move_active_roster_count($vid);
+        }
+    }
+
+    return $rows;
+}
+
+/**
+ * Legacy destination SQL can return multiple summary rows for one variation_id; sum before applying active counts.
+ *
+ * @param object[] $rows
+ * @return object[]
+ */
+function intersoccer_roster_move_collapse_destination_rows_by_variation(array $rows): array {
+    $indexed = [];
+    foreach ($rows as $row) {
+        $vid = (int) ($row->variation_id ?? 0);
+        if ($vid <= 0) {
+            $indexed[] = $row;
+            continue;
+        }
+        if (!isset($indexed[$vid])) {
+            $indexed[$vid] = $row;
+            continue;
+        }
+        $indexed[$vid]->current_players = (int) ($indexed[$vid]->current_players ?? 0) + (int) ($row->current_players ?? 0);
+    }
+
+    return array_values($indexed);
+}
+
+/**
  * Include sibling variations with zero roster rows so admins can move players back to an emptied roster.
  *
  * @param object[] $available_rows Rows from roster-details destination query.
  * @param int      $product_id     Parent product ID.
- * @param int      $exclude_variation_id Current roster variation (never list as target).
+ * @param int[]    $exclude_variation_ids Variations on the current roster page (canonical IDs).
  * @param string   $activity_type  Activity label stored on roster rows.
  * @param int      $girls_only     0|1 girls_only facet for same-gender group.
  *
@@ -864,30 +965,40 @@ function intersoccer_assess_roster_move_admin_target(
 function intersoccer_roster_move_merge_empty_sibling_variation_targets(
     array $available_rows,
     int $product_id,
-    int $exclude_variation_id,
+    array $exclude_variation_ids,
     string $activity_type,
     int $girls_only
 ): array {
-    if ($product_id <= 0 || !function_exists('wc_get_product')) {
-        return $available_rows;
-    }
-
-    $parent = wc_get_product($product_id);
-    if (!$parent || !is_callable([$parent, 'get_children'])) {
-        return $available_rows;
-    }
+    $exclude_variation_ids = intersoccer_roster_move_normalize_exclude_variation_ids($exclude_variation_ids);
 
     $indexed = [];
     foreach ($available_rows as $row) {
         $vid = (int) ($row->variation_id ?? 0);
-        if ($vid > 0) {
-            $indexed[$vid] = $row;
+        if ($vid <= 0) {
+            continue;
         }
+        if (intersoccer_roster_move_variation_is_excluded($vid, $exclude_variation_ids)) {
+            continue;
+        }
+        if (!isset($indexed[$vid])) {
+            $indexed[$vid] = $row;
+            continue;
+        }
+        $indexed[$vid]->current_players = (int) ($indexed[$vid]->current_players ?? 0) + (int) ($row->current_players ?? 0);
+    }
+
+    if ($product_id <= 0 || !function_exists('wc_get_product')) {
+        return intersoccer_roster_move_apply_destination_player_counts(array_values($indexed));
+    }
+
+    $parent = wc_get_product($product_id);
+    if (!$parent || !is_callable([$parent, 'get_children'])) {
+        return intersoccer_roster_move_apply_destination_player_counts(array_values($indexed));
     }
 
     foreach ((array) $parent->get_children() as $child_id) {
         $child_id = (int) $child_id;
-        if ($child_id <= 0 || $child_id === $exclude_variation_id || isset($indexed[$child_id])) {
+        if ($child_id <= 0 || intersoccer_roster_move_variation_is_excluded($child_id, $exclude_variation_ids) || isset($indexed[$child_id])) {
             continue;
         }
 
@@ -923,5 +1034,5 @@ function intersoccer_roster_move_merge_empty_sibling_variation_targets(
         ];
     }
 
-    return array_values($indexed);
+    return intersoccer_roster_move_apply_destination_player_counts(array_values($indexed));
 }

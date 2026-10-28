@@ -297,7 +297,7 @@ class MovePlayersCapacityPrivacyTest extends TestCase {
             'activity_type' => 'Course',
             'girls_only' => 0,
         ];
-        $merged = $method->invoke($service, [], $base, self::TEST_VARIATION_ID);
+        $merged = $method->invoke($service, [], $base, [(object) ['variation_id' => self::TEST_VARIATION_ID]]);
 
         $this->assertCount(1, $merged);
         $this->assertSame(881002, (int) $merged[0]->variation_id);

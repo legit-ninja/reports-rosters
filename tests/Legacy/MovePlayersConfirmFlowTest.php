@@ -209,7 +209,7 @@ class MovePlayersConfirmFlowTest extends TestCase {
         $merged = intersoccer_roster_move_merge_empty_sibling_variation_targets(
             [],
             self::TEST_PARENT_ID,
-            self::TEST_VARIATION_ID,
+            [self::TEST_VARIATION_ID],
             'Course',
             0
         );

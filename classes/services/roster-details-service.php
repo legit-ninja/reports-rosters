@@ -201,11 +201,11 @@ class RosterDetailsService {
         }
 
         $availableRosters = $this->mergeEmptySiblingVariationTargets(
-            $this->buildRosterSummaries($baseRoster, $filters['variation_id'], false),
+            $this->buildRosterSummaries($baseRoster, $rosters, false),
             $baseRoster,
-            (int) $filters['variation_id']
+            $rosters
         );
-        $crossGenderRosters = $this->buildRosterSummaries($baseRoster, $filters['variation_id'], true);
+        $crossGenderRosters = $this->buildRosterSummaries($baseRoster, $rosters, true);
         $unknownCount = $this->countUnknownAttendees($rosters);
 
         return [
@@ -699,7 +699,7 @@ class RosterDetailsService {
         }
     }
 
-    private function mergeEmptySiblingVariationTargets(array $summaries, object $baseRoster, int $currentVariationId): array {
+    private function mergeEmptySiblingVariationTargets(array $summaries, object $baseRoster, array $rosterRows): array {
         $this->ensureRosterMoveAdminTargetLoaded();
         if (!function_exists('intersoccer_roster_move_merge_empty_sibling_variation_targets')) {
             $this->logger->error('Roster move empty-sibling merge skipped: roster-move-admin-target.php unavailable');
@@ -707,16 +707,20 @@ class RosterDetailsService {
             return $summaries;
         }
 
+        $excludeIds = function_exists('intersoccer_roster_move_page_exclude_variation_ids')
+            ? intersoccer_roster_move_page_exclude_variation_ids($rosterRows)
+            : [];
+
         return intersoccer_roster_move_merge_empty_sibling_variation_targets(
             $summaries,
             (int) ($baseRoster->product_id ?? 0),
-            $currentVariationId,
+            $excludeIds,
             (string) ($baseRoster->activity_type ?? ''),
             (int) ($baseRoster->girls_only ?? 0)
         );
     }
 
-    private function buildRosterSummaries(object $baseRoster, int $currentVariationId, bool $crossGender): array {
+    private function buildRosterSummaries(object $baseRoster, array $rosterRows, bool $crossGender): array {
         $activityType = $baseRoster->activity_type ?? '';
 
         if (!$activityType) {
@@ -726,13 +730,33 @@ class RosterDetailsService {
         $collection = $this->repository->where(['activity_type' => $activityType]);
         $summaries = [];
 
+        $excludeVariationIds = function_exists('intersoccer_roster_move_page_exclude_variation_ids')
+            ? intersoccer_roster_move_page_exclude_variation_ids($rosterRows)
+            : [];
+        if (function_exists('intersoccer_roster_move_normalize_exclude_variation_ids')) {
+            $excludeVariationIds = intersoccer_roster_move_normalize_exclude_variation_ids($excludeVariationIds);
+        }
+
         foreach ($collection as $model) {
             if ((int) $model->is_placeholder === 1) {
                 continue;
             }
 
-            if ((int) $model->variation_id === $currentVariationId) {
-                continue;
+            $modelVariationId = (int) $model->variation_id;
+            if ($modelVariationId > 0) {
+                if (function_exists('intersoccer_roster_move_variation_is_excluded')) {
+                    if (intersoccer_roster_move_variation_is_excluded($modelVariationId, $excludeVariationIds)) {
+                        continue;
+                    }
+                } elseif (in_array(
+                    function_exists('intersoccer_resolve_variation_for_roster')
+                        ? (int) intersoccer_resolve_variation_for_roster($modelVariationId)
+                        : $modelVariationId,
+                    $excludeVariationIds,
+                    true
+                )) {
+                    continue;
+                }
             }
 
             $status = get_post_status($model->order_id);
@@ -813,6 +837,10 @@ class RosterDetailsService {
         $labels = array_map(function ($summary) {
             return trim(((string) ($summary->product_name ?? '')) . ' | ' . ((string) ($summary->venue ?? '')) . ' | ' . ((string) ($summary->age_group ?? '')));
         }, $summaryValues);
+
+        if (function_exists('intersoccer_roster_move_apply_destination_player_counts')) {
+            $summaryValues = intersoccer_roster_move_apply_destination_player_counts($summaryValues);
+        }
 
         return $summaryValues;
     }
