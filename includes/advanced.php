@@ -1429,6 +1429,7 @@ function intersoccer_move_players_ajax() {
 
     foreach ($order_item_ids as $item_id) {
         $log_line('InterSoccer Migration: Processing item ID: ' . $item_id);
+        $history_to_snapshot = null;
         
         try {
             // Get order from item
@@ -1482,6 +1483,9 @@ function intersoccer_move_players_ajax() {
 
             // Log original state
             $original_variation_id = $item->get_variation_id();
+            $history_from_snapshot = function_exists('intersoccer_roster_history_snapshot_from_item')
+                ? intersoccer_roster_history_snapshot_from_item((int) $item_id)
+                : null;
             $original_product_id = $item->get_product_id();
             $original_subtotal = $item->get_subtotal();
             $original_total = $item->get_total();
@@ -1639,6 +1643,14 @@ function intersoccer_move_players_ajax() {
                             true
                         );
                     }
+                    $preserved_roster_history = '';
+                    if (function_exists('intersoccer_roster_history_meta_key')) {
+                        $preserved_roster_history = wc_get_order_item_meta(
+                            (int) $item_id,
+                            intersoccer_roster_history_meta_key(),
+                            true
+                        );
+                    }
                     $player_meta_snapshot = intersoccer_migration_snapshot_player_attendee_meta($item);
                     intersoccer_migration_remove_variation_meta_for_move($item, $human_lookup);
                     if ($preserved_stock_delta !== '' && $preserved_stock_delta !== null
@@ -1646,6 +1658,13 @@ function intersoccer_move_players_ajax() {
                         $item->update_meta_data(
                             intersoccer_roster_move_stock_delta_meta_key(),
                             $preserved_stock_delta
+                        );
+                    }
+                    if ($preserved_roster_history !== '' && $preserved_roster_history !== null
+                        && function_exists('intersoccer_roster_history_meta_key')) {
+                        $item->update_meta_data(
+                            intersoccer_roster_history_meta_key(),
+                            $preserved_roster_history
                         );
                     }
                     error_log(
@@ -1746,6 +1765,9 @@ function intersoccer_move_players_ajax() {
                             );
                         }
                     }
+                    $history_to_snapshot = function_exists('intersoccer_roster_history_snapshot_from_item')
+                        ? intersoccer_roster_history_snapshot_from_item((int) $item_id)
+                        : null;
                 } catch (Exception $e) {
                     $log_line('InterSoccer Migration: Failed to update roster for item ' . $item_id . ': ' . $e->getMessage());
                     $migration_success = false;
@@ -1788,10 +1810,12 @@ function intersoccer_move_players_ajax() {
                     $preserved_total == $original_total) {
 
                     if (function_exists('intersoccer_roster_move_apply_stock_for_completed_move')) {
+                        $stock_applied = ['applied_from' => 0, 'applied_to' => 0];
                         $stock_ok = intersoccer_roster_move_apply_stock_for_completed_move(
                             (int) $item_id,
                             (int) $original_variation_id,
-                            (int) $target_variation_id
+                            (int) $target_variation_id,
+                            $stock_applied
                         );
                         if (!$stock_ok) {
                             $record_failure(
@@ -1803,6 +1827,23 @@ function intersoccer_move_players_ajax() {
                             );
                             continue;
                         }
+                    } else {
+                        $stock_applied = ['applied_from' => 0, 'applied_to' => 0];
+                    }
+
+                    if (function_exists('intersoccer_roster_history_append_move')) {
+                        intersoccer_roster_history_append_move(
+                            (int) $item_id,
+                            (int) $order_id,
+                            $history_from_snapshot,
+                            isset($history_to_snapshot) ? $history_to_snapshot : null,
+                            [
+                                'move_anyway'        => $confirmed_reason_codes !== [],
+                                'overridden_reasons' => array_values($confirmed_reason_codes),
+                                'applied_from'       => (int) ($stock_applied['applied_from'] ?? 0),
+                                'applied_to'         => (int) ($stock_applied['applied_to'] ?? 0),
+                            ]
+                        );
                     }
                     
                     if (function_exists('intersoccer_roster_move_record_successful_move')) {

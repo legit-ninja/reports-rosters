@@ -1008,6 +1008,8 @@ function intersoccer_render_roster_details_page() {
         echo '<th style="width: 90px;">' . esc_html__('Shirt Size', 'intersoccer-reports-rosters') . '</th>';
         echo '<th style="width: 90px;">' . esc_html__('Shorts Size', 'intersoccer-reports-rosters') . '</th>';
     }
+
+    echo '<th style="width: 120px;">History</th>';
     
     echo '</tr>';
     echo '</thead><tbody>';
@@ -1104,6 +1106,14 @@ function intersoccer_render_roster_details_page() {
             echo '<td>' . esc_html($row->shirt_size ?? 'N/A') . '</td>';
             echo '<td>' . esc_html($row->shorts_size ?? 'N/A') . '</td>';
         }
+
+        echo '<td>';
+        if (function_exists('intersoccer_roster_history_render_admin_cell')) {
+            echo intersoccer_roster_history_render_admin_cell((int) ($row->order_item_id ?? 0));
+        } else {
+            echo '—';
+        }
+        echo '</td>';
         
         echo '</tr>';
     }

@@ -130,6 +130,8 @@
             <file>tests/Legacy/MovePlayersRoundTripRosterDataTest.php</file>
             <file>tests/Legacy/MovePlayersAjaxRoundTripRosterDataTest.php</file>
             <file>tests/Legacy/MovePlayersStockAdjustTest.php</file>
+            <file>tests/Legacy/MovePlayersHistoryTest.php</file>
+            <file>tests/Legacy/MovePlayersAttendeeFieldsTest.php</file>
             <directory>tests/ReportAccuracy</directory>
         </testsuite>
         <testsuite name="Complete">

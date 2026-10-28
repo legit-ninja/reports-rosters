@@ -1281,6 +1281,10 @@ if (!function_exists('intersoccer_migration_prune_unexpected_move_meta_keys')) {
                 && $key === intersoccer_roster_move_stock_delta_meta_key()) {
                 continue;
             }
+            if (function_exists('intersoccer_roster_history_meta_key')
+                && $key === intersoccer_roster_history_meta_key()) {
+                continue;
+            }
             if (!intersoccer_migration_is_variation_rewrite_meta_key($key, $human_lookup)) {
                 continue;
             }

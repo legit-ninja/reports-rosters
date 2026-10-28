@@ -176,15 +176,26 @@ if (!function_exists('intersoccer_roster_move_reverse_stock_delta')) {
 if (!function_exists('intersoccer_roster_move_apply_stock_for_completed_move')) {
     /**
      * Adjust managed stock after a successful roster move. Returns false when WC stock update fails.
+     *
+     * When $applied is passed, receives signed deltas for this move's from/to variations
+     * (same values as the stock-delta record on forward moves; reversal mapping on move-back).
+     *
+     * @param array{applied_from:int,applied_to:int}|null $applied
      */
     function intersoccer_roster_move_apply_stock_for_completed_move(
         int $order_item_id,
         int $original_variation_id,
-        int $target_variation_id
+        int $target_variation_id,
+        ?array &$applied = null
     ): bool {
+        $zero = ['applied_from' => 0, 'applied_to' => 0];
         $from_id = intersoccer_roster_move_resolve_variation_for_stock($original_variation_id);
         $to_id = intersoccer_roster_move_resolve_variation_for_stock($target_variation_id);
         if ($from_id <= 0 || $to_id <= 0 || $from_id === $to_id) {
+            if ($applied !== null) {
+                $applied = $zero;
+            }
+
             return true;
         }
 
@@ -192,6 +203,12 @@ if (!function_exists('intersoccer_roster_move_apply_stock_for_completed_move')) 
         if ($existing
             && (int) $existing['to_variation_id'] === $from_id
             && (int) $existing['from_variation_id'] === $to_id) {
+            if ($applied !== null) {
+                $applied = [
+                    'applied_from' => -(int) ($existing['applied_to'] ?? 0),
+                    'applied_to'   => -(int) ($existing['applied_from'] ?? 0),
+                ];
+            }
             $ok = intersoccer_roster_move_reverse_stock_delta($existing);
             if ($ok) {
                 intersoccer_roster_move_clear_stock_delta($order_item_id);
@@ -203,6 +220,10 @@ if (!function_exists('intersoccer_roster_move_apply_stock_for_completed_move')) 
         $from_product = wc_get_product($from_id);
         $to_product = wc_get_product($to_id);
         if (!$from_product instanceof WC_Product_Variation || !$to_product instanceof WC_Product_Variation) {
+            if ($applied !== null) {
+                $applied = $zero;
+            }
+
             return false;
         }
 
@@ -211,6 +232,10 @@ if (!function_exists('intersoccer_roster_move_apply_stock_for_completed_move')) 
 
         if ($applied_from > 0) {
             if (!intersoccer_roster_move_wc_update_stock($from_product, $applied_from, 'increase')) {
+                if ($applied !== null) {
+                    $applied = $zero;
+                }
+
                 return false;
             }
         }
@@ -219,9 +244,19 @@ if (!function_exists('intersoccer_roster_move_apply_stock_for_completed_move')) 
                 if ($applied_from > 0) {
                     intersoccer_roster_move_apply_stock_delta_on_variation($from_id, -$applied_from);
                 }
+                if ($applied !== null) {
+                    $applied = $zero;
+                }
 
                 return false;
             }
+        }
+
+        if ($applied !== null) {
+            $applied = [
+                'applied_from' => $applied_from,
+                'applied_to'   => $applied_to,
+            ];
         }
 
         intersoccer_roster_move_write_stock_delta($order_item_id, [
