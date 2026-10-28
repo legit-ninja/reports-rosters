@@ -1891,7 +1891,7 @@ msgstr[1] "%1$s Teilnehmer nach %2$s verschoben."
 #, php-format
 msgid "%1$s of %2$s players moved. These couldn't be moved:"
 msgid_plural "%1$s of %2$s players moved. These couldn't be moved:"
-msgstr[0] "%1$s von %2$s Teilnehmer verschoben. Diese konnten nicht verschoben werden:"
+msgstr[0] "%1$s von %2$s Teilnehmern verschoben. Diese konnten nicht verschoben werden:"
 msgstr[1] "%1$s von %2$s Teilnehmern verschoben. Diese konnten nicht verschoben werden:"
 
 #: includes/roster-move-reason-messages.php:93
