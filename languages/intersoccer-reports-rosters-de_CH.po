@@ -1810,3 +1810,89 @@ msgstr "Alle Veranstaltungen"
 #, php-format
 msgid "Event type: %s"
 msgstr "Veranstaltungstyp: %s"
+#: includes/roster-move-reason-messages.php:35
+msgid "This roster isn't open for purchase"
+msgstr "Diese Gruppe ist nicht buchbar"
+
+#. translators: %1$d: places taken, %2$d: capacity
+#: includes/roster-move-reason-messages.php:40
+#, php-format
+msgid "This roster is full: %1$d of %2$d places taken."
+msgstr "Diese Gruppe ist voll: %1$d von %2$d Plätzen belegt."
+
+#. translators: %d: number of places over capacity
+#: includes/roster-move-reason-messages.php:42
+#, php-format
+msgid "Moving will put it over capacity by %d."
+msgstr "Danach ist die Gruppe um %d überbucht."
+
+#: includes/roster-move-reason-messages.php:43
+msgid "This roster is marked out of stock."
+msgstr "Diese Gruppe ist als ausverkauft markiert."
+
+#: includes/roster-move-reason-messages.php:44
+msgid "This roster is hidden from the shop."
+msgstr "Diese Gruppe ist im Shop ausgeblendet."
+
+#: includes/roster-move-reason-messages.php:45
+msgid "This roster is closed for sale."
+msgstr "Der Verkauf für diese Gruppe ist geschlossen."
+
+#: includes/roster-move-reason-messages.php:46
+msgid "This roster can't be bought right now."
+msgstr "Diese Gruppe ist zurzeit nicht buchbar."
+
+#: includes/roster-move-reason-messages.php:47
+msgid "Moving still works. The players keep their details and orders. Customers still can't buy this roster."
+msgstr "Verschieben ist trotzdem möglich. Teilnehmerdaten und Bestellungen bleiben erhalten. Kunden können diese Gruppe weiterhin nicht buchen."
+
+#: includes/roster-move-reason-messages.php:48
+msgid "Move anyway"
+msgstr "Trotzdem verschieben"
+
+#: includes/roster-editor.php:705
+#: includes/roster-editor.php:1124
+#: includes/roster-move-reason-messages.php:49
+msgid "Cancel"
+msgstr "Abbrechen"
+
+#: classes/Admin/asset-manager.php:296
+#: includes/roster-move-reason-messages.php:50
+msgid "Checking..."
+msgstr "Wird geprüft..."
+
+#: includes/advanced.php:1367
+#: includes/roster-move-reason-messages.php:52
+msgid "This roster is a different type (Girls Only or Regular). Tick the option above to move these players."
+msgstr "Diese Gruppe ist von einem anderen Typ (Girls Only oder Regular). Aktivieren Sie die Option oben, um diese Teilnehmer zu verschieben."
+
+#: includes/roster-move-reason-messages.php:53
+msgid "Try again"
+msgstr "Erneut versuchen"
+
+#: includes/roster-move-reason-messages.php:54
+msgid "Dismiss"
+msgstr "Schliessen"
+
+#: includes/roster-move-reason-messages.php:68
+#: includes/roster-move-reason-messages.php:74
+#: includes/roster-move-reason-messages.php:350
+#, php-format
+msgid "Moved %1$s player to %2$s."
+msgid_plural "Moved %1$s players to %2$s."
+msgstr[0] "%1$s Teilnehmer nach %2$s verschoben."
+msgstr[1] "%1$s Teilnehmer nach %2$s verschoben."
+
+#: includes/roster-move-reason-messages.php:80
+#: includes/roster-move-reason-messages.php:87
+#: includes/roster-move-reason-messages.php:366
+#, php-format
+msgid "%1$s of %2$s players moved. These couldn't be moved:"
+msgid_plural "%1$s of %2$s players moved. These couldn't be moved:"
+msgstr[0] "%1$s von %2$s Teilnehmern verschoben. Diese konnten nicht verschoben werden:"
+msgstr[1] "%1$s von %2$s Teilnehmern verschoben. Diese konnten nicht verschoben werden:"
+
+#: includes/roster-move-reason-messages.php:93
+#, php-format
+msgid "%1$s: %2$s"
+msgstr "%1$s: %2$s"

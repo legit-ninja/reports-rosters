@@ -311,7 +311,8 @@ class MovePlayersAjaxPartialFailureTest extends TestCase {
         $this->assertSame(1, (int) ($data['moved_count'] ?? 0));
         $this->assertSame(2, (int) ($data['total_count'] ?? 0));
         $this->assertNotSame('', (string) ($data['partial_summary'] ?? ''));
-        $this->assertStringContainsString('players moved', (string) $data['partial_summary']);
+        $this->assertStringContainsString('players moved. These couldn\'t be moved:', (string) $data['partial_summary']);
+        $this->assertStringContainsString('1 of 2', (string) $data['partial_summary']);
         $this->assertSame([self::ITEM_OK], $data['moved_order_item_ids'] ?? []);
         $failed = $data['failed'] ?? [];
         $this->assertCount(1, $failed);

@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-28T00:00:13+00:00\n"
+"POT-Creation-Date: 2026-10-28T01:33:09+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: intersoccer-reports-rosters\n"
@@ -2381,7 +2381,7 @@ msgstr ""
 #: includes/advanced.php:736
 #: includes/advanced.php:2935
 #: includes/roster-details.php:2190
-#: includes/roster-move-reason-messages.php:95
+#: includes/roster-move-reason-messages.php:96
 msgid "Unknown error occurred."
 msgstr ""
 
@@ -5142,7 +5142,7 @@ msgid "Select a destination roster..."
 msgstr ""
 
 #: includes/roster-details.php:1188
-#: includes/roster-move-reason-messages.php:314
+#: includes/roster-move-reason-messages.php:315
 msgid "Untitled roster"
 msgstr ""
 
@@ -5312,7 +5312,7 @@ msgstr ""
 
 #: includes/roster-details.php:1609
 #: includes/roster-details.php:1646
-#: includes/roster-move-reason-messages.php:93
+#: includes/roster-move-reason-messages.php:94
 #: includes/rosters.php:743
 #: includes/rosters.php:765
 #: includes/rosters.php:808
@@ -5751,7 +5751,7 @@ msgstr ""
 
 #: includes/roster-move-reason-messages.php:68
 #: includes/roster-move-reason-messages.php:74
-#: includes/roster-move-reason-messages.php:349
+#: includes/roster-move-reason-messages.php:350
 #, php-format
 msgid "Moved %1$s player to %2$s."
 msgid_plural "Moved %1$s players to %2$s."
@@ -5759,20 +5759,20 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: includes/roster-move-reason-messages.php:80
-#: includes/roster-move-reason-messages.php:86
-#: includes/roster-move-reason-messages.php:365
+#: includes/roster-move-reason-messages.php:87
+#: includes/roster-move-reason-messages.php:366
 #, php-format
-msgid "%1$s of %2$s player moved. %3$s couldn't be moved:"
-msgid_plural "%1$s of %2$s players moved. %3$s couldn't be moved:"
+msgid "%1$s of %2$s players moved. These couldn't be moved:"
+msgid_plural "%1$s of %2$s players moved. These couldn't be moved:"
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/roster-move-reason-messages.php:92
+#: includes/roster-move-reason-messages.php:93
 #, php-format
 msgid "%1$s: %2$s"
 msgstr ""
 
-#: includes/roster-move-reason-messages.php:94
+#: includes/roster-move-reason-messages.php:95
 msgid "Permission denied. Please refresh the page and try again."
 msgstr ""
 

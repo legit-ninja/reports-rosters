@@ -77,15 +77,16 @@ function intersoccer_roster_move_js_localize_strings(): array {
         2,
         'intersoccer-reports-rosters'
     );
-    $strings['partial_one'] = _n(
-        '%1$s of %2$s player moved. %3$s couldn\'t be moved:',
-        '%1$s of %2$s players moved. %3$s couldn\'t be moved:',
+    $partial_summary = _n(
+        '%1$s of %2$s players moved. These couldn\'t be moved:',
+        '%1$s of %2$s players moved. These couldn\'t be moved:',
         1,
         'intersoccer-reports-rosters'
     );
+    $strings['partial_one'] = $partial_summary;
     $strings['partial_many'] = _n(
-        '%1$s of %2$s player moved. %3$s couldn\'t be moved:',
-        '%1$s of %2$s players moved. %3$s couldn\'t be moved:',
+        '%1$s of %2$s players moved. These couldn\'t be moved:',
+        '%1$s of %2$s players moved. These couldn\'t be moved:',
         2,
         'intersoccer-reports-rosters'
     );
@@ -363,9 +364,9 @@ function intersoccer_roster_move_format_success_message(int $moved_count, string
 function intersoccer_roster_move_format_partial_summary(int $moved, int $total, int $failed): string {
     $total = max(1, $total);
     $template = _n(
-        '%1$s of %2$s player moved. %3$s couldn\'t be moved:',
-        '%1$s of %2$s players moved. %3$s couldn\'t be moved:',
-        $total,
+        '%1$s of %2$s players moved. These couldn\'t be moved:',
+        '%1$s of %2$s players moved. These couldn\'t be moved:',
+        $moved,
         'intersoccer-reports-rosters'
     );
 
@@ -376,8 +377,7 @@ function intersoccer_roster_move_format_partial_summary(int $moved, int $total, 
     return sprintf(
         $template,
         $format_count($moved),
-        $format_count($total),
-        $format_count($failed)
+        $format_count($total)
     );
 }
 

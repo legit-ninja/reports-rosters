@@ -883,6 +883,14 @@ if (!function_exists('_e')) {
 
 if (!function_exists('_n')) {
     function _n($single, $plural, $number, $domain = 'default') {
+        if (!empty($GLOBALS['intersoccer_test_record_n_calls'])) {
+            if (!isset($GLOBALS['intersoccer_test_recorded_n_numbers'])
+                || !is_array($GLOBALS['intersoccer_test_recorded_n_numbers'])) {
+                $GLOBALS['intersoccer_test_recorded_n_numbers'] = [];
+            }
+            $GLOBALS['intersoccer_test_recorded_n_numbers'][] = (int) $number;
+        }
+
         return $number === 1 ? $single : $plural;
     }
 }
