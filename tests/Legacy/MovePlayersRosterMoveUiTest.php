@@ -35,7 +35,33 @@ class MovePlayersRosterMoveUiTest extends TestCase {
         $this->assertStringContainsString("'status'", $source);
         $this->assertStringContainsString('rosterMoveInlinePanel', $source);
         $this->assertStringContainsString('isrrRosterMoveL10n', $source);
-        $this->assertStringContainsString('roster-move-reason-messages.php', $source);
+        $this->assertStringContainsString('roster-move-admin-target.php', $source);
         $this->assertStringContainsString('rosterMoveConfirmHeading', $source);
+    }
+
+    public function test_partial_panel_try_again_only_when_retryable_failures_exist(): void {
+        $handler = $this->extractRosterMoveClickHandler();
+        $this->assertStringContainsString('retryableFailedIds.length > 0', $handler);
+        $this->assertStringContainsString('id="rosterMoveTryAgain"', $handler);
+    }
+
+    public function test_run_move_ajax_does_not_post_empty_retry_item_list(): void {
+        $handler = $this->extractRosterMoveClickHandler();
+        $this->assertStringContainsString('if (!retryIds.length)', $handler);
+        $this->assertStringContainsString('return;', $handler);
+        $this->assertStringNotContainsString('Permission denied. Please refresh', $handler);
+        $this->assertStringContainsString("rosterMoveL10n('permission_denied')", $handler);
+    }
+
+    private function extractRosterMoveClickHandler(): string {
+        $path = dirname(__DIR__, 2) . '/includes/roster-details.php';
+        $source = file_get_contents($path);
+        $this->assertIsString($source);
+
+        if (!preg_match("/applyBulk\\.on\\('click',\\s*function\\(\\)\\s*\\{(.+?)\\n\\s*\\}\\);\\s*\\n\\s*\\/\\/ Add keyboard shortcuts/s", $source, $matches)) {
+            $this->fail('Could not extract roster move click handler from roster-details.php');
+        }
+
+        return $matches[1];
     }
 }

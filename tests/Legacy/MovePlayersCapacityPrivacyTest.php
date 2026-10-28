@@ -184,6 +184,7 @@ class MovePlayersCapacityPrivacyTest extends TestCase {
             'gender_block',
             'failed_player_line',
             'ajax_error',
+            'permission_denied',
             'unknown_error',
             'partial_one',
             'partial_many',

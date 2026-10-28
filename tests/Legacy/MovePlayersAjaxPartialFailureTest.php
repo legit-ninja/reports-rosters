@@ -14,6 +14,8 @@ class MovePlayersAjaxPartialFailureTest extends TestCase {
 
     use MovePlayersTestIsolationTrait;
 
+    private static bool $rosterRowFilterRegistered = false;
+
     private const ORDER_ID = 89001;
     private const ITEM_OK = 89011;
     private const ITEM_ON_TARGET = 89012;
@@ -27,6 +29,7 @@ class MovePlayersAjaxPartialFailureTest extends TestCase {
 
     protected function setUp(): void {
         parent::setUp();
+        $GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
         $this->resetMovePlayersTestGlobals();
         $this->ensureCourseMetaStub();
 
@@ -47,6 +50,26 @@ class MovePlayersAjaxPartialFailureTest extends TestCase {
         require_once dirname(__DIR__, 2) . '/includes/roster-move-admin-target.php';
         require_once dirname(__DIR__, 2) . '/includes/roster-move-audit.php';
         require_once dirname(__DIR__, 2) . '/includes/advanced.php';
+
+        if (!self::$rosterRowFilterRegistered) {
+            add_filter(
+                'intersoccer_roster_move_order_item_has_roster_row',
+                static function ($has, $order_item_id) {
+                    if ($has !== null) {
+                        return $has;
+                    }
+                    $map = $GLOBALS['intersoccer_test_roster_row_filter_map'] ?? null;
+                    if (!is_array($map) || !array_key_exists((int) $order_item_id, $map)) {
+                        return null;
+                    }
+
+                    return (bool) $map[(int) $order_item_id];
+                },
+                10,
+                2
+            );
+            self::$rosterRowFilterRegistered = true;
+        }
     }
 
     protected function tearDown(): void {
@@ -57,7 +80,8 @@ class MovePlayersAjaxPartialFailureTest extends TestCase {
             unlink($this->tempErrorLog);
         }
         unset(
-            $GLOBALS['intersoccer_test_roster_row_ids_by_item'],
+            $GLOBALS['intersoccer_test_emit_wp_hooks'],
+            $GLOBALS['intersoccer_test_roster_row_filter_map'],
             $GLOBALS['intersoccer_test_player_first_name_by_item'],
             $GLOBALS['intersoccer_test_capture_roster_move_logs'],
             $GLOBALS['intersoccer_test_captured_roster_move_logs'],
@@ -138,7 +162,12 @@ class MovePlayersAjaxPartialFailureTest extends TestCase {
             self::ITEM_NO_ROSTER => 0,
         ];
 
-        $GLOBALS['intersoccer_test_roster_row_ids_by_item'] = $roster_rows;
+        $GLOBALS['intersoccer_test_roster_row_filter_map'] = array_map(
+            static function ($row_id) {
+                return (int) $row_id > 0;
+            },
+            $roster_rows
+        );
         $GLOBALS['intersoccer_test_player_first_name_by_item'] = [
             self::ITEM_OK => 'Alex',
             self::ITEM_ON_TARGET => 'Sam',
@@ -304,7 +333,7 @@ class MovePlayersAjaxPartialFailureTest extends TestCase {
         $failed_id = (int) ($first['data']['failed'][0]['order_item_id'] ?? 0);
         $this->assertSame(self::ITEM_NO_ROSTER, $failed_id);
 
-        $GLOBALS['intersoccer_test_roster_row_ids_by_item'][self::ITEM_NO_ROSTER] = 903;
+        $GLOBALS['intersoccer_test_roster_row_filter_map'][self::ITEM_NO_ROSTER] = true;
 
         $retry = $this->invokeMoveAjax([
             'target_variation_id' => self::TARGET_VAR,
@@ -338,6 +367,65 @@ class MovePlayersAjaxPartialFailureTest extends TestCase {
         $this->assertStringContainsString('0 of 2', (string) $data['partial_summary']);
         $this->assertSame([], $data['moved_order_item_ids'] ?? null);
         $this->assertCount(2, $data['failed'] ?? []);
+    }
+
+    public function test_partial_batch_with_only_non_retryable_failures_marks_retryable_false(): void {
+        $this->installWorld();
+        $response = $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_OK, self::ITEM_ON_TARGET],
+            'confirm_warnings' => '1',
+        ]);
+
+        $this->assertTrue($response['success'] ?? false);
+        $failed = $response['data']['failed'] ?? [];
+        $this->assertNotEmpty($failed);
+        foreach ($failed as $entry) {
+            $this->assertFalse($entry['retryable'] ?? true);
+        }
+    }
+
+    public function test_retry_moves_only_preflight_failed_item_via_filter(): void {
+        $this->installWorld();
+        $block_once = true;
+        add_filter(
+            'intersoccer_roster_move_preflight_failure',
+            static function ($failure, $item_id) use (&$block_once) {
+                if ($block_once && (int) $item_id === self::ITEM_NO_ROSTER) {
+                    $block_once = false;
+
+                    return [
+                        'reason' => __('Temporary move block.', 'intersoccer-reports-rosters'),
+                        'retryable' => true,
+                    ];
+                }
+
+                return $failure;
+            },
+            10,
+            4
+        );
+
+        $first = $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_OK, self::ITEM_NO_ROSTER],
+            'confirm_warnings' => '1',
+        ]);
+        $this->assertTrue($first['success'] ?? false);
+        $failed_id = (int) ($first['data']['failed'][0]['order_item_id'] ?? 0);
+        $this->assertSame(self::ITEM_NO_ROSTER, $failed_id);
+        $this->assertTrue($first['data']['failed'][0]['retryable'] ?? false);
+
+        $GLOBALS['intersoccer_test_roster_row_filter_map'][self::ITEM_NO_ROSTER] = true;
+
+        $retry = $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [$failed_id],
+            'confirm_warnings' => '1',
+        ]);
+        $this->assertTrue($retry['success'] ?? false);
+        $this->assertSame(1, (int) ($retry['data']['moved_count'] ?? 0));
+        $this->assertSame(self::TARGET_VAR, (int) ($GLOBALS['intersoccer_test_wc_order_item_data'][$failed_id]['variation_id'] ?? 0));
     }
 
     public function test_mixed_batch_records_same_variation_skip_as_non_retryable_failure(): void {
