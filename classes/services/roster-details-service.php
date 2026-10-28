@@ -688,8 +688,22 @@ class RosterDetailsService {
      * @param object[] $summaries
      * @return object[]
      */
+    private function ensureRosterMoveAdminTargetLoaded(): void {
+        if (function_exists('intersoccer_roster_move_merge_empty_sibling_variation_targets')) {
+            return;
+        }
+
+        $path = dirname(__DIR__, 2) . '/includes/roster-move-admin-target.php';
+        if (is_readable($path)) {
+            require_once $path;
+        }
+    }
+
     private function mergeEmptySiblingVariationTargets(array $summaries, object $baseRoster, int $currentVariationId): array {
+        $this->ensureRosterMoveAdminTargetLoaded();
         if (!function_exists('intersoccer_roster_move_merge_empty_sibling_variation_targets')) {
+            $this->logger->error('Roster move empty-sibling merge skipped: roster-move-admin-target.php unavailable');
+
             return $summaries;
         }
 

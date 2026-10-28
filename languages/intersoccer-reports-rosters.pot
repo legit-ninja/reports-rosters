@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-27T23:30:06+00:00\n"
+"POT-Creation-Date: 2026-10-28T00:00:13+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: intersoccer-reports-rosters\n"
@@ -363,19 +363,19 @@ msgstr ""
 #: classes/Ajax/rosters-tabs-ajax-handler.php:67
 #: includes/advanced.php:34
 #: includes/advanced.php:1288
-#: includes/advanced.php:2107
-#: includes/advanced.php:2940
-#: includes/advanced.php:2981
-#: includes/advanced.php:3022
-#: includes/advanced.php:3071
-#: includes/advanced.php:3119
+#: includes/advanced.php:2125
+#: includes/advanced.php:2958
+#: includes/advanced.php:2999
+#: includes/advanced.php:3040
+#: includes/advanced.php:3089
+#: includes/advanced.php:3137
 #: includes/birthdays.php:257
 #: includes/office365-settings.php:317
 #: includes/oop-adapter.php:723
-#: includes/roster-details.php:473
-#: includes/roster-details.php:499
-#: includes/roster-details.php:507
-#: includes/roster-details.php:518
+#: includes/roster-details.php:475
+#: includes/roster-details.php:501
+#: includes/roster-details.php:509
+#: includes/roster-details.php:520
 #: includes/roster-export-all-handler.php:236
 #: includes/rosters.php:1366
 #: includes/rosters.php:1423
@@ -440,8 +440,8 @@ msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:177
 #: classes/Ajax/admin-tools-ajax-handler.php:403
-#: includes/advanced.php:2950
-#: includes/advanced.php:2991
+#: includes/advanced.php:2968
+#: includes/advanced.php:3009
 msgid "Event signature is required."
 msgstr ""
 
@@ -451,65 +451,65 @@ msgid "Operation failed."
 msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:198
-#: includes/advanced.php:2969
+#: includes/advanced.php:2987
 #, php-format
 msgid "Roster closed successfully. %d entries updated."
 msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:199
-#: includes/advanced.php:3010
+#: includes/advanced.php:3028
 #, php-format
 msgid "Roster reopened successfully. %d entries updated."
 msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:237
-#: includes/advanced.php:3034
-#: includes/advanced.php:3083
+#: includes/advanced.php:3052
+#: includes/advanced.php:3101
 msgid "No rosters selected."
 msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:256
-#: includes/advanced.php:3058
+#: includes/advanced.php:3076
 #, php-format
 msgid "%d roster(s) closed successfully. %d entries updated."
 msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:257
-#: includes/advanced.php:3106
+#: includes/advanced.php:3124
 #, php-format
 msgid "%d roster(s) reopened successfully. %d entries updated."
 msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:279
-#: includes/advanced.php:3130
+#: includes/advanced.php:3148
 msgid "Season is required."
 msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:291
-#: includes/advanced.php:3142
+#: includes/advanced.php:3160
 msgid "Year is required to close a season. Evergreen seasons (e.g. Autumn) need an explicit year so other years are not closed."
 msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:309
-#: includes/advanced.php:3167
+#: includes/advanced.php:3185
 #, php-format
 msgid "No active rosters found for season \"%s\"."
 msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:339
-#: includes/advanced.php:3197
+#: includes/advanced.php:3215
 #, php-format
 msgid "No active rosters found for season \"%1$s\" in year %2$d."
 msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:362
-#: includes/advanced.php:3224
+#: includes/advanced.php:3242
 #: includes/rosters.php:1057
 msgid "Failed to close rosters in season."
 msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:368
-#: includes/advanced.php:3233
+#: includes/advanced.php:3251
 #, php-format
 msgid "Successfully closed %1$d roster(s) in season \"%2$s\" (%3$d). %4$d entries updated."
 msgstr ""
@@ -771,7 +771,7 @@ msgstr ""
 #: includes/player-camp-status.php:924
 #: includes/player-course-status-admin.php:814
 #: includes/reports.php:661
-#: includes/roster-details.php:945
+#: includes/roster-details.php:947
 #: includes/roster-editor-ajax.php:157
 #: includes/winback-report-admin.php:1045
 msgid "Age"
@@ -786,7 +786,7 @@ msgstr ""
 #: includes/event-reports.php:157
 #: includes/reports-data.php:99
 #: includes/reports.php:662
-#: includes/roster-details.php:942
+#: includes/roster-details.php:944
 #: includes/roster-editor-ajax.php:158
 msgid "Gender"
 msgstr ""
@@ -797,7 +797,7 @@ msgid "Booking"
 msgstr ""
 
 #: classes/Ajax/rosters-tabs-ajax-handler.php:150
-#: includes/roster-details.php:953
+#: includes/roster-details.php:955
 msgid "Selected days"
 msgstr ""
 
@@ -986,7 +986,7 @@ msgid "No rosters found to rebuild signatures."
 msgstr ""
 
 #: classes/services/roster-details-service.php:168
-#: includes/roster-details.php:811
+#: includes/roster-details.php:813
 msgid "No rosters found for the provided parameters."
 msgstr ""
 
@@ -996,7 +996,7 @@ msgstr ""
 
 #: classes/services/roster-listing-service.php:921
 #: classes/services/roster-listing-service.php:1178
-#: includes/advanced.php:2151
+#: includes/advanced.php:2169
 #: includes/rosters.php:3145
 msgid "Tournament"
 msgstr ""
@@ -1262,7 +1262,7 @@ msgstr ""
 
 #: classes/ui/pages/abstract-page.php:273
 #: classes/ui/pages/reports-page.php:472
-#: includes/advanced.php:2552
+#: includes/advanced.php:2570
 #: includes/rosters.php:1349
 #: includes/rosters.php:1799
 #: includes/rosters.php:2282
@@ -1281,7 +1281,7 @@ msgid "Paid"
 msgstr ""
 
 #: classes/ui/pages/abstract-page.php:295
-#: includes/advanced.php:2162
+#: includes/advanced.php:2180
 #: includes/winback-report-admin.php:557
 msgid "Pending"
 msgstr ""
@@ -1339,9 +1339,9 @@ msgid "Active Camps"
 msgstr ""
 
 #: classes/ui/pages/camp-pages.php:573
-#: includes/advanced.php:2518
+#: includes/advanced.php:2536
 #: includes/reports-ui.php:292
-#: includes/roster-details.php:1101
+#: includes/roster-details.php:1103
 #: includes/rosters.php:3026
 #: includes/rosters.php:3454
 #: includes/signature-drift-report.php:156
@@ -1368,13 +1368,13 @@ msgstr ""
 #: classes/ui/pages/reports-page.php:316
 #: classes/ui/pages/reports-page.php:385
 #: classes/ui/pages/reports-page.php:410
-#: includes/advanced.php:2385
+#: includes/advanced.php:2403
 #: includes/reports-ajax.php:153
 #: includes/reports-data.php:96
 #: includes/reports-ui.php:639
 #: includes/reports.php:462
 #: includes/reports.php:657
-#: includes/roster-details.php:1113
+#: includes/roster-details.php:1115
 #: includes/roster-editor-ajax.php:159
 #: includes/rosters.php:3037
 #: includes/rosters.php:3152
@@ -1394,10 +1394,10 @@ msgstr ""
 #: classes/ui/pages/other-events-page.php:250
 #: classes/ui/pages/other-events-page.php:432
 #: classes/ui/pages/reports-page.php:318
-#: includes/advanced.php:2408
+#: includes/advanced.php:2426
 #: includes/reports-data.php:98
-#: includes/roster-details.php:961
-#: includes/roster-details.php:1119
+#: includes/roster-details.php:963
+#: includes/roster-details.php:1121
 #: includes/rosters.php:3048
 #: includes/rosters.php:3156
 #: includes/rosters.php:3731
@@ -1411,7 +1411,7 @@ msgstr ""
 
 #: classes/ui/pages/camp-pages.php:609
 #: includes/reports-data.php:97
-#: includes/roster-details.php:952
+#: includes/roster-details.php:954
 msgid "Booking Type"
 msgstr ""
 
@@ -1468,7 +1468,7 @@ msgid "Attendee"
 msgstr ""
 
 #: classes/ui/pages/camp-pages.php:700
-#: includes/roster-details.php:946
+#: includes/roster-details.php:948
 msgid "Medical/Dietary"
 msgstr ""
 
@@ -2198,8 +2198,8 @@ msgstr ""
 
 #: includes/advanced.php:65
 #: includes/advanced.php:218
-#: includes/advanced.php:2112
 #: includes/advanced.php:2130
+#: includes/advanced.php:2148
 msgid "Roster Sync Queue"
 msgstr ""
 
@@ -2379,9 +2379,9 @@ msgstr ""
 #: includes/advanced.php:479
 #: includes/advanced.php:706
 #: includes/advanced.php:736
-#: includes/advanced.php:2917
-#: includes/roster-details.php:2177
-#: includes/roster-move-reason-messages.php:94
+#: includes/advanced.php:2935
+#: includes/roster-details.php:2190
+#: includes/roster-move-reason-messages.php:95
 msgid "Unknown error occurred."
 msgstr ""
 
@@ -2404,7 +2404,7 @@ msgstr ""
 #: includes/advanced.php:626
 #: includes/advanced.php:696
 #: includes/advanced.php:726
-#: includes/advanced.php:2884
+#: includes/advanced.php:2902
 msgid "Running..."
 msgstr ""
 
@@ -2413,8 +2413,8 @@ msgstr ""
 #: includes/advanced.php:502
 #: includes/advanced.php:704
 #: includes/advanced.php:734
-#: includes/advanced.php:2894
-#: includes/advanced.php:2896
+#: includes/advanced.php:2912
+#: includes/advanced.php:2914
 msgid "Finished: "
 msgstr ""
 
@@ -2436,10 +2436,10 @@ msgstr ""
 #: includes/advanced.php:712
 #: includes/advanced.php:736
 #: includes/advanced.php:742
-#: includes/advanced.php:2904
-#: includes/advanced.php:2906
-#: includes/advanced.php:2919
-#: includes/advanced.php:2921
+#: includes/advanced.php:2922
+#: includes/advanced.php:2924
+#: includes/advanced.php:2937
+#: includes/advanced.php:2939
 msgid "Failed: "
 msgstr ""
 
@@ -2606,59 +2606,59 @@ msgstr ""
 msgid "Could not find this booking line on the order."
 msgstr ""
 
-#: includes/advanced.php:1497
+#: includes/advanced.php:1515
 msgid "No roster row exists for this player. Create or rebuild the roster before moving."
 msgstr ""
 
-#: includes/advanced.php:1511
+#: includes/advanced.php:1529
 msgid "Already on this roster."
 msgstr ""
 
-#: includes/advanced.php:1788
-#: includes/advanced.php:1797
-#: includes/advanced.php:1807
+#: includes/advanced.php:1806
+#: includes/advanced.php:1815
+#: includes/advanced.php:1825
 msgid "This player could not be moved. Please try again."
 msgstr ""
 
-#: includes/advanced.php:1839
+#: includes/advanced.php:1857
 msgid "Player is already in this class"
 msgstr ""
 
-#: includes/advanced.php:1857
+#: includes/advanced.php:1875
 msgid "No players moved. Check logs for details."
 msgstr ""
 
-#: includes/advanced.php:2091
+#: includes/advanced.php:2109
 msgid "Roster Sync Queue requires the latest plugin files (ReportsRostersDiagnosticsService). Deploy the full intersoccer-reports-rosters plugin update, including vendor/autoload, then reload this page."
 msgstr ""
 
-#: includes/advanced.php:2114
+#: includes/advanced.php:2132
 msgid "Review WooCommerce line items that are out of sync with intersoccer_rosters."
 msgstr ""
 
-#: includes/advanced.php:2132
+#: includes/advanced.php:2150
 msgid "Review WooCommerce line items that are out of sync with intersoccer_rosters. Filter by reason, fix items individually, or run bulk safe fixes below."
 msgstr ""
 
-#: includes/advanced.php:2136
-#: includes/advanced.php:2221
+#: includes/advanced.php:2154
+#: includes/advanced.php:2239
 msgid "Run Sync Scan"
 msgstr ""
 
-#: includes/advanced.php:2141
+#: includes/advanced.php:2159
 #: includes/reports-ui.php:279
 msgid "Year"
 msgstr ""
 
-#: includes/advanced.php:2145
-#: includes/advanced.php:2372
+#: includes/advanced.php:2163
+#: includes/advanced.php:2390
 #: includes/reports-data.php:94
 #: includes/roster-editor-ajax.php:160
 #: includes/rosters.php:1327
 msgid "Activity Type"
 msgstr ""
 
-#: includes/advanced.php:2148
+#: includes/advanced.php:2166
 #: includes/player-camp-status.php:884
 #: includes/player-course-status-admin.php:552
 #: includes/player-course-status-admin.php:639
@@ -2671,86 +2671,86 @@ msgstr ""
 msgid "All"
 msgstr ""
 
-#: includes/advanced.php:2149
+#: includes/advanced.php:2167
 #: includes/reports-ui.php:287
 #: includes/winback-report-admin.php:921
 msgid "Course"
 msgstr ""
 
-#: includes/advanced.php:2150
+#: includes/advanced.php:2168
 #: includes/reports-ui.php:286
 #: includes/winback-report-admin.php:920
 msgid "Camp"
 msgstr ""
 
-#: includes/advanced.php:2156
+#: includes/advanced.php:2174
 msgid "Order Statuses"
 msgstr ""
 
-#: includes/advanced.php:2160
+#: includes/advanced.php:2178
 msgid "Completed"
 msgstr ""
 
-#: includes/advanced.php:2161
+#: includes/advanced.php:2179
 msgid "Processing"
 msgstr ""
 
-#: includes/advanced.php:2163
+#: includes/advanced.php:2181
 #: includes/player-course-status-admin.php:31
 #: includes/player-course-status.php:235
 msgid "On hold"
 msgstr ""
 
-#: includes/advanced.php:2172
+#: includes/advanced.php:2190
 msgid "Defaults to completed orders only. Cancelled, refunded, and other non-completed statuses are excluded from both Woo and roster sides of the scan."
 msgstr ""
 
-#: includes/advanced.php:2176
+#: includes/advanced.php:2194
 msgid "Sync Reason"
 msgstr ""
 
-#: includes/advanced.php:2179
+#: includes/advanced.php:2197
 msgid "All reasons"
 msgstr ""
 
-#: includes/advanced.php:2180
+#: includes/advanced.php:2198
 msgid "missing_in_rosters"
 msgstr ""
 
-#: includes/advanced.php:2181
+#: includes/advanced.php:2199
 msgid "missing_in_woo"
 msgstr ""
 
-#: includes/advanced.php:2182
+#: includes/advanced.php:2200
 msgid "incomplete_player_data"
 msgstr ""
 
-#: includes/advanced.php:2183
+#: includes/advanced.php:2201
 msgid "fragmented_roster"
 msgstr ""
 
-#: includes/advanced.php:2184
+#: includes/advanced.php:2202
 msgid "venue_mismatch"
 msgstr ""
 
-#: includes/advanced.php:2185
+#: includes/advanced.php:2203
 msgid "course_day_mismatch"
 msgstr ""
 
-#: includes/advanced.php:2186
+#: includes/advanced.php:2204
 msgid "missing_in_woo_meta"
 msgstr ""
 
-#: includes/advanced.php:2187
+#: includes/advanced.php:2205
 msgid "missing_in_roster_venue"
 msgstr ""
 
-#: includes/advanced.php:2188
+#: includes/advanced.php:2206
 msgid "unknown_placeholder_persisted"
 msgstr ""
 
-#: includes/advanced.php:2193
-#: includes/advanced.php:2246
+#: includes/advanced.php:2211
+#: includes/advanced.php:2264
 #: includes/reports-data.php:90
 #: includes/reports.php:646
 #: includes/roster-editor-ajax.php:162
@@ -2758,364 +2758,364 @@ msgstr ""
 msgid "Order ID"
 msgstr ""
 
-#: includes/advanced.php:2194
+#: includes/advanced.php:2212
 msgid "Optional"
 msgstr ""
 
-#: includes/advanced.php:2197
+#: includes/advanced.php:2215
 msgid "Page Size"
 msgstr ""
 
-#: includes/advanced.php:2208
+#: includes/advanced.php:2226
 msgid "Season Type"
 msgstr ""
 
-#: includes/advanced.php:2209
+#: includes/advanced.php:2227
 msgid "Optional (e.g. Summer)"
 msgstr ""
 
-#: includes/advanced.php:2212
+#: includes/advanced.php:2230
 #: includes/reports-ui.php:302
 #: includes/reports-ui.php:638
 msgid "Region"
 msgstr ""
 
-#: includes/advanced.php:2213
+#: includes/advanced.php:2231
 msgid "Optional canton/region"
 msgstr ""
 
-#: includes/advanced.php:2216
+#: includes/advanced.php:2234
 #: includes/reports-ui.php:319
 msgid "Exclude BuyClub"
 msgstr ""
 
-#: includes/advanced.php:2217
+#: includes/advanced.php:2235
 msgid "Exclude zero-net BuyClub lines"
 msgstr ""
 
-#: includes/advanced.php:2230
+#: includes/advanced.php:2248
 msgid "Safe Fix Issues (Woo Source of Truth)"
 msgstr ""
 
-#: includes/advanced.php:2232
+#: includes/advanced.php:2250
 msgid "Runs non-destructive fixes only. It can insert missing roster rows, backfill missing Woo course-day metadata, and quarantine orphan roster rows for manual review. It excludes products that do not use the activity_type attribute (e.g. Birthday Parties)."
 msgstr ""
 
-#: includes/advanced.php:2235
+#: includes/advanced.php:2253
 msgid "Fix Issues (Safe)"
 msgstr ""
 
-#: includes/advanced.php:2241
+#: includes/advanced.php:2259
 msgid "Trace One Order/Item"
 msgstr ""
 
-#: includes/advanced.php:2247
+#: includes/advanced.php:2265
 msgid "Optional if order item ID set"
 msgstr ""
 
-#: includes/advanced.php:2250
+#: includes/advanced.php:2268
 #: includes/roster-editor.php:1108
 msgid "Order Item ID"
 msgstr ""
 
-#: includes/advanced.php:2251
+#: includes/advanced.php:2269
 msgid "Optional if order ID set"
 msgstr ""
 
-#: includes/advanced.php:2255
+#: includes/advanced.php:2273
 msgid "Trace Item"
 msgstr ""
 
-#: includes/advanced.php:2276
+#: includes/advanced.php:2294
 msgid "Event Signature Verifier"
 msgstr ""
 
-#: includes/advanced.php:2281
+#: includes/advanced.php:2299
 msgid "About Event Signatures:"
 msgstr ""
 
-#: includes/advanced.php:2282
+#: includes/advanced.php:2300
 msgid "Event signatures ensure that the same physical event generates a unique identifier regardless of which language the customer used when purchasing. This prevents roster fragmentation across languages."
 msgstr ""
 
-#: includes/advanced.php:2285
+#: includes/advanced.php:2303
 msgid "Technical details: see the InterSoccer workspace Cursor skill <code>reports-rosters</code> (event signatures rule) or <code>docs/README.md</code> in this plugin."
 msgstr ""
 
-#: includes/advanced.php:2291
+#: includes/advanced.php:2309
 msgid "Test Event Data"
 msgstr ""
 
-#: includes/advanced.php:2292
+#: includes/advanced.php:2310
 msgid "Select event data from your existing product attributes. The dropdown values show terms in the currently active WPML language."
 msgstr ""
 
-#: includes/advanced.php:2306
+#: includes/advanced.php:2324
 msgid "Current WPML Language:"
 msgstr ""
 
-#: includes/advanced.php:2309
+#: includes/advanced.php:2327
 msgid "Dropdown values are shown in this language. To test different languages, switch the WPML admin language and refresh this page."
 msgstr ""
 
-#: includes/advanced.php:2319
+#: includes/advanced.php:2337
 msgid "Quick Load from Recent Order"
 msgstr ""
 
-#: includes/advanced.php:2320
+#: includes/advanced.php:2338
 msgid "Load event data from a recent order for quick testing:"
 msgstr ""
 
-#: includes/advanced.php:2345
+#: includes/advanced.php:2363
 msgid "-- Select a Recent Event --"
 msgstr ""
 
-#: includes/advanced.php:2362
+#: includes/advanced.php:2380
 msgid "Load Selected Event"
 msgstr ""
 
-#: includes/advanced.php:2365
+#: includes/advanced.php:2383
 msgid "No recent events found. Process some orders first."
 msgstr ""
 
-#: includes/advanced.php:2393
+#: includes/advanced.php:2411
 msgid "-- Select a Venue --"
 msgstr ""
 
-#: includes/advanced.php:2402
+#: includes/advanced.php:2420
 msgid "Select from existing venues in your system"
 msgstr ""
 
-#: includes/advanced.php:2416
+#: includes/advanced.php:2434
 msgid "-- Select an Age Group --"
 msgstr ""
 
-#: includes/advanced.php:2425
+#: includes/advanced.php:2443
 msgid "Select from existing age groups"
 msgstr ""
 
-#: includes/advanced.php:2431
+#: includes/advanced.php:2449
 msgid "Camp Terms"
 msgstr ""
 
-#: includes/advanced.php:2439
+#: includes/advanced.php:2457
 msgid "-- Select Camp Terms (for camps) --"
 msgstr ""
 
-#: includes/advanced.php:2448
+#: includes/advanced.php:2466
 msgid "For camps only - leave empty for courses"
 msgstr ""
 
-#: includes/advanced.php:2454
+#: includes/advanced.php:2472
 #: includes/reports-ui.php:641
 msgid "Course Day"
 msgstr ""
 
-#: includes/advanced.php:2462
+#: includes/advanced.php:2480
 msgid "-- Select Course Day (for courses) --"
 msgstr ""
 
-#: includes/advanced.php:2471
+#: includes/advanced.php:2489
 msgid "For courses only - leave empty for camps"
 msgstr ""
 
-#: includes/advanced.php:2477
+#: includes/advanced.php:2495
 #: includes/reports-ui.php:642
 msgid "Times"
 msgstr ""
 
-#: includes/advanced.php:2503
+#: includes/advanced.php:2521
 msgid "-- Select Times --"
 msgstr ""
 
-#: includes/advanced.php:2512
+#: includes/advanced.php:2530
 msgid "Select from existing camp/course times"
 msgstr ""
 
-#: includes/advanced.php:2526
+#: includes/advanced.php:2544
 msgid "-- Select a Season --"
 msgstr ""
 
-#: includes/advanced.php:2535
+#: includes/advanced.php:2553
 msgid "Select from existing seasons"
 msgstr ""
 
-#: includes/advanced.php:2541
+#: includes/advanced.php:2559
 #: includes/signature-drift-report.php:255
 msgid "Product ID"
 msgstr ""
 
-#: includes/advanced.php:2545
+#: includes/advanced.php:2563
 msgid "e.g., 12345"
 msgstr ""
 
-#: includes/advanced.php:2557
+#: includes/advanced.php:2575
 msgid "Is this a girls-only event?"
 msgstr ""
 
-#: includes/advanced.php:2564
+#: includes/advanced.php:2582
 msgid "Test Signature Generation"
 msgstr ""
 
-#: includes/advanced.php:2573
+#: includes/advanced.php:2591
 msgid "Test Results"
 msgstr ""
 
-#: includes/advanced.php:2577
+#: includes/advanced.php:2595
 msgid "1. Original Input Data"
 msgstr ""
 
-#: includes/advanced.php:2583
+#: includes/advanced.php:2601
 msgid "2. Normalized Data (English)"
 msgstr ""
 
-#: includes/advanced.php:2587
+#: includes/advanced.php:2605
 msgid "Changed Fields:"
 msgstr ""
 
-#: includes/advanced.php:2601
+#: includes/advanced.php:2619
 msgid "No changes needed - data was already in English!"
 msgstr ""
 
-#: includes/advanced.php:2608
+#: includes/advanced.php:2626
 msgid "3. Generated Event Signature"
 msgstr ""
 
-#: includes/advanced.php:2613
+#: includes/advanced.php:2631
 msgid "Important:"
 msgstr ""
 
-#: includes/advanced.php:2614
+#: includes/advanced.php:2632
 msgid "This signature should be IDENTICAL for the same event in all languages!"
 msgstr ""
 
-#: includes/advanced.php:2620
+#: includes/advanced.php:2638
 msgid "4. Signature Components"
 msgstr ""
 
-#: includes/advanced.php:2621
+#: includes/advanced.php:2639
 msgid "The signature is generated from these normalized components:"
 msgstr ""
 
-#: includes/advanced.php:2628
+#: includes/advanced.php:2646
 msgid "Testing Instructions"
 msgstr ""
 
-#: includes/advanced.php:2630
+#: includes/advanced.php:2648
 msgid "Use the <strong>Quick Load</strong> dropdown to select a recent event, OR manually select event attributes"
 msgstr ""
 
-#: includes/advanced.php:2631
+#: includes/advanced.php:2649
 msgid "Test in <strong>English</strong>: Switch WPML to English, refresh page, select event, and note the generated signature"
 msgstr ""
 
-#: includes/advanced.php:2632
+#: includes/advanced.php:2650
 msgid "Test in <strong>French</strong>: Switch WPML to French, refresh page, select THE SAME event (translated terms), test again"
 msgstr ""
 
-#: includes/advanced.php:2633
+#: includes/advanced.php:2651
 msgid "Test in <strong>German</strong>: Switch WPML to German, refresh page, select THE SAME event (translated terms), test again"
 msgstr ""
 
-#: includes/advanced.php:2634
+#: includes/advanced.php:2652
 msgid "Verify that ALL THREE generate the <strong>IDENTICAL signature</strong>"
 msgstr ""
 
-#: includes/advanced.php:2636
+#: includes/advanced.php:2654
 msgid "If signatures differ:"
 msgstr ""
 
-#: includes/advanced.php:2638
+#: includes/advanced.php:2656
 msgid "Check that taxonomy terms have complete WPML translations"
 msgstr ""
 
-#: includes/advanced.php:2639
+#: includes/advanced.php:2657
 msgid "Verify term names are consistent across languages"
 msgstr ""
 
-#: includes/advanced.php:2640
+#: includes/advanced.php:2658
 msgid "Check debug.log for normalization warnings"
 msgstr ""
 
-#: includes/advanced.php:2655
+#: includes/advanced.php:2673
 msgid "Please select an event from the dropdown"
 msgstr ""
 
-#: includes/advanced.php:2717
+#: includes/advanced.php:2735
 msgid "Error loading event data. Please try again."
 msgstr ""
 
-#: includes/advanced.php:2803
+#: includes/advanced.php:2821
 msgid "Placeholder Roster Management"
 msgstr ""
 
-#: includes/advanced.php:2804
+#: includes/advanced.php:2822
 msgid "Placeholder rosters are automatically created for each product variation to allow player migration before the first order is placed."
 msgstr ""
 
-#: includes/advanced.php:2808
+#: includes/advanced.php:2826
 msgid "Placeholder Rosters:"
 msgstr ""
 
-#: includes/advanced.php:2812
+#: includes/advanced.php:2830
 msgid "Real Rosters:"
 msgstr ""
 
-#: includes/advanced.php:2816
+#: includes/advanced.php:2834
 msgid "Total:"
 msgstr ""
 
-#: includes/advanced.php:2825
-#: includes/advanced.php:2908
-#: includes/advanced.php:2923
+#: includes/advanced.php:2843
+#: includes/advanced.php:2926
+#: includes/advanced.php:2941
 msgid "Sync All Placeholders"
 msgstr ""
 
-#: includes/advanced.php:2830
+#: includes/advanced.php:2848
 msgid "This will create or update placeholder rosters for all published product variations. Placeholders allow admins to migrate players to events before the first order is placed."
 msgstr ""
 
-#: includes/advanced.php:2874
+#: includes/advanced.php:2892
 msgid "This will create or update placeholder rosters for all published product variations. Continue?"
 msgstr ""
 
-#: includes/advanced.php:2880
-#: includes/advanced.php:2882
+#: includes/advanced.php:2898
+#: includes/advanced.php:2900
 msgid "Starting: Syncing placeholders..."
 msgstr ""
 
-#: includes/advanced.php:2894
-#: includes/advanced.php:2896
+#: includes/advanced.php:2912
+#: includes/advanced.php:2914
 msgid "Placeholders synced successfully."
 msgstr ""
 
-#: includes/advanced.php:2904
-#: includes/advanced.php:2906
+#: includes/advanced.php:2922
+#: includes/advanced.php:2924
 msgid "Sync failed."
 msgstr ""
 
-#: includes/advanced.php:2963
-#: includes/roster-details.php:1602
+#: includes/advanced.php:2981
+#: includes/roster-details.php:1604
 #: includes/rosters.php:738
 #: includes/rosters.php:760
 #: includes/rosters.php:864
 msgid "Failed to close roster."
 msgstr ""
 
-#: includes/advanced.php:3004
-#: includes/roster-details.php:1639
+#: includes/advanced.php:3022
+#: includes/roster-details.php:1641
 #: includes/rosters.php:803
 #: includes/rosters.php:825
 #: includes/rosters.php:900
 msgid "Failed to reopen roster."
 msgstr ""
 
-#: includes/advanced.php:3047
+#: includes/advanced.php:3065
 #: includes/rosters.php:971
 msgid "Failed to close rosters."
 msgstr ""
 
-#: includes/advanced.php:3095
+#: includes/advanced.php:3113
 #: includes/rosters.php:1012
 msgid "Failed to reopen rosters."
 msgstr ""
@@ -4408,7 +4408,7 @@ msgid "Event"
 msgstr ""
 
 #: includes/reports-ajax.php:154
-#: includes/roster-details.php:944
+#: includes/roster-details.php:946
 #: includes/winback-report-admin.php:1047
 msgid "Email"
 msgstr ""
@@ -4596,7 +4596,7 @@ msgstr ""
 #: includes/reports-ui.php:355
 #: includes/reports-ui.php:1140
 #: includes/reports.php:546
-#: includes/roster-details.php:1324
+#: includes/roster-details.php:1326
 msgid "Also sync to Office 365"
 msgstr ""
 
@@ -4705,25 +4705,25 @@ msgstr ""
 
 #: includes/reports-ui.php:451
 #: includes/reports-ui.php:546
-#: includes/roster-details.php:955
+#: includes/roster-details.php:957
 msgid "Tuesday"
 msgstr ""
 
 #: includes/reports-ui.php:452
 #: includes/reports-ui.php:547
-#: includes/roster-details.php:956
+#: includes/roster-details.php:958
 msgid "Wednesday"
 msgstr ""
 
 #: includes/reports-ui.php:453
 #: includes/reports-ui.php:548
-#: includes/roster-details.php:957
+#: includes/roster-details.php:959
 msgid "Thursday"
 msgstr ""
 
 #: includes/reports-ui.php:454
 #: includes/reports-ui.php:549
-#: includes/roster-details.php:958
+#: includes/roster-details.php:960
 msgid "Friday"
 msgstr ""
 
@@ -4745,18 +4745,18 @@ msgid "Category"
 msgstr ""
 
 #: includes/reports-ui.php:834
-#: includes/roster-details.php:2163
+#: includes/roster-details.php:2176
 msgid "Export completed successfully!"
 msgstr ""
 
 #: includes/reports-ui.php:836
 #: includes/reports-ui.php:1309
-#: includes/roster-details.php:2165
+#: includes/roster-details.php:2178
 msgid "Export completed and synced to Office 365."
 msgstr ""
 
 #: includes/reports-ui.php:838
-#: includes/roster-details.php:2167
+#: includes/roster-details.php:2180
 msgid "Export completed. Sync to Office 365 failed:"
 msgstr ""
 
@@ -4781,7 +4781,7 @@ msgid "Export timeout. Please try again."
 msgstr ""
 
 #: includes/reports-ui.php:856
-#: includes/roster-details.php:2183
+#: includes/roster-details.php:2196
 msgid "Export failed: Connection error"
 msgstr ""
 
@@ -4888,7 +4888,7 @@ msgid "AJAX configuration error: nonce not available."
 msgstr ""
 
 #: includes/reports-ui.php:1277
-#: includes/roster-details.php:2134
+#: includes/roster-details.php:2147
 msgid "Exporting..."
 msgstr ""
 
@@ -5010,259 +5010,259 @@ msgstr ""
 msgid "Enhanced export failed: "
 msgstr ""
 
-#: includes/roster-details.php:608
-#: includes/roster-details.php:763
-#: includes/roster-details.php:798
+#: includes/roster-details.php:610
+#: includes/roster-details.php:765
+#: includes/roster-details.php:800
 msgid "Roster Details"
 msgstr ""
 
-#: includes/roster-details.php:764
+#: includes/roster-details.php:766
 msgid "Invalid parameters provided."
 msgstr ""
 
-#: includes/roster-details.php:906
+#: includes/roster-details.php:908
 msgid "Unknown Event"
 msgstr ""
 
-#: includes/roster-details.php:922
+#: includes/roster-details.php:924
 msgid "Roster Details for "
 msgstr ""
 
-#: includes/roster-details.php:932
+#: includes/roster-details.php:934
 #, php-format
 msgid "%d Unknown Attendee entry found. Please update player assignments in the Player Management UI."
 msgid_plural "%d Unknown Attendee entries found. Please update player assignments in the Player Management UI."
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/roster-details.php:939
+#: includes/roster-details.php:941
 msgid "Order Date"
 msgstr ""
 
-#: includes/roster-details.php:940
+#: includes/roster-details.php:942
 msgid "Name"
 msgstr ""
 
-#: includes/roster-details.php:941
+#: includes/roster-details.php:943
 msgid "Surname"
 msgstr ""
 
-#: includes/roster-details.php:943
+#: includes/roster-details.php:945
 #: includes/winback-report-admin.php:1048
 msgid "Phone"
 msgstr ""
 
-#: includes/roster-details.php:947
+#: includes/roster-details.php:949
 msgid "AVS Number"
 msgstr ""
 
-#: includes/roster-details.php:950
+#: includes/roster-details.php:952
 msgid "Late Pickup"
 msgstr ""
 
-#: includes/roster-details.php:951
+#: includes/roster-details.php:953
 msgid "Late Pickup Days"
 msgstr ""
 
-#: includes/roster-details.php:954
+#: includes/roster-details.php:956
 msgid "Monday"
 msgstr ""
 
-#: includes/roster-details.php:965
+#: includes/roster-details.php:967
 msgid "Tournament Date (pa_date)"
 msgstr ""
 
-#: includes/roster-details.php:969
+#: includes/roster-details.php:971
 #: includes/roster-export.php:715
 msgid "Shirt Size"
 msgstr ""
 
-#: includes/roster-details.php:970
+#: includes/roster-details.php:972
 #: includes/roster-export.php:716
 msgid "Shorts Size"
 msgstr ""
 
-#: includes/roster-details.php:1103
-#: includes/roster-details.php:1736
-#: includes/roster-details.php:1797
+#: includes/roster-details.php:1105
+#: includes/roster-details.php:1738
+#: includes/roster-details.php:1799
 msgid "Select season..."
 msgstr ""
 
-#: includes/roster-details.php:1107
+#: includes/roster-details.php:1109
 msgid "Day / Term"
 msgstr ""
 
-#: includes/roster-details.php:1109
-#: includes/roster-details.php:1690
+#: includes/roster-details.php:1111
+#: includes/roster-details.php:1692
 msgid "Select season first..."
 msgstr ""
 
-#: includes/roster-details.php:1115
-#: includes/roster-details.php:1691
+#: includes/roster-details.php:1117
+#: includes/roster-details.php:1693
 msgid "Select day or term first..."
 msgstr ""
 
-#: includes/roster-details.php:1121
-#: includes/roster-details.php:1692
+#: includes/roster-details.php:1123
+#: includes/roster-details.php:1694
 msgid "Select venue first..."
 msgstr ""
 
-#: includes/roster-details.php:1125
+#: includes/roster-details.php:1127
 #: includes/rosters.php:3059
 #: includes/rosters.php:3160
 msgid "Time"
 msgstr ""
 
-#: includes/roster-details.php:1127
-#: includes/roster-details.php:1693
+#: includes/roster-details.php:1129
+#: includes/roster-details.php:1695
 msgid "Select age group first..."
 msgstr ""
 
-#: includes/roster-details.php:1131
+#: includes/roster-details.php:1133
 msgid "Destination Roster"
 msgstr ""
 
-#: includes/roster-details.php:1133
-#: includes/roster-details.php:1694
+#: includes/roster-details.php:1135
+#: includes/roster-details.php:1696
 msgid "Select time first..."
 msgstr ""
 
-#: includes/roster-details.php:1137
+#: includes/roster-details.php:1139
 #: includes/roster-move-reason-messages.php:51
 msgid "Apply"
 msgstr ""
 
-#: includes/roster-details.php:1141
+#: includes/roster-details.php:1143
 msgid "Use each filter in order to narrow destination rosters."
 msgstr ""
 
-#: includes/roster-details.php:1143
-#: includes/roster-details.php:1689
+#: includes/roster-details.php:1145
+#: includes/roster-details.php:1691
 msgid "Select a destination roster..."
 msgstr ""
 
-#: includes/roster-details.php:1186
-#: includes/roster-move-reason-messages.php:313
+#: includes/roster-details.php:1188
+#: includes/roster-move-reason-messages.php:314
 msgid "Untitled roster"
 msgstr ""
 
-#: includes/roster-details.php:1202
+#: includes/roster-details.php:1204
 #, php-format
 msgid "%d player"
 msgid_plural "%d players"
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/roster-details.php:1237
-#: includes/roster-details.php:1243
-#: includes/roster-details.php:1247
-#: includes/roster-details.php:1251
-#: includes/roster-details.php:1255
+#: includes/roster-details.php:1239
+#: includes/roster-details.php:1245
+#: includes/roster-details.php:1249
+#: includes/roster-details.php:1253
+#: includes/roster-details.php:1257
 msgid "Not set"
 msgstr ""
 
-#: includes/roster-details.php:1273
+#: includes/roster-details.php:1275
 msgid "No other rosters available"
 msgstr ""
 
-#: includes/roster-details.php:1279
+#: includes/roster-details.php:1281
 msgid "Instructions:"
 msgstr ""
 
-#: includes/roster-details.php:1280
+#: includes/roster-details.php:1282
 msgid "1) Select players using checkboxes"
 msgstr ""
 
-#: includes/roster-details.php:1281
+#: includes/roster-details.php:1283
 msgid "2) Choose \"Move to Another Roster\""
 msgstr ""
 
-#: includes/roster-details.php:1282
+#: includes/roster-details.php:1284
 msgid "3) Choose season, day/term, venue, age group, and time to reveal destination roster options"
 msgstr ""
 
-#: includes/roster-details.php:1283
+#: includes/roster-details.php:1285
 msgid "4) Select destination roster and click Apply"
 msgstr ""
 
-#: includes/roster-details.php:1285
+#: includes/roster-details.php:1287
 msgid "Note:"
 msgstr ""
 
-#: includes/roster-details.php:1285
+#: includes/roster-details.php:1287
 msgid "This will update order items and preserve original pricing. Changes cannot be undone."
 msgstr ""
 
-#: includes/roster-details.php:1325
+#: includes/roster-details.php:1327
 msgid "Export Roster"
 msgstr ""
 
-#: includes/roster-details.php:1328
+#: includes/roster-details.php:1330
 #: includes/roster-editor.php:1048
 msgid "Event Details"
 msgstr ""
 
-#: includes/roster-details.php:1329
+#: includes/roster-details.php:1331
 msgid "Product Name: "
 msgstr ""
 
-#: includes/roster-details.php:1330
+#: includes/roster-details.php:1332
 msgid "Venue: "
 msgstr ""
 
-#: includes/roster-details.php:1331
+#: includes/roster-details.php:1333
 msgid "Age Group: "
 msgstr ""
 
-#: includes/roster-details.php:1334
+#: includes/roster-details.php:1336
 msgid "Tournament Day: "
 msgstr ""
 
-#: includes/roster-details.php:1336
+#: includes/roster-details.php:1338
 msgid "Course Day: "
 msgstr ""
 
-#: includes/roster-details.php:1338
+#: includes/roster-details.php:1340
 msgid "Camp Terms: "
 msgstr ""
 
-#: includes/roster-details.php:1343
+#: includes/roster-details.php:1345
 msgid "Tournament Time: "
 msgstr ""
 
-#: includes/roster-details.php:1346
+#: includes/roster-details.php:1348
 msgid "Camp Times: "
 msgstr ""
 
-#: includes/roster-details.php:1349
+#: includes/roster-details.php:1351
 msgid "Course Times: "
 msgstr ""
 
-#: includes/roster-details.php:1353
+#: includes/roster-details.php:1355
 msgid "Girls Only: "
 msgstr ""
 
-#: includes/roster-details.php:1358
+#: includes/roster-details.php:1360
 msgid "Status: "
 msgstr ""
 
-#: includes/roster-details.php:1358
+#: includes/roster-details.php:1360
 msgid "Closed"
 msgstr ""
 
-#: includes/roster-details.php:1361
+#: includes/roster-details.php:1363
 #: includes/rosters.php:3732
 msgid "Total Players"
 msgstr ""
 
-#: includes/roster-details.php:1369
+#: includes/roster-details.php:1371
 #: includes/rosters.php:721
 #: includes/rosters.php:1849
 #: includes/rosters.php:2340
 msgid "Reopen Roster"
 msgstr ""
 
-#: includes/roster-details.php:1370
+#: includes/roster-details.php:1372
 #: includes/rosters.php:804
 #: includes/rosters.php:809
 #: includes/rosters.php:826
@@ -5274,13 +5274,13 @@ msgstr ""
 msgid "Reopen"
 msgstr ""
 
-#: includes/roster-details.php:1375
+#: includes/roster-details.php:1377
 #: includes/rosters.php:1856
 #: includes/rosters.php:2347
 msgid "Close Out Roster"
 msgstr ""
 
-#: includes/roster-details.php:1376
+#: includes/roster-details.php:1378
 #: includes/rosters.php:786
 #: includes/rosters.php:865
 #: includes/rosters.php:870
@@ -5289,29 +5289,29 @@ msgstr ""
 msgid "Close Out"
 msgstr ""
 
-#: includes/roster-details.php:1398
+#: includes/roster-details.php:1400
 msgid "Repair Day Presence"
 msgstr ""
 
-#: includes/roster-details.php:1582
+#: includes/roster-details.php:1584
 #: includes/rosters.php:715
 #: includes/rosters.php:847
 msgid "Are you sure you want to close out this roster? This will mark the event as completed."
 msgstr ""
 
-#: includes/roster-details.php:1586
+#: includes/roster-details.php:1588
 #: includes/rosters.php:850
 #: includes/rosters.php:957
 #: includes/rosters.php:1041
 msgid "Closing..."
 msgstr ""
 
-#: includes/roster-details.php:1599
+#: includes/roster-details.php:1601
 msgid "Roster closed successfully."
 msgstr ""
 
-#: includes/roster-details.php:1607
-#: includes/roster-details.php:1644
+#: includes/roster-details.php:1609
+#: includes/roster-details.php:1646
 #: includes/roster-move-reason-messages.php:93
 #: includes/rosters.php:743
 #: includes/rosters.php:765
@@ -5325,42 +5325,42 @@ msgstr ""
 msgid "An error occurred. Please try again."
 msgstr ""
 
-#: includes/roster-details.php:1619
+#: includes/roster-details.php:1621
 #: includes/rosters.php:780
 #: includes/rosters.php:883
 msgid "Are you sure you want to reopen this roster?"
 msgstr ""
 
-#: includes/roster-details.php:1623
+#: includes/roster-details.php:1625
 #: includes/rosters.php:783
 #: includes/rosters.php:886
 #: includes/rosters.php:998
 msgid "Reopening..."
 msgstr ""
 
-#: includes/roster-details.php:1636
+#: includes/roster-details.php:1638
 msgid "Roster reopened successfully."
 msgstr ""
 
-#: includes/roster-details.php:1695
+#: includes/roster-details.php:1697
 msgid "No destination rosters match current filters"
 msgstr ""
 
-#: includes/roster-details.php:2133
+#: includes/roster-details.php:2146
 msgid "Exporting roster..."
 msgstr ""
 
-#: includes/roster-details.php:2172
+#: includes/roster-details.php:2185
 msgid "Export generated but download failed. Please try again."
 msgstr ""
 
-#: includes/roster-details.php:2178
-#: includes/roster-details.php:2188
-#: includes/roster-details.php:2193
+#: includes/roster-details.php:2191
+#: includes/roster-details.php:2201
+#: includes/roster-details.php:2206
 msgid "Export failed: "
 msgstr ""
 
-#: includes/roster-details.php:2186
+#: includes/roster-details.php:2199
 msgid "Export timeout. The roster may be too large. Please try again or contact support."
 msgstr ""
 
@@ -5673,11 +5673,11 @@ msgstr ""
 msgid "Rosters reconciled."
 msgstr ""
 
-#: includes/roster-move-admin-target.php:773
+#: includes/roster-move-admin-target.php:770
 msgid "Could not verify activity type for source and target."
 msgstr ""
 
-#: includes/roster-move-admin-target.php:779
+#: includes/roster-move-admin-target.php:776
 msgid "Target variation must be the same activity type as the source (e.g. course to course)."
 msgstr ""
 
@@ -5751,7 +5751,7 @@ msgstr ""
 
 #: includes/roster-move-reason-messages.php:68
 #: includes/roster-move-reason-messages.php:74
-#: includes/roster-move-reason-messages.php:348
+#: includes/roster-move-reason-messages.php:349
 #, php-format
 msgid "Moved %1$s player to %2$s."
 msgid_plural "Moved %1$s players to %2$s."
@@ -5760,7 +5760,7 @@ msgstr[1] ""
 
 #: includes/roster-move-reason-messages.php:80
 #: includes/roster-move-reason-messages.php:86
-#: includes/roster-move-reason-messages.php:364
+#: includes/roster-move-reason-messages.php:365
 #, php-format
 msgid "%1$s of %2$s player moved. %3$s couldn't be moved:"
 msgid_plural "%1$s of %2$s players moved. %3$s couldn't be moved:"
@@ -5770,6 +5770,10 @@ msgstr[1] ""
 #: includes/roster-move-reason-messages.php:92
 #, php-format
 msgid "%1$s: %2$s"
+msgstr ""
+
+#: includes/roster-move-reason-messages.php:94
+msgid "Permission denied. Please refresh the page and try again."
 msgstr ""
 
 #: includes/roster-times-facet.php:138

@@ -705,12 +705,9 @@ function intersoccer_roster_move_order_item_has_roster_row(int $order_item_id): 
         return false;
     }
 
-    if (isset($GLOBALS['intersoccer_test_roster_row_ids_by_item'])
-        && is_array($GLOBALS['intersoccer_test_roster_row_ids_by_item'])) {
-        $mapped = $GLOBALS['intersoccer_test_roster_row_ids_by_item'][(int) $order_item_id] ?? null;
-        if ($mapped !== null) {
-            return (int) $mapped > 0;
-        }
+    $filtered = apply_filters('intersoccer_roster_move_order_item_has_roster_row', null, $order_item_id);
+    if ($filtered !== null) {
+        return (bool) $filtered;
     }
 
     $table = $wpdb->prefix . 'intersoccer_rosters';

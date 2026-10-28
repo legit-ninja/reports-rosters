@@ -91,6 +91,7 @@ function intersoccer_roster_move_js_localize_strings(): array {
     );
     $strings['failed_player_line'] = __('%1$s: %2$s', 'intersoccer-reports-rosters');
     $strings['ajax_error'] = __('An error occurred. Please try again.', 'intersoccer-reports-rosters');
+    $strings['permission_denied'] = __('Permission denied. Please refresh the page and try again.', 'intersoccer-reports-rosters');
     $strings['unknown_error'] = __('Unknown error occurred.', 'intersoccer-reports-rosters');
 
     return $strings;

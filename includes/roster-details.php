@@ -466,7 +466,9 @@ function intersoccer_fetch_roster_sibling_candidates_for_consolidation(array $an
  * Render the roster details page
  */
 function intersoccer_render_roster_details_page() {
-    if (!function_exists('intersoccer_roster_move_js_localize_strings')) {
+    if (!function_exists('intersoccer_roster_move_merge_empty_sibling_variation_targets')) {
+        require_once __DIR__ . '/roster-move-admin-target.php';
+    } elseif (!function_exists('intersoccer_roster_move_js_localize_strings')) {
         require_once __DIR__ . '/roster-move-reason-messages.php';
     }
     if (!intersoccer_user_can_view_roster_admin()) {
@@ -1932,9 +1934,16 @@ function intersoccer_render_roster_details_page() {
                 const confirmFlag = retryFailedOnly && window.isrrRosterMoveLastConfirmWarnings
                     ? window.isrrRosterMoveLastConfirmWarnings
                     : confirmWarnings;
-                const itemIds = retryFailedOnly && window.isrrRosterMoveLastFailedIds
-                    ? window.isrrRosterMoveLastFailedIds
-                    : selectedItems;
+                let itemIds = selectedItems;
+                if (retryFailedOnly) {
+                    const retryIds = Array.isArray(window.isrrRosterMoveLastFailedIds)
+                        ? window.isrrRosterMoveLastFailedIds
+                        : [];
+                    if (!retryIds.length) {
+                        return;
+                    }
+                    itemIds = retryIds;
+                }
 
                 $.ajax({
                     url: ajaxurl,
@@ -1997,21 +2006,25 @@ function intersoccer_render_roster_details_page() {
                                     failList += '<li>' + $('<div>').text(line).html() + '</li>';
                                 });
                                 const partialLine = response.data.partial_summary || '';
-                                showRosterMovePanel(
-                                    '<p role="alert"><span class="isrr-roster-move-icon" aria-hidden="true">⚠</span>' +
-                                    $('<div>').text(partialLine).html() + '</p><ul>' + failList + '</ul>' +
-                                    '<div class="isrr-roster-move-actions">' +
-                                    '<button type="button" class="button button-primary" id="rosterMoveTryAgain">' +
-                                    $('<div>').text(rosterMoveL10n('try_again')).html() + '</button>' +
-                                    '<button type="button" class="button" id="rosterMoveDismiss">' +
-                                    $('<div>').text(rosterMoveL10n('dismiss')).html() + '</button></div>',
-                                    'alert',
-                                    'error'
-                                );
-                                window.isrrRosterMoveLastFailedIds = failed
+                                const retryableFailedIds = failed
                                     .filter(function(f) { return f.retryable !== false; })
                                     .map(function(f) { return f.order_item_id; })
                                     .filter(Boolean);
+                                window.isrrRosterMoveLastFailedIds = retryableFailedIds;
+                                let actionsHtml = '<div class="isrr-roster-move-actions">';
+                                if (retryableFailedIds.length > 0) {
+                                    actionsHtml += '<button type="button" class="button button-primary" id="rosterMoveTryAgain">' +
+                                        $('<div>').text(rosterMoveL10n('try_again')).html() + '</button>';
+                                }
+                                actionsHtml += '<button type="button" class="button" id="rosterMoveDismiss">' +
+                                    $('<div>').text(rosterMoveL10n('dismiss')).html() + '</button></div>';
+                                showRosterMovePanel(
+                                    '<p role="alert"><span class="isrr-roster-move-icon" aria-hidden="true">⚠</span>' +
+                                    $('<div>').text(partialLine).html() + '</p><ul>' + failList + '</ul>' +
+                                    actionsHtml,
+                                    'alert',
+                                    'error'
+                                );
                                 $('#rosterMoveTryAgain').on('click', function() {
                                     hideRosterMovePanel();
                                     runMoveAjax(confirmFlag, true);
@@ -2058,7 +2071,7 @@ function intersoccer_render_roster_details_page() {
                             }
                         } catch (e) {
                             if (xhr.status === 403) {
-                                errorMessage = 'Permission denied. Please refresh the page and try again.';
+                                errorMessage = rosterMoveL10n('permission_denied');
                             }
                         }
                         showRosterMovePanel(

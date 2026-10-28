@@ -1490,6 +1490,24 @@ function intersoccer_move_players_ajax() {
                 ? intersoccer_read_order_item_booking_fields($item_id)
                 : ['booking_type' => '', 'selected_days' => '', 'late_pickup_days' => ''];
 
+            $preflight = apply_filters(
+                'intersoccer_roster_move_preflight_failure',
+                null,
+                (int) $item_id,
+                (int) $order_id,
+                (int) $target_variation_id
+            );
+            if (is_array($preflight) && isset($preflight['reason'])) {
+                $record_failure(
+                    (int) $item_id,
+                    (int) $order_id,
+                    (string) $preflight['reason'],
+                    !isset($preflight['retryable']) || (bool) $preflight['retryable'],
+                    isset($preflight['log']) ? (string) $preflight['log'] : ''
+                );
+                continue;
+            }
+
             if (!intersoccer_roster_move_order_item_has_roster_row($item_id)) {
                 $record_failure(
                     (int) $item_id,
