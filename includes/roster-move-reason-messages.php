@@ -54,7 +54,8 @@ function intersoccer_roster_move_ui_strings(): array {
         'dismiss' => __('Dismiss', 'intersoccer-reports-rosters'),
         'select_destination' => __('Please select a destination roster.', 'intersoccer-reports-rosters'),
         'no_players_selected' => __('No players selected.', 'intersoccer-reports-rosters'),
-        'target_missing' => __('The destination roster no longer exists or was deleted.', 'intersoccer-reports-rosters'),
+        'target_missing' => __('This roster no longer exists, so players can\'t be moved to it.', 'intersoccer-reports-rosters'),
+        'all_failed' => __('No players were moved.', 'intersoccer-reports-rosters'),
     ];
 }
 
@@ -91,7 +92,7 @@ function intersoccer_roster_move_js_localize_strings(): array {
         'intersoccer-reports-rosters'
     );
     $strings['failed_player_line'] = __('%1$s: %2$s', 'intersoccer-reports-rosters');
-    $strings['ajax_error'] = __('An error occurred. Please try again.', 'intersoccer-reports-rosters');
+    $strings['ajax_error'] = __('Something went wrong. No players were moved. Try again.', 'intersoccer-reports-rosters');
     $strings['permission_denied'] = __('Permission denied. Please refresh the page and try again.', 'intersoccer-reports-rosters');
     $strings['unknown_error'] = __('Unknown error occurred.', 'intersoccer-reports-rosters');
 

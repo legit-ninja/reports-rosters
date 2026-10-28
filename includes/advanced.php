@@ -1334,7 +1334,7 @@ function intersoccer_move_players_ajax() {
         error_log('InterSoccer Migration: Invalid target variation - ID: ' . $target_variation_id . ', exists: ' . ($variation ? 'yes' : 'no') . ', type: ' . ($variation ? $variation->get_type() : 'N/A'));
         $missing_message = function_exists('intersoccer_roster_move_ui_string')
             ? intersoccer_roster_move_ui_string('target_missing')
-            : __('The destination roster no longer exists or was deleted.', 'intersoccer-reports-rosters');
+            : __('This roster no longer exists, so players can\'t be moved to it.', 'intersoccer-reports-rosters');
         wp_send_json_error(['message' => $missing_message, 'hard_block' => true]);
     }
 
@@ -1342,7 +1342,7 @@ function intersoccer_move_players_ajax() {
         error_log('InterSoccer Migration: Target is not a WC_Product_Variation - ID: ' . $target_variation_id);
         $missing_message = function_exists('intersoccer_roster_move_ui_string')
             ? intersoccer_roster_move_ui_string('target_missing')
-            : __('The destination roster no longer exists or was deleted.', 'intersoccer-reports-rosters');
+            : __('This roster no longer exists, so players can\'t be moved to it.', 'intersoccer-reports-rosters');
         wp_send_json_error(['message' => $missing_message, 'hard_block' => true]);
     }
 
@@ -1872,7 +1872,10 @@ function intersoccer_move_players_ajax() {
         wp_send_json_success($success_payload);
     }
 
-    wp_send_json_error(['message' => __('No players moved. Check logs for details.', 'intersoccer-reports-rosters')]);
+    $all_failed_message = function_exists('intersoccer_roster_move_ui_string')
+        ? intersoccer_roster_move_ui_string('all_failed')
+        : __('No players were moved.', 'intersoccer-reports-rosters');
+    wp_send_json_error(['message' => $all_failed_message]);
 }
 
 /**

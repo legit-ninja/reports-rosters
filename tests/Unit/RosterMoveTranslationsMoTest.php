@@ -133,6 +133,21 @@ class RosterMoveTranslationsMoTest extends TestCase {
         $success = $catalog->pluralForm('Moved %1$s player to %2$s.', 'Moved %1$s players to %2$s.', 2);
         $this->assertSame('%1$s Teilnehmer nach %2$s verschoben.', $success);
 
+        $target_missing = $catalog->translate('This roster no longer exists, so players can\'t be moved to it.');
+        $this->assertSame(
+            'Diese Gruppe existiert nicht mehr. Teilnehmer können nicht dorthin verschoben werden.',
+            $target_missing
+        );
+
+        $all_failed = $catalog->translate('No players were moved.');
+        $this->assertSame('Es wurden keine Teilnehmer verschoben.', $all_failed);
+
+        $error_generic = $catalog->translate('Something went wrong. No players were moved. Try again.');
+        $this->assertSame(
+            'Etwas ist schiefgelaufen. Es wurden keine Teilnehmer verschoben. Bitte erneut versuchen.',
+            $error_generic
+        );
+
         $ended = $catalog->translate('This course has ended.');
         $this->assertNull($ended);
     }
@@ -165,6 +180,21 @@ class RosterMoveTranslationsMoTest extends TestCase {
             1
         );
         $this->assertStringContainsString(self::NBSP . ':', (string) $partial);
+
+        $target_missing = $catalog->translate('This roster no longer exists, so players can\'t be moved to it.');
+        $this->assertSame(
+            'Ce groupe n\'existe plus. Impossible d\'y déplacer des participants.',
+            $target_missing
+        );
+
+        $all_failed = $catalog->translate('No players were moved.');
+        $this->assertSame('Aucun participant n\'a été déplacé.', $all_failed);
+
+        $error_generic = $catalog->translate('Something went wrong. No players were moved. Try again.');
+        $this->assertSame(
+            'Une erreur s\'est produite. Aucun participant n\'a été déplacé. Veuillez réessayer.',
+            $error_generic
+        );
 
         $ended = $catalog->translate('This course has ended.');
         $this->assertNull($ended);

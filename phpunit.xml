@@ -123,6 +123,8 @@
             <file>tests/Unit/RosterSingleExportSplitPermissionsTest.php</file>
             <file>tests/Unit/MedicalRosterEditorDobGateTest.php</file>
             <file>tests/Unit/PlayerCampStatusDobGatingTest.php</file>
+            <file>tests/Unit/RosterMoveTranslationsMoTest.php</file>
+            <file>tests/Unit/RosterMovePartialSummaryPluralTest.php</file>
             <directory>tests/ReportAccuracy</directory>
         </testsuite>
         <testsuite name="Complete">

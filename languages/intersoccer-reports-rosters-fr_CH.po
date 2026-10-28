@@ -1896,3 +1896,18 @@ msgstr[1] "%1$s participants sur %2$s déplacés. Ceux-ci n'ont pas pu être dé
 #, php-format
 msgid "%1$s: %2$s"
 msgstr "%1$s : %2$s"
+
+#: includes/advanced.php:1337
+#: includes/advanced.php:1345
+#: includes/roster-move-reason-messages.php:57
+msgid "This roster no longer exists, so players can't be moved to it."
+msgstr "Ce groupe n'existe plus. Impossible d'y déplacer des participants."
+
+#: includes/advanced.php:1877
+#: includes/roster-move-reason-messages.php:58
+msgid "No players were moved."
+msgstr "Aucun participant n'a été déplacé."
+
+#: includes/roster-move-reason-messages.php:95
+msgid "Something went wrong. No players were moved. Try again."
+msgstr "Une erreur s'est produite. Aucun participant n'a été déplacé. Veuillez réessayer."
