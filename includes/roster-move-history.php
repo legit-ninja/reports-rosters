@@ -378,14 +378,142 @@ if (!function_exists('intersoccer_roster_history_build_origin_entry')) {
     }
 }
 
-if (!function_exists('intersoccer_roster_history_ensure_origin')) {
+if (!function_exists('intersoccer_roster_history_build_origin_entry_from_side')) {
     /**
-     * Lazy backfill when history is read and no origin exists.
+     * Origin entry from a pre-captured roster side (preserves frozen label and IDs as-is).
+     *
+     * @param array<string,mixed> $from_side
+     * @param array<string,mixed> $roster_row_for_order_date
+     * @return array<string,mixed>
+     */
+    function intersoccer_roster_history_build_origin_entry_from_side(
+        int $order_id,
+        int $order_item_id,
+        array $from_side,
+        bool $backfilled,
+        string $note = '',
+        array $roster_row_for_order_date = []
+    ): array {
+        $label = is_array($from_side['label'] ?? null) ? $from_side['label'] : [];
+
+        return [
+            'v'               => INTERSOCCER_ROSTER_HISTORY_SCHEMA_VERSION,
+            'seq'             => 1,
+            'type'            => 'origin',
+            'at'              => gmdate('Y-m-d\TH:i:s\Z'),
+            'order_id'        => $order_id,
+            'order_item_id'   => $order_item_id,
+            'product_id'      => (int) ($from_side['product_id'] ?? 0),
+            'variation_id'    => (int) ($from_side['variation_id'] ?? 0),
+            'event_signature' => (string) ($from_side['event_signature'] ?? ''),
+            'booking_type'    => (string) ($from_side['booking_type'] ?? ''),
+            'selected_days'   => (string) ($from_side['selected_days'] ?? ''),
+            'days_selected'   => (string) ($from_side['days_selected'] ?? ''),
+            'start_date'      => (string) ($from_side['start_date'] ?? ''),
+            'end_date'        => (string) ($from_side['end_date'] ?? ''),
+            'camp_terms'      => (string) ($from_side['camp_terms'] ?? ''),
+            'course_day'      => (string) ($from_side['course_day'] ?? ''),
+            'order_date'      => intersoccer_roster_history_order_date_ymd($order_id, $roster_row_for_order_date),
+            'backfilled'      => $backfilled,
+            'note'            => $note,
+            'label'           => [
+                'product'   => (string) ($label['product'] ?? ''),
+                'variation' => (string) ($label['variation'] ?? ''),
+                'dates'     => (string) ($label['dates'] ?? ''),
+            ],
+        ];
+    }
+}
+
+if (!function_exists('intersoccer_roster_history_roster_row_from_side')) {
+    /**
+     * @param array<string,mixed> $side
+     * @return array<string,mixed>
+     */
+    function intersoccer_roster_history_roster_row_from_side(array $side, int $order_id, int $order_item_id): array {
+        $label = is_array($side['label'] ?? null) ? $side['label'] : [];
+        $row = [
+            'order_id'        => $order_id,
+            'order_item_id'   => $order_item_id,
+            'variation_id'    => (int) ($side['variation_id'] ?? 0),
+            'product_id'      => (int) ($side['product_id'] ?? 0),
+            'event_signature' => (string) ($side['event_signature'] ?? ''),
+            'booking_type'    => (string) ($side['booking_type'] ?? ''),
+            'selected_days'   => (string) ($side['selected_days'] ?? ''),
+            'days_selected'   => (string) ($side['days_selected'] ?? ''),
+            'start_date'      => (string) ($side['start_date'] ?? ''),
+            'end_date'        => (string) ($side['end_date'] ?? ''),
+            'camp_terms'      => (string) ($side['camp_terms'] ?? ''),
+            'course_day'      => (string) ($side['course_day'] ?? ''),
+        ];
+        $product = trim((string) ($label['product'] ?? ''));
+        if ($product !== '') {
+            $row['product_name'] = $product;
+        }
+
+        return $row;
+    }
+}
+
+if (!function_exists('intersoccer_roster_history_persist_backfill_origin_from_side')) {
+    /**
+     * Write a single backfilled origin from the pre-move roster side (first move on a legacy line).
+     *
+     * @param array<string,mixed> $from_side
+     */
+    function intersoccer_roster_history_persist_backfill_origin_from_side(
+        int $order_item_id,
+        int $order_id,
+        array $from_side
+    ): void {
+        if ($order_item_id <= 0 || $from_side === []) {
+            return;
+        }
+        $entries = intersoccer_roster_history_decode_entries(intersoccer_roster_history_read_raw($order_item_id));
+        if (intersoccer_roster_history_has_origin($entries)) {
+            return;
+        }
+        $row = intersoccer_roster_history_roster_row_from_side($from_side, $order_id, $order_item_id);
+        $note = '';
+        $legacy = intersoccer_roster_history_legacy_backfill_context($order_item_id);
+        if ($legacy['note'] !== '') {
+            $note = (string) $legacy['note'];
+        }
+        $entries[] = intersoccer_roster_history_build_origin_entry_from_side(
+            $order_id,
+            $order_item_id,
+            $from_side,
+            true,
+            $note,
+            $row
+        );
+        intersoccer_roster_history_write_entries($order_item_id, $entries);
+    }
+}
+
+if (!function_exists('intersoccer_roster_history_get_entries')) {
+    /**
+     * Persisted history entries only (never writes).
      *
      * @return array<int,array<string,mixed>>
      */
-    function intersoccer_roster_history_ensure_origin(int $order_item_id): array {
-        $entries = intersoccer_roster_history_decode_entries(intersoccer_roster_history_read_raw($order_item_id));
+    function intersoccer_roster_history_get_entries(int $order_item_id): array {
+        if ($order_item_id <= 0) {
+            return [];
+        }
+
+        return intersoccer_roster_history_decode_entries(intersoccer_roster_history_read_raw($order_item_id));
+    }
+}
+
+if (!function_exists('intersoccer_roster_history_get_entries_for_display')) {
+    /**
+     * Stored entries plus a computed (non-persisted) origin when none exists yet.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    function intersoccer_roster_history_get_entries_for_display(int $order_item_id): array {
+        $entries = intersoccer_roster_history_get_entries($order_item_id);
         if (intersoccer_roster_history_has_origin($entries)) {
             return $entries;
         }
@@ -397,23 +525,12 @@ if (!function_exists('intersoccer_roster_history_ensure_origin')) {
         if ($order_id <= 0 && function_exists('wc_get_order_id_by_order_item_id')) {
             $order_id = (int) wc_get_order_id_by_order_item_id($order_item_id);
         }
-        $entries[] = intersoccer_roster_history_build_origin_entry($order_id, $order_item_id, $row, true, '');
-        intersoccer_roster_history_write_entries($order_item_id, $entries);
+        $virtual = intersoccer_roster_history_build_origin_entry($order_id, $order_item_id, $row, true, '');
+        $moves = array_values(array_filter($entries, static function ($entry) {
+            return is_array($entry) && (($entry['type'] ?? '') !== 'origin');
+        }));
 
-        return $entries;
-    }
-}
-
-if (!function_exists('intersoccer_roster_history_get_entries')) {
-    /**
-     * @return array<int,array<string,mixed>>
-     */
-    function intersoccer_roster_history_get_entries(int $order_item_id): array {
-        if ($order_item_id <= 0) {
-            return [];
-        }
-
-        return intersoccer_roster_history_ensure_origin($order_item_id);
+        return array_merge([$virtual], $moves);
     }
 }
 
@@ -453,7 +570,12 @@ if (!function_exists('intersoccer_roster_history_append_move')) {
         if ($order_item_id <= 0 || !$from_side || !$to_side) {
             return;
         }
-        $entries = intersoccer_roster_history_ensure_origin($order_item_id);
+        if (!intersoccer_roster_history_has_origin(
+            intersoccer_roster_history_decode_entries(intersoccer_roster_history_read_raw($order_item_id))
+        )) {
+            intersoccer_roster_history_persist_backfill_origin_from_side($order_item_id, $order_id, $from_side);
+        }
+        $entries = intersoccer_roster_history_get_entries($order_item_id);
         $user_id = (int) ($context['actor_user_id'] ?? (function_exists('get_current_user_id') ? get_current_user_id() : 0));
         $display_name = (string) ($context['actor_display_name'] ?? '');
         if ($display_name === '' && $user_id > 0 && function_exists('get_userdata')) {
@@ -513,7 +635,7 @@ if (!function_exists('intersoccer_roster_history_render_admin_cell')) {
             && !intersoccer_user_can_view_roster_admin()) {
             return '';
         }
-        $entries = intersoccer_roster_history_get_entries($order_item_id);
+        $entries = intersoccer_roster_history_get_entries_for_display($order_item_id);
         if ($entries === []) {
             return '<span class="isrr-roster-history-empty">—</span>';
         }

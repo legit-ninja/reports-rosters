@@ -537,18 +537,106 @@ class MovePlayersHistoryTest extends TestCase {
         $this->assertSame(0, (int) ($move['stock']['applied_to'] ?? -1));
     }
 
-    public function test_legacy_backfill_is_idempotent(): void {
+    public function test_legacy_backfill_is_idempotent_on_first_move_only(): void {
         global $intersoccer_test_wc_order_item_meta;
         $this->installHandlerWorld();
         unset($intersoccer_test_wc_order_item_meta[self::ITEM_ID][intersoccer_roster_history_meta_key()]);
 
+        $before_read = intersoccer_roster_history_get_entries(self::ITEM_ID);
+        $this->assertSame([], $before_read);
+        $this->assertSame('', intersoccer_roster_history_read_raw(self::ITEM_ID));
+
+        $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_ID],
+            'confirm_warnings' => '1',
+        ]);
+
         $first = intersoccer_roster_history_get_entries(self::ITEM_ID);
-        $this->assertCount(1, $first);
+        $this->assertCount(2, $first);
         $this->assertTrue($first[0]['backfilled']);
+        $this->assertSame(self::SOURCE_VAR, (int) ($first[0]['variation_id'] ?? 0));
+        $this->assertSame('hist-sig-abc', $first[0]['event_signature'] ?? '');
+        $this->assertStringContainsString('History Course EN', (string) ($first[0]['label']['product'] ?? ''));
 
         $second = intersoccer_roster_history_get_entries(self::ITEM_ID);
-        $this->assertCount(1, $second);
+        $this->assertCount(2, $second);
         $this->assertSame($first[0]['seq'], $second[0]['seq']);
+    }
+
+    public function test_legacy_first_move_origin_uses_pre_move_roster_side(): void {
+        $this->installHandlerWorld();
+        global $intersoccer_test_wc_order_item_meta;
+        unset($intersoccer_test_wc_order_item_meta[self::ITEM_ID][intersoccer_roster_history_meta_key()]);
+
+        $response = $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_ID],
+            'confirm_warnings' => '1',
+        ]);
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        $entries = intersoccer_roster_history_get_entries(self::ITEM_ID);
+        $this->assertCount(2, $entries);
+        $origin = $entries[0];
+        $move = $entries[1];
+        $this->assertSame('origin', $origin['type']);
+        $this->assertTrue($origin['backfilled']);
+        $this->assertSame(self::SOURCE_VAR, (int) ($origin['variation_id'] ?? 0));
+        $this->assertSame(self::SOURCE_VAR, (int) ($move['from']['variation_id'] ?? 0));
+        $this->assertSame(self::TARGET_VAR, (int) ($move['to']['variation_id'] ?? 0));
+        $this->assertSame($move['from']['label'], $origin['label']);
+        $this->assertSame($move['from']['event_signature'], $origin['event_signature']);
+        $this->assertSame($move['from']['product_id'], $origin['product_id']);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function snapshotOrderItemMetaStore(): array {
+        global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_data;
+
+        return [
+            'meta' => is_array($intersoccer_test_wc_order_item_meta)
+                ? json_decode(json_encode($intersoccer_test_wc_order_item_meta), true)
+                : [],
+            'data' => is_array($intersoccer_test_wc_order_item_data)
+                ? json_decode(json_encode($intersoccer_test_wc_order_item_data), true)
+                : [],
+        ];
+    }
+
+    public function test_admin_view_does_not_persist_history_for_legacy_rows(): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $store = [
+            self::ITEM_ID => $this->baselineRosterRow(),
+            self::ITEM_BATCH_OK => array_merge($this->baselineRosterRow(), [
+                'order_item_id' => self::ITEM_BATCH_OK,
+                'id' => 702,
+                'product_name' => 'History Course B',
+            ]),
+        ];
+        $this->installHandlerWorld([
+            'order_item_ids' => [self::ITEM_ID, self::ITEM_BATCH_OK],
+            'roster_row_map' => [self::ITEM_ID => true, self::ITEM_BATCH_OK => true],
+            'roster_store' => $store,
+        ]);
+        foreach ([self::ITEM_ID, self::ITEM_BATCH_OK] as $item_id) {
+            unset($intersoccer_test_wc_order_item_meta[$item_id][intersoccer_roster_history_meta_key()]);
+        }
+
+        $before = $this->snapshotOrderItemMetaStore();
+
+        $html_one = intersoccer_roster_history_render_admin_cell(self::ITEM_ID);
+        $html_two = intersoccer_roster_history_render_admin_cell(self::ITEM_BATCH_OK);
+        $this->assertStringContainsString('History', $html_one);
+        $this->assertStringContainsString('History Course EN', $html_one);
+        $this->assertStringContainsString('History', $html_two);
+
+        $after = $this->snapshotOrderItemMetaStore();
+        $this->assertSame($before, $after);
+        $this->assertSame('', intersoccer_roster_history_read_raw(self::ITEM_ID));
+        $this->assertSame('', intersoccer_roster_history_read_raw(self::ITEM_BATCH_OK));
     }
 
     public function test_rejected_move_appends_nothing(): void {

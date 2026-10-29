@@ -30,6 +30,7 @@ class MovePlayersAttendeeFieldsTest extends TestCase {
     private const ATTENDEE_DOB = '2015-03-01';
     private const ATTENDEE_GENDER = 'Female';
     private const MEDICAL_CONDITIONS = 'Asthma; carries inhaler';
+    private const CANONICAL_GIRLS_ONLY = '1';
 
     /** @var list<string> */
     private const ATTENDEE_META_KEYS = [
@@ -135,6 +136,7 @@ class MovePlayersAttendeeFieldsTest extends TestCase {
             'Attendee DOB' => self::ATTENDEE_DOB,
             'Attendee Gender' => self::ATTENDEE_GENDER,
             'Medical Conditions' => self::MEDICAL_CONDITIONS,
+            '_intersoccer_canonical_girls_only' => self::CANONICAL_GIRLS_ONLY,
         ];
     }
 
@@ -358,6 +360,7 @@ class MovePlayersAttendeeFieldsTest extends TestCase {
         $this->assertSingleMetaValue($order_item_id, 'Assigned Attendee', self::ASSIGNED_ATTENDEE);
         $this->assertSingleMetaValue($order_item_id, 'assigned_player', self::ASSIGNED_PLAYER);
         $this->assertSingleMetaValue($order_item_id, 'Player Index', self::PLAYER_INDEX);
+        $this->assertSingleMetaValue($order_item_id, '_intersoccer_canonical_girls_only', self::CANONICAL_GIRLS_ONLY);
     }
 
     /**

@@ -428,7 +428,12 @@ if (!function_exists('intersoccer_migration_is_player_attendee_meta_key')) {
                 'Attendee DOB',
                 'Attendee Gender',
                 'Medical Conditions',
+                '_intersoccer_canonical_girls_only',
             ], true);
+        }
+
+        if ($key === '_intersoccer_canonical_girls_only') {
+            return true;
         }
 
         $map = intersoccer_get_order_meta_field_map();
