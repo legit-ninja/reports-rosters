@@ -428,12 +428,7 @@ if (!function_exists('intersoccer_migration_is_player_attendee_meta_key')) {
                 'Attendee DOB',
                 'Attendee Gender',
                 'Medical Conditions',
-                '_intersoccer_canonical_girls_only',
             ], true);
-        }
-
-        if ($key === '_intersoccer_canonical_girls_only') {
-            return true;
         }
 
         $map = intersoccer_get_order_meta_field_map();
@@ -541,6 +536,66 @@ if (!function_exists('intersoccer_migration_apply_player_attendee_meta_snapshot'
         foreach ($snapshot as $key => $value) {
             $item->update_meta_data((string) $key, $value);
         }
+        $item->save();
+    }
+}
+
+if (!function_exists('intersoccer_migration_resolve_destination_canonical_girls_only_for_move')) {
+    /**
+     * Destination roster girls-only flag for order-line canonical meta (0|1 as string).
+     *
+     * Uses the same variation resolver as roster move writes. When the destination is unknown,
+     * returns null so callers keep the line's existing value.
+     */
+    function intersoccer_migration_resolve_destination_canonical_girls_only_for_move(
+        WC_Product_Variation $variation,
+        ?string $existing_value = null
+    ): ?string {
+        if (!function_exists('intersoccer_roster_move_resolve_variation_girls_only_tristate')) {
+            return null;
+        }
+
+        $tristate = intersoccer_roster_move_resolve_variation_girls_only_tristate($variation);
+        if ($tristate === 'unknown') {
+            if ($existing_value !== null && $existing_value !== '') {
+                return (string) $existing_value;
+            }
+
+            return null;
+        }
+
+        $flag = function_exists('intersoccer_roster_move_resolve_variation_girls_only_flag')
+            ? intersoccer_roster_move_resolve_variation_girls_only_flag($variation)
+            : ($tristate === 'yes' ? 1 : 0);
+
+        return (string) (int) $flag;
+    }
+}
+
+if (!function_exists('intersoccer_migration_apply_destination_canonical_girls_only_for_move')) {
+    /**
+     * Set a single `_intersoccer_canonical_girls_only` row from the destination variation roster.
+     */
+    function intersoccer_migration_apply_destination_canonical_girls_only_for_move(
+        int $item_id,
+        WC_Product_Variation $variation,
+        ?string $existing_value = null
+    ): void {
+        if ($item_id <= 0) {
+            return;
+        }
+
+        $resolved = intersoccer_migration_resolve_destination_canonical_girls_only_for_move(
+            $variation,
+            $existing_value
+        );
+        if ($resolved === null) {
+            return;
+        }
+
+        $item = new WC_Order_Item_Product($item_id);
+        $item->delete_meta_data('_intersoccer_canonical_girls_only');
+        $item->update_meta_data('_intersoccer_canonical_girls_only', $resolved);
         $item->save();
     }
 }
@@ -1311,7 +1366,8 @@ if (!function_exists('intersoccer_migration_finalize_move_item_meta')) {
         array $other_meta,
         array $slug_meta,
         array $existing_line_keys,
-        WC_Product_Variation $variation
+        WC_Product_Variation $variation,
+        ?string $prior_canonical_girls_only = null
     ): void {
         if ($item_id <= 0) {
             return;
@@ -1362,6 +1418,14 @@ if (!function_exists('intersoccer_migration_finalize_move_item_meta')) {
         }
 
         intersoccer_migration_prune_unexpected_move_meta_keys($item_id, $existing_line_keys, $human_lookup);
+
+        if (function_exists('intersoccer_migration_apply_destination_canonical_girls_only_for_move')) {
+            intersoccer_migration_apply_destination_canonical_girls_only_for_move(
+                $item_id,
+                $variation,
+                $prior_canonical_girls_only
+            );
+        }
     }
 }
 

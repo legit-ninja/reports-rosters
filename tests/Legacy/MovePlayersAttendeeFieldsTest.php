@@ -360,7 +360,6 @@ class MovePlayersAttendeeFieldsTest extends TestCase {
         $this->assertSingleMetaValue($order_item_id, 'Assigned Attendee', self::ASSIGNED_ATTENDEE);
         $this->assertSingleMetaValue($order_item_id, 'assigned_player', self::ASSIGNED_PLAYER);
         $this->assertSingleMetaValue($order_item_id, 'Player Index', self::PLAYER_INDEX);
-        $this->assertSingleMetaValue($order_item_id, '_intersoccer_canonical_girls_only', self::CANONICAL_GIRLS_ONLY);
     }
 
     /**
@@ -406,6 +405,7 @@ class MovePlayersAttendeeFieldsTest extends TestCase {
         $item_after_out = new \WC_Order_Item_Product(self::ITEM_ID);
         $this->assertSame(self::TARGET_VAR, (int) $item_after_out->get_variation_id());
         $this->assertAttendeeAndPlayerMetaPreserved(self::ITEM_ID);
+        $this->assertSingleMetaValue(self::ITEM_ID, '_intersoccer_canonical_girls_only', '0');
 
         $inbound = $this->invokeMoveAjax([
             'target_variation_id' => self::SOURCE_VAR,
@@ -418,5 +418,6 @@ class MovePlayersAttendeeFieldsTest extends TestCase {
         $item_after_back = new \WC_Order_Item_Product(self::ITEM_ID);
         $this->assertSame(self::SOURCE_VAR, (int) $item_after_back->get_variation_id());
         $this->assertAttendeeAndPlayerMetaPreserved(self::ITEM_ID);
+        $this->assertSingleMetaValue(self::ITEM_ID, '_intersoccer_canonical_girls_only', '0');
     }
 }
