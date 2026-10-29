@@ -588,6 +588,7 @@ class MovePlayersHistoryTest extends TestCase {
         $this->assertSame($move['from']['label'], $origin['label']);
         $this->assertSame($move['from']['event_signature'], $origin['event_signature']);
         $this->assertSame($move['from']['product_id'], $origin['product_id']);
+        $this->assertSame('', (string) ($origin['note'] ?? ''));
     }
 
     /**

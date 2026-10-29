@@ -10,6 +10,7 @@ defined('ABSPATH') or die('Restricted access');
 require_once __DIR__ . '/roster-move-reason-messages.php';
 require_once __DIR__ . '/roster-move-stock.php';
 require_once __DIR__ . '/roster-move-history.php';
+require_once __DIR__ . '/migration-meta.php';
 
 /**
  * Meta keys that mark a course/camp product or variation as cancelled (first truthy wins).

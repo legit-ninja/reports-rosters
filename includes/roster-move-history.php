@@ -291,15 +291,24 @@ if (!function_exists('intersoccer_roster_history_legacy_backfill_context')) {
     /**
      * @return array{origin_variation_id:int,note:string}
      */
-    function intersoccer_roster_history_legacy_backfill_context(int $order_item_id): array {
+    function intersoccer_roster_history_legacy_backfill_context(
+        int $order_item_id,
+        int $exclude_stock_delta_from_variation_id = 0
+    ): array {
         $origin_variation_id = 0;
         $note = '';
 
         if (function_exists('intersoccer_roster_move_read_stock_delta')) {
             $delta = intersoccer_roster_move_read_stock_delta($order_item_id);
             if ($delta && (int) ($delta['from_variation_id'] ?? 0) > 0) {
-                $origin_variation_id = intersoccer_roster_history_resolve_variation_id((int) $delta['from_variation_id']);
-                $note = 'Origin variation inferred from existing roster move stock delta (pre-move side).';
+                $delta_from = intersoccer_roster_history_resolve_variation_id((int) $delta['from_variation_id']);
+                $exclude = $exclude_stock_delta_from_variation_id > 0
+                    ? intersoccer_roster_history_resolve_variation_id($exclude_stock_delta_from_variation_id)
+                    : 0;
+                if ($exclude <= 0 || $delta_from !== $exclude) {
+                    $origin_variation_id = $delta_from;
+                    $note = 'Origin variation inferred from an earlier roster move stock delta (pre-move side).';
+                }
             }
         }
 
@@ -475,7 +484,10 @@ if (!function_exists('intersoccer_roster_history_persist_backfill_origin_from_si
         }
         $row = intersoccer_roster_history_roster_row_from_side($from_side, $order_id, $order_item_id);
         $note = '';
-        $legacy = intersoccer_roster_history_legacy_backfill_context($order_item_id);
+        $legacy = intersoccer_roster_history_legacy_backfill_context(
+            $order_item_id,
+            (int) ($from_side['variation_id'] ?? 0)
+        );
         if ($legacy['note'] !== '') {
             $note = (string) $legacy['note'];
         }

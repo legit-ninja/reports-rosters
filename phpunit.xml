@@ -133,6 +133,7 @@
             <file>tests/Legacy/MovePlayersHistoryTest.php</file>
             <file>tests/Legacy/MovePlayersAttendeeFieldsTest.php</file>
             <file>tests/Legacy/MovePlayersCanonicalGirlsOnlyMoveTest.php</file>
+            <file>tests/Legacy/OrderAdminLineItemMetaDisplayTest.php</file>
             <file>tests/Legacy/MovePlayersRosterHistoryOriginOnBuildTest.php</file>
             <directory>tests/ReportAccuracy</directory>
         </testsuite>
