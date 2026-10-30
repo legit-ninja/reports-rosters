@@ -25,14 +25,16 @@ class MovePlayersItemDiscountsTest extends TestCase {
     /** @var array<int,array<string,mixed>> */
     private const ITEM_DISCOUNTS = [
         [
-            'code' => 'SIBLING10',
-            'amount' => 12.5,
+            'name' => 'Sibling Discount',
             'type' => 'percent',
+            'amount' => 12.5,
+            'allocation_method' => 'proportional',
         ],
         [
-            'code' => 'EARLYBIRD',
-            'amount' => 5.0,
+            'name' => 'Early Bird',
             'type' => 'fixed_cart',
+            'amount' => 5.0,
+            'allocation_method' => 'direct',
         ],
     ];
 
@@ -103,6 +105,7 @@ class MovePlayersItemDiscountsTest extends TestCase {
             'Activity Type' => 'Course',
             'Assigned Attendee' => 'Discount Meta Player',
             'assigned_player_id' => 'player-discount-961',
+            'Discount Amount' => '17.50',
             '_intersoccer_item_discounts' => self::ITEM_DISCOUNTS,
             '_intersoccer_total_item_discount' => '17.50',
         ];
@@ -319,5 +322,9 @@ class MovePlayersItemDiscountsTest extends TestCase {
         $this->assertSame(1, (int) ($outbound['data']['moved_count'] ?? 0));
         $this->assertSame(self::ITEM_DISCOUNTS, $intersoccer_test_wc_order_item_meta[self::ITEM_ID]['_intersoccer_item_discounts']);
         $this->assertSame($before_discounts, wc_get_order_item_meta(self::ITEM_ID, '_intersoccer_item_discounts', true));
+        $this->assertSame('17.50', $intersoccer_test_wc_order_item_meta[self::ITEM_ID]['_intersoccer_total_item_discount']);
+        $this->assertSame('17.50', $intersoccer_test_wc_order_item_meta[self::ITEM_ID]['Discount Amount']);
+        $this->assertSame('17.50', wc_get_order_item_meta(self::ITEM_ID, '_intersoccer_total_item_discount', true));
+        $this->assertSame('17.50', wc_get_order_item_meta(self::ITEM_ID, 'Discount Amount', true));
     }
 }

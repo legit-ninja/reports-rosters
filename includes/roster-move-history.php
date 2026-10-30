@@ -499,11 +499,15 @@ if (!function_exists('intersoccer_roster_history_roster_row_for_variation_infere
 
         $row = is_array($peer) ? $peer : [];
         if ($row === []) {
-            $row = $anchor_row;
+            $row = [
+                'order_id'      => (int) ($anchor_row['order_id'] ?? 0),
+                'order_item_id' => $order_item_id,
+            ];
+        } else {
+            $row['order_id'] = (int) ($anchor_row['order_id'] ?? $row['order_id'] ?? 0);
+            $row['order_item_id'] = $order_item_id;
         }
 
-        $row['order_id'] = (int) ($anchor_row['order_id'] ?? $row['order_id'] ?? 0);
-        $row['order_item_id'] = $order_item_id;
         $row['variation_id'] = $resolved;
         $row['product_id'] = $parent_id;
 
@@ -530,12 +534,58 @@ if (!function_exists('intersoccer_roster_history_roster_row_for_variation_infere
             if (trim((string) ($row[$field] ?? '')) !== '') {
                 continue;
             }
-            if (!method_exists($variation, 'get_meta')) {
+            if (!is_callable([$variation, 'get_meta'])) {
                 continue;
             }
             $meta_val = trim((string) $variation->get_meta($field, true));
             if ($meta_val !== '') {
                 $row[$field] = $meta_val;
+            }
+        }
+
+        $row = intersoccer_roster_history_apply_variation_attributes_to_row($row, $variation);
+
+        return $row;
+    }
+}
+
+if (!function_exists('intersoccer_roster_history_apply_variation_attributes_to_row')) {
+    /**
+     * Fill empty roster row facets from WooCommerce variation attributes (display labels).
+     *
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>
+     */
+    function intersoccer_roster_history_apply_variation_attributes_to_row(array $row, $variation): array {
+        if (!is_object($variation) || !is_callable([$variation, 'get_attribute'])) {
+            return $row;
+        }
+
+        $taxonomy_to_field = [
+            'pa_intersoccer-venues' => 'venue',
+            'pa_age-group'          => 'age_group',
+            'pa_course-day'         => 'course_day',
+            'pa_camp-terms'         => 'camp_terms',
+            'pa_program-season'     => 'season',
+        ];
+
+        foreach ($taxonomy_to_field as $taxonomy => $field) {
+            if (trim((string) ($row[$field] ?? '')) !== '') {
+                continue;
+            }
+            $val = trim((string) $variation->get_attribute($taxonomy));
+            if ($val !== '') {
+                $row[$field] = $val;
+            }
+        }
+
+        if (trim((string) ($row['times'] ?? '')) === '') {
+            foreach (['pa_camp-times', 'pa_course-times'] as $taxonomy) {
+                $val = trim((string) $variation->get_attribute($taxonomy));
+                if ($val !== '') {
+                    $row['times'] = $val;
+                    break;
+                }
             }
         }
 
@@ -599,14 +649,26 @@ if (!function_exists('intersoccer_roster_history_first_move_origin_context')) {
                 );
                 if ($rebuilt !== null) {
                     $origin_side = $rebuilt;
-                    $label_source = $rebuilt;
+                    $origin_side['booking_type'] = (string) ($from_side['booking_type'] ?? '');
+                    $origin_side['selected_days'] = (string) ($from_side['selected_days'] ?? '');
+                    $origin_side['days_selected'] = (string) ($from_side['days_selected'] ?? '');
+                    $label_source = $origin_side;
+                    $label_line = intersoccer_roster_history_format_label_line($label_source);
+                    $note = $label_line !== ''
+                        ? 'Original booking inferred from an earlier move: ' . $label_line
+                        : 'Original booking inferred from an earlier move.';
+                } else {
+                    $label_line = intersoccer_roster_history_format_label_line($from_side);
+                    $note = $label_line !== ''
+                        ? 'Original booking could not be identified; earliest known roster before this move: ' . $label_line
+                        : 'Original booking could not be identified; earliest known roster before this move.';
                 }
+            } else {
+                $label_line = intersoccer_roster_history_format_label_line($label_source);
+                $note = $label_line !== ''
+                    ? 'Original booking inferred from an earlier move: ' . $label_line
+                    : 'Original booking inferred from an earlier move.';
             }
-
-            $label_line = intersoccer_roster_history_format_label_line($label_source);
-            $note = $label_line !== ''
-                ? 'Original booking inferred from an earlier move: ' . $label_line
-                : 'Original booking inferred from an earlier move.';
         } else {
             $label_line = intersoccer_roster_history_format_label_line($from_side);
             $note = $label_line !== ''

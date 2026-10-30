@@ -79,7 +79,8 @@ class MovePlayersHistoryTest extends TestCase {
             $GLOBALS['intersoccer_test_roster_store'],
             $GLOBALS['intersoccer_test_roster_peer_store'],
             $GLOBALS['intersoccer_test_userdata_map'],
-            $GLOBALS['intersoccer_test_current_user']
+            $GLOBALS['intersoccer_test_current_user'],
+            $GLOBALS['intersoccer_test_roster_inference_event_signature']
         );
         $this->resetMovePlayersTestGlobals();
         $_POST = [];
@@ -231,8 +232,17 @@ class MovePlayersHistoryTest extends TestCase {
             $v->shouldReceive('get_stock_quantity')->andReturnUsing(static function () use ($vid) {
                 return (int) ($GLOBALS['intersoccer_test_wc_stock_qty'][$vid] ?? 0);
             });
+            $roster_meta = is_array($overrides['roster_meta'] ?? null) ? $overrides['roster_meta'] : [];
+            foreach ($roster_meta as $meta_key => $meta_value) {
+                $v->shouldReceive('get_meta')->with($meta_key, true)->andReturn((string) $meta_value);
+            }
             $v->shouldReceive('get_meta')->with('capacity', true)->andReturn($overrides['capacity'] ?? '');
-            $v->shouldReceive('get_variation_attributes')->andReturn([]);
+            $v->shouldReceive('get_meta')->andReturn('');
+            $v->shouldReceive('get_variation_attributes')->andReturn($overrides['variation_attributes'] ?? []);
+            $attribute_map = is_array($overrides['variation_attribute_map'] ?? null) ? $overrides['variation_attribute_map'] : [];
+            foreach ($attribute_map as $taxonomy => $attribute_value) {
+                $v->shouldReceive('get_attribute')->with($taxonomy)->andReturn((string) $attribute_value);
+            }
             $v->shouldReceive('get_attribute')->andReturn('');
             $v->shouldReceive('get_attributes')->andReturn([]);
             $v->shouldReceive('get_name')->andReturn($overrides['variation_name'] ?? ('Variation ' . $vid));
@@ -367,6 +377,10 @@ class MovePlayersHistoryTest extends TestCase {
                 return null;
             }
             if (strpos($sql, 'event_signature') !== false && strpos($sql, 'variation_id') !== false) {
+                $inferred = trim((string) ($GLOBALS['intersoccer_test_roster_inference_event_signature'] ?? ''));
+                if ($inferred !== '') {
+                    return $inferred;
+                }
                 foreach ($GLOBALS['intersoccer_test_roster_peer_store'] ?? [] as $peer_row) {
                     $vid = (int) ($peer_row['variation_id'] ?? 0);
                     $sig = trim((string) ($peer_row['event_signature'] ?? ''));
@@ -809,8 +823,84 @@ class MovePlayersHistoryTest extends TestCase {
         $this->assertSame(self::SOURCE_VAR, (int) ($origin['variation_id'] ?? 0));
         $this->assertSame('hist-sig-abc', $origin['event_signature'] ?? '');
         $note = trim((string) ($origin['note'] ?? ''));
-        $this->assertStringContainsString('Original booking inferred from an earlier move:', $note);
+        $this->assertStringContainsString('Original booking could not be identified', $note);
+        $this->assertStringContainsString('earliest known roster before this move', $note);
         $this->assertStringContainsString('History Course EN', $note);
+        $this->assertStringNotContainsString('Original booking inferred from an earlier move:', $note);
+    }
+
+    public function test_first_move_inferred_origin_without_peer_row_does_not_leak_destination_roster(): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $baseline = array_merge($this->baselineRosterRow(), [
+            'booking_type' => 'Individual Days',
+            'selected_days' => 'Mon, Tue',
+            'days_selected' => 'Mon, Tue',
+        ]);
+        $this->installHandlerWorld([
+            'roster_store' => [self::ITEM_ID => $baseline],
+            'roster_peer_store' => [],
+            'original_overrides' => [
+                'variation_name' => 'Inferred Original Product EN',
+                'variation_attribute_map' => [
+                    'pa_intersoccer-venues' => 'Lausanne Variation Venue',
+                    'pa_age-group' => '9-11',
+                    'pa_course-times' => 'Afternoon',
+                    'pa_course-day' => 'Friday',
+                ],
+            ],
+        ]);
+        unset($intersoccer_test_wc_order_item_meta[self::ITEM_ID][intersoccer_roster_history_meta_key()]);
+        $this->seedLatestAuditFromVariation(self::ORIGINAL_VAR);
+
+        $GLOBALS['intersoccer_test_roster_inference_event_signature'] = 'hist-sig-inferred-only';
+
+        $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_ID],
+            'confirm_warnings' => '1',
+        ]);
+
+        $origin = intersoccer_roster_history_get_entries(self::ITEM_ID)[0];
+        $this->assertSame(self::ORIGINAL_VAR, (int) ($origin['variation_id'] ?? 0));
+        $this->assertSame('hist-sig-inferred-only', $origin['event_signature'] ?? '');
+        $this->assertSame('Individual Days', $origin['booking_type'] ?? '');
+        $this->assertSame('Mon, Tue', $origin['selected_days'] ?? '');
+        $this->assertSame('Mon, Tue', $origin['days_selected'] ?? '');
+        $this->assertStringContainsString('Inferred Original Product EN', (string) ($origin['label']['product'] ?? ''));
+        $this->assertStringContainsString('Lausanne Variation Venue', (string) ($origin['label']['variation'] ?? ''));
+        $this->assertStringNotContainsString('hist-sig-abc', (string) ($origin['event_signature'] ?? ''));
+        $this->assertStringNotContainsString('Geneva Centre', (string) ($origin['label']['variation'] ?? ''));
+    }
+
+    public function test_first_move_inferred_origin_keeps_player_booking_fields_from_pre_move_side(): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $baseline = array_merge($this->baselineRosterRow(), [
+            'booking_type' => 'Individual Days',
+            'selected_days' => 'Mon, Wed',
+            'days_selected' => 'Mon, Wed',
+        ]);
+        $peer = $this->originalPeerRosterRow();
+        $peer['booking_type'] = 'Full Term';
+        $peer['selected_days'] = '';
+        $peer['days_selected'] = '';
+        $this->installHandlerWorld([
+            'roster_store' => [self::ITEM_ID => $baseline],
+            'roster_peer_store' => [$peer],
+        ]);
+        unset($intersoccer_test_wc_order_item_meta[self::ITEM_ID][intersoccer_roster_history_meta_key()]);
+        $this->seedLatestAuditFromVariation(self::ORIGINAL_VAR);
+
+        $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_ID],
+            'confirm_warnings' => '1',
+        ]);
+
+        $origin = intersoccer_roster_history_get_entries(self::ITEM_ID)[0];
+        $this->assertSame('Individual Days', $origin['booking_type'] ?? '');
+        $this->assertSame('Mon, Wed', $origin['selected_days'] ?? '');
+        $this->assertSame('Mon, Wed', $origin['days_selected'] ?? '');
+        $this->assertSame('hist-sig-original', $origin['event_signature'] ?? '');
     }
 
     /**

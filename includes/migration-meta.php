@@ -1107,24 +1107,6 @@ if (!function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
                 $allowed['attribute_' . $key] = true;
             }
         }
-        foreach ($variation->get_variation_attributes() as $attribute_key => $attribute_value) {
-            $allowed[(string) $attribute_key] = true;
-            $clean_key = str_replace('attribute_', '', (string) $attribute_key);
-            $allowed[$clean_key] = true;
-        }
-
-        if (function_exists('intersoccer_migration_pa_taxonomy_keys_for_move')
-            && method_exists($variation, 'get_attribute')) {
-            foreach (intersoccer_migration_pa_taxonomy_keys_for_move() as $taxonomy) {
-                $from_variation = $variation->get_attribute($taxonomy);
-                if ($from_variation === '' || $from_variation === null) {
-                    continue;
-                }
-                $allowed[$taxonomy] = true;
-                $allowed['attribute_' . $taxonomy] = true;
-            }
-        }
-
         $filtered = [];
         foreach ($slug_meta as $meta_key => $meta_value) {
             if (!isset($allowed[$meta_key])) {
@@ -1208,15 +1190,13 @@ if (!function_exists('intersoccer_migration_coerce_move_line_meta_value')) {
             if (intersoccer_migration_move_meta_array_is_nested($raw)) {
                 return $raw;
             }
-            $parts = [];
             foreach ($raw as $part) {
                 if (!is_scalar($part)) {
                     return $raw;
                 }
-                $parts[] = trim((string) $part);
             }
 
-            return implode(', ', $parts);
+            return $raw;
         }
         if (is_scalar($raw) || $raw === null) {
             return trim((string) $raw);

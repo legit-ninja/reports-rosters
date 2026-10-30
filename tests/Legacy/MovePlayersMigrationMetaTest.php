@@ -856,20 +856,63 @@ class MovePlayersMigrationMetaTest extends TestCase {
             'pa_intersoccer-venues' => 'geneva-college-sismondi-nations',
             'attribute_pa_intersoccer-venues' => 'geneva-college-sismondi-nations',
         ];
+        $existing_pa_keys = array_keys($existing_line_pa);
         $slug_meta = [
             'pa_intersoccer-venues' => $venue_slug,
             'attribute_pa_intersoccer-venues' => $venue_slug,
+            'pa_age-group' => '5-12',
+            'attribute_pa_age-group' => '5-12',
         ];
 
-        $normalized = intersoccer_migration_normalize_slug_meta_for_variation(
+        $filtered = intersoccer_migration_filter_slug_meta_for_move(
             $slug_meta,
+            $existing_pa_keys,
             $variation,
             $existing_line_pa
         );
 
-        $this->assertSame($venue_slug, $normalized['pa_intersoccer-venues']);
-        $this->assertSame($venue_slug, $normalized['attribute_pa_intersoccer-venues']);
-        $this->assertNotSame($venue_display, $normalized['pa_intersoccer-venues']);
+        $this->assertSame($venue_slug, $filtered['pa_intersoccer-venues']);
+        $this->assertSame($venue_slug, $filtered['attribute_pa_intersoccer-venues']);
+        $this->assertNotSame($venue_display, $filtered['pa_intersoccer-venues']);
+        $this->assertArrayNotHasKey('pa_age-group', $filtered);
+        $this->assertArrayNotHasKey('attribute_pa_age-group', $filtered);
+    }
+
+    public function test_filter_slug_meta_does_not_add_venue_pa_when_line_had_no_venue_key(): void {
+        $venue_slug = 'geneva-stade-chenois-thonex';
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_intersoccer-venues' => $venue_slug,
+            'attribute_pa_age-group' => '5-12',
+        ]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn(0);
+
+        $existing_pa_keys = [
+            'attribute_pa_age-group',
+            'pa_age-group',
+        ];
+        $existing_line_pa = [
+            'attribute_pa_age-group' => '5-8y',
+            'pa_age-group' => '5-8y',
+        ];
+        $slug_meta = [
+            'attribute_pa_intersoccer-venues' => $venue_slug,
+            'pa_intersoccer-venues' => $venue_slug,
+            'attribute_pa_age-group' => '5-12',
+            'pa_age-group' => '5-12',
+        ];
+
+        $filtered = intersoccer_migration_filter_slug_meta_for_move(
+            $slug_meta,
+            $existing_pa_keys,
+            $variation,
+            $existing_line_pa
+        );
+
+        $this->assertArrayNotHasKey('pa_intersoccer-venues', $filtered);
+        $this->assertArrayNotHasKey('attribute_pa_intersoccer-venues', $filtered);
+        $this->assertSame('5-12', $filtered['pa_age-group']);
     }
 
     public function test_normalize_slug_meta_writes_slug_when_key_missing_on_line(): void {
@@ -948,7 +991,12 @@ class MovePlayersMigrationMetaTest extends TestCase {
 
     public function test_sandbox_7883_shape_missing_pa_age_group_writes_slug_sibling_on_filter(): void {
         $line_meta = $this->sandboxOrderItem7883MetaShape();
-        unset($line_meta['pa_age-group'], $line_meta['pa_course-times'], $line_meta['pa_intersoccer-venues']);
+        unset(
+            $line_meta['pa_age-group'],
+            $line_meta['pa_course-times'],
+            $line_meta['pa_intersoccer-venues'],
+            $line_meta['attribute_pa_intersoccer-venues']
+        );
         $existing_pa = array_keys(array_filter(
             $line_meta,
             static function ($key) {
@@ -990,7 +1038,8 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertSame('5-12', $filtered['attribute_pa_age-group']);
         $this->assertSame('5-12', $filtered['pa_age-group']);
         $this->assertSame('1000-1130', $filtered['pa_course-times']);
-        $this->assertSame('geneva-stade-chenois-thonex', $filtered['pa_intersoccer-venues']);
+        $this->assertArrayNotHasKey('pa_intersoccer-venues', $filtered);
+        $this->assertArrayNotHasKey('attribute_pa_intersoccer-venues', $filtered);
     }
 
     public function test_prune_meta_rows_keeps_girls_only_label_and_lowercase_when_both_on_line(): void {
@@ -1209,6 +1258,41 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertSame($discounts, $snapshot['other']['_intersoccer_item_discounts']);
         $this->assertSame('17.50', $snapshot['other']['_intersoccer_total_item_discount']);
         $this->assertSame('Course', $snapshot['human']['activity_type'] ?? '');
+    }
+
+    public function test_snapshot_line_meta_values_preserves_flat_scalar_arrays_in_other_bucket(): void {
+        $tags = ['tag-a', 'tag-b'];
+        $meta = [
+            '_custom_tags' => $tags,
+            'Activity Type' => 'Course',
+        ];
+        $item = Mockery::mock('WC_Order_Item_Product');
+        $item->shouldReceive('get_meta_data')->andReturnUsing(static function () use ($meta) {
+            $objects = [];
+            foreach ($meta as $key => $value) {
+                $objects[] = new class($key, $value) {
+                    private $key;
+                    private $value;
+
+                    public function __construct($key, $value) {
+                        $this->key = $key;
+                        $this->value = $value;
+                    }
+
+                    public function get_data() {
+                        return ['key' => $this->key, 'value' => $this->value];
+                    }
+                };
+            }
+
+            return $objects;
+        });
+        $alias_map = intersoccer_migration_human_alias_map();
+        $lookup = intersoccer_migration_build_lookup($alias_map);
+
+        $snapshot = intersoccer_migration_snapshot_line_meta_values($item, $alias_map, $lookup);
+
+        $this->assertSame($tags, $snapshot['other']['_custom_tags']);
     }
 
     public function test_restore_canonical_meta_preserves_nested_item_discounts_in_other_bucket(): void {
