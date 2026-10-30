@@ -9,8 +9,12 @@ use InterSoccer\ReportsRosters\Tests\TestCase;
 use InterSoccerRRTestMeta;
 
 class PlayerCourseStatusDateAndExportTest extends TestCase {
+	/** @var array<string,mixed> */
+	private $savedGet = [];
+
 	protected function setUp(): void {
 		parent::setUp();
+		$this->savedGet = $_GET;
 		if (function_exists('intersoccer_test_ensure_pm_filter_stub')) {
 			intersoccer_test_ensure_pm_filter_stub();
 		}
@@ -26,6 +30,7 @@ class PlayerCourseStatusDateAndExportTest extends TestCase {
 
 	protected function tearDown(): void {
 		$this->reset_fixtures();
+		$_GET = $this->savedGet;
 		parent::tearDown();
 	}
 
@@ -224,6 +229,8 @@ class PlayerCourseStatusDateAndExportTest extends TestCase {
 		$this->assertContains('Times', $headers);
 		$this->assertNotContains('Course Bookings', $headers);
 		$this->assertContains('Parent Billing Phone', $headers);
+		$this->assertContains('Parent Email', $headers);
+		$this->assertContains('Account Email', $headers);
 	}
 
 	public function test_normalize_times_display_unifies_french_hour_format(): void {
@@ -257,7 +264,12 @@ class PlayerCourseStatusDateAndExportTest extends TestCase {
 		$_GET = ['page' => 'intersoccer-player-course-status', 'year' => '2026', 'season_type' => ''];
 		$filters_all = intersoccer_player_course_status_request_filters();
 		$this->assertSame('', $filters_all['season_type']);
-		unset($_GET);
+	}
+
+	public function test_course_day_filter_label_normalizes_fr_and_de_weekdays(): void {
+		$this->assertSame('Wednesday', intersoccer_player_course_status_course_day_filter_label('wednesday', 'Mercredi'));
+		$this->assertSame('Wednesday', intersoccer_player_course_status_course_day_filter_label('mercredi', ''));
+		$this->assertSame('Saturday', intersoccer_player_course_status_course_day_filter_label('saturday', 'Samstag'));
 	}
 
 	public function test_season_type_courses_includes_autumn_winter_spring_excludes_summer(): void {
@@ -320,7 +332,11 @@ class PlayerCourseStatusDateAndExportTest extends TestCase {
 		$this->assertNotFalse($line_type_idx);
 		$this->assertStringContainsString('Booked', (string) $lines[0][ $line_type_idx ]);
 		$this->assertStringContainsString('Pending', (string) $lines[1][ $line_type_idx ]);
+		$parent_idx = array_search('Parent Email', $headers, true);
 		$acct_idx = array_search('Account Email', $headers, true);
+		$this->assertNotFalse($parent_idx);
+		$this->assertNotFalse($acct_idx);
+		$this->assertSame('acct@test', $lines[0][ $parent_idx ]);
 		$this->assertSame('acct@test', $lines[0][ $acct_idx ]);
 		$bill_email_idx = array_search('Parent Billing Email', $headers, true);
 		$this->assertSame('bill@test', $lines[0][ $bill_email_idx ]);

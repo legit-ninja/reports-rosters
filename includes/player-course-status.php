@@ -71,6 +71,7 @@ function intersoccer_player_course_status_user_can_view_dob() {
 function intersoccer_player_course_status_reset_run_memos() {
 	intersoccer_player_course_status_reset_roster_query_state();
 	intersoccer_player_course_status_reset_facet_slug_memos();
+	unset($GLOBALS['intersoccer_pcs_resolved_course_dates_memo']);
 	if (function_exists('intersoccer_winback_reset_facet_resolution_cache')) {
 		intersoccer_winback_reset_facet_resolution_cache();
 	}
@@ -230,6 +231,7 @@ function intersoccer_player_course_status_export_booking_headers() {
 function intersoccer_player_course_status_export_headers() {
 	$headers = [
 		'Player Name',
+		'Parent Email',
 		'Account Email',
 		'User ID',
 	];
@@ -325,9 +327,11 @@ function intersoccer_player_course_status_export_booking_cells(array $booking, $
 function intersoccer_player_course_status_export_player_cells(array $row) {
 	$player = is_array($row['player'] ?? null) ? $row['player'] : [];
 	$parent = is_array($row['parent'] ?? null) ? $row['parent'] : [];
+	$account_email = (string) ($parent['email'] ?? '');
 	$out = [
 		(string) ($player['name'] ?? ''),
-		(string) ($parent['email'] ?? ''),
+		$account_email,
+		$account_email,
 		(int) ($parent['id'] ?? 0),
 	];
 	if (intersoccer_player_course_status_user_can_view_dob()) {
@@ -581,21 +585,34 @@ function intersoccer_player_course_status_variation_course_date_from_row(array $
  * @param array<string,mixed> $row
  */
 function intersoccer_player_course_status_resolve_row_start_date(array $row) {
+	$item_id = (int) ( $row['order_item_id'] ?? 0 );
+	if ($item_id > 0 && isset($GLOBALS['intersoccer_pcs_resolved_course_dates_memo'][ $item_id ]['start'])) {
+		return (string) $GLOBALS['intersoccer_pcs_resolved_course_dates_memo'][ $item_id ]['start'];
+	}
 	$raw = trim((string) ( $row['start_date'] ?? '' ));
 	$parsed = intersoccer_player_course_status_parse_resolved_date($raw, 'pcs roster (start)');
 	if ($parsed !== '') {
+		if ($item_id > 0) {
+			$GLOBALS['intersoccer_pcs_resolved_course_dates_memo'][ $item_id ]['start'] = $parsed;
+		}
+
 		return $parsed;
 	}
-	$item_id = (int) ( $row['order_item_id'] ?? 0 );
 	if ($item_id > 0) {
 		$om = intersoccer_player_course_status_order_item_course_date_meta_value($item_id, 'start');
 		$parsed = intersoccer_player_course_status_parse_resolved_date($om, 'pcs order meta (start)');
 		if ($parsed !== '') {
+			$GLOBALS['intersoccer_pcs_resolved_course_dates_memo'][ $item_id ]['start'] = $parsed;
+
 			return $parsed;
 		}
 	}
+	$parsed = intersoccer_player_course_status_variation_course_date_from_row($row, 'start');
+	if ($item_id > 0) {
+		$GLOBALS['intersoccer_pcs_resolved_course_dates_memo'][ $item_id ]['start'] = (string) $parsed;
+	}
 
-	return intersoccer_player_course_status_variation_course_date_from_row($row, 'start');
+	return $parsed;
 }
 
 /**
@@ -604,21 +621,34 @@ function intersoccer_player_course_status_resolve_row_start_date(array $row) {
  * @param array<string,mixed> $row
  */
 function intersoccer_player_course_status_resolve_row_end_date(array $row) {
+	$item_id = (int) ( $row['order_item_id'] ?? 0 );
+	if ($item_id > 0 && isset($GLOBALS['intersoccer_pcs_resolved_course_dates_memo'][ $item_id ]['end'])) {
+		return (string) $GLOBALS['intersoccer_pcs_resolved_course_dates_memo'][ $item_id ]['end'];
+	}
 	$raw = trim((string) ( $row['end_date'] ?? '' ));
 	$parsed = intersoccer_player_course_status_parse_resolved_date($raw, 'pcs roster (end)');
 	if ($parsed !== '') {
+		if ($item_id > 0) {
+			$GLOBALS['intersoccer_pcs_resolved_course_dates_memo'][ $item_id ]['end'] = $parsed;
+		}
+
 		return $parsed;
 	}
-	$item_id = (int) ( $row['order_item_id'] ?? 0 );
 	if ($item_id > 0) {
 		$om = intersoccer_player_course_status_order_item_course_date_meta_value($item_id, 'end');
 		$parsed = intersoccer_player_course_status_parse_resolved_date($om, 'pcs order meta (end)');
 		if ($parsed !== '') {
+			$GLOBALS['intersoccer_pcs_resolved_course_dates_memo'][ $item_id ]['end'] = $parsed;
+
 			return $parsed;
 		}
 	}
+	$parsed = intersoccer_player_course_status_variation_course_date_from_row($row, 'end');
+	if ($item_id > 0) {
+		$GLOBALS['intersoccer_pcs_resolved_course_dates_memo'][ $item_id ]['end'] = (string) $parsed;
+	}
 
-	return intersoccer_player_course_status_variation_course_date_from_row($row, 'end');
+	return $parsed;
 }
 
 /**
@@ -665,7 +695,12 @@ function intersoccer_player_course_status_apply_resolved_course_dates_to_rows(ar
 			}
 		}
 		if (function_exists('update_meta_cache')) {
-			update_meta_cache('post', array_values($prime_ids));
+			$prime_list = array_values($prime_ids);
+			$chunk_size = 500;
+			$total = count($prime_list);
+			for ($offset = 0; $offset < $total; $offset += $chunk_size) {
+				update_meta_cache('post', array_slice($prime_list, $offset, $chunk_size));
+			}
 		}
 	}
 	foreach ($rows as &$row) {
@@ -1175,33 +1210,40 @@ function intersoccer_player_course_status_course_season_bundle_label() {
 }
 
 /**
+ * Whether a season label belongs in the Autumn/Winter/Spring bundle (excludes standalone Summer).
+ *
+ * Empty or unrecognised labels stay included so rows are not hidden by the default office filter.
+ * Compound labels such as Spring/Summer count as Spring (not Summer-only).
+ *
+ * @param string $row_season
+ */
+function intersoccer_player_course_status_course_season_bundle_includes_season_label($row_season) {
+	$row_canonical = intersoccer_player_course_status_canonical_season_label($row_season);
+	if ($row_canonical === '') {
+		return true;
+	}
+	if (preg_match('/spring\s*\/\s*summer/iu', $row_canonical)) {
+		return true;
+	}
+	if (preg_match('/\bsummer\b/iu', $row_canonical)) {
+		return false;
+	}
+	foreach (['autumn', 'winter', 'spring'] as $token) {
+		if (preg_match('/\b' . $token . '\b/iu', $row_canonical)) {
+			return true;
+		}
+	}
+
+	return true;
+}
+
+/**
  * Whether a roster season belongs to Autumn, Winter, or Spring (not Summer).
  *
  * @param string $row_season
  */
 function intersoccer_player_course_status_row_matches_course_season_bundle($row_season) {
-	$row_canonical = intersoccer_player_course_status_canonical_season_label($row_season);
-	if ($row_canonical === '') {
-		return false;
-	}
-	if (function_exists('intersoccer_extract_season_type')) {
-		$row_type = intersoccer_extract_season_type($row_canonical);
-		if ($row_type !== null && $row_type !== '') {
-			$token = strtolower((string) $row_type);
-
-			return in_array($token, ['autumn', 'winter', 'spring'], true);
-		}
-	}
-	if (preg_match('/\bsummer\b/iu', $row_canonical) && !preg_match('/spring\/summer/iu', $row_canonical)) {
-		return false;
-	}
-	foreach (['autumn', 'winter', 'spring'] as $token) {
-		if (stripos($row_canonical, $token) !== false) {
-			return true;
-		}
-	}
-
-	return false;
+	return intersoccer_player_course_status_course_season_bundle_includes_season_label($row_season);
 }
 
 /**
@@ -1220,11 +1262,16 @@ function intersoccer_player_course_status_default_season_type() {
 function intersoccer_player_course_status_course_day_filter_label($slug, $course_day_label = '') {
 	$label = trim((string) $course_day_label);
 	if ($label !== '' && strcasecmp($label, 'N/A') !== 0) {
-		return $label;
+		if (function_exists('intersoccer_normalize_weekday_token')) {
+			$normalized = intersoccer_normalize_weekday_token($label);
+			if (is_string($normalized) && $normalized !== '') {
+				return $normalized;
+			}
+		}
 	}
 	$slug = trim((string) $slug);
 	if ($slug === '') {
-		return '';
+		return $label !== '' && strcasecmp($label, 'N/A') !== 0 ? $label : '';
 	}
 	if (function_exists('intersoccer_normalize_weekday_token')) {
 		$day = intersoccer_normalize_weekday_token($slug);
@@ -2855,7 +2902,8 @@ function intersoccer_player_course_status_stream_excel(array $rows, $year) {
 
 	$headers = intersoccer_player_course_status_export_headers();
 	$sheet->fromArray($headers, null, 'A1');
-	$last_col = chr(ord('A') + count($headers) - 1);
+	$last_col_index = count($headers);
+	$last_col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($last_col_index);
 	$sheet->getStyle('A1:' . $last_col . '1')->getFont()->setBold(true);
 
 	$row_index = 2;
@@ -2869,7 +2917,8 @@ function intersoccer_player_course_status_stream_excel(array $rows, $year) {
 		}
 	}
 
-	foreach (range('A', $last_col) as $col) {
+	for ($col_index = 1; $col_index <= $last_col_index; $col_index++) {
+		$col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col_index);
 		$sheet->getColumnDimension($col)->setAutoSize(true);
 	}
 

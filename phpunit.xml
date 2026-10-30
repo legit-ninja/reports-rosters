@@ -79,6 +79,7 @@
             <file>tests/Reports/PlayerCourseStatusMemoryTest.php</file>
             <file>tests/Reports/PlayerCourseStatusSeasonLabelTest.php</file>
             <file>tests/Reports/PlayerCourseStatusDateAndExportTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusSeasonBundleTest.php</file>
             <file>tests/Reports/PlayerCourseStatusMenuTest.php</file>
             <file>tests/Reports/PlayerCourseStatusCacheTest.php</file>
             <file>tests/Reports/PlayerCourseStatusPerfBaseCacheTest.php</file>

@@ -43,7 +43,7 @@ Roster `season` strings are normalized only inside the player course status engi
 - **Title case per word**, including segments after `/` (e.g. `Spring/summer 2026` → `Spring/Summer 2026`).
 - `filter_options['seasons']` dedupes by case-insensitive canonical label; compound labels (containing `/`) stay as the full canonical string; simple `Season YYYY` rows still expose the extracted season **type** (e.g. `Autumn`) for backward compatibility.
 - Booking `season`, `label`, and `bookings_label` use the canonical label.
-- `season_type` filter matching uses canonical comparison plus existing season-type / substring rules. Special value **`courses`**: include Autumn, Winter, and Spring; exclude Summer (via `intersoccer_extract_season_type()` when available).
+- `season_type` filter matching uses canonical comparison plus existing season-type / substring rules. Special value **`courses`**: include Autumn, Winter, and Spring (compound **Spring/Summer** counts as Spring); exclude standalone Summer. Empty or unrecognised season labels remain visible in the **`courses`** filter.
 
 ### Full-result cache
 
@@ -145,7 +145,7 @@ Label format: `product · venue · course_day · times · season · start–end`
 
 `times` on bookings uses roster `times`, falling back to `course_times` only when `times` is empty; values are normalized to a single display form (`HHMM-HHMM`, e.g. `1000-1130`) via `intersoccer_player_course_status_normalize_times_display()`.
 
-`filter_options` venues / course days / age groups / seasons are built from in-scope rows that are **completed/processing or pending/on-hold** (not cancelled/refunded/failed), so a pending-only season still appears in the season dropdown.
+`filter_options` venues / course days / age groups / seasons are built from **in-scope** roster rows for the active filter set (calendar **year**, **season_type**, **girls_mode**, and related scope applied in `filter_scoped_rows()`), limited to rows that are **completed/processing or pending/on-hold** (not cancelled/refunded/failed), so a pending-only season still appears in the season dropdown when that season is in scope. Course-day option labels are English weekdays (`intersoccer_normalize_weekday_token()` on roster label then slug).
 
 ### Status / booked rules
 
@@ -208,7 +208,7 @@ Same gate as PCS: `intersoccer_player_course_status_user_can_view_dob()` (wraps 
 
 ### Excel columns (in order)
 
-**Player (repeated on each line):** `Player Name`, `Account Email`, `User ID`, `DOB` (only when `intersoccer_player_course_status_user_can_view_dob()`), `Age`, `Booked` (Yes/No facet), `Status` (translated `booking_status_label`), `Match Tier`.
+**Player (repeated on each line):** `Player Name`, `Parent Email` (guardian WooCommerce account email — legacy office column), `Account Email` (same account email; billing contact per line remains `Parent Billing Email`), `User ID`, `DOB` (only when `intersoccer_player_course_status_user_can_view_dob()`), `Age`, `Booked` (Yes/No facet), `Status` (translated `booking_status_label`), `Match Tier`.
 
 **Per line:** `Line Type` (`Booked line` / `Pending payment line` / `On hold line` / empty), `Product`, `Venue`, `Age Group`, `Course Day`, `Times` (roster `times`, not `course_times`), `Season`, `Start Date`, `End Date`, `Order Status` (normalized), `Girls Only` (Yes/No), `Order ID`, `Parent Billing Name`, `Parent Billing Email`, `Parent Billing Phone` (roster parent fields from that booking row).
 

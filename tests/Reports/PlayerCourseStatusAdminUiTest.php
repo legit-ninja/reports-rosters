@@ -467,6 +467,7 @@ class PlayerCourseStatusAdminUiTest extends TestCase {
 		$this->assertNotFalse($booked);
 		$this->assertSame($booked + 1, $status);
 		$this->assertContains('Line Type', $headers);
+		$this->assertContains('Parent Email', $headers);
 		$this->assertContains('Account Email', $headers);
 		$this->assertNotContains('Course Bookings', $headers);
 	}
