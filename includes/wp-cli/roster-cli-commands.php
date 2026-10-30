@@ -288,6 +288,65 @@ final class Intersoccer_Rr_Wp_Cli {
             \WP_CLI::log('Totals (live): ' . implode(', ', $parts));
         }
     }
+
+    /**
+     * Player course status totals (same engine as the admin PCS page).
+     *
+     * ## OPTIONS
+     *
+     * [--year=<year>]
+     * : Report year (default: current calendar year).
+     *
+     * [--season-type=<slug>]
+     * : Season bundle filter (default: courses). Use empty string for all seasons.
+     *
+     * [--format=<format>]
+     * : Output format: json (default) or table.
+     *
+     * ## EXAMPLES
+     *
+     *     wp intersoccer-rr pcs-totals --year=2026 --season-type=courses
+     *
+     * @subcommand pcs-totals
+     * @when after_wp_load
+     *
+     * @param list<string> $args
+     * @param array<string,mixed> $assoc_args
+     */
+    public function pcs_totals(array $args, array $assoc_args): void {
+        $plugin_includes = dirname(__DIR__);
+        if (!function_exists('intersoccer_player_course_status_report_totals')) {
+            $pcs = $plugin_includes . '/player-course-status.php';
+            if (!is_readable($pcs)) {
+                \WP_CLI::error('Player course status engine is not available.');
+            }
+            require_once $pcs;
+        }
+
+        add_filter('intersoccer_player_course_status_cache_enabled', '__return_false', PHP_INT_MAX);
+
+        $year = isset($assoc_args['year']) ? (int) $assoc_args['year'] : (int) gmdate('Y');
+        if ($year < 2000) {
+            \WP_CLI::error('Invalid --year (must be >= 2000).');
+        }
+        $season_type = array_key_exists('season-type', $assoc_args)
+            ? (string) $assoc_args['season-type']
+            : 'courses';
+        $format = isset($assoc_args['format']) ? (string) $assoc_args['format'] : 'json';
+
+        $filters = [
+            'year' => $year,
+            'season_type' => $season_type,
+        ];
+        $totals = intersoccer_player_course_status_report_totals($filters);
+
+        if ($format === 'table') {
+            \WP_CLI\Utils\format_items('table', [$totals], array_keys($totals));
+            return;
+        }
+
+        \WP_CLI::log(wp_json_encode($totals, JSON_PRETTY_PRINT));
+    }
 }
 
 \WP_CLI::add_command('intersoccer-rr', Intersoccer_Rr_Wp_Cli::class);

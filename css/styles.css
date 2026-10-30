@@ -1243,3 +1243,37 @@
         display: none !important;
     }
 }
+
+/* Player course status — each label+control is one flex item; the bar wraps between pairs */
+.intersoccer-player-course-status .intersoccer-pcs-filters-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+}
+
+.intersoccer-player-course-status .intersoccer-pcs-filters-form .intersoccer-pcs-filter-field {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.intersoccer-player-course-status .intersoccer-pcs-filters-form .intersoccer-pcs-filter-field label {
+    margin: 0;
+    flex-shrink: 0;
+}
+
+.intersoccer-player-course-status .intersoccer-pcs-filters-form .intersoccer-pcs-filter-field select,
+.intersoccer-player-course-status .intersoccer-pcs-filters-form .intersoccer-pcs-filter-field input[type="text"] {
+    flex-shrink: 0;
+    max-width: min(100%, 280px);
+}
+
+.intersoccer-player-course-status .intersoccer-pcs-filters-form .button,
+.intersoccer-player-course-status .intersoccer-pcs-filters-form a.button {
+    white-space: nowrap;
+    flex-shrink: 0;
+}

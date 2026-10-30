@@ -321,8 +321,10 @@ jQuery(document).ready(function($) {
         }
     };
     
-    // Initialize the rebuild manager
-    rebuildManager.init();
+    // Initialize the rebuild manager only when the legacy rebuild UI is present.
+    if ($('#intersoccer-rebuild-form').length || $('#start-rebuild').length) {
+        rebuildManager.init();
+    }
 
     // Handle database upgrade form submission via AJAX
     (function handleDatabaseUpgrade() {
@@ -340,9 +342,14 @@ jQuery(document).ready(function($) {
         var failureText = strings.upgrade_failed || 'Database upgrade failed.';
         var networkText = strings.upgrade_failed_network || 'Database upgrade failed due to a network error.';
         var runningText = strings.upgrade_running || 'Migration already running. Please wait and refresh.';
+        var confirmText = strings.confirm_upgrade || 'Run schema 2.4.0? A full roster backup table will be created first, then event_type, camp_times, and times will be widened to 191 characters. Continue?';
 
         $form.on('submit', function(event) {
             event.preventDefault();
+
+            if (!window.confirm(confirmText)) {
+                return;
+            }
 
             $button.prop('disabled', true).val(upgradingText);
             $status.removeClass('notice notice-success notice-error notice-info').hide().text('');
@@ -350,7 +357,7 @@ jQuery(document).ready(function($) {
             $.ajax({
                 url: $form.attr('action'),
                 method: 'POST',
-                data: $form.serialize(),
+                data: $(this).serialize(),
                 dataType: 'json'
             }).done(function(response) {
                 var message = (response && response.data && response.data.message) ? response.data.message : '';

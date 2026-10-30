@@ -59,6 +59,7 @@
         <testsuite name="Production">
             <file>tests/Core/LoggerTest.php</file>
             <file>tests/Core/ActivationRequirementsTest.php</file>
+            <file>tests/Core/DbUpgrade240UserCopyTest.php</file>
             <file>tests/Core/CommittedPluginAutoloadTest.php</file>
             <file>tests/WarmupBootstrapTest.php</file>
             <file>tests/Reports/FinalReportsTotalsTest.php</file>
@@ -78,10 +79,14 @@
             <file>tests/Reports/PlayerCourseStatusGoldenTest.php</file>
             <file>tests/Reports/PlayerCourseStatusMemoryTest.php</file>
             <file>tests/Reports/PlayerCourseStatusSeasonLabelTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusDateAndExportTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusSeasonBundleTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusMenuTest.php</file>
             <file>tests/Reports/PlayerCourseStatusCacheTest.php</file>
             <file>tests/Reports/PlayerCourseStatusPerfBaseCacheTest.php</file>
             <file>tests/Reports/PlayerCourseStatusWarmPathQueryTest.php</file>
             <file>tests/Reports/PlayerCourseStatusLegacyEquivalenceTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusQa150FixesTest.php</file>
             <file>tests/Reports/WinbackReportCacheTest.php</file>
             <file>tests/Reports/PlayerCampStatusLoadPlayersQueryCountTest.php</file>
             <file>tests/Reports/WinbackReportTest.php</file>

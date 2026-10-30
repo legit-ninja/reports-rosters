@@ -432,6 +432,62 @@ if (!function_exists('intersoccer_player_course_status_admin_options_html')) {
 	}
 }
 
+if (!function_exists('intersoccer_player_course_status_admin_season_type_options')) {
+	/**
+	 * Season filter: All seasons, combined course seasons, then individual labels from filter_options.
+	 *
+	 * @param mixed  $seasons From filter_options['seasons'].
+	 * @param string $current
+	 * @return array<string,string>
+	 */
+	function intersoccer_player_course_status_admin_season_type_options($seasons, $current) {
+		$options = [
+			'' => __('All seasons', 'intersoccer-reports-rosters'),
+		];
+		if (function_exists('intersoccer_player_course_status_course_season_bundle_filter_value')) {
+			$bundle = intersoccer_player_course_status_course_season_bundle_filter_value();
+			$options[ $bundle ] = function_exists('intersoccer_player_course_status_course_season_bundle_label')
+				? intersoccer_player_course_status_course_season_bundle_label()
+				: 'Autumn / Winter / Spring';
+		}
+		if (is_array($seasons)) {
+			foreach ($seasons as $season) {
+				if (!is_scalar($season)) {
+					continue;
+				}
+				$season = (string) $season;
+				if ($season === '' || array_key_exists($season, $options)) {
+					continue;
+				}
+				$options[ $season ] = $season;
+			}
+		}
+		$current = (string) $current;
+		if ($current !== '' && !array_key_exists($current, $options)) {
+			$options[ $current ] = $current;
+		}
+
+		return $options;
+	}
+}
+
+if (!function_exists('intersoccer_player_course_status_admin_filter_field_html')) {
+	/**
+	 * One filter control: label + input/select wrapped so the pair does not break across lines.
+	 *
+	 * @param string $label_for
+	 * @param string $label_text Already escaped or plain (will be escaped).
+	 * @param string $control_html
+	 * @return string
+	 */
+	function intersoccer_player_course_status_admin_filter_field_html($label_for, $label_text, $control_html) {
+		return '<span class="intersoccer-pcs-filter-field">'
+			. '<label for="' . esc_attr($label_for) . '">' . esc_html($label_text) . '</label> '
+			. $control_html
+			. '</span>';
+	}
+}
+
 if (!function_exists('intersoccer_player_course_status_admin_select_html')) {
 	/**
 	 * @param string               $name
@@ -568,27 +624,35 @@ if (!function_exists('intersoccer_player_course_status_admin_filters_html')) {
 	 */
 	function intersoccer_player_course_status_admin_filters_html(array $filters, array $filter_options) {
 		$year = isset($filters['year']) ? (int) $filters['year'] : (int) date('Y');
+		$wrap = 'intersoccer_player_course_status_admin_filter_field_html';
 		$parts = [];
-		$parts[] = '<label for="pcrs-year">' . esc_html__('Year:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+		$parts[] = $wrap(
+			'pcrs-year',
+			__('Year:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'year',
 				'pcrs-year',
 				intersoccer_player_course_status_admin_year_options($year),
 				(string) $year
-			);
-		$parts[] = '<label for="pcrs-season">' . esc_html__('Season:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-season',
+			__('Season:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'season_type',
 				'pcrs-season',
-				intersoccer_player_course_status_admin_list_options(
+				intersoccer_player_course_status_admin_season_type_options(
 					$filter_options['seasons'] ?? [],
-					(string) ($filters['season_type'] ?? ''),
-					__('All seasons', 'intersoccer-reports-rosters')
+					(string) ($filters['season_type'] ?? '')
 				),
 				(string) ($filters['season_type'] ?? '')
-			);
-		$parts[] = '<label for="pcrs-girls">' . esc_html__('Girls mode:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-girls',
+			__('Girls mode:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'girls_mode',
 				'pcrs-girls',
 				[
@@ -597,9 +661,12 @@ if (!function_exists('intersoccer_player_course_status_admin_filters_html')) {
 					'girls_only' => __('Girls only', 'intersoccer-reports-rosters'),
 				],
 				(string) ($filters['girls_mode'] ?? 'all')
-			);
-		$parts[] = '<label for="pcrs-venue">' . esc_html__('Venue:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-venue',
+			__('Venue:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'venue',
 				'pcrs-venue',
 				intersoccer_player_course_status_admin_map_options(
@@ -608,20 +675,26 @@ if (!function_exists('intersoccer_player_course_status_admin_filters_html')) {
 					__('All venues', 'intersoccer-reports-rosters')
 				),
 				(string) ($filters['venue'] ?? '')
-			);
-		$parts[] = '<label for="pcrs-day">' . esc_html__('Course day:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-day',
+			__('Course day:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'course_day',
 				'pcrs-day',
-				intersoccer_player_course_status_admin_list_options(
+				intersoccer_player_course_status_admin_map_options(
 					$filter_options['course_days'] ?? [],
 					(string) ($filters['course_day'] ?? ''),
 					__('All days', 'intersoccer-reports-rosters')
 				),
 				(string) ($filters['course_day'] ?? '')
-			);
-		$parts[] = '<label for="pcrs-age">' . esc_html__('Age group:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-age',
+			__('Age group:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'age_group',
 				'pcrs-age',
 				intersoccer_player_course_status_admin_map_options(
@@ -630,9 +703,12 @@ if (!function_exists('intersoccer_player_course_status_admin_filters_html')) {
 					__('All age groups', 'intersoccer-reports-rosters')
 				),
 				(string) ($filters['age_group'] ?? '')
-			);
-		$parts[] = '<label for="pcrs-booked">' . esc_html__('Booked:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-booked',
+			__('Booked:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'booked',
 				'pcrs-booked',
 				[
@@ -641,18 +717,25 @@ if (!function_exists('intersoccer_player_course_status_admin_filters_html')) {
 					'not_booked' => __('Not booked only', 'intersoccer-reports-rosters'),
 				],
 				(string) ($filters['booked'] ?? 'all')
-			);
-		$parts[] = '<label for="pcrs-status">' . esc_html__('Status:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-status',
+			__('Status:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'booking_status',
 				'pcrs-status',
 				intersoccer_player_course_status_admin_booking_status_options(),
 				(string) ($filters['booking_status'] ?? '')
-			);
-		$parts[] = '<label for="pcrs-search">' . esc_html__('Search:', 'intersoccer-reports-rosters') . '</label> '
-			. '<input type="text" name="search" id="pcrs-search" value="'
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-search',
+			__('Search:', 'intersoccer-reports-rosters'),
+			'<input type="text" name="search" id="pcrs-search" value="'
 			. esc_attr((string) ($filters['search'] ?? ''))
-			. '" placeholder="' . esc_attr__('Name or parent email', 'intersoccer-reports-rosters') . '" />';
+			. '" placeholder="' . esc_attr__('Name or parent email', 'intersoccer-reports-rosters') . '" />'
+		);
 
 		return implode("\n", $parts);
 	}
@@ -695,7 +778,7 @@ if (!function_exists('intersoccer_player_course_status_admin_warnings_html')) {
 	function intersoccer_player_course_status_admin_warnings_html($warnings) {
 		$html = '';
 		foreach (intersoccer_player_course_status_admin_warning_messages($warnings) as $message) {
-			$html .= '<div class="notice notice-warning"><p>' . esc_html($message) . '</p></div>';
+			$html .= '<div class="notice notice-warning inline"><p>' . esc_html($message) . '</p></div>';
 		}
 
 		return $html;
@@ -722,6 +805,41 @@ if (!function_exists('intersoccer_player_course_status_admin_export_control_html
 		return '<a class="button" href="' . esc_url(intersoccer_player_course_status_admin_export_url($filters)) . '">'
 			. esc_html__('Export to Excel', 'intersoccer-reports-rosters')
 			. '</a>';
+	}
+}
+
+if (!function_exists('intersoccer_player_course_status_admin_final_reports_url')) {
+	/**
+	 * Final Reports course grid for the selected year (same args as MenuManager::build_final_reports_url).
+	 *
+	 * @param int $year
+	 */
+	function intersoccer_player_course_status_admin_final_reports_url($year) {
+		$year = (int) $year;
+		$args = [
+			'page' => 'intersoccer-final-reports',
+			'activity_type' => 'Course',
+		];
+		if ($year >= 2000) {
+			$args['year'] = $year;
+		}
+
+		return add_query_arg($args, admin_url('admin.php'));
+	}
+}
+
+if (!function_exists('intersoccer_player_course_status_admin_final_reports_html')) {
+	/**
+	 * Secondary link to the Final Reports course grid for the filter year.
+	 *
+	 * @param array<string,mixed> $filters
+	 */
+	function intersoccer_player_course_status_admin_final_reports_html(array $filters) {
+		$year = isset($filters['year']) ? (int) $filters['year'] : (int) date('Y');
+
+		return '<a class="button button-secondary" href="'
+			. esc_url(intersoccer_player_course_status_admin_final_reports_url($year))
+			. '">' . esc_html__('Final course numbers', 'intersoccer-reports-rosters') . '</a>';
 	}
 }
 
@@ -766,18 +884,20 @@ if (!function_exists('intersoccer_player_course_status_admin_render_page')) {
 		?>
 		<div class="wrap intersoccer-player-course-status">
 			<h1><?php esc_html_e('Player course status', 'intersoccer-reports-rosters'); ?></h1>
+			<?php echo intersoccer_player_course_status_admin_warnings_html($warnings); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 			<p><?php esc_html_e('All players from Player Management, with course roster bookings for the selected filters. Pending payment and on-hold orders count as not booked.', 'intersoccer-reports-rosters'); ?></p>
 
 			<p class="description" style="margin-bottom:16px;">
 				<?php echo esc_html(intersoccer_player_course_status_admin_totals_text($totals, (int) $slice['total_rows'])); ?>
 			</p>
 
-			<form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" style="margin-bottom:16px;">
+			<form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" class="intersoccer-pcs-filters-form" style="margin-bottom:16px;">
 				<input type="hidden" name="page" value="intersoccer-player-course-status" />
 				<?php echo intersoccer_player_course_status_admin_filters_html($filters, $filter_options); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 
 				<button type="submit" class="button button-primary"><?php esc_html_e('Filter', 'intersoccer-reports-rosters'); ?></button>
 				<?php echo intersoccer_player_course_status_admin_export_control_html($filters, $warnings); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
+				<?php echo intersoccer_player_course_status_admin_final_reports_html($filters); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 				<?php echo intersoccer_player_course_status_admin_refresh_html($filters); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 			</form>
 
@@ -799,8 +919,6 @@ if (!function_exists('intersoccer_player_course_status_admin_render_page')) {
 					</div>
 				</div>
 			<?php endif; ?>
-
-			<?php echo intersoccer_player_course_status_admin_warnings_html($warnings); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 
 			<?php if (empty($slice['rows'])) : ?>
 				<p><?php esc_html_e('No players matched the selected filters.', 'intersoccer-reports-rosters'); ?></p>

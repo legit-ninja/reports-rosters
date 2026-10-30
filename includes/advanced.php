@@ -9,6 +9,11 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+$intersoccer_db_upgrade_user_copy = dirname(__FILE__) . '/db-schema-2-4-0-user-copy.php';
+if (is_readable($intersoccer_db_upgrade_user_copy)) {
+	require_once $intersoccer_db_upgrade_user_copy;
+}
+
 /**
  * Default reconcile order statuses for sync queue UI.
  *
@@ -139,10 +144,10 @@ function intersoccer_render_advanced_page() {
                     <form id="intersoccer-upgrade-form" method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="upgrade-form">
                         <input type="hidden" name="action" value="intersoccer_upgrade_database">
                         <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
-                        <input type="submit" name="upgrade_database" class="button button-primary" value="<?php _e('Upgrade Database', 'intersoccer-reports-rosters'); ?>" onclick="return confirm('<?php echo esc_js(__('This will modify the database structure and backfill data. Are you sure?', 'intersoccer-reports-rosters')); ?>');">
+                        <input type="submit" name="upgrade_database" class="button button-primary" value="<?php _e('Upgrade Database', 'intersoccer-reports-rosters'); ?>">
                     </form>
                     <div id="intersoccer-rebuild-status" class="intersoccer-upgrade-status" role="status" aria-live="polite" style="display:none;margin-top:8px;"></div>
-                    <p><?php _e('Note: This action adds new columns (e.g., financial fields, girls_only) and backfills data. Use with caution.', 'intersoccer-reports-rosters'); ?></p>
+                    <p><?php echo esc_html(intersoccer_db_upgrade_2_4_0_user_help_text()); ?></p>
                 </div>
                 <div class="rebuild-options">
                     <h2><?php _e('Roster Management', 'intersoccer-reports-rosters'); ?></h2>
