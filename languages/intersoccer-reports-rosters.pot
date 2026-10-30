@@ -6409,3 +6409,11 @@ msgstr ""
 #: intersoccer-reports-rosters.php:418
 msgid "Weekly Attendance Trends"
 msgstr ""
+
+#: includes/roster-move-reason-messages.php:47
+msgid "Moving players..."
+msgstr ""
+
+#: includes/roster-move-reason-messages.php:93
+msgid "The move is taking longer than expected. Refresh the page and check the roster before trying again."
+msgstr ""
