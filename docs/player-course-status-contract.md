@@ -24,7 +24,7 @@ Request parser: `intersoccer_player_course_status_request_filters()` (adds `page
 | Key | Type | Default | Notes |
 |-----|------|---------|--------|
 | `year` | int | current calendar year | Course year rule below |
-| `season_type` | string | `''` in `normalize_filters()` / `generate()`; **`Autumn`** on first office page load via `request_filters()` when `season_type` is omitted from the query string | `Summer` / `Winter` / `Autumn` / `Spring`; empty string (explicit **All seasons**) = no season filter |
+| `season_type` | string | `''` in `normalize_filters()` / `generate()` | **`courses`** on first office page load via `request_filters()` when `season_type` is omitted — matches rows whose season type is **Autumn**, **Winter**, or **Spring** (excludes **Summer**). Label: “Autumn / Winter / Spring”. Also: `Summer` / `Winter` / `Autumn` / `Spring` individually; empty string (explicit **All seasons**) = no season filter |
 | `girls_mode` | string | `all` | `all` \| `mixed` \| `girls_only` |
 | `booked` | string | `all` | `all` \| `booked` \| `not_booked` — filters **players** after join. `not_booked` includes players whose `booking_status` is `pending_payment`, `on_hold`, or plain `not_booked`. |
 | `booking_status` | string | `''` | `''` (all) \| `booked` \| `pending_payment` \| `on_hold` \| `not_booked` — applied **after** `booked`. Here `not_booked` means plain not-booked only (excludes pending/on-hold). |
@@ -43,7 +43,7 @@ Roster `season` strings are normalized only inside the player course status engi
 - **Title case per word**, including segments after `/` (e.g. `Spring/summer 2026` → `Spring/Summer 2026`).
 - `filter_options['seasons']` dedupes by case-insensitive canonical label; compound labels (containing `/`) stay as the full canonical string; simple `Season YYYY` rows still expose the extracted season **type** (e.g. `Autumn`) for backward compatibility.
 - Booking `season`, `label`, and `bookings_label` use the canonical label.
-- `season_type` filter matching uses canonical comparison plus existing season-type / substring rules.
+- `season_type` filter matching uses canonical comparison plus existing season-type / substring rules. Special value **`courses`**: include Autumn, Winter, and Spring; exclude Summer (via `intersoccer_extract_season_type()` when available).
 
 ### Full-result cache
 

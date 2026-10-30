@@ -432,6 +432,45 @@ if (!function_exists('intersoccer_player_course_status_admin_options_html')) {
 	}
 }
 
+if (!function_exists('intersoccer_player_course_status_admin_season_type_options')) {
+	/**
+	 * Season filter: All seasons, combined course seasons, then individual labels from filter_options.
+	 *
+	 * @param mixed  $seasons From filter_options['seasons'].
+	 * @param string $current
+	 * @return array<string,string>
+	 */
+	function intersoccer_player_course_status_admin_season_type_options($seasons, $current) {
+		$options = [
+			'' => __('All seasons', 'intersoccer-reports-rosters'),
+		];
+		if (function_exists('intersoccer_player_course_status_course_season_bundle_filter_value')) {
+			$bundle = intersoccer_player_course_status_course_season_bundle_filter_value();
+			$options[ $bundle ] = function_exists('intersoccer_player_course_status_course_season_bundle_label')
+				? intersoccer_player_course_status_course_season_bundle_label()
+				: 'Autumn / Winter / Spring';
+		}
+		if (is_array($seasons)) {
+			foreach ($seasons as $season) {
+				if (!is_scalar($season)) {
+					continue;
+				}
+				$season = (string) $season;
+				if ($season === '' || array_key_exists($season, $options)) {
+					continue;
+				}
+				$options[ $season ] = $season;
+			}
+		}
+		$current = (string) $current;
+		if ($current !== '' && !array_key_exists($current, $options)) {
+			$options[ $current ] = $current;
+		}
+
+		return $options;
+	}
+}
+
 if (!function_exists('intersoccer_player_course_status_admin_select_html')) {
 	/**
 	 * @param string               $name
@@ -580,10 +619,9 @@ if (!function_exists('intersoccer_player_course_status_admin_filters_html')) {
 			. intersoccer_player_course_status_admin_select_html(
 				'season_type',
 				'pcrs-season',
-				intersoccer_player_course_status_admin_list_options(
+				intersoccer_player_course_status_admin_season_type_options(
 					$filter_options['seasons'] ?? [],
-					(string) ($filters['season_type'] ?? ''),
-					__('All seasons', 'intersoccer-reports-rosters')
+					(string) ($filters['season_type'] ?? '')
 				),
 				(string) ($filters['season_type'] ?? '')
 			);

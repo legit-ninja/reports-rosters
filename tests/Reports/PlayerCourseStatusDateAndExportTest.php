@@ -250,14 +250,30 @@ class PlayerCourseStatusDateAndExportTest extends TestCase {
 		$this->assertContains('Winter', $opts['seasons']);
 	}
 
-	public function test_request_filters_default_season_type_to_autumn_when_omitted(): void {
+	public function test_request_filters_default_season_type_to_courses_bundle_when_omitted(): void {
 		$_GET = ['page' => 'intersoccer-player-course-status', 'year' => '2026'];
 		$filters = intersoccer_player_course_status_request_filters();
-		$this->assertSame('Autumn', $filters['season_type']);
+		$this->assertSame('courses', $filters['season_type']);
 		$_GET = ['page' => 'intersoccer-player-course-status', 'year' => '2026', 'season_type' => ''];
 		$filters_all = intersoccer_player_course_status_request_filters();
 		$this->assertSame('', $filters_all['season_type']);
 		unset($_GET);
+	}
+
+	public function test_season_type_courses_includes_autumn_winter_spring_excludes_summer(): void {
+		$rows = [
+			$this->base_course_row(['season' => 'Autumn 2026', 'order_item_id' => 8601, 'start_date' => '2026-09-01', 'end_date' => '2026-12-01']),
+			$this->base_course_row(['season' => 'Winter 2026', 'order_item_id' => 8602, 'start_date' => '2026-01-10', 'end_date' => '2026-03-01']),
+			$this->base_course_row(['season' => 'Spring 2026', 'order_item_id' => 8603, 'start_date' => '2026-04-01', 'end_date' => '2026-06-01']),
+			$this->base_course_row(['season' => 'Summer Camps 2026', 'order_item_id' => 8604, 'start_date' => '2026-07-01', 'end_date' => '2026-08-01']),
+		];
+		$prepared = intersoccer_player_course_status_prepare_roster_rows($rows);
+		$scoped = intersoccer_player_course_status_filter_scoped_rows($prepared, 2026, 'courses', 'all');
+		$item_ids = array_map(static function ($row) {
+			return (int) ($row['order_item_id'] ?? 0);
+		}, $scoped);
+		sort($item_ids);
+		$this->assertSame([8601, 8602, 8603], $item_ids);
 	}
 
 	public function test_export_one_row_per_booking_includes_pending_line(): void {

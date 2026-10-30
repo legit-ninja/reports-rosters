@@ -760,6 +760,9 @@ function intersoccer_player_course_status_season_matches_filter($row_season, $se
 	if ($season_type === '') {
 		return true;
 	}
+	if ($season_type === intersoccer_player_course_status_course_season_bundle_filter_value()) {
+		return intersoccer_player_course_status_row_matches_course_season_bundle($row_season);
+	}
 	$row_canonical = intersoccer_player_course_status_canonical_season_label($row_season);
 	$filter_canonical = intersoccer_player_course_status_canonical_season_label($season_type);
 	if ($row_canonical !== '' && $filter_canonical !== ''
@@ -1158,10 +1161,54 @@ function intersoccer_player_course_status_resolve_times(array $row) {
 }
 
 /**
- * Default season_type for the office page when the request omits season_type (courses: Autumn, not Summer).
+ * Combined office filter: Autumn, Winter, and Spring course seasons (excludes Summer).
+ */
+function intersoccer_player_course_status_course_season_bundle_filter_value() {
+	return 'courses';
+}
+
+/**
+ * Admin label for the combined course-season filter option.
+ */
+function intersoccer_player_course_status_course_season_bundle_label() {
+	return __('Autumn / Winter / Spring', 'intersoccer-reports-rosters');
+}
+
+/**
+ * Whether a roster season belongs to Autumn, Winter, or Spring (not Summer).
+ *
+ * @param string $row_season
+ */
+function intersoccer_player_course_status_row_matches_course_season_bundle($row_season) {
+	$row_canonical = intersoccer_player_course_status_canonical_season_label($row_season);
+	if ($row_canonical === '') {
+		return false;
+	}
+	if (function_exists('intersoccer_extract_season_type')) {
+		$row_type = intersoccer_extract_season_type($row_canonical);
+		if ($row_type !== null && $row_type !== '') {
+			$token = strtolower((string) $row_type);
+
+			return in_array($token, ['autumn', 'winter', 'spring'], true);
+		}
+	}
+	if (preg_match('/\bsummer\b/iu', $row_canonical) && !preg_match('/spring\/summer/iu', $row_canonical)) {
+		return false;
+	}
+	foreach (['autumn', 'winter', 'spring'] as $token) {
+		if (stripos($row_canonical, $token) !== false) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * Default season_type for the office page when the request omits season_type (course seasons bundle, not Summer).
  */
 function intersoccer_player_course_status_default_season_type() {
-	return 'Autumn';
+	return intersoccer_player_course_status_course_season_bundle_filter_value();
 }
 
 /**
