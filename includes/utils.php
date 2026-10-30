@@ -965,7 +965,20 @@ if (!function_exists('intersoccer_read_order_item_booking_fields')) {
         $read = static function (array $keys) use ($item) {
             foreach ($keys as $key) {
                 $value = $item->get_meta($key, true);
+                if (function_exists('intersoccer_order_item_move_meta_value_is_blank')
+                    && intersoccer_order_item_move_meta_value_is_blank(
+                        intersoccer_order_item_coerce_line_meta_value($value)
+                    )) {
+                    continue;
+                }
                 if ($value === '' || $value === null) {
+                    continue;
+                }
+                if (function_exists('intersoccer_order_item_move_meta_compare_string')) {
+                    $compared = intersoccer_order_item_move_meta_compare_string($value);
+                    if ($compared !== null && $compared !== '') {
+                        return $compared;
+                    }
                     continue;
                 }
                 return is_array($value)
@@ -6490,60 +6503,84 @@ if (!function_exists('intersoccer_roster_facet_db_string_column')) {
     }
 }
 
-if (!function_exists('intersoccer_order_item_canonical_meta_already_matches')) {
+if (!function_exists('intersoccer_order_item_coerce_line_meta_value')) {
     /**
-     * Whether order line meta already matches normalized English canonical values (skip item save).
+     * Coerce order line meta for compare/skip paths (nested-safe; mirrors migration-meta).
      *
-     * @param WC_Order_Item_Product $item
-     * @param array<string,string>  $human_meta
-     * @param array<string,array>   $human_alias_map
+     * @param mixed $raw
+     * @return mixed
      */
-    function intersoccer_order_item_canonical_meta_already_matches($item, array $human_meta, array $human_alias_map): bool {
-        if (!$item instanceof WC_Order_Item_Product) {
-            return false;
+    function intersoccer_order_item_coerce_line_meta_value($raw) {
+        if (function_exists('intersoccer_migration_coerce_move_line_meta_value')) {
+            return intersoccer_migration_coerce_move_line_meta_value($raw);
+        }
+        if (is_array($raw)) {
+            foreach ($raw as $part) {
+                if (is_array($part) || is_object($part)) {
+                    return $raw;
+                }
+                if (!is_scalar($part) && $part !== null) {
+                    return $raw;
+                }
+            }
+
+            return $raw;
+        }
+        if (is_scalar($raw) || $raw === null) {
+            return trim((string) $raw);
         }
 
-        foreach ($human_meta as $canonical => $expected_raw) {
-            $expected = is_array($expected_raw)
-                ? implode(', ', array_map('trim', $expected_raw))
-                : trim((string) $expected_raw);
-            if ($expected === '') {
-                continue;
-            }
+        return $raw;
+    }
+}
 
-            $aliases = array_unique(array_merge(
-                [(string) $canonical],
-                $human_alias_map[$canonical] ?? []
-            ));
-
-            $found = '';
-            foreach ($aliases as $alias_key) {
-                $candidate = trim((string) $item->get_meta($alias_key, true));
-                if ($candidate !== '') {
-                    $found = $candidate;
-                    break;
-                }
-            }
-
-            if ($found !== $expected) {
-                return false;
-            }
-
-            $primary_label = function_exists('intersoccer_migration_pick_meta_label_for_canonical')
-                ? intersoccer_migration_pick_meta_label_for_canonical($canonical, $human_alias_map, [])
-                : ($human_alias_map[$canonical][0] ?? (string) $canonical);
-
-            foreach ($aliases as $alias_key) {
-                if ((string) $alias_key === (string) $primary_label) {
-                    continue;
-                }
-                if (trim((string) $item->get_meta($alias_key, true)) !== '') {
-                    return false;
-                }
-            }
+if (!function_exists('intersoccer_order_item_move_meta_value_is_blank')) {
+    /**
+     * @param mixed $value
+     */
+    function intersoccer_order_item_move_meta_value_is_blank($value): bool {
+        if (function_exists('intersoccer_migration_move_meta_value_is_blank')) {
+            return intersoccer_migration_move_meta_value_is_blank($value);
+        }
+        if (is_array($value)) {
+            return $value === [];
+        }
+        if (is_scalar($value) || $value === null) {
+            return trim((string) $value) === '';
         }
 
-        return true;
+        return false;
+    }
+}
+
+if (!function_exists('intersoccer_order_item_move_meta_compare_string')) {
+    /**
+     * Scalar compare form for move/skip checks; null when value is nested or non-scalar.
+     *
+     * @param mixed $value
+     */
+    function intersoccer_order_item_move_meta_compare_string($value): ?string {
+        $coerced = intersoccer_order_item_coerce_line_meta_value($value);
+        if (is_array($coerced)) {
+            if (function_exists('intersoccer_migration_move_meta_array_is_nested')
+                && intersoccer_migration_move_meta_array_is_nested($coerced)) {
+                return null;
+            }
+            $parts = [];
+            foreach ($coerced as $part) {
+                if (!is_scalar($part) && $part !== null) {
+                    return null;
+                }
+                $parts[] = trim((string) $part);
+            }
+
+            return implode(', ', $parts);
+        }
+        if (!is_scalar($coerced) && $coerced !== null) {
+            return null;
+        }
+
+        return trim((string) $coerced);
     }
 }
 

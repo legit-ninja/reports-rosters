@@ -17,6 +17,22 @@ class MovePlayersUtilsSpeedNullTest extends TestCase {
     private const VAR_A = 77060;
     private const VAR_B = 77070;
 
+    /** @var array<int,array<string,mixed>> */
+    private const NESTED_ITEM_DISCOUNTS = [
+        [
+            'name' => 'Sibling Discount',
+            'type' => 'percent',
+            'amount' => 12.5,
+            'allocation_method' => 'proportional_reporting',
+        ],
+        [
+            'name' => 'Early Bird',
+            'type' => 'fixed_cart',
+            'amount' => 5.0,
+            'allocation_method' => 'cart_line',
+        ],
+    ];
+
     protected function setUp(): void {
         parent::setUp();
         require_once dirname(__DIR__, 2) . '/includes/order-meta-keys.php';
@@ -138,6 +154,121 @@ class MovePlayersUtilsSpeedNullTest extends TestCase {
         // #104 updates the existing FR row in place (no key added or removed).
         $this->assertSame('Full Term', $intersoccer_test_wc_order_item_meta[$item_id]['Type de réservation']);
         $this->assertSame('Full Term', $intersoccer_test_wc_order_item_meta[$item_id]['Booking Type']);
+    }
+
+    public function test_renormalize_booking_meta_tolerates_nested_discount_meta_without_fatal(): void {
+        global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_save_count;
+
+        $item_id = 88004;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [
+            'Booking Type' => 'Full Term',
+            'Days Selected' => 'Monday',
+            '_intersoccer_item_discounts' => self::NESTED_ITEM_DISCOUNTS,
+            '_intersoccer_total_item_discount' => '17.50',
+        ];
+        $intersoccer_test_wc_order_item_save_count = 0;
+
+        $ok = intersoccer_renormalize_order_item_booking_meta($item_id, [
+            'booking_type' => 'Full Term',
+            'selected_days' => 'Monday',
+            'late_pickup_days' => '',
+        ]);
+
+        $this->assertFalse($ok);
+        $this->assertSame(0, $intersoccer_test_wc_order_item_save_count);
+        $this->assertSame(self::NESTED_ITEM_DISCOUNTS, $intersoccer_test_wc_order_item_meta[$item_id]['_intersoccer_item_discounts']);
+    }
+
+    public function test_renormalize_order_item_event_meta_tolerates_nested_discount_meta_without_fatal(): void {
+        global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_save_count, $wpdb;
+
+        $item_id = 88005;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [
+            'Activity Type' => 'Course',
+            'Age Group' => '6-8',
+            'Booking Type' => 'Full Term',
+            '_intersoccer_item_discounts' => self::NESTED_ITEM_DISCOUNTS,
+        ];
+        $intersoccer_test_wc_order_item_save_count = 0;
+
+        $wpdb = Mockery::mock($wpdb);
+        $wpdb->prefix = 'wp_';
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query) {
+            return (string) $query;
+        });
+        $wpdb->shouldReceive('get_row')->andReturn(null);
+
+        $ok = intersoccer_renormalize_order_item_event_meta($item_id);
+
+        $this->assertFalse($ok);
+        $this->assertSame(0, $intersoccer_test_wc_order_item_save_count);
+        $this->assertSame(self::NESTED_ITEM_DISCOUNTS, $intersoccer_test_wc_order_item_meta[$item_id]['_intersoccer_item_discounts']);
+    }
+
+    public function test_renormalize_order_item_event_meta_returns_false_without_save_when_meta_already_matches(): void {
+        global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_save_count, $wpdb;
+
+        $item_id = 88009;
+        $before = [
+            'Activity Type' => 'Camp',
+            'Age Group'         => '5-13y-full-day',
+            'Sites InterSoccer' => 'geneva-centre',
+            'Camp Times'        => '900am-400pm',
+        ];
+        $intersoccer_test_wc_order_item_meta[$item_id] = $before;
+        $intersoccer_test_wc_order_item_save_count = 0;
+
+        $wpdb = Mockery::mock($wpdb);
+        $wpdb->prefix = 'wp_';
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query) {
+            return (string) $query;
+        });
+        $wpdb->shouldReceive('get_row')->andReturn(null);
+
+        $this->assertFalse(intersoccer_renormalize_order_item_event_meta($item_id));
+        $this->assertSame(0, $intersoccer_test_wc_order_item_save_count);
+        $this->assertSame($before, $intersoccer_test_wc_order_item_meta[$item_id]);
+    }
+
+    public function test_renormalize_booking_meta_does_not_seed_pa_or_attribute_pa_twins_from_attribute_pa_only_line(): void {
+        global $intersoccer_test_wc_order_item_meta;
+
+        $item_id = 88006;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [
+            'attribute_pa_booking-type' => 'full-term',
+        ];
+        $before_pa = $this->listPaShapeMetaKeys($intersoccer_test_wc_order_item_meta[$item_id]);
+
+        intersoccer_renormalize_order_item_booking_meta($item_id, [
+            'booking_type' => 'Full Term',
+            'selected_days' => '',
+            'late_pickup_days' => '',
+        ]);
+
+        $after_pa = $this->listPaShapeMetaKeys($intersoccer_test_wc_order_item_meta[$item_id]);
+        $this->assertSame($before_pa, $after_pa);
+        $this->assertArrayNotHasKey('pa_booking-type', $intersoccer_test_wc_order_item_meta[$item_id]);
+        $this->assertArrayNotHasKey('Sites InterSoccer', $intersoccer_test_wc_order_item_meta[$item_id]);
+    }
+
+    public function test_renormalize_booking_meta_does_not_seed_pa_twin_from_pa_only_line(): void {
+        global $intersoccer_test_wc_order_item_meta;
+
+        $item_id = 88007;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [
+            'pa_booking-type' => 'full-term',
+        ];
+        $before_pa = $this->listPaShapeMetaKeys($intersoccer_test_wc_order_item_meta[$item_id]);
+
+        intersoccer_renormalize_order_item_booking_meta($item_id, [
+            'booking_type' => 'Full Term',
+            'selected_days' => '',
+            'late_pickup_days' => '',
+        ]);
+
+        $after_pa = $this->listPaShapeMetaKeys($intersoccer_test_wc_order_item_meta[$item_id]);
+        $this->assertSame($before_pa, $after_pa);
+        $this->assertArrayNotHasKey('attribute_pa_booking-type', $intersoccer_test_wc_order_item_meta[$item_id]);
     }
 
     public function test_renormalize_row_from_variation_skips_second_identical_rebuild_in_request(): void {
@@ -358,5 +489,21 @@ class MovePlayersUtilsSpeedNullTest extends TestCase {
         }
 
         return $matches[1];
+    }
+
+    /**
+     * @param array<string,mixed> $meta
+     * @return array<int,string>
+     */
+    private function listPaShapeMetaKeys(array $meta): array {
+        $keys = [];
+        foreach (array_keys($meta) as $key) {
+            if (strpos((string) $key, 'pa_') === 0 || strpos((string) $key, 'attribute_pa_') === 0) {
+                $keys[] = (string) $key;
+            }
+        }
+        sort($keys);
+
+        return $keys;
     }
 }
