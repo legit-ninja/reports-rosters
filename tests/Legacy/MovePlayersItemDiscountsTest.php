@@ -28,13 +28,13 @@ class MovePlayersItemDiscountsTest extends TestCase {
             'name' => 'Sibling Discount',
             'type' => 'percent',
             'amount' => 12.5,
-            'allocation_method' => 'proportional',
+            'allocation_method' => 'proportional_reporting',
         ],
         [
             'name' => 'Early Bird',
             'type' => 'fixed_cart',
             'amount' => 5.0,
-            'allocation_method' => 'direct',
+            'allocation_method' => 'cart_line',
         ],
     ];
 

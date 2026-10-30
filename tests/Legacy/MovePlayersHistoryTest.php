@@ -78,9 +78,9 @@ class MovePlayersHistoryTest extends TestCase {
             $GLOBALS['intersoccer_test_roster_row_filter_map'],
             $GLOBALS['intersoccer_test_roster_store'],
             $GLOBALS['intersoccer_test_roster_peer_store'],
+            $GLOBALS['intersoccer_test_roster_peer_queries'],
             $GLOBALS['intersoccer_test_userdata_map'],
-            $GLOBALS['intersoccer_test_current_user'],
-            $GLOBALS['intersoccer_test_roster_inference_event_signature']
+            $GLOBALS['intersoccer_test_current_user']
         );
         $this->resetMovePlayersTestGlobals();
         $_POST = [];
@@ -162,6 +162,7 @@ class MovePlayersHistoryTest extends TestCase {
             self::ITEM_ID => $baseline,
         ];
         $GLOBALS['intersoccer_test_roster_peer_store'] = $options['roster_peer_store'] ?? [];
+        $GLOBALS['intersoccer_test_roster_peer_queries'] = 0;
 
         $GLOBALS['intersoccer_test_wc_stock_qty'] = [
             self::SOURCE_VAR => 2,
@@ -260,7 +261,7 @@ class MovePlayersHistoryTest extends TestCase {
         $source = $make_variation(self::SOURCE_VAR, $options['source_overrides'] ?? []);
         $target = $make_variation(self::TARGET_VAR, $options['target_overrides'] ?? []);
         $original = $make_variation(self::ORIGINAL_VAR, array_merge(
-            ['variation_name' => 'History Course Original EN'],
+            $this->catalogOriginalVariationOverrides(),
             $options['original_overrides'] ?? []
         ));
 
@@ -319,12 +320,7 @@ class MovePlayersHistoryTest extends TestCase {
                 return null;
             }
             if (strpos($sql, 'variation_id') !== false && strpos($sql, 'order_item_id !=') !== false) {
-                foreach ($GLOBALS['intersoccer_test_roster_peer_store'] ?? [] as $peer_row) {
-                    $vid = (int) ($peer_row['variation_id'] ?? 0);
-                    if ($vid > 0 && strpos($sql, (string) $vid) !== false) {
-                        return $peer_row;
-                    }
-                }
+                $GLOBALS['intersoccer_test_roster_peer_queries'] = (int) ($GLOBALS['intersoccer_test_roster_peer_queries'] ?? 0) + 1;
 
                 return null;
             }
@@ -374,21 +370,6 @@ class MovePlayersHistoryTest extends TestCase {
         });
         $wpdb->shouldReceive('get_var')->andReturnUsing(static function ($sql) use ($target_capacity_count) {
             if (!is_string($sql)) {
-                return null;
-            }
-            if (strpos($sql, 'event_signature') !== false && strpos($sql, 'variation_id') !== false) {
-                $inferred = trim((string) ($GLOBALS['intersoccer_test_roster_inference_event_signature'] ?? ''));
-                if ($inferred !== '') {
-                    return $inferred;
-                }
-                foreach ($GLOBALS['intersoccer_test_roster_peer_store'] ?? [] as $peer_row) {
-                    $vid = (int) ($peer_row['variation_id'] ?? 0);
-                    $sig = trim((string) ($peer_row['event_signature'] ?? ''));
-                    if ($vid > 0 && $sig !== '' && strpos($sql, (string) $vid) !== false) {
-                        return $sig;
-                    }
-                }
-
                 return null;
             }
             if (strpos($sql, 'woocommerce_order_items') !== false) {
@@ -694,19 +675,39 @@ class MovePlayersHistoryTest extends TestCase {
     }
 
     /**
+     * @return array<string,mixed>
+     */
+    private function catalogOriginalVariationOverrides(): array {
+        return [
+            'variation_name' => 'History Course Original EN',
+            'variation_attribute_map' => [
+                'pa_intersoccer-venues' => 'Catalog Original Venue',
+                'pa_age-group' => '9-11',
+                'pa_course-times' => 'Afternoon',
+                'pa_course-day' => 'Friday',
+            ],
+        ];
+    }
+
+    /**
      * @param array<string,mixed> $origin
      */
     private function assertInferredOriginFromEarlierMove(array $origin): void {
         $this->assertTrue($origin['backfilled']);
         $this->assertSame(self::ORIGINAL_VAR, (int) ($origin['variation_id'] ?? 0));
-        $this->assertSame('hist-sig-original', $origin['event_signature'] ?? '');
+        $this->assertSame('', (string) ($origin['event_signature'] ?? ''));
+        $this->assertSame('', (string) ($origin['start_date'] ?? ''));
+        $this->assertSame('', (string) ($origin['end_date'] ?? ''));
         $this->assertStringContainsString('History Course Original EN', (string) ($origin['label']['product'] ?? ''));
-        $this->assertStringContainsString('Lausanne Centre', (string) ($origin['label']['variation'] ?? ''));
+        $this->assertStringContainsString('Catalog Original Venue', (string) ($origin['label']['variation'] ?? ''));
+        $this->assertStringNotContainsString('Lausanne Centre', (string) ($origin['label']['variation'] ?? ''));
+        $this->assertStringNotContainsString('hist-sig-original', (string) ($origin['event_signature'] ?? ''));
         $note = trim((string) ($origin['note'] ?? ''));
         $this->assertNotSame('', $note);
         $this->assertStringContainsString('Original booking inferred from an earlier move:', $note);
         $this->assertStringContainsString('History Course Original EN', $note);
         $this->assertStringNotContainsString('audit meta', strtolower($note));
+        $this->assertSame(0, (int) ($GLOBALS['intersoccer_test_roster_peer_queries'] ?? -1));
     }
 
     private function seedLatestAuditFromVariation(int $variation_id): void {
@@ -820,13 +821,17 @@ class MovePlayersHistoryTest extends TestCase {
 
         $origin = intersoccer_roster_history_get_entries(self::ITEM_ID)[0];
         $this->assertTrue($origin['backfilled']);
-        $this->assertSame(self::SOURCE_VAR, (int) ($origin['variation_id'] ?? 0));
-        $this->assertSame('hist-sig-abc', $origin['event_signature'] ?? '');
+        $this->assertSame(94077, (int) ($origin['variation_id'] ?? 0));
+        $this->assertSame('', (string) ($origin['event_signature'] ?? ''));
+        $this->assertSame('', trim((string) ($origin['label']['product'] ?? '')));
+        $this->assertSame('', trim((string) ($origin['label']['variation'] ?? '')));
+        $this->assertSame('', trim((string) ($origin['label']['dates'] ?? '')));
         $note = trim((string) ($origin['note'] ?? ''));
         $this->assertStringContainsString('Original booking could not be identified', $note);
-        $this->assertStringContainsString('earliest known roster before this move', $note);
+        $this->assertStringContainsString('before this move:', $note);
         $this->assertStringContainsString('History Course EN', $note);
         $this->assertStringNotContainsString('Original booking inferred from an earlier move:', $note);
+        $this->assertSame(0, (int) ($GLOBALS['intersoccer_test_roster_peer_queries'] ?? -1));
     }
 
     public function test_first_move_inferred_origin_without_peer_row_does_not_leak_destination_roster(): void {
@@ -852,8 +857,6 @@ class MovePlayersHistoryTest extends TestCase {
         unset($intersoccer_test_wc_order_item_meta[self::ITEM_ID][intersoccer_roster_history_meta_key()]);
         $this->seedLatestAuditFromVariation(self::ORIGINAL_VAR);
 
-        $GLOBALS['intersoccer_test_roster_inference_event_signature'] = 'hist-sig-inferred-only';
-
         $this->invokeMoveAjax([
             'target_variation_id' => self::TARGET_VAR,
             'order_item_ids' => [self::ITEM_ID],
@@ -862,7 +865,9 @@ class MovePlayersHistoryTest extends TestCase {
 
         $origin = intersoccer_roster_history_get_entries(self::ITEM_ID)[0];
         $this->assertSame(self::ORIGINAL_VAR, (int) ($origin['variation_id'] ?? 0));
-        $this->assertSame('hist-sig-inferred-only', $origin['event_signature'] ?? '');
+        $this->assertSame('', (string) ($origin['event_signature'] ?? ''));
+        $this->assertSame('', (string) ($origin['start_date'] ?? ''));
+        $this->assertSame('', (string) ($origin['end_date'] ?? ''));
         $this->assertSame('Individual Days', $origin['booking_type'] ?? '');
         $this->assertSame('Mon, Tue', $origin['selected_days'] ?? '');
         $this->assertSame('Mon, Tue', $origin['days_selected'] ?? '');
@@ -870,6 +875,7 @@ class MovePlayersHistoryTest extends TestCase {
         $this->assertStringContainsString('Lausanne Variation Venue', (string) ($origin['label']['variation'] ?? ''));
         $this->assertStringNotContainsString('hist-sig-abc', (string) ($origin['event_signature'] ?? ''));
         $this->assertStringNotContainsString('Geneva Centre', (string) ($origin['label']['variation'] ?? ''));
+        $this->assertSame(0, (int) ($GLOBALS['intersoccer_test_roster_peer_queries'] ?? -1));
     }
 
     public function test_first_move_inferred_origin_keeps_player_booking_fields_from_pre_move_side(): void {
@@ -900,7 +906,10 @@ class MovePlayersHistoryTest extends TestCase {
         $this->assertSame('Individual Days', $origin['booking_type'] ?? '');
         $this->assertSame('Mon, Wed', $origin['selected_days'] ?? '');
         $this->assertSame('Mon, Wed', $origin['days_selected'] ?? '');
-        $this->assertSame('hist-sig-original', $origin['event_signature'] ?? '');
+        $this->assertSame('', (string) ($origin['event_signature'] ?? ''));
+        $this->assertStringNotContainsString('Lausanne Centre', (string) ($origin['label']['variation'] ?? ''));
+        $this->assertStringContainsString('Catalog Original Venue', (string) ($origin['label']['variation'] ?? ''));
+        $this->assertSame(0, (int) ($GLOBALS['intersoccer_test_roster_peer_queries'] ?? -1));
     }
 
     /**

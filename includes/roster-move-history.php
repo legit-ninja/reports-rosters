@@ -466,15 +466,13 @@ if (!function_exists('intersoccer_roster_history_roster_row_from_side')) {
 
 if (!function_exists('intersoccer_roster_history_roster_row_for_variation_inference')) {
     /**
-     * Build a roster-shaped row for an earlier variation (no mixing with the current from-side row).
+     * Build a roster-shaped row for an earlier variation from catalog data only (never other roster rows).
      *
-     * @param array<string,mixed> $anchor_row Current roster row on the order line (order ids, booking context).
      * @return array<string,mixed>|null Null when the variation cannot be loaded.
      */
     function intersoccer_roster_history_roster_row_for_variation_inference(
         int $variation_id,
-        int $order_item_id,
-        array $anchor_row
+        int $order_item_id
     ): ?array {
         $resolved = intersoccer_roster_history_resolve_variation_id($variation_id);
         if ($resolved <= 0 || !function_exists('wc_get_product')) {
@@ -486,60 +484,30 @@ if (!function_exists('intersoccer_roster_history_roster_row_for_variation_infere
         }
 
         $parent_id = (int) $variation->get_parent_id();
-        global $wpdb;
-        $table = $wpdb->prefix . 'intersoccer_rosters';
-        $peer = $wpdb->get_row(
-            $wpdb->prepare(
-                "SELECT * FROM {$table} WHERE variation_id = %d AND order_item_id != %d ORDER BY updated_at DESC, id DESC LIMIT 1",
-                $resolved,
-                $order_item_id
-            ),
-            ARRAY_A
-        );
-
-        $row = is_array($peer) ? $peer : [];
-        if ($row === []) {
-            $row = [
-                'order_id'      => (int) ($anchor_row['order_id'] ?? 0),
-                'order_item_id' => $order_item_id,
-            ];
-        } else {
-            $row['order_id'] = (int) ($anchor_row['order_id'] ?? $row['order_id'] ?? 0);
-            $row['order_item_id'] = $order_item_id;
+        $order_id = 0;
+        if (function_exists('wc_get_order_id_by_order_item_id')) {
+            $order_id = (int) wc_get_order_id_by_order_item_id($order_item_id);
         }
 
-        $row['variation_id'] = $resolved;
-        $row['product_id'] = $parent_id;
-
-        if (trim((string) ($row['event_signature'] ?? '')) === '') {
-            $existing_signature = $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT event_signature FROM {$table} WHERE variation_id = %d AND event_signature != '' AND order_item_id != %d ORDER BY updated_at DESC, id DESC LIMIT 1",
-                    $resolved,
-                    $order_item_id
-                )
-            );
-            if (!empty($existing_signature)) {
-                $row['event_signature'] = (string) $existing_signature;
-            }
-        }
-
-        if (trim((string) ($row['product_name'] ?? '')) === '') {
-            $row['product_name'] = function_exists('intersoccer_get_english_product_name')
+        $row = [
+            'order_id'          => $order_id,
+            'order_item_id'     => $order_item_id,
+            'variation_id'      => $resolved,
+            'product_id'        => $parent_id,
+            'event_signature'   => '',
+            'start_date'        => '',
+            'end_date'          => '',
+            'product_name'      => function_exists('intersoccer_get_english_product_name')
                 ? (string) intersoccer_get_english_product_name($variation->get_name(), $parent_id)
-                : (string) $variation->get_name();
-        }
+                : (string) $variation->get_name(),
+        ];
 
-        foreach (['venue', 'age_group', 'times', 'course_day', 'camp_terms', 'season'] as $field) {
-            if (trim((string) ($row[$field] ?? '')) !== '') {
-                continue;
-            }
-            if (!is_callable([$variation, 'get_meta'])) {
-                continue;
-            }
-            $meta_val = trim((string) $variation->get_meta($field, true));
-            if ($meta_val !== '') {
-                $row[$field] = $meta_val;
+        if (is_callable([$variation, 'get_meta'])) {
+            foreach (['venue', 'age_group', 'times', 'course_day', 'camp_terms', 'season', 'start_date', 'end_date', 'event_signature'] as $field) {
+                $meta_val = trim((string) $variation->get_meta($field, true));
+                if ($meta_val !== '') {
+                    $row[$field] = $meta_val;
+                }
             }
         }
 
@@ -600,10 +568,9 @@ if (!function_exists('intersoccer_roster_history_roster_side_from_variation_infe
      */
     function intersoccer_roster_history_roster_side_from_variation_inference(
         int $variation_id,
-        int $order_item_id,
-        array $anchor_row
+        int $order_item_id
     ): ?array {
-        $row = intersoccer_roster_history_roster_row_for_variation_inference($variation_id, $order_item_id, $anchor_row);
+        $row = intersoccer_roster_history_roster_row_for_variation_inference($variation_id, $order_item_id);
         if ($row === null) {
             return null;
         }
@@ -634,18 +601,9 @@ if (!function_exists('intersoccer_roster_history_first_move_origin_context')) {
             $label_source = $from_side;
 
             if ($resolved_legacy !== $from_variation) {
-                $anchor_row = intersoccer_roster_history_roster_row_for_item($order_item_id);
-                if (!is_array($anchor_row) || $anchor_row === []) {
-                    $order_id = 0;
-                    if (function_exists('wc_get_order_id_by_order_item_id')) {
-                        $order_id = (int) wc_get_order_id_by_order_item_id($order_item_id);
-                    }
-                    $anchor_row = intersoccer_roster_history_roster_row_from_side($from_side, $order_id, $order_item_id);
-                }
                 $rebuilt = intersoccer_roster_history_roster_side_from_variation_inference(
                     $resolved_legacy,
-                    $order_item_id,
-                    $anchor_row
+                    $order_item_id
                 );
                 if ($rebuilt !== null) {
                     $origin_side = $rebuilt;
@@ -659,9 +617,27 @@ if (!function_exists('intersoccer_roster_history_first_move_origin_context')) {
                         : 'Original booking inferred from an earlier move.';
                 } else {
                     $label_line = intersoccer_roster_history_format_label_line($from_side);
-                    $note = $label_line !== ''
-                        ? 'Original booking could not be identified; earliest known roster before this move: ' . $label_line
-                        : 'Original booking could not be identified; earliest known roster before this move.';
+                    $note = 'Original booking could not be identified.';
+                    if ($label_line !== '') {
+                        $note .= ' before this move: ' . $label_line;
+                    }
+                    $origin_side = [
+                        'variation_id'    => $legacy_variation,
+                        'product_id'      => 0,
+                        'event_signature' => '',
+                        'booking_type'    => (string) ($from_side['booking_type'] ?? ''),
+                        'selected_days'   => (string) ($from_side['selected_days'] ?? ''),
+                        'days_selected'   => (string) ($from_side['days_selected'] ?? ''),
+                        'start_date'      => '',
+                        'end_date'        => '',
+                        'camp_terms'      => '',
+                        'course_day'      => '',
+                        'label'           => [
+                            'product'   => '',
+                            'variation' => '',
+                            'dates'     => '',
+                        ],
+                    ];
                 }
             } else {
                 $label_line = intersoccer_roster_history_format_label_line($label_source);
@@ -697,6 +673,9 @@ if (!function_exists('intersoccer_roster_history_persist_backfill_origin_from_si
     ): void {
         if ($order_item_id <= 0 || $from_side === []) {
             return;
+        }
+        if ($order_id <= 0 && function_exists('wc_get_order_id_by_order_item_id')) {
+            $order_id = (int) wc_get_order_id_by_order_item_id($order_item_id);
         }
         $entries = intersoccer_roster_history_decode_entries(intersoccer_roster_history_read_raw($order_item_id));
         if (intersoccer_roster_history_has_origin($entries)) {
@@ -746,9 +725,12 @@ if (!function_exists('intersoccer_roster_history_get_entries_for_display')) {
         if (!$row) {
             return $entries;
         }
-        $order_id = (int) ($row['order_id'] ?? 0);
-        if ($order_id <= 0 && function_exists('wc_get_order_id_by_order_item_id')) {
+        $order_id = 0;
+        if (function_exists('wc_get_order_id_by_order_item_id')) {
             $order_id = (int) wc_get_order_id_by_order_item_id($order_item_id);
+        }
+        if ($order_id <= 0) {
+            $order_id = (int) ($row['order_id'] ?? 0);
         }
         $virtual = intersoccer_roster_history_build_origin_entry($order_id, $order_item_id, $row, false, '');
         $moves = array_values(array_filter($entries, static function ($entry) {
