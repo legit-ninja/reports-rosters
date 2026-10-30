@@ -365,7 +365,10 @@ if (!class_exists('InterSoccerRRTestMeta')) {
 
 if (!function_exists('taxonomy_exists')) {
     function taxonomy_exists($taxonomy) {
-        return false;
+        return $taxonomy !== ''
+            && isset($GLOBALS['intersoccer_test_terms_by_slug'][$taxonomy])
+            && is_array($GLOBALS['intersoccer_test_terms_by_slug'][$taxonomy])
+            && $GLOBALS['intersoccer_test_terms_by_slug'][$taxonomy] !== [];
     }
 }
 

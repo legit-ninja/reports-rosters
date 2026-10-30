@@ -1092,11 +1092,6 @@ if (!function_exists('intersoccer_renormalize_order_item_booking_meta')) {
             return false;
         }
 
-        if (function_exists('intersoccer_roster_move_item_renormalize_is_suppressed')
-            && intersoccer_roster_move_item_renormalize_is_suppressed($order_item_id)) {
-            return false;
-        }
-
         $item = new WC_Order_Item_Product($order_item_id);
         $meta_changed = false;
         $meta_values_differ = static function ($current, $normalized): bool {
@@ -4439,12 +4434,22 @@ if (!function_exists('intersoccer_renormalize_roster_row_from_variation')) {
             $from_order = intersoccer_roster_collect_event_data_from_order_item($order_item_id);
             foreach (['city', 'canton_region'] as $facet_key) {
                 if (trim((string) ($record[$facet_key] ?? '')) !== '') {
-                    $normalized[$facet_key] = $record[$facet_key];
+                    $record_normalized = intersoccer_normalize_roster_facets_for_storage([
+                        $facet_key       => $record[$facet_key],
+                        'activity_type'  => $event_data['activity_type'] ?? '',
+                        'product_id'     => $parent_id,
+                    ]);
+                    $normalized[$facet_key] = $record_normalized[$facet_key] ?? $record[$facet_key];
                     continue;
                 }
                 if (trim((string) ($normalized[$facet_key] ?? '')) === '') {
                     if (!empty($from_order[$facet_key])) {
-                        $normalized[$facet_key] = $from_order[$facet_key];
+                        $from_order_normalized = intersoccer_normalize_roster_facets_for_storage([
+                            $facet_key       => $from_order[$facet_key],
+                            'activity_type'  => $event_data['activity_type'] ?? '',
+                            'product_id'     => $parent_id,
+                        ]);
+                        $normalized[$facet_key] = $from_order_normalized[$facet_key] ?? $from_order[$facet_key];
                     }
                 }
             }
@@ -4453,6 +4458,21 @@ if (!function_exists('intersoccer_renormalize_roster_row_from_variation')) {
         $product_name = function_exists('intersoccer_get_english_product_name')
             ? intersoccer_get_english_product_name($variation->get_name(), $parent_id)
             : $variation->get_name();
+
+        if (function_exists('intersoccer_normalize_roster_facets_for_storage')) {
+            $canton_city_normalize = intersoccer_normalize_roster_facets_for_storage([
+                'canton_region' => $normalized['canton_region'] ?? '',
+                'city'          => $normalized['city'] ?? '',
+                'activity_type' => $normalized['activity_type'] ?? '',
+                'product_id'    => $parent_id,
+            ]);
+            if (trim((string) ($canton_city_normalize['canton_region'] ?? '')) !== '') {
+                $normalized['canton_region'] = $canton_city_normalize['canton_region'];
+            }
+            if (trim((string) ($canton_city_normalize['city'] ?? '')) !== '') {
+                $normalized['city'] = $canton_city_normalize['city'];
+            }
+        }
 
         $update_data = intersoccer_build_roster_facet_db_update($normalized, $record, $product_name);
         $update_data['variation_id'] = $variation_id;
@@ -5590,11 +5610,13 @@ if (!function_exists('intersoccer_normalize_roster_facets_for_storage')) {
                 continue;
             }
             if ($field === 'canton_region' && function_exists('intersoccer_migration_default_language_term_slug')) {
-                $normalized[$field] = intersoccer_migration_default_language_term_slug(
+                $en_slug = intersoccer_migration_default_language_term_slug(
                     $taxonomy,
                     (string) $normalized[$field]
                 );
-                continue;
+                if ($en_slug !== '') {
+                    $normalized[$field] = $en_slug;
+                }
             }
             if (function_exists('intersoccer_get_term_name')) {
                 $name = intersoccer_get_term_name($normalized[$field], $taxonomy);
@@ -5674,6 +5696,18 @@ if (!function_exists('intersoccer_build_roster_facet_db_update')) {
             ? intersoccer_event_signature_from_event_data($signature_payload)
             : '';
 
+        $canton_value = (string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'canton_region');
+        if ($canton_value !== '' && function_exists('intersoccer_normalize_roster_facets_for_storage')) {
+            $canton_normalized = intersoccer_normalize_roster_facets_for_storage([
+                'canton_region' => $canton_value,
+                'activity_type' => $normalized_data['activity_type'] ?? '',
+                'product_id'    => (int) ($normalized_data['product_id'] ?? 0),
+            ]);
+            if (trim((string) ($canton_normalized['canton_region'] ?? '')) !== '') {
+                $canton_value = (string) $canton_normalized['canton_region'];
+            }
+        }
+
         $update = [
             'event_signature' => $signature,
             'venue'           => substr((string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'venue'), 0, 200),
@@ -5683,7 +5717,7 @@ if (!function_exists('intersoccer_build_roster_facet_db_update')) {
             'times'           => substr((string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'times'), 0, 50),
             'season'          => substr((string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'season'), 0, 50),
             'city'            => substr((string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'city'), 0, 100),
-            'canton_region'   => substr((string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'canton_region'), 0, 100),
+            'canton_region'   => substr($canton_value, 0, 100),
             'activity_type'   => substr((string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'activity_type'), 0, 50),
         ];
 

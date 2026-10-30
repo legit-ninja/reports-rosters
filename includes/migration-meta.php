@@ -763,11 +763,6 @@ if (!function_exists('intersoccer_migration_supplement_roster_normalized_from_va
                 continue;
             }
 
-            if ($facet === 'canton_region') {
-                $normalized[$facet] = $en_slug;
-                continue;
-            }
-
             if (function_exists('intersoccer_get_term_name')) {
                 $name = intersoccer_get_term_name($en_slug, $taxonomy);
                 if ($name !== '' && $name !== 'N/A') {

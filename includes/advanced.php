@@ -1737,27 +1737,6 @@ function intersoccer_move_players_ajax() {
                             intersoccer_migration_apply_slug_meta_for_move($item_id, $slug_meta);
                         }
                     }
-                    $booking_after_restore = function_exists('intersoccer_read_order_item_booking_fields')
-                        ? intersoccer_read_order_item_booking_fields($item_id)
-                        : ['booking_type' => '', 'selected_days' => '', 'late_pickup_days' => ''];
-
-                    // Repair booking meta when canonical restore clears full-week/single-days metadata.
-                    if (!empty($booking_before['booking_type']) && empty($booking_after_restore['booking_type'])) {
-                        $booking_repair = function_exists('intersoccer_normalize_roster_booking_columns')
-                            ? intersoccer_normalize_roster_booking_columns([], $booking_before)
-                            : $booking_before;
-
-                        if (function_exists('intersoccer_renormalize_order_item_booking_meta')) {
-                            intersoccer_renormalize_order_item_booking_meta($item_id, $booking_repair);
-                        }
-
-                        error_log(
-                            'InterSoccer Migration: Repaired booking meta after restore wipe for item ' . $item_id .
-                            ' (before=' . ($booking_before['booking_type'] ?? '') .
-                            ', after_restore=' . ($booking_after_restore['booking_type'] ?? '') . ')'
-                        );
-                    }
-                    
                     $log_line('InterSoccer Migration: Saved order item and order for item ' . $item_id);
                 } catch (Exception $e) {
                     $log_line('InterSoccer Migration: Failed to save order for item ' . $item_id . ': ' . $e->getMessage());
@@ -1810,6 +1789,72 @@ function intersoccer_move_players_ajax() {
                         $prior_canonical_order_meta
                     );
                     $log_line('InterSoccer Migration: Finalized order item meta for item ' . $item_id);
+
+                    $booking_after_restore = function_exists('intersoccer_read_order_item_booking_fields')
+                        ? intersoccer_read_order_item_booking_fields($item_id)
+                        : ['booking_type' => '', 'selected_days' => '', 'late_pickup_days' => ''];
+                    $destination_booking = function_exists('intersoccer_migration_roster_booking_from_destination_variation')
+                        ? intersoccer_migration_roster_booking_from_destination_variation([], [], $variation)
+                        : [];
+                    $destination_booking_label = trim((string) ($destination_booking['booking_type'] ?? ''));
+                    $stored_booking_type = '';
+                    if (in_array('Booking Type', $existing_line_meta_keys, true)) {
+                        $item_check = new WC_Order_Item_Product($item_id);
+                        $stored_booking_type = trim((string) $item_check->get_meta('Booking Type', true));
+                    }
+
+                    if (!empty($booking_before['booking_type'])
+                        && $destination_booking_label !== ''
+                        && (
+                            empty($booking_after_restore['booking_type'])
+                            || strcasecmp((string) $booking_after_restore['booking_type'], $destination_booking_label) !== 0
+                            || (
+                                $stored_booking_type !== ''
+                                && strcasecmp($stored_booking_type, $destination_booking_label) !== 0
+                            )
+                        )
+                    ) {
+                        $booking_repair = $destination_booking;
+                        if (function_exists('intersoccer_normalize_roster_booking_columns')) {
+                            $booking_repair = intersoccer_normalize_roster_booking_columns([], $booking_repair);
+                        }
+
+                        if (function_exists('intersoccer_renormalize_order_item_booking_meta')) {
+                            $booking_type_target = trim((string) ($booking_repair['booking_type'] ?? ''));
+                            if ($booking_type_target !== '') {
+                                $item_repair = new WC_Order_Item_Product($item_id);
+                                $booking_alias_flip = array_fill_keys(
+                                    array_merge(
+                                        ['Booking Type', 'Type de réservation', 'Buchungstyp', 'booking_type'],
+                                        $human_alias_map['booking_type'] ?? []
+                                    ),
+                                    true
+                                );
+                                $existing_key_flip = array_fill_keys($existing_line_meta_keys, true);
+                                $repair_meta_changed = false;
+                                foreach (array_keys($existing_key_flip) as $meta_key) {
+                                    if (!isset($booking_alias_flip[$meta_key])) {
+                                        continue;
+                                    }
+                                    $current = $item_repair->get_meta($meta_key, true);
+                                    if ($current === '' || $current === null) {
+                                        $item_repair->update_meta_data($meta_key, $booking_type_target);
+                                        $repair_meta_changed = true;
+                                    }
+                                }
+                                if ($repair_meta_changed) {
+                                    $item_repair->save();
+                                }
+                            }
+                            intersoccer_renormalize_order_item_booking_meta($item_id, $booking_repair);
+                        }
+
+                        error_log(
+                            'InterSoccer Migration: Repaired booking meta after restore wipe for item ' . $item_id .
+                            ' (before=' . ($booking_before['booking_type'] ?? '') .
+                            ', after_restore=' . ($booking_after_restore['booking_type'] ?? '') . ')'
+                        );
+                    }
                 } catch (Exception $e) {
                     $log_line('InterSoccer Migration: Failed to finalize item meta for item ' . $item_id . ': ' . $e->getMessage());
                     $migration_success = false;
@@ -2112,12 +2157,22 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
         $from_order = intersoccer_roster_collect_event_data_from_order_item($item_id);
         foreach (['city', 'canton_region'] as $facet_key) {
             if (trim((string) ($record[$facet_key] ?? '')) !== '') {
-                $normalized[$facet_key] = $record[$facet_key];
+                $record_normalized = intersoccer_normalize_roster_facets_for_storage([
+                    $facet_key       => $record[$facet_key],
+                    'activity_type'  => $event_data['activity_type'] ?? '',
+                    'product_id'     => $parent_id,
+                ]);
+                $normalized[$facet_key] = $record_normalized[$facet_key] ?? $record[$facet_key];
                 continue;
             }
             if (trim((string) ($normalized[$facet_key] ?? '')) === '') {
                 if (!empty($from_order[$facet_key])) {
-                    $normalized[$facet_key] = $from_order[$facet_key];
+                    $from_order_normalized = intersoccer_normalize_roster_facets_for_storage([
+                        $facet_key       => $from_order[$facet_key],
+                        'activity_type'  => $event_data['activity_type'] ?? '',
+                        'product_id'     => $parent_id,
+                    ]);
+                    $normalized[$facet_key] = $from_order_normalized[$facet_key] ?? $from_order[$facet_key];
                 }
             }
         }
@@ -2126,6 +2181,21 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
     $product_name = function_exists('intersoccer_get_english_product_name')
         ? intersoccer_get_english_product_name($variation->get_name(), $parent_id)
         : $variation->get_name();
+
+    if (function_exists('intersoccer_normalize_roster_facets_for_storage')) {
+        $canton_city_normalize = intersoccer_normalize_roster_facets_for_storage([
+            'canton_region' => $normalized['canton_region'] ?? '',
+            'city'          => $normalized['city'] ?? '',
+            'activity_type' => $normalized['activity_type'] ?? '',
+            'product_id'    => $parent_id,
+        ]);
+        if (trim((string) ($canton_city_normalize['canton_region'] ?? '')) !== '') {
+            $normalized['canton_region'] = $canton_city_normalize['canton_region'];
+        }
+        if (trim((string) ($canton_city_normalize['city'] ?? '')) !== '') {
+            $normalized['city'] = $canton_city_normalize['city'];
+        }
+    }
 
     $facet_update = function_exists('intersoccer_build_roster_facet_db_update')
         ? intersoccer_build_roster_facet_db_update($normalized, $record, $product_name)

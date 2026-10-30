@@ -630,4 +630,424 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
         $this->assertSame('geneva', intersoccer_migration_default_language_term_slug('pa_canton-region', 'geneve'));
         $this->assertSame('geneva', intersoccer_migration_default_language_term_slug('pa_canton-region', 'Genève'));
     }
+
+    /**
+     * @param array<string,object> $by_slug
+     * @param array<int,object>    $by_id
+     * @param array<int,int>       $wpml_map
+     */
+    private function registerGenevaCantonTerms(array $wpml_map = [7401 => 7400, 7501 => 7400]): void {
+        $this->registerTerms(
+            [
+                'pa_canton-region' => [
+                    'geneve' => (object) ['term_id' => 7401, 'slug' => 'geneve', 'name' => 'Genève'],
+                    'genf' => (object) ['term_id' => 7501, 'slug' => 'genf', 'name' => 'Genf'],
+                    'geneva' => (object) ['term_id' => 7400, 'slug' => 'geneva', 'name' => 'Geneva'],
+                ],
+            ],
+            [
+                7401 => (object) ['term_id' => 7401, 'slug' => 'geneve', 'name' => 'Genève'],
+                7501 => (object) ['term_id' => 7501, 'slug' => 'genf', 'name' => 'Genf'],
+                7400 => (object) ['term_id' => 7400, 'slug' => 'geneva', 'name' => 'Geneva'],
+            ]
+        );
+        $this->stubWpmlEnTerms($wpml_map);
+    }
+
+    public function test_normalize_roster_facets_for_storage_stores_canton_en_term_name_for_fr_and_de(): void {
+        $this->registerGenevaCantonTerms();
+
+        $fr = intersoccer_normalize_roster_facets_for_storage([
+            'canton_region' => 'geneve',
+            'activity_type' => 'Camp',
+            'product_id' => 1,
+        ]);
+        $this->assertSame('Geneva', $fr['canton_region']);
+
+        $de = intersoccer_normalize_roster_facets_for_storage([
+            'canton_region' => 'genf',
+            'activity_type' => 'Camp',
+            'product_id' => 1,
+        ]);
+        $this->assertSame('Geneva', $de['canton_region']);
+
+        $en = intersoccer_normalize_roster_facets_for_storage([
+            'canton_region' => 'geneva',
+            'activity_type' => 'Camp',
+            'product_id' => 1,
+        ]);
+        $this->assertSame('Geneva', $en['canton_region']);
+    }
+
+    public function test_migration_supplement_roster_normalized_from_variation_fills_canton_en_term_name(): void {
+        $this->registerGenevaCantonTerms();
+
+        $variation = Mockery::mock(\WC_Product_Variation::class);
+        $variation->shouldReceive('get_id')->andReturn(99001);
+        $variation->shouldReceive('get_parent_id')->andReturn(1);
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_canton-region' => 'geneve',
+        ]);
+        $variation->shouldReceive('get_attribute')->with('pa_canton-region')->andReturn('geneve');
+        $variation->shouldReceive('get_attributes')->andReturn([]);
+
+        $normalized = intersoccer_migration_supplement_roster_normalized_from_variation(
+            [],
+            ['canton_region' => ''],
+            $variation
+        );
+        $this->assertSame('Geneva', $normalized['canton_region']);
+    }
+
+    public function test_blank_key_move_fills_roster_canton_en_term_name(): void {
+        $this->registerGenevaCantonTerms();
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9300, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                9300 => (object) ['term_id' => 9300, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+
+        $this->installMoveWorld([
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Player blank canton',
+            ],
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_canton-region' => 'geneva',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'roster_row' => [
+                'booking_type' => 'Unknown',
+                'canton_region' => '',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_roster_store;
+        $row = $intersoccer_test_roster_store[self::ITEM_ID];
+        $this->assertSame('Geneva', $row['canton_region']);
+    }
+
+    public function test_admin_repair_batch_sets_roster_canton_geneva_for_fr_line(): void {
+        $this->registerGenevaCantonTerms();
+        $this->assertAdminRepairBatchSetsRosterCantonGeneva(
+            88201,
+            882011,
+            ['Canton / Région' => 'Genève']
+        );
+    }
+
+    public function test_admin_repair_batch_sets_roster_canton_geneva_for_de_line(): void {
+        $this->registerGenevaCantonTerms();
+        $this->assertAdminRepairBatchSetsRosterCantonGeneva(
+            88202,
+            882021,
+            ['Canton / Region' => 'Genf']
+        );
+    }
+
+    /**
+     * @param array<string,string> $item_meta
+     */
+    private function assertAdminRepairBatchSetsRosterCantonGeneva(int $item_id, int $roster_id, array $item_meta): void {
+        global $wpdb, $intersoccer_test_wc_order_item_meta;
+
+        $intersoccer_test_wc_order_item_meta[$item_id] = array_merge(
+            [
+                "Type d'activité" => 'Camp',
+                'Lieux InterSoccer' => 'Centre',
+            ],
+            $item_meta
+        );
+
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        $row = [
+            'id' => $roster_id,
+            'order_item_id' => $item_id,
+            'variation_id' => 0,
+            'activity_type' => 'Camp',
+            'venue' => 'Centre',
+            'canton_region' => '',
+            'product_id' => 1,
+            'product_name' => 'Camp',
+            'booking_type' => 'Full Week',
+        ];
+
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query) {
+            return $query;
+        });
+        $wpdb->shouldReceive('get_var')->andReturn('1');
+        $wpdb->shouldReceive('get_results')->andReturn([
+            ['id' => $roster_id, 'order_item_id' => $item_id, 'variation_id' => 0],
+        ]);
+        $wpdb->shouldReceive('get_row')->andReturn($row);
+        $captured_canton = null;
+        $wpdb->shouldReceive('update')->andReturnUsing(static function ($table, $data, $where) use (&$captured_canton, $rosters_table) {
+            if ($table === $rosters_table && isset($data['canton_region'])) {
+                $captured_canton = $data['canton_region'];
+            }
+
+            return 1;
+        });
+
+        $batch = intersoccer_renormalize_roster_language_batch(0, 40, 'orders');
+        $this->assertSame(1, (int) ($batch['updated'] ?? 0));
+        $this->assertSame('Geneva', $captured_canton);
+    }
+
+    public function test_renormalize_language_batch_meta_updated_counts_order_meta_writes_only(): void {
+        global $wpdb, $intersoccer_test_wc_order_item_meta;
+
+        $booking_only_item = 88301;
+        $unchanged_item = 88302;
+        $booking_only_roster = 883011;
+        $unchanged_roster = 883021;
+
+        $intersoccer_test_wc_order_item_meta[$booking_only_item] = [
+            '_meta_rows' => [
+                ['id' => 8001, 'key' => 'Buchungstyp', 'value' => 'Ganze Woche'],
+            ],
+            'Buchungstyp' => 'Ganze Woche',
+            "Type d'activité" => 'Camp',
+            'Lieux InterSoccer' => 'Centre',
+        ];
+        $intersoccer_test_wc_order_item_meta[$unchanged_item] = [
+            'Activity Type' => 'Camp',
+            'Booking Type' => 'Full Week',
+        ];
+
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+
+        $rows_by_id = [
+            $booking_only_roster => [
+                'id' => $booking_only_roster,
+                'order_item_id' => $booking_only_item,
+                'variation_id' => 0,
+                'activity_type' => 'Camp',
+                'venue' => 'Centre',
+                'canton_region' => 'Geneva',
+                'booking_type' => 'Unknown',
+                'product_id' => 1,
+                'product_name' => 'Camp',
+            ],
+            $unchanged_roster => [
+                'id' => $unchanged_roster,
+                'order_item_id' => $unchanged_item,
+                'variation_id' => 0,
+                'activity_type' => 'Camp',
+                'venue' => 'Centre',
+                'canton_region' => 'Geneva',
+                'booking_type' => 'Full Week',
+                'product_id' => 1,
+                'product_name' => 'Camp',
+            ],
+        ];
+
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query, ...$args) {
+            if ($args !== []) {
+                $escaped = array_map(
+                    static function ($arg) {
+                        return is_numeric($arg) ? (string) (int) $arg : "'" . (string) $arg . "'";
+                    },
+                    $args
+                );
+
+                return vsprintf(str_replace(['%d', '%s'], '%s', $query), $escaped);
+            }
+
+            return $query;
+        });
+        $wpdb->shouldReceive('get_var')->andReturn('1');
+        $wpdb->shouldReceive('get_results')->andReturn([
+            ['id' => $booking_only_roster, 'order_item_id' => $booking_only_item, 'variation_id' => 0],
+        ]);
+        $get_row_calls = 0;
+        $get_row_sequence = [
+            $rows_by_id[$booking_only_roster],
+            $rows_by_id[$booking_only_roster],
+        ];
+        $wpdb->shouldReceive('get_row')->andReturnUsing(static function () use (&$get_row_calls, $get_row_sequence) {
+            $index = min($get_row_calls, count($get_row_sequence) - 1);
+            $get_row_calls++;
+
+            return $get_row_sequence[$index];
+        });
+        $wpdb->shouldReceive('update')->andReturnUsing(static function ($table, $data, $where) use ($rosters_table, &$rows_by_id) {
+            if ($table !== $rosters_table || !isset($where['id'])) {
+                return 1;
+            }
+            $id = (int) $where['id'];
+            if (isset($rows_by_id[$id])) {
+                $rows_by_id[$id] = array_merge($rows_by_id[$id], $data);
+            }
+
+            return 1;
+        });
+
+        $batch = intersoccer_renormalize_roster_language_batch(0, 40, 'orders');
+        $this->assertSame(1, (int) ($batch['meta_updated'] ?? 0));
+        $this->assertSame(1, (int) ($batch['updated'] ?? 0));
+        $this->assertSame(0, (int) ($batch['errors'] ?? 0));
+        $this->assertSame('Full Week', $intersoccer_test_wc_order_item_meta[$booking_only_item]['Buchungstyp']);
+    }
+
+    public function test_renormalize_language_batch_meta_updated_zero_when_order_meta_unchanged(): void {
+        global $wpdb, $intersoccer_test_wc_order_item_meta;
+
+        $unchanged_item = 88302;
+        $unchanged_roster = 883021;
+
+        $intersoccer_test_wc_order_item_meta[$unchanged_item] = [
+            'Activity Type' => 'Camp',
+            'Booking Type' => 'Full Week',
+        ];
+
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        $row = [
+            'id' => $unchanged_roster,
+            'order_item_id' => $unchanged_item,
+            'variation_id' => 0,
+            'activity_type' => 'Camp',
+            'venue' => 'Centre',
+            'canton_region' => 'Geneva',
+            'booking_type' => 'Full Week',
+            'product_id' => 1,
+            'product_name' => 'Camp',
+        ];
+
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query, ...$args) {
+            if ($args !== []) {
+                $escaped = array_map(
+                    static function ($arg) {
+                        return is_numeric($arg) ? (string) (int) $arg : "'" . (string) $arg . "'";
+                    },
+                    $args
+                );
+
+                return vsprintf(str_replace(['%d', '%s'], '%s', $query), $escaped);
+            }
+
+            return $query;
+        });
+        $wpdb->shouldReceive('get_var')->andReturn('1');
+        $wpdb->shouldReceive('get_results')->andReturn([
+            ['id' => $unchanged_roster, 'order_item_id' => $unchanged_item, 'variation_id' => 0],
+        ]);
+        $wpdb->shouldReceive('get_row')->andReturn($row);
+        $wpdb->shouldReceive('update')->andReturnUsing(static function ($table, $data, $where) use ($rosters_table, &$row) {
+            if ($table === $rosters_table && isset($where['id'])) {
+                $row = array_merge($row, $data);
+            }
+
+            return 1;
+        });
+
+        $batch = intersoccer_renormalize_roster_language_batch(0, 40, 'orders');
+        $this->assertSame(0, (int) ($batch['meta_updated'] ?? 0));
+        $this->assertSame(1, (int) ($batch['updated'] ?? 0));
+        $this->assertSame(0, (int) ($batch['errors'] ?? 0));
+    }
+
+    public function test_move_repair_keeps_single_booking_type_row_with_destination_value_after_restore_wipe(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9600, 'slug' => 'full-week', 'name' => 'Full Week'],
+                    'single-days' => (object) ['term_id' => 9601, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                ],
+            ],
+            [
+                9600 => (object) ['term_id' => 9600, 'slug' => 'full-week', 'name' => 'Full Week'],
+                9601 => (object) ['term_id' => 9601, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->installMoveWorld([
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Booking repair player',
+                'Booking Type' => 'Single Day(s)',
+                '_intersoccer_canonical_booking_type' => 'single-days',
+            ],
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_canton-region' => 'geneva',
+                'attribute_pa_girls-only' => 'no',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $booking_rows = [];
+        if (isset($meta['_meta_rows']) && is_array($meta['_meta_rows'])) {
+            foreach ($meta['_meta_rows'] as $row) {
+                if (($row['key'] ?? '') === 'Booking Type') {
+                    $booking_rows[] = $row;
+                }
+            }
+        } elseif (isset($meta['Booking Type'])) {
+            $booking_rows[] = ['key' => 'Booking Type', 'value' => $meta['Booking Type']];
+        }
+        $this->assertCount(1, $booking_rows);
+        $this->assertSame('Full Week', $booking_rows[0]['value']);
+    }
+
+    public function test_move_does_not_add_booking_type_when_line_had_no_booking_key(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9700, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                9700 => (object) ['term_id' => 9700, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->installMoveWorld([
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'No booking key',
+            ],
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_canton-region' => 'geneva',
+                'attribute_pa_girls-only' => 'no',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertArrayNotHasKey('Booking Type', $meta);
+        if (isset($meta['_meta_rows']) && is_array($meta['_meta_rows'])) {
+            foreach ($meta['_meta_rows'] as $row) {
+                $this->assertNotSame('Booking Type', $row['key'] ?? '');
+            }
+        }
+    }
 }
