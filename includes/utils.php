@@ -1208,11 +1208,13 @@ if (!function_exists('intersoccer_renormalize_order_item_booking_meta')) {
         }
 
         if (array_key_exists('selected_days', $booking)) {
-            $selected_target = (string) $booking['selected_days'];
-            $update_existing_alias_rows(
-                ['Days Selected', 'Jours sélectionnés', 'Ausgewählte Tage', 'Selected Days'],
-                $selected_target
-            );
+            $selected_target = trim((string) $booking['selected_days']);
+            if ($selected_target !== '') {
+                $update_existing_alias_rows(
+                    ['Days Selected', 'Jours sélectionnés', 'Ausgewählte Tage', 'Selected Days'],
+                    $selected_target
+                );
+            }
         }
 
         if (array_key_exists('late_pickup_days', $booking) && $booking['late_pickup_days'] !== '') {

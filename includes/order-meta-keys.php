@@ -857,7 +857,16 @@ if (!function_exists('intersoccer_get_order_item_pa_taxonomy_meta_value')) {
             }
             $val = $item_meta[$key];
             if (is_array($val)) {
-                $val = $val[0] ?? implode(', ', array_map('trim', $val));
+                $scalar_parts = [];
+                foreach ($val as $part) {
+                    if (is_scalar($part)) {
+                        $trimmed = trim((string) $part);
+                        if ($trimmed !== '') {
+                            $scalar_parts[] = $trimmed;
+                        }
+                    }
+                }
+                $val = $scalar_parts === [] ? '' : implode(', ', $scalar_parts);
             }
             $val = trim((string) $val);
             if ($val !== '') {

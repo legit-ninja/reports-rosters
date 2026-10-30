@@ -661,15 +661,27 @@ if (!function_exists('intersoccer_migration_resolve_destination_canonical_order_
         }
 
         $pa_taxonomy = $pa_map[$meta_key];
-        $slug = '';
+        $raw_slug = '';
         if (function_exists('intersoccer_migration_pa_attribute_slug_for_variation')) {
-            $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $pa_taxonomy);
+            $raw_slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $pa_taxonomy, false);
         }
+        $slug = $raw_slug;
         if ($slug === '') {
             $slug = intersoccer_migration_slug_meta_pa_value($slug_meta, $pa_taxonomy);
         }
-        if ($slug !== '' && function_exists('intersoccer_migration_default_language_term_slug')) {
-            $slug = intersoccer_migration_default_language_term_slug($pa_taxonomy, $slug);
+        if ($slug !== '' && function_exists('intersoccer_migration_default_language_term_slug_strict')) {
+            $strict_input = $raw_slug !== '' ? $raw_slug : $slug;
+            $resolved_slug = intersoccer_migration_default_language_term_slug_strict($pa_taxonomy, $strict_input);
+            if ($resolved_slug === null) {
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log(
+                        'InterSoccer move: destination taxonomy value did not resolve to a term; keeping existing line value'
+                    );
+                }
+
+                return null;
+            }
+            $slug = $resolved_slug;
         }
 
         if ($meta_key === '_intersoccer_canonical_activity_type' && $slug === '') {
@@ -943,6 +955,75 @@ if (!function_exists('intersoccer_migration_term_id_in_default_language')) {
     }
 }
 
+if (!function_exists('intersoccer_migration_resolve_default_language_term_slug_from_lookup')) {
+    /**
+     * Map a taxonomy slug or label to the default-language term slug when a term exists.
+     *
+     * @return string|null EN slug when resolved; null when no matching term.
+     */
+    function intersoccer_migration_resolve_default_language_term_slug_from_lookup(string $taxonomy, string $value): ?string {
+        $value = trim($value);
+        if ($value === '' || $taxonomy === '') {
+            return null;
+        }
+
+        $term = null;
+        if (function_exists('intersoccer_get_term_in_default_language')) {
+            $term = intersoccer_get_term_in_default_language($value, $taxonomy);
+        }
+        if ((!$term || is_wp_error($term)) && function_exists('get_term_by')) {
+            $term = get_term_by('slug', $value, $taxonomy);
+            if (!$term || is_wp_error($term)) {
+                $term = get_term_by('name', $value, $taxonomy);
+            }
+        }
+
+        if (!$term || is_wp_error($term)) {
+            return null;
+        }
+
+        $en_id = intersoccer_migration_term_id_in_default_language((int) $term->term_id, $taxonomy);
+        $en_term = function_exists('get_term') ? get_term($en_id, $taxonomy) : $term;
+        if ($en_term && !is_wp_error($en_term) && !empty($en_term->slug)) {
+            return (string) $en_term->slug;
+        }
+
+        return (string) $term->slug;
+    }
+}
+
+if (!function_exists('intersoccer_migration_default_language_term_slug_strict')) {
+    /**
+     * Resolve to default-language slug only when a taxonomy term matches (no label/slug invention).
+     */
+    function intersoccer_migration_default_language_term_slug_strict(string $taxonomy, string $value): ?string {
+        $value = trim($value);
+        if ($value === '' || $taxonomy === '') {
+            return null;
+        }
+
+        if ($taxonomy === 'pa_girls-only') {
+            $coerced = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $value);
+            if ($coerced === '') {
+                return null;
+            }
+
+            return $coerced;
+        }
+
+        $resolved = intersoccer_migration_resolve_default_language_term_slug_from_lookup($taxonomy, $value);
+        if ($resolved !== null) {
+            return $resolved;
+        }
+
+        if (strpos($value, ' ') !== false) {
+            return null;
+        }
+
+        return $value;
+    }
+}
+
 if (!function_exists('intersoccer_migration_default_language_term_slug')) {
     /**
      * Resolve a taxonomy value (slug or label) to the default-language term slug (EN on WPML sites).
@@ -957,25 +1038,9 @@ if (!function_exists('intersoccer_migration_default_language_term_slug')) {
             return intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $value);
         }
 
-        $term = null;
-        if (function_exists('intersoccer_get_term_in_default_language')) {
-            $term = intersoccer_get_term_in_default_language($value, $taxonomy);
-        }
-        if ((!$term || is_wp_error($term)) && function_exists('get_term_by')) {
-            $term = get_term_by('slug', $value, $taxonomy);
-            if (!$term || is_wp_error($term)) {
-                $term = get_term_by('name', $value, $taxonomy);
-            }
-        }
-
-        if ($term && !is_wp_error($term)) {
-            $en_id = intersoccer_migration_term_id_in_default_language((int) $term->term_id, $taxonomy);
-            $en_term = function_exists('get_term') ? get_term($en_id, $taxonomy) : $term;
-            if ($en_term && !is_wp_error($en_term) && !empty($en_term->slug)) {
-                return (string) $en_term->slug;
-            }
-
-            return (string) $term->slug;
+        $resolved = intersoccer_migration_resolve_default_language_term_slug_from_lookup($taxonomy, $value);
+        if ($resolved !== null) {
+            return $resolved;
         }
 
         if (strpos($value, ' ') !== false) {
@@ -1044,8 +1109,20 @@ if (!function_exists('intersoccer_migration_pa_attribute_slug_for_variation')) {
     /**
      * Term slug WooCommerce stores for a variation attribute (variation attrs first, then parent).
      */
-    function intersoccer_migration_pa_attribute_slug_for_variation(WC_Product_Variation $variation, string $taxonomy): string {
+    function intersoccer_migration_pa_attribute_slug_for_variation(
+        WC_Product_Variation $variation,
+        string $taxonomy,
+        bool $coerce = true
+    ): string {
         $taxonomy = str_replace('attribute_', '', $taxonomy);
+
+        $normalize = static function (string $tax, string $raw) use ($coerce): string {
+            if (!$coerce || !function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
+                return trim($raw);
+            }
+
+            return intersoccer_migration_coerce_pa_taxonomy_slug($tax, $raw);
+        };
 
         foreach ($variation->get_variation_attributes() as $attribute_key => $attribute_value) {
             $clean_key = str_replace('attribute_', '', (string) $attribute_key);
@@ -1054,13 +1131,13 @@ if (!function_exists('intersoccer_migration_pa_attribute_slug_for_variation')) {
             }
             $raw = is_array($attribute_value) ? (string) reset($attribute_value) : (string) $attribute_value;
 
-            return intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $raw);
+            return $normalize($taxonomy, $raw);
         }
 
         if (method_exists($variation, 'get_attribute')) {
             $from_variation = $variation->get_attribute($taxonomy);
             if ($from_variation !== '' && $from_variation !== null) {
-                return intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, (string) $from_variation);
+                return $normalize($taxonomy, (string) $from_variation);
             }
         }
 
@@ -1070,7 +1147,7 @@ if (!function_exists('intersoccer_migration_pa_attribute_slug_for_variation')) {
             if ($parent && method_exists($parent, 'get_attribute')) {
                 $from_parent = $parent->get_attribute($taxonomy);
                 if ($from_parent !== '' && $from_parent !== null) {
-                    return intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, (string) $from_parent);
+                    return $normalize($taxonomy, (string) $from_parent);
                 }
             }
         }
