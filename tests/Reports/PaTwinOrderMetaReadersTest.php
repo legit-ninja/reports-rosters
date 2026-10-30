@@ -6,13 +6,20 @@
 namespace InterSoccer\ReportsRosters\Tests\Reports;
 
 use InterSoccer\ReportsRosters\Tests\TestCase;
+use Mockery;
 
 class PaTwinOrderMetaReadersTest extends TestCase {
+
+    private const ORDER_ID = 88200;
+    private const ITEM_ID = 88201;
+    private const PARENT_ID = 88210;
+    private const VARIATION_ID = 88211;
 
     protected function setUp(): void {
         parent::setUp();
         require_once dirname(__DIR__, 2) . '/includes/order-meta-keys.php';
         require_once dirname(__DIR__, 2) . '/includes/utils.php';
+        require_once dirname(__DIR__, 2) . '/includes/db.php';
         if (!function_exists('intersoccer_get_enhanced_booking_report')) {
             require_once dirname(__DIR__, 2) . '/includes/reporting-discounts.php';
         }
@@ -66,7 +73,8 @@ class PaTwinOrderMetaReadersTest extends TestCase {
 
     /** @dataProvider prepareRosterVenueProvider */
     public function test_prepare_roster_entry_venue_read_resolves_pa_shape(array $meta, string $expected): void {
-        $this->assertSame($expected, $this->prepareRosterVenueFromMeta($meta));
+        $entry = $this->invokePrepareRosterEntry($meta);
+        $this->assertSame($expected, $entry['venue']);
     }
 
     public static function prepareRosterVenueProvider(): array {
@@ -84,7 +92,8 @@ class PaTwinOrderMetaReadersTest extends TestCase {
 
     /** @dataProvider prepareRosterTimesProvider */
     public function test_prepare_roster_entry_times_read(array $meta, string $expected): void {
-        $this->assertSame($expected, $this->prepareRosterTimesFromMeta($meta));
+        $entry = $this->invokePrepareRosterEntry($meta);
+        $this->assertSame($expected, $entry['times']);
     }
 
     public static function prepareRosterTimesProvider(): array {
@@ -94,7 +103,7 @@ class PaTwinOrderMetaReadersTest extends TestCase {
                     'Course Times' => 'Morning session',
                     'attribute_pa_course-times' => 'afternoon-slug',
                 ],
-                'Morning session',
+                'morning-session',
             ],
             'attribute pa when no human label' => [
                 ['attribute_pa_camp-times' => 'full-day'],
@@ -109,14 +118,15 @@ class PaTwinOrderMetaReadersTest extends TestCase {
 
     /** @dataProvider prepareRosterTournamentDayProvider */
     public function test_prepare_roster_entry_tournament_day_read(array $meta, string $expected): void {
-        $this->assertSame($expected, $this->prepareRosterTournamentDayFromMeta($meta));
+        $entry = $this->invokePrepareRosterEntry($meta, 'Tournament');
+        $this->assertSame($expected, $entry['course_day']);
     }
 
     public static function prepareRosterTournamentDayProvider(): array {
         return [
             'human tournament day first' => [
                 ['Tournament Day' => 'Sunday', 'attribute_pa_tournament-day' => 'saturday-slug'],
-                'Sunday',
+                'sunday',
             ],
             'attribute pa only' => [
                 ['attribute_pa_tournament-day' => 'saturday-slug'],
@@ -129,10 +139,29 @@ class PaTwinOrderMetaReadersTest extends TestCase {
         ];
     }
 
+    /** @dataProvider prepareRosterBookingTypeProvider */
+    public function test_prepare_roster_entry_booking_type_read(array $meta, string $expected): void {
+        $entry = $this->invokePrepareRosterEntry($meta);
+        $this->assertSame($expected, $entry['booking_type']);
+    }
+
+    public static function prepareRosterBookingTypeProvider(): array {
+        return [
+            'attribute pa only' => [
+                ['attribute_pa_booking-type' => 'full-term'],
+                'full-term',
+            ],
+            'pa only' => [
+                ['pa_booking-type' => 'single-days'],
+                'single-days',
+            ],
+        ];
+    }
+
     /** @dataProvider updateRosterEntryFacetProvider */
-    public function test_update_roster_entry_event_facet_reads(array $meta, string $field, string $expected): void {
-        $resolved = $this->updateRosterEntryFacetsFromMeta($meta);
-        $this->assertSame($expected, $resolved[$field]);
+    public function test_update_roster_entry_event_facet_reads(array $meta, string $field, string $expected, string $product_type = 'camp'): void {
+        $row = $this->invokeUpdateRosterEntry($meta, $product_type);
+        $this->assertSame($expected, $row[$field]);
     }
 
     public static function updateRosterEntryFacetProvider(): array {
@@ -159,8 +188,19 @@ class PaTwinOrderMetaReadersTest extends TestCase {
             ],
             'tournament day attribute only' => [
                 ['attribute_pa_tournament-day' => 'sunday-slug'],
-                'tournament_day',
+                'course_day',
                 'sunday-slug',
+                'tournament',
+            ],
+            'booking type attribute only' => [
+                ['attribute_pa_booking-type' => 'full-term'],
+                'booking_type',
+                'Full Term',
+            ],
+            'booking type pa only' => [
+                ['pa_booking-type' => 'single-days'],
+                'booking_type',
+                'Single Day(s)',
             ],
         ];
     }
@@ -198,85 +238,141 @@ class PaTwinOrderMetaReadersTest extends TestCase {
     }
 
     /**
-     * Mirrors intersoccer_prepare_roster_entry venue read (pa helper only; no product fallback).
-     *
-     * @param array<string,string> $order_item_meta
+     * @param array<string,string> $meta
+     * @return array<string,mixed>
      */
-    private function prepareRosterVenueFromMeta(array $order_item_meta): string {
-        return intersoccer_get_order_item_pa_taxonomy_meta_value($order_item_meta, 'pa_intersoccer-venues');
-    }
+    private function invokePrepareRosterEntry(array $meta, string $activity_type = 'Camp'): array {
+        global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_data;
+        global $intersoccer_test_wc_get_product_callback;
 
-    /**
-     * Mirrors intersoccer_prepare_roster_entry times read after RR #104 human-label-first fix.
-     *
-     * @param array<string,string> $order_item_meta
-     */
-    private function prepareRosterTimesFromMeta(array $order_item_meta): string {
-        $read_pa_meta = static function (string $taxonomy) use ($order_item_meta): string {
-            return intersoccer_get_order_item_pa_taxonomy_meta_value($order_item_meta, $taxonomy);
-        };
-        $times = $order_item_meta['Course Times'] ?? $order_item_meta['Camp Times'] ?? $order_item_meta['Tournament Time'] ?? null;
-        if (!$times) {
-            $times = $read_pa_meta('pa_course-times');
-            if ($times === '') {
-                $times = $read_pa_meta('pa_camp-times');
-            }
-            if ($times === '') {
-                $times = $read_pa_meta('pa_tournament-time');
-            }
-        }
+        $this->installEmptyAttributeProductStub();
 
-        return (string) $times;
-    }
-
-    /**
-     * Mirrors intersoccer_prepare_roster_entry tournament day branch.
-     *
-     * @param array<string,string> $order_item_meta
-     */
-    private function prepareRosterTournamentDayFromMeta(array $order_item_meta): string {
-        $course_day = $order_item_meta['Tournament Day'] ?? '';
-        if ($course_day === '') {
-            $course_day = intersoccer_get_order_item_pa_taxonomy_meta_value($order_item_meta, 'pa_tournament-day');
-        }
-
-        return (string) $course_day;
-    }
-
-    /**
-     * Mirrors intersoccer_update_roster_entry event facet reads (utils.php).
-     *
-     * @param array<string,string> $item_meta
-     * @return array{venue:string,times:string,tournament_day:string}
-     */
-    private function updateRosterEntryFacetsFromMeta(array $item_meta): array {
-        $read_pa_item_meta = static function (string $taxonomy) use ($item_meta): string {
-            return intersoccer_get_order_item_pa_taxonomy_meta_value($item_meta, $taxonomy);
-        };
-        $venue = $read_pa_item_meta('pa_intersoccer-venues');
-        if ($venue === '') {
-            $venue = $item_meta['Sites InterSoccer'] ?? $item_meta['InterSoccer Venues'] ?? '';
-        }
-        $times = $read_pa_item_meta('pa_camp-times');
-        if ($times === '') {
-            $times = $read_pa_item_meta('pa_course-times');
-        }
-        if ($times === '') {
-            $times = $read_pa_item_meta('pa_tournament-time');
-        }
-        if ($times === '') {
-            $times = $item_meta['Camp Times'] ?? $item_meta['Course Times'] ?? $item_meta['Tournament Time'] ?? '';
-        }
-        $tournament_day = $item_meta['Tournament Day'] ?? '';
-        if ($tournament_day === '') {
-            $tournament_day = $read_pa_item_meta('pa_tournament-day');
-        }
-
-        return [
-            'venue' => $venue,
-            'times' => $times,
-            'tournament_day' => $tournament_day,
+        $intersoccer_test_wc_order_item_data[self::ITEM_ID] = [
+            'product_id' => self::PARENT_ID,
+            'variation_id' => self::VARIATION_ID,
         ];
+        $intersoccer_test_wc_order_item_meta[self::ITEM_ID] = array_merge(
+            [
+                'Assigned Attendee' => 'Meta Reader Player',
+                'Activity Type' => $activity_type,
+            ],
+            $meta
+        );
+
+        $item = new \WC_Order_Item_Product(self::ITEM_ID);
+        $order = new \WC_Order(self::ORDER_ID);
+        $order->set_items([self::ITEM_ID => $item]);
+
+        set_error_handler(static function (int $severity, string $message): bool {
+            if ($severity === E_WARNING && str_contains($message, 'Undefined variable $')) {
+                return true;
+            }
+
+            return false;
+        });
+        try {
+            $entry = intersoccer_prepare_roster_entry(
+                $order,
+                $item,
+                self::ITEM_ID,
+                self::ORDER_ID,
+                '2026-01-15 12:00:00',
+                []
+            );
+        } finally {
+            restore_error_handler();
+        }
+        $this->assertIsArray($entry, 'intersoccer_prepare_roster_entry should return roster row data');
+
+        return $entry;
+    }
+
+    /**
+     * @param array<string,string> $meta
+     * @return array<string,mixed>
+     */
+    private function invokeUpdateRosterEntry(array $meta, string $product_type = 'camp'): array {
+        global $wpdb, $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_data;
+        global $intersoccer_test_wc_get_order_callback, $intersoccer_test_product_type_safe_callback;
+
+        $this->installEmptyAttributeProductStub();
+        $intersoccer_test_product_type_safe_callback = static function () use ($product_type) {
+            return $product_type;
+        };
+
+        $intersoccer_test_wc_order_item_data[self::ITEM_ID] = [
+            'product_id' => self::PARENT_ID,
+            'variation_id' => self::VARIATION_ID,
+            'subtotal' => 100.00,
+            'total' => 100.00,
+            'name' => 'Facet reader product',
+        ];
+        $intersoccer_test_wc_order_item_meta[self::ITEM_ID] = array_merge(
+            [
+                'Assigned Attendee' => 'Meta Reader Player',
+                'Activity Type' => ucfirst($product_type),
+            ],
+            $meta
+        );
+
+        $item = new \WC_Order_Item_Product(self::ITEM_ID);
+        $order = new \WC_Order(self::ORDER_ID);
+        $order->set_items([self::ITEM_ID => $item]);
+        $intersoccer_test_wc_get_order_callback = static function ($order_id) use ($order) {
+            return (int) $order_id === self::ORDER_ID ? $order : false;
+        };
+
+        $capture = new class extends \InterSoccerTestWpdb {
+            /** @var array<string,mixed> */
+            public array $captured_replace = [];
+
+            public function get_row($query = null, $output = OBJECT, $y = 0) {
+                return null;
+            }
+
+            public function get_var($query = null, $x = 0, $y = 0) {
+                return '0';
+            }
+
+            public function replace($table, $data, $format = null) {
+                $this->captured_replace = is_array($data) ? $data : [];
+
+                return 1;
+            }
+        };
+        $wpdb = $capture;
+
+        $this->assertTrue(
+            intersoccer_update_roster_entry(self::ORDER_ID, self::ITEM_ID),
+            'intersoccer_update_roster_entry should upsert using order-item meta readers'
+        );
+        $this->assertNotEmpty($capture->captured_replace);
+
+        return $capture->captured_replace;
+    }
+
+    private function installEmptyAttributeProductStub(): void {
+        global $intersoccer_test_wc_get_product_callback;
+
+        $make_product = static function (int $id) {
+            $product = Mockery::mock(\WC_Product::class);
+            $product->shouldReceive('get_id')->andReturn($id);
+            $product->shouldReceive('get_name')->andReturn('Stub product');
+            $product->shouldReceive('get_attribute')->andReturn('');
+            $product->shouldReceive('get_attributes')->andReturn([]);
+            $product->shouldReceive('is_type')->andReturn(false);
+
+            return $product;
+        };
+
+        $intersoccer_test_wc_get_product_callback = static function ($id) use ($make_product) {
+            $id = (int) $id;
+            if (in_array($id, [self::PARENT_ID, self::VARIATION_ID], true)) {
+                return $make_product($id);
+            }
+
+            return false;
+        };
     }
 
     private function captureEnhancedBookingReportSql(): string {

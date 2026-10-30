@@ -1158,11 +1158,17 @@ if (!class_exists('WC_Order')) {
         public function get_payment_method() { return $this->data['payment_method'] ?? 'stripe'; }
         public function get_total_tax() { return $this->data['total_tax'] ?? 0.0; }
         public function get_customer_id() { return 1; }
+        public function get_user_id() { return $this->data['user_id'] ?? 1; }
+        public function get_coupon_codes() { return $this->data['coupon_codes'] ?? []; }
         public function get_billing_email() { return 'test@example.com'; }
         public function get_billing_phone() { return '+41 12 345 67 89'; }
         public function get_billing_first_name() { return 'John'; }
         public function get_billing_last_name() { return 'Doe'; }
         public function get_items($types = 'line_item') { return $this->items; }
+        public function get_item($item_id) {
+            $item_id = (int) $item_id;
+            return $this->items[$item_id] ?? null;
+        }
         public function set_items($items) { $this->items = $items; }
         public function get_total() { return 100.00; }
         public function get_total_refunded() { return 0.0; }
@@ -1262,7 +1268,21 @@ if (!class_exists('WC_Order_Item_Product')) {
         public function get_total() { return $this->data['total'] ?? 100.00; }
         public function get_subtotal() { return $this->data['subtotal'] ?? 100.00; }
         public function get_name() { return $this->data['name'] ?? 'Test Product'; }
-        public function get_product() { return null; }
+        public function get_product() {
+            if (!function_exists('wc_get_product')) {
+                return null;
+            }
+            $variation_id = (int) $this->get_variation_id();
+            $product_id = (int) $this->get_product_id();
+            if ($variation_id > 0) {
+                $product = wc_get_product($variation_id);
+                if ($product) {
+                    return $product;
+                }
+            }
+
+            return wc_get_product($product_id) ?: null;
+        }
         public function get_meta_data() {
             $out = [];
             foreach ($this->meta_data as $key => $value) {
@@ -1402,6 +1422,17 @@ if (!function_exists('wc_get_order_item_meta')) {
         }
         global $intersoccer_test_wc_order_item_meta;
         $item_id = (int) $item_id;
+        if ($key === '' || $key === null) {
+            if (!is_array($intersoccer_test_wc_order_item_meta) || !isset($intersoccer_test_wc_order_item_meta[$item_id])) {
+                return [];
+            }
+            $all = [];
+            foreach ($intersoccer_test_wc_order_item_meta[$item_id] as $meta_key => $meta_value) {
+                $all[$meta_key] = is_array($meta_value) ? $meta_value : [$meta_value];
+            }
+
+            return $all;
+        }
         if (is_array($intersoccer_test_wc_order_item_meta)
             && isset($intersoccer_test_wc_order_item_meta[$item_id][$key])
         ) {
