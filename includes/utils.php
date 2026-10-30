@@ -114,6 +114,23 @@ if (!function_exists('intersoccer_invalidate_term_def_cache')) {
     }
 }
 
+if (!function_exists('intersoccer_term_def_request_cache_ref')) {
+    /**
+     * Request-level term lookup cache (PHPUnit may bind to $GLOBALS for isolation).
+     *
+     * @return array<string, mixed>
+     */
+    function &intersoccer_term_def_request_cache_ref() {
+        static $cache = [];
+        if (isset($GLOBALS['intersoccer_test_term_def_request_cache'])
+            && is_array($GLOBALS['intersoccer_test_term_def_request_cache'])) {
+            return $GLOBALS['intersoccer_test_term_def_request_cache'];
+        }
+
+        return $cache;
+    }
+}
+
 if (!function_exists('intersoccer_get_cached_term_in_default_language')) {
     /**
      * Resolve a term in default language with request-level and transient caching.
@@ -128,7 +145,7 @@ if (!function_exists('intersoccer_get_cached_term_in_default_language')) {
         }
 
         $value = (string) $value;
-        static $request_cache = [];
+        $request_cache = &intersoccer_term_def_request_cache_ref();
 
         $request_key = md5($taxonomy . "\0" . $value);
         if (array_key_exists($request_key, $request_cache)) {
@@ -4433,23 +4450,18 @@ if (!function_exists('intersoccer_renormalize_roster_row_from_variation')) {
         if ($order_item_id > 0 && function_exists('intersoccer_roster_collect_event_data_from_order_item')) {
             $from_order = intersoccer_roster_collect_event_data_from_order_item($order_item_id);
             foreach (['city', 'canton_region'] as $facet_key) {
+                $taxonomy = $facet_key === 'city' ? 'pa_city' : 'pa_canton-region';
                 if (trim((string) ($record[$facet_key] ?? '')) !== '') {
-                    $record_normalized = intersoccer_normalize_roster_facets_for_storage([
-                        $facet_key       => $record[$facet_key],
-                        'activity_type'  => $event_data['activity_type'] ?? '',
-                        'product_id'     => $parent_id,
-                    ]);
-                    $normalized[$facet_key] = $record_normalized[$facet_key] ?? $record[$facet_key];
+                    $normalized[$facet_key] = function_exists('intersoccer_roster_facet_en_term_name_if_resolved')
+                        ? intersoccer_roster_facet_en_term_name_if_resolved($record[$facet_key], $taxonomy)
+                        : $record[$facet_key];
                     continue;
                 }
                 if (trim((string) ($normalized[$facet_key] ?? '')) === '') {
                     if (!empty($from_order[$facet_key])) {
-                        $from_order_normalized = intersoccer_normalize_roster_facets_for_storage([
-                            $facet_key       => $from_order[$facet_key],
-                            'activity_type'  => $event_data['activity_type'] ?? '',
-                            'product_id'     => $parent_id,
-                        ]);
-                        $normalized[$facet_key] = $from_order_normalized[$facet_key] ?? $from_order[$facet_key];
+                        $normalized[$facet_key] = function_exists('intersoccer_roster_facet_en_term_name_if_resolved')
+                            ? intersoccer_roster_facet_en_term_name_if_resolved($from_order[$facet_key], $taxonomy)
+                            : $from_order[$facet_key];
                     }
                 }
             }
@@ -4459,18 +4471,18 @@ if (!function_exists('intersoccer_renormalize_roster_row_from_variation')) {
             ? intersoccer_get_english_product_name($variation->get_name(), $parent_id)
             : $variation->get_name();
 
-        if (function_exists('intersoccer_normalize_roster_facets_for_storage')) {
-            $canton_city_normalize = intersoccer_normalize_roster_facets_for_storage([
-                'canton_region' => $normalized['canton_region'] ?? '',
-                'city'          => $normalized['city'] ?? '',
-                'activity_type' => $normalized['activity_type'] ?? '',
-                'product_id'    => $parent_id,
-            ]);
-            if (trim((string) ($canton_city_normalize['canton_region'] ?? '')) !== '') {
-                $normalized['canton_region'] = $canton_city_normalize['canton_region'];
+        if (function_exists('intersoccer_roster_facet_en_term_name_if_resolved')) {
+            if (trim((string) ($normalized['canton_region'] ?? '')) !== '') {
+                $normalized['canton_region'] = intersoccer_roster_facet_en_term_name_if_resolved(
+                    $normalized['canton_region'],
+                    'pa_canton-region'
+                );
             }
-            if (trim((string) ($canton_city_normalize['city'] ?? '')) !== '') {
-                $normalized['city'] = $canton_city_normalize['city'];
+            if (trim((string) ($normalized['city'] ?? '')) !== '') {
+                $normalized['city'] = intersoccer_roster_facet_en_term_name_if_resolved(
+                    $normalized['city'],
+                    'pa_city'
+                );
             }
         }
 
@@ -5660,6 +5672,69 @@ if (!function_exists('intersoccer_normalize_roster_facets_for_storage')) {
     }
 }
 
+if (!function_exists('intersoccer_roster_facet_en_term_name_if_resolved')) {
+    /**
+     * Map a roster city/canton raw value to the English term name when taxonomy lookup succeeds.
+     * Never applies intersoccer_normalize_term_fallback (preserves unresolved values byte-for-byte).
+     *
+     * @param mixed  $raw_value Stored slug or label.
+     * @param string $taxonomy  pa_city or pa_canton-region.
+     * @return string
+     */
+    function intersoccer_roster_facet_en_term_name_if_resolved($raw_value, $taxonomy) {
+        $raw = (string) $raw_value;
+        if (trim($raw) === '') {
+            return $raw;
+        }
+
+        $lookup = $raw;
+        if ($taxonomy === 'pa_canton-region' && function_exists('intersoccer_migration_default_language_term_slug')) {
+            $en_slug = intersoccer_migration_default_language_term_slug($taxonomy, $raw);
+            if ($en_slug !== '') {
+                $lookup = $en_slug;
+            }
+        }
+
+        if (function_exists('intersoccer_get_term_in_default_language')) {
+            $term = intersoccer_get_term_in_default_language($lookup, $taxonomy);
+            if ($term && !is_wp_error($term) && !empty($term->name)) {
+                return (string) $term->name;
+            }
+            $term = intersoccer_get_term_in_default_language($raw, $taxonomy);
+            if ($term && !is_wp_error($term) && !empty($term->name)) {
+                return (string) $term->name;
+            }
+        }
+
+        $resolve_name = static function ($value) use ($taxonomy) {
+            if ($value === '') {
+                return null;
+            }
+            $term = get_term_by('slug', $value, $taxonomy);
+            if ($term && !is_wp_error($term) && !empty($term->name)) {
+                return (string) $term->name;
+            }
+            $term = get_term_by('name', $value, $taxonomy);
+            if ($term && !is_wp_error($term) && !empty($term->name)) {
+                return (string) $term->name;
+            }
+
+            return null;
+        };
+
+        $resolved = $resolve_name($lookup);
+        if ($resolved !== null) {
+            return $resolved;
+        }
+        $resolved = $resolve_name($raw);
+        if ($resolved !== null) {
+            return $resolved;
+        }
+
+        return $raw;
+    }
+}
+
 if (!function_exists('intersoccer_roster_facet_value_or_record')) {
     /**
      * Prefer non-empty normalized facet; fall back to existing roster row (move/repair must not blank columns).
@@ -5697,15 +5772,8 @@ if (!function_exists('intersoccer_build_roster_facet_db_update')) {
             : '';
 
         $canton_value = (string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'canton_region');
-        if ($canton_value !== '' && function_exists('intersoccer_normalize_roster_facets_for_storage')) {
-            $canton_normalized = intersoccer_normalize_roster_facets_for_storage([
-                'canton_region' => $canton_value,
-                'activity_type' => $normalized_data['activity_type'] ?? '',
-                'product_id'    => (int) ($normalized_data['product_id'] ?? 0),
-            ]);
-            if (trim((string) ($canton_normalized['canton_region'] ?? '')) !== '') {
-                $canton_value = (string) $canton_normalized['canton_region'];
-            }
+        if ($canton_value !== '' && function_exists('intersoccer_roster_facet_en_term_name_if_resolved')) {
+            $canton_value = intersoccer_roster_facet_en_term_name_if_resolved($canton_value, 'pa_canton-region');
         }
 
         $update = [

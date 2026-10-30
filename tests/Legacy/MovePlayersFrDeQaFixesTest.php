@@ -70,8 +70,10 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
             $GLOBALS['intersoccer_test_wpml_term_map'],
             $GLOBALS['intersoccer_test_terms_by_id'],
             $GLOBALS['intersoccer_test_terms_by_slug'],
+            $GLOBALS['intersoccer_test_terms_by_name'],
             $GLOBALS['intersoccer_test_roster_store'],
-            $GLOBALS['intersoccer_test_wc_order_item_meta']
+            $GLOBALS['intersoccer_test_wc_order_item_meta'],
+            $GLOBALS['intersoccer_test_roster_row_filter_map']
         );
         $this->resetMovePlayersTestGlobals();
         parent::tearDown();
@@ -700,17 +702,25 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
     }
 
     public function test_blank_key_move_fills_roster_canton_en_term_name(): void {
-        $this->registerGenevaCantonTerms();
         $this->registerTerms(
             [
+                'pa_canton-region' => [
+                    'geneve' => (object) ['term_id' => 7401, 'slug' => 'geneve', 'name' => 'Genève'],
+                    'genf' => (object) ['term_id' => 7501, 'slug' => 'genf', 'name' => 'Genf'],
+                    'geneva' => (object) ['term_id' => 7400, 'slug' => 'geneva', 'name' => 'Geneva'],
+                ],
                 'pa_booking-type' => [
                     'full-week' => (object) ['term_id' => 9300, 'slug' => 'full-week', 'name' => 'Full Week'],
                 ],
             ],
             [
+                7401 => (object) ['term_id' => 7401, 'slug' => 'geneve', 'name' => 'Genève'],
+                7501 => (object) ['term_id' => 7501, 'slug' => 'genf', 'name' => 'Genf'],
+                7400 => (object) ['term_id' => 7400, 'slug' => 'geneva', 'name' => 'Geneva'],
                 9300 => (object) ['term_id' => 9300, 'slug' => 'full-week', 'name' => 'Full Week'],
             ]
         );
+        $this->stubWpmlEnTerms([7401 => 7400, 7501 => 7400]);
 
         $this->installMoveWorld([
             'item_meta' => [
@@ -982,7 +992,7 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
             'item_meta' => [
                 'Activity Type' => 'Camp',
                 'Assigned Attendee' => 'Booking repair player',
-                'Booking Type' => 'Single Day(s)',
+                'Booking Type' => '',
                 '_intersoccer_canonical_booking_type' => 'single-days',
             ],
             'target_attrs' => [
@@ -1049,5 +1059,144 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
                 $this->assertNotSame('Booking Type', $row['key'] ?? '');
             }
         }
+    }
+
+    public function test_fr_single_days_move_keeps_booking_type_and_selected_days(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'jours-selectionnes' => (object) ['term_id' => 9801, 'slug' => 'jours-selectionnes', 'name' => 'Jours sélectionnés'],
+                    'single-days' => (object) ['term_id' => 9800, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                    'full-week' => (object) ['term_id' => 9802, 'slug' => 'full-week', 'name' => 'Full Week'],
+                    'semaine-complete' => (object) ['term_id' => 9803, 'slug' => 'semaine-complete', 'name' => 'Semaine complète'],
+                ],
+            ],
+            [
+                9801 => (object) ['term_id' => 9801, 'slug' => 'jours-selectionnes', 'name' => 'Jours sélectionnés'],
+                9800 => (object) ['term_id' => 9800, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                9802 => (object) ['term_id' => 9802, 'slug' => 'full-week', 'name' => 'Full Week'],
+                9803 => (object) ['term_id' => 9803, 'slug' => 'semaine-complete', 'name' => 'Semaine complète'],
+            ]
+        );
+        $this->stubWpmlEnTerms([9801 => 9800, 9803 => 9802]);
+
+        $this->installMoveWorld([
+            'source_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'geneva-college-varembe',
+                'attribute_pa_booking-type' => 'jours-selectionnes',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'semaine-complete',
+                'attribute_pa_canton-region' => 'geneva',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'FR single days',
+                'Type de réservation' => 'Jours sélectionnés',
+                'Jours sélectionnés' => 'Monday, Wednesday',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('Jours sélectionnés', $meta['Type de réservation']);
+        $this->assertSame('Monday, Wednesday', $meta['Jours sélectionnés']);
+    }
+
+    public function test_de_single_days_move_keeps_booking_type_and_selected_days(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'einzelne-tage' => (object) ['term_id' => 9901, 'slug' => 'einzelne-tage', 'name' => 'Einzelne Tage'],
+                    'single-days' => (object) ['term_id' => 9900, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                    'full-week' => (object) ['term_id' => 9902, 'slug' => 'full-week', 'name' => 'Full Week'],
+                    'ganze-woche' => (object) ['term_id' => 9903, 'slug' => 'ganze-woche', 'name' => 'Ganze Woche'],
+                ],
+            ],
+            [
+                9901 => (object) ['term_id' => 9901, 'slug' => 'einzelne-tage', 'name' => 'Einzelne Tage'],
+                9900 => (object) ['term_id' => 9900, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                9902 => (object) ['term_id' => 9902, 'slug' => 'full-week', 'name' => 'Full Week'],
+                9903 => (object) ['term_id' => 9903, 'slug' => 'ganze-woche', 'name' => 'Ganze Woche'],
+            ]
+        );
+        $this->stubWpmlEnTerms([9901 => 9900, 9903 => 9902]);
+
+        $this->installMoveWorld([
+            'source_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'geneva-college-varembe',
+                'attribute_pa_booking-type' => 'einzelne-tage',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'ganze-woche',
+                'attribute_pa_canton-region' => 'geneva',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'DE single days',
+                'Buchungstyp' => 'Einzelne Tage',
+                'Ausgewählte Tage' => 'Monday, Wednesday',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('Einzelne Tage', $meta['Buchungstyp']);
+        $this->assertSame('Monday, Wednesday', $meta['Ausgewählte Tage']);
+    }
+
+    public function test_en_single_days_to_full_week_move_does_not_blank_days_selected(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'single-days' => (object) ['term_id' => 9950, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                    'full-week' => (object) ['term_id' => 9951, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                9950 => (object) ['term_id' => 9950, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                9951 => (object) ['term_id' => 9951, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->installMoveWorld([
+            'source_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'geneva-college-varembe',
+                'attribute_pa_booking-type' => 'single-days',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_canton-region' => 'geneva',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'EN single to full week',
+                'Booking Type' => 'Single Day(s)',
+                'Days Selected' => 'Monday, Wednesday',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('Monday, Wednesday', $meta['Days Selected']);
     }
 }

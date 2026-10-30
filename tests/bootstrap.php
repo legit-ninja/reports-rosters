@@ -365,10 +365,15 @@ if (!class_exists('InterSoccerRRTestMeta')) {
 
 if (!function_exists('taxonomy_exists')) {
     function taxonomy_exists($taxonomy) {
-        return $taxonomy !== ''
-            && isset($GLOBALS['intersoccer_test_terms_by_slug'][$taxonomy])
-            && is_array($GLOBALS['intersoccer_test_terms_by_slug'][$taxonomy])
-            && $GLOBALS['intersoccer_test_terms_by_slug'][$taxonomy] !== [];
+        if ($taxonomy === '') {
+            return false;
+        }
+        $by_slug = $GLOBALS['intersoccer_test_terms_by_slug'] ?? [];
+        if (!is_array($by_slug) || !isset($by_slug[$taxonomy]) || !is_array($by_slug[$taxonomy])) {
+            return false;
+        }
+
+        return $by_slug[$taxonomy] !== [];
     }
 }
 
@@ -377,18 +382,24 @@ if (!function_exists('get_term_by')) {
         if (isset($GLOBALS['intersoccer_test_get_term_by_call_count'])) {
             $GLOBALS['intersoccer_test_get_term_by_call_count']++;
         }
-        if ($field === 'slug' && $taxonomy !== '' && isset($GLOBALS['intersoccer_test_terms_by_slug'][$taxonomy])) {
-            $slug_key = strtolower((string) $value);
-            if (isset($GLOBALS['intersoccer_test_terms_by_slug'][$taxonomy][$slug_key])) {
-                $row = $GLOBALS['intersoccer_test_terms_by_slug'][$taxonomy][$slug_key];
-                return is_object($row) ? $row : (object) $row;
+        if ($field === 'slug' && $taxonomy !== '') {
+            $by_slug = $GLOBALS['intersoccer_test_terms_by_slug'] ?? [];
+            if (isset($by_slug[$taxonomy])) {
+                $slug_key = strtolower((string) $value);
+                if (isset($by_slug[$taxonomy][$slug_key])) {
+                    $row = $by_slug[$taxonomy][$slug_key];
+                    return is_object($row) ? $row : (object) $row;
+                }
             }
         }
-        if ($field === 'name' && $taxonomy !== '' && isset($GLOBALS['intersoccer_test_terms_by_name'][$taxonomy])) {
-            $name_key = function_exists('mb_strtolower') ? mb_strtolower((string) $value) : strtolower((string) $value);
-            if (isset($GLOBALS['intersoccer_test_terms_by_name'][$taxonomy][$name_key])) {
-                $row = $GLOBALS['intersoccer_test_terms_by_name'][$taxonomy][$name_key];
-                return is_object($row) ? $row : (object) $row;
+        if ($field === 'name' && $taxonomy !== '') {
+            $by_name = $GLOBALS['intersoccer_test_terms_by_name'] ?? [];
+            if (isset($by_name[$taxonomy])) {
+                $name_key = function_exists('mb_strtolower') ? mb_strtolower((string) $value) : strtolower((string) $value);
+                if (isset($by_name[$taxonomy][$name_key])) {
+                    $row = $by_name[$taxonomy][$name_key];
+                    return is_object($row) ? $row : (object) $row;
+                }
             }
         }
         return false;
