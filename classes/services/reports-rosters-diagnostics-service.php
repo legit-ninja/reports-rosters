@@ -1082,7 +1082,7 @@ class ReportsRostersDiagnosticsService {
                 INNER JOIN {$order_itemmeta_table} om
                     ON oi.order_item_id = om.order_item_id
                 WHERE oi.order_item_type = 'line_item'
-                  AND om.meta_key IN ('Season', 'pa_program-season')
+                  AND om.meta_key IN ('Season', 'pa_program-season', 'attribute_pa_program-season')
                   AND om.meta_value LIKE %s";
 
         $ids = $wpdb->get_col($wpdb->prepare($sql, $like));
@@ -1172,7 +1172,7 @@ class ReportsRostersDiagnosticsService {
                         COALESCE(NULLIF(om_course_day.meta_value, ''), om_course_day_attr.meta_value, om_course_day_us.meta_value, om_course_day_us_attr.meta_value) AS course_day_value,
                         COALESCE(om_activity_type.meta_value, pm_activity_type.meta_value) AS activity_type,
                         pm_activity_type.meta_value AS product_activity_type_attr,
-                        COALESCE(om_season.meta_value, om_season_alt.meta_value, '') AS season,
+                        COALESCE(om_season.meta_value, om_season_alt.meta_value, om_season_alt_attr.meta_value, '') AS season,
                         COALESCE(om_canton.meta_value, '') AS canton,
                         om_line_subtotal.meta_value AS line_subtotal,
                         om_line_total.meta_value AS line_total
@@ -1203,6 +1203,8 @@ class ReportsRostersDiagnosticsService {
                         ON oi.order_item_id = om_season.order_item_id AND om_season.meta_key = 'Season'
                     LEFT JOIN {$order_itemmeta_table} om_season_alt
                         ON oi.order_item_id = om_season_alt.order_item_id AND om_season_alt.meta_key = 'pa_program-season'
+                    LEFT JOIN {$order_itemmeta_table} om_season_alt_attr
+                        ON oi.order_item_id = om_season_alt_attr.order_item_id AND om_season_alt_attr.meta_key = 'attribute_pa_program-season'
                     LEFT JOIN {$order_itemmeta_table} om_canton
                         ON oi.order_item_id = om_canton.order_item_id AND om_canton.meta_key = 'Canton / Region'
                     LEFT JOIN {$order_itemmeta_table} om_line_subtotal

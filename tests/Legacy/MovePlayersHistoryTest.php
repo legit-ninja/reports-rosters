@@ -827,8 +827,7 @@ class MovePlayersHistoryTest extends TestCase {
         $this->assertSame('', trim((string) ($origin['label']['variation'] ?? '')));
         $this->assertSame('', trim((string) ($origin['label']['dates'] ?? '')));
         $note = trim((string) ($origin['note'] ?? ''));
-        $this->assertStringContainsString('Original booking could not be identified', $note);
-        $this->assertStringContainsString('before this move:', $note);
+        $this->assertStringContainsString('Original booking could not be identified. Roster before this move:', $note);
         $this->assertStringContainsString('History Course EN', $note);
         $this->assertStringNotContainsString('Original booking inferred from an earlier move:', $note);
         $this->assertSame(0, (int) ($GLOBALS['intersoccer_test_roster_peer_queries'] ?? -1));

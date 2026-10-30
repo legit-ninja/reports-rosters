@@ -617,10 +617,9 @@ if (!function_exists('intersoccer_roster_history_first_move_origin_context')) {
                         : 'Original booking inferred from an earlier move.';
                 } else {
                     $label_line = intersoccer_roster_history_format_label_line($from_side);
-                    $note = 'Original booking could not be identified.';
-                    if ($label_line !== '') {
-                        $note .= ' before this move: ' . $label_line;
-                    }
+                    $note = $label_line !== ''
+                        ? 'Original booking could not be identified. Roster before this move: ' . $label_line
+                        : 'Original booking could not be identified.';
                     $origin_side = [
                         'variation_id'    => $legacy_variation,
                         'product_id'      => 0,

@@ -110,6 +110,7 @@
             <file>tests/Ajax/RosterVenueAccessTest.php</file>
             <file>tests/Unit/RosterDaysUnknownTest.php</file>
             <file>tests/Reports/OrderMetaFieldMapTest.php</file>
+            <file>tests/Reports/PaTwinOrderMetaReadersTest.php</file>
             <file>tests/Services/RosterBuilderSingleDayTest.php</file>
             <file>tests/Services/DataValidatorSingleDayUnknownTest.php</file>
             <file>tests/Unit/RosterCampBookingDisplayTest.php</file>

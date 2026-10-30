@@ -31,9 +31,9 @@ function intersoccer_display_booking_report($start_date, $end_date, $activity_ty
                 om_activity_type.meta_value as activity_type,
                 om_canton.meta_value as canton,
                 t.name as venue,
-                om_booking_type.meta_value as booking_type,
+                COALESCE(NULLIF(om_booking_type.meta_value, ''), om_booking_type_attr.meta_value) as booking_type,
                 COALESCE(om_selected_days.meta_value, om_selected_days_legacy.meta_value) as selected_days,
-                om_age_group.meta_value as age_group,
+                COALESCE(NULLIF(om_age_group.meta_value, ''), om_age_group_attr.meta_value) as age_group,
                 COALESCE(om_gender.meta_value, om_gender_legacy.meta_value) as gender,
                 om_line_total.meta_value as line_total,
                 COALESCE(om_discount.meta_value, om_discount_amount.meta_value, om_discount_legacy.meta_value) as discount_codes
@@ -43,11 +43,14 @@ function intersoccer_display_booking_report($start_date, $end_date, $activity_ty
              LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_activity_type ON oi.order_item_id = om_activity_type.order_item_id AND om_activity_type.meta_key = 'Activity Type'
              LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_canton ON oi.order_item_id = om_canton.order_item_id AND om_canton.meta_key = 'Canton / Region'
              LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_venue ON oi.order_item_id = om_venue.order_item_id AND om_venue.meta_key = 'pa_intersoccer-venues'
-             LEFT JOIN {$wpdb->terms} t ON om_venue.meta_value = t.slug
+             LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_venue_attr ON oi.order_item_id = om_venue_attr.order_item_id AND om_venue_attr.meta_key = 'attribute_pa_intersoccer-venues'
+             LEFT JOIN {$wpdb->terms} t ON COALESCE(NULLIF(om_venue.meta_value, ''), om_venue_attr.meta_value) = t.slug
              LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_booking_type ON oi.order_item_id = om_booking_type.order_item_id AND om_booking_type.meta_key = 'pa_booking-type'
+             LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_booking_type_attr ON oi.order_item_id = om_booking_type_attr.order_item_id AND om_booking_type_attr.meta_key = 'attribute_pa_booking-type'
              LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_selected_days ON oi.order_item_id = om_selected_days.order_item_id AND om_selected_days.meta_key = 'Days Selected'
              LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_selected_days_legacy ON oi.order_item_id = om_selected_days_legacy.order_item_id AND om_selected_days_legacy.meta_key = 'Days of Week'
              LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_age_group ON oi.order_item_id = om_age_group.order_item_id AND om_age_group.meta_key = 'pa_age-group'
+             LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_age_group_attr ON oi.order_item_id = om_age_group_attr.order_item_id AND om_age_group_attr.meta_key = 'attribute_pa_age-group'
              LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_gender ON oi.order_item_id = om_gender.order_item_id AND om_gender.meta_key = 'Attendee Gender'
              LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_gender_legacy ON oi.order_item_id = om_gender_legacy.order_item_id AND om_gender_legacy.meta_key = 'gender'
              LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta om_line_total ON oi.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
@@ -269,7 +272,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 om_line_subtotal.meta_value AS line_subtotal,
                 om_line_total.meta_value AS line_total,
                 om_qty.meta_value AS line_quantity,
-                COALESCE(om_year.meta_value, om_year_alt.meta_value) AS program_year,
+                COALESCE(om_year.meta_value, om_year_alt.meta_value, om_year_alt_attr.meta_value) AS program_year,
                 p.post_date
              FROM $rosters_table r
              JOIN $order_items_table oi ON r.order_item_id = oi.order_item_id
@@ -279,6 +282,7 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
              LEFT JOIN $order_itemmeta_table om_qty ON oi.order_item_id = om_qty.order_item_id AND om_qty.meta_key = '_qty'
              LEFT JOIN $order_itemmeta_table om_year ON oi.order_item_id = om_year.order_item_id AND om_year.meta_key = 'Year'
              LEFT JOIN $order_itemmeta_table om_year_alt ON oi.order_item_id = om_year_alt.order_item_id AND om_year_alt.meta_key = 'pa_program-year'
+             LEFT JOIN $order_itemmeta_table om_year_alt_attr ON oi.order_item_id = om_year_alt_attr.order_item_id AND om_year_alt_attr.meta_key = 'attribute_pa_program-year'
              LEFT JOIN $posts_table catalog_var ON catalog_var.ID = r.variation_id AND r.variation_id > 0 AND catalog_var.post_type = 'product_variation'
              LEFT JOIN $posts_table catalog_prod ON catalog_prod.ID = r.product_id AND r.product_id > 0 AND catalog_prod.post_type = 'product'
              WHERE $where_clause",
@@ -369,12 +373,12 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                 p.ID AS order_id,
                 COALESCE(om_canonical_canton.meta_value, om_canton.meta_value) AS canton,
                 COALESCE(om_canonical_venue.meta_value, t.name) AS venue,
-                COALESCE(om_canonical_camp_terms.meta_value, om_camp_terms.meta_value, om_camp_terms_alt.meta_value, pm_camp_terms_variation.meta_value, pm_camp_terms_product.meta_value) AS camp_terms,
-                COALESCE(om_season.meta_value, om_season_alt.meta_value) AS season,
-                COALESCE(om_canonical_booking.meta_value, om_booking_type.meta_value) AS booking_type,
+                COALESCE(om_canonical_camp_terms.meta_value, om_camp_terms.meta_value, om_camp_terms_alt.meta_value, om_camp_terms_alt_attr.meta_value, pm_camp_terms_variation.meta_value, pm_camp_terms_product.meta_value) AS camp_terms,
+                COALESCE(om_season.meta_value, om_season_alt.meta_value, om_season_alt_attr.meta_value) AS season,
+                COALESCE(om_canonical_booking.meta_value, om_booking_type.meta_value, om_booking_type_attr.meta_value) AS booking_type,
                 COALESCE(om_selected_days.meta_value, om_selected_days_legacy.meta_value) AS selected_days,
-                COALESCE(om_canonical_age.meta_value, om_age_group.meta_value) AS age_group,
-                COALESCE(om_canonical_activity.meta_value, om_activity_type.meta_value, pm_activity_type.meta_value) AS activity_type,
+                COALESCE(om_canonical_age.meta_value, om_age_group.meta_value, om_age_group_attr.meta_value) AS age_group,
+                COALESCE(om_canonical_activity.meta_value, om_activity_type.meta_value, om_activity_type_pa.meta_value, om_activity_type_pa_attr.meta_value, pm_activity_type.meta_value) AS activity_type,
                 om_product_id.meta_value AS product_id,
                 om_variation_id.meta_value AS variation_id,
                 p.post_date,
@@ -390,16 +394,23 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
              LEFT JOIN $order_itemmeta_table om_canonical_camp_terms ON oi.order_item_id = om_canonical_camp_terms.order_item_id AND om_canonical_camp_terms.meta_key = '_intersoccer_canonical_camp_terms'
              LEFT JOIN $order_itemmeta_table om_canton ON oi.order_item_id = om_canton.order_item_id AND om_canton.meta_key = 'Canton / Region'
              LEFT JOIN $order_itemmeta_table om_venue ON oi.order_item_id = om_venue.order_item_id AND om_venue.meta_key = 'pa_intersoccer-venues'
-             LEFT JOIN $terms_table t ON om_venue.meta_value = t.slug
+             LEFT JOIN $order_itemmeta_table om_venue_attr ON oi.order_item_id = om_venue_attr.order_item_id AND om_venue_attr.meta_key = 'attribute_pa_intersoccer-venues'
+             LEFT JOIN $terms_table t ON COALESCE(NULLIF(om_venue.meta_value, ''), om_venue_attr.meta_value) = t.slug
              LEFT JOIN $order_itemmeta_table om_camp_terms ON oi.order_item_id = om_camp_terms.order_item_id AND om_camp_terms.meta_key = 'camp_terms'
              LEFT JOIN $order_itemmeta_table om_camp_terms_alt ON oi.order_item_id = om_camp_terms_alt.order_item_id AND om_camp_terms_alt.meta_key = 'pa_camp-terms'
+             LEFT JOIN $order_itemmeta_table om_camp_terms_alt_attr ON oi.order_item_id = om_camp_terms_alt_attr.order_item_id AND om_camp_terms_alt_attr.meta_key = 'attribute_pa_camp-terms'
              LEFT JOIN $order_itemmeta_table om_season ON oi.order_item_id = om_season.order_item_id AND om_season.meta_key = 'Season'
              LEFT JOIN $order_itemmeta_table om_season_alt ON oi.order_item_id = om_season_alt.order_item_id AND om_season_alt.meta_key = 'pa_program-season'
+             LEFT JOIN $order_itemmeta_table om_season_alt_attr ON oi.order_item_id = om_season_alt_attr.order_item_id AND om_season_alt_attr.meta_key = 'attribute_pa_program-season'
              LEFT JOIN $order_itemmeta_table om_booking_type ON oi.order_item_id = om_booking_type.order_item_id AND om_booking_type.meta_key = 'pa_booking-type'
+             LEFT JOIN $order_itemmeta_table om_booking_type_attr ON oi.order_item_id = om_booking_type_attr.order_item_id AND om_booking_type_attr.meta_key = 'attribute_pa_booking-type'
              LEFT JOIN $order_itemmeta_table om_selected_days ON oi.order_item_id = om_selected_days.order_item_id AND om_selected_days.meta_key = 'Days Selected'
              LEFT JOIN $order_itemmeta_table om_selected_days_legacy ON oi.order_item_id = om_selected_days_legacy.order_item_id AND om_selected_days_legacy.meta_key = 'Days of Week'
              LEFT JOIN $order_itemmeta_table om_age_group ON oi.order_item_id = om_age_group.order_item_id AND om_age_group.meta_key = 'pa_age-group'
+             LEFT JOIN $order_itemmeta_table om_age_group_attr ON oi.order_item_id = om_age_group_attr.order_item_id AND om_age_group_attr.meta_key = 'attribute_pa_age-group'
              LEFT JOIN $order_itemmeta_table om_activity_type ON oi.order_item_id = om_activity_type.order_item_id AND om_activity_type.meta_key = 'Activity Type'
+             LEFT JOIN $order_itemmeta_table om_activity_type_pa ON oi.order_item_id = om_activity_type_pa.order_item_id AND om_activity_type_pa.meta_key = 'pa_activity-type'
+             LEFT JOIN $order_itemmeta_table om_activity_type_pa_attr ON oi.order_item_id = om_activity_type_pa_attr.order_item_id AND om_activity_type_pa_attr.meta_key = 'attribute_pa_activity-type'
              LEFT JOIN $order_itemmeta_table om_product_id ON oi.order_item_id = om_product_id.order_item_id AND om_product_id.meta_key = '_product_id'
              LEFT JOIN $order_itemmeta_table om_variation_id ON oi.order_item_id = om_variation_id.order_item_id AND om_variation_id.meta_key = '_variation_id'
              LEFT JOIN {$wpdb->postmeta} pm_activity_type ON om_product_id.meta_value = pm_activity_type.post_id AND pm_activity_type.meta_key = 'pa_activity-type'
@@ -1130,8 +1141,9 @@ function intersoccer_reports_merge_final_numbers_not_on_roster_rows(
         "SELECT oi.order_item_id, p.ID AS order_id, om_product.meta_value AS product_id,
                 COALESCE(om_activity.meta_value, '') AS activity_type,
                 om_line_subtotal.meta_value AS line_subtotal, om_line_total.meta_value AS line_total,
-                om_qty.meta_value AS line_quantity, om_venue.meta_value AS venue,
-                COALESCE(om_season.meta_value, om_season_alt.meta_value) AS season,
+                om_qty.meta_value AS line_quantity,
+                COALESCE(NULLIF(om_venue.meta_value, ''), om_venue_attr.meta_value) AS venue,
+                COALESCE(om_season.meta_value, om_season_alt.meta_value, om_season_alt_attr.meta_value) AS season,
                 COALESCE(om_player.meta_value, om_player_id.meta_value) AS assigned_player_id,
                 p.post_date
          FROM {$posts_table} p
@@ -1143,8 +1155,10 @@ function intersoccer_reports_merge_final_numbers_not_on_roster_rows(
          LEFT JOIN {$order_itemmeta_table} om_line_total ON oi.order_item_id = om_line_total.order_item_id AND om_line_total.meta_key = '_line_total'
          LEFT JOIN {$order_itemmeta_table} om_qty ON oi.order_item_id = om_qty.order_item_id AND om_qty.meta_key = '_qty'
          LEFT JOIN {$order_itemmeta_table} om_venue ON oi.order_item_id = om_venue.order_item_id AND om_venue.meta_key = 'pa_intersoccer-venues'
+         LEFT JOIN {$order_itemmeta_table} om_venue_attr ON oi.order_item_id = om_venue_attr.order_item_id AND om_venue_attr.meta_key = 'attribute_pa_intersoccer-venues'
          LEFT JOIN {$order_itemmeta_table} om_season ON oi.order_item_id = om_season.order_item_id AND om_season.meta_key = 'Season'
          LEFT JOIN {$order_itemmeta_table} om_season_alt ON oi.order_item_id = om_season_alt.order_item_id AND om_season_alt.meta_key = 'pa_program-season'
+         LEFT JOIN {$order_itemmeta_table} om_season_alt_attr ON oi.order_item_id = om_season_alt_attr.order_item_id AND om_season_alt_attr.meta_key = 'attribute_pa_program-season'
          LEFT JOIN {$order_itemmeta_table} om_player ON oi.order_item_id = om_player.order_item_id AND om_player.meta_key = 'Assigned Attendee'
          LEFT JOIN {$order_itemmeta_table} om_player_id ON oi.order_item_id = om_player_id.order_item_id AND om_player_id.meta_key = 'assigned_player_id'
          WHERE p.post_type = 'shop_order' AND p.post_status IN ({$status_sql}) AND r.order_item_id IS NULL

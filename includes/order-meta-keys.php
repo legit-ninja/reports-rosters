@@ -488,7 +488,7 @@ function intersoccer_reports_sql_meta_key_candidates($field) {
         'discount_amount' => ['Discount Amount'],
         'activity_type' => ['_intersoccer_canonical_activity_type', 'Activity Type'],
         'girls_only' => ['_intersoccer_canonical_girls_only', 'Girls Only'],
-        'booking_type' => ['_intersoccer_canonical_booking_type', 'Booking Type', 'pa_booking-type'],
+        'booking_type' => ['_intersoccer_canonical_booking_type', 'Booking Type', 'pa_booking-type', 'attribute_pa_booking-type'],
         'venue' => ['_intersoccer_canonical_venue', 'Sites InterSoccer'],
         'region' => ['_intersoccer_canonical_canton', 'Canton / Region'],
         'canton' => ['_intersoccer_canonical_canton', 'Canton / Region'],
@@ -839,7 +839,7 @@ if (!function_exists('intersoccer_get_order_item_pa_taxonomy_meta_value')) {
             return '';
         }
         if (stripos($taxonomy, 'pa_') !== 0) {
-            $taxonomy = 'pa_' . ltrim($taxonomy, 'pa_');
+            $taxonomy = 'pa_' . $taxonomy;
         }
 
         $candidates = [
@@ -1380,7 +1380,7 @@ function intersoccer_roster_enrich_camp_fields_from_order_item(&$row) {
     }
 
     if ($get($row, 'booking_type') === '' && function_exists('wc_get_order_item_meta')) {
-        foreach (['_intersoccer_canonical_booking_type', 'Booking Type', 'booking_type', 'pa_booking-type'] as $meta_key) {
+        foreach (['_intersoccer_canonical_booking_type', 'Booking Type', 'booking_type', 'pa_booking-type', 'attribute_pa_booking-type'] as $meta_key) {
             $v = wc_get_order_item_meta($item_id, $meta_key, true);
             if ($v === null || $v === '') {
                 continue;

@@ -966,7 +966,7 @@ if (!function_exists('intersoccer_read_order_item_booking_fields')) {
             }
         }
         if ($booking_type === '') {
-            $booking_type = $read(['pa_booking-type', 'Booking Type', 'Type de réservation', 'Buchungstyp']);
+            $booking_type = $read(['pa_booking-type', 'attribute_pa_booking-type', 'Booking Type', 'Type de réservation', 'Buchungstyp']);
         }
 
         return [
@@ -3567,16 +3567,53 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     }
 
     // Event details with fallbacks
-    $venue = $item_meta['pa_intersoccer-venues'] ?? $item_meta['Sites InterSoccer'] ?? $item_meta['InterSoccer Venues'] ?? '';
-    $age_group = $item_meta['pa_age-group'] ?? $item_meta['Age Group'] ?? '';
-    $camp_terms = $item_meta['pa_camp-terms'] ?? $item_meta['Camp Terms'] ?? '';
-    $times = $item_meta['pa_camp-times'] ?? $item_meta['pa_course-times'] ?? $item_meta['pa_tournament-time'] ?? $item_meta['Camp Times'] ?? $item_meta['Course Times'] ?? $item_meta['Tournament Time'] ?? '';
-    $booking_type = $item_meta['pa_booking-type'] ?? $item_meta['Booking Type'] ?? '';
+    $read_pa_item_meta = static function (string $taxonomy) use ($item_meta): string {
+        if (function_exists('intersoccer_get_order_item_pa_taxonomy_meta_value')) {
+            return intersoccer_get_order_item_pa_taxonomy_meta_value($item_meta, $taxonomy);
+        }
+
+        return trim((string) ($item_meta[$taxonomy] ?? ''));
+    };
+    $venue = $read_pa_item_meta('pa_intersoccer-venues');
+    if ($venue === '') {
+        $venue = $item_meta['Sites InterSoccer'] ?? $item_meta['InterSoccer Venues'] ?? '';
+    }
+    $age_group = $read_pa_item_meta('pa_age-group');
+    if ($age_group === '') {
+        $age_group = $item_meta['Age Group'] ?? '';
+    }
+    $camp_terms = $read_pa_item_meta('pa_camp-terms');
+    if ($camp_terms === '') {
+        $camp_terms = $item_meta['Camp Terms'] ?? '';
+    }
+    $times = $read_pa_item_meta('pa_camp-times');
+    if ($times === '') {
+        $times = $read_pa_item_meta('pa_course-times');
+    }
+    if ($times === '') {
+        $times = $read_pa_item_meta('pa_tournament-time');
+    }
+    if ($times === '') {
+        $times = $item_meta['Camp Times'] ?? $item_meta['Course Times'] ?? $item_meta['Tournament Time'] ?? '';
+    }
+    $booking_type = $read_pa_item_meta('pa_booking-type');
+    if ($booking_type === '') {
+        $booking_type = $item_meta['Booking Type'] ?? '';
+    }
     $selected_days = $item_meta['Days Selected'] ?? '';
-    $season = $item_meta['pa_program-season'] ?? $item_meta['Season'] ?? '';
-    $canton_region = $item_meta['pa_canton-region'] ?? $item_meta['Canton / Region'] ?? '';
+    $season = $read_pa_item_meta('pa_program-season');
+    if ($season === '') {
+        $season = $item_meta['Season'] ?? '';
+    }
+    $canton_region = $read_pa_item_meta('pa_canton-region');
+    if ($canton_region === '') {
+        $canton_region = $item_meta['Canton / Region'] ?? '';
+    }
     $city = $item_meta['City'] ?? '';
-    $activity_type = $item_meta['pa_activity-type'] ?? $item_meta['Activity Type'] ?? '';
+    $activity_type = $read_pa_item_meta('pa_activity-type');
+    if ($activity_type === '') {
+        $activity_type = $item_meta['Activity Type'] ?? '';
+    }
     $start_date = $item_meta['Start Date'] ?? null;
     $end_date = $item_meta['End Date'] ?? null;
     $event_dates = 'N/A';
@@ -3585,7 +3622,10 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     $course_day = 'N/A';
     if ($product_type === 'tournament') {
         // For Tournaments, extract Tournament Day from metadata
-        $tournament_day = $item_meta['Tournament Day'] ?? $item_meta['pa_tournament-day'] ?? $raw_order_item_meta['Tournament Day'] ?? null;
+        $tournament_day = $item_meta['Tournament Day'] ?? $raw_order_item_meta['Tournament Day'] ?? null;
+        if (!$tournament_day) {
+            $tournament_day = $read_pa_item_meta('pa_tournament-day') ?: null;
+        }
         if ($tournament_day) {
             // If it's already a readable name (like "Sunday"), use it directly
             if (preg_match('/^[A-Z][a-z]+$/', $tournament_day)) {
@@ -3598,7 +3638,10 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         }
     } else {
         // For Courses, extract Course Day
-        $course_day_slug = $item_meta['pa_course-day'] ?? $item_meta['Course Day'] ?? $raw_order_item_meta['Course Day'] ?? null;
+        $course_day_slug = $read_pa_item_meta('pa_course-day');
+        if (!$course_day_slug) {
+            $course_day_slug = $item_meta['Course Day'] ?? $raw_order_item_meta['Course Day'] ?? null;
+        }
         if ($course_day_slug) {
             $term = get_term_by('slug', $course_day_slug, 'pa_course-day');
             $course_day = $term ? $term->name : ucfirst($course_day_slug);

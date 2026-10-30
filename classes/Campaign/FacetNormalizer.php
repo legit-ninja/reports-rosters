@@ -138,18 +138,18 @@ class FacetNormalizer {
 			}
 		}
 
-		$course_terms = $this->first_meta($raw, ['Course Terms', 'pa_course-day', 'Season']);
+		$course_terms = $this->first_meta($raw, ['Course Terms', 'pa_course-day', 'attribute_pa_course-day', 'Season']);
 		if ($out['camp_week'] === 'not_recorded' && $course_terms !== '' && $out['activity_type'] === 'course') {
 			$out['camp_week'] = $this->normalize_course_term($course_terms);
 		}
 
 		// Day length follows MASTER B.6: Age Group display label (+ times), not pa_* slug alone.
 		$age_label = $this->first_meta($raw, ['Age Group']);
-		$times = $this->first_meta($raw, ['Camp Times', 'pa_camp-times', 'Course Times', 'pa_course-times']);
+		$times = $this->first_meta($raw, ['Camp Times', 'pa_camp-times', 'attribute_pa_camp-times', 'Course Times', 'pa_course-times', 'attribute_pa_course-times']);
 		$out['day_length'] = $this->normalize_day_length($age_label, $times);
 
 		$out['product_name'] = $this->first_meta($raw, ['_product_name', 'product_name']);
-		$out['season'] = $this->first_meta($raw, ['Season', 'pa_program-season']);
+		$out['season'] = $this->first_meta($raw, ['Season', 'pa_program-season', 'attribute_pa_program-season']);
 
 		return $out;
 	}
