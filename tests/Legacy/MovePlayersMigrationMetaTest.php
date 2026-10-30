@@ -35,6 +35,51 @@ class MovePlayersMigrationMetaTest extends TestCase {
             require_once dirname(__DIR__, 2) . '/includes/advanced.php';
         }
 
+        $this->registerMigrationMetaPaTerms();
+    }
+
+    private function registerMigrationMetaPaTerms(): void {
+        $entries = [
+            ['pa_activity-type', 'course', 'Course'],
+            ['pa_activity-type', 'course-girls-only', 'Course Girls Only'],
+            ['pa_girls-only', 'no', 'No'],
+            ['pa_girls-only', 'yes', 'Yes'],
+            ['pa_program-season', 'autumn-2026', 'Autumn 2026'],
+            ['pa_program-season', 'spring-summer-2026', 'Spring Summer 2026'],
+            ['pa_intersoccer-venues', 'geneva-college-sismondi-nations', 'Geneva College Sismondi Nations'],
+            ['pa_intersoccer-venues', 'geneva-stade-chenois-thonex', 'Geneva Stade Chenois Thonex'],
+            ['pa_intersoccer-venues', 'geneva-stade-chenois-thonex', 'Geneva - Stade Chênois, Thonex'],
+            ['pa_age-group', '5-8y', '5-8y'],
+            ['pa_age-group', '5-12', '5-12'],
+            ['pa_age-group', '3-12y', '3-12y'],
+            ['pa_booking-type', 'full-term', 'Full Term'],
+            ['pa_canton-region', 'geneva', 'Geneva'],
+            ['pa_city', 'geneva', 'Geneva'],
+            ['pa_course-day', 'sunday', 'Sunday'],
+            ['pa_course-times', '1115-1245', '11:15-12:45'],
+            ['pa_course-times', '1000-1130', '10:00-11:30'],
+            ['pa_course-times', '0930-1100', '09:30-11:00'],
+            ['pa_camp-times', '9-00am-4-00pm', '9:00am-4:00pm'],
+            ['pa_program-season', 'autumn', 'Autumn'],
+        ];
+
+        $by_slug = [];
+        $by_id = [];
+        $by_name = [];
+        $id = 88000;
+        foreach ($entries as [$taxonomy, $slug, $name]) {
+            $slug_key = strtolower($slug);
+            $obj = (object) ['term_id' => $id, 'slug' => $slug_key, 'name' => $name];
+            $by_slug[$taxonomy][$slug_key] = $obj;
+            $by_id[$id] = $obj;
+            $name_key = function_exists('mb_strtolower') ? mb_strtolower($name) : strtolower($name);
+            $by_name[$taxonomy][$name_key] = $obj;
+            ++$id;
+        }
+
+        $GLOBALS['intersoccer_test_terms_by_slug'] = $by_slug;
+        $GLOBALS['intersoccer_test_terms_by_id'] = $by_id;
+        $GLOBALS['intersoccer_test_terms_by_name'] = $by_name;
     }
 
     protected function tearDown(): void {

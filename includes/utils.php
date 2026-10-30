@@ -4430,7 +4430,18 @@ if (!function_exists('intersoccer_renormalize_roster_row_from_variation')) {
                     $event_data['city'] = $display;
                     break;
                 case 'pa_canton-region':
-                    $event_data['canton_region'] = $display;
+                    $raw_canton = is_array($attribute_value) ? (string) reset($attribute_value) : (string) $attribute_value;
+                    if (function_exists('intersoccer_migration_default_language_term_slug_strict')) {
+                        $resolved_canton = intersoccer_migration_default_language_term_slug_strict(
+                            'pa_canton-region',
+                            $raw_canton
+                        );
+                        if ($resolved_canton !== null && $resolved_canton !== '') {
+                            $event_data['canton_region'] = $display;
+                        }
+                    } else {
+                        $event_data['canton_region'] = $display;
+                    }
                     break;
                 case 'pa_girls-only':
                     $slug = strtolower(is_array($attribute_value) ? reset($attribute_value) : (string) $attribute_value);
@@ -4461,9 +4472,16 @@ if (!function_exists('intersoccer_renormalize_roster_row_from_variation')) {
                 }
                 if (trim((string) ($normalized[$facet_key] ?? '')) === '') {
                     if (!empty($from_order[$facet_key])) {
+                        $candidate = (string) $from_order[$facet_key];
+                        if (function_exists('intersoccer_migration_default_language_term_slug_strict')) {
+                            $resolved = intersoccer_migration_default_language_term_slug_strict($taxonomy, $candidate);
+                            if ($resolved === null) {
+                                continue;
+                            }
+                        }
                         $normalized[$facet_key] = function_exists('intersoccer_roster_facet_en_term_name_if_resolved')
-                            ? intersoccer_roster_facet_en_term_name_if_resolved($from_order[$facet_key], $taxonomy)
-                            : $from_order[$facet_key];
+                            ? intersoccer_roster_facet_en_term_name_if_resolved($candidate, $taxonomy)
+                            : $candidate;
                     }
                 }
             }
@@ -5623,12 +5641,12 @@ if (!function_exists('intersoccer_normalize_roster_facets_for_storage')) {
             if (empty($normalized[$field])) {
                 continue;
             }
-            if ($field === 'canton_region' && function_exists('intersoccer_migration_default_language_term_slug')) {
-                $en_slug = intersoccer_migration_default_language_term_slug(
+            if ($field === 'canton_region' && function_exists('intersoccer_migration_default_language_term_slug_strict')) {
+                $en_slug = intersoccer_migration_default_language_term_slug_strict(
                     $taxonomy,
                     (string) $normalized[$field]
                 );
-                if ($en_slug !== '') {
+                if ($en_slug !== null && $en_slug !== '') {
                     $normalized[$field] = $en_slug;
                 }
             }
@@ -5690,9 +5708,9 @@ if (!function_exists('intersoccer_roster_facet_en_term_name_if_resolved')) {
         }
 
         $lookup = $raw;
-        if ($taxonomy === 'pa_canton-region' && function_exists('intersoccer_migration_default_language_term_slug')) {
-            $en_slug = intersoccer_migration_default_language_term_slug($taxonomy, $raw);
-            if ($en_slug !== '') {
+        if ($taxonomy === 'pa_canton-region' && function_exists('intersoccer_migration_default_language_term_slug_strict')) {
+            $en_slug = intersoccer_migration_default_language_term_slug_strict($taxonomy, $raw);
+            if ($en_slug !== null && $en_slug !== '') {
                 $lookup = $en_slug;
             }
         }
@@ -5994,8 +6012,7 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
             if ($term && !is_wp_error($term)) {
                 $normalized['canton_region'] = $term->name;
             } else {
-                // Use fallback normalization to ensure consistent signatures
-                $normalized['canton_region'] = intersoccer_normalize_term_fallback($event_data['canton_region']);
+                $normalized['canton_region'] = $event_data['canton_region'];
             }
         }
 

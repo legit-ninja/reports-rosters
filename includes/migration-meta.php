@@ -759,19 +759,24 @@ if (!function_exists('intersoccer_migration_supplement_roster_normalized_from_va
                 continue;
             }
 
-            $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy);
-            if ($slug === '') {
+            $raw_slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy, false);
+            if ($raw_slug === '') {
                 if ($facet === 'times') {
-                    $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, 'pa_course-times');
+                    $raw_slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, 'pa_course-times', false);
+                    if ($raw_slug !== '') {
+                        $taxonomy = 'pa_course-times';
+                    }
                 }
-                if ($slug === '') {
+                if ($raw_slug === '') {
                     continue;
                 }
-                $taxonomy = 'pa_course-times';
             }
 
-            $en_slug = intersoccer_migration_default_language_term_slug($taxonomy, $slug);
-            if ($en_slug === '') {
+            $en_slug = null;
+            if (function_exists('intersoccer_migration_default_language_term_slug_strict')) {
+                $en_slug = intersoccer_migration_default_language_term_slug_strict($taxonomy, $raw_slug);
+            }
+            if ($en_slug === null || $en_slug === '') {
                 continue;
             }
 
@@ -811,14 +816,20 @@ if (!function_exists('intersoccer_migration_roster_booking_from_destination_vari
             return $booking;
         }
 
-        $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, 'pa_booking-type');
-        if ($slug === '') {
+        $raw_slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, 'pa_booking-type', false);
+        if ($raw_slug === '') {
             return $booking;
         }
 
-        $en_slug = intersoccer_migration_default_language_term_slug('pa_booking-type', $slug);
+        $en_slug = '';
+        if (function_exists('intersoccer_migration_default_language_term_slug_strict')) {
+            $resolved = intersoccer_migration_default_language_term_slug_strict('pa_booking-type', $raw_slug);
+            if ($resolved !== null) {
+                $en_slug = $resolved;
+            }
+        }
         if ($en_slug === '') {
-            $en_slug = $slug;
+            return $booking;
         }
 
         if (function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
@@ -1101,6 +1112,19 @@ if (!function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
     }
 }
 
+if (!function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
+    /**
+     * Normalize a pa_* value only when a real taxonomy term matches (no label/slug invention).
+     */
+    function intersoccer_migration_coerce_pa_taxonomy_slug_strict(string $taxonomy, string $value): ?string {
+        if (function_exists('intersoccer_migration_default_language_term_slug_strict')) {
+            return intersoccer_migration_default_language_term_slug_strict($taxonomy, $value);
+        }
+
+        return null;
+    }
+}
+
 if (!function_exists('intersoccer_migration_pa_attribute_slug_for_variation')) {
     /**
      * Term slug WooCommerce stores for a variation attribute (variation attrs first, then parent).
@@ -1370,14 +1394,36 @@ if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation'))
                 continue;
             }
             $taxonomy = preg_replace('/^attribute_/i', '', (string) $meta_key);
+            $raw_from_variation = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy, false);
             $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy);
-            if ($slug === '') {
-                $slug = intersoccer_migration_coerce_pa_taxonomy_slug(
+            if ($raw_from_variation !== '' && function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
+                $strict_from_variation = intersoccer_migration_coerce_pa_taxonomy_slug_strict(
                     $taxonomy,
-                    is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value
+                    $raw_from_variation
                 );
+                if ($strict_from_variation === null) {
+                    $slug = '';
+                } else {
+                    $slug = $strict_from_variation;
+                }
             }
             if ($slug === '') {
+                $fallback_raw = is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value;
+                if (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
+                    $strict_slug = intersoccer_migration_coerce_pa_taxonomy_slug_strict($taxonomy, $fallback_raw);
+                    $slug = $strict_slug !== null ? $strict_slug : '';
+                } elseif (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
+                    $slug = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $fallback_raw);
+                }
+            }
+            if ($slug === '') {
+                $existing_on_empty = intersoccer_migration_pa_existing_line_value_for_key(
+                    $existing_line_pa,
+                    (string) $meta_key
+                );
+                if ($existing_on_empty !== '') {
+                    $normalized[$meta_key] = $existing_on_empty;
+                }
                 continue;
             }
             $existing = intersoccer_migration_pa_existing_line_value_for_key($existing_line_pa, (string) $meta_key);
@@ -1406,7 +1452,15 @@ if (!function_exists('intersoccer_migration_set_slug_meta_pair')) {
         if ($taxonomy === '' || $value === '') {
             return;
         }
-        $value = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $value);
+        if (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
+            $strict_value = intersoccer_migration_coerce_pa_taxonomy_slug_strict($taxonomy, $value);
+            if ($strict_value === null || $strict_value === '') {
+                return;
+            }
+            $value = $strict_value;
+        } elseif (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
+            $value = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $value);
+        }
 
         if (!isset($slug_meta[$taxonomy]) || $slug_meta[$taxonomy] === '') {
             $slug_meta[$taxonomy] = $value;

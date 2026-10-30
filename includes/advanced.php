@@ -1094,7 +1094,12 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
         foreach ($variation_attributes as $attribute_key => $attribute_value) {
             $clean_key = str_replace('attribute_', '', $attribute_key);
             $slug_value = is_array($attribute_value) ? (string) reset($attribute_value) : (string) $attribute_value;
-            if (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
+            if (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
+                $strict_slug = intersoccer_migration_coerce_pa_taxonomy_slug_strict($clean_key, $slug_value);
+                if ($strict_slug !== null) {
+                    $slug_value = $strict_slug;
+                }
+            } elseif (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
                 $slug_value = intersoccer_migration_coerce_pa_taxonomy_slug($clean_key, $slug_value);
             }
             $slug_meta[$attribute_key] = $slug_value;
@@ -1105,11 +1110,14 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
 
             if (isset($taxonomy_canonical_map[$clean_key])) {
                 $canonical = $taxonomy_canonical_map[$clean_key];
-                if ($canonical === 'girls_only') {
-                    $human_meta[$canonical] = $display_value;
-                } else {
-                    $human_meta[$canonical] = $display_value;
+                if ($canonical !== 'girls_only'
+                    && function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
+                    $raw_attr = is_array($attribute_value) ? (string) reset($attribute_value) : (string) $attribute_value;
+                    if (intersoccer_migration_coerce_pa_taxonomy_slug_strict($clean_key, $raw_attr) === null) {
+                        continue;
+                    }
                 }
+                $human_meta[$canonical] = $display_value;
             }
         }
 
@@ -2119,7 +2127,18 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
                 $event_data['city'] = $display_value;
                 break;
             case 'pa_canton-region':
-                $event_data['canton_region'] = $display_value;
+                $raw_canton = is_array($attribute_value) ? (string) reset($attribute_value) : (string) $attribute_value;
+                if (function_exists('intersoccer_migration_default_language_term_slug_strict')) {
+                    $resolved_canton = intersoccer_migration_default_language_term_slug_strict(
+                        'pa_canton-region',
+                        $raw_canton
+                    );
+                    if ($resolved_canton !== null && $resolved_canton !== '') {
+                        $event_data['canton_region'] = $display_value;
+                    }
+                } else {
+                    $event_data['canton_region'] = $display_value;
+                }
                 break;
             case 'pa_girls-only':
                 $girls_only_flag = strtolower(is_array($attribute_value) ? reset($attribute_value) : (string) $attribute_value);
@@ -2190,9 +2209,16 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
             }
             if (trim((string) ($normalized[$facet_key] ?? '')) === '') {
                 if (!empty($from_order[$facet_key])) {
+                    $candidate = (string) $from_order[$facet_key];
+                    if (function_exists('intersoccer_migration_default_language_term_slug_strict')) {
+                        $resolved = intersoccer_migration_default_language_term_slug_strict($taxonomy, $candidate);
+                        if ($resolved === null) {
+                            continue;
+                        }
+                    }
                     $normalized[$facet_key] = function_exists('intersoccer_roster_facet_en_term_name_if_resolved')
-                        ? intersoccer_roster_facet_en_term_name_if_resolved($from_order[$facet_key], $taxonomy)
-                        : $from_order[$facet_key];
+                        ? intersoccer_roster_facet_en_term_name_if_resolved($candidate, $taxonomy)
+                        : $candidate;
                 }
             }
         }

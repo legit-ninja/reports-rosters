@@ -656,6 +656,39 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
         $this->stubWpmlEnTerms($wpml_map);
     }
 
+    /**
+     * @return array<int,string>
+     */
+    private function moveBookkeepingOrderMetaKeys(): array {
+        $keys = function_exists('intersoccer_roster_move_audit_all_meta_keys')
+            ? intersoccer_roster_move_audit_all_meta_keys()
+            : [];
+        if (function_exists('intersoccer_roster_history_meta_key')) {
+            $keys[] = intersoccer_roster_history_meta_key();
+        }
+        if (function_exists('intersoccer_roster_move_stock_delta_meta_key')) {
+            $keys[] = intersoccer_roster_move_stock_delta_meta_key();
+        }
+
+        return array_values(array_unique($keys));
+    }
+
+    /**
+     * @param array<int,string> $keysBefore
+     */
+    private function assertMoveOrderMetaKeysOnlyBookkeepingAdded(array $keysBefore): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $after = array_keys($intersoccer_test_wc_order_item_meta[self::ITEM_ID]);
+        $allowed = array_merge($keysBefore, $this->moveBookkeepingOrderMetaKeys());
+        $this->assertEqualsCanonicalizing($allowed, $after);
+        foreach ($after as $key) {
+            if (in_array($key, $keysBefore, true) || in_array($key, $this->moveBookkeepingOrderMetaKeys(), true)) {
+                continue;
+            }
+            $this->fail('Unexpected order item meta key after move: ' . $key);
+        }
+    }
+
     public function test_normalize_roster_facets_for_storage_stores_canton_en_term_name_for_fr_and_de(): void {
         $this->registerGenevaCantonTerms();
 
@@ -1245,12 +1278,15 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
             ],
         ]);
 
+        global $intersoccer_test_wc_order_item_meta;
+        $keys_before = array_keys($intersoccer_test_wc_order_item_meta[self::ITEM_ID]);
+
         $response = $this->invokeMoveAjax();
         $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
 
-        global $intersoccer_test_wc_order_item_meta;
         $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
         $this->assertSame('single-days', $meta['_intersoccer_canonical_booking_type']);
+        $this->assertMoveOrderMetaKeysOnlyBookkeepingAdded($keys_before);
     }
 
     public function test_de_move_keeps_canonical_booking_type_when_destination_label_unresolved(): void {
@@ -1285,12 +1321,15 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
             ],
         ]);
 
+        global $intersoccer_test_wc_order_item_meta;
+        $keys_before = array_keys($intersoccer_test_wc_order_item_meta[self::ITEM_ID]);
+
         $response = $this->invokeMoveAjax();
         $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
 
-        global $intersoccer_test_wc_order_item_meta;
         $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
         $this->assertSame('single-days', $meta['_intersoccer_canonical_booking_type']);
+        $this->assertMoveOrderMetaKeysOnlyBookkeepingAdded($keys_before);
     }
 
     public function test_fr_move_resolved_booking_label_still_writes_en_canonical_slug(): void {
@@ -1328,6 +1367,9 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
         global $intersoccer_test_wc_order_item_meta;
         $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
         $this->assertSame('full-week', $meta['_intersoccer_canonical_booking_type']);
+        if (isset($meta['attribute_pa_booking-type'])) {
+            $this->assertSame('full-week', $meta['attribute_pa_booking-type']);
+        }
     }
 
     public function test_migration_default_language_term_slug_strict_resolves_registered_term_slug(): void {
@@ -1385,12 +1427,15 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
             ],
         ]);
 
+        global $intersoccer_test_wc_order_item_meta;
+        $keys_before = array_keys($intersoccer_test_wc_order_item_meta[self::ITEM_ID]);
+
         $response = $this->invokeMoveAjax();
         $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
 
-        global $intersoccer_test_wc_order_item_meta;
         $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
         $this->assertSame('geneva', $meta['_intersoccer_canonical_canton']);
+        $this->assertMoveOrderMetaKeysOnlyBookkeepingAdded($keys_before);
     }
 
     public function test_de_move_keeps_canonical_booking_type_when_destination_ganztags_unresolved(): void {
@@ -1425,12 +1470,15 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
             ],
         ]);
 
+        global $intersoccer_test_wc_order_item_meta;
+        $keys_before = array_keys($intersoccer_test_wc_order_item_meta[self::ITEM_ID]);
+
         $response = $this->invokeMoveAjax();
         $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
 
-        global $intersoccer_test_wc_order_item_meta;
         $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
         $this->assertSame('single-days', $meta['_intersoccer_canonical_booking_type']);
+        $this->assertMoveOrderMetaKeysOnlyBookkeepingAdded($keys_before);
     }
 
     public function test_fr_move_keeps_canonical_booking_type_when_destination_matin_unresolved(): void {
@@ -1465,12 +1513,378 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
             ],
         ]);
 
+        global $intersoccer_test_wc_order_item_meta;
+        $keys_before = array_keys($intersoccer_test_wc_order_item_meta[self::ITEM_ID]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('single-days', $meta['_intersoccer_canonical_booking_type']);
+        $this->assertMoveOrderMetaKeysOnlyBookkeepingAdded($keys_before);
+    }
+
+    public function test_fr_move_keeps_existing_pa_booking_meta_when_destination_matin_unresolved(): void {
+        $this->registerTerms(
+            [
+                'pa_intersoccer-venues' => [
+                    'stade-de-vessy' => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                ],
+                'pa_booking-type' => [
+                    'single-days' => (object) ['term_id' => 7302, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                ],
+            ],
+            [
+                7100 => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                7302 => (object) ['term_id' => 7302, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'Matin',
+                'attribute_pa_canton-region' => 'geneva',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'FR pa booking keep',
+                'attribute_pa_booking-type' => 'single-days',
+                'pa_booking-type' => 'single-days',
+            ],
+        ]);
+
         $response = $this->invokeMoveAjax();
         $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
 
         global $intersoccer_test_wc_order_item_meta;
         $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
-        $this->assertSame('single-days', $meta['_intersoccer_canonical_booking_type']);
+        $this->assertSame('single-days', $meta['attribute_pa_booking-type']);
+        $this->assertSame('single-days', $meta['pa_booking-type']);
+    }
+
+    public function test_de_move_keeps_existing_pa_booking_meta_when_destination_ganztags_unresolved(): void {
+        $this->registerTerms(
+            [
+                'pa_intersoccer-venues' => [
+                    'stade-de-vessy' => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                ],
+                'pa_booking-type' => [
+                    'single-days' => (object) ['term_id' => 8302, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                ],
+            ],
+            [
+                7100 => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                8302 => (object) ['term_id' => 8302, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'Ganztags',
+                'attribute_pa_canton-region' => 'geneva',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'DE pa booking keep',
+                'attribute_pa_booking-type' => 'single-days',
+                'pa_booking-type' => 'single-days',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('single-days', $meta['attribute_pa_booking-type']);
+        $this->assertSame('single-days', $meta['pa_booking-type']);
+    }
+
+    public function test_fr_move_does_not_add_pa_booking_meta_when_line_had_no_key_and_destination_unresolved(): void {
+        $this->registerTerms(
+            [
+                'pa_intersoccer-venues' => [
+                    'stade-de-vessy' => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                ],
+            ],
+            [
+                7100 => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'Matin',
+                'attribute_pa_canton-region' => 'geneva',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'FR no pa booking key',
+            ],
+        ]);
+
+        global $intersoccer_test_wc_order_item_meta;
+        $keys_before = array_keys($intersoccer_test_wc_order_item_meta[self::ITEM_ID]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertArrayNotHasKey('attribute_pa_booking-type', $meta);
+        $this->assertArrayNotHasKey('pa_booking-type', $meta);
+        $this->assertMoveOrderMetaKeysOnlyBookkeepingAdded($keys_before);
+    }
+
+    public function test_de_move_does_not_add_pa_booking_meta_when_line_had_no_key_and_destination_unresolved(): void {
+        $this->registerTerms(
+            [
+                'pa_intersoccer-venues' => [
+                    'stade-de-vessy' => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                ],
+            ],
+            [
+                7100 => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'Ganztags',
+                'attribute_pa_canton-region' => 'geneva',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'DE no pa booking key',
+            ],
+        ]);
+
+        global $intersoccer_test_wc_order_item_meta;
+        $keys_before = array_keys($intersoccer_test_wc_order_item_meta[self::ITEM_ID]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertArrayNotHasKey('attribute_pa_booking-type', $meta);
+        $this->assertMoveOrderMetaKeysOnlyBookkeepingAdded($keys_before);
+    }
+
+    public function test_fr_move_blank_roster_canton_stays_blank_when_destination_canton_unresolved(): void {
+        $this->registerTerms(
+            [
+                'pa_intersoccer-venues' => [
+                    'stade-de-vessy' => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                ],
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9300, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                7100 => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                9300 => (object) ['term_id' => 9300, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_canton-region' => 'Région Inconnue',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'FR blank canton unresolved',
+            ],
+            'roster_row' => [
+                'canton_region' => '',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_roster_store;
+        $this->assertSame('', $intersoccer_test_roster_store[self::ITEM_ID]['canton_region']);
+    }
+
+    public function test_de_move_blank_roster_canton_stays_blank_when_destination_canton_unresolved(): void {
+        $this->registerTerms(
+            [
+                'pa_intersoccer-venues' => [
+                    'stade-de-vessy' => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                ],
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9300, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                7100 => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                9300 => (object) ['term_id' => 9300, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_canton-region' => 'Unbekannte Region',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'DE blank canton unresolved',
+            ],
+            'roster_row' => [
+                'canton_region' => '',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_roster_store;
+        $this->assertSame('', $intersoccer_test_roster_store[self::ITEM_ID]['canton_region']);
+    }
+
+    public function test_fr_admin_repair_leaves_unresolved_canton_meta_and_roster_unchanged(): void {
+        global $wpdb, $intersoccer_test_wc_order_item_meta;
+
+        $item_id = 88301;
+        $roster_id = 883011;
+        $meta_before = [
+            "Type d'activité" => 'Camp',
+            'Canton / Région' => 'Région Inconnue',
+        ];
+        $intersoccer_test_wc_order_item_meta[$item_id] = $meta_before;
+
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        $row = [
+            'id' => $roster_id,
+            'order_item_id' => $item_id,
+            'variation_id' => 0,
+            'activity_type' => 'Camp',
+            'venue' => 'Centre',
+            'canton_region' => 'Région Inconnue',
+            'product_id' => 1,
+            'product_name' => 'Camp',
+            'booking_type' => 'Full Week',
+        ];
+
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query) {
+            return $query;
+        });
+        $wpdb->shouldReceive('get_var')->andReturn('1');
+        $wpdb->shouldReceive('get_results')->andReturn([
+            ['id' => $roster_id, 'order_item_id' => $item_id, 'variation_id' => 0],
+        ]);
+        $wpdb->shouldReceive('get_row')->andReturn($row);
+        $captured_canton = null;
+        $wpdb->shouldReceive('update')->andReturnUsing(static function ($table, $data, $where) use (&$captured_canton, $rosters_table) {
+            if ($table === $rosters_table && isset($data['canton_region'])) {
+                $captured_canton = $data['canton_region'];
+            }
+
+            return 1;
+        });
+
+        intersoccer_renormalize_roster_language_batch(0, 40, 'orders');
+        $this->assertSame('Région Inconnue', $intersoccer_test_wc_order_item_meta[$item_id]['Canton / Région']);
+        if ($captured_canton !== null) {
+            $this->assertSame('Région Inconnue', $captured_canton);
+        }
+    }
+
+    public function test_de_admin_repair_leaves_unresolved_canton_meta_and_roster_unchanged(): void {
+        global $wpdb, $intersoccer_test_wc_order_item_meta;
+
+        $item_id = 88302;
+        $roster_id = 883021;
+        $meta_before = [
+            'Aktivitätstyp' => 'Camp',
+            'Canton / Region' => 'Unbekannte Region',
+        ];
+        $intersoccer_test_wc_order_item_meta[$item_id] = $meta_before;
+
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
+        $row = [
+            'id' => $roster_id,
+            'order_item_id' => $item_id,
+            'variation_id' => 0,
+            'activity_type' => 'Camp',
+            'venue' => 'Centre',
+            'canton_region' => 'Unbekannte Region',
+            'product_id' => 1,
+            'product_name' => 'Camp',
+            'booking_type' => 'Full Week',
+        ];
+
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query) {
+            return $query;
+        });
+        $wpdb->shouldReceive('get_var')->andReturn('1');
+        $wpdb->shouldReceive('get_results')->andReturn([
+            ['id' => $roster_id, 'order_item_id' => $item_id, 'variation_id' => 0],
+        ]);
+        $wpdb->shouldReceive('get_row')->andReturn($row);
+        $captured_canton = null;
+        $wpdb->shouldReceive('update')->andReturnUsing(static function ($table, $data, $where) use (&$captured_canton, $rosters_table) {
+            if ($table === $rosters_table && isset($data['canton_region'])) {
+                $captured_canton = $data['canton_region'];
+            }
+
+            return 1;
+        });
+
+        intersoccer_renormalize_roster_language_batch(0, 40, 'orders');
+        $this->assertSame('Unbekannte Region', $intersoccer_test_wc_order_item_meta[$item_id]['Canton / Region']);
+        if ($captured_canton !== null) {
+            $this->assertSame('Unbekannte Region', $captured_canton);
+        }
+    }
+
+    public function test_fr_blank_key_move_fills_roster_canton_from_registered_geneve_term(): void {
+        $this->registerGenevaCantonTerms();
+
+        $this->installMoveWorld([
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'FR blank canton resolved',
+            ],
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_canton-region' => 'geneve',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'roster_row' => [
+                'canton_region' => '',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_roster_store;
+        $this->assertSame('Geneva', $intersoccer_test_roster_store[self::ITEM_ID]['canton_region']);
     }
 
     /**
