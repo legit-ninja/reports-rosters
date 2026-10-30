@@ -9,6 +9,11 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+$intersoccer_db_upgrade_user_copy = dirname(__FILE__) . '/db-schema-2-4-0-user-copy.php';
+if (is_readable($intersoccer_db_upgrade_user_copy)) {
+	require_once $intersoccer_db_upgrade_user_copy;
+}
+
 /**
  * Default reconcile order statuses for sync queue UI.
  *
@@ -142,7 +147,7 @@ function intersoccer_render_advanced_page() {
                         <input type="submit" name="upgrade_database" class="button button-primary" value="<?php _e('Upgrade Database', 'intersoccer-reports-rosters'); ?>">
                     </form>
                     <div id="intersoccer-rebuild-status" class="intersoccer-upgrade-status" role="status" aria-live="polite" style="display:none;margin-top:8px;"></div>
-                    <p><?php _e('Note: Version 2.4.0 widens the roster times column to 191 characters and creates a full roster backup table (automatically dropped after 14 days). Use with caution.', 'intersoccer-reports-rosters'); ?></p>
+                    <p><?php echo esc_html(intersoccer_db_upgrade_2_4_0_user_help_text()); ?></p>
                 </div>
                 <div class="rebuild-options">
                     <h2><?php _e('Roster Management', 'intersoccer-reports-rosters'); ?></h2>

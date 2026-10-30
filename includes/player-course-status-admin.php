@@ -471,6 +471,23 @@ if (!function_exists('intersoccer_player_course_status_admin_season_type_options
 	}
 }
 
+if (!function_exists('intersoccer_player_course_status_admin_filter_field_html')) {
+	/**
+	 * One filter control: label + input/select wrapped so the pair does not break across lines.
+	 *
+	 * @param string $label_for
+	 * @param string $label_text Already escaped or plain (will be escaped).
+	 * @param string $control_html
+	 * @return string
+	 */
+	function intersoccer_player_course_status_admin_filter_field_html($label_for, $label_text, $control_html) {
+		return '<span class="intersoccer-pcs-filter-field">'
+			. '<label for="' . esc_attr($label_for) . '">' . esc_html($label_text) . '</label> '
+			. $control_html
+			. '</span>';
+	}
+}
+
 if (!function_exists('intersoccer_player_course_status_admin_select_html')) {
 	/**
 	 * @param string               $name
@@ -607,16 +624,22 @@ if (!function_exists('intersoccer_player_course_status_admin_filters_html')) {
 	 */
 	function intersoccer_player_course_status_admin_filters_html(array $filters, array $filter_options) {
 		$year = isset($filters['year']) ? (int) $filters['year'] : (int) date('Y');
+		$wrap = 'intersoccer_player_course_status_admin_filter_field_html';
 		$parts = [];
-		$parts[] = '<label for="pcrs-year">' . esc_html__('Year:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+		$parts[] = $wrap(
+			'pcrs-year',
+			__('Year:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'year',
 				'pcrs-year',
 				intersoccer_player_course_status_admin_year_options($year),
 				(string) $year
-			);
-		$parts[] = '<label for="pcrs-season">' . esc_html__('Season:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-season',
+			__('Season:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'season_type',
 				'pcrs-season',
 				intersoccer_player_course_status_admin_season_type_options(
@@ -624,9 +647,12 @@ if (!function_exists('intersoccer_player_course_status_admin_filters_html')) {
 					(string) ($filters['season_type'] ?? '')
 				),
 				(string) ($filters['season_type'] ?? '')
-			);
-		$parts[] = '<label for="pcrs-girls">' . esc_html__('Girls mode:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-girls',
+			__('Girls mode:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'girls_mode',
 				'pcrs-girls',
 				[
@@ -635,9 +661,12 @@ if (!function_exists('intersoccer_player_course_status_admin_filters_html')) {
 					'girls_only' => __('Girls only', 'intersoccer-reports-rosters'),
 				],
 				(string) ($filters['girls_mode'] ?? 'all')
-			);
-		$parts[] = '<label for="pcrs-venue">' . esc_html__('Venue:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-venue',
+			__('Venue:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'venue',
 				'pcrs-venue',
 				intersoccer_player_course_status_admin_map_options(
@@ -646,9 +675,12 @@ if (!function_exists('intersoccer_player_course_status_admin_filters_html')) {
 					__('All venues', 'intersoccer-reports-rosters')
 				),
 				(string) ($filters['venue'] ?? '')
-			);
-		$parts[] = '<label for="pcrs-day">' . esc_html__('Course day:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-day',
+			__('Course day:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'course_day',
 				'pcrs-day',
 				intersoccer_player_course_status_admin_map_options(
@@ -657,9 +689,12 @@ if (!function_exists('intersoccer_player_course_status_admin_filters_html')) {
 					__('All days', 'intersoccer-reports-rosters')
 				),
 				(string) ($filters['course_day'] ?? '')
-			);
-		$parts[] = '<label for="pcrs-age">' . esc_html__('Age group:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-age',
+			__('Age group:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'age_group',
 				'pcrs-age',
 				intersoccer_player_course_status_admin_map_options(
@@ -668,9 +703,12 @@ if (!function_exists('intersoccer_player_course_status_admin_filters_html')) {
 					__('All age groups', 'intersoccer-reports-rosters')
 				),
 				(string) ($filters['age_group'] ?? '')
-			);
-		$parts[] = '<label for="pcrs-booked">' . esc_html__('Booked:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-booked',
+			__('Booked:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'booked',
 				'pcrs-booked',
 				[
@@ -679,18 +717,25 @@ if (!function_exists('intersoccer_player_course_status_admin_filters_html')) {
 					'not_booked' => __('Not booked only', 'intersoccer-reports-rosters'),
 				],
 				(string) ($filters['booked'] ?? 'all')
-			);
-		$parts[] = '<label for="pcrs-status">' . esc_html__('Status:', 'intersoccer-reports-rosters') . '</label> '
-			. intersoccer_player_course_status_admin_select_html(
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-status',
+			__('Status:', 'intersoccer-reports-rosters'),
+			intersoccer_player_course_status_admin_select_html(
 				'booking_status',
 				'pcrs-status',
 				intersoccer_player_course_status_admin_booking_status_options(),
 				(string) ($filters['booking_status'] ?? '')
-			);
-		$parts[] = '<label for="pcrs-search">' . esc_html__('Search:', 'intersoccer-reports-rosters') . '</label> '
-			. '<input type="text" name="search" id="pcrs-search" value="'
+			)
+		);
+		$parts[] = $wrap(
+			'pcrs-search',
+			__('Search:', 'intersoccer-reports-rosters'),
+			'<input type="text" name="search" id="pcrs-search" value="'
 			. esc_attr((string) ($filters['search'] ?? ''))
-			. '" placeholder="' . esc_attr__('Name or parent email', 'intersoccer-reports-rosters') . '" />';
+			. '" placeholder="' . esc_attr__('Name or parent email', 'intersoccer-reports-rosters') . '" />'
+		);
 
 		return implode("\n", $parts);
 	}

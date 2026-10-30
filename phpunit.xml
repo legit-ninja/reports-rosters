@@ -59,6 +59,7 @@
         <testsuite name="Production">
             <file>tests/Core/LoggerTest.php</file>
             <file>tests/Core/ActivationRequirementsTest.php</file>
+            <file>tests/Core/DbUpgrade240UserCopyTest.php</file>
             <file>tests/Core/CommittedPluginAutoloadTest.php</file>
             <file>tests/WarmupBootstrapTest.php</file>
             <file>tests/Reports/FinalReportsTotalsTest.php</file>

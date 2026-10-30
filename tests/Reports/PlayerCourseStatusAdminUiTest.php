@@ -257,6 +257,8 @@ class PlayerCourseStatusAdminUiTest extends TestCase {
 		);
 
 		$this->assertStringContainsString('name="booking_status"', $html);
+		$this->assertStringContainsString('class="intersoccer-pcs-filter-field"', $html);
+		$this->assertSame(9, substr_count($html, 'class="intersoccer-pcs-filter-field"'));
 		$this->assertStringContainsString('id="pcrs-status"', $html);
 		$this->assertStringContainsString('value="on_hold" selected="selected"', $html);
 		$this->assertStringContainsString('>All<', $html);

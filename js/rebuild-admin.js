@@ -342,7 +342,7 @@ jQuery(document).ready(function($) {
         var failureText = strings.upgrade_failed || 'Database upgrade failed.';
         var networkText = strings.upgrade_failed_network || 'Database upgrade failed due to a network error.';
         var runningText = strings.upgrade_running || 'Migration already running. Please wait and refresh.';
-        var confirmText = strings.confirm_upgrade || 'This will modify the database structure and backfill data. Are you sure?';
+        var confirmText = strings.confirm_upgrade || 'Run schema 2.4.0? A full roster backup table will be created first, then event_type, camp_times, and times will be widened to 191 characters. Continue?';
 
         $form.on('submit', function(event) {
             event.preventDefault();

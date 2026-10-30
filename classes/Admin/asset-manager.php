@@ -187,6 +187,14 @@ class AssetManager {
 
         // Reports & Rosters - Advanced page (rebuild UI)
         if ($is_advanced_screen || $is_roster_sync_screen) {
+            $upgrade_copy = dirname(__DIR__, 2) . '/includes/db-schema-2-4-0-user-copy.php';
+            if (is_readable($upgrade_copy)) {
+                require_once $upgrade_copy;
+            }
+            $confirm_upgrade = function_exists('intersoccer_db_upgrade_2_4_0_user_confirm_text')
+                ? intersoccer_db_upgrade_2_4_0_user_confirm_text()
+                : __('Run schema 2.4.0? A full roster backup table will be created first, then event_type, camp_times, and times will be widened to 191 characters. Continue?', 'intersoccer-reports-rosters');
+
             wp_enqueue_style(
                 'intersoccer-reports-rosters-rebuild-admin-css',
                 $this->plugin_url . 'css/rebuild-admin.css',
@@ -218,7 +226,7 @@ class AssetManager {
                     'upgrade_failed' => __('Database upgrade failed.', 'intersoccer-reports-rosters'),
                     'upgrade_failed_network' => __('Database upgrade failed due to a network error.', 'intersoccer-reports-rosters'),
                     'upgrade_running' => __('Migration already running. Please wait and refresh.', 'intersoccer-reports-rosters'),
-                    'confirm_upgrade' => __('This will modify the database structure and backfill data. Are you sure?', 'intersoccer-reports-rosters'),
+                    'confirm_upgrade' => $confirm_upgrade,
                 ],
             ]);
         }
