@@ -218,6 +218,7 @@ class AssetManager {
                     'upgrade_failed' => __('Database upgrade failed.', 'intersoccer-reports-rosters'),
                     'upgrade_failed_network' => __('Database upgrade failed due to a network error.', 'intersoccer-reports-rosters'),
                     'upgrade_running' => __('Migration already running. Please wait and refresh.', 'intersoccer-reports-rosters'),
+                    'confirm_upgrade' => __('This will modify the database structure and backfill data. Are you sure?', 'intersoccer-reports-rosters'),
                 ],
             ]);
         }

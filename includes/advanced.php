@@ -139,10 +139,10 @@ function intersoccer_render_advanced_page() {
                     <form id="intersoccer-upgrade-form" method="post" action="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" class="upgrade-form">
                         <input type="hidden" name="action" value="intersoccer_upgrade_database">
                         <?php wp_nonce_field('intersoccer_rebuild_nonce', 'nonce'); ?>
-                        <input type="submit" name="upgrade_database" class="button button-primary" value="<?php _e('Upgrade Database', 'intersoccer-reports-rosters'); ?>" onclick="return confirm('<?php echo esc_js(__('This will modify the database structure and backfill data. Are you sure?', 'intersoccer-reports-rosters')); ?>');">
+                        <input type="submit" name="upgrade_database" class="button button-primary" value="<?php _e('Upgrade Database', 'intersoccer-reports-rosters'); ?>">
                     </form>
                     <div id="intersoccer-rebuild-status" class="intersoccer-upgrade-status" role="status" aria-live="polite" style="display:none;margin-top:8px;"></div>
-                    <p><?php _e('Note: This action adds new columns (e.g., financial fields, girls_only) and backfills data. Use with caution.', 'intersoccer-reports-rosters'); ?></p>
+                    <p><?php _e('Note: Version 2.4.0 widens the roster times column to 191 characters and creates a full roster backup table (automatically dropped after 14 days). Use with caution.', 'intersoccer-reports-rosters'); ?></p>
                 </div>
                 <div class="rebuild-options">
                     <h2><?php _e('Roster Management', 'intersoccer-reports-rosters'); ?></h2>

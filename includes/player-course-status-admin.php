@@ -846,7 +846,7 @@ if (!function_exists('intersoccer_player_course_status_admin_render_page')) {
 				<?php echo esc_html(intersoccer_player_course_status_admin_totals_text($totals, (int) $slice['total_rows'])); ?>
 			</p>
 
-			<form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" style="margin-bottom:16px;">
+			<form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" class="intersoccer-pcs-filters-form" style="margin-bottom:16px;">
 				<input type="hidden" name="page" value="intersoccer-player-course-status" />
 				<?php echo intersoccer_player_course_status_admin_filters_html($filters, $filter_options); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 

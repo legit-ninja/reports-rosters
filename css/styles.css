@@ -1243,3 +1243,24 @@
         display: none !important;
     }
 }
+
+/* Player course status — keep filter labels, selects, and action buttons on one row when space allows */
+.intersoccer-player-course-status .intersoccer-pcs-filters-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+}
+
+.intersoccer-player-course-status .intersoccer-pcs-filters-form label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    margin: 0;
+}
+
+.intersoccer-player-course-status .intersoccer-pcs-filters-form .button,
+.intersoccer-player-course-status .intersoccer-pcs-filters-form a.button {
+    white-space: nowrap;
+}
