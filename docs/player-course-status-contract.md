@@ -54,7 +54,7 @@ Roster `season` strings are normalized only inside the player course status engi
 | Key prefix | `intersoccer_pcs_` + MD5 of JSON: cache schema version (`intersoccer_player_course_status_cache_schema_version()`, currently `5`), normalized filters (`year`, `season_type`, `girls_mode`, `booked`, `booking_status`, `search`, `venue`, `course_day`, `age_group` — not `paged`), data marker, output context |
 | Data marker | `COUNT(*)` and `MAX(id)` on `{prefix}intersoccer_rosters`; `MAX(date_updated_gmt)` on `{prefix}wc_orders` when HPOS is active (`intersoccer_roster_report_uses_hpos_orders_table()`), else `MAX(post_modified_gmt)` on `shop_order` posts |
 | Output context (cache key) | `get_locale()` and whether `intersoccer_player_course_status_user_can_view_dob()` is true (DOB column + `dob` / `dob_restricted` on rows; translated `booking_status_label` strings) |
-| TTL | 300 seconds default; filter `intersoccer_player_course_status_cache_ttl` |
+| TTL | 12 hours (43200 seconds) default; filter `intersoccer_player_course_status_cache_ttl` |
 | Stored format | Slim result (drops derivable `player.name`, `bookings_label`, `booking_status_label`, and per-booking `label`; rehydrated on read) → `serialize` → `gzcompress` → **base64** string in the transient (text-safe for `wp_options` utf8mb4) |
 | Size cap | Applied to the **stored base64 string** length after compression (default 5 MiB, filter `intersoccer_player_course_status_cache_max_bytes`). Skip write when non-empty `warnings` or stored size over cap |
 | Object cache | Persistent object caches (e.g. memcached) may refuse items over ~1 MiB; WordPress then omits the transient and the report regenerates on each request until TTL/marker would have expired anyway |
