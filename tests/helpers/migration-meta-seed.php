@@ -11,7 +11,7 @@ if (!defined('INTERSOCCER_TESTING') || !INTERSOCCER_TESTING) {
 
 if (!function_exists('intersoccer_migration_seed_order_item_pa_slug_meta_from_variation')) {
     /**
-     * QA/sandbox helper: align stored pa_* keys with Woo variation attribute slugs.
+     * QA helper: align stored pa_* keys with Woo variation attribute slugs.
      */
     function intersoccer_migration_seed_order_item_pa_slug_meta_from_variation(int $item_id, int $variation_id): void {
         if ($item_id <= 0 || $variation_id <= 0 || !function_exists('wc_get_product')) {

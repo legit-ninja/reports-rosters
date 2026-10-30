@@ -135,7 +135,7 @@ class AttributionBackfillApplyTest extends TestCase {
 
     /**
      * The wpdb double mirrors skip/attribution predicates in PHP; production uses LEFT JOIN + IS NULL OR,
-     * not NOT EXISTS. Real-SQL behaviour is verified on the sandbox, not in this unit test.
+     * not NOT EXISTS. Real-SQL behaviour is verified in QA, not in this unit test.
      */
     public function test_findMissingAttributionOrderIds_sql_excludes_attributed_and_skipped_orders(): void {
         ReportAccuracyStore::addOrder((new FakeOrder(901))

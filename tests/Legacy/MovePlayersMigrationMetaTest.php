@@ -506,11 +506,11 @@ class MovePlayersMigrationMetaTest extends TestCase {
     }
 
     /**
-     * Meta key shape from sandbox order item 7884 (no customer / attendee values).
+     * Meta key shape from QA order item 7884 (no customer / attendee values).
      *
      * @return array<string,string>
      */
-    private function sandboxOrderItem7884MetaShape(): array {
+    private function orderItem7884MetaShape(): array {
         return [
             'Activity Type' => 'Course',
             'Age Group' => '6-12y',
@@ -552,12 +552,12 @@ class MovePlayersMigrationMetaTest extends TestCase {
     }
 
     /**
-     * Meta key shape from sandbox order item 7883 (no customer / attendee values).
+     * Meta key shape from QA order item 7883 (no customer / attendee values).
      *
      * @return array<string,string>
      */
-    private function sandboxOrderItem7883MetaShape(): array {
-        $shape = $this->sandboxOrderItem7884MetaShape();
+    private function orderItem7883MetaShape(): array {
+        $shape = $this->orderItem7884MetaShape();
         $shape['Variation ID'] = '30712';
         $shape['attribute_pa_course-times'] = '0930-1100';
         $shape['pa_course-times'] = '0930-1100';
@@ -570,8 +570,8 @@ class MovePlayersMigrationMetaTest extends TestCase {
         return $shape;
     }
 
-    public function test_sandbox_7884_shape_keeps_booking_slug_keys_when_target_exposes_parent_booking_type(): void {
-        $line_meta = $this->sandboxOrderItem7884MetaShape();
+    public function test_order_7884_shape_keeps_booking_slug_keys_when_target_exposes_parent_booking_type(): void {
+        $line_meta = $this->orderItem7884MetaShape();
         $existing_pa = array_keys(array_filter(
             $line_meta,
             static function ($key) {
@@ -603,8 +603,8 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertArrayHasKey('attribute_pa_booking-type', $filtered);
     }
 
-    public function test_sandbox_7883_shape_allowed_canonicals_include_year_and_girls_only(): void {
-        $line_meta = $this->sandboxOrderItem7883MetaShape();
+    public function test_order_7883_shape_allowed_canonicals_include_year_and_girls_only(): void {
+        $line_meta = $this->orderItem7883MetaShape();
         $alias_map = intersoccer_migration_human_alias_map();
         $lookup = intersoccer_migration_build_lookup($alias_map);
         $allowed = intersoccer_migration_allowed_canonicals_for_move(
@@ -617,16 +617,16 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertContains('girls_only', $allowed);
     }
 
-    public function test_sandbox_7884_shape_pick_meta_label_prefers_lowercase_girls_only_key(): void {
+    public function test_order_7884_shape_pick_meta_label_prefers_lowercase_girls_only_key(): void {
         $alias_map = intersoccer_migration_human_alias_map();
-        $line_keys = array_keys($this->sandboxOrderItem7884MetaShape());
+        $line_keys = array_keys($this->orderItem7884MetaShape());
 
         $label = intersoccer_migration_pick_meta_label_for_canonical('girls_only', $alias_map, $line_keys);
 
         $this->assertSame('girls_only', $label);
     }
 
-    public function test_sandbox_7884_shape_girls_only_target_activity_type_label(): void {
+    public function test_order_7884_shape_girls_only_target_activity_type_label(): void {
         if (!function_exists('intersoccer_build_migration_meta_updates')) {
             $this->markTestSkipped('intersoccer_build_migration_meta_updates not available');
         }
@@ -713,11 +713,11 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertSame('Unknown Canton Label', $payload['human_meta']['canton_region'] ?? '');
     }
 
-    public function test_sandbox_7883_shape_snapshot_maps_year_to_program_year_canonical(): void {
+    public function test_order_7883_shape_snapshot_maps_year_to_program_year_canonical(): void {
         global $intersoccer_test_wc_order_item_meta;
 
         $item_id = 88002;
-        $intersoccer_test_wc_order_item_meta[$item_id] = $this->sandboxOrderItem7883MetaShape();
+        $intersoccer_test_wc_order_item_meta[$item_id] = $this->orderItem7883MetaShape();
         $alias_map = intersoccer_migration_human_alias_map();
         $lookup = intersoccer_migration_build_lookup($alias_map);
         $item = new \WC_Order_Item_Product($item_id);
@@ -1102,8 +1102,8 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertSame('full-term', $normalized['attribute_pa_booking-type']);
     }
 
-    public function test_sandbox_7883_shape_attribute_only_pa_keys_do_not_gain_slug_siblings_on_filter(): void {
-        $line_meta = $this->sandboxOrderItem7883MetaShape();
+    public function test_order_7883_shape_attribute_only_pa_keys_do_not_gain_slug_siblings_on_filter(): void {
+        $line_meta = $this->orderItem7883MetaShape();
         unset($line_meta['pa_age-group'], $line_meta['pa_course-times'], $line_meta['pa_intersoccer-venues']);
         $existing_pa = array_keys(array_filter(
             $line_meta,
@@ -1272,7 +1272,7 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $item_id = 88001;
         $lookup = intersoccer_migration_build_lookup(intersoccer_migration_human_alias_map());
         $existing_keys = array_values(array_filter(
-            array_keys($this->sandboxOrderItem7884MetaShape()),
+            array_keys($this->orderItem7884MetaShape()),
             static function ($key) {
                 return $key !== 'girls_only';
             }

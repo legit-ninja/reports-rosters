@@ -251,7 +251,7 @@ class MovePlayersAdminTargetTest extends TestCase {
     }
 
     /**
-     * Target with no pa_girls-only on variation or parent (sandbox variation 30712 pattern).
+     * Target with no pa_girls-only on variation or parent (QA variation 30712 pattern).
      */
     public function test_unset_target_does_not_warn_cross_gender_for_girls_only_source(): void {
         global $intersoccer_test_wc_order_item_meta;
@@ -343,7 +343,7 @@ class MovePlayersAdminTargetTest extends TestCase {
     }
 
     /**
-     * Sandbox variation 37665 pattern: girls-only product type without pa_girls-only on the variation.
+     * QA variation 37665 pattern: girls-only product type without pa_girls-only on the variation.
      */
     public function test_product_type_girls_only_variation_bucket_matches_pa_write(): void {
         global $intersoccer_test_product_type_safe_callback, $intersoccer_test_wc_get_product_callback;

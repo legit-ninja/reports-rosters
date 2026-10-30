@@ -1,6 +1,6 @@
 <?php
 /**
- * In-memory repro (sandbox DB, read-only): build the roster row for an order item the same way
+ * In-memory repro (read-only): build the roster row for an order item the same way
  * RosterBuilder::processOrderItem does, then run the same validation RosterRepository::create runs
  * (Roster::validate()). Never calls create()/update(), so no roster row is written.
  *
@@ -8,8 +8,7 @@
  * Bug (c): start_date must be the real camp start (2026-10-19), not empty/1970-01-01.
  * Controls: 62465/7885 (EN), 62466/7886 (FR), and EN/FR items re-validated with a genuine girls-only activity_type.
  *
- * Run (sql-sandbox dir):
- *   docker compose run --rm -v $WT/tests/repro:/repro:ro wpcli eval-file /repro/roster-from-order-item.php
+ * Run with WP-CLI eval-file against a QA copy of the site.
  */
 use InterSoccer\ReportsRosters\Services\RosterBuilder;
 use InterSoccer\ReportsRosters\Data\Models\Roster;
