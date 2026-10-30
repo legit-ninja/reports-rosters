@@ -21,6 +21,8 @@ class MovePlayersHistoryTest extends TestCase {
     private const PARENT_ID = 94000;
     private const SOURCE_VAR = 94010;
     private const TARGET_VAR = 94020;
+    private const ORIGINAL_VAR = 94015;
+    private const PEER_ITEM_ID = 94099;
 
     protected function setUp(): void {
         parent::setUp();
@@ -75,6 +77,7 @@ class MovePlayersHistoryTest extends TestCase {
             $GLOBALS['intersoccer_test_emit_wp_hooks'],
             $GLOBALS['intersoccer_test_roster_row_filter_map'],
             $GLOBALS['intersoccer_test_roster_store'],
+            $GLOBALS['intersoccer_test_roster_peer_store'],
             $GLOBALS['intersoccer_test_userdata_map'],
             $GLOBALS['intersoccer_test_current_user']
         );
@@ -113,6 +116,35 @@ class MovePlayersHistoryTest extends TestCase {
     }
 
     /**
+     * @return array<string,mixed>
+     */
+    private function originalPeerRosterRow(): array {
+        return [
+            'id' => 710,
+            'order_item_id' => self::PEER_ITEM_ID,
+            'order_id' => self::ORDER_ID,
+            'variation_id' => self::ORIGINAL_VAR,
+            'product_id' => self::PARENT_ID,
+            'event_signature' => 'hist-sig-original',
+            'booking_type' => 'Full Term',
+            'selected_days' => '',
+            'days_selected' => '',
+            'start_date' => '2026-08-01',
+            'end_date' => '2026-11-30',
+            'camp_terms' => '',
+            'course_day' => 'Friday',
+            'product_name' => 'History Course Original EN',
+            'venue' => 'Lausanne Centre',
+            'age_group' => '9-11',
+            'times' => 'Afternoon',
+            'season' => 'Autumn 2026',
+            'order_date' => '2026-07-15 10:00:00',
+            'city' => 'lausanne',
+            'canton_region' => 'Vaud',
+        ];
+    }
+
+    /**
      * @param array<string,mixed> $options
      */
     private function installHandlerWorld(array $options = []): void {
@@ -128,6 +160,7 @@ class MovePlayersHistoryTest extends TestCase {
         $GLOBALS['intersoccer_test_roster_store'] = $options['roster_store'] ?? [
             self::ITEM_ID => $baseline,
         ];
+        $GLOBALS['intersoccer_test_roster_peer_store'] = $options['roster_peer_store'] ?? [];
 
         $GLOBALS['intersoccer_test_wc_stock_qty'] = [
             self::SOURCE_VAR => 2,
@@ -158,6 +191,7 @@ class MovePlayersHistoryTest extends TestCase {
         $intersoccer_test_post_status_map = [
             self::SOURCE_VAR => 'publish',
             self::TARGET_VAR => 'publish',
+            self::ORIGINAL_VAR => 'publish',
             self::PARENT_ID => 'publish',
         ];
 
@@ -201,7 +235,7 @@ class MovePlayersHistoryTest extends TestCase {
             $v->shouldReceive('get_variation_attributes')->andReturn([]);
             $v->shouldReceive('get_attribute')->andReturn('');
             $v->shouldReceive('get_attributes')->andReturn([]);
-            $v->shouldReceive('get_name')->andReturn('Variation ' . $vid);
+            $v->shouldReceive('get_name')->andReturn($overrides['variation_name'] ?? ('Variation ' . $vid));
             $v->shouldReceive('get_price')->andReturn($overrides['price'] ?? '100');
             $v->shouldReceive('is_purchasable')->andReturn($overrides['is_purchasable'] ?? true);
             $v->shouldReceive('is_type')->with('variation')->andReturn(true);
@@ -215,6 +249,10 @@ class MovePlayersHistoryTest extends TestCase {
 
         $source = $make_variation(self::SOURCE_VAR, $options['source_overrides'] ?? []);
         $target = $make_variation(self::TARGET_VAR, $options['target_overrides'] ?? []);
+        $original = $make_variation(self::ORIGINAL_VAR, array_merge(
+            ['variation_name' => 'History Course Original EN'],
+            $options['original_overrides'] ?? []
+        ));
 
         $parent = Mockery::mock('WC_Product');
         $parent->shouldReceive('get_id')->andReturn(self::PARENT_ID);
@@ -224,13 +262,16 @@ class MovePlayersHistoryTest extends TestCase {
         $parent->shouldReceive('get_attribute')->andReturn('');
         $parent->shouldReceive('get_attributes')->andReturn([]);
 
-        $intersoccer_test_wc_get_product_callback = static function ($id) use ($source, $target, $parent) {
+        $intersoccer_test_wc_get_product_callback = static function ($id) use ($source, $target, $original, $parent) {
             $id = (int) $id;
             if ($id === self::SOURCE_VAR) {
                 return $source;
             }
             if ($id === self::TARGET_VAR) {
                 return $target;
+            }
+            if ($id === self::ORIGINAL_VAR) {
+                return $original;
             }
             if ($id === self::PARENT_ID) {
                 return $parent;
@@ -265,6 +306,16 @@ class MovePlayersHistoryTest extends TestCase {
         $wpdb->shouldReceive('query')->andReturn(true);
         $wpdb->shouldReceive('get_row')->andReturnUsing(static function ($sql) {
             if (!is_string($sql) || strpos($sql, 'intersoccer_rosters') === false) {
+                return null;
+            }
+            if (strpos($sql, 'variation_id') !== false && strpos($sql, 'order_item_id !=') !== false) {
+                foreach ($GLOBALS['intersoccer_test_roster_peer_store'] ?? [] as $peer_row) {
+                    $vid = (int) ($peer_row['variation_id'] ?? 0);
+                    if ($vid > 0 && strpos($sql, (string) $vid) !== false) {
+                        return $peer_row;
+                    }
+                }
+
                 return null;
             }
             if (strpos($sql, 'order_item_id') !== false) {
@@ -313,6 +364,17 @@ class MovePlayersHistoryTest extends TestCase {
         });
         $wpdb->shouldReceive('get_var')->andReturnUsing(static function ($sql) use ($target_capacity_count) {
             if (!is_string($sql)) {
+                return null;
+            }
+            if (strpos($sql, 'event_signature') !== false && strpos($sql, 'variation_id') !== false) {
+                foreach ($GLOBALS['intersoccer_test_roster_peer_store'] ?? [] as $peer_row) {
+                    $vid = (int) ($peer_row['variation_id'] ?? 0);
+                    $sig = trim((string) ($peer_row['event_signature'] ?? ''));
+                    if ($vid > 0 && $sig !== '' && strpos($sql, (string) $vid) !== false) {
+                        return $sig;
+                    }
+                }
+
                 return null;
             }
             if (strpos($sql, 'woocommerce_order_items') !== false) {
@@ -439,6 +501,9 @@ class MovePlayersHistoryTest extends TestCase {
 
         $entries = intersoccer_roster_history_get_entries(self::ITEM_ID);
         $this->assertCount(3, $entries);
+        $this->assertSame(1, (int) ($entries[0]['seq'] ?? 0));
+        $this->assertSame(2, (int) ($entries[1]['seq'] ?? 0));
+        $this->assertSame(3, (int) ($entries[2]['seq'] ?? 0));
         $this->assertSame($origin_after_first, $entries[0]);
         $first_move = $entries[1];
         $this->assertSame(1, (int) ($first_move['stock']['applied_from'] ?? 0));
@@ -536,7 +601,8 @@ class MovePlayersHistoryTest extends TestCase {
         $this->assertSame(0, (int) ($move['stock']['applied_to'] ?? -1));
     }
 
-    public function test_legacy_backfill_is_idempotent_on_first_move_only(): void {
+    /** Items with no persisted history meta: first move writes origin once and re-read is idempotent. */
+    public function test_no_history_meta_first_move_is_idempotent_and_not_backfilled(): void {
         global $intersoccer_test_wc_order_item_meta;
         $this->installHandlerWorld();
         unset($intersoccer_test_wc_order_item_meta[self::ITEM_ID][intersoccer_roster_history_meta_key()]);
@@ -563,7 +629,8 @@ class MovePlayersHistoryTest extends TestCase {
         $this->assertSame($first[0]['seq'], $second[0]['seq']);
     }
 
-    public function test_legacy_first_move_origin_uses_pre_move_roster_side(): void {
+    /** Items with no persisted history meta: origin matches the pre-move roster side. */
+    public function test_no_history_meta_first_move_origin_uses_pre_move_roster_side(): void {
         $this->installHandlerWorld();
         global $intersoccer_test_wc_order_item_meta;
         unset($intersoccer_test_wc_order_item_meta[self::ITEM_ID][intersoccer_roster_history_meta_key()]);
@@ -593,7 +660,8 @@ class MovePlayersHistoryTest extends TestCase {
         $this->assertStringContainsString('first roster move', strtolower($note));
     }
 
-    public function test_legacy_first_move_origin_note_names_original_roster(): void {
+    /** Items with no persisted history meta: origin note names the original roster. */
+    public function test_no_history_meta_first_move_origin_note_names_original_roster(): void {
         global $intersoccer_test_wc_order_item_meta;
         $this->installHandlerWorld();
         unset($intersoccer_test_wc_order_item_meta[self::ITEM_ID][intersoccer_roster_history_meta_key()]);
@@ -612,6 +680,140 @@ class MovePlayersHistoryTest extends TestCase {
     }
 
     /**
+     * @param array<string,mixed> $origin
+     */
+    private function assertInferredOriginFromEarlierMove(array $origin): void {
+        $this->assertTrue($origin['backfilled']);
+        $this->assertSame(self::ORIGINAL_VAR, (int) ($origin['variation_id'] ?? 0));
+        $this->assertSame('hist-sig-original', $origin['event_signature'] ?? '');
+        $this->assertStringContainsString('History Course Original EN', (string) ($origin['label']['product'] ?? ''));
+        $this->assertStringContainsString('Lausanne Centre', (string) ($origin['label']['variation'] ?? ''));
+        $note = trim((string) ($origin['note'] ?? ''));
+        $this->assertNotSame('', $note);
+        $this->assertStringContainsString('Original booking inferred from an earlier move:', $note);
+        $this->assertStringContainsString('History Course Original EN', $note);
+        $this->assertStringNotContainsString('audit meta', strtolower($note));
+    }
+
+    private function seedLatestAuditFromVariation(int $variation_id): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $keys = intersoccer_roster_move_audit_latest_meta_keys();
+        $intersoccer_test_wc_order_item_meta[self::ITEM_ID][$keys['from_variation_id']] = (string) $variation_id;
+        $intersoccer_test_wc_order_item_meta[self::ITEM_ID][$keys['to_variation_id']] = (string) self::TARGET_VAR;
+        $this->syncOrderItemMetaFromGlobal(self::ITEM_ID);
+    }
+
+    private function seedAuditHistoryFromVariation(int $variation_id): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $intersoccer_test_wc_order_item_meta[self::ITEM_ID][intersoccer_roster_move_audit_history_meta_key()] = wp_json_encode([
+            intersoccer_roster_move_audit_build_entry($variation_id, self::TARGET_VAR, 55, '2026-09-01T10:00:00Z'),
+        ]);
+        $this->syncOrderItemMetaFromGlobal(self::ITEM_ID);
+    }
+
+    private function syncOrderItemMetaFromGlobal(int $item_id): void {
+        global $intersoccer_test_wc_get_order_callback, $intersoccer_test_wc_order_item_meta;
+        if (!is_callable($intersoccer_test_wc_get_order_callback ?? null)) {
+            return;
+        }
+        $order = $intersoccer_test_wc_get_order_callback(self::ORDER_ID);
+        if (!$order || !method_exists($order, 'get_items')) {
+            return;
+        }
+        $meta = $intersoccer_test_wc_order_item_meta[$item_id] ?? [];
+        if (!is_array($meta)) {
+            return;
+        }
+        foreach ($order->get_items() as $item) {
+            if ((int) $item->get_id() !== $item_id) {
+                continue;
+            }
+            foreach ($meta as $key => $value) {
+                $item->update_meta_data($key, $value);
+            }
+        }
+    }
+
+    public function test_first_move_with_latest_audit_meta_infers_original_variation_side(): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $this->installHandlerWorld([
+            'roster_peer_store' => [$this->originalPeerRosterRow()],
+        ]);
+        unset($intersoccer_test_wc_order_item_meta[self::ITEM_ID][intersoccer_roster_history_meta_key()]);
+        $this->seedLatestAuditFromVariation(self::ORIGINAL_VAR);
+
+        $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_ID],
+            'confirm_warnings' => '1',
+        ]);
+
+        $origin = intersoccer_roster_history_get_entries(self::ITEM_ID)[0];
+        $this->assertInferredOriginFromEarlierMove($origin);
+    }
+
+    public function test_first_move_with_audit_history_meta_infers_original_variation_side(): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $this->installHandlerWorld([
+            'roster_peer_store' => [$this->originalPeerRosterRow()],
+        ]);
+        unset($intersoccer_test_wc_order_item_meta[self::ITEM_ID][intersoccer_roster_history_meta_key()]);
+        $this->seedAuditHistoryFromVariation(self::ORIGINAL_VAR);
+
+        $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_ID],
+            'confirm_warnings' => '1',
+        ]);
+
+        $origin = intersoccer_roster_history_get_entries(self::ITEM_ID)[0];
+        $this->assertInferredOriginFromEarlierMove($origin);
+    }
+
+    public function test_first_move_when_audit_from_matches_current_variation_marks_backfilled_without_rebuild(): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $this->installHandlerWorld();
+        unset($intersoccer_test_wc_order_item_meta[self::ITEM_ID][intersoccer_roster_history_meta_key()]);
+        $this->seedLatestAuditFromVariation(self::SOURCE_VAR);
+
+        $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_ID],
+            'confirm_warnings' => '1',
+        ]);
+
+        $origin = intersoccer_roster_history_get_entries(self::ITEM_ID)[0];
+        $this->assertTrue($origin['backfilled']);
+        $this->assertSame(self::SOURCE_VAR, (int) ($origin['variation_id'] ?? 0));
+        $this->assertSame('hist-sig-abc', $origin['event_signature'] ?? '');
+        $this->assertStringContainsString('History Course EN', (string) ($origin['label']['product'] ?? ''));
+        $note = trim((string) ($origin['note'] ?? ''));
+        $this->assertStringContainsString('Original booking inferred from an earlier move:', $note);
+        $this->assertStringContainsString('History Course EN', $note);
+    }
+
+    public function test_first_move_when_earlier_variation_unresolved_keeps_from_side(): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $this->installHandlerWorld();
+        unset($intersoccer_test_wc_order_item_meta[self::ITEM_ID][intersoccer_roster_history_meta_key()]);
+        $this->seedLatestAuditFromVariation(94077);
+
+        $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_ID],
+            'confirm_warnings' => '1',
+        ]);
+
+        $origin = intersoccer_roster_history_get_entries(self::ITEM_ID)[0];
+        $this->assertTrue($origin['backfilled']);
+        $this->assertSame(self::SOURCE_VAR, (int) ($origin['variation_id'] ?? 0));
+        $this->assertSame('hist-sig-abc', $origin['event_signature'] ?? '');
+        $note = trim((string) ($origin['note'] ?? ''));
+        $this->assertStringContainsString('Original booking inferred from an earlier move:', $note);
+        $this->assertStringContainsString('History Course EN', $note);
+    }
+
+    /**
      * @return array<string,mixed>
      */
     private function snapshotOrderItemMetaStore(): array {
@@ -627,7 +829,7 @@ class MovePlayersHistoryTest extends TestCase {
         ];
     }
 
-    public function test_admin_view_does_not_persist_history_for_legacy_rows(): void {
+    public function test_admin_view_does_not_persist_history_for_items_without_history_meta(): void {
         global $intersoccer_test_wc_order_item_meta;
         $store = [
             self::ITEM_ID => $this->baselineRosterRow(),
@@ -652,6 +854,7 @@ class MovePlayersHistoryTest extends TestCase {
         $html_two = intersoccer_roster_history_render_admin_cell(self::ITEM_BATCH_OK);
         $this->assertStringContainsString('History', $html_one);
         $this->assertStringContainsString('History Course EN', $html_one);
+        $this->assertStringNotContainsString('Backfilled', $html_one);
         $this->assertStringContainsString('History', $html_two);
 
         $after = $this->snapshotOrderItemMetaStore();
@@ -739,6 +942,7 @@ class MovePlayersHistoryTest extends TestCase {
         $html = intersoccer_roster_history_render_admin_cell(self::ITEM_ID);
         $this->assertStringContainsString('History', $html);
         $this->assertStringContainsString('History Course EN', $html);
+        $this->assertStringNotContainsString('Backfilled', $html);
         $this->assertStringNotContainsString('<input', $html);
         $this->assertStringNotContainsString('<textarea', $html);
         $this->assertStringNotContainsString('<button', $html);

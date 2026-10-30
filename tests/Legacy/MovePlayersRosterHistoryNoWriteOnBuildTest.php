@@ -32,6 +32,7 @@ class MovePlayersRosterHistoryNoWriteOnBuildTest extends TestCase {
         $wpdb = Mockery::mock('wpdb');
         $wpdb->last_error = '';
         $intersoccer_test_wc_order_item_meta = [];
+        $GLOBALS['intersoccer_test_order_notes'] = [];
 
         $logger = Mockery::mock(Logger::class);
         $logger->shouldReceive('debug')->andReturnNull();
@@ -76,6 +77,7 @@ class MovePlayersRosterHistoryNoWriteOnBuildTest extends TestCase {
         ]);
 
         $this->assertSame([], $intersoccer_test_wc_order_item_meta);
+        $this->assertSame([], $GLOBALS['intersoccer_test_order_notes']);
         if (function_exists('intersoccer_roster_history_get_entries')) {
             $this->assertSame([], intersoccer_roster_history_get_entries($order_item_id));
         }
