@@ -1016,11 +1016,7 @@ if (!function_exists('intersoccer_migration_default_language_term_slug_strict'))
             return $resolved;
         }
 
-        if (strpos($value, ' ') !== false) {
-            return null;
-        }
-
-        return $value;
+        return null;
     }
 }
 

@@ -65,6 +65,43 @@ class MovePlayersCanonicalOrderMetaMoveTest extends TestCase {
             );
             self::$rosterRowFilterRegistered = true;
         }
+
+        $this->registerVenueTermsForCanonicalMoveTests();
+    }
+
+    private function registerVenueTermsForCanonicalMoveTests(): void {
+        $by_slug = [
+            'pa_intersoccer-venues' => [
+                self::OLD_VENUE_SLUG => (object) [
+                    'term_id' => 9610,
+                    'slug' => self::OLD_VENUE_SLUG,
+                    'name' => 'College Varembe',
+                ],
+                self::NEW_VENUE_SLUG => (object) [
+                    'term_id' => 9620,
+                    'slug' => self::NEW_VENUE_SLUG,
+                    'name' => 'Stade de Vessy',
+                ],
+            ],
+        ];
+        $by_id = [
+            9610 => $by_slug['pa_intersoccer-venues'][self::OLD_VENUE_SLUG],
+            9620 => $by_slug['pa_intersoccer-venues'][self::NEW_VENUE_SLUG],
+        ];
+        $GLOBALS['intersoccer_test_terms_by_slug'] = $by_slug;
+        $GLOBALS['intersoccer_test_terms_by_id'] = $by_id;
+        $GLOBALS['intersoccer_test_terms_by_name'] = [];
+        foreach ($by_slug['pa_intersoccer-venues'] as $row) {
+            $key = function_exists('mb_strtolower') ? mb_strtolower((string) $row->name) : strtolower((string) $row->name);
+            $GLOBALS['intersoccer_test_terms_by_name']['pa_intersoccer-venues'][$key] = $row;
+        }
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value) {
+            if ($hook === 'wpml_default_language') {
+                return 'en';
+            }
+
+            return $value;
+        };
     }
 
     protected function tearDown(): void {
@@ -74,7 +111,11 @@ class MovePlayersCanonicalOrderMetaMoveTest extends TestCase {
             $GLOBALS['intersoccer_test_roster_store'],
             $GLOBALS['intersoccer_test_wc_order_item_meta'],
             $GLOBALS['intersoccer_test_wc_order_item_data'],
-            $GLOBALS['intersoccer_test_current_user']
+            $GLOBALS['intersoccer_test_current_user'],
+            $GLOBALS['intersoccer_test_terms_by_slug'],
+            $GLOBALS['intersoccer_test_terms_by_id'],
+            $GLOBALS['intersoccer_test_terms_by_name'],
+            $GLOBALS['intersoccer_test_apply_filters_callback']
         );
         $this->resetMovePlayersTestGlobals();
         $_POST = [];

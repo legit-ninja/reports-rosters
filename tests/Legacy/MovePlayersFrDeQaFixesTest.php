@@ -1330,6 +1330,149 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
         $this->assertSame('full-week', $meta['_intersoccer_canonical_booking_type']);
     }
 
+    public function test_migration_default_language_term_slug_strict_resolves_registered_term_slug(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 7310, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                7310 => (object) ['term_id' => 7310, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->assertSame(
+            'full-week',
+            intersoccer_migration_default_language_term_slug_strict('pa_booking-type', 'full-week')
+        );
+    }
+
+    public function test_de_move_keeps_canonical_canton_when_destination_genf_unresolved(): void {
+        $this->registerTerms(
+            [
+                'pa_intersoccer-venues' => [
+                    'stade-de-vessy' => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                ],
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 7300, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+                'pa_canton-region' => [
+                    'geneva' => (object) ['term_id' => 7400, 'slug' => 'geneva', 'name' => 'Geneva'],
+                ],
+            ],
+            [
+                7100 => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                7300 => (object) ['term_id' => 7300, 'slug' => 'full-week', 'name' => 'Full Week'],
+                7400 => (object) ['term_id' => 7400, 'slug' => 'geneva', 'name' => 'Geneva'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_canton-region' => 'Genf',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'DE unresolved canton label',
+                '_intersoccer_canonical_venue' => 'geneva-college-varembe',
+                '_intersoccer_canonical_canton' => 'geneva',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('geneva', $meta['_intersoccer_canonical_canton']);
+    }
+
+    public function test_de_move_keeps_canonical_booking_type_when_destination_ganztags_unresolved(): void {
+        $this->registerTerms(
+            [
+                'pa_intersoccer-venues' => [
+                    'stade-de-vessy' => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                ],
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 8300, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                7100 => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                8300 => (object) ['term_id' => 8300, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'Ganztags',
+                'attribute_pa_canton-region' => 'geneva',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'DE unresolved Ganztags booking label',
+                '_intersoccer_canonical_venue' => 'geneva-college-varembe',
+                '_intersoccer_canonical_booking_type' => 'single-days',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('single-days', $meta['_intersoccer_canonical_booking_type']);
+    }
+
+    public function test_fr_move_keeps_canonical_booking_type_when_destination_matin_unresolved(): void {
+        $this->registerTerms(
+            [
+                'pa_intersoccer-venues' => [
+                    'stade-de-vessy' => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                ],
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 7300, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                7100 => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                7300 => (object) ['term_id' => 7300, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'Matin',
+                'attribute_pa_canton-region' => 'geneva',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'FR unresolved Matin booking label',
+                '_intersoccer_canonical_venue' => 'geneva-college-varembe',
+                '_intersoccer_canonical_booking_type' => 'single-days',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('single-days', $meta['_intersoccer_canonical_booking_type']);
+    }
+
     /**
      * @param array<string,string> $meta_key_to_value
      */

@@ -49,9 +49,14 @@ class PaTwinOrderMetaReadersTest extends TestCase {
         $this->assertSame('', intersoccer_get_order_item_pa_taxonomy_meta_value($meta, 'pa_age-group'));
     }
 
-    public function test_pa_taxonomy_helper_implodes_scalar_array_values(): void {
+    public function test_pa_taxonomy_helper_returns_first_scalar_from_array_values(): void {
         $meta = ['pa_booking-type' => ['single-days', 'full-week']];
-        $this->assertSame('single-days, full-week', intersoccer_get_order_item_pa_taxonomy_meta_value($meta, 'pa_booking-type'));
+        $this->assertSame('single-days', intersoccer_get_order_item_pa_taxonomy_meta_value($meta, 'pa_booking-type'));
+    }
+
+    public function test_pa_taxonomy_helper_skips_non_scalar_then_returns_next_scalar(): void {
+        $meta = ['pa_booking-type' => [['x'], 'b']];
+        $this->assertSame('b', intersoccer_get_order_item_pa_taxonomy_meta_value($meta, 'pa_booking-type'));
     }
 
     public function test_read_order_item_booking_fields_reads_attribute_pa_booking_type_only(): void {
