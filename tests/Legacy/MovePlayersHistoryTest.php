@@ -366,11 +366,20 @@ class MovePlayersHistoryTest extends TestCase {
         return is_array($decoded) ? $decoded : [];
     }
 
-    public function test_origin_on_roster_build_has_required_fields_and_not_backfilled(): void {
-        $row = $this->baselineRosterRow();
-        intersoccer_roster_history_record_origin_on_roster_build(self::ITEM_ID, $row);
+    public function test_first_move_writes_origin_with_required_fields_and_not_backfilled(): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $this->installHandlerWorld();
+        unset($intersoccer_test_wc_order_item_meta[self::ITEM_ID][intersoccer_roster_history_meta_key()]);
+
+        $response = $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_ID],
+            'confirm_warnings' => '1',
+        ]);
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
         $entries = intersoccer_roster_history_get_entries(self::ITEM_ID);
-        $this->assertCount(1, $entries);
+        $this->assertCount(2, $entries);
         $origin = $entries[0];
         $this->assertSame('origin', $origin['type']);
         $this->assertFalse($origin['backfilled']);
@@ -382,11 +391,11 @@ class MovePlayersHistoryTest extends TestCase {
         $this->assertNotSame('', (string) ($origin['order_date'] ?? ''));
         $this->assertIsArray($origin['label']);
         $this->assertStringContainsString('History Course EN', (string) $origin['label']['product']);
+        $this->assertNotSame('', trim((string) ($origin['note'] ?? '')));
+        $this->assertStringContainsString('History Course EN', (string) ($origin['note'] ?? ''));
     }
 
     public function test_move_through_handler_appends_full_move_record(): void {
-        $row = $this->baselineRosterRow();
-        intersoccer_roster_history_record_origin_on_roster_build(self::ITEM_ID, $row);
         $this->installHandlerWorld();
 
         $response = $this->invokeMoveAjax([
@@ -413,8 +422,6 @@ class MovePlayersHistoryTest extends TestCase {
     }
 
     public function test_move_back_appends_second_move_without_changing_origin(): void {
-        $row = $this->baselineRosterRow();
-        intersoccer_roster_history_record_origin_on_roster_build(self::ITEM_ID, $row);
         $this->installHandlerWorld();
 
         $this->invokeMoveAjax([
@@ -443,8 +450,6 @@ class MovePlayersHistoryTest extends TestCase {
     }
 
     public function test_forward_move_with_destination_stock_one_records_applied_decrease(): void {
-        $row = $this->baselineRosterRow();
-        intersoccer_roster_history_record_origin_on_roster_build(self::ITEM_ID, $row);
         $GLOBALS['intersoccer_test_wc_stock_qty'][self::TARGET_VAR] = 1;
         $this->installHandlerWorld(['target_stock_quantity' => 1]);
 
@@ -460,8 +465,6 @@ class MovePlayersHistoryTest extends TestCase {
     }
 
     public function test_move_back_after_capped_move_anyway_records_reversal_stock(): void {
-        $row = $this->baselineRosterRow();
-        intersoccer_roster_history_record_origin_on_roster_build(self::ITEM_ID, $row);
         $GLOBALS['intersoccer_test_wc_stock_qty'][self::TARGET_VAR] = 0;
         $this->installHandlerWorld([
             'target_stock_quantity' => 0,
@@ -493,8 +496,6 @@ class MovePlayersHistoryTest extends TestCase {
     }
 
     public function test_unmanaged_stock_move_records_zero_in_history(): void {
-        $row = $this->baselineRosterRow();
-        intersoccer_roster_history_record_origin_on_roster_build(self::ITEM_ID, $row);
         $this->installHandlerWorld([
             'target_overrides' => ['managing_stock' => false],
             'source_overrides' => ['managing_stock' => false],
@@ -512,8 +513,6 @@ class MovePlayersHistoryTest extends TestCase {
     }
 
     public function test_move_anyway_records_overridden_reasons_and_capped_stock(): void {
-        $row = $this->baselineRosterRow();
-        intersoccer_roster_history_record_origin_on_roster_build(self::ITEM_ID, $row);
         $GLOBALS['intersoccer_test_wc_stock_qty'][self::TARGET_VAR] = 0;
         $this->installHandlerWorld([
             'target_stock_quantity' => 0,
@@ -554,7 +553,7 @@ class MovePlayersHistoryTest extends TestCase {
 
         $first = intersoccer_roster_history_get_entries(self::ITEM_ID);
         $this->assertCount(2, $first);
-        $this->assertTrue($first[0]['backfilled']);
+        $this->assertFalse($first[0]['backfilled']);
         $this->assertSame(self::SOURCE_VAR, (int) ($first[0]['variation_id'] ?? 0));
         $this->assertSame('hist-sig-abc', $first[0]['event_signature'] ?? '');
         $this->assertStringContainsString('History Course EN', (string) ($first[0]['label']['product'] ?? ''));
@@ -581,14 +580,35 @@ class MovePlayersHistoryTest extends TestCase {
         $origin = $entries[0];
         $move = $entries[1];
         $this->assertSame('origin', $origin['type']);
-        $this->assertTrue($origin['backfilled']);
+        $this->assertFalse($origin['backfilled']);
         $this->assertSame(self::SOURCE_VAR, (int) ($origin['variation_id'] ?? 0));
         $this->assertSame(self::SOURCE_VAR, (int) ($move['from']['variation_id'] ?? 0));
         $this->assertSame(self::TARGET_VAR, (int) ($move['to']['variation_id'] ?? 0));
         $this->assertSame($move['from']['label'], $origin['label']);
         $this->assertSame($move['from']['event_signature'], $origin['event_signature']);
         $this->assertSame($move['from']['product_id'], $origin['product_id']);
-        $this->assertSame('', (string) ($origin['note'] ?? ''));
+        $note = trim((string) ($origin['note'] ?? ''));
+        $this->assertNotSame('', $note);
+        $this->assertStringContainsString('History Course EN', $note);
+        $this->assertStringContainsString('first roster move', strtolower($note));
+    }
+
+    public function test_legacy_first_move_origin_note_names_original_roster(): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $this->installHandlerWorld();
+        unset($intersoccer_test_wc_order_item_meta[self::ITEM_ID][intersoccer_roster_history_meta_key()]);
+
+        $this->invokeMoveAjax([
+            'target_variation_id' => self::TARGET_VAR,
+            'order_item_ids' => [self::ITEM_ID],
+            'confirm_warnings' => '1',
+        ]);
+
+        $origin = intersoccer_roster_history_get_entries(self::ITEM_ID)[0];
+        $note = trim((string) ($origin['note'] ?? ''));
+        $this->assertNotSame('', $note);
+        $this->assertStringContainsString('History Course EN', $note);
+        $this->assertSame('move', intersoccer_roster_history_get_entries(self::ITEM_ID)[1]['type']);
     }
 
     /**
@@ -644,7 +664,6 @@ class MovePlayersHistoryTest extends TestCase {
         $this->installHandlerWorld([
             'roster_row_map' => [self::ITEM_ID => false],
         ]);
-        intersoccer_roster_history_record_origin_on_roster_build(self::ITEM_ID, $this->baselineRosterRow());
         $before = intersoccer_roster_history_get_entries(self::ITEM_ID);
 
         $response = $this->invokeMoveAjax([
@@ -668,10 +687,6 @@ class MovePlayersHistoryTest extends TestCase {
             'roster_row_map' => [self::ITEM_BATCH_OK => true, self::ITEM_BLOCK => false],
             'roster_store' => $store,
         ]);
-        intersoccer_roster_history_record_origin_on_roster_build(
-            self::ITEM_BATCH_OK,
-            $store[self::ITEM_BATCH_OK]
-        );
 
         $this->invokeMoveAjax([
             'target_variation_id' => self::TARGET_VAR,
@@ -686,8 +701,6 @@ class MovePlayersHistoryTest extends TestCase {
     }
 
     public function test_history_meta_survives_second_move_migration(): void {
-        $row = $this->baselineRosterRow();
-        intersoccer_roster_history_record_origin_on_roster_build(self::ITEM_ID, $row);
         $this->installHandlerWorld();
 
         $this->invokeMoveAjax([
@@ -709,8 +722,6 @@ class MovePlayersHistoryTest extends TestCase {
     }
 
     public function test_history_entries_contain_no_personal_fields(): void {
-        $row = $this->baselineRosterRow();
-        intersoccer_roster_history_record_origin_on_roster_build(self::ITEM_ID, $row);
         $this->installHandlerWorld();
         $this->invokeMoveAjax([
             'target_variation_id' => self::TARGET_VAR,
@@ -724,8 +735,7 @@ class MovePlayersHistoryTest extends TestCase {
     }
 
     public function test_admin_view_renders_frozen_labels_without_edit_controls(): void {
-        $row = $this->baselineRosterRow();
-        intersoccer_roster_history_record_origin_on_roster_build(self::ITEM_ID, $row);
+        $this->installHandlerWorld();
         $html = intersoccer_roster_history_render_admin_cell(self::ITEM_ID);
         $this->assertStringContainsString('History', $html);
         $this->assertStringContainsString('History Course EN', $html);

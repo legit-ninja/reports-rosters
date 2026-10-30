@@ -1,6 +1,6 @@
 <?php
 /**
- * Roster history origin is written on new roster create without admin-only includes preloaded.
+ * Roster build must not write roster history (or any order data) at completion time.
  */
 
 namespace InterSoccer\ReportsRosters\Tests\Legacy;
@@ -16,13 +16,13 @@ use InterSoccer\ReportsRosters\Services\RosterBuilder;
 use InterSoccer\ReportsRosters\Tests\TestCase;
 use Mockery;
 
-class MovePlayersRosterHistoryOriginOnBuildTest extends TestCase {
+class MovePlayersRosterHistoryNoWriteOnBuildTest extends TestCase {
 
     /**
      * @runInSeparateProcess
      * @preserveGlobalState disabled
      */
-    public function test_new_roster_create_writes_origin_without_preloaded_history_module(): void {
+    public function test_new_roster_create_writes_no_order_item_history_meta(): void {
         require_once dirname(__DIR__) . '/bootstrap.php';
         require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
 
@@ -54,9 +54,10 @@ class MovePlayersRosterHistoryOriginOnBuildTest extends TestCase {
             Mockery::mock(PlayerMatcher::class)
         );
 
+        $order_item_id = 88011;
         $roster_data = [
             'order_id' => 88000,
-            'order_item_id' => 88011,
+            'order_item_id' => $order_item_id,
             'product_id' => 88010,
             'variation_id' => 88012,
             'event_signature' => 'origin-on-build-sig',
@@ -74,12 +75,9 @@ class MovePlayersRosterHistoryOriginOnBuildTest extends TestCase {
             'validate_data' => false,
         ]);
 
-        $this->assertTrue(function_exists('intersoccer_roster_history_get_entries'));
-        $entries = intersoccer_roster_history_get_entries(88011);
-        $this->assertCount(1, $entries);
-        $this->assertSame('origin', $entries[0]['type']);
-        $this->assertFalse($entries[0]['backfilled']);
-        $this->assertSame(88012, (int) ($entries[0]['variation_id'] ?? 0));
-        $this->assertSame('origin-on-build-sig', (string) ($entries[0]['event_signature'] ?? ''));
+        $this->assertSame([], $intersoccer_test_wc_order_item_meta);
+        if (function_exists('intersoccer_roster_history_get_entries')) {
+            $this->assertSame([], intersoccer_roster_history_get_entries($order_item_id));
+        }
     }
 }

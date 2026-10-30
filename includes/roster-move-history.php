@@ -464,9 +464,50 @@ if (!function_exists('intersoccer_roster_history_roster_row_from_side')) {
     }
 }
 
+if (!function_exists('intersoccer_roster_history_first_move_origin_context')) {
+    /**
+     * Note and backfill flags for the origin entry written on the first roster move.
+     *
+     * @param array<string,mixed> $from_side Pre-move roster side captured for the move.
+     * @return array{backfilled:bool,note:string,from_side:array<string,mixed>}
+     */
+    function intersoccer_roster_history_first_move_origin_context(int $order_item_id, array $from_side): array {
+        $exclude_variation = (int) ($from_side['variation_id'] ?? 0);
+        $legacy = intersoccer_roster_history_legacy_backfill_context($order_item_id, $exclude_variation);
+        $note = trim((string) ($legacy['note'] ?? ''));
+        $backfilled = false;
+        $origin_side = $from_side;
+
+        $legacy_variation = (int) ($legacy['origin_variation_id'] ?? 0);
+        if ($legacy_variation > 0) {
+            $from_variation = intersoccer_roster_history_resolve_variation_id($exclude_variation);
+            $resolved_legacy = intersoccer_roster_history_resolve_variation_id($legacy_variation);
+            if ($resolved_legacy !== $from_variation) {
+                $backfilled = true;
+                $origin_side['variation_id'] = $resolved_legacy;
+            } elseif ($note !== '') {
+                $backfilled = true;
+            }
+        }
+
+        if ($note === '') {
+            $label_line = intersoccer_roster_history_format_label_line($from_side);
+            $note = $label_line !== ''
+                ? 'Original booking before first roster move: ' . $label_line
+                : 'Original booking before first roster move.';
+        }
+
+        return [
+            'backfilled' => $backfilled,
+            'note'       => $note,
+            'from_side'  => $origin_side,
+        ];
+    }
+}
+
 if (!function_exists('intersoccer_roster_history_persist_backfill_origin_from_side')) {
     /**
-     * Write a single backfilled origin from the pre-move roster side (first move on a legacy line).
+     * Write a single origin from the pre-move roster side (first move on the line).
      *
      * @param array<string,mixed> $from_side
      */
@@ -483,20 +524,13 @@ if (!function_exists('intersoccer_roster_history_persist_backfill_origin_from_si
             return;
         }
         $row = intersoccer_roster_history_roster_row_from_side($from_side, $order_id, $order_item_id);
-        $note = '';
-        $legacy = intersoccer_roster_history_legacy_backfill_context(
-            $order_item_id,
-            (int) ($from_side['variation_id'] ?? 0)
-        );
-        if ($legacy['note'] !== '') {
-            $note = (string) $legacy['note'];
-        }
+        $context = intersoccer_roster_history_first_move_origin_context($order_item_id, $from_side);
         $entries[] = intersoccer_roster_history_build_origin_entry_from_side(
             $order_id,
             $order_item_id,
-            $from_side,
-            true,
-            $note,
+            $context['from_side'],
+            (bool) $context['backfilled'],
+            (string) $context['note'],
             $row
         );
         intersoccer_roster_history_write_entries($order_item_id, $entries);
@@ -543,26 +577,6 @@ if (!function_exists('intersoccer_roster_history_get_entries_for_display')) {
         }));
 
         return array_merge([$virtual], $moves);
-    }
-}
-
-if (!function_exists('intersoccer_roster_history_record_origin_on_roster_build')) {
-    /**
-     * Called when a roster row is first created from order completion (not backfilled).
-     *
-     * @param array<string,mixed> $roster_row
-     */
-    function intersoccer_roster_history_record_origin_on_roster_build(int $order_item_id, array $roster_row): void {
-        if ($order_item_id <= 0) {
-            return;
-        }
-        $existing = intersoccer_roster_history_decode_entries(intersoccer_roster_history_read_raw($order_item_id));
-        if (intersoccer_roster_history_has_origin($existing)) {
-            return;
-        }
-        $order_id = (int) ($roster_row['order_id'] ?? 0);
-        $existing[] = intersoccer_roster_history_build_origin_entry($order_id, $order_item_id, $roster_row, false, '');
-        intersoccer_roster_history_write_entries($order_item_id, $existing);
     }
 }
 

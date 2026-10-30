@@ -2200,16 +2200,6 @@ class RosterBuilder {
                 'id' => $roster->id,
                 'order_id' => $roster_data['order_id']
             ]);
-            $history_module = dirname(__DIR__, 2) . '/includes/roster-move-history.php';
-            if (is_readable($history_module)) {
-                require_once $history_module;
-            }
-            if (function_exists('intersoccer_roster_history_record_origin_on_roster_build')) {
-                intersoccer_roster_history_record_origin_on_roster_build(
-                    (int) ($roster_data['order_item_id'] ?? 0),
-                    $roster_data
-                );
-            }
         } else {
             $reason = $this->formatRosterFailureReason(
                 new \RuntimeException('roster_insert_failed'),
