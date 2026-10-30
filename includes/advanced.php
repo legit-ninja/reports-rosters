@@ -1643,7 +1643,7 @@ function intersoccer_move_players_ajax() {
             // Step 2: Remove variation-derived meta only; preserve player/attendee fields.
             $pending_restore = false;
             $player_meta_snapshot = [];
-            $prior_canonical_girls_only = null;
+            $prior_canonical_order_meta = [];
             if ($migration_success) {
                 try {
                     $preserved_stock_delta = '';
@@ -1662,11 +1662,17 @@ function intersoccer_move_players_ajax() {
                             true
                         );
                     }
-                    $prior_canonical_girls_only = (string) wc_get_order_item_meta(
-                        (int) $item_id,
-                        '_intersoccer_canonical_girls_only',
-                        true
-                    );
+                    if (!function_exists('intersoccer_get_canonical_order_meta_field_map')) {
+                        require_once __DIR__ . '/order-meta-keys.php';
+                    }
+                    if (function_exists('intersoccer_get_canonical_order_meta_field_map')) {
+                        foreach (array_keys(intersoccer_get_canonical_order_meta_field_map()) as $canonical_meta_key) {
+                            $prior_val = wc_get_order_item_meta((int) $item_id, $canonical_meta_key, true);
+                            if ($prior_val !== '' && $prior_val !== null) {
+                                $prior_canonical_order_meta[$canonical_meta_key] = (string) $prior_val;
+                            }
+                        }
+                    }
                     $player_meta_snapshot = intersoccer_migration_snapshot_player_attendee_meta($item);
                     intersoccer_migration_remove_variation_meta_for_move($item, $human_lookup);
                     if ($preserved_stock_delta !== '' && $preserved_stock_delta !== null
@@ -1801,7 +1807,7 @@ function intersoccer_move_players_ajax() {
                         $slug_meta,
                         $existing_line_meta_keys,
                         $variation,
-                        $prior_canonical_girls_only !== '' ? $prior_canonical_girls_only : null
+                        $prior_canonical_order_meta
                     );
                     $log_line('InterSoccer Migration: Finalized order item meta for item ' . $item_id);
                 } catch (Exception $e) {

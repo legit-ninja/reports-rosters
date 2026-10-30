@@ -600,6 +600,171 @@ if (!function_exists('intersoccer_migration_apply_destination_canonical_girls_on
     }
 }
 
+if (!function_exists('intersoccer_migration_canonical_order_meta_key_to_pa_taxonomy')) {
+    /**
+     * Map `_intersoccer_canonical_*` keys to WooCommerce pa_* taxonomies (EN slugs on the line).
+     *
+     * @return array<string,string>
+     */
+    function intersoccer_migration_canonical_order_meta_key_to_pa_taxonomy(): array {
+        return [
+            '_intersoccer_canonical_activity_type' => 'pa_activity-type',
+            '_intersoccer_canonical_booking_type' => 'pa_booking-type',
+            '_intersoccer_canonical_venue' => 'pa_intersoccer-venues',
+            '_intersoccer_canonical_canton' => 'pa_canton-region',
+            '_intersoccer_canonical_age_group' => 'pa_age-group',
+            '_intersoccer_canonical_camp_terms' => 'pa_camp-terms',
+        ];
+    }
+}
+
+if (!function_exists('intersoccer_migration_slug_meta_pa_value')) {
+    /**
+     * Read a pa_* slug from migration slug_meta (attribute_pa_* or bare pa_*).
+     */
+    function intersoccer_migration_slug_meta_pa_value(array $slug_meta, string $pa_taxonomy): string {
+        if ($pa_taxonomy === '') {
+            return '';
+        }
+        foreach (['attribute_' . $pa_taxonomy, $pa_taxonomy] as $key) {
+            if (!empty($slug_meta[$key])) {
+                return trim((string) $slug_meta[$key]);
+            }
+        }
+
+        return '';
+    }
+}
+
+if (!function_exists('intersoccer_migration_resolve_destination_canonical_order_meta_for_move')) {
+    /**
+     * Destination value for one existing `_intersoccer_canonical_*` row (null = leave unchanged).
+     *
+     * @param array<string,string> $slug_meta
+     */
+    function intersoccer_migration_resolve_destination_canonical_order_meta_for_move(
+        string $meta_key,
+        WC_Product_Variation $variation,
+        array $slug_meta,
+        ?string $existing_value = null
+    ): ?string {
+        if ($meta_key === '_intersoccer_canonical_girls_only') {
+            return intersoccer_migration_resolve_destination_canonical_girls_only_for_move(
+                $variation,
+                $existing_value
+            );
+        }
+
+        $pa_map = intersoccer_migration_canonical_order_meta_key_to_pa_taxonomy();
+        if (!isset($pa_map[$meta_key])) {
+            return null;
+        }
+
+        $pa_taxonomy = $pa_map[$meta_key];
+        $slug = intersoccer_migration_slug_meta_pa_value($slug_meta, $pa_taxonomy);
+        if ($slug === '' && function_exists('intersoccer_migration_pa_attribute_slug_for_variation')) {
+            $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $pa_taxonomy);
+        }
+
+        if ($meta_key === '_intersoccer_canonical_activity_type' && $slug === '') {
+            $product_type = '';
+            if (function_exists('intersoccer_get_product_type_safe')) {
+                $product_type = (string) intersoccer_get_product_type_safe(
+                    (int) $variation->get_parent_id(),
+                    (int) $variation->get_id()
+                );
+            } elseif (function_exists('intersoccer_get_product_type')) {
+                $product_type = (string) intersoccer_get_product_type((int) $variation->get_parent_id());
+            }
+            $product_type = trim(strtolower($product_type));
+            if ($product_type !== '') {
+                $slug = $product_type;
+            }
+        }
+
+        if ($slug === '') {
+            return null;
+        }
+
+        if ($meta_key === '_intersoccer_canonical_activity_type'
+            && function_exists('intersoccer_canonical_activity_type_for_roster')) {
+            return strtolower((string) intersoccer_canonical_activity_type_for_roster($slug));
+        }
+
+        return $slug;
+    }
+}
+
+if (!function_exists('intersoccer_migration_apply_destination_canonical_order_meta_for_move')) {
+    /**
+     * Update existing `_intersoccer_canonical_*` rows from the destination variation; never add keys.
+     *
+     * @param array<int,string>       $existing_line_keys
+     * @param array<string,string>    $slug_meta
+     * @param array<string,string>    $prior_canonical_order_meta Values captured before strip (optional).
+     */
+    function intersoccer_migration_apply_destination_canonical_order_meta_for_move(
+        int $item_id,
+        WC_Product_Variation $variation,
+        array $existing_line_keys,
+        array $slug_meta,
+        array $prior_canonical_order_meta = []
+    ): void {
+        if ($item_id <= 0 || $existing_line_keys === []) {
+            return;
+        }
+
+        if (!function_exists('intersoccer_get_canonical_order_meta_field_map')) {
+            $path = dirname(__FILE__) . '/order-meta-keys.php';
+            if (is_readable($path)) {
+                require_once $path;
+            }
+        }
+        if (!function_exists('intersoccer_get_canonical_order_meta_field_map')) {
+            return;
+        }
+
+        $existing_flip = array_fill_keys($existing_line_keys, true);
+        $item = new WC_Order_Item_Product($item_id);
+        $meta_changed = false;
+
+        foreach (intersoccer_get_canonical_order_meta_field_map() as $meta_key => $_field) {
+            if (!isset($existing_flip[$meta_key])) {
+                continue;
+            }
+
+            $existing_value = $prior_canonical_order_meta[$meta_key] ?? null;
+            if ($existing_value === null || $existing_value === '') {
+                $existing_value = (string) $item->get_meta($meta_key, true);
+                if ($existing_value === '') {
+                    $existing_value = null;
+                }
+            }
+
+            $resolved = intersoccer_migration_resolve_destination_canonical_order_meta_for_move(
+                (string) $meta_key,
+                $variation,
+                $slug_meta,
+                $existing_value
+            );
+            if ($resolved === null) {
+                continue;
+            }
+
+            $current = (string) $item->get_meta($meta_key, true);
+            if ($current !== (string) $resolved) {
+                $meta_changed = true;
+            }
+            $item->delete_meta_data($meta_key);
+            $item->update_meta_data($meta_key, $resolved);
+        }
+
+        if ($meta_changed) {
+            $item->save();
+        }
+    }
+}
+
 if (!function_exists('intersoccer_migration_pa_taxonomy_keys_for_move')) {
     /**
      * @return array<int,string>
@@ -1360,7 +1525,7 @@ if (!function_exists('intersoccer_migration_finalize_move_item_meta')) {
         array $slug_meta,
         array $existing_line_keys,
         WC_Product_Variation $variation,
-        ?string $prior_canonical_girls_only = null
+        array $prior_canonical_order_meta = []
     ): void {
         if ($item_id <= 0) {
             return;
@@ -1412,11 +1577,13 @@ if (!function_exists('intersoccer_migration_finalize_move_item_meta')) {
 
         intersoccer_migration_prune_unexpected_move_meta_keys($item_id, $existing_line_keys, $human_lookup);
 
-        if (function_exists('intersoccer_migration_apply_destination_canonical_girls_only_for_move')) {
-            intersoccer_migration_apply_destination_canonical_girls_only_for_move(
+        if (function_exists('intersoccer_migration_apply_destination_canonical_order_meta_for_move')) {
+            intersoccer_migration_apply_destination_canonical_order_meta_for_move(
                 $item_id,
                 $variation,
-                $prior_canonical_girls_only
+                $existing_line_keys,
+                $slug_meta,
+                $prior_canonical_order_meta
             );
         }
     }

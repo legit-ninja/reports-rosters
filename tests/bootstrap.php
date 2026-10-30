@@ -363,6 +363,12 @@ if (!class_exists('InterSoccerRRTestMeta')) {
     }
 }
 
+if (!function_exists('taxonomy_exists')) {
+    function taxonomy_exists($taxonomy) {
+        return false;
+    }
+}
+
 if (!function_exists('get_term_by')) {
     function get_term_by($field, $value, $taxonomy = '') {
         if (isset($GLOBALS['intersoccer_test_get_term_by_call_count'])) {
