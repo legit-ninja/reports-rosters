@@ -1431,6 +1431,8 @@ if (!function_exists('intersoccer_migration_restore_canonical_meta')) {
      * @param array $human_lookup
      * @param array $human_meta
      * @param array $other_meta
+     * @param bool  $restrict_to_existing_line_keys Admin language repair: never add keys or merge/prune rows.
+     * @return bool True when order item meta was changed.
      */
     function intersoccer_migration_restore_canonical_meta(
         $item_id,
@@ -1438,13 +1440,19 @@ if (!function_exists('intersoccer_migration_restore_canonical_meta')) {
         array $human_lookup,
         array $human_meta,
         array $other_meta,
-        array $existing_line_keys = []
+        array $existing_line_keys = [],
+        bool $restrict_to_existing_line_keys = false
     ) {
-        if ($existing_line_keys === []) {
-            return;
-        }
-
         $item = new WC_Order_Item_Product($item_id);
+        $existing_flip = array_fill_keys($existing_line_keys, true);
+        $meta_changed = false;
+        $meta_values_differ = static function ($current, $normalized): bool {
+            if (is_array($current) || is_array($normalized)) {
+                return $current !== $normalized;
+            }
+
+            return (string) $current !== (string) $normalized;
+        };
 
         foreach ($human_meta as $canonical => $meta_value) {
             $normalized_value = intersoccer_migration_coerce_move_line_meta_value($meta_value);
@@ -1457,44 +1465,77 @@ if (!function_exists('intersoccer_migration_restore_canonical_meta')) {
                 [$canonical],
                 $human_alias_map[$canonical] ?? []
             ));
-            $existing_flip = array_fill_keys($existing_line_keys, true);
             $wrote = false;
             foreach ($aliases as $alias_key) {
-                if ($existing_line_keys !== [] && !isset($existing_flip[$alias_key])) {
+                if ($restrict_to_existing_line_keys) {
+                    if (!isset($existing_flip[$alias_key])) {
+                        continue;
+                    }
+                } elseif ($existing_line_keys !== [] && !isset($existing_flip[$alias_key])) {
                     continue;
+                }
+                $current = $item->get_meta($alias_key, true);
+                if ($meta_values_differ($current, $normalized_value)) {
+                    $meta_changed = true;
                 }
                 $item->delete_meta_data($alias_key);
                 $item->add_meta_data($alias_key, $normalized_value, true);
                 $wrote = true;
             }
-            if (!$wrote) {
+            if (!$wrote && !$restrict_to_existing_line_keys) {
                 $label = function_exists('intersoccer_migration_pick_meta_label_for_canonical')
                     ? intersoccer_migration_pick_meta_label_for_canonical($canonical, $human_alias_map, $existing_line_keys)
                     : $aliases[0];
+                $current = $item->get_meta($label, true);
+                if ($meta_values_differ($current, $normalized_value)) {
+                    $meta_changed = true;
+                }
                 $item->delete_meta_data($label);
                 $item->add_meta_data($label, $normalized_value, true);
             }
         }
 
         foreach ($other_meta as $meta_key => $meta_value) {
+            if ($restrict_to_existing_line_keys && !isset($existing_flip[$meta_key])) {
+                continue;
+            }
+
             $normalized_value = intersoccer_migration_coerce_move_line_meta_value($meta_value);
+            $current = $item->get_meta($meta_key, true);
 
             $item->delete_meta_data($meta_key);
             if (intersoccer_migration_move_meta_value_is_blank($normalized_value)) {
+                if (!$meta_values_differ($current, '')) {
+                    // unchanged
+                } else {
+                    $meta_changed = true;
+                }
                 continue;
+            }
+
+            if ($meta_values_differ($current, $normalized_value)) {
+                $meta_changed = true;
             }
 
             $item->add_meta_data($meta_key, $normalized_value, true);
         }
 
+        if (!$meta_changed) {
+            return false;
+        }
+
         $item->save();
 
-        intersoccer_migration_cleanup_item_meta($item_id, $human_alias_map, $human_lookup, $existing_line_keys);
-        intersoccer_migration_prune_meta_rows($item_id, $human_alias_map, $human_lookup, $existing_line_keys);
+        if (!$restrict_to_existing_line_keys) {
+            intersoccer_migration_cleanup_item_meta($item_id, $human_alias_map, $human_lookup, $existing_line_keys);
+            intersoccer_migration_prune_meta_rows($item_id, $human_alias_map, $human_lookup, $existing_line_keys);
+        }
 
         if (defined('WP_DEBUG') && WP_DEBUG) {
             error_log('InterSoccer: Restored canonical metadata for order item');
         }
+
+        return true;
     }
 }
 

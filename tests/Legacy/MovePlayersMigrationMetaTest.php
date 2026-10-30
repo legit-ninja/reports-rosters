@@ -1392,24 +1392,120 @@ class MovePlayersMigrationMetaTest extends TestCase {
     }
 
     /**
-     * Regression: RR #104 — restore with an empty existing-key list must not rewrite order lines.
+     * @return array<string,mixed>
      */
-    public function test_renormalize_order_item_event_meta_does_not_rewrite_labels_with_empty_key_list(): void {
+    private function mockEmptyRosterRowForRenormalize(): void {
+        global $wpdb;
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query) {
+            return $query;
+        });
+        $wpdb->shouldReceive('get_row')->andReturn([]);
+    }
+
+    /**
+     * Regression: RR #104 — admin language repair rewrites FR event values to English on existing keys.
+     */
+    public function test_renormalize_order_item_event_meta_rewrites_french_values_on_existing_keys(): void {
+        if (!function_exists('intersoccer_renormalize_order_item_event_meta')) {
+            $this->markTestSkipped('intersoccer_renormalize_order_item_event_meta not found');
+        }
+
+        global $intersoccer_test_wc_order_item_meta;
+
+        $this->mockEmptyRosterRowForRenormalize();
+
+        $item_id = 88105;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [
+            "Type d'activité" => 'Cours',
+            "Groupe d'âge"    => '5-13y (Full Day)',
+            'Lieux InterSoccer' => 'Geneva Centre',
+            'Horaires du camp'  => '9:00am-4:00pm',
+        ];
+        $keys_before = array_keys($intersoccer_test_wc_order_item_meta[$item_id]);
+
+        $this->assertTrue(intersoccer_renormalize_order_item_event_meta($item_id));
+
+        $after = $intersoccer_test_wc_order_item_meta[$item_id];
+        $this->assertEqualsCanonicalizing($keys_before, array_keys($after));
+        $this->assertSame('Course', $after["Type d'activité"]);
+        $this->assertSame('5-13y-full-day', $after["Groupe d'âge"]);
+        $this->assertArrayNotHasKey('age_group', $after);
+        $this->assertArrayNotHasKey('Age Group', $after);
+    }
+
+    /**
+     * Regression: RR #104 — admin language repair rewrites DE event values on existing keys only.
+     */
+    public function test_renormalize_order_item_event_meta_rewrites_german_values_on_existing_keys(): void {
+        if (!function_exists('intersoccer_renormalize_order_item_event_meta')) {
+            $this->markTestSkipped('intersoccer_renormalize_order_item_event_meta not found');
+        }
+
+        global $intersoccer_test_wc_order_item_meta;
+
+        $this->mockEmptyRosterRowForRenormalize();
+
+        $item_id = 88106;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [
+            'Buchungstyp' => 'Einzelne Tage',
+            'Jours sélectionnés' => 'Monday, Wednesday',
+            "Type d'activité" => 'Camp',
+        ];
+        $keys_before = array_keys($intersoccer_test_wc_order_item_meta[$item_id]);
+
+        $this->assertTrue(intersoccer_renormalize_order_item_event_meta($item_id));
+
+        $after = $intersoccer_test_wc_order_item_meta[$item_id];
+        $this->assertEqualsCanonicalizing($keys_before, array_keys($after));
+        $this->assertSame('Camp', $after["Type d'activité"]);
+        $this->assertSame('Single Day(s)', $after['Buchungstyp']);
+    }
+
+    /**
+     * Regression: RR #104 — repair must not add internal keys the line never had.
+     */
+    public function test_renormalize_order_item_event_meta_never_adds_missing_internal_keys(): void {
+        if (!function_exists('intersoccer_renormalize_order_item_event_meta')) {
+            $this->markTestSkipped('intersoccer_renormalize_order_item_event_meta not found');
+        }
+
+        global $intersoccer_test_wc_order_item_meta;
+
+        $this->mockEmptyRosterRowForRenormalize();
+
+        $item_id = 88107;
+        $before = [
+            "Groupe d'âge" => '5-13y (Full Day)',
+            'Lieux InterSoccer' => 'Geneva Centre',
+            "Type d'activité" => 'Camp',
+        ];
+        $intersoccer_test_wc_order_item_meta[$item_id] = $before;
+
+        intersoccer_renormalize_order_item_event_meta($item_id);
+
+        $after = $intersoccer_test_wc_order_item_meta[$item_id];
+        $this->assertEqualsCanonicalizing(array_keys($before), array_keys($after));
+        $this->assertArrayNotHasKey('age_group', $after);
+        $this->assertArrayNotHasKey('intersoccer_venues', $after);
+    }
+
+    /**
+     * Regression: RR #104 — duplicate DB meta rows are not merged during admin repair.
+     */
+    public function test_renormalize_order_item_event_meta_does_not_merge_duplicate_meta_rows(): void {
         if (!function_exists('intersoccer_renormalize_order_item_event_meta')) {
             $this->markTestSkipped('intersoccer_renormalize_order_item_event_meta not found');
         }
 
         global $intersoccer_test_wc_order_item_meta, $wpdb;
 
-        $item_id = 88105;
-        $before = [
-            'Age Group'        => '5-13y (Full Day)',
-            'age_group'        => '5-13y (Full Day)',
-            'Sites InterSoccer' => 'Geneva Centre',
-            'Activity Type'    => 'Camp',
-            'Camp Times'       => '9:00am-4:00pm',
+        $item_id = 88108;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [
+            "Type d'activité" => 'Cours',
+            'Lieux InterSoccer' => 'Geneva Centre',
         ];
-        $intersoccer_test_wc_order_item_meta[$item_id] = $before;
 
         $wpdb = Mockery::mock('wpdb');
         $wpdb->prefix = 'wp_';
@@ -1417,8 +1513,62 @@ class MovePlayersMigrationMetaTest extends TestCase {
             return $query;
         });
         $wpdb->shouldReceive('get_row')->andReturn([]);
+        $wpdb->shouldReceive('get_results')->never();
+        $wpdb->shouldReceive('delete')->never();
+        $wpdb->shouldReceive('update')->never();
 
         $this->assertTrue(intersoccer_renormalize_order_item_event_meta($item_id));
+        $this->assertEqualsCanonicalizing(
+            ["Type d'activité", 'Lieux InterSoccer'],
+            array_keys($intersoccer_test_wc_order_item_meta[$item_id])
+        );
+    }
+
+    /**
+     * Regression: RR #104 — already-English lines perform no order-meta write.
+     */
+    public function test_renormalize_order_item_event_meta_reports_no_write_when_values_already_english(): void {
+        if (!function_exists('intersoccer_renormalize_order_item_event_meta')) {
+            $this->markTestSkipped('intersoccer_renormalize_order_item_event_meta not found');
+        }
+
+        global $intersoccer_test_wc_order_item_meta;
+
+        $this->mockEmptyRosterRowForRenormalize();
+
+        $item_id = 88109;
+        $before = [
+            'Activity Type'     => 'Camp',
+            'Age Group'         => '5-13y-full-day',
+            'Sites InterSoccer' => 'geneva-centre',
+            'Camp Times'        => '900am-400pm',
+        ];
+        $intersoccer_test_wc_order_item_meta[$item_id] = $before;
+
+        $this->assertFalse(intersoccer_renormalize_order_item_event_meta($item_id));
+        $this->assertSame($before, $intersoccer_test_wc_order_item_meta[$item_id]);
+    }
+
+    /**
+     * Regression: RR #104 — lines with no event meta perform no order-meta write.
+     */
+    public function test_renormalize_order_item_event_meta_skips_line_with_only_non_event_meta(): void {
+        if (!function_exists('intersoccer_renormalize_order_item_event_meta')) {
+            $this->markTestSkipped('intersoccer_renormalize_order_item_event_meta not found');
+        }
+
+        global $intersoccer_test_wc_order_item_meta;
+
+        $this->mockEmptyRosterRowForRenormalize();
+
+        $item_id = 88110;
+        $before = [
+            'Assigned Attendee'  => 'Test Child',
+            'assigned_player_id' => 'player-uuid-1',
+        ];
+        $intersoccer_test_wc_order_item_meta[$item_id] = $before;
+
+        $this->assertFalse(intersoccer_renormalize_order_item_event_meta($item_id));
         $this->assertSame($before, $intersoccer_test_wc_order_item_meta[$item_id]);
     }
 }

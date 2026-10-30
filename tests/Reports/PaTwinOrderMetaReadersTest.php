@@ -181,7 +181,7 @@ class PaTwinOrderMetaReadersTest extends TestCase {
                 'times',
                 'morning-camp',
             ],
-            'times human label after pa miss' => [
+            'times prefers pa slug when attribute_pa_camp-times is present' => [
                 ['Camp Times' => 'Afternoon camp', 'attribute_pa_camp-times' => 'morning-camp'],
                 'times',
                 'morning-camp',

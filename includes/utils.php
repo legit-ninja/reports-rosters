@@ -4142,7 +4142,7 @@ if (!function_exists('intersoccer_renormalize_order_item_event_meta')) {
 
         if (function_exists('intersoccer_roster_move_item_renormalize_is_suppressed')
             && intersoccer_roster_move_item_renormalize_is_suppressed($order_item_id)) {
-            return true;
+            return false;
         }
 
         if (!function_exists('intersoccer_migration_human_alias_map')
@@ -4218,14 +4218,29 @@ if (!function_exists('intersoccer_renormalize_order_item_event_meta')) {
         $normalized['selected_days'] = $booking['selected_days'];
         $human_meta = intersoccer_human_meta_from_normalized_facets($normalized);
 
-        intersoccer_migration_restore_canonical_meta(
+        $existing_line_keys = function_exists('intersoccer_migration_snapshot_line_meta_keys')
+            ? intersoccer_migration_snapshot_line_meta_keys($item)
+            : [];
+        if ($existing_line_keys === []) {
+            return false;
+        }
+
+        $allowed_canonicals = intersoccer_migration_allowed_canonicals_for_move(
+            $existing_line_keys,
+            $alias_map,
+            $lookup
+        );
+        $human_meta = intersoccer_migration_filter_human_meta_for_move($human_meta, $allowed_canonicals);
+
+        return intersoccer_migration_restore_canonical_meta(
             $order_item_id,
             $alias_map,
             $lookup,
             $human_meta,
-            []
+            [],
+            $existing_line_keys,
+            true
         );
-        return true;
     }
 }
 
@@ -4367,10 +4382,14 @@ if (!function_exists('intersoccer_renormalize_roster_row_language')) {
     /**
      * Normalize all event-specific roster columns to English (facets + booking), not player fields.
      *
-     * @param int $roster_id
+     * @param int  $roster_id
+     * @param bool|null $order_meta_written Set to true when order line event meta was rewritten.
      * @return bool
      */
-    function intersoccer_renormalize_roster_row_language($roster_id) {
+    function intersoccer_renormalize_roster_row_language($roster_id, &$order_meta_written = null) {
+        if ($order_meta_written !== null) {
+            $order_meta_written = false;
+        }
         global $wpdb;
 
         $roster_id = (int) $roster_id;
@@ -4459,7 +4478,10 @@ if (!function_exists('intersoccer_renormalize_roster_row_language')) {
             if ((!function_exists('intersoccer_roster_move_item_renormalize_is_suppressed')
                     || !intersoccer_roster_move_item_renormalize_is_suppressed($order_item_id))
                 && function_exists('intersoccer_renormalize_order_item_event_meta')) {
-                intersoccer_renormalize_order_item_event_meta($order_item_id);
+                $meta_wrote = intersoccer_renormalize_order_item_event_meta($order_item_id);
+                if ($order_meta_written !== null) {
+                    $order_meta_written = $meta_wrote;
+                }
             }
             $booking = intersoccer_normalize_roster_booking_columns(
                 $record,
@@ -4539,13 +4561,14 @@ if (!function_exists('intersoccer_renormalize_roster_language_batch')) {
                     continue;
                 }
 
+                $order_meta_written = false;
                 $ok = function_exists('intersoccer_renormalize_roster_row_language')
-                    ? intersoccer_renormalize_roster_row_language($roster_id)
+                    ? intersoccer_renormalize_roster_row_language($roster_id, $order_meta_written)
                     : false;
 
                 if ($ok) {
                     $stats['updated']++;
-                    if ($phase === 'orders' && (int) ($row['order_item_id'] ?? 0) > 0) {
+                    if ($phase === 'orders' && $order_meta_written) {
                         $stats['meta_updated']++;
                     }
                 } else {
