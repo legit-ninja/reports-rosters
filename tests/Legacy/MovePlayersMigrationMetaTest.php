@@ -1502,8 +1502,15 @@ class MovePlayersMigrationMetaTest extends TestCase {
         global $intersoccer_test_wc_order_item_meta, $wpdb;
 
         $item_id = 88108;
+        $activity_key = "Type d'activité";
+        $row_ids = [5001, 5002];
         $intersoccer_test_wc_order_item_meta[$item_id] = [
-            "Type d'activité" => 'Cours',
+            '_meta_rows' => [
+                ['id' => $row_ids[0], 'key' => $activity_key, 'value' => 'Cours'],
+                ['id' => $row_ids[1], 'key' => $activity_key, 'value' => 'Cours'],
+                ['id' => 5003, 'key' => 'Lieux InterSoccer', 'value' => 'Geneva Centre'],
+            ],
+            $activity_key => 'Cours',
             'Lieux InterSoccer' => 'Geneva Centre',
         ];
 
@@ -1513,15 +1520,25 @@ class MovePlayersMigrationMetaTest extends TestCase {
             return $query;
         });
         $wpdb->shouldReceive('get_row')->andReturn([]);
-        $wpdb->shouldReceive('get_results')->never();
-        $wpdb->shouldReceive('delete')->never();
-        $wpdb->shouldReceive('update')->never();
 
         $this->assertTrue(intersoccer_renormalize_order_item_event_meta($item_id));
-        $this->assertEqualsCanonicalizing(
-            ["Type d'activité", 'Lieux InterSoccer'],
-            array_keys($intersoccer_test_wc_order_item_meta[$item_id])
-        );
+
+        $store = $intersoccer_test_wc_order_item_meta[$item_id];
+        $this->assertArrayHasKey('_meta_rows', $store);
+        $rows = $store['_meta_rows'];
+        $this->assertCount(3, $rows);
+        $this->assertSame([5001, 5002, 5003], array_column($rows, 'id'));
+
+        $activity_rows = array_values(array_filter(
+            $rows,
+            static function ($row) use ($activity_key) {
+                return is_array($row) && ($row['key'] ?? '') === $activity_key;
+            }
+        ));
+        $this->assertCount(2, $activity_rows);
+        foreach ($activity_rows as $row) {
+            $this->assertSame('Course', $row['value']);
+        }
     }
 
     /**

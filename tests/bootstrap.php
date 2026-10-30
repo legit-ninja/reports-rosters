@@ -1216,16 +1216,18 @@ if (!class_exists('WC_DateTime')) {
 
 if (!class_exists('WC_Order_Item_Meta_Stub')) {
     class WC_Order_Item_Meta_Stub {
+        public $id;
         public $key;
         public $value;
 
-        public function __construct($key, $value) {
+        public function __construct($key, $value, $id = 0) {
+            $this->id = (int) $id;
             $this->key = $key;
             $this->value = $value;
         }
 
         public function get_data() {
-            return ['key' => $this->key, 'value' => $this->value];
+            return ['id' => $this->id, 'key' => $this->key, 'value' => $this->value];
         }
     }
 }
@@ -1235,10 +1237,44 @@ if (!class_exists('WC_Order_Item_Product')) {
         protected $data = [];
         protected $id = 1;
         protected $meta_data = [];
-        
+        /** @var array<int,array{id:int,key:string,value:mixed}> */
+        protected $meta_rows = [];
+
         public function __construct($item_id = 0) {
             $this->id = $item_id ?: 1;
             $this->hydrateMetaFromTestStore();
+        }
+
+        protected function nextMetaRowId(): int {
+            global $intersoccer_test_wc_order_item_meta_next_id;
+            if (!isset($intersoccer_test_wc_order_item_meta_next_id)) {
+                $intersoccer_test_wc_order_item_meta_next_id = 1000;
+            }
+
+            return ++$intersoccer_test_wc_order_item_meta_next_id;
+        }
+
+        protected function rebuildFlatMetaFromRows(): void {
+            $this->meta_data = [];
+            foreach ($this->meta_rows as $row) {
+                $key = (string) $row['key'];
+                if (!array_key_exists($key, $this->meta_data)) {
+                    $this->meta_data[$key] = $row['value'];
+                }
+            }
+        }
+
+        protected function metaRowsHaveDuplicateKeys(): bool {
+            $seen = [];
+            foreach ($this->meta_rows as $row) {
+                $key = (string) $row['key'];
+                if (isset($seen[$key])) {
+                    return true;
+                }
+                $seen[$key] = true;
+            }
+
+            return false;
         }
 
         protected function hydrateMetaFromTestStore(): void {
@@ -1250,9 +1286,35 @@ if (!class_exists('WC_Order_Item_Product')) {
             if (!is_array($intersoccer_test_wc_order_item_meta) || !isset($intersoccer_test_wc_order_item_meta[$item_id])) {
                 return;
             }
-            foreach ($intersoccer_test_wc_order_item_meta[$item_id] as $key => $value) {
-                $this->meta_data[$key] = $value;
+            $store = $intersoccer_test_wc_order_item_meta[$item_id];
+            if (isset($store['_meta_rows']) && is_array($store['_meta_rows'])) {
+                $this->meta_rows = [];
+                foreach ($store['_meta_rows'] as $row) {
+                    if (!is_array($row) || !isset($row['key'])) {
+                        continue;
+                    }
+                    $this->meta_rows[] = [
+                        'id' => (int) ($row['id'] ?? $this->nextMetaRowId()),
+                        'key' => (string) $row['key'],
+                        'value' => $row['value'] ?? '',
+                    ];
+                }
+                $this->rebuildFlatMetaFromRows();
+
+                return;
             }
+            $this->meta_rows = [];
+            foreach ($store as $key => $value) {
+                if ($key === '_meta_rows') {
+                    continue;
+                }
+                $this->meta_rows[] = [
+                    'id' => $this->nextMetaRowId(),
+                    'key' => (string) $key,
+                    'value' => $value,
+                ];
+            }
+            $this->rebuildFlatMetaFromRows();
         }
 
         protected function persistMetaToTestStore(): void {
@@ -1260,7 +1322,11 @@ if (!class_exists('WC_Order_Item_Product')) {
             if (!is_array($intersoccer_test_wc_order_item_meta)) {
                 $intersoccer_test_wc_order_item_meta = [];
             }
-            $intersoccer_test_wc_order_item_meta[(int) $this->id] = $this->meta_data;
+            $store = $this->meta_data;
+            if ($this->metaRowsHaveDuplicateKeys()) {
+                $store['_meta_rows'] = $this->meta_rows;
+            }
+            $intersoccer_test_wc_order_item_meta[(int) $this->id] = $store;
             if (!is_array($intersoccer_test_wc_order_item_data)) {
                 $intersoccer_test_wc_order_item_data = [];
             }
@@ -1291,8 +1357,8 @@ if (!class_exists('WC_Order_Item_Product')) {
         }
         public function get_meta_data() {
             $out = [];
-            foreach ($this->meta_data as $key => $value) {
-                $out[] = new WC_Order_Item_Meta_Stub($key, $value);
+            foreach ($this->meta_rows as $row) {
+                $out[] = new WC_Order_Item_Meta_Stub($row['key'], $row['value'], $row['id']);
             }
             return $out;
         }
@@ -1304,14 +1370,61 @@ if (!class_exists('WC_Order_Item_Product')) {
             $val = $this->meta_data[$key];
             return $single ? $val : [$val];
         }
-        public function update_meta_data($key, $value) {
-            $this->meta_data[(string) $key] = $value;
+        public function update_meta_data($key, $value, $meta_id = 0) {
+            $key = (string) $key;
+            $meta_id = (int) $meta_id;
+            if ($meta_id > 0) {
+                foreach ($this->meta_rows as &$row) {
+                    if ((int) $row['id'] === $meta_id) {
+                        $row['key'] = $key;
+                        $row['value'] = $value;
+                        $this->rebuildFlatMetaFromRows();
+
+                        return;
+                    }
+                }
+                unset($row);
+            }
+
+            $updated = false;
+            foreach ($this->meta_rows as &$row) {
+                if ((string) $row['key'] === $key) {
+                    $row['value'] = $value;
+                    $updated = true;
+                    break;
+                }
+            }
+            unset($row);
+            if (!$updated) {
+                $this->meta_rows[] = [
+                    'id' => $this->nextMetaRowId(),
+                    'key' => $key,
+                    'value' => $value,
+                ];
+            }
+            $this->rebuildFlatMetaFromRows();
         }
         public function add_meta_data($key, $value, $unique = false) {
-            $this->update_meta_data($key, $value);
+            $key = (string) $key;
+            if ($unique) {
+                $this->delete_meta_data($key);
+            }
+            $this->meta_rows[] = [
+                'id' => $this->nextMetaRowId(),
+                'key' => $key,
+                'value' => $value,
+            ];
+            $this->rebuildFlatMetaFromRows();
         }
         public function delete_meta_data($key) {
-            unset($this->meta_data[(string) $key]);
+            $key = (string) $key;
+            $this->meta_rows = array_values(array_filter(
+                $this->meta_rows,
+                static function ($row) use ($key) {
+                    return (string) $row['key'] !== $key;
+                }
+            ));
+            $this->rebuildFlatMetaFromRows();
         }
         public function save() {
             $this->persistMetaToTestStore();

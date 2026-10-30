@@ -373,13 +373,13 @@ class MovePlayersCanonicalOrderMetaMoveTest extends TestCase {
             $intersoccer_test_wc_order_item_meta[self::ITEM_ID]['attribute_pa_intersoccer-venues'],
             $intersoccer_test_wc_order_item_meta[self::ITEM_ID]['pa_intersoccer-venues']
         );
-        $meta_map = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
 
-        $overlay = intersoccer_apply_canonical_order_item_meta_to_data(
-            ['venue' => self::OLD_VENUE_SLUG],
-            $meta_map
-        );
+        $data = ['venue' => self::OLD_VENUE_SLUG];
+        $item = new \WC_Order_Item_Product(self::ITEM_ID);
+        $overlay = intersoccer_apply_order_item_attribute_meta_to_data($data, $item);
         $this->assertSame(self::NEW_VENUE_SLUG, $overlay['venue']);
+
+        $meta_map = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
         $this->assertSame(
             self::NEW_VENUE_SLUG,
             intersoccer_get_order_item_meta_field_value($meta_map, 'venue')
