@@ -340,11 +340,24 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
         COALESCE(NULLIF(booking_type_meta.meta_value, ''), booking_type_meta_attr.meta_value) as booking_type,
         COALESCE(days_selected_meta.meta_value, days_of_week_meta.meta_value) as selected_days,
         COALESCE(NULLIF(age_group_meta.meta_value, ''), age_group_meta_attr.meta_value) as age_group,
-        activity_type_meta.meta_value as activity_type,
+        COALESCE(
+            NULLIF(activity_type_human.meta_value, ''),
+            NULLIF(activity_type_pa.meta_value, ''),
+            activity_type_pa_attr.meta_value
+        ) as activity_type,
         
         -- Venue and location
-        venue_meta.meta_value as venue,
-        canton_region.meta_value as canton_region,
+        COALESCE(
+            NULLIF(venue_pa.meta_value, ''),
+            venue_pa_attr.meta_value,
+            NULLIF(venue_sites.meta_value, ''),
+            venue_intersoccer.meta_value
+        ) as venue,
+        COALESCE(
+            NULLIF(canton_pa.meta_value, ''),
+            canton_pa_attr.meta_value,
+            canton_human.meta_value
+        ) as canton_region,
         
         -- Price data
         COALESCE(CAST(subtotal.meta_value AS DECIMAL(10,2)), 0) AS base_price,
@@ -399,14 +412,28 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
         AND age_group_meta.meta_key = 'pa_age-group'
     LEFT JOIN $order_itemmeta_table age_group_meta_attr ON oi.order_item_id = age_group_meta_attr.order_item_id
         AND age_group_meta_attr.meta_key = 'attribute_pa_age-group'
-    LEFT JOIN $order_itemmeta_table activity_type_meta ON oi.order_item_id = activity_type_meta.order_item_id
-        AND (activity_type_meta.meta_key = 'Activity Type' OR activity_type_meta.meta_key = 'pa_activity-type' OR activity_type_meta.meta_key = 'attribute_pa_activity-type')
+    LEFT JOIN $order_itemmeta_table activity_type_human ON oi.order_item_id = activity_type_human.order_item_id
+        AND activity_type_human.meta_key = 'Activity Type'
+    LEFT JOIN $order_itemmeta_table activity_type_pa ON oi.order_item_id = activity_type_pa.order_item_id
+        AND activity_type_pa.meta_key = 'pa_activity-type'
+    LEFT JOIN $order_itemmeta_table activity_type_pa_attr ON oi.order_item_id = activity_type_pa_attr.order_item_id
+        AND activity_type_pa_attr.meta_key = 'attribute_pa_activity-type'
     
     -- Venue and location
-    LEFT JOIN $order_itemmeta_table venue_meta ON oi.order_item_id = venue_meta.order_item_id 
-        AND (venue_meta.meta_key = 'pa_intersoccer-venues' OR venue_meta.meta_key = 'attribute_pa_intersoccer-venues' OR venue_meta.meta_key = 'Sites InterSoccer' OR venue_meta.meta_key = 'InterSoccer Venues')
-    LEFT JOIN $order_itemmeta_table canton_region ON oi.order_item_id = canton_region.order_item_id
-        AND (canton_region.meta_key = 'pa_canton-region' OR canton_region.meta_key = 'attribute_pa_canton-region' OR canton_region.meta_key = 'Canton / Region')
+    LEFT JOIN $order_itemmeta_table venue_pa ON oi.order_item_id = venue_pa.order_item_id
+        AND venue_pa.meta_key = 'pa_intersoccer-venues'
+    LEFT JOIN $order_itemmeta_table venue_pa_attr ON oi.order_item_id = venue_pa_attr.order_item_id
+        AND venue_pa_attr.meta_key = 'attribute_pa_intersoccer-venues'
+    LEFT JOIN $order_itemmeta_table venue_sites ON oi.order_item_id = venue_sites.order_item_id
+        AND venue_sites.meta_key = 'Sites InterSoccer'
+    LEFT JOIN $order_itemmeta_table venue_intersoccer ON oi.order_item_id = venue_intersoccer.order_item_id
+        AND venue_intersoccer.meta_key = 'InterSoccer Venues'
+    LEFT JOIN $order_itemmeta_table canton_pa ON oi.order_item_id = canton_pa.order_item_id
+        AND canton_pa.meta_key = 'pa_canton-region'
+    LEFT JOIN $order_itemmeta_table canton_pa_attr ON oi.order_item_id = canton_pa_attr.order_item_id
+        AND canton_pa_attr.meta_key = 'attribute_pa_canton-region'
+    LEFT JOIN $order_itemmeta_table canton_human ON oi.order_item_id = canton_human.order_item_id
+        AND canton_human.meta_key = 'Canton / Region'
     
     -- Price data
     LEFT JOIN $order_itemmeta_table subtotal ON oi.order_item_id = subtotal.order_item_id 

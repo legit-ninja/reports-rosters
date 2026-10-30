@@ -36,6 +36,7 @@ function intersoccer_get_order_meta_field_map() {
         'Season' => 'season',
         'Year' => 'program_year',
         'pa_program-year' => 'program_year',
+        'attribute_pa_program-year' => 'program_year',
         'Canton / Region' => 'region',
         'City' => 'city',
         'Activity Type' => 'activity_type',
@@ -1047,6 +1048,7 @@ function intersoccer_get_order_meta_canonical_to_final_report_row_keys() {
         'Season' => 'season',
         'Year' => 'program_year',
         'pa_program-year' => 'program_year',
+        'attribute_pa_program-year' => 'program_year',
     ];
 }
 

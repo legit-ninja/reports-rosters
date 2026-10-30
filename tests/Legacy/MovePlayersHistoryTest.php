@@ -827,8 +827,12 @@ class MovePlayersHistoryTest extends TestCase {
         $this->assertSame('', trim((string) ($origin['label']['variation'] ?? '')));
         $this->assertSame('', trim((string) ($origin['label']['dates'] ?? '')));
         $note = trim((string) ($origin['note'] ?? ''));
-        $this->assertStringContainsString('Original booking could not be identified. Roster before this move:', $note);
-        $this->assertStringContainsString('History Course EN', $note);
+        $from_side = intersoccer_roster_history_roster_side_from_row($this->baselineRosterRow());
+        $label_line = intersoccer_roster_history_format_label_line($from_side);
+        $this->assertSame(
+            'Original booking could not be identified. Roster before this move: ' . $label_line,
+            $note
+        );
         $this->assertStringNotContainsString('Original booking inferred from an earlier move:', $note);
         $this->assertSame(0, (int) ($GLOBALS['intersoccer_test_roster_peer_queries'] ?? -1));
     }

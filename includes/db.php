@@ -1279,15 +1279,15 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
         }
 
         // Extract times with postmeta fallback (supports Course, Camp, and Tournament)
-        $times = $read_pa_meta('pa_course-times');
-        if ($times === '') {
-            $times = $read_pa_meta('pa_camp-times');
-        }
-        if ($times === '') {
-            $times = $read_pa_meta('pa_tournament-time');
-        }
-        if ($times === '') {
-            $times = $order_item_meta['Course Times'] ?? $order_item_meta['Camp Times'] ?? $order_item_meta['Tournament Time'] ?? null;
+        $times = $order_item_meta['Course Times'] ?? $order_item_meta['Camp Times'] ?? $order_item_meta['Tournament Time'] ?? null;
+        if (!$times) {
+            $times = $read_pa_meta('pa_course-times');
+            if ($times === '') {
+                $times = $read_pa_meta('pa_camp-times');
+            }
+            if ($times === '') {
+                $times = $read_pa_meta('pa_tournament-time');
+            }
         }
         if (!$times) {
             $times = $variation ? ($variation->get_attribute('pa_course-times') ?? $variation->get_attribute('pa_camp-times') ?? $variation->get_attribute('pa_tournament-time')) : null;
