@@ -1440,6 +1440,10 @@ if (!function_exists('intersoccer_migration_restore_canonical_meta')) {
         array $other_meta,
         array $existing_line_keys = []
     ) {
+        if ($existing_line_keys === []) {
+            return;
+        }
+
         $item = new WC_Order_Item_Product($item_id);
 
         foreach ($human_meta as $canonical => $meta_value) {

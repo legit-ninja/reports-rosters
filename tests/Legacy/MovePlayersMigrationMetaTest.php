@@ -1390,4 +1390,35 @@ class MovePlayersMigrationMetaTest extends TestCase {
 
         $this->assertSame($discounts, $intersoccer_test_wc_order_item_meta[$item_id]['_intersoccer_item_discounts']);
     }
+
+    /**
+     * Regression: RR #104 — restore with an empty existing-key list must not rewrite order lines.
+     */
+    public function test_renormalize_order_item_event_meta_does_not_rewrite_labels_with_empty_key_list(): void {
+        if (!function_exists('intersoccer_renormalize_order_item_event_meta')) {
+            $this->markTestSkipped('intersoccer_renormalize_order_item_event_meta not found');
+        }
+
+        global $intersoccer_test_wc_order_item_meta, $wpdb;
+
+        $item_id = 88105;
+        $before = [
+            'Age Group'        => '5-13y (Full Day)',
+            'age_group'        => '5-13y (Full Day)',
+            'Sites InterSoccer' => 'Geneva Centre',
+            'Activity Type'    => 'Camp',
+            'Camp Times'       => '9:00am-4:00pm',
+        ];
+        $intersoccer_test_wc_order_item_meta[$item_id] = $before;
+
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query) {
+            return $query;
+        });
+        $wpdb->shouldReceive('get_row')->andReturn([]);
+
+        $this->assertTrue(intersoccer_renormalize_order_item_event_meta($item_id));
+        $this->assertSame($before, $intersoccer_test_wc_order_item_meta[$item_id]);
+    }
 }
