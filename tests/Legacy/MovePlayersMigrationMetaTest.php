@@ -989,14 +989,9 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertSame('full-term', $normalized['attribute_pa_booking-type']);
     }
 
-    public function test_sandbox_7883_shape_missing_pa_age_group_writes_slug_sibling_on_filter(): void {
+    public function test_sandbox_7883_shape_attribute_only_pa_keys_do_not_gain_slug_siblings_on_filter(): void {
         $line_meta = $this->sandboxOrderItem7883MetaShape();
-        unset(
-            $line_meta['pa_age-group'],
-            $line_meta['pa_course-times'],
-            $line_meta['pa_intersoccer-venues'],
-            $line_meta['attribute_pa_intersoccer-venues']
-        );
+        unset($line_meta['pa_age-group'], $line_meta['pa_course-times'], $line_meta['pa_intersoccer-venues']);
         $existing_pa = array_keys(array_filter(
             $line_meta,
             static function ($key) {
@@ -1036,10 +1031,81 @@ class MovePlayersMigrationMetaTest extends TestCase {
         );
 
         $this->assertSame('5-12', $filtered['attribute_pa_age-group']);
-        $this->assertSame('5-12', $filtered['pa_age-group']);
-        $this->assertSame('1000-1130', $filtered['pa_course-times']);
+        $this->assertSame('1000-1130', $filtered['attribute_pa_course-times']);
+        $this->assertSame('geneva-stade-chenois-thonex', $filtered['attribute_pa_intersoccer-venues']);
+        $this->assertArrayNotHasKey('pa_age-group', $filtered);
+        $this->assertArrayNotHasKey('pa_course-times', $filtered);
         $this->assertArrayNotHasKey('pa_intersoccer-venues', $filtered);
+    }
+
+    public function test_filter_slug_meta_updates_only_pa_slug_key_when_line_had_no_attribute_sibling(): void {
+        $venue_slug = 'geneva-stade-chenois-thonex';
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_intersoccer-venues' => $venue_slug,
+            'attribute_pa_age-group' => '5-12',
+        ]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn(0);
+
+        $existing_pa_keys = ['pa_intersoccer-venues', 'pa_age-group'];
+        $existing_line_pa = [
+            'pa_intersoccer-venues' => 'geneva-college-sismondi-nations',
+            'pa_age-group' => '5-8y',
+        ];
+        $slug_meta = [
+            'attribute_pa_intersoccer-venues' => $venue_slug,
+            'pa_intersoccer-venues' => $venue_slug,
+            'attribute_pa_age-group' => '5-12',
+            'pa_age-group' => '5-12',
+        ];
+
+        $filtered = intersoccer_migration_filter_slug_meta_for_move(
+            $slug_meta,
+            $existing_pa_keys,
+            $variation,
+            $existing_line_pa
+        );
+
+        $this->assertSame($venue_slug, $filtered['pa_intersoccer-venues']);
+        $this->assertSame('5-12', $filtered['pa_age-group']);
         $this->assertArrayNotHasKey('attribute_pa_intersoccer-venues', $filtered);
+        $this->assertArrayNotHasKey('attribute_pa_age-group', $filtered);
+    }
+
+    public function test_filter_slug_meta_updates_only_attribute_slug_key_when_line_had_no_pa_sibling(): void {
+        $venue_slug = 'geneva-stade-chenois-thonex';
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_intersoccer-venues' => $venue_slug,
+            'attribute_pa_age-group' => '5-12',
+        ]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn(0);
+
+        $existing_pa_keys = ['attribute_pa_intersoccer-venues', 'attribute_pa_age-group'];
+        $existing_line_pa = [
+            'attribute_pa_intersoccer-venues' => 'geneva-college-sismondi-nations',
+            'attribute_pa_age-group' => '5-8y',
+        ];
+        $slug_meta = [
+            'attribute_pa_intersoccer-venues' => $venue_slug,
+            'pa_intersoccer-venues' => $venue_slug,
+            'attribute_pa_age-group' => '5-12',
+            'pa_age-group' => '5-12',
+        ];
+
+        $filtered = intersoccer_migration_filter_slug_meta_for_move(
+            $slug_meta,
+            $existing_pa_keys,
+            $variation,
+            $existing_line_pa
+        );
+
+        $this->assertSame($venue_slug, $filtered['attribute_pa_intersoccer-venues']);
+        $this->assertSame('5-12', $filtered['attribute_pa_age-group']);
+        $this->assertArrayNotHasKey('pa_intersoccer-venues', $filtered);
+        $this->assertArrayNotHasKey('pa_age-group', $filtered);
     }
 
     public function test_prune_meta_rows_keeps_girls_only_label_and_lowercase_when_both_on_line(): void {

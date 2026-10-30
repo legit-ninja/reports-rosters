@@ -790,48 +790,6 @@ if (!function_exists('intersoccer_migration_pa_existing_line_value_for_key')) {
     }
 }
 
-if (!function_exists('intersoccer_migration_seed_missing_pa_slug_meta_keys')) {
-    /**
-     * When only one of pa_X / attribute_pa_X exists on the line, seed the missing key for slug write.
-     *
-     * @param array<string,string>  $slug_meta
-     * @param array<int,string>     $existing_pa_keys
-     * @return array<string,string>
-     */
-    function intersoccer_migration_seed_missing_pa_slug_meta_keys(
-        array $slug_meta,
-        array $existing_pa_keys,
-        WC_Product_Variation $variation
-    ): array {
-        $existing_flip = array_fill_keys($existing_pa_keys, true);
-        foreach ($existing_pa_keys as $key) {
-            if (preg_match('/^attribute_(pa_.+)$/i', (string) $key, $matches)) {
-                $taxonomy = $matches[1];
-                if (isset($existing_flip[$taxonomy])) {
-                    continue;
-                }
-                $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy);
-                if ($slug !== '') {
-                    $slug_meta[$taxonomy] = $slug;
-                }
-                continue;
-            }
-            if (preg_match('/^pa_/i', (string) $key)) {
-                $attribute_key = 'attribute_' . $key;
-                if (isset($existing_flip[$attribute_key])) {
-                    continue;
-                }
-                $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, (string) $key);
-                if ($slug !== '') {
-                    $slug_meta[$attribute_key] = $slug;
-                }
-            }
-        }
-
-        return $slug_meta;
-    }
-}
-
 if (!function_exists('intersoccer_migration_pa_line_value_uses_slug_form')) {
     /**
      * Whether the line already stores a taxonomy value as the term slug (not a display label).
@@ -1096,16 +1054,9 @@ if (!function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
         WC_Product_Variation $variation,
         array $existing_line_pa = []
     ): array {
-        $slug_meta = intersoccer_migration_seed_missing_pa_slug_meta_keys($slug_meta, $existing_pa_keys, $variation);
-
         $allowed = [];
         foreach ($existing_pa_keys as $key) {
             $allowed[$key] = true;
-            if (preg_match('/^attribute_(pa_.+)$/i', (string) $key, $matches)) {
-                $allowed[$matches[1]] = true;
-            } elseif (preg_match('/^pa_/i', (string) $key)) {
-                $allowed['attribute_' . $key] = true;
-            }
         }
         $filtered = [];
         foreach ($slug_meta as $meta_key => $meta_value) {
