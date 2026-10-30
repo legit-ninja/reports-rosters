@@ -1178,6 +1178,70 @@ if (!function_exists('intersoccer_migration_remove_variation_meta_for_move')) {
     }
 }
 
+if (!function_exists('intersoccer_migration_move_meta_array_is_nested')) {
+    /**
+     * True when an order-item meta array contains nested arrays/objects (e.g. discount breakdown).
+     */
+    function intersoccer_migration_move_meta_array_is_nested(array $value): bool {
+        foreach ($value as $element) {
+            if (is_array($element) || is_object($element)) {
+                return true;
+            }
+            if (!is_scalar($element) && $element !== null) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+if (!function_exists('intersoccer_migration_coerce_move_line_meta_value')) {
+    /**
+     * Normalize a line meta value for move snapshot/restore without touching nested structures.
+     *
+     * @param mixed $raw
+     * @return mixed
+     */
+    function intersoccer_migration_coerce_move_line_meta_value($raw) {
+        if (is_array($raw)) {
+            if (intersoccer_migration_move_meta_array_is_nested($raw)) {
+                return $raw;
+            }
+            $parts = [];
+            foreach ($raw as $part) {
+                if (!is_scalar($part)) {
+                    return $raw;
+                }
+                $parts[] = trim((string) $part);
+            }
+
+            return implode(', ', $parts);
+        }
+        if (is_scalar($raw) || $raw === null) {
+            return trim((string) $raw);
+        }
+
+        return $raw;
+    }
+}
+
+if (!function_exists('intersoccer_migration_move_meta_value_is_blank')) {
+    /**
+     * @param mixed $value
+     */
+    function intersoccer_migration_move_meta_value_is_blank($value): bool {
+        if (is_array($value)) {
+            return $value === [];
+        }
+        if (is_scalar($value) || $value === null) {
+            return trim((string) $value) === '';
+        }
+
+        return false;
+    }
+}
+
 if (!function_exists('intersoccer_migration_snapshot_line_meta_keys')) {
     /**
      * @param \WC_Order_Item_Product $item
@@ -1198,7 +1262,7 @@ if (!function_exists('intersoccer_migration_snapshot_line_meta_keys')) {
 
 if (!function_exists('intersoccer_migration_snapshot_line_meta_values')) {
     /**
-     * @return array{human: array<string,string>, other: array<string,string>}
+     * @return array{human: array<string,mixed>, other: array<string,mixed>}
      */
     function intersoccer_migration_snapshot_line_meta_values(
         $item,
@@ -1213,9 +1277,7 @@ if (!function_exists('intersoccer_migration_snapshot_line_meta_values')) {
             if ($key === '') {
                 continue;
             }
-            $value = is_array($data['value'] ?? null)
-                ? implode(', ', array_map('trim', $data['value']))
-                : trim((string) ($data['value'] ?? ''));
+            $value = intersoccer_migration_coerce_move_line_meta_value($data['value'] ?? '');
             $normalized = intersoccer_migration_normalize_meta_key($key);
             if (isset($human_lookup[$normalized])) {
                 $human[$human_lookup[$normalized]] = $value;
@@ -1290,9 +1352,9 @@ if (!function_exists('intersoccer_migration_filter_human_meta_for_move')) {
 
 if (!function_exists('intersoccer_migration_filter_other_meta_for_move')) {
     /**
-     * @param array<string,string> $other_meta
+     * @param array<string,mixed> $other_meta
      * @param array<int,string>    $existing_line_keys
-     * @return array<string,string>
+     * @return array<string,mixed>
      */
     function intersoccer_migration_filter_other_meta_for_move(array $other_meta, array $existing_line_keys): array {
         $flip = array_fill_keys($existing_line_keys, true);
@@ -1450,11 +1512,9 @@ if (!function_exists('intersoccer_migration_restore_canonical_meta')) {
         $item = new WC_Order_Item_Product($item_id);
 
         foreach ($human_meta as $canonical => $meta_value) {
-            $normalized_value = is_array($meta_value)
-                ? implode(', ', array_map('trim', $meta_value))
-                : trim((string) $meta_value);
+            $normalized_value = intersoccer_migration_coerce_move_line_meta_value($meta_value);
 
-            if ($normalized_value === '') {
+            if (intersoccer_migration_move_meta_value_is_blank($normalized_value)) {
                 continue;
             }
 
@@ -1482,12 +1542,10 @@ if (!function_exists('intersoccer_migration_restore_canonical_meta')) {
         }
 
         foreach ($other_meta as $meta_key => $meta_value) {
-            $normalized_value = is_array($meta_value)
-                ? implode(', ', array_map('trim', $meta_value))
-                : trim((string) $meta_value);
+            $normalized_value = intersoccer_migration_coerce_move_line_meta_value($meta_value);
 
             $item->delete_meta_data($meta_key);
-            if ($normalized_value === '') {
+            if (intersoccer_migration_move_meta_value_is_blank($normalized_value)) {
                 continue;
             }
 

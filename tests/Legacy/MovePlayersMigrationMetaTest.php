@@ -1158,4 +1158,86 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertSame('', $payload['other_meta']['End Date'] ?? 'missing');
         $this->assertSame('', $payload['other_meta']['Holidays'] ?? 'missing');
     }
+
+    /**
+     * Regression: RR #104 — nested _intersoccer_item_discounts must not pass through trim/array_map.
+     */
+    public function test_snapshot_line_meta_values_preserves_nested_item_discounts(): void {
+        $discounts = [
+            [
+                'code' => 'SIBLING10',
+                'amount' => 12.5,
+                'type' => 'percent',
+            ],
+            [
+                'code' => 'EARLYBIRD',
+                'amount' => 5.0,
+                'type' => 'fixed_cart',
+            ],
+        ];
+        $meta = [
+            '_intersoccer_item_discounts' => $discounts,
+            '_intersoccer_total_item_discount' => '17.50',
+            'Activity Type' => 'Course',
+        ];
+        $item = Mockery::mock('WC_Order_Item_Product');
+        $item->shouldReceive('get_meta_data')->andReturnUsing(static function () use ($meta) {
+            $objects = [];
+            foreach ($meta as $key => $value) {
+                $objects[] = new class($key, $value) {
+                    private $key;
+                    private $value;
+
+                    public function __construct($key, $value) {
+                        $this->key = $key;
+                        $this->value = $value;
+                    }
+
+                    public function get_data() {
+                        return ['key' => $this->key, 'value' => $this->value];
+                    }
+                };
+            }
+
+            return $objects;
+        });
+        $alias_map = intersoccer_migration_human_alias_map();
+        $lookup = intersoccer_migration_build_lookup($alias_map);
+
+        $snapshot = intersoccer_migration_snapshot_line_meta_values($item, $alias_map, $lookup);
+
+        $this->assertSame($discounts, $snapshot['other']['_intersoccer_item_discounts']);
+        $this->assertSame('17.50', $snapshot['other']['_intersoccer_total_item_discount']);
+        $this->assertSame('Course', $snapshot['human']['activity_type'] ?? '');
+    }
+
+    public function test_restore_canonical_meta_preserves_nested_item_discounts_in_other_bucket(): void {
+        global $intersoccer_test_wc_order_item_meta;
+
+        $item_id = 88104;
+        $discounts = [
+            ['code' => 'COUPON-A', 'amount' => 10.0, 'type' => 'fixed_product'],
+            ['code' => 'COUPON-B', 'amount' => 2.5, 'type' => 'percent'],
+        ];
+        $intersoccer_test_wc_order_item_meta[$item_id] = [
+            '_intersoccer_item_discounts' => $discounts,
+            'Activity Type' => 'Course',
+        ];
+        $alias_map = intersoccer_migration_human_alias_map();
+        $lookup = intersoccer_migration_build_lookup($alias_map);
+        $existing_keys = array_keys($intersoccer_test_wc_order_item_meta[$item_id]);
+
+        intersoccer_migration_restore_canonical_meta(
+            $item_id,
+            $alias_map,
+            $lookup,
+            [],
+            [
+                '_intersoccer_item_discounts' => $discounts,
+            ],
+            $existing_keys
+        );
+
+        $this->assertSame($discounts, $intersoccer_test_wc_order_item_meta[$item_id]['_intersoccer_item_discounts']);
+    }
 }

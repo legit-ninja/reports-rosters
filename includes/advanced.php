@@ -1567,7 +1567,12 @@ function intersoccer_move_players_ajax() {
                 );
                 $human_meta = intersoccer_migration_filter_human_meta_for_move($human_meta, $allowed_canonicals);
                 foreach ($allowed_canonicals as $canonical) {
-                    if (($human_meta[$canonical] ?? '') === '' && !empty($line_meta_snapshot['human'][$canonical])) {
+                    if (function_exists('intersoccer_migration_move_meta_value_is_blank')
+                        && intersoccer_migration_move_meta_value_is_blank($human_meta[$canonical] ?? null)
+                        && !intersoccer_migration_move_meta_value_is_blank($line_meta_snapshot['human'][$canonical] ?? null)
+                    ) {
+                        $human_meta[$canonical] = $line_meta_snapshot['human'][$canonical];
+                    } elseif (($human_meta[$canonical] ?? '') === '' && !empty($line_meta_snapshot['human'][$canonical])) {
                         $human_meta[$canonical] = $line_meta_snapshot['human'][$canonical];
                     }
                 }
@@ -1575,7 +1580,12 @@ function intersoccer_move_players_ajax() {
             if (function_exists('intersoccer_migration_filter_other_meta_for_move')) {
                 $other_meta = intersoccer_migration_filter_other_meta_for_move($other_meta, $existing_line_meta_keys);
                 foreach ($existing_line_meta_keys as $meta_key) {
-                    if (($other_meta[$meta_key] ?? '') === '' && !empty($line_meta_snapshot['other'][$meta_key])) {
+                    if (function_exists('intersoccer_migration_move_meta_value_is_blank')
+                        && intersoccer_migration_move_meta_value_is_blank($other_meta[$meta_key] ?? null)
+                        && !intersoccer_migration_move_meta_value_is_blank($line_meta_snapshot['other'][$meta_key] ?? null)
+                    ) {
+                        $other_meta[$meta_key] = $line_meta_snapshot['other'][$meta_key];
+                    } elseif (($other_meta[$meta_key] ?? '') === '' && !empty($line_meta_snapshot['other'][$meta_key])) {
                         $other_meta[$meta_key] = $line_meta_snapshot['other'][$meta_key];
                     }
                 }
