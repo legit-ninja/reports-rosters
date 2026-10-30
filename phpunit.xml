@@ -136,6 +136,7 @@
             <file>tests/Legacy/MovePlayersItemDiscountsTest.php</file>
             <file>tests/Legacy/MovePlayersCanonicalGirlsOnlyMoveTest.php</file>
             <file>tests/Legacy/MovePlayersCanonicalOrderMetaMoveTest.php</file>
+            <file>tests/Legacy/MovePlayersFrDeQaFixesTest.php</file>
             <file>tests/Legacy/OrderAdminLineItemMetaDisplayTest.php</file>
             <file>tests/Legacy/MovePlayersRosterHistoryNoWriteOnBuildTest.php</file>
             <directory>tests/ReportAccuracy</directory>

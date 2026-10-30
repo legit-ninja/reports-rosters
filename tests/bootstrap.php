@@ -381,6 +381,13 @@ if (!function_exists('get_term_by')) {
                 return is_object($row) ? $row : (object) $row;
             }
         }
+        if ($field === 'name' && $taxonomy !== '' && isset($GLOBALS['intersoccer_test_terms_by_name'][$taxonomy])) {
+            $name_key = function_exists('mb_strtolower') ? mb_strtolower((string) $value) : strtolower((string) $value);
+            if (isset($GLOBALS['intersoccer_test_terms_by_name'][$taxonomy][$name_key])) {
+                $row = $GLOBALS['intersoccer_test_terms_by_name'][$taxonomy][$name_key];
+                return is_object($row) ? $row : (object) $row;
+            }
+        }
         return false;
     }
 }

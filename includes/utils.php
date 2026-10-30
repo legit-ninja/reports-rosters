@@ -1092,32 +1092,130 @@ if (!function_exists('intersoccer_renormalize_order_item_booking_meta')) {
             return false;
         }
 
-        $item = new WC_Order_Item_Product($order_item_id);
+        if (function_exists('intersoccer_roster_move_item_renormalize_is_suppressed')
+            && intersoccer_roster_move_item_renormalize_is_suppressed($order_item_id)) {
+            return false;
+        }
 
-        if (!empty($booking['booking_type'])) {
-            foreach (['Booking Type', 'Type de réservation', 'Buchungstyp'] as $key) {
-                $item->delete_meta_data($key);
+        $item = new WC_Order_Item_Product($order_item_id);
+        $meta_changed = false;
+        $meta_values_differ = static function ($current, $normalized): bool {
+            if (is_array($current) || is_array($normalized)) {
+                return $current !== $normalized;
             }
-            $item->add_meta_data('Booking Type', $booking['booking_type'], true);
+
+            return (string) $current !== (string) $normalized;
+        };
+        $meta_row_key = static function ($meta): string {
+            if (!is_object($meta)) {
+                return '';
+            }
+            if (isset($meta->key)) {
+                return (string) $meta->key;
+            }
+            if (method_exists($meta, 'get_data')) {
+                $data = $meta->get_data();
+
+                return (string) ($data['key'] ?? '');
+            }
+
+            return '';
+        };
+        $meta_row_value = static function ($meta) {
+            if (!is_object($meta)) {
+                return '';
+            }
+            if (isset($meta->value)) {
+                return $meta->value;
+            }
+            if (method_exists($meta, 'get_data')) {
+                $data = $meta->get_data();
+
+                return $data['value'] ?? '';
+            }
+
+            return '';
+        };
+        $meta_row_id = static function ($meta): int {
+            if (!is_object($meta)) {
+                return 0;
+            }
+            if (isset($meta->id)) {
+                return (int) $meta->id;
+            }
+            if (method_exists($meta, 'get_data')) {
+                $data = $meta->get_data();
+
+                return (int) ($data['id'] ?? 0);
+            }
+
+            return 0;
+        };
+        $update_existing_alias_rows = static function (
+            array $alias_keys,
+            $target_value
+        ) use (
+            $item,
+            $meta_row_key,
+            $meta_row_value,
+            $meta_row_id,
+            $meta_values_differ,
+            &$meta_changed
+        ): void {
+            if ($alias_keys === []) {
+                return;
+            }
+            $alias_flip = array_fill_keys($alias_keys, true);
+            foreach ($item->get_meta_data() as $meta) {
+                $row_key = $meta_row_key($meta);
+                if ($row_key === '' || !isset($alias_flip[$row_key])) {
+                    continue;
+                }
+                $current = $meta_row_value($meta);
+                if ($meta_values_differ($current, $target_value)) {
+                    $meta_changed = true;
+                }
+                $row_id = $meta_row_id($meta);
+                if ($row_id > 0) {
+                    $item->update_meta_data($row_key, $target_value, $row_id);
+                } else {
+                    $item->update_meta_data($row_key, $target_value);
+                }
+            }
+        };
+
+        $booking_type_target = '';
+        if (!empty($booking['booking_type']) && strcasecmp((string) $booking['booking_type'], 'Unknown') !== 0) {
+            $booking_type_target = (string) $booking['booking_type'];
+        }
+        if ($booking_type_target !== '') {
+            $update_existing_alias_rows(
+                ['Booking Type', 'Type de réservation', 'Buchungstyp'],
+                $booking_type_target
+            );
         }
 
         if (array_key_exists('selected_days', $booking)) {
-            foreach (['Days Selected', 'Jours sélectionnés', 'Ausgewählte Tage', 'Selected Days'] as $key) {
-                $item->delete_meta_data($key);
-            }
-            if ($booking['selected_days'] !== '') {
-                $item->add_meta_data('Days Selected', $booking['selected_days'], true);
-            }
+            $selected_target = (string) $booking['selected_days'];
+            $update_existing_alias_rows(
+                ['Days Selected', 'Jours sélectionnés', 'Ausgewählte Tage', 'Selected Days'],
+                $selected_target
+            );
         }
 
         if (array_key_exists('late_pickup_days', $booking) && $booking['late_pickup_days'] !== '') {
-            foreach (['Late Pickup Days', 'Jours de garde prolongée'] as $key) {
-                $item->delete_meta_data($key);
-            }
-            $item->add_meta_data('Late Pickup Days', $booking['late_pickup_days'], true);
+            $update_existing_alias_rows(
+                ['Late Pickup Days', 'Jours de garde prolongée'],
+                (string) $booking['late_pickup_days']
+            );
+        }
+
+        if (!$meta_changed) {
+            return false;
         }
 
         $item->save();
+
         return true;
     }
 }
@@ -4328,6 +4426,14 @@ if (!function_exists('intersoccer_renormalize_roster_row_from_variation')) {
         }
 
         $normalized = intersoccer_normalize_roster_facets_for_storage($event_data);
+        if ($variation instanceof WC_Product_Variation
+            && function_exists('intersoccer_migration_supplement_roster_normalized_from_variation')) {
+            $normalized = intersoccer_migration_supplement_roster_normalized_from_variation(
+                $normalized,
+                $record,
+                $variation
+            );
+        }
         $order_item_id = (int) ($record['order_item_id'] ?? 0);
         if ($order_item_id > 0 && function_exists('intersoccer_roster_collect_event_data_from_order_item')) {
             $from_order = intersoccer_roster_collect_event_data_from_order_item($order_item_id);
@@ -4366,6 +4472,14 @@ if (!function_exists('intersoccer_renormalize_roster_row_from_variation')) {
             $record,
             intersoccer_read_order_item_booking_fields((int) ($record['order_item_id'] ?? 0))
         );
+        if ($variation instanceof WC_Product_Variation
+            && function_exists('intersoccer_migration_roster_booking_from_destination_variation')) {
+            $booking = intersoccer_migration_roster_booking_from_destination_variation(
+                $booking,
+                $record,
+                $variation
+            );
+        }
         $update_data = array_merge($update_data, intersoccer_build_roster_booking_db_update($booking, $record));
 
         $formats = [];
@@ -4408,12 +4522,14 @@ if (!function_exists('intersoccer_renormalize_roster_row_language')) {
 
         $order_item_id = (int) ($record['order_item_id'] ?? 0);
         $variation_id = (int) ($record['variation_id'] ?? 0);
+        $roster_changed = false;
 
         if ($variation_id > 0 && function_exists('intersoccer_renormalize_roster_row_from_variation')) {
             $ok = intersoccer_renormalize_roster_row_from_variation($roster_id);
             if (!$ok) {
                 return false;
             }
+            $roster_changed = true;
             $record = $wpdb->get_row(
                 $wpdb->prepare("SELECT * FROM {$rosters_table} WHERE id = %d LIMIT 1", $roster_id),
                 ARRAY_A
@@ -4467,8 +4583,10 @@ if (!function_exists('intersoccer_renormalize_roster_row_language')) {
             if ($wpdb->update($rosters_table, $update_data, ['id' => $roster_id], $formats, ['%d']) === false) {
                 return false;
             }
+            $roster_changed = true;
         }
 
+        $any_order_meta_wrote = false;
         if ($order_item_id > 0) {
             $record = $wpdb->get_row(
                 $wpdb->prepare("SELECT * FROM {$rosters_table} WHERE id = %d LIMIT 1", $roster_id),
@@ -4478,18 +4596,26 @@ if (!function_exists('intersoccer_renormalize_roster_row_language')) {
             if ((!function_exists('intersoccer_roster_move_item_renormalize_is_suppressed')
                     || !intersoccer_roster_move_item_renormalize_is_suppressed($order_item_id))
                 && function_exists('intersoccer_renormalize_order_item_event_meta')) {
-                $meta_wrote = intersoccer_renormalize_order_item_event_meta($order_item_id);
-                if ($order_meta_written !== null) {
-                    $order_meta_written = $meta_wrote;
+                if (intersoccer_renormalize_order_item_event_meta($order_item_id)) {
+                    $any_order_meta_wrote = true;
                 }
             }
             $booking = intersoccer_normalize_roster_booking_columns(
                 $record,
                 intersoccer_read_order_item_booking_fields($order_item_id)
             );
-            if (function_exists('intersoccer_renormalize_order_item_booking_meta')) {
-                intersoccer_renormalize_order_item_booking_meta($order_item_id, $booking);
+            if (function_exists('intersoccer_renormalize_order_item_booking_meta')
+                && intersoccer_renormalize_order_item_booking_meta($order_item_id, $booking)) {
+                $any_order_meta_wrote = true;
             }
+        }
+
+        if ($order_meta_written !== null) {
+            $order_meta_written = $any_order_meta_wrote;
+        }
+
+        if (!$roster_changed && !$any_order_meta_wrote) {
+            return false;
         }
 
         return true;
@@ -5460,7 +5586,17 @@ if (!function_exists('intersoccer_normalize_roster_facets_for_storage')) {
         ];
 
         foreach ($term_fields as $field => $taxonomy) {
-            if (!empty($normalized[$field]) && function_exists('intersoccer_get_term_name')) {
+            if (empty($normalized[$field])) {
+                continue;
+            }
+            if ($field === 'canton_region' && function_exists('intersoccer_migration_default_language_term_slug')) {
+                $normalized[$field] = intersoccer_migration_default_language_term_slug(
+                    $taxonomy,
+                    (string) $normalized[$field]
+                );
+                continue;
+            }
+            if (function_exists('intersoccer_get_term_name')) {
                 $name = intersoccer_get_term_name($normalized[$field], $taxonomy);
                 if ($name !== '' && $name !== 'N/A') {
                     $normalized[$field] = $name;

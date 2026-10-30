@@ -661,9 +661,15 @@ if (!function_exists('intersoccer_migration_resolve_destination_canonical_order_
         }
 
         $pa_taxonomy = $pa_map[$meta_key];
-        $slug = intersoccer_migration_slug_meta_pa_value($slug_meta, $pa_taxonomy);
-        if ($slug === '' && function_exists('intersoccer_migration_pa_attribute_slug_for_variation')) {
+        $slug = '';
+        if (function_exists('intersoccer_migration_pa_attribute_slug_for_variation')) {
             $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $pa_taxonomy);
+        }
+        if ($slug === '') {
+            $slug = intersoccer_migration_slug_meta_pa_value($slug_meta, $pa_taxonomy);
+        }
+        if ($slug !== '' && function_exists('intersoccer_migration_default_language_term_slug')) {
+            $slug = intersoccer_migration_default_language_term_slug($pa_taxonomy, $slug);
         }
 
         if ($meta_key === '_intersoccer_canonical_activity_type' && $slug === '') {
@@ -697,7 +703,133 @@ if (!function_exists('intersoccer_migration_resolve_destination_canonical_order_
             return strtolower((string) intersoccer_canonical_activity_type_for_roster($slug));
         }
 
+        if ($meta_key === '_intersoccer_canonical_booking_type'
+            && function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
+            $normalized_slug = intersoccer_normalize_booking_type_slug_for_reports($slug);
+            if ($normalized_slug !== '' && $normalized_slug !== 'other') {
+                return $normalized_slug;
+            }
+        }
+
         return $slug;
+    }
+}
+
+if (!function_exists('intersoccer_migration_supplement_roster_normalized_from_variation')) {
+    /**
+     * Fill blank roster facet columns from the destination variation (EN canonical storage shape).
+     *
+     * @param array<string,mixed> $normalized
+     * @param array<string,mixed> $record
+     */
+    function intersoccer_migration_supplement_roster_normalized_from_variation(
+        array $normalized,
+        array $record,
+        WC_Product_Variation $variation
+    ): array {
+        if (!function_exists('intersoccer_roster_facet_value_or_record')
+            || !function_exists('intersoccer_migration_pa_attribute_slug_for_variation')) {
+            return $normalized;
+        }
+
+        $facet_taxonomies = [
+            'venue'         => 'pa_intersoccer-venues',
+            'age_group'     => 'pa_age-group',
+            'camp_terms'    => 'pa_camp-terms',
+            'course_day'    => 'pa_course-day',
+            'times'         => 'pa_camp-times',
+            'city'          => 'pa_city',
+            'canton_region' => 'pa_canton-region',
+        ];
+
+        foreach ($facet_taxonomies as $facet => $taxonomy) {
+            if (intersoccer_roster_facet_value_or_record($normalized, $record, $facet) !== '') {
+                continue;
+            }
+
+            $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy);
+            if ($slug === '') {
+                if ($facet === 'times') {
+                    $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, 'pa_course-times');
+                }
+                if ($slug === '') {
+                    continue;
+                }
+                $taxonomy = 'pa_course-times';
+            }
+
+            $en_slug = intersoccer_migration_default_language_term_slug($taxonomy, $slug);
+            if ($en_slug === '') {
+                continue;
+            }
+
+            if ($facet === 'canton_region') {
+                $normalized[$facet] = $en_slug;
+                continue;
+            }
+
+            if (function_exists('intersoccer_get_term_name')) {
+                $name = intersoccer_get_term_name($en_slug, $taxonomy);
+                if ($name !== '' && $name !== 'N/A') {
+                    $normalized[$facet] = $name;
+                    continue;
+                }
+            }
+
+            $normalized[$facet] = $en_slug;
+        }
+
+        return $normalized;
+    }
+}
+
+if (!function_exists('intersoccer_migration_roster_booking_from_destination_variation')) {
+    /**
+     * When order item meta has no booking keys, derive roster booking_type from the destination variation.
+     *
+     * @param array<string,mixed> $booking
+     * @param array<string,mixed> $record
+     */
+    function intersoccer_migration_roster_booking_from_destination_variation(
+        array $booking,
+        array $record,
+        WC_Product_Variation $variation
+    ): array {
+        $current = trim((string) ($booking['booking_type'] ?? ''));
+        if ($current !== '' && strcasecmp($current, 'Unknown') !== 0) {
+            return $booking;
+        }
+
+        if (!function_exists('intersoccer_migration_pa_attribute_slug_for_variation')) {
+            return $booking;
+        }
+
+        $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, 'pa_booking-type');
+        if ($slug === '') {
+            return $booking;
+        }
+
+        $en_slug = intersoccer_migration_default_language_term_slug('pa_booking-type', $slug);
+        if ($en_slug === '') {
+            $en_slug = $slug;
+        }
+
+        if (function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
+            $en_slug = intersoccer_normalize_booking_type_slug_for_reports($en_slug);
+        }
+
+        static $slug_labels = [
+            'full-week'   => 'Full Week',
+            'single-days' => 'Single Day(s)',
+            'full-term'   => 'Full Term',
+        ];
+        if (isset($slug_labels[$en_slug])) {
+            $booking['booking_type'] = $slug_labels[$en_slug];
+        } elseif (function_exists('intersoccer_normalize_booking_type_for_storage')) {
+            $booking['booking_type'] = intersoccer_normalize_booking_type_for_storage($en_slug);
+        }
+
+        return $booking;
     }
 }
 
@@ -796,6 +928,69 @@ if (!function_exists('intersoccer_migration_pa_taxonomy_keys_for_move')) {
     }
 }
 
+if (!function_exists('intersoccer_migration_term_id_in_default_language')) {
+    /**
+     * Map a taxonomy term ID to the WPML default-language (English) term ID.
+     */
+    function intersoccer_migration_term_id_in_default_language(int $term_id, string $taxonomy): int {
+        if ($term_id <= 0 || $taxonomy === '' || !function_exists('apply_filters')) {
+            return $term_id;
+        }
+
+        $default_lang = apply_filters('wpml_default_language', null);
+        if (empty($default_lang)) {
+            return $term_id;
+        }
+
+        $mapped = (int) apply_filters('wpml_object_id', $term_id, $taxonomy, true, $default_lang);
+
+        return $mapped > 0 ? $mapped : $term_id;
+    }
+}
+
+if (!function_exists('intersoccer_migration_default_language_term_slug')) {
+    /**
+     * Resolve a taxonomy value (slug or label) to the default-language term slug (EN on WPML sites).
+     */
+    function intersoccer_migration_default_language_term_slug(string $taxonomy, string $value): string {
+        $value = trim($value);
+        if ($value === '' || $taxonomy === '') {
+            return '';
+        }
+
+        if ($taxonomy === 'pa_girls-only') {
+            return intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $value);
+        }
+
+        $term = null;
+        if (function_exists('intersoccer_get_term_in_default_language')) {
+            $term = intersoccer_get_term_in_default_language($value, $taxonomy);
+        }
+        if ((!$term || is_wp_error($term)) && function_exists('get_term_by')) {
+            $term = get_term_by('slug', $value, $taxonomy);
+            if (!$term || is_wp_error($term)) {
+                $term = get_term_by('name', $value, $taxonomy);
+            }
+        }
+
+        if ($term && !is_wp_error($term)) {
+            $en_id = intersoccer_migration_term_id_in_default_language((int) $term->term_id, $taxonomy);
+            $en_term = function_exists('get_term') ? get_term($en_id, $taxonomy) : $term;
+            if ($en_term && !is_wp_error($en_term) && !empty($en_term->slug)) {
+                return (string) $en_term->slug;
+            }
+
+            return (string) $term->slug;
+        }
+
+        if (strpos($value, ' ') !== false) {
+            return function_exists('sanitize_title') ? sanitize_title($value) : strtolower(str_replace(' ', '-', $value));
+        }
+
+        return $value;
+    }
+}
+
 if (!function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
     /**
      * Normalize a pa_* meta value to the WooCommerce term slug (not display name).
@@ -819,9 +1014,21 @@ if (!function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
         }
 
         if (function_exists('taxonomy_exists') && taxonomy_exists($taxonomy)) {
+            if (function_exists('intersoccer_migration_default_language_term_slug')) {
+                $slug = intersoccer_migration_default_language_term_slug($taxonomy, $value);
+                if ($slug !== '') {
+                    return $slug;
+                }
+            }
             if (function_exists('intersoccer_get_cached_term_in_default_language')) {
                 $term = intersoccer_get_cached_term_in_default_language($value, $taxonomy);
                 if ($term && !is_wp_error($term)) {
+                    $en_id = intersoccer_migration_term_id_in_default_language((int) $term->term_id, $taxonomy);
+                    $en_term = get_term($en_id, $taxonomy);
+                    if ($en_term && !is_wp_error($en_term)) {
+                        return (string) $en_term->slug;
+                    }
+
                     return (string) $term->slug;
                 }
             }

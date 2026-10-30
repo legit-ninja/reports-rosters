@@ -2100,6 +2100,14 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
         ARRAY_A
     ) ?: [];
 
+    if (function_exists('intersoccer_migration_supplement_roster_normalized_from_variation')) {
+        $normalized = intersoccer_migration_supplement_roster_normalized_from_variation(
+            $normalized,
+            $record,
+            $variation
+        );
+    }
+
     if ($item_id > 0 && function_exists('intersoccer_roster_collect_event_data_from_order_item')) {
         $from_order = intersoccer_roster_collect_event_data_from_order_item($item_id);
         foreach (['city', 'canton_region'] as $facet_key) {
@@ -2141,6 +2149,13 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
             intersoccer_read_order_item_booking_fields($item_id)
         )
         : [];
+    if (function_exists('intersoccer_migration_roster_booking_from_destination_variation')) {
+        $booking = intersoccer_migration_roster_booking_from_destination_variation(
+            $booking,
+            $record,
+            $variation
+        );
+    }
     $booking_update = function_exists('intersoccer_build_roster_booking_db_update')
         ? intersoccer_build_roster_booking_db_update($booking, $record)
         : [];
