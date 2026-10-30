@@ -5628,6 +5628,8 @@ if (!function_exists('intersoccer_normalize_roster_facets_for_storage')) {
 
         $normalized['start_date'] = $payload['start_date'];
 
+        $preserve_canton_raw = trim((string) ($payload['canton_region'] ?? ''));
+
         $term_fields = [
             'venue'         => 'pa_intersoccer-venues',
             'age_group'     => 'pa_age-group',
@@ -5656,6 +5658,13 @@ if (!function_exists('intersoccer_normalize_roster_facets_for_storage')) {
                     $normalized[$field] = $name;
                 }
             }
+        }
+
+        if ($preserve_canton_raw !== ''
+            && function_exists('intersoccer_migration_default_language_term_slug_strict')
+            && intersoccer_migration_default_language_term_slug_strict('pa_canton-region', $preserve_canton_raw) === null
+        ) {
+            $normalized['canton_region'] = $preserve_canton_raw;
         }
 
         if (!empty($normalized['times']) && function_exists('intersoccer_get_term_name')) {
@@ -6012,7 +6021,8 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
             if ($term && !is_wp_error($term)) {
                 $normalized['canton_region'] = $term->name;
             } else {
-                $normalized['canton_region'] = $event_data['canton_region'];
+                // Use fallback normalization to ensure consistent signatures
+                $normalized['canton_region'] = intersoccer_normalize_term_fallback($event_data['canton_region']);
             }
         }
 

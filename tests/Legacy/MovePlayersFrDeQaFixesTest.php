@@ -1923,4 +1923,152 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
             'Ausgewählte Tage' => 'Montag, Mittwoch',
         ]);
     }
+
+    // Regression: RR #104 — event signature canton normalization unchanged from af6cd65 (fallback, not raw label).
+    public function test_signature_normalize_unresolved_genf_canton_matches_term_fallback(): void {
+        if (!function_exists('intersoccer_normalize_event_data_for_signature')
+            || !function_exists('intersoccer_normalize_term_fallback')
+        ) {
+            $this->markTestSkipped('Signature normalization helpers not available');
+        }
+
+        $normalized = intersoccer_normalize_event_data_for_signature([
+            'canton_region' => 'Genf',
+            'product_id' => 1,
+            'activity_type' => 'Camp',
+        ]);
+        $expected = intersoccer_normalize_term_fallback('Genf');
+
+        $this->assertSame($expected, $normalized['canton_region'] ?? '');
+    }
+
+    // Regression: RR #104 — visible canton label follows destination display when pa slug is unresolved.
+    public function test_move_writes_destination_canton_display_when_pa_slug_unresolved(): void {
+        $this->registerTerms(
+            [
+                'pa_intersoccer-venues' => [
+                    'stade-de-vessy' => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                ],
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 7300, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+                'pa_canton-region' => [
+                    'geneva' => (object) ['term_id' => 7400, 'slug' => 'geneva', 'name' => 'Geneva'],
+                ],
+            ],
+            [
+                7100 => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                7300 => (object) ['term_id' => 7300, 'slug' => 'full-week', 'name' => 'Full Week'],
+                7400 => (object) ['term_id' => 7400, 'slug' => 'geneva', 'name' => 'Geneva'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_canton-region' => 'Genf',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Visible canton label move',
+                'Canton / Region' => 'Geneva',
+                '_intersoccer_canonical_canton' => 'geneva',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('Genf', $meta['Canton / Region'] ?? '');
+        $this->assertSame('geneva', $meta['_intersoccer_canonical_canton']);
+    }
+
+    // Regression: RR #104 — resolved FR/DE move still writes EN pa_* slug bytes on the line (af6cd65 contract).
+    public function test_rr104_move_resolved_fr_and_de_terms_write_en_pa_slugs_on_line(): void {
+        $this->registerTerms(
+            [
+                'pa_intersoccer-venues' => [
+                    'stade-de-vessy' => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                ],
+                'pa_booking-type' => [
+                    'semaine-complete' => (object) ['term_id' => 7301, 'slug' => 'semaine-complete', 'name' => 'Semaine complète'],
+                    'ganze-woche' => (object) ['term_id' => 8301, 'slug' => 'ganze-woche', 'name' => 'Ganze Woche'],
+                    'full-week' => (object) ['term_id' => 8300, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+                'pa_canton-region' => [
+                    'geneve' => (object) ['term_id' => 7401, 'slug' => 'geneve', 'name' => 'Genève'],
+                    'genf' => (object) ['term_id' => 7501, 'slug' => 'genf', 'name' => 'Genf'],
+                    'geneva' => (object) ['term_id' => 7400, 'slug' => 'geneva', 'name' => 'Geneva'],
+                ],
+            ],
+            [
+                7301 => (object) ['term_id' => 7301, 'slug' => 'semaine-complete', 'name' => 'Semaine complète'],
+                8301 => (object) ['term_id' => 8301, 'slug' => 'ganze-woche', 'name' => 'Ganze Woche'],
+                8300 => (object) ['term_id' => 8300, 'slug' => 'full-week', 'name' => 'Full Week'],
+                7401 => (object) ['term_id' => 7401, 'slug' => 'geneve', 'name' => 'Genève'],
+                7501 => (object) ['term_id' => 7501, 'slug' => 'genf', 'name' => 'Genf'],
+                7400 => (object) ['term_id' => 7400, 'slug' => 'geneva', 'name' => 'Geneva'],
+            ]
+        );
+        $this->stubWpmlEnTerms([7301 => 8300, 7401 => 7400, 7501 => 7400]);
+
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'Semaine complète',
+                'attribute_pa_canton-region' => 'geneve',
+                'attribute_pa_girls-only' => 'no',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta_fr = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('full-week', $meta_fr['_intersoccer_canonical_booking_type'] ?? '');
+        $this->assertSame('geneva', $meta_fr['_intersoccer_canonical_canton'] ?? '');
+        if (isset($meta_fr['attribute_pa_booking-type'])) {
+            $this->assertSame('full-week', $meta_fr['attribute_pa_booking-type']);
+        }
+
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'Ganze Woche',
+                'attribute_pa_canton-region' => 'genf',
+                'attribute_pa_girls-only' => 'no',
+            ],
+        ]);
+
+        $response_de = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response_de['data']['moved_count'] ?? 0));
+
+        $meta_de = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('full-week', $meta_de['_intersoccer_canonical_booking_type'] ?? '');
+        $this->assertSame('geneva', $meta_de['_intersoccer_canonical_canton'] ?? '');
+        if (isset($meta_de['attribute_pa_booking-type'])) {
+            $this->assertSame('full-week', $meta_de['attribute_pa_booking-type']);
+        }
+    }
+
+    // Regression: RR #104 — admin repair maps resolved FR/DE canton labels to English roster facet (af6cd65).
+    public function test_rr104_admin_repair_resolved_fr_de_canton_labels_write_geneva_roster(): void {
+        $this->registerGenevaCantonTerms();
+        $this->assertAdminRepairBatchSetsRosterCantonGeneva(
+            88391,
+            883911,
+            ['Canton / Région' => 'Genève']
+        );
+        $this->assertAdminRepairBatchSetsRosterCantonGeneva(
+            88392,
+            883921,
+            ['Canton / Region' => 'Genf']
+        );
+    }
 }

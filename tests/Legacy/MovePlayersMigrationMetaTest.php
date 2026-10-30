@@ -645,6 +645,74 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertSame('Course, Girls Only', $payload['human_meta']['activity_type'] ?? '');
     }
 
+    // Regression: RR #104 — build_migration_meta_updates omits unresolved pa_* from slug_meta; resolved slugs stay EN.
+    public function test_build_migration_meta_updates_omits_unresolved_pa_from_slug_meta(): void {
+        if (!function_exists('intersoccer_build_migration_meta_updates')) {
+            $this->markTestSkipped('intersoccer_build_migration_meta_updates not available');
+        }
+
+        global $intersoccer_test_get_product_type_callback, $intersoccer_test_product_type_safe_callback;
+        $intersoccer_test_get_product_type_callback = static function () {
+            return 'camp';
+        };
+        $intersoccer_test_product_type_safe_callback = static function () {
+            return 'camp';
+        };
+
+        $parent_id = 88050;
+        $variation_id = 88051;
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_id')->andReturn($variation_id);
+        $variation->shouldReceive('get_parent_id')->andReturn($parent_id);
+        $variation->shouldReceive('get_name')->andReturn('Camp variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_booking-type' => 'full-term',
+            'attribute_pa_canton-region' => 'Unknown Canton Label',
+            'attribute_pa_girls-only' => 'no',
+        ]);
+        $variation->shouldReceive('get_attribute')->andReturnUsing(static function ($name) {
+            if ($name === 'pa_booking-type') {
+                return 'Full Term';
+            }
+            if ($name === 'pa_canton-region') {
+                return 'Unknown Canton Label';
+            }
+            if ($name === 'pa_girls-only') {
+                return 'No';
+            }
+
+            return '';
+        });
+        $variation->shouldReceive('get_attributes')->andReturn([]);
+
+        global $intersoccer_test_wc_get_product_callback;
+        $parent = Mockery::mock('WC_Product');
+        $parent->shouldReceive('get_id')->andReturn($parent_id);
+        $parent->shouldReceive('get_name')->andReturn('Camp Parent');
+        $parent->shouldReceive('get_attribute')->andReturn('');
+        $parent->shouldReceive('get_attributes')->andReturn([]);
+        $intersoccer_test_wc_get_product_callback = static function ($id) use ($variation, $variation_id, $parent, $parent_id) {
+            $id = (int) $id;
+            if ($id === $variation_id) {
+                return $variation;
+            }
+            if ($id === $parent_id) {
+                return $parent;
+            }
+
+            return false;
+        };
+
+        $payload = intersoccer_build_migration_meta_updates($variation);
+        $slug_meta = $payload['slug_meta'] ?? [];
+
+        $this->assertSame('full-term', $slug_meta['pa_booking-type'] ?? '');
+        $this->assertSame('full-term', $slug_meta['attribute_pa_booking-type'] ?? '');
+        $this->assertArrayNotHasKey('pa_canton-region', $slug_meta);
+        $this->assertArrayNotHasKey('attribute_pa_canton-region', $slug_meta);
+        $this->assertSame('Unknown Canton Label', $payload['human_meta']['canton_region'] ?? '');
+    }
+
     public function test_sandbox_7883_shape_snapshot_maps_year_to_program_year_canonical(): void {
         global $intersoccer_test_wc_order_item_meta;
 

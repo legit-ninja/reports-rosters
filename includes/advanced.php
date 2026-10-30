@@ -1072,6 +1072,8 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
         $human_meta  = array();
         $other_meta  = array();
         $expected_slugs = array();
+        $variation_display_by_canonical = array();
+        $variation_raw_by_pa = array();
 
         $human_alias_map = intersoccer_migration_human_alias_map();
         $human_lookup    = intersoccer_migration_build_lookup($human_alias_map);
@@ -1094,11 +1096,19 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
         foreach ($variation_attributes as $attribute_key => $attribute_value) {
             $clean_key = str_replace('attribute_', '', $attribute_key);
             $slug_value = is_array($attribute_value) ? (string) reset($attribute_value) : (string) $attribute_value;
+            $variation_raw_by_pa[$clean_key] = $slug_value;
             if (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
                 $strict_slug = intersoccer_migration_coerce_pa_taxonomy_slug_strict($clean_key, $slug_value);
-                if ($strict_slug !== null) {
-                    $slug_value = $strict_slug;
+                if ($strict_slug === null) {
+                    $display_value = intersoccer_migration_format_attribute_value($clean_key, $attribute_value);
+                    if (isset($taxonomy_canonical_map[$clean_key])) {
+                        $canonical = $taxonomy_canonical_map[$clean_key];
+                        $human_meta[$canonical] = $display_value;
+                        $variation_display_by_canonical[$canonical] = $display_value;
+                    }
+                    continue;
                 }
+                $slug_value = $strict_slug;
             } elseif (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
                 $slug_value = intersoccer_migration_coerce_pa_taxonomy_slug($clean_key, $slug_value);
             }
@@ -1110,14 +1120,12 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
 
             if (isset($taxonomy_canonical_map[$clean_key])) {
                 $canonical = $taxonomy_canonical_map[$clean_key];
-                if ($canonical !== 'girls_only'
-                    && function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
-                    $raw_attr = is_array($attribute_value) ? (string) reset($attribute_value) : (string) $attribute_value;
-                    if (intersoccer_migration_coerce_pa_taxonomy_slug_strict($clean_key, $raw_attr) === null) {
-                        continue;
-                    }
+                if ($canonical === 'girls_only') {
+                    $human_meta[$canonical] = $display_value;
+                } else {
+                    $human_meta[$canonical] = $display_value;
                 }
-                $human_meta[$canonical] = $display_value;
+                $variation_display_by_canonical[$canonical] = $display_value;
             }
         }
 
@@ -1231,6 +1239,24 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
             $human_meta = function_exists('intersoccer_human_meta_from_normalized_facets')
                 ? intersoccer_human_meta_from_normalized_facets($normalized)
                 : $human_meta;
+
+            if (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
+                foreach ($taxonomy_canonical_map as $pa_key => $canonical) {
+                    if ($canonical === 'girls_only') {
+                        continue;
+                    }
+                    if (!isset($variation_display_by_canonical[$canonical])) {
+                        continue;
+                    }
+                    $raw_attr = $variation_raw_by_pa[$pa_key] ?? '';
+                    if ($raw_attr === '') {
+                        continue;
+                    }
+                    if (intersoccer_migration_coerce_pa_taxonomy_slug_strict($pa_key, $raw_attr) === null) {
+                        $human_meta[$canonical] = $variation_display_by_canonical[$canonical];
+                    }
+                }
+            }
 
             $girls_only_flag = (int) ($normalized['girls_only'] ?? 0);
             $activity_for_label = $human_meta['activity_type'] ?? $normalized['activity_type'] ?? '';
