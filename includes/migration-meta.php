@@ -710,7 +710,7 @@ if (!function_exists('intersoccer_migration_apply_destination_canonical_order_me
         array $slug_meta,
         array $prior_canonical_order_meta = []
     ): void {
-        if ($item_id <= 0 || $existing_line_keys === []) {
+        if ($item_id <= 0 || ($existing_line_keys === [] && $prior_canonical_order_meta === [])) {
             return;
         }
 
@@ -724,7 +724,10 @@ if (!function_exists('intersoccer_migration_apply_destination_canonical_order_me
             return;
         }
 
-        $existing_flip = array_fill_keys($existing_line_keys, true);
+        $existing_flip = array_fill_keys(
+            array_unique(array_merge($existing_line_keys, array_keys($prior_canonical_order_meta))),
+            true
+        );
         $item = new WC_Order_Item_Product($item_id);
         $meta_changed = false;
 
