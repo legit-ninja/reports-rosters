@@ -33,6 +33,13 @@ if (!function_exists('intersoccer_reports_resolve_program_year')) {
 	}
 }
 
+if (!function_exists('intersoccer_extract_year_from_season')) {
+	$__reports_data = dirname(__FILE__) . '/reports-data.php';
+	if (file_exists($__reports_data)) {
+		require_once $__reports_data;
+	}
+}
+
 if (!function_exists('intersoccer_roster_row_matches_listing_kind')) {
 	$__utils = dirname(__FILE__) . '/utils.php';
 	if (file_exists($__utils)) {
@@ -1079,19 +1086,18 @@ function intersoccer_player_course_status_course_day_slug($raw) {
 	}
 	if (function_exists('intersoccer_roster_facet_for_grouping')) {
 		$slug = intersoccer_roster_facet_for_grouping($raw, 'pa_course-day');
-		$GLOBALS['intersoccer_pcs_course_day_slug_memo'][ $memo_key ] = $slug;
-
-		return $slug;
+	} else {
+		$slug = strtolower($raw);
 	}
 	if (function_exists('intersoccer_normalize_weekday_token')) {
-		$day = intersoccer_normalize_weekday_token($raw);
-		$slug = $day ? strtolower((string) $day) : strtolower($raw);
-		$GLOBALS['intersoccer_pcs_course_day_slug_memo'][ $memo_key ] = $slug;
-
-		return $slug;
+		$canonical = intersoccer_normalize_weekday_token($raw);
+		if ($canonical === null && $slug !== '') {
+			$canonical = intersoccer_normalize_weekday_token($slug);
+		}
+		if ($canonical !== null) {
+			$slug = strtolower((string) $canonical);
+		}
 	}
-
-	$slug = strtolower($raw);
 	$GLOBALS['intersoccer_pcs_course_day_slug_memo'][ $memo_key ] = $slug;
 
 	return $slug;
@@ -2499,6 +2505,31 @@ function intersoccer_player_course_status_normalize_filters(array $filters) {
 		'course_day' => isset($filters['course_day']) ? sanitize_text_field((string) $filters['course_day']) : '',
 		'age_group' => isset($filters['age_group']) ? sanitize_text_field((string) $filters['age_group']) : '',
 	];
+}
+
+/**
+ * PCS totals for the given filters (same engine path as the admin UI and WP-CLI).
+ *
+ * @param array<string,mixed> $filters
+ * @param array<string,mixed> $options Optional second argument to {@see intersoccer_player_course_status_generate()}.
+ * @return array<string,int>
+ */
+function intersoccer_player_course_status_report_totals(array $filters, array $options = []) {
+	$result = intersoccer_player_course_status_generate($filters, $options);
+	$totals = $result['totals'] ?? null;
+
+	if (!is_array($totals)) {
+		return [
+			'players' => 0,
+			'booked' => 0,
+			'not_booked' => 0,
+			'pending_payment' => 0,
+			'on_hold' => 0,
+			'unmatched_bookings' => 0,
+		];
+	}
+
+	return $totals;
 }
 
 /**
