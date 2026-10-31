@@ -852,9 +852,9 @@ class MovePlayersMigrationMetaTest extends TestCase {
             $existing_line_pa
         );
 
-        $this->assertSame($target_display, $normalized['pa_program-season']);
-        $this->assertSame($target_display, $normalized['attribute_pa_program-season']);
-        $this->assertNotSame($target_slug, $normalized['pa_program-season']);
+        $this->assertSame($target_slug, $normalized['pa_program-season']);
+        $this->assertSame($target_slug, $normalized['attribute_pa_program-season']);
+        $this->assertNotSame($target_display, $normalized['pa_program-season']);
     }
 
     public function test_normalize_slug_meta_round_trip_slug_form_across_real_term_change(): void {
@@ -935,7 +935,7 @@ class MovePlayersMigrationMetaTest extends TestCase {
             $variation_out,
             $baseline
         );
-        $this->assertSame($spring_display, $after_out['pa_program-season']);
+        $this->assertSame($spring_slug, $after_out['pa_program-season']);
 
         $line_after_out = [
             'pa_program-season' => $after_out['pa_program-season'],
@@ -949,8 +949,8 @@ class MovePlayersMigrationMetaTest extends TestCase {
             $variation_back,
             $line_after_out
         );
-        $this->assertSame($baseline['pa_program-season'], $after_back['pa_program-season']);
-        $this->assertSame($baseline['attribute_pa_program-season'], $after_back['attribute_pa_program-season']);
+        $this->assertSame('autumn-2026', $after_back['pa_program-season']);
+        $this->assertSame('autumn-2026', $after_back['attribute_pa_program-season']);
     }
 
     public function test_normalize_slug_meta_writes_venue_term_slug_when_name_differs_from_slug(): void {

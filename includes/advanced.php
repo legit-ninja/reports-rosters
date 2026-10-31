@@ -1182,8 +1182,22 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
             }
         }
 
+        $is_camp_product = ($product_type === 'camp');
+        if (!$is_camp_product && function_exists('intersoccer_get_product_type')) {
+            $is_camp_product = intersoccer_get_product_type((int) $variation->get_parent_id()) === 'camp';
+        }
+
+        if ($is_camp_product && function_exists('intersoccer_migration_camp_schedule_other_meta_for_move')) {
+            $camp_schedule_meta = intersoccer_migration_camp_schedule_other_meta_for_move((int) $variation->get_id());
+            foreach ($camp_schedule_meta as $meta_key => $meta_value) {
+                $other_meta[$meta_key] = $meta_value;
+            }
+        }
+
         if (!empty($product_type)) {
             $human_meta['activity_type'] = ucfirst($product_type);
+        } elseif ($is_camp_product) {
+            $human_meta['activity_type'] = 'Camp';
         }
 
         if (function_exists('intersoccer_get_product_season')) {
@@ -2308,6 +2322,48 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
         'product_id'   => $parent_id,
         'product_name' => substr((string) $product_name, 0, 255),
     ]);
+
+    $camp_product_type = $product_type;
+    if ($camp_product_type === '' && function_exists('intersoccer_get_product_type')) {
+        $camp_product_type = (string) intersoccer_get_product_type($parent_id);
+    }
+    $activity_lower = strtolower(trim((string) ($normalized['activity_type'] ?? ($record['activity_type'] ?? ''))));
+    $line_activity = function_exists('wc_get_order_item_meta')
+        ? strtolower(trim((string) wc_get_order_item_meta((int) $item_id, 'Activity Type', true)))
+        : '';
+    if ($camp_product_type === 'camp' || $activity_lower === 'camp' || $line_activity === 'camp') {
+        $resolved_start = '';
+        $resolved_end = '';
+        if (function_exists('wc_get_order_item_meta')) {
+            foreach (['Camp Start Date', 'Date de début du camp', 'Camp-Startdatum', '_camp_start_date'] as $key) {
+                $raw = trim((string) wc_get_order_item_meta((int) $item_id, $key, true));
+                if ($raw !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) {
+                    $resolved_start = $raw;
+                    break;
+                }
+            }
+            foreach (['Camp End Date', 'Date de fin du camp', 'Camp-Enddatum', '_camp_end_date'] as $key) {
+                $raw = trim((string) wc_get_order_item_meta((int) $item_id, $key, true));
+                if ($raw !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) {
+                    $resolved_end = $raw;
+                    break;
+                }
+            }
+        }
+        if ($resolved_start === '' && function_exists('intersoccer_migration_read_variation_camp_schedule_ymd')) {
+            $schedule = intersoccer_migration_read_variation_camp_schedule_ymd($target_variation_id);
+            $resolved_start = $schedule['start'];
+            $resolved_end = $schedule['end'] !== '' ? $schedule['end'] : $schedule['start'];
+        }
+        if ($resolved_start !== '' && $resolved_start !== '1970-01-01') {
+            $update_data['start_date'] = $resolved_start;
+            if ($resolved_end !== '' && $resolved_end !== '1970-01-01') {
+                $update_data['end_date'] = $resolved_end;
+            } else {
+                $update_data['end_date'] = $resolved_start;
+            }
+        }
+    }
 
     if (function_exists('intersoccer_roster_canonicalize_row_product_ids')) {
         $canonical = intersoccer_roster_canonicalize_row_product_ids([
