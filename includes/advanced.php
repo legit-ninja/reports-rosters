@@ -1317,6 +1317,14 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
             }
         }
 
+        if ($for_order_line && function_exists('intersoccer_migration_apply_order_language_time_human_labels')) {
+            $human_meta = intersoccer_migration_apply_order_language_time_human_labels(
+                $human_meta,
+                $expected_slugs,
+                $variation_raw_by_pa
+            );
+        }
+
         return array(
             'slug_meta'  => $slug_meta,
             'human_meta' => $human_meta,

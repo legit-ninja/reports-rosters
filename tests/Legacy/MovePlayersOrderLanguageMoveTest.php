@@ -748,4 +748,57 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         $row = $intersoccer_test_roster_store[self::ITEM_ID];
         $this->assertSame(1, (int) ($row['girls_only'] ?? 0));
     }
+
+    // Regression: RR #175 — FR order-line course times stay HHhMM when catalog EN names would normalize to slugs.
+    public function test_fr_order_line_build_localizes_course_times_for_order_language(): void {
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'fr';
+        $GLOBALS['intersoccer_test_terms_by_slug']['pa_course-times'] = [
+            '1115-1245' => (object) ['term_id' => 97350, 'slug' => '1115-1245', 'name' => '11:15-12:45'],
+            '1400-1530' => (object) ['term_id' => 97351, 'slug' => '1400-1530', 'name' => '1400-1530'],
+        ];
+        $GLOBALS['intersoccer_test_terms_by_id'] = [
+            97350 => $GLOBALS['intersoccer_test_terms_by_slug']['pa_course-times']['1115-1245'],
+            97351 => $GLOBALS['intersoccer_test_terms_by_slug']['pa_course-times']['1400-1530'],
+        ];
+
+        global $intersoccer_test_product_type_safe_callback, $intersoccer_test_get_product_type_callback;
+        $intersoccer_test_product_type_safe_callback = static function () {
+            return 'course';
+        };
+        $intersoccer_test_get_product_type_callback = static function () {
+            return 'course';
+        };
+
+        $variation = Mockery::mock(\WC_Product_Variation::class);
+        $variation->shouldReceive('get_id')->andReturn(self::FR_TARGET);
+        $variation->shouldReceive('get_parent_id')->andReturn(self::FR_PARENT);
+        $variation->shouldReceive('get_name')->andReturn('Ligne cours FR');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_course-times' => '1400-1530',
+            'attribute_pa_course-day' => 'saturday',
+            'attribute_pa_booking-type' => 'full-term',
+            'attribute_pa_girls-only' => 'no',
+        ]);
+        $variation->shouldReceive('get_attribute')->andReturnUsing(static function ($name) {
+            $map = [
+                'pa_course-times' => '1400-1530',
+                'pa_course-day' => 'saturday',
+                'pa_booking-type' => 'full-term',
+                'pa_girls-only' => 'no',
+            ];
+
+            return $map[$name] ?? '';
+        });
+        $variation->shouldReceive('get_attributes')->andReturn([]);
+
+        $build = static function () use ($variation) {
+            return intersoccer_build_migration_meta_updates($variation, true);
+        };
+        $payload = function_exists('intersoccer_with_wpml_language')
+            ? intersoccer_with_wpml_language('fr', $build)
+            : $build();
+
+        $this->assertSame('14h00-15h30', $payload['human_meta']['course_times'] ?? '');
+        $this->assertSame('1400-1530', $payload['slug_meta']['pa_course-times'] ?? '');
+    }
 }

@@ -382,6 +382,14 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
                         return is_string($value) && trim($value) !== '' ? $value : null;
                     }
                 }
+                if (strpos($sql, 'variation_id') !== false) {
+                    $row = $GLOBALS['intersoccer_test_roster_store'][self::ITEM_ID] ?? null;
+                    if (is_array($row) && !empty($row['variation_id'])) {
+                        return (string) (int) $row['variation_id'];
+                    }
+
+                    return null;
+                }
 
                 return '972';
             }
@@ -4479,6 +4487,44 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
                 '_intersoccer_canonical_booking_type' => 'full-week',
             ],
             'roster_row' => ['booking_type' => 'Full Week'],
+        ]);
+        $this->seedRosterHistoryMetaForBlockTest();
+        $this->assertBookingTypeMismatchHardBlockNoWrites(['confirm_warnings' => '1']);
+    }
+
+    public function test_camp_four_day_days_only_meta_blocks_single_day_target_from_source_variation(): void {
+        $four_days = 'Monday, Tuesday, Wednesday, Thursday';
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9770, 'slug' => 'full-week', 'name' => 'Full Week'],
+                    'single-days' => (object) ['term_id' => 9771, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                ],
+            ],
+            [
+                9770 => (object) ['term_id' => 9770, 'slug' => 'full-week', 'name' => 'Full Week'],
+                9771 => (object) ['term_id' => 9771, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'source_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'single-days',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'parent_attrs' => [
+                'pa_days-of-week' => $four_days,
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Four day line without booking meta',
+                'Days Selected' => $four_days,
+            ],
+            'roster_row' => ['booking_type' => ''],
         ]);
         $this->seedRosterHistoryMetaForBlockTest();
         $this->assertBookingTypeMismatchHardBlockNoWrites(['confirm_warnings' => '1']);
