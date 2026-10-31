@@ -1137,3 +1137,4 @@ class ComposerStaticInit524cfbad5fc29d5511275e827678d85a
         }, null, ClassLoader::class);
     }
 }
+        'InterSoccer\\ReportsRosters\\Exceptions\\RosterRebuildAbortedException' => __DIR__ . '/../..' . '/classes/Exceptions/RosterRebuildAbortedException.php',

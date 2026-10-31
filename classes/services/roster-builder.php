@@ -26,6 +26,7 @@ use InterSoccer\ReportsRosters\Services\EventSignatureGenerator;
 use InterSoccer\ReportsRosters\Services\PlayerMatcher;
 use InterSoccer\ReportsRosters\Exceptions\ValidationException;
 use InterSoccer\ReportsRosters\Exceptions\DatabaseException;
+use InterSoccer\ReportsRosters\Exceptions\RosterRebuildAbortedException;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -272,6 +273,27 @@ class RosterBuilder {
             'rosters_deleted' => 0,
         ];
     }
+
+    /**
+     * @param string $generic_fallback Message used when no earlier abort error was recorded
+     */
+    private function resolveRebuildAbortErrorMessage(string $generic_fallback): string {
+        $errors = $this->build_stats['errors'] ?? [];
+        for ($i = count($errors) - 1; $i >= 0; $i--) {
+            $err = $errors[$i];
+            if (is_string($err) && $err !== '' && $err !== $generic_fallback) {
+                return $err;
+            }
+        }
+
+        return $generic_fallback;
+    }
+
+    private function rethrowIfRebuildAborted(\Throwable $e): void {
+        if ($e instanceof RosterRebuildAbortedException) {
+            throw $e;
+        }
+    }
     
     /**
      * Build rosters from WooCommerce orders
@@ -322,11 +344,13 @@ class RosterBuilder {
 
             if ($is_full_rebuild) {
                 if ($stats === false) {
+                    $generic = 'Rebuild failed; no roster rows were changed.';
                     $this->build_stats['rebuild_failed'] = true;
                     if ($this->build_stats['end_time'] === null) {
                         $this->build_stats['end_time'] = microtime(true);
                     }
-                    $this->build_stats['errors'][] = 'Rebuild failed; no roster rows were changed.';
+                    $this->build_stats['errors'][] = $generic;
+                    $this->build_stats['error'] = $this->resolveRebuildAbortErrorMessage($generic);
                     return $this->build_stats;
                 }
                 if (!empty($stats['age_mismatches'])) {
@@ -723,6 +747,7 @@ class RosterBuilder {
                     $this->build_stats['orders_processed']++;
                     $total_processed++;
                 } catch (\Throwable $e) {
+                    $this->rethrowIfRebuildAborted($e);
                     $this->build_stats['skipped_orders']++;
                     $this->build_stats['errors'][] = "Order {$order_id}: " . $e->getMessage();
                     $this->logger->error('Failed to process order in batch', [
@@ -931,7 +956,10 @@ class RosterBuilder {
             return $deleted_count;
         } catch (\Throwable $e) {
             if ($failure_mode === self::DELETE_ORDER_ITEM_ABORT_RUN) {
-                throw $e;
+                $this->rethrowIfRebuildAborted($e);
+                $message = "Failed to delete obsolete roster {$order_item_id}: {$e->getMessage()}";
+                $this->build_stats['errors'][] = $message;
+                throw new RosterRebuildAbortedException($message, 0, $e);
             }
 
             $message = "Failed to delete obsolete roster {$order_item_id}: {$e->getMessage()}";
@@ -2843,6 +2871,7 @@ class RosterBuilder {
                         }
                         $this->build_stats['orders_processed']++;
                     } catch (\Throwable $e) {
+                        $this->rethrowIfRebuildAborted($e);
                         $this->build_stats['skipped_orders']++;
                         $this->build_stats['errors'][] = "Order {$order_id}: " . $e->getMessage();
 
@@ -2859,8 +2888,10 @@ class RosterBuilder {
             $this->build_stats['end_time'] = microtime(true);
 
             if ($tx_ok === false) {
+                $generic = 'Rebuild failed; no roster rows were changed.';
                 $this->build_stats['rebuild_failed'] = true;
-                $this->build_stats['errors'][] = 'Rebuild failed; no roster rows were changed.';
+                $this->build_stats['errors'][] = $generic;
+                $abort_error = $this->resolveRebuildAbortErrorMessage($generic);
 
                 $this->logger->error('Specific orders rebuild transaction failed', $this->build_stats);
 
@@ -2870,7 +2901,7 @@ class RosterBuilder {
                     'age_mismatches' => $this->build_stats['age_mismatches'] ?? [],
                     'not_checked' => $this->build_stats['not_checked'] ?? ['count' => 0, 'order_item_ids' => []],
                     'rebuild_failed' => true,
-                    'error' => 'Rebuild failed; no roster rows were changed.',
+                    'error' => $abort_error,
                 ];
             }
 

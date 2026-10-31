@@ -1049,3 +1049,4 @@ return array(
     'ZipStream\\Stream' => $vendorDir . '/maennchen/zipstream-php/src/Stream.php',
     'ZipStream\\ZipStream' => $vendorDir . '/maennchen/zipstream-php/src/ZipStream.php',
 );
+    'InterSoccer\\ReportsRosters\\Exceptions\\RosterRebuildAbortedException' => \$baseDir . '/classes/Exceptions/RosterRebuildAbortedException.php',

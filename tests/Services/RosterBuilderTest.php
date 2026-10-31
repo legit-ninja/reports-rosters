@@ -605,13 +605,15 @@ class RosterBuilderTest extends TestCase {
     }
 
     public function test_build_rosters_with_clear_existing_does_not_truncate_before_processing(): void {
+        $queries = [];
         $wpdbStub = Mockery::mock('wpdb');
         $wpdbStub->prefix = 'wp_';
-        $wpdbStub->shouldReceive('get_results')->andReturn([]);
-        $wpdbStub->shouldReceive('query')->andReturnUsing(function ($sql) {
-            $upper = strtoupper((string) $sql);
-            $this->assertStringNotContainsString('TRUNCATE', $upper);
-            $this->assertDoesNotMatchRegularExpression('/^\s*DELETE\s+FROM/i', (string) $sql);
+        $wpdbStub->shouldReceive('get_results')->andReturnUsing(function ($sql) use (&$queries) {
+            $queries[] = ['type' => 'get_results', 'sql' => (string) $sql];
+            return [];
+        });
+        $wpdbStub->shouldReceive('query')->andReturnUsing(function ($sql) use (&$queries) {
+            $queries[] = ['type' => 'query', 'sql' => (string) $sql];
             return true;
         });
 
@@ -629,11 +631,33 @@ class RosterBuilderTest extends TestCase {
             return [];
         };
 
-        $result = $this->rosterBuilder->buildRosters(['clear_existing' => true]);
+        try {
+            $result = $this->rosterBuilder->buildRosters(['clear_existing' => true]);
 
-        $this->assertIsArray($result);
-        $this->assertArrayHasKey('orders_processed', $result);
+            $this->assertIsArray($result);
+            $this->assertArrayHasKey('orders_processed', $result);
+
+            $found_existing_select = false;
+            foreach ($queries as $entry) {
+                $sql = $entry['sql'];
+                $upper = strtoupper($sql);
+                if (strpos($upper, 'SELECT') === 0 && strpos($sql, 'order_item_id') !== false) {
+                    $found_existing_select = true;
+                }
+                $this->assertStringNotContainsString('TRUNCATE', $upper);
+                $this->assertDoesNotMatchRegularExpression('/^\s*DELETE\s+FROM/i', $sql);
+            }
+            $this->assertTrue($found_existing_select, 'Expected existing roster map SELECT before processing');
+        } finally {
+            $intersoccer_test_wc_get_orders_callback = null;
+        }
+    }
+
+    protected function tearDown(): void {
+        global $intersoccer_test_wc_get_orders_callback, $intersoccer_test_wc_get_order_callback;
         $intersoccer_test_wc_get_orders_callback = null;
+        $intersoccer_test_wc_get_order_callback = null;
+        parent::tearDown();
     }
 
     public function test_build_rosters_skips_refund_orders() {

@@ -89,6 +89,14 @@ class RosterRebuildTransactionJournalWpdb {
 
     public function delete($table, $where) {
         $this->last_error = '';
+        $item_id = (int) ($where['order_item_id'] ?? 0);
+        if ($item_id > 0) {
+            $this->sql[] = sprintf(
+                'DELETE FROM %s WHERE order_item_id = %d',
+                $table,
+                $item_id
+            );
+        }
         $this->delete_attempts++;
         if ($this->fail_delete_on_attempt !== null
             && $this->delete_attempts === $this->fail_delete_on_attempt
@@ -96,7 +104,6 @@ class RosterRebuildTransactionJournalWpdb {
             $this->last_error = 'synthetic delete failure';
             return false;
         }
-        $item_id = (int) ($where['order_item_id'] ?? 0);
         if ($item_id > 0) {
             unset($this->working[$item_id]);
         }
@@ -105,6 +112,10 @@ class RosterRebuildTransactionJournalWpdb {
 
     public function get_results($query = null, $output = OBJECT) {
         $this->last_error = '';
+        $sql = trim((string) $query);
+        if ($sql !== '') {
+            $this->sql[] = $sql;
+        }
         if (preg_match('/SELECT order_item_id, order_id FROM/', (string) $query)) {
             return $this->existing_map_rows;
         }
@@ -134,6 +145,9 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
     private $wpdb;
     private $previous_wpdb;
 
+    /** @var list<string> */
+    private $admin_log_actions = [];
+
     protected function setUp(): void {
         parent::setUp();
         ReportAccuracyStore::reset();
@@ -141,6 +155,11 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
         $this->wpdb = new RosterRebuildTransactionJournalWpdb();
         $this->previous_wpdb = $GLOBALS['wpdb'] ?? null;
         $GLOBALS['wpdb'] = $this->wpdb;
+        $this->admin_log_actions = [];
+        \Brain\Monkey\Functions\when('intersoccer_roster_admin_log_insert')->alias(function ($action) {
+            $this->admin_log_actions[] = (string) $action;
+            return true;
+        });
     }
 
     protected function tearDown(): void {
@@ -190,21 +209,101 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
     }
 
     /** @return list<string> */
-    private function txSqlOnly(): array {
+    private function writeSqlSequence(): array {
         $out = [];
         foreach ($this->wpdb->sql as $line) {
-            $u = strtoupper($line);
-            if ($u === 'START TRANSACTION'
-                || $u === 'COMMIT'
-                || $u === 'ROLLBACK'
-                || strpos($u, 'SAVEPOINT ') === 0
-                || strpos($u, 'RELEASE SAVEPOINT ') === 0
-                || strpos($u, 'ROLLBACK TO SAVEPOINT ') === 0
-            ) {
-                $out[] = $line;
+            if ($this->isReadOnlySql($line)) {
+                continue;
+            }
+            $out[] = $line;
+        }
+
+        return $out;
+    }
+
+    private function isReadOnlySql(string $sql): bool {
+        $upper = ltrim(strtoupper(trim($sql)));
+        return strpos($upper, 'SELECT ') === 0
+            || strpos($upper, 'SHOW ') === 0
+            || strpos($upper, 'DESCRIBE ') === 0;
+    }
+
+    /** @param list<string> $sequence */
+    private function assertWriteSequenceBoundedByTransaction(array $sequence): void {
+        $start_idx = null;
+        $end_idx = null;
+        foreach ($sequence as $i => $line) {
+            $upper = strtoupper(trim($line));
+            if ($upper === 'START TRANSACTION') {
+                $start_idx = $i;
+            }
+            if ($upper === 'COMMIT' || $upper === 'ROLLBACK') {
+                $end_idx = $i;
             }
         }
-        return $out;
+        $this->assertNotNull($start_idx, 'Expected START TRANSACTION in write sequence');
+        $this->assertNotNull($end_idx, 'Expected COMMIT or ROLLBACK in write sequence');
+        $this->assertSame($end_idx, count($sequence) - 1, 'No SQL statements after outer COMMIT/ROLLBACK');
+
+        foreach ($sequence as $i => $line) {
+            if (!$this->isTransactionalControlSql($line) && !$this->isReadOnlySql($line)) {
+                $this->assertGreaterThanOrEqual($start_idx, $i, "Write before START TRANSACTION: {$line}");
+                $this->assertLessThanOrEqual($end_idx, $i, "Write after outer COMMIT/ROLLBACK: {$line}");
+            }
+        }
+    }
+
+    private function isTransactionalControlSql(string $sql): bool {
+        $upper = strtoupper(trim($sql));
+        return $upper === 'START TRANSACTION'
+            || $upper === 'COMMIT'
+            || $upper === 'ROLLBACK'
+            || strpos($upper, 'SAVEPOINT ') === 0
+            || strpos($upper, 'RELEASE SAVEPOINT ') === 0
+            || strpos($upper, 'ROLLBACK TO SAVEPOINT ') === 0;
+    }
+
+    private function assertTransactionLevelZero(Database $database): void {
+        $ref = new \ReflectionClass($database);
+        $prop = $ref->getProperty('transaction_level');
+        $prop->setAccessible(true);
+        $this->assertSame(0, $prop->getValue($database));
+    }
+
+    private function deleteSql(int $order_item_id): string {
+        return sprintf(
+            'DELETE FROM %sintersoccer_rosters WHERE order_item_id = %d',
+            $this->wpdb->prefix,
+            $order_item_id
+        );
+    }
+
+    /** @return list<string> */
+    private function expectedTwoDeleteCommitSequence(int $first_id, int $second_id): array {
+        return [
+            'START TRANSACTION',
+            'SAVEPOINT intersoccer_sp_2',
+            $this->deleteSql($first_id),
+            'RELEASE SAVEPOINT intersoccer_sp_2',
+            'SAVEPOINT intersoccer_sp_2',
+            $this->deleteSql($second_id),
+            'RELEASE SAVEPOINT intersoccer_sp_2',
+            'COMMIT',
+        ];
+    }
+
+    /** @return list<string> */
+    private function expectedSecondDeleteFailureSequence(int $first_id, int $second_id): array {
+        return [
+            'START TRANSACTION',
+            'SAVEPOINT intersoccer_sp_2',
+            $this->deleteSql($first_id),
+            'RELEASE SAVEPOINT intersoccer_sp_2',
+            'SAVEPOINT intersoccer_sp_2',
+            $this->deleteSql($second_id),
+            'ROLLBACK TO SAVEPOINT intersoccer_sp_2',
+            'ROLLBACK',
+        ];
     }
 
     private function minimalBuilder(Database $database, RosterRepository $repo): RosterBuilder {
@@ -234,17 +333,9 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
 
         $builder->buildRosters(['clear_existing' => true, 'batch_size' => 5]);
 
-        $this->assertSame(
-            [
-                'START TRANSACTION',
-                'SAVEPOINT intersoccer_sp_2',
-                'RELEASE SAVEPOINT intersoccer_sp_2',
-                'SAVEPOINT intersoccer_sp_2',
-                'RELEASE SAVEPOINT intersoccer_sp_2',
-                'COMMIT',
-            ],
-            $this->txSqlOnly()
-        );
+        $sequence = $this->writeSqlSequence();
+        $this->assertSame($this->expectedTwoDeleteCommitSequence(6101, 6102), $sequence);
+        $this->assertWriteSequenceBoundedByTransaction($sequence);
         $this->assertSame([], $this->wpdb->committed_item_ids());
     }
 
@@ -341,17 +432,9 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
 
         $builder->rebuildSpecificOrders([$order_id]);
 
-        $this->assertSame(
-            [
-                'START TRANSACTION',
-                'SAVEPOINT intersoccer_sp_2',
-                'RELEASE SAVEPOINT intersoccer_sp_2',
-                'SAVEPOINT intersoccer_sp_2',
-                'RELEASE SAVEPOINT intersoccer_sp_2',
-                'COMMIT',
-            ],
-            $this->txSqlOnly()
-        );
+        $sequence = $this->writeSqlSequence();
+        $this->assertSame($this->expectedTwoDeleteCommitSequence($removed_a, $removed_b), $sequence);
+        $this->assertWriteSequenceBoundedByTransaction($sequence);
         $this->assertSame([$line_keep], $this->wpdb->committed_item_ids());
     }
 
@@ -365,18 +448,174 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
         $result = $builder->buildRosters(['clear_existing' => true, 'batch_size' => 5]);
 
         $this->assertTrue($result['rebuild_failed'] ?? false);
-        $this->assertSame(
-            [
-                'START TRANSACTION',
-                'SAVEPOINT intersoccer_sp_2',
-                'RELEASE SAVEPOINT intersoccer_sp_2',
-                'SAVEPOINT intersoccer_sp_2',
-                'ROLLBACK TO SAVEPOINT intersoccer_sp_2',
-                'ROLLBACK',
-            ],
-            $this->txSqlOnly()
-        );
+        $this->assertStringContainsString('Failed to delete obsolete roster 6102', (string) ($result['error'] ?? ''));
+        $sequence = $this->writeSqlSequence();
+        $this->assertSame($this->expectedSecondDeleteFailureSequence(6101, 6102), $sequence);
+        $this->assertWriteSequenceBoundedByTransaction($sequence);
         $this->assertSame([6101, 6102], $this->wpdb->committed_item_ids());
+        $this->assertSame([], $this->admin_log_actions);
+        $this->assertTransactionLevelZero($database);
+    }
+
+    public function test_rebuild_specific_orders_second_delete_failure_rolls_back_and_rebuild_failed(): void {
+        $order_id = 7001;
+        $line_keep = 7101;
+        $removed_a = 7102;
+        $removed_b = 7103;
+        $meta = array_merge(DeletedProductFixture::courseMeta(), [
+            'Start Date' => 'July 1, 2026',
+            'End Date' => 'December 31, 2026',
+            'Activity Type' => 'Course',
+        ]);
+        $order = new StoredOrder($order_id, 'completed', '2026-01-12 10:00:00');
+        $order->addLine(new StoredLineItem(
+            $line_keep,
+            'Synthetic Course',
+            DeletedProductFixture::LIVE_PID,
+            DeletedProductFixture::LIVE_VID,
+            $meta,
+            true,
+            300.0
+        ));
+        ReportAccuracyStore::$orders[$order_id] = $order;
+
+        $this->wpdb->committed = [
+            $line_keep => true,
+            $removed_a => true,
+            $removed_b => true,
+        ];
+        $this->wpdb->fail_delete_on_attempt = 2;
+
+        global $intersoccer_test_wc_get_order_callback;
+        $intersoccer_test_wc_get_order_callback = static fn ($oid) => ReportAccuracyStore::$orders[(int) $oid] ?? false;
+
+        $logger = Mockery::mock(Logger::class);
+        $logger->shouldReceive('info', 'debug', 'warning', 'error')->andReturn(null);
+        $database = $this->realDatabase();
+        $repo_real = $this->realRosterRepository($database);
+
+        $stored = [
+            $line_keep => ['order_item_id' => $line_keep, 'order_id' => $order_id],
+            $removed_a => ['order_item_id' => $removed_a, 'order_id' => $order_id],
+            $removed_b => ['order_item_id' => $removed_b, 'order_id' => $order_id],
+        ];
+
+        $player = new Player([
+            'customer_id' => 1,
+            'player_index' => 0,
+            'first_name' => 'Synthetic',
+            'last_name' => 'Player',
+            'dob' => '2018-03-01',
+            'gender' => 'male',
+        ]);
+        $player_repo = Mockery::mock(PlayerRepository::class);
+        $player_repo->shouldReceive('getPlayersByCustomerId')->andReturn(new PlayersCollection([$player]));
+        $matcher = Mockery::mock(PlayerMatcher::class);
+        $matcher->shouldReceive('getAssignedPlayers')->andReturn(new PlayersCollection([$player]));
+        $validator = Mockery::mock(DataValidator::class);
+        $validator->shouldReceive('validateRosterData')->andReturn(['valid' => true, 'errors' => []]);
+
+        $repo = Mockery::mock(RosterRepository::class);
+        $repo->shouldReceive('first')->andReturn(null);
+        $repo->shouldReceive('count')->andReturn(0);
+        $repo->shouldReceive('where')->andReturnUsing(function (array $where) use ($stored, $order_id) {
+            if ((int) ($where['order_id'] ?? 0) !== $order_id) {
+                return new RostersCollection();
+            }
+            $rows = [];
+            foreach ($stored as $row) {
+                $rows[] = (object) $row;
+            }
+            return new RostersCollection($rows);
+        });
+        $repo->shouldReceive('create')->andReturnUsing(function (array $data) {
+            $r = new Roster($data);
+            $r->setSkipAgeGroupValidation(true);
+            $r->validate();
+            return $r;
+        });
+        $repo->shouldReceive('update')->andReturnUsing(fn ($r) => $r);
+        $repo->shouldReceive('deleteByOrderItemId')->andReturnUsing(function (int $id) use ($repo_real) {
+            return $repo_real->deleteByOrderItemId($id);
+        });
+
+        $builder = new RosterBuilder(
+            $logger,
+            $database,
+            $player_repo,
+            $repo,
+            $validator,
+            Mockery::mock(EventMatcher::class),
+            $matcher
+        );
+
+        $result = $builder->rebuildSpecificOrders([$order_id]);
+
+        $this->assertTrue($result['rebuild_failed'] ?? false);
+        $this->assertStringContainsString('Failed to delete obsolete roster 7103', (string) ($result['error'] ?? ''));
+        $sequence = $this->writeSqlSequence();
+        $this->assertSame($this->expectedSecondDeleteFailureSequence($removed_a, $removed_b), $sequence);
+        $this->assertWriteSequenceBoundedByTransaction($sequence);
+        $this->assertSame([$line_keep, $removed_a, $removed_b], $this->wpdb->committed_item_ids());
+        $this->assertSame([], $this->admin_log_actions);
+        $this->assertTransactionLevelZero($database);
+    }
+
+    public function test_rebuild_specific_orders_inactive_order_second_delete_failure_rolls_back(): void {
+        $order_id = 7203;
+        $row_a = 7303;
+        $row_b = 7304;
+        $this->wpdb->committed = [$row_a => true, $row_b => true];
+        $this->wpdb->fail_delete_on_attempt = 2;
+
+        global $intersoccer_test_wc_get_order_callback;
+        $intersoccer_test_wc_get_order_callback = static function ($oid) use ($order_id) {
+            if ((int) $oid !== $order_id) {
+                return false;
+            }
+            return new class($order_id) {
+                private $id;
+                public function __construct($id) { $this->id = $id; }
+                public function get_id() { return $this->id; }
+                public function get_type() { return 'shop_order'; }
+                public function get_status() { return 'failed'; }
+                public function get_items() { return [7400 => new \stdClass()]; }
+            };
+        };
+
+        $database = $this->realDatabase();
+        $repo_real = $this->realRosterRepository($database);
+        $stored = [
+            $row_a => ['order_item_id' => $row_a, 'order_id' => $order_id],
+            $row_b => ['order_item_id' => $row_b, 'order_id' => $order_id],
+        ];
+        $repo = Mockery::mock(RosterRepository::class);
+        $repo->shouldReceive('where')->andReturnUsing(function (array $where) use ($stored, $order_id) {
+            if ((int) ($where['order_id'] ?? 0) !== $order_id) {
+                return new RostersCollection();
+            }
+            $rows = [];
+            foreach ($stored as $row) {
+                $rows[] = (object) $row;
+            }
+            return new RostersCollection($rows);
+        });
+        $repo->shouldReceive('deleteByOrderItemId')->andReturnUsing(function (int $id) use ($repo_real) {
+            return $repo_real->deleteByOrderItemId($id);
+        });
+        $repo->shouldReceive('syncOrderStatusForKeptRows')->andReturn(0);
+
+        $builder = $this->minimalBuilder($database, $repo);
+        $result = $builder->rebuildSpecificOrders([$order_id]);
+
+        $this->assertTrue($result['rebuild_failed'] ?? false);
+        $this->assertStringContainsString('Failed to delete obsolete roster 7304', (string) ($result['error'] ?? ''));
+        $sequence = $this->writeSqlSequence();
+        $this->assertSame($this->expectedSecondDeleteFailureSequence($row_a, $row_b), $sequence);
+        $this->assertWriteSequenceBoundedByTransaction($sequence);
+        $this->assertSame([$row_a, $row_b], $this->wpdb->committed_item_ids());
+        $this->assertSame([], $this->admin_log_actions);
+        $this->assertTransactionLevelZero($database);
     }
 
     public function test_reconcile_continue_mode_one_delete_error_other_succeeds(): void {
