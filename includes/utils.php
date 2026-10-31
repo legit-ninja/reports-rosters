@@ -316,9 +316,10 @@ function intersoccer_get_english_product_name($product_name, $product_id = 0) {
                 }
             }
             
-            $lookup_id = ($original_product_id && $original_product_id != $product_id)
-                ? (int) $original_product_id
-                : (int) $normalized_product_id;
+            $lookup_id = (int) $normalized_product_id;
+            if ($original_product_id && (int) $original_product_id > 0) {
+                $lookup_id = (int) $original_product_id;
+            }
 
             if ($lookup_id > 0 && function_exists('intersoccer_with_wpml_default_language')) {
                 $english_name = intersoccer_with_wpml_default_language(static function () use ($lookup_id) {

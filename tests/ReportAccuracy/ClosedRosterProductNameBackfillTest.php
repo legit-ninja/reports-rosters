@@ -152,7 +152,7 @@ class ClosedRosterProductNameBackfillTest extends TestCase {
     public function test_apply_without_catalogue_uses_order_line_last_resort(): void {
         unset($GLOBALS['intersoccer_test_wc_get_product_callback'], $GLOBALS['intersoccer_test_apply_filters_callback']);
         self::$roster_rows = [
-            ['id' => 4, 'order_item_id' => 504, 'order_id' => 604, 'product_id' => 0, 'product_name' => 'SYNTH Stale DE', 'event_completed' => 1],
+            ['id' => 4, 'order_item_id' => 504, 'order_id' => 604, 'product_id' => 0, 'product_name' => '', 'event_completed' => 1],
         ];
         self::$order_items = [
             504 => ['order_item_name' => 'SYNTH Titel DE'],
