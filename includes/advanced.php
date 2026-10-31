@@ -1407,6 +1407,20 @@ function intersoccer_move_players_ajax() {
         wp_send_json_error(['message' => $block_message, 'hard_block' => true]);
     }
 
+    if (function_exists('intersoccer_migration_move_hard_block_for_booking_type_mismatch')) {
+        $booking_type_block = intersoccer_migration_move_hard_block_for_booking_type_mismatch(
+            $variation,
+            $order_item_ids
+        );
+        if ($booking_type_block !== null) {
+            error_log(
+                'InterSoccer Migration: Booking type mismatch hard block - target variation ' .
+                $target_variation_id
+            );
+            wp_send_json_error(['message' => $booking_type_block, 'hard_block' => true]);
+        }
+    }
+
     if (!empty($assessment['gender_block']) && !$allow_cross_gender) {
         $gender_message = function_exists('intersoccer_roster_move_ui_string')
             ? intersoccer_roster_move_ui_string('gender_block')
@@ -1635,6 +1649,15 @@ function intersoccer_move_players_ajax() {
                         $other_meta[$meta_key] = $line_meta_snapshot['other'][$meta_key];
                     }
                 }
+            }
+            if (function_exists('intersoccer_migration_preserve_unchanged_other_meta_for_move')) {
+                $other_meta = intersoccer_migration_preserve_unchanged_other_meta_for_move(
+                    $other_meta,
+                    $line_meta_snapshot['other'] ?? [],
+                    (int) $original_variation_id,
+                    $variation,
+                    $existing_line_meta_keys
+                );
             }
             if (function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
                 $slug_meta = intersoccer_migration_filter_slug_meta_for_move(

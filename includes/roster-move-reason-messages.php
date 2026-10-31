@@ -36,6 +36,8 @@ function intersoccer_roster_move_ui_strings(): array {
         'private_or_disabled' => __('This roster\'s variation is private or disabled.', 'intersoccer-reports-rosters'),
         'no_price' => __('This roster has no price set.', 'intersoccer-reports-rosters'),
         'course_ended' => __('This course has ended.', 'intersoccer-reports-rosters'),
+        'camp_ended' => __('This camp has ended.', 'intersoccer-reports-rosters'),
+        'booking_type_mismatch' => 'This roster has a different booking type (for example single days vs full week). Moving between booking types isn\'t supported yet.',
         'out_of_stock' => __('This roster is marked out of stock.', 'intersoccer-reports-rosters'),
         'hidden' => __('This roster is hidden from the shop.', 'intersoccer-reports-rosters'),
         'closed' => __('This roster is closed for sale.', 'intersoccer-reports-rosters'),
@@ -446,6 +448,13 @@ function intersoccer_roster_move_warning_context_for_variation(WC_Product_Variat
         $over_capacity_n = ($taken + $moving_player_count) - $capacity;
     }
 
+    $product_type = '';
+    if (function_exists('intersoccer_get_product_type_safe')) {
+        $product_type = (string) intersoccer_get_product_type_safe($parent_id, $variation_id);
+    } elseif (function_exists('intersoccer_get_product_type')) {
+        $product_type = (string) intersoccer_get_product_type($parent_id);
+    }
+
     return [
         'variation_id' => $variation_id,
         'parent_id' => $parent_id,
@@ -453,6 +462,7 @@ function intersoccer_roster_move_warning_context_for_variation(WC_Product_Variat
         'taken' => $taken,
         'moving_player_count' => $moving_player_count,
         'over_capacity_n' => $over_capacity_n,
+        'product_type' => $product_type,
     ];
 }
 
@@ -479,7 +489,12 @@ function intersoccer_roster_move_reason_lines_for_codes(array $reason_codes, arr
                 $lines[] = intersoccer_roster_move_ui_string('no_price');
                 break;
             case 'course_ended':
-                $lines[] = intersoccer_roster_move_ui_string('course_ended');
+                $target_type = strtolower(trim((string) ($context['product_type'] ?? '')));
+                if ($target_type === 'camp') {
+                    $lines[] = intersoccer_roster_move_ui_string('camp_ended');
+                } else {
+                    $lines[] = intersoccer_roster_move_ui_string('course_ended');
+                }
                 break;
             case 'full':
                 if ($capacity > 0) {

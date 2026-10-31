@@ -75,7 +75,9 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
             $GLOBALS['intersoccer_test_roster_store'],
             $GLOBALS['intersoccer_test_wc_order_item_meta'],
             $GLOBALS['intersoccer_test_roster_row_filter_map'],
-            $GLOBALS['intersoccer_test_camp_schedule_meta_stub']
+            $GLOBALS['intersoccer_test_camp_schedule_meta_stub'],
+            $GLOBALS['intersoccer_test_course_meta_by_variation'],
+            $GLOBALS['intersoccer_test_parent_product_attributes_by_variation']
         );
         $this->resetMovePlayersTestGlobals();
         parent::tearDown();
@@ -1123,7 +1125,7 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
             ],
             'target_attrs' => [
                 'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
-                'attribute_pa_booking-type' => 'semaine-complete',
+                'attribute_pa_booking-type' => 'jours-selectionnes',
                 'attribute_pa_canton-region' => 'geneva',
                 'attribute_pa_girls-only' => 'no',
             ],
@@ -1171,7 +1173,7 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
             ],
             'target_attrs' => [
                 'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
-                'attribute_pa_booking-type' => 'ganze-woche',
+                'attribute_pa_booking-type' => 'einzelne-tage',
                 'attribute_pa_canton-region' => 'geneva',
                 'attribute_pa_girls-only' => 'no',
             ],
@@ -3068,6 +3070,430 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
 
         $response = $this->invokeMoveAjax(null, ['allow_cross_gender' => '1']);
         $this->assertEmpty($response['data']['gender_block'] ?? null);
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+    }
+
+    private function ensureCourseMetaStub(): void {
+        if (!function_exists('intersoccer_get_course_meta')) {
+            eval(
+                'function intersoccer_get_course_meta($variation_id, $key, $default = null) {
+                    $map = $GLOBALS["intersoccer_test_course_meta_by_variation"][(int) $variation_id] ?? [];
+                    return array_key_exists($key, $map) ? $map[$key] : $default;
+                }'
+            );
+        }
+    }
+
+    private function ensureParentProductAttributesStub(): void {
+        if (!function_exists('intersoccer_get_parent_product_attributes')) {
+            eval(
+                'function intersoccer_get_parent_product_attributes($parent_id, $variation_id) {
+                    return $GLOBALS["intersoccer_test_parent_product_attributes_by_variation"][(int) $variation_id] ?? [];
+                }'
+            );
+        }
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function invokeMoveAjaxBlocked(array $post_overrides = []): array {
+        $GLOBALS['intersoccer_test_json_error_throws'] = true;
+        try {
+            return $this->invokeMoveAjax(null, $post_overrides);
+        } catch (\RuntimeException $e) {
+            $decoded = json_decode($e->getMessage(), true);
+
+            return is_array($decoded) ? $decoded : [];
+        } finally {
+            unset($GLOBALS['intersoccer_test_json_error_throws']);
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $meta_before
+     * @param array<string,mixed> $item_data_before
+     * @param array<string,mixed> $roster_before
+     * @param array<string,int>   $stock_before
+     */
+    private function assertMoveFullyUnchanged(
+        array $meta_before,
+        array $item_data_before,
+        array $roster_before,
+        array $stock_before
+    ): void {
+        global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_data, $intersoccer_test_roster_store;
+        global $intersoccer_test_wc_stock_qty;
+        $this->assertSame($meta_before, $intersoccer_test_wc_order_item_meta[self::ITEM_ID]);
+        $this->assertSame((int) $item_data_before['variation_id'], (int) $intersoccer_test_wc_order_item_data[self::ITEM_ID]['variation_id']);
+        $this->assertSame((int) $item_data_before['product_id'], (int) $intersoccer_test_wc_order_item_data[self::ITEM_ID]['product_id']);
+        $this->assertSame($roster_before, $intersoccer_test_roster_store[self::ITEM_ID]);
+        $this->assertSame($stock_before, $intersoccer_test_wc_stock_qty);
+    }
+
+    private function registerCourseMoveTerms(): void {
+        $this->registerTerms(
+            [
+                'pa_course-times' => [
+                    '1115-1245' => (object) ['term_id' => 8801, 'slug' => '1115-1245', 'name' => '11h15-12h45'],
+                    '1400-1530' => (object) ['term_id' => 8802, 'slug' => '1400-1530', 'name' => '14h00-15h30'],
+                ],
+                'pa_course-day' => [
+                    'saturday' => (object) ['term_id' => 8803, 'slug' => 'saturday', 'name' => 'Saturday'],
+                ],
+                'pa_booking-type' => [
+                    'full-term' => (object) ['term_id' => 8804, 'slug' => 'full-term', 'name' => 'Full Term'],
+                ],
+                'pa_intersoccer-venues' => [
+                    'geneva-site' => (object) ['term_id' => 8805, 'slug' => 'geneva-site', 'name' => 'Sites InterSoccer FR'],
+                ],
+                'pa_age-group' => [
+                    '5-8y' => (object) ['term_id' => 8806, 'slug' => '5-8y', 'name' => '5-8y FR'],
+                ],
+            ],
+            [
+                8801 => (object) ['term_id' => 8801, 'slug' => '1115-1245', 'name' => '11h15-12h45'],
+                8802 => (object) ['term_id' => 8802, 'slug' => '1400-1530', 'name' => '14h00-15h30'],
+                8803 => (object) ['term_id' => 8803, 'slug' => 'saturday', 'name' => 'Saturday'],
+                8804 => (object) ['term_id' => 8804, 'slug' => 'full-term', 'name' => 'Full Term'],
+                8805 => (object) ['term_id' => 8805, 'slug' => 'geneva-site', 'name' => 'Sites InterSoccer FR'],
+                8806 => (object) ['term_id' => 8806, 'slug' => '5-8y', 'name' => '5-8y FR'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+    }
+
+    private function installCourseMoveWorld(array $options): void {
+        global $intersoccer_test_product_type_safe_callback, $intersoccer_test_get_product_type_callback;
+        $intersoccer_test_product_type_safe_callback = static function () {
+            return 'course';
+        };
+        $intersoccer_test_get_product_type_callback = static function () {
+            return 'course';
+        };
+        $this->ensureCourseMetaStub();
+        $this->ensureParentProductAttributesStub();
+        $this->installMoveWorld($options);
+    }
+
+    // Regression: RR #104 QA — time-only FR course move keeps localized schedule + Note bytes.
+    public function test_fr_course_time_only_move_preserves_localized_schedule_note_and_parent_fields(): void {
+        $this->registerCourseMoveTerms();
+        $shared_course_meta = [
+            '_course_start_date' => '2027-01-10',
+            '_end_date' => '2027-06-13',
+            '_course_holiday_dates' => ['2027-02-14', '2027-03-28', '2027-04-04'],
+        ];
+        $GLOBALS['intersoccer_test_course_meta_by_variation'] = [
+            self::SOURCE_VAR => $shared_course_meta,
+            self::TARGET_VAR => $shared_course_meta,
+        ];
+        $note_en = 'Join anytime – prices are pro-rated if you start late.';
+        $GLOBALS['intersoccer_test_parent_product_attributes_by_variation'] = [
+            self::SOURCE_VAR => ['Note' => $note_en],
+            self::TARGET_VAR => ['Note' => $note_en],
+        ];
+        $fr_note = 'Inscription possible à tout moment – les tarifs sont calculés au prorata si vous…';
+        $fr_start = 'janvier 10, 2027';
+        $fr_end = 'juin 13, 2027';
+        $fr_holidays = 'février 14, 2027, mars 28, 2027, avril 4, 2027';
+
+        $this->installCourseMoveWorld([
+            'source_attrs' => [
+                'attribute_pa_course-times' => '1115-1245',
+                'attribute_pa_course-day' => 'saturday',
+                'attribute_pa_booking-type' => 'full-term',
+                'attribute_pa_intersoccer-venues' => 'geneva-site',
+                'attribute_pa_age-group' => '5-8y',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_course-times' => '1400-1530',
+                'attribute_pa_course-day' => 'saturday',
+                'attribute_pa_booking-type' => 'full-term',
+                'attribute_pa_intersoccer-venues' => 'geneva-site',
+                'attribute_pa_age-group' => '5-8y',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Course',
+                'Assigned Attendee' => 'FR course QA',
+                'Start Date' => $fr_start,
+                'End Date' => $fr_end,
+                'Holidays' => $fr_holidays,
+                'Note' => $fr_note,
+                'Course Times' => '11h15-12h45',
+                'pa_course-times' => '1115-1245',
+                'attribute_pa_course-times' => '1115-1245',
+                '_intersoccer_canonical_booking_type' => 'full-term',
+            ],
+            'roster_row' => [
+                'activity_type' => 'Course',
+                'booking_type' => 'Full Term',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame($fr_note, $meta['Note']);
+        $this->assertSame($fr_start, $meta['Start Date']);
+        $this->assertSame($fr_end, $meta['End Date']);
+        $this->assertSame($fr_holidays, $meta['Holidays']);
+        $this->assertSame('14h00-15h30', $meta['Course Times'] ?? '');
+        $this->assertSame('1400-1530', $meta['pa_course-times'] ?? '');
+    }
+
+    public function test_de_course_time_only_move_preserves_localized_schedule_and_note(): void {
+        $this->registerCourseMoveTerms();
+        $shared_course_meta = [
+            '_course_start_date' => '2027-01-10',
+            '_end_date' => '2027-06-13',
+            '_course_holiday_dates' => ['2027-02-14', '2027-03-28', '2027-04-04'],
+        ];
+        $GLOBALS['intersoccer_test_course_meta_by_variation'] = [
+            self::SOURCE_VAR => $shared_course_meta,
+            self::TARGET_VAR => $shared_course_meta,
+        ];
+        $note_en = 'Join anytime – prices are pro-rated if you start late.';
+        $GLOBALS['intersoccer_test_parent_product_attributes_by_variation'] = [
+            self::SOURCE_VAR => ['Note' => $note_en],
+            self::TARGET_VAR => ['Note' => $note_en],
+        ];
+        $de_note = 'Jederzeit einsteigen – Preise werden anteilig berechnet, wenn Sie später starten.';
+        $de_start = '10. Januar 2027';
+        $de_end = '13. Juni 2027';
+        $de_holidays = '14. Februar 2027, 28. März 2027, 4. April 2027';
+
+        $this->installCourseMoveWorld([
+            'source_attrs' => [
+                'attribute_pa_course-times' => '1115-1245',
+                'attribute_pa_course-day' => 'saturday',
+                'attribute_pa_booking-type' => 'full-term',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_course-times' => '1400-1530',
+                'attribute_pa_course-day' => 'saturday',
+                'attribute_pa_booking-type' => 'full-term',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Course',
+                'Assigned Attendee' => 'DE course QA',
+                'Start Date' => $de_start,
+                'End Date' => $de_end,
+                'Holidays' => $de_holidays,
+                'Note' => $de_note,
+                'Course Times' => '11h15-12h45',
+                'pa_course-times' => '1115-1245',
+                'attribute_pa_course-times' => '1115-1245',
+                '_intersoccer_canonical_booking_type' => 'full-term',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame($de_note, $meta['Note']);
+        $this->assertSame($de_start, $meta['Start Date']);
+        $this->assertSame($de_end, $meta['End Date']);
+        $this->assertSame($de_holidays, $meta['Holidays']);
+        $this->assertSame('1400-1530', $meta['pa_course-times'] ?? '');
+    }
+
+    public function test_course_move_with_different_destination_dates_rewrites_start_and_end(): void {
+        $this->registerCourseMoveTerms();
+        $GLOBALS['intersoccer_test_course_meta_by_variation'] = [
+            self::SOURCE_VAR => [
+                '_course_start_date' => '2027-01-10',
+                '_end_date' => '2027-06-13',
+                '_course_holiday_dates' => ['2027-02-14'],
+            ],
+            self::TARGET_VAR => [
+                '_course_start_date' => '2027-02-01',
+                '_end_date' => '2027-07-01',
+                '_course_holiday_dates' => ['2027-03-01'],
+            ],
+        ];
+        $this->installCourseMoveWorld([
+            'source_attrs' => [
+                'attribute_pa_course-times' => '1115-1245',
+                'attribute_pa_course-day' => 'saturday',
+                'attribute_pa_booking-type' => 'full-term',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_course-times' => '1115-1245',
+                'attribute_pa_course-day' => 'saturday',
+                'attribute_pa_booking-type' => 'full-term',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Course',
+                'Assigned Attendee' => 'Course date change',
+                'Start Date' => 'janvier 10, 2027',
+                'End Date' => 'juin 13, 2027',
+                'Holidays' => 'février 14, 2027',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('February 1, 2027', $meta['Start Date'] ?? '');
+        $this->assertSame('July 1, 2027', $meta['End Date'] ?? '');
+        $this->assertSame('March 1, 2027', $meta['Holidays'] ?? '');
+    }
+
+    public function test_camp_single_days_to_full_week_move_is_hard_blocked_with_no_writes(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'single-days' => (object) ['term_id' => 9700, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                    'full-week' => (object) ['term_id' => 9701, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                9700 => (object) ['term_id' => 9700, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                9701 => (object) ['term_id' => 9701, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'source_attrs' => [
+                'attribute_pa_booking-type' => 'single-days',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Booking block QA',
+                '_intersoccer_canonical_booking_type' => 'single-days',
+            ],
+        ]);
+
+        global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_data, $intersoccer_test_roster_store, $intersoccer_test_wc_stock_qty;
+        $meta_before = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $item_data_before = $intersoccer_test_wc_order_item_data[self::ITEM_ID];
+        $roster_before = $intersoccer_test_roster_store[self::ITEM_ID];
+        $stock_before = $intersoccer_test_wc_stock_qty;
+
+        $response = $this->invokeMoveAjaxBlocked(['confirm_warnings' => '1']);
+        $this->assertFalse($response['success'] ?? true);
+        $this->assertTrue($response['data']['hard_block'] ?? false);
+        $this->assertSame(
+            intersoccer_roster_move_ui_string('booking_type_mismatch'),
+            $response['data']['message'] ?? ''
+        );
+        $this->assertMoveFullyUnchanged($meta_before, $item_data_before, $roster_before, $stock_before);
+    }
+
+    public function test_camp_full_week_to_single_days_move_is_hard_blocked(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'single-days' => (object) ['term_id' => 9710, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                    'full-week' => (object) ['term_id' => 9711, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                9710 => (object) ['term_id' => 9710, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                9711 => (object) ['term_id' => 9711, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'source_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'single-days',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                '_intersoccer_canonical_booking_type' => 'full-week',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjaxBlocked();
+        $this->assertTrue($response['data']['hard_block'] ?? false);
+    }
+
+    public function test_course_full_term_to_single_days_move_is_hard_blocked(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-term' => (object) ['term_id' => 9720, 'slug' => 'full-term', 'name' => 'Full Term'],
+                    'single-days' => (object) ['term_id' => 9721, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                ],
+            ],
+            [
+                9720 => (object) ['term_id' => 9720, 'slug' => 'full-term', 'name' => 'Full Term'],
+                9721 => (object) ['term_id' => 9721, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+        global $intersoccer_test_product_type_safe_callback, $intersoccer_test_get_product_type_callback;
+        $intersoccer_test_product_type_safe_callback = static function () {
+            return 'course';
+        };
+        $intersoccer_test_get_product_type_callback = static function () {
+            return 'course';
+        };
+        $this->installMoveWorld([
+            'source_attrs' => [
+                'attribute_pa_booking-type' => 'full-term',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'single-days',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Course',
+                '_intersoccer_canonical_booking_type' => 'full-term',
+            ],
+            'roster_row' => ['activity_type' => 'Course', 'booking_type' => 'Full Term'],
+        ]);
+
+        $response = $this->invokeMoveAjaxBlocked();
+        $this->assertTrue($response['data']['hard_block'] ?? false);
+    }
+
+    public function test_move_proceeds_when_line_booking_type_unresolvable(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9730, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [9730 => (object) ['term_id' => 9730, 'slug' => 'full-week', 'name' => 'Full Week']]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Unknown booking',
+            ],
+            'roster_row' => ['booking_type' => 'Unknown'],
+        ]);
+
+        $response = $this->invokeMoveAjax();
         $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
     }
 }

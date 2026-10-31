@@ -456,6 +456,22 @@ class MovePlayersAdminTargetTest extends TestCase {
         $this->assertContains('course_ended', $assessment['warnings']);
     }
 
+    public function test_course_ended_confirm_line_stays_course_for_course_target(): void {
+        $lines = intersoccer_roster_move_reason_lines_for_codes(
+            ['course_ended'],
+            ['product_type' => 'course']
+        );
+        $this->assertSame([intersoccer_roster_move_ui_string('course_ended')], $lines);
+    }
+
+    public function test_course_ended_confirm_line_uses_camp_copy_for_camp_target(): void {
+        $lines = intersoccer_roster_move_reason_lines_for_codes(
+            ['course_ended'],
+            ['product_type' => 'camp']
+        );
+        $this->assertSame([intersoccer_roster_move_ui_string('camp_ended')], $lines);
+    }
+
     public function test_order_item_has_roster_row_false_when_missing(): void {
         $this->assertFalse(intersoccer_roster_move_order_item_has_roster_row(0));
         $this->assertFalse(intersoccer_roster_move_order_item_has_roster_row(999001));
