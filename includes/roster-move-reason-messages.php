@@ -99,22 +99,10 @@ function intersoccer_roster_move_js_localize_strings(): array {
 }
 
 /**
- * Test-friendly move log (captures to $GLOBALS['intersoccer_test_captured_roster_move_logs'] when set).
+ * Move-flow diagnostic log (tests may listen on {@see 'intersoccer_roster_move_log'}).
  */
 function intersoccer_roster_move_log(string $message): void {
-    if (!empty($GLOBALS['intersoccer_test_capture_roster_move_logs'])) {
-        if (!isset($GLOBALS['intersoccer_test_captured_roster_move_logs'])
-            || !is_array($GLOBALS['intersoccer_test_captured_roster_move_logs'])) {
-            $GLOBALS['intersoccer_test_captured_roster_move_logs'] = [];
-        }
-        $GLOBALS['intersoccer_test_captured_roster_move_logs'][] = $message;
-    }
-    if (!empty($GLOBALS['intersoccer_test_error_log_file']) && is_string($GLOBALS['intersoccer_test_error_log_file'])) {
-        file_put_contents($GLOBALS['intersoccer_test_error_log_file'], $message . "\n", FILE_APPEND);
-    }
-    if (!empty($GLOBALS['intersoccer_test_capture_roster_move_logs'])) {
-        return;
-    }
+    do_action('intersoccer_roster_move_log', $message);
     error_log($message);
 }
 
@@ -161,14 +149,6 @@ function intersoccer_roster_move_order_item_player_first_name(int $order_item_id
     global $wpdb;
     if ($order_item_id <= 0) {
         return '';
-    }
-
-    if (isset($GLOBALS['intersoccer_test_player_first_name_by_item'])
-        && is_array($GLOBALS['intersoccer_test_player_first_name_by_item'])) {
-        $mapped = $GLOBALS['intersoccer_test_player_first_name_by_item'][(int) $order_item_id] ?? null;
-        if (is_string($mapped) && $mapped !== '') {
-            return $mapped;
-        }
     }
 
     $table = $wpdb->prefix . 'intersoccer_rosters';

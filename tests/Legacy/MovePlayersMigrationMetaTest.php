@@ -1806,4 +1806,115 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertFalse(intersoccer_renormalize_order_item_event_meta($item_id));
         $this->assertSame($before, $intersoccer_test_wc_order_item_meta[$item_id]);
     }
+
+    public function test_activity_label_girls_only_alone_is_inconclusive(): void {
+        $this->assertNull(intersoccer_migration_move_activity_label_resolves_camp('Girls Only'));
+    }
+
+    public function test_activity_label_camp_girls_only_still_resolves_camp(): void {
+        $this->assertTrue(intersoccer_migration_move_activity_label_resolves_camp('Camp, Girls Only'));
+    }
+
+    public function test_days_selected_placeholder_values_are_not_single_day_signal(): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $item_id = 88401;
+        $intersoccer_test_wc_order_item_meta[$item_id] = ['Days Selected' => 'N/A'];
+        $this->assertSame(
+            'missing',
+            intersoccer_migration_move_days_selected_booking_type_outcome($item_id, 'N/A')['kind']
+        );
+        $this->assertSame(
+            'missing',
+            intersoccer_migration_move_days_selected_booking_type_outcome($item_id, 'none')['kind']
+        );
+        $this->assertSame(
+            'missing',
+            intersoccer_migration_move_days_selected_booking_type_outcome($item_id, ' - ')['kind']
+        );
+    }
+
+    public function test_days_selected_partial_week_is_single_day_signal(): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $item_id = 88402;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [];
+        $outcome = intersoccer_migration_move_days_selected_booking_type_outcome($item_id, 'Monday, Wednesday');
+        $this->assertSame('known', $outcome['kind']);
+        $this->assertSame('single-days', $outcome['slug']);
+    }
+
+    public function test_days_selected_full_week_listing_is_not_single_day_signal(): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $item_id = 88403;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [];
+        $outcome = intersoccer_migration_move_days_selected_booking_type_outcome(
+            $item_id,
+            'Monday, Tuesday, Wednesday, Thursday, Friday'
+        );
+        $this->assertSame('missing', $outcome['kind']);
+    }
+
+    public function test_days_selected_german_names_parse_for_single_day_signal(): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $item_id = 88404;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [];
+        $outcome = intersoccer_migration_move_days_selected_booking_type_outcome($item_id, 'Montag, Mittwoch');
+        $this->assertSame('known', $outcome['kind']);
+        $this->assertSame('single-days', $outcome['slug']);
+    }
+
+    public function test_booking_type_outcome_skips_unknown_canonical_for_later_known_pa_slug(): void {
+        global $intersoccer_test_wc_order_item_meta, $wpdb;
+        $item_id = 88405;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [
+            '_intersoccer_canonical_booking_type' => 'not-a-booking-slug',
+            'pa_booking-type' => 'single-days',
+        ];
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query) {
+            return $query;
+        });
+        $wpdb->shouldReceive('get_var')->andReturn(null);
+
+        $outcome = intersoccer_migration_move_order_item_booking_type_outcome($item_id);
+        $this->assertSame('known', $outcome['kind']);
+        $this->assertSame('single-days', $outcome['slug']);
+    }
+
+    public function test_booking_type_outcome_unknown_when_every_present_signal_unrecognized(): void {
+        global $intersoccer_test_wc_order_item_meta, $wpdb;
+        $item_id = 88406;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [
+            '_intersoccer_canonical_booking_type' => 'not-a-booking-slug',
+            'pa_booking-type' => 'journee-unique',
+            'Days Selected' => 'Summer break',
+        ];
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query) {
+            return $query;
+        });
+        $wpdb->shouldReceive('get_var')->andReturn('Unknown');
+
+        $outcome = intersoccer_migration_move_order_item_booking_type_outcome($item_id);
+        $this->assertSame('unknown', $outcome['kind']);
+    }
+
+    public function test_booking_type_outcome_missing_when_all_signals_absent(): void {
+        global $intersoccer_test_wc_order_item_meta, $wpdb;
+        $item_id = 88407;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [
+            'Activity Type' => 'Camp',
+            'Assigned Attendee' => 'No booking signals',
+        ];
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query) {
+            return $query;
+        });
+        $wpdb->shouldReceive('get_var')->andReturn(null);
+
+        $outcome = intersoccer_migration_move_order_item_booking_type_outcome($item_id);
+        $this->assertSame('missing', $outcome['kind']);
+    }
 }

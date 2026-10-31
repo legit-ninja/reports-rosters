@@ -26,6 +26,10 @@ class MovePlayersAjaxPartialFailureTest extends TestCase {
 
     private ?string $previousErrorLog = null;
     private ?string $tempErrorLog = null;
+    /** @var callable|null */
+    private $moveLogCaptureHook = null;
+    /** @var list<string> */
+    private array $capturedMoveLogs = [];
 
     protected function setUp(): void {
         parent::setUp();
@@ -73,6 +77,11 @@ class MovePlayersAjaxPartialFailureTest extends TestCase {
     }
 
     protected function tearDown(): void {
+        if ($this->moveLogCaptureHook !== null) {
+            remove_action('intersoccer_roster_move_log', $this->moveLogCaptureHook, 10);
+            $this->moveLogCaptureHook = null;
+        }
+        $this->capturedMoveLogs = [];
         if ($this->previousErrorLog !== null) {
             ini_set('error_log', $this->previousErrorLog);
         }
@@ -81,11 +90,7 @@ class MovePlayersAjaxPartialFailureTest extends TestCase {
         }
         unset(
             $GLOBALS['intersoccer_test_emit_wp_hooks'],
-            $GLOBALS['intersoccer_test_roster_row_filter_map'],
-            $GLOBALS['intersoccer_test_player_first_name_by_item'],
-            $GLOBALS['intersoccer_test_capture_roster_move_logs'],
-            $GLOBALS['intersoccer_test_captured_roster_move_logs'],
-            $GLOBALS['intersoccer_test_error_log_file']
+            $GLOBALS['intersoccer_test_roster_row_filter_map']
         );
         $this->resetMovePlayersTestGlobals();
         $_POST = [];
@@ -104,16 +109,18 @@ class MovePlayersAjaxPartialFailureTest extends TestCase {
     }
 
     private function beginLogCapture(): void {
+        $this->capturedMoveLogs = [];
+        $this->moveLogCaptureHook = function (string $message): void {
+            $this->capturedMoveLogs[] = $message;
+        };
+        add_action('intersoccer_roster_move_log', $this->moveLogCaptureHook, 10, 1);
         $this->tempErrorLog = tempnam(sys_get_temp_dir(), 'rr-move-log-');
         $this->previousErrorLog = ini_get('error_log');
         ini_set('error_log', $this->tempErrorLog);
-        $GLOBALS['intersoccer_test_capture_roster_move_logs'] = true;
-        $GLOBALS['intersoccer_test_captured_roster_move_logs'] = [];
-        $GLOBALS['intersoccer_test_error_log_file'] = $this->tempErrorLog;
     }
 
     private function combinedLogText(): string {
-        $parts = (array) ($GLOBALS['intersoccer_test_captured_roster_move_logs'] ?? []);
+        $parts = $this->capturedMoveLogs;
         if ($this->tempErrorLog && is_readable($this->tempErrorLog)) {
             $parts[] = (string) file_get_contents($this->tempErrorLog);
         }
@@ -168,11 +175,6 @@ class MovePlayersAjaxPartialFailureTest extends TestCase {
             },
             $roster_rows
         );
-        $GLOBALS['intersoccer_test_player_first_name_by_item'] = [
-            self::ITEM_OK => 'Alex',
-            self::ITEM_ON_TARGET => 'Sam',
-            self::ITEM_NO_ROSTER => 'Zoe',
-        ];
 
         $intersoccer_test_post_status_map = [
             self::SOURCE_VAR => 'publish',
@@ -241,8 +243,20 @@ class MovePlayersAjaxPartialFailureTest extends TestCase {
 
         $wpdb = Mockery::mock('wpdb');
         $wpdb->prefix = 'wp_';
-        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query) {
-            return (string) $query;
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query, ...$args) {
+            $flat_args = [];
+            foreach ($args as $arg) {
+                if (is_array($arg)) {
+                    $flat_args = array_merge($flat_args, $arg);
+                } else {
+                    $flat_args[] = $arg;
+                }
+            }
+            $safe_args = array_map(static function ($v) {
+                return is_string($v) ? addslashes($v) : $v;
+            }, $flat_args);
+
+            return @vsprintf(str_replace(['%s', '%d', '%f'], ["'%s'", '%d', '%f'], (string) $query), $safe_args) ?: (string) $query;
         });
         $wpdb->shouldReceive('get_results')->andReturn([]);
         $wpdb->shouldReceive('get_row')->andReturn(null);

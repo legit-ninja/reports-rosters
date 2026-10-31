@@ -55,7 +55,6 @@ class MovePlayersCapacityPrivacyTest extends TestCase {
     protected function tearDown(): void {
         $this->resetMovePlayersTestGlobals();
         $_POST = [];
-        unset($GLOBALS['intersoccer_test_capture_roster_move_logs']);
         parent::tearDown();
     }
 
@@ -225,19 +224,27 @@ class MovePlayersCapacityPrivacyTest extends TestCase {
     }
 
     public function test_invalid_input_returns_clean_error_without_logging_nonce(): void {
-        $GLOBALS['intersoccer_test_capture_roster_move_logs'] = true;
-        $GLOBALS['intersoccer_test_captured_roster_move_logs'] = [];
+        $tempErrorLog = tempnam(sys_get_temp_dir(), 'rr-move-log-');
+        $previousErrorLog = ini_get('error_log');
+        ini_set('error_log', $tempErrorLog);
         $nonce = wp_create_nonce('intersoccer_move_nonce');
 
-        $response = $this->invokeMoveAjax([
-            'target_variation_id' => 0,
-            'order_item_ids' => [],
-            'nonce' => $nonce,
-        ]);
+        try {
+            $response = $this->invokeMoveAjax([
+                'target_variation_id' => 0,
+                'order_item_ids' => [],
+                'nonce' => $nonce,
+            ]);
 
-        $this->assertFalse($response['success'] ?? true);
-        $logs = implode("\n", (array) ($GLOBALS['intersoccer_test_captured_roster_move_logs'] ?? []));
-        $this->assertStringNotContainsString($nonce, $logs);
+            $this->assertFalse($response['success'] ?? true);
+            $logs = is_readable($tempErrorLog) ? (string) file_get_contents($tempErrorLog) : '';
+            $this->assertStringNotContainsString($nonce, $logs);
+        } finally {
+            ini_set('error_log', $previousErrorLog);
+            if (is_file($tempErrorLog)) {
+                unlink($tempErrorLog);
+            }
+        }
     }
 
     public function test_service_merge_empty_sibling_includes_zero_player_variation(): void {

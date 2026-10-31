@@ -4171,6 +4171,251 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
         $this->assertBookingTypeMismatchHardBlockNoWrites(['confirm_warnings' => '1']);
     }
 
+    public function test_camp_move_uses_first_recognised_pa_after_unknown_canonical_booking_type(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'single-days' => (object) ['term_id' => 9752, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                    'full-week' => (object) ['term_id' => 9753, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                9752 => (object) ['term_id' => 9752, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                9753 => (object) ['term_id' => 9753, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'single-days',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Unknown canonical known pa',
+                '_intersoccer_canonical_booking_type' => 'not-a-booking-slug',
+                'pa_booking-type' => 'single-days',
+                'attribute_pa_booking-type' => 'single-days',
+            ],
+            'roster_row' => ['booking_type' => ''],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+    }
+
+    public function test_camp_move_hard_blocks_when_all_booking_signals_unrecognized(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9754, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [9754 => (object) ['term_id' => 9754, 'slug' => 'full-week', 'name' => 'Full Week']]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'All unrecognized booking',
+                '_intersoccer_canonical_booking_type' => 'not-a-booking-slug',
+                'pa_booking-type' => 'journee-unique',
+                'attribute_pa_booking-type' => 'journee-unique',
+                'Days Selected' => 'Summer break',
+            ],
+            'roster_row' => ['booking_type' => 'Unknown'],
+        ]);
+        $this->seedRosterHistoryMetaForBlockTest();
+        $this->assertBookingTypeMismatchHardBlockNoWrites(['confirm_warnings' => '1']);
+    }
+
+    public function test_camp_move_proceeds_when_all_booking_type_signals_missing(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9755, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [9755 => (object) ['term_id' => 9755, 'slug' => 'full-week', 'name' => 'Full Week']]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Missing booking signals',
+            ],
+            'roster_row' => ['booking_type' => ''],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+    }
+
+    public function test_girls_only_activity_label_falls_through_to_roster_camp_for_booking_block(): void {
+        global $intersoccer_test_product_type_safe_callback, $intersoccer_test_get_product_type_callback;
+        $intersoccer_test_product_type_safe_callback = static function () {
+            return 'unknown';
+        };
+        $intersoccer_test_get_product_type_callback = static function () {
+            return 'unknown';
+        };
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9756, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [9756 => (object) ['term_id' => 9756, 'slug' => 'full-week', 'name' => 'Full Week']]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Girls Only',
+                'Assigned Attendee' => 'Girls only inconclusive camp',
+            ],
+            'roster_row' => [
+                'activity_type' => 'Camp',
+                'booking_type' => 'Unknown',
+            ],
+        ]);
+        $this->seedRosterHistoryMetaForBlockTest();
+        $this->assertBookingTypeMismatchHardBlockNoWrites(['confirm_warnings' => '1']);
+    }
+
+    public function test_girls_only_activity_with_roster_course_is_not_camp_for_booking_block(): void {
+        global $intersoccer_test_product_type_safe_callback, $intersoccer_test_get_product_type_callback;
+        $intersoccer_test_product_type_safe_callback = static function () {
+            return 'unknown';
+        };
+        $intersoccer_test_get_product_type_callback = static function () {
+            return 'unknown';
+        };
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9757, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [9757 => (object) ['term_id' => 9757, 'slug' => 'full-week', 'name' => 'Full Week']]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Girls Only',
+                'Assigned Attendee' => 'Girls only roster course',
+            ],
+            'roster_row' => [
+                'activity_type' => 'Course',
+                'booking_type' => 'Unknown',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+    }
+
+    public function test_camp_days_selected_placeholders_are_not_single_day_booking_signals(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9758, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [9758 => (object) ['term_id' => 9758, 'slug' => 'full-week', 'name' => 'Full Week']]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Placeholder days only',
+                'Days Selected' => 'N/A',
+            ],
+            'roster_row' => ['booking_type' => ''],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+    }
+
+    public function test_camp_full_week_days_selected_list_is_not_single_day_booking_signal(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9759, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [9759 => (object) ['term_id' => 9759, 'slug' => 'full-week', 'name' => 'Full Week']]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'All weekdays listed',
+                'Days Selected' => 'Monday, Tuesday, Wednesday, Thursday, Friday',
+            ],
+            'roster_row' => ['booking_type' => ''],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+    }
+
+    public function test_camp_move_hard_blocks_cross_type_when_pa_resolves_after_unknown_canonical(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'single-days' => (object) ['term_id' => 9760, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                    'full-week' => (object) ['term_id' => 9761, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                9760 => (object) ['term_id' => 9760, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                9761 => (object) ['term_id' => 9761, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Known pa cross type',
+                '_intersoccer_canonical_booking_type' => 'not-a-booking-slug',
+                'pa_booking-type' => 'single-days',
+                'attribute_pa_booking-type' => 'single-days',
+            ],
+            'roster_row' => ['booking_type' => ''],
+        ]);
+        $this->seedRosterHistoryMetaForBlockTest();
+        $this->assertBookingTypeMismatchHardBlockNoWrites(['confirm_warnings' => '1']);
+    }
+
     public function test_birthday_move_proceeds_without_booking_type_on_either_side(): void {
         global $intersoccer_test_product_type_safe_callback, $intersoccer_test_get_product_type_callback;
         $intersoccer_test_product_type_safe_callback = static function () {
