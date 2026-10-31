@@ -487,6 +487,170 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
         $this->assertStringNotContainsString('synthetic line validation failure', $message);
     }
 
+    /**
+     * @return array{0:int,1:int,2:string} order id, item id, distinctive earlier error fragment
+     */
+    private function seedOrderWithMissingActivityTypeLine(): array {
+        $order_id = 6500;
+        $item_id = 6601;
+        $order = new StoredOrder($order_id, 'completed', '2026-01-05 10:00:00');
+        $order->addLine(new StoredLineItem(
+            $item_id,
+            'Line Missing Activity Type',
+            DeletedProductFixture::LIVE_PID,
+            DeletedProductFixture::LIVE_VID,
+            [],
+            true,
+            50.0
+        ));
+        ReportAccuracyStore::$orders[$order_id] = $order;
+        $earlier_error_fragment = "Order {$order_id}, Item {$item_id}: Order item missing activity type";
+
+        return [$order_id, $item_id, $earlier_error_fragment];
+    }
+
+    public function test_rebuild_specific_orders_abort_error_excludes_earlier_line_errors(): void {
+        [$bad_order_id, , $earlier_error_fragment] = $this->seedOrderWithMissingActivityTypeLine();
+
+        $order_id = 7001;
+        $line_keep = 7101;
+        $removed_a = 7102;
+        $removed_b = 7103;
+        $meta = array_merge(DeletedProductFixture::courseMeta(), [
+            'Start Date' => 'July 1, 2026',
+            'End Date' => 'December 31, 2026',
+            'Activity Type' => 'Course',
+        ]);
+        $order = new StoredOrder($order_id, 'completed', '2026-01-12 10:00:00');
+        $order->addLine(new StoredLineItem(
+            $line_keep,
+            'Synthetic Course',
+            DeletedProductFixture::LIVE_PID,
+            DeletedProductFixture::LIVE_VID,
+            $meta,
+            true,
+            300.0
+        ));
+        ReportAccuracyStore::$orders[$order_id] = $order;
+
+        $this->wpdb->committed = [
+            $line_keep => true,
+            $removed_a => true,
+            $removed_b => true,
+        ];
+        $this->wpdb->fail_delete_on_attempt = 2;
+
+        global $intersoccer_test_wc_get_order_callback;
+        $intersoccer_test_wc_get_order_callback = static fn ($oid) => ReportAccuracyStore::$orders[(int) $oid] ?? false;
+
+        $logger = Mockery::mock(Logger::class);
+        $logger->shouldReceive('info', 'debug', 'warning', 'error')->andReturn(null);
+        $database = $this->realDatabase();
+        $repo_real = $this->realRosterRepository($database);
+
+        $stored = [
+            $line_keep => ['order_item_id' => $line_keep, 'order_id' => $order_id],
+            $removed_a => ['order_item_id' => $removed_a, 'order_id' => $order_id],
+            $removed_b => ['order_item_id' => $removed_b, 'order_id' => $order_id],
+        ];
+
+        $player = new Player([
+            'customer_id' => 1,
+            'player_index' => 0,
+            'first_name' => 'Synthetic',
+            'last_name' => 'Player',
+            'dob' => '2018-03-01',
+            'gender' => 'male',
+        ]);
+        $player_repo = Mockery::mock(PlayerRepository::class);
+        $player_repo->shouldReceive('getPlayersByCustomerId')->andReturn(new PlayersCollection([$player]));
+        $matcher = Mockery::mock(PlayerMatcher::class);
+        $matcher->shouldReceive('getAssignedPlayers')->andReturn(new PlayersCollection([$player]));
+        $validator = Mockery::mock(DataValidator::class);
+        $validator->shouldReceive('validateRosterData')->andReturn(['valid' => true, 'errors' => []]);
+
+        $repo = Mockery::mock(RosterRepository::class);
+        $repo->shouldReceive('first')->andReturn(null);
+        $repo->shouldReceive('count')->andReturn(0);
+        $repo->shouldReceive('where')->andReturnUsing(function (array $where) use ($stored, $order_id) {
+            if ((int) ($where['order_id'] ?? 0) !== $order_id) {
+                return new RostersCollection();
+            }
+            $rows = [];
+            foreach ($stored as $row) {
+                $rows[] = (object) $row;
+            }
+            return new RostersCollection($rows);
+        });
+        $repo->shouldReceive('create')->andReturnUsing(function (array $data) {
+            $r = new Roster($data);
+            $r->setSkipAgeGroupValidation(true);
+            $r->validate();
+            return $r;
+        });
+        $repo->shouldReceive('update')->andReturnUsing(fn ($r) => $r);
+        $repo->shouldReceive('deleteByOrderItemId')->andReturnUsing(function (int $id) use ($repo_real) {
+            return $repo_real->deleteByOrderItemId($id);
+        });
+
+        $builder = new RosterBuilder(
+            $logger,
+            $database,
+            $player_repo,
+            $repo,
+            $validator,
+            Mockery::mock(EventMatcher::class),
+            $matcher
+        );
+
+        $result = $builder->rebuildSpecificOrders([$bad_order_id, $order_id]);
+
+        $this->assertTrue($result['rebuild_failed'] ?? false);
+        $error = (string) ($result['error'] ?? '');
+        $this->assertStringContainsString('Failed to delete obsolete roster 7103', $error);
+        $this->assertStringNotContainsString($earlier_error_fragment, $error);
+        $this->assertSame([$line_keep, $removed_a, $removed_b], $this->wpdb->committed_item_ids());
+        $this->assertTransactionLevelZero($database);
+    }
+
+    public function test_full_rebuild_abort_error_excludes_earlier_line_errors(): void {
+        $this->seedObsoletePair();
+        [$bad_order_id, , $earlier_error_fragment] = $this->seedOrderWithMissingActivityTypeLine();
+
+        global $intersoccer_test_wc_get_orders_callback, $intersoccer_test_wc_get_order_callback;
+        $previous_order_callback = $intersoccer_test_wc_get_order_callback;
+        $intersoccer_test_wc_get_orders_callback = static function ($args) use ($bad_order_id) {
+            $offset = (int) ($args['offset'] ?? 0);
+            if ($offset > 0) {
+                return [];
+            }
+            return [$bad_order_id];
+        };
+        $intersoccer_test_wc_get_order_callback = static function ($oid) use ($bad_order_id, $previous_order_callback) {
+            if ((int) $oid === $bad_order_id) {
+                return ReportAccuracyStore::$orders[$bad_order_id];
+            }
+            if (is_callable($previous_order_callback)) {
+                return $previous_order_callback($oid);
+            }
+            return false;
+        };
+
+        $this->wpdb->fail_delete_on_attempt = 2;
+        $database = $this->realDatabase();
+        $repo = $this->realRosterRepository($database);
+        $builder = $this->minimalBuilder($database, $repo);
+
+        $result = $builder->buildRosters(['clear_existing' => true, 'batch_size' => 5]);
+
+        $this->assertTrue($result['rebuild_failed'] ?? false);
+        $error = (string) ($result['error'] ?? '');
+        $this->assertStringContainsString('Failed to delete obsolete roster 6102', $error);
+        $this->assertStringNotContainsString($earlier_error_fragment, $error);
+        $this->assertSame([6101, 6102], $this->wpdb->committed_item_ids());
+        $this->assertTransactionLevelZero($database);
+    }
+
     public function test_rebuild_specific_orders_second_delete_failure_rolls_back_and_rebuild_failed(): void {
         $order_id = 7001;
         $line_keep = 7101;

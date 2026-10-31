@@ -43,7 +43,6 @@ class DatabaseNestedTransactionTest extends TestCase {
                     $this->test->recordSql($sql);
                     return false;
                 }
-                $this->last_error = '';
                 $this->test->recordSql($sql);
                 return true;
             }
@@ -159,7 +158,7 @@ class DatabaseNestedTransactionTest extends TestCase {
         $this->assertSame(0, $this->database->get_transaction_level());
     }
 
-    public function test_rollback_to_savepoint_failure_still_allows_outer_commit(): void {
+    public function test_rollback_to_savepoint_failure_forces_outer_rollback(): void {
         $this->setFailQuery('ROLLBACK TO SAVEPOINT intersoccer_sp_2');
 
         $result = $this->database->transaction(function () {
@@ -171,16 +170,44 @@ class DatabaseNestedTransactionTest extends TestCase {
             return 'outer-continues';
         });
 
-        $this->assertSame('outer-continues', $result);
+        $this->assertFalse($result);
         $this->assertSame(
             [
                 'START TRANSACTION',
                 'SAVEPOINT intersoccer_sp_2',
                 'ROLLBACK TO SAVEPOINT intersoccer_sp_2',
+                'ROLLBACK',
+            ],
+            $this->sql
+        );
+        $this->assertSame(0, $this->database->get_transaction_level());
+
+        $this->sql = [];
+        $this->setFailQuery(null);
+        $this->database->get_wpdb()->last_error = '';
+        $second = $this->database->transaction(function () {
+            return 'fresh';
+        });
+        $this->assertSame('fresh', $second);
+        $this->assertSame(
+            [
+                'START TRANSACTION',
                 'COMMIT',
             ],
             $this->sql
         );
+        $this->assertSame(0, $this->database->get_transaction_level());
+    }
+
+    public function test_outer_transaction_failure_preserves_wpdb_last_error(): void {
+        global $wpdb;
+        $result = $this->database->transaction(function () use ($wpdb) {
+            $wpdb->last_error = 'persistent outer failure';
+            return false;
+        });
+
+        $this->assertFalse($result);
+        $this->assertSame('persistent outer failure', $wpdb->last_error);
         $this->assertSame(0, $this->database->get_transaction_level());
     }
 
@@ -201,6 +228,7 @@ class DatabaseNestedTransactionTest extends TestCase {
         );
 
         $this->sql = [];
+        $this->database->get_wpdb()->last_error = '';
         $second = $this->database->transaction(function () {
             return 'fresh';
         });

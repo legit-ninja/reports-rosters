@@ -47,6 +47,13 @@ class Database {
      * @var int
      */
     private $transaction_level = 0;
+
+    /**
+     * When true, a nested ROLLBACK TO SAVEPOINT failed; outer COMMIT must become ROLLBACK.
+     *
+     * @var bool
+     */
+    private $transaction_rollback_only = false;
     
     /**
      * Table schema definitions
@@ -206,6 +213,7 @@ class Database {
     public function begin_transaction() {
         try {
             if ($this->transaction_level === 0) {
+                $this->transaction_rollback_only = false;
                 $result = $this->wpdb->query('START TRANSACTION');
                 if ($result === false) {
                     throw new DatabaseException('Failed to start transaction: ' . $this->wpdb->last_error);
@@ -249,6 +257,24 @@ class Database {
 
             $committing_level = $this->transaction_level;
 
+            if ($this->transaction_rollback_only) {
+                if ($committing_level === 1) {
+                    $result = $this->wpdb->query('ROLLBACK');
+                    if ($result === false) {
+                        throw new DatabaseException('Failed to rollback transaction: ' . $this->wpdb->last_error);
+                    }
+                    $this->transaction_level = 0;
+                    $this->transaction_rollback_only = false;
+                    $this->logger->error(
+                        'Commit refused after failed savepoint rollback; outer transaction rolled back'
+                    );
+                    return false;
+                }
+
+                $this->logger->error('Commit refused while transaction is rollback-only');
+                return false;
+            }
+
             if ($committing_level === 1) {
                 // Keep level at 1 until COMMIT succeeds so a failed COMMIT still matches an open
                 // outer transaction for rollback_transaction() (transaction() catch path).
@@ -257,6 +283,7 @@ class Database {
                     throw new DatabaseException('Failed to commit transaction: ' . $this->wpdb->last_error);
                 }
                 $this->transaction_level = 0;
+                $this->transaction_rollback_only = false;
                 $this->logger->debug('Database transaction committed');
             } else {
                 $savepoint = $this->savepoint_name($committing_level);
@@ -311,6 +338,9 @@ class Database {
             return true;
 
         } catch (\Throwable $e) {
+            if ($level_at_start > 1) {
+                $this->transaction_rollback_only = true;
+            }
             $this->logger->error('Failed to rollback transaction', [
                 'error' => $e->getMessage(),
                 'level' => $this->transaction_level
@@ -321,6 +351,9 @@ class Database {
                 $this->transaction_level = 0;
             } else {
                 $this->transaction_level = $level_at_start - 1;
+            }
+            if ($this->transaction_level === 0) {
+                $this->transaction_rollback_only = false;
             }
         }
     }
@@ -366,8 +399,15 @@ class Database {
             return $result;
             
         } catch (\Throwable $e) {
-            $this->rollback_transaction();
-            if (isset($this->wpdb->last_error)) {
+            $rollback_ok = $this->rollback_transaction();
+            $level_after_rollback = $this->get_transaction_level();
+            // Clear stale wpdb errors only after a successful nested savepoint rollback so an
+            // outer callback can continue; leave last_error intact when the outer tx failed.
+            if ($rollback_ok
+                && $level_after_rollback > 0
+                && !$this->transaction_rollback_only
+                && isset($this->wpdb->last_error)
+            ) {
                 $this->wpdb->last_error = '';
             }
             $this->logger->error('Transaction failed and rolled back', [
