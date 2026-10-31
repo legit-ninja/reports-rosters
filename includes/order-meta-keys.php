@@ -36,6 +36,7 @@ function intersoccer_get_order_meta_field_map() {
         'Season' => 'season',
         'Year' => 'program_year',
         'pa_program-year' => 'program_year',
+        'attribute_pa_program-year' => 'program_year',
         'Canton / Region' => 'region',
         'City' => 'city',
         'Activity Type' => 'activity_type',
@@ -488,7 +489,7 @@ function intersoccer_reports_sql_meta_key_candidates($field) {
         'discount_amount' => ['Discount Amount'],
         'activity_type' => ['_intersoccer_canonical_activity_type', 'Activity Type'],
         'girls_only' => ['_intersoccer_canonical_girls_only', 'Girls Only'],
-        'booking_type' => ['_intersoccer_canonical_booking_type', 'Booking Type', 'pa_booking-type'],
+        'booking_type' => ['_intersoccer_canonical_booking_type', 'Booking Type', 'pa_booking-type', 'attribute_pa_booking-type'],
         'venue' => ['_intersoccer_canonical_venue', 'Sites InterSoccer'],
         'region' => ['_intersoccer_canonical_canton', 'Canton / Region'],
         'canton' => ['_intersoccer_canonical_canton', 'Canton / Region'],
@@ -827,6 +828,57 @@ if (!function_exists('intersoccer_get_wc_order_item_attribute_meta_field_map')) 
     }
 }
 
+if (!function_exists('intersoccer_get_order_item_pa_taxonomy_meta_value')) {
+    /**
+     * Read a Woo attribute taxonomy value from flattened order-item meta (pa_* or attribute_pa_*).
+     *
+     * @param array<string,mixed> $item_meta
+     */
+    function intersoccer_get_order_item_pa_taxonomy_meta_value(array $item_meta, string $taxonomy): string {
+        $taxonomy = trim($taxonomy);
+        if ($taxonomy === '') {
+            return '';
+        }
+        if (stripos($taxonomy, 'pa_') !== 0) {
+            $taxonomy = 'pa_' . $taxonomy;
+        }
+
+        $candidates = [
+            $taxonomy,
+            'attribute_' . $taxonomy,
+            str_replace('-', '_', $taxonomy),
+            'attribute_' . str_replace('-', '_', $taxonomy),
+        ];
+        $candidates = array_unique($candidates);
+
+        foreach ($candidates as $key) {
+            if (!array_key_exists($key, $item_meta)) {
+                continue;
+            }
+            $val = $item_meta[$key];
+            if (is_array($val)) {
+                $first_scalar = '';
+                foreach ($val as $part) {
+                    if (is_scalar($part)) {
+                        $trimmed = trim((string) $part);
+                        if ($trimmed !== '') {
+                            $first_scalar = $trimmed;
+                            break;
+                        }
+                    }
+                }
+                $val = $first_scalar;
+            }
+            $val = trim((string) $val);
+            if ($val !== '') {
+                return $val;
+            }
+        }
+
+        return '';
+    }
+}
+
 if (!function_exists('intersoccer_apply_order_item_attribute_meta_to_data')) {
     /**
      * Copy Woo attribute meta (pa_* / attribute_pa_*) into roster/order_data fields when still empty.
@@ -1006,6 +1058,7 @@ function intersoccer_get_order_meta_canonical_to_final_report_row_keys() {
         'Season' => 'season',
         'Year' => 'program_year',
         'pa_program-year' => 'program_year',
+        'attribute_pa_program-year' => 'program_year',
     ];
 }
 
@@ -1339,7 +1392,7 @@ function intersoccer_roster_enrich_camp_fields_from_order_item(&$row) {
     }
 
     if ($get($row, 'booking_type') === '' && function_exists('wc_get_order_item_meta')) {
-        foreach (['_intersoccer_canonical_booking_type', 'Booking Type', 'booking_type', 'pa_booking-type'] as $meta_key) {
+        foreach (['_intersoccer_canonical_booking_type', 'Booking Type', 'booking_type', 'pa_booking-type', 'attribute_pa_booking-type'] as $meta_key) {
             $v = wc_get_order_item_meta($item_id, $meta_key, true);
             if ($v === null || $v === '') {
                 continue;

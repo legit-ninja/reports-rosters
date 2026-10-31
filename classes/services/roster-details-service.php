@@ -200,8 +200,48 @@ class RosterDetailsService {
             ];
         }
 
-        $availableRosters = $this->buildRosterSummaries($baseRoster, $filters['variation_id'], false);
-        $crossGenderRosters = $this->buildRosterSummaries($baseRoster, $filters['variation_id'], true);
+        $source_order_item_ids = [];
+        foreach ($rosters as $row) {
+            $oid = is_object($row) ? (int) ($row->order_item_id ?? 0) : 0;
+            if ($oid > 0) {
+                $source_order_item_ids[$oid] = $oid;
+            }
+        }
+        $this->ensureRosterMoveAdminTargetLoaded();
+        $source_girls_tristate = function_exists('intersoccer_roster_move_resolve_source_girls_only_tristate')
+            ? intersoccer_roster_move_resolve_source_girls_only_tristate(array_values($source_order_item_ids))
+            : ((int) ($baseRoster->girls_only ?? 0) === 1 ? 'yes' : 'mixed');
+
+        $all_destination_summaries = $this->buildRosterSummaries($baseRoster, $rosters);
+        if (function_exists('intersoccer_roster_move_build_admin_destination_lists')) {
+            [$availableRosters, $crossGenderRosters] = intersoccer_roster_move_build_admin_destination_lists(
+                $all_destination_summaries,
+                $source_girls_tristate,
+                (int) ($baseRoster->product_id ?? 0),
+                function_exists('intersoccer_roster_move_page_exclude_variation_ids')
+                    ? intersoccer_roster_move_page_exclude_variation_ids($rosters)
+                    : [],
+                (string) ($baseRoster->activity_type ?? ''),
+                (int) ($baseRoster->girls_only ?? 0)
+            );
+        } elseif (function_exists('intersoccer_roster_move_partition_destination_lists')) {
+            [$availableRosters, $crossGenderRosters] = intersoccer_roster_move_partition_destination_lists(
+                $all_destination_summaries,
+                $source_girls_tristate
+            );
+            $availableRosters = $this->mergeEmptySiblingVariationTargets(
+                $availableRosters,
+                $baseRoster,
+                $rosters
+            );
+        } else {
+            $availableRosters = $this->mergeEmptySiblingVariationTargets(
+                $all_destination_summaries,
+                $baseRoster,
+                $rosters
+            );
+            $crossGenderRosters = [];
+        }
         $unknownCount = $this->countUnknownAttendees($rosters);
 
         return [
@@ -680,7 +720,43 @@ class RosterDetailsService {
         return strcasecmp((string) $valueA, (string) $valueB);
     }
 
-    private function buildRosterSummaries(object $baseRoster, int $currentVariationId, bool $crossGender): array {
+    /**
+     * @param object[] $summaries
+     * @return object[]
+     */
+    private function ensureRosterMoveAdminTargetLoaded(): void {
+        if (function_exists('intersoccer_roster_move_merge_empty_sibling_variation_targets')) {
+            return;
+        }
+
+        $path = dirname(__DIR__, 2) . '/includes/roster-move-admin-target.php';
+        if (is_readable($path)) {
+            require_once $path;
+        }
+    }
+
+    private function mergeEmptySiblingVariationTargets(array $summaries, object $baseRoster, array $rosterRows): array {
+        $this->ensureRosterMoveAdminTargetLoaded();
+        if (!function_exists('intersoccer_roster_move_merge_empty_sibling_variation_targets')) {
+            $this->logger->error('Roster move empty-sibling merge skipped: roster-move-admin-target.php unavailable');
+
+            return $summaries;
+        }
+
+        $excludeIds = function_exists('intersoccer_roster_move_page_exclude_variation_ids')
+            ? intersoccer_roster_move_page_exclude_variation_ids($rosterRows)
+            : [];
+
+        return intersoccer_roster_move_merge_empty_sibling_variation_targets(
+            $summaries,
+            (int) ($baseRoster->product_id ?? 0),
+            $excludeIds,
+            (string) ($baseRoster->activity_type ?? ''),
+            (int) ($baseRoster->girls_only ?? 0)
+        );
+    }
+
+    private function buildRosterSummaries(object $baseRoster, array $rosterRows): array {
         $activityType = $baseRoster->activity_type ?? '';
 
         if (!$activityType) {
@@ -690,13 +766,33 @@ class RosterDetailsService {
         $collection = $this->repository->where(['activity_type' => $activityType]);
         $summaries = [];
 
+        $excludeVariationIds = function_exists('intersoccer_roster_move_page_exclude_variation_ids')
+            ? intersoccer_roster_move_page_exclude_variation_ids($rosterRows)
+            : [];
+        if (function_exists('intersoccer_roster_move_normalize_exclude_variation_ids')) {
+            $excludeVariationIds = intersoccer_roster_move_normalize_exclude_variation_ids($excludeVariationIds);
+        }
+
         foreach ($collection as $model) {
             if ((int) $model->is_placeholder === 1) {
                 continue;
             }
 
-            if ((int) $model->variation_id === $currentVariationId) {
-                continue;
+            $modelVariationId = (int) $model->variation_id;
+            if ($modelVariationId > 0) {
+                if (function_exists('intersoccer_roster_move_variation_is_excluded')) {
+                    if (intersoccer_roster_move_variation_is_excluded($modelVariationId, $excludeVariationIds)) {
+                        continue;
+                    }
+                } elseif (in_array(
+                    function_exists('intersoccer_resolve_variation_for_roster')
+                        ? (int) intersoccer_resolve_variation_for_roster($modelVariationId)
+                        : $modelVariationId,
+                    $excludeVariationIds,
+                    true
+                )) {
+                    continue;
+                }
             }
 
             $status = get_post_status($model->order_id);
@@ -705,33 +801,22 @@ class RosterDetailsService {
             }
 
             $isGirlsOnly = (int) $model->girls_only === 1;
-            $baseGirlsOnly = (int) $baseRoster->girls_only === 1;
 
-            if ($crossGender) {
-                if ($isGirlsOnly === $baseGirlsOnly) {
-                    continue;
-                }
-            } else {
-                if ($isGirlsOnly !== $baseGirlsOnly) {
-                    continue;
-                }
+            $key = (string) (int) $model->variation_id;
+            if ($key === '0') {
+                $keyParts = [
+                    (int) $model->product_id,
+                    (string) $model->product_name,
+                    (string) $model->venue,
+                    (string) $model->age_group,
+                    (string) $model->activity_type,
+                    (string) $model->camp_terms,
+                    (string) $model->course_day,
+                    (string) $model->times,
+                    (string) $model->season,
+                ];
+                $key = implode('|', $keyParts);
             }
-
-            $keyParts = [
-                (int) $model->product_id,
-                (int) $model->variation_id,
-                (string) $model->product_name,
-                (string) $model->venue,
-                (string) $model->age_group,
-                (string) $model->activity_type,
-                (string) $model->camp_terms,
-                (string) $model->course_day,
-                (string) $model->times,
-                (string) $model->season,
-                $isGirlsOnly ? '1' : '0',
-            ];
-
-            $key = implode('|', $keyParts);
 
             if (!isset($summaries[$key])) {
                 $summaries[$key] = (object) [
@@ -777,6 +862,10 @@ class RosterDetailsService {
         $labels = array_map(function ($summary) {
             return trim(((string) ($summary->product_name ?? '')) . ' | ' . ((string) ($summary->venue ?? '')) . ' | ' . ((string) ($summary->age_group ?? '')));
         }, $summaryValues);
+
+        if (function_exists('intersoccer_roster_move_apply_destination_player_counts')) {
+            $summaryValues = intersoccer_roster_move_apply_destination_player_counts($summaryValues);
+        }
 
         return $summaryValues;
     }

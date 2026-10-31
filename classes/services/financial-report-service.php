@@ -191,9 +191,9 @@ class FinancialReportService {
                 'Days Selected', 'Days of Week'
             ]);
 
-            $age_group = $this->extractMetaValue($meta_map, ['pa_age-group', 'Age Group']);
-            $activity_type_display = $this->extractMetaValue($meta_map, ['pa_booking-type', 'Activity Type']);
-            $venue = $this->extractMetaValue($meta_map, ['pa_intersoccer-venues', 'Sites InterSoccer', 'InterSoccer Venues']);
+            $age_group = $this->extractMetaValue($meta_map, ['pa_age-group', 'attribute_pa_age-group', 'Age Group']);
+            $activity_type_display = $this->extractMetaValue($meta_map, ['pa_booking-type', 'attribute_pa_booking-type', 'Activity Type']);
+            $venue = $this->extractMetaValue($meta_map, ['pa_intersoccer-venues', 'attribute_pa_intersoccer-venues', 'Sites InterSoccer', 'InterSoccer Venues']);
 
             // Classify product type using the classification chain
             $productType = $productTypeClassifier->classifyOrderItem($meta_map, (int) $row->product_id);

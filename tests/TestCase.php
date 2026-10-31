@@ -26,7 +26,42 @@ abstract class TestCase extends PHPUnitTestCase {
      * Teardown after each test
      */
     protected function tearDown(): void {
+        global $intersoccer_test_product_type_safe_callback;
+        global $intersoccer_test_get_product_type_callback;
+        global $intersoccer_test_wc_get_product_callback;
+        global $intersoccer_test_post_status_map;
+        global $intersoccer_test_wc_order_item_meta;
+        global $intersoccer_test_order_notes;
+        global $intersoccer_test_userdata_map;
+        $intersoccer_test_product_type_safe_callback = null;
+        $intersoccer_test_get_product_type_callback = null;
+        $intersoccer_test_wc_get_product_callback = null;
+        $intersoccer_test_post_status_map = [];
+        $intersoccer_test_wc_order_item_meta = [];
+        $intersoccer_test_order_notes = [];
+        $intersoccer_test_userdata_map = [];
+
+        unset(
+            $GLOBALS['intersoccer_test_wc_get_order_callback'],
+            $GLOBALS['intersoccer_test_live_order_status_map'],
+            $GLOBALS['intersoccer_test_live_order_status_batch_load_calls'],
+            $GLOBALS['intersoccer_test_get_userdata'],
+            $GLOBALS['intersoccer_test_wc_order_item_data'],
+            $GLOBALS['intersoccer_migrated_items'],
+            $GLOBALS['intersoccer_rr_product_type_safe_cache'],
+            $GLOBALS['intersoccer_test_json_success_throws']
+        );
+        if (function_exists('intersoccer_roster_report_reset_live_order_status_memo')) {
+            intersoccer_roster_report_reset_live_order_status_memo();
+        }
+
         Mockery::close();
+
+        global $wpdb;
+        if (class_exists('InterSoccerTestWpdb', false)) {
+            $wpdb = new \InterSoccerTestWpdb();
+        }
+
         parent::tearDown();
     }
     

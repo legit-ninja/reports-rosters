@@ -403,6 +403,9 @@ class PlayerMatcher {
         if ($gender_raw === '') {
             $gender_raw = strtolower(trim((string) $item->get_meta('pa_gender')));
         }
+        if ($gender_raw === '') {
+            $gender_raw = strtolower(trim((string) $item->get_meta('attribute_pa_gender')));
+        }
         $gender = 'other';
         if ($gender_raw !== '') {
             if (preg_match('/\b(f|female|girl|filles?|mädchen|weiblich)\b/ui', $gender_raw)) {

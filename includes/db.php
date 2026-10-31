@@ -1235,32 +1235,60 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
         }
 
         // Extract event details, prioritizing camp_terms for Camps
-        $booking_type = $order_item_meta['pa_booking-type'] ?? ($variation ? $variation->get_attribute('pa_booking-type') : ($parent_product ? $parent_product->get_attribute('pa_booking-type') : 'Unknown'));
-        $selected_days = $order_item_meta['Days Selected'] ?? 'N/A';
-        $camp_terms = $order_item_meta['pa_camp-terms'] ?? ($variation ? $variation->get_attribute('pa_camp-terms') : ($parent_product ? $parent_product->get_attribute('pa_camp-terms') : 'N/A'));
-        $venue = $order_item_meta['pa_intersoccer-venues'] ?? ($variation ? $variation->get_attribute('pa_intersoccer-venues') : ($parent_product ? $parent_product->get_attribute('pa_intersoccer-venues') : 'Unknown Venue'));
-        if ($venue === 'Unknown Venue') {
-            $meta = wc_get_order_item_meta($order_item_id, 'pa_intersoccer-venues', true);
-            if ($meta) {
-                $venue = $meta;
-                if (defined('WP_DEBUG') && WP_DEBUG) {
-                    error_log('InterSoccer: Fallback venue extracted: ' . $venue);
-                }
+        $read_pa_meta = static function (string $taxonomy) use ($order_item_meta) {
+            if (function_exists('intersoccer_get_order_item_pa_taxonomy_meta_value')) {
+                return intersoccer_get_order_item_pa_taxonomy_meta_value($order_item_meta, $taxonomy);
             }
+
+            return trim((string) ($order_item_meta[$taxonomy] ?? ''));
+        };
+        $booking_type = $read_pa_meta('pa_booking-type');
+        if ($booking_type === '') {
+            $booking_type = $variation ? $variation->get_attribute('pa_booking-type') : ($parent_product ? $parent_product->get_attribute('pa_booking-type') : 'Unknown');
         }
-        $age_group = $order_item_meta['pa_age-group'] ?? ($variation ? $variation->get_attribute('pa_age-group') : ($parent_product ? $parent_product->get_attribute('pa_age-group') : 'N/A'));
+        $selected_days = $order_item_meta['Days Selected'] ?? 'N/A';
+        $camp_terms = $read_pa_meta('pa_camp-terms');
+        if ($camp_terms === '') {
+            $camp_terms = $variation ? $variation->get_attribute('pa_camp-terms') : ($parent_product ? $parent_product->get_attribute('pa_camp-terms') : 'N/A');
+        }
+        $venue = $read_pa_meta('pa_intersoccer-venues');
+        if ($venue === '') {
+            $venue = $variation ? $variation->get_attribute('pa_intersoccer-venues') : ($parent_product ? $parent_product->get_attribute('pa_intersoccer-venues') : 'Unknown Venue');
+        }
+        $age_group = $read_pa_meta('pa_age-group');
+        if ($age_group === '') {
+            $age_group = $variation ? $variation->get_attribute('pa_age-group') : ($parent_product ? $parent_product->get_attribute('pa_age-group') : 'N/A');
+        }
         // Extract course_day for Courses, tournament_day for Tournaments
         if ($activity_type === 'Course') {
-            $course_day = $order_item_meta['pa_course-day'] ?? ($variation ? $variation->get_attribute('pa_course-day') : ($parent_product ? $parent_product->get_attribute('pa_course-day') : 'N/A'));
+            $course_day = $read_pa_meta('pa_course-day');
+            if ($course_day === '') {
+                $course_day = $variation ? $variation->get_attribute('pa_course-day') : ($parent_product ? $parent_product->get_attribute('pa_course-day') : 'N/A');
+            }
         } elseif ($activity_type === 'Tournament') {
             // For Tournaments, extract Tournament Day from metadata
-            $course_day = $order_item_meta['Tournament Day'] ?? $order_item_meta['pa_tournament-day'] ?? ($variation ? $variation->get_attribute('pa_tournament-day') : ($parent_product ? $parent_product->get_attribute('pa_tournament-day') : 'N/A'));
+            $course_day = $order_item_meta['Tournament Day'] ?? '';
+            if ($course_day === '') {
+                $course_day = $read_pa_meta('pa_tournament-day');
+            }
+            if ($course_day === '') {
+                $course_day = $variation ? $variation->get_attribute('pa_tournament-day') : ($parent_product ? $parent_product->get_attribute('pa_tournament-day') : 'N/A');
+            }
         } else {
             $course_day = 'N/A';
         }
 
         // Extract times with postmeta fallback (supports Course, Camp, and Tournament)
         $times = $order_item_meta['Course Times'] ?? $order_item_meta['Camp Times'] ?? $order_item_meta['Tournament Time'] ?? null;
+        if (!$times) {
+            $times = $read_pa_meta('pa_course-times');
+            if ($times === '') {
+                $times = $read_pa_meta('pa_camp-times');
+            }
+            if ($times === '') {
+                $times = $read_pa_meta('pa_tournament-time');
+            }
+        }
         if (!$times) {
             $times = $variation ? ($variation->get_attribute('pa_course-times') ?? $variation->get_attribute('pa_camp-times') ?? $variation->get_attribute('pa_tournament-time')) : null;
             if (!$times && $parent_product) {
@@ -1858,7 +1886,12 @@ function intersoccer_upgrade_database() {
         }
 
         $raw_order_item_meta = wc_get_order_item_meta($row->order_item_id, '', true);
-        $meta_activity_type = $item_meta['pa_activity-type'] ?? $item_meta['Activity Type'] ?? $raw_order_item_meta['Activity Type'][0] ?? '';
+        $meta_activity_type = function_exists('intersoccer_get_order_item_pa_taxonomy_meta_value')
+            ? intersoccer_get_order_item_pa_taxonomy_meta_value($item_meta, 'pa_activity-type')
+            : trim((string) ($item_meta['pa_activity-type'] ?? ''));
+        if ($meta_activity_type === '') {
+            $meta_activity_type = $item_meta['Activity Type'] ?? $raw_order_item_meta['Activity Type'][0] ?? '';
+        }
         $girls_only = function_exists('intersoccer_resolve_roster_girls_only_flag')
             ? intersoccer_resolve_roster_girls_only_flag([
                 'raw_activity_type' => $meta_activity_type ?: ($row->activity_type ?? ''),
