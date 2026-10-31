@@ -258,17 +258,18 @@ function intersoccer_oop_verbose_log() {
 /**
  * Adapter: Process order using OOP
  * 
- * @param int $order_id Order ID
+ * @param int   $order_id Order ID
+ * @param array $options  Optional. Passed to OrderProcessor::processOrder (e.g. complete_order => false).
  * @return bool Success status
  */
 if (!function_exists('intersoccer_oop_process_order')) {
-function intersoccer_oop_process_order($order_id) {
+function intersoccer_oop_process_order($order_id, array $options = []) {
     try {
         if (intersoccer_oop_verbose_log()) {
             error_log('InterSoccer OOP: Processing order via OOP adapter');
         }
         $processor = intersoccer_oop_get_order_processor();
-        $result = $processor->processOrder($order_id);
+        $result = $processor->processOrder($order_id, $options);
         
         if (intersoccer_oop_verbose_log()) {
             if ($result) {

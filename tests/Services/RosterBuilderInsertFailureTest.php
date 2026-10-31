@@ -64,12 +64,7 @@ class RosterBuilderInsertFailureTest extends TestCase {
         $statsProp = new \ReflectionProperty(RosterBuilder::class, 'build_stats');
         $statsProp->setAccessible(true);
         $stats = $statsProp->getValue($builder);
-        $this->assertNotEmpty($stats['errors']);
-        $this->assertStringNotContainsString('Sensitive', $stats['errors'][0]);
-        $this->assertStringNotContainsString('2015', $stats['errors'][0]);
-        $this->assertStringContainsString('RuntimeException', $stats['errors'][0]);
-        $this->assertStringContainsString('fresh insert error', $stats['errors'][0]);
-        $this->assertStringNotContainsString('stale error', $stats['errors'][0]);
+        $this->assertSame([], $stats['errors'] ?? []);
 
         $this->assertIsArray($captured);
         $this->assertSame(42, $captured['order_id']);
@@ -77,6 +72,7 @@ class RosterBuilderInsertFailureTest extends TestCase {
         $this->assertArrayNotHasKey('player', $captured);
         $this->assertStringContainsString('RuntimeException', (string) $captured['reason']);
         $this->assertStringContainsString('fresh insert error', (string) $captured['reason']);
+        $this->assertStringNotContainsString('stale error', (string) $captured['reason']);
     }
 
     public function test_insert_failure_strips_quoted_values_from_duplicate_entry_db_error(): void {
@@ -125,9 +121,7 @@ class RosterBuilderInsertFailureTest extends TestCase {
         $statsProp = new \ReflectionProperty(RosterBuilder::class, 'build_stats');
         $statsProp->setAccessible(true);
         $stats = $statsProp->getValue($builder);
-        $joined = implode(' ', $stats['errors']);
-        $this->assertStringNotContainsString('Leaked Player Name', $joined);
-        $this->assertStringContainsString("Duplicate entry '?'", $joined);
+        $this->assertSame([], $stats['errors'] ?? []);
 
         $this->assertIsArray($captured);
         $this->assertStringNotContainsString('Leaked Player Name', (string) $captured['reason']);

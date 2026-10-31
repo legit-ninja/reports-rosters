@@ -149,17 +149,32 @@ class RosterAjaxHandler {
                 'clear_existing' => true,
                 'batch_size' => 100
             ]);
+
+            if (!empty($results['rebuild_failed'])) {
+                wp_send_json_error([
+                    'message' => __('Rebuild failed; no roster rows were changed.', 'intersoccer-reports-rosters'),
+                    'results' => $results,
+                ]);
+            }
             
             $error_count = is_array($results['errors'] ?? null) ? count($results['errors']) : 0;
-            
+            $mismatch_count = is_array($results['age_mismatches'] ?? null) ? count($results['age_mismatches']) : 0;
+            $not_checked_count = (int) ($results['not_checked']['count'] ?? 0);
+
+            $message = sprintf(
+                __('Rebuild completed. Processed: %1$d, Created: %2$d, Errors: %3$d. Age outside group: %4$d. Age not checked: %5$d.', 'intersoccer-reports-rosters'),
+                $results['orders_processed'] ?? 0,
+                $results['rosters_created'] ?? 0,
+                $error_count,
+                $mismatch_count,
+                $not_checked_count
+            );
+
             wp_send_json_success([
-                'message' => sprintf(
-                    __('Rebuild completed. Processed: %d, Created: %d, Errors: %d', 'intersoccer-reports-rosters'),
-                    $results['orders_processed'] ?? 0,
-                    $results['rosters_created'] ?? 0,
-                    $error_count
-                ),
-                'results' => $results
+                'message' => $message,
+                'results' => $results,
+                'age_mismatches' => $results['age_mismatches'] ?? [],
+                'not_checked' => $results['not_checked'] ?? ['count' => 0, 'order_item_ids' => []],
             ]);
             
         } catch (\Exception $e) {

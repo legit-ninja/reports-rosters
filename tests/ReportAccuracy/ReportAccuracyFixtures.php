@@ -322,6 +322,11 @@ namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy {
         public function setMeta(string $key, $value): self { $this->meta_data[$key] = $value; return $this; }
 
         public function get_status() { return $this->status; }
+        public function get_customer_id() { return 1; }
+        public function get_billing_email() { return 'parent@example.test'; }
+        public function get_billing_phone() { return '+41 00 000 00 00'; }
+        public function get_billing_first_name() { return 'Parent'; }
+        public function get_billing_last_name() { return 'Test'; }
         public function get_items($types = 'line_item') {
             $out = [];
             foreach ((array) $types as $t) {
@@ -348,6 +353,8 @@ namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy {
             return $t;
         }
         public function get_total_refunded() { return $this->total_refunded; }
+        public function get_coupon_codes() { return []; }
+        public function get_billing_company() { return ''; }
         public function update_meta_data($key, $value) {
             $this->meta_data[$key] = $value;
             ReportAccuracyStore::$writes[] = ['op' => 'update', 'object' => 'order', 'id' => $this->id, 'key' => (string) $key];

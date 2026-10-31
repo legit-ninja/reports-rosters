@@ -373,7 +373,14 @@ function intersoccer_render_advanced_page() {
                         data: $form.serialize(),
                         success: function(response) {
                             if (response.success) {
-                                showAdminNotice('<?php echo esc_js(__('Finished: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Rosters rebuilt successfully.', 'intersoccer-reports-rosters')); ?>'), 'success');
+                                var msg = response.data.message || '<?php echo esc_js(__('Rosters rebuilt successfully.', 'intersoccer-reports-rosters')); ?>';
+                                if (response.data.age_mismatches && response.data.age_mismatches.length) {
+                                    msg += ' <?php echo esc_js(__('Mismatch details (order / line / group / age at start):', 'intersoccer-reports-rosters')); ?>';
+                                    response.data.age_mismatches.forEach(function(row) {
+                                        msg += ' [' + (row.order_id || '') + '/' + (row.order_item_id || '') + ' ' + (row.age_group || '') + ' age ' + (row.age_at_start ?? '') + ']';
+                                    });
+                                }
+                                showAdminNotice('<?php echo esc_js(__('Finished: ', 'intersoccer-reports-rosters')); ?>' + msg, 'success');
                             } else {
                                 showAdminNotice('<?php echo esc_js(__('Failed: ', 'intersoccer-reports-rosters')); ?>' + (response.data.message || '<?php echo esc_js(__('Unknown error occurred.', 'intersoccer-reports-rosters')); ?>'), 'error');
                             }

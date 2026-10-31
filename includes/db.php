@@ -786,6 +786,15 @@ function intersoccer_rebuild_rosters_and_reports() {
                 ];
             }
 
+            if (!empty($result['rebuild_failed'])) {
+                return [
+                    'status' => 'error',
+                    'inserted' => 0,
+                    'message' => __('Rebuild failed; no roster rows were changed.', 'intersoccer-reports-rosters'),
+                    'stats' => $result,
+                ];
+            }
+
             $errors = array_filter($result['errors'] ?? []);
             $inserted = intval(($result['rosters_created'] ?? 0) + ($result['rosters_updated'] ?? 0));
             $orders = intval($result['orders_processed'] ?? 0);
@@ -1031,9 +1040,22 @@ if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exis
                 $result = intersoccer_rebuild_rosters_and_reports();
                 ob_clean();
                 if ($result['status'] === 'success') {
+                    $stats = is_array($result['stats'] ?? null) ? $result['stats'] : [];
+                    $mismatch_count = is_array($stats['age_mismatches'] ?? null) ? count($stats['age_mismatches']) : 0;
+                    $not_checked_count = (int) ($stats['not_checked']['count'] ?? 0);
+                    $detail = $mismatch_count || $not_checked_count
+                        ? sprintf(
+                            ' Age outside group: %d. Age not checked: %d.',
+                            $mismatch_count,
+                            $not_checked_count
+                        )
+                        : '';
                     wp_send_json_success([
                         'inserted' => $result['inserted'],
-                        'message' => __('Rebuild completed. Inserted ' . $result['inserted'] . ' rosters.', 'intersoccer-reports-rosters')
+                        'message' => ($result['message'] ?? '') . $detail,
+                        'results' => $stats,
+                        'age_mismatches' => $stats['age_mismatches'] ?? [],
+                        'not_checked' => $stats['not_checked'] ?? ['count' => 0, 'order_item_ids' => []],
                     ]);
                 } else {
                     wp_send_json_error(['message' => __('Rebuild failed: ' . $result['message'], 'intersoccer-reports-rosters')]);

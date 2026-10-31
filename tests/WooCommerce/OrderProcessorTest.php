@@ -33,6 +33,7 @@ class OrderProcessorTest extends TestCase {
         $this->logger = Mockery::spy(Logger::class);
         $this->rosterRepository = Mockery::mock(RosterRepository::class);
         $this->rosterBuilder = Mockery::mock(RosterBuilder::class);
+        $this->rosterBuilder->shouldReceive('getEligibleOrderLineItemIds')->byDefault()->andReturn([]);
         
         $this->processor = new OrderProcessor(
             $this->logger,
@@ -94,6 +95,7 @@ class OrderProcessorTest extends TestCase {
             ->once()
             ->with(123, Mockery::type('array'))
             ->andReturn($rosters);
+        $this->rosterBuilder->shouldReceive('hadOrderItemWriteFailures')->andReturn(false);
         
         $result = $this->processor->processOrder($order);
         
@@ -111,9 +113,14 @@ class OrderProcessorTest extends TestCase {
         $order->shouldReceive('update_status')->never();
         
         $this->rosterRepository
-            ->shouldReceive('count')
+            ->shouldReceive('where')
             ->with(['order_id' => 55])
-            ->andReturn(0);
+            ->andReturn(new RostersCollection());
+        
+        $this->rosterBuilder
+            ->shouldReceive('getEligibleOrderLineItemIds')
+            ->with($order)
+            ->andReturn([]);
         
         $rosters = Mockery::mock(RostersCollection::class);
         $rosters->shouldReceive('count')->andReturn(1);
@@ -123,6 +130,7 @@ class OrderProcessorTest extends TestCase {
             ->once()
             ->with(55, Mockery::type('array'))
             ->andReturn($rosters);
+        $this->rosterBuilder->shouldReceive('hadOrderItemWriteFailures')->andReturn(false);
         
         $result = $this->processor->processOrder($order);
         
@@ -165,6 +173,7 @@ class OrderProcessorTest extends TestCase {
             ->once()
             ->with(10, Mockery::type('array'))
             ->andReturn($rosters);
+        $this->rosterBuilder->shouldReceive('hadOrderItemWriteFailures')->andReturn(false);
         
         $orderFailure = Mockery::mock('WC_Order');
         $orderFailure->shouldReceive('get_status')->andReturn('pending');
@@ -202,6 +211,7 @@ class OrderProcessorTest extends TestCase {
             ->once()
             ->with(999, Mockery::type('array'))
             ->andReturn($rosters);
+        $this->rosterBuilder->shouldReceive('hadOrderItemWriteFailures')->andReturn(false);
 
         $result = $this->processor->processOrder($order);
 

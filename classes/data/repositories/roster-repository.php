@@ -853,20 +853,38 @@ class RosterRepository implements RepositoryInterface {
             $this->logger->debug('Deleting roster entries by order_item_id', ['order_item_id' => $order_item_id]);
 
             $deleted_count = $this->database->transaction(function () use ($order_item_id) {
-                return (int) $this->database->delete_roster_entries(['order_item_id' => $order_item_id]);
+                $deleted = $this->database->delete_roster_entries(['order_item_id' => $order_item_id]);
+                if ($deleted === false) {
+                    throw new DatabaseException('Delete roster entries failed for order_item_id ' . $order_item_id);
+                }
+
+                return (int) $deleted;
             });
+
+            if ($deleted_count === false) {
+                throw new DatabaseException(
+                    'Failed to delete roster entries by order_item_id ' . $order_item_id
+                );
+            }
 
             if ($deleted_count > 0) {
                 $this->clearRelatedCaches();
             }
 
-            return $deleted_count;
-        } catch (\Exception $e) {
+            return (int) $deleted_count;
+        } catch (\Throwable $e) {
             $this->logger->error('Failed to delete roster entries by order_item_id', [
                 'order_item_id' => $order_item_id,
                 'error' => $e->getMessage(),
             ]);
-            throw $e;
+            if ($e instanceof DatabaseException) {
+                throw $e;
+            }
+            throw new DatabaseException(
+                'Failed to delete roster entries by order_item_id ' . $order_item_id . ': ' . $e->getMessage(),
+                0,
+                $e
+            );
         }
     }
 
@@ -1207,33 +1225,6 @@ class RosterRepository implements RepositoryInterface {
                 'error' => $e->getMessage()
             ]);
             return [];
-        }
-    }
-    
-    /**
-     * Rebuild roster entries from WooCommerce orders
-     * 
-     * @param array $options Rebuild options
-     * @return array Rebuild results
-     */
-    public function rebuildFromOrders(array $options = []) {
-        try {
-            $this->logger->info('Starting roster rebuild from orders');
-            
-            $results = $this->database->rebuild_rosters($options);
-            
-            // Clear all caches after rebuild
-            $this->clearAllCaches();
-            
-            $this->logger->info('Roster rebuild completed', $results);
-            
-            return $results;
-            
-        } catch (\Exception $e) {
-            $this->logger->error('Roster rebuild failed', [
-                'error' => $e->getMessage()
-            ]);
-            throw $e;
         }
     }
     

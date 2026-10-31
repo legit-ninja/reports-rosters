@@ -1737,11 +1737,7 @@ if (!function_exists('intersoccer_attempt_roster_build_for_order_item_ids')) {
         foreach ($order_ids as $order_id) {
             try {
                 if (function_exists('intersoccer_oop_process_order')) {
-                    if (intersoccer_oop_process_order($order_id)) {
-                        $processed++;
-                    }
-                } elseif (function_exists('intersoccer_safe_populate_rosters')) {
-                    if (intersoccer_safe_populate_rosters($order_id)) {
+                    if (intersoccer_oop_process_order($order_id, ['complete_order' => false])) {
                         $processed++;
                     }
                 }

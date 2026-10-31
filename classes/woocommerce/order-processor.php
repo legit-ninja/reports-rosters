@@ -66,9 +66,12 @@ class OrderProcessor {
      * Process a single WooCommerce order.
      *
      * @param int|\WC_Order $order Order ID or object.
+     * @param array $options Optional. `complete_order` => false skips status transition and completion-check scheduling (roster build only).
      * @return bool True on success.
      */
-    public function processOrder($order) {
+    public function processOrder($order, array $options = []) {
+        $complete_order = !array_key_exists('complete_order', $options) || $options['complete_order'] !== false;
+
         try {
             $this->resetLastState();
             $wc_order = $this->resolveOrder($order);
@@ -90,14 +93,19 @@ class OrderProcessor {
                 return false;
             }
 
-            // Skip heavy build when order is already completed and rosters exist (e.g. from cron or duplicate hook).
+            // Skip heavy build when order is already completed and every eligible line has a roster row.
             if ($wc_order->get_status() === 'completed') {
-                $existing_count = $this->roster_repository->count(['order_id' => $wc_order->get_id()]);
-                if ($existing_count > 0) {
-                    $existing = $this->roster_repository->where(['order_id' => $wc_order->get_id()]);
+                $existing = $this->roster_repository->where(['order_id' => $wc_order->get_id()]);
+                if ($existing->count() > 0) {
+                    $eligible_item_ids = $this->roster_builder->getEligibleOrderLineItemIds($wc_order);
+                    $existing_item_ids = [];
                     $rows_needing_resync = 0;
                     foreach ($existing as $row) {
                         $row_data = method_exists($row, 'toArray') ? $row->toArray() : (array) $row;
+                        $line_item_id = (int) ($row_data['order_item_id'] ?? 0);
+                        if ($line_item_id > 0) {
+                            $existing_item_ids[$line_item_id] = true;
+                        }
                         if (function_exists('intersoccer_roster_row_needs_order_resync')
                             && intersoccer_roster_row_needs_order_resync($row_data)) {
                             $rows_needing_resync++;
@@ -108,7 +116,14 @@ class OrderProcessor {
                             $rows_needing_resync++;
                         }
                     }
-                    if ($rows_needing_resync === 0) {
+                    $missing_eligible_lines = false;
+                    foreach ($eligible_item_ids as $eligible_id) {
+                        if (!isset($existing_item_ids[(int) $eligible_id])) {
+                            $missing_eligible_lines = true;
+                            break;
+                        }
+                    }
+                    if ($eligible_item_ids !== [] && !$missing_eligible_lines && $rows_needing_resync === 0) {
                         $this->last_rosters = $existing;
                         $this->last_order_completed = true;
                         return true;
@@ -118,15 +133,12 @@ class OrderProcessor {
 
             $this->last_rosters = $this->roster_builder->buildRosterFromOrder(
                 $wc_order->get_id(),
-                [
-                    'validate_data'  => true,
-                    'skip_duplicates' => true,
-                    'update_existing' => true,
-                ]
+                $this->rosterBuildOptions()
             );
 
             $roster_count = $this->last_rosters->count();
             $completed = false;
+            $missing_eligible_roster_lines = 0;
 
             if ($roster_count > 0) {
                 $current_status = $wc_order->get_status();
@@ -138,48 +150,59 @@ class OrderProcessor {
                     ]);
                 }
 
-                if (!in_array($current_status, ['completed', 'refunded', 'cancelled'], true)) {
-                    try {
-                        if ($this->isVerboseLogging()) {
-                            $this->logger->info('OrderProcessor: Attempting to complete order', [
-                                'order_id' => $wc_order->get_id(),
-                                'from_status' => $current_status,
-                            ]);
-                        }
+                if ($complete_order && $current_status === 'processing') {
+                    $missing_eligible_roster_lines = $this->countEligibleOrderLinesMissingRosterRows($wc_order);
+                    $can_complete_order = !$this->roster_builder->hadOrderItemWriteFailures()
+                        && $missing_eligible_roster_lines === 0;
 
-                        $wc_order->update_status(
-                            'completed',
-                            \__('Completed via OOP OrderProcessor (rosters populated).', 'intersoccer-reports-rosters')
-                        );
-
-                        // Explicitly save the order to ensure status is persisted
-                        $wc_order->save();
-
-                        // Reload the order from database to verify the status was actually updated
-                        $order_id = $wc_order->get_id();
-                        $reloaded_order = \function_exists('wc_get_order') ? wc_get_order($order_id) : null;
-                        $updated_status = $reloaded_order ? $reloaded_order->get_status() : $wc_order->get_status();
-
-                        if ($updated_status === 'completed') {
-                            $completed = true;
+                    if ($can_complete_order) {
+                        try {
                             if ($this->isVerboseLogging()) {
-                                $this->logger->info('OrderProcessor: Order successfully completed', [
-                                    'order_id' => $order_id,
+                                $this->logger->info('OrderProcessor: Attempting to complete order', [
+                                    'order_id' => $wc_order->get_id(),
+                                    'from_status' => $current_status,
                                 ]);
                             }
-                        } else {
-                            $this->logger->warning('OrderProcessor: Order status update may have failed', [
-                                'order_id' => $order_id,
-                                'expected_status' => 'completed',
-                                'actual_status' => $updated_status,
-                                'in_memory_status' => $wc_order->get_status(),
+
+                            $wc_order->update_status(
+                                'completed',
+                                \__('Completed via OOP OrderProcessor (rosters populated).', 'intersoccer-reports-rosters')
+                            );
+
+                            // Explicitly save the order to ensure status is persisted
+                            $wc_order->save();
+
+                            // Reload the order from database to verify the status was actually updated
+                            $order_id = $wc_order->get_id();
+                            $reloaded_order = \function_exists('wc_get_order') ? wc_get_order($order_id) : null;
+                            $updated_status = $reloaded_order ? $reloaded_order->get_status() : $wc_order->get_status();
+
+                            if ($updated_status === 'completed') {
+                                $completed = true;
+                                if ($this->isVerboseLogging()) {
+                                    $this->logger->info('OrderProcessor: Order successfully completed', [
+                                        'order_id' => $order_id,
+                                    ]);
+                                }
+                            } else {
+                                $this->logger->warning('OrderProcessor: Order status update may have failed', [
+                                    'order_id' => $order_id,
+                                    'expected_status' => 'completed',
+                                    'actual_status' => $updated_status,
+                                    'in_memory_status' => $wc_order->get_status(),
+                                ]);
+                            }
+                        } catch (\Throwable $e) {
+                            $this->logger->error('OrderProcessor: Exception while completing order', [
+                                'order_id' => $wc_order->get_id(),
+                                'exception' => $e->getMessage(),
+                                'trace' => $e->getTraceAsString(),
                             ]);
                         }
-                    } catch (\Throwable $e) {
-                        $this->logger->error('OrderProcessor: Exception while completing order', [
+                    } elseif ($missing_eligible_roster_lines > 0) {
+                        $this->logger->error('OrderProcessor: Order left in processing because eligible order lines are missing roster rows', [
                             'order_id' => $wc_order->get_id(),
-                            'exception' => $e->getMessage(),
-                            'trace' => $e->getTraceAsString(),
+                            'missing_line_count' => $missing_eligible_roster_lines,
                         ]);
                     }
                 } else {
@@ -191,7 +214,12 @@ class OrderProcessor {
                     }
                 }
 
-                if (!$completed && \function_exists('intersoccer_schedule_order_completion_check')) {
+                if (
+                    $complete_order
+                    && !$completed
+                    && $wc_order->get_status() === 'processing'
+                    && \function_exists('intersoccer_schedule_order_completion_check')
+                ) {
                     \intersoccer_schedule_order_completion_check($wc_order->get_id());
                 }
             } else {
@@ -212,6 +240,17 @@ class OrderProcessor {
                 ]);
             }
 
+            if ($this->roster_builder->hadOrderItemWriteFailures()) {
+                $this->logger->error('OrderProcessor: Roster build had order line write failures', [
+                    'order_id' => $wc_order->get_id(),
+                ]);
+                return false;
+            }
+
+            if ($missing_eligible_roster_lines > 0 && $wc_order->get_status() === 'processing') {
+                return false;
+            }
+
             return true;
         } catch (\Throwable $e) {
             $this->logger->error('OrderProcessor: Failed to process order', [
@@ -219,10 +258,10 @@ class OrderProcessor {
                 'message' => $e->getMessage(),
             ]);
 
-            if (\function_exists('intersoccer_schedule_order_completion_check')) {
-                $order_id = is_object($order) && method_exists($order, 'get_id') ? $order->get_id() : $order;
-                if (is_numeric($order_id)) {
-                    \intersoccer_schedule_order_completion_check((int) $order_id);
+            if ($complete_order && \function_exists('intersoccer_schedule_order_completion_check')) {
+                $failed_order = $this->resolveOrder($order);
+                if ($failed_order && $failed_order->get_status() === 'processing') {
+                    \intersoccer_schedule_order_completion_check((int) $failed_order->get_id());
                 }
             }
 
@@ -301,7 +340,22 @@ class OrderProcessor {
             return false;
         }
 
-        return in_array($wc_order->get_status(), ['completed', 'processing', 'on-hold'], true);
+        $statuses = $this->rosterRebuildStatuses();
+
+        return in_array($wc_order->get_status(), $statuses, true);
+    }
+
+    /**
+     * @return string[]
+     */
+    private function rosterRebuildStatuses(): array {
+        $default = ['completed', 'processing', 'on-hold'];
+        if (!function_exists('apply_filters') || !function_exists('intersoccer_normalize_roster_rebuild_statuses')) {
+            return $default;
+        }
+        $filtered = apply_filters('intersoccer_roster_rebuild_statuses', $default);
+
+        return intersoccer_normalize_roster_rebuild_statuses($filtered);
     }
 
     /**
@@ -362,5 +416,59 @@ class OrderProcessor {
     private function isVerboseLogging(): bool {
         return (defined('WP_DEBUG') && WP_DEBUG)
             || (defined('INTERSOCCER_REPORTS_DEBUG_LOG') && INTERSOCCER_REPORTS_DEBUG_LOG);
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    private function rosterBuildOptions(): array {
+        return [
+            'validate_data' => true,
+            'skip_duplicates' => true,
+            'update_existing' => true,
+            'skip_age_group_validation' => true,
+        ];
+    }
+
+    /**
+     * Count eligible paid order lines that do not yet have a roster row (read-only on the order).
+     *
+     * @param \WC_Order $order
+     * @return int
+     */
+    private function countEligibleOrderLinesMissingRosterRows(\WC_Order $order): int {
+        $eligible_item_ids = $this->roster_builder->getEligibleOrderLineItemIds($order);
+        if ($eligible_item_ids === []) {
+            return 0;
+        }
+
+        $existing = $this->roster_repository->where(['order_id' => $order->get_id()]);
+        $existing_item_ids = $this->mapRosterRowsToOrderItemIds($existing);
+
+        $missing = 0;
+        foreach ($eligible_item_ids as $eligible_id) {
+            if (!isset($existing_item_ids[(int) $eligible_id])) {
+                $missing++;
+            }
+        }
+
+        return $missing;
+    }
+
+    /**
+     * @param RostersCollection $existing
+     * @return array<int, true>
+     */
+    private function mapRosterRowsToOrderItemIds(RostersCollection $existing): array {
+        $existing_item_ids = [];
+        foreach ($existing as $row) {
+            $row_data = method_exists($row, 'toArray') ? $row->toArray() : (array) $row;
+            $line_item_id = (int) ($row_data['order_item_id'] ?? 0);
+            if ($line_item_id > 0) {
+                $existing_item_ids[$line_item_id] = true;
+            }
+        }
+
+        return $existing_item_ids;
     }
 }
