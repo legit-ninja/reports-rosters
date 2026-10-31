@@ -367,7 +367,15 @@ if (!function_exists('intersoccer_dedupe_admin_order_item_formatted_meta')) {
 
 if (!function_exists('intersoccer_order_admin_is_wp_admin_request')) {
     function intersoccer_order_admin_is_wp_admin_request(): bool {
-        $pre = apply_filters('intersoccer_pre_order_admin_is_wp_admin_request', null);
+        $pre = null;
+        if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING) {
+            /**
+             * Test-only hook; ignored unless INTERSOCCER_TESTING is true.
+             *
+             * @param bool|null $pre
+             */
+            $pre = apply_filters('intersoccer_pre_order_admin_is_wp_admin_request', null);
+        }
         if ($pre !== null) {
             return (bool) $pre;
         }
@@ -381,7 +389,15 @@ if (!function_exists('intersoccer_should_dedupe_admin_order_item_formatted_meta'
      * True only on WooCommerce order edit screens in wp-admin (not emails, storefront, or REST).
      */
     function intersoccer_should_dedupe_admin_order_item_formatted_meta(): bool {
-        $pre = apply_filters('intersoccer_pre_should_dedupe_admin_order_item_formatted_meta', null);
+        $pre = null;
+        if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING) {
+            /**
+             * Test-only hook; ignored unless INTERSOCCER_TESTING is true.
+             *
+             * @param bool|null $pre
+             */
+            $pre = apply_filters('intersoccer_pre_should_dedupe_admin_order_item_formatted_meta', null);
+        }
         if ($pre !== null) {
             return (bool) $pre;
         }

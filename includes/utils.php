@@ -5059,7 +5059,17 @@ if (defined('INTERSOCCER_RUN_TEST_PROCESS_ORDERS') && INTERSOCCER_RUN_TEST_PROCE
 
 if (!function_exists('intersoccer_get_product_type_safe')) {
     function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
-        $pre = apply_filters('intersoccer_pre_get_product_type_safe', null, $product_id, $variation_id);
+        $pre = null;
+        if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING) {
+            /**
+             * Test-only hook; ignored unless INTERSOCCER_TESTING is true.
+             *
+             * @param string|null $pre
+             * @param int         $product_id
+             * @param int|null    $variation_id
+             */
+            $pre = apply_filters('intersoccer_pre_get_product_type_safe', null, $product_id, $variation_id);
+        }
         if ($pre !== null) {
             return (string) $pre;
         }
