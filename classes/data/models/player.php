@@ -211,60 +211,127 @@ class Player extends AbstractModel {
      * @return bool Is eligible
      */
     public function isEligibleForAgeGroup($age_group, $event_date = null) {
-        // Parse age group
-        $age_range = $this->parseAgeGroup($age_group);
+        $age_range = self::parseAgeGroupRange($age_group);
         if (!$age_range) {
-            return false;
+            return true;
         }
-        
+
         $age = $this->getAgeAt($event_date);
         return $age >= $age_range['min'] && $age <= $age_range['max'];
+    }
+
+    /**
+     * Age-group check outcome at an event date: ok, outside the parsed range, or not_checked.
+     */
+    public function ageGroupStatusAt(string $age_group, ?string $event_date): string {
+        $dob = trim((string) ($this->dob ?? ''));
+        $age_group = trim($age_group);
+        $event_date = $event_date !== null ? trim($event_date) : '';
+        if ($dob === '' || $age_group === '' || $event_date === '') {
+            return 'not_checked';
+        }
+
+        $age_range = self::parseAgeGroupRange($age_group);
+        if (!$age_range) {
+            return 'not_checked';
+        }
+
+        $age = $this->getAgeAt($event_date);
+        if ($age < $age_range['min'] || $age > $age_range['max']) {
+            return 'outside';
+        }
+
+        return 'ok';
     }
 
     /**
      * Whether the player is below the minimum age for the group on the event date.
      */
     public function isBelowMinAgeForAgeGroupAt(string $age_group, ?string $event_date = null): bool {
-        $age_range = $this->parseAgeGroup($age_group);
+        $age_range = self::parseAgeGroupRange($age_group);
         if (!$age_range || empty($this->dob) || empty($event_date)) {
             return false;
         }
 
         return $this->getAgeAt($event_date) < $age_range['min'];
     }
-    
+
     /**
-     * Parse age group string to min/max ages
-     * 
-     * @param string $age_group Age group string
-     * @return array|null Age range or null if invalid
+     * Parse age group label to min/max ages (public for tests and read-time badges).
+     *
+     * @param string|null $age_group Age group string
+     * @return array{min:int,max:int}|null
      */
-    private function parseAgeGroup($age_group) {
-        // Check predefined age groups first
+    public static function parseAgeGroupRange($age_group): ?array {
+        $age_group = trim((string) $age_group);
+        if ($age_group === '') {
+            return null;
+        }
+
         foreach (self::AGE_GROUPS as $activity_groups) {
             if (isset($activity_groups[$age_group])) {
                 return $activity_groups[$age_group];
             }
         }
-        
-        // Try to parse "Under" age groups (e.g., "U14", "U12", "Under 14")
-        if (preg_match('/U(\d+)/i', $age_group, $matches) || 
-            preg_match('/Under\s*(\d+)/i', $age_group, $matches)) {
+
+        if (self::isSchoolGradeAgeGroupLabel($age_group)) {
+            return null;
+        }
+
+        if (preg_match('/^\s*(?:U\s?|Under\s*)(\d{1,2})\b/i', $age_group, $matches)) {
             return [
                 'min' => 0,
-                'max' => (int) $matches[1]
+                'max' => (int) $matches[1],
             ];
         }
-        
-        // Try to parse dynamic age groups (e.g., "5-13y", "3-5y (Half-Day)")
-        if (preg_match('/(\d+)-(\d+)y/', $age_group, $matches)) {
-            return [
-                'min' => (int) $matches[1],
-                'max' => (int) $matches[2]
-            ];
+
+        if (!preg_match_all('/(?<!\d)(\d{1,2})\s*[-–]\s*(\d{1,2})(?!\d)/u', $age_group, $all_matches, PREG_SET_ORDER)) {
+            return null;
         }
-        
-        return null;
+
+        $distinct = [];
+        foreach ($all_matches as $match) {
+            $min = (int) $match[1];
+            $max = (int) $match[2];
+            if ($min > $max) {
+                return null;
+            }
+            $distinct[$min . '-' . $max] = ['min' => $min, 'max' => $max];
+        }
+
+        if (count($distinct) !== 1) {
+            return null;
+        }
+
+        return reset($distinct);
+    }
+
+    private static function isSchoolGradeAgeGroupLabel(string $age_group): bool {
+        $patterns = [
+            '/Pre-K/i',
+            '/Vor-K/i',
+            '/\bKG\b/i',
+            '/\bG\d+\b/i',
+            '/\bGR\d+\b/i',
+            '/Grade/i',
+            '/primaire/i',
+            '/enfantine/i',
+        ];
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $age_group)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param string $age_group Age group string
+     * @return array|null Age range or null if invalid
+     */
+    private function parseAgeGroup($age_group) {
+        return self::parseAgeGroupRange($age_group);
     }
     
     /**

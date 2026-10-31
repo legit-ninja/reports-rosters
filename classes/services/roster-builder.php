@@ -117,6 +117,13 @@ class RosterBuilder {
     private $obsolete_reconcile_synced_order_ids = [];
 
     /**
+     * During full rebuild: roster lines not yet upserted in this run (order_item_id => order_id).
+     *
+     * @var array<int,int>|null
+     */
+    private $full_rebuild_existing_item_map = null;
+
+    /**
      * Rows updated via syncOrderStatusForKeptRows in the current reconcile run.
      *
      * @var int
@@ -243,7 +250,13 @@ class RosterBuilder {
             'start_time' => microtime(true),
             'end_time' => null,
             'errors' => [],
-            'warnings' => []
+            'warnings' => [],
+            'age_mismatches' => [],
+            'not_checked' => [
+                'count' => 0,
+                'order_item_ids' => [],
+            ],
+            'rosters_deleted' => 0,
         ];
     }
     
@@ -256,9 +269,13 @@ class RosterBuilder {
     public function buildRosters(array $options = []) {
         try {
             $this->logger->info('Starting roster build process', $options);
-            
+
             $this->init_build_stats();
-            
+
+            $default_statuses = function_exists('intersoccer_roster_rebuild_statuses')
+                ? intersoccer_roster_rebuild_statuses()
+                : ['completed', 'processing', 'on-hold'];
+
             // Set default options
             $options = array_merge([
                 'clear_existing' => false,
@@ -266,31 +283,99 @@ class RosterBuilder {
                 'date_range' => null,
                 'batch_size' => 100,
                 'validate_data' => true,
-                'skip_duplicates' => true
+                'skip_duplicates' => true,
+                'update_existing' => false,
+                'update_past_events' => false,
+                'skip_age_group_validation' => false,
             ], $options);
-            
-            // Clear existing rosters if requested
-            if ($options['clear_existing']) {
-                $this->clearExistingRosters();
+
+            $is_full_rebuild = !empty($options['clear_existing']);
+            if ($is_full_rebuild) {
+                // Full rebuild: upsert all eligible lines, then delete only obsolete rows (no TRUNCATE).
+                $options['update_existing'] = true;
+                $options['skip_duplicates'] = false;
+                $options['update_past_events'] = true;
+                $options['skip_age_group_validation'] = true;
+                $options['order_statuses'] = $default_statuses;
             }
-            
-            // Process orders in transaction
-            return $this->database->transaction(function() use ($options) {
+
+            $stats = $this->database->transaction(function () use ($options, $is_full_rebuild) {
+                if ($is_full_rebuild) {
+                    return $this->runFullRebuildInTransaction($options);
+                }
+
                 return $this->processOrdersInBatches($options);
             });
-            
+
+            if ($is_full_rebuild && !empty($stats['age_mismatches'])) {
+                $this->logRebuildAgeMismatchAdminEntry($stats['age_mismatches']);
+            }
+
+            return $stats;
+
         } catch (\Exception $e) {
             $this->logger->error('Roster build process failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
                 'stats' => $this->build_stats
             ]);
-            
+
             $this->build_stats['end_time'] = microtime(true);
             $this->build_stats['errors'][] = $e->getMessage();
-            
+
             return $this->build_stats;
         }
+    }
+
+    /**
+     * Full roster rebuild (clear_existing): upsert then obsolete-row cleanup inside the transaction.
+     *
+     * @param array $options
+     * @return array
+     */
+    private function runFullRebuildInTransaction(array $options) {
+        $wpdb = $this->database->get_wpdb();
+        $table = $wpdb->prefix . 'intersoccer_rosters';
+
+        $existing_rows = $wpdb->get_results(
+            "SELECT order_item_id, order_id FROM {$table}",
+            ARRAY_A
+        );
+        $existing_item_map = [];
+        if (is_array($existing_rows)) {
+            foreach ($existing_rows as $row) {
+                $item_id = isset($row['order_item_id']) ? (int) $row['order_item_id'] : 0;
+                if ($item_id <= 0) {
+                    continue;
+                }
+                $existing_item_map[$item_id] = isset($row['order_id']) ? (int) $row['order_id'] : 0;
+            }
+        }
+
+        $this->full_rebuild_existing_item_map = $existing_item_map;
+        try {
+            $this->processOrdersInBatches($options);
+            $deleted = $this->deleteObsoleteReconcileRows($existing_item_map);
+            $this->build_stats['rosters_deleted'] = $deleted;
+        } finally {
+            $this->full_rebuild_existing_item_map = null;
+        }
+
+        return $this->build_stats;
+    }
+
+    /**
+     * Alias for legacy OOP adapter entry points (same as buildRosters with clear_existing).
+     *
+     * @param array $options
+     * @return array
+     */
+    public function rebuildAll(array $options = []) {
+        if (!isset($options['clear_existing'])) {
+            $options['clear_existing'] = true;
+        }
+
+        return $this->buildRosters($options);
     }
     
     /**
@@ -338,6 +423,8 @@ class RosterBuilder {
         ];
 
         $this->logger->info('Starting roster reconciliation', $options);
+
+        $this->init_build_stats();
 
         try {
             $wpdb = $this->database->get_wpdb();
@@ -477,42 +564,12 @@ class RosterBuilder {
             ]);
 
             if ($options['delete_obsolete'] && !empty($existing_item_map)) {
-                $this->obsolete_reconcile_synced_order_ids = [];
-                $this->reconcile_status_synced_total = 0;
-                $obsolete_ids = array_keys($existing_item_map);
-                $delete_chunk_size = max(1, (int) ($options['delete_batch_size'] ?? 200));
-
-                for ($i = 0, $total = count($obsolete_ids); $i < $total; $i += $delete_chunk_size) {
-                    $chunk = array_slice($obsolete_ids, $i, $delete_chunk_size);
-                    foreach ($chunk as $obsolete_item_id) {
-                        $stored_order_id = isset($existing_item_map[$obsolete_item_id])
-                            ? (int) $existing_item_map[$obsolete_item_id]
-                            : 0;
-                        if (!$this->shouldDeleteObsoleteReconcileRow((int) $obsolete_item_id, $stored_order_id)) {
-                            continue;
-                        }
-                        try {
-                            $deleted_count = $this->roster_repository->deleteByOrderItemId((int) $obsolete_item_id);
-                            $results['deleted'] += $deleted_count;
-                            $this->logger->debug('Deleted obsolete roster entries', [
-                                'order_item_id' => $obsolete_item_id,
-                                'deleted' => $deleted_count,
-                            ]);
-                        } catch (\Exception $e) {
-                            $results['errors']++;
-                            $results['error_messages'][] = "Failed to delete obsolete roster {$obsolete_item_id}: {$e->getMessage()}";
-                            $this->logger->error('Failed to delete obsolete roster entry', [
-                                'order_item_id' => $obsolete_item_id,
-                                'error' => $e->getMessage(),
-                            ]);
-                        }
-                    }
-                    if ($i + $delete_chunk_size < $total && function_exists('wp_cache_flush')) {
-                        wp_cache_flush();
-                    }
-                }
+                $results['deleted'] = $this->deleteObsoleteReconcileRows($existing_item_map);
                 $results['status_synced'] = $this->reconcile_status_synced_total;
             }
+
+            $results['age_mismatches'] = $this->build_stats['age_mismatches'];
+            $results['not_checked'] = $this->build_stats['not_checked'];
 
             $results['end_time'] = current_time('mysql');
             $results['duration'] = round(microtime(true) - $start_time, 2);
@@ -563,7 +620,13 @@ class RosterBuilder {
             }
             
             // Validate order status
-            if (!in_array($order->get_status(), ['completed', 'processing'])) {
+            $allowed_statuses = ['completed', 'processing'];
+            if (!empty($options['skip_age_group_validation'])) {
+                $allowed_statuses = function_exists('intersoccer_roster_rebuild_statuses')
+                    ? intersoccer_roster_rebuild_statuses()
+                    : array_merge($allowed_statuses, ['on-hold']);
+            }
+            if (!in_array($order->get_status(), $allowed_statuses, true)) {
                 $this->logger->warning('Skipping order with invalid status', [
                     'order_id' => $order_id,
                     'status' => $order->get_status()
@@ -817,6 +880,138 @@ class RosterBuilder {
             return false;
         }
     }
+
+    /**
+     * Delete roster rows whose lines were not synced in this run, using reconcile obsolete rules.
+     *
+     * @param array<int,int> $existing_item_map order_item_id => stored order_id
+     * @param int            $delete_batch_size
+     * @return int Rows deleted
+     */
+    private function deleteObsoleteReconcileRows(array &$existing_item_map, int $delete_batch_size = 200): int {
+        if ($existing_item_map === []) {
+            return 0;
+        }
+
+        $this->obsolete_reconcile_synced_order_ids = [];
+        $this->reconcile_status_synced_total = 0;
+        $deleted_total = 0;
+        $obsolete_ids = array_keys($existing_item_map);
+        $delete_chunk_size = max(1, $delete_batch_size);
+
+        for ($i = 0, $total = count($obsolete_ids); $i < $total; $i += $delete_chunk_size) {
+            $chunk = array_slice($obsolete_ids, $i, $delete_chunk_size);
+            foreach ($chunk as $obsolete_item_id) {
+                $stored_order_id = isset($existing_item_map[$obsolete_item_id])
+                    ? (int) $existing_item_map[$obsolete_item_id]
+                    : 0;
+                if (!$this->shouldDeleteObsoleteReconcileRow((int) $obsolete_item_id, $stored_order_id)) {
+                    continue;
+                }
+                try {
+                    $deleted_count = $this->roster_repository->deleteByOrderItemId((int) $obsolete_item_id);
+                    $deleted_total += $deleted_count;
+                    $this->logger->debug('Deleted obsolete roster entries', [
+                        'order_item_id' => $obsolete_item_id,
+                        'deleted' => $deleted_count,
+                    ]);
+                } catch (\Exception $e) {
+                    $this->build_stats['errors'][] = "Failed to delete obsolete roster {$obsolete_item_id}: {$e->getMessage()}";
+                    $this->logger->error('Failed to delete obsolete roster entry', [
+                        'order_item_id' => $obsolete_item_id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+            if ($i + $delete_chunk_size < $total && function_exists('wp_cache_flush')) {
+                wp_cache_flush();
+            }
+        }
+
+        return $deleted_total;
+    }
+
+    /**
+     * @param array<string,mixed> $roster_data
+     */
+    private function recordAgeGroupBuildOutcome(array $roster_data): void {
+        $dob = trim((string) ($roster_data['player_dob'] ?? $roster_data['dob'] ?? ''));
+        $age_group = trim((string) ($roster_data['age_group'] ?? ''));
+        $start_date = trim((string) ($roster_data['start_date'] ?? ''));
+        $order_item_id = (int) ($roster_data['order_item_id'] ?? 0);
+        $order_id = (int) ($roster_data['order_id'] ?? 0);
+
+        $player = new Player([
+            'customer_id' => (int) ($roster_data['customer_id'] ?? 0),
+            'player_index' => (int) ($roster_data['player_index'] ?? 0),
+            'first_name' => (string) ($roster_data['player_first_name'] ?? $roster_data['first_name'] ?? ''),
+            'last_name' => (string) ($roster_data['player_last_name'] ?? $roster_data['last_name'] ?? ''),
+            'dob' => $dob,
+            'gender' => (string) ($roster_data['player_gender'] ?? $roster_data['gender'] ?? 'male'),
+        ]);
+
+        $status = $player->ageGroupStatusAt($age_group, $start_date !== '' ? $start_date : null);
+        if ($status === 'not_checked') {
+            $this->build_stats['not_checked']['count']++;
+            if ($order_item_id > 0) {
+                $this->build_stats['not_checked']['order_item_ids'][] = $order_item_id;
+            }
+            return;
+        }
+
+        if ($status === 'outside') {
+            $this->build_stats['age_mismatches'][] = [
+                'order_id' => $order_id,
+                'order_item_id' => $order_item_id,
+                'age_group' => $age_group,
+                'age_at_start' => $player->getAgeAt($start_date),
+            ];
+        }
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $age_mismatches
+     */
+    private function logRebuildAgeMismatchAdminEntry(array $age_mismatches): void {
+        if ($age_mismatches === [] || !function_exists('intersoccer_roster_admin_log_insert')) {
+            return;
+        }
+
+        $order_item_ids = [];
+        foreach ($age_mismatches as $row) {
+            $id = (int) ($row['order_item_id'] ?? 0);
+            if ($id > 0) {
+                $order_item_ids[] = $id;
+            }
+        }
+
+        intersoccer_roster_admin_log_insert('rebuild_age_mismatch', '', [
+            'mismatch_count' => count($age_mismatches),
+            'order_item_ids' => $order_item_ids,
+        ]);
+    }
+
+    /**
+     * Remove roster rows for an order whose lines no longer exist (after a successful per-order rebuild).
+     */
+    private function deleteObsoleteRowsForOrderAfterRebuild(int $order_id, \WC_Order $order): void {
+        if ($order_id <= 0 || !method_exists($order, 'get_items')) {
+            return;
+        }
+
+        $line_ids = array_map('intval', array_keys($order->get_items()));
+        $existing = $this->roster_repository->where(['order_id' => $order_id]);
+        foreach ($existing as $roster_row) {
+            $item_id = (int) ($roster_row->order_item_id ?? 0);
+            if ($item_id <= 0 || in_array($item_id, $line_ids, true)) {
+                continue;
+            }
+            if (!$this->shouldDeleteObsoleteReconcileRow($item_id, $order_id)) {
+                continue;
+            }
+            $this->roster_repository->deleteByOrderItemId($item_id);
+        }
+    }
     
     /**
      * Process items from a WooCommerce order
@@ -931,6 +1126,12 @@ class RosterBuilder {
                 if ($roster) {
                     $rosters->add($roster);
                     $this->build_stats['players_processed']++;
+                    if (is_array($this->full_rebuild_existing_item_map)) {
+                        unset($this->full_rebuild_existing_item_map[(int) $item_id]);
+                    }
+                    if (!empty($options['skip_age_group_validation'])) {
+                        $this->recordAgeGroupBuildOutcome($roster_data);
+                    }
                     // One roster row per order line item (uniq_order_item_id).
                     break;
                 }
@@ -2329,24 +2530,6 @@ class RosterBuilder {
     }
     
     /**
-     * Clear existing roster entries
-     * 
-     * @return void
-     */
-    private function clearExistingRosters() {
-        $this->logger->info('Clearing existing roster entries');
-        
-        $wpdb = $this->database->get_wpdb();
-        $table_name = $wpdb->prefix . 'intersoccer_rosters';
-        
-        $wpdb->query("TRUNCATE TABLE {$table_name}");
-        
-        $this->roster_repository->clearAllCaches();
-        
-        $this->logger->info('Cleared existing rosters via TRUNCATE');
-    }
-    
-    /**
      * Get build statistics
      * 
      * @return array Build statistics
@@ -2536,32 +2719,42 @@ class RosterBuilder {
                 'order_ids' => $order_ids,
                 'count' => count($order_ids)
             ]);
-            
+
             $this->init_build_stats();
             $options = array_merge([
                 'validate_data' => true,
                 'update_existing' => true,
-                'skip_duplicates' => false
+                'skip_duplicates' => false,
+                'update_past_events' => true,
+                'skip_age_group_validation' => true,
             ], $options);
-            
+
             $results = new RostersCollection();
-            
-            $this->database->transaction(function() use ($order_ids, $options, &$results) {
+
+            $this->database->transaction(function () use ($order_ids, $options, &$results) {
                 foreach ($order_ids as $order_id) {
+                    $order_id = (int) $order_id;
                     try {
-                        // Remove existing rosters for this order
-                        $this->roster_repository->deleteWhere(['order_id' => $order_id]);
-                        
-                        // Rebuild rosters for this order
-                        $order_rosters = $this->buildRosterFromOrder($order_id, $options);
+                        $order = wc_get_order($order_id);
+                        if (!$order || !is_object($order)) {
+                            throw new \Exception("Order not found: {$order_id}");
+                        }
+
+                        $allowed_statuses = function_exists('intersoccer_roster_rebuild_statuses')
+                            ? intersoccer_roster_rebuild_statuses()
+                            : ['completed', 'processing', 'on-hold'];
+                        if (!in_array((string) $order->get_status(), $allowed_statuses, true)) {
+                            throw new \Exception("Order {$order_id} has invalid status for rebuild");
+                        }
+
+                        $order_rosters = $this->processOrderItems($order, $options);
                         $results = $results->merge($order_rosters);
-                        
+                        $this->deleteObsoleteRowsForOrderAfterRebuild($order_id, $order);
                         $this->build_stats['orders_processed']++;
-                        
                     } catch (\Exception $e) {
                         $this->build_stats['skipped_orders']++;
                         $this->build_stats['errors'][] = "Order {$order_id}: " . $e->getMessage();
-                        
+
                         $this->logger->error('Failed to rebuild order', [
                             'order_id' => $order_id,
                             'error' => $e->getMessage()
@@ -2569,24 +2762,32 @@ class RosterBuilder {
                     }
                 }
             });
-            
+
             $this->build_stats['end_time'] = microtime(true);
-            
+
             $this->logger->info('Specific orders rebuild completed', $this->build_stats);
-            
+
+            $statistics = $this->getBuildStatistics();
+            $statistics['age_mismatches'] = $this->build_stats['age_mismatches'];
+            $statistics['not_checked'] = $this->build_stats['not_checked'];
+
             return [
                 'rosters' => $results,
-                'statistics' => $this->getBuildStatistics()
+                'statistics' => $statistics,
+                'age_mismatches' => $this->build_stats['age_mismatches'],
+                'not_checked' => $this->build_stats['not_checked'],
             ];
-            
+
         } catch (\Exception $e) {
             $this->logger->error('Specific orders rebuild failed', [
                 'error' => $e->getMessage()
             ]);
-            
+
             return [
                 'rosters' => new RostersCollection(),
                 'statistics' => $this->getBuildStatistics(),
+                'age_mismatches' => $this->build_stats['age_mismatches'] ?? [],
+                'not_checked' => $this->build_stats['not_checked'] ?? ['count' => 0, 'order_item_ids' => []],
                 'error' => $e->getMessage()
             ];
         }

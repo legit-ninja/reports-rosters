@@ -1264,6 +1264,9 @@ if (!function_exists('wc_get_order_item_meta')) {
 
 if (!function_exists('wc_update_order_item_meta')) {
     function wc_update_order_item_meta($item_id, $meta_key, $meta_value, $prev_value = '') {
+        if (!empty($GLOBALS['intersoccer_test_track_order_meta_writes'])) {
+            $GLOBALS['intersoccer_test_order_meta_write_count'] = (int) ($GLOBALS['intersoccer_test_order_meta_write_count'] ?? 0) + 1;
+        }
         return true;
     }
 }

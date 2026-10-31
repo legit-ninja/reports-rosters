@@ -655,7 +655,7 @@ function intersoccer_render_roster_details_page() {
             $season = $base_roster->season;
         }
     } else {
-        $query = "SELECT r.player_name, r.first_name, r.last_name, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.late_pickup_days, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.avs_number, r.customer_id, r.player_index, r.order_id, r.day_presence, r.selected_days, r.days_selected, r.event_details, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only, p.post_date as order_date";
+        $query = "SELECT r.player_name, r.first_name, r.last_name, r.player_dob, r.start_date, r.gender, r.parent_phone, r.parent_email, r.age, r.medical_conditions, r.late_pickup, r.late_pickup_days, r.booking_type, r.course_day, r.shirt_size, r.shorts_size, r.avs_number, r.customer_id, r.player_index, r.order_id, r.day_presence, r.selected_days, r.days_selected, r.event_details, r.order_item_id, r.variation_id, r.age_group, r.activity_type, r.product_name, r.camp_terms, r.venue, r.times, r.product_id, r.girls_only, p.post_date as order_date";
         $query .= " FROM $rosters_table r";
         $query .= " JOIN {$wpdb->posts} p ON r.order_id = p.ID";
 
@@ -992,7 +992,24 @@ function intersoccer_render_roster_details_page() {
             ? intersoccer_roster_display_last_name($row)
             : ($row->last_name ?? 'N/A');
         echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($display_first) . '</td>';
-        echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($display_last) . '</td>';
+        echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($display_last);
+        $dob_for_age = trim((string) ($row->player_dob ?? ''));
+        $start_for_age = trim((string) ($row->start_date ?? ''));
+        $age_group_for_age = trim((string) ($row->age_group ?? ''));
+        if ($dob_for_age !== '' && $start_for_age !== '' && $age_group_for_age !== '') {
+            $age_check_player = new \InterSoccer\ReportsRosters\Data\Models\Player([
+                'customer_id' => (int) ($row->customer_id ?? 1),
+                'player_index' => (int) ($row->player_index ?? 0),
+                'first_name' => (string) ($display_first !== 'N/A' ? $display_first : 'Player'),
+                'last_name' => (string) ($display_last !== 'N/A' ? $display_last : 'Name'),
+                'dob' => $dob_for_age,
+                'gender' => (string) ($row->gender ?? 'male'),
+            ]);
+            if ($age_check_player->ageGroupStatusAt($age_group_for_age, $start_for_age) === 'outside') {
+                echo ' <span class="roster-badge roster-badge--age-outside">' . esc_html__('Age outside group', 'intersoccer-reports-rosters') . '</span>';
+            }
+        }
+        echo '</td>';
         echo '<td>' . esc_html($row->gender ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->parent_phone ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->parent_email ?? 'N/A') . '</td>';
@@ -1390,6 +1407,17 @@ function intersoccer_render_roster_details_page() {
     
     // Add CSS for icon buttons
     echo '<style>
+        .roster-badge--age-outside {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            background: #b45309;
+            color: #fff;
+            vertical-align: middle;
+        }
         .close-roster-btn, .reopen-roster-btn {
             background: #dc3232;
             color: white;
