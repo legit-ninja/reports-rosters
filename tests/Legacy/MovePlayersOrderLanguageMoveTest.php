@@ -28,6 +28,7 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
     protected function setUp(): void {
         parent::setUp();
         $this->resetMovePlayersTestGlobals();
+        unset($GLOBALS['intersoccer_test_current_user_caps']);
         $GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
 
         global $intersoccer_test_product_type_safe_callback, $intersoccer_test_get_product_type_callback;
@@ -361,6 +362,8 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
 
         $item = new \WC_Order_Item_Product(self::ITEM_ID);
         $order = new \WC_Order(self::ORDER_ID);
+        $GLOBALS['intersoccer_test_current_user'] = (object) ['ID' => 1, 'roles' => ['administrator']];
+        unset($GLOBALS['intersoccer_test_current_user_caps']);
         if (!$skip_wpml_meta) {
             $order->update_meta_data('wpml_language', $order_lang);
         }
@@ -369,6 +372,7 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             return (int) $oid === self::ORDER_ID ? $order : false;
         };
 
+        global $wpdb;
         $wpdb = Mockery::mock('wpdb');
         $wpdb->prefix = 'wp_';
         $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query, ...$args) {
@@ -425,7 +429,6 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
 
             return 0;
         });
-        $GLOBALS['wpdb'] = $wpdb;
 
         $GLOBALS['intersoccer_test_get_english_product_name_callback'] = static function ($name, $product_id) {
             return 'English Camp Title';
