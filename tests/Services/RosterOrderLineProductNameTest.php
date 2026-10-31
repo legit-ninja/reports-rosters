@@ -122,7 +122,7 @@ class RosterOrderLineProductNameTest extends TestCase {
                 return 'en';
             }
             if ($hook === 'wpml_object_id') {
-                return $args[0] ?? $value;
+                return $value;
             }
             return $value;
         };
