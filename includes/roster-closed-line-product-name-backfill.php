@@ -1,6 +1,6 @@
 <?php
 /**
- * One-off backfill: closed roster rows product_name from order line as booked.
+ * One-off backfill: closed roster rows product_name to English catalogue title.
  *
  * @package InterSoccer_Reports_Rosters
  */
@@ -85,7 +85,7 @@ if (!class_exists('Intersoccer_Roster_Closed_Line_Product_Name_Backfill_Service'
                             'order_line_name' => $line_name,
                             'product_id' => (int) ($row['product_id'] ?? 0),
                             'variation_id' => (int) ($row['variation_id'] ?? 0),
-                            'catalog_product_name' => (string) ($row['product_name'] ?? ''),
+                            'stored_product_name' => (string) ($row['product_name'] ?? ''),
                         ])
                         : ['product_name' => $line_name];
                     $new_name = trim((string) ($target['product_name'] ?? ''));

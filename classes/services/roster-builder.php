@@ -1875,6 +1875,17 @@ class RosterBuilder {
             }
         }
         $english_confirmed = $wpml_resolved && $stored !== '';
+        $line_fallback = trim((string) ($roster_data['order_line_name'] ?? ''));
+        if ($line_fallback === '' && !empty($roster_data['order_item_id'])
+            && function_exists('intersoccer_roster_order_line_name_by_item_id')) {
+            $line_fallback = trim((string) intersoccer_roster_order_line_name_by_item_id((int) $roster_data['order_item_id']));
+        }
+        if ($stored === '' && $line_fallback !== '') {
+            return [
+                'product_name' => $line_fallback,
+                'name_not_english' => true,
+            ];
+        }
         return [
             'product_name' => $stored,
             'name_not_english' => $stored !== '' && !$english_confirmed,

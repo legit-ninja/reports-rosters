@@ -265,8 +265,13 @@ function intersoccer_get_term_name($value, $taxonomy) {
  * @return string English product name
  */
 function intersoccer_get_english_product_name($product_name, $product_id = 0) {
-    if (empty($product_name) || $product_name === 'N/A') {
-        return $product_name ?: 'N/A';
+    $product_name = (string) $product_name;
+    $product_id = (int) $product_id;
+    if ($product_name === 'N/A') {
+        return 'N/A';
+    }
+    if ($product_id <= 0 && $product_name === '') {
+        return 'N/A';
     }
     
     // If WPML is active, try to get the English version
@@ -333,45 +338,45 @@ function intersoccer_get_english_product_name($product_name, $product_id = 0) {
 
 if (!function_exists('intersoccer_roster_resolve_product_name_for_storage')) {
     /**
-     * Resolve roster product_name for writes: order line name as booked; else English catalogue title.
+     * Resolve roster product_name for writes: English default-language parent catalogue title.
      *
-     * @param array<string,mixed> $context order_line_name, product_id, variation_id, catalog_product_name
+     * Fallback when the product no longer exists: existing stored name, then order line name (deleted product only).
+     *
+     * @param array<string,mixed> $context order_line_name, product_id, variation_id, stored_product_name, catalog_product_name
      * @return array{product_name:string,used_english_catalogue_fallback:bool}
      */
     function intersoccer_roster_resolve_product_name_for_storage(array $context) {
-        $line = trim((string) ($context['order_line_name'] ?? $context['product_name'] ?? ''));
         $product_id = (int) ($context['product_id'] ?? 0);
         $variation_id = (int) ($context['variation_id'] ?? 0);
         $lookup_id = $variation_id > 0 ? $variation_id : $product_id;
+        $stored = trim((string) ($context['stored_product_name'] ?? $context['catalog_product_name'] ?? ''));
+        $line = trim((string) ($context['order_line_name'] ?? ''));
 
+        if ($lookup_id > 0 && function_exists('intersoccer_get_english_product_name')) {
+            $english = trim((string) intersoccer_get_english_product_name($stored, $lookup_id));
+            if ($english !== '' && $english !== 'N/A') {
+                return [
+                    'product_name' => substr($english, 0, 255),
+                    'used_english_catalogue_fallback' => true,
+                ];
+            }
+        }
+
+        if ($stored !== '') {
+            return [
+                'product_name' => substr($stored, 0, 255),
+                'used_english_catalogue_fallback' => false,
+            ];
+        }
+
+        // Deleted catalogue product: order line name is the last resort (orders are never rewritten).
         if ($line !== '') {
             return [
                 'product_name' => substr($line, 0, 255),
                 'used_english_catalogue_fallback' => false,
             ];
         }
-        $catalog = trim((string) ($context['catalog_product_name'] ?? ''));
-        if ($catalog === '' && isset($context['catalog_product_name_resolver']) && is_callable($context['catalog_product_name_resolver'])) {
-            $catalog = trim((string) call_user_func($context['catalog_product_name_resolver']));
-        }
-        if ($catalog !== '') {
-            return [
-                'product_name' => substr($catalog, 0, 255),
-                'used_english_catalogue_fallback' => true,
-            ];
-        }
-        if ($lookup_id > 0 && function_exists('wc_get_product')) {
-            $product = wc_get_product($lookup_id);
-            if ($product && method_exists($product, 'get_name')) {
-                $name = trim((string) $product->get_name());
-                if ($name !== '') {
-                    return [
-                        'product_name' => substr($name, 0, 255),
-                        'used_english_catalogue_fallback' => true,
-                    ];
-                }
-            }
-        }
+
         return ['product_name' => '', 'used_english_catalogue_fallback' => false];
     }
 }
@@ -406,12 +411,12 @@ if (!function_exists('intersoccer_roster_catalog_product_name')) {
 
 if (!function_exists('intersoccer_roster_product_name_resolve_context')) {
     /**
-     * Build resolve context; catalogue lookup runs only when order_line_name is empty.
+     * Build resolve context for English catalogue product_name storage.
      *
-     * @param string              $order_line_name
-     * @param int                 $product_id
-     * @param int                 $variation_id
-     * @param callable|null       $catalog_resolver Optional override when line name is empty.
+     * @param string        $order_line_name Used only when the catalogue product is gone.
+     * @param int           $product_id
+     * @param int           $variation_id
+     * @param callable|null $catalog_resolver Optional stored-name override (tests).
      * @return array<string,mixed>
      */
     function intersoccer_roster_product_name_resolve_context($order_line_name, $product_id, $variation_id, $catalog_resolver = null) {
@@ -419,21 +424,11 @@ if (!function_exists('intersoccer_roster_product_name_resolve_context')) {
             'order_line_name' => $order_line_name,
             'product_id' => (int) $product_id,
             'variation_id' => (int) $variation_id,
+            'stored_product_name' => '',
         ];
-        if (trim((string) $order_line_name) !== '') {
-            return $context;
-        }
         if ($catalog_resolver !== null && is_callable($catalog_resolver)) {
             $context['catalog_product_name_resolver'] = $catalog_resolver;
-            return $context;
         }
-        $pid = (int) $product_id;
-        $vid = (int) $variation_id;
-        $context['catalog_product_name_resolver'] = static function () use ($pid, $vid) {
-            return function_exists('intersoccer_roster_catalog_product_name')
-                ? intersoccer_roster_catalog_product_name($pid, $vid)
-                : '';
-        };
         return $context;
     }
 }
@@ -496,22 +491,14 @@ if (!function_exists('intersoccer_roster_apply_product_name_for_storage')) {
      */
     function intersoccer_roster_apply_product_name_for_storage(array $row) {
         $line_name = intersoccer_roster_resolve_order_line_name($row);
-        $order_item_id = (int) ($row['order_item_id'] ?? 0);
-
-        if ($line_name !== '') {
-            $context = intersoccer_roster_product_name_resolve_context(
-                $line_name,
-                (int) ($row['product_id'] ?? 0),
-                (int) ($row['variation_id'] ?? 0)
-            );
-        } elseif ($order_item_id > 0) {
-            $context = intersoccer_roster_product_name_resolve_context(
-                '',
-                (int) ($row['product_id'] ?? 0),
-                (int) ($row['variation_id'] ?? 0)
-            );
-        } else {
-            return $row;
+        $context = intersoccer_roster_product_name_resolve_context(
+            $line_name,
+            (int) ($row['product_id'] ?? 0),
+            (int) ($row['variation_id'] ?? 0)
+        );
+        $context['stored_product_name'] = trim((string) ($row['product_name'] ?? ''));
+        if (isset($context['catalog_product_name_resolver']) && is_callable($context['catalog_product_name_resolver'])) {
+            $context['stored_product_name'] = trim((string) call_user_func($context['catalog_product_name_resolver']));
         }
 
         $resolved = intersoccer_roster_resolve_product_name_for_storage($context);
@@ -569,7 +556,7 @@ if (!function_exists('intersoccer_roster_backfill_facets_from_missing_variation_
 
 if (!function_exists('intersoccer_roster_apply_post_signature_roster_storage_fields')) {
     /**
-     * Order-line product name, season, and missing-variation facets — must run after event_signature.
+     * English catalogue product name, season, and missing-variation facets — must run after event_signature.
      *
      * @param array<string,mixed> $row
      * @return array<string,mixed>
@@ -1532,6 +1519,158 @@ if (!function_exists('intersoccer_wpml_canonical_product_id')) {
             }
         }
         return $product_id;
+    }
+}
+
+if (!function_exists('intersoccer_roster_wpml_product_id_variants')) {
+    /**
+     * All known WPML parent product IDs for a filter (canonical EN id plus language twins).
+     *
+     * @param int $product_id Product or variation ID from a roster row or filter request.
+     * @return int[] Unique positive product IDs.
+     */
+    function intersoccer_roster_wpml_product_id_variants($product_id) {
+        $canon = function_exists('intersoccer_wpml_canonical_product_id')
+            ? (int) intersoccer_wpml_canonical_product_id((int) $product_id)
+            : (int) $product_id;
+        if ($canon <= 0) {
+            return [];
+        }
+        $ids = [$canon];
+        if (!function_exists('apply_filters')) {
+            return $ids;
+        }
+        $trid = apply_filters('wpml_get_element_trid', null, $canon, 'post_product');
+        if ($trid) {
+            $translations = apply_filters('wpml_get_element_translations', null, $trid, 'post_product');
+            if (is_array($translations)) {
+                foreach ($translations as $translation) {
+                    if (is_object($translation) && !empty($translation->element_id)) {
+                        $ids[] = (int) $translation->element_id;
+                    } elseif (is_array($translation) && !empty($translation['element_id'])) {
+                        $ids[] = (int) $translation['element_id'];
+                    }
+                }
+            }
+        }
+        $langs = apply_filters('wpml_active_languages', null);
+        if (is_array($langs)) {
+            foreach (array_keys($langs) as $lang) {
+                $mapped = (int) apply_filters('wpml_object_id', $canon, 'product', true, $lang);
+                if ($mapped > 0) {
+                    $ids[] = $mapped;
+                }
+            }
+        }
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+        sort($ids, SORT_NUMERIC);
+
+        return $ids;
+    }
+}
+
+if (!function_exists('intersoccer_roster_product_ids_for_stored_name')) {
+    /**
+     * Map a legacy product_name filter value to roster product_id values (includes WPML twins).
+     *
+     * @param string $product_name Stored roster product_name.
+     * @return int[]
+     */
+    function intersoccer_roster_product_ids_for_stored_name($product_name) {
+        global $wpdb;
+        $product_name = trim((string) $product_name);
+        if ($product_name === '') {
+            return [];
+        }
+        $table = $wpdb->prefix . 'intersoccer_rosters';
+        $base_ids = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT DISTINCT product_id FROM {$table} WHERE product_name = %s AND product_id > 0",
+                $product_name
+            )
+        );
+        if (!is_array($base_ids) || $base_ids === []) {
+            return [];
+        }
+        $all = [];
+        foreach ($base_ids as $pid) {
+            $variants = function_exists('intersoccer_roster_wpml_product_id_variants')
+                ? intersoccer_roster_wpml_product_id_variants((int) $pid)
+                : [(int) $pid];
+            foreach ($variants as $variant_id) {
+                if ($variant_id > 0) {
+                    $all[$variant_id] = $variant_id;
+                }
+            }
+        }
+
+        return array_values($all);
+    }
+}
+
+if (!function_exists('intersoccer_roster_append_product_id_where_clause')) {
+    /**
+     * Append product_id filter SQL (canonical id + WPML twins). Supports legacy product_name param.
+     *
+     * @param array<int,string>   $where_clauses
+     * @param array<int,mixed>    $query_params
+     * @param int                 $product_id Canonical/default-language parent product id.
+     * @param string              $legacy_product_name Optional legacy filter.
+     * @param string              $column SQL column reference (e.g. r.product_id).
+     */
+    function intersoccer_roster_append_product_id_where_clause(
+        array &$where_clauses,
+        array &$query_params,
+        $product_id,
+        $legacy_product_name = '',
+        $column = 'r.product_id'
+    ) {
+        $product_id = (int) $product_id;
+        $legacy_product_name = trim((string) $legacy_product_name);
+        $ids = [];
+        if ($product_id > 0) {
+            $ids = function_exists('intersoccer_roster_wpml_product_id_variants')
+                ? intersoccer_roster_wpml_product_id_variants($product_id)
+                : [$product_id];
+        } elseif ($legacy_product_name !== '' && function_exists('intersoccer_roster_product_ids_for_stored_name')) {
+            $ids = intersoccer_roster_product_ids_for_stored_name($legacy_product_name);
+        }
+        if ($ids === [] && $legacy_product_name !== '') {
+            $where_clauses[] = 'r.product_name = %s';
+            $query_params[] = $legacy_product_name;
+
+            return;
+        }
+        if ($ids === []) {
+            return;
+        }
+        $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+        $where_clauses[] = "{$column} IN ({$placeholders})";
+        foreach ($ids as $id) {
+            $query_params[] = (int) $id;
+        }
+    }
+}
+
+if (!function_exists('intersoccer_roster_listing_product_label')) {
+    /**
+     * Display label for a roster listing group from canonical product_id.
+     *
+     * @param int    $product_id
+     * @param string $stored_name Fallback from MAX(r.product_name).
+     * @return string
+     */
+    function intersoccer_roster_listing_product_label($product_id, $stored_name = '') {
+        $product_id = (int) $product_id;
+        $stored_name = trim((string) $stored_name);
+        if ($product_id > 0 && function_exists('intersoccer_get_english_product_name')) {
+            $english = trim((string) intersoccer_get_english_product_name($stored_name, $product_id));
+            if ($english !== '' && $english !== 'N/A') {
+                return $english;
+            }
+        }
+
+        return $stored_name !== '' ? $stored_name : 'N/A';
     }
 }
 
@@ -3894,16 +4033,31 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
     }
     
     $line_name_for_storage = trim((string) $item->get_name());
+    $storage_product_id = (int) $product_id;
+    $storage_variation_id = (int) $variation_id;
+    if (function_exists('intersoccer_roster_canonicalize_row_product_ids')) {
+        $canonical_ids = intersoccer_roster_canonicalize_row_product_ids([
+            'product_id' => $storage_product_id,
+            'variation_id' => $storage_variation_id,
+        ]);
+        $storage_product_id = (int) ($canonical_ids['product_id'] ?? $storage_product_id);
+        $storage_variation_id = (int) ($canonical_ids['variation_id'] ?? $storage_variation_id);
+    }
     $resolved_name = function_exists('intersoccer_roster_resolve_product_name_for_storage')
         ? intersoccer_roster_resolve_product_name_for_storage(
-            intersoccer_roster_product_name_resolve_context(
-                $line_name_for_storage,
-                (int) $product_id,
-                (int) $variation_id
+            array_merge(
+                intersoccer_roster_product_name_resolve_context(
+                    $line_name_for_storage,
+                    $storage_product_id,
+                    $storage_variation_id
+                ),
+                ['stored_product_name' => '']
             )
         )
         : ['product_name' => (string) $item->get_name()];
     $product_name = (string) ($resolved_name['product_name'] ?? $item->get_name());
+    $product_id = $storage_product_id;
+    $variation_id = $storage_variation_id;
 
     $girls_only = function_exists('intersoccer_resolve_roster_girls_only_flag')
         ? (bool) intersoccer_resolve_roster_girls_only_flag([
@@ -4531,6 +4685,7 @@ if (!function_exists('intersoccer_renormalize_roster_row_from_variation')) {
                 'product_id' => $parent_id,
                 'variation_id' => $variation_id,
             ];
+        $resolve_context['stored_product_name'] = trim((string) ($record['product_name'] ?? ''));
         $resolved = function_exists('intersoccer_roster_resolve_product_name_for_storage')
             ? intersoccer_roster_resolve_product_name_for_storage($resolve_context)
             : ['product_name' => ''];
@@ -4648,6 +4803,7 @@ if (!function_exists('intersoccer_renormalize_roster_row_language')) {
                     'product_id' => (int) ($record['product_id'] ?? 0),
                     'variation_id' => (int) ($record['variation_id'] ?? 0),
                 ];
+            $resolve_context['stored_product_name'] = trim((string) ($record['product_name'] ?? ''));
             $resolved = function_exists('intersoccer_roster_resolve_product_name_for_storage')
                 ? intersoccer_roster_resolve_product_name_for_storage($resolve_context)
                 : ['product_name' => $record['product_name'] ?? ''];

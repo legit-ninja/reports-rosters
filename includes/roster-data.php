@@ -91,7 +91,7 @@ function intersoccer_pe_get_camp_variations($filters) {
          FROM $rosters_table r
          JOIN $posts_table p ON r.product_id = p.ID AND p.post_type = 'product' AND p.post_status = 'publish'
          WHERE $where_clause
-         GROUP BY r.event_signature, r.product_id, r.camp_terms, r.venue, r.age_group, r.product_name, r.times";
+         GROUP BY r.event_signature, r.product_id, r.camp_terms, r.venue, r.age_group, r.times";
     error_log('InterSoccer: Camp variations query: ' . $query);
 
     $results = $wpdb->get_results($query, ARRAY_A);
@@ -107,7 +107,9 @@ function intersoccer_pe_get_camp_variations($filters) {
         error_log('InterSoccer: Processing config_key: ' . $config_key);
         $config_grouped[$config_key] = [
             'product_id' => $row['product_id'],
-            'product_name' => $row['product_name'],
+            'product_name' => function_exists('intersoccer_roster_listing_product_label')
+                ? intersoccer_roster_listing_product_label((int) $row['product_id'], (string) ($row['product_name'] ?? ''))
+                : ($row['product_name'] ?? ''),
             'camp_terms' => $row['camp_terms'],
             'region' => '', // Add region logic if needed
             'venues' => [$row['venue'] => ['variation_ids' => explode(',', $row['variation_ids'])]],
@@ -146,7 +148,7 @@ function intersoccer_pe_get_course_variations($filters) {
          FROM $rosters_table r
          JOIN $posts_table p ON r.product_id = p.ID AND p.post_type = 'product' AND p.post_status = 'publish'
          WHERE $where_clause
-         GROUP BY r.event_signature, r.product_id, r.course_day, r.venue, r.age_group, r.product_name, r.times";
+         GROUP BY r.event_signature, r.product_id, r.course_day, r.venue, r.age_group, r.times";
     error_log('InterSoccer: Course variations query: ' . $query);
 
     $results = $wpdb->get_results($query, ARRAY_A);
@@ -162,7 +164,9 @@ function intersoccer_pe_get_course_variations($filters) {
         error_log('InterSoccer: Processing config_key: ' . $config_key);
         $config_grouped[$config_key] = [
             'product_id' => $row['product_id'],
-            'product_name' => $row['product_name'],
+            'product_name' => function_exists('intersoccer_roster_listing_product_label')
+                ? intersoccer_roster_listing_product_label((int) $row['product_id'], (string) ($row['product_name'] ?? ''))
+                : ($row['product_name'] ?? ''),
             'course_day' => $row['course_day'],
             'region' => '', // Add region logic if needed
             'venues' => [$row['venue'] => ['variation_ids' => explode(',', $row['variation_ids'])]],
@@ -197,7 +201,7 @@ function intersoccer_pe_get_girls_only_variations($filters) {
          FROM $rosters_table r
          JOIN $posts_table p ON r.product_id = p.ID AND p.post_type = 'product' AND p.post_status = 'publish'
          WHERE $where_clause
-         GROUP BY r.event_signature, r.product_id, r.camp_terms, r.venue, r.age_group, r.product_name, r.times, r.shirt_size, r.shorts_size";
+         GROUP BY r.event_signature, r.product_id, r.camp_terms, r.venue, r.age_group, r.times, r.shirt_size, r.shorts_size";
     error_log('InterSoccer: Girls Only variations query: ' . $query);
 
     $results = $wpdb->get_results($query, ARRAY_A);
@@ -213,7 +217,9 @@ function intersoccer_pe_get_girls_only_variations($filters) {
         error_log('InterSoccer: Processing config_key: ' . $config_key);
         $config_grouped[$config_key] = [
             'product_id' => $row['product_id'],
-            'product_name' => $row['product_name'],
+            'product_name' => function_exists('intersoccer_roster_listing_product_label')
+                ? intersoccer_roster_listing_product_label((int) $row['product_id'], (string) ($row['product_name'] ?? ''))
+                : ($row['product_name'] ?? ''),
             'camp_terms' => $row['camp_terms'],
             'region' => '', // Add region logic if needed
             'venues' => [$row['venue'] => ['variation_ids' => explode(',', $row['variation_ids'])]],

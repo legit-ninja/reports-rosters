@@ -493,13 +493,18 @@ function intersoccer_rebuild_event_signatures() {
                 do_action('wpml_switch_language', $default_lang);
             }
 
-            $product = wc_get_product($product_id_to_use);
-            if ($product) {
-                $normalized_product_name = $product->get_name();
-                intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Normalized product_name during signature rebuild');
+            if (function_exists('intersoccer_get_english_product_name')) {
+                $normalized_product_name = trim((string) intersoccer_get_english_product_name(
+                    (string) ($record['product_name'] ?? ''),
+                    (int) $product_id_to_use
+                ));
             } else {
-                intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Warning - Product not found during signature rebuild');
+                $product = wc_get_product($product_id_to_use);
+                if ($product) {
+                    $normalized_product_name = $product->get_name();
+                }
             }
+            intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Normalized product_name during signature rebuild');
 
             // Switch back to original language
             if ($current_lang !== $default_lang && !empty($current_lang)) {
@@ -704,14 +709,6 @@ function intersoccer_rebuild_event_signatures() {
 
         intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Generated event signature during rebuild');
 
-        // Store the order-line name as booked; the signature above stays built from the English catalogue name.
-        $line_name_for_storage = function_exists('intersoccer_roster_order_line_name_by_item_id')
-            ? trim((string) intersoccer_roster_order_line_name_by_item_id((int) ($record['order_item_id'] ?? 0)))
-            : '';
-        if ($line_name_for_storage !== '') {
-            $update_data['product_name'] = substr($line_name_for_storage, 0, 255);
-        }
-        
         // Update product_id to normalized value if it changed (for WPML translations)
         if ($product_id_to_use != $record['product_id']) {
             $update_data['product_id'] = $product_id_to_use;
@@ -1586,6 +1583,16 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                 'product_id' => (int) $product_id,
                 'variation_id' => (int) $variation_id,
             ];
+        if (function_exists('intersoccer_roster_canonicalize_row_product_ids')) {
+            $canonical_ids = intersoccer_roster_canonicalize_row_product_ids([
+                'product_id' => (int) $product_id,
+                'variation_id' => (int) $variation_id,
+            ]);
+            $resolve_context['product_id'] = (int) ($canonical_ids['product_id'] ?? $product_id);
+            $resolve_context['variation_id'] = (int) ($canonical_ids['variation_id'] ?? $variation_id);
+            $product_id = $resolve_context['product_id'];
+            $variation_id = $resolve_context['variation_id'];
+        }
         $resolved_name = function_exists('intersoccer_roster_resolve_product_name_for_storage')
             ? intersoccer_roster_resolve_product_name_for_storage($resolve_context)
             : ['product_name' => $line_name_for_product];
