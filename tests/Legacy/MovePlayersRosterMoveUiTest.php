@@ -64,4 +64,85 @@ class MovePlayersRosterMoveUiTest extends TestCase {
 
         return $matches[1];
     }
+
+    public function test_roster_details_markup_includes_show_empty_rosters_and_data_players(): void {
+        $path = dirname(__DIR__, 2) . '/includes/roster-details.php';
+        $source = file_get_contents($path);
+        $this->assertIsString($source);
+        $this->assertStringContainsString('id="showEmptyRosters"', $source);
+        $this->assertStringContainsString("esc_html__('Show empty rosters', 'intersoccer-reports-rosters')", $source);
+        $this->assertStringContainsString('data-players="', $source);
+        $this->assertStringContainsString("$('#showEmptyRosters')", $source);
+    }
+
+    public function test_repair_day_presence_handler_strings_are_translatable(): void {
+        $path = dirname(__DIR__, 2) . '/includes/roster-details.php';
+        $source = file_get_contents($path);
+        $this->assertIsString($source);
+
+        if (!preg_match("/#repair-day-presence-btn', function\\(e\\)\\s*\\{(.+?)\\n\\s*\\}\\);\\s*\\n\\s*function runRosterStatusAjax/s", $source, $matches)) {
+            $this->fail('Could not extract repair day presence handler from roster-details.php');
+        }
+
+        $handler = $matches[1];
+        $this->assertStringNotContainsString("text('Missing event signature.')", $handler);
+        $this->assertStringContainsString("__('Missing event signature.', 'intersoccer-reports-rosters')", $handler);
+        $this->assertStringContainsString("__('Repairing...', 'intersoccer-reports-rosters')", $handler);
+        $this->assertStringContainsString("__('Repair completed.', 'intersoccer-reports-rosters')", $handler);
+        $this->assertStringContainsString("__('Repair failed.', 'intersoccer-reports-rosters')", $handler);
+        $this->assertStringContainsString("__('Repair failed (network/server error).', 'intersoccer-reports-rosters')", $handler);
+    }
+
+    public function test_close_and_reopen_handlers_have_no_alert_or_confirm(): void {
+        $path = dirname(__DIR__, 2) . '/includes/roster-details.php';
+        $source = file_get_contents($path);
+        $this->assertIsString($source);
+
+        $this->assertStringContainsString('function runRosterStatusAjax', $source);
+        $this->assertStringContainsString('showRosterStatusConfirmPanel', $source);
+        $this->assertStringContainsString('showRosterStatusNotice', $source);
+        $this->assertStringContainsString('rosterStatusInlinePanel', $source);
+        $this->assertStringContainsString('complete: function()', $source);
+
+        $this->assertDoesNotMatchRegularExpression('/close-roster-btn[\s\S]{0,2500}\bconfirm\s*\(/', $source);
+        $this->assertDoesNotMatchRegularExpression('/reopen-roster-btn[\s\S]{0,2500}\bconfirm\s*\(/', $source);
+        $this->assertDoesNotMatchRegularExpression('/runRosterStatusAjax[\s\S]{0,3500}\balert\s*\(/', $source);
+        $this->assertStringContainsString('var originalLabel = $btn.text()', $source);
+        $this->assertStringContainsString('completedSuccessfully = true', $source);
+        $this->assertStringContainsString('if (!completedSuccessfully)', $source);
+        $this->assertStringContainsString('$btn.prop(\'disabled\', false).text(originalLabel)', $source);
+    }
+
+    public function test_show_empty_rosters_bypasses_cascade_until_time_selected(): void {
+        $path = dirname(__DIR__, 2) . '/includes/roster-details.php';
+        $source = file_get_contents($path);
+        $this->assertIsString($source);
+        $this->assertStringContainsString('function showEmptyRostersEnabled()', $source);
+        $this->assertStringContainsString('function emptyPlayerDestinations(', $source);
+        $this->assertStringContainsString('showEmpty && !targetTimeSelect.val()', $source);
+        $this->assertStringContainsString('fillDestinationRosterSelect', $source);
+        $this->assertStringContainsString('migrationTexts.chooseDestination', $source);
+    }
+
+    public function test_show_empty_rosters_respects_chosen_filters_without_time(): void {
+        $source = file_get_contents(dirname(__DIR__, 2) . '/includes/roster-details.php');
+        $this->assertIsString($source);
+        $this->assertStringContainsString('function emptyDestinationsMatchingFilters(options, chosen)', $source);
+        $this->assertStringContainsString("const keys = ['season', 'schedule', 'venue', 'ageGroup', 'time'];", $source);
+        $this->assertStringContainsString('!chosen[key] || option[key] === chosen[key]', $source);
+        $this->assertStringContainsString('emptyDestinationsMatchingFilters(eligible, {', $source);
+        $this->assertStringNotContainsString('showEmpty ? emptyPlayerDestinations(eligible)', $source);
+    }
+
+    public function test_show_empty_rosters_without_season_lists_none_and_shows_hint(): void {
+        $source = file_get_contents(dirname(__DIR__, 2) . '/includes/roster-details.php');
+        $this->assertIsString($source);
+        $this->assertMatchesRegularExpression('/function emptyDestinationsMatchingFilters\\(options, chosen\\) \\{\\s*if \\(!chosen\\.season\\) \\{\\s*return \\[\\];/', $source);
+        $this->assertStringContainsString("pickSeasonForEmptyRosters: '<?php echo esc_js(__('Pick a season first to see empty rosters.', 'intersoccer-reports-rosters')); ?>'", $source);
+        $this->assertStringContainsString("esc_html__('Pick a season first to see empty rosters.', 'intersoccer-reports-rosters')", $source);
+        $this->assertStringContainsString('id="showEmptyRostersHint"', $source);
+        $this->assertStringContainsString('const needsSeasonForEmpty = showEmpty && !targetSeasonSelect.val();', $source);
+        $this->assertStringContainsString("$('#showEmptyRostersHint').toggle(needsSeasonForEmpty);", $source);
+        $this->assertStringContainsString('placeholder = migrationTexts.pickSeasonForEmptyRosters;', $source);
+    }
 }

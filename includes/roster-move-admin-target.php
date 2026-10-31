@@ -1044,6 +1044,190 @@ function intersoccer_roster_move_build_admin_destination_lists(
 }
 
 /**
+ * Build normalized facet data using the same rules as intersoccer_renormalize_roster_row_from_variation().
+ *
+ * @param \WC_Product_Variation|\WC_Product $variation
+ * @param array<string,mixed>               $record_seed Existing row values (activity_type, season, girls_only, facet fallbacks).
+ * @return array<string,mixed>
+ */
+function intersoccer_roster_move_variation_renormalize_event_data($variation, array $record_seed): array {
+    $parent_id = method_exists($variation, 'get_parent_id') ? (int) $variation->get_parent_id() : 0;
+
+    $event_data = [
+        'activity_type' => (string) ($record_seed['activity_type'] ?? ''),
+        'venue' => '',
+        'age_group' => '',
+        'camp_terms' => '',
+        'course_day' => '',
+        'times' => '',
+        'season' => (string) ($record_seed['season'] ?? ''),
+        'city' => '',
+        'canton_region' => '',
+        'girls_only' => (int) ($record_seed['girls_only'] ?? 0),
+        'product_id' => $parent_id,
+    ];
+
+    if (!method_exists($variation, 'get_variation_attributes')) {
+        return function_exists('intersoccer_normalize_roster_facets_for_storage')
+            ? intersoccer_normalize_roster_facets_for_storage($event_data)
+            : $event_data;
+    }
+
+    foreach ((array) $variation->get_variation_attributes() as $attribute_key => $attribute_value) {
+        $clean_key = str_replace('attribute_', '', (string) $attribute_key);
+        $display = function_exists('intersoccer_format_attribute_for_storage')
+            ? intersoccer_format_attribute_for_storage($clean_key, $attribute_value)
+            : (is_array($attribute_value) ? implode(', ', $attribute_value) : (string) $attribute_value);
+
+        switch ($clean_key) {
+            case 'pa_intersoccer-venues':
+                $event_data['venue'] = $display;
+                break;
+            case 'pa_age-group':
+                $event_data['age_group'] = $display;
+                break;
+            case 'pa_camp-terms':
+                $event_data['camp_terms'] = $display;
+                break;
+            case 'pa_camp-times':
+            case 'pa_course-times':
+                $event_data['times'] = $display;
+                break;
+            case 'pa_course-day':
+                $event_data['course_day'] = $display;
+                break;
+            case 'pa_city':
+                $event_data['city'] = $display;
+                break;
+            case 'pa_canton-region':
+                $event_data['canton_region'] = $display;
+                break;
+            case 'pa_girls-only':
+                $slug = strtolower(is_array($attribute_value) ? (string) reset($attribute_value) : (string) $attribute_value);
+                $event_data['girls_only'] = in_array($slug, ['girls-only', 'yes', 'girls'], true) ? 1 : 0;
+                break;
+        }
+    }
+
+    if (!function_exists('intersoccer_normalize_roster_facets_for_storage')) {
+        return $event_data;
+    }
+
+    return intersoccer_normalize_roster_facets_for_storage($event_data);
+}
+
+/**
+ * Season value stored on a roster row after manual_update (before renormalize keeps it).
+ *
+ * Mirrors intersoccer_manual_update_roster_entry() season sourcing from intersoccer_get_product_season()
+ * and the same normalize + build_roster_facet_db_update path with an empty existing row.
+ *
+ * @param int $parent_id Woo parent product ID.
+ * @return string Stored season column value (may be '').
+ */
+function intersoccer_roster_move_manual_update_season_for_parent(int $parent_id): string {
+    $season_raw = '';
+    if (function_exists('intersoccer_get_product_season')) {
+        // Defined by the InterSoccer Product Variations plugin (read-only term lookup).
+        $season = intersoccer_get_product_season($parent_id);
+        if (!empty($season)) {
+            $season_raw = (string) $season;
+        }
+    } elseif (function_exists('wc_get_product_terms') && $parent_id > 0) {
+        // Same read as Product Variations does: first pa_program-season term name on the parent.
+        $terms = wc_get_product_terms($parent_id, 'pa_program-season', ['fields' => 'names']);
+        if (is_array($terms) && !empty($terms)) {
+            $season_raw = (string) reset($terms);
+        }
+    }
+
+    if ($season_raw === '') {
+        return '';
+    }
+
+    if (!function_exists('intersoccer_normalize_roster_facets_for_storage')) {
+        return $season_raw;
+    }
+
+    $normalized = intersoccer_normalize_roster_facets_for_storage([
+        'activity_type' => '',
+        'venue' => '',
+        'age_group' => '',
+        'camp_terms' => '',
+        'course_day' => '',
+        'times' => '',
+        'season' => $season_raw,
+        'girls_only' => 0,
+        'city' => '',
+        'canton_region' => '',
+        'product_id' => $parent_id,
+    ]);
+
+    if (function_exists('intersoccer_build_roster_facet_db_update')) {
+        $update = intersoccer_build_roster_facet_db_update($normalized, [], '');
+
+        return (string) ($update['season'] ?? '');
+    }
+
+    return (string) ($normalized['season'] ?? '');
+}
+
+/**
+ * Storage-normalized roster facets for an empty variation (move destination stub).
+ *
+ * @param \WC_Product_Variation|\WC_Product $variation
+ * @param int                               $product_id
+ * @param string                            $activity_type
+ * @return array{venue:string,age_group:string,camp_terms:string,course_day:string,times:string,season:string}
+ */
+function intersoccer_roster_move_empty_target_facets_from_variation($variation, int $product_id, string $activity_type): array {
+    $parent_id = $product_id;
+    if (method_exists($variation, 'get_parent_id')) {
+        $parent_id = (int) $variation->get_parent_id();
+        if ($parent_id <= 0) {
+            $parent_id = $product_id;
+        }
+    }
+
+    $record_seed = [
+        'activity_type' => $activity_type,
+        'season' => intersoccer_roster_move_manual_update_season_for_parent($parent_id),
+        'girls_only' => 0,
+        'venue' => '',
+        'age_group' => '',
+        'camp_terms' => '',
+        'course_day' => '',
+        'times' => '',
+        'city' => '',
+        'canton_region' => '',
+    ];
+
+    $normalized = intersoccer_roster_move_variation_renormalize_event_data($variation, $record_seed);
+
+    if (function_exists('intersoccer_build_roster_facet_db_update')) {
+        $update = intersoccer_build_roster_facet_db_update($normalized, $record_seed, '');
+
+        return [
+            'venue' => (string) ($update['venue'] ?? ''),
+            'age_group' => (string) ($update['age_group'] ?? ''),
+            'camp_terms' => (string) ($update['camp_terms'] ?? ''),
+            'course_day' => (string) ($update['course_day'] ?? ''),
+            'times' => (string) ($update['times'] ?? ''),
+            'season' => (string) ($update['season'] ?? ''),
+        ];
+    }
+
+    return [
+        'venue' => (string) ($normalized['venue'] ?? ''),
+        'age_group' => (string) ($normalized['age_group'] ?? ''),
+        'camp_terms' => (string) ($normalized['camp_terms'] ?? ''),
+        'course_day' => (string) ($normalized['course_day'] ?? ''),
+        'times' => (string) ($normalized['times'] ?? ''),
+        'season' => (string) ($normalized['season'] ?? ''),
+    ];
+}
+
+/**
  * Include sibling variations with zero roster rows so admins can move players back to an emptied roster.
  *
  * @param object[] $available_rows Rows from roster-details destination query.
@@ -1110,17 +1294,19 @@ function intersoccer_roster_move_merge_empty_sibling_variation_targets(
             continue;
         }
 
+        $facets = intersoccer_roster_move_empty_target_facets_from_variation($variation, $product_id, $activity_type);
+
         $indexed[$child_id] = (object) [
             'product_id' => $product_id,
             'variation_id' => $child_id,
             'product_name' => method_exists($variation, 'get_name') ? $variation->get_name() : '',
-            'venue' => '',
-            'age_group' => '',
+            'venue' => $facets['venue'],
+            'age_group' => $facets['age_group'],
             'activity_type' => $activity_type,
-            'camp_terms' => '',
-            'course_day' => '',
-            'times' => '',
-            'season' => '',
+            'camp_terms' => $facets['camp_terms'],
+            'course_day' => $facets['course_day'],
+            'times' => $facets['times'],
+            'season' => $facets['season'],
             'girls_only' => $row_girls,
             'current_players' => 0,
         ];

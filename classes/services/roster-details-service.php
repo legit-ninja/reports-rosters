@@ -773,6 +773,15 @@ class RosterDetailsService {
             $excludeVariationIds = intersoccer_roster_move_normalize_exclude_variation_ids($excludeVariationIds);
         }
 
+        $orderIds = [];
+        foreach ($collection as $model) {
+            if ((int) $model->is_placeholder === 1 || !$model->order_id) {
+                continue;
+            }
+            $orderIds[] = (int) $model->order_id;
+        }
+        $this->primeOrderPostsForSummaries(array_values(array_unique($orderIds)));
+
         foreach ($collection as $model) {
             if ((int) $model->is_placeholder === 1) {
                 continue;
@@ -793,6 +802,10 @@ class RosterDetailsService {
                 )) {
                     continue;
                 }
+            }
+
+            if (!$model->order_id) {
+                continue;
             }
 
             $status = get_post_status($model->order_id);
@@ -868,6 +881,19 @@ class RosterDetailsService {
         }
 
         return $summaryValues;
+    }
+
+    /**
+     * Load the destination rows' order posts in one query so get_post_status() below hits the cache.
+     *
+     * @param int[] $order_ids
+     */
+    private function primeOrderPostsForSummaries(array $order_ids): void {
+        if ($order_ids === [] || !function_exists('_prime_post_caches')) {
+            return;
+        }
+
+        _prime_post_caches($order_ids, false, false);
     }
 
     private function countUnknownAttendees(array $rosters): int {

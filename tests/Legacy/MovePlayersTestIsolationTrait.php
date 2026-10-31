@@ -32,6 +32,8 @@ trait MovePlayersTestIsolationTrait {
         $intersoccer_test_wc_get_product_callback = null;
         $intersoccer_test_product_type_safe_callback = null;
         $intersoccer_test_get_product_type_callback = null;
+        global $intersoccer_test_get_product_season_callback;
+        $intersoccer_test_get_product_season_callback = null;
         $intersoccer_test_post_status_map = [];
         $intersoccer_test_wc_get_order_callback = null;
         $intersoccer_test_order_notes = [];
