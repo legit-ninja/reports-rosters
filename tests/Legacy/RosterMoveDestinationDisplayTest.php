@@ -139,4 +139,55 @@ class RosterMoveDestinationDisplayTest extends TestCase {
         $this->assertCount(1, $regular);
         $this->assertSame([], $cross);
     }
+
+    public function test_build_admin_destination_lists_partitions_girls_only_empty_sibling_once(): void {
+        $go_variation = 901888;
+        $rows = [
+            (object) ['variation_id' => self::VAR_B, 'current_players' => 2, 'girls_only' => 0],
+            (object) ['variation_id' => $go_variation, 'current_players' => 0, 'girls_only' => 1],
+        ];
+
+        $go_variation_mock = Mockery::mock('WC_Product_Variation');
+        $go_variation_mock->shouldReceive('get_id')->andReturn($go_variation);
+        $go_variation_mock->shouldReceive('get_parent_id')->andReturn(self::PARENT_ID);
+        $go_variation_mock->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_girls-only' => 'yes',
+        ]);
+        $go_variation_mock->shouldReceive('get_attribute')->andReturnUsing(static function ($name) {
+            if ($name === 'pa_girls-only' || $name === 'girls-only') {
+                return 'yes';
+            }
+
+            return '';
+        });
+        $go_variation_mock->shouldReceive('get_attributes')->andReturn([]);
+        $go_variation_mock->shouldReceive('get_name')->andReturn('Girls only camp week');
+        $go_variation_mock->shouldReceive('is_type')->with('variation')->andReturn(true);
+
+        global $intersoccer_test_wc_get_product_callback;
+        $intersoccer_test_wc_get_product_callback = static function ($id) use ($go_variation_mock, $go_variation) {
+            if ((int) $id === $go_variation) {
+                return $go_variation_mock;
+            }
+
+            return null;
+        };
+
+        [$regular, $cross] = intersoccer_roster_move_build_admin_destination_lists(
+            $rows,
+            'mixed',
+            self::PARENT_ID,
+            [],
+            'Camp',
+            0
+        );
+
+        $regular_ids = array_map(static fn($row) => (int) $row->variation_id, $regular);
+        $cross_ids = array_map(static fn($row) => (int) $row->variation_id, $cross);
+
+        $this->assertContains(self::VAR_B, $regular_ids);
+        $this->assertNotContains($go_variation, $regular_ids);
+        $this->assertSame([$go_variation], $cross_ids);
+        $this->assertCount(1, $cross_ids);
+    }
 }

@@ -213,22 +213,35 @@ class RosterDetailsService {
             : ((int) ($baseRoster->girls_only ?? 0) === 1 ? 'yes' : 'mixed');
 
         $all_destination_summaries = $this->buildRosterSummaries($baseRoster, $rosters);
-        if (function_exists('intersoccer_roster_move_partition_destination_lists')) {
-            [$available_summaries, $cross_summaries] = intersoccer_roster_move_partition_destination_lists(
+        if (function_exists('intersoccer_roster_move_build_admin_destination_lists')) {
+            [$availableRosters, $crossGenderRosters] = intersoccer_roster_move_build_admin_destination_lists(
+                $all_destination_summaries,
+                $source_girls_tristate,
+                (int) ($baseRoster->product_id ?? 0),
+                function_exists('intersoccer_roster_move_page_exclude_variation_ids')
+                    ? intersoccer_roster_move_page_exclude_variation_ids($rosters)
+                    : [],
+                (string) ($baseRoster->activity_type ?? ''),
+                (int) ($baseRoster->girls_only ?? 0)
+            );
+        } elseif (function_exists('intersoccer_roster_move_partition_destination_lists')) {
+            [$availableRosters, $crossGenderRosters] = intersoccer_roster_move_partition_destination_lists(
                 $all_destination_summaries,
                 $source_girls_tristate
             );
+            $availableRosters = $this->mergeEmptySiblingVariationTargets(
+                $availableRosters,
+                $baseRoster,
+                $rosters
+            );
         } else {
-            $available_summaries = $all_destination_summaries;
-            $cross_summaries = [];
+            $availableRosters = $this->mergeEmptySiblingVariationTargets(
+                $all_destination_summaries,
+                $baseRoster,
+                $rosters
+            );
+            $crossGenderRosters = [];
         }
-
-        $availableRosters = $this->mergeEmptySiblingVariationTargets(
-            $available_summaries,
-            $baseRoster,
-            $rosters
-        );
-        $crossGenderRosters = $cross_summaries;
         $unknownCount = $this->countUnknownAttendees($rosters);
 
         return [

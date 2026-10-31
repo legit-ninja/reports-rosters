@@ -876,34 +876,23 @@ function intersoccer_render_roster_details_page() {
             );
         }
 
-        $partitioned = function_exists('intersoccer_roster_move_partition_destination_lists')
-            ? intersoccer_roster_move_partition_destination_lists(
+        $partitioned = function_exists('intersoccer_roster_move_build_admin_destination_lists')
+            ? intersoccer_roster_move_build_admin_destination_lists(
                 is_array($all_destination_rows) ? $all_destination_rows : [],
-                $source_girls_tristate
-            )
-            : [$all_destination_rows, []];
-        $available_rosters = $partitioned[0];
-        $cross_gender_rosters = $partitioned[1];
-
-        if (function_exists('intersoccer_roster_move_merge_empty_sibling_variation_targets')) {
-            $available_rosters = intersoccer_roster_move_merge_empty_sibling_variation_targets(
-                is_array($available_rosters) ? $available_rosters : [],
+                $source_girls_tristate,
                 (int) ($base_roster->product_id ?? 0),
                 $page_exclude_variation_ids,
                 (string) $base_roster->activity_type,
                 $base_roster_girls_only
-            );
-        } elseif (function_exists('intersoccer_roster_move_apply_destination_player_counts')) {
-            $available_rosters = intersoccer_roster_move_apply_destination_player_counts(
-                is_array($available_rosters) ? $available_rosters : []
-            );
-        }
-
-        if (function_exists('intersoccer_roster_move_apply_destination_player_counts')) {
-            $cross_gender_rosters = intersoccer_roster_move_apply_destination_player_counts(
-                is_array($cross_gender_rosters) ? $cross_gender_rosters : []
-            );
-        }
+            )
+            : (function_exists('intersoccer_roster_move_partition_destination_lists')
+                ? intersoccer_roster_move_partition_destination_lists(
+                    is_array($all_destination_rows) ? $all_destination_rows : [],
+                    $source_girls_tristate
+                )
+                : [$all_destination_rows, []]);
+        $available_rosters = $partitioned[0];
+        $cross_gender_rosters = $partitioned[1];
 
         $unknown_count = count(array_filter($rosters, fn($row) => $row->player_name === 'Unknown Attendee'));
 

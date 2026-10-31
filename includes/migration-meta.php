@@ -2098,19 +2098,47 @@ if (!function_exists('intersoccer_migration_resolve_move_en_slug_from_line')) {
     /**
      * @param array<string,string> $prior_canonical_order_meta
      * @param array<string,string> $existing_line_pa
+     * @param array<string,string> $line_human_snapshot Canonical-keyed visible labels from the line.
      */
     function intersoccer_migration_resolve_move_en_slug_from_line(
         string $pa_taxonomy,
         ?string $canonical_order_meta_key,
         array $prior_canonical_order_meta,
-        array $existing_line_pa
+        array $existing_line_pa,
+        array $line_human_snapshot = [],
+        string $canonical_internal = ''
     ): ?string {
+        $resolve_strict_en = static function (string $taxonomy, string $value): ?string {
+            if ($taxonomy === '' || trim($value) === '') {
+                return null;
+            }
+            $stored = trim($value);
+            if (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
+                $strict = intersoccer_migration_coerce_pa_taxonomy_slug_strict($taxonomy, $stored);
+                if ($strict === null) {
+                    return null;
+                }
+                $stored = $strict;
+            }
+            if (function_exists('intersoccer_migration_default_language_term_slug_strict')) {
+                return intersoccer_migration_default_language_term_slug_strict($taxonomy, $stored);
+            }
+
+            return $stored;
+        };
+
         if ($canonical_order_meta_key !== null
             && $canonical_order_meta_key !== ''
             && isset($prior_canonical_order_meta[$canonical_order_meta_key])
             && $prior_canonical_order_meta[$canonical_order_meta_key] !== ''
         ) {
-            return (string) $prior_canonical_order_meta[$canonical_order_meta_key];
+            $from_canonical = $resolve_strict_en(
+                $pa_taxonomy,
+                (string) $prior_canonical_order_meta[$canonical_order_meta_key]
+            );
+            if ($from_canonical !== null) {
+                return $from_canonical;
+            }
         }
 
         if ($pa_taxonomy === '') {
@@ -2121,19 +2149,19 @@ if (!function_exists('intersoccer_migration_resolve_move_en_slug_from_line')) {
             if (!isset($existing_line_pa[$pa_key]) || $existing_line_pa[$pa_key] === '') {
                 continue;
             }
-            $stored = (string) $existing_line_pa[$pa_key];
-            if (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
-                $strict = intersoccer_migration_coerce_pa_taxonomy_slug_strict($pa_taxonomy, $stored);
-                if ($strict === null) {
-                    return null;
-                }
-                $stored = $strict;
-            }
-            if (function_exists('intersoccer_migration_default_language_term_slug_strict')) {
-                return intersoccer_migration_default_language_term_slug_strict($pa_taxonomy, $stored);
+            $from_pa = $resolve_strict_en($pa_taxonomy, (string) $existing_line_pa[$pa_key]);
+            if ($from_pa !== null) {
+                return $from_pa;
             }
 
-            return $stored;
+            return null;
+        }
+
+        if ($canonical_internal !== ''
+            && isset($line_human_snapshot[$canonical_internal])
+            && trim((string) $line_human_snapshot[$canonical_internal]) !== ''
+        ) {
+            return $resolve_strict_en($pa_taxonomy, (string) $line_human_snapshot[$canonical_internal]);
         }
 
         return null;
@@ -2169,74 +2197,11 @@ if (!function_exists('intersoccer_migration_preserve_unchanged_human_meta_for_mo
         $canonical_to_pa = intersoccer_migration_human_canonical_to_pa_taxonomy();
         $canonical_to_order_meta = intersoccer_migration_human_canonical_to_order_meta_key();
 
-        $resolve_activity_slug = static function (
-            WC_Product_Variation $variation,
-            array $slug_meta,
-            array $prior_canonical_order_meta,
-            array $existing_line_pa,
-            bool $from_line
-        ): ?string {
-            if ($from_line) {
-                $from_meta = intersoccer_migration_resolve_move_en_slug_from_line(
-                    'pa_activity-type',
-                    '_intersoccer_canonical_activity_type',
-                    $prior_canonical_order_meta,
-                    $existing_line_pa
-                );
-                if ($from_meta !== null && $from_meta !== '') {
-                    if (function_exists('intersoccer_canonical_activity_type_for_roster')) {
-                        return strtolower((string) intersoccer_canonical_activity_type_for_roster($from_meta));
-                    }
-
-                    return strtolower($from_meta);
-                }
-
-                return null;
-            }
-
-            $from_variation = intersoccer_migration_resolve_move_en_slug_from_variation(
-                'pa_activity-type',
-                $variation,
-                $slug_meta
-            );
-            if ($from_variation !== null && $from_variation !== '') {
-                if (function_exists('intersoccer_canonical_activity_type_for_roster')) {
-                    return strtolower((string) intersoccer_canonical_activity_type_for_roster($from_variation));
-                }
-
-                return strtolower($from_variation);
-            }
-
-            if (function_exists('intersoccer_get_product_type_safe')) {
-                $product_type = strtolower((string) intersoccer_get_product_type_safe(
-                    (int) $variation->get_parent_id(),
-                    (int) $variation->get_id()
-                ));
-                if ($product_type !== '') {
-                    return $product_type;
-                }
-            }
-
-            return null;
-        };
-
         foreach ($human_meta as $canonical => $destination_value) {
             if (!isset($allowed_flip[$canonical])) {
                 continue;
             }
-            if (in_array($canonical, ['booking_type', 'girls_only', 'selected_days', 'program_year'], true)) {
-                continue;
-            }
-
-            if ($canonical === 'activity_type') {
-                $dest_slug = $resolve_activity_slug($variation, $slug_meta, $prior_canonical_order_meta, $existing_line_pa, false);
-                $source_slug = $resolve_activity_slug($variation, $slug_meta, $prior_canonical_order_meta, $existing_line_pa, true);
-                if ($dest_slug === null || $source_slug === null || $dest_slug !== $source_slug) {
-                    continue;
-                }
-                if (isset($line_human_snapshot[$canonical]) && $line_human_snapshot[$canonical] !== '') {
-                    $human_meta[$canonical] = $line_human_snapshot[$canonical];
-                }
+            if (in_array($canonical, ['booking_type', 'girls_only', 'selected_days', 'program_year', 'activity_type'], true)) {
                 continue;
             }
 
@@ -2251,7 +2216,9 @@ if (!function_exists('intersoccer_migration_preserve_unchanged_human_meta_for_mo
                     $pa_taxonomy,
                     null,
                     $prior_canonical_order_meta,
-                    $existing_line_pa
+                    $existing_line_pa,
+                    $line_human_snapshot,
+                    $canonical
                 );
             } else {
                 $order_meta_key = $canonical_to_order_meta[$canonical] ?? null;
@@ -2260,7 +2227,9 @@ if (!function_exists('intersoccer_migration_preserve_unchanged_human_meta_for_mo
                     $pa_taxonomy,
                     $order_meta_key,
                     $prior_canonical_order_meta,
-                    $existing_line_pa
+                    $existing_line_pa,
+                    $line_human_snapshot,
+                    $canonical
                 );
             }
 

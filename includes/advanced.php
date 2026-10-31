@@ -1636,7 +1636,7 @@ function intersoccer_move_players_ajax() {
                     }
                 }
             }
-        if (function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
+            if (function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
                 $slug_meta = intersoccer_migration_filter_slug_meta_for_move(
                     $slug_meta,
                     $existing_pa_slug_keys,

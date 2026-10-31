@@ -2538,61 +2538,83 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
     public function test_fr_move_keeps_localized_facets_when_en_slugs_unchanged(): void {
         $fr_age = '5-13 ans (Journée complète)';
         $fr_canton = 'Genève';
-        $fr_venue = 'Sites InterSoccer';
+        $fr_city = 'Genève';
+        $fr_venue = 'Genève - Stade de Varembé (Nations)';
+        $fr_camp_terms = 'Semaine complète';
+        $fr_booking = 'Semaine complète';
+        $venue_slug = 'geneve-stade-de-varembe-nations';
+        $age_slug = '5-13-ans-journee-complete';
+        $camp_term_slug = 'winter-week-1-february-15-19-5-days';
+
+        $item_meta_before = [
+            'Activity Type' => 'Camp',
+            'Assigned Attendee' => 'FR unchanged QA line',
+            'Age Group' => $fr_age,
+            'Canton / Region' => $fr_canton,
+            'City' => $fr_city,
+            'Sites InterSoccer' => $fr_venue,
+            'Camp Terms' => $fr_camp_terms,
+            'Booking Type' => $fr_booking,
+            '_intersoccer_canonical_venue' => 'geneva-stade-de-varembe-nations',
+            '_intersoccer_canonical_age_group' => '5-13y-full-day',
+            '_intersoccer_canonical_canton' => 'geneve',
+            '_intersoccer_canonical_camp_terms' => $camp_term_slug,
+            'pa_intersoccer-venues' => $venue_slug,
+            'attribute_pa_intersoccer-venues' => $venue_slug,
+            'pa_age-group' => $age_slug,
+            'attribute_pa_age-group' => $age_slug,
+            'pa_camp-terms' => $camp_term_slug,
+            'attribute_pa_camp-terms' => $camp_term_slug,
+        ];
 
         $this->registerTerms(
             [
                 'pa_intersoccer-venues' => [
-                    'stade-de-vessy' => (object) ['term_id' => 9600, 'slug' => 'stade-de-vessy', 'name' => $fr_venue],
+                    $venue_slug => (object) ['term_id' => 9610, 'slug' => $venue_slug, 'name' => $fr_venue],
+                    'geneva-stade-de-varembe-nations' => (object) ['term_id' => 9611, 'slug' => 'geneva-stade-de-varembe-nations', 'name' => 'Geneva - Stade de Varembé (Nations)'],
                 ],
                 'pa_age-group' => [
-                    '5-13-ans-journee-complete' => (object) ['term_id' => 9601, 'slug' => '5-13-ans-journee-complete', 'name' => $fr_age],
-                    '5-13y-full-day' => (object) ['term_id' => 9602, 'slug' => '5-13y-full-day', 'name' => '5-13y (Full Day)'],
+                    $age_slug => (object) ['term_id' => 9612, 'slug' => $age_slug, 'name' => $fr_age],
+                    '5-13y-full-day' => (object) ['term_id' => 9613, 'slug' => '5-13y-full-day', 'name' => '5-13y (Full Day)'],
                 ],
                 'pa_canton-region' => [
-                    'geneve' => (object) ['term_id' => 9603, 'slug' => 'geneve', 'name' => $fr_canton],
-                    'geneva' => (object) ['term_id' => 9604, 'slug' => 'geneva', 'name' => 'Geneva'],
+                    'geneve' => (object) ['term_id' => 9614, 'slug' => 'geneve', 'name' => $fr_canton],
+                    'geneva' => (object) ['term_id' => 9615, 'slug' => 'geneva', 'name' => 'Geneva'],
                 ],
-                'pa_booking-type' => [
-                    'full-week' => (object) ['term_id' => 9605, 'slug' => 'full-week', 'name' => 'Full Week'],
+                'pa_city' => [
+                    'geneve' => (object) ['term_id' => 9616, 'slug' => 'geneve', 'name' => $fr_city],
+                    'geneva' => (object) ['term_id' => 9617, 'slug' => 'geneva', 'name' => 'Geneva'],
                 ],
                 'pa_camp-terms' => [
-                    'easter-week-1' => (object) ['term_id' => 9606, 'slug' => 'easter-week-1', 'name' => 'Semaine de Pâques 1'],
+                    $camp_term_slug => (object) ['term_id' => 9618, 'slug' => $camp_term_slug, 'name' => 'Winter Week 1 February 15-19 5 days'],
+                ],
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9619, 'slug' => 'full-week', 'name' => 'Full Week'],
+                    'semaine-complete' => (object) ['term_id' => 9620, 'slug' => 'semaine-complete', 'name' => $fr_booking],
                 ],
             ],
             [
-                9600 => (object) ['term_id' => 9600, 'slug' => 'stade-de-vessy', 'name' => $fr_venue],
-                9601 => (object) ['term_id' => 9601, 'slug' => '5-13-ans-journee-complete', 'name' => $fr_age],
-                9602 => (object) ['term_id' => 9602, 'slug' => '5-13y-full-day', 'name' => '5-13y (Full Day)'],
-                9603 => (object) ['term_id' => 9603, 'slug' => 'geneve', 'name' => $fr_canton],
-                9604 => (object) ['term_id' => 9604, 'slug' => 'geneva', 'name' => 'Geneva'],
-                9605 => (object) ['term_id' => 9605, 'slug' => 'full-week', 'name' => 'Full Week'],
-                9606 => (object) ['term_id' => 9606, 'slug' => 'easter-week-1', 'name' => 'Semaine de Pâques 1'],
+                9610 => (object) ['term_id' => 9610, 'slug' => $venue_slug, 'name' => $fr_venue],
+                9611 => (object) ['term_id' => 9611, 'slug' => 'geneva-stade-de-varembe-nations', 'name' => 'Geneva - Stade de Varembé (Nations)'],
+                9612 => (object) ['term_id' => 9612, 'slug' => $age_slug, 'name' => $fr_age],
+                9613 => (object) ['term_id' => 9613, 'slug' => '5-13y-full-day', 'name' => '5-13y (Full Day)'],
+                9614 => (object) ['term_id' => 9614, 'slug' => 'geneve', 'name' => $fr_canton],
+                9615 => (object) ['term_id' => 9615, 'slug' => 'geneva', 'name' => 'Geneva'],
+                9616 => (object) ['term_id' => 9616, 'slug' => 'geneve', 'name' => $fr_city],
+                9617 => (object) ['term_id' => 9617, 'slug' => 'geneva', 'name' => 'Geneva'],
+                9618 => (object) ['term_id' => 9618, 'slug' => $camp_term_slug, 'name' => 'Winter Week 1 February 15-19 5 days'],
+                9619 => (object) ['term_id' => 9619, 'slug' => 'full-week', 'name' => 'Full Week'],
+                9620 => (object) ['term_id' => 9620, 'slug' => 'semaine-complete', 'name' => $fr_booking],
             ]
         );
-        $this->stubWpmlEnTerms([9601 => 9602, 9603 => 9604]);
+        $this->stubWpmlEnTerms([9610 => 9611, 9612 => 9613, 9614 => 9615, 9616 => 9617, 9620 => 9619]);
 
         $this->installMoveWorld([
-            'item_meta' => [
-                'Activity Type' => 'Camp',
-                'Assigned Attendee' => 'FR unchanged facets',
-                "Groupe d'âge" => $fr_age,
-                'Canton / Région' => $fr_canton,
-                'Lieux InterSoccer' => $fr_venue,
-                'Camp Terms' => 'Semaine de Pâques 1',
-                '_intersoccer_canonical_venue' => 'stade-de-vessy',
-                '_intersoccer_canonical_age_group' => '5-13y-full-day',
-                '_intersoccer_canonical_canton' => 'geneva',
-                '_intersoccer_canonical_camp_terms' => 'easter-week-1',
-                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
-                'attribute_pa_age-group' => '5-13-ans-journee-complete',
-                'attribute_pa_canton-region' => 'geneve',
-            ],
+            'item_meta' => $item_meta_before,
             'target_attrs' => [
-                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
-                'attribute_pa_age-group' => '5-13-ans-journee-complete',
-                'attribute_pa_canton-region' => 'geneve',
-                'attribute_pa_camp-terms' => 'easter-week-1',
+                'attribute_pa_intersoccer-venues' => $venue_slug,
+                'attribute_pa_age-group' => $age_slug,
+                'attribute_pa_camp-terms' => $camp_term_slug,
                 'attribute_pa_booking-type' => 'full-week',
                 'attribute_pa_girls-only' => 'no',
             ],
@@ -2603,10 +2625,103 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
 
         global $intersoccer_test_wc_order_item_meta;
         $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
-        $this->assertSame($fr_age, $meta["Groupe d'âge"]);
-        $this->assertSame($fr_canton, $meta['Canton / Région']);
-        $this->assertSame($fr_venue, $meta['Lieux InterSoccer']);
-        $this->assertSame('Semaine de Pâques 1', $meta['Camp Terms']);
+        foreach ($item_meta_before as $key => $expected) {
+            if (strpos($key, '_intersoccer_canonical_') === 0) {
+                continue;
+            }
+            $this->assertSame($expected, $meta[$key] ?? null, 'meta key ' . $key);
+        }
+    }
+
+    public function test_de_move_keeps_localized_facets_when_en_slugs_unchanged(): void {
+        $de_age = '5-13 Jahre (Ganztägig)';
+        $de_canton = 'Genf';
+        $de_city = 'Genf';
+        $de_venue = 'Genf - Stade de Varembé (Nations)';
+        $venue_slug = 'geneve-stade-de-varembe-nations';
+        $age_slug = '5-13-jahre-ganzer-tag';
+        $camp_term_slug = 'winter-week-1-february-15-19-5-days';
+
+        $item_meta_before = [
+            'Activity Type' => 'Camp',
+            'Assigned Attendee' => 'DE unchanged QA line',
+            'Altersgruppe' => $de_age,
+            'Kanton / Region' => $de_canton,
+            'Stadt' => $de_city,
+            'InterSoccer-Standorte' => $de_venue,
+            'Camp Terms' => 'Winterwoche 1',
+            'pa_intersoccer-venues' => $venue_slug,
+            'attribute_pa_intersoccer-venues' => $venue_slug,
+            'pa_age-group' => $age_slug,
+            'attribute_pa_age-group' => $age_slug,
+            'pa_camp-terms' => $camp_term_slug,
+            'attribute_pa_camp-terms' => $camp_term_slug,
+            '_intersoccer_canonical_venue' => 'geneva-stade-de-varembe-nations',
+            '_intersoccer_canonical_age_group' => '5-13y-full-day',
+            '_intersoccer_canonical_canton' => 'geneve',
+            '_intersoccer_canonical_camp_terms' => $camp_term_slug,
+        ];
+
+        $this->registerTerms(
+            [
+                'pa_intersoccer-venues' => [
+                    $venue_slug => (object) ['term_id' => 9630, 'slug' => $venue_slug, 'name' => $de_venue],
+                    'geneva-stade-de-varembe-nations' => (object) ['term_id' => 9631, 'slug' => 'geneva-stade-de-varembe-nations', 'name' => 'Geneva - Stade de Varembé (Nations)'],
+                ],
+                'pa_age-group' => [
+                    $age_slug => (object) ['term_id' => 9632, 'slug' => $age_slug, 'name' => $de_age],
+                    '5-13y-full-day' => (object) ['term_id' => 9633, 'slug' => '5-13y-full-day', 'name' => '5-13y (Full Day)'],
+                ],
+                'pa_canton-region' => [
+                    'geneve' => (object) ['term_id' => 9634, 'slug' => 'geneve', 'name' => $de_canton],
+                    'geneva' => (object) ['term_id' => 9635, 'slug' => 'geneva', 'name' => 'Geneva'],
+                ],
+                'pa_city' => [
+                    'geneve' => (object) ['term_id' => 9636, 'slug' => 'geneve', 'name' => $de_city],
+                    'geneva' => (object) ['term_id' => 9637, 'slug' => 'geneva', 'name' => 'Geneva'],
+                ],
+                'pa_camp-terms' => [
+                    $camp_term_slug => (object) ['term_id' => 9638, 'slug' => $camp_term_slug, 'name' => 'Winter Week 1 February 15-19 5 days'],
+                ],
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9639, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                9630 => (object) ['term_id' => 9630, 'slug' => $venue_slug, 'name' => $de_venue],
+                9631 => (object) ['term_id' => 9631, 'slug' => 'geneva-stade-de-varembe-nations', 'name' => 'Geneva - Stade de Varembé (Nations)'],
+                9632 => (object) ['term_id' => 9632, 'slug' => $age_slug, 'name' => $de_age],
+                9633 => (object) ['term_id' => 9633, 'slug' => '5-13y-full-day', 'name' => '5-13y (Full Day)'],
+                9634 => (object) ['term_id' => 9634, 'slug' => 'geneve', 'name' => $de_canton],
+                9635 => (object) ['term_id' => 9635, 'slug' => 'geneva', 'name' => 'Geneva'],
+                9636 => (object) ['term_id' => 9636, 'slug' => 'geneve', 'name' => $de_city],
+                9637 => (object) ['term_id' => 9637, 'slug' => 'geneva', 'name' => 'Geneva'],
+                9638 => (object) ['term_id' => 9638, 'slug' => $camp_term_slug, 'name' => 'Winter Week 1 February 15-19 5 days'],
+                9639 => (object) ['term_id' => 9639, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([9630 => 9631, 9632 => 9633, 9634 => 9635, 9636 => 9637]);
+
+        $this->installMoveWorld([
+            'item_meta' => $item_meta_before,
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => $venue_slug,
+                'attribute_pa_age-group' => $age_slug,
+                'attribute_pa_camp-terms' => $camp_term_slug,
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame($de_age, $meta['Altersgruppe']);
+        $this->assertSame($de_canton, $meta['Kanton / Region']);
+        $this->assertSame($de_city, $meta['Stadt']);
+        $this->assertSame($de_venue, $meta['InterSoccer-Standorte']);
     }
 
     public function test_fr_move_writes_en_only_for_changed_facets(): void {
@@ -2663,6 +2778,126 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
         $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
         $this->assertSame($fr_age, $meta["Groupe d'âge"]);
         $this->assertSame('geneva-stade-vessy-champel', $meta['_intersoccer_canonical_venue']);
+    }
+
+    public function test_de_move_writes_en_only_for_changed_facets(): void {
+        $de_age = '5-13 Jahre (Ganztägig)';
+        $de_canton = 'Genf';
+        $de_city = 'Genf';
+        $old_de_venue = 'Genf - Stade de Varembé (Nations)';
+        $new_en_venue = 'Geneva - Stade de Vessy (Champel)';
+
+        $this->registerTerms(
+            [
+                'pa_intersoccer-venues' => [
+                    'geneva-stade-vessy-champel' => (object) ['term_id' => 9750, 'slug' => 'geneva-stade-vessy-champel', 'name' => $new_en_venue],
+                    'geneve-stade-de-varembe-nations' => (object) ['term_id' => 9751, 'slug' => 'geneve-stade-de-varembe-nations', 'name' => $old_de_venue],
+                ],
+                'pa_age-group' => [
+                    '5-13-jahre-ganzer-tag' => (object) ['term_id' => 9752, 'slug' => '5-13-jahre-ganzer-tag', 'name' => $de_age],
+                    '5-13y-full-day' => (object) ['term_id' => 9753, 'slug' => '5-13y-full-day', 'name' => '5-13y (Full Day)'],
+                ],
+                'pa_canton-region' => [
+                    'geneve' => (object) ['term_id' => 9754, 'slug' => 'geneve', 'name' => $de_canton],
+                    'geneva' => (object) ['term_id' => 9755, 'slug' => 'geneva', 'name' => 'Geneva'],
+                ],
+                'pa_city' => [
+                    'geneve' => (object) ['term_id' => 9756, 'slug' => 'geneve', 'name' => $de_city],
+                    'geneva' => (object) ['term_id' => 9757, 'slug' => 'geneva', 'name' => 'Geneva'],
+                ],
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9758, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                9750 => (object) ['term_id' => 9750, 'slug' => 'geneva-stade-vessy-champel', 'name' => $new_en_venue],
+                9751 => (object) ['term_id' => 9751, 'slug' => 'geneve-stade-de-varembe-nations', 'name' => $old_de_venue],
+                9752 => (object) ['term_id' => 9752, 'slug' => '5-13-jahre-ganzer-tag', 'name' => $de_age],
+                9753 => (object) ['term_id' => 9753, 'slug' => '5-13y-full-day', 'name' => '5-13y (Full Day)'],
+                9754 => (object) ['term_id' => 9754, 'slug' => 'geneve', 'name' => $de_canton],
+                9755 => (object) ['term_id' => 9755, 'slug' => 'geneva', 'name' => 'Geneva'],
+                9756 => (object) ['term_id' => 9756, 'slug' => 'geneve', 'name' => $de_city],
+                9757 => (object) ['term_id' => 9757, 'slug' => 'geneva', 'name' => 'Geneva'],
+                9758 => (object) ['term_id' => 9758, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([9751 => 9750, 9752 => 9753, 9754 => 9755, 9756 => 9757]);
+
+        $this->installMoveWorld([
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'DE changed venue only',
+                'Altersgruppe' => $de_age,
+                'Kanton / Region' => $de_canton,
+                'Stadt' => $de_city,
+                'InterSoccer-Standorte' => $old_de_venue,
+                '_intersoccer_canonical_venue' => 'geneva-stade-de-varembe-nations',
+                '_intersoccer_canonical_age_group' => '5-13y-full-day',
+                '_intersoccer_canonical_canton' => 'geneve',
+                'pa_intersoccer-venues' => 'geneve-stade-de-varembe-nations',
+                'attribute_pa_intersoccer-venues' => 'geneve-stade-de-varembe-nations',
+                'pa_age-group' => '5-13-jahre-ganzer-tag',
+                'attribute_pa_age-group' => '5-13-jahre-ganzer-tag',
+            ],
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'geneva-stade-vessy-champel',
+                'attribute_pa_age-group' => '5-13-jahre-ganzer-tag',
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame($de_age, $meta['Altersgruppe']);
+        $this->assertSame($de_canton, $meta['Kanton / Region']);
+        $this->assertSame($de_city, $meta['Stadt']);
+        $this->assertSame('geneva-stade-vessy-champel', $meta['_intersoccer_canonical_venue']);
+    }
+
+    public function test_fr_move_to_girls_only_writes_activity_type_from_destination_not_preserve(): void {
+        $this->registerTerms(
+            [
+                'pa_girls-only' => [
+                    'yes' => (object) ['term_id' => 9760, 'slug' => 'yes', 'name' => 'Yes'],
+                    'no' => (object) ['term_id' => 9761, 'slug' => 'no', 'name' => 'No'],
+                ],
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9762, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                9760 => (object) ['term_id' => 9760, 'slug' => 'yes', 'name' => 'Yes'],
+                9761 => (object) ['term_id' => 9761, 'slug' => 'no', 'name' => 'No'],
+                9762 => (object) ['term_id' => 9762, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->installMoveWorld([
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'FR mixed to girls only',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'yes',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax(null, ['allow_cross_gender' => '1']);
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $expected = intersoccer_migration_activity_type_for_girls_only_tristate('Camp', 'yes');
+        $this->assertSame($expected, $meta['Activity Type']);
+        $this->assertNotSame('Camp', $meta['Activity Type']);
     }
 
     public function test_de_move_keeps_localized_age_group_when_slug_unchanged(): void {
@@ -2790,9 +3025,18 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
             ],
         ]);
 
+        global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_data, $intersoccer_test_roster_store;
+        $meta_before = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $item_data_before = $intersoccer_test_wc_order_item_data[self::ITEM_ID];
+        $roster_before = $intersoccer_test_roster_store[self::ITEM_ID];
+
         $response = $this->invokeMoveAjax(null, ['allow_cross_gender' => '0']);
         $this->assertTrue(!empty($response['data']['gender_block']));
         $this->assertSame(0, (int) ($response['data']['moved_count'] ?? 0));
+        $this->assertSame($meta_before, $intersoccer_test_wc_order_item_meta[self::ITEM_ID]);
+        $this->assertSame((int) $item_data_before['variation_id'], (int) $intersoccer_test_wc_order_item_data[self::ITEM_ID]['variation_id']);
+        $this->assertSame((int) $item_data_before['product_id'], (int) $intersoccer_test_wc_order_item_data[self::ITEM_ID]['product_id']);
+        $this->assertSame($roster_before, $intersoccer_test_roster_store[self::ITEM_ID]);
     }
 
     public function test_move_ajax_proceeds_with_allow_cross_gender(): void {

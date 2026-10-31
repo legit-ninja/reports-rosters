@@ -998,6 +998,46 @@ function intersoccer_roster_move_partition_destination_lists(array $rows, string
 }
 
 /**
+ * Merge empty sibling variations, then partition regular vs cross-gender destination lists.
+ *
+ * @param object[] $destination_rows
+ * @param int[]    $exclude_variation_ids
+ * @return array{0: object[], 1: object[]}
+ */
+function intersoccer_roster_move_build_admin_destination_lists(
+    array $destination_rows,
+    string $source_girls_tristate,
+    int $product_id,
+    array $exclude_variation_ids,
+    string $activity_type,
+    int $base_roster_girls_only
+): array {
+    $rows = $destination_rows;
+    if (function_exists('intersoccer_roster_move_merge_empty_sibling_variation_targets')) {
+        $rows = intersoccer_roster_move_merge_empty_sibling_variation_targets(
+            $rows,
+            $product_id,
+            $exclude_variation_ids,
+            $activity_type,
+            $base_roster_girls_only
+        );
+    } elseif (function_exists('intersoccer_roster_move_apply_destination_player_counts')) {
+        $rows = intersoccer_roster_move_apply_destination_player_counts($rows);
+    }
+
+    $partitioned = function_exists('intersoccer_roster_move_partition_destination_lists')
+        ? intersoccer_roster_move_partition_destination_lists($rows, $source_girls_tristate)
+        : [$rows, []];
+
+    if (function_exists('intersoccer_roster_move_apply_destination_player_counts')) {
+        $partitioned[0] = intersoccer_roster_move_apply_destination_player_counts($partitioned[0]);
+        $partitioned[1] = intersoccer_roster_move_apply_destination_player_counts($partitioned[1]);
+    }
+
+    return $partitioned;
+}
+
+/**
  * Include sibling variations with zero roster rows so admins can move players back to an emptied roster.
  *
  * @param object[] $available_rows Rows from roster-details destination query.
