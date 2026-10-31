@@ -604,33 +604,36 @@ class RosterBuilderTest extends TestCase {
         $this->assertNotEmpty($result['errors']);
     }
 
-    public function test_build_rosters_with_clear_existing_uses_truncate() {
+    public function test_build_rosters_with_clear_existing_does_not_truncate_before_processing(): void {
         $wpdbStub = Mockery::mock('wpdb');
         $wpdbStub->prefix = 'wp_';
-        $wpdbStub->shouldReceive('query')
-            ->once()
-            ->with('TRUNCATE TABLE wp_intersoccer_rosters')
-            ->andReturn(true);
+        $wpdbStub->shouldReceive('get_results')->andReturn([]);
+        $wpdbStub->shouldReceive('query')->andReturnUsing(function ($sql) {
+            $upper = strtoupper((string) $sql);
+            $this->assertStringNotContainsString('TRUNCATE', $upper);
+            $this->assertDoesNotMatchRegularExpression('/^\s*DELETE\s+FROM/i', (string) $sql);
+            return true;
+        });
 
         $this->database->shouldReceive('get_wpdb')
-            ->once()
             ->andReturn($wpdbStub);
-
-        $this->rosterRepository->shouldReceive('clearAllCaches')
-            ->once();
 
         $this->database->shouldReceive('transaction')
             ->once()
-            ->andReturnUsing(function($callback) {
+            ->andReturnUsing(function ($callback) {
                 return $callback();
             });
 
-        Functions\when('wc_get_orders')->justReturn([]);
+        global $intersoccer_test_wc_get_orders_callback;
+        $intersoccer_test_wc_get_orders_callback = static function () {
+            return [];
+        };
 
         $result = $this->rosterBuilder->buildRosters(['clear_existing' => true]);
 
         $this->assertIsArray($result);
         $this->assertArrayHasKey('orders_processed', $result);
+        $intersoccer_test_wc_get_orders_callback = null;
     }
 
     public function test_build_rosters_skips_refund_orders() {

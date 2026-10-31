@@ -1283,7 +1283,26 @@ if (!function_exists('wc_delete_order_item_meta')) {
 
 if (!function_exists('intersoccer_roster_rebuild_statuses')) {
     function intersoccer_roster_rebuild_statuses(): array {
-        return ['completed', 'processing', 'on-hold'];
+        $default = ['completed', 'processing', 'on-hold'];
+        if (!function_exists('apply_filters')) {
+            return $default;
+        }
+        $filtered = apply_filters('intersoccer_roster_rebuild_statuses', $default);
+        if (!is_array($filtered) || $filtered === []) {
+            return $default;
+        }
+        $normalized = [];
+        foreach ($filtered as $status) {
+            if (!is_string($status)) {
+                continue;
+            }
+            $status = trim($status);
+            if ($status !== '') {
+                $normalized[] = $status;
+            }
+        }
+
+        return $normalized !== [] ? $normalized : $default;
     }
 }
 

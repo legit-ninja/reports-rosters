@@ -196,6 +196,13 @@ class Database {
      * 
      * @return bool Success status
      */
+    /**
+     * @param int $level Nesting level (1 = outermost).
+     */
+    private function savepoint_name(int $level): string {
+        return 'intersoccer_sp_' . $level;
+    }
+
     public function begin_transaction() {
         try {
             if ($this->transaction_level === 0) {
@@ -204,14 +211,22 @@ class Database {
                     throw new DatabaseException('Failed to start transaction: ' . $this->wpdb->last_error);
                 }
                 $this->logger->debug('Database transaction started');
+            } else {
+                $next_level = $this->transaction_level + 1;
+                $savepoint = $this->savepoint_name($next_level);
+                $result = $this->wpdb->query('SAVEPOINT ' . $savepoint);
+                if ($result === false) {
+                    throw new DatabaseException('Failed to create savepoint: ' . $this->wpdb->last_error);
+                }
+                $this->logger->debug('Database savepoint created', ['savepoint' => $savepoint]);
             }
-            
+
             $this->transaction_level++;
             $this->logger->debug('Transaction nesting level: ' . $this->transaction_level);
-            
+
             return true;
-            
-        } catch (\Exception $e) {
+
+        } catch (\Throwable $e) {
             $this->logger->error('Failed to begin transaction', [
                 'error' => $e->getMessage(),
                 'level' => $this->transaction_level
@@ -232,20 +247,28 @@ class Database {
                 return false;
             }
             
+            $committing_level = $this->transaction_level;
             $this->transaction_level--;
-            
+
             if ($this->transaction_level === 0) {
                 $result = $this->wpdb->query('COMMIT');
                 if ($result === false) {
                     throw new DatabaseException('Failed to commit transaction: ' . $this->wpdb->last_error);
                 }
                 $this->logger->debug('Database transaction committed');
+            } else {
+                $savepoint = $this->savepoint_name($committing_level);
+                $result = $this->wpdb->query('RELEASE SAVEPOINT ' . $savepoint);
+                if ($result === false) {
+                    throw new DatabaseException('Failed to release savepoint: ' . $this->wpdb->last_error);
+                }
+                $this->logger->debug('Database savepoint released', ['savepoint' => $savepoint]);
             }
-            
+
             $this->logger->debug('Transaction nesting level: ' . $this->transaction_level);
             return true;
-            
-        } catch (\Exception $e) {
+
+        } catch (\Throwable $e) {
             $this->logger->error('Failed to commit transaction', [
                 'error' => $e->getMessage(),
                 'level' => $this->transaction_level
@@ -266,17 +289,26 @@ class Database {
                 return false;
             }
             
-            $result = $this->wpdb->query('ROLLBACK');
-            if ($result === false) {
-                throw new DatabaseException('Failed to rollback transaction: ' . $this->wpdb->last_error);
+            if ($this->transaction_level === 1) {
+                $result = $this->wpdb->query('ROLLBACK');
+                if ($result === false) {
+                    throw new DatabaseException('Failed to rollback transaction: ' . $this->wpdb->last_error);
+                }
+                $this->transaction_level = 0;
+                $this->logger->info('Database transaction rolled back');
+            } else {
+                $savepoint = $this->savepoint_name($this->transaction_level);
+                $result = $this->wpdb->query('ROLLBACK TO SAVEPOINT ' . $savepoint);
+                if ($result === false) {
+                    throw new DatabaseException('Failed to rollback to savepoint: ' . $this->wpdb->last_error);
+                }
+                $this->transaction_level--;
+                $this->logger->info('Database transaction rolled back to savepoint', ['savepoint' => $savepoint]);
             }
-            
-            $this->transaction_level = 0;
-            $this->logger->info('Database transaction rolled back');
-            
+
             return true;
-            
-        } catch (\Exception $e) {
+
+        } catch (\Throwable $e) {
             $this->logger->error('Failed to rollback transaction', [
                 'error' => $e->getMessage(),
                 'level' => $this->transaction_level
@@ -309,7 +341,7 @@ class Database {
             
             return $result;
             
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->rollback_transaction();
             $this->logger->error('Transaction failed and rolled back', [
                 'error' => $e->getMessage(),
@@ -1145,61 +1177,6 @@ class Database {
         }
         
         return date('Y-m-d', $timestamp);
-    }
-    
-    /**
-     * Rebuild rosters from WooCommerce orders
-     * 
-     * @param array $options Rebuild options
-     * @return array Rebuild results
-     */
-    public function rebuild_rosters(array $options = []) {
-        try {
-            $this->logger->info('Starting roster rebuild process');
-            
-            $results = [
-                'processed' => 0,
-                'inserted' => 0,
-                'updated' => 0,
-                'errors' => 0,
-                'start_time' => current_time('mysql'),
-                'end_time' => null
-            ];
-            
-            // Clear existing data if requested
-            if (isset($options['clear_existing']) && $options['clear_existing']) {
-                $this->logger->info('Clearing existing roster data');
-                $this->wpdb->query("TRUNCATE TABLE {$this->wpdb->prefix}intersoccer_rosters");
-            }
-            
-            // Process orders in transaction
-            $this->transaction(function($db) use (&$results, $options) {
-                // This would integrate with the OrderProcessor service
-                // For now, we'll just update the end time
-                $results['end_time'] = current_time('mysql');
-                return true;
-            });
-            
-            $this->logger->info('Roster rebuild process completed', $results);
-            
-            return $results;
-            
-        } catch (\Exception $e) {
-            $this->logger->error('Roster rebuild process failed', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
-            return [
-                'processed' => 0,
-                'inserted' => 0,
-                'updated' => 0,
-                'errors' => 1,
-                'start_time' => current_time('mysql'),
-                'end_time' => current_time('mysql'),
-                'error' => $e->getMessage()
-            ];
-        }
     }
     
     /**

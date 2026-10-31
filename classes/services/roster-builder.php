@@ -109,6 +109,19 @@ class RosterBuilder {
      */
     private $build_stats = [];
 
+    /** Rebuild transaction: a failed delete aborts the whole run. */
+    private const DELETE_ORDER_ITEM_ABORT_RUN = 'abort_run';
+
+    /** Reconcile (no outer run transaction): record delete failure and continue. */
+    private const DELETE_ORDER_ITEM_CONTINUE = 'continue';
+
+    /**
+     * Lines on the current order that did not produce a roster row (validation failure or no assigned players).
+     *
+     * @var int
+     */
+    private $current_order_unbuilt_line_items = 0;
+
     /**
      * Order IDs already status-synced during the current reconcile delete_obsolete pass.
      *
@@ -324,7 +337,7 @@ class RosterBuilder {
 
             return $stats;
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->logger->error('Roster build process failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
@@ -369,7 +382,11 @@ class RosterBuilder {
             $remaining_map = is_array($this->full_rebuild_existing_item_map)
                 ? $this->full_rebuild_existing_item_map
                 : [];
-            $deleted = $this->deleteObsoleteReconcileRows($remaining_map);
+            $deleted = $this->deleteObsoleteReconcileRows(
+                $remaining_map,
+                200,
+                self::DELETE_ORDER_ITEM_ABORT_RUN
+            );
             $this->build_stats['rosters_deleted'] = $deleted;
         } finally {
             $this->full_rebuild_existing_item_map = null;
@@ -897,13 +914,50 @@ class RosterBuilder {
     }
 
     /**
+     * Delete roster rows for an order line, with explicit failure handling for rebuild vs reconcile.
+     *
+     * @param int    $order_item_id
+     * @param string $failure_mode One of DELETE_ORDER_ITEM_ABORT_RUN or DELETE_ORDER_ITEM_CONTINUE
+     * @return int Rows deleted (0 when continue mode catches a failure)
+     */
+    private function deleteRosterRowByOrderItemId(int $order_item_id, string $failure_mode): int {
+        try {
+            $deleted_count = $this->roster_repository->deleteByOrderItemId($order_item_id);
+            $this->logger->debug('Deleted obsolete roster entries', [
+                'order_item_id' => $order_item_id,
+                'deleted' => $deleted_count,
+            ]);
+
+            return $deleted_count;
+        } catch (\Throwable $e) {
+            if ($failure_mode === self::DELETE_ORDER_ITEM_ABORT_RUN) {
+                throw $e;
+            }
+
+            $message = "Failed to delete obsolete roster {$order_item_id}: {$e->getMessage()}";
+            $this->build_stats['errors'][] = $message;
+            $this->logger->error('Failed to delete obsolete roster entry', [
+                'order_item_id' => $order_item_id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return 0;
+        }
+    }
+
+    /**
      * Delete roster rows whose lines were not synced in this run, using reconcile obsolete rules.
      *
      * @param array<int,int> $existing_item_map order_item_id => stored order_id
      * @param int            $delete_batch_size
+     * @param string         $failure_mode      DELETE_ORDER_ITEM_ABORT_RUN or DELETE_ORDER_ITEM_CONTINUE
      * @return int Rows deleted
      */
-    private function deleteObsoleteReconcileRows(array &$existing_item_map, int $delete_batch_size = 200): int {
+    private function deleteObsoleteReconcileRows(
+        array &$existing_item_map,
+        int $delete_batch_size = 200,
+        string $failure_mode = self::DELETE_ORDER_ITEM_CONTINUE
+    ): int {
         if ($existing_item_map === []) {
             return 0;
         }
@@ -923,20 +977,7 @@ class RosterBuilder {
                 if (!$this->shouldDeleteObsoleteReconcileRow((int) $obsolete_item_id, $stored_order_id)) {
                     continue;
                 }
-                try {
-                    $deleted_count = $this->roster_repository->deleteByOrderItemId((int) $obsolete_item_id);
-                    $deleted_total += $deleted_count;
-                    $this->logger->debug('Deleted obsolete roster entries', [
-                        'order_item_id' => $obsolete_item_id,
-                        'deleted' => $deleted_count,
-                    ]);
-                } catch (\Exception $e) {
-                    $this->build_stats['errors'][] = "Failed to delete obsolete roster {$obsolete_item_id}: {$e->getMessage()}";
-                    $this->logger->error('Failed to delete obsolete roster entry', [
-                        'order_item_id' => $obsolete_item_id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
+                $deleted_total += $this->deleteRosterRowByOrderItemId((int) $obsolete_item_id, $failure_mode);
             }
             if ($i + $delete_chunk_size < $total && function_exists('wp_cache_flush')) {
                 wp_cache_flush();
@@ -1024,7 +1065,7 @@ class RosterBuilder {
             if (!$this->shouldDeleteObsoleteReconcileRow($item_id, $order_id)) {
                 continue;
             }
-            $this->roster_repository->deleteByOrderItemId($item_id);
+            $this->deleteRosterRowByOrderItemId($item_id, self::DELETE_ORDER_ITEM_ABORT_RUN);
         }
     }
 
@@ -1045,7 +1086,7 @@ class RosterBuilder {
             if (!$this->shouldDeleteObsoleteReconcileRow($item_id, $order_id)) {
                 continue;
             }
-            $this->roster_repository->deleteByOrderItemId($item_id);
+            $this->deleteRosterRowByOrderItemId($item_id, self::DELETE_ORDER_ITEM_ABORT_RUN);
         }
     }
     
@@ -1060,6 +1101,7 @@ class RosterBuilder {
         $rosters = new RostersCollection();
         $order_id = $order->get_id();
         $customer_id = $order->get_customer_id();
+        $this->current_order_unbuilt_line_items = 0;
 
         $item_count = count($order->get_items());
         $this->logger->debug('Processing order items', [
@@ -1091,7 +1133,8 @@ class RosterBuilder {
 
                 $rosters = $rosters->merge($item_rosters);
                 
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
+                $this->current_order_unbuilt_line_items++;
                 $this->build_stats['validation_errors']++;
                 $this->build_stats['errors'][] = "Order {$order_id}, Item {$item_id}: " . $e->getMessage();
                 
@@ -1139,6 +1182,7 @@ class RosterBuilder {
         $assigned_players = $this->player_matcher->getAssignedPlayers($item, $customer_players, ['skip_age_gender_validation' => true]);
         $assigned_count = $assigned_players->count();
         if ($assigned_players->isEmpty()) {
+            $this->current_order_unbuilt_line_items++;
             $this->build_stats['warnings'][] = "Order {$order->get_id()}, Item {$item_id}: No assigned players found";
             $this->logger->warning('Order item has no assigned players', [
                 'order_id' => $order->get_id(),
@@ -2787,10 +2831,9 @@ class RosterBuilder {
                     }
 
                     try {
-                        $item_errors_before = (int) $this->build_stats['validation_errors'];
                         $order_rosters = $this->processOrderItems($order, $options);
                         $results = $results->merge($order_rosters);
-                        if ((int) $this->build_stats['validation_errors'] === $item_errors_before) {
+                        if ($this->current_order_unbuilt_line_items === 0) {
                             // Only after every line of the order built: drop rows of lines no longer on it.
                             $this->deleteObsoleteRowsForOrderAfterRebuild($order_id, $order);
                         } else {
@@ -2799,7 +2842,7 @@ class RosterBuilder {
                             ]);
                         }
                         $this->build_stats['orders_processed']++;
-                    } catch (\Exception $e) {
+                    } catch (\Throwable $e) {
                         $this->build_stats['skipped_orders']++;
                         $this->build_stats['errors'][] = "Order {$order_id}: " . $e->getMessage();
 
@@ -2848,7 +2891,7 @@ class RosterBuilder {
                 'not_checked' => $this->build_stats['not_checked'],
             ];
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->logger->error('Specific orders rebuild failed', [
                 'error' => $e->getMessage()
             ]);

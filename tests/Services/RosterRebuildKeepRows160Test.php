@@ -40,6 +40,29 @@ class RosterRebuildKeepRows160Test extends TestCase {
         parent::tearDown();
     }
 
+    public function test_rebuild_statuses_filter_normalizes(): void {
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value) {
+            if ($hook === 'intersoccer_roster_rebuild_statuses') {
+                return [' processing ', '', 99, 'completed'];
+            }
+            return $value;
+        };
+        $statuses = intersoccer_roster_rebuild_statuses();
+        unset($GLOBALS['intersoccer_test_apply_filters_callback']);
+        $this->assertSame(['processing', 'completed'], $statuses);
+    }
+
+    public function test_rebuild_statuses_filter_garbage_falls_back_to_default(): void {
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value) {
+            if ($hook === 'intersoccer_roster_rebuild_statuses') {
+                return 'not-an-array';
+            }
+            return $value;
+        };
+        $this->assertSame(['completed', 'processing', 'on-hold'], intersoccer_roster_rebuild_statuses());
+        unset($GLOBALS['intersoccer_test_apply_filters_callback']);
+    }
+
     public function test_rebuild_statuses_option_a(): void {
         $this->assertSame(['completed', 'processing', 'on-hold'], intersoccer_roster_rebuild_statuses());
     }

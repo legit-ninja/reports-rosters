@@ -430,6 +430,24 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertNotEmpty($result['statistics']['errors']);
     }
 
+    public function test_rebuild_specific_orders_no_assigned_players_skips_removed_line_delete(): void {
+        $this->order(8350, 'completed', [8450 => $this->meta()]);
+        $this->existingRow(8450, 8350);
+        $this->existingRow(8459, 8350);
+        $this->routeOrders([]);
+
+        $builder = $this->builder();
+        $matcher = Mockery::mock(PlayerMatcher::class);
+        $matcher->shouldReceive('getAssignedPlayers')->andReturn(new PlayersCollection());
+        (function () use ($matcher) { $this->player_matcher = $matcher; })->call($builder);
+
+        $result = $builder->rebuildSpecificOrders([8350]);
+
+        $this->assertSame([], $this->deleted);
+        $this->assertArrayHasKey(8459, $this->stored);
+        $this->assertNotEmpty($result['statistics']['warnings']);
+    }
+
     public function test_rebuild_specific_orders_inactive_statuses_use_obsolete_rule(): void {
         $this->order(7201, 'cancelled', [7301 => $this->meta()]);
         $this->order(7202, 'refunded', [7302 => $this->meta()]);
