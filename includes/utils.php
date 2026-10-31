@@ -5514,22 +5514,48 @@ if (!function_exists('intersoccer_with_wpml_default_language')) {
      * @return mixed
      */
     function intersoccer_with_wpml_default_language(callable $callback) {
-        $current_lang = '';
         $default_lang = '';
-        if (function_exists('wpml_get_current_language')) {
-            $current_lang = wpml_get_current_language();
-        }
         if (function_exists('wpml_get_default_language')) {
             $default_lang = wpml_get_default_language();
-            if ($default_lang && $current_lang !== $default_lang) {
-                do_action('wpml_switch_language', $default_lang);
-            }
+        }
+        if ($default_lang === '' || $default_lang === null) {
+            $default_lang = apply_filters('wpml_default_language', 'en');
+        }
+        if (!is_string($default_lang) || $default_lang === '') {
+            $default_lang = 'en';
+        }
+
+        return intersoccer_with_wpml_language($default_lang, $callback);
+    }
+}
+
+if (!function_exists('intersoccer_with_wpml_language')) {
+    /**
+     * Run a callback while WPML is switched to a specific language (read-only; restores previous language).
+     *
+     * @param string   $language_code
+     * @param callable $callback
+     * @return mixed
+     */
+    function intersoccer_with_wpml_language(string $language_code, callable $callback) {
+        $language_code = trim($language_code);
+        if ($language_code === '') {
+            return $callback();
+        }
+
+        $current_lang = '';
+        if (function_exists('wpml_get_current_language')) {
+            $current_lang = (string) wpml_get_current_language();
+        }
+
+        if ($current_lang !== $language_code) {
+            do_action('wpml_switch_language', $language_code);
         }
 
         try {
             return $callback();
         } finally {
-            if ($default_lang && $current_lang && $current_lang !== $default_lang) {
+            if ($current_lang !== '' && $current_lang !== $language_code) {
                 do_action('wpml_switch_language', $current_lang);
             }
         }

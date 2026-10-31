@@ -851,6 +851,103 @@ if (!function_exists('intersoccer_migration_roster_booking_from_destination_vari
     }
 }
 
+if (!function_exists('intersoccer_roster_move_order_language')) {
+    /**
+     * Language code stored on the order (WPML), or site default.
+     *
+     * @param \WC_Order $order
+     * @return string
+     */
+    function intersoccer_roster_move_order_language(WC_Order $order): string {
+        $lang = $order->get_meta('wpml_language');
+        if (is_string($lang) && $lang !== '') {
+            return $lang;
+        }
+
+        $default = apply_filters('wpml_default_language', null);
+        if (is_string($default) && $default !== '') {
+            return $default;
+        }
+
+        return 'en';
+    }
+}
+
+if (!function_exists('intersoccer_roster_move_log_order_language_twin_fallback')) {
+    function intersoccer_roster_move_log_order_language_twin_fallback(int $en_variation_id, string $order_lang): void {
+        $message = 'InterSoccer roster move: no WPML catalog twin for variation '
+            . $en_variation_id
+            . ' in language '
+            . $order_lang
+            . '; using default-language catalog.';
+        if (function_exists('intersoccer_roster_move_log')) {
+            intersoccer_roster_move_log($message);
+        } else {
+            error_log($message);
+        }
+    }
+}
+
+if (!function_exists('intersoccer_roster_move_resolve_order_catalog_ids')) {
+    /**
+     * Resolve WPML twins for order-line writes (variation + parent product).
+     *
+     * @return array{variation_id:int,parent_id:int,used_fallback:bool}
+     */
+    function intersoccer_roster_move_resolve_order_catalog_ids(
+        int $en_variation_id,
+        int $en_parent_id,
+        string $order_lang
+    ): array {
+        $en_variation_id = (int) $en_variation_id;
+        $en_parent_id = (int) $en_parent_id;
+        $order_lang = trim($order_lang);
+        if ($order_lang === '') {
+            $order_lang = 'en';
+        }
+
+        $default_lang = apply_filters('wpml_default_language', null);
+        if (!is_string($default_lang) || $default_lang === '') {
+            $default_lang = 'en';
+        }
+
+        if ($order_lang === $default_lang || $en_variation_id <= 0) {
+            return [
+                'variation_id'  => $en_variation_id,
+                'parent_id'     => $en_parent_id,
+                'used_fallback' => false,
+            ];
+        }
+
+        $twin_variation_id = (int) apply_filters(
+            'wpml_object_id',
+            $en_variation_id,
+            'product_variation',
+            true,
+            $order_lang
+        );
+        $twin_parent_id = $en_parent_id > 0
+            ? (int) apply_filters('wpml_object_id', $en_parent_id, 'product', true, $order_lang)
+            : 0;
+
+        $used_fallback = false;
+        if ($twin_variation_id <= 0 || $twin_variation_id === $en_variation_id) {
+            $used_fallback = true;
+            intersoccer_roster_move_log_order_language_twin_fallback($en_variation_id, $order_lang);
+            $twin_variation_id = $en_variation_id;
+            $twin_parent_id = $en_parent_id;
+        } elseif ($twin_parent_id <= 0) {
+            $twin_parent_id = $en_parent_id;
+        }
+
+        return [
+            'variation_id'  => $twin_variation_id,
+            'parent_id'     => $twin_parent_id,
+            'used_fallback' => $used_fallback,
+        ];
+    }
+}
+
 if (!function_exists('intersoccer_migration_apply_destination_canonical_order_meta_for_move')) {
     /**
      * Update existing `_intersoccer_canonical_*` rows from the destination variation; never add keys.
@@ -3232,7 +3329,9 @@ if (!function_exists('intersoccer_migration_finalize_move_item_meta')) {
         array $slug_meta,
         array $existing_line_keys,
         WC_Product_Variation $variation,
-        array $prior_canonical_order_meta = []
+        array $prior_canonical_order_meta = [],
+        ?WC_Product_Variation $canonical_source_variation = null,
+        bool $preserve_order_language_pa_slugs = false
     ): void {
         if ($item_id <= 0) {
             return;
@@ -3258,16 +3357,38 @@ if (!function_exists('intersoccer_migration_finalize_move_item_meta')) {
                 $existing_line_pa[$pa_key] = (string) wc_get_order_item_meta($item_id, $pa_key, true);
             }
         }
-        if (function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
-            $slug_meta = intersoccer_migration_filter_slug_meta_for_move(
-                $slug_meta,
-                $existing_pa,
-                $variation,
-                $existing_line_pa
-            );
-        } elseif (function_exists('intersoccer_migration_normalize_slug_meta_for_variation')) {
-            $slug_meta = intersoccer_migration_normalize_slug_meta_for_variation($slug_meta, $variation, $existing_line_pa);
+        if (!$preserve_order_language_pa_slugs) {
+            if (function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
+                $slug_meta = intersoccer_migration_filter_slug_meta_for_move(
+                    $slug_meta,
+                    $existing_pa,
+                    $variation,
+                    $existing_line_pa
+                );
+            } elseif (function_exists('intersoccer_migration_normalize_slug_meta_for_variation')) {
+                $slug_meta = intersoccer_migration_normalize_slug_meta_for_variation($slug_meta, $variation, $existing_line_pa);
+            }
+        } else {
+            $allowed = [];
+            foreach ($existing_pa as $key) {
+                $allowed[$key] = true;
+            }
+            $filtered = [];
+            foreach ($slug_meta as $meta_key => $meta_value) {
+                if (!isset($allowed[$meta_key])) {
+                    continue;
+                }
+                if ($meta_value === '' || $meta_value === null) {
+                    continue;
+                }
+                $filtered[$meta_key] = is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value;
+            }
+            $slug_meta = $filtered;
         }
+
+        $canonical_variation = $canonical_source_variation instanceof WC_Product_Variation
+            ? $canonical_source_variation
+            : $variation;
 
         intersoccer_migration_restore_canonical_meta(
             $item_id,
@@ -3285,13 +3406,26 @@ if (!function_exists('intersoccer_migration_finalize_move_item_meta')) {
         intersoccer_migration_prune_unexpected_move_meta_keys($item_id, $existing_line_keys, $human_lookup);
 
         if (function_exists('intersoccer_migration_apply_destination_canonical_order_meta_for_move')) {
-            intersoccer_migration_apply_destination_canonical_order_meta_for_move(
+            $apply_canonical = static function () use (
                 $item_id,
-                $variation,
+                $canonical_variation,
                 $existing_line_keys,
                 $slug_meta,
                 $prior_canonical_order_meta
-            );
+            ): void {
+                intersoccer_migration_apply_destination_canonical_order_meta_for_move(
+                    $item_id,
+                    $canonical_variation,
+                    $existing_line_keys,
+                    $slug_meta,
+                    $prior_canonical_order_meta
+                );
+            };
+            if (function_exists('intersoccer_with_wpml_default_language')) {
+                intersoccer_with_wpml_default_language($apply_canonical);
+            } else {
+                $apply_canonical();
+            }
         }
     }
 }
