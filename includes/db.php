@@ -1574,16 +1574,26 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             $late_pickup_days = $order_item_meta['Late Pickup Days'] ?? '';
         }
 
-        $catalog_name = function_exists('intersoccer_roster_catalog_product_name')
-            ? intersoccer_roster_catalog_product_name((int) $product_id, (int) $variation_id)
-            : (string) $product->get_name();
+        $line_name_for_product = trim((string) $item->get_name());
+        $resolve_context = intersoccer_roster_product_name_resolve_context(
+            $line_name_for_product,
+            (int) $product_id,
+            (int) $variation_id,
+            static function () use ($product_id, $variation_id, $product) {
+                if (function_exists('intersoccer_roster_catalog_product_name')) {
+                    return intersoccer_roster_catalog_product_name((int) $product_id, (int) $variation_id);
+                }
+                $raw = trim((string) $product->get_name());
+                if ($raw === '') {
+                    return '';
+                }
+                return function_exists('intersoccer_get_english_product_name')
+                    ? trim((string) intersoccer_get_english_product_name($raw, (int) $product_id))
+                    : $raw;
+            }
+        );
         $resolved_name = function_exists('intersoccer_roster_resolve_product_name_for_storage')
-            ? intersoccer_roster_resolve_product_name_for_storage([
-                'order_line_name' => $item->get_name(),
-                'product_id' => (int) $product_id,
-                'variation_id' => (int) $variation_id,
-                'catalog_product_name' => $catalog_name,
-            ])
+            ? intersoccer_roster_resolve_product_name_for_storage($resolve_context)
             : ['product_name' => (string) $product->get_name()];
         $product_name = (string) ($resolved_name['product_name'] ?? $product->get_name());
 

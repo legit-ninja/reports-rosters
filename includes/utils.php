@@ -340,7 +340,6 @@ if (!function_exists('intersoccer_roster_resolve_product_name_for_storage')) {
      */
     function intersoccer_roster_resolve_product_name_for_storage(array $context) {
         $line = trim((string) ($context['order_line_name'] ?? $context['product_name'] ?? ''));
-        $catalog = trim((string) ($context['catalog_product_name'] ?? ''));
         $product_id = (int) ($context['product_id'] ?? 0);
         $variation_id = (int) ($context['variation_id'] ?? 0);
         $lookup_id = $variation_id > 0 ? $variation_id : $product_id;
@@ -350,6 +349,10 @@ if (!function_exists('intersoccer_roster_resolve_product_name_for_storage')) {
                 'product_name' => substr($line, 0, 255),
                 'used_english_catalogue_fallback' => false,
             ];
+        }
+        $catalog = trim((string) ($context['catalog_product_name'] ?? ''));
+        if ($catalog === '' && isset($context['catalog_product_name_resolver']) && is_callable($context['catalog_product_name_resolver'])) {
+            $catalog = trim((string) call_user_func($context['catalog_product_name_resolver']));
         }
         if ($catalog !== '') {
             return [
@@ -391,7 +394,47 @@ if (!function_exists('intersoccer_roster_catalog_product_name')) {
         if (!$product || !method_exists($product, 'get_name')) {
             return '';
         }
-        return trim((string) $product->get_name());
+        $name = trim((string) $product->get_name());
+        if ($name === '') {
+            return '';
+        }
+        return function_exists('intersoccer_get_english_product_name')
+            ? trim((string) intersoccer_get_english_product_name($name, $lookup_id))
+            : $name;
+    }
+}
+
+if (!function_exists('intersoccer_roster_product_name_resolve_context')) {
+    /**
+     * Build resolve context; catalogue lookup runs only when order_line_name is empty.
+     *
+     * @param string              $order_line_name
+     * @param int                 $product_id
+     * @param int                 $variation_id
+     * @param callable|null       $catalog_resolver Optional override when line name is empty.
+     * @return array<string,mixed>
+     */
+    function intersoccer_roster_product_name_resolve_context($order_line_name, $product_id, $variation_id, $catalog_resolver = null) {
+        $context = [
+            'order_line_name' => $order_line_name,
+            'product_id' => (int) $product_id,
+            'variation_id' => (int) $variation_id,
+        ];
+        if (trim((string) $order_line_name) !== '') {
+            return $context;
+        }
+        if ($catalog_resolver !== null && is_callable($catalog_resolver)) {
+            $context['catalog_product_name_resolver'] = $catalog_resolver;
+            return $context;
+        }
+        $pid = (int) $product_id;
+        $vid = (int) $variation_id;
+        $context['catalog_product_name_resolver'] = static function () use ($pid, $vid) {
+            return function_exists('intersoccer_roster_catalog_product_name')
+                ? intersoccer_roster_catalog_product_name($pid, $vid)
+                : '';
+        };
+        return $context;
     }
 }
 
@@ -452,16 +495,14 @@ if (!function_exists('intersoccer_roster_apply_product_name_for_storage')) {
      * @return array<string,mixed>
      */
     function intersoccer_roster_apply_product_name_for_storage(array $row) {
-        $resolved = intersoccer_roster_resolve_product_name_for_storage([
-            'order_line_name' => intersoccer_roster_resolve_order_line_name($row),
-            'product_id' => (int) ($row['product_id'] ?? 0),
-            'variation_id' => (int) ($row['variation_id'] ?? 0),
-            'catalog_product_name' => intersoccer_roster_catalog_product_name(
-                (int) ($row['product_id'] ?? 0),
-                (int) ($row['variation_id'] ?? 0)
-            ),
-            'product_name' => $row['product_name'] ?? '',
-        ]);
+        $line_name = intersoccer_roster_resolve_order_line_name($row);
+        $context = intersoccer_roster_product_name_resolve_context(
+            $line_name,
+            (int) ($row['product_id'] ?? 0),
+            (int) ($row['variation_id'] ?? 0)
+        );
+        $context['product_name'] = $row['product_name'] ?? '';
+        $resolved = intersoccer_roster_resolve_product_name_for_storage($context);
         if (!empty($resolved['product_name'])) {
             $row['product_name'] = $resolved['product_name'];
         }
@@ -592,16 +633,21 @@ if (!function_exists('intersoccer_roster_order_line_name_by_item_id')) {
      * @return string
      */
     function intersoccer_roster_order_line_name_by_item_id($order_item_id) {
-        global $wpdb;
         $order_item_id = (int) $order_item_id;
-        if ($order_item_id <= 0 || !$wpdb) {
+        if ($order_item_id <= 0) {
             return '';
         }
-        $name = $wpdb->get_var($wpdb->prepare(
-            "SELECT order_item_name FROM {$wpdb->prefix}woocommerce_order_items WHERE order_item_id = %d LIMIT 1",
-            $order_item_id
-        ));
-        return is_string($name) ? trim($name) : '';
+        if (class_exists('WC_Order_Factory') && method_exists('WC_Order_Factory', 'get_order_item')) {
+            $item = WC_Order_Factory::get_order_item($order_item_id);
+            if ($item && method_exists($item, 'get_name')) {
+                try {
+                    return trim((string) $item->get_name());
+                } catch (\Throwable $e) {
+                    return '';
+                }
+            }
+        }
+        return '';
     }
 }
 
@@ -3835,16 +3881,15 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         $late_pickup_days = $resolved_late['late_pickup_days'];
     }
     
-    $catalog_name = function_exists('intersoccer_roster_catalog_product_name')
-        ? intersoccer_roster_catalog_product_name((int) $product_id, (int) $variation_id)
-        : '';
+    $line_name_for_storage = trim((string) $item->get_name());
     $resolved_name = function_exists('intersoccer_roster_resolve_product_name_for_storage')
-        ? intersoccer_roster_resolve_product_name_for_storage([
-            'order_line_name' => $item->get_name(),
-            'product_id' => (int) $product_id,
-            'variation_id' => (int) $variation_id,
-            'catalog_product_name' => $catalog_name,
-        ])
+        ? intersoccer_roster_resolve_product_name_for_storage(
+            intersoccer_roster_product_name_resolve_context(
+                $line_name_for_storage,
+                (int) $product_id,
+                (int) $variation_id
+            )
+        )
         : ['product_name' => (string) $item->get_name()];
     $product_name = (string) ($resolved_name['product_name'] ?? $item->get_name());
 
