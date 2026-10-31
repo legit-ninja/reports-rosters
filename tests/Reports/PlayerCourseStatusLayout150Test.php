@@ -103,18 +103,24 @@ class PlayerCourseStatusLayout150Test extends TestCase {
 		$this->assertSame('', intersoccer_player_course_status_admin_results_table_html([]));
 	}
 
-	public function test_styles_css_scopes_widefat_and_layout_rules_to_pcs_page(): void {
+	public function test_styles_css_keeps_global_widefat_and_scopes_pcs_layout_rules(): void {
 		$css = file_get_contents(dirname(__DIR__, 2) . '/css/styles.css');
 		$this->assertIsString($css);
 
-		$this->assertDoesNotMatchRegularExpression(
-			'/^\s*\.widefat\b/m',
-			$css,
-			'unscoped .widefat rules must be removed'
+		$this->assertMatchesRegularExpression(
+			'/^\s*\.widefat\s*\{\s*\n\s*width:\s*100%;\s*\n\s*border-collapse:\s*collapse;\s*\n\s*\}/m',
+			$css
+		);
+		$this->assertMatchesRegularExpression(
+			'/^\s*\.widefat th, \.widefat td\s*\{[^}]*padding:\s*var\(--intersoccer-space-sm, 8px\);[^}]*border:\s*1px solid var\(--intersoccer-border-subtle, #ddd\);/ms',
+			$css
+		);
+		$this->assertMatchesRegularExpression(
+			'/^\s*\.widefat th\s*\{[^}]*background:\s*var\(--intersoccer-bg-header, #f9f9f9\);/ms',
+			$css
 		);
 
-		$this->assertStringContainsString('.intersoccer-player-course-status .widefat {', $css);
-		$this->assertStringContainsString('.intersoccer-player-course-status .widefat th,', $css);
+		$this->assertStringNotContainsString('.intersoccer-player-course-status .widefat', $css);
 		$this->assertStringContainsString('.intersoccer-reports-rosters-campaign-analytics .widefat {', $css);
 		$this->assertStringContainsString('.intersoccer-player-course-status .intersoccer-pcs-table-scroll {', $css);
 		$this->assertStringContainsString('overflow-x: auto;', $css);
