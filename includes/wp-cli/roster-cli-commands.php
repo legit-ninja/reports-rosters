@@ -46,6 +46,67 @@ final class Intersoccer_Rosters_Wp_Cli {
      * @param list<string> $args
      * @param array<string,mixed> $assoc_args
      */
+    /**
+     * Backfill product_name on closed roster rows from the Woo order line name (English orders only).
+     *
+     * Default is dry-run (counts only). Never logs row values.
+     *
+     * ## OPTIONS
+     *
+     * [--apply]
+     * : Persist updates. Idempotent.
+     *
+     * [--id-cursor=<n>]
+     * : Start after this roster row id (default 0).
+     *
+     * [--chunk=<n>]
+     * : Batch size (default 500).
+     *
+     * ## EXAMPLES
+     *
+     *     wp intersoccer-rosters closed-line-product-name-backfill
+     *     wp intersoccer-rosters closed-line-product-name-backfill --apply
+     *
+     * @subcommand closed-line-product-name-backfill
+     * @when after_wp_load
+     *
+     * @param list<string> $args
+     * @param array<string,mixed> $assoc_args
+     */
+    public function closed_line_product_name_backfill(array $args, array $assoc_args): void {
+        $utils = dirname(__DIR__) . '/utils.php';
+        if (is_readable($utils)) {
+            require_once $utils;
+        }
+        $service_file = dirname(__DIR__) . '/roster-closed-line-product-name-backfill.php';
+        if (is_readable($service_file)) {
+            require_once $service_file;
+        }
+        if (!class_exists('Intersoccer_Roster_Closed_Line_Product_Name_Backfill_Service')) {
+            \WP_CLI::error('Backfill service is not available.');
+        }
+
+        $apply = \WP_CLI\Utils\get_flag_value($assoc_args, 'apply', false) === true;
+        $id_cursor = isset($assoc_args['id-cursor']) ? (int) $assoc_args['id-cursor'] : 0;
+        $chunk = isset($assoc_args['chunk']) ? (int) $assoc_args['chunk'] : 500;
+
+        $service = Intersoccer_Roster_Closed_Line_Product_Name_Backfill_Service::from_wpdb();
+        $summary = $service->run([
+            'apply' => $apply,
+            'id_cursor' => $id_cursor,
+            'chunk' => max(1, $chunk),
+        ]);
+
+        \WP_CLI::log(sprintf(
+            'rows_scanned=%d would_change=%d changed=%d skipped_no_line_name=%d',
+            (int) $summary['rows_scanned'],
+            (int) $summary['would_change'],
+            (int) $summary['changed'],
+            (int) $summary['skipped_no_line_name']
+        ));
+        \WP_CLI::success($apply ? 'Apply complete.' : 'Dry run complete.');
+    }
+
     public function signature_drift_sample(array $args, array $assoc_args): void {
         if (!class_exists(\InterSoccer\ReportsRosters\Services\SignatureDriftService::class)) {
             \WP_CLI::error('SignatureDriftService is not available.');

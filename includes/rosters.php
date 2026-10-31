@@ -3274,7 +3274,7 @@ function intersoccer_render_other_events_page() {
     }
 
     if (function_exists('intersoccer_rosters_bootstrap_saved_list_filters')) {
-        intersoccer_rosters_bootstrap_saved_list_filters('other_events', ['season', 'product_name'], false);
+        intersoccer_rosters_bootstrap_saved_list_filters('other_events', ['season', 'product_id', 'product_name'], false);
     }
 
     // Check if user is a coach and filter venues accordingly
@@ -3334,7 +3334,7 @@ function intersoccer_render_other_events_page() {
     // The end date is already calculated and stored in the database from order item metadata
     $all_events = [];
     $all_seasons = [];
-    $all_product_names = [];
+    $all_products = [];
 
     foreach ($groups as $group) {
         // Get variation IDs for reference (not needed for date calculation)
@@ -3344,12 +3344,18 @@ function intersoccer_render_other_events_page() {
         }
         $group['variation_ids'] = $variation_ids;
         
-        // Normalize product name to English for display (combine French and English versions)
+        // Normalize product id/name for display and filters (English parent product).
+        $product_id = isset($group['product_id']) ? (int) $group['product_id'] : 0;
+        if ($product_id > 0 && function_exists('intersoccer_wpml_canonical_product_id')) {
+            $product_id = (int) intersoccer_wpml_canonical_product_id($product_id);
+            $group['product_id'] = $product_id;
+        }
         if (!empty($group['product_name']) && $group['product_name'] !== 'N/A') {
-            $product_id = isset($group['product_id']) ? (int)$group['product_id'] : 0;
-            $group['product_name'] = function_exists('intersoccer_get_english_product_name') 
-                ? intersoccer_get_english_product_name($group['product_name'], $product_id)
-                : $group['product_name'];
+            $group['product_name'] = function_exists('intersoccer_roster_listing_product_label')
+                ? intersoccer_roster_listing_product_label($product_id, (string) $group['product_name'])
+                : (function_exists('intersoccer_get_english_product_name')
+                    ? intersoccer_get_english_product_name($group['product_name'], $product_id)
+                    : $group['product_name']);
         }
         
         // Get dates directly from the database (already calculated and stored)
@@ -3373,8 +3379,8 @@ function intersoccer_render_other_events_page() {
         if ($group['season'] && $group['season'] !== 'N/A') {
             $all_seasons[$group['season']] = $group['season'];
         }
-        if ($group['product_name'] && $group['product_name'] !== 'N/A') {
-            $all_product_names[$group['product_name']] = $group['product_name'];
+        if ($product_id > 0 && !empty($group['product_name']) && $group['product_name'] !== 'N/A') {
+            $all_products[$product_id] = $group['product_name'];
         }
 
         $all_events[] = $group;
@@ -3382,7 +3388,20 @@ function intersoccer_render_other_events_page() {
 
     // Get filter options
     $selected_season = isset($_GET['season']) ? sanitize_text_field($_GET['season']) : '';
+    $selected_product_id = isset($_GET['product_id']) ? absint($_GET['product_id']) : 0;
+    if ($selected_product_id > 0 && function_exists('intersoccer_wpml_canonical_product_id')) {
+        $selected_product_id = (int) intersoccer_wpml_canonical_product_id($selected_product_id);
+    }
     $selected_product_name = isset($_GET['product_name']) ? sanitize_text_field($_GET['product_name']) : '';
+    if ($selected_product_id <= 0 && $selected_product_name !== ''
+        && function_exists('intersoccer_roster_product_ids_for_stored_name')) {
+        $legacy_ids = intersoccer_roster_product_ids_for_stored_name($selected_product_name);
+        if ($legacy_ids !== []) {
+            $selected_product_id = function_exists('intersoccer_wpml_canonical_product_id')
+                ? (int) intersoccer_wpml_canonical_product_id((int) $legacy_ids[0])
+                : (int) $legacy_ids[0];
+        }
+    }
 
     $display_events = $all_events;
 
@@ -3393,10 +3412,18 @@ function intersoccer_render_other_events_page() {
         });
     }
 
-    // Filter by product name
-    if ($selected_product_name) {
+    // Filter by canonical product_id (includes WPML twins on each row).
+    if ($selected_product_id > 0) {
+        $display_events = array_filter($display_events, function($event) use ($selected_product_id) {
+            $pid = (int) ($event['product_id'] ?? 0);
+            if ($pid > 0 && function_exists('intersoccer_wpml_canonical_product_id')) {
+                $pid = (int) intersoccer_wpml_canonical_product_id($pid);
+            }
+            return $pid === $selected_product_id;
+        });
+    } elseif ($selected_product_name) {
         $display_events = array_filter($display_events, function($event) use ($selected_product_name) {
-            return $event['product_name'] === $selected_product_name;
+            return ($event['product_name'] ?? '') === $selected_product_name;
         });
     }
 
@@ -3438,6 +3465,7 @@ function intersoccer_render_other_events_page() {
                 if (function_exists('intersoccer_rosters_print_export_filter_hidden_fields')) {
                     intersoccer_rosters_print_export_filter_hidden_fields([
                         'season' => $selected_season,
+                        'product_id' => $selected_product_id > 0 ? (string) $selected_product_id : '',
                         'product_name' => $selected_product_name,
                     ]);
                 }
@@ -3463,16 +3491,19 @@ function intersoccer_render_other_events_page() {
                 </div>
                 <div class="filter-group">
                     <label><?php _e('Event', 'intersoccer-reports-rosters'); ?></label>
-                    <select name="product_name" onchange="this.form.submit()">
+                    <select name="product_id" onchange="this.form.submit()">
                         <option value=""><?php _e('All Events', 'intersoccer-reports-rosters'); ?></option>
-                        <?php foreach ($all_product_names as $product_name): ?>
-                            <option value="<?php echo esc_attr($product_name); ?>" <?php selected($selected_product_name, $product_name); ?>>
-                                <?php echo esc_html($product_name); ?>
+                        <?php
+                        asort($all_products, SORT_NATURAL | SORT_FLAG_CASE);
+                        foreach ($all_products as $product_id => $product_label) :
+                            ?>
+                            <option value="<?php echo esc_attr((string) $product_id); ?>" <?php selected($selected_product_id, (int) $product_id); ?>>
+                                <?php echo esc_html($product_label); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <?php if ($selected_season || $selected_product_name): ?>
+                <?php if ($selected_season || $selected_product_id || $selected_product_name): ?>
                 <div class="filter-group">
                     <a href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-other-events&clear_isrr_filters=1')); ?>" class="button button-secondary">
                         ↻ <?php _e('Clear Filters', 'intersoccer-reports-rosters'); ?>
@@ -3485,7 +3516,7 @@ function intersoccer_render_other_events_page() {
         <div class="sports-rosters">
             <?php if (empty($grouped_events)): ?>
                 <?php
-                $has_active_filters = $selected_season || $selected_product_name;
+                $has_active_filters = $selected_season || $selected_product_id || $selected_product_name;
                 $reconcile_url = esc_url(wp_nonce_url(admin_url('admin.php?page=intersoccer-other-events&action=reconcile'), 'intersoccer_reconcile'));
                 $clear_filters_url_oe = esc_url(admin_url('admin.php?page=intersoccer-other-events&clear_isrr_filters=1'));
                 if ($has_active_filters) {
@@ -3578,7 +3609,8 @@ function intersoccer_render_other_events_page() {
                                                     $view_url = admin_url('admin.php?page=intersoccer-roster-details&event_signature=' . urlencode($event['event_signature']));
                                                 } else {
                                                     $variation_ids_str = is_array($event['variation_ids']) ? implode(',', $event['variation_ids']) : (string) $event['variation_ids'];
-                                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_ids=' . urlencode($variation_ids_str) . '&product_name=' . urlencode($event['product_name']) . '&age_group=' . urlencode($event['age_group']) . '&times=' . urlencode($event['times']) . '&season=' . urlencode($season));
+                                                    $event_product_id = isset($event['product_id']) ? (int) $event['product_id'] : 0;
+                                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_ids=' . urlencode($variation_ids_str) . '&product_id=' . urlencode((string) $event_product_id) . '&age_group=' . urlencode($event['age_group']) . '&times=' . urlencode($event['times']) . '&season=' . urlencode($season));
                                                 }
                                                 ?>
                                                 <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
@@ -3626,22 +3658,36 @@ function intersoccer_render_all_rosters_page() {
 
     delete_transient('intersoccer_rosters_cache');
 
-    $product_names_query = "SELECT DISTINCT product_name FROM $rosters_table WHERE product_name IS NOT NULL" . intersoccer_roster_placeholder_where();
+    $product_rows_query = "SELECT product_id, MAX(product_name) as product_name FROM $rosters_table WHERE product_id > 0" . intersoccer_roster_placeholder_where();
 
     // Add coach venue filtering if user is a coach
     if ($is_coach && !empty($coach_accessible_venues)) {
         $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
-        $product_names_query .= " AND venue IN ($placeholders)";
-        $product_names = $wpdb->get_col($wpdb->prepare($product_names_query, $coach_accessible_venues));
+        $product_rows_query .= " AND venue IN ($placeholders)";
+        $product_rows = $wpdb->get_results($wpdb->prepare($product_rows_query . ' GROUP BY product_id ORDER BY product_name', $coach_accessible_venues), ARRAY_A);
     } elseif ($is_coach && empty($coach_accessible_venues)) {
-        // Coach has no venue assignments, show no products
-        $product_names = [];
+        $product_rows = [];
     } else {
-        $product_names = $wpdb->get_col($product_names_query);
+        $product_rows = $wpdb->get_results($product_rows_query . ' GROUP BY product_id ORDER BY product_name', ARRAY_A);
     }
 
-    $product_names = array_filter($product_names); // Remove any null values
-    sort($product_names);
+    $all_roster_products = [];
+    foreach ($product_rows as $row) {
+        $pid = (int) ($row['product_id'] ?? 0);
+        if ($pid <= 0) {
+            continue;
+        }
+        $canon = function_exists('intersoccer_wpml_canonical_product_id')
+            ? (int) intersoccer_wpml_canonical_product_id($pid)
+            : $pid;
+        $label = function_exists('intersoccer_roster_listing_product_label')
+            ? intersoccer_roster_listing_product_label($canon, (string) ($row['product_name'] ?? ''))
+            : (string) ($row['product_name'] ?? '');
+        if (!isset($all_roster_products[$canon])) {
+            $all_roster_products[$canon] = $label;
+        }
+    }
+    asort($all_roster_products, SORT_NATURAL | SORT_FLAG_CASE);
 
     ?>
     <div class="wrap intersoccer-rosters-page">
@@ -3655,7 +3701,7 @@ function intersoccer_render_all_rosters_page() {
             </div>
         </div>
         
-        <?php if (empty($product_names)) : ?>
+        <?php if (empty($all_roster_products)) : ?>
             <?php
             $reconcile_url = wp_nonce_url(admin_url('admin.php?page=intersoccer-all-rosters&action=reconcile'), 'intersoccer_reconcile');
             intersoccer_render_empty_state([
@@ -3679,27 +3725,29 @@ function intersoccer_render_all_rosters_page() {
             
             <div class="sports-rosters">
                 <?php
-                foreach ($product_names as $product_name) {
-                    // Group ONLY by event_signature to ensure French and English versions combine
-                    // Use MAX() for non-aggregated fields to get a representative value when multiple exist
+                foreach ($all_roster_products as $filter_product_id => $product_label) {
+                    $variant_ids = function_exists('intersoccer_roster_wpml_product_id_variants')
+                        ? intersoccer_roster_wpml_product_id_variants((int) $filter_product_id)
+                        : [(int) $filter_product_id];
+                    if ($variant_ids === []) {
+                        $variant_ids = [(int) $filter_product_id];
+                    }
+                    $id_placeholders = implode(',', array_fill(0, count($variant_ids), '%d'));
                     $query = "SELECT MAX(variation_id) as variation_id, MAX(product_name) as product_name, MAX(product_id) as product_id, MAX(venue) as venue, MAX(age_group) as age_group, event_signature, COUNT(DISTINCT order_item_id) as total_players
                               FROM $rosters_table
-                              WHERE product_name = %s" . intersoccer_roster_placeholder_where();
+                              WHERE product_id IN ($id_placeholders)" . intersoccer_roster_placeholder_where();
 
                     // Add coach venue filtering if user is a coach
                     if ($is_coach && !empty($coach_accessible_venues)) {
-                        $placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
-                        $query .= " AND venue IN ($placeholders)";
-                        $query_args = array_merge([$product_name], $coach_accessible_venues);
+                        $venue_placeholders = implode(',', array_fill(0, count($coach_accessible_venues), '%s'));
+                        $query .= " AND venue IN ($venue_placeholders)";
+                        $query_args = array_merge($variant_ids, $coach_accessible_venues);
                     } elseif ($is_coach && empty($coach_accessible_venues)) {
-                        // Coach has no venue assignments, skip this product
                         continue;
                     } else {
-                        $query_args = [$product_name];
+                        $query_args = $variant_ids;
                     }
 
-                    // Group ONLY by event_signature to ensure French and English versions combine
-                    // event_signature already includes all necessary identifying information
                     $query .= " GROUP BY event_signature
                                ORDER BY product_name, venue, age_group";
 
@@ -3709,10 +3757,9 @@ function intersoccer_render_all_rosters_page() {
                     );
                     
                     if (!empty($groups)) {
-                        // Normalize product name to English for display
-                        $display_product_name = function_exists('intersoccer_get_english_product_name') 
-                            ? intersoccer_get_english_product_name($product_name, 0)
-                            : $product_name;
+                        $display_product_name = function_exists('intersoccer_roster_listing_product_label')
+                            ? intersoccer_roster_listing_product_label((int) $filter_product_id, $product_label)
+                            : $product_label;
                         
                         echo '<div class="roster-season">';
                         echo '<div class="season-header">';
@@ -3742,9 +3789,9 @@ function intersoccer_render_all_rosters_page() {
                             }
                             
                             // Normalize product name to English for display
-                            $group_product_name = isset($group['product_name']) ? $group['product_name'] : $product_name;
-                            $display_group_product_name = function_exists('intersoccer_get_english_product_name') 
-                                ? intersoccer_get_english_product_name($group_product_name, $group['product_id'] ?? 0)
+                            $group_product_name = isset($group['product_name']) ? $group['product_name'] : $product_label;
+                            $display_group_product_name = function_exists('intersoccer_roster_listing_product_label')
+                                ? intersoccer_roster_listing_product_label((int) ($group['product_id'] ?? $filter_product_id), $group_product_name)
                                 : $group_product_name;
                             
                             echo '<tr>';

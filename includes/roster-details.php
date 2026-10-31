@@ -473,7 +473,10 @@ function intersoccer_render_roster_details_page() {
     global $wpdb;
     $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
     // Get query parameters
-    $product_id = isset($_GET['product_id']) ? intval($_GET['product_id']) : 0;
+    $product_id = isset($_GET['product_id']) ? absint($_GET['product_id']) : 0;
+    if ($product_id > 0 && function_exists('intersoccer_wpml_canonical_product_id')) {
+        $product_id = (int) intersoccer_wpml_canonical_product_id($product_id);
+    }
     $variation_id = isset($_GET['variation_id']) ? intval($_GET['variation_id']) : 0;
     $variation_ids_str = isset($_GET['variation_ids']) ? sanitize_text_field($_GET['variation_ids']) : '';
     $variation_ids = $variation_ids_str ? intersoccer_roster_parse_csv_int_ids($variation_ids_str) : [];
@@ -576,6 +579,7 @@ function intersoccer_render_roster_details_page() {
         $result = $service->getRosterContext(
             [
                 'product_id' => $product_id,
+                'product_name' => $product_name,
                 'variation_id' => $variation_id,
                 'variation_ids' => $variation_ids,
                 'order_item_ids' => $order_item_ids,
@@ -677,16 +681,23 @@ function intersoccer_render_roster_details_page() {
             $query_params[] = 'Tournament';
         }
 
-        if ($product_id > 0) {
-            $where_clauses[] = "r.product_id = %d";
-            $query_params[] = $product_id;
-        }
-
-        if ($product_name) {
-            $where_clauses[] = "r.product_name = %s";
-            $query_params[] = $product_name;
-            if ($event_dates && $event_dates !== 'N/A') {
-                $where_clauses[] = "r.event_dates = %s";
+        if ($product_id > 0 || $product_name) {
+            if (function_exists('intersoccer_roster_append_product_id_where_clause')) {
+                intersoccer_roster_append_product_id_where_clause(
+                    $where_clauses,
+                    $query_params,
+                    $product_id,
+                    $product_name
+                );
+            } elseif ($product_id > 0) {
+                $where_clauses[] = 'r.product_id = %d';
+                $query_params[] = $product_id;
+            } elseif ($product_name) {
+                $where_clauses[] = 'r.product_name = %s';
+                $query_params[] = $product_name;
+            }
+            if ($product_name && $event_dates && $event_dates !== 'N/A') {
+                $where_clauses[] = 'r.event_dates = %s';
                 $query_params[] = $event_dates;
             }
         }
@@ -816,7 +827,7 @@ function intersoccer_render_roster_details_page() {
         SELECT DISTINCT 
             r.product_id,
             r.variation_id,
-            r.product_name,
+            MAX(r.product_name) AS product_name,
             r.venue,
             r.age_group,
             r.activity_type,
@@ -832,7 +843,7 @@ function intersoccer_render_roster_details_page() {
         AND r.activity_type = %s
         AND r.girls_only = %d
         AND r.variation_id != %d
-        GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season, r.girls_only
+        GROUP BY r.product_id, r.variation_id, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season, r.girls_only
         ORDER BY r.product_name, r.venue, r.age_group
     ", $base_roster->activity_type, $base_roster_girls_only, $variation_id);
 
@@ -842,7 +853,7 @@ function intersoccer_render_roster_details_page() {
         SELECT DISTINCT 
             r.product_id,
             r.variation_id,
-            r.product_name,
+            MAX(r.product_name) AS product_name,
             r.venue,
             r.age_group,
             r.activity_type,
@@ -858,7 +869,7 @@ function intersoccer_render_roster_details_page() {
         AND r.activity_type = %s
         AND r.girls_only != %d
         AND r.variation_id != %d
-        GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season, r.girls_only
+        GROUP BY r.product_id, r.variation_id, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season, r.girls_only
         ORDER BY r.product_name, r.venue, r.age_group
     ", $base_roster->activity_type, $base_roster_girls_only, $variation_id);
 

@@ -972,7 +972,15 @@ class RosterBuilder {
     private function extractOrderItemData(\WC_Order $order, $item_id, \WC_Order_Item_Product $item) {
         $product = $item->get_product();
         $variation_id = $item->get_variation_id();
-        
+        $order_line_name = '';
+        if (is_callable([$item, 'get_name'])) {
+            try {
+                $order_line_name = trim((string) $item->get_name());
+            } catch (\Throwable $e) {
+                $order_line_name = '';
+            }
+        }
+
         // Base order data
         $order_data = [
             'order_id' => $order->get_id(),
@@ -981,11 +989,18 @@ class RosterBuilder {
             'variation_id' => $variation_id ?: 0,
             'customer_id' => $order->get_customer_id(),
             'order_status' => $order->get_status(),
+            'order_line_name' => $order_line_name,
             'product_name' => ($product && is_object($product) && method_exists($product, 'get_name'))
                 ? (string) $product->get_name()
                 : (
                     !$product && (int) $item->get_product_id() <= 0 && is_callable([$item, 'get_name'])
-                        ? (string) $item->get_name()
+                        ? (function () use ($item) {
+                            try {
+                                return (string) $item->get_name();
+                            } catch (\Throwable $e) {
+                                return '';
+                            }
+                        })()
                         : ''
                 ),
         ];
@@ -1020,7 +1035,7 @@ class RosterBuilder {
         if ((int) ($order_data['product_id'] ?? 0) <= 0) {
             $meta_product_id = function_exists('wc_get_order_item_meta')
                 ? (int) wc_get_order_item_meta($item_id, '_product_id', true)
-                : (int) $item->get_meta('_product_id', true);
+                : (int) $this->readOrderItemMeta($item, '_product_id');
             if ($meta_product_id > 0) {
                 $order_data['product_id'] = $meta_product_id;
             }
@@ -1028,18 +1043,18 @@ class RosterBuilder {
         if ((int) ($order_data['variation_id'] ?? 0) <= 0) {
             $meta_variation_id = function_exists('wc_get_order_item_meta')
                 ? (int) wc_get_order_item_meta($item_id, '_variation_id', true)
-                : (int) $item->get_meta('_variation_id', true);
+                : (int) $this->readOrderItemMeta($item, '_variation_id');
             if ($meta_variation_id > 0) {
                 $order_data['variation_id'] = $meta_variation_id;
             }
             if ((int) ($order_data['variation_id'] ?? 0) <= 0) {
-                $meta_variation_id_alt = (int) $item->get_meta('Variation ID', true);
+                $meta_variation_id_alt = (int) $this->readOrderItemMeta($item, 'Variation ID');
                 if ($meta_variation_id_alt > 0) {
                     $order_data['variation_id'] = $meta_variation_id_alt;
                 }
             }
             if ((int) ($order_data['variation_id'] ?? 0) <= 0) {
-                $meta_variation_id_slug = (int) $item->get_meta('variation_id', true);
+                $meta_variation_id_slug = (int) $this->readOrderItemMeta($item, 'variation_id');
                 if ($meta_variation_id_slug > 0) {
                     $order_data['variation_id'] = $meta_variation_id_slug;
                 }
@@ -1526,6 +1541,10 @@ class RosterBuilder {
                 : $this->signature_generator->generate($event_data_to_normalize);
         }
 
+        if (function_exists('intersoccer_roster_apply_post_signature_roster_storage_fields')) {
+            $roster_data = intersoccer_roster_apply_post_signature_roster_storage_fields($roster_data);
+        }
+
         // Camps: English weekday list + day_presence JSON (canonical storage for roster UI and reports).
         $activity_lower = strtolower(trim((string) ($roster_data['activity_type'] ?? '')));
         if ($activity_lower === 'camp') {
@@ -1607,6 +1626,8 @@ class RosterBuilder {
             if (function_exists('intersoccer_roster_apply_canonical_write_fields')) {
                 $roster_data = intersoccer_roster_apply_canonical_write_fields($roster_data);
             }
+
+        unset($roster_data['order_line_name']);
 
         return $roster_data;
     }
@@ -1787,6 +1808,22 @@ class RosterBuilder {
     }
 
     /**
+     * @param \WC_Order_Item_Product|object $item
+     * @param string $key
+     * @return mixed
+     */
+    private function readOrderItemMeta($item, $key) {
+        if (!is_object($item) || !method_exists($item, 'get_meta')) {
+            return '';
+        }
+        try {
+            return $item->get_meta($key, true);
+        } catch (\Throwable $e) {
+            return '';
+        }
+    }
+
+    /**
      * Prefer English / default-language product title for deleted catalogue lines.
      *
      * @return array{product_name:string,name_not_english:bool}
@@ -1838,6 +1875,17 @@ class RosterBuilder {
             }
         }
         $english_confirmed = $wpml_resolved && $stored !== '';
+        $line_fallback = trim((string) ($roster_data['order_line_name'] ?? ''));
+        if ($line_fallback === '' && !empty($roster_data['order_item_id'])
+            && function_exists('intersoccer_roster_order_line_name_by_item_id')) {
+            $line_fallback = trim((string) intersoccer_roster_order_line_name_by_item_id((int) $roster_data['order_item_id']));
+        }
+        if ($stored === '' && $line_fallback !== '') {
+            return [
+                'product_name' => $line_fallback,
+                'name_not_english' => true,
+            ];
+        }
         return [
             'product_name' => $stored,
             'name_not_english' => $stored !== '' && !$english_confirmed,
@@ -2315,14 +2363,8 @@ class RosterBuilder {
             }
         }
 
-        if (trim((string) ($roster_data['product_name'] ?? '')) === '' && $product_id > 0 && function_exists('wc_get_product')) {
-            $product = wc_get_product($product_id);
-            if ($product && method_exists($product, 'get_name')) {
-                $name = trim((string) $product->get_name());
-                if ($name !== '') {
-                    $roster_data['product_name'] = $name;
-                }
-            }
+        if (trim((string) ($roster_data['product_name'] ?? '')) === '' && function_exists('intersoccer_roster_apply_product_name_for_storage')) {
+            $roster_data = intersoccer_roster_apply_product_name_for_storage($roster_data);
         }
 
         return $roster_data;

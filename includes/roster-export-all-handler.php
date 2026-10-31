@@ -55,9 +55,30 @@ function intersoccer_export_other_events_signatures_sql(array $filter, array $co
         $sql .= ' AND venue = %s';
         $params[] = $filter['venue'];
     }
-    if (!empty($filter['product_name'])) {
-        $sql .= ' AND product_name = %s';
-        $params[] = $filter['product_name'];
+    if (!empty($filter['product_id'])) {
+        $filter_pid = function_exists('intersoccer_wpml_canonical_product_id')
+            ? (int) intersoccer_wpml_canonical_product_id((int) $filter['product_id'])
+            : (int) $filter['product_id'];
+        $ids = function_exists('intersoccer_roster_wpml_product_id_variants')
+            ? intersoccer_roster_wpml_product_id_variants($filter_pid)
+            : [$filter_pid];
+        if ($ids !== []) {
+            $ph = implode(',', array_fill(0, count($ids), '%d'));
+            $sql .= " AND product_id IN ({$ph})";
+            $params = array_merge($params, $ids);
+        }
+    } elseif (!empty($filter['product_name'])) {
+        $legacy_ids = function_exists('intersoccer_roster_product_ids_for_stored_name')
+            ? intersoccer_roster_product_ids_for_stored_name((string) $filter['product_name'])
+            : [];
+        if ($legacy_ids !== []) {
+            $ph = implode(',', array_fill(0, count($legacy_ids), '%d'));
+            $sql .= " AND product_id IN ({$ph})";
+            $params = array_merge($params, $legacy_ids);
+        } else {
+            $sql .= ' AND product_name = %s';
+            $params[] = $filter['product_name'];
+        }
     }
     if (!empty($context['is_coach']) && !empty($context['accessible_venues'])) {
         $ph = implode(',', array_fill(0, count($context['accessible_venues']), '%s'));
@@ -83,9 +104,30 @@ function intersoccer_export_all_rosters_signatures_sql(array $filter, array $con
     $sql = "SELECT DISTINCT event_signature FROM {$table} WHERE event_signature != ''";
     $params = [];
     $sql .= intersoccer_export_safe_placeholder_sql();
-    if (!empty($filter['product_name'])) {
-        $sql .= ' AND product_name = %s';
-        $params[] = $filter['product_name'];
+    if (!empty($filter['product_id'])) {
+        $filter_pid = function_exists('intersoccer_wpml_canonical_product_id')
+            ? (int) intersoccer_wpml_canonical_product_id((int) $filter['product_id'])
+            : (int) $filter['product_id'];
+        $ids = function_exists('intersoccer_roster_wpml_product_id_variants')
+            ? intersoccer_roster_wpml_product_id_variants($filter_pid)
+            : [$filter_pid];
+        if ($ids !== []) {
+            $ph = implode(',', array_fill(0, count($ids), '%d'));
+            $sql .= " AND product_id IN ({$ph})";
+            $params = array_merge($params, $ids);
+        }
+    } elseif (!empty($filter['product_name'])) {
+        $legacy_ids = function_exists('intersoccer_roster_product_ids_for_stored_name')
+            ? intersoccer_roster_product_ids_for_stored_name((string) $filter['product_name'])
+            : [];
+        if ($legacy_ids !== []) {
+            $ph = implode(',', array_fill(0, count($legacy_ids), '%d'));
+            $sql .= " AND product_id IN ({$ph})";
+            $params = array_merge($params, $legacy_ids);
+        } else {
+            $sql .= ' AND product_name = %s';
+            $params[] = $filter['product_name'];
+        }
     }
     if (!empty($context['is_coach']) && !empty($context['accessible_venues'])) {
         $ph = implode(',', array_fill(0, count($context['accessible_venues']), '%s'));
@@ -104,7 +146,7 @@ function intersoccer_export_all_rosters_signatures_sql(array $filter, array $con
 /**
  * @param string[] $signatures
  */
-function intersoccer_export_stream_csv_from_signatures(array $signatures, string $slug): void {
+function intersoccer_export_stream_csv_from_signatures(array $signatures, string $slug, array $filter = []): void {
     if ($signatures === []) {
         wp_die(esc_html__('No roster data found for export.', 'intersoccer-reports-rosters'));
     }
@@ -117,11 +159,15 @@ function intersoccer_export_stream_csv_from_signatures(array $signatures, string
     $chunks = array_chunk($signatures, $chunk_size);
     $all_rows = [];
     foreach ($chunks as $chunk) {
-        $part = $export_service->getExportRows([
+        $export_filters = [
             'use_fields' => true,
             'event_signatures' => $chunk,
             'activity_types' => $activity_types,
-        ]);
+        ];
+        if (!empty($filter['season'])) {
+            $export_filters['season'] = (string) $filter['season'];
+        }
+        $part = $export_service->getExportRows($export_filters);
         if (is_array($part) && $part !== []) {
             $all_rows = array_merge($all_rows, $part);
         }
@@ -218,10 +264,12 @@ function intersoccer_roster_export_listing_context_from_globals(): array {
  */
 function intersoccer_roster_export_parse_filter_post(array $raw): array {
     $out = [];
-    $keys = ['season', 'venue', 'camp_terms', 'course_day', 'age_group', 'city', 'status', 'type', 'consolidated', 'product_name', 'times', 'girls_only_mode'];
+    $keys = ['season', 'venue', 'camp_terms', 'course_day', 'age_group', 'city', 'status', 'type', 'consolidated', 'product_name', 'product_id', 'times', 'girls_only_mode'];
     foreach ($keys as $k) {
         if (isset($raw[$k]) && $raw[$k] !== '') {
-            $out[$k] = sanitize_text_field((string) $raw[$k]);
+            $out[$k] = $k === 'product_id'
+                ? (string) absint($raw[$k])
+                : sanitize_text_field((string) $raw[$k]);
         }
     }
 
@@ -323,7 +371,7 @@ function intersoccer_export_all_rosters_handler(): void {
         wp_die(esc_html__('No roster groups match the current filters for export.', 'intersoccer-reports-rosters'));
     }
 
-    intersoccer_export_stream_csv_from_signatures($signatures, $export_type);
+    intersoccer_export_stream_csv_from_signatures($signatures, $export_type, $filter);
 }
 
 add_action('wp_ajax_intersoccer_export_all_rosters', 'intersoccer_export_all_rosters_handler');

@@ -102,6 +102,11 @@
             <file>tests/Unit/RosterDaysUnknownTest.php</file>
             <file>tests/Reports/OrderMetaFieldMapTest.php</file>
             <file>tests/Services/RosterBuilderSingleDayTest.php</file>
+            <file>tests/Services/RosterOrderLineProductNameTest.php</file>
+            <file>tests/Services/RosterProductIdQueryLevelTest.php</file>
+            <file>tests/Services/RosterDetailsServiceProductFilterTest.php</file>
+            <file>tests/Services/RosterOrderLineSeasonFacetTest.php</file>
+            <file>tests/Services/RosterCourseExportSeasonColumnTest.php</file>
             <file>tests/Services/DataValidatorSingleDayUnknownTest.php</file>
             <file>tests/Unit/RosterCampBookingDisplayTest.php</file>
             <file>tests/Unit/BookingTypeNormalizerTest.php</file>

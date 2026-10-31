@@ -1252,6 +1252,23 @@ if (!function_exists('wc_get_product')) {
     }
 }
 
+if (!class_exists('WC_Order_Factory')) {
+    class WC_Order_Factory {
+        /**
+         * @param int|string $item_id
+         * @return mixed
+         */
+        public static function get_order_item($item_id) {
+            intersoccer_rr_test_api_call_count('WC_Order_Factory::get_order_item');
+            global $intersoccer_test_wc_order_factory_get_order_item_callback;
+            if (is_callable($intersoccer_test_wc_order_factory_get_order_item_callback)) {
+                return call_user_func($intersoccer_test_wc_order_factory_get_order_item_callback, $item_id);
+            }
+            return false;
+        }
+    }
+}
+
 if (!function_exists('wc_get_order_item_meta')) {
     function wc_get_order_item_meta($item_id, $key, $single = true) {
         intersoccer_rr_test_api_call_count('wc_get_order_item_meta');
