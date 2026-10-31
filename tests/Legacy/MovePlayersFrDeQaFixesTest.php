@@ -216,7 +216,13 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
             return (int) $id === self::ORDER_ID ? $order : false;
         };
 
-        $make_variation = static function (int $vid, array $attrs) {
+        $source_attrs = (array) ($options['source_attrs'] ?? [
+            'attribute_pa_intersoccer-venues' => 'geneva-college-varembe',
+            'attribute_pa_girls-only' => 'no',
+        ]);
+        $variation_meta = (array) ($options['variation_meta'] ?? []);
+
+        $make_variation = static function (int $vid, array $attrs) use ($variation_meta) {
             $v = Mockery::mock(\WC_Product_Variation::class);
             $v->shouldReceive('get_id')->andReturn($vid);
             $v->shouldReceive('get_parent_id')->andReturn(self::PARENT_ID);
@@ -244,7 +250,14 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
             $v->shouldReceive('is_type')->with('variation')->andReturn(true);
             $v->shouldReceive('get_stock_status')->andReturn('instock');
             $v->shouldReceive('set_stock_quantity')->never();
-            $v->shouldReceive('get_meta')->andReturn('');
+            $v->shouldReceive('get_meta')->andReturnUsing(static function ($key, $single = true) use ($variation_meta) {
+                $key = (string) $key;
+                if (array_key_exists($key, $variation_meta)) {
+                    return $variation_meta[$key];
+                }
+
+                return '';
+            });
 
             return $v;
         };
@@ -254,13 +267,19 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
         $parent->shouldReceive('get_catalog_visibility')->andReturn('visible');
         $parent->shouldReceive('get_meta')->with('capacity', true)->andReturn('');
         $parent->shouldReceive('get_name')->andReturn('Camp parent');
-        $parent->shouldReceive('get_attribute')->andReturn('');
-        $parent->shouldReceive('get_attributes')->andReturn([]);
+        $parent_attrs = (array) ($options['parent_attrs'] ?? []);
+        $parent->shouldReceive('get_attribute')->andReturnUsing(static function ($name) use ($parent_attrs) {
+            if (isset($parent_attrs[$name])) {
+                return (string) $parent_attrs[$name];
+            }
+            $pa_key = 'pa_' . ltrim((string) $name, 'pa_');
+            if (isset($parent_attrs[$pa_key])) {
+                return (string) $parent_attrs[$pa_key];
+            }
 
-        $source_attrs = (array) ($options['source_attrs'] ?? [
-            'attribute_pa_intersoccer-venues' => 'geneva-college-varembe',
-            'attribute_pa_girls-only' => 'no',
-        ]);
+            return '';
+        });
+        $parent->shouldReceive('get_attributes')->andReturn([]);
 
         $intersoccer_test_wc_get_product_callback = static function ($id) use (
             $make_variation,
@@ -4378,6 +4397,191 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
                 'Days Selected' => 'Monday, Tuesday, Wednesday, Thursday, Friday',
             ],
             'roster_row' => ['booking_type' => ''],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+    }
+
+    public function test_camp_four_day_parent_all_days_selected_move_to_full_week_proceeds(): void {
+        $four_days = 'Monday, Tuesday, Wednesday, Thursday';
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9762, 'slug' => 'full-week', 'name' => 'Full Week'],
+                    'single-days' => (object) ['term_id' => 9763, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                ],
+            ],
+            [
+                9762 => (object) ['term_id' => 9762, 'slug' => 'full-week', 'name' => 'Full Week'],
+                9763 => (object) ['term_id' => 9763, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'source_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'parent_attrs' => [
+                'pa_days-of-week' => $four_days,
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Four day parent full selection',
+                'Days Selected' => $four_days,
+                'attribute_pa_booking-type' => 'full-week',
+                '_intersoccer_canonical_booking_type' => 'full-week',
+            ],
+            'roster_row' => ['booking_type' => 'Full Week'],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+    }
+
+    public function test_camp_four_day_parent_all_days_selected_move_to_single_days_is_blocked(): void {
+        $four_days = 'Monday, Tuesday, Wednesday, Thursday';
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9764, 'slug' => 'full-week', 'name' => 'Full Week'],
+                    'single-days' => (object) ['term_id' => 9765, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                ],
+            ],
+            [
+                9764 => (object) ['term_id' => 9764, 'slug' => 'full-week', 'name' => 'Full Week'],
+                9765 => (object) ['term_id' => 9765, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'source_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'single-days',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'parent_attrs' => [
+                'pa_days-of-week' => $four_days,
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Four day parent blocks single target',
+                'Days Selected' => $four_days,
+                'attribute_pa_booking-type' => 'full-week',
+                '_intersoccer_canonical_booking_type' => 'full-week',
+            ],
+            'roster_row' => ['booking_type' => 'Full Week'],
+        ]);
+        $this->seedRosterHistoryMetaForBlockTest();
+        $this->assertBookingTypeMismatchHardBlockNoWrites(['confirm_warnings' => '1']);
+    }
+
+    public function test_camp_four_day_parent_three_days_selected_blocks_full_week_target(): void {
+        $four_days = 'Monday, Tuesday, Wednesday, Thursday';
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9766, 'slug' => 'full-week', 'name' => 'Full Week'],
+                    'single-days' => (object) ['term_id' => 9767, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                ],
+            ],
+            [
+                9766 => (object) ['term_id' => 9766, 'slug' => 'full-week', 'name' => 'Full Week'],
+                9767 => (object) ['term_id' => 9767, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'parent_attrs' => [
+                'pa_days-of-week' => $four_days,
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Three of four offered days',
+                'Days Selected' => 'Monday, Tuesday, Wednesday',
+            ],
+            'roster_row' => ['booking_type' => ''],
+        ]);
+        $this->seedRosterHistoryMetaForBlockTest();
+        $this->assertBookingTypeMismatchHardBlockNoWrites(['confirm_warnings' => '1']);
+    }
+
+    public function test_camp_variation_days_used_when_parent_has_none(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'single-days' => (object) ['term_id' => 9768, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                ],
+            ],
+            [9768 => (object) ['term_id' => 9768, 'slug' => 'single-days', 'name' => 'Single Day(s)']]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'source_attrs' => [
+                'pa_days-of-week' => 'Tuesday, Thursday',
+                'attribute_pa_booking-type' => 'single-days',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'single-days',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Variation offered days',
+                'Days Selected' => 'Tuesday',
+            ],
+            'roster_row' => ['booking_type' => ''],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+    }
+
+    public function test_fr_twin_camp_parent_days_of_week_resolved_via_mapped_parent(): void {
+        $four_days = 'Monday, Tuesday, Wednesday, Thursday';
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9769, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [9769 => (object) ['term_id' => 9769, 'slug' => 'full-week', 'name' => 'Full Week']]
+        );
+        $this->stubWpmlEnTerms([self::SOURCE_VAR_FR_TWIN => self::SOURCE_VAR]);
+        $this->installMoveWorld([
+            'source_variation_id' => self::SOURCE_VAR_FR_TWIN,
+            'source_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'parent_attrs' => [
+                'pa_days-of-week' => $four_days,
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'FR twin parent days',
+                'Days Selected' => $four_days,
+                'attribute_pa_booking-type' => 'full-week',
+                '_intersoccer_canonical_booking_type' => 'full-week',
+            ],
+            'roster_row' => ['booking_type' => 'Full Week'],
         ]);
 
         $response = $this->invokeMoveAjax();

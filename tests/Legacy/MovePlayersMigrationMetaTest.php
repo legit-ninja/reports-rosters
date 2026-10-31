@@ -1900,6 +1900,183 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertSame('unknown', $outcome['kind']);
     }
 
+    /**
+     * @param array<string,string> $parent_attrs
+     * @param array<string,string> $variation_attrs
+     * @param array<string,string> $variation_meta
+     */
+    private function stubCampOfferedDaysProducts(
+        int $item_id,
+        int $variation_id,
+        int $parent_id,
+        array $parent_attrs = [],
+        array $variation_attrs = [],
+        array $variation_meta = [],
+        ?int $fr_twin_variation_id = null
+    ): void {
+        global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_get_product_callback;
+
+        $line_variation_id = $fr_twin_variation_id ?? $variation_id;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [
+            '_variation_id' => (string) $line_variation_id,
+            '_product_id' => (string) $parent_id,
+        ];
+
+        if ($fr_twin_variation_id !== null) {
+            $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$args) use ($fr_twin_variation_id, $variation_id) {
+                if ($hook === 'wpml_default_language') {
+                    return 'en';
+                }
+                if ($hook === 'wpml_object_id') {
+                    $id = (int) $value;
+                    if ($id === $fr_twin_variation_id) {
+                        return $variation_id;
+                    }
+                }
+
+                return $value;
+            };
+        }
+
+        $make_variation = static function (int $vid) use ($parent_id, $variation_attrs, $variation_meta) {
+            $variation = Mockery::mock('WC_Product_Variation');
+            $variation->shouldReceive('get_id')->andReturn($vid);
+            $variation->shouldReceive('get_parent_id')->andReturn($parent_id);
+            $variation->shouldReceive('get_attribute')->andReturnUsing(static function ($name) use ($variation_attrs) {
+                if (isset($variation_attrs[$name])) {
+                    return $variation_attrs[$name];
+                }
+                $pa_key = 'pa_' . ltrim((string) $name, 'pa_');
+                if (isset($variation_attrs[$pa_key])) {
+                    return $variation_attrs[$pa_key];
+                }
+
+                return '';
+            });
+            $variation->shouldReceive('get_meta')->andReturnUsing(static function ($key) use ($variation_meta) {
+                $key = (string) $key;
+                return $variation_meta[$key] ?? '';
+            });
+
+            return $variation;
+        };
+
+        $parent = Mockery::mock('WC_Product');
+        $parent->shouldReceive('get_id')->andReturn($parent_id);
+        $parent->shouldReceive('get_attribute')->andReturnUsing(static function ($name) use ($parent_attrs) {
+            if (isset($parent_attrs[$name])) {
+                return $parent_attrs[$name];
+            }
+            $pa_key = 'pa_' . ltrim((string) $name, 'pa_');
+            if (isset($parent_attrs[$pa_key])) {
+                return $parent_attrs[$pa_key];
+            }
+
+            return '';
+        });
+
+        $intersoccer_test_wc_get_product_callback = static function ($id) use (
+            $make_variation,
+            $parent,
+            $parent_id,
+            $variation_id,
+            $fr_twin_variation_id,
+            $line_variation_id
+        ) {
+            $id = (int) $id;
+            if ($id === $parent_id) {
+                return $parent;
+            }
+            if ($id === $variation_id || $id === $line_variation_id || ($fr_twin_variation_id !== null && $id === $fr_twin_variation_id)) {
+                return $make_variation($id);
+            }
+
+            return false;
+        };
+    }
+
+    public function test_offered_camp_weekdays_prefers_parent_days_of_week(): void {
+        $item_id = 88410;
+        $four_days = 'Monday, Tuesday, Wednesday, Thursday';
+        $this->stubCampOfferedDaysProducts(
+            $item_id,
+            884101,
+            884100,
+            ['pa_days-of-week' => $four_days],
+            ['pa_days-of-week' => 'Friday']
+        );
+
+        $this->assertSame(
+            ['Monday', 'Tuesday', 'Wednesday', 'Thursday'],
+            intersoccer_migration_move_order_item_offered_camp_weekdays($item_id)
+        );
+    }
+
+    public function test_offered_camp_weekdays_uses_variation_when_parent_empty(): void {
+        $item_id = 88411;
+        $this->stubCampOfferedDaysProducts(
+            $item_id,
+            884111,
+            884110,
+            [],
+            ['pa_days-of-week' => 'Tuesday, Thursday']
+        );
+
+        $this->assertSame(
+            ['Tuesday', 'Thursday'],
+            intersoccer_migration_move_order_item_offered_camp_weekdays($item_id)
+        );
+    }
+
+    public function test_offered_camp_weekdays_fr_twin_reads_parent_via_resolved_variation(): void {
+        $item_id = 88412;
+        $four_days = 'Monday, Tuesday, Wednesday, Thursday';
+        $this->stubCampOfferedDaysProducts(
+            $item_id,
+            884121,
+            884120,
+            ['pa_days-of-week' => $four_days],
+            [],
+            [],
+            884122
+        );
+
+        $this->assertSame(
+            ['Monday', 'Tuesday', 'Wednesday', 'Thursday'],
+            intersoccer_migration_move_order_item_offered_camp_weekdays($item_id)
+        );
+    }
+
+    public function test_days_selected_all_four_day_parent_offering_is_not_single_day_signal(): void {
+        $item_id = 88413;
+        $four_days = 'Monday, Tuesday, Wednesday, Thursday';
+        $this->stubCampOfferedDaysProducts(
+            $item_id,
+            884131,
+            884130,
+            ['pa_days-of-week' => $four_days]
+        );
+        $outcome = intersoccer_migration_move_days_selected_booking_type_outcome($item_id, $four_days);
+        $this->assertSame('missing', $outcome['kind']);
+    }
+
+    public function test_days_selected_three_of_four_day_parent_is_single_day_signal(): void {
+        $item_id = 88414;
+        $four_days = 'Monday, Tuesday, Wednesday, Thursday';
+        $this->stubCampOfferedDaysProducts(
+            $item_id,
+            884141,
+            884140,
+            ['pa_days-of-week' => $four_days]
+        );
+        $outcome = intersoccer_migration_move_days_selected_booking_type_outcome(
+            $item_id,
+            'Monday, Tuesday, Wednesday'
+        );
+        $this->assertSame('known', $outcome['kind']);
+        $this->assertSame('single-days', $outcome['slug']);
+    }
+
     public function test_booking_type_outcome_missing_when_all_signals_absent(): void {
         global $intersoccer_test_wc_order_item_meta, $wpdb;
         $item_id = 88407;

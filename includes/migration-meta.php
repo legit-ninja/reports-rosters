@@ -2595,10 +2595,7 @@ if (!function_exists('intersoccer_migration_move_activity_label_resolves_camp'))
             }
         }
 
-        if (strcasecmp($canonical, 'Girls Only') === 0) {
-            return null;
-        }
-
+        // Bare 'Girls Only' is inconclusive on purpose (camp facet, not a program type).
         return null;
     }
 }
@@ -2621,49 +2618,28 @@ if (!function_exists('intersoccer_migration_move_days_selected_is_placeholder'))
     }
 }
 
-if (!function_exists('intersoccer_migration_move_order_item_offered_camp_weekdays')) {
+if (!function_exists('intersoccer_migration_move_offered_camp_weekdays_from_product')) {
     /**
-     * @return list<string> Canonical English weekday names offered for the line's camp week.
+     * @param WC_Product|WC_Product_Variation $product
+     * @return list<string> Canonical English weekday names, or empty when none found.
      */
-    function intersoccer_migration_move_order_item_offered_camp_weekdays(int $order_item_id): array {
-        static $default = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-
-        $variation_id = 0;
-        if (function_exists('wc_get_order_item_meta')) {
-            $variation_id = (int) wc_get_order_item_meta($order_item_id, '_variation_id', true);
-        }
-        if ($variation_id <= 0 && function_exists('wc_get_order_id_by_order_item_id') && function_exists('wc_get_order')) {
-            $order_id = (int) wc_get_order_id_by_order_item_id($order_item_id);
-            if ($order_id > 0) {
-                $order = wc_get_order($order_id);
-                if ($order && is_callable([$order, 'get_item'])) {
-                    $item = $order->get_item($order_item_id);
-                    if ($item && is_a($item, 'WC_Order_Item_Product')) {
-                        $variation_id = (int) $item->get_variation_id();
-                    }
-                }
-            }
-        }
-
-        if ($variation_id <= 0 || !function_exists('wc_get_product')) {
-            return $default;
-        }
-
-        $variation = wc_get_product($variation_id);
-        if (!$variation instanceof WC_Product_Variation) {
-            return $default;
+    function intersoccer_migration_move_offered_camp_weekdays_from_product($product): array {
+        if (!is_object($product)) {
+            return [];
         }
 
         $raw_candidates = [];
         foreach (['days-of-week', 'pa_days-of-week'] as $attr_name) {
-            $attr = trim((string) $variation->get_attribute($attr_name));
+            $attr = trim((string) $product->get_attribute($attr_name));
             if ($attr !== '') {
                 $raw_candidates[] = $attr;
             }
         }
-        $meta_dow = trim((string) $variation->get_meta('Days of Week', true));
-        if ($meta_dow !== '') {
-            $raw_candidates[] = $meta_dow;
+        if (method_exists($product, 'get_meta')) {
+            $meta_dow = trim((string) $product->get_meta('Days of Week', true));
+            if ($meta_dow !== '') {
+                $raw_candidates[] = $meta_dow;
+            }
         }
 
         foreach ($raw_candidates as $raw) {
@@ -2677,6 +2653,80 @@ if (!function_exists('intersoccer_migration_move_order_item_offered_camp_weekday
             $days = array_values(array_unique(array_filter(array_map('trim', explode(',', $normalized)))));
             if ($days !== []) {
                 return $days;
+            }
+        }
+
+        return [];
+    }
+}
+
+if (!function_exists('intersoccer_migration_move_order_item_offered_camp_weekdays')) {
+    /**
+     * @return list<string> Canonical English weekday names offered for the line's camp week.
+     */
+    function intersoccer_migration_move_order_item_offered_camp_weekdays(int $order_item_id): array {
+        static $default = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+        $variation_id = 0;
+        $parent_id_from_line = 0;
+        if (function_exists('wc_get_order_item_meta')) {
+            $variation_id = (int) wc_get_order_item_meta($order_item_id, '_variation_id', true);
+            $parent_id_from_line = (int) wc_get_order_item_meta($order_item_id, '_product_id', true);
+        }
+        if ($variation_id <= 0 && function_exists('wc_get_order_id_by_order_item_id') && function_exists('wc_get_order')) {
+            $order_id = (int) wc_get_order_id_by_order_item_id($order_item_id);
+            if ($order_id > 0) {
+                $order = wc_get_order($order_id);
+                if ($order && is_callable([$order, 'get_item'])) {
+                    $item = $order->get_item($order_item_id);
+                    if ($item && is_a($item, 'WC_Order_Item_Product')) {
+                        $variation_id = (int) $item->get_variation_id();
+                        if ($parent_id_from_line <= 0) {
+                            $parent_id_from_line = (int) $item->get_product_id();
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!function_exists('wc_get_product')) {
+            return $default;
+        }
+
+        $parent_id = 0;
+        if ($variation_id > 0) {
+            $resolved_variation_id = $variation_id;
+            if (function_exists('intersoccer_resolve_variation_for_roster')) {
+                $resolved_variation_id = (int) intersoccer_resolve_variation_for_roster($variation_id);
+            }
+            if ($resolved_variation_id > 0) {
+                $resolved_variation = wc_get_product($resolved_variation_id);
+                if ($resolved_variation instanceof WC_Product_Variation) {
+                    $parent_id = (int) $resolved_variation->get_parent_id();
+                }
+            }
+        }
+        if ($parent_id <= 0 && $parent_id_from_line > 0) {
+            $parent_id = $parent_id_from_line;
+        }
+
+        if ($parent_id > 0) {
+            $parent = wc_get_product($parent_id);
+            if ($parent) {
+                $from_parent = intersoccer_migration_move_offered_camp_weekdays_from_product($parent);
+                if ($from_parent !== []) {
+                    return $from_parent;
+                }
+            }
+        }
+
+        if ($variation_id > 0) {
+            $variation = wc_get_product($variation_id);
+            if ($variation instanceof WC_Product_Variation) {
+                $from_variation = intersoccer_migration_move_offered_camp_weekdays_from_product($variation);
+                if ($from_variation !== []) {
+                    return $from_variation;
+                }
             }
         }
 
