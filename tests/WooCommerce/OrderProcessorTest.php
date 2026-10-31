@@ -112,9 +112,14 @@ class OrderProcessorTest extends TestCase {
         $order->shouldReceive('update_status')->never();
         
         $this->rosterRepository
-            ->shouldReceive('count')
+            ->shouldReceive('where')
             ->with(['order_id' => 55])
-            ->andReturn(0);
+            ->andReturn(new RostersCollection());
+        
+        $this->rosterBuilder
+            ->shouldReceive('getEligibleOrderLineItemIds')
+            ->with($order)
+            ->andReturn([]);
         
         $rosters = Mockery::mock(RostersCollection::class);
         $rosters->shouldReceive('count')->andReturn(1);

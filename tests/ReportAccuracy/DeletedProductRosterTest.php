@@ -226,6 +226,19 @@ class DeletedProductWpdb extends FakeBookingWpdb {
     }
 }
 
+/** Captures Logger::error entries for strict assertions. */
+class DeletedProductRecordingLogger extends Logger {
+    /** @var array<int,array{message:string,context:array<string,mixed>}> */
+    public $errors = [];
+
+    public function error($message, $context = []) {
+        $this->errors[] = [
+            'message' => (string) $message,
+            'context' => is_array($context) ? $context : [],
+        ];
+    }
+}
+
 class DeletedProductRosterTest extends TestCase {
 
     /** @var DeletedProductWpdb */
@@ -342,6 +355,7 @@ class DeletedProductRosterTest extends TestCase {
     private function processor(RosterBuilder $builder): OrderProcessor {
         $repo = $this->createMock(RosterRepository::class);
         $repo->method('count')->willReturn(0);
+        $repo->method('where')->willReturn(new RostersCollection());
         return new OrderProcessor($this->logger(), $repo, $builder);
     }
 
@@ -704,35 +718,40 @@ class DeletedProductRosterTest extends TestCase {
     }
 
     public function test_failed_roster_insert_logs_error_and_build_stats(): void {
-        $logger = $this->createMock(Logger::class);
-        $logger->expects($this->atLeastOnce())
-            ->method('error')
-            ->with(
-                $this->callback(static function ($message) {
-                    return in_array($message, [
-                        'Roster insert failed',
-                        'Order line roster write failed',
-                        'Failed to build roster from order',
-                    ], true);
-                }),
-                $this->callback(static function ($context) {
-                    return is_array($context)
-                        && (
-                            ((int) ($context['order_id'] ?? 0) === 9501 && (int) ($context['order_item_id'] ?? 0) === 5501)
-                            || ((int) ($context['order_id'] ?? 0) === 9501 && isset($context['error']))
-                        );
-                })
-            );
-
+        $logger = new DeletedProductRecordingLogger();
         $builder = $this->builderWithLogger($logger, static function () {
             return null;
         });
         $order = $this->order(9501, $this->liveLine(5501));
         $this->processor($builder)->processOrder($order);
         $this->assertSame(0, count($this->created));
+
+        $insert_logs = array_values(array_filter(
+            $logger->errors,
+            static fn(array $e): bool => $e['message'] === 'Roster insert failed'
+        ));
+        $this->assertCount(1, $insert_logs);
+        $this->assertSame(9501, (int) ($insert_logs[0]['context']['order_id'] ?? 0));
+        $this->assertSame(5501, (int) ($insert_logs[0]['context']['order_item_id'] ?? 0));
+
+        $line_logs = array_values(array_filter(
+            $logger->errors,
+            static fn(array $e): bool => $e['message'] === 'Order line roster write failed'
+        ));
+        $this->assertCount(1, $line_logs);
+        $this->assertSame(9501, (int) ($line_logs[0]['context']['order_id'] ?? 0));
+        $this->assertSame(5501, (int) ($line_logs[0]['context']['item_id'] ?? 0));
+
+        $whole_order_logs = array_values(array_filter(
+            $logger->errors,
+            static fn(array $e): bool => $e['message'] === 'Failed to build roster from order'
+        ));
+        $this->assertSame([], $whole_order_logs);
+
         $prop = new \ReflectionProperty(RosterBuilder::class, 'build_stats');
         $prop->setAccessible(true);
         $stats = $prop->getValue($builder);
+        $this->assertSame(1, $stats['item_write_failures'] ?? 0);
         $this->assertNotEmpty($stats['errors'] ?? []);
     }
 

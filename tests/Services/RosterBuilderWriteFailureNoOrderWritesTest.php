@@ -1,6 +1,6 @@
 <?php
 /**
- * Dedup private order notes for repeated roster write failures per line.
+ * Roster line write failures must not touch the WooCommerce order (notes, meta, save).
  */
 
 namespace InterSoccer\ReportsRosters\Tests\Services;
@@ -21,13 +21,10 @@ use InterSoccer\ReportsRosters\Services\RosterBuilder;
 use InterSoccer\ReportsRosters\Tests\TestCase;
 use Mockery;
 
-class RosterBuilderFailureNoteDedupTest extends TestCase {
+class RosterBuilderWriteFailureNoOrderWritesTest extends TestCase {
 
     /** @var array<int,mixed> */
     private static $orders = [];
-
-    /** @var array<string,mixed> */
-    private $failureNoteMeta = [];
 
     protected function setUp(): void {
         parent::setUp();
@@ -43,7 +40,6 @@ class RosterBuilderFailureNoteDedupTest extends TestCase {
         });
         $GLOBALS['intersoccer_test_wc_get_order_callback'] = [self::class, 'getOrder'];
         self::$orders = [];
-        $this->failureNoteMeta = [];
     }
 
     protected function tearDown(): void {
@@ -84,29 +80,17 @@ class RosterBuilderFailureNoteDedupTest extends TestCase {
         return $item;
     }
 
-    private function orderWithMeta(int $order_id, int $customer_id, int $item_id, $item, array &$notes) {
+    private function orderWithoutWriteHooks(int $order_id, int $customer_id, int $item_id, $item): void {
         $order = Mockery::mock('WC_Order');
         $order->shouldReceive('get_id')->andReturn($order_id);
         $order->shouldReceive('get_status')->andReturn('completed');
         $order->shouldReceive('get_customer_id')->andReturn($customer_id);
         $order->shouldReceive('get_items')->andReturn([$item_id => $item]);
         $order->shouldReceive('get_item')->andReturnUsing(fn($id) => (int) $id === $item_id ? $item : false);
-        $order->shouldReceive('add_order_note')->andReturnUsing(function ($note) use (&$notes) {
-            $notes[] = $note;
-            return 1;
-        });
-        $order->shouldReceive('get_meta')->andReturnUsing(function ($key, $single = false) {
-            if ($key === '_intersoccer_roster_failure_notes') {
-                return $single ? $this->failureNoteMeta : [$this->failureNoteMeta];
-            }
-            return $single ? '' : [];
-        });
-        $order->shouldReceive('update_meta_data')->andReturnUsing(function ($key, $value) {
-            if ($key === '_intersoccer_roster_failure_notes') {
-                $this->failureNoteMeta = is_array($value) ? $value : [];
-            }
-        });
-        $order->shouldReceive('save')->andReturn($order_id);
+        $order->shouldReceive('add_order_note')->never();
+        $order->shouldReceive('update_meta_data')->never();
+        $order->shouldReceive('save')->never();
+        $order->shouldReceive('get_meta')->andReturn('');
         $order->shouldReceive('get_coupon_codes')->andReturn([]);
         $order->shouldReceive('get_billing_company')->andReturn('');
         foreach (['get_billing_email' => 'parent@example.test', 'get_billing_phone' => '+41 00 000 00 00',
@@ -114,7 +98,6 @@ class RosterBuilderFailureNoteDedupTest extends TestCase {
             $order->shouldReceive($m)->andReturn($v);
         }
         self::$orders[$order_id] = $order;
-        return $order;
     }
 
     /** @return array<string,string> */
@@ -153,6 +136,19 @@ class RosterBuilderFailureNoteDedupTest extends TestCase {
         ];
     }
 
+    private function failingRepo(): RosterRepository {
+        $db = Mockery::mock(Database::class);
+        $db->shouldReceive('insert_roster_entry')->andReturn(0);
+        $cache = Mockery::mock(CacheManager::class);
+        $cache->shouldReceive('get')->andReturn(null);
+        $cache->shouldReceive('set', 'forget', 'forgetPattern')->andReturn(true);
+        $repo = Mockery::mock(RosterRepository::class, [$this->logger(), $db, $cache])->makePartial();
+        $repo->shouldReceive('first')->andReturn(null);
+        $repo->shouldReceive('count')->andReturn(0);
+        $repo->shouldReceive('where')->andReturn(new RostersCollection());
+        return $repo;
+    }
+
     private function makeBuilder(RosterRepository $repo): RosterBuilder {
         $uuid = '00000000-0000-4000-8000-000000000901';
         $players = new PlayersCollection();
@@ -182,60 +178,25 @@ class RosterBuilderFailureNoteDedupTest extends TestCase {
         );
     }
 
-    private function failingRepo(): RosterRepository {
-        $db = Mockery::mock(Database::class);
-        $db->shouldReceive('insert_roster_entry')->andReturn(0);
-        $cache = Mockery::mock(CacheManager::class);
-        $cache->shouldReceive('get')->andReturn(null);
-        $cache->shouldReceive('set', 'forget', 'forgetPattern')->andReturn(true);
-        $repo = Mockery::mock(RosterRepository::class, [$this->logger(), $db, $cache])->makePartial();
-        $repo->shouldReceive('first')->andReturn(null);
-        $repo->shouldReceive('count')->andReturn(0);
-        $repo->shouldReceive('where')->andReturn(new RostersCollection());
-        return $repo;
+    private function buildStats(RosterBuilder $builder): array {
+        $prop = new \ReflectionProperty(RosterBuilder::class, 'build_stats');
+        $prop->setAccessible(true);
+        return $prop->getValue($builder);
     }
 
-    private function succeedingRepo(): RosterRepository {
-        $db = Mockery::mock(Database::class);
-        $db->shouldReceive('insert_roster_entry')->andReturn(930001);
-        $cache = Mockery::mock(CacheManager::class);
-        $cache->shouldReceive('get')->andReturn(null);
-        $cache->shouldReceive('set', 'forget', 'forgetPattern')->andReturn(true);
-        $repo = Mockery::mock(RosterRepository::class, [$this->logger(), $db, $cache])->makePartial();
-        $repo->shouldReceive('first')->andReturn(null);
-        $repo->shouldReceive('count')->andReturn(0);
-        $repo->shouldReceive('where')->andReturn(new RostersCollection());
-        return $repo;
-    }
-
-    public function test_same_write_failure_twice_adds_one_order_note() {
+    public function test_same_write_failure_twice_counts_one_failure_per_build_without_order_writes(): void {
         $uuid = '00000000-0000-4000-8000-000000000901';
         $item = $this->courseItem($this->courseMeta($uuid, '2015-02-03'));
-        $notes = [];
-        $this->orderWithMeta(6001, 601, 901, $item, $notes);
+        $this->orderWithoutWriteHooks(6001, 601, 901, $item);
         $builder = $this->makeBuilder($this->failingRepo());
 
         $builder->buildRosterFromOrder(6001, ['validate_data' => true, 'skip_age_group_validation' => true]);
         $this->assertTrue($builder->hadOrderItemWriteFailures());
+        $stats_first = $this->buildStats($builder);
+        $this->assertSame(1, $stats_first['item_write_failures']);
 
         $builder->buildRosterFromOrder(6001, ['validate_data' => true, 'skip_age_group_validation' => true]);
-        $this->assertTrue($builder->hadOrderItemWriteFailures());
-        $this->assertCount(1, $notes);
-    }
-
-    public function test_successful_write_clears_failure_note_marker() {
-        $uuid = '00000000-0000-4000-8000-000000000902';
-        $item = $this->courseItem($this->courseMeta($uuid, '2015-02-03'));
-        $notes = [];
-        $this->orderWithMeta(6002, 602, 902, $item, $notes);
-
-        $fail_builder = $this->makeBuilder($this->failingRepo());
-        $fail_builder->buildRosterFromOrder(6002, ['validate_data' => true, 'skip_age_group_validation' => true]);
-        $this->assertNotEmpty($this->failureNoteMeta);
-
-        $ok_builder = $this->makeBuilder($this->succeedingRepo());
-        $rows = $ok_builder->buildRosterFromOrder(6002, ['validate_data' => true, 'skip_age_group_validation' => true]);
-        $this->assertSame(1, $rows->count());
-        $this->assertSame([], $this->failureNoteMeta);
+        $stats_second = $this->buildStats($builder);
+        $this->assertSame(1, $stats_second['item_write_failures']);
     }
 }

@@ -115,7 +115,9 @@
             <file>tests/Services/RosterBuilderHookAgeAtStartTest.php</file>
             <file>tests/Services/RosterBuilderOrderItemWriteFailureTest.php</file>
             <file>tests/Services/RosterBuilderAdvisoryValidationTest.php</file>
-            <file>tests/Services/RosterBuilderFailureNoteDedupTest.php</file>
+            <file>tests/WooCommerce/OrderProcessorOnHoldStatusTest.php</file>
+            <file>tests/WooCommerce/OrderProcessorCompletedFastPathTest.php</file>
+            <file>tests/Services/RosterBuilderWriteFailureNoOrderWritesTest.php</file>
             <file>tests/Unit/MedicalAccessTest.php</file>
             <file>tests/Unit/MedicalAccessSplitPermissionsTest.php</file>
             <file>tests/Unit/MedicalAccessPmMissingTest.php</file>

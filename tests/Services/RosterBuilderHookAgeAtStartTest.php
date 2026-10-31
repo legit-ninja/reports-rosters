@@ -314,8 +314,10 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         $order->shouldReceive('get_status')->andReturn('completed');
         $repo = Mockery::mock(RosterRepository::class);
         $repo->shouldReceive('count')->andReturn(0);
+        $repo->shouldReceive('where')->andReturn(new RostersCollection());
         $captured = null;
         $builder = Mockery::mock(RosterBuilder::class);
+        $builder->shouldReceive('getEligibleOrderLineItemIds')->andReturn([]);
         $builder->shouldReceive('buildRosterFromOrder')->andReturnUsing(function ($id, $opts) use (&$captured) {
             $captured = $opts;
             return new RostersCollection();
@@ -465,11 +467,26 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         $this->assertSame(1, $this->update_calls);
     }
 
-    public function test_order_processor_hook_path_notes_once_and_returns_false_on_db_failure() {
+    public function test_order_processor_hook_path_returns_false_on_db_failure_without_order_writes() {
         $uuid = '00000000-0000-4000-8000-000000000519';
         $item = $this->item(52636, 52637, $this->courseItemMeta($uuid, '2015-02-03'));
-        $notes = [];
-        $order = $this->order(1019, 219, 519, $item, $notes);
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(1019);
+        $order->shouldReceive('get_status')->andReturn('completed');
+        $order->shouldReceive('get_customer_id')->andReturn(219);
+        $order->shouldReceive('get_items')->andReturn([519 => $item]);
+        $order->shouldReceive('get_item')->andReturnUsing(fn($id) => (int) $id === 519 ? $item : false);
+        $order->shouldReceive('add_order_note')->never();
+        $order->shouldReceive('update_meta_data')->never();
+        $order->shouldReceive('save')->never();
+        $order->shouldReceive('get_meta')->andReturn('');
+        $order->shouldReceive('get_coupon_codes')->andReturn([]);
+        $order->shouldReceive('get_billing_company')->andReturn('');
+        foreach (['get_billing_email' => 'parent@example.test', 'get_billing_phone' => '+41 00 000 00 00',
+                  'get_billing_first_name' => 'Parent', 'get_billing_last_name' => 'Test'] as $m => $v) {
+            $order->shouldReceive($m)->andReturn($v);
+        }
+        self::$orders[1019] = $order;
         $validator = Mockery::mock(DataValidator::class);
         $validator->shouldReceive('validateRosterData')->andReturn(['valid' => true, 'errors' => [], 'field_errors' => []]);
         $db = Mockery::mock(Database::class);
@@ -499,9 +516,7 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         $processor = new OrderProcessor($this->logger(), $repo, $builder);
 
         $this->assertFalse($processor->processOrder($order));
-        $this->assertCount(1, $notes);
         $this->assertFalse($processor->processOrder($order));
-        $this->assertCount(1, $notes);
     }
 
     public function test_eligible_age_is_ok_without_stored_marker() {
