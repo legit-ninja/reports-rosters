@@ -396,6 +396,12 @@ class RosterProductIdQueryLevelTest extends TestCase {
         $this->assertNotSame('r.product_name = %s', $where[0]);
     }
 
+    public function test_roster_data_queries_use_max_product_name(): void {
+        $path = dirname(__DIR__, 2) . '/includes/roster-data.php';
+        $src = (string) file_get_contents($path);
+        $this->assertSame(3, substr_count($src, 'MAX(r.product_name) AS product_name'));
+    }
+
     public function test_export_all_signatures_filter_by_product_id_includes_both_twins(): void {
         $this->wpdb->captured_queries = [];
         $sigs = intersoccer_export_all_rosters_signatures_sql(['product_id' => (string) self::EN_PID], []);

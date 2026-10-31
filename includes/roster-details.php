@@ -579,6 +579,7 @@ function intersoccer_render_roster_details_page() {
         $result = $service->getRosterContext(
             [
                 'product_id' => $product_id,
+                'product_name' => $product_name,
                 'variation_id' => $variation_id,
                 'variation_ids' => $variation_ids,
                 'order_item_ids' => $order_item_ids,
@@ -826,7 +827,7 @@ function intersoccer_render_roster_details_page() {
         SELECT DISTINCT 
             r.product_id,
             r.variation_id,
-            r.product_name,
+            MAX(r.product_name) AS product_name,
             r.venue,
             r.age_group,
             r.activity_type,
@@ -852,7 +853,7 @@ function intersoccer_render_roster_details_page() {
         SELECT DISTINCT 
             r.product_id,
             r.variation_id,
-            r.product_name,
+            MAX(r.product_name) AS product_name,
             r.venue,
             r.age_group,
             r.activity_type,

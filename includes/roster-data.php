@@ -86,7 +86,7 @@ function intersoccer_pe_get_camp_variations($filters) {
     }
     $where_clause = implode(' AND ', $where);
 
-    $query = "SELECT r.product_id, r.camp_terms, r.venue, r.age_group, r.product_name, r.times, r.start_date, 
+    $query = "SELECT r.product_id, r.camp_terms, r.venue, r.age_group, MAX(r.product_name) AS product_name, r.times, r.start_date, 
                 COUNT(*) as total_players, GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids, r.event_signature
          FROM $rosters_table r
          JOIN $posts_table p ON r.product_id = p.ID AND p.post_type = 'product' AND p.post_status = 'publish'
@@ -143,7 +143,7 @@ function intersoccer_pe_get_course_variations($filters) {
     }
     $where_clause = implode(' AND ', $where);
 
-    $query = "SELECT r.product_id, r.course_day, r.venue, r.age_group, r.product_name, r.times, r.start_date, 
+    $query = "SELECT r.product_id, r.course_day, r.venue, r.age_group, MAX(r.product_name) AS product_name, r.times, r.start_date, 
                 COUNT(*) as total_players, GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids, r.event_signature
          FROM $rosters_table r
          JOIN $posts_table p ON r.product_id = p.ID AND p.post_type = 'product' AND p.post_status = 'publish'
@@ -196,7 +196,7 @@ function intersoccer_pe_get_girls_only_variations($filters) {
     }
     $where_clause = implode(' AND ', $where);
 
-    $query = "SELECT r.product_id, r.camp_terms, r.venue, r.age_group, r.product_name, r.times, r.shirt_size, r.shorts_size, r.start_date,
+    $query = "SELECT r.product_id, r.camp_terms, r.venue, r.age_group, MAX(r.product_name) AS product_name, r.times, r.shirt_size, r.shorts_size, r.start_date,
                 COUNT(*) as total_players, GROUP_CONCAT(DISTINCT r.order_item_id) as order_item_ids, r.event_signature
          FROM $rosters_table r
          JOIN $posts_table p ON r.product_id = p.ID AND p.post_type = 'product' AND p.post_status = 'publish'

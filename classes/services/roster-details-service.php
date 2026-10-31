@@ -242,6 +242,7 @@ class RosterDetailsService {
         $filters['age_group'] = isset($filters['age_group']) ? trim($filters['age_group']) : '';
         $filters['times'] = isset($filters['times']) ? trim($filters['times']) : '';
         $filters['season'] = isset($filters['season']) ? trim($filters['season']) : '';
+        $filters['product_name'] = isset($filters['product_name']) ? trim($filters['product_name']) : '';
         $filters['girls_only'] = !empty($filters['girls_only']);
 
         return $filters;
@@ -273,8 +274,11 @@ class RosterDetailsService {
     private function buildCriteria(array $filters, array $context, bool $ignoreEventSignature): array {
         $criteria = [];
 
-        if ($filters['product_id'] > 0) {
-            $criteria['product_id'] = $filters['product_id'];
+        $productFilter = $this->resolveProductIdCriteria($filters);
+        if ($productFilter !== null) {
+            $criteria['product_id'] = $productFilter;
+        } elseif (!empty($filters['product_name'])) {
+            $criteria['product_name'] = $filters['product_name'];
         }
 
         if ($filters['variation_id'] > 0) {
@@ -342,6 +346,38 @@ class RosterDetailsService {
         }
 
         return $criteria;
+    }
+
+    /**
+     * Map URL product filter to repository product_id criteria (canonical EN parent + WPML twins).
+     *
+     * @param array<string,mixed> $filters
+     * @return int|int[]|null
+     */
+    private function resolveProductIdCriteria(array $filters) {
+        if ($filters['product_id'] > 0) {
+            $ids = function_exists('intersoccer_roster_wpml_product_id_variants')
+                ? intersoccer_roster_wpml_product_id_variants($filters['product_id'])
+                : [(int) $filters['product_id']];
+            $ids = array_values(array_unique(array_filter(array_map('intval', (array) $ids))));
+            if ($ids === []) {
+                return (int) $filters['product_id'];
+            }
+
+            return count($ids) === 1 ? $ids[0] : $ids;
+        }
+
+        $product_name = isset($filters['product_name']) ? trim((string) $filters['product_name']) : '';
+        if ($product_name === '' || !function_exists('intersoccer_roster_product_ids_for_stored_name')) {
+            return null;
+        }
+
+        $ids = intersoccer_roster_product_ids_for_stored_name($product_name);
+        if ($ids === []) {
+            return null;
+        }
+
+        return count($ids) === 1 ? $ids[0] : $ids;
     }
 
     /**
@@ -550,7 +586,7 @@ class RosterDetailsService {
                 continue;
             }
 
-            $status = get_post_status($model->order_id);
+            $status = \get_post_status($model->order_id);
             if (!$status) {
                 if (!$allow_missing_status) {
                     continue;
@@ -588,7 +624,7 @@ class RosterDetailsService {
             if (function_exists('intersoccer_roster_backfill_avs_number_from_user_meta')) {
                 $data = intersoccer_roster_backfill_avs_number_from_user_meta($data);
             }
-            $post = get_post($model->order_id);
+            $post = \get_post($model->order_id);
             $data['order_date'] = $post ? $post->post_date : null;
             $data['girls_only'] = isset($data['girls_only']) ? (int) $data['girls_only'] : 0;
             // When age is missing or zero but DOB exists, compute age for display (e.g. from intersoccer_players)
@@ -699,7 +735,7 @@ class RosterDetailsService {
                 continue;
             }
 
-            $status = get_post_status($model->order_id);
+            $status = \get_post_status($model->order_id);
             if (!$status || !in_array($status, $this->allowed_statuses, true)) {
                 continue;
             }
@@ -717,10 +753,14 @@ class RosterDetailsService {
                 }
             }
 
+            $canonicalProductId = (int) $model->product_id;
+            if (function_exists('intersoccer_wpml_canonical_product_id')) {
+                $canonicalProductId = (int) intersoccer_wpml_canonical_product_id($canonicalProductId);
+            }
+
             $keyParts = [
-                (int) $model->product_id,
+                $canonicalProductId,
                 (int) $model->variation_id,
-                (string) $model->product_name,
                 (string) $model->venue,
                 (string) $model->age_group,
                 (string) $model->activity_type,
@@ -734,10 +774,18 @@ class RosterDetailsService {
             $key = implode('|', $keyParts);
 
             if (!isset($summaries[$key])) {
+                $storedName = (string) $model->product_name;
+                $label = $storedName;
+                if (function_exists('intersoccer_roster_listing_product_label')) {
+                    $label = intersoccer_roster_listing_product_label($canonicalProductId, $storedName);
+                } elseif (function_exists('intersoccer_get_english_product_name') && $canonicalProductId > 0) {
+                    $label = (string) intersoccer_get_english_product_name($storedName, $canonicalProductId);
+                }
+
                 $summaries[$key] = (object) [
-                    'product_id' => (int) $model->product_id,
+                    'product_id' => $canonicalProductId,
                     'variation_id' => (int) $model->variation_id,
-                    'product_name' => $model->product_name,
+                    'product_name' => $label !== '' ? $label : $storedName,
                     'venue' => $model->venue,
                     'age_group' => $model->age_group,
                     'activity_type' => $model->activity_type,

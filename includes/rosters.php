@@ -3609,7 +3609,8 @@ function intersoccer_render_other_events_page() {
                                                     $view_url = admin_url('admin.php?page=intersoccer-roster-details&event_signature=' . urlencode($event['event_signature']));
                                                 } else {
                                                     $variation_ids_str = is_array($event['variation_ids']) ? implode(',', $event['variation_ids']) : (string) $event['variation_ids'];
-                                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_ids=' . urlencode($variation_ids_str) . '&product_name=' . urlencode($event['product_name']) . '&age_group=' . urlencode($event['age_group']) . '&times=' . urlencode($event['times']) . '&season=' . urlencode($season));
+                                                    $event_product_id = isset($event['product_id']) ? (int) $event['product_id'] : 0;
+                                                    $view_url = admin_url('admin.php?page=intersoccer-roster-details&variation_ids=' . urlencode($variation_ids_str) . '&product_id=' . urlencode((string) $event_product_id) . '&age_group=' . urlencode($event['age_group']) . '&times=' . urlencode($event['times']) . '&season=' . urlencode($season));
                                                 }
                                                 ?>
                                                 <a href="<?php echo esc_url($view_url); ?>" class="button-roster-view">
