@@ -309,7 +309,11 @@ class OrderProcessor {
             return false;
         }
 
-        return in_array($wc_order->get_status(), ['completed', 'processing', 'on-hold'], true);
+        $statuses = function_exists('intersoccer_roster_rebuild_statuses')
+            ? intersoccer_roster_rebuild_statuses()
+            : ['completed', 'processing', 'on-hold'];
+
+        return in_array($wc_order->get_status(), $statuses, true);
     }
 
     /**

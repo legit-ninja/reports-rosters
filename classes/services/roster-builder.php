@@ -686,16 +686,22 @@ class RosterBuilder {
     public function buildRosterFromOrder($order_id, array $options = []) {
         try {
             $this->last_build_call_item_write_failures = 0;
+            $this->init_build_stats();
 
             $this->logger->debug('Building roster from single order', [
                 'order_id' => $order_id,
                 'options' => $options
             ]);
             
+            $paid_statuses = function_exists('intersoccer_roster_rebuild_statuses')
+                ? intersoccer_roster_rebuild_statuses()
+                : ['completed', 'processing', 'on-hold'];
+
             $options = array_merge([
                 'validate_data' => true,
                 'skip_duplicates' => true,
-                'update_existing' => true
+                'update_existing' => true,
+                'skip_age_group_validation' => true,
             ], $options);
             
             // Get order data
@@ -705,7 +711,7 @@ class RosterBuilder {
             }
             
             // Validate order status
-            if (!in_array($order->get_status(), ['completed', 'processing'], true)) {
+            if (!in_array($order->get_status(), $paid_statuses, true)) {
                 $this->logger->warning('Skipping order with invalid status', [
                     'order_id' => $order_id,
                     'status' => $order->get_status()
@@ -1281,7 +1287,7 @@ class RosterBuilder {
                 }
                 break;
 
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 global $wpdb;
                 $db_error = '';
                 if ($e instanceof DatabaseException
@@ -2187,47 +2193,6 @@ class RosterBuilder {
     }
 
     /**
-     * @param array $roster_data
-     * @return array|string|null
-     */
-    private function applyUnderAgeAtStartToEventDetails(array $roster_data) {
-        $details = $roster_data['event_details'] ?? [];
-        if (is_string($details)) {
-            $decoded = json_decode($details, true);
-            $details = is_array($decoded) ? $decoded : [];
-        }
-        if (!is_array($details)) {
-            $details = [];
-        }
-        if (!$this->rosterRowIsUnderMinAgeAtStart($roster_data)) {
-            return $details;
-        }
-        $details['under_age_at_start'] = true;
-
-        return $details;
-    }
-
-    private function rosterRowIsUnderMinAgeAtStart(array $roster_data): bool {
-        $dob = trim((string) ($roster_data['player_dob'] ?? $roster_data['dob'] ?? ''));
-        $age_group = trim((string) ($roster_data['age_group'] ?? ''));
-        $start_date = trim((string) ($roster_data['start_date'] ?? ''));
-        if ($dob === '' || $age_group === '' || $start_date === '') {
-            return false;
-        }
-
-        $player = new Player([
-            'customer_id' => (int) ($roster_data['customer_id'] ?? 0),
-            'player_index' => (int) ($roster_data['player_index'] ?? 0),
-            'first_name' => (string) ($roster_data['player_first_name'] ?? $roster_data['first_name'] ?? ''),
-            'last_name' => (string) ($roster_data['player_last_name'] ?? $roster_data['last_name'] ?? ''),
-            'dob' => $dob,
-            'gender' => (string) ($roster_data['player_gender'] ?? $roster_data['gender'] ?? ''),
-        ]);
-
-        return $player->isBelowMinAgeForAgeGroupAt($age_group, $start_date);
-    }
-
-    /**
      * Build event details JSON from roster data
      *
      * @param array $roster_data Roster data
@@ -2431,47 +2396,6 @@ class RosterBuilder {
             }
         }
         return true;
-    }
-
-    /**
-     * @param array $roster_data
-     * @return array|string|null
-     */
-    private function applyUnderAgeAtStartToEventDetails(array $roster_data) {
-        $details = $roster_data['event_details'] ?? [];
-        if (is_string($details)) {
-            $decoded = json_decode($details, true);
-            $details = is_array($decoded) ? $decoded : [];
-        }
-        if (!is_array($details)) {
-            $details = [];
-        }
-        if (!$this->rosterRowIsUnderMinAgeAtStart($roster_data)) {
-            return $details;
-        }
-        $details['under_age_at_start'] = true;
-
-        return $details;
-    }
-
-    private function rosterRowIsUnderMinAgeAtStart(array $roster_data): bool {
-        $dob = trim((string) ($roster_data['player_dob'] ?? $roster_data['dob'] ?? ''));
-        $age_group = trim((string) ($roster_data['age_group'] ?? ''));
-        $start_date = trim((string) ($roster_data['start_date'] ?? ''));
-        if ($dob === '' || $age_group === '' || $start_date === '') {
-            return false;
-        }
-
-        $player = new Player([
-            'customer_id' => (int) ($roster_data['customer_id'] ?? 0),
-            'player_index' => (int) ($roster_data['player_index'] ?? 0),
-            'first_name' => (string) ($roster_data['player_first_name'] ?? $roster_data['first_name'] ?? ''),
-            'last_name' => (string) ($roster_data['player_last_name'] ?? $roster_data['last_name'] ?? ''),
-            'dob' => $dob,
-            'gender' => (string) ($roster_data['player_gender'] ?? $roster_data['gender'] ?? ''),
-        ]);
-
-        return $player->isBelowMinAgeForAgeGroupAt($age_group, $start_date);
     }
     
     /**

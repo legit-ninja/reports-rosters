@@ -282,18 +282,6 @@ class Player extends AbstractModel {
     }
 
     /**
-     * Whether the player is below the minimum age for the group on the event date.
-     */
-    public function isBelowMinAgeForAgeGroupAt(string $age_group, ?string $event_date = null): bool {
-        $age_range = self::parseAgeGroupRange($age_group);
-        if (!$age_range || empty($this->dob) || empty($event_date)) {
-            return false;
-        }
-
-        return $this->getAgeAt($event_date) < $age_range['min'];
-    }
-
-    /**
      * Parse age group label to min/max ages (public for tests and read-time badges).
      *
      * @param string|null $age_group Age group string

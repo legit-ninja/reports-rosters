@@ -1,24 +1,7 @@
 <?php
 /**
- * Repro: live order-status hook writes no roster row for a course line when the assigned
- * player is still under the age group's minimum on the course start date (turns 3 a few
- * days/weeks after the term starts).
- *
- * Live path (origin/master 80bf153):
- *   HooksManager::handle_order_status (woocommerce_order_status_completed)
- *   -> OrderProcessor::processOrder, order-processor.php:119-126 (no skip_age_group_validation)
- *   -> RosterBuilder::buildRosterFromOrder -> processOrderItems -> processOrderItem
- *   -> createOrUpdateRoster (roster-builder.php:1668-1672, flag not set)
- *   -> RosterRepository::create -> Roster::validate (roster-repository.php:500)
- *   -> Roster::validateAgeGroup throws (roster.php:926-930)
- *   -> rethrown roster-repository.php:545-550, swallowed roster-builder.php:755-763.
- * Reconcile (roster-builder.php:304) and diagnostics "Fix Sync" pass skip_age_group_validation=true,
- * so the same line gets a row from those paths but never from the hook.
- *
- * Meta shapes are copied from two missing course lines in the staging-copy sandbox (Etoy EN
- * order, Versoix FR order) and from a same-variation line that did get a row for each, anonymized:
- * no names, emails, phones; order, item, customer ids and player UUIDs are synthetic. Course
- * dates, age groups and the players' dates of birth relative to the start date are the real values.
+ * Hook path (HooksManager -> OrderProcessor -> RosterBuilder): every paid line must upsert
+ * a roster row with skip_age_group_validation; age is flagged read-time via Player::ageGroupStatusAt.
  */
 
 namespace InterSoccer\ReportsRosters\Tests\Services;
@@ -43,7 +26,7 @@ use Mockery;
 
 class RosterBuilderHookAgeAtStartTest extends TestCase {
 
-    /** Options passed by the live hook, copied from order-processor.php build options. */
+    /** Options passed by the live hook (order-processor.php). */
     private const LIVE_HOOK_OPTIONS = [
         'validate_data'   => true,
         'skip_duplicates' => true,
@@ -57,8 +40,17 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
     /** @var array<int,array> rows handed to Database::insert_roster_entry */
     private $inserted = [];
 
-    /** @var RosterBuilder */
-    private $builder;
+    /** @var int */
+    private $insert_calls = 0;
+
+    /** @var int */
+    private $update_calls = 0;
+
+    /** @var array<int|string,string> */
+    private $failureNoteMeta = [];
+
+    /** @var int */
+    private $first_lookup_calls = 0;
 
     protected function setUp(): void {
         parent::setUp();
@@ -75,6 +67,10 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         $GLOBALS['intersoccer_test_wc_get_order_callback'] = [self::class, 'getOrder'];
         self::$orders = [];
         $this->inserted = [];
+        $this->insert_calls = 0;
+        $this->update_calls = 0;
+        $this->failureNoteMeta = [];
+        $this->first_lookup_calls = 0;
     }
 
     protected function tearDown(): void {
@@ -87,18 +83,16 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         return self::$orders[(int) $id] ?? false;
     }
 
-    // ------------------------------------------------------------------ fixtures
-
     private function logger() {
         $logger = Mockery::mock(Logger::class);
         $logger->shouldReceive('info', 'debug', 'warning', 'error')->andReturn(null);
         return $logger;
     }
 
-    /** Real RosterRepository::create() + Roster::validate(); only storage is faked. */
-    private function rosterRepository() {
+    private function rosterRepository(?Roster $existing_on_second_lookup = null) {
         $db = Mockery::mock(Database::class);
         $db->shouldReceive('insert_roster_entry')->andReturnUsing(function (array $row) {
+            $this->insert_calls++;
             $this->inserted[] = $row;
             return 900000 + count($this->inserted);
         });
@@ -106,9 +100,22 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         $cache->shouldReceive('get')->andReturn(null);
         $cache->shouldReceive('set', 'forget', 'forgetPattern')->andReturn(true);
         $repo = Mockery::mock(RosterRepository::class, [$this->logger(), $db, $cache])->makePartial();
-        $repo->shouldReceive('first')->andReturn(null);          // no existing row for the line
+        if ($existing_on_second_lookup !== null) {
+            $repo->shouldReceive('first')->andReturnUsing(function () use ($existing_on_second_lookup) {
+                $this->first_lookup_calls++;
+                return $this->first_lookup_calls <= 2 ? null : $existing_on_second_lookup;
+            });
+        } else {
+            $repo->shouldReceive('first')->andReturn(null);
+        }
         $repo->shouldReceive('count')->andReturn(0);
         $repo->shouldReceive('where')->andReturn(new RostersCollection());
+        if ($existing_on_second_lookup !== null) {
+            $repo->shouldReceive('update')->once()->andReturnUsing(function ($id, $data) use ($existing_on_second_lookup) {
+                $this->update_calls++;
+                return $existing_on_second_lookup;
+            });
+        }
         return $repo;
     }
 
@@ -124,12 +131,11 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         ]);
     }
 
-    private function makeBuilder(Player $player): RosterBuilder {
+    private function makeBuilder(Player $player, ?RosterRepository $repo = null): RosterBuilder {
         $players = new PlayersCollection();
         $players->add($player);
         $playerRepo = Mockery::mock(PlayerRepository::class);
         $playerRepo->shouldReceive('getPlayersByCustomerId')->andReturn($players);
-        // Players match by UUID in the sandbox (assignByMetadataUuid); not under test here.
         $matcher = Mockery::mock(PlayerMatcher::class);
         $matcher->shouldReceive('getAssignedPlayers')->andReturn($players);
         $validator = Mockery::mock(DataValidator::class);
@@ -138,19 +144,14 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
             $this->logger(),
             Mockery::mock(Database::class),
             $playerRepo,
-            $this->rosterRepository(),
+            $repo ?? $this->rosterRepository(),
             $validator,
             Mockery::mock(EventMatcher::class),
             $matcher
         );
     }
 
-    /** Same wiring as makeBuilder but exercises DataValidator cross-field age rules. */
-    private function makeBuilderWithRealValidator(Player $player): RosterBuilder {
-        return $this->makeBuilderWithRealValidatorAndLogger($player, $this->logger());
-    }
-
-    private function makeBuilderWithRealValidatorAndLogger(Player $player, Logger $logger): RosterBuilder {
+    private function makeBuilderWithRealValidator(Player $player, Logger $logger, ?RosterRepository $repo = null): RosterBuilder {
         $players = new PlayersCollection();
         $players->add($player);
         $playerRepo = Mockery::mock(PlayerRepository::class);
@@ -161,7 +162,7 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
             $logger,
             Mockery::mock(Database::class),
             $playerRepo,
-            $this->rosterRepository(),
+            $repo ?? $this->rosterRepository(),
             new DataValidator($logger),
             Mockery::mock(EventMatcher::class),
             $matcher
@@ -189,16 +190,34 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         return $item;
     }
 
-    private function order(int $order_id, int $customer_id, int $item_id, $item) {
+    private function order(int $order_id, int $customer_id, int $item_id, $item, array &$notes = null) {
         $order = Mockery::mock('WC_Order');
         $order->shouldReceive('get_id')->andReturn($order_id);
         $order->shouldReceive('get_status')->andReturn('completed');
         $order->shouldReceive('get_customer_id')->andReturn($customer_id);
         $order->shouldReceive('get_items')->andReturn([$item_id => $item]);
         $order->shouldReceive('get_item')->andReturnUsing(fn($id) => (int) $id === $item_id ? $item : false);
-        $order->shouldReceive('add_order_note')->andReturn(1);
-        $order->shouldReceive('get_meta')->andReturn([]);
-        $order->shouldReceive('update_meta_data')->andReturn(null);
+        if ($notes !== null) {
+            $order->shouldReceive('add_order_note')->andReturnUsing(function ($note) use (&$notes) {
+                $notes[] = $note;
+                return count($notes);
+            });
+        } else {
+            $order->shouldReceive('add_order_note')->andReturn(1);
+        }
+        $order->shouldReceive('get_meta')->andReturnUsing(function ($key, $single = false) {
+            if ($key === '_intersoccer_roster_failure_notes') {
+                return $single ? $this->failureNoteMeta : [$this->failureNoteMeta];
+            }
+            return $single ? '' : [];
+        });
+        $order->shouldReceive('get_coupon_codes')->andReturn([]);
+        $order->shouldReceive('get_billing_company')->andReturn('');
+        $order->shouldReceive('update_meta_data')->andReturnUsing(function ($key, $value) {
+            if ($key === '_intersoccer_roster_failure_notes') {
+                $this->failureNoteMeta = is_array($value) ? $value : [];
+            }
+        });
         $order->shouldReceive('save')->andReturn($order_id);
         foreach (['get_billing_email' => 'parent@example.test', 'get_billing_phone' => '+41 00 000 00 00',
                   'get_billing_first_name' => 'Parent', 'get_billing_last_name' => 'Test'] as $m => $v) {
@@ -208,9 +227,9 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
         return $order;
     }
 
-    /** Etoy Autumn 2026 course line, EN order (missing case A and its control). */
-    private function etoyItemMeta(string $uuid, string $dob): array {
-        return [
+    /** @param array<string,string> $overrides */
+    private function courseItemMeta(string $uuid, string $dob, array $overrides = []): array {
+        $base = [
             'pa_intersoccer-venues' => 'etoy-centre-sportif-etoy',
             'pa_course-day' => 'sunday',
             'pa_age-group' => '3-12y',
@@ -245,40 +264,49 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
             'Player DOB' => $dob,
             'Player Medical' => 'N/A',
         ];
-    }
-
-    /**
-     * Versoix Autumn 2026 course line after RosterBuilder::buildRosterData() (values as replayed
-     * in the sandbox for missing case B and its control, terms already resolved to English names).
-     */
-    private function versoixRosterData(int $order_id, int $item_id, int $customer_id, string $uuid, string $dob): array {
-        return [
-            'order_id' => $order_id, 'order_item_id' => $item_id,
-            'product_id' => 30713, 'variation_id' => 30714, 'customer_id' => $customer_id,
-            'order_status' => 'completed', 'activity_type' => 'Course',
-            'venue' => 'Versoix - Centre Sportif Versoix', 'age_group' => '3-7y',
-            'season' => 'Autumn 2026', 'booking_type' => 'Full Term', 'course_day' => 'Wednesday',
-            'times' => '1600-1700', 'course_times' => '16h00-17h00',
-            'start_date' => '2026-08-26', 'end_date' => '2026-12-09', 'selected_days' => '',
-            'girls_only' => 0, 'player_index' => 0, 'player_id' => $uuid,
-            'first_name' => 'Test', 'last_name' => 'Player', 'player_first_name' => 'Test', 'player_last_name' => 'Player',
-            'dob' => $dob, 'player_dob' => $dob, 'gender' => 'male', 'player_gender' => 'male',
-            'parent_email' => 'parent@example.test', 'parent_phone' => '+41 00 000 00 00',
-            'event_signature' => '9e06fef35bc59188776ee293500fbdae',
-        ];
-    }
-
-    private function callPrivate($obj, string $method, ...$args) {
-        $m = (new \ReflectionClass($obj))->getMethod($method);
-        $m->setAccessible(true);
-        return $m->invoke($obj, ...$args);
+        return array_merge($base, $overrides);
     }
 
     private function buildErrors(RosterBuilder $b): array {
         return $b->getBuildStatistics()['errors'] ?? [];
     }
 
-    // ------------------------------------------------------------------ live hook contract
+    private function ageStatusForInsertedRow(int $index = 0): string {
+        $row = $this->inserted[$index];
+        $player = $this->player(
+            (int) ($row['customer_id'] ?? 0),
+            (string) ($row['player_id'] ?? '00000000-0000-4000-8000-000000000001'),
+            (string) ($row['player_dob'] ?? $row['dob'] ?? '')
+        );
+
+        return $player->ageGroupStatusAt(
+            (string) ($row['age_group'] ?? ''),
+            (string) ($row['start_date'] ?? '') !== '' ? (string) $row['start_date'] : null
+        );
+    }
+
+    private function ageOutsideBadgeHtml(int $index = 0): string {
+        if (!function_exists('intersoccer_roster_age_outside_group_badge_html')) {
+            require_once dirname(__DIR__, 2) . '/includes/roster-details.php';
+        }
+        return intersoccer_roster_age_outside_group_badge_html((object) $this->inserted[$index]);
+    }
+
+    private function eventDetailsArray(int $index = 0): array {
+        $ed = $this->inserted[$index]['event_details'] ?? [];
+        if (is_string($ed)) {
+            $ed = json_decode($ed, true) ?: [];
+        }
+        return is_array($ed) ? $ed : [];
+    }
+
+    private function runHookBuild(int $order_id, Player $player, ?RosterRepository $repo = null): RosterBuilder {
+        $b = $this->makeBuilder($player, $repo);
+        $rows = $b->buildRosterFromOrder($order_id, self::LIVE_HOOK_OPTIONS);
+        $this->assertSame(1, $rows->count(), 'errors: ' . json_encode($this->buildErrors($b)));
+        $this->assertGreaterThanOrEqual(1, count($this->inserted));
+        return $b;
+    }
 
     public function test_live_hook_passes_skip_age_group_validation_like_reconcile_and_fix_sync() {
         $order = Mockery::mock('WC_Order');
@@ -292,41 +320,101 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
             $captured = $opts;
             return new RostersCollection();
         });
+        $builder->shouldReceive('hadOrderItemWriteFailures')->andReturn(false);
         $logger = Mockery::spy(Logger::class);
         (new OrderProcessor($logger, $repo, $builder))->processOrder($order);
 
-        $this->assertIsArray($captured, 'buildRosterFromOrder was not called');
-        $this->assertTrue(
-            !empty($captured['skip_age_group_validation']),
-            'order-processor.php:119-126 builds with ' . json_encode($captured)
-            . ' - Roster::validateAgeGroup then rejects players under the minimum age on the start date'
-        );
+        $this->assertIsArray($captured);
+        $this->assertTrue(!empty($captured['skip_age_group_validation']));
     }
 
-    // ------------------------------------------------------------------ Etoy (full path from item meta)
-
-    public function test_real_validator_hook_options_with_skip_creates_under_age_row() {
+    public function test_under_minimum_age_writes_row_and_read_time_outside_status() {
         $uuid = '00000000-0000-4000-8000-000000000511';
-        $item = $this->item(52636, 52637, $this->etoyItemMeta($uuid, '2023-08-31'));
+        $item = $this->item(52636, 52637, $this->courseItemMeta($uuid, '2023-08-31'));
         $this->order(1011, 211, 511, $item);
-        $b = $this->makeBuilderWithRealValidator($this->player(211, $uuid, '2023-08-31'));
+        $this->runHookBuild(1011, $this->player(211, $uuid, '2023-08-31'));
 
-        $rows = $b->buildRosterFromOrder(1011, self::LIVE_HOOK_OPTIONS);
+        $this->assertSame('outside', $this->ageStatusForInsertedRow());
+        $this->assertStringContainsString('Age outside group', $this->ageOutsideBadgeHtml());
+        $this->assertArrayNotHasKey('under_age_at_start', $this->eventDetailsArray());
+    }
 
-        $this->assertSame(1, $rows->count(), 'errors: ' . json_encode($this->buildErrors($b)));
-        $this->assertCount(1, $this->inserted);
-        $this->assertFalse($b->hadOrderItemWriteFailures());
-        $ed = $this->inserted[0]['event_details'] ?? [];
-        if (is_string($ed)) {
-            $ed = json_decode($ed, true) ?: [];
-        }
-        $this->assertTrue(!empty($ed['under_age_at_start']));
+    public function test_over_maximum_age_writes_row_and_read_time_outside_status() {
+        $uuid = '00000000-0000-4000-8000-000000000512';
+        $meta = $this->courseItemMeta($uuid, '2010-02-03', [
+            'pa_age-group' => '3-5y',
+            '_intersoccer_canonical_age_group' => '3-5y',
+            'Age Group' => '3-5y',
+        ]);
+        $item = $this->item(52636, 52637, $meta);
+        $this->order(1012, 212, 512, $item);
+        $this->runHookBuild(1012, $this->player(212, $uuid, '2010-02-03'));
+
+        $this->assertSame('outside', $this->ageStatusForInsertedRow());
+        $this->assertStringContainsString('Age outside group', $this->ageOutsideBadgeHtml());
+    }
+
+    public function test_age_group_5_12_in_range_is_ok() {
+        $uuid = '00000000-0000-4000-8000-000000000513';
+        $meta = $this->courseItemMeta($uuid, '2015-02-03', [
+            'pa_age-group' => '5-12',
+            '_intersoccer_canonical_age_group' => '5-12',
+            'Age Group' => '5-12',
+        ]);
+        $item = $this->item(52636, 52637, $meta);
+        $this->order(1013, 213, 513, $item);
+        $this->runHookBuild(1013, $this->player(213, $uuid, '2015-02-03'));
+
+        $this->assertSame('ok', $this->ageStatusForInsertedRow());
+        $this->assertSame('', $this->ageOutsideBadgeHtml());
+    }
+
+    public function test_age_group_5_12_out_of_range_is_outside() {
+        $uuid = '00000000-0000-4000-8000-000000000514';
+        $meta = $this->courseItemMeta($uuid, '2023-08-31', [
+            'pa_age-group' => '5-12',
+            '_intersoccer_canonical_age_group' => '5-12',
+            'Age Group' => '5-12',
+        ]);
+        $item = $this->item(52636, 52637, $meta);
+        $this->order(1014, 214, 514, $item);
+        $this->runHookBuild(1014, $this->player(214, $uuid, '2023-08-31'));
+
+        $this->assertSame('outside', $this->ageStatusForInsertedRow());
+    }
+
+    public function test_pre_k_to_g5_label_is_not_checked() {
+        $uuid = '00000000-0000-4000-8000-000000000515';
+        $meta = $this->courseItemMeta($uuid, '2015-02-03', [
+            'pa_age-group' => 'Pre-K to G5',
+            '_intersoccer_canonical_age_group' => 'Pre-K to G5',
+            'Age Group' => 'Pre-K to G5',
+        ]);
+        $item = $this->item(52636, 52637, $meta);
+        $this->order(1015, 215, 515, $item);
+        $this->runHookBuild(1015, $this->player(215, $uuid, '2015-02-03'));
+
+        $this->assertSame('not_checked', $this->ageStatusForInsertedRow());
+        $this->assertSame('', $this->ageOutsideBadgeHtml());
+    }
+
+    public function test_missing_dob_is_not_checked() {
+        $uuid = '00000000-0000-4000-8000-000000000516';
+        $meta = $this->courseItemMeta($uuid, '0000-00-00', [
+            'Attendee DOB' => '0000-00-00',
+            'Player DOB' => '0000-00-00',
+        ]);
+        $item = $this->item(52636, 52637, $meta);
+        $this->order(1016, 216, 516, $item);
+        $this->runHookBuild(1016, $this->player(216, $uuid, '0000-00-00'));
+
+        $this->assertSame('not_checked', $this->ageStatusForInsertedRow());
     }
 
     public function test_real_validator_without_skip_rejects_under_age_at_start() {
-        $uuid = '00000000-0000-4000-8000-000000000512';
-        $item = $this->item(52636, 52637, $this->etoyItemMeta($uuid, '2023-08-31'));
-        $this->order(1012, 212, 512, $item);
+        $uuid = '00000000-0000-4000-8000-000000000517';
+        $item = $this->item(52636, 52637, $this->courseItemMeta($uuid, '2023-08-31'));
+        $this->order(1017, 217, 517, $item);
         $advisory_rules = '';
         $logger = Mockery::mock(Logger::class);
         $logger->shouldReceive('info', 'debug', 'error')->andReturn(null);
@@ -336,124 +424,93 @@ class RosterBuilderHookAgeAtStartTest extends TestCase {
             }
             return null;
         });
-        $b = $this->makeBuilderWithRealValidatorAndLogger($this->player(212, $uuid, '2023-08-31'), $logger);
+        $b = $this->makeBuilderWithRealValidator($this->player(217, $uuid, '2023-08-31'), $logger);
 
-        $rows = $b->buildRosterFromOrder(1012, [
+        $rows = $b->buildRosterFromOrder(1017, [
             'validate_data' => true,
             'skip_duplicates' => true,
             'update_existing' => true,
+            'skip_age_group_validation' => false,
         ]);
 
         $this->assertSame(0, $rows->count());
         $this->assertTrue($b->hadOrderItemWriteFailures());
-        $errors = $this->buildErrors($b);
-        $this->assertNotEmpty($errors);
-        $this->assertStringContainsString('not eligible for age group', implode(' ', $errors));
+        $this->assertStringContainsString('not eligible for age group', implode(' ', $this->buildErrors($b)));
         $this->assertStringContainsString('age_group_eligibility', $advisory_rules);
     }
 
-    public function test_case_a_etoy_live_hook_options_create_one_row() {
-        $uuid = '00000000-0000-4000-8000-000000000501';
-        $item = $this->item(52636, 52637, $this->etoyItemMeta($uuid, '2023-08-31')); // age 2 on 2026-08-23
-        $this->order(1001, 201, 501, $item);
-        $b = $this->makeBuilder($this->player(201, $uuid, '2023-08-31'));
+    public function test_hook_rerun_on_same_order_upserts_without_duplicate_insert() {
+        $uuid = '00000000-0000-4000-8000-000000000518';
+        $item = $this->item(52636, 52637, $this->courseItemMeta($uuid, '2023-08-31'));
+        $this->order(1018, 218, 518, $item);
+        $existing = Mockery::mock(Roster::class)->shouldIgnoreMissing();
+        $existing->id = 42;
+        $existing->order_id = 1018;
+        $existing->order_item_id = 518;
+        $existing->customer_id = 218;
+        $existing->player_index = 0;
+        $existing->end_date = '2026-12-20';
+        $existing->event_completed = 0;
+        $existing->order_status = 'completed';
+        $repo = $this->rosterRepository($existing);
+        $b = $this->makeBuilder($this->player(218, $uuid, '2023-08-31'), $repo);
 
-        $rows = $b->buildRosterFromOrder(1001, self::LIVE_HOOK_OPTIONS);
+        $first = $b->buildRosterFromOrder(1018, self::LIVE_HOOK_OPTIONS);
+        $this->assertSame(1, $first->count());
+        $this->assertSame(1, $this->insert_calls);
 
-        $this->assertSame(1, $rows->count(), 'swallowed: ' . json_encode($this->buildErrors($b)));
-        $this->assertCount(1, $this->inserted);
+        $second = $b->buildRosterFromOrder(1018, self::LIVE_HOOK_OPTIONS);
+        $this->assertSame(1, $second->count());
+        $this->assertSame(1, $this->insert_calls);
+        $this->assertSame(1, $this->update_calls);
     }
 
-    public function test_control_a_etoy_same_variation_creates_one_row() {
-        $uuid = '00000000-0000-4000-8000-000000000502';
-        $item = $this->item(52636, 52637, $this->etoyItemMeta($uuid, '2015-02-03')); // age 11 on 2026-08-23
-        $this->order(1002, 202, 502, $item);
-        $b = $this->makeBuilder($this->player(202, $uuid, '2015-02-03'));
+    public function test_order_processor_hook_path_notes_once_and_returns_false_on_db_failure() {
+        $uuid = '00000000-0000-4000-8000-000000000519';
+        $item = $this->item(52636, 52637, $this->courseItemMeta($uuid, '2015-02-03'));
+        $notes = [];
+        $order = $this->order(1019, 219, 519, $item, $notes);
+        $validator = Mockery::mock(DataValidator::class);
+        $validator->shouldReceive('validateRosterData')->andReturn(['valid' => true, 'errors' => [], 'field_errors' => []]);
+        $db = Mockery::mock(Database::class);
+        $cache = Mockery::mock(CacheManager::class);
+        $cache->shouldReceive('get')->andReturn(null);
+        $cache->shouldReceive('set', 'forget', 'forgetPattern')->andReturn(true);
+        $repo = Mockery::mock(RosterRepository::class, [$this->logger(), $db, $cache])->makePartial();
+        $repo->shouldReceive('first')->andReturn(null);
+        $repo->shouldReceive('count')->andReturn(0);
+        $repo->shouldReceive('where')->andReturn(new RostersCollection());
+        $repo->shouldReceive('create')->andReturn(null);
+        $players = new PlayersCollection();
+        $players->add($this->player(219, $uuid, '2015-02-03'));
+        $playerRepo = Mockery::mock(PlayerRepository::class);
+        $playerRepo->shouldReceive('getPlayersByCustomerId')->andReturn($players);
+        $matcher = Mockery::mock(PlayerMatcher::class);
+        $matcher->shouldReceive('getAssignedPlayers')->andReturn($players);
+        $builder = new RosterBuilder(
+            $this->logger(),
+            Mockery::mock(Database::class),
+            $playerRepo,
+            $repo,
+            $validator,
+            Mockery::mock(EventMatcher::class),
+            $matcher
+        );
+        $processor = new OrderProcessor($this->logger(), $repo, $builder);
 
-        $rows = $b->buildRosterFromOrder(1002, self::LIVE_HOOK_OPTIONS);
-
-        $this->assertSame(1, $rows->count(), 'errors: ' . json_encode($this->buildErrors($b)));
-        $row = $this->inserted[0];
-        $this->assertSame('3-12y', $row['age_group']);
-        $this->assertSame('2026-08-23', (string) $row['start_date']);
+        $this->assertFalse($processor->processOrder($order));
+        $this->assertCount(1, $notes);
+        $this->assertFalse($processor->processOrder($order));
+        $this->assertCount(1, $notes);
     }
 
-    public function test_case_a_etoy_reconcile_options_create_one_row() {
-        $uuid = '00000000-0000-4000-8000-000000000501';
-        $item = $this->item(52636, 52637, $this->etoyItemMeta($uuid, '2023-08-31'));
-        $this->order(1001, 201, 501, $item);
-        $b = $this->makeBuilder($this->player(201, $uuid, '2023-08-31'));
+    public function test_eligible_age_is_ok_without_stored_marker() {
+        $uuid = '00000000-0000-4000-8000-000000000520';
+        $item = $this->item(52636, 52637, $this->courseItemMeta($uuid, '2015-02-03'));
+        $this->order(1020, 220, 520, $item);
+        $this->runHookBuild(1020, $this->player(220, $uuid, '2015-02-03'));
 
-        $rows = $b->buildRosterFromOrder(1001, self::LIVE_HOOK_OPTIONS + ['skip_age_group_validation' => true]);
-
-        $this->assertSame(1, $rows->count(), 'errors: ' . json_encode($this->buildErrors($b)));
-    }
-
-    // ------------------------------------------------------------------ Versoix (createOrUpdateRoster -> real create/validate)
-
-    public function test_case_b_versoix_live_hook_options_create_row() {
-        $uuid = '00000000-0000-4000-8000-000000000503';
-        $b = $this->makeBuilder($this->player(203, $uuid, '2023-09-10'));
-        $data = $this->versoixRosterData(1003, 503, 203, $uuid, '2023-09-10'); // age 2 on 2026-08-26
-
-        try {
-            $roster = $this->callPrivate($b, 'createOrUpdateRoster', $data, self::LIVE_HOOK_OPTIONS);
-        } catch (\Throwable $e) {
-            $this->fail(get_class($e) . ' (swallowed live at roster-builder.php:755): ' . $e->getMessage());
-        }
-        $this->assertInstanceOf(Roster::class, $roster);
-    }
-
-    public function test_control_b_versoix_same_variation_creates_row() {
-        $uuid = '00000000-0000-4000-8000-000000000504';
-        $b = $this->makeBuilder($this->player(204, $uuid, '2023-08-22'));
-        $data = $this->versoixRosterData(1004, 504, 204, $uuid, '2023-08-22'); // turned 3 on 2026-08-22
-
-        $roster = $this->callPrivate($b, 'createOrUpdateRoster', $data, self::LIVE_HOOK_OPTIONS);
-
-        $this->assertInstanceOf(Roster::class, $roster);
-        $this->assertCount(1, $this->inserted);
-    }
-
-    /** Rules out the 'y'-suffix parse bug: both age groups parse; only age-at-start differs. */
-    public function test_under_age_at_start_marker_in_event_details() {
-        $uuid = '00000000-0000-4000-8000-000000000505';
-        $item = $this->item(52636, 52637, $this->etoyItemMeta($uuid, '2023-08-31'));
-        $this->order(1005, 205, 505, $item);
-        $b = $this->makeBuilder($this->player(205, $uuid, '2023-08-31'));
-
-        $b->buildRosterFromOrder(1005, self::LIVE_HOOK_OPTIONS);
-
-        $ed = $this->inserted[0]['event_details'] ?? [];
-        if (is_string($ed)) {
-            $ed = json_decode($ed, true) ?: [];
-        }
-        $this->assertTrue(!empty($ed['under_age_at_start']));
-    }
-
-    public function test_eligible_age_omits_under_age_at_start_marker() {
-        $uuid = '00000000-0000-4000-8000-000000000506';
-        $item = $this->item(52636, 52637, $this->etoyItemMeta($uuid, '2015-02-03'));
-        $this->order(1006, 206, 506, $item);
-        $b = $this->makeBuilder($this->player(206, $uuid, '2015-02-03'));
-
-        $b->buildRosterFromOrder(1006, self::LIVE_HOOK_OPTIONS);
-
-        $ed = $this->inserted[0]['event_details'] ?? [];
-        if (is_string($ed)) {
-            $ed = json_decode($ed, true) ?: [];
-        }
-        $this->assertArrayNotHasKey('under_age_at_start', $ed);
-    }
-
-    public function test_age_groups_parse_and_only_age_on_start_date_differs() {
-        $parse = new \ReflectionMethod(Player::class, 'parseAgeGroup');
-        $parse->setAccessible(true);
-        $p = $this->player(1, 'x', '2023-09-10');
-        $this->assertSame(['min' => 3, 'max' => 7], $parse->invoke($p, '3-7y'));
-        $this->assertSame(['min' => 3, 'max' => 12], $parse->invoke($p, '3-12y'));
-        $this->assertSame(2, $this->player(1, 'x', '2023-09-10')->getAgeAt('2026-08-26'));
-        $this->assertSame(2, $this->player(1, 'x', '2023-08-31')->getAgeAt('2026-08-23'));
-        $this->assertSame(3, $this->player(1, 'x', '2023-08-22')->getAgeAt('2026-08-26'));
+        $this->assertSame('ok', $this->ageStatusForInsertedRow());
+        $this->assertArrayNotHasKey('under_age_at_start', $this->eventDetailsArray());
     }
 }

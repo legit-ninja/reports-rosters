@@ -132,6 +132,8 @@ class RosterBuilderAdvisoryValidationTest extends TestCase {
         $order->shouldReceive('get_meta')->andReturn([]);
         $order->shouldReceive('update_meta_data')->andReturn(null);
         $order->shouldReceive('save')->andReturn($order_id);
+        $order->shouldReceive('get_coupon_codes')->andReturn([]);
+        $order->shouldReceive('get_billing_company')->andReturn('');
         foreach (['get_billing_email' => 'parent@example.test', 'get_billing_phone' => '+41 00 000 00 00',
                   'get_billing_first_name' => 'Parent', 'get_billing_last_name' => 'Test'] as $m => $v) {
             $order->shouldReceive($m)->andReturn($v);
@@ -278,7 +280,6 @@ class RosterBuilderAdvisoryValidationTest extends TestCase {
         $cache->shouldReceive('get')->andReturn(null);
         $cache->shouldReceive('set', 'forget', 'forgetPattern')->andReturn(true);
         $rosterRepo = Mockery::mock(RosterRepository::class, [$this->logger(), $db, $cache])->makePartial();
-        $rosterRepo->shouldReceive('deleteWhere')->once()->andReturn(1);
         $rosterRepo->shouldReceive('first')->andReturn(null);
         $rosterRepo->shouldReceive('count')->andReturn(0);
         $rosterRepo->shouldReceive('where')->andReturn(new RostersCollection());

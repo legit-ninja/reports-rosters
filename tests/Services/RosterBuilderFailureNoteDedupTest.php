@@ -107,6 +107,8 @@ class RosterBuilderFailureNoteDedupTest extends TestCase {
             }
         });
         $order->shouldReceive('save')->andReturn($order_id);
+        $order->shouldReceive('get_coupon_codes')->andReturn([]);
+        $order->shouldReceive('get_billing_company')->andReturn('');
         foreach (['get_billing_email' => 'parent@example.test', 'get_billing_phone' => '+41 00 000 00 00',
                   'get_billing_first_name' => 'Parent', 'get_billing_last_name' => 'Test'] as $m => $v) {
             $order->shouldReceive($m)->andReturn($v);

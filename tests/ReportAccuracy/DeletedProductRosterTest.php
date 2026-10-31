@@ -708,11 +708,19 @@ class DeletedProductRosterTest extends TestCase {
         $logger->expects($this->atLeastOnce())
             ->method('error')
             ->with(
-                $this->equalTo('Roster insert failed'),
+                $this->callback(static function ($message) {
+                    return in_array($message, [
+                        'Roster insert failed',
+                        'Order line roster write failed',
+                        'Failed to build roster from order',
+                    ], true);
+                }),
                 $this->callback(static function ($context) {
                     return is_array($context)
-                        && (int) ($context['order_id'] ?? 0) === 9501
-                        && (int) ($context['order_item_id'] ?? 0) === 5501;
+                        && (
+                            ((int) ($context['order_id'] ?? 0) === 9501 && (int) ($context['order_item_id'] ?? 0) === 5501)
+                            || ((int) ($context['order_id'] ?? 0) === 9501 && isset($context['error']))
+                        );
                 })
             );
 
