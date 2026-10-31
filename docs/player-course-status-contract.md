@@ -7,8 +7,9 @@ Stacked on win-back / PCS shared loader (`includes/roster-report-loader.php`). U
 | Item | Value |
 |------|--------|
 | Slug | `intersoccer-player-course-status` |
-| Parent | `null` (hidden menu) |
+| Parent | `intersoccer-reports-rosters` (visible submenu beside **Player camp status**) |
 | Capability | `manage_options` |
+| Office UI | `includes/player-course-status-admin.php` — warnings `notice-warning inline` directly under `<h1>`; secondary **Final course numbers** → `admin.php?page=intersoccer-final-reports&activity_type=Course&year={year}` |
 | Render | `intersoccer_render_player_course_status_page()` |
 | Export hook | `admin_init` priority 1 + `load-{hook}` → `intersoccer_player_course_status_maybe_export_excel()` |
 
@@ -23,7 +24,7 @@ Request parser: `intersoccer_player_course_status_request_filters()` (adds `page
 | Key | Type | Default | Notes |
 |-----|------|---------|--------|
 | `year` | int | current calendar year | Course year rule below |
-| `season_type` | string | `''` | `Summer` / `Winter` / `Autumn` / `Spring`; empty = all |
+| `season_type` | string | `''` in `normalize_filters()` / `generate()` | **`courses`** on first office page load via `request_filters()` when `season_type` is omitted — matches rows whose season type is **Autumn**, **Winter**, or **Spring** (excludes **Summer**). Label: “Autumn / Winter / Spring”. Also: `Summer` / `Winter` / `Autumn` / `Spring` individually; empty string (explicit **All seasons**) = no season filter |
 | `girls_mode` | string | `all` | `all` \| `mixed` \| `girls_only` |
 | `booked` | string | `all` | `all` \| `booked` \| `not_booked` — filters **players** after join. `not_booked` includes players whose `booking_status` is `pending_payment`, `on_hold`, or plain `not_booked`. |
 | `booking_status` | string | `''` | `''` (all) \| `booked` \| `pending_payment` \| `on_hold` \| `not_booked` — applied **after** `booked`. Here `not_booked` means plain not-booked only (excludes pending/on-hold). |
@@ -42,7 +43,7 @@ Roster `season` strings are normalized only inside the player course status engi
 - **Title case per word**, including segments after `/` (e.g. `Spring/summer 2026` → `Spring/Summer 2026`).
 - `filter_options['seasons']` dedupes by case-insensitive canonical label; compound labels (containing `/`) stay as the full canonical string; simple `Season YYYY` rows still expose the extracted season **type** (e.g. `Autumn`) for backward compatibility.
 - Booking `season`, `label`, and `bookings_label` use the canonical label.
-- `season_type` filter matching uses canonical comparison plus existing season-type / substring rules.
+- `season_type` filter matching uses canonical comparison plus existing season-type / substring rules. Special value **`courses`**: include Autumn, Winter, and Spring (compound **Spring/Summer** counts as Spring); exclude standalone Summer. Empty or unrecognised season labels remain visible in the **`courses`** filter.
 
 ### Full-result cache
 
@@ -50,10 +51,10 @@ Roster `season` strings are normalized only inside the player course status engi
 
 | Item | Detail |
 |------|--------|
-| Key prefix | `intersoccer_pcs_` + MD5 of JSON: cache schema version (`intersoccer_player_course_status_cache_schema_version()`, currently `2`), normalized filters (`year`, `season_type`, `girls_mode`, `booked`, `booking_status`, `search`, `venue`, `course_day`, `age_group` — not `paged`), data marker, output context |
+| Key prefix | `intersoccer_pcs_` + MD5 of JSON: cache schema version (`intersoccer_player_course_status_cache_schema_version()`, currently `5`), normalized filters (`year`, `season_type`, `girls_mode`, `booked`, `booking_status`, `search`, `venue`, `course_day`, `age_group` — not `paged`), data marker, output context |
 | Data marker | `COUNT(*)` and `MAX(id)` on `{prefix}intersoccer_rosters`; `MAX(date_updated_gmt)` on `{prefix}wc_orders` when HPOS is active (`intersoccer_roster_report_uses_hpos_orders_table()`), else `MAX(post_modified_gmt)` on `shop_order` posts |
 | Output context (cache key) | `get_locale()` and whether `intersoccer_player_course_status_user_can_view_dob()` is true (DOB column + `dob` / `dob_restricted` on rows; translated `booking_status_label` strings) |
-| TTL | 300 seconds default; filter `intersoccer_player_course_status_cache_ttl` |
+| TTL | 12 hours (43200 seconds) default; filter `intersoccer_player_course_status_cache_ttl` |
 | Stored format | Slim result (drops derivable `player.name`, `bookings_label`, `booking_status_label`, and per-booking `label`; rehydrated on read) → `serialize` → `gzcompress` → **base64** string in the transient (text-safe for `wp_options` utf8mb4) |
 | Size cap | Applied to the **stored base64 string** length after compression (default 5 MiB, filter `intersoccer_player_course_status_cache_max_bytes`). Skip write when non-empty `warnings` or stored size over cap |
 | Object cache | Persistent object caches (e.g. memcached) may refuse items over ~1 MiB; WordPress then omits the transient and the report regenerates on each request until TTL/marker would have expired anyway |
@@ -70,7 +71,7 @@ Roster `season` strings are normalized only inside the player course status engi
   'unmatched_bookings' => list<booking + ['player_name','customer_id']>,
   'filter_options' => [
     'venues' => slug => label,
-    'course_days' => list<string slug>,
+    'course_days' => slug => label (weekday label for admin `<select>`; value remains slug),
     'age_groups' => slug => label,
     'seasons' => list<string>,
   ],
@@ -135,11 +136,16 @@ Roster prefilter SQL must not compare `start_date` / `end_date` to non-date lite
   'course_day', 'course_day_slug',
   'times', 'season', 'start_date', 'end_date',
   'order_status', 'girls_only' => bool,
+  'parent_billing_name', 'parent_billing_email', 'parent_billing_phone' => string,  // from roster row at booking time
   'label' => string,
 ]
 ```
 
 Label format: `product · venue · course_day · times · season · start–end` (empty parts skipped).
+
+`times` on bookings uses roster `times`, falling back to `course_times` only when `times` is empty; values are normalized to a single display form (`HHMM-HHMM`, e.g. `1000-1130`) via `intersoccer_player_course_status_normalize_times_display()`.
+
+`filter_options` venues / course days / age groups / seasons are built from **in-scope** roster rows for the active filter set (calendar **year**, **season_type**, **girls_mode**, and related scope applied in `filter_scoped_rows()`), limited to rows that are **completed/processing or pending/on-hold** (not cancelled/refunded/failed), so a pending-only season still appears in the season dropdown when that season is in scope. Course-day option labels are English weekdays (`intersoccer_normalize_weekday_token()` on roster label then slug).
 
 ### Status / booked rules
 
@@ -161,6 +167,16 @@ A course row is in year **Y** when:
 2. `intersoccer_reports_resolve_program_year()` on the row (after batch `Year` / `pa_program-year` on the line) equals **Y**.
 
 SQL prefilter: `start_date` / `end_date` in `[Y-1]-01-01` … `[Y+1]-12-31`, or `NULL` / `1970-01-01`; final year decision in PHP (see strict SQL note above).
+
+### Course date resolution (read-time, PCS only)
+
+When roster `start_date` / `end_date` are empty, sentinel (`1970-01-01`), or a localized string (FR/DE month names), the engine resolves **in memory** during `intersoccer_player_course_status_prepare_roster_rows()` (no roster table writes):
+
+1. Parse roster column with `intersoccer_parse_date_unified()` (after optional German month normalization in `intersoccer_player_course_status_normalize_localized_date_string()`).
+2. Batched order-item meta: `Start Date` / `End Date` and FR/DE aliases (`Date de début`, `Date de fin`, `Startdatum`, `Enddatum`), parsed with `intersoccer_parse_date_unified()`.
+3. Default-language variation meta `_course_start_date` / `_end_date` (WPML via `intersoccer_get_default_language_variation_id()` when available).
+
+Resolved `Y-m-d` values drive year scoping (`intersoccer_player_course_status_row_in_year()`), booking records, labels, and export. Program-year meta (`Year` / `pa_program-year`) still applies when dates do not place the row in **Y**.
 
 ### Course vs camp
 
@@ -187,8 +203,15 @@ Same gate as PCS: `intersoccer_player_course_status_user_can_view_dob()` (wraps 
 | Nonce action | `intersoccer_player_course_status_excel` |
 | Filename | `player-course-status-{year}.xlsx` |
 | Sheet title | `Player Course Status` |
-| Headers | `Player Name`, `Parent Email`, `User ID`, `DOB` (if allowed), `Age`, `Booked`, `Status`, `Course Bookings`, `Match Tier` |
+| Layout | **One row per player booking line** (booked `bookings[]` plus each `pending_bookings[]` line). Players with no lines still get **one** row with empty booking columns. |
+| Helpers | `intersoccer_player_course_status_export_headers()`, `intersoccer_player_course_status_export_rows_for_player()` |
 
-`Booked` remains Yes/No. `Status` is the translated `booking_status_label`. Pending lines are not included in `Course Bookings`.
+### Excel columns (in order)
+
+**Player (repeated on each line):** `Player Name`, `Parent Email` (guardian WooCommerce account email — legacy office column), `Account Email` (same account email; billing contact per line remains `Parent Billing Email`), `User ID`, `DOB` (only when `intersoccer_player_course_status_user_can_view_dob()`), `Age`, `Booked` (Yes/No facet), `Status` (translated `booking_status_label`), `Match Tier`.
+
+**Per line:** `Line Type` (`Booked line` / `Pending payment line` / `On hold line` / empty), `Product`, `Venue`, `Age Group`, `Course Day`, `Times` (roster `times`, not `course_times`), `Season`, `Start Date`, `End Date`, `Order Status` (normalized), `Girls Only` (Yes/No), `Order ID`, `Parent Billing Name`, `Parent Billing Email`, `Parent Billing Phone` (roster parent fields from that booking row).
+
+`Booked` / `Status` reflect the **player** facet state; `Line Type` identifies each exported booking row. Screen/API `generate()` row shape is unchanged aside from optional new keys on booking objects (`parent_billing_*`).
 
 Export uses the same `generate()` rows as the screen (no separate query path). If `warnings` is non-empty, export stops with `wp_die()` instead of streaming a workbook.

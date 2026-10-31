@@ -227,6 +227,8 @@ class PlayerCourseStatusAdminUiTest extends TestCase {
 		]);
 
 		$this->assertStringContainsString('Ada &lt;script&gt;x&lt;/script&gt;', $html);
+		$this->assertStringContainsString('Unmatched bookings (not filtered)', $html);
+		$this->assertStringContainsString('This list ignores the filters above.', $html);
 		$this->assertStringContainsString('Course &amp; Hall', $html);
 		$this->assertStringContainsString('>42<', $html);
 		$this->assertStringContainsString('>processing<', $html);
@@ -250,13 +252,15 @@ class PlayerCourseStatusAdminUiTest extends TestCase {
 			],
 			[
 				'venues' => ['zurich' => 'Zurich <b>Hall'],
-				'course_days' => ['sunday', 'monday'],
+				'course_days' => ['sunday' => 'Sunday', 'monday' => 'Monday'],
 				'age_groups' => ['u8' => 'Under 8 & Co'],
 				'seasons' => ['Winter'],
 			]
 		);
 
 		$this->assertStringContainsString('name="booking_status"', $html);
+		$this->assertStringContainsString('class="intersoccer-pcs-filter-field"', $html);
+		$this->assertSame(9, substr_count($html, 'class="intersoccer-pcs-filter-field"'));
 		$this->assertStringContainsString('id="pcrs-status"', $html);
 		$this->assertStringContainsString('value="on_hold" selected="selected"', $html);
 		$this->assertStringContainsString('>All<', $html);
@@ -273,6 +277,7 @@ class PlayerCourseStatusAdminUiTest extends TestCase {
 		$this->assertStringContainsString('value="missing-hall" selected="selected"', $html);
 		$this->assertStringContainsString('Under 8 &amp; Co', $html);
 		$this->assertStringContainsString('value="sunday" selected="selected"', $html);
+		$this->assertStringContainsString('>Sunday<', $html);
 		$this->assertStringContainsString('value="2019" selected="selected"', $html);
 		$this->assertStringContainsString('value="Ada &lt;b&gt;"', $html);
 		$this->assertStringNotContainsString('<b>', $html);
@@ -351,7 +356,7 @@ class PlayerCourseStatusAdminUiTest extends TestCase {
 		]);
 		$page = $shown . '<table class="widefat striped"><tbody>' . $rows . '</tbody></table>';
 
-		$this->assertStringContainsString('class="notice notice-warning"', $shown);
+		$this->assertStringContainsString('class="notice notice-warning inline"', $shown);
 		$this->assertStringContainsString('Roster query failed &lt;b&gt;badly&lt;/b&gt;', $shown);
 		$this->assertStringContainsString('Second warning', $shown);
 		$this->assertStringNotContainsString('<b>', $shown);
@@ -465,8 +470,10 @@ class PlayerCourseStatusAdminUiTest extends TestCase {
 
 		$this->assertNotFalse($booked);
 		$this->assertSame($booked + 1, $status);
-		$this->assertContains('Course Bookings', $headers);
-		$this->assertNotContains('Pending', $headers);
+		$this->assertContains('Line Type', $headers);
+		$this->assertContains('Parent Email', $headers);
+		$this->assertContains('Account Email', $headers);
+		$this->assertNotContains('Course Bookings', $headers);
 	}
 
 	/**

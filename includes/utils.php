@@ -492,6 +492,14 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
     $log_date_parse = static function (string $message) use ($context): void {
         intersoccer_parse_date_unified_debug_log($message, $context);
     };
+
+    if (function_exists('intersoccer_parse_date_unified_localized_month_date')) {
+        $localized_parsed = intersoccer_parse_date_unified_localized_month_date($date_string);
+        if ($localized_parsed !== null) {
+            $log_date_parse("InterSoccer: Parsed date '$date_string' via localized month name to '$localized_parsed'");
+            return $localized_parsed;
+        }
+    }
     
     // Format priority order (most specific/unambiguous first)
     // 1. F j, Y - "August 17, 2025" (most common, unambiguous)
@@ -686,6 +694,63 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
     // All parsing attempts failed
     $log_date_parse("InterSoccer: Failed to parse date '$date_string'");
     return null;
+}
+
+if (!function_exists('intersoccer_parse_date_unified_localized_month_date')) {
+    /**
+     * Parse dates whose month name is localized (DE/FR/EN), e.g. "März 3, 2026".
+     *
+     * @param string $date_string
+     * @return string|null Y-m-d or null
+     */
+    function intersoccer_parse_date_unified_localized_month_date($date_string) {
+        if (!function_exists('intersoccer_reports_month_token_to_english')) {
+            return null;
+        }
+        $date_string = trim((string) $date_string);
+        if ($date_string === '') {
+            return null;
+        }
+
+        $try_f_j_y = static function (string $english_month, int $day, int $year): ?string {
+            if ($year < 1900 || $year > 2100 || $day < 1 || $day > 31) {
+                return null;
+            }
+            $candidate = $english_month . ' ' . $day . ', ' . $year;
+            $date = DateTime::createFromFormat('F j, Y', $candidate);
+            if ($date === false) {
+                return null;
+            }
+            if ($date->format('F j, Y') !== $candidate) {
+                return null;
+            }
+
+            return $date->format('Y-m-d');
+        };
+
+        if (preg_match('/^([\p{L}\p{M}]+)\s+(\d{1,2}),\s*(\d{4})$/u', $date_string, $matches)) {
+            $english_month = intersoccer_reports_month_token_to_english($matches[1]);
+            if ($english_month !== '') {
+                return $try_f_j_y($english_month, (int) $matches[2], (int) $matches[3]);
+            }
+        }
+
+        if (preg_match('/^(\d{1,2})\.\s*([\p{L}\p{M}]+)\s+(\d{4})$/u', $date_string, $matches)) {
+            $english_month = intersoccer_reports_month_token_to_english($matches[2]);
+            if ($english_month !== '') {
+                return $try_f_j_y($english_month, (int) $matches[1], (int) $matches[3]);
+            }
+        }
+
+        if (preg_match('/^(\d{1,2})\s+([\p{L}\p{M}]+)\s+(\d{4})$/u', $date_string, $matches)) {
+            $english_month = intersoccer_reports_month_token_to_english($matches[2]);
+            if ($english_month !== '') {
+                return $try_f_j_y($english_month, (int) $matches[1], (int) $matches[3]);
+            }
+        }
+
+        return null;
+    }
 }
 
 if (!function_exists('intersoccer_normalize_weekday_token')) {
@@ -7267,6 +7332,9 @@ function intersoccer_reports_month_token_to_english($token) {
         return '';
     }
     $ascii = $raw;
+    if (function_exists('remove_accents')) {
+        $ascii = remove_accents($raw);
+    }
     if (function_exists('iconv')) {
         $converted = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $raw);
         if (is_string($converted) && $converted !== '') {

@@ -104,7 +104,7 @@ class PlayerCourseStatusTest extends TestCase {
 	public function test_booking_label_and_times_fallback(): void {
 		$row = $this->base_course_row(['times' => '', 'course_times' => '14:00-15:00']);
 		$label = intersoccer_player_course_status_booking_label($row);
-		$this->assertStringContainsString('14:00-15:00', $label);
+		$this->assertStringContainsString('1400-1500', $label);
 		$this->assertStringContainsString('Sunday', $label);
 	}
 

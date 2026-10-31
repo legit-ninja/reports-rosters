@@ -242,7 +242,7 @@ class MenuManager {
         }
 
         $player_course_status_hook = add_submenu_page(
-            null,
+            'intersoccer-reports-rosters',
             __('Player course status', 'intersoccer-reports-rosters'),
             __('Player course status', 'intersoccer-reports-rosters'),
             'manage_options',

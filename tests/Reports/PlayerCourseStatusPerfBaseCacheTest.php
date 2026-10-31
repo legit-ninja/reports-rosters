@@ -113,7 +113,7 @@ class PlayerCourseStatusPerfBaseCacheTest extends TestCase {
 	}
 
 	public function test_schema_version_is_v3_and_legacy_v2_blob_is_not_used(): void {
-		$this->assertSame(4, intersoccer_player_course_status_cache_schema_version());
+		$this->assertSame(5, intersoccer_player_course_status_cache_schema_version());
 		$key = intersoccer_player_course_status_cache_transient_key(['year' => 2026]);
 		$legacy_payload = base64_encode((string) gzcompress(maybe_serialize(['rows' => []]), 6));
 		$GLOBALS['intersoccer_test_pcs_transient_store'][ $key ] = $legacy_payload;
