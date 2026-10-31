@@ -17,8 +17,14 @@ class MovePlayersConfirmFlowTest extends TestCase {
     private const TEST_VARIATION_ID = 881001;
     private const TEST_PARENT_ID = 881010;
 
+    /** @var string[] Facet columns compared between renormalize DB update and empty-stub helper. */
+    private const FACET_DB_COLUMNS = ['venue', 'age_group', 'camp_terms', 'course_day', 'times', 'season'];
+
     protected function setUp(): void {
         parent::setUp();
+        if (!function_exists('taxonomy_exists')) {
+            eval('function taxonomy_exists($taxonomy) { return true; }');
+        }
         global $intersoccer_test_post_status_map, $intersoccer_test_product_type_safe_callback, $wpdb;
         $intersoccer_test_post_status_map = [];
         $intersoccer_test_product_type_safe_callback = static function () {
@@ -39,6 +45,11 @@ class MovePlayersConfirmFlowTest extends TestCase {
 
         require_once dirname(__DIR__, 2) . '/includes/utils.php';
         require_once dirname(__DIR__) . '/stubs/move-players-product-type-stub.php';
+        require_once dirname(__DIR__) . '/stubs/get-product-season-stub.php';
+        global $intersoccer_test_get_product_season_callback;
+        $intersoccer_test_get_product_season_callback = static function ($parent_id) {
+            return '2025-2026';
+        };
         require_once dirname(__DIR__, 2) . '/includes/roster-move-admin-target.php';
     }
 
@@ -217,6 +228,274 @@ class MovePlayersConfirmFlowTest extends TestCase {
         $this->assertCount(1, $merged);
         $this->assertSame(881002, (int) $merged[0]->variation_id);
         $this->assertSame(0, (int) $merged[0]->current_players);
+    }
+
+    public function test_merge_empty_sibling_stub_uses_variation_facets(): void {
+        global $intersoccer_test_wc_get_product_callback;
+        $empty_child = new class(881002) extends \WC_Product_Variation {
+            public function get_parent_id() {
+                return 881010;
+            }
+
+            public function get_name() {
+                return 'Tuesday Zumikon';
+            }
+
+            public function get_variation_attributes() {
+                return [
+                    'attribute_pa_course-day' => 'tuesday',
+                    'attribute_pa_intersoccer-venues' => 'zumikon',
+                    'attribute_pa_age-group' => '5-12y',
+                    'attribute_pa_course-times' => '1400---1700',
+                    'attribute_pa_program-season' => '2025-2026',
+                ];
+            }
+
+            public function get_attribute($name) {
+                $map = [
+                    'pa_course-day' => 'tuesday',
+                    'pa_intersoccer-venues' => 'zumikon',
+                    'pa_age-group' => '5-12y',
+                    'pa_course-times' => '1400---1700',
+                    'pa_program-season' => '2025-2026',
+                ];
+
+                return $map[$name] ?? '';
+            }
+
+            public function get_attributes() {
+                return [];
+            }
+
+            public function get_meta($key, $single = true) {
+                return '';
+            }
+        };
+
+        $parent = Mockery::mock('WC_Product');
+        $parent->shouldReceive('get_children')->andReturn([881002]);
+        $parent->shouldReceive('get_meta')->with('capacity', true)->andReturn('');
+        $parent->shouldReceive('get_name')->andReturn('Parent course');
+        $parent->shouldReceive('get_id')->andReturn(self::TEST_PARENT_ID);
+        $parent->shouldReceive('get_attribute')->andReturn('');
+        $parent->shouldReceive('get_attributes')->andReturn([]);
+
+        global $wpdb;
+        $wpdb = $this->createWpdbMock();
+        $wpdb->shouldReceive('get_var')->andReturn('0');
+
+        $intersoccer_test_wc_get_product_callback = static function ($id) use ($parent, $empty_child) {
+            if ((int) $id === self::TEST_PARENT_ID) {
+                return $parent;
+            }
+            if ((int) $id === 881002) {
+                return $empty_child;
+            }
+            return false;
+        };
+
+        $merged = intersoccer_roster_move_merge_empty_sibling_variation_targets(
+            [],
+            self::TEST_PARENT_ID,
+            [self::TEST_VARIATION_ID],
+            'Course',
+            0
+        );
+
+        $this->assertCount(1, $merged);
+        $stub = $merged[0];
+        $expected_facets = intersoccer_roster_move_empty_target_facets_from_variation(
+            $empty_child,
+            self::TEST_PARENT_ID,
+            'Course'
+        );
+        foreach (self::FACET_DB_COLUMNS as $column) {
+            $this->assertSame(
+                (string) ($expected_facets[$column] ?? ''),
+                (string) ($stub->{$column} ?? ''),
+                'Empty sibling stub facet mismatch: ' . $column
+            );
+        }
+    }
+
+    public function test_empty_stub_facets_match_renormalize_for_single_day_course_variation(): void {
+        $variation_id = 910101;
+        $parent_id = 910100;
+        $variation = $this->makeCourseVariationFixture(
+            $variation_id,
+            $parent_id,
+            ['attribute_pa_course-day' => 'tuesday']
+        );
+        $record = $this->baseRenormalizeRecord($variation_id, $parent_id, 'Course');
+        $this->assertEmptyStubFacetsMatchTwoStepManualUpdateThenRenormalize($variation, $record, $parent_id);
+    }
+
+    public function test_empty_stub_facets_match_renormalize_for_multi_day_course_variation(): void {
+        $variation_id = 910102;
+        $parent_id = 910100;
+        $variation = $this->makeCourseVariationFixture(
+            $variation_id,
+            $parent_id,
+            ['attribute_pa_course-day' => 'monday,tuesday,wednesday']
+        );
+        $record = $this->baseRenormalizeRecord($variation_id, $parent_id, 'Course');
+        $this->assertEmptyStubFacetsMatchTwoStepManualUpdateThenRenormalize($variation, $record, $parent_id);
+    }
+
+    public function test_empty_stub_facets_match_renormalize_for_camp_variation(): void {
+        $variation_id = 920201;
+        $parent_id = 920200;
+        $variation = $this->makeCampVariationFixture($variation_id, $parent_id);
+        $record = $this->baseRenormalizeRecord($variation_id, $parent_id, 'Camp');
+        $this->assertEmptyStubFacetsMatchTwoStepManualUpdateThenRenormalize($variation, $record, $parent_id);
+    }
+
+    public function test_empty_stub_season_empty_when_get_product_season_returns_empty(): void {
+        global $intersoccer_test_get_product_season_callback;
+        $intersoccer_test_get_product_season_callback = static function () {
+            return '';
+        };
+
+        $variation_id = 910103;
+        $parent_id = 910100;
+        $variation = $this->makeCourseVariationFixture(
+            $variation_id,
+            $parent_id,
+            ['attribute_pa_course-day' => 'friday']
+        );
+        $record = $this->baseRenormalizeRecord($variation_id, $parent_id, 'Course');
+        $this->assertEmptyStubFacetsMatchTwoStepManualUpdateThenRenormalize($variation, $record, $parent_id);
+        $this->assertSame('', intersoccer_roster_move_empty_target_facets_from_variation($variation, $parent_id, 'Course')['season']);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function baseRenormalizeRecord(int $variation_id, int $product_id, string $activity_type): array {
+        return [
+            'id' => 900000 + ($variation_id % 10000),
+            'variation_id' => $variation_id,
+            'product_id' => $product_id,
+            'activity_type' => $activity_type,
+            'season' => '',
+            'order_item_id' => 0,
+            'girls_only' => 0,
+            'venue' => '',
+            'age_group' => '',
+            'camp_terms' => '',
+            'course_day' => '',
+            'times' => '',
+            'city' => '',
+            'canton_region' => '',
+            'start_date' => '',
+            'booking_type' => '',
+            'selected_days' => '',
+            'late_pickup_days' => '',
+        ];
+    }
+
+    /**
+     * @param array<string,string> $extra_attributes
+     */
+    private function makeCourseVariationFixture(int $variation_id, int $parent_id, array $extra_attributes = []) {
+        $attributes = array_merge(
+            [
+                'attribute_pa_intersoccer-venues' => 'zumikon',
+                'attribute_pa_age-group' => '5-12y',
+                'attribute_pa_course-times' => '1400---1700',
+            ],
+            $extra_attributes
+        );
+
+        return $this->makeVariation([
+            'id' => $variation_id,
+            'parent_id' => $parent_id,
+            'attributes' => $attributes,
+            'name' => 'Course variation ' . $variation_id,
+        ]);
+    }
+
+    private function makeCampVariationFixture(int $variation_id, int $parent_id) {
+        return $this->makeVariation([
+            'id' => $variation_id,
+            'parent_id' => $parent_id,
+            'attributes' => [
+                'attribute_pa_intersoccer-venues' => 'geneva-centre',
+                'attribute_pa_age-group' => '5-13y-full-day',
+                'attribute_pa_camp-terms' => 'summer-week-1',
+                'attribute_pa_camp-times' => '0900---1600',
+            ],
+            'name' => 'Camp variation ' . $variation_id,
+        ]);
+    }
+
+    /**
+     * @param array<string,mixed> $record
+     */
+    private function assertEmptyStubFacetsMatchTwoStepManualUpdateThenRenormalize($variation, array $record, int $parent_id): void {
+        $record['season'] = intersoccer_roster_move_manual_update_season_for_parent($parent_id);
+        $from_renormalize = $this->captureRenormalizeFacetDbColumns($variation, $record);
+        $from_stub = intersoccer_roster_move_empty_target_facets_from_variation(
+            $variation,
+            $parent_id,
+            (string) $record['activity_type']
+        );
+
+        foreach (self::FACET_DB_COLUMNS as $column) {
+            $this->assertSame(
+                $from_renormalize[$column],
+                (string) ($from_stub[$column] ?? ''),
+                'Empty stub vs manual_update+renormalize facet mismatch: ' . $column
+            );
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $record
+     *
+     * @return array<string,string>
+     */
+    private function captureRenormalizeFacetDbColumns($variation, array $record): array {
+        global $wpdb, $intersoccer_test_wc_get_product_callback;
+
+        $variation_id = (int) $record['variation_id'];
+        $product_id = (int) $record['product_id'];
+        $roster_id = (int) $record['id'];
+
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query) {
+            return (string) $query;
+        });
+        $wpdb->shouldReceive('get_row')->once()->andReturn($record);
+
+        $captured_update = null;
+        $wpdb->shouldReceive('update')
+            ->once()
+            ->withArgs(function ($table, $data) use (&$captured_update) {
+                $captured_update = $data;
+
+                return is_array($data);
+            })
+            ->andReturn(1);
+
+        $intersoccer_test_wc_get_product_callback = static function ($id) use ($variation, $variation_id) {
+            if ((int) $id === $variation_id) {
+                return $variation;
+            }
+
+            return false;
+        };
+
+        $this->assertTrue(intersoccer_renormalize_roster_row_from_variation($roster_id));
+        $this->assertIsArray($captured_update);
+
+        $out = [];
+        foreach (self::FACET_DB_COLUMNS as $column) {
+            $out[$column] = (string) ($captured_update[$column] ?? '');
+        }
+
+        return $out;
     }
 
     protected function tearDown(): void {

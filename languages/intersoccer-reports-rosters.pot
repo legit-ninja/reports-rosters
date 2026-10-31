@@ -6409,3 +6409,31 @@ msgstr ""
 #: intersoccer-reports-rosters.php:418
 msgid "Weekly Attendance Trends"
 msgstr ""
+
+#: includes/roster-details.php:1151
+msgid "Show empty rosters"
+msgstr ""
+
+#: includes/roster-details.php:1613
+msgid "Confirm roster status change"
+msgstr ""
+
+#: includes/roster-details.php:1616
+msgid "Confirm"
+msgstr ""
+
+#: includes/roster-details.php:1654
+msgid "Repairing..."
+msgstr ""
+
+#: includes/roster-details.php:1667
+msgid "Repair completed."
+msgstr ""
+
+#: includes/roster-details.php:1669
+msgid "Repair failed."
+msgstr ""
+
+#: includes/roster-details.php:1674
+msgid "Repair failed (network/server error)."
+msgstr ""

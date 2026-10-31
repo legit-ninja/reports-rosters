@@ -619,4 +619,267 @@ class RosterRefundServiceTest extends TestCase {
             $this->assertContains($status, $captured_values);
         }
     }
+
+    public function test_prime_order_posts_once_per_summary_build(): void {
+        $GLOBALS['intersoccer_rr_test_api_counting_enabled'] = true;
+        $GLOBALS['intersoccer_rr_test_api_call_counts'] = [];
+        $GLOBALS['intersoccer_test_post_status'] = [
+            101 => 'wc-completed',
+            102 => 'wc-cancelled',
+        ];
+
+        $collection = new RostersCollection([
+            new Roster([
+                'order_id' => 101,
+                'order_item_id' => 1001,
+                'variation_id' => 501,
+                'activity_type' => 'Course',
+                'girls_only' => 0,
+                'is_placeholder' => 0,
+            ]),
+            new Roster([
+                'order_id' => 102,
+                'order_item_id' => 1002,
+                'variation_id' => 502,
+                'activity_type' => 'Course',
+                'girls_only' => 0,
+                'is_placeholder' => 0,
+            ]),
+            new Roster([
+                'order_id' => 101,
+                'order_item_id' => 1003,
+                'variation_id' => 503,
+                'activity_type' => 'Course',
+                'girls_only' => 0,
+                'is_placeholder' => 0,
+            ]),
+        ]);
+
+        $repository = Mockery::mock(\InterSoccer\ReportsRosters\Data\Repositories\RosterRepository::class);
+        $repository->shouldReceive('where')->once()->andReturn($collection);
+
+        $service = new RosterDetailsService(
+            Mockery::mock(Logger::class)->shouldIgnoreMissing(),
+            $repository,
+            Mockery::mock(Database::class)->shouldIgnoreMissing()
+        );
+
+        $prime = new ReflectionMethod(RosterDetailsService::class, 'primeOrderPostsForSummaries');
+        $prime->setAccessible(true);
+        $prime->invoke($service, [101, 102, 101]);
+        $this->assertSame(1, (int) ($GLOBALS['intersoccer_rr_test_api_call_counts']['_prime_post_caches'] ?? 0));
+
+        $build = new ReflectionMethod(RosterDetailsService::class, 'buildRosterSummaries');
+        $build->setAccessible(true);
+        $build->invoke($service, (object) [
+            'activity_type' => 'Course',
+            'girls_only' => 0,
+            'product_id' => 900,
+        ], []);
+        $this->assertSame(2, (int) ($GLOBALS['intersoccer_rr_test_api_call_counts']['_prime_post_caches'] ?? 0));
+
+        unset($GLOBALS['intersoccer_test_post_status'], $GLOBALS['intersoccer_rr_test_api_counting_enabled'], $GLOBALS['intersoccer_rr_test_api_call_counts']);
+    }
+
+    public function test_destination_summaries_keep_order_status_filtering_with_primed_posts(): void {
+        $GLOBALS['intersoccer_test_post_status'] = [
+            201 => 'wc-completed',
+            202 => 'wc-processing',
+            203 => 'wc-cancelled',
+            204 => 'wc-refunded',
+            205 => 'trash',
+            206 => 'wc-completed',
+        ];
+
+        $collection = new RostersCollection([
+            new Roster([
+                'order_id' => 201,
+                'order_item_id' => 2001,
+                'variation_id' => 701,
+                'product_id' => 900,
+                'product_name' => 'A',
+                'activity_type' => 'Course',
+                'venue' => 'Geneva',
+                'course_day' => 'Monday',
+                'girls_only' => 0,
+                'is_placeholder' => 0,
+            ]),
+            new Roster([
+                'order_id' => 202,
+                'order_item_id' => 2002,
+                'variation_id' => 702,
+                'product_id' => 900,
+                'product_name' => 'B',
+                'activity_type' => 'Course',
+                'venue' => 'Geneva',
+                'course_day' => 'Tuesday',
+                'girls_only' => 0,
+                'is_placeholder' => 0,
+            ]),
+            new Roster([
+                'order_id' => 203,
+                'order_item_id' => 2003,
+                'variation_id' => 703,
+                'product_id' => 900,
+                'activity_type' => 'Course',
+                'girls_only' => 0,
+                'is_placeholder' => 0,
+            ]),
+            new Roster([
+                'order_id' => 204,
+                'order_item_id' => 2004,
+                'variation_id' => 704,
+                'product_id' => 900,
+                'activity_type' => 'Course',
+                'girls_only' => 0,
+                'is_placeholder' => 0,
+            ]),
+            new Roster([
+                'order_id' => 205,
+                'order_item_id' => 2005,
+                'variation_id' => 705,
+                'product_id' => 900,
+                'activity_type' => 'Course',
+                'girls_only' => 0,
+                'is_placeholder' => 0,
+            ]),
+            new Roster([
+                'order_id' => 0,
+                'order_item_id' => 2006,
+                'variation_id' => 706,
+                'product_id' => 900,
+                'activity_type' => 'Course',
+                'girls_only' => 0,
+                'is_placeholder' => 0,
+            ]),
+            new Roster([
+                'order_id' => 206,
+                'order_item_id' => 2007,
+                'variation_id' => 801,
+                'product_id' => 900,
+                'product_name' => 'Girls',
+                'activity_type' => 'Course',
+                'venue' => 'Lausanne',
+                'girls_only' => 1,
+                'is_placeholder' => 0,
+            ]),
+            new Roster([
+                'order_id' => 201,
+                'order_item_id' => 0,
+                'variation_id' => 707,
+                'product_id' => 900,
+                'activity_type' => 'Course',
+                'girls_only' => 0,
+                'is_placeholder' => 1,
+            ]),
+        ]);
+
+        $baseRoster = (object) [
+            'activity_type' => 'Course',
+            'girls_only' => 0,
+            'product_id' => 900,
+        ];
+
+        $expected = $this->referenceLegacySummaryMaps($collection, $baseRoster);
+
+        $repository = Mockery::mock(\InterSoccer\ReportsRosters\Data\Repositories\RosterRepository::class);
+        $repository->shouldReceive('where')->once()->andReturn($collection);
+
+        $service = new RosterDetailsService(
+            Mockery::mock(Logger::class)->shouldIgnoreMissing(),
+            $repository,
+            Mockery::mock(Database::class)->shouldIgnoreMissing()
+        );
+
+        $build = new ReflectionMethod(RosterDetailsService::class, 'buildRosterSummaries');
+        $build->setAccessible(true);
+        $actual = $build->invoke($service, $baseRoster, []);
+
+        // #104 builds one destination list and splits it by variation girls-only state afterwards,
+        // so compare the variations that survive status filtering, across both legacy buckets.
+        $this->assertSame(
+            $this->summaryVariationSignature(array_merge($expected['same_gender'], $expected['cross_gender'])),
+            $this->summaryVariationSignature($actual)
+        );
+
+        unset($GLOBALS['intersoccer_test_post_status']);
+    }
+
+    /**
+     * @return array{same_gender:object[],cross_gender:object[]}
+     */
+    private function referenceLegacySummaryMaps(RostersCollection $collection, object $baseRoster): array {
+        $allowed = ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'];
+        $sameGenderSummaries = [];
+        $crossGenderSummaries = [];
+        $baseGirlsOnly = (int) ($baseRoster->girls_only ?? 0) === 1;
+
+        foreach ($collection as $model) {
+            if ((int) $model->is_placeholder === 1) {
+                continue;
+            }
+
+            if (!$model->order_id) {
+                continue;
+            }
+
+            $status = get_post_status($model->order_id);
+            if (!$status || !in_array($status, $allowed, true)) {
+                continue;
+            }
+
+            $isGirlsOnly = (int) $model->girls_only === 1;
+            if ($isGirlsOnly !== $baseGirlsOnly) {
+                $targetSummaries = &$crossGenderSummaries;
+            } else {
+                $targetSummaries = &$sameGenderSummaries;
+            }
+
+            $keyParts = [
+                (int) $model->product_id,
+                (int) $model->variation_id,
+                (string) $model->product_name,
+                (string) $model->venue,
+                (string) $model->age_group,
+                (string) $model->activity_type,
+                (string) $model->camp_terms,
+                (string) $model->course_day,
+                (string) $model->times,
+                (string) $model->season,
+                $isGirlsOnly ? '1' : '0',
+            ];
+            $key = implode('|', $keyParts);
+
+            if (!isset($targetSummaries[$key])) {
+                $targetSummaries[$key] = (object) [
+                    'variation_id' => (int) $model->variation_id,
+                    'current_players' => 0,
+                ];
+            }
+
+            if ($model->order_item_id) {
+                $targetSummaries[$key]->current_players++;
+            }
+            unset($targetSummaries);
+        }
+
+        return [
+            'same_gender' => array_values($sameGenderSummaries),
+            'cross_gender' => array_values($crossGenderSummaries),
+        ];
+    }
+
+    /**
+     * @param object[] $summaries
+     */
+    private function summaryVariationSignature(array $summaries): string {
+        $ids = [];
+        foreach ($summaries as $summary) {
+            $ids[] = (int) $summary->variation_id;
+        }
+        $ids = array_values(array_unique($ids));
+        sort($ids, SORT_NUMERIC);
+
+        return implode(',', $ids);
+    }
 }

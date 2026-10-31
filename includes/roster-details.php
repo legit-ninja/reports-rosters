@@ -1122,6 +1122,14 @@ function intersoccer_render_roster_details_page() {
     echo '            The player\'s details will be preserved, but they will be assigned to a different event type.';
     echo '        </p>';
     echo '    </div>';
+    
+    // Optional: surface zero-player destinations even when cascade filters would hide them.
+    echo '    <div id="showEmptyRostersOption" style="display: none; margin: 10px 0 0 0;">';
+    echo '        <label style="cursor: pointer;">';
+    echo '            <input type="checkbox" id="showEmptyRosters" value="1">';
+    echo '            <strong>' . esc_html__('Show empty rosters', 'intersoccer-reports-rosters') . '</strong>';
+    echo '        </label>';
+    echo '    </div>';
             
     echo '    <div id="moveOptions" style="display: none; margin-top: 10px;">';
     echo '        <div style="display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;">';
@@ -1283,7 +1291,7 @@ function intersoccer_render_roster_details_page() {
                 $time = __('Not set', 'intersoccer-reports-rosters');
             }
             $roster_label = $build_roster_label($roster);
-            echo '            <option value="' . esc_attr($roster->variation_id) . '" data-season="' . esc_attr($season) . '" data-schedule="' . esc_attr($schedule) . '" data-venue="' . esc_attr($venue) . '" data-age-group="' . esc_attr($age_group) . '" data-time="' . esc_attr($time) . '" data-girls-only="' . esc_attr($roster->girls_only ? '1' : '0') . '" data-cross-gender="' . esc_attr($cross_gender ? '1' : '0') . '">' . esc_html($roster_label) . '</option>';
+            echo '            <option value="' . esc_attr($roster->variation_id) . '" data-season="' . esc_attr($season) . '" data-schedule="' . esc_attr($schedule) . '" data-venue="' . esc_attr($venue) . '" data-age-group="' . esc_attr($age_group) . '" data-time="' . esc_attr($time) . '" data-players="' . esc_attr((int) ($roster->current_players ?? 0)) . '" data-girls-only="' . esc_attr($roster->girls_only ? '1' : '0') . '" data-cross-gender="' . esc_attr($cross_gender ? '1' : '0') . '">' . esc_html($roster_label) . '</option>';
         }
     };
 
@@ -1406,6 +1414,9 @@ function intersoccer_render_roster_details_page() {
     }
     echo '</div>';
 
+    echo '<div id="roster-status-notice" style="margin-top: 12px;"></div>';
+    echo '<div id="rosterStatusInlinePanel" class="isrr-roster-move-panel" style="display: none; margin-top: 12px;" aria-live="polite"></div>';
+
     // Repair day presence (admin only) - updates only the day_presence JSON for this event_signature.
     $repair_event_signature = null;
     if (isset($base_roster)) {
@@ -1525,6 +1536,8 @@ function intersoccer_render_roster_details_page() {
         var rosterDetailsFromPage = '<?php echo esc_js($from_page); ?>';
         var isrrRosterMoveL10n = <?php echo wp_json_encode(intersoccer_roster_move_js_localize_strings()); ?>;
         var rosterMovePanel = $('#rosterMoveInlinePanel');
+        var rosterStatusPanel = $('#rosterStatusInlinePanel');
+        var rosterStatusNotice = $('#roster-status-notice');
         var applyBulkDefaultLabel = isrrRosterMoveL10n.apply;
 
         function rosterMoveL10n(key) {
@@ -1560,6 +1573,50 @@ function intersoccer_render_roster_details_page() {
             }
         });
 
+        function hideRosterStatusPanel() {
+            rosterStatusPanel.hide().empty().removeClass('isrr-roster-move-panel--confirm isrr-roster-move-panel--error isrr-roster-move-panel--success');
+        }
+
+        function showRosterStatusNotice(message, type) {
+            type = type || 'info';
+            var noticeClass = 'notice notice-' + type + ' is-dismissible';
+            var $notice = $('<div class="' + noticeClass + '"><p></p><button type="button" class="notice-dismiss"><span class="screen-reader-text"><?php echo esc_js(__('Dismiss this notice.', 'intersoccer-reports-rosters')); ?></span></button></div>');
+            $notice.find('p').text(message);
+            rosterStatusNotice.empty().append($notice);
+            $notice.find('.notice-dismiss').on('click', function() {
+                $notice.remove();
+            });
+        }
+
+        function showRosterStatusConfirmPanel(message, onConfirm, onCancel) {
+            var markup = '<h3 id="rosterStatusConfirmHeading" tabindex="-1"><?php echo esc_js(__('Confirm roster status change', 'intersoccer-reports-rosters')); ?></h3>'
+                + '<p></p>'
+                + '<div class="isrr-roster-move-actions">'
+                + '<button type="button" class="button button-primary" id="rosterStatusConfirmBtn"><?php echo esc_js(__('Confirm', 'intersoccer-reports-rosters')); ?></button>'
+                + '<button type="button" class="button" id="rosterStatusCancelBtn"><?php echo esc_js(__('Cancel', 'intersoccer-reports-rosters')); ?></button>'
+                + '</div>';
+            rosterStatusPanel
+                .removeClass('isrr-roster-move-panel--confirm isrr-roster-move-panel--error isrr-roster-move-panel--success')
+                .addClass('isrr-roster-move-panel--confirm')
+                .attr('role', 'alertdialog')
+                .html(markup)
+                .show();
+            rosterStatusPanel.find('p').text(message);
+            rosterStatusPanel.find('#rosterStatusConfirmHeading').trigger('focus');
+            rosterStatusPanel.find('#rosterStatusConfirmBtn').on('click', function() {
+                hideRosterStatusPanel();
+                if (typeof onConfirm === 'function') {
+                    onConfirm();
+                }
+            });
+            rosterStatusPanel.find('#rosterStatusCancelBtn').on('click', function() {
+                hideRosterStatusPanel();
+                if (typeof onCancel === 'function') {
+                    onCancel();
+                }
+            });
+        }
+
         // Repair day presence handler
         $(document).on('click', '#repair-day-presence-btn', function(e) {
             e.preventDefault();
@@ -1568,12 +1625,12 @@ function intersoccer_render_roster_details_page() {
             var $result = $('#repair-day-presence-result');
 
             if (!eventSignature) {
-                $result.text('Missing event signature.');
+                $result.text('<?php echo esc_js(__('Missing event signature.', 'intersoccer-reports-rosters')); ?>');
                 return;
             }
 
             $btn.prop('disabled', true);
-            $result.text('Repairing...');
+            $result.text('<?php echo esc_js(__('Repairing...', 'intersoccer-reports-rosters')); ?>');
 
             $.ajax({
                 url: typeof ajaxurl !== 'undefined' ? ajaxurl : '<?php echo esc_js(admin_url('admin-ajax.php')); ?>',
@@ -1586,14 +1643,14 @@ function intersoccer_render_roster_details_page() {
                 },
                 success: function(resp) {
                     if (resp && resp.success) {
-                        $result.text(resp.data && resp.data.message ? resp.data.message : 'Repair completed.');
+                        $result.text(resp.data && resp.data.message ? resp.data.message : '<?php echo esc_js(__('Repair completed.', 'intersoccer-reports-rosters')); ?>');
                     } else {
-                        var msg = (resp && resp.data && resp.data.message) ? resp.data.message : 'Repair failed.';
+                        var msg = (resp && resp.data && resp.data.message) ? resp.data.message : '<?php echo esc_js(__('Repair failed.', 'intersoccer-reports-rosters')); ?>';
                         $result.text(msg);
                     }
                 },
                 error: function() {
-                    $result.text('Repair failed (network/server error).');
+                    $result.text('<?php echo esc_js(__('Repair failed (network/server error).', 'intersoccer-reports-rosters')); ?>');
                 },
                 complete: function() {
                     $btn.prop('disabled', false);
@@ -1601,78 +1658,73 @@ function intersoccer_render_roster_details_page() {
             });
         });
 
+        function runRosterStatusAjax($btn, actionName, loadingLabel, confirmMessage, successFallback, errorFallback) {
+            var eventSignature = $btn.data('event-signature');
+            var originalLabel = $btn.text();
+            showRosterStatusConfirmPanel(confirmMessage, function() {
+                $btn.prop('disabled', true).text(loadingLabel);
+                var completedSuccessfully = false;
+
+                $.ajax({
+                    url: intersoccerAjaxUrl,
+                    type: 'POST',
+                    data: {
+                        action: actionName,
+                        nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
+                        event_signature: eventSignature,
+                        source_page: 'girls-only-details'
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            completedSuccessfully = true;
+                            var successMsg = (response.data && response.data.message) ? response.data.message : successFallback;
+                            showRosterStatusNotice(successMsg, 'success');
+                            window.setTimeout(function() {
+                                location.reload();
+                            }, 1200);
+                            return;
+                        }
+                        var errMsg = (response.data && response.data.message) ? response.data.message : errorFallback;
+                        showRosterStatusNotice(errMsg, 'error');
+                    },
+                    error: function() {
+                        showRosterStatusNotice('<?php echo esc_js(__('An error occurred. Please try again.', 'intersoccer-reports-rosters')); ?>', 'error');
+                    },
+                    complete: function() {
+                        if (!completedSuccessfully) {
+                            $btn.prop('disabled', false).text(originalLabel);
+                        }
+                    }
+                });
+            });
+        }
+
         // Close roster handler (for roster details page)
         $(document).on('click', '.close-roster-btn, #roster-close-btn', function(e) {
             e.preventDefault();
             var $btn = $(this);
-            var eventSignature = $btn.data('event-signature');
-            
-            if (!confirm('<?php echo esc_js(__('Are you sure you want to close out this roster? This will mark the event as completed.', 'intersoccer-reports-rosters')); ?>')) {
-                return;
-            }
-            
-            $btn.prop('disabled', true).text('<?php echo esc_js(__('Closing...', 'intersoccer-reports-rosters')); ?>');
-            
-            $.ajax({
-                url: intersoccerAjaxUrl,
-                type: 'POST',
-                data: {
-                    action: 'intersoccer_close_out_roster',
-                    nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
-                    event_signature: eventSignature,
-                    source_page: 'girls-only-details'
-                },
-                success: function(response) {
-                    if (response.success) {
-                        alert(response.data.message || '<?php echo esc_js(__('Roster closed successfully.', 'intersoccer-reports-rosters')); ?>');
-                        location.reload();
-                    } else {
-                        alert(response.data.message || '<?php echo esc_js(__('Failed to close roster.', 'intersoccer-reports-rosters')); ?>');
-                        $btn.prop('disabled', false);
-                    }
-                },
-                error: function() {
-                    alert('<?php echo esc_js(__('An error occurred. Please try again.', 'intersoccer-reports-rosters')); ?>');
-                    $btn.prop('disabled', false);
-                }
-            });
+            runRosterStatusAjax(
+                $btn,
+                'intersoccer_close_out_roster',
+                '<?php echo esc_js(__('Closing...', 'intersoccer-reports-rosters')); ?>',
+                '<?php echo esc_js(__('Are you sure you want to close out this roster? This will mark the event as completed.', 'intersoccer-reports-rosters')); ?>',
+                '<?php echo esc_js(__('Roster closed successfully.', 'intersoccer-reports-rosters')); ?>',
+                '<?php echo esc_js(__('Failed to close roster.', 'intersoccer-reports-rosters')); ?>'
+            );
         });
         
         // Reopen roster handler (for roster details page)
         $(document).on('click', '.reopen-roster-btn, #roster-reopen-btn', function(e) {
             e.preventDefault();
             var $btn = $(this);
-            var eventSignature = $btn.data('event-signature');
-            
-            if (!confirm('<?php echo esc_js(__('Are you sure you want to reopen this roster?', 'intersoccer-reports-rosters')); ?>')) {
-                return;
-            }
-            
-            $btn.prop('disabled', true).text('<?php echo esc_js(__('Reopening...', 'intersoccer-reports-rosters')); ?>');
-            
-            $.ajax({
-                url: intersoccerAjaxUrl,
-                type: 'POST',
-                data: {
-                    action: 'intersoccer_reopen_roster',
-                    nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>',
-                    event_signature: eventSignature,
-                    source_page: 'girls-only-details'
-                },
-                success: function(response) {
-                    if (response.success) {
-                        alert(response.data.message || '<?php echo esc_js(__('Roster reopened successfully.', 'intersoccer-reports-rosters')); ?>');
-                        location.reload();
-                    } else {
-                        alert(response.data.message || '<?php echo esc_js(__('Failed to reopen roster.', 'intersoccer-reports-rosters')); ?>');
-                        $btn.prop('disabled', false);
-                    }
-                },
-                error: function() {
-                    alert('<?php echo esc_js(__('An error occurred. Please try again.', 'intersoccer-reports-rosters')); ?>');
-                    $btn.prop('disabled', false);
-                }
-            });
+            runRosterStatusAjax(
+                $btn,
+                'intersoccer_reopen_roster',
+                '<?php echo esc_js(__('Reopening...', 'intersoccer-reports-rosters')); ?>',
+                '<?php echo esc_js(__('Are you sure you want to reopen this roster?', 'intersoccer-reports-rosters')); ?>',
+                '<?php echo esc_js(__('Roster reopened successfully.', 'intersoccer-reports-rosters')); ?>',
+                '<?php echo esc_js(__('Failed to reopen roster.', 'intersoccer-reports-rosters')); ?>'
+            );
         });
         
         const selectAll = $('#selectAll');
@@ -1703,6 +1755,7 @@ function intersoccer_render_roster_details_page() {
                 venue: String($(this).data('venue') || ''),
                 ageGroup: String($(this).data('age-group') || ''),
                 time: String($(this).data('time') || ''),
+                players: String($(this).data('players') || '0'),
                 girlsOnly: String($(this).data('girls-only') || '0'),
                 crossGender: String($(this).data('cross-gender') || '0')
             };
@@ -1749,6 +1802,44 @@ function intersoccer_render_roster_details_page() {
             });
             if (!values.length) {
                 $select.prop('disabled', true);
+            }
+        }
+
+        function mergeDestinationOptionsByValue(primary, extras) {
+            const seen = {};
+            const merged = [];
+            primary.concat(extras).forEach(function(option) {
+                if (!option || !option.value || seen[option.value]) {
+                    return;
+                }
+                seen[option.value] = true;
+                merged.push(option);
+            });
+            return merged;
+        }
+
+        function showEmptyRostersEnabled() {
+            return $('#showEmptyRosters').is(':checked');
+        }
+
+        function emptyPlayerDestinations(options) {
+            return options.filter((option) => parseInt(option.players, 10) === 0);
+        }
+
+        function fillDestinationRosterSelect(rosterOptions, placeholderText, disableWhenEmpty) {
+            resetSelectOptions(targetRosterSelect, placeholderText, disableWhenEmpty && !rosterOptions.length);
+            rosterOptions.forEach((option) => {
+                targetRosterSelect.append(
+                    $('<option>', {
+                        value: option.value,
+                        text: option.text,
+                        'data-girls-only': option.girlsOnly,
+                        'data-cross-gender': option.crossGender
+                    })
+                );
+            });
+            if (rosterOptions.length === 1) {
+                targetRosterSelect.val(rosterOptions[0].value);
             }
         }
 
@@ -1799,24 +1890,34 @@ function intersoccer_render_roster_details_page() {
             }
 
             const finalMatches = targetTimeSelect.val() ? byAgeGroup.filter((option) => option.time === targetTimeSelect.val()) : [];
-            resetSelectOptions(targetRosterSelect, migrationTexts.chooseTimeFirst, !targetTimeSelect.val());
-            finalMatches.forEach((option) => {
-                targetRosterSelect.append(
-                    $('<option>', {
-                        value: option.value,
-                        text: option.text,
-                        'data-girls-only': option.girlsOnly,
-                        'data-cross-gender': option.crossGender
-                    })
+            const showEmpty = showEmptyRostersEnabled();
+            const emptyDestinations = showEmpty ? emptyPlayerDestinations(eligible) : [];
+            let rosterOptions = finalMatches;
+            if (showEmpty) {
+                rosterOptions = targetTimeSelect.val()
+                    ? mergeDestinationOptionsByValue(finalMatches, emptyDestinations)
+                    : emptyDestinations;
+            }
+
+            if (showEmpty && !targetTimeSelect.val()) {
+                fillDestinationRosterSelect(
+                    rosterOptions,
+                    rosterOptions.length ? migrationTexts.chooseDestination : migrationTexts.noMatchingRosters,
+                    true
                 );
-            });
+                return;
+            }
+
+            fillDestinationRosterSelect(
+                rosterOptions,
+                migrationTexts.chooseTimeFirst,
+                !targetTimeSelect.val()
+            );
 
             if (targetTimeSelect.val()) {
-                targetRosterSelect.prop('disabled', !finalMatches.length);
-                if (!finalMatches.length) {
+                targetRosterSelect.prop('disabled', !rosterOptions.length);
+                if (!rosterOptions.length) {
                     resetSelectOptions(targetRosterSelect, migrationTexts.noMatchingRosters, true);
-                } else if (finalMatches.length === 1) {
-                    targetRosterSelect.val(finalMatches[0].value);
                 }
             }
         }
@@ -1841,11 +1942,13 @@ function intersoccer_render_roster_details_page() {
             console.log('InterSoccer Migration: Bulk action changed to:', this.value, 'Show move options:', isMove);
             moveOptions.toggle(isMove);
             $('#crossGenderOption').toggle(isMove);
+            $('#showEmptyRostersOption').toggle(isMove);
                         
             // Reset target roster selection when switching away from move
             if (!isMove) {
                 targetRosterSelect.val('');
                 $('#allowCrossGender').prop('checked', false);
+                $('#showEmptyRosters').prop('checked', false);
                 resetDestinationFilters();
             } else {
                 rebuildDestinationFilters();
@@ -1868,6 +1971,10 @@ function intersoccer_render_roster_details_page() {
         $('#allowCrossGender').on('change', function() {
             const isChecked = $(this).is(':checked');
             console.log('InterSoccer Migration: Cross-gender checkbox toggled:', isChecked);
+            rebuildDestinationFilters();
+        });
+
+        $('#showEmptyRosters').on('change', function() {
             rebuildDestinationFilters();
         });
 
