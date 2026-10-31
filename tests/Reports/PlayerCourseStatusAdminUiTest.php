@@ -227,6 +227,8 @@ class PlayerCourseStatusAdminUiTest extends TestCase {
 		]);
 
 		$this->assertStringContainsString('Ada &lt;script&gt;x&lt;/script&gt;', $html);
+		$this->assertStringContainsString('Unmatched bookings (not filtered)', $html);
+		$this->assertStringContainsString('This list ignores the filters above.', $html);
 		$this->assertStringContainsString('Course &amp; Hall', $html);
 		$this->assertStringContainsString('>42<', $html);
 		$this->assertStringContainsString('>processing<', $html);

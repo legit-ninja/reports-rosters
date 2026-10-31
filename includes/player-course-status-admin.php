@@ -281,13 +281,62 @@ if (!function_exists('intersoccer_player_course_status_admin_unmatched_html')) {
 			return '';
 		}
 
-		return '<h2>' . esc_html__('Unmatched bookings', 'intersoccer-reports-rosters') . '</h2>'
-			. '<table class="widefat striped"><thead><tr>'
+		$table = '<table class="widefat striped"><thead><tr>'
 			. '<th>' . esc_html__('Player', 'intersoccer-reports-rosters') . '</th>'
 			. '<th>' . esc_html__('Customer', 'intersoccer-reports-rosters') . '</th>'
 			. '<th>' . esc_html__('Booking', 'intersoccer-reports-rosters') . '</th>'
 			. '<th>' . esc_html__('Order status', 'intersoccer-reports-rosters') . '</th>'
 			. '</tr></thead><tbody>' . $rows . '</tbody></table>';
+
+		return '<h2>' . esc_html__('Unmatched bookings (not filtered)', 'intersoccer-reports-rosters') . '</h2>'
+			. '<p class="description">' . esc_html__(
+				'Course bookings that could not be matched to a player. This list ignores the filters above.',
+				'intersoccer-reports-rosters'
+			) . '</p>'
+			. '<div class="intersoccer-pcs-table-scroll">' . $table . '</div>';
+	}
+}
+
+if (!function_exists('intersoccer_player_course_status_admin_empty_html')) {
+	/**
+	 * Shown when the filtered player list has no rows.
+	 *
+	 * @return string
+	 */
+	function intersoccer_player_course_status_admin_empty_html() {
+		return '<div class="notice notice-info inline intersoccer-pcs-empty"><p>'
+			. esc_html__('No players matched the selected filters.', 'intersoccer-reports-rosters')
+			. '</p></div>';
+	}
+}
+
+if (!function_exists('intersoccer_player_course_status_admin_results_table_html')) {
+	/**
+	 * Main results table inside a horizontal scroll container.
+	 *
+	 * @param array<int,mixed> $rows
+	 * @return string
+	 */
+	function intersoccer_player_course_status_admin_results_table_html(array $rows) {
+		if ($rows === []) {
+			return '';
+		}
+
+		$table = '<table class="widefat striped">'
+			. '<thead><tr>'
+			. '<th>' . esc_html__('Player', 'intersoccer-reports-rosters') . '</th>'
+			. '<th>' . esc_html__('Parent email / User', 'intersoccer-reports-rosters') . '</th>'
+			. '<th>' . esc_html__('DOB', 'intersoccer-reports-rosters') . '</th>'
+			. '<th>' . esc_html__('Age', 'intersoccer-reports-rosters') . '</th>'
+			. '<th>' . esc_html__('Booked', 'intersoccer-reports-rosters') . '</th>'
+			. '<th>' . esc_html__('Status', 'intersoccer-reports-rosters') . '</th>'
+			. '<th>' . esc_html__('Course bookings', 'intersoccer-reports-rosters') . '</th>'
+			. '<th>' . esc_html__('Match tier', 'intersoccer-reports-rosters') . '</th>'
+			. '</tr></thead><tbody>'
+			. intersoccer_player_course_status_admin_rows_html($rows)
+			. '</tbody></table>';
+
+		return '<div class="intersoccer-pcs-table-scroll">' . $table . '</div>';
 	}
 }
 
@@ -921,25 +970,9 @@ if (!function_exists('intersoccer_player_course_status_admin_render_page')) {
 			<?php endif; ?>
 
 			<?php if (empty($slice['rows'])) : ?>
-				<p><?php esc_html_e('No players matched the selected filters.', 'intersoccer-reports-rosters'); ?></p>
+				<?php echo intersoccer_player_course_status_admin_empty_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 			<?php else : ?>
-				<table class="widefat striped">
-					<thead>
-						<tr>
-							<th><?php esc_html_e('Player', 'intersoccer-reports-rosters'); ?></th>
-							<th><?php esc_html_e('Parent email / User', 'intersoccer-reports-rosters'); ?></th>
-							<th><?php esc_html_e('DOB', 'intersoccer-reports-rosters'); ?></th>
-							<th><?php esc_html_e('Age', 'intersoccer-reports-rosters'); ?></th>
-							<th><?php esc_html_e('Booked', 'intersoccer-reports-rosters'); ?></th>
-							<th><?php esc_html_e('Status', 'intersoccer-reports-rosters'); ?></th>
-							<th><?php esc_html_e('Course bookings', 'intersoccer-reports-rosters'); ?></th>
-							<th><?php esc_html_e('Match tier', 'intersoccer-reports-rosters'); ?></th>
-						</tr>
-					</thead>
-					<tbody>
-						<?php echo intersoccer_player_course_status_admin_rows_html($slice['rows']); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
-					</tbody>
-				</table>
+				<?php echo intersoccer_player_course_status_admin_results_table_html($slice['rows']); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>
 			<?php endif; ?>
 
 			<?php echo intersoccer_player_course_status_admin_unmatched_html($result['unmatched_bookings'] ?? []); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the helper. ?>

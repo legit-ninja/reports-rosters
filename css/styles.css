@@ -28,20 +28,6 @@
     overflow-x: auto;
 }
 
-.widefat {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.widefat th, .widefat td {
-    padding: var(--intersoccer-space-sm, 8px);
-    border: 1px solid var(--intersoccer-border-subtle, #ddd);
-}
-
-.widefat th {
-    background: var(--intersoccer-bg-header, #f9f9f9);
-}
-
 /* Tab Styling */
 .nav-tab-wrapper {
     margin-bottom: var(--intersoccer-space-xl, 20px);
@@ -1268,12 +1254,33 @@
 
 .intersoccer-player-course-status .intersoccer-pcs-filters-form .intersoccer-pcs-filter-field select,
 .intersoccer-player-course-status .intersoccer-pcs-filters-form .intersoccer-pcs-filter-field input[type="text"] {
-    flex-shrink: 0;
-    max-width: min(100%, 280px);
+    min-width: 0;
+    flex-shrink: 1;
+    max-width: 100%;
 }
 
 .intersoccer-player-course-status .intersoccer-pcs-filters-form .button,
 .intersoccer-player-course-status .intersoccer-pcs-filters-form a.button {
     white-space: nowrap;
     flex-shrink: 0;
+}
+
+.intersoccer-player-course-status .intersoccer-pcs-table-scroll {
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.intersoccer-player-course-status .widefat {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.intersoccer-player-course-status .widefat th,
+.intersoccer-player-course-status .widefat td {
+    padding: var(--intersoccer-space-sm, 8px);
+    border: 1px solid var(--intersoccer-border-subtle, #ddd);
+}
+
+.intersoccer-player-course-status .widefat th {
+    background: var(--intersoccer-bg-header, #f9f9f9);
 }

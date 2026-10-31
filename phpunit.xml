@@ -87,6 +87,7 @@
             <file>tests/Reports/PlayerCourseStatusWarmPathQueryTest.php</file>
             <file>tests/Reports/PlayerCourseStatusLegacyEquivalenceTest.php</file>
             <file>tests/Reports/PlayerCourseStatusQa150FixesTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusLayout150Test.php</file>
             <file>tests/Reports/WinbackReportCacheTest.php</file>
             <file>tests/Reports/PlayerCampStatusLoadPlayersQueryCountTest.php</file>
             <file>tests/Reports/WinbackReportTest.php</file>
