@@ -1737,7 +1737,8 @@ if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation'))
     function intersoccer_migration_normalize_slug_meta_for_variation(
         array $slug_meta,
         WC_Product_Variation $variation,
-        array $existing_line_pa = []
+        array $existing_line_pa = [],
+        bool $prefer_order_language_catalog_slugs = false
     ): array {
         $normalized = [];
         foreach ($slug_meta as $meta_key => $meta_value) {
@@ -1751,7 +1752,16 @@ if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation'))
             $taxonomy = preg_replace('/^attribute_/i', '', (string) $meta_key);
             $raw_from_variation = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy, false);
             $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy);
-            if ($raw_from_variation !== '' && function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
+            if ($prefer_order_language_catalog_slugs) {
+                if ($raw_from_variation !== '') {
+                    $slug = trim($raw_from_variation);
+                } elseif ($meta_value !== '' && $meta_value !== null) {
+                    $slug = trim(is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value);
+                }
+                if ($taxonomy === 'pa_girls-only' && function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
+                    $slug = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $slug);
+                }
+            } elseif ($raw_from_variation !== '' && function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
                 $strict_from_variation = intersoccer_migration_coerce_pa_taxonomy_slug_strict(
                     $taxonomy,
                     $raw_from_variation
@@ -1782,6 +1792,15 @@ if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation'))
                 continue;
             }
             $existing = intersoccer_migration_pa_existing_line_value_for_key($existing_line_pa, (string) $meta_key);
+            if ($prefer_order_language_catalog_slugs && $existing !== '') {
+                if ($slug === ''
+                    || $existing === $slug
+                    || intersoccer_migration_pa_stored_value_same_term_as_slug($taxonomy, $existing, $slug)
+                ) {
+                    $normalized[$meta_key] = $existing;
+                    continue;
+                }
+            }
             if ($existing !== '' && intersoccer_migration_pa_stored_value_same_term_as_slug($taxonomy, $existing, $slug)) {
                 $normalized[$meta_key] = $existing;
             } else {
@@ -3369,21 +3388,30 @@ if (!function_exists('intersoccer_migration_finalize_move_item_meta')) {
                 $slug_meta = intersoccer_migration_normalize_slug_meta_for_variation($slug_meta, $variation, $existing_line_pa);
             }
         } else {
-            $allowed = [];
-            foreach ($existing_pa as $key) {
-                $allowed[$key] = true;
-            }
-            $filtered = [];
-            foreach ($slug_meta as $meta_key => $meta_value) {
-                if (!isset($allowed[$meta_key])) {
-                    continue;
+            if (function_exists('intersoccer_migration_normalize_slug_meta_for_variation')) {
+                $slug_meta = intersoccer_migration_normalize_slug_meta_for_variation(
+                    $slug_meta,
+                    $variation,
+                    $existing_line_pa,
+                    true
+                );
+            } else {
+                $allowed = [];
+                foreach ($existing_pa as $key) {
+                    $allowed[$key] = true;
                 }
-                if ($meta_value === '' || $meta_value === null) {
-                    continue;
+                $filtered = [];
+                foreach ($slug_meta as $meta_key => $meta_value) {
+                    if (!isset($allowed[$meta_key])) {
+                        continue;
+                    }
+                    if ($meta_value === '' || $meta_value === null) {
+                        continue;
+                    }
+                    $filtered[$meta_key] = is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value;
                 }
-                $filtered[$meta_key] = is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value;
+                $slug_meta = $filtered;
             }
-            $slug_meta = $filtered;
         }
 
         $canonical_variation = $canonical_source_variation instanceof WC_Product_Variation

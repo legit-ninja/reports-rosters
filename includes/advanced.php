@@ -1689,6 +1689,14 @@ function intersoccer_move_players_ajax() {
             $slug_meta      = $meta_payload['slug_meta'];
             $human_meta     = $meta_payload['human_meta'];
             $other_meta     = $meta_payload['other_meta'];
+            if (function_exists('intersoccer_migration_normalize_slug_meta_for_variation')) {
+                $slug_meta = intersoccer_migration_normalize_slug_meta_for_variation(
+                    $slug_meta,
+                    $order_variation,
+                    $existing_pa_slug_values,
+                    true
+                );
+            }
             if (function_exists('intersoccer_migration_allowed_canonicals_for_move')) {
                 $allowed_canonicals = intersoccer_migration_allowed_canonicals_for_move(
                     $existing_line_meta_keys,
