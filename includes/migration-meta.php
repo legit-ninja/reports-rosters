@@ -2304,14 +2304,49 @@ if (!function_exists('intersoccer_migration_preserve_unchanged_other_meta_for_mo
             return $other_meta;
         }
 
+        $mapped_source_variation_id = $source_variation_id;
+        if (function_exists('intersoccer_resolve_variation_for_roster')) {
+            $resolved_source = (int) intersoccer_resolve_variation_for_roster($source_variation_id);
+            if ($resolved_source > 0) {
+                $mapped_source_variation_id = $resolved_source;
+            }
+        }
+
         $existing_flip = array_fill_keys($existing_line_keys, true);
         $destination_id = (int) $destination_variation->get_id();
+        $dest_parent_id = (int) $destination_variation->get_parent_id();
+        $source_parent_id = 0;
+        $mapped_source_product = wc_get_product($mapped_source_variation_id);
+        if ($mapped_source_product instanceof WC_Product_Variation) {
+            $source_parent_id = (int) $mapped_source_product->get_parent_id();
+        }
 
-        $source_course = intersoccer_migration_course_schedule_fingerprint($source_variation_id);
+        $source_product_type = '';
+        $dest_product_type = '';
+        if (function_exists('intersoccer_get_product_type_safe')) {
+            if ($source_parent_id > 0) {
+                $source_product_type = (string) intersoccer_get_product_type_safe($source_parent_id, $mapped_source_variation_id);
+            }
+            if ($dest_parent_id > 0) {
+                $dest_product_type = (string) intersoccer_get_product_type_safe($dest_parent_id, $destination_id);
+            }
+        }
+
+        $source_course = intersoccer_migration_course_schedule_fingerprint($mapped_source_variation_id);
         $dest_course = intersoccer_migration_course_schedule_fingerprint($destination_id);
-        if ($source_course !== null && $dest_course !== null && $source_course === $dest_course) {
+        if ($source_product_type === 'course' && $dest_product_type === 'course'
+            && $source_course !== null && $dest_course !== null
+            && ($source_course['start'] ?? '') !== '' && ($dest_course['start'] ?? '') !== ''
+        ) {
             foreach (intersoccer_migration_course_schedule_order_meta_keys() as $meta_key) {
                 if (!isset($existing_flip[$meta_key], $line_other_snapshot[$meta_key])) {
+                    continue;
+                }
+                $field = intersoccer_migration_course_schedule_field_for_order_meta_key($meta_key);
+                if ($field === null) {
+                    continue;
+                }
+                if (!intersoccer_migration_course_schedule_field_unchanged($field, $source_course, $dest_course)) {
                     continue;
                 }
                 $other_meta[$meta_key] = $line_other_snapshot[$meta_key];
@@ -2319,7 +2354,7 @@ if (!function_exists('intersoccer_migration_preserve_unchanged_other_meta_for_mo
         }
 
         $source_camp = function_exists('intersoccer_migration_read_variation_camp_schedule_ymd')
-            ? intersoccer_migration_read_variation_camp_schedule_ymd($source_variation_id)
+            ? intersoccer_migration_read_variation_camp_schedule_ymd($mapped_source_variation_id)
             : ['start' => '', 'end' => '', 'week_index' => ''];
         $dest_camp = function_exists('intersoccer_migration_read_variation_camp_schedule_ymd')
             ? intersoccer_migration_read_variation_camp_schedule_ymd($destination_id)
@@ -2338,9 +2373,8 @@ if (!function_exists('intersoccer_migration_preserve_unchanged_other_meta_for_mo
             }
         }
 
-        $source_variation = wc_get_product($source_variation_id);
-        if ($source_variation instanceof WC_Product_Variation) {
-            $source_parent_other = intersoccer_migration_build_parent_other_meta_for_variation($source_variation);
+        if ($mapped_source_product instanceof WC_Product_Variation) {
+            $source_parent_other = intersoccer_migration_build_parent_other_meta_for_variation($mapped_source_product);
             $dest_parent_other = intersoccer_migration_build_parent_other_meta_for_variation($destination_variation);
             foreach ($dest_parent_other as $label => $dest_value) {
                 if (!array_key_exists($label, $source_parent_other)) {
@@ -2360,46 +2394,246 @@ if (!function_exists('intersoccer_migration_preserve_unchanged_other_meta_for_mo
     }
 }
 
-if (!function_exists('intersoccer_migration_move_en_booking_type_slug_from_variation')) {
-    function intersoccer_migration_move_en_booking_type_slug_from_variation(WC_Product_Variation $variation): ?string {
-        if (!function_exists('intersoccer_migration_pa_attribute_slug_for_variation')) {
+if (!function_exists('intersoccer_migration_course_schedule_field_for_order_meta_key')) {
+    /**
+     * @return 'start'|'end'|'holidays'|null
+     */
+    function intersoccer_migration_course_schedule_field_for_order_meta_key(string $meta_key): ?string {
+        $meta_key = trim($meta_key);
+        if ($meta_key === '') {
             return null;
         }
 
-        $raw_slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, 'pa_booking-type', false);
-        if ($raw_slug === '') {
-            return null;
+        $canonical_map = [
+            'Start Date' => 'start',
+            'End Date' => 'end',
+            'Holidays' => 'holidays',
+        ];
+        if (isset($canonical_map[$meta_key])) {
+            return $canonical_map[$meta_key];
         }
 
-        $en_slug = $raw_slug;
+        if (function_exists('intersoccer_get_order_meta_manual_aliases')) {
+            $aliases = intersoccer_get_order_meta_manual_aliases();
+            foreach ($canonical_map as $canonical => $field) {
+                foreach ($aliases[$canonical] ?? [] as $alias) {
+                    if ((string) $alias === $meta_key) {
+                        return $field;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+}
+
+if (!function_exists('intersoccer_migration_course_schedule_field_unchanged')) {
+    /**
+     * @param array{start:string,end:string,holidays:string[]} $source_course
+     * @param array{start:string,end:string,holidays:string[]} $dest_course
+     */
+    function intersoccer_migration_course_schedule_field_unchanged(
+        string $field,
+        array $source_course,
+        array $dest_course
+    ): bool {
+        if ($field === 'start') {
+            return (string) ($source_course['start'] ?? '') === (string) ($dest_course['start'] ?? '');
+        }
+        if ($field === 'end') {
+            return (string) ($source_course['end'] ?? '') === (string) ($dest_course['end'] ?? '');
+        }
+        if ($field === 'holidays') {
+            $source_holidays = $source_course['holidays'] ?? [];
+            $dest_holidays = $dest_course['holidays'] ?? [];
+            if (!is_array($source_holidays)) {
+                $source_holidays = [];
+            }
+            if (!is_array($dest_holidays)) {
+                $dest_holidays = [];
+            }
+
+            return $source_holidays === $dest_holidays;
+        }
+
+        return false;
+    }
+}
+
+if (!function_exists('intersoccer_migration_move_booking_type_label_meta_keys')) {
+    /**
+     * @return array<int,string>
+     */
+    function intersoccer_migration_move_booking_type_label_meta_keys(): array {
+        $keys = ['Booking Type', 'Type de réservation', 'Buchungstyp'];
+        if (function_exists('intersoccer_get_order_meta_manual_aliases')) {
+            $aliases = intersoccer_get_order_meta_manual_aliases();
+            foreach ($aliases['Booking Type'] ?? [] as $alias) {
+                $keys[] = (string) $alias;
+            }
+        }
+
+        return array_values(array_unique(array_filter($keys, static function ($key) {
+            return trim((string) $key) !== '';
+        })));
+    }
+}
+
+if (!function_exists('intersoccer_migration_move_days_selected_meta_keys')) {
+    /**
+     * @return array<int,string>
+     */
+    function intersoccer_migration_move_days_selected_meta_keys(): array {
+        $keys = ['Days Selected', 'Jours sélectionnés', 'Ausgewählte Tage'];
+        if (function_exists('intersoccer_get_order_meta_manual_aliases')) {
+            $aliases = intersoccer_get_order_meta_manual_aliases();
+            foreach ($aliases['Days Selected'] ?? [] as $alias) {
+                $keys[] = (string) $alias;
+            }
+        }
+
+        return array_values(array_unique(array_filter($keys, static function ($key) {
+            return trim((string) $key) !== '';
+        })));
+    }
+}
+
+if (!function_exists('intersoccer_migration_move_classify_raw_booking_type_value')) {
+    /**
+     * @return array{kind:'missing'|'known'|'unknown',slug:?string}
+     */
+    function intersoccer_migration_move_classify_raw_booking_type_value(string $raw): array {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return ['kind' => 'missing', 'slug' => null];
+        }
+
+        $en_slug = $raw;
         if (function_exists('intersoccer_migration_default_language_term_slug_strict')) {
-            $resolved = intersoccer_migration_default_language_term_slug_strict('pa_booking-type', $raw_slug);
+            $resolved = intersoccer_migration_default_language_term_slug_strict('pa_booking-type', $raw);
             if ($resolved !== null && $resolved !== '') {
                 $en_slug = $resolved;
             }
         }
 
         if (!function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
-            return $en_slug !== '' ? $en_slug : null;
+            return ['kind' => 'known', 'slug' => $en_slug !== '' ? $en_slug : null];
         }
 
         $normalized = intersoccer_normalize_booking_type_slug_for_reports($en_slug);
+        if ($normalized === '' || $normalized === 'other') {
+            return ['kind' => 'unknown', 'slug' => null];
+        }
 
-        return ($normalized !== '' && $normalized !== 'other') ? $normalized : null;
+        return ['kind' => 'known', 'slug' => $normalized];
     }
 }
 
-if (!function_exists('intersoccer_migration_move_en_booking_type_slug_from_order_item')) {
-    function intersoccer_migration_move_en_booking_type_slug_from_order_item(int $order_item_id): ?string {
+if (!function_exists('intersoccer_migration_move_variation_is_camp')) {
+    function intersoccer_migration_move_variation_is_camp(WC_Product_Variation $variation): bool {
+        if (!function_exists('intersoccer_get_product_type_safe')) {
+            return false;
+        }
+
+        $parent_id = (int) $variation->get_parent_id();
+        if ($parent_id <= 0) {
+            return false;
+        }
+
+        return intersoccer_get_product_type_safe($parent_id, (int) $variation->get_id()) === 'camp';
+    }
+}
+
+if (!function_exists('intersoccer_migration_move_order_item_is_camp')) {
+    function intersoccer_migration_move_order_item_is_camp(int $order_item_id): bool {
+        if ($order_item_id <= 0 || !function_exists('wc_get_order_item_meta')) {
+            return false;
+        }
+
+        foreach (['Activity Type', 'activity_type'] as $meta_key) {
+            $activity = wc_get_order_item_meta($order_item_id, $meta_key, true);
+            if (is_string($activity) && strcasecmp(trim($activity), 'Camp') === 0) {
+                return true;
+            }
+        }
+
+        global $wpdb;
+        if (isset($wpdb) && is_object($wpdb) && !empty($wpdb->prefix)) {
+            $table = $wpdb->prefix . 'intersoccer_rosters';
+            $activity_type = $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT activity_type FROM {$table} WHERE order_item_id = %d LIMIT 1",
+                    $order_item_id
+                )
+            );
+            if (is_string($activity_type) && strcasecmp(trim($activity_type), 'Camp') === 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+if (!function_exists('intersoccer_migration_move_variation_booking_type_outcome')) {
+    /**
+     * @return array{kind:'missing'|'known'|'unknown',slug:?string}
+     */
+    function intersoccer_migration_move_variation_booking_type_outcome(WC_Product_Variation $variation): array {
+        if (!function_exists('intersoccer_migration_pa_attribute_slug_for_variation')) {
+            return ['kind' => 'missing', 'slug' => null];
+        }
+
+        $raw_slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, 'pa_booking-type', false);
+        if ($raw_slug === '') {
+            return ['kind' => 'missing', 'slug' => null];
+        }
+
+        return intersoccer_migration_move_classify_raw_booking_type_value($raw_slug);
+    }
+}
+
+if (!function_exists('intersoccer_migration_move_en_booking_type_slug_from_variation')) {
+    function intersoccer_migration_move_en_booking_type_slug_from_variation(WC_Product_Variation $variation): ?string {
+        $outcome = intersoccer_migration_move_variation_booking_type_outcome($variation);
+
+        return $outcome['kind'] === 'known' ? $outcome['slug'] : null;
+    }
+}
+
+if (!function_exists('intersoccer_migration_move_order_item_meta_key_exists')) {
+    function intersoccer_migration_move_order_item_meta_key_exists(int $order_item_id, string $meta_key): bool {
+        if (function_exists('metadata_exists')) {
+            return metadata_exists('order_item', $order_item_id, $meta_key);
+        }
+
+        global $intersoccer_test_wc_order_item_meta;
+        if (is_array($intersoccer_test_wc_order_item_meta)
+            && isset($intersoccer_test_wc_order_item_meta[$order_item_id])
+            && is_array($intersoccer_test_wc_order_item_meta[$order_item_id])
+        ) {
+            return array_key_exists($meta_key, $intersoccer_test_wc_order_item_meta[$order_item_id]);
+        }
+
+        return false;
+    }
+}
+
+if (!function_exists('intersoccer_migration_move_order_item_booking_type_outcome')) {
+    /**
+     * @return array{kind:'missing'|'known'|'unknown',slug:?string}
+     */
+    function intersoccer_migration_move_order_item_booking_type_outcome(int $order_item_id): array {
         if ($order_item_id <= 0) {
-            return null;
+            return ['kind' => 'missing', 'slug' => null];
         }
 
         $canonical = wc_get_order_item_meta($order_item_id, '_intersoccer_canonical_booking_type', true);
-        if ($canonical !== '' && $canonical !== null && function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
-            $slug = intersoccer_normalize_booking_type_slug_for_reports((string) $canonical);
-            if ($slug !== '' && $slug !== 'other') {
-                return $slug;
+        if ($canonical !== '' && $canonical !== null) {
+            $outcome = intersoccer_migration_move_classify_raw_booking_type_value((string) $canonical);
+            if ($outcome['kind'] !== 'missing') {
+                return $outcome;
             }
         }
 
@@ -2408,18 +2642,23 @@ if (!function_exists('intersoccer_migration_move_en_booking_type_slug_from_order
             if ($raw === '' || $raw === null) {
                 continue;
             }
-            $en_slug = (string) $raw;
-            if (function_exists('intersoccer_migration_default_language_term_slug_strict')) {
-                $resolved = intersoccer_migration_default_language_term_slug_strict('pa_booking-type', $en_slug);
-                if ($resolved !== null && $resolved !== '') {
-                    $en_slug = $resolved;
-                }
+            $outcome = intersoccer_migration_move_classify_raw_booking_type_value((string) $raw);
+            if ($outcome['kind'] !== 'missing') {
+                return $outcome;
             }
-            if (function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
-                $slug = intersoccer_normalize_booking_type_slug_for_reports($en_slug);
-                if ($slug !== '' && $slug !== 'other') {
-                    return $slug;
-                }
+        }
+
+        foreach (intersoccer_migration_move_booking_type_label_meta_keys() as $meta_key) {
+            if (!intersoccer_migration_move_order_item_meta_key_exists($order_item_id, $meta_key)) {
+                continue;
+            }
+            $raw = wc_get_order_item_meta($order_item_id, $meta_key, true);
+            if ($raw === '' || $raw === null) {
+                continue;
+            }
+            $outcome = intersoccer_migration_move_classify_raw_booking_type_value((string) $raw);
+            if ($outcome['kind'] !== 'missing') {
+                return $outcome;
             }
         }
 
@@ -2432,17 +2671,33 @@ if (!function_exists('intersoccer_migration_move_en_booking_type_slug_from_order
                     $order_item_id
                 )
             );
-            if ($booking_type !== null && trim((string) $booking_type) !== ''
-                && function_exists('intersoccer_normalize_booking_type_slug_for_reports')
-            ) {
-                $slug = intersoccer_normalize_booking_type_slug_for_reports((string) $booking_type);
-                if ($slug !== '' && $slug !== 'other') {
-                    return $slug;
+            if ($booking_type !== null && trim((string) $booking_type) !== '') {
+                $outcome = intersoccer_migration_move_classify_raw_booking_type_value((string) $booking_type);
+                if ($outcome['kind'] !== 'missing') {
+                    return $outcome;
                 }
             }
         }
 
-        return null;
+        foreach (intersoccer_migration_move_days_selected_meta_keys() as $meta_key) {
+            if (!intersoccer_migration_move_order_item_meta_key_exists($order_item_id, $meta_key)) {
+                continue;
+            }
+            $days = wc_get_order_item_meta($order_item_id, $meta_key, true);
+            if (is_string($days) && trim($days) !== '') {
+                return ['kind' => 'known', 'slug' => 'single-days'];
+            }
+        }
+
+        return ['kind' => 'missing', 'slug' => null];
+    }
+}
+
+if (!function_exists('intersoccer_migration_move_en_booking_type_slug_from_order_item')) {
+    function intersoccer_migration_move_en_booking_type_slug_from_order_item(int $order_item_id): ?string {
+        $outcome = intersoccer_migration_move_order_item_booking_type_outcome($order_item_id);
+
+        return $outcome['kind'] === 'known' ? $outcome['slug'] : null;
     }
 }
 
@@ -2454,8 +2709,18 @@ if (!function_exists('intersoccer_migration_move_hard_block_for_booking_type_mis
         WC_Product_Variation $destination_variation,
         array $order_item_ids
     ): ?string {
-        $dest_slug = intersoccer_migration_move_en_booking_type_slug_from_variation($destination_variation);
-        if ($dest_slug === null) {
+        $block_message = function_exists('intersoccer_roster_move_ui_string')
+            ? intersoccer_roster_move_ui_string('booking_type_mismatch')
+            : 'This roster has a different booking type (for example single days vs full week). Moving between booking types isn\'t supported yet.';
+
+        $dest_is_camp = intersoccer_migration_move_variation_is_camp($destination_variation);
+        $dest_outcome = intersoccer_migration_move_variation_booking_type_outcome($destination_variation);
+        if ($dest_is_camp && $dest_outcome['kind'] === 'unknown') {
+            return $block_message;
+        }
+
+        $dest_slug = $dest_outcome['kind'] === 'known' ? $dest_outcome['slug'] : null;
+        if (!$dest_is_camp && $dest_slug === null) {
             return null;
         }
 
@@ -2464,14 +2729,26 @@ if (!function_exists('intersoccer_migration_move_hard_block_for_booking_type_mis
             if ($item_id <= 0) {
                 continue;
             }
-            $line_slug = intersoccer_migration_move_en_booking_type_slug_from_order_item($item_id);
-            if ($line_slug === null || $line_slug === $dest_slug) {
+
+            $line_is_camp = intersoccer_migration_move_order_item_is_camp($item_id);
+            $line_outcome = intersoccer_migration_move_order_item_booking_type_outcome($item_id);
+
+            if ($line_is_camp && $line_outcome['kind'] === 'unknown') {
+                return $block_message;
+            }
+
+            $line_slug = $line_outcome['kind'] === 'known' ? $line_outcome['slug'] : null;
+
+            if (!$line_is_camp) {
+                if ($dest_slug !== null && $line_slug !== null && $line_slug !== $dest_slug) {
+                    return $block_message;
+                }
                 continue;
             }
 
-            return function_exists('intersoccer_roster_move_ui_string')
-                ? intersoccer_roster_move_ui_string('booking_type_mismatch')
-                : 'This roster has a different booking type (for example single days vs full week). Moving between booking types isn\'t supported yet.';
+            if ($dest_slug !== null && $line_slug !== null && $line_slug !== $dest_slug) {
+                return $block_message;
+            }
         }
 
         return null;

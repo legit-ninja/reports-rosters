@@ -37,6 +37,7 @@ function intersoccer_roster_move_ui_strings(): array {
         'no_price' => __('This roster has no price set.', 'intersoccer-reports-rosters'),
         'course_ended' => __('This course has ended.', 'intersoccer-reports-rosters'),
         'camp_ended' => __('This camp has ended.', 'intersoccer-reports-rosters'),
+        'program_ended' => __('This program has ended.', 'intersoccer-reports-rosters'),
         'booking_type_mismatch' => 'This roster has a different booking type (for example single days vs full week). Moving between booking types isn\'t supported yet.',
         'out_of_stock' => __('This roster is marked out of stock.', 'intersoccer-reports-rosters'),
         'hidden' => __('This roster is hidden from the shop.', 'intersoccer-reports-rosters'),
@@ -492,8 +493,10 @@ function intersoccer_roster_move_reason_lines_for_codes(array $reason_codes, arr
                 $target_type = strtolower(trim((string) ($context['product_type'] ?? '')));
                 if ($target_type === 'camp') {
                     $lines[] = intersoccer_roster_move_ui_string('camp_ended');
-                } else {
+                } elseif ($target_type === 'course') {
                     $lines[] = intersoccer_roster_move_ui_string('course_ended');
+                } else {
+                    $lines[] = intersoccer_roster_move_ui_string('program_ended');
                 }
                 break;
             case 'full':
