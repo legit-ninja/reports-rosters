@@ -133,8 +133,6 @@ class RosterBuilder {
      */
     private $last_build_call_item_write_failures = 0;
 
-    private const ORDER_META_ROSTER_FAILURE_NOTES = '_intersoccer_roster_failure_notes';
-
     /**
      * Order IDs already status-synced during the current reconcile delete_obsolete pass.
      *
@@ -328,9 +326,7 @@ class RosterBuilder {
 
             $this->init_build_stats();
 
-            $default_statuses = function_exists('intersoccer_roster_rebuild_statuses')
-                ? intersoccer_roster_rebuild_statuses()
-                : ['completed', 'processing', 'on-hold'];
+            $default_statuses = $this->rosterRebuildStatuses();
 
             // Set default options
             $options = array_merge([
@@ -693,9 +689,7 @@ class RosterBuilder {
                 'options' => $options
             ]);
             
-            $paid_statuses = function_exists('intersoccer_roster_rebuild_statuses')
-                ? intersoccer_roster_rebuild_statuses()
-                : ['completed', 'processing', 'on-hold'];
+            $paid_statuses = $this->rosterRebuildStatuses();
 
             $options = array_merge([
                 'validate_data' => true,
@@ -1266,7 +1260,6 @@ class RosterBuilder {
                 if ($roster) {
                     $rosters->add($roster);
                     $this->build_stats['players_processed']++;
-                    $this->clearItemWriteFailureNoteMarker($order, (int) $item_id);
                     if (is_array($this->full_rebuild_existing_item_map)) {
                         unset($this->full_rebuild_existing_item_map[(int) $item_id]);
                     }
@@ -1375,56 +1368,7 @@ class RosterBuilder {
     }
 
     /**
-     * @return array<int|string,string>
-     */
-    private function getItemWriteFailureNoteMarkers(\WC_Order $order): array {
-        if (!method_exists($order, 'get_meta')) {
-            return [];
-        }
-        $markers = $order->get_meta(self::ORDER_META_ROSTER_FAILURE_NOTES, true);
-        return is_array($markers) ? $markers : [];
-    }
-
-    private function failureReasonHash(string $reason): string {
-        return substr(md5($reason), 0, 8);
-    }
-
-    private function orderItemWriteFailureWasAlreadyNoted(\WC_Order $order, int $item_id, string $reason): bool {
-        $markers = $this->getItemWriteFailureNoteMarkers($order);
-        $key = (string) $item_id;
-        if (!isset($markers[$key])) {
-            return false;
-        }
-
-        return (string) $markers[$key] === $this->failureReasonHash($reason);
-    }
-
-    private function markItemWriteFailureNoted(\WC_Order $order, int $item_id, string $reason): void {
-        if (!method_exists($order, 'update_meta_data') || !method_exists($order, 'save')) {
-            return;
-        }
-        $markers = $this->getItemWriteFailureNoteMarkers($order);
-        $markers[(string) $item_id] = $this->failureReasonHash($reason);
-        $order->update_meta_data(self::ORDER_META_ROSTER_FAILURE_NOTES, $markers);
-        $order->save();
-    }
-
-    private function clearItemWriteFailureNoteMarker(\WC_Order $order, int $item_id): void {
-        if (!method_exists($order, 'get_meta') || !method_exists($order, 'update_meta_data') || !method_exists($order, 'save')) {
-            return;
-        }
-        $markers = $this->getItemWriteFailureNoteMarkers($order);
-        $key = (string) $item_id;
-        if (!isset($markers[$key])) {
-            return;
-        }
-        unset($markers[$key]);
-        $order->update_meta_data(self::ORDER_META_ROSTER_FAILURE_NOTES, $markers);
-        $order->save();
-    }
-
-    /**
-     * Log, note, and count a failed roster write for one order line (no player PII in logs).
+     * Log and count a failed roster write for one order line (no player PII in logs).
      */
     private function recordOrderItemRosterWriteFailure(\WC_Order $order, int $item_id, string $reason): void {
         $order_id = (int) $order->get_id();
@@ -1443,24 +1387,59 @@ class RosterBuilder {
             'item_id' => $item_id,
             'reason' => $reason,
         ]);
+    }
 
-        if ($this->orderItemWriteFailureWasAlreadyNoted($order, $item_id, $reason)) {
-            return;
+    /**
+     * WooCommerce order line item IDs that should receive a roster row (read-only on the order).
+     *
+     * @return int[]
+     */
+    public function getEligibleOrderLineItemIds(\WC_Order $order): array {
+        $customer_id = (int) $order->get_customer_id();
+        if ($customer_id <= 0) {
+            return [];
         }
 
-        if (is_callable([$order, 'add_order_note'])) {
-            $note = sprintf(
-                /* translators: 1: order line item ID, 2: failure reason */
-                \__(
-                    'InterSoccer rosters: booking line item %1$d could not be added to the roster. Reason: %2$s',
-                    'intersoccer-reports-rosters'
-                ),
-                $item_id,
-                $reason
-            );
-            $order->add_order_note($note, false, false);
-            $this->markItemWriteFailureNoted($order, $item_id, $reason);
+        $customer_players = $this->player_repository->getPlayersByCustomerId($customer_id);
+        $eligible = [];
+
+        foreach ($order->get_items() as $item_id => $item) {
+            if (!$item instanceof \WC_Order_Item_Product) {
+                continue;
+            }
+            try {
+                $order_data = $this->extractOrderItemData($order, (int) $item_id, $item);
+                if (empty($order_data['activity_type'])) {
+                    continue;
+                }
+                $assigned_players = $this->player_matcher->getAssignedPlayers(
+                    $item,
+                    $customer_players,
+                    ['skip_age_gender_validation' => true]
+                );
+                if ($assigned_players->isEmpty()) {
+                    continue;
+                }
+                $eligible[] = (int) $item_id;
+            } catch (\Throwable $e) {
+                continue;
+            }
         }
+
+        return $eligible;
+    }
+
+    /**
+     * @return string[]
+     */
+    private function rosterRebuildStatuses(): array {
+        $default = ['completed', 'processing', 'on-hold'];
+        if (!function_exists('apply_filters') || !function_exists('intersoccer_normalize_roster_rebuild_statuses')) {
+            return $default;
+        }
+        $filtered = apply_filters('intersoccer_roster_rebuild_statuses', $default);
+
+        return intersoccer_normalize_roster_rebuild_statuses($filtered);
     }
     
     /**
@@ -2278,8 +2257,6 @@ class RosterBuilder {
     }
 
     private function recordRosterInsertFailure(int $order_id, int $order_item_id, string $reason): void {
-        $this->build_stats['validation_errors']++;
-        $this->build_stats['errors'][] = "Order {$order_id}, item {$order_item_id}: {$reason}";
         $this->logger->error('Roster insert failed', [
             'order_id' => $order_id,
             'order_item_id' => $order_item_id,
@@ -3000,9 +2977,7 @@ class RosterBuilder {
                         continue;
                     }
 
-                    $allowed_statuses = function_exists('intersoccer_roster_rebuild_statuses')
-                        ? intersoccer_roster_rebuild_statuses()
-                        : ['completed', 'processing', 'on-hold'];
+                    $allowed_statuses = $this->rosterRebuildStatuses();
                     if (!in_array((string) $order->get_status(), $allowed_statuses, true)) {
                         $this->reconcileStoredOrderRowsWithoutRebuild($order_id);
                         $this->build_stats['skipped_orders']++;

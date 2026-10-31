@@ -90,14 +90,19 @@ class OrderProcessor {
                 return false;
             }
 
-            // Skip heavy build when order is already completed and rosters exist (e.g. from cron or duplicate hook).
+            // Skip heavy build when order is already completed and every eligible line has a roster row.
             if ($wc_order->get_status() === 'completed') {
-                $existing_count = $this->roster_repository->count(['order_id' => $wc_order->get_id()]);
-                if ($existing_count > 0) {
-                    $existing = $this->roster_repository->where(['order_id' => $wc_order->get_id()]);
+                $existing = $this->roster_repository->where(['order_id' => $wc_order->get_id()]);
+                if ($existing->count() > 0) {
+                    $eligible_item_ids = $this->roster_builder->getEligibleOrderLineItemIds($wc_order);
+                    $existing_item_ids = [];
                     $rows_needing_resync = 0;
                     foreach ($existing as $row) {
                         $row_data = method_exists($row, 'toArray') ? $row->toArray() : (array) $row;
+                        $line_item_id = (int) ($row_data['order_item_id'] ?? 0);
+                        if ($line_item_id > 0) {
+                            $existing_item_ids[$line_item_id] = true;
+                        }
                         if (function_exists('intersoccer_roster_row_needs_order_resync')
                             && intersoccer_roster_row_needs_order_resync($row_data)) {
                             $rows_needing_resync++;
@@ -108,7 +113,14 @@ class OrderProcessor {
                             $rows_needing_resync++;
                         }
                     }
-                    if ($rows_needing_resync === 0) {
+                    $missing_eligible_lines = false;
+                    foreach ($eligible_item_ids as $eligible_id) {
+                        if (!isset($existing_item_ids[(int) $eligible_id])) {
+                            $missing_eligible_lines = true;
+                            break;
+                        }
+                    }
+                    if ($eligible_item_ids !== [] && !$missing_eligible_lines && $rows_needing_resync === 0) {
                         $this->last_rosters = $existing;
                         $this->last_order_completed = true;
                         return true;
@@ -139,7 +151,7 @@ class OrderProcessor {
                     ]);
                 }
 
-                if (!in_array($current_status, ['completed', 'refunded', 'cancelled'], true)) {
+                if ($current_status === 'processing') {
                     try {
                         if ($this->isVerboseLogging()) {
                             $this->logger->info('OrderProcessor: Attempting to complete order', [
@@ -309,11 +321,22 @@ class OrderProcessor {
             return false;
         }
 
-        $statuses = function_exists('intersoccer_roster_rebuild_statuses')
-            ? intersoccer_roster_rebuild_statuses()
-            : ['completed', 'processing', 'on-hold'];
+        $statuses = $this->rosterRebuildStatuses();
 
         return in_array($wc_order->get_status(), $statuses, true);
+    }
+
+    /**
+     * @return string[]
+     */
+    private function rosterRebuildStatuses(): array {
+        $default = ['completed', 'processing', 'on-hold'];
+        if (!function_exists('apply_filters') || !function_exists('intersoccer_normalize_roster_rebuild_statuses')) {
+            return $default;
+        }
+        $filtered = apply_filters('intersoccer_roster_rebuild_statuses', $default);
+
+        return intersoccer_normalize_roster_rebuild_statuses($filtered);
     }
 
     /**
