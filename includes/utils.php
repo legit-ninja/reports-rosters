@@ -116,18 +116,24 @@ if (!function_exists('intersoccer_invalidate_term_def_cache')) {
 
 if (!function_exists('intersoccer_term_def_request_cache_ref')) {
     /**
-     * Request-level term lookup cache (PHPUnit may bind to $GLOBALS for isolation).
+     * Request-level term lookup cache.
      *
      * @return array<string, mixed>
      */
     function &intersoccer_term_def_request_cache_ref() {
         static $cache = [];
-        if (isset($GLOBALS['intersoccer_test_term_def_request_cache'])
-            && is_array($GLOBALS['intersoccer_test_term_def_request_cache'])) {
-            return $GLOBALS['intersoccer_test_term_def_request_cache'];
-        }
 
         return $cache;
+    }
+}
+
+if (!function_exists('intersoccer_reset_term_def_request_cache')) {
+    /**
+     * Clear the request-level term lookup cache (tests / long-running CLI).
+     */
+    function intersoccer_reset_term_def_request_cache() {
+        $cache = &intersoccer_term_def_request_cache_ref();
+        $cache = [];
     }
 }
 
@@ -5053,11 +5059,9 @@ if (defined('INTERSOCCER_RUN_TEST_PROCESS_ORDERS') && INTERSOCCER_RUN_TEST_PROCE
 
 if (!function_exists('intersoccer_get_product_type_safe')) {
     function intersoccer_get_product_type_safe($product_id, $variation_id = null) {
-        global $intersoccer_test_product_type_safe_callback;
-        if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING
-            && is_callable($intersoccer_test_product_type_safe_callback)
-        ) {
-            return (string) call_user_func($intersoccer_test_product_type_safe_callback, $product_id, $variation_id);
+        $pre = apply_filters('intersoccer_pre_get_product_type_safe', null, $product_id, $variation_id);
+        if ($pre !== null) {
+            return (string) $pre;
         }
 
         $product_id = (int) $product_id;

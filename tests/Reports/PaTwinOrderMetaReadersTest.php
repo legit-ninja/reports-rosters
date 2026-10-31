@@ -314,6 +314,10 @@ class PaTwinOrderMetaReadersTest extends TestCase {
         $intersoccer_test_product_type_safe_callback = static function () use ($product_type) {
             return $product_type;
         };
+        $preProductTypeFilter = static function ($pre, $unused_product_id = null, $unused_variation_id = null) use ($product_type) {
+            return $product_type;
+        };
+        add_filter('intersoccer_pre_get_product_type_safe', $preProductTypeFilter, 1, 3);
 
         $intersoccer_test_wc_order_item_data[self::ITEM_ID] = [
             'product_id' => self::PARENT_ID,
@@ -357,13 +361,17 @@ class PaTwinOrderMetaReadersTest extends TestCase {
         };
         $wpdb = $capture;
 
-        $this->assertTrue(
-            intersoccer_update_roster_entry(self::ORDER_ID, self::ITEM_ID),
-            'intersoccer_update_roster_entry should upsert using order-item meta readers'
-        );
-        $this->assertNotEmpty($capture->captured_replace);
+        try {
+            $this->assertTrue(
+                intersoccer_update_roster_entry(self::ORDER_ID, self::ITEM_ID),
+                'intersoccer_update_roster_entry should upsert using order-item meta readers'
+            );
+            $this->assertNotEmpty($capture->captured_replace);
 
-        return $capture->captured_replace;
+            return $capture->captured_replace;
+        } finally {
+            remove_filter('intersoccer_pre_get_product_type_safe', $preProductTypeFilter, 1);
+        }
     }
 
     private function installEmptyAttributeProductStub(): void {

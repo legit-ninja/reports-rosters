@@ -47,6 +47,9 @@ if (!defined('OBJECT_K')) {
 // Composer autoloader (must come AFTER ABSPATH is defined)
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 
+// Term-def request cache: test shim loads before includes/utils.php (production has no test globals).
+require_once __DIR__ . '/shims/term-def-request-cache-test-shim.php';
+
 // ============================================================================
 // WordPress Function Stubs - Defined BEFORE loading classes that use them
 // ============================================================================
@@ -85,9 +88,19 @@ if (!function_exists('intersoccer_test_store_wp_hook_callback')) {
     }
 }
 
+if (!function_exists('intersoccer_test_wp_hook_should_run')) {
+    function intersoccer_test_wp_hook_should_run($hook) {
+        if (!empty($GLOBALS['intersoccer_test_emit_wp_hooks'])) {
+            return true;
+        }
+
+        return is_string($hook) && str_starts_with($hook, 'intersoccer_pre_');
+    }
+}
+
 if (!function_exists('intersoccer_test_run_wp_hooks')) {
     function intersoccer_test_run_wp_hooks($type, $hook, $initial_value, array $args) {
-        if (empty($GLOBALS['intersoccer_test_emit_wp_hooks'])
+        if (!intersoccer_test_wp_hook_should_run($hook)
             || empty($GLOBALS['intersoccer_test_wp_hooks'][$type][$hook])) {
             return $initial_value;
         }
@@ -138,16 +151,57 @@ if (!function_exists('add_filter')) {
 }
 
 if (!function_exists('remove_action')) {
-    function remove_action($hook, $callback, $priority = 10) { return true; }
+    function remove_action($hook, $callback, $priority = 10) {
+        if (empty($GLOBALS['intersoccer_test_wp_hooks']['actions'][$hook][(int) $priority])) {
+            return false;
+        }
+        $bucket = &$GLOBALS['intersoccer_test_wp_hooks']['actions'][$hook][(int) $priority];
+        foreach ($bucket as $i => $entry) {
+            if (($entry['callback'] ?? null) === $callback) {
+                unset($bucket[$i]);
+                $bucket = array_values($bucket);
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 if (!function_exists('remove_filter')) {
-    function remove_filter($hook, $callback, $priority = 10) { return true; }
+    function remove_filter($hook, $callback, $priority = 10) {
+        if (empty($GLOBALS['intersoccer_test_wp_hooks']['filters'][$hook][(int) $priority])) {
+            return false;
+        }
+        $bucket = &$GLOBALS['intersoccer_test_wp_hooks']['filters'][$hook][(int) $priority];
+        foreach ($bucket as $i => $entry) {
+            if (($entry['callback'] ?? null) === $callback) {
+                unset($bucket[$i]);
+                $bucket = array_values($bucket);
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 if (!function_exists('do_action')) {
     function do_action($hook, ...$args) {
+        if (!isset($GLOBALS['intersoccer_test_did_action_counts'])
+            || !is_array($GLOBALS['intersoccer_test_did_action_counts'])) {
+            $GLOBALS['intersoccer_test_did_action_counts'] = [];
+        }
+        $GLOBALS['intersoccer_test_did_action_counts'][$hook] =
+            (int) ($GLOBALS['intersoccer_test_did_action_counts'][$hook] ?? 0) + 1;
         intersoccer_test_run_wp_hooks('actions', $hook, null, $args);
+    }
+}
+
+if (!function_exists('did_action')) {
+    function did_action($hook, $callback = null) {
+        if ($callback !== null) {
+            return false;
+        }
+        return (int) ($GLOBALS['intersoccer_test_did_action_counts'][$hook] ?? 0);
     }
 }
 
@@ -1766,3 +1820,37 @@ foreach (glob(dirname(__DIR__) . '/classes/admin/*.php') as $file) {
 }
 
 require_once __DIR__ . '/helpers/migration-meta-seed.php';
+
+add_filter(
+    'intersoccer_pre_roster_move_post_status',
+    static function ($status, $post_id) {
+        global $intersoccer_test_post_status_map;
+        if (is_array($intersoccer_test_post_status_map)
+            && array_key_exists((int) $post_id, $intersoccer_test_post_status_map)
+        ) {
+            return (string) $intersoccer_test_post_status_map[(int) $post_id];
+        }
+
+        return $status;
+    },
+    10,
+    2
+);
+
+add_filter(
+    'intersoccer_pre_get_product_type_safe',
+    static function ($type, $product_id, $variation_id = null) {
+        global $intersoccer_test_product_type_safe_callback;
+        if (is_callable($intersoccer_test_product_type_safe_callback)) {
+            return (string) call_user_func(
+                $intersoccer_test_product_type_safe_callback,
+                $product_id,
+                $variation_id
+            );
+        }
+
+        return $type;
+    },
+    10,
+    3
+);

@@ -55,12 +55,9 @@ function intersoccer_roster_move_post_is_cancelled(int $post_id): bool {
  * @param int $post_id
  */
 function intersoccer_roster_move_get_post_status(int $post_id): string {
-    global $intersoccer_test_post_status_map;
-    if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING
-        && is_array($intersoccer_test_post_status_map)
-        && array_key_exists($post_id, $intersoccer_test_post_status_map)
-    ) {
-        return (string) $intersoccer_test_post_status_map[$post_id];
+    $pre = apply_filters('intersoccer_pre_roster_move_post_status', null, $post_id);
+    if ($pre !== null) {
+        return (string) $pre;
     }
 
     $status = function_exists('get_post_status') ? get_post_status($post_id) : 'publish';

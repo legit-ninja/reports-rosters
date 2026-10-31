@@ -9,19 +9,66 @@ use InterSoccer\ReportsRosters\Tests\TestCase;
 
 class OrderAdminLineItemMetaDisplayTest extends TestCase {
 
+    /** @var callable|null */
+    private $preOrderAdminIsWpAdminFilter;
+
+    /** @var callable|null */
+    private $preShouldDedupeAdminOrderItemMetaFilter;
+
     protected function setUp(): void {
         parent::setUp();
         require_once dirname(__DIR__, 2) . '/includes/migration-meta.php';
         require_once dirname(__DIR__, 2) . '/includes/order-meta-keys.php';
         require_once dirname(__DIR__, 2) . '/includes/order-admin-line-item-meta-display.php';
+
+        $this->preOrderAdminIsWpAdminFilter = static function ($pre) {
+            if (array_key_exists('intersoccer_test_is_admin', $GLOBALS)) {
+                return (bool) $GLOBALS['intersoccer_test_is_admin'];
+            }
+
+            return $pre;
+        };
+        $this->preShouldDedupeAdminOrderItemMetaFilter = static function ($pre) {
+            if (!empty($GLOBALS['intersoccer_test_force_admin_order_item_meta_dedupe'])) {
+                return true;
+            }
+
+            return $pre;
+        };
+        add_filter(
+            'intersoccer_pre_order_admin_is_wp_admin_request',
+            $this->preOrderAdminIsWpAdminFilter,
+            10,
+            1
+        );
+        add_filter(
+            'intersoccer_pre_should_dedupe_admin_order_item_formatted_meta',
+            $this->preShouldDedupeAdminOrderItemMetaFilter,
+            10,
+            1
+        );
     }
 
     protected function tearDown(): void {
+        if ($this->preOrderAdminIsWpAdminFilter !== null) {
+            remove_filter(
+                'intersoccer_pre_order_admin_is_wp_admin_request',
+                $this->preOrderAdminIsWpAdminFilter,
+                10
+            );
+        }
+        if ($this->preShouldDedupeAdminOrderItemMetaFilter !== null) {
+            remove_filter(
+                'intersoccer_pre_should_dedupe_admin_order_item_formatted_meta',
+                $this->preShouldDedupeAdminOrderItemMetaFilter,
+                10
+            );
+        }
         unset(
             $GLOBALS['intersoccer_test_force_admin_order_item_meta_dedupe'],
             $GLOBALS['intersoccer_test_is_admin'],
             $GLOBALS['intersoccer_test_current_user_caps'],
-            $GLOBALS['intersoccer_test_woocommerce_email_header_fired']
+            $GLOBALS['intersoccer_test_did_action_counts']
         );
         parent::tearDown();
     }
@@ -376,11 +423,11 @@ class OrderAdminLineItemMetaDisplayTest extends TestCase {
     }
 
     public function test_email_context_does_not_dedupe(): void {
-        $GLOBALS['intersoccer_test_woocommerce_email_header_fired'] = true;
+        do_action('woocommerce_email_header');
         $GLOBALS['intersoccer_test_is_admin'] = true;
         unset($GLOBALS['intersoccer_test_force_admin_order_item_meta_dedupe']);
         $this->assertFalse(intersoccer_should_dedupe_admin_order_item_formatted_meta());
-        unset($GLOBALS['intersoccer_test_woocommerce_email_header_fired'], $GLOBALS['intersoccer_test_is_admin']);
+        unset($GLOBALS['intersoccer_test_is_admin']);
     }
 
     /**

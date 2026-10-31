@@ -12,6 +12,10 @@ trait MovePlayersTestIsolationTrait {
     protected function resetMovePlayersTestGlobals(): void {
         $GLOBALS['intersoccer_test_term_def_request_cache'] = [];
 
+        if (function_exists('intersoccer_reset_term_def_request_cache')) {
+            intersoccer_reset_term_def_request_cache();
+        }
+
         global $intersoccer_test_wc_order_item_meta;
         global $intersoccer_test_wc_order_item_data;
         global $intersoccer_test_wc_get_product_callback;
@@ -50,6 +54,9 @@ trait MovePlayersTestIsolationTrait {
             $GLOBALS['intersoccer_test_roster_row_filter_map']
         );
         $GLOBALS['intersoccer_test_term_def_request_cache'] = [];
+        if (function_exists('intersoccer_reset_term_def_request_cache')) {
+            intersoccer_reset_term_def_request_cache();
+        }
         if (function_exists('intersoccer_invalidate_term_def_cache')) {
             intersoccer_invalidate_term_def_cache();
         }
