@@ -244,7 +244,10 @@ class RosterRebuildProcessPath160Test extends TestCase {
 
     public function test_transaction_false_sets_rebuild_failed_and_skips_admin_log(): void {
         $logged = [];
-        $GLOBALS['intersoccer_test_admin_log_capture'] = &$logged;
+        \Brain\Monkey\Functions\when('intersoccer_roster_admin_log_insert')->alias(function ($action, $sig = '', $payload = []) use (&$logged) {
+            $logged[] = $action;
+            return true;
+        });
 
         $logger = Mockery::mock(Logger::class);
         $logger->shouldReceive('info', 'debug', 'warning', 'error')->andReturn(null);

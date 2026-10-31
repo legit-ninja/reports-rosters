@@ -446,10 +446,11 @@ class RosterBuilderTest extends TestCase {
                 return $callback();
             });
         
-        $this->rosterRepository->shouldReceive('deleteWhere')
+        // RR #160: no delete-first; rows of removed lines are cleaned up only after the order builds.
+        $this->rosterRepository->shouldNotReceive('deleteWhere');
+        $this->rosterRepository->shouldReceive('where')
             ->with(['order_id' => 1])
-            ->once()
-            ->andReturn(1);
+            ->andReturn(new \InterSoccer\ReportsRosters\Data\Collections\RostersCollection());
         
         $order = Mockery::mock('WC_Order');
         $order->shouldReceive('get_id')->andReturn(1);

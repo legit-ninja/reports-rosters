@@ -106,6 +106,7 @@
             <file>tests/Data/Models/PlayerAgeGroupStatusPlaceholderTest.php</file>
             <file>tests/Services/RosterRebuildKeepRows160Test.php</file>
             <file>tests/Services/RosterRebuildProcessPath160Test.php</file>
+            <file>tests/Services/RosterRebuildCoverage160Test.php</file>
             <file>tests/Services/DataValidatorSingleDayUnknownTest.php</file>
             <file>tests/Unit/RosterCampBookingDisplayTest.php</file>
             <file>tests/Unit/BookingTypeNormalizerTest.php</file>

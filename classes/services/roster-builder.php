@@ -578,8 +578,15 @@ class RosterBuilder {
             ]);
 
             if ($options['delete_obsolete'] && !empty($existing_item_map)) {
+                $errors_before_delete = count($this->build_stats['errors']);
                 $results['deleted'] = $this->deleteObsoleteReconcileRows($existing_item_map);
                 $results['status_synced'] = $this->reconcile_status_synced_total;
+                // Delete failures are recorded in build_stats; keep Reconcile's own error counters as before.
+                $delete_errors = array_slice($this->build_stats['errors'], $errors_before_delete);
+                if ($delete_errors !== []) {
+                    $results['errors'] += count($delete_errors);
+                    $results['error_messages'] = array_merge($results['error_messages'], $delete_errors);
+                }
             }
 
             $results['age_mismatches'] = $this->build_stats['age_mismatches'];
@@ -2780,9 +2787,17 @@ class RosterBuilder {
                     }
 
                     try {
+                        $item_errors_before = (int) $this->build_stats['validation_errors'];
                         $order_rosters = $this->processOrderItems($order, $options);
                         $results = $results->merge($order_rosters);
-                        $this->deleteObsoleteRowsForOrderAfterRebuild($order_id, $order);
+                        if ((int) $this->build_stats['validation_errors'] === $item_errors_before) {
+                            // Only after every line of the order built: drop rows of lines no longer on it.
+                            $this->deleteObsoleteRowsForOrderAfterRebuild($order_id, $order);
+                        } else {
+                            $this->logger->warning('Keeping removed-line rows; order did not build cleanly', [
+                                'order_id' => $order_id,
+                            ]);
+                        }
                         $this->build_stats['orders_processed']++;
                     } catch (\Exception $e) {
                         $this->build_stats['skipped_orders']++;
