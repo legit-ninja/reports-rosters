@@ -446,10 +446,11 @@ class RosterBuilderTest extends TestCase {
                 return $callback();
             });
         
-        $this->rosterRepository->shouldReceive('deleteWhere')
+        // RR #160: no delete-first; rows of removed lines are cleaned up only after the order builds.
+        $this->rosterRepository->shouldNotReceive('deleteWhere');
+        $this->rosterRepository->shouldReceive('where')
             ->with(['order_id' => 1])
-            ->once()
-            ->andReturn(1);
+            ->andReturn(new \InterSoccer\ReportsRosters\Data\Collections\RostersCollection());
         
         $order = Mockery::mock('WC_Order');
         $order->shouldReceive('get_id')->andReturn(1);
@@ -603,33 +604,60 @@ class RosterBuilderTest extends TestCase {
         $this->assertNotEmpty($result['errors']);
     }
 
-    public function test_build_rosters_with_clear_existing_uses_truncate() {
+    public function test_build_rosters_with_clear_existing_does_not_truncate_before_processing(): void {
+        $queries = [];
         $wpdbStub = Mockery::mock('wpdb');
         $wpdbStub->prefix = 'wp_';
-        $wpdbStub->shouldReceive('query')
-            ->once()
-            ->with('TRUNCATE TABLE wp_intersoccer_rosters')
-            ->andReturn(true);
+        $wpdbStub->shouldReceive('get_results')->andReturnUsing(function ($sql) use (&$queries) {
+            $queries[] = ['type' => 'get_results', 'sql' => (string) $sql];
+            return [];
+        });
+        $wpdbStub->shouldReceive('query')->andReturnUsing(function ($sql) use (&$queries) {
+            $queries[] = ['type' => 'query', 'sql' => (string) $sql];
+            return true;
+        });
 
         $this->database->shouldReceive('get_wpdb')
-            ->once()
             ->andReturn($wpdbStub);
-
-        $this->rosterRepository->shouldReceive('clearAllCaches')
-            ->once();
 
         $this->database->shouldReceive('transaction')
             ->once()
-            ->andReturnUsing(function($callback) {
+            ->andReturnUsing(function ($callback) {
                 return $callback();
             });
 
-        Functions\when('wc_get_orders')->justReturn([]);
+        global $intersoccer_test_wc_get_orders_callback;
+        $intersoccer_test_wc_get_orders_callback = static function () {
+            return [];
+        };
 
-        $result = $this->rosterBuilder->buildRosters(['clear_existing' => true]);
+        try {
+            $result = $this->rosterBuilder->buildRosters(['clear_existing' => true]);
 
-        $this->assertIsArray($result);
-        $this->assertArrayHasKey('orders_processed', $result);
+            $this->assertIsArray($result);
+            $this->assertArrayHasKey('orders_processed', $result);
+
+            $found_existing_select = false;
+            foreach ($queries as $entry) {
+                $sql = $entry['sql'];
+                $upper = strtoupper($sql);
+                if (strpos($upper, 'SELECT') === 0 && strpos($sql, 'order_item_id') !== false) {
+                    $found_existing_select = true;
+                }
+                $this->assertStringNotContainsString('TRUNCATE', $upper);
+                $this->assertDoesNotMatchRegularExpression('/^\s*DELETE\s+FROM/i', $sql);
+            }
+            $this->assertTrue($found_existing_select, 'Expected existing roster map SELECT before processing');
+        } finally {
+            $intersoccer_test_wc_get_orders_callback = null;
+        }
+    }
+
+    protected function tearDown(): void {
+        global $intersoccer_test_wc_get_orders_callback, $intersoccer_test_wc_get_order_callback;
+        $intersoccer_test_wc_get_orders_callback = null;
+        $intersoccer_test_wc_get_order_callback = null;
+        parent::tearDown();
     }
 
     public function test_build_rosters_skips_refund_orders() {

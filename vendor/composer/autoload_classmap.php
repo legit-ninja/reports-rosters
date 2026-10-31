@@ -76,6 +76,7 @@ return array(
     'InterSoccer\\ReportsRosters\\Data\\Repositories\\RosterRepository' => $baseDir . '/classes/data/repositories/roster-repository.php',
     'InterSoccer\\ReportsRosters\\Exceptions\\DatabaseException' => $baseDir . '/classes/Exceptions/DatabaseException.php',
     'InterSoccer\\ReportsRosters\\Exceptions\\ValidationException' => $baseDir . '/classes/Exceptions/ValidationException.php',
+    'InterSoccer\\ReportsRosters\\Exceptions\\RosterRebuildAbortedException' => $baseDir . '/classes/Exceptions/RosterRebuildAbortedException.php',
     'InterSoccer\\ReportsRosters\\Export\\AbstractExporter' => $baseDir . '/classes/export/export-exporter.php',
     'InterSoccer\\ReportsRosters\\Export\\CsvExporter' => $baseDir . '/classes/export/csv-exporter.php',
     'InterSoccer\\ReportsRosters\\Export\\ExcelExporter' => $baseDir . '/classes/export/excel-exporter.php',

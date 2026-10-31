@@ -153,6 +153,7 @@ class ComposerStaticInit524cfbad5fc29d5511275e827678d85a
         'InterSoccer\\ReportsRosters\\Data\\Repositories\\RosterRepository' => __DIR__ . '/../..' . '/classes/data/repositories/roster-repository.php',
         'InterSoccer\\ReportsRosters\\Exceptions\\DatabaseException' => __DIR__ . '/../..' . '/classes/Exceptions/DatabaseException.php',
         'InterSoccer\\ReportsRosters\\Exceptions\\ValidationException' => __DIR__ . '/../..' . '/classes/Exceptions/ValidationException.php',
+        'InterSoccer\\ReportsRosters\\Exceptions\\RosterRebuildAbortedException' => __DIR__ . '/../..' . '/classes/Exceptions/RosterRebuildAbortedException.php',
         'InterSoccer\\ReportsRosters\\Export\\AbstractExporter' => __DIR__ . '/../..' . '/classes/export/export-exporter.php',
         'InterSoccer\\ReportsRosters\\Export\\CsvExporter' => __DIR__ . '/../..' . '/classes/export/csv-exporter.php',
         'InterSoccer\\ReportsRosters\\Export\\ExcelExporter' => __DIR__ . '/../..' . '/classes/export/excel-exporter.php',
