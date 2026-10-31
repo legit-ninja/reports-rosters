@@ -1196,8 +1196,6 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
 
         if (!empty($product_type)) {
             $human_meta['activity_type'] = ucfirst($product_type);
-        } elseif ($is_camp_product) {
-            $human_meta['activity_type'] = 'Camp';
         }
 
         if (function_exists('intersoccer_get_product_season')) {

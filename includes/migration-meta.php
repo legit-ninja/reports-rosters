@@ -1423,7 +1423,7 @@ if (!function_exists('intersoccer_migration_camp_schedule_other_meta_for_move'))
         $key_groups = [
             'start' => ['Camp Start Date', 'Date de début du camp', 'Camp-Startdatum', '_camp_start_date'],
             'end'   => ['Camp End Date', 'Date de fin du camp', 'Camp-Enddatum', '_camp_end_date'],
-            'week'  => ['Camp Week Index', 'Index de semaine du camp', 'Camp-Wochenindex', '_camp_week_index'],
+            'week'  => ['Camp Week Index', '_camp_week_index'],
         ];
 
         if (function_exists('intersoccer_get_order_meta_manual_aliases')) {
@@ -1449,6 +1449,62 @@ if (!function_exists('intersoccer_migration_camp_schedule_other_meta_for_move'))
         }
 
         return $out;
+    }
+}
+
+if (!function_exists('intersoccer_migration_roster_row_needs_blank_fill_from_variation')) {
+    /**
+     * Whether rebuild should load the line variation for blank-field fill (excludes canton_region).
+     *
+     * @param array<string,mixed> $roster_data
+     */
+    function intersoccer_migration_roster_row_needs_blank_fill_from_variation(array $roster_data): bool {
+        if ((int) ($roster_data['variation_id'] ?? 0) <= 0) {
+            return false;
+        }
+
+        $blank = static function ($value): bool {
+            $value = trim((string) $value);
+
+            return $value === '' || strcasecmp($value, 'N/A') === 0;
+        };
+
+        $activity = trim((string) ($roster_data['activity_type'] ?? ''));
+        $is_camp = strcasecmp($activity, 'Camp') === 0
+            || strcasecmp($activity, 'Girls Only') === 0
+            || stripos($activity, 'Camp') !== false;
+
+        $facet_keys = [
+            'venue',
+            'age_group',
+            'camp_terms',
+            'course_day',
+            'times',
+            'season',
+            'city',
+            'activity_type',
+        ];
+        foreach ($facet_keys as $facet) {
+            if ($is_camp && $facet === 'course_day') {
+                continue;
+            }
+            $current = (string) ($roster_data[$facet] ?? '');
+            if ($facet === 'camp_terms' && $blank($current)) {
+                $current = (string) ($roster_data['event_type'] ?? '');
+            }
+            if ($facet === 'times' && $blank($current)) {
+                $current = (string) (($roster_data['camp_times'] ?? '') ?: ($roster_data['course_times'] ?? ''));
+            }
+            if ($blank($current)) {
+                return true;
+            }
+        }
+
+        $booking_type = trim((string) ($roster_data['booking_type'] ?? ''));
+
+        return $booking_type === ''
+            || strcasecmp($booking_type, 'Unknown') === 0
+            || strcasecmp($booking_type, 'unknown') === 0;
     }
 }
 
@@ -1502,7 +1558,6 @@ if (!function_exists('intersoccer_migration_apply_blank_roster_fill_from_variati
             'times'         => ['times', 'camp_times', 'course_times'],
             'season'        => ['season'],
             'city'          => ['city'],
-            'canton_region' => ['canton_region', 'region'],
             'activity_type' => ['activity_type'],
         ];
 

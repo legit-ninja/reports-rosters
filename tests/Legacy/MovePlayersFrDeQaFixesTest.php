@@ -339,11 +339,11 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
     /**
      * @return array<string,mixed>
      */
-    private function invokeMoveAjax(): array {
+    private function invokeMoveAjax(?int $target_variation_id = null): array {
         $_POST = [
             'action' => 'intersoccer_move_players',
             'nonce' => wp_create_nonce('intersoccer_move_nonce'),
-            'target_variation_id' => self::TARGET_VAR,
+            'target_variation_id' => $target_variation_id ?? self::TARGET_VAR,
             'order_item_ids' => [self::ITEM_ID],
         ];
         $GLOBALS['intersoccer_test_json_success_throws'] = true;
@@ -2139,6 +2139,156 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
         $this->assertSame('5-13-ans-journee-complete', $meta['pa_age-group']);
     }
 
+    public function test_de_move_stores_en_venue_slug_in_pa_intersoccer_venues_not_term_name(): void {
+        $en_venue_slug = 'geneva-stade-de-vessy-champel';
+        $en_venue_name = 'Geneva - Stade de Vessy (Champel)';
+        $de_old_display = 'Genf - Stade de Varembé';
+
+        $this->registerTerms(
+            [
+                'pa_intersoccer-venues' => [
+                    $en_venue_slug => (object) ['term_id' => 8150, 'slug' => $en_venue_slug, 'name' => $en_venue_name],
+                ],
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 8151, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                8150 => (object) ['term_id' => 8150, 'slug' => $en_venue_slug, 'name' => $en_venue_name],
+                8151 => (object) ['term_id' => 8151, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $this->installMoveWorld([
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Player DE venue slug',
+                'Aktivitätstyp' => 'Camp',
+                'pa_intersoccer-venues' => $de_old_display,
+                'attribute_pa_intersoccer-venues' => $de_old_display,
+                'InterSoccer-Standorte' => $de_old_display,
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_intersoccer-venues' => $en_venue_slug,
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame($en_venue_slug, $meta['pa_intersoccer-venues']);
+        $this->assertSame($en_venue_slug, $meta['attribute_pa_intersoccer-venues']);
+        $this->assertNotSame($en_venue_name, $meta['pa_intersoccer-venues']);
+    }
+
+    public function test_de_camp_move_updates_de_schedule_keys_without_adding_en_fr_labels(): void {
+        \InterSoccerRRTestMeta::$data[self::TARGET_VAR] = [
+            '_camp_start_date' => '2027-04-05',
+            '_camp_end_date' => '2027-04-09',
+            '_camp_week_index' => '2',
+        ];
+
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'single-days' => (object) ['term_id' => 9170, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                ],
+            ],
+            [
+                9170 => (object) ['term_id' => 9170, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $before = [
+            'Activity Type' => 'Camp',
+            'Aktivitätstyp' => 'Camp',
+            'Assigned Attendee' => 'DE camp schedule',
+            'Camp-Startdatum' => '2027-02-15',
+            'Camp-Enddatum' => '2027-02-19',
+            '_camp_start_date' => '2027-02-15',
+            '_camp_end_date' => '2027-02-19',
+            '_camp_week_index' => '1',
+        ];
+
+        $this->installMoveWorld([
+            'item_meta' => $before,
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'single-days',
+                'attribute_pa_girls-only' => 'no',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('2027-04-05', $meta['Camp-Startdatum']);
+        $this->assertSame('2027-04-09', $meta['Camp-Enddatum']);
+        $this->assertSame('2', $meta['_camp_week_index']);
+        $this->assertArrayNotHasKey('Camp Start Date', $meta);
+        $this->assertArrayNotHasKey('Date de début du camp', $meta);
+    }
+
+    public function test_camp_same_week_move_leaves_schedule_keys_unchanged(): void {
+        $schedule = [
+            '_camp_start_date' => '2027-04-05',
+            '_camp_end_date' => '2027-04-09',
+            '_camp_week_index' => '2',
+        ];
+        \InterSoccerRRTestMeta::$data[self::TARGET_VAR] = $schedule;
+        \InterSoccerRRTestMeta::$data[self::SOURCE_VAR] = $schedule;
+
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'single-days' => (object) ['term_id' => 9180, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                ],
+            ],
+            [
+                9180 => (object) ['term_id' => 9180, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+
+        $item_meta = [
+            'Activity Type' => 'Camp',
+            'Assigned Attendee' => 'Same week camp',
+            'Camp Start Date' => '2027-04-05',
+            'Camp End Date' => '2027-04-09',
+            'Camp Week Index' => '2',
+            '_camp_start_date' => '2027-04-05',
+            '_camp_end_date' => '2027-04-09',
+            '_camp_week_index' => '2',
+        ];
+
+        $this->installMoveWorld([
+            'item_meta' => $item_meta,
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'single-days',
+                'attribute_pa_girls-only' => 'no',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame($item_meta['Camp Start Date'], $meta['Camp Start Date']);
+        $this->assertSame($item_meta['Camp End Date'], $meta['Camp End Date']);
+        $this->assertSame($item_meta['Camp Week Index'], $meta['Camp Week Index']);
+        $this->assertSame($item_meta['_camp_start_date'], $meta['_camp_start_date']);
+        $this->assertArrayNotHasKey('Camp-Startdatum', $meta);
+    }
+
     public function test_camp_move_replaces_existing_schedule_keys_with_destination_dates(): void {
         \InterSoccerRRTestMeta::$data[self::TARGET_VAR] = [
             '_camp_start_date' => '2027-04-05',
@@ -2181,7 +2331,6 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
                 '_camp_week_index' => '1',
                 'Date de début du camp' => '2027-02-15',
                 'Date de fin du camp' => '2027-02-19',
-                'Index de semaine du camp' => '1',
             ],
             'target_attrs' => [
                 'attribute_pa_booking-type' => 'single-days',
@@ -2204,7 +2353,6 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
             '_camp_week_index',
             'Date de début du camp',
             'Date de fin du camp',
-            'Index de semaine du camp',
         ] as $key) {
             $this->assertArrayHasKey($key, $meta, $key);
         }

@@ -1475,15 +1475,19 @@ class RosterBuilder {
             $roster_data = intersoccer_roster_backfill_facets_from_order_item_meta($roster_data);
         }
 
-        $fill_variation_id = (int) ($roster_data['variation_id'] ?? 0);
-        if ($fill_variation_id > 0 && function_exists('wc_get_product')
+        if (function_exists('intersoccer_migration_roster_row_needs_blank_fill_from_variation')
+            && intersoccer_migration_roster_row_needs_blank_fill_from_variation($roster_data)
+            && function_exists('wc_get_product')
             && function_exists('intersoccer_migration_apply_blank_roster_fill_from_variation')) {
-            $variation_for_fill = wc_get_product($fill_variation_id);
-            if ($variation_for_fill instanceof \WC_Product_Variation) {
-                $roster_data = intersoccer_migration_apply_blank_roster_fill_from_variation(
-                    $roster_data,
-                    $variation_for_fill
-                );
+            $fill_variation_id = (int) ($roster_data['variation_id'] ?? 0);
+            if ($fill_variation_id > 0) {
+                $variation_for_fill = wc_get_product($fill_variation_id);
+                if ($variation_for_fill instanceof \WC_Product_Variation) {
+                    $roster_data = intersoccer_migration_apply_blank_roster_fill_from_variation(
+                        $roster_data,
+                        $variation_for_fill
+                    );
+                }
             }
         }
 

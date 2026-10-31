@@ -750,6 +750,111 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertSame('no', intersoccer_migration_coerce_pa_taxonomy_slug('pa_girls-only', 'No'));
     }
 
+    public function test_roster_row_needs_blank_fill_when_booking_unknown_or_facet_blank(): void {
+        $this->assertTrue(intersoccer_migration_roster_row_needs_blank_fill_from_variation([
+            'variation_id' => 100,
+            'booking_type' => 'Unknown',
+            'city' => 'Geneva',
+            'venue' => 'Venue',
+            'activity_type' => 'Camp',
+        ]));
+        $this->assertFalse(intersoccer_migration_roster_row_needs_blank_fill_from_variation([
+            'variation_id' => 100,
+            'booking_type' => 'Full Week',
+            'city' => 'Geneva',
+            'venue' => 'Venue',
+            'activity_type' => 'Camp',
+            'age_group' => '5-13y',
+            'camp_terms' => 'Easter',
+            'season' => 'Summer',
+            'times' => 'Full Day',
+            'course_day' => '',
+        ]));
+        $this->assertFalse(intersoccer_migration_roster_row_needs_blank_fill_from_variation([
+            'variation_id' => 0,
+            'booking_type' => '',
+        ]));
+    }
+
+    public function test_camp_schedule_other_meta_for_move_uses_contract_schedule_keys_only(): void {
+        \InterSoccerRRTestMeta::$data[77001] = [
+            '_camp_start_date' => '2027-04-05',
+            '_camp_end_date' => '2027-04-09',
+            '_camp_week_index' => '2',
+        ];
+        $meta = intersoccer_migration_camp_schedule_other_meta_for_move(77001);
+        $this->assertSame('2027-04-05', $meta['Camp Start Date']);
+        $this->assertSame('2027-04-05', $meta['Date de début du camp']);
+        $this->assertSame('2027-04-05', $meta['Camp-Startdatum']);
+        $this->assertSame('2', $meta['Camp Week Index']);
+        $this->assertArrayNotHasKey('Index de semaine du camp', $meta);
+        $this->assertArrayNotHasKey('Camp-Wochenindex', $meta);
+    }
+
+    public function test_normalize_slug_meta_fr_move_out_and_back_keeps_venue_slugs_not_names(): void {
+        $from_slug = 'geneva-stade-varember-nations';
+        $to_slug = 'geneva-stade-de-vessy-champel';
+        $from_display = 'Geneva - Stade de Varembé (Nations)';
+        $to_display = 'Geneva - Stade de Vessy (Champel)';
+
+        $GLOBALS['intersoccer_test_terms_by_slug']['pa_intersoccer-venues'][$from_slug] = (object) [
+            'term_id' => 88501,
+            'slug' => $from_slug,
+            'name' => $from_display,
+        ];
+        $GLOBALS['intersoccer_test_terms_by_slug']['pa_intersoccer-venues'][$to_slug] = (object) [
+            'term_id' => 88502,
+            'slug' => $to_slug,
+            'name' => $to_display,
+        ];
+        $GLOBALS['intersoccer_test_terms_by_id'][88501] = $GLOBALS['intersoccer_test_terms_by_slug']['pa_intersoccer-venues'][$from_slug];
+        $GLOBALS['intersoccer_test_terms_by_id'][88502] = $GLOBALS['intersoccer_test_terms_by_slug']['pa_intersoccer-venues'][$to_slug];
+
+        $variation_out = Mockery::mock('WC_Product_Variation');
+        $variation_out->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_intersoccer-venues' => $to_slug,
+        ]);
+        $variation_out->shouldReceive('get_attribute')->with('pa_intersoccer-venues')->andReturn($to_display);
+        $variation_out->shouldReceive('get_attribute')->andReturn('');
+        $variation_out->shouldReceive('get_parent_id')->andReturn(0);
+
+        $variation_back = Mockery::mock('WC_Product_Variation');
+        $variation_back->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_intersoccer-venues' => $from_slug,
+        ]);
+        $variation_back->shouldReceive('get_attribute')->with('pa_intersoccer-venues')->andReturn($from_display);
+        $variation_back->shouldReceive('get_attribute')->andReturn('');
+        $variation_back->shouldReceive('get_parent_id')->andReturn(0);
+
+        $baseline = [
+            'pa_intersoccer-venues' => $from_display,
+            'attribute_pa_intersoccer-venues' => $from_display,
+        ];
+        $after_out = intersoccer_migration_normalize_slug_meta_for_variation(
+            [
+                'pa_intersoccer-venues' => $to_slug,
+                'attribute_pa_intersoccer-venues' => $to_slug,
+            ],
+            $variation_out,
+            $baseline
+        );
+        $this->assertSame($to_slug, $after_out['pa_intersoccer-venues']);
+        $this->assertSame($to_slug, $after_out['attribute_pa_intersoccer-venues']);
+        $this->assertNotSame($to_display, $after_out['pa_intersoccer-venues']);
+
+        $after_back = intersoccer_migration_normalize_slug_meta_for_variation(
+            [
+                'pa_intersoccer-venues' => $from_slug,
+                'attribute_pa_intersoccer-venues' => $from_slug,
+            ],
+            $variation_back,
+            $after_out
+        );
+        $this->assertSame($from_slug, $after_back['pa_intersoccer-venues']);
+        $this->assertSame($from_slug, $after_back['attribute_pa_intersoccer-venues']);
+        $this->assertNotSame($from_display, $after_back['pa_intersoccer-venues']);
+    }
+
     public function test_normalize_slug_meta_preserves_display_bytes_when_term_unchanged_on_line(): void {
         $variation = Mockery::mock('WC_Product_Variation');
         $variation->shouldReceive('get_variation_attributes')->andReturn([
