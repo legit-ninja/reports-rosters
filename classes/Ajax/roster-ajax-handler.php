@@ -149,6 +149,13 @@ class RosterAjaxHandler {
                 'clear_existing' => true,
                 'batch_size' => 100
             ]);
+
+            if (!empty($results['rebuild_failed'])) {
+                wp_send_json_error([
+                    'message' => __('Rebuild failed; no roster rows were changed.', 'intersoccer-reports-rosters'),
+                    'results' => $results,
+                ]);
+            }
             
             $error_count = is_array($results['errors'] ?? null) ? count($results['errors']) : 0;
             $mismatch_count = is_array($results['age_mismatches'] ?? null) ? count($results['age_mismatches']) : 0;

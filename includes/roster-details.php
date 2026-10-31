@@ -15,6 +15,45 @@ if (!defined('ABSPATH')) {
 
 require_once plugin_dir_path(dirname(__FILE__)) . 'includes/roster-data.php';
 
+if (!function_exists('intersoccer_roster_age_outside_group_badge_html')) {
+    /**
+     * Read-time "Age outside group" badge HTML for a roster row object.
+     *
+     * @param object $row Roster row with player_dob, start_date, age_group, customer_id, player_index, gender.
+     * @return string HTML fragment (empty when not outside).
+     */
+    function intersoccer_roster_age_outside_group_badge_html($row): string {
+        $dob_for_age = trim((string) ($row->player_dob ?? ''));
+        $start_for_age = trim((string) ($row->start_date ?? ''));
+        $age_group_for_age = trim((string) ($row->age_group ?? ''));
+        if ($dob_for_age === '' && $start_for_age === '' && $age_group_for_age === '') {
+            return '';
+        }
+
+        $display_first = function_exists('intersoccer_roster_display_first_name')
+            ? intersoccer_roster_display_first_name($row)
+            : ($row->first_name ?? 'Player');
+        $display_last = function_exists('intersoccer_roster_display_last_name')
+            ? intersoccer_roster_display_last_name($row)
+            : ($row->last_name ?? 'Name');
+
+        $age_check_player = new \InterSoccer\ReportsRosters\Data\Models\Player([
+            'customer_id' => (int) ($row->customer_id ?? 1),
+            'player_index' => (int) ($row->player_index ?? 0),
+            'first_name' => (string) ($display_first !== 'N/A' ? $display_first : 'Player'),
+            'last_name' => (string) ($display_last !== 'N/A' ? $display_last : 'Name'),
+            'dob' => $dob_for_age,
+            'gender' => (string) ($row->gender ?? 'male'),
+        ]);
+
+        if ($age_check_player->ageGroupStatusAt($age_group_for_age, $start_for_age !== '' ? $start_for_age : null) !== 'outside') {
+            return '';
+        }
+
+        return ' <span class="roster-badge roster-badge--age-outside">' . esc_html__('Age outside group', 'intersoccer-reports-rosters') . '</span>';
+    }
+}
+
 if (!function_exists('intersoccer_user_can_view_roster_admin')) {
     /**
      * Rosters, other events, birthdays, and roster details.
@@ -993,22 +1032,7 @@ function intersoccer_render_roster_details_page() {
             : ($row->last_name ?? 'N/A');
         echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($display_first) . '</td>';
         echo '<td' . ($is_unknown ? ' style="font-style: italic; color: red;"' : '') . '>' . esc_html($display_last);
-        $dob_for_age = trim((string) ($row->player_dob ?? ''));
-        $start_for_age = trim((string) ($row->start_date ?? ''));
-        $age_group_for_age = trim((string) ($row->age_group ?? ''));
-        if ($dob_for_age !== '' && $start_for_age !== '' && $age_group_for_age !== '') {
-            $age_check_player = new \InterSoccer\ReportsRosters\Data\Models\Player([
-                'customer_id' => (int) ($row->customer_id ?? 1),
-                'player_index' => (int) ($row->player_index ?? 0),
-                'first_name' => (string) ($display_first !== 'N/A' ? $display_first : 'Player'),
-                'last_name' => (string) ($display_last !== 'N/A' ? $display_last : 'Name'),
-                'dob' => $dob_for_age,
-                'gender' => (string) ($row->gender ?? 'male'),
-            ]);
-            if ($age_check_player->ageGroupStatusAt($age_group_for_age, $start_for_age) === 'outside') {
-                echo ' <span class="roster-badge roster-badge--age-outside">' . esc_html__('Age outside group', 'intersoccer-reports-rosters') . '</span>';
-            }
-        }
+        echo intersoccer_roster_age_outside_group_badge_html($row);
         echo '</td>';
         echo '<td>' . esc_html($row->gender ?? 'N/A') . '</td>';
         echo '<td>' . esc_html($row->parent_phone ?? 'N/A') . '</td>';

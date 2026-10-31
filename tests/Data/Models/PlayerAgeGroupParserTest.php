@@ -22,29 +22,36 @@ class PlayerAgeGroupParserTest extends TestCase {
     }
 
     public function ageGroupRangeProvider(): array {
+        $cases = require __DIR__ . '/AgeGroupTerms160Cases.php';
+        $rows = [];
+        foreach ($cases as $label => $expected) {
+            if ($label === '(empty)') {
+                $label = '';
+            }
+            $key = $label === '' ? 'empty' : substr(preg_replace('/[^a-z0-9]+/i', '_', $label), 0, 60);
+            $rows[$key] = [$expected, $label];
+        }
+        return $rows;
+    }
+
+    /**
+     * @dataProvider ageGroupRangeEdgeProvider
+     */
+    public function test_parse_age_group_range_edges(?array $expected, string $label): void {
+        $this->test_parse_age_group_range($expected, $label);
+    }
+
+    public function ageGroupRangeEdgeProvider(): array {
         return [
-            'empty' => [null, ''],
-            'en half day' => [['min' => 3, 'max' => 5], '3-5y (Half-Day)'],
-            'en full day' => [['min' => 5, 'max' => 13], '5-13y (Full Day)'],
-            'no y suffix' => [['min' => 5, 'max' => 12], '5-12'],
-            'fr name' => [['min' => 3, 'max' => 12], '3-12 ans'],
-            'de halbtags' => [['min' => 3, 'max' => 5], '3-5 Jahre (halbtags)'],
-            'de ganztaegig' => [['min' => 5, 'max' => 13], '5-13 Jahre (ganztägig)'],
-            'de jahre alt' => [['min' => 3, 'max' => 11], '3-11 Jahre alt'],
-            'slug ans journee' => [['min' => 5, 'max' => 13], '5-13-ans-journee-complete'],
-            'slug fr' => [['min' => 5, 'max' => 12], '5-12-fr'],
-            'en dash spaces' => [['min' => 4, 'max' => 11], '4 – 11y'],
-            'anchored u12' => [['min' => 0, 'max' => 12], 'U12'],
-            'anchored under 14' => [['min' => 0, 'max' => 14], 'Under 14'],
+            'en half day duplicate key' => [['min' => 3, 'max' => 5], '3-5y (Half-Day)'],
             'mid word u digit' => [null, 'venue-u12-extra'],
             'combined comma label' => [null, '3-5y (Half-Day), 5-13y (Full Day)'],
             'combined slug' => [null, '3-5y-half-day-5-13y-full-day'],
-            'pre-k to g5' => [null, 'Pre-K to G5'],
-            'g1-g5' => [null, 'G1-G5'],
-            'kg gr' => [null, 'KG-GR1, GR2-5'],
             'invalid n greater m' => [null, '13-5y'],
             'two ranges' => [null, '3-5 and 5-13'],
-            'predefined camp key' => [['min' => 3, 'max' => 5], '3-5y (Half-Day)'],
+            'en dash spaces' => [['min' => 4, 'max' => 11], '4 – 11y'],
+            'anchored u12' => [['min' => 0, 'max' => 12], 'U12'],
+            'anchored under 14' => [['min' => 0, 'max' => 14], 'Under 14'],
         ];
     }
 

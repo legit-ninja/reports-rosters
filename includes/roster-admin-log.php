@@ -8,15 +8,6 @@
 defined('ABSPATH') or die('Restricted access');
 
 /**
- * WooCommerce order statuses included in a full roster rebuild (upsert + obsolete cleanup).
- *
- * @return string[]
- */
-function intersoccer_roster_rebuild_statuses(): array {
-    return ['completed', 'processing', 'on-hold'];
-}
-
-/**
  * @param string               $action
  * @param string               $event_signature
  * @param array<string,mixed> $payload

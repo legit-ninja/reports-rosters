@@ -134,6 +134,17 @@ if (file_exists($intersoccer_roster_canonical)) {
 
 require_once plugin_dir_path(__FILE__) . 'includes/medical-access.php';
 
+if (!function_exists('intersoccer_roster_rebuild_statuses')) {
+    /**
+     * WooCommerce order statuses included in a full roster rebuild (upsert + obsolete cleanup).
+     *
+     * @return string[]
+     */
+    function intersoccer_roster_rebuild_statuses(): array {
+        return ['completed', 'processing', 'on-hold'];
+    }
+}
+
 // Load OOP adapter/compat layer (kept small and will be further reduced).
 $intersoccer_oop_adapter = plugin_dir_path(__FILE__) . 'includes/oop-adapter.php';
 if (file_exists($intersoccer_oop_adapter)) {

@@ -221,13 +221,50 @@ class Player extends AbstractModel {
     }
 
     /**
+     * @param mixed $value
+     */
+    public static function normalizeDateForAgeCheck($value): string {
+        if ($value instanceof \DateTimeInterface) {
+            $value = $value->format('Y-m-d');
+        }
+        $value = trim((string) $value);
+        if ($value !== '' && $value[0] === '-') {
+            return '0000-00-00';
+        }
+        return $value;
+    }
+
+    public static function isMissingOrUnparseableDate(?string $date): bool {
+        if ($date === null) {
+            return true;
+        }
+        $date = trim($date);
+        if ($date === '' || $date === '1970-01-01' || $date === '0000-00-00') {
+            return true;
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            $parts = array_map('intval', explode('-', $date));
+            if (count($parts) !== 3 || $parts[0] < 1900 || !checkdate($parts[1], $parts[2], $parts[0])) {
+                return true;
+            }
+            return false;
+        }
+        try {
+            new \DateTime($date);
+            return false;
+        } catch (\Exception $e) {
+            return true;
+        }
+    }
+
+    /**
      * Age-group check outcome at an event date: ok, outside the parsed range, or not_checked.
      */
     public function ageGroupStatusAt(string $age_group, ?string $event_date): string {
-        $dob = trim((string) ($this->dob ?? ''));
+        $dob = self::normalizeDateForAgeCheck($this->dob ?? '');
         $age_group = trim($age_group);
-        $event_date = $event_date !== null ? trim($event_date) : '';
-        if ($dob === '' || $age_group === '' || $event_date === '') {
+        $event_date = self::normalizeDateForAgeCheck($event_date);
+        if (self::isMissingOrUnparseableDate($dob) || $age_group === '' || self::isMissingOrUnparseableDate($event_date)) {
             return 'not_checked';
         }
 

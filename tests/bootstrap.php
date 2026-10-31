@@ -1281,6 +1281,12 @@ if (!function_exists('wc_delete_order_item_meta')) {
 // InterSoccer-specific stubs
 // ============================================================================
 
+if (!function_exists('intersoccer_roster_rebuild_statuses')) {
+    function intersoccer_roster_rebuild_statuses(): array {
+        return ['completed', 'processing', 'on-hold'];
+    }
+}
+
 if (!function_exists('intersoccer_schedule_order_completion_check')) {
     function intersoccer_schedule_order_completion_check($order_id, $delay = null) {
         global $intersoccer_test_schedule_completion_callback;

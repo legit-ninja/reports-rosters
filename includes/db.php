@@ -786,6 +786,15 @@ function intersoccer_rebuild_rosters_and_reports() {
                 ];
             }
 
+            if (!empty($result['rebuild_failed'])) {
+                return [
+                    'status' => 'error',
+                    'inserted' => 0,
+                    'message' => __('Rebuild failed; no roster rows were changed.', 'intersoccer-reports-rosters'),
+                    'stats' => $result,
+                ];
+            }
+
             $errors = array_filter($result['errors'] ?? []);
             $inserted = intval(($result['rosters_created'] ?? 0) + ($result['rosters_updated'] ?? 0));
             $orders = intval($result['orders_processed'] ?? 0);

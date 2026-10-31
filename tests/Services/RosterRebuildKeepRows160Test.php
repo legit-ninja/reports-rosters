@@ -29,9 +29,6 @@ class RosterRebuildKeepRows160Test extends TestCase {
         parent::setUp();
         $this->deletedItemIds = [];
         $this->currentRows = [];
-        if (!function_exists('intersoccer_roster_rebuild_statuses')) {
-            require_once dirname(__DIR__, 2) . '/includes/roster-admin-log.php';
-        }
     }
 
     protected function tearDown(): void {
