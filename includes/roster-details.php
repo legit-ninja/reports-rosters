@@ -2065,9 +2065,19 @@ function intersoccer_render_roster_details_page() {
                             }
 
                             const successMsg = response.data.message || '';
+                            let warningsBlock = '';
+                            const postMoveWarnings = response.data.warnings || [];
+                            if (postMoveWarnings.length) {
+                                warningsBlock = '<ul class="isrr-roster-move-post-warnings">';
+                                postMoveWarnings.forEach(function(warningLine) {
+                                    warningsBlock += '<li>' + $('<div>').text(warningLine).html() + '</li>';
+                                });
+                                warningsBlock += '</ul>';
+                            }
                             showRosterMovePanel(
                                 '<p><span class="isrr-roster-move-icon" aria-hidden="true">✓</span>' +
                                 $('<div>').text(successMsg).html() + '</p>' +
+                                warningsBlock +
                                 '<div class="isrr-roster-move-actions"><button type="button" class="button" id="rosterMoveDismiss">' +
                                 $('<div>').text(rosterMoveL10n('dismiss')).html() + '</button></div>',
                                 'status',

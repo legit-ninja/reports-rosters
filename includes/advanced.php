@@ -1100,9 +1100,6 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
             $variation_raw_by_pa[$clean_key] = $slug_value;
             if ($for_order_line) {
                 $slug_value = trim($slug_value);
-                if ($clean_key === 'pa_girls-only' && function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
-                    $slug_value = intersoccer_migration_coerce_pa_taxonomy_slug($clean_key, $slug_value);
-                }
                 if ($slug_value === '') {
                     continue;
                 }
@@ -1465,6 +1462,7 @@ function intersoccer_move_players_ajax() {
     $same_variation_skips = 0;
     $errors = [];
     $moved_item_ids = [];
+    $move_admin_warnings = [];
     global $wpdb;
 
     $run_migration = static function () use (
@@ -1475,6 +1473,7 @@ function intersoccer_move_players_ajax() {
         &$same_variation_skips,
         &$errors,
         &$moved_item_ids,
+        &$move_admin_warnings,
         $wpdb,
         $confirmed_reason_codes,
         $log_line
@@ -1620,7 +1619,15 @@ function intersoccer_move_players_ajax() {
                 ? intersoccer_roster_move_order_language($order)
                 : (string) apply_filters('wpml_default_language', 'en');
             if (!is_string($order_lang) || $order_lang === '') {
-                $order_lang = 'en';
+                $order_lang = function_exists('intersoccer_wpml_default_language_code')
+                    ? intersoccer_wpml_default_language_code()
+                    : (string) apply_filters('wpml_default_language', 'en');
+            }
+            $site_default_lang = function_exists('intersoccer_wpml_default_language_code')
+                ? intersoccer_wpml_default_language_code()
+                : (string) apply_filters('wpml_default_language', 'en');
+            if (!is_string($site_default_lang) || $site_default_lang === '') {
+                $site_default_lang = 'en';
             }
 
             $en_parent_id = (int) $variation->get_parent_id();
@@ -1637,6 +1644,13 @@ function intersoccer_move_players_ajax() {
                 ];
             $order_variation_id = (int) $order_catalog['variation_id'];
             $new_product_id = (int) $order_catalog['parent_id'];
+            if (!empty($order_catalog['used_fallback'])) {
+                $move_admin_warnings[] = sprintf(
+                    'Order item %d: no %s translation of the destination session was found; the English session was written to the order.',
+                    (int) $item_id,
+                    $order_lang
+                );
+            }
 
             $resolve_order_variation = static function () use ($order_variation_id, $variation, $target_variation_id, $en_parent_id) {
                 $candidate = wc_get_product($order_variation_id);
@@ -1692,7 +1706,7 @@ function intersoccer_move_players_ajax() {
             $english_target_variation = $variation instanceof WC_Product_Variation
                 ? $variation
                 : $order_variation;
-            $legacy_slug_filter_variation = ($order_lang === 'en')
+            $legacy_slug_filter_variation = ($order_lang === $site_default_lang)
                 ? $english_target_variation
                 : $order_variation;
             if (function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
@@ -1707,7 +1721,7 @@ function intersoccer_move_players_ajax() {
                     $slug_meta,
                     $legacy_slug_filter_variation,
                     $existing_pa_slug_values,
-                    $order_lang !== 'en'
+                    $order_lang !== $site_default_lang
                 );
             }
             if (function_exists('intersoccer_migration_allowed_canonicals_for_move')) {
@@ -1741,7 +1755,7 @@ function intersoccer_move_players_ajax() {
                     }
                 }
             }
-            $preserve_catalog_variation = ($order_lang === 'en')
+            $preserve_catalog_variation = ($order_lang === $site_default_lang)
                 ? $english_target_variation
                 : $order_variation;
             if (function_exists('intersoccer_migration_preserve_unchanged_other_meta_for_move')) {
@@ -2264,7 +2278,8 @@ function intersoccer_move_players_ajax() {
                 $moved_item_ids,
                 (int) $target_variation_id,
                 $variation,
-                $reason_codes
+                $reason_codes,
+                $move_admin_warnings
             )
             : [];
         wp_send_json_success($success_payload);

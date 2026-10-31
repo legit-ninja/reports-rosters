@@ -101,14 +101,18 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             return;
         }
 
-        if (!function_exists('wpml_get_current_language')) {
-            /**
-             * @return string
-             */
-            function wpml_get_current_language() {
+        add_filter(
+            'wpml_current_language',
+            static function ($lang) {
+                if (is_string($lang) && $lang !== '') {
+                    return $lang;
+                }
+
                 return (string) ($GLOBALS['intersoccer_test_wpml_current_language'] ?? 'en');
-            }
-        }
+            },
+            0,
+            1
+        );
 
         add_action(
             'wpml_switch_language',
@@ -201,20 +205,21 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
 
         $order_lang = (string) ($options['order_lang'] ?? 'en');
         $skip_wpml_meta = !empty($options['omit_wpml_language_meta']);
+        $girls_only_fr_slug = isset($options['girls_only_fr_slug']) ? (string) $options['girls_only_fr_slug'] : '';
 
         $en_target_attrs = [
             'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
             'attribute_pa_age-group'          => '5-13y-full-day',
             'attribute_pa_booking-type'       => 'full-week',
             'attribute_pa_canton-region'      => 'geneva',
-            'attribute_pa_girls-only'         => 'no',
+            'attribute_pa_girls-only'         => $girls_only_fr_slug !== '' ? 'yes' : 'no',
         ];
         $fr_target_attrs = [
             'attribute_pa_intersoccer-venues' => 'geneve-stade-vessy',
             'attribute_pa_age-group'          => '5-13-ans-journee-complete',
             'attribute_pa_booking-type'       => 'semaine-complete',
             'attribute_pa_canton-region'      => 'geneve',
-            'attribute_pa_girls-only'         => 'no',
+            'attribute_pa_girls-only'         => $girls_only_fr_slug !== '' ? $girls_only_fr_slug : 'no',
         ];
         $de_target_attrs = [
             'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
@@ -334,7 +339,13 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             return $parent;
         };
 
-        $intersoccer_test_wc_get_product_callback = static function ($id) use ($make_variation, $make_parent) {
+        $intersoccer_test_wc_get_product_callback = static function ($id) use (
+            $make_variation,
+            $make_parent,
+            $en_target_attrs,
+            $fr_target_attrs,
+            $de_target_attrs
+        ) {
             $id = (int) $id;
             switch ($id) {
                 case self::EN_PARENT:
@@ -351,39 +362,21 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
                 case self::EN_TARGET:
                     return $make_variation(
                         $id,
-                        [
-                            'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
-                            'attribute_pa_age-group' => '5-13y-full-day',
-                            'attribute_pa_booking-type' => 'full-week',
-                            'attribute_pa_canton-region' => 'geneva',
-                            'attribute_pa_girls-only' => 'no',
-                        ],
+                        $en_target_attrs,
                         self::EN_PARENT,
                         'Destination EN line name'
                     );
                 case self::FR_TARGET:
                     return $make_variation(
                         $id,
-                        [
-                            'attribute_pa_intersoccer-venues' => 'geneve-stade-vessy',
-                            'attribute_pa_age-group' => '5-13-ans-journee-complete',
-                            'attribute_pa_booking-type' => 'semaine-complete',
-                            'attribute_pa_canton-region' => 'geneve',
-                            'attribute_pa_girls-only' => 'no',
-                        ],
+                        $fr_target_attrs,
                         self::FR_PARENT,
                         'Ligne destination FR'
                     );
                 case self::DE_TARGET:
                     return $make_variation(
                         $id,
-                        [
-                            'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
-                            'attribute_pa_age-group' => '5-13-jahre-ganzer-tag',
-                            'attribute_pa_booking-type' => 'ganze-woche',
-                            'attribute_pa_canton-region' => 'geneva',
-                            'attribute_pa_girls-only' => 'no',
-                        ],
+                        $de_target_attrs,
                         self::DE_PARENT,
                         'Zielzeile DE'
                     );
@@ -467,7 +460,7 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         };
     }
 
-    private function invokeMoveAjax(): array {
+    private function invokeMoveAjax(array $options = []): array {
         $_POST = [
             'action' => 'intersoccer_move_players',
             'nonce' => wp_create_nonce('intersoccer_move_nonce'),
@@ -475,6 +468,9 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             'order_item_ids' => [self::ITEM_ID],
             'confirm_warnings' => '1',
         ];
+        if (!empty($options['allow_cross_gender'])) {
+            $_POST['allow_cross_gender'] = '1';
+        }
         $GLOBALS['intersoccer_test_json_success_throws'] = true;
         try {
             ob_start();
@@ -500,6 +496,22 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
 
         $order2 = new \WC_Order(2);
         $this->assertSame('en', intersoccer_roster_move_order_language($order2));
+
+        $order3 = new \WC_Order(3);
+        $prev = $GLOBALS['intersoccer_test_apply_filters_callback'] ?? null;
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value) {
+            if ($hook === 'wpml_default_language') {
+                return 'de';
+            }
+
+            return $value;
+        };
+        $this->assertSame('de', intersoccer_roster_move_order_language($order3));
+        if ($prev !== null) {
+            $GLOBALS['intersoccer_test_apply_filters_callback'] = $prev;
+        } else {
+            unset($GLOBALS['intersoccer_test_apply_filters_callback']);
+        }
     }
 
     public function test_fr_order_move_writes_fr_catalog_ids_labels_and_en_roster(): void {
@@ -519,6 +531,7 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
 
         $response = $this->invokeMoveAjax();
         $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+        $this->assertEmpty($response['data']['warnings'] ?? []);
 
         global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_data, $intersoccer_test_roster_store;
         $data = $intersoccer_test_wc_order_item_data[self::ITEM_ID];
@@ -658,6 +671,11 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         $en_row = $GLOBALS['intersoccer_test_roster_store'][self::ITEM_ID];
         $this->assertSame(self::EN_TARGET, (int) $en_row['variation_id']);
         $this->assertSame('English Camp Title', $en_row['product_name'] ?? '');
+
+        $this->assertSame('fr', apply_filters('wpml_current_language', null));
+        if (function_exists('wpml_get_current_language')) {
+            $this->assertSame('fr', wpml_get_current_language());
+        }
     }
 
     public function test_missing_twin_falls_back_to_en_catalog_and_logs(): void {
@@ -693,5 +711,41 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
 
         $logged = implode("\n", (array) ($GLOBALS['intersoccer_test_roster_move_log'] ?? []));
         $this->assertStringContainsString('no WPML catalog twin', $logged);
+
+        $warnings = $response['data']['warnings'] ?? [];
+        $this->assertNotEmpty($warnings);
+        $this->assertStringContainsString((string) self::ITEM_ID, implode("\n", $warnings));
+        $this->assertStringContainsString('no fr translation', strtolower(implode("\n", $warnings)));
+    }
+
+    public function test_fr_order_move_writes_localized_girls_only_slug_on_line_and_en_canonical_roster(): void {
+        $this->registerCatalogTerms();
+        $this->stubWpml();
+        $this->installMoveWorld([
+            'order_lang' => 'fr',
+            'girls_only_fr_slug' => 'filles-uniquement',
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Order language move QA',
+                'attribute_pa_booking-type' => 'full-week',
+                'pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+                'pa_girls-only' => 'no',
+                'Type de réservation' => 'Semaine complète',
+                '_intersoccer_canonical_girls_only' => 'no',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax(['allow_cross_gender' => true]);
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+        $this->assertEmpty($response['data']['warnings'] ?? []);
+
+        global $intersoccer_test_wc_order_item_meta, $intersoccer_test_roster_store;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('filles-uniquement', $meta['pa_girls-only'] ?? '');
+        $this->assertSame('1', $meta['_intersoccer_canonical_girls_only'] ?? '');
+
+        $row = $intersoccer_test_roster_store[self::ITEM_ID];
+        $this->assertSame(1, (int) ($row['girls_only'] ?? 0));
     }
 }

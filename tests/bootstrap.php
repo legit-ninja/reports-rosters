@@ -248,6 +248,17 @@ if (!function_exists('wpml_get_default_language')) {
     }
 }
 
+if (!function_exists('wpml_get_current_language')) {
+    function wpml_get_current_language() {
+        $filtered = apply_filters('wpml_current_language', null);
+        if (is_string($filtered) && $filtered !== '') {
+            return $filtered;
+        }
+
+        return (string) ($GLOBALS['intersoccer_test_wpml_current_language'] ?? 'en');
+    }
+}
+
 // URL functions
 if (!function_exists('admin_url')) {
     function admin_url($path = '', $scheme = 'admin') {

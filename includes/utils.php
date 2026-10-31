@@ -5506,6 +5506,26 @@ if (!function_exists('intersoccer_format_roster_date_for_storage')) {
     }
 }
 
+if (!function_exists('intersoccer_wpml_default_language_code')) {
+    /**
+     * Site default WPML language code (fallback en).
+     */
+    function intersoccer_wpml_default_language_code(): string {
+        if (function_exists('wpml_get_default_language')) {
+            $default_lang = wpml_get_default_language();
+            if (is_string($default_lang) && $default_lang !== '') {
+                return $default_lang;
+            }
+        }
+        $default_lang = apply_filters('wpml_default_language', null);
+        if (is_string($default_lang) && $default_lang !== '') {
+            return $default_lang;
+        }
+
+        return 'en';
+    }
+}
+
 if (!function_exists('intersoccer_with_wpml_default_language')) {
     /**
      * Run a callback while WPML is switched to the default (English) language.
@@ -5544,7 +5564,10 @@ if (!function_exists('intersoccer_with_wpml_language')) {
         }
 
         $current_lang = '';
-        if (function_exists('wpml_get_current_language')) {
+        $filtered_current = apply_filters('wpml_current_language', null);
+        if (is_string($filtered_current) && $filtered_current !== '') {
+            $current_lang = $filtered_current;
+        } elseif (function_exists('wpml_get_current_language')) {
             $current_lang = (string) wpml_get_current_language();
         }
 

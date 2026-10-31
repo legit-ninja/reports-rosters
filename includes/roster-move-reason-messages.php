@@ -230,7 +230,8 @@ function intersoccer_roster_move_build_move_ajax_success_payload(
     array $moved_item_ids,
     int $target_variation_id,
     $variation,
-    array $reason_codes = []
+    array $reason_codes = [],
+    array $admin_warnings = []
 ): array {
     $failed = intersoccer_roster_move_map_failures_for_ajax($errors);
     $failed_count = count($failed);
@@ -262,6 +263,10 @@ function intersoccer_roster_move_build_move_ajax_success_payload(
     ];
     if ($reason_codes !== []) {
         $payload['reason_codes'] = $reason_codes;
+    }
+    $admin_warnings = array_values(array_filter(array_map('strval', $admin_warnings)));
+    if ($admin_warnings !== []) {
+        $payload['warnings'] = $admin_warnings;
     }
 
     return $payload;

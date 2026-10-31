@@ -1758,9 +1758,6 @@ if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation'))
                 } elseif ($meta_value !== '' && $meta_value !== null) {
                     $slug = trim(is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value);
                 }
-                if ($taxonomy === 'pa_girls-only' && function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
-                    $slug = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $slug);
-                }
             } elseif ($raw_from_variation !== '' && function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
                 $strict_from_variation = intersoccer_migration_coerce_pa_taxonomy_slug_strict(
                     $taxonomy,
