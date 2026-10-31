@@ -45,7 +45,6 @@ class MovePlayersConfirmFlowTest extends TestCase {
 
         require_once dirname(__DIR__, 2) . '/includes/utils.php';
         require_once dirname(__DIR__) . '/stubs/move-players-product-type-stub.php';
-        require_once dirname(__DIR__) . '/stubs/get-product-season-stub.php';
         global $intersoccer_test_get_product_season_callback;
         $intersoccer_test_get_product_season_callback = static function ($parent_id) {
             return '2025-2026';

@@ -1826,6 +1826,12 @@ function intersoccer_render_roster_details_page() {
             return options.filter((option) => parseInt(option.players, 10) === 0);
         }
 
+        // Empty destinations still honour every filter the admin has chosen (season, day/term, venue, age group, time).
+        function emptyDestinationsMatchingFilters(options, chosen) {
+            const keys = ['season', 'schedule', 'venue', 'ageGroup', 'time'];
+            return emptyPlayerDestinations(options).filter((option) => keys.every((key) => !chosen[key] || option[key] === chosen[key]));
+        }
+
         function fillDestinationRosterSelect(rosterOptions, placeholderText, disableWhenEmpty) {
             resetSelectOptions(targetRosterSelect, placeholderText, disableWhenEmpty && !rosterOptions.length);
             rosterOptions.forEach((option) => {
@@ -1891,7 +1897,15 @@ function intersoccer_render_roster_details_page() {
 
             const finalMatches = targetTimeSelect.val() ? byAgeGroup.filter((option) => option.time === targetTimeSelect.val()) : [];
             const showEmpty = showEmptyRostersEnabled();
-            const emptyDestinations = showEmpty ? emptyPlayerDestinations(eligible) : [];
+            const emptyDestinations = showEmpty
+                ? emptyDestinationsMatchingFilters(eligible, {
+                    season: targetSeasonSelect.val() || '',
+                    schedule: targetScheduleSelect.val() || '',
+                    venue: targetVenueSelect.val() || '',
+                    ageGroup: targetAgeGroupSelect.val() || '',
+                    time: targetTimeSelect.val() || ''
+                })
+                : [];
             let rosterOptions = finalMatches;
             if (showEmpty) {
                 rosterOptions = targetTimeSelect.val()

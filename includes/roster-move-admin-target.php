@@ -1128,9 +1128,16 @@ function intersoccer_roster_move_variation_renormalize_event_data($variation, ar
 function intersoccer_roster_move_manual_update_season_for_parent(int $parent_id): string {
     $season_raw = '';
     if (function_exists('intersoccer_get_product_season')) {
+        // Defined by the InterSoccer Product Variations plugin (read-only term lookup).
         $season = intersoccer_get_product_season($parent_id);
         if (!empty($season)) {
             $season_raw = (string) $season;
+        }
+    } elseif (function_exists('wc_get_product_terms') && $parent_id > 0) {
+        // Same read as Product Variations does: first pa_program-season term name on the parent.
+        $terms = wc_get_product_terms($parent_id, 'pa_program-season', ['fields' => 'names']);
+        if (is_array($terms) && !empty($terms)) {
+            $season_raw = (string) reset($terms);
         }
     }
 

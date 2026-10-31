@@ -123,4 +123,14 @@ class MovePlayersRosterMoveUiTest extends TestCase {
         $this->assertStringContainsString('fillDestinationRosterSelect', $source);
         $this->assertStringContainsString('migrationTexts.chooseDestination', $source);
     }
+
+    public function test_show_empty_rosters_respects_chosen_filters_without_time(): void {
+        $source = file_get_contents(dirname(__DIR__, 2) . '/includes/roster-details.php');
+        $this->assertIsString($source);
+        $this->assertStringContainsString('function emptyDestinationsMatchingFilters(options, chosen)', $source);
+        $this->assertStringContainsString("const keys = ['season', 'schedule', 'venue', 'ageGroup', 'time'];", $source);
+        $this->assertStringContainsString('!chosen[key] || option[key] === chosen[key]', $source);
+        $this->assertStringContainsString('emptyDestinationsMatchingFilters(eligible, {', $source);
+        $this->assertStringNotContainsString('showEmpty ? emptyPlayerDestinations(eligible)', $source);
+    }
 }

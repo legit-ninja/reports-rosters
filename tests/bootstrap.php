@@ -417,6 +417,25 @@ if (!class_exists('InterSoccerRRTestMeta')) {
     }
 }
 
+/**
+ * Parent product season. In production this comes from the InterSoccer Product Variations plugin
+ * (reads the parent's pa_program-season term name). Tests set $intersoccer_test_get_product_season_callback.
+ */
+if (!function_exists('intersoccer_get_product_season')) {
+    /**
+     * @param int $parent_id
+     * @return string
+     */
+    function intersoccer_get_product_season($parent_id) {
+        global $intersoccer_test_get_product_season_callback;
+        if (is_callable($intersoccer_test_get_product_season_callback)) {
+            return (string) call_user_func($intersoccer_test_get_product_season_callback, (int) $parent_id);
+        }
+
+        return '';
+    }
+}
+
 if (!function_exists('taxonomy_exists')) {
     function taxonomy_exists($taxonomy) {
         if ($taxonomy === '') {
