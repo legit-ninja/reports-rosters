@@ -149,12 +149,26 @@ class RosterProductIdQueryLevelTest extends TestCase {
 
     private function stubWpmlAndEnglishCatalogue(): void {
         $map = [self::FR_PID => self::EN_PID, self::EN_PID => self::EN_PID];
-        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$args) use ($map) {
+        $en_pid = self::EN_PID;
+        $fr_pid = self::FR_PID;
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$args) use ($map, $en_pid, $fr_pid) {
             if ($hook === 'wpml_default_language') {
                 return 'en';
             }
             if ($hook === 'wpml_object_id' && isset($args[0]) && $args[0] === 'product') {
-                return $map[(int) $value] ?? (int) $value;
+                $id = (int) $value;
+                $lang = $args[2] ?? null;
+                if ($lang === 'fr' && $id === $en_pid) {
+                    return $fr_pid;
+                }
+                if ($lang === 'en' && isset($map[$id])) {
+                    return (int) $map[$id];
+                }
+                if (isset($map[$id])) {
+                    return (int) $map[$id];
+                }
+
+                return $id;
             }
             if ($hook === 'wpml_active_languages') {
                 return ['en' => [], 'fr' => []];
@@ -195,38 +209,19 @@ class RosterProductIdQueryLevelTest extends TestCase {
             'event_signature' => self::EVENT_SIG,
             'variation_ids' => '',
             'total_players' => 1,
+            'activity_type' => 'Course',
+            'course_day' => 'Monday',
+            'camp_terms' => '',
         ];
 
         $this->wpdb->roster_rows = [
             $base + [
                 'product_id' => self::FR_PID,
                 'order_item_id' => 88001,
-                'activity_type' => 'Course',
-                'course_day' => 'Monday',
-                'camp_terms' => '',
             ],
             $base + [
                 'product_id' => self::EN_PID,
                 'order_item_id' => 88002,
-                'activity_type' => 'Course',
-                'course_day' => 'Monday',
-                'camp_terms' => '',
-            ],
-            $base + [
-                'product_id' => self::FR_PID,
-                'order_item_id' => 88003,
-                'activity_type' => 'Camp',
-                'course_day' => '',
-                'camp_terms' => 'Week 1',
-            ],
-            $base + [
-                'product_id' => self::EN_PID,
-                'order_item_id' => 88004,
-                'activity_type' => 'Girls Only',
-                'course_day' => '',
-                'camp_terms' => 'Week 1',
-                'shirt_size' => 'M',
-                'shorts_size' => 'M',
             ],
         ];
     }
