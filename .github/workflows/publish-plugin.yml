@@ -52,5 +52,6 @@ jobs:
       version: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
       changelog: ${{ github.event.release.body || '' }}
       publish_url: ${{ vars.UU_PUBLISH_URL }}
+      include_vendor: true
     secrets:
       UU_PUBLISH_TOKEN: ${{ secrets.UU_PUBLISH_TOKEN }}

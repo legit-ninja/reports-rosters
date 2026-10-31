@@ -86,6 +86,27 @@ function intersoccer_order_item_meta_key_is_canonical($raw_key): bool {
 }
 
 /**
+ * Find the first meta key in $raw_meta that matches one of $needles (case-insensitive).
+ *
+ * @param array<string,mixed> $raw_meta
+ * @param list<string>        $needles
+ * @return string|null Actual key from $raw_meta
+ */
+function intersoccer_order_meta_first_matching_key(array $raw_meta, array $needles) {
+    $index = [];
+    foreach ($raw_meta as $key => $_value) {
+        $index[strtolower((string) $key)] = (string) $key;
+    }
+    foreach ($needles as $needle) {
+        $lower = strtolower((string) $needle);
+        if (isset($index[$lower])) {
+            return $index[$lower];
+        }
+    }
+    return null;
+}
+
+/**
  * Skip internal plugin storage for report/roster display scans, but keep canonical keys.
  *
  * @param mixed $raw_key
@@ -141,9 +162,45 @@ function intersoccer_apply_canonical_order_item_meta_to_data(array $data, array 
             continue;
         }
         if ($field === 'booking_type') {
-            $data['booking_type'] = function_exists('intersoccer_normalize_booking_type_label_for_reports')
+            $normalized_bt = function_exists('intersoccer_normalize_booking_type_label_for_reports')
                 ? intersoccer_normalize_booking_type_label_for_reports($val)
                 : $val;
+            $normalized_slug = function_exists('intersoccer_normalize_booking_type_slug_for_reports')
+                ? intersoccer_normalize_booking_type_slug_for_reports($normalized_bt)
+                : strtolower(trim((string) $normalized_bt));
+            if ($normalized_slug === 'other' && !empty($data['booking_type'])) {
+                $existing = function_exists('intersoccer_normalize_booking_type_label_for_reports')
+                    ? intersoccer_normalize_booking_type_label_for_reports($data['booking_type'])
+                    : $data['booking_type'];
+                $existing_slug = function_exists('intersoccer_normalize_booking_type_slug_for_reports')
+                    ? intersoccer_normalize_booking_type_slug_for_reports($existing)
+                    : strtolower(trim((string) $existing));
+                if ($existing_slug !== '' && $existing_slug !== 'other') {
+                    continue;
+                }
+            }
+            if ($normalized_slug === 'other') {
+                $alias_needles = ['Booking Type', 'buchungstyp', 'type de réservation', 'pa_booking-type', 'attribute_pa_booking-type'];
+                $resolved_key = function_exists('intersoccer_order_meta_first_matching_key')
+                    ? intersoccer_order_meta_first_matching_key($raw_meta, $alias_needles)
+                    : null;
+                if ($resolved_key !== null) {
+                    $alias_val = $scalar($raw_meta[$resolved_key]);
+                    if ($alias_val !== '') {
+                        $resolved = function_exists('intersoccer_normalize_booking_type_label_for_reports')
+                            ? intersoccer_normalize_booking_type_label_for_reports($alias_val)
+                            : $alias_val;
+                        $resolved_slug = function_exists('intersoccer_normalize_booking_type_slug_for_reports')
+                            ? intersoccer_normalize_booking_type_slug_for_reports($resolved)
+                            : strtolower(trim((string) $resolved));
+                        if ($resolved_slug !== '' && $resolved_slug !== 'other') {
+                            $data['booking_type'] = $resolved;
+                            continue;
+                        }
+                    }
+                }
+            }
+            $data['booking_type'] = $normalized_bt;
             continue;
         }
         if ($field === 'event_type') {

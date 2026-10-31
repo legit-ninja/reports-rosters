@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 2.10.17
+ * Version: 2.10.25
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -132,6 +132,22 @@ if (file_exists($intersoccer_roster_canonical)) {
     require_once $intersoccer_roster_canonical;
 }
 
+require_once plugin_dir_path(__FILE__) . 'includes/medical-access.php';
+
+if (!function_exists('intersoccer_roster_rebuild_statuses')) {
+    /**
+     * WooCommerce order statuses included in a full roster rebuild (upsert + obsolete cleanup).
+     *
+     * @return string[]
+     */
+    function intersoccer_roster_rebuild_statuses(): array {
+        $default = ['completed', 'processing', 'on-hold'];
+        $filtered = apply_filters('intersoccer_roster_rebuild_statuses', $default);
+
+        return intersoccer_normalize_roster_rebuild_statuses($filtered);
+    }
+}
+
 // Load OOP adapter/compat layer (kept small and will be further reduced).
 $intersoccer_oop_adapter = plugin_dir_path(__FILE__) . 'includes/oop-adapter.php';
 if (file_exists($intersoccer_oop_adapter)) {
@@ -141,6 +157,24 @@ if (file_exists($intersoccer_oop_adapter)) {
 $order_meta_repair_hook = plugin_dir_path(__FILE__) . 'includes/order-meta-repair-hook.php';
 if (file_exists($order_meta_repair_hook)) {
     require_once $order_meta_repair_hook;
+}
+
+// PCS / win-back cache warm-up: hook registration on every request; heavy report files load in cron/event callbacks only.
+$intersoccer_pcs_cache_gate = plugin_dir_path(__FILE__) . 'includes/player-course-status-cache-gate.php';
+if (file_exists($intersoccer_pcs_cache_gate)) {
+    require_once $intersoccer_pcs_cache_gate;
+}
+$intersoccer_winback_cache_gate = plugin_dir_path(__FILE__) . 'includes/winback-report-cache-gate.php';
+if (file_exists($intersoccer_winback_cache_gate)) {
+    require_once $intersoccer_winback_cache_gate;
+}
+$intersoccer_winback_warmup = plugin_dir_path(__FILE__) . 'includes/winback-report-warmup.php';
+if (file_exists($intersoccer_winback_warmup)) {
+    require_once $intersoccer_winback_warmup;
+}
+$intersoccer_pcs_warmup = plugin_dir_path(__FILE__) . 'includes/player-course-status-warmup.php';
+if (file_exists($intersoccer_pcs_warmup)) {
+    require_once $intersoccer_pcs_warmup;
 }
 
 // Final Numbers urgency + distressed variation-ID export (Campaign Offers calls this when present).
@@ -190,6 +224,8 @@ add_action('init', function () {
             'Camps',
             'Courses',
             'Girls Only',
+            'Restricted',
+            'N/A',
             'Tournaments',
             'Other Events',
             'InterSoccer Settings',

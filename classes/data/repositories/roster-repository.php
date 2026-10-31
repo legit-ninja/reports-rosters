@@ -853,20 +853,38 @@ class RosterRepository implements RepositoryInterface {
             $this->logger->debug('Deleting roster entries by order_item_id', ['order_item_id' => $order_item_id]);
 
             $deleted_count = $this->database->transaction(function () use ($order_item_id) {
-                return (int) $this->database->delete_roster_entries(['order_item_id' => $order_item_id]);
+                $deleted = $this->database->delete_roster_entries(['order_item_id' => $order_item_id]);
+                if ($deleted === false) {
+                    throw new DatabaseException('Delete roster entries failed for order_item_id ' . $order_item_id);
+                }
+
+                return (int) $deleted;
             });
+
+            if ($deleted_count === false) {
+                throw new DatabaseException(
+                    'Failed to delete roster entries by order_item_id ' . $order_item_id
+                );
+            }
 
             if ($deleted_count > 0) {
                 $this->clearRelatedCaches();
             }
 
-            return $deleted_count;
-        } catch (\Exception $e) {
+            return (int) $deleted_count;
+        } catch (\Throwable $e) {
             $this->logger->error('Failed to delete roster entries by order_item_id', [
                 'order_item_id' => $order_item_id,
                 'error' => $e->getMessage(),
             ]);
-            throw $e;
+            if ($e instanceof DatabaseException) {
+                throw $e;
+            }
+            throw new DatabaseException(
+                'Failed to delete roster entries by order_item_id ' . $order_item_id . ': ' . $e->getMessage(),
+                0,
+                $e
+            );
         }
     }
 
@@ -950,6 +968,65 @@ class RosterRepository implements RepositoryInterface {
         $this->clearRelatedCaches();
     }
     
+    /**
+     * Girls-only roster rows (admin Girls Only page and legacy listings).
+     *
+     * Includes rows with girls_only = 1 and legacy rows whose activity_type still carries
+     * a girls-only label (EN/FR/DE), matching intersoccer_roster_is_girls_only() semantics.
+     *
+     * @param array<string,mixed> $filters Optional season, venue, activity_type, limit, offset.
+     * @return RostersCollection
+     */
+    public function find_girls_only(array $filters = []) {
+        global $wpdb;
+
+        $table_name = $wpdb->prefix . $this->table;
+        $where = [
+            'is_placeholder = 0',
+            "(girls_only = 1 OR activity_type = 'Girls Only' OR activity_type LIKE '%Girls Only%'
+                OR activity_type LIKE '%girls only%' OR activity_type LIKE '%filles seulement%'
+                OR activity_type LIKE '%filles uniquement%' OR activity_type LIKE '%nur mädchen%'
+                OR activity_type LIKE '%nur madchen%' OR activity_type LIKE '%Nur Mädchen%'
+                OR activity_type LIKE '%Mädchen%')",
+        ];
+        $params = [];
+
+        $allowed_filters = ['season', 'venue', 'activity_type', 'age_group', 'city', 'canton_region'];
+        foreach ($allowed_filters as $field) {
+            if (!isset($filters[$field]) || $filters[$field] === '' || $filters[$field] === null) {
+                continue;
+            }
+            $where[] = "{$field} = %s";
+            $params[] = $filters[$field];
+        }
+
+        $sql = 'SELECT * FROM ' . $table_name . ' WHERE ' . implode(' AND ', $where) . ' ORDER BY start_date DESC, id DESC';
+        if ($params !== []) {
+            $sql = $wpdb->prepare($sql, $params);
+        }
+
+        $limit = isset($filters['limit']) ? max(0, (int) $filters['limit']) : 0;
+        $offset = isset($filters['offset']) ? max(0, (int) $filters['offset']) : 0;
+        if ($limit > 0) {
+            $sql .= $wpdb->prepare(' LIMIT %d OFFSET %d', $limit, $offset);
+        }
+
+        $results = $wpdb->get_results($sql, ARRAY_A);
+
+        $rosters = new RostersCollection();
+        foreach ($results as $data) {
+            if (function_exists('intersoccer_roster_is_girls_only')
+                && !intersoccer_roster_is_girls_only($data)) {
+                continue;
+            }
+            $roster = new Roster($data);
+            $roster->setExists(true);
+            $rosters->add($roster);
+        }
+
+        return $rosters;
+    }
+
     /**
      * Get roster entries by activity type
      * 
@@ -1069,9 +1146,15 @@ class RosterRepository implements RepositoryInterface {
         global $wpdb;
         $table_name = $wpdb->prefix . $this->table;
         
-        $sql = "SELECT * FROM {$table_name} 
-                WHERE start_date <= %s 
-                AND (end_date >= %s OR end_date IS NULL)
+        $start_lte = function_exists('intersoccer_roster_sql_treat_null_date_as_epoch')
+            ? intersoccer_roster_sql_treat_null_date_as_epoch('start_date')
+            : "COALESCE(NULLIF(NULLIF(start_date, ''), '1970-01-01'), '1970-01-01')";
+        $end_epoch = function_exists('intersoccer_roster_sql_treat_null_date_as_epoch')
+            ? intersoccer_roster_sql_treat_null_date_as_epoch('end_date')
+            : "COALESCE(NULLIF(NULLIF(end_date, ''), '1970-01-01'), '1970-01-01')";
+        $sql = "SELECT * FROM {$table_name}
+                WHERE {$start_lte} <= %s
+                AND ({$end_epoch} >= %s OR end_date IS NULL)
                 AND order_status = 'completed'
                 ORDER BY start_date ASC";
         
@@ -1142,33 +1225,6 @@ class RosterRepository implements RepositoryInterface {
                 'error' => $e->getMessage()
             ]);
             return [];
-        }
-    }
-    
-    /**
-     * Rebuild roster entries from WooCommerce orders
-     * 
-     * @param array $options Rebuild options
-     * @return array Rebuild results
-     */
-    public function rebuildFromOrders(array $options = []) {
-        try {
-            $this->logger->info('Starting roster rebuild from orders');
-            
-            $results = $this->database->rebuild_rosters($options);
-            
-            // Clear all caches after rebuild
-            $this->clearAllCaches();
-            
-            $this->logger->info('Roster rebuild completed', $results);
-            
-            return $results;
-            
-        } catch (\Exception $e) {
-            $this->logger->error('Roster rebuild failed', [
-                'error' => $e->getMessage()
-            ]);
-            throw $e;
         }
     }
     

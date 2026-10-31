@@ -15,6 +15,7 @@
         <ini name="memory_limit" value="-1"/>
         <ini name="error_reporting" value="E_ALL"/>
         <ini name="display_errors" value="1"/>
+        <ini name="log_errors" value="0"/>
         <ini name="display_startup_errors" value="1"/>
         <const name="WP_TESTS_DIR" value="/tmp/wordpress-tests-lib"/>
         <const name="WP_TESTS_MULTISITE" value="0"/>
@@ -59,6 +60,7 @@
             <file>tests/Core/LoggerTest.php</file>
             <file>tests/Core/ActivationRequirementsTest.php</file>
             <file>tests/Core/CommittedPluginAutoloadTest.php</file>
+            <file>tests/WarmupBootstrapTest.php</file>
             <file>tests/Reports/FinalReportsTotalsTest.php</file>
             <file>tests/Reports/BookingReportTotalsHtmlTest.php</file>
             <file>tests/Reports/FinalReportsAggregationAccuracyTest.php</file>
@@ -67,6 +69,29 @@
             <file>tests/Reports/CanonicalOrderMetaPreferenceTest.php</file>
             <file>tests/Reports/DistressedVariationIdsTest.php</file>
             <file>tests/Reports/PlayerCampStatusTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusQueryCountTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusPendingTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusAdminUiTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusStrictDateTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusLoadPlayersQueryCountTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusGoldenTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusMemoryTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusSeasonLabelTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusCacheTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusPerfBaseCacheTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusWarmPathQueryTest.php</file>
+            <file>tests/Reports/PlayerCourseStatusLegacyEquivalenceTest.php</file>
+            <file>tests/Reports/WinbackReportCacheTest.php</file>
+            <file>tests/Reports/PlayerCampStatusLoadPlayersQueryCountTest.php</file>
+            <file>tests/Reports/WinbackReportTest.php</file>
+            <file>tests/Reports/WinbackReportAdminUiTest.php</file>
+            <file>tests/Reports/WinbackCatalogueWpmlTest.php</file>
+            <file>tests/Reports/WinbackCatalogueFu11Test.php</file>
+            <file>tests/Reports/WinbackCatalogueFu12Test.php</file>
+            <file>tests/Reports/WinbackReportQueryCountTest.php</file>
+            <file>tests/Reports/WinbackReportRuntimeCacheFlushTest.php</file>
+            <file>tests/Reports/WinbackReportMemoryTest.php</file>
             <file>tests/Reports/FinalReportsMetaTest.php</file>
             <file>tests/Campaign/Final15CampaignFixtureTest.php</file>
             <file>tests/Campaign/CampaignMomentumTest.php</file>
@@ -77,6 +102,13 @@
             <file>tests/Unit/RosterDaysUnknownTest.php</file>
             <file>tests/Reports/OrderMetaFieldMapTest.php</file>
             <file>tests/Services/RosterBuilderSingleDayTest.php</file>
+            <file>tests/Data/Models/PlayerAgeGroupParserTest.php</file>
+            <file>tests/Data/Models/PlayerAgeGroupStatusPlaceholderTest.php</file>
+            <file>tests/Services/RosterRebuildKeepRows160Test.php</file>
+            <file>tests/Services/RosterRebuildProcessPath160Test.php</file>
+            <file>tests/Services/RosterRebuildCoverage160Test.php</file>
+            <file>tests/Core/DatabaseNestedTransactionTest.php</file>
+            <file>tests/Services/RosterRebuildNestedTransaction160Test.php</file>
             <file>tests/Services/DataValidatorSingleDayUnknownTest.php</file>
             <file>tests/Unit/RosterCampBookingDisplayTest.php</file>
             <file>tests/Unit/BookingTypeNormalizerTest.php</file>
@@ -84,6 +116,16 @@
             <file>tests/Services/RosterBuilderOrderItemWriteFailureTest.php</file>
             <file>tests/Services/RosterBuilderAdvisoryValidationTest.php</file>
             <file>tests/Services/RosterBuilderFailureNoteDedupTest.php</file>
+            <file>tests/Unit/MedicalAccessTest.php</file>
+            <file>tests/Unit/MedicalAccessSplitPermissionsTest.php</file>
+            <file>tests/Unit/MedicalAccessPmMissingTest.php</file>
+            <file>tests/Unit/MedicalRosterAjaxTest.php</file>
+            <file>tests/Unit/RosterExportMedicalGatingTest.php</file>
+            <file>tests/Unit/RosterExportAllMedicalGatingTest.php</file>
+            <file>tests/Unit/RosterSingleExportSplitPermissionsTest.php</file>
+            <file>tests/Unit/MedicalRosterEditorDobGateTest.php</file>
+            <file>tests/Unit/PlayerCampStatusDobGatingTest.php</file>
+            <directory>tests/ReportAccuracy</directory>
         </testsuite>
         <testsuite name="Complete">
             <directory>tests</directory>

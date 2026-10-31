@@ -366,7 +366,11 @@ class RostersCollection extends AbstractCollection {
      * @return array Array of collections keyed by month name
      */
     public function groupByMonth() {
-        return $this->groupBy(function(Roster $roster) {
+        return $this->groupBy(function (Roster $roster) {
+            if (!function_exists('intersoccer_roster_has_real_date')
+                || !intersoccer_roster_has_real_date($roster->start_date)) {
+                return 'Unknown';
+            }
             return date('F Y', strtotime($roster->start_date));
         });
     }
@@ -629,8 +633,16 @@ class RostersCollection extends AbstractCollection {
             });
         }
         
-        $special_needs_rosters = $filtered_rosters->filterBySpecialNeeds(true);
-        
+        $special_needs_count = 0;
+        $special_needs_details = [];
+        if (intersoccer_rr_current_user_can_view_medical()) {
+            $special_needs_rosters = $filtered_rosters->filterBySpecialNeeds(true);
+            $special_needs_count = $special_needs_rosters->count();
+            $special_needs_details = $special_needs_rosters->map(function (Roster $roster) {
+                return $roster->getCoachInfo();
+            })->toArray();
+        }
+
         return [
             'total_players' => $filtered_rosters->count(),
             'age_distribution' => $filtered_rosters->countBy(function(Roster $roster) {
@@ -638,10 +650,8 @@ class RostersCollection extends AbstractCollection {
             }),
             'gender_split' => $filtered_rosters->countBy('gender'),
             'activity_breakdown' => $filtered_rosters->countBy('activity_type'),
-            'special_needs_count' => $special_needs_rosters->count(),
-            'special_needs_details' => $special_needs_rosters->map(function(Roster $roster) {
-                return $roster->getCoachInfo();
-            })->toArray(),
+            'special_needs_count' => $special_needs_count,
+            'special_needs_details' => $special_needs_details,
             'emergency_contacts' => $this->getEmergencyContactsList($filtered_rosters),
             'attendance_summary' => $this->getAttendanceSummary($filtered_rosters)
         ];
@@ -812,6 +822,10 @@ class RostersCollection extends AbstractCollection {
         
         // Group rosters by day of week
         foreach ($week_rosters as $roster) {
+            if (!function_exists('intersoccer_roster_has_real_date')
+                || !intersoccer_roster_has_real_date($roster->start_date)) {
+                continue;
+            }
             $day_of_week = date('l', strtotime($roster->start_date));
             if (isset($schedule[$day_of_week])) {
                 $schedule[$day_of_week]->add($roster);

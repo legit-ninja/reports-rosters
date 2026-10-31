@@ -63,7 +63,9 @@ function intersoccer_pe_get_event_roster_by_variation($variation_id, $context = 
     }
     $roster = $wpdb->get_results($wpdb->prepare($query, $variation_id), ARRAY_A);
 
-    error_log('InterSoccer: Retrieved ' . count($roster) . ' roster entries for variation ' . $variation_id . ' with context ' . json_encode($context));
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('InterSoccer: Retrieved ' . count($roster) . ' roster entries for roster data lookup');
+    }
     return $roster ?: [];
 }
 

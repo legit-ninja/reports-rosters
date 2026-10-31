@@ -208,7 +208,6 @@ msgstr "Girls Only: "
 msgid "Total Players"
 msgstr "Total Players"
 
-#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/summer-camps-report.php:17
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/event-reports.php:131
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:26
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/intersoccer-reports-rosters.php:91
@@ -217,11 +216,6 @@ msgstr "Total Players"
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/abstract-page.php:66
 msgid "You do not have sufficient permissions to access this page."
 msgstr "You do not have sufficient permissions to access this page."
-
-#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/summer-camps-report.php:29
-#: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/summer-camps-report.php:30
-msgid "Summer Camps Report"
-msgstr "Summer Camps Report"
 
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/event-reports.php:142
 msgid "No report data available for this variation."

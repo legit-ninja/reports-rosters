@@ -15,21 +15,75 @@ function intersoccer_financial_attribution_version(): string {
 }
 
 /**
- * Classify a cart/order fee name into a canonical discount type.
+ * Map EN/FR/DE fee or discount labels to a canonical discount type.
  */
-function intersoccer_classify_discount_fee(string $fee_name): string {
-    $normalized = strtolower(trim($fee_name));
+function intersoccer_canonical_discount_type_from_label(string $label): string {
+    if ($label === '') {
+        return 'other';
+    }
 
-    if ($normalized === 'referral discount' || strpos($normalized, 'referral discount') !== false) {
+    $normalized = function_exists('mb_strtolower')
+        ? mb_strtolower(trim($label), 'UTF-8')
+        : strtolower(trim($label));
+
+    if (strpos($normalized, 'referral credits') !== false
+        || strpos($normalized, 'loyalty points') !== false
+        || strpos($normalized, 'points discount') !== false
+        || strpos($normalized, 'crédits de parrainage') !== false
+        || strpos($normalized, 'credits de parrainage') !== false
+        || strpos($normalized, 'réduction de points') !== false
+        || strpos($normalized, 'reduction de points') !== false
+        || strpos($normalized, 'empfehlungscredits') !== false
+        || strpos($normalized, 'punkte-rabatt') !== false
+        || $normalized === 'referral credits discount'
+    ) {
+        return 'referral_points';
+    }
+
+    if ($normalized === 'referral discount'
+        || strpos($normalized, 'referral discount') !== false
+        || strpos($normalized, 'réduction de parrainage') !== false
+        || strpos($normalized, 'reduction de parrainage') !== false
+        || $normalized === 'empfehlungsrabatt'
+        || strpos($normalized, 'empfehlungsrabatt') !== false
+    ) {
         return 'referral_first_order';
     }
 
-    if ($normalized === 'referral credits discount'
-        || strpos($normalized, 'referral credits') !== false
-        || strpos($normalized, 'loyalty points') !== false
-        || strpos($normalized, 'points discount') !== false
+    if (strpos($normalized, 'sibling') !== false
+        || strpos($normalized, 'multi-child') !== false
+        || strpos($normalized, '2nd child') !== false
+        || strpos($normalized, '3rd child') !== false
+        || strpos($normalized, '2nd+ child') !== false
     ) {
-        return 'referral_points';
+        return 'sibling';
+    }
+
+    if (strpos($normalized, 'same season') !== false
+        || strpos($normalized, 'même saison') !== false
+        || strpos($normalized, 'second course') !== false
+        || (strpos($normalized, '50%') !== false && strpos($normalized, 'season') !== false)
+    ) {
+        return 'same_season';
+    }
+
+    if (strpos($normalized, 'coupon') !== false
+        || strpos($normalized, 'promo') !== false
+        || strpos($normalized, 'promotional') !== false
+    ) {
+        return 'coupon';
+    }
+
+    return 'other';
+}
+
+/**
+ * Classify a cart/order fee name into a canonical discount type.
+ */
+function intersoccer_classify_discount_fee(string $fee_name): string {
+    $canonical = intersoccer_canonical_discount_type_from_label($fee_name);
+    if ($canonical !== 'other') {
+        return $canonical;
     }
 
     if (function_exists('intersoccer_determine_precise_discount_type')) {
@@ -47,44 +101,7 @@ function intersoccer_determine_discount_type_from_name($discount_name) {
         return 'other';
     }
 
-    $name_lower = strtolower($discount_name);
-
-    if ($name_lower === 'referral discount' || strpos($name_lower, 'referral discount') !== false) {
-        return 'referral_first_order';
-    }
-
-    if (strpos($name_lower, 'referral credits') !== false
-        || strpos($name_lower, 'loyalty points') !== false
-        || strpos($name_lower, 'points discount') !== false
-    ) {
-        return 'referral_points';
-    }
-
-    if (strpos($name_lower, 'sibling') !== false
-        || strpos($name_lower, 'multi-child') !== false
-        || strpos($name_lower, '2nd child') !== false
-        || strpos($name_lower, '3rd child') !== false
-        || strpos($name_lower, '2nd+ child') !== false
-    ) {
-        return 'sibling';
-    }
-
-    if (strpos($name_lower, 'same season') !== false
-        || strpos($name_lower, 'même saison') !== false
-        || strpos($name_lower, 'second course') !== false
-        || (strpos($name_lower, '50%') !== false && strpos($name_lower, 'season') !== false)
-    ) {
-        return 'same_season';
-    }
-
-    if (strpos($name_lower, 'coupon') !== false
-        || strpos($name_lower, 'promo') !== false
-        || strpos($name_lower, 'promotional') !== false
-    ) {
-        return 'coupon';
-    }
-
-    return 'other';
+    return intersoccer_canonical_discount_type_from_label((string) $discount_name);
 }
 
 /**
@@ -136,6 +153,91 @@ function intersoccer_parse_legacy_discount_amount($value): float {
     }
 
     return (float) strip_tags($string_value);
+}
+
+/**
+ * Correct persisted item discount meta that double-counted FR/DE referral/points fees (order_fee + referral_order_meta).
+ *
+ * **Read path only** — FinancialReportService calls this when loading persisted line breakdowns.
+ * Legacy PV line meta vs order-level fees is handled at attribution write time (order-level bucket
+ * matching in OrderFinancialAttributionService), not here.
+ *
+ * @param array<int,array<string,mixed>> $breakdown
+ * @return array{amount:float,breakdown:array<int,array<string,mixed>>}
+ */
+function intersoccer_reconcile_stale_persisted_item_discount(float $amount, array $breakdown): array {
+    if ($breakdown === []) {
+        return ['amount' => $amount, 'breakdown' => $breakdown];
+    }
+
+    $adjusted = $breakdown;
+    $removed = 0.0;
+
+    foreach (['referral_points', 'referral_first_order'] as $canonical_type) {
+        $fee_index = null;
+        $meta_index = null;
+
+        foreach ($adjusted as $index => $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $source = (string) ($entry['source'] ?? '');
+            $type = (string) ($entry['type'] ?? '');
+            $name = (string) ($entry['name'] ?? '');
+
+            if ($source === 'order_fee' && intersoccer_classify_discount_fee($name) === $canonical_type) {
+                $fee_index = $index;
+            }
+            if ($source === 'referral_order_meta' && $type === $canonical_type) {
+                $meta_index = $index;
+            }
+        }
+
+        if ($fee_index === null || $meta_index === null) {
+            continue;
+        }
+
+        $removed += (float) ($adjusted[$meta_index]['amount'] ?? 0.0);
+        unset($adjusted[$meta_index]);
+        $adjusted[$fee_index]['type'] = $canonical_type;
+    }
+
+    $changed = $removed > 0.0;
+    foreach ($adjusted as $index => $entry) {
+        if (!is_array($entry) || (string) ($entry['source'] ?? '') !== 'order_fee') {
+            continue;
+        }
+
+        $name = (string) ($entry['name'] ?? '');
+        $canonical = intersoccer_classify_discount_fee($name);
+        if ($canonical !== 'referral_points' && $canonical !== 'referral_first_order') {
+            continue;
+        }
+
+        foreach ($adjusted as $other) {
+            if (is_array($other)
+                && (string) ($other['source'] ?? '') === 'referral_order_meta'
+                && (string) ($other['type'] ?? '') === $canonical
+            ) {
+                continue 2;
+            }
+        }
+
+        if ((string) ($entry['type'] ?? '') !== $canonical) {
+            $adjusted[$index]['type'] = $canonical;
+            $changed = true;
+        }
+    }
+
+    if (!$changed) {
+        return ['amount' => $amount, 'breakdown' => $breakdown];
+    }
+
+    return [
+        'amount' => max(0.0, round($amount - $removed, 2)),
+        'breakdown' => array_values($adjusted),
+    ];
 }
 
 /**

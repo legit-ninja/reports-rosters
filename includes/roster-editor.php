@@ -999,7 +999,13 @@ function intersoccer_render_roster_edit_form() {
                         <?php intersoccer_render_form_field($roster, 'last_name', 'Last Name', 'text'); ?>
                         <?php intersoccer_render_form_field($roster, 'player_first_name', 'Player First Name', 'text'); ?>
                         <?php intersoccer_render_form_field($roster, 'player_last_name', 'Player Last Name', 'text'); ?>
-                        <?php intersoccer_render_form_field($roster, 'player_dob', 'Player Date of Birth', 'date'); ?>
+                        <?php
+                        if (!intersoccer_rr_current_user_can_view_dob()) {
+                            echo '<tr><th>' . esc_html__('Player Date of Birth', 'intersoccer-reports-rosters') . '</th><td>' . esc_html(intersoccer_rr_medical_restricted_label()) . '</td></tr>';
+                        } else {
+                            intersoccer_render_form_field($roster, 'player_dob', 'Player Date of Birth', 'date');
+                        }
+                        ?>
                         <?php intersoccer_render_form_field($roster, 'age', 'Age', 'number'); ?>
                         <?php intersoccer_render_form_field_select($roster, 'gender', 'Gender', ['N/A', 'Male', 'Female', 'Other']); ?>
                         <?php intersoccer_render_form_field_select($roster, 'player_gender', 'Player Gender', ['', 'Male', 'Female', 'Other']); ?>
@@ -1016,9 +1022,24 @@ function intersoccer_render_roster_edit_form() {
 
                     <h2><?php _e('Medical/Dietary Information', 'intersoccer-reports-rosters'); ?></h2>
                     <table class="form-table">
-                        <?php intersoccer_render_form_field($roster, 'medical_conditions', 'Medical Conditions', 'textarea'); ?>
-                        <?php intersoccer_render_form_field($roster, 'player_medical', 'Player Medical Info', 'textarea'); ?>
-                        <?php intersoccer_render_form_field($roster, 'player_dietary', 'Dietary Needs', 'textarea'); ?>
+                        <?php
+                        if (!intersoccer_rr_current_user_can_view_medical()) {
+                            $restricted = intersoccer_rr_medical_restricted_label();
+                            foreach (
+                                [
+                                    'medical_conditions' => __('Medical Conditions', 'intersoccer-reports-rosters'),
+                                    'player_medical'     => __('Player Medical Info', 'intersoccer-reports-rosters'),
+                                    'player_dietary'     => __('Dietary Needs', 'intersoccer-reports-rosters'),
+                                ] as $field_key => $field_label
+                            ) {
+                                echo '<tr><th>' . esc_html($field_label) . '</th><td>' . esc_html($restricted) . '</td></tr>';
+                            }
+                        } else {
+                            intersoccer_render_form_field($roster, 'medical_conditions', 'Medical Conditions', 'textarea');
+                            intersoccer_render_form_field($roster, 'player_medical', 'Player Medical Info', 'textarea');
+                            intersoccer_render_form_field($roster, 'player_dietary', 'Dietary Needs', 'textarea');
+                        }
+                        ?>
                     </table>
                 </div>
 
@@ -1189,7 +1210,9 @@ function intersoccer_render_roster_edit_form() {
  * Helper function to render a form field
  */
 function intersoccer_render_form_field($roster, $field_name, $label, $type = 'text', $atts = []) {
-    $value = isset($roster[$field_name]) ? esc_attr($roster[$field_name]) : '';
+    $raw_value = isset($roster[$field_name]) && $roster[$field_name] !== null
+        ? (string) $roster[$field_name]
+        : '';
     $input_attrs = '';
     
     foreach ($atts as $key => $val) {
@@ -1201,17 +1224,17 @@ function intersoccer_render_form_field($roster, $field_name, $label, $type = 'te
     echo '<td>';
     
     if ($type === 'textarea') {
-        echo '<textarea name="' . esc_attr($field_name) . '" id="' . esc_attr($field_name) . '" class="regular-text" rows="3"' . $input_attrs . '>' . esc_textarea($value) . '</textarea>';
+        echo '<textarea name="' . esc_attr($field_name) . '" id="' . esc_attr($field_name) . '" class="regular-text" rows="3"' . $input_attrs . '>' . esc_textarea($raw_value) . '</textarea>';
     } elseif ($type === 'datetime-local') {
-        // Convert MySQL datetime to datetime-local format
-        if ($value && strpos($value, ' ') !== false) {
-            $value = str_replace(' ', 'T', $value);
+        $display_value = $raw_value;
+        if ($display_value !== '' && strpos($display_value, ' ') !== false) {
+            $display_value = str_replace(' ', 'T', $display_value);
         }
-        echo '<input type="datetime-local" name="' . esc_attr($field_name) . '" id="' . esc_attr($field_name) . '" value="' . $value . '" class="regular-text"' . $input_attrs . ' />';
+        echo '<input type="datetime-local" name="' . esc_attr($field_name) . '" id="' . esc_attr($field_name) . '" value="' . esc_attr($display_value) . '" class="regular-text"' . $input_attrs . ' />';
     } else {
         $input_type = ($type === 'date') ? 'text' : $type;
         $date_class = ($type === 'date') ? ' datepicker' : '';
-        echo '<input type="' . esc_attr($input_type) . '" name="' . esc_attr($field_name) . '" id="' . esc_attr($field_name) . '" value="' . $value . '" class="regular-text' . $date_class . '"' . $input_attrs . ' />';
+        echo '<input type="' . esc_attr($input_type) . '" name="' . esc_attr($field_name) . '" id="' . esc_attr($field_name) . '" value="' . esc_attr($raw_value) . '" class="regular-text' . $date_class . '"' . $input_attrs . ' />';
     }
     
     echo '</td>';

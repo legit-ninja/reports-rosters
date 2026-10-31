@@ -123,7 +123,10 @@ abstract class AbstractReport implements ReportInterface {
         }
         
         if (!empty($filters['date_to'])) {
-            $where_conditions[] = "{$prefix}end_date <= %s";
+            $end_col = function_exists('intersoccer_roster_sql_treat_null_date_as_epoch')
+                ? intersoccer_roster_sql_treat_null_date_as_epoch($prefix . 'end_date')
+                : "COALESCE(NULLIF(NULLIF({$prefix}end_date, ''), '1970-01-01'), '1970-01-01')";
+            $where_conditions[] = "{$end_col} <= %s";
             $params[] = $filters['date_to'];
         }
         

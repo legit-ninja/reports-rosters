@@ -57,7 +57,7 @@ class DatabaseException extends \Exception {
     public function __construct(
         $message = "Database operation failed",
         $code = 0,
-        \Throwable $previous = null,
+        ?\Throwable $previous = null,
         $sql_error = '',
         $sql_state = '',
         $failed_query = null

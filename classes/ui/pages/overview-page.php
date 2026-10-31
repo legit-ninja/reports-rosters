@@ -616,13 +616,28 @@ class OverviewPage extends AbstractPage {
         // Weekly trends (last 12 weeks)
         $twelve_weeks_ago = date('Y-m-d', strtotime('-12 weeks'));
         $trends_data = $wpdb->get_results($wpdb->prepare(
-            "SELECT DATE_FORMAT(start_date, '%%Y-%%u') as week, COUNT(*) as count 
-             FROM {$table_name} 
-             WHERE start_date >= %s 
-             GROUP BY week 
+            "SELECT
+                CASE
+                    WHEN start_date IS NULL OR start_date IN ('', '1970-01-01', '0000-00-00') THEN NULL
+                    ELSE DATE_FORMAT(start_date, '%%Y-%%u')
+                END as week,
+                COUNT(*) as count
+             FROM {$table_name}
+             WHERE start_date IS NULL
+                OR start_date IN ('', '1970-01-01', '0000-00-00')
+                OR start_date >= %s
+             GROUP BY week
              ORDER BY week ASC",
             $twelve_weeks_ago
         ), ARRAY_A);
+
+        $no_date_label = __('No date', 'intersoccer-reports-rosters');
+        foreach ($trends_data as &$trend_row) {
+            if ($trend_row['week'] === null || $trend_row['week'] === '') {
+                $trend_row['week'] = $no_date_label;
+            }
+        }
+        unset($trend_row);
         
         return [
             'venue_data' => $venue_data ?: [],

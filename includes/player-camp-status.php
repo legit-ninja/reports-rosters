@@ -7,11 +7,93 @@
 
 defined('ABSPATH') or die('Restricted access');
 
+$__rr_loader = dirname( __FILE__ ) . '/roster-report-loader.php';
+if ( file_exists( $__rr_loader ) ) {
+	require_once $__rr_loader;
+}
+
 if ( ! function_exists( 'intersoccer_roster_field_player_first_name' ) ) {
 	$__cf = dirname( __FILE__ ) . '/roster-canonical-fields.php';
 	if ( file_exists( $__cf ) ) {
 		require_once $__cf;
 	}
+}
+
+if ( ! function_exists( 'intersoccer_rr_current_user_can_view_dob' ) ) {
+	$__ma = dirname( __FILE__ ) . '/medical-access.php';
+	if ( file_exists( $__ma ) ) {
+		require_once $__ma;
+	}
+}
+
+/**
+ * @return array<int,bool>
+ */
+function &intersoccer_player_camp_status_dob_gate_user_cache() {
+	static $cache = [];
+
+	return $cache;
+}
+
+/**
+ * Whether the current user may see DOB on this report (cached per user ID).
+ */
+function intersoccer_player_camp_status_user_can_view_dob() {
+	$cache = &intersoccer_player_camp_status_dob_gate_user_cache();
+	$uid   = (int) get_current_user_id();
+	if ( array_key_exists( $uid, $cache ) ) {
+		return $cache[ $uid ];
+	}
+	if ( ! function_exists( 'intersoccer_rr_current_user_can_view_dob' ) ) {
+		$cache[ $uid ] = false;
+
+		return $cache[ $uid ];
+	}
+	$cache[ $uid ] = intersoccer_rr_current_user_can_view_dob() === true;
+
+	return $cache[ $uid ];
+}
+
+/** @internal tests */
+function intersoccer_player_camp_status_reset_dob_gate_cache() {
+	$cache = &intersoccer_player_camp_status_dob_gate_user_cache();
+	$cache = [];
+}
+
+/**
+ * DOB cell value for the admin HTML table.
+ *
+ * @param string $dob Raw DOB from player meta.
+ */
+function intersoccer_player_camp_status_format_dob_for_display( $dob ) {
+	if ( ! intersoccer_player_camp_status_user_can_view_dob() ) {
+		return function_exists( 'intersoccer_rr_medical_restricted_label' )
+			? intersoccer_rr_medical_restricted_label()
+			: 'Restricted';
+	}
+
+	return (string) $dob;
+}
+
+/**
+ * Excel column headers for player camp status export.
+ *
+ * @return string[]
+ */
+function intersoccer_player_camp_status_export_headers() {
+	$headers = [
+		'Player Name',
+		'Parent Email',
+		'User ID',
+	];
+	if ( intersoccer_player_camp_status_user_can_view_dob() ) {
+		$headers[] = 'DOB';
+	}
+	$headers[] = 'Age';
+	$headers[] = 'Booked';
+	$headers[] = 'Camp Bookings';
+
+	return $headers;
 }
 
 
@@ -173,7 +255,9 @@ function intersoccer_player_camp_status_booking_summary(array $row) {
 	}
 	$season = trim((string) ($row['season'] ?? ''));
 	$start = trim((string) ($row['start_date'] ?? ''));
-	if ($start === '1970-01-01') {
+	if (function_exists('intersoccer_roster_has_real_date') && !intersoccer_roster_has_real_date($start)) {
+		$start = '';
+	} elseif ($start === '1970-01-01') {
 		$start = '';
 	}
 
@@ -207,6 +291,10 @@ function intersoccer_player_camp_status_build_roster_index(array $rows) {
 
 	foreach ($rows as $row) {
 		if (!is_array($row)) {
+			continue;
+		}
+		if (function_exists('intersoccer_roster_report_status_counts_as_booked')
+			&& !intersoccer_roster_report_status_counts_as_booked($row['order_status'] ?? '')) {
 			continue;
 		}
 		$summary = intersoccer_player_camp_status_booking_summary($row);
@@ -373,6 +461,10 @@ function intersoccer_player_camp_status_load_players() {
 		)
 	);
 
+	if (!empty($user_ids) && function_exists('cache_users')) {
+		cache_users(array_map('intval', $user_ids));
+	}
+
 	$players = [];
 	foreach ((array) $user_ids as $user_id) {
 		$user_id = (int) $user_id;
@@ -465,6 +557,9 @@ function intersoccer_player_camp_status_load_camp_roster_rows($year, $season_typ
 		'start_date',
 		'activity_type',
 	];
+	if (in_array('order_status', (array) $columns, true)) {
+		$select[] = 'order_status';
+	}
 	if ($has_customer) {
 		$select[] = 'customer_id';
 	}
@@ -510,13 +605,13 @@ function intersoccer_player_camp_status_load_camp_roster_rows($year, $season_typ
 		$rows = [];
 	}
 
+	if (function_exists('intersoccer_roster_report_rows_apply_live_order_status')) {
+		$rows = intersoccer_roster_report_rows_apply_live_order_status($rows);
+	}
+
 	foreach ($rows as &$row) {
-		$cid = (int) ($row['customer_id'] ?? 0);
-		if ($cid <= 0 && !empty($row['order_id']) && function_exists('wc_get_order')) {
-			$order = wc_get_order((int) $row['order_id']);
-			if ($order) {
-				$row['customer_id'] = (int) $order->get_user_id();
-			}
+		if (function_exists('intersoccer_roster_report_resolve_row_customer_id')) {
+			$row['customer_id'] = intersoccer_roster_report_resolve_row_customer_id($row);
 		}
 		if (!isset($row['player_index'])) {
 			$row['player_index'] = 0;
@@ -603,19 +698,23 @@ function intersoccer_player_camp_status_request_filters() {
  * Flat export row for Excel.
  *
  * @param array<string,mixed> $row
- * @return array{0:string,1:string,2:int|string,3:string,4:string|int|null,5:string,6:string}
+ * @return list<string|int>
  */
 function intersoccer_player_camp_status_export_row(array $row) {
 	$name = trim(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? ''));
-	return [
+	$out = [
 		$name,
 		(string) ($row['user_email'] ?? ''),
 		(int) ($row['user_id'] ?? 0),
-		(string) ($row['dob'] ?? ''),
-		$row['age'] ?? '',
-		!empty($row['booked']) ? 'Yes' : 'No',
-		(string) ($row['bookings_display'] ?? ''),
 	];
+	if ( intersoccer_player_camp_status_user_can_view_dob() ) {
+		$out[] = (string) ( $row['dob'] ?? '' );
+	}
+	$out[] = $row['age'] ?? '';
+	$out[] = ! empty( $row['booked'] ) ? 'Yes' : 'No';
+	$out[] = (string) ( $row['bookings_display'] ?? '' );
+
+	return $out;
 }
 
 /**
@@ -643,17 +742,10 @@ function intersoccer_player_camp_status_stream_excel(array $rows, $year) {
 	$sheet = $spreadsheet->getActiveSheet();
 	$sheet->setTitle('Player Camp Status');
 
-	$headers = [
-		'Player Name',
-		'Parent Email',
-		'User ID',
-		'DOB',
-		'Age',
-		'Booked',
-		'Camp Bookings',
-	];
+	$headers = intersoccer_player_camp_status_export_headers();
 	$sheet->fromArray($headers, null, 'A1');
-	$sheet->getStyle('A1:G1')->getFont()->setBold(true);
+	$last_col = chr( ord( 'A' ) + count( $headers ) - 1 );
+	$sheet->getStyle( 'A1:' . $last_col . '1' )->getFont()->setBold( true );
 
 	$row_index = 2;
 	foreach ($rows as $row) {
@@ -661,7 +753,7 @@ function intersoccer_player_camp_status_stream_excel(array $rows, $year) {
 		$row_index++;
 	}
 
-	foreach (range('A', 'G') as $col) {
+	foreach ( range( 'A', $last_col ) as $col ) {
 		$sheet->getColumnDimension($col)->setAutoSize(true);
 	}
 
@@ -846,7 +938,7 @@ function intersoccer_render_player_camp_status_page() {
 								<br />
 								<a href="<?php echo esc_url($user_edit); ?>">#<?php echo esc_html((string) (int) $row['user_id']); ?></a>
 							</td>
-							<td><?php echo esc_html((string) ($row['dob'] ?? '')); ?></td>
+							<td><?php echo esc_html( intersoccer_player_camp_status_format_dob_for_display( (string) ( $row['dob'] ?? '' ) ) ); ?></td>
 							<td><?php echo esc_html($row['age'] !== null && $row['age'] !== '' ? (string) $row['age'] : '—'); ?></td>
 							<td>
 								<?php if (!empty($row['booked'])) : ?>

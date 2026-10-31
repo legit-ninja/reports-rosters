@@ -759,9 +759,32 @@ function intersoccer_office365_build_booking_report_xlsx($report_data, $start_da
             $discount_effectiveness = is_finite($discount_effectiveness) ? $discount_effectiveness : 0;
         }
         
+        if (!function_exists('intersoccer_reports_booking_xlsx_summary_count_rows')) {
+            require_once plugin_dir_path(__FILE__) . 'reporting-discounts.php';
+        }
+        $booking_count_rows = function_exists('intersoccer_reports_booking_xlsx_summary_count_rows')
+            ? intersoccer_reports_booking_xlsx_summary_count_rows($report_data['totals'])
+            : [
+                ['Total Bookings:', (int) ($report_data['totals']['bookings'] ?? 0), 'Listed rows'],
+                ['Total places:', (int) ($report_data['totals']['places'] ?? 0), 'Sum of line quantities'],
+            ];
+
         $summary_data = [
             ['Metric', 'Value', 'Notes'],
-            ['Total Bookings:', (int)$report_data['totals']['bookings'], 'Individual line items processed'],
+            $booking_count_rows[0],
+            $booking_count_rows[1],
+            [
+                function_exists('intersoccer_reports_zero_total_buyclub_bookings_footer_label')
+                    ? intersoccer_reports_zero_total_buyclub_bookings_footer_label(
+                        (int) ($report_data['totals']['zero_total_buyclub_bookings'] ?? 0)
+                    )
+                    : sprintf(
+                        'of which zero-total BuyClub bookings: %d',
+                        (int) ($report_data['totals']['zero_total_buyclub_bookings'] ?? 0)
+                    ),
+                '',
+                '',
+            ],
             ['Gross Revenue:', (float)$report_data['totals']['base_price'], 'Before any discounts applied'],
             ['Total Discounts:', (float)$report_data['totals']['discount_amount'], 'All discount types combined'],
             ['- Sibling Discounts:', (float)$discount_type_totals['sibling'], 'Multi-child camp/course discounts'],
@@ -824,7 +847,10 @@ function intersoccer_office365_build_booking_report_xlsx($report_data, $start_da
             
             // Format currency values
             try {
-                if (is_numeric($summary_row[1]) && $summary_row[1] > 0 && !strpos($summary_row[0], 'Rate') && !strpos($summary_row[0], 'Bookings') && !strpos($summary_row[0], 'Average') && !strpos($summary_row[0], 'Effectiveness')) {
+                $use_chf = function_exists('intersoccer_reports_booking_xlsx_summary_uses_chf_currency_format')
+                    ? intersoccer_reports_booking_xlsx_summary_uses_chf_currency_format((string) $summary_row[0], $summary_row[1])
+                    : (is_numeric($summary_row[1]) && $summary_row[1] > 0 && !strpos($summary_row[0], 'Rate') && !strpos($summary_row[0], 'Bookings') && !strpos($summary_row[0], 'Average') && !strpos($summary_row[0], 'Effectiveness') && stripos($summary_row[0], 'places') === false);
+                if ($use_chf) {
                     $sheet->getStyle('B' . $current_row)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
                 }
                 // Format percentage values
@@ -917,6 +943,16 @@ function intersoccer_office365_build_booking_report_xlsx($report_data, $start_da
                 $sheet->getStyle('B' . $current_row . ':D' . $current_row)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
                 $sheet->getStyle('E' . $current_row)->getNumberFormat()->setFormatCode('0.0%');
                 
+                $current_row++;
+                $zero_buyclub_label = function_exists('intersoccer_reports_zero_total_buyclub_bookings_footer_label')
+                    ? intersoccer_reports_zero_total_buyclub_bookings_footer_label(
+                        (int) ($report_data['totals']['zero_total_buyclub_bookings'] ?? 0)
+                    )
+                    : sprintf(
+                        'of which zero-total BuyClub bookings: %d',
+                        (int) ($report_data['totals']['zero_total_buyclub_bookings'] ?? 0)
+                    );
+                $sheet->setCellValueExplicit('A' . $current_row, $zero_buyclub_label, DataType::TYPE_STRING);
                 $current_row++;
             } catch (\Exception $e) {
                 error_log('InterSoccer ENHANCED: Error adding revenue by type section: ' . $e->getMessage());

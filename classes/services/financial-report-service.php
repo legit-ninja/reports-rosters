@@ -39,6 +39,11 @@ class FinancialReportService {
     private $productTypeClassifier;
 
     /**
+     * @var array<int,array{items:array<int,array{discount_total:float,breakdown:array<int,array<string,mixed>>,refund:float}>}|null>
+     */
+    private $inMemoryAttributionCache = [];
+
+    /**
      * Constructor.
      */
     public function __construct(Logger $logger = null, Database $database = null, ProductTypeClassifierService $productTypeClassifier = null) {
@@ -111,11 +116,11 @@ class FinancialReportService {
 
         $order_rows = $this->wpdb->get_results($query);
 
-        $this->ensureOrdersAttributed((array) $order_rows);
-
         $data = [];
         $totals = [
             'bookings' => 0,
+            'places' => 0,
+            'zero_total_buyclub_bookings' => 0,
             'base_price' => 0.0,
             'discount_amount' => 0.0,
             'final_price' => 0.0,
@@ -134,6 +139,12 @@ class FinancialReportService {
             ];
         }
 
+        $canonical_product_names = function_exists('intersoccer_reports_index_canonical_booking_product_names')
+            ? intersoccer_reports_index_canonical_booking_product_names((array) $order_rows)
+            : [];
+
+        $zero_total_buyclub_bookings = 0;
+
         foreach ((array) $order_rows as $row) {
             $order_id = (int) $row->order_id;
 
@@ -141,10 +152,14 @@ class FinancialReportService {
                 continue;
             }
 
-            $billing_company = get_post_meta($order_id, '_billing_company', true);
-            if (!empty($billing_company) && stripos($billing_company, 'buyclub') !== false) {
+            $line_subtotal_pre = (float) $row->line_subtotal;
+            $line_total_pre = (float) $row->line_total;
+            if (function_exists('intersoccer_reports_order_billing_company_is_buyclub')
+                && intersoccer_reports_order_billing_company_is_buyclub($order_id)) {
                 continue;
             }
+            $line_is_buyclub = function_exists('intersoccer_reports_line_is_buyclub')
+                && intersoccer_reports_line_is_buyclub($line_subtotal_pre, $line_total_pre, $order_id);
 
             $item_meta = $this->wpdb->get_results($this->wpdb->prepare(
                 "SELECT meta_key, meta_value FROM {$this->wpdb->prefix}woocommerce_order_itemmeta WHERE order_item_id = %d",
@@ -185,13 +200,21 @@ class FinancialReportService {
 
             $base_price = (float) $row->line_subtotal;
             $line_total = (float) $row->line_total;
-            $discount_data = $this->resolveItemDiscountData($meta_map, $base_price, $line_total, $order_id, (int) $row->order_item_id);
+            $item_id = (int) $row->order_item_id;
+            $has_persisted_discount = isset($meta_map[OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL])
+                && $meta_map[OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL] !== '';
+            $computed = $has_persisted_discount ? null : $this->getInMemoryItemAttribution($order_id, $item_id);
+            $discount_data = $this->resolveItemDiscountData($meta_map, $base_price, $line_total, $order_id, $item_id, $computed);
             $discount_amount = $discount_data['amount'];
             $item_discount_breakdown = $discount_data['breakdown'];
 
             $reimbursement = 0.0;
-            if (isset($meta_map[OrderFinancialAttributionService::META_ITEM_REFUND]) && $meta_map[OrderFinancialAttributionService::META_ITEM_REFUND] !== '') {
+            $has_persisted_refund = isset($meta_map[OrderFinancialAttributionService::META_ITEM_REFUND])
+                && $meta_map[OrderFinancialAttributionService::META_ITEM_REFUND] !== '';
+            if ($has_persisted_refund) {
                 $reimbursement = (float) $meta_map[OrderFinancialAttributionService::META_ITEM_REFUND];
+            } elseif ($computed !== null && ($computed['refund'] ?? 0) > 0.01) {
+                $reimbursement = (float) $computed['refund'];
             }
 
             // Final = Gross - attributed line discounts (NO refund)
@@ -205,6 +228,10 @@ class FinancialReportService {
             $revenueByType[$productType]['net'] += $net_price;
             $revenueByType[$productType]['count']++;
 
+            if ($line_is_buyclub && $final_price <= 0.0) {
+                $zero_total_buyclub_bookings++;
+            }
+
             $coupons = $this->wpdb->get_col($this->wpdb->prepare(
                 "SELECT order_item_name FROM {$this->wpdb->prefix}woocommerce_order_items
                  WHERE order_id = %d AND order_item_type = 'coupon'",
@@ -216,7 +243,10 @@ class FinancialReportService {
 
             $stripe_fee = $final_price > 0 ? ($final_price * 0.029) + 0.30 : 0.0;
 
+            $line_qty = (int) ($row->quantity ?? 0);
+
             $data[] = [
+                'line_quantity' => $line_qty,
                 'ref' => $order_id . '-' . $row->order_item_id,
                 'booked' => date('Y-m-d', strtotime($row->order_date)),
                 'base_price' => number_format($base_price, 2),
@@ -228,7 +258,11 @@ class FinancialReportService {
                 'stripe_fee' => number_format($stripe_fee, 2),
                 'final_price' => number_format($final_price, 2),
                 'discount_codes' => implode(', ', $coupons),
-                'class_name' => $row->order_item_name,
+                'class_name' => $canonical_product_names[(int) $row->product_id] ?? (
+                    function_exists('intersoccer_get_english_product_name')
+                        ? intersoccer_get_english_product_name((string) $row->order_item_name, (int) $row->product_id)
+                        : (string) $row->order_item_name
+                ),
                 'venue' => $venue ?: 'N/A',
                 'booker_email' => get_post_meta($order_id, '_billing_email', true) ?: 'N/A',
                 'booker_phone' => get_post_meta($order_id, '_billing_phone', true) ?: 'N/A',
@@ -249,6 +283,13 @@ class FinancialReportService {
         }
 
         $totals['bookings'] = count($data);
+        $totals['places'] = 0;
+        foreach ($data as $report_row) {
+            $totals['places'] += function_exists('intersoccer_reports_booking_report_row_place_count')
+                ? intersoccer_reports_booking_report_row_place_count($report_row)
+                : max(1, (int) ($report_row['line_quantity'] ?? 1));
+        }
+        $totals['zero_total_buyclub_bookings'] = $zero_total_buyclub_bookings;
 
         // Round revenue by type values and calculate percentages
         $totalNet = $totals['final_price'] - $totals['reimbursement'];
@@ -271,7 +312,21 @@ class FinancialReportService {
     /**
      * @return array{amount:float,breakdown:array<int,array<string,mixed>>}
      */
-    private function resolveItemDiscountData(array $meta_map, float $base_price, float $line_total, int $order_id, int $item_id): array {
+    private function resolveItemDiscountData(
+        array $meta_map,
+        float $base_price,
+        float $line_total,
+        int $order_id,
+        int $item_id,
+        ?array $computed = null
+    ): array {
+        if ($computed !== null && !empty($computed['breakdown'])) {
+            return [
+                'amount' => (float) ($computed['discount_total'] ?? 0.0),
+                'breakdown' => is_array($computed['breakdown'] ?? null) ? $computed['breakdown'] : [],
+            ];
+        }
+
         $discount_amount = 0.0;
         $item_discount_breakdown = [];
 
@@ -304,11 +359,15 @@ class FinancialReportService {
             $discount_amount = max(0.0, $base_price - $line_total);
             if ($discount_amount > 0.01) {
                 $this->logger->debug('FinancialReportService: Using fallback discount calculation', [
-                    'order_id' => $order_id,
-                    'item_id' => $item_id,
                     'discount_amount' => $discount_amount,
                 ]);
             }
+        }
+
+        if ($item_discount_breakdown !== []) {
+            $reconciled = intersoccer_reconcile_stale_persisted_item_discount($discount_amount, $item_discount_breakdown);
+            $discount_amount = $reconciled['amount'];
+            $item_discount_breakdown = $reconciled['breakdown'];
         }
 
         return [
@@ -390,48 +449,69 @@ class FinancialReportService {
     }
 
     /**
-     * Attribute discounts/refunds for orders in the report that predate the attribution hook.
-     *
-     * @param array<int,object> $order_rows
+     * @return array{discount_total:float,breakdown:array<int,array<string,mixed>>,refund:float}|null
      */
-    private function ensureOrdersAttributed(array $order_rows): void {
+    private function getInMemoryItemAttribution(int $order_id, int $item_id): ?array {
         if (!function_exists('intersoccer_oop_get_order_financial_attribution_service') || !function_exists('wc_get_order')) {
-            return;
+            return null;
         }
 
-        $service = intersoccer_oop_get_order_financial_attribution_service();
-        $seen = [];
-
-        foreach ($order_rows as $row) {
-            $order_id = (int) ($row->order_id ?? 0);
-            if ($order_id <= 0 || isset($seen[$order_id])) {
-                continue;
-            }
-            $seen[$order_id] = true;
-
+        if (!array_key_exists($order_id, $this->inMemoryAttributionCache)) {
             $order = wc_get_order($order_id);
-            if (!$order) {
-                continue;
-            }
-
-            if ($order->get_meta(OrderFinancialAttributionService::META_ORDER_ATTRIBUTION_AT, true)) {
-                continue;
-            }
-
-            $had_refunds = (float) $order->get_total_refunded() > 0.01;
-            try {
-                if ($had_refunds) {
-                    $service->reattributeFullOrder($order);
-                } else {
-                    $service->attributeOrderDiscounts($order);
+            if (!$order || $order->get_meta(OrderFinancialAttributionService::META_ORDER_ATTRIBUTION_AT, true)) {
+                $this->inMemoryAttributionCache[$order_id] = null;
+            } else {
+                try {
+                    $service = intersoccer_oop_get_order_financial_attribution_service();
+                    $discounts = $service->computeItemDiscountsForOrder($order);
+                    $refunds = $service->computeItemRefundsForOrder($order);
+                    $items = [];
+                    foreach ($discounts as $disc_item_id => $payload) {
+                        $items[(int) $disc_item_id] = [
+                            'discount_total' => (float) $payload['discount_total'],
+                            'breakdown' => $payload['breakdown'],
+                            'refund' => (float) ($refunds[(int) $disc_item_id] ?? 0.0),
+                        ];
+                    }
+                    foreach ($refunds as $refund_item_id => $amount) {
+                        $refund_item_id = (int) $refund_item_id;
+                        if (!isset($items[$refund_item_id])) {
+                            $items[$refund_item_id] = [
+                                'discount_total' => 0.0,
+                                'breakdown' => [],
+                                'refund' => (float) $amount,
+                            ];
+                        }
+                    }
+                    $this->inMemoryAttributionCache[$order_id] = ['items' => $items];
+                } catch (\Throwable $e) {
+                    $this->logger->error('FinancialReportService: In-memory attribution failed', [
+                        'order_id' => $order_id,
+                        'message' => $e->getMessage(),
+                    ]);
+                    $this->inMemoryAttributionCache[$order_id] = null;
                 }
-            } catch (\Throwable $e) {
-                $this->logger->error('FinancialReportService: Lazy attribution failed', [
-                    'order_id' => $order_id,
-                    'message' => $e->getMessage(),
-                ]);
-                continue;
             }
         }
+
+        $cache = $this->inMemoryAttributionCache[$order_id];
+        if ($cache === null) {
+            return null;
+        }
+
+        $item = $cache['items'][$item_id] ?? null;
+        if ($item === null) {
+            return null;
+        }
+
+        if (empty($item['breakdown'])) {
+            if (($item['refund'] ?? 0) > 0.01) {
+                return $item;
+            }
+
+            return null;
+        }
+
+        return $item;
     }
 }

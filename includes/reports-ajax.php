@@ -79,10 +79,31 @@ function intersoccer_filter_report_callback() {
     $year = isset($_POST['year']) ? sanitize_text_field($_POST['year']) : date('Y');
     $region = isset($_POST['region']) ? sanitize_text_field($_POST['region']) : '';
 
-    $visible_columns = isset($_POST['columns']) ? array_map('sanitize_text_field', (array)$_POST['columns']) : [
-        'ref', 'booked', 'base_price', 'discount_amount', 'discounts_applied', 'stripe_fee', 'final_price',
-        'class_name', 'venue', 'booker_email', 'booker_phone'
+    $allowed_financial_columns = [
+        'ref',
+        'booked',
+        'base_price',
+        'discount_amount',
+        'discounts_applied',
+        'stripe_fee',
+        'final_price',
+        'discount_codes',
+        'class_name',
+        'venue',
+        'booker_email',
+        'booker_phone',
     ];
+    $default_columns = [
+        'ref', 'booked', 'base_price', 'discount_amount', 'discounts_applied', 'stripe_fee', 'final_price',
+        'class_name', 'venue', 'booker_email', 'booker_phone',
+    ];
+    $requested_columns = isset($_POST['columns'])
+        ? array_map('sanitize_text_field', (array) $_POST['columns'])
+        : $default_columns;
+    $visible_columns = array_values(array_intersect($requested_columns, $allowed_financial_columns));
+    if ($visible_columns === []) {
+        $visible_columns = $default_columns;
+    }
 
     // Use the simplified financial reporting function
     $report_data = intersoccer_get_financial_booking_report($start_date, $end_date, $year, $region);
@@ -215,7 +236,27 @@ function intersoccer_render_enhanced_booking_totals($totals, $report_data = null
         <h3 style="margin-top: 0; color: #0073aa;">Financial Summary</h3>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
             <div class="summary-item">
-                <strong>Total Bookings:</strong> <?php echo number_format($totals['bookings']); ?>
+                <strong><?php esc_html_e('Total Bookings:', 'intersoccer-reports-rosters'); ?></strong>
+                <?php
+                $booking_rows = (int) ($totals['bookings'] ?? 0);
+                $booking_places = (int) ($totals['places'] ?? $booking_rows);
+                echo esc_html(
+                    function_exists('intersoccer_reports_booking_footer_bookings_places_display')
+                        ? intersoccer_reports_booking_footer_bookings_places_display($booking_rows, $booking_places)
+                        : number_format($booking_rows) . ' (' . number_format($booking_places) . ' places)'
+                );
+                ?>
+            </div>
+            <div class="summary-item">
+                <?php
+                echo esc_html(
+                    function_exists('intersoccer_reports_zero_total_buyclub_bookings_footer_label')
+                        ? intersoccer_reports_zero_total_buyclub_bookings_footer_label(
+                            (int) ($totals['zero_total_buyclub_bookings'] ?? 0)
+                        )
+                        : sprintf('of which zero-total BuyClub bookings: %d', (int) ($totals['zero_total_buyclub_bookings'] ?? 0))
+                );
+                ?>
             </div>
             <div class="summary-item">
                 <strong>Gross Revenue:</strong> CHF <?php echo number_format($totals['base_price'], 2); ?>
@@ -349,6 +390,23 @@ function intersoccer_render_revenue_by_type_table($revenue_by_type, $totals) {
                     <td style="text-align: right;"><?php echo number_format($net_revenue, 2); ?></td>
                     <td style="text-align: right;">100.0%</td>
                     <td style="text-align: right;"><?php echo number_format($totals['bookings'] ?? 0); ?></td>
+                </tr>
+                <tr>
+                    <td colspan="5">
+                        <?php
+                        echo esc_html(
+                            function_exists('intersoccer_reports_zero_total_buyclub_bookings_footer_label')
+                                ? intersoccer_reports_zero_total_buyclub_bookings_footer_label(
+                                    (int) ($totals['zero_total_buyclub_bookings'] ?? 0)
+                                )
+                                : sprintf(
+                                    'of which zero-total BuyClub bookings: %d',
+                                    (int) ($totals['zero_total_buyclub_bookings'] ?? 0)
+                                )
+                        );
+                        ?>
+                    </td>
+                    <td></td>
                 </tr>
             </tfoot>
         </table>
@@ -503,6 +561,12 @@ function intersoccer_build_revenue_by_type_xlsx($report_data, $start_date, $end_
           ->getStartColor()->setARGB('FFF8F9FA');
     $sheet->getStyle('B' . $current_row . ':D' . $current_row)->getNumberFormat()->setFormatCode('#,##0.00 "CHF"');
     $sheet->getStyle('E' . $current_row)->getNumberFormat()->setFormatCode('0.0%');
+
+    $current_row++;
+    $zero_buyclub_label = function_exists('intersoccer_reports_zero_total_buyclub_bookings_footer_label')
+        ? intersoccer_reports_zero_total_buyclub_bookings_footer_label((int) ($totals['zero_total_buyclub_bookings'] ?? 0))
+        : sprintf('of which zero-total BuyClub bookings: %d', (int) ($totals['zero_total_buyclub_bookings'] ?? 0));
+    $sheet->setCellValue('A' . $current_row, $zero_buyclub_label);
 
     // Auto-size columns
     foreach (range('A', 'F') as $col) {

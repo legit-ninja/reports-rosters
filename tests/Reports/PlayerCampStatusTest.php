@@ -22,6 +22,17 @@ class PlayerCampStatusTest extends TestCase {
 		}
 	}
 
+	protected function tearDown(): void {
+		if (function_exists('intersoccer_player_camp_status_reset_dob_gate_cache')) {
+			intersoccer_player_camp_status_reset_dob_gate_cache();
+		}
+		unset(
+			$GLOBALS['intersoccer_test_current_user_caps'],
+			$GLOBALS['intersoccer_test_current_user']
+		);
+		parent::tearDown();
+	}
+
 	public function test_filter_roster_rows_by_year_and_season_type() {
 		if (!function_exists('intersoccer_player_camp_status_filter_roster_rows')) {
 			$this->markTestSkipped('player-camp-status helpers not loaded');
@@ -247,6 +258,15 @@ class PlayerCampStatusTest extends TestCase {
 		if (!function_exists('intersoccer_player_camp_status_export_row')) {
 			$this->markTestSkipped('player-camp-status helpers not loaded');
 		}
+		if (function_exists('intersoccer_test_ensure_pm_filter_stub')) {
+			intersoccer_test_ensure_pm_filter_stub();
+		}
+		if (function_exists('intersoccer_test_set_user_caps')) {
+			intersoccer_test_set_user_caps(['manage_options' => true]);
+		}
+		if (function_exists('intersoccer_player_camp_status_reset_dob_gate_cache')) {
+			intersoccer_player_camp_status_reset_dob_gate_cache();
+		}
 
 		$exported = intersoccer_player_camp_status_export_row([
 			'first_name' => 'Ada',
@@ -262,6 +282,7 @@ class PlayerCampStatusTest extends TestCase {
 		$this->assertSame('Ada Lovelace', $exported[0]);
 		$this->assertSame('ada@example.com', $exported[1]);
 		$this->assertSame(10, $exported[2]);
+		$this->assertSame('2015-01-01', $exported[3]);
 		$this->assertSame('Yes', $exported[5]);
 		$this->assertStringContainsString('Camp A', $exported[6]);
 	}

@@ -135,6 +135,25 @@ class UtilsTest extends TestCase {
         ]));
     }
 
+    public function test_roster_is_girls_only_uses_flag_or_text() {
+        if (!function_exists('intersoccer_roster_is_girls_only')) {
+            $this->fail('intersoccer_roster_is_girls_only must be loaded');
+        }
+
+        $this->assertTrue(intersoccer_roster_is_girls_only(['girls_only' => 1, 'activity_type' => 'Camp']));
+        $this->assertTrue(intersoccer_roster_is_girls_only(['girls_only' => 0, 'activity_type' => 'Camp, Girls Only']));
+        $this->assertFalse(intersoccer_roster_is_girls_only(['girls_only' => 0, 'activity_type' => 'Camp']));
+    }
+
+    public function test_canonical_activity_type_strips_girls_only_composite_for_storage() {
+        if (!function_exists('intersoccer_canonical_activity_type_for_roster')) {
+            $this->fail('intersoccer_canonical_activity_type_for_roster must be loaded');
+        }
+
+        $this->assertSame('Camp', intersoccer_canonical_activity_type_for_roster('Camp, Girls Only'));
+        $this->assertSame('Camp', intersoccer_canonical_activity_type_for_roster('camp girls only'));
+    }
+
     public function test_resolve_roster_girls_only_flag_from_activity_type_variants() {
         if (!function_exists('intersoccer_resolve_roster_girls_only_flag')) {
             $this->markTestSkipped('intersoccer_resolve_roster_girls_only_flag not loaded');

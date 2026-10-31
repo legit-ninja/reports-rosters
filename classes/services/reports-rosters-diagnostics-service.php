@@ -1527,6 +1527,8 @@ class ReportsRostersDiagnosticsService {
                 'activity_type' => $activity_type,
                 'venue' => (string) ($woo_row['venue_value'] ?? ''),
                 'course_day' => (string) ($woo_row['course_day_value'] ?? ''),
+                'start_date' => null,
+                'end_date' => null,
                 'event_signature' => $event_signature,
                 'player_first_name' => $first_name,
                 'player_last_name' => $last_name,
@@ -1536,7 +1538,7 @@ class ReportsRostersDiagnosticsService {
             ],
             [
                 '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s',
-                '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',
+                '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',
             ]
         );
 
