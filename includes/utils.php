@@ -5548,15 +5548,27 @@ if (!function_exists('intersoccer_with_wpml_language')) {
             $current_lang = (string) wpml_get_current_language();
         }
 
-        if ($current_lang !== $language_code) {
+        $switched = ($current_lang !== $language_code);
+        if ($switched) {
             do_action('wpml_switch_language', $language_code);
         }
 
         try {
             return $callback();
         } finally {
-            if ($current_lang !== '' && $current_lang !== $language_code) {
-                do_action('wpml_switch_language', $current_lang);
+            if ($switched) {
+                $restore_lang = $current_lang;
+                if ($restore_lang === '') {
+                    if (function_exists('wpml_get_default_language')) {
+                        $restore_lang = (string) wpml_get_default_language();
+                    }
+                    if ($restore_lang === '') {
+                        $restore_lang = (string) apply_filters('wpml_default_language', 'en');
+                    }
+                }
+                if ($restore_lang !== '' && $restore_lang !== $language_code) {
+                    do_action('wpml_switch_language', $restore_lang);
+                }
             }
         }
     }

@@ -2,8 +2,10 @@
 /**
  * Roster move writes destination catalog data on the order in the order's WPML language;
  * roster rows remain English.
+ *
+ * @runTestsInSeparateProcesses
+ * @preserveGlobalState disabled
  */
-
 namespace InterSoccer\ReportsRosters\Tests\Legacy;
 
 use InterSoccer\ReportsRosters\Tests\TestCase;
@@ -14,6 +16,8 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
     use MovePlayersTestIsolationTrait;
 
     private static bool $rosterRowFilterRegistered = false;
+
+    private static bool $adminWpmlStubsRegistered = false;
 
     private const ORDER_ID = 97301;
     private const ITEM_ID = 97311;
@@ -28,6 +32,7 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
     protected function setUp(): void {
         parent::setUp();
         $this->resetMovePlayersTestGlobals();
+        $this->registerAdminWpmlLanguageStubs();
         unset($GLOBALS['intersoccer_test_current_user_caps']);
         $GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
 
@@ -84,10 +89,37 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             $GLOBALS['intersoccer_test_wc_order_item_data'],
             $GLOBALS['intersoccer_test_roster_row_filter_map'],
             $GLOBALS['intersoccer_test_roster_move_log'],
-            $GLOBALS['intersoccer_test_get_english_product_name_callback']
+            $GLOBALS['intersoccer_test_get_english_product_name_callback'],
+            $GLOBALS['intersoccer_test_wpml_current_language']
         );
         $this->resetMovePlayersTestGlobals();
         parent::tearDown();
+    }
+
+    private function registerAdminWpmlLanguageStubs(): void {
+        if (self::$adminWpmlStubsRegistered) {
+            return;
+        }
+
+        if (!function_exists('wpml_get_current_language')) {
+            /**
+             * @return string
+             */
+            function wpml_get_current_language() {
+                return (string) ($GLOBALS['intersoccer_test_wpml_current_language'] ?? 'en');
+            }
+        }
+
+        add_action(
+            'wpml_switch_language',
+            static function ($language_code) {
+                $GLOBALS['intersoccer_test_wpml_current_language'] = (string) $language_code;
+            },
+            0,
+            1
+        );
+
+        self::$adminWpmlStubsRegistered = true;
     }
 
     private function registerCatalogTerms(): void {
@@ -542,6 +574,90 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         $this->assertSame(self::EN_PARENT, (int) $data['product_id']);
         $this->assertSame(self::EN_TARGET, (int) $data['variation_id']);
         $this->assertSame('Destination EN line name', $data['name']);
+    }
+
+    public function test_en_order_move_does_not_add_pa_keys_absent_from_line(): void {
+        $this->registerCatalogTerms();
+        $this->stubWpml();
+        $this->installMoveWorld([
+            'order_lang' => 'en',
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Order language move QA',
+                'attribute_pa_booking-type' => 'full-week',
+                'pa_booking-type' => 'full-week',
+                'Booking Type' => 'Full Week',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertArrayHasKey('pa_booking-type', $meta);
+        $this->assertArrayNotHasKey('pa_intersoccer-venues', $meta);
+        $this->assertArrayNotHasKey('attribute_pa_intersoccer-venues', $meta);
+        $this->assertArrayNotHasKey('pa_age-group', $meta);
+        $this->assertArrayNotHasKey('pa_canton-region', $meta);
+    }
+
+    public function test_admin_fr_language_moves_fr_and_en_orders_with_en_roster(): void {
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'fr';
+        $this->registerCatalogTerms();
+        $this->stubWpml();
+        $this->installMoveWorld([
+            'order_lang' => 'fr',
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Order language move QA',
+                'attribute_pa_booking-type' => 'full-week',
+                'pa_booking-type' => 'full-week',
+                'Type de réservation' => 'Semaine complète',
+            ],
+        ]);
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_data, $intersoccer_test_roster_store;
+        $fr_data = $intersoccer_test_wc_order_item_data[self::ITEM_ID];
+        $this->assertSame(self::FR_TARGET, (int) $fr_data['variation_id']);
+        $this->assertSame('Ligne destination FR', $fr_data['name']);
+        $fr_row = $intersoccer_test_roster_store[self::ITEM_ID];
+        $this->assertSame('English Camp Title', $fr_row['product_name'] ?? '');
+        $this->assertSame('Stade de Vessy', $fr_row['venue'] ?? '');
+        $this->assertSame('5-13y (Full Day)', $fr_row['age_group'] ?? '');
+
+        $this->resetMovePlayersTestGlobals();
+        $this->registerAdminWpmlLanguageStubs();
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'fr';
+        $GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
+        global $intersoccer_test_product_type_safe_callback, $intersoccer_test_get_product_type_callback;
+        $intersoccer_test_product_type_safe_callback = static function () {
+            return 'camp';
+        };
+        $intersoccer_test_get_product_type_callback = static function () {
+            return 'camp';
+        };
+
+        $this->registerCatalogTerms();
+        $this->stubWpml();
+        $this->installMoveWorld(['order_lang' => 'en']);
+
+        $response_en = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response_en['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_data, $intersoccer_test_wc_order_item_meta;
+        $en_data = $intersoccer_test_wc_order_item_data[self::ITEM_ID];
+        $this->assertSame(self::EN_TARGET, (int) $en_data['variation_id']);
+        $this->assertSame('Destination EN line name', $en_data['name']);
+        $en_meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertArrayNotHasKey('pa_intersoccer-venues', $en_meta);
+
+        $en_row = $GLOBALS['intersoccer_test_roster_store'][self::ITEM_ID];
+        $this->assertSame(self::EN_TARGET, (int) $en_row['variation_id']);
+        $this->assertSame('English Camp Title', $en_row['product_name'] ?? '');
     }
 
     public function test_missing_twin_falls_back_to_en_catalog_and_logs(): void {

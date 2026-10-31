@@ -146,7 +146,6 @@
         </testsuite>
         <testsuite name="Complete">
             <directory>tests</directory>
-            <exclude>tests/Legacy/MovePlayersOrderLanguageMoveTest.php</exclude>
         </testsuite>
     </testsuites>
     <coverage processUncoveredFiles="true">
