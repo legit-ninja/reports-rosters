@@ -954,6 +954,50 @@ function intersoccer_roster_move_collapse_destination_rows_by_variation(array $r
 }
 
 /**
+ * Split destination summary rows so each variation_id appears in exactly one list.
+ *
+ * Uses variation-level girls-only tristate (same resolver as move AJAX gender_block).
+ *
+ * @param object[] $rows
+ * @return array{0: object[], 1: object[]}
+ */
+function intersoccer_roster_move_partition_destination_lists(array $rows, string $source_tristate): array {
+    $regular = [];
+    $cross_gender = [];
+
+    foreach ($rows as $row) {
+        $variation_id = (int) ($row->variation_id ?? 0);
+        if ($variation_id <= 0) {
+            $regular[] = $row;
+            continue;
+        }
+
+        $target_tristate = 'unknown';
+        if (function_exists('wc_get_product')) {
+            $variation = wc_get_product($variation_id);
+            if ($variation instanceof WC_Product_Variation
+                && function_exists('intersoccer_roster_move_resolve_variation_girls_only_tristate')
+            ) {
+                $target_tristate = intersoccer_roster_move_resolve_variation_girls_only_tristate($variation);
+            } else {
+                $regular[] = $row;
+                continue;
+            }
+        }
+
+        if (function_exists('intersoccer_roster_move_cross_gender_warning_needed')
+            && intersoccer_roster_move_cross_gender_warning_needed($source_tristate, $target_tristate, false)
+        ) {
+            $cross_gender[] = $row;
+        } else {
+            $regular[] = $row;
+        }
+    }
+
+    return [$regular, $cross_gender];
+}
+
+/**
  * Include sibling variations with zero roster rows so admins can move players back to an emptied roster.
  *
  * @param object[] $available_rows Rows from roster-details destination query.

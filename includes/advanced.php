@@ -1636,7 +1636,7 @@ function intersoccer_move_players_ajax() {
                     }
                 }
             }
-            if (function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
+        if (function_exists('intersoccer_migration_filter_slug_meta_for_move')) {
                 $slug_meta = intersoccer_migration_filter_slug_meta_for_move(
                     $slug_meta,
                     $existing_pa_slug_keys,
@@ -1648,6 +1648,37 @@ function intersoccer_move_players_ajax() {
                     $slug_meta,
                     $variation,
                     $existing_pa_slug_values
+                );
+            }
+
+            if (function_exists('intersoccer_migration_preserve_unchanged_human_meta_for_move')
+                && function_exists('intersoccer_migration_allowed_canonicals_for_move')
+            ) {
+                if (!function_exists('intersoccer_get_canonical_order_meta_field_map')) {
+                    require_once __DIR__ . '/order-meta-keys.php';
+                }
+                $prior_canonical_for_preserve = [];
+                if (function_exists('intersoccer_get_canonical_order_meta_field_map')) {
+                    foreach (array_keys(intersoccer_get_canonical_order_meta_field_map()) as $canonical_meta_key) {
+                        $prior_val = $item->get_meta($canonical_meta_key, true);
+                        if ($prior_val !== '' && $prior_val !== null) {
+                            $prior_canonical_for_preserve[$canonical_meta_key] = (string) $prior_val;
+                        }
+                    }
+                }
+                $allowed_for_preserve = intersoccer_migration_allowed_canonicals_for_move(
+                    $existing_line_meta_keys,
+                    $human_alias_map,
+                    $human_lookup
+                );
+                $human_meta = intersoccer_migration_preserve_unchanged_human_meta_for_move(
+                    $human_meta,
+                    $line_meta_snapshot['human'] ?? [],
+                    $prior_canonical_for_preserve,
+                    $existing_pa_slug_values,
+                    $variation,
+                    $slug_meta,
+                    $allowed_for_preserve
                 );
             }
 

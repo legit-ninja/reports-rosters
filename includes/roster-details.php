@@ -835,7 +835,18 @@ function intersoccer_render_roster_details_page() {
             $exclude_params = $page_exclude_variation_ids;
         }
 
-        $available_rosters_query = $wpdb->prepare("
+        $source_order_item_ids = [];
+        foreach ($rosters as $row) {
+            $oid = is_object($row) ? (int) ($row->order_item_id ?? 0) : 0;
+            if ($oid > 0) {
+                $source_order_item_ids[$oid] = $oid;
+            }
+        }
+        $source_girls_tristate = function_exists('intersoccer_roster_move_resolve_source_girls_only_tristate')
+            ? intersoccer_roster_move_resolve_source_girls_only_tristate(array_values($source_order_item_ids))
+            : ($base_roster_girls_only === 1 ? 'yes' : 'mixed');
+
+        $all_destinations_query = $wpdb->prepare("
         SELECT DISTINCT 
             r.product_id,
             r.variation_id,
@@ -847,24 +858,33 @@ function intersoccer_render_roster_details_page() {
             r.course_day,
             r.times,
             r.season,
-            r.girls_only,
+            MAX(r.girls_only) AS girls_only,
             COUNT(DISTINCT r.order_item_id) as current_players
         FROM $rosters_table r
         JOIN {$wpdb->posts} p ON r.order_id = p.ID
         WHERE p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
         AND r.activity_type = %s
-        AND r.girls_only = %d
         {$exclude_sql}
-        GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season, r.girls_only
+        GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season
         ORDER BY r.product_name, r.venue, r.age_group
-    ", array_merge([$base_roster->activity_type, $base_roster_girls_only], $exclude_params));
+    ", array_merge([$base_roster->activity_type], $exclude_params));
 
-        $available_rosters = $wpdb->get_results($available_rosters_query, OBJECT);
+        $all_destination_rows = $wpdb->get_results($all_destinations_query, OBJECT);
         if (function_exists('intersoccer_roster_move_collapse_destination_rows_by_variation')) {
-            $available_rosters = intersoccer_roster_move_collapse_destination_rows_by_variation(
-                is_array($available_rosters) ? $available_rosters : []
+            $all_destination_rows = intersoccer_roster_move_collapse_destination_rows_by_variation(
+                is_array($all_destination_rows) ? $all_destination_rows : []
             );
         }
+
+        $partitioned = function_exists('intersoccer_roster_move_partition_destination_lists')
+            ? intersoccer_roster_move_partition_destination_lists(
+                is_array($all_destination_rows) ? $all_destination_rows : [],
+                $source_girls_tristate
+            )
+            : [$all_destination_rows, []];
+        $available_rosters = $partitioned[0];
+        $cross_gender_rosters = $partitioned[1];
+
         if (function_exists('intersoccer_roster_move_merge_empty_sibling_variation_targets')) {
             $available_rosters = intersoccer_roster_move_merge_empty_sibling_variation_targets(
                 is_array($available_rosters) ? $available_rosters : [],
@@ -879,36 +899,6 @@ function intersoccer_render_roster_details_page() {
             );
         }
 
-        $cross_gender_rosters_query = $wpdb->prepare("
-        SELECT DISTINCT 
-            r.product_id,
-            r.variation_id,
-            r.product_name,
-            r.venue,
-            r.age_group,
-            r.activity_type,
-            r.camp_terms,
-            r.course_day,
-            r.times,
-            r.season,
-            r.girls_only,
-            COUNT(DISTINCT r.order_item_id) as current_players
-        FROM $rosters_table r
-        JOIN {$wpdb->posts} p ON r.order_id = p.ID
-        WHERE p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
-        AND r.activity_type = %s
-        AND r.girls_only != %d
-        {$exclude_sql}
-        GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season, r.girls_only
-        ORDER BY r.product_name, r.venue, r.age_group
-    ", array_merge([$base_roster->activity_type, $base_roster_girls_only], $exclude_params));
-
-        $cross_gender_rosters = $wpdb->get_results($cross_gender_rosters_query, OBJECT);
-        if (function_exists('intersoccer_roster_move_collapse_destination_rows_by_variation')) {
-            $cross_gender_rosters = intersoccer_roster_move_collapse_destination_rows_by_variation(
-                is_array($cross_gender_rosters) ? $cross_gender_rosters : []
-            );
-        }
         if (function_exists('intersoccer_roster_move_apply_destination_player_counts')) {
             $cross_gender_rosters = intersoccer_roster_move_apply_destination_player_counts(
                 is_array($cross_gender_rosters) ? $cross_gender_rosters : []

@@ -200,12 +200,35 @@ class RosterDetailsService {
             ];
         }
 
+        $source_order_item_ids = [];
+        foreach ($rosters as $row) {
+            $oid = is_object($row) ? (int) ($row->order_item_id ?? 0) : 0;
+            if ($oid > 0) {
+                $source_order_item_ids[$oid] = $oid;
+            }
+        }
+        $this->ensureRosterMoveAdminTargetLoaded();
+        $source_girls_tristate = function_exists('intersoccer_roster_move_resolve_source_girls_only_tristate')
+            ? intersoccer_roster_move_resolve_source_girls_only_tristate(array_values($source_order_item_ids))
+            : ((int) ($baseRoster->girls_only ?? 0) === 1 ? 'yes' : 'mixed');
+
+        $all_destination_summaries = $this->buildRosterSummaries($baseRoster, $rosters);
+        if (function_exists('intersoccer_roster_move_partition_destination_lists')) {
+            [$available_summaries, $cross_summaries] = intersoccer_roster_move_partition_destination_lists(
+                $all_destination_summaries,
+                $source_girls_tristate
+            );
+        } else {
+            $available_summaries = $all_destination_summaries;
+            $cross_summaries = [];
+        }
+
         $availableRosters = $this->mergeEmptySiblingVariationTargets(
-            $this->buildRosterSummaries($baseRoster, $rosters, false),
+            $available_summaries,
             $baseRoster,
             $rosters
         );
-        $crossGenderRosters = $this->buildRosterSummaries($baseRoster, $rosters, true);
+        $crossGenderRosters = $cross_summaries;
         $unknownCount = $this->countUnknownAttendees($rosters);
 
         return [
@@ -720,7 +743,7 @@ class RosterDetailsService {
         );
     }
 
-    private function buildRosterSummaries(object $baseRoster, array $rosterRows, bool $crossGender): array {
+    private function buildRosterSummaries(object $baseRoster, array $rosterRows): array {
         $activityType = $baseRoster->activity_type ?? '';
 
         if (!$activityType) {
@@ -765,33 +788,22 @@ class RosterDetailsService {
             }
 
             $isGirlsOnly = (int) $model->girls_only === 1;
-            $baseGirlsOnly = (int) $baseRoster->girls_only === 1;
 
-            if ($crossGender) {
-                if ($isGirlsOnly === $baseGirlsOnly) {
-                    continue;
-                }
-            } else {
-                if ($isGirlsOnly !== $baseGirlsOnly) {
-                    continue;
-                }
+            $key = (string) (int) $model->variation_id;
+            if ($key === '0') {
+                $keyParts = [
+                    (int) $model->product_id,
+                    (string) $model->product_name,
+                    (string) $model->venue,
+                    (string) $model->age_group,
+                    (string) $model->activity_type,
+                    (string) $model->camp_terms,
+                    (string) $model->course_day,
+                    (string) $model->times,
+                    (string) $model->season,
+                ];
+                $key = implode('|', $keyParts);
             }
-
-            $keyParts = [
-                (int) $model->product_id,
-                (int) $model->variation_id,
-                (string) $model->product_name,
-                (string) $model->venue,
-                (string) $model->age_group,
-                (string) $model->activity_type,
-                (string) $model->camp_terms,
-                (string) $model->course_day,
-                (string) $model->times,
-                (string) $model->season,
-                $isGirlsOnly ? '1' : '0',
-            ];
-
-            $key = implode('|', $keyParts);
 
             if (!isset($summaries[$key])) {
                 $summaries[$key] = (object) [

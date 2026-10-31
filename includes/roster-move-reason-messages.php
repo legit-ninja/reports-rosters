@@ -75,7 +75,7 @@ function intersoccer_roster_move_js_localize_strings(): array {
         'intersoccer-reports-rosters'
     );
     $partial_summary = _n(
-        '%1$s of %2$s players moved. These couldn\'t be moved:',
+        '%1$s of %2$s player moved. These couldn\'t be moved:',
         '%1$s of %2$s players moved. These couldn\'t be moved:',
         1,
         'intersoccer-reports-rosters'
@@ -361,9 +361,9 @@ function intersoccer_roster_move_format_success_message(int $moved_count, string
 function intersoccer_roster_move_format_partial_summary(int $moved, int $total, int $failed): string {
     $total = max(1, $total);
     $template = _n(
+        '%1$s of %2$s player moved. These couldn\'t be moved:',
         '%1$s of %2$s players moved. These couldn\'t be moved:',
-        '%1$s of %2$s players moved. These couldn\'t be moved:',
-        $moved,
+        $total,
         'intersoccer-reports-rosters'
     );
 

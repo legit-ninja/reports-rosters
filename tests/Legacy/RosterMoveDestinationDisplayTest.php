@@ -92,4 +92,51 @@ class RosterMoveDestinationDisplayTest extends TestCase {
         $this->assertNotContains(self::VAR_SOURCE_DEFAULT, $ids);
         $this->assertContains(self::VAR_B, $ids);
     }
+
+    public function test_mixed_girls_only_roster_rows_list_variation_once_as_cross_gender(): void {
+        $mixed_variation = 901777;
+        $rows = [
+            (object) ['variation_id' => $mixed_variation, 'current_players' => 2, 'girls_only' => 0],
+            (object) ['variation_id' => $mixed_variation, 'current_players' => 1, 'girls_only' => 1],
+            (object) ['variation_id' => self::VAR_B, 'current_players' => 4, 'girls_only' => 0],
+        ];
+        $collapsed = intersoccer_roster_move_collapse_destination_rows_by_variation($rows);
+        $this->assertCount(2, $collapsed);
+
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_id')->andReturn($mixed_variation);
+        $variation->shouldReceive('get_parent_id')->andReturn(self::PARENT_ID);
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_girls-only' => 'yes',
+        ]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_name')->andReturn('Girls only camp');
+
+        global $intersoccer_test_wc_get_product_callback;
+        $intersoccer_test_wc_get_product_callback = static function ($id) use ($variation, $mixed_variation) {
+            if ((int) $id === $mixed_variation) {
+                return $variation;
+            }
+
+            return null;
+        };
+
+        [$regular, $cross] = intersoccer_roster_move_partition_destination_lists($collapsed, 'mixed');
+        $regular_ids = array_map(static fn($row) => (int) $row->variation_id, $regular);
+        $cross_ids = array_map(static fn($row) => (int) $row->variation_id, $cross);
+
+        $this->assertContains(self::VAR_B, $regular_ids);
+        $this->assertNotContains($mixed_variation, $regular_ids);
+        $this->assertSame([$mixed_variation], $cross_ids);
+        $this->assertCount(1, $cross_ids);
+    }
+
+    public function test_regular_variation_stays_in_regular_list_once(): void {
+        [$regular, $cross] = intersoccer_roster_move_partition_destination_lists(
+            [(object) ['variation_id' => self::VAR_B, 'current_players' => 2, 'girls_only' => 0]],
+            'mixed'
+        );
+        $this->assertCount(1, $regular);
+        $this->assertSame([], $cross);
+    }
 }
