@@ -5549,6 +5549,26 @@ if (!function_exists('intersoccer_with_wpml_default_language')) {
     }
 }
 
+if (!function_exists('intersoccer_wpml_current_language_code')) {
+    /**
+     * Active WPML language code (filter-first, then wpml_get_current_language()).
+     */
+    function intersoccer_wpml_current_language_code(): string {
+        $filtered = apply_filters('wpml_current_language', null);
+        if (is_string($filtered) && trim($filtered) !== '') {
+            return trim($filtered);
+        }
+        if (function_exists('wpml_get_current_language')) {
+            $current = wpml_get_current_language();
+            if (is_string($current) && trim($current) !== '') {
+                return trim($current);
+            }
+        }
+
+        return 'en';
+    }
+}
+
 if (!function_exists('intersoccer_with_wpml_language')) {
     /**
      * Run a callback while WPML is switched to a specific language (read-only; restores previous language).

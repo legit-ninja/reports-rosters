@@ -749,7 +749,7 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         $this->assertSame(1, (int) ($row['girls_only'] ?? 0));
     }
 
-    // Regression: RR #175 — FR order-line course times stay HHhMM when catalog EN names would normalize to slugs.
+    // Regression: RR #175 — FR order-line course times: compact slugs become HHhMM; FR term names stay as stored.
     public function test_fr_order_line_build_localizes_course_times_for_order_language(): void {
         $GLOBALS['intersoccer_test_wpml_current_language'] = 'fr';
         $GLOBALS['intersoccer_test_terms_by_slug']['pa_course-times'] = [

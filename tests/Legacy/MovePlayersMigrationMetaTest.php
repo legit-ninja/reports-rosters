@@ -2109,7 +2109,7 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $this->assertSame('missing', $outcome['kind']);
     }
 
-    // Regression: RR #175 — source variation booking type when line meta is days-only.
+    // Regression: RR #175 — source variation booking type when line meta is days-only and roster is blank.
     public function test_booking_type_outcome_uses_source_variation_when_line_booking_meta_absent(): void {
         global $intersoccer_test_wc_order_item_meta, $wpdb;
         $item_id = 88420;
@@ -2134,6 +2134,103 @@ class MovePlayersMigrationMetaTest extends TestCase {
         $outcome = intersoccer_migration_move_order_item_booking_type_outcome($item_id);
         $this->assertSame('known', $outcome['kind']);
         $this->assertSame('full-week', $outcome['slug']);
+    }
+
+    // Regression: RR #175 — roster booking type wins over source variation when line meta is silent.
+    public function test_booking_type_outcome_prefers_roster_over_source_variation_when_line_booking_meta_absent(): void {
+        global $intersoccer_test_wc_order_item_meta, $wpdb;
+        $item_id = 88421;
+        $four_days = 'Monday, Tuesday, Wednesday, Thursday';
+        $this->stubCampOfferedDaysProducts(
+            $item_id,
+            884211,
+            884210,
+            ['pa_days-of-week' => $four_days],
+            ['attribute_pa_booking-type' => 'full-week']
+        );
+        $intersoccer_test_wc_order_item_meta[$item_id]['Activity Type'] = 'Camp';
+        $intersoccer_test_wc_order_item_meta[$item_id]['Days Selected'] = $four_days;
+
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query) {
+            return $query;
+        });
+        $wpdb->shouldReceive('get_var')->andReturn('Single Day(s)');
+
+        $outcome = intersoccer_migration_move_order_item_booking_type_outcome($item_id);
+        $this->assertSame('known', $outcome['kind']);
+        $this->assertSame('single-days', $outcome['slug']);
+    }
+
+    public function test_format_compact_time_slug_for_order_language_fr_strips_wpml_suffix(): void {
+        if (!function_exists('intersoccer_migration_format_compact_time_slug_for_order_language')) {
+            $this->markTestSkipped('intersoccer_migration_format_compact_time_slug_for_order_language not available');
+        }
+
+        $this->assertSame(
+            '11h15-12h45',
+            intersoccer_migration_format_compact_time_slug_for_order_language('1115-1245-fr', 'fr')
+        );
+        $this->assertSame(
+            '',
+            intersoccer_migration_format_compact_time_slug_for_order_language('1115-1245-fr', 'en')
+        );
+    }
+
+    public function test_apply_order_language_time_human_labels_fr_course_times_only(): void {
+        if (!function_exists('intersoccer_migration_apply_order_language_time_human_labels')) {
+            $this->markTestSkipped('intersoccer_migration_apply_order_language_time_human_labels not available');
+        }
+
+        $GLOBALS['intersoccer_test_terms_by_slug']['pa_course-times'] = [
+            '1115-1245' => (object) ['term_id' => 88511, 'slug' => '1115-1245', 'name' => '11h15-12h45'],
+            '1400-1530' => (object) ['term_id' => 88512, 'slug' => '1400-1530', 'name' => '1400-1530'],
+            '1115-1245-fr' => (object) ['term_id' => 88513, 'slug' => '1115-1245-fr', 'name' => '1115-1245-fr'],
+        ];
+        $GLOBALS['intersoccer_test_terms_by_id'] = [
+            88511 => $GLOBALS['intersoccer_test_terms_by_slug']['pa_course-times']['1115-1245'],
+            88512 => $GLOBALS['intersoccer_test_terms_by_slug']['pa_course-times']['1400-1530'],
+            88513 => $GLOBALS['intersoccer_test_terms_by_slug']['pa_course-times']['1115-1245-fr'],
+        ];
+
+        $base = ['course_times' => '9h30-11h00', 'camp_times' => '1400-1530'];
+        $slugs = ['pa_course-times' => '1115-1245'];
+        $fr_style = intersoccer_migration_apply_order_language_time_human_labels($base, $slugs, [], 'fr');
+        $this->assertSame('11h15-12h45', $fr_style['course_times']);
+        $this->assertSame('1400-1530', $fr_style['camp_times']);
+
+        $slugs = ['pa_course-times' => '1400-1530'];
+        $compact = intersoccer_migration_apply_order_language_time_human_labels($base, $slugs, [], 'fr');
+        $this->assertSame('14h00-15h30', $compact['course_times']);
+
+        $slugs = ['pa_course-times' => '1115-1245-fr'];
+        $suffix = intersoccer_migration_apply_order_language_time_human_labels($base, $slugs, [], 'fr');
+        $this->assertSame('11h15-12h45', $suffix['course_times']);
+    }
+
+    public function test_apply_order_language_time_human_labels_de_en_leave_course_and_camp_unchanged(): void {
+        if (!function_exists('intersoccer_migration_apply_order_language_time_human_labels')) {
+            $this->markTestSkipped('intersoccer_migration_apply_order_language_time_human_labels not available');
+        }
+
+        $GLOBALS['intersoccer_test_terms_by_slug']['pa_course-times'] = [
+            '1115-1245' => (object) ['term_id' => 88521, 'slug' => '1115-1245', 'name' => '1115-1245'],
+        ];
+        $GLOBALS['intersoccer_test_terms_by_id'][88521] = $GLOBALS['intersoccer_test_terms_by_slug']['pa_course-times']['1115-1245'];
+
+        $human = ['course_times' => '1115-1245', 'camp_times' => '1000-1230'];
+        $slugs = [
+            'pa_course-times' => '1115-1245',
+            'pa_camp-times' => '1000-1230',
+        ];
+        $de = intersoccer_migration_apply_order_language_time_human_labels($human, $slugs, [], 'de');
+        $this->assertSame('1115-1245', $de['course_times']);
+        $this->assertSame('1000-1230', $de['camp_times']);
+
+        $en = intersoccer_migration_apply_order_language_time_human_labels($human, $slugs, [], 'en');
+        $this->assertSame('1115-1245', $en['course_times']);
+        $this->assertSame('1000-1230', $en['camp_times']);
     }
 
     // Regression: RR #175 — FR order-line course times use localized labels, not EN slug fallback.

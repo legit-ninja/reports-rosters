@@ -3092,77 +3092,80 @@ if (!function_exists('intersoccer_migration_order_language_term_name_from_pa_slu
 
 if (!function_exists('intersoccer_migration_format_compact_time_slug_for_order_language')) {
     /**
-     * Format HHMM-HHMM catalog slugs for order-line display when no localized term name exists.
+     * Format HHMM-HHMM catalog slugs as FR order-line labels when no localized term name exists.
      */
     function intersoccer_migration_format_compact_time_slug_for_order_language(string $slug, string $order_lang): string {
-        $slug = trim($slug);
-        if (!preg_match('/^(\d{2})(\d{2})-(\d{2})(\d{2})$/', $slug, $matches)) {
+        $language = strtolower(substr(trim($order_lang), 0, 2));
+        if ($language !== 'fr') {
             return '';
         }
 
-        $start_h = (int) $matches[1];
-        $start_m = (int) $matches[2];
-        $end_h   = (int) $matches[3];
-        $end_m   = (int) $matches[4];
-        $language = strtolower(substr(trim($order_lang), 0, 2));
-        if ($language === 'fr') {
-            return sprintf('%dh%02d-%dh%02d', $start_h, $start_m, $end_h, $end_m);
+        $slug = strtolower(trim($slug));
+        if (!preg_match('/^(\d{4}-\d{4})(?:-(?:fr|de|en|\d+))?$/', $slug, $matches)) {
+            return '';
+        }
+        if (!preg_match('/^(\d{2})(\d{2})-(\d{2})(\d{2})$/', $matches[1], $parts)) {
+            return '';
         }
 
-        return sprintf('%02d:%02d-%02d:%02d', $start_h, $start_m, $end_h, $end_m);
+        $start_h = (int) $parts[1];
+        $start_m = (int) $parts[2];
+        $end_h   = (int) $parts[3];
+        $end_m   = (int) $parts[4];
+
+        return sprintf('%dh%02d-%dh%02d', $start_h, $start_m, $end_h, $end_m);
     }
 }
 
 if (!function_exists('intersoccer_migration_apply_order_language_time_human_labels')) {
     /**
-     * Order-line camp/course time labels follow the order language, not English roster normalization.
+     * FR order-line course time labels only; camp times and EN/DE labels stay catalog term names.
      *
      * @param array<string,string> $human_meta
      * @param array<string,string> $expected_slugs
      * @param array<string,string> $variation_raw_by_pa
+     * @param string|null          $order_lang When set, skips WPML detection.
      * @return array<string,string>
      */
     function intersoccer_migration_apply_order_language_time_human_labels(
         array $human_meta,
         array $expected_slugs,
-        array $variation_raw_by_pa
+        array $variation_raw_by_pa,
+        ?string $order_lang = null
     ): array {
-        $order_lang = 'en';
-        if (function_exists('wpml_get_current_language')) {
-            $current = wpml_get_current_language();
-            if (is_string($current) && trim($current) !== '') {
-                $order_lang = trim($current);
-            }
-        }
-        if ($order_lang === 'en' && function_exists('apply_filters')) {
-            $filtered = apply_filters('wpml_current_language', null);
-            if (is_string($filtered) && trim($filtered) !== '') {
-                $order_lang = trim($filtered);
-            }
+        if ($order_lang === null || trim($order_lang) === '') {
+            $order_lang = function_exists('intersoccer_wpml_current_language_code')
+                ? intersoccer_wpml_current_language_code()
+                : 'en';
+        } else {
+            $order_lang = trim($order_lang);
         }
 
-        $time_map = [
-            'pa_course-times' => 'course_times',
-            'pa_camp-times'   => 'camp_times',
-        ];
+        $language = strtolower(substr($order_lang, 0, 2));
+        if ($language !== 'fr') {
+            return $human_meta;
+        }
 
-        foreach ($time_map as $pa_taxonomy => $canonical) {
-            $slug = trim((string) ($expected_slugs[$pa_taxonomy] ?? $variation_raw_by_pa[$pa_taxonomy] ?? ''));
-            if ($slug === '') {
-                continue;
-            }
+        $pa_taxonomy = 'pa_course-times';
+        $canonical   = 'course_times';
+        $slug        = trim((string) ($expected_slugs[$pa_taxonomy] ?? $variation_raw_by_pa[$pa_taxonomy] ?? ''));
+        if ($slug === '') {
+            return $human_meta;
+        }
 
-            $display = intersoccer_migration_order_language_term_name_from_pa_slug($pa_taxonomy, $slug);
-            if ($display === '' || $display === $slug || preg_match('/^\d{4}-\d{4}$/', $display)) {
-                $formatted = intersoccer_migration_format_compact_time_slug_for_order_language($slug, $order_lang);
-                if ($formatted !== '') {
-                    $display = $formatted;
-                }
+        $display = intersoccer_migration_order_language_term_name_from_pa_slug($pa_taxonomy, $slug);
+        $needs_compact_format = $display === ''
+            || $display === $slug
+            || preg_match('/^\d{4}-\d{4}$/', $display);
+        if ($needs_compact_format) {
+            $formatted = intersoccer_migration_format_compact_time_slug_for_order_language($slug, $order_lang);
+            if ($formatted !== '') {
+                $display = $formatted;
             }
+        }
 
-            if ($display !== '') {
-                $human_meta[$canonical] = $display;
-            }
+        if ($display !== '') {
+            $human_meta[$canonical] = $display;
         }
 
         return $human_meta;
@@ -3223,17 +3226,6 @@ if (!function_exists('intersoccer_migration_move_order_item_booking_type_outcome
             $consider_raw_booking_value((string) $raw);
         }
 
-        if (function_exists('intersoccer_migration_move_en_booking_type_slug_from_order_item_source_variation')) {
-            $source_variation_slug = intersoccer_migration_move_en_booking_type_slug_from_order_item_source_variation(
-                $order_item_id
-            );
-            if ($source_variation_slug !== null && $source_variation_slug !== '') {
-                $consider_classified(
-                    intersoccer_migration_move_classify_raw_booking_type_value($source_variation_slug)
-                );
-            }
-        }
-
         global $wpdb;
         if (isset($wpdb) && is_object($wpdb) && !empty($wpdb->prefix)) {
             $table = $wpdb->prefix . 'intersoccer_rosters';
@@ -3245,6 +3237,17 @@ if (!function_exists('intersoccer_migration_move_order_item_booking_type_outcome
             );
             if ($booking_type !== null && trim((string) $booking_type) !== '') {
                 $consider_raw_booking_value((string) $booking_type);
+            }
+        }
+
+        if (function_exists('intersoccer_migration_move_en_booking_type_slug_from_order_item_source_variation')) {
+            $source_variation_slug = intersoccer_migration_move_en_booking_type_slug_from_order_item_source_variation(
+                $order_item_id
+            );
+            if ($source_variation_slug !== null && $source_variation_slug !== '') {
+                $consider_classified(
+                    intersoccer_migration_move_classify_raw_booking_type_value($source_variation_slug)
+                );
             }
         }
 
