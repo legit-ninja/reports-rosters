@@ -18,6 +18,10 @@ class InterSoccerPreFilterTestingGateTest extends TestCase {
      * @param string $scriptBasename File under tests/scripts/
      */
     private function assertNoTestingChildScriptPasses(string $scriptBasename): void {
+        if (!function_exists('proc_open')) {
+            $this->markTestSkipped('proc_open is unavailable in this PHP environment');
+        }
+
         $root = dirname(__DIR__, 2);
         $script = $root . '/tests/scripts/' . $scriptBasename;
         $this->assertFileExists($script);

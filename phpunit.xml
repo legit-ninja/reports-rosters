@@ -115,6 +115,7 @@
             <file>tests/Services/DataValidatorSingleDayUnknownTest.php</file>
             <file>tests/Unit/RosterCampBookingDisplayTest.php</file>
             <file>tests/Unit/BookingTypeNormalizerTest.php</file>
+            <file>tests/Unit/InterSoccerPreFilterTestingGateTest.php</file>
             <file>tests/Unit/MedicalAccessTest.php</file>
             <file>tests/Unit/MedicalAccessSplitPermissionsTest.php</file>
             <file>tests/Unit/MedicalAccessPmMissingTest.php</file>
