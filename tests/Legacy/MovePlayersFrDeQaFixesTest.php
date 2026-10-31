@@ -4076,6 +4076,101 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
         $this->assertBookingTypeMismatchHardBlockNoWrites(['confirm_warnings' => '1']);
     }
 
+    public function test_girls_only_camp_line_with_unknown_booking_type_attribute_is_hard_blocked(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'tageweise' => (object) ['term_id' => 9747, 'slug' => 'tageweise', 'name' => 'Tageweise'],
+                    'full-week' => (object) ['term_id' => 9748, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                9747 => (object) ['term_id' => 9747, 'slug' => 'tageweise', 'name' => 'Tageweise'],
+                9748 => (object) ['term_id' => 9748, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp, Girls Only',
+                'Assigned Attendee' => 'Girls only unknown booking',
+                'pa_booking-type' => 'tageweise',
+                'attribute_pa_booking-type' => 'tageweise',
+            ],
+            'roster_row' => [
+                'activity_type' => 'Camp, Girls Only',
+                'booking_type' => '',
+            ],
+        ]);
+        $this->seedRosterHistoryMetaForBlockTest();
+        $this->assertBookingTypeMismatchHardBlockNoWrites(['confirm_warnings' => '1']);
+    }
+
+    public function test_camp_line_with_only_canonical_activity_type_and_unknown_booking_type_is_hard_blocked(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'tageweise' => (object) ['term_id' => 9749, 'slug' => 'tageweise', 'name' => 'Tageweise'],
+                    'full-week' => (object) ['term_id' => 9750, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [
+                9749 => (object) ['term_id' => 9749, 'slug' => 'tageweise', 'name' => 'Tageweise'],
+                9750 => (object) ['term_id' => 9750, 'slug' => 'full-week', 'name' => 'Full Week'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Assigned Attendee' => 'Canonical activity camp only',
+                '_intersoccer_canonical_activity_type' => 'camp',
+                'pa_booking-type' => 'tageweise',
+                'attribute_pa_booking-type' => 'tageweise',
+            ],
+            'roster_row' => [
+                'activity_type' => '',
+                'booking_type' => '',
+            ],
+        ]);
+        $this->seedRosterHistoryMetaForBlockTest();
+        $this->assertBookingTypeMismatchHardBlockNoWrites(['confirm_warnings' => '1']);
+    }
+
+    public function test_camp_variation_without_activity_type_meta_blocks_unknown_roster_booking_type(): void {
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9751, 'slug' => 'full-week', 'name' => 'Full Week'],
+                ],
+            ],
+            [9751 => (object) ['term_id' => 9751, 'slug' => 'full-week', 'name' => 'Full Week']]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'item_meta' => [
+                'Assigned Attendee' => 'Camp variation no activity label',
+            ],
+            'roster_row' => [
+                'activity_type' => '',
+                'booking_type' => 'Unknown',
+            ],
+        ]);
+        $this->seedRosterHistoryMetaForBlockTest();
+        $this->assertBookingTypeMismatchHardBlockNoWrites(['confirm_warnings' => '1']);
+    }
+
     public function test_birthday_move_proceeds_without_booking_type_on_either_side(): void {
         global $intersoccer_test_product_type_safe_callback, $intersoccer_test_get_product_type_callback;
         $intersoccer_test_product_type_safe_callback = static function () {

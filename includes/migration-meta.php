@@ -2545,16 +2545,149 @@ if (!function_exists('intersoccer_migration_move_variation_is_camp')) {
     }
 }
 
+if (!function_exists('intersoccer_migration_move_activity_type_label_meta_keys')) {
+    /**
+     * @return array<int,string>
+     */
+    function intersoccer_migration_move_activity_type_label_meta_keys(): array {
+        $keys = ['Activity Type', 'activity_type'];
+        if (function_exists('intersoccer_get_order_meta_manual_aliases')) {
+            $aliases = intersoccer_get_order_meta_manual_aliases();
+            foreach ($aliases['Activity Type'] ?? [] as $alias) {
+                $keys[] = (string) $alias;
+            }
+        } else {
+            foreach (intersoccer_migration_human_alias_map_static_fallback('activity_type') as $alias) {
+                $keys[] = (string) $alias;
+            }
+        }
+
+        return array_values(array_unique(array_filter($keys, static function ($key) {
+            return trim((string) $key) !== '';
+        })));
+    }
+}
+
+if (!function_exists('intersoccer_migration_move_activity_label_resolves_camp')) {
+    /**
+     * @return bool|null True/false when the label resolves to a camp or non-camp program; null when inconclusive.
+     */
+    function intersoccer_migration_move_activity_label_resolves_camp(string $raw): ?bool {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return null;
+        }
+
+        $canonical = function_exists('intersoccer_canonical_activity_type_for_roster')
+            ? trim((string) intersoccer_canonical_activity_type_for_roster($raw))
+            : $raw;
+        if ($canonical === '') {
+            return null;
+        }
+        if (strcasecmp($canonical, 'Camp') === 0) {
+            return true;
+        }
+
+        static $non_camp = ['Course', 'Tournament', 'Birthday Party', 'Birthday', 'Event', 'Other', 'Girls Only'];
+        foreach ($non_camp as $type) {
+            if (strcasecmp($canonical, $type) === 0) {
+                return false;
+            }
+        }
+
+        return null;
+    }
+}
+
 if (!function_exists('intersoccer_migration_move_order_item_is_camp')) {
     function intersoccer_migration_move_order_item_is_camp(int $order_item_id): bool {
-        if ($order_item_id <= 0 || !function_exists('wc_get_order_item_meta')) {
+        if ($order_item_id <= 0) {
             return false;
         }
 
-        foreach (['Activity Type', 'activity_type'] as $meta_key) {
-            $activity = wc_get_order_item_meta($order_item_id, $meta_key, true);
-            if (is_string($activity) && strcasecmp(trim($activity), 'Camp') === 0) {
-                return true;
+        $variation_id = 0;
+        $product_id = 0;
+        if (function_exists('wc_get_order_item_meta')) {
+            $variation_id = (int) wc_get_order_item_meta($order_item_id, '_variation_id', true);
+            $product_id = (int) wc_get_order_item_meta($order_item_id, '_product_id', true);
+        }
+        if ($variation_id <= 0 && function_exists('wc_get_order_id_by_order_item_id') && function_exists('wc_get_order')) {
+            $order_id = (int) wc_get_order_id_by_order_item_id($order_item_id);
+            if ($order_id > 0) {
+                $order = wc_get_order($order_id);
+                if ($order && is_callable([$order, 'get_item'])) {
+                    $item = $order->get_item($order_item_id);
+                    if ($item && is_a($item, 'WC_Order_Item_Product')) {
+                        $variation_id = (int) $item->get_variation_id();
+                        $product_id = (int) $item->get_product_id();
+                    }
+                }
+            }
+        }
+        if ($variation_id <= 0 || $product_id <= 0) {
+            global $wpdb;
+            if (isset($wpdb) && is_object($wpdb) && !empty($wpdb->prefix)) {
+                $table = $wpdb->prefix . 'intersoccer_rosters';
+                $row = $wpdb->get_row(
+                    $wpdb->prepare(
+                        "SELECT variation_id, product_id FROM {$table} WHERE order_item_id = %d LIMIT 1",
+                        $order_item_id
+                    ),
+                    ARRAY_A
+                );
+                if (is_array($row)) {
+                    if ($variation_id <= 0) {
+                        $variation_id = (int) ($row['variation_id'] ?? 0);
+                    }
+                    if ($product_id <= 0) {
+                        $product_id = (int) ($row['product_id'] ?? 0);
+                    }
+                }
+            }
+        }
+
+        if ($variation_id > 0 && function_exists('intersoccer_get_product_type_safe')) {
+            if (function_exists('intersoccer_resolve_variation_for_roster')) {
+                $resolved_variation_id = (int) intersoccer_resolve_variation_for_roster($variation_id);
+                if ($resolved_variation_id > 0) {
+                    $variation_id = $resolved_variation_id;
+                }
+            }
+            if ($product_id <= 0 && function_exists('wc_get_product')) {
+                $variation_product = wc_get_product($variation_id);
+                if ($variation_product instanceof WC_Product_Variation) {
+                    $product_id = (int) $variation_product->get_parent_id();
+                }
+            }
+            if ($product_id > 0) {
+                $product_type = strtolower(trim((string) intersoccer_get_product_type_safe($product_id, $variation_id)));
+                if ($product_type !== '' && $product_type !== 'unknown') {
+                    return $product_type === 'camp';
+                }
+            }
+        }
+
+        if (function_exists('wc_get_order_item_meta')) {
+            $canonical_activity = wc_get_order_item_meta($order_item_id, '_intersoccer_canonical_activity_type', true);
+            if ($canonical_activity !== '' && $canonical_activity !== null) {
+                $slug = strtolower(trim((string) $canonical_activity));
+                if ($slug === 'camp') {
+                    return true;
+                }
+                if ($slug !== '') {
+                    return false;
+                }
+            }
+
+            foreach (intersoccer_migration_move_activity_type_label_meta_keys() as $meta_key) {
+                $activity = wc_get_order_item_meta($order_item_id, $meta_key, true);
+                if ($activity === '' || $activity === null) {
+                    continue;
+                }
+                $resolved = intersoccer_migration_move_activity_label_resolves_camp((string) $activity);
+                if ($resolved !== null) {
+                    return $resolved;
+                }
             }
         }
 
@@ -2567,8 +2700,11 @@ if (!function_exists('intersoccer_migration_move_order_item_is_camp')) {
                     $order_item_id
                 )
             );
-            if (is_string($activity_type) && strcasecmp(trim($activity_type), 'Camp') === 0) {
-                return true;
+            if (is_string($activity_type) && trim($activity_type) !== '') {
+                $resolved = intersoccer_migration_move_activity_label_resolves_camp($activity_type);
+                if ($resolved !== null) {
+                    return $resolved;
+                }
             }
         }
 
@@ -2602,24 +2738,6 @@ if (!function_exists('intersoccer_migration_move_en_booking_type_slug_from_varia
     }
 }
 
-if (!function_exists('intersoccer_migration_move_order_item_meta_key_exists')) {
-    function intersoccer_migration_move_order_item_meta_key_exists(int $order_item_id, string $meta_key): bool {
-        if (function_exists('metadata_exists')) {
-            return metadata_exists('order_item', $order_item_id, $meta_key);
-        }
-
-        global $intersoccer_test_wc_order_item_meta;
-        if (is_array($intersoccer_test_wc_order_item_meta)
-            && isset($intersoccer_test_wc_order_item_meta[$order_item_id])
-            && is_array($intersoccer_test_wc_order_item_meta[$order_item_id])
-        ) {
-            return array_key_exists($meta_key, $intersoccer_test_wc_order_item_meta[$order_item_id]);
-        }
-
-        return false;
-    }
-}
-
 if (!function_exists('intersoccer_migration_move_order_item_booking_type_outcome')) {
     /**
      * @return array{kind:'missing'|'known'|'unknown',slug:?string}
@@ -2649,9 +2767,6 @@ if (!function_exists('intersoccer_migration_move_order_item_booking_type_outcome
         }
 
         foreach (intersoccer_migration_move_booking_type_label_meta_keys() as $meta_key) {
-            if (!intersoccer_migration_move_order_item_meta_key_exists($order_item_id, $meta_key)) {
-                continue;
-            }
             $raw = wc_get_order_item_meta($order_item_id, $meta_key, true);
             if ($raw === '' || $raw === null) {
                 continue;
@@ -2680,9 +2795,6 @@ if (!function_exists('intersoccer_migration_move_order_item_booking_type_outcome
         }
 
         foreach (intersoccer_migration_move_days_selected_meta_keys() as $meta_key) {
-            if (!intersoccer_migration_move_order_item_meta_key_exists($order_item_id, $meta_key)) {
-                continue;
-            }
             $days = wc_get_order_item_meta($order_item_id, $meta_key, true);
             if (is_string($days) && trim($days) !== '') {
                 return ['kind' => 'known', 'slug' => 'single-days'];
