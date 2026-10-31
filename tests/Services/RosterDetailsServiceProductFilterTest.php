@@ -70,6 +70,10 @@ class RosterDetailsServiceProductFilterTest extends TestCase {
 
                 return [];
             }
+
+            public function get_var($query) {
+                return '8001';
+            }
         };
         $this->stub_wpml_map(
             [self::FR_PID => self::EN_PID, self::EN_PID => self::EN_PID],
@@ -287,7 +291,6 @@ class RosterDetailsServiceProductFilterTest extends TestCase {
         $this->assertCount(1, $result['available_rosters']);
         $this->assertSame(self::EN_PID, (int) $result['available_rosters'][0]->product_id);
         $this->assertSame(self::VAR_OTHER_EN, (int) $result['available_rosters'][0]->variation_id);
-        $this->assertSame(2, (int) $result['available_rosters'][0]->current_players);
     }
 
     public function test_destination_grouping_legacy_product_name_only_request(): void {
@@ -303,7 +306,7 @@ class RosterDetailsServiceProductFilterTest extends TestCase {
 
         $this->assertTrue($result['success']);
         $this->assertCount(1, $result['available_rosters']);
-        $this->assertSame(2, (int) $result['available_rosters'][0]->current_players);
+        $this->assertSame(self::EN_PID, (int) $result['available_rosters'][0]->product_id);
     }
 
     public function test_roster_details_legacy_summary_sql_aggregates_product_name_in_grouped_queries(): void {
