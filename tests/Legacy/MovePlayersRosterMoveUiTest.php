@@ -65,6 +65,13 @@ class MovePlayersRosterMoveUiTest extends TestCase {
         $this->assertStringContainsString("find('.roster-move-apply-label').text", $details);
     }
 
+    public function test_run_move_ajax_before_send_has_no_phase_timer(): void {
+        $handler = $this->extractRosterMoveClickHandler();
+        $this->assertStringNotContainsString('isrrRosterMovePhaseTimer', $handler);
+        $this->assertStringNotContainsString('setTimeout', $handler);
+        $this->assertStringContainsString('confirmFlag || retryFailedOnly', $handler);
+    }
+
     private function extractRosterMoveClickHandler(): string {
         $path = dirname(__DIR__, 2) . '/includes/roster-details.php';
         $source = file_get_contents($path);

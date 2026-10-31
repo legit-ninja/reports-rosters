@@ -1994,19 +1994,9 @@ function intersoccer_render_roster_details_page() {
                         confirm_warnings: confirmFlag ? '1' : '0'
                     },
                     beforeSend: function() {
-                        if (window.isrrRosterMovePhaseTimer) {
-                            window.clearTimeout(window.isrrRosterMovePhaseTimer);
-                            window.isrrRosterMovePhaseTimer = null;
-                        }
-                        // First request may return needs_confirm (no move yet); short Checking label then Moving during server work.
-                        // Confirmed move or retry-failed-only is already executing the move — show Moving immediately.
+                        // First request may return needs_confirm (no move yet); confirmed move or retry uses Moving label.
                         const showMovingImmediately = confirmFlag || retryFailedOnly;
                         setRosterMoveApplyBusy(showMovingImmediately ? 'moving_players' : 'checking');
-                        if (!showMovingImmediately) {
-                            window.isrrRosterMovePhaseTimer = window.setTimeout(function() {
-                                setRosterMoveApplyBusy('moving_players');
-                            }, 350);
-                        }
                     },
                     success: function(response) {
                         console.log('InterSoccer Migration: AJAX success:', response);
@@ -2132,10 +2122,6 @@ function intersoccer_render_roster_details_page() {
                         );
                     },
                     complete: function() {
-                        if (window.isrrRosterMovePhaseTimer) {
-                            window.clearTimeout(window.isrrRosterMovePhaseTimer);
-                            window.isrrRosterMovePhaseTimer = null;
-                        }
                         resetRosterMoveApplyButton();
                     }
                 });

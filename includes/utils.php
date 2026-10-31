@@ -1099,30 +1099,12 @@ if (!function_exists('intersoccer_build_roster_booking_db_update')) {
             $update['booking_type'] = substr((string) $booking['booking_type'], 0, 50);
         }
         if (array_key_exists('selected_days', $booking)) {
-            $selected = trim((string) ($booking['selected_days'] ?? ''));
-            $update['selected_days'] = function_exists('intersoccer_roster_nullable_storage_string')
-                ? intersoccer_roster_nullable_storage_string(
-                    $selected,
-                    array_key_exists('selected_days', $record) ? $record['selected_days'] : null,
-                    array_key_exists('selected_days', $record)
-                )
-                : $selected;
+            $selected = (string) $booking['selected_days'];
+            $update['selected_days'] = $selected;
             if ($selected !== '') {
                 $update['days_selected'] = substr($selected, 0, 200);
             } else {
-                $legacy_days = (string) ($record['days_selected'] ?? $record['selected_days'] ?? '');
-                if ($legacy_days !== '') {
-                    $update['days_selected'] = substr($legacy_days, 0, 200);
-                } else {
-                    $stored_days = array_key_exists('days_selected', $record)
-                        ? $record['days_selected']
-                        : (array_key_exists('selected_days', $record) ? $record['selected_days'] : null);
-                    $days_field_present = array_key_exists('days_selected', $record)
-                        || array_key_exists('selected_days', $record);
-                    $update['days_selected'] = function_exists('intersoccer_roster_nullable_storage_string')
-                        ? intersoccer_roster_nullable_storage_string('', $stored_days, $days_field_present)
-                        : $legacy_days;
-                }
+                $update['days_selected'] = (string) ($record['days_selected'] ?? $record['selected_days'] ?? '');
             }
         }
         if (isset($booking['day_presence'])) {
@@ -4421,11 +4403,6 @@ if (!function_exists('intersoccer_renormalize_roster_row_from_variation')) {
             return false;
         }
 
-        if (!isset($GLOBALS['intersoccer_rr_roster_facet_rebuild_guard'])
-            || !is_array($GLOBALS['intersoccer_rr_roster_facet_rebuild_guard'])) {
-            $GLOBALS['intersoccer_rr_roster_facet_rebuild_guard'] = [];
-        }
-
         $variation_id = function_exists('intersoccer_resolve_variation_for_roster')
             ? intersoccer_resolve_variation_for_roster((int) $record['variation_id'])
             : (int) $record['variation_id'];
@@ -4580,15 +4557,8 @@ if (!function_exists('intersoccer_renormalize_roster_row_from_variation')) {
         }
         $update_data = array_merge($update_data, intersoccer_build_roster_booking_db_update($booking, $record));
 
-        $input_guard_key = function_exists('intersoccer_roster_facet_rebuild_input_guard_key')
-            ? intersoccer_roster_facet_rebuild_input_guard_key($roster_id, $variation_id, $update_data)
-            : '';
-
         if (function_exists('intersoccer_roster_facet_rebuild_record_matches_update')
             && intersoccer_roster_facet_rebuild_record_matches_update($record, $update_data)) {
-            if (function_exists('intersoccer_roster_facet_rebuild_mark_guard_keys')) {
-                intersoccer_roster_facet_rebuild_mark_guard_keys($roster_id, $record, $input_guard_key);
-            }
             return true;
         }
 
@@ -4598,16 +4568,6 @@ if (!function_exists('intersoccer_renormalize_roster_row_from_variation')) {
         }
 
         $updated = $wpdb->update($rosters_table, $update_data, ['id' => $roster_id], $formats, ['%d']);
-        if ($updated !== false && function_exists('intersoccer_roster_facet_rebuild_mark_guard_keys')) {
-            intersoccer_roster_facet_rebuild_mark_guard_keys($roster_id, $record, $input_guard_key);
-            $fresh = $wpdb->get_row(
-                $wpdb->prepare("SELECT * FROM {$rosters_table} WHERE id = %d LIMIT 1", $roster_id),
-                ARRAY_A
-            );
-            if (is_array($fresh)) {
-                intersoccer_roster_facet_rebuild_mark_guard_keys($roster_id, $fresh, $input_guard_key);
-            }
-        }
         return $updated !== false;
     }
 }
@@ -5847,7 +5807,7 @@ if (!function_exists('intersoccer_roster_facet_value_or_record')) {
      * @param array<string,mixed> $normalized_data
      * @param array<string,mixed> $record
      */
-    function intersoccer_roster_facet_value_or_record(array $normalized_data, array $record, string $field): ?string {
+    function intersoccer_roster_facet_value_or_record(array $normalized_data, array $record, string $field): string {
         if (array_key_exists($field, $normalized_data)) {
             $candidate = trim((string) $normalized_data[$field]);
             if ($candidate !== '') {
@@ -5855,15 +5815,7 @@ if (!function_exists('intersoccer_roster_facet_value_or_record')) {
             }
         }
 
-        if (array_key_exists($field, $record)) {
-            if ($record[$field] === null) {
-                return null;
-            }
-            $stored = trim((string) $record[$field]);
-            return $stored;
-        }
-
-        return null;
+        return trim((string) ($record[$field] ?? ''));
     }
 }
 
@@ -5893,10 +5845,7 @@ if (!function_exists('intersoccer_build_roster_facet_db_update')) {
             'event_signature' => $signature,
             'venue'           => substr((string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'venue'), 0, 200),
             'age_group'       => substr((string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'age_group'), 0, 50),
-            'camp_terms'      => intersoccer_roster_facet_db_string_column(
-                intersoccer_roster_facet_value_or_record($normalized_data, $record, 'camp_terms'),
-                100
-            ),
+            'camp_terms'      => substr((string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'camp_terms'), 0, 100),
             'course_day'      => substr((string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'course_day'), 0, 20),
             'times'           => substr((string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'times'), 0, 50),
             'season'          => substr((string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'season'), 0, 50),
@@ -6372,44 +6321,6 @@ if (!function_exists('intersoccer_normalize_activity_type')) {
     }
 }
 
-if (!function_exists('intersoccer_roster_facet_rebuild_guard_key')) {
-    /**
-     * Request-scoped dedupe key for facet/roster rebuilds (same row snapshot → skip repeat work).
-     *
-     * @param array<string,mixed> $record
-     */
-    function intersoccer_roster_facet_rebuild_guard_key(int $roster_id, array $record): string {
-        $payload = [
-            'variation_id'  => (int) ($record['variation_id'] ?? 0),
-            'event_signature' => $record['event_signature'] ?? null,
-            'venue'         => $record['venue'] ?? null,
-            'age_group'     => $record['age_group'] ?? null,
-            'camp_terms'    => array_key_exists('camp_terms', $record) ? $record['camp_terms'] : null,
-            'course_day'    => $record['course_day'] ?? null,
-            'times'         => $record['times'] ?? null,
-            'activity_type' => $record['activity_type'] ?? '',
-            'product_id'    => (int) ($record['product_id'] ?? 0),
-            'booking_type'  => $record['booking_type'] ?? null,
-            'selected_days' => array_key_exists('selected_days', $record) ? $record['selected_days'] : null,
-        ];
-
-        return $roster_id . ':' . md5((string) wp_json_encode($payload));
-    }
-}
-
-if (!function_exists('intersoccer_roster_facet_rebuild_input_guard_key')) {
-    /**
-     * Dedupe key from resolved DB update payload (same inputs → skip repeat facet rebuild).
-     *
-     * @param array<string,mixed> $update_data
-     */
-    function intersoccer_roster_facet_rebuild_input_guard_key(int $roster_id, int $variation_id, array $update_data): string {
-        ksort($update_data);
-
-        return $roster_id . ':in:' . (int) $variation_id . ':' . md5((string) wp_json_encode($update_data));
-    }
-}
-
 if (!function_exists('intersoccer_roster_facet_rebuild_record_matches_update')) {
     /**
      * @param array<string,mixed> $record
@@ -6421,9 +6332,6 @@ if (!function_exists('intersoccer_roster_facet_rebuild_record_matches_update')) 
                 return false;
             }
             $stored = $record[$column];
-            if ($value === null && ($stored === null || $stored === '')) {
-                continue;
-            }
             if ($value === null || $stored === null) {
                 if ($value !== $stored) {
                     return false;
@@ -6442,64 +6350,6 @@ if (!function_exists('intersoccer_roster_facet_rebuild_record_matches_update')) 
         }
 
         return true;
-    }
-}
-
-if (!function_exists('intersoccer_roster_facet_rebuild_mark_guard_keys')) {
-    /**
-     * @param array<string,mixed> $record
-     */
-    function intersoccer_roster_facet_rebuild_mark_guard_keys(int $roster_id, array $record, string $input_guard_key = ''): void {
-        if (!isset($GLOBALS['intersoccer_rr_roster_facet_rebuild_guard'])
-            || !is_array($GLOBALS['intersoccer_rr_roster_facet_rebuild_guard'])) {
-            $GLOBALS['intersoccer_rr_roster_facet_rebuild_guard'] = [];
-        }
-        $GLOBALS['intersoccer_rr_roster_facet_rebuild_guard'][intersoccer_roster_facet_rebuild_guard_key($roster_id, $record)] = true;
-        if ($input_guard_key !== '') {
-            $GLOBALS['intersoccer_rr_roster_facet_rebuild_guard'][$input_guard_key] = true;
-        }
-    }
-}
-
-if (!function_exists('intersoccer_roster_nullable_storage_string')) {
-    /**
-     * Preserve SQL NULL for empty values when the stored row was NULL (avoid '' churn on moves).
-     *
-     * @param mixed $new_value
-     * @param mixed $stored_value
-     * @param bool  $field_present Whether the column existed on the stored row.
-     * @return string|null
-     */
-    function intersoccer_roster_nullable_storage_string($new_value, $stored_value, $field_present = true) {
-        $new = trim((string) ($new_value ?? ''));
-        if ($new !== '') {
-            return $new;
-        }
-        if (!$field_present) {
-            return null;
-        }
-        if ($stored_value === null) {
-            return null;
-        }
-        if ($stored_value === '') {
-            return '';
-        }
-
-        return '';
-    }
-}
-
-if (!function_exists('intersoccer_roster_facet_db_string_column')) {
-    /**
-     * @param string|null $value
-     * @param int         $max_length
-     * @return string|null
-     */
-    function intersoccer_roster_facet_db_string_column($value, $max_length) {
-        if ($value === null) {
-            return null;
-        }
-        return substr((string) $value, 0, $max_length);
     }
 }
 

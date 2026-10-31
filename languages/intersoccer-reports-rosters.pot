@@ -6410,10 +6410,10 @@ msgstr ""
 msgid "Weekly Attendance Trends"
 msgstr ""
 
-#: includes/roster-move-reason-messages.php:47
+#: includes/roster-move-reason-messages.php:50
 msgid "Moving players..."
 msgstr ""
 
-#: includes/roster-move-reason-messages.php:93
+#: includes/roster-move-reason-messages.php:96
 msgid "The move is taking longer than expected. Refresh the page and check the roster before trying again."
 msgstr ""

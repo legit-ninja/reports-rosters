@@ -75,7 +75,7 @@ class RosterMoveRosterDataHelpersTest extends TestCase {
         $this->assertArrayNotHasKey('N/A', $update);
     }
 
-    public function test_empty_selected_days_db_update_writes_null_when_stored_null(): void {
+    public function test_empty_selected_days_db_update_writes_empty_string_when_stored_null(): void {
         $update = intersoccer_build_roster_booking_db_update(
             [
                 'booking_type' => 'Full Term',
@@ -83,8 +83,8 @@ class RosterMoveRosterDataHelpersTest extends TestCase {
             ],
             ['selected_days' => null, 'days_selected' => null]
         );
-        $this->assertNull($update['selected_days']);
-        $this->assertNull($update['days_selected']);
+        $this->assertSame('', $update['selected_days']);
+        $this->assertSame('', $update['days_selected']);
     }
 
     public function test_course_does_not_recompute_day_presence(): void {

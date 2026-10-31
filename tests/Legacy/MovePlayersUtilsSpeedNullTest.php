@@ -1,6 +1,6 @@
 <?php
 /**
- * Roster move utils: NULL storage, skip-unchanged meta saves, duplicate renormalize guard, term cache.
+ * Roster move utils: skip-unchanged meta saves, facet rebuild match skip, term cache.
  *
  * @package InterSoccer_Reports_Rosters
  */
@@ -49,8 +49,7 @@ class MovePlayersUtilsSpeedNullTest extends TestCase {
         unset(
             $GLOBALS['intersoccer_test_wc_order_item_save_count'],
             $GLOBALS['intersoccer_test_get_term_by_call_count'],
-            $GLOBALS['intersoccer_test_roster_store'],
-            $GLOBALS['intersoccer_rr_roster_facet_rebuild_guard']
+            $GLOBALS['intersoccer_test_roster_store']
         );
         parent::tearDown();
     }
@@ -64,13 +63,26 @@ class MovePlayersUtilsSpeedNullTest extends TestCase {
             ['days_selected' => 'Monday', 'selected_days' => null]
         );
         $this->assertSame('Monday', $update['days_selected']);
-        $this->assertNull($update['selected_days']);
+        $this->assertSame('', $update['selected_days']);
     }
 
-    public function test_nullable_storage_string_empty_with_non_empty_stored_returns_empty_string(): void {
-        $this->assertSame('', intersoccer_roster_nullable_storage_string('', 'Monday', true));
-        $this->assertNull(intersoccer_roster_nullable_storage_string('', null, true));
-        $this->assertNull(intersoccer_roster_nullable_storage_string('', null, false));
+    public function test_facet_and_booking_db_update_writes_empty_string_not_null_for_stored_null_columns(): void {
+        $facet = intersoccer_build_roster_facet_db_update(
+            ['camp_terms' => '', 'activity_type' => 'Course'],
+            ['camp_terms' => null],
+            'Course EN'
+        );
+        $this->assertSame('', $facet['camp_terms']);
+
+        $booking = intersoccer_build_roster_booking_db_update(
+            [
+                'booking_type' => 'Full Term',
+                'selected_days' => '',
+            ],
+            ['selected_days' => null, 'days_selected' => null]
+        );
+        $this->assertSame('', $booking['selected_days']);
+        $this->assertSame('', $booking['days_selected']);
     }
 
     public function test_build_roster_booking_db_update_clears_selected_days_but_keeps_days_selected_legacy(): void {
@@ -271,6 +283,16 @@ class MovePlayersUtilsSpeedNullTest extends TestCase {
         $this->assertArrayNotHasKey('attribute_pa_booking-type', $intersoccer_test_wc_order_item_meta[$item_id]);
     }
 
+    public function test_renormalize_row_from_variation_uses_single_roster_select_when_writing(): void {
+        $roster_selects = 0;
+        $this->installFacetRebuildWorld($this->facetRowForVariation(self::VAR_A), $roster_selects);
+        global $wpdb;
+        $wpdb->shouldReceive('update')->once()->andReturn(1);
+
+        $this->assertTrue(intersoccer_renormalize_roster_row_from_variation(self::ROSTER_ID));
+        $this->assertSame(1, $roster_selects);
+    }
+
     public function test_renormalize_row_from_variation_skips_second_identical_rebuild_in_request(): void {
         $this->installFacetRebuildWorld($this->facetRowForVariation(self::VAR_A));
         global $wpdb;
@@ -393,8 +415,14 @@ class MovePlayersUtilsSpeedNullTest extends TestCase {
         $this->assertStringContainsString('Refresh the page', $strings['ajax_timeout']);
 
         $handler = $this->extractRosterMoveClickHandler();
-        $this->assertStringContainsString("setRosterMoveApplyBusy('moving_players')", $handler);
+        $this->assertMatchesRegularExpression(
+            "/setRosterMoveApplyBusy\\(\\s*showMovingImmediately \\? 'moving_players' : 'checking'\\s*\\)/",
+            $handler
+        );
         $this->assertStringContainsString('showMovingImmediately', $handler);
+        $this->assertStringContainsString('confirmFlag || retryFailedOnly', $handler);
+        $this->assertStringNotContainsString('isrrRosterMovePhaseTimer', $handler);
+        $this->assertStringNotContainsString('setTimeout', $handler);
         $this->assertStringContainsString("rosterMoveL10n('ajax_timeout')", $handler);
         $this->assertStringContainsString('complete:', $handler);
 
@@ -431,14 +459,14 @@ class MovePlayersUtilsSpeedNullTest extends TestCase {
 
     /**
      * @param array<string,mixed> $row
+     * @param int|null            $roster_id_select_count When set, incremented for each roster row SELECT by id inside rebuild.
      */
-    private function installFacetRebuildWorld(array $row): void {
+    private function installFacetRebuildWorld(array $row, ?int &$roster_id_select_count = null): void {
         global $wpdb, $intersoccer_test_wc_get_product_callback;
 
         $GLOBALS['intersoccer_test_roster_store'] = [
             self::ROSTER_ID => $row,
         ];
-        $GLOBALS['intersoccer_rr_roster_facet_rebuild_guard'] = [];
 
         $make_variation = static function (int $vid) {
             $v = Mockery::mock(\WC_Product_Variation::class);
@@ -465,7 +493,13 @@ class MovePlayersUtilsSpeedNullTest extends TestCase {
         $wpdb->shouldReceive('prepare')->andReturnUsing(static function ($query) {
             return (string) $query;
         });
-        $wpdb->shouldReceive('get_row')->andReturnUsing(static function ($sql) {
+        $wpdb->shouldReceive('get_row')->andReturnUsing(static function ($sql) use (&$roster_id_select_count) {
+            if ($roster_id_select_count !== null
+                && is_string($sql)
+                && strpos($sql, 'intersoccer_rosters') !== false
+                && strpos($sql, 'WHERE id =') !== false) {
+                $roster_id_select_count++;
+            }
             if (!is_string($sql) || strpos($sql, 'intersoccer_rosters') === false) {
                 return null;
             }
