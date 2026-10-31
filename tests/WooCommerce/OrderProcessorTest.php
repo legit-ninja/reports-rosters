@@ -33,6 +33,7 @@ class OrderProcessorTest extends TestCase {
         $this->logger = Mockery::spy(Logger::class);
         $this->rosterRepository = Mockery::mock(RosterRepository::class);
         $this->rosterBuilder = Mockery::mock(RosterBuilder::class);
+        $this->rosterBuilder->shouldReceive('getEligibleOrderLineItemIds')->byDefault()->andReturn([]);
         
         $this->processor = new OrderProcessor(
             $this->logger,

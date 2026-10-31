@@ -380,13 +380,19 @@ class RosterBuilderOrderItemWriteFailureTest extends TestCase {
         $order->shouldReceive('get_status')->andReturn('processing');
 
         $rosters = Mockery::mock(RostersCollection::class);
-        $rosters->shouldReceive('count')->andReturn(0);
+        $rosters->shouldReceive('count')->andReturn(1);
 
         $builder = Mockery::mock(RosterBuilder::class);
         $builder->shouldReceive('buildRosterFromOrder')->once()->andReturn($rosters);
-        $builder->shouldReceive('hadOrderItemWriteFailures')->once()->andReturn(true);
+        $builder->shouldReceive('getEligibleOrderLineItemIds')->andReturn([901, 902]);
+        $builder->shouldReceive('hadOrderItemWriteFailures')->andReturn(true);
+        $builder->shouldReceive('getBuildStatistics')->andReturn(['item_write_failures' => 1]);
 
         $repo = Mockery::mock(RosterRepository::class);
+        $repo->shouldReceive('where')->with(['order_id' => 3001])->andReturn(new RostersCollection());
+
+        $order->shouldReceive('update_status')->never();
+        $order->shouldReceive('save')->never();
         $logger = Mockery::spy(Logger::class);
 
         $result = (new OrderProcessor($logger, $repo, $builder))->processOrder($order);
