@@ -66,9 +66,12 @@ class OrderProcessor {
      * Process a single WooCommerce order.
      *
      * @param int|\WC_Order $order Order ID or object.
+     * @param array $options Optional. `complete_order` => false skips status transition and completion-check scheduling (roster build only).
      * @return bool True on success.
      */
-    public function processOrder($order) {
+    public function processOrder($order, array $options = []) {
+        $complete_order = !array_key_exists('complete_order', $options) || $options['complete_order'] !== false;
+
         try {
             $this->resetLastState();
             $wc_order = $this->resolveOrder($order);
@@ -130,12 +133,7 @@ class OrderProcessor {
 
             $this->last_rosters = $this->roster_builder->buildRosterFromOrder(
                 $wc_order->get_id(),
-                [
-                    'validate_data'  => true,
-                    'skip_duplicates' => true,
-                    'update_existing' => true,
-                    'skip_age_group_validation' => true,
-                ]
+                $this->rosterBuildOptions()
             );
 
             $roster_count = $this->last_rosters->count();
@@ -152,7 +150,7 @@ class OrderProcessor {
                     ]);
                 }
 
-                if ($current_status === 'processing') {
+                if ($complete_order && $current_status === 'processing') {
                     $missing_eligible_roster_lines = $this->countEligibleOrderLinesMissingRosterRows($wc_order);
                     $can_complete_order = !$this->roster_builder->hadOrderItemWriteFailures()
                         && $missing_eligible_roster_lines === 0;
@@ -216,7 +214,12 @@ class OrderProcessor {
                     }
                 }
 
-                if (!$completed && \function_exists('intersoccer_schedule_order_completion_check')) {
+                if (
+                    $complete_order
+                    && !$completed
+                    && $wc_order->get_status() === 'processing'
+                    && \function_exists('intersoccer_schedule_order_completion_check')
+                ) {
                     \intersoccer_schedule_order_completion_check($wc_order->get_id());
                 }
             } else {
@@ -255,10 +258,10 @@ class OrderProcessor {
                 'message' => $e->getMessage(),
             ]);
 
-            if (\function_exists('intersoccer_schedule_order_completion_check')) {
-                $order_id = is_object($order) && method_exists($order, 'get_id') ? $order->get_id() : $order;
-                if (is_numeric($order_id)) {
-                    \intersoccer_schedule_order_completion_check((int) $order_id);
+            if ($complete_order && \function_exists('intersoccer_schedule_order_completion_check')) {
+                $failed_order = $this->resolveOrder($order);
+                if ($failed_order && $failed_order->get_status() === 'processing') {
+                    \intersoccer_schedule_order_completion_check((int) $failed_order->get_id());
                 }
             }
 
@@ -413,6 +416,18 @@ class OrderProcessor {
     private function isVerboseLogging(): bool {
         return (defined('WP_DEBUG') && WP_DEBUG)
             || (defined('INTERSOCCER_REPORTS_DEBUG_LOG') && INTERSOCCER_REPORTS_DEBUG_LOG);
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    private function rosterBuildOptions(): array {
+        return [
+            'validate_data' => true,
+            'skip_duplicates' => true,
+            'update_existing' => true,
+            'skip_age_group_validation' => true,
+        ];
     }
 
     /**

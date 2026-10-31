@@ -118,6 +118,8 @@
             <file>tests/WooCommerce/OrderProcessorOnHoldStatusTest.php</file>
             <file>tests/WooCommerce/OrderProcessorCompletedFastPathTest.php</file>
             <file>tests/WooCommerce/OrderProcessorProcessingCompletionGateTest.php</file>
+            <file>tests/WooCommerce/OrderProcessorViewBuildOnlyTest.php</file>
+            <file>tests/WooCommerce/OrderProcessorCompletionRescheduleTest.php</file>
             <file>tests/Services/RosterBuilderWriteFailureNoOrderWritesTest.php</file>
             <file>tests/Unit/MedicalAccessTest.php</file>
             <file>tests/Unit/MedicalAccessSplitPermissionsTest.php</file>

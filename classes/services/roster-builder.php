@@ -1396,11 +1396,9 @@ class RosterBuilder {
      */
     public function getEligibleOrderLineItemIds(\WC_Order $order): array {
         $customer_id = (int) $order->get_customer_id();
-        if ($customer_id <= 0) {
-            return [];
-        }
-
-        $customer_players = $this->player_repository->getPlayersByCustomerId($customer_id);
+        $customer_players = $customer_id > 0
+            ? $this->player_repository->getPlayersByCustomerId($customer_id)
+            : new PlayersCollection();
         $eligible = [];
 
         foreach ($order->get_items() as $item_id => $item) {

@@ -99,4 +99,56 @@ class OrderProcessorCompletedFastPathTest extends TestCase {
         $this->assertTrue($processor->processOrder($order));
         $this->assertSame($built, $processor->getLastProcessedRosters());
     }
+
+    public function test_guest_completed_all_eligible_lines_skips_build(): void {
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(7703);
+        $order->shouldReceive('get_customer_id')->andReturn(0);
+        $order->shouldReceive('get_status')->andReturn('completed');
+        $order->shouldReceive('update_status')->never();
+        $order->shouldReceive('save')->never();
+
+        $existing = self::existingRowsCollection(7703, 77031);
+
+        $repo = Mockery::mock(RosterRepository::class);
+        $repo->shouldReceive('where')->once()->with(['order_id' => 7703])->andReturn($existing);
+
+        $builder = Mockery::mock(RosterBuilder::class);
+        $builder->shouldReceive('getEligibleOrderLineItemIds')->once()->with($order)->andReturn([77031]);
+        $builder->shouldReceive('buildRosterFromOrder')->never();
+
+        $processor = new OrderProcessor(Mockery::spy(Logger::class), $repo, $builder);
+
+        $this->assertTrue($processor->processOrder($order));
+        $this->assertSame(1, $processor->getLastProcessedRosters()->count());
+    }
+
+    public function test_guest_completed_missing_eligible_line_runs_build(): void {
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_id')->andReturn(7704);
+        $order->shouldReceive('get_customer_id')->andReturn(0);
+        $order->shouldReceive('get_status')->andReturn('completed', 'completed');
+        $order->shouldReceive('update_status')->never();
+
+        $existing = self::existingRowsCollection(7704, 77041);
+
+        $repo = Mockery::mock(RosterRepository::class);
+        $repo->shouldReceive('where')->once()->with(['order_id' => 7704])->andReturn($existing);
+
+        $built = Mockery::mock(RostersCollection::class);
+        $built->shouldReceive('count')->andReturn(2);
+
+        $builder = Mockery::mock(RosterBuilder::class);
+        $builder->shouldReceive('getEligibleOrderLineItemIds')->once()->with($order)->andReturn([77041, 77042]);
+        $builder->shouldReceive('buildRosterFromOrder')
+            ->once()
+            ->with(7704, Mockery::type('array'))
+            ->andReturn($built);
+        $builder->shouldReceive('hadOrderItemWriteFailures')->andReturn(false);
+
+        $processor = new OrderProcessor(Mockery::spy(Logger::class), $repo, $builder);
+
+        $this->assertTrue($processor->processOrder($order));
+        $this->assertSame($built, $processor->getLastProcessedRosters());
+    }
 }
