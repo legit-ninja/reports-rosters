@@ -53,6 +53,25 @@ class MovePlayersRosterMoveUiTest extends TestCase {
         $this->assertStringContainsString("rosterMoveL10n('permission_denied')", $handler);
     }
 
+    public function test_run_move_ajax_uses_complete_handler_for_button_reset(): void {
+        $handler = $this->extractRosterMoveClickHandler();
+        $this->assertStringContainsString('complete:', $handler);
+        $this->assertStringContainsString('resetRosterMoveApplyButton()', $handler);
+        $this->assertStringContainsString('timeout: 120000', $handler);
+        $this->assertStringNotContainsString("$('#applyBulk').text(", $handler);
+
+        $details = file_get_contents(dirname(__DIR__, 2) . '/includes/roster-details.php');
+        $this->assertStringContainsString('function setRosterMoveApplyBusy', $details);
+        $this->assertStringContainsString("find('.roster-move-apply-label').text", $details);
+    }
+
+    public function test_run_move_ajax_before_send_has_no_phase_timer(): void {
+        $handler = $this->extractRosterMoveClickHandler();
+        $this->assertStringNotContainsString('isrrRosterMovePhaseTimer', $handler);
+        $this->assertStringNotContainsString('setTimeout', $handler);
+        $this->assertStringContainsString('confirmFlag || retryFailedOnly', $handler);
+    }
+
     private function extractRosterMoveClickHandler(): string {
         $path = dirname(__DIR__, 2) . '/includes/roster-details.php';
         $source = file_get_contents($path);

@@ -47,6 +47,7 @@ function intersoccer_roster_move_ui_strings(): array {
         'move_anyway' => __('Move anyway', 'intersoccer-reports-rosters'),
         'cancel' => __('Cancel', 'intersoccer-reports-rosters'),
         'checking' => __('Checking...', 'intersoccer-reports-rosters'),
+        'moving_players' => __('Moving players...', 'intersoccer-reports-rosters'),
         'apply' => __('Apply', 'intersoccer-reports-rosters'),
         'gender_block' => __('This roster is a different type (Girls Only or Regular). Tick the option above to move these players.', 'intersoccer-reports-rosters'),
         'try_again' => __('Try again', 'intersoccer-reports-rosters'),
@@ -92,6 +93,7 @@ function intersoccer_roster_move_js_localize_strings(): array {
     );
     $strings['failed_player_line'] = __('%1$s: %2$s', 'intersoccer-reports-rosters');
     $strings['ajax_error'] = __('An error occurred. Please try again.', 'intersoccer-reports-rosters');
+    $strings['ajax_timeout'] = __('The move is taking longer than expected. Refresh the page and check the roster before trying again.', 'intersoccer-reports-rosters');
     $strings['permission_denied'] = __('Permission denied. Please refresh the page and try again.', 'intersoccer-reports-rosters');
     $strings['unknown_error'] = __('Unknown error occurred.', 'intersoccer-reports-rosters');
 

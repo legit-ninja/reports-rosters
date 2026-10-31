@@ -248,6 +248,12 @@ if (!function_exists('wpml_get_default_language')) {
     }
 }
 
+if (!function_exists('wpml_get_current_language')) {
+    function wpml_get_current_language() {
+        return apply_filters('wpml_current_language', 'en');
+    }
+}
+
 // URL functions
 if (!function_exists('admin_url')) {
     function admin_url($path = '', $scheme = 'admin') {
@@ -1502,6 +1508,11 @@ if (!class_exists('WC_Order_Item_Product')) {
             $this->rebuildFlatMetaFromRows();
         }
         public function save() {
+            global $intersoccer_test_wc_order_item_save_count;
+            if (!isset($intersoccer_test_wc_order_item_save_count)) {
+                $intersoccer_test_wc_order_item_save_count = 0;
+            }
+            $intersoccer_test_wc_order_item_save_count++;
             $this->persistMetaToTestStore();
             return (int) $this->id;
         }

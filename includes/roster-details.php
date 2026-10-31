@@ -1162,7 +1162,7 @@ function intersoccer_render_roster_details_page() {
     echo '                </select>';
     echo '            </div>';
     echo '            <div>';
-    echo '                <button id="applyBulk" class="button button-primary">' . esc_html__('Apply', 'intersoccer-reports-rosters') . '</button>';
+    echo '                <button id="applyBulk" class="button button-primary"><span class="spinner roster-move-apply-spinner" aria-hidden="true"></span><span class="roster-move-apply-label">' . esc_html__('Apply', 'intersoccer-reports-rosters') . '</span></button>';
     echo '            </div>';
     echo '        </div>';
         echo '        <div id="rosterMoveInlinePanel" class="isrr-roster-move-panel" style="display: none;" aria-live="polite"></div>';
@@ -1531,8 +1531,18 @@ function intersoccer_render_roster_details_page() {
             return isrrRosterMoveL10n[key] || '';
         }
 
+        function setRosterMoveApplyBusy(labelKey) {
+            var $btn = $('#applyBulk');
+            $btn.prop('disabled', true);
+            $btn.find('.roster-move-apply-label').text(rosterMoveL10n(labelKey));
+            $btn.find('.roster-move-apply-spinner').addClass('is-active');
+        }
+
         function resetRosterMoveApplyButton() {
-            applyBulk.prop('disabled', false).text(applyBulkDefaultLabel);
+            var $btn = $('#applyBulk');
+            $btn.prop('disabled', false);
+            $btn.find('.roster-move-apply-label').text(applyBulkDefaultLabel);
+            $btn.find('.roster-move-apply-spinner').removeClass('is-active');
         }
 
         function hideRosterMovePanel() {
@@ -1974,6 +1984,7 @@ function intersoccer_render_roster_details_page() {
                 $.ajax({
                     url: ajaxurl,
                     type: 'POST',
+                    timeout: 120000,
                     data: {
                         action: 'intersoccer_move_players',
                         nonce: '<?php echo esc_js(wp_create_nonce('intersoccer_move_nonce')); ?>',
@@ -1983,11 +1994,12 @@ function intersoccer_render_roster_details_page() {
                         confirm_warnings: confirmFlag ? '1' : '0'
                     },
                     beforeSend: function() {
-                        applyBulk.prop('disabled', true).text(rosterMoveL10n('checking'));
+                        // First request may return needs_confirm (no move yet); confirmed move or retry uses Moving label.
+                        const showMovingImmediately = confirmFlag || retryFailedOnly;
+                        setRosterMoveApplyBusy(showMovingImmediately ? 'moving_players' : 'checking');
                     },
                     success: function(response) {
                         console.log('InterSoccer Migration: AJAX success:', response);
-                        resetRosterMoveApplyButton();
 
                         if (response.success && response.data && response.data.gender_block) {
                             const msg = response.data.gender_message || response.data.message || rosterMoveL10n('gender_block');
@@ -2087,17 +2099,20 @@ function intersoccer_render_roster_details_page() {
                             'error'
                         );
                     },
-                    error: function(xhr) {
-                        resetRosterMoveApplyButton();
+                    error: function(xhr, textStatus) {
                         let errorMessage = rosterMoveL10n('ajax_error');
-                        try {
-                            const errorResponse = JSON.parse(xhr.responseText);
-                            if (errorResponse.data && errorResponse.data.message) {
-                                errorMessage = errorResponse.data.message;
-                            }
-                        } catch (e) {
-                            if (xhr.status === 403) {
-                                errorMessage = rosterMoveL10n('permission_denied');
+                        if (textStatus === 'timeout') {
+                            errorMessage = rosterMoveL10n('ajax_timeout');
+                        } else {
+                            try {
+                                const errorResponse = JSON.parse(xhr.responseText);
+                                if (errorResponse.data && errorResponse.data.message) {
+                                    errorMessage = errorResponse.data.message;
+                                }
+                            } catch (e) {
+                                if (xhr.status === 403) {
+                                    errorMessage = rosterMoveL10n('permission_denied');
+                                }
                             }
                         }
                         showRosterMovePanel(
@@ -2105,6 +2120,9 @@ function intersoccer_render_roster_details_page() {
                             'alert',
                             'error'
                         );
+                    },
+                    complete: function() {
+                        resetRosterMoveApplyButton();
                     }
                 });
             }

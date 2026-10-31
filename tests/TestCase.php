@@ -54,6 +54,9 @@ abstract class TestCase extends PHPUnitTestCase {
         if (function_exists('intersoccer_roster_report_reset_live_order_status_memo')) {
             intersoccer_roster_report_reset_live_order_status_memo();
         }
+        if (function_exists('intersoccer_reset_get_term_by_request_cache')) {
+            intersoccer_reset_get_term_by_request_cache();
+        }
 
         Mockery::close();
 

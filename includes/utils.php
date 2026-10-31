@@ -189,12 +189,16 @@ if (!function_exists('intersoccer_get_cached_term_in_default_language')) {
             }
         }
 
-        $term = get_term_by('slug', $value, $taxonomy);
+        $term = function_exists('intersoccer_get_term_by_cached')
+            ? intersoccer_get_term_by_cached('slug', $value, $taxonomy)
+            : get_term_by('slug', $value, $taxonomy);
         if ($term && !is_wp_error($term)) {
             return $persist_term_cache((int) $term->term_id);
         }
 
-        $term = get_term_by('name', $value, $taxonomy);
+        $term = function_exists('intersoccer_get_term_by_cached')
+            ? intersoccer_get_term_by_cached('name', $value, $taxonomy)
+            : get_term_by('name', $value, $taxonomy);
         if ($term && !is_wp_error($term)) {
             return $persist_term_cache((int) $term->term_id);
         }
@@ -961,7 +965,20 @@ if (!function_exists('intersoccer_read_order_item_booking_fields')) {
         $read = static function (array $keys) use ($item) {
             foreach ($keys as $key) {
                 $value = $item->get_meta($key, true);
+                if (function_exists('intersoccer_order_item_move_meta_value_is_blank')
+                    && intersoccer_order_item_move_meta_value_is_blank(
+                        intersoccer_order_item_coerce_line_meta_value($value)
+                    )) {
+                    continue;
+                }
                 if ($value === '' || $value === null) {
+                    continue;
+                }
+                if (function_exists('intersoccer_order_item_move_meta_compare_string')) {
+                    $compared = intersoccer_order_item_move_meta_compare_string($value);
+                    if ($compared !== null && $compared !== '') {
+                        return $compared;
+                    }
                     continue;
                 }
                 return is_array($value)
@@ -4540,6 +4557,11 @@ if (!function_exists('intersoccer_renormalize_roster_row_from_variation')) {
         }
         $update_data = array_merge($update_data, intersoccer_build_roster_booking_db_update($booking, $record));
 
+        if (function_exists('intersoccer_roster_facet_rebuild_record_matches_update')
+            && intersoccer_roster_facet_rebuild_record_matches_update($record, $update_data)) {
+            return true;
+        }
+
         $formats = [];
         foreach ($update_data as $key => $value) {
             $formats[] = in_array($key, ['girls_only', 'variation_id', 'product_id'], true) ? '%d' : '%s';
@@ -6129,7 +6151,9 @@ function intersoccer_get_term_by_translated_name($translated_name, $taxonomy) {
     $normalized_input = strtolower(trim($translated_name));
     
     // First try to find by slug (in case the stored value is a slug)
-    $term = get_term_by('slug', $translated_name, $taxonomy);
+    $term = function_exists('intersoccer_get_term_by_cached')
+        ? intersoccer_get_term_by_cached('slug', $translated_name, $taxonomy)
+        : get_term_by('slug', $translated_name, $taxonomy);
     if ($term && !is_wp_error($term)) {
         // We found it by slug, now we need to get the English name
         // The term object's name will be in the current language context
@@ -6140,7 +6164,9 @@ function intersoccer_get_term_by_translated_name($translated_name, $taxonomy) {
     }
     
     // Try exact name match (case-sensitive first for performance)
-    $term = get_term_by('name', $translated_name, $taxonomy);
+    $term = function_exists('intersoccer_get_term_by_cached')
+        ? intersoccer_get_term_by_cached('name', $translated_name, $taxonomy)
+        : get_term_by('name', $translated_name, $taxonomy);
     if ($term && !is_wp_error($term)) {
         error_log('InterSoccer: Found term by exact name match for "' . $translated_name . '" in taxonomy "' . $taxonomy . '"');
         return $term;
@@ -6292,6 +6318,170 @@ if (!function_exists('intersoccer_normalize_activity_type')) {
         }
 
         return ucfirst($normalized);
+    }
+}
+
+if (!function_exists('intersoccer_roster_facet_rebuild_record_matches_update')) {
+    /**
+     * @param array<string,mixed> $record
+     * @param array<string,mixed> $update_data
+     */
+    function intersoccer_roster_facet_rebuild_record_matches_update(array $record, array $update_data): bool {
+        foreach ($update_data as $column => $value) {
+            if (!array_key_exists($column, $record)) {
+                return false;
+            }
+            $stored = $record[$column];
+            if ($value === null || $stored === null) {
+                if ($value !== $stored) {
+                    return false;
+                }
+                continue;
+            }
+            if (in_array($column, ['girls_only', 'variation_id', 'product_id'], true)) {
+                if ((int) $stored !== (int) $value) {
+                    return false;
+                }
+                continue;
+            }
+            if ((string) $stored !== (string) $value) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}
+
+if (!function_exists('intersoccer_order_item_coerce_line_meta_value')) {
+    /**
+     * Coerce order line meta for compare/skip paths (nested-safe; mirrors migration-meta).
+     *
+     * @param mixed $raw
+     * @return mixed
+     */
+    function intersoccer_order_item_coerce_line_meta_value($raw) {
+        if (function_exists('intersoccer_migration_coerce_move_line_meta_value')) {
+            return intersoccer_migration_coerce_move_line_meta_value($raw);
+        }
+        if (is_array($raw)) {
+            foreach ($raw as $part) {
+                if (is_array($part) || is_object($part)) {
+                    return $raw;
+                }
+                if (!is_scalar($part) && $part !== null) {
+                    return $raw;
+                }
+            }
+
+            return $raw;
+        }
+        if (is_scalar($raw) || $raw === null) {
+            return trim((string) $raw);
+        }
+
+        return $raw;
+    }
+}
+
+if (!function_exists('intersoccer_order_item_move_meta_value_is_blank')) {
+    /**
+     * @param mixed $value
+     */
+    function intersoccer_order_item_move_meta_value_is_blank($value): bool {
+        if (function_exists('intersoccer_migration_move_meta_value_is_blank')) {
+            return intersoccer_migration_move_meta_value_is_blank($value);
+        }
+        if (is_array($value)) {
+            return $value === [];
+        }
+        if (is_scalar($value) || $value === null) {
+            return trim((string) $value) === '';
+        }
+
+        return false;
+    }
+}
+
+if (!function_exists('intersoccer_order_item_move_meta_compare_string')) {
+    /**
+     * Scalar compare form for move/skip checks; null when value is nested or non-scalar.
+     *
+     * @param mixed $value
+     */
+    function intersoccer_order_item_move_meta_compare_string($value): ?string {
+        $coerced = intersoccer_order_item_coerce_line_meta_value($value);
+        if (is_array($coerced)) {
+            if (function_exists('intersoccer_migration_move_meta_array_is_nested')
+                && intersoccer_migration_move_meta_array_is_nested($coerced)) {
+                return null;
+            }
+            $parts = [];
+            foreach ($coerced as $part) {
+                if (!is_scalar($part) && $part !== null) {
+                    return null;
+                }
+                $parts[] = trim((string) $part);
+            }
+
+            return implode(', ', $parts);
+        }
+        if (!is_scalar($coerced) && $coerced !== null) {
+            return null;
+        }
+
+        return trim((string) $coerced);
+    }
+}
+
+if (!function_exists('intersoccer_get_term_by_cached')) {
+    /**
+     * Request-scoped cache for get_term_by (positive hits only).
+     *
+     * @param string $field slug|name|term_id|...
+     * @param mixed  $value
+     * @param string $taxonomy
+     * @return WP_Term|false
+     */
+    function intersoccer_get_term_by_cached($field, $value, $taxonomy) {
+        if (!isset($GLOBALS['intersoccer_get_term_by_cached_hits'])
+            || !is_array($GLOBALS['intersoccer_get_term_by_cached_hits'])) {
+            $GLOBALS['intersoccer_get_term_by_cached_hits'] = [];
+        }
+        $cache = &$GLOBALS['intersoccer_get_term_by_cached_hits'];
+
+        $field = (string) $field;
+        $taxonomy = (string) $taxonomy;
+        $value_key = is_scalar($value) ? (string) $value : wp_json_encode($value);
+        $lang = apply_filters('wpml_current_language', null);
+        if ($lang === null || $lang === '') {
+            $lang = function_exists('wpml_get_current_language') ? wpml_get_current_language() : '';
+        }
+        if (!is_string($lang) || $lang === '') {
+            $lang = 'default';
+        }
+        $cache_key = $lang . "\0" . $field . "\0" . $taxonomy . "\0" . $value_key;
+
+        if (array_key_exists($cache_key, $cache)) {
+            return $cache[$cache_key];
+        }
+
+        $term = get_term_by($field, $value, $taxonomy);
+        if ($term && !is_wp_error($term)) {
+            $cache[$cache_key] = $term;
+            return $term;
+        }
+
+        return false;
+    }
+}
+
+if (!function_exists('intersoccer_reset_get_term_by_request_cache')) {
+    /**
+     * Clear request-scoped get_term_by cache (PHPUnit teardown).
+     */
+    function intersoccer_reset_get_term_by_request_cache(): void {
+        $GLOBALS['intersoccer_get_term_by_cached_hits'] = [];
     }
 }
 
@@ -7522,12 +7712,16 @@ function intersoccer_get_term_slug_by_name($name, $taxonomy) {
     }
 
     // Fallback: try direct lookup (for backwards compatibility)
-    $term = get_term_by('slug', $name, $taxonomy);
+    $term = function_exists('intersoccer_get_term_by_cached')
+        ? intersoccer_get_term_by_cached('slug', $name, $taxonomy)
+        : get_term_by('slug', $name, $taxonomy);
     if ($term && !is_wp_error($term)) {
         return $term->slug;
     }
 
-    $term = get_term_by('name', $name, $taxonomy);
+    $term = function_exists('intersoccer_get_term_by_cached')
+        ? intersoccer_get_term_by_cached('name', $name, $taxonomy)
+        : get_term_by('name', $name, $taxonomy);
     if ($term && !is_wp_error($term)) {
         return $term->slug;
     }
