@@ -972,7 +972,15 @@ class RosterBuilder {
     private function extractOrderItemData(\WC_Order $order, $item_id, \WC_Order_Item_Product $item) {
         $product = $item->get_product();
         $variation_id = $item->get_variation_id();
-        
+        $order_line_name = '';
+        if (is_callable([$item, 'get_name'])) {
+            try {
+                $order_line_name = trim((string) $item->get_name());
+            } catch (\Throwable $e) {
+                $order_line_name = '';
+            }
+        }
+
         // Base order data
         $order_data = [
             'order_id' => $order->get_id(),
@@ -981,6 +989,7 @@ class RosterBuilder {
             'variation_id' => $variation_id ?: 0,
             'customer_id' => $order->get_customer_id(),
             'order_status' => $order->get_status(),
+            'order_line_name' => $order_line_name,
             'product_name' => ($product && is_object($product) && method_exists($product, 'get_name'))
                 ? (string) $product->get_name()
                 : (

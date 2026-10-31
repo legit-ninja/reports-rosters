@@ -109,11 +109,80 @@ class RosterOrderLineProductNameTest extends TestCase {
 
         $row = intersoccer_roster_apply_product_name_for_storage([
             'order_line_name' => '',
+            'order_item_id' => 94001,
             'product_id' => 9103,
             'variation_id' => 0,
         ]);
 
         $this->assertSame('SYNTH Catalogue Only', $row['product_name']);
+    }
+
+    public function test_apply_product_name_skips_catalog_when_no_order_item_context(): void {
+        $GLOBALS['intersoccer_rr_test_api_counting_enabled'] = true;
+        $GLOBALS['intersoccer_rr_test_api_call_counts'] = [];
+        $GLOBALS['intersoccer_test_wc_get_product_callback'] = static function () {
+            throw new \RuntimeException('wc_get_product must not run without order item context');
+        };
+
+        $row = intersoccer_roster_apply_product_name_for_storage([
+            'product_id' => 9104,
+            'variation_id' => 9105,
+        ]);
+
+        $this->assertSame('', (string) ($row['product_name'] ?? ''));
+        $this->assertSame(0, (int) ($GLOBALS['intersoccer_rr_test_api_call_counts']['wc_get_product'] ?? 0));
+    }
+
+    public function test_renormalize_resolve_context_uses_line_name_without_catalog_lookup(): void {
+        $GLOBALS['intersoccer_rr_test_api_counting_enabled'] = true;
+        $GLOBALS['intersoccer_rr_test_api_call_counts'] = [];
+        $GLOBALS['intersoccer_test_wc_get_product_callback'] = static function () {
+            throw new \RuntimeException('wc_get_product must not run when order line name is set');
+        };
+
+        $context = intersoccer_roster_product_name_resolve_context(
+            'SYNTH Renorm Line',
+            9202,
+            9203
+        );
+        $resolved = intersoccer_roster_resolve_product_name_for_storage($context);
+
+        $this->assertSame('SYNTH Renorm Line', $resolved['product_name']);
+        $this->assertFalse($resolved['used_english_catalogue_fallback']);
+        $this->assertSame(0, (int) ($GLOBALS['intersoccer_rr_test_api_call_counts']['wc_get_product'] ?? 0));
+    }
+
+    public function test_renormalize_resolve_context_empty_line_uses_english_catalogue(): void {
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$args) {
+            if ($hook === 'wpml_default_language') {
+                return 'en';
+            }
+            if ($hook === 'wpml_object_id') {
+                return $value;
+            }
+            return $value;
+        };
+        $GLOBALS['intersoccer_test_wc_get_product_callback'] = static function () {
+            return new class {
+                public function get_name() {
+                    return 'SYNTH Cours FR';
+                }
+
+                public function get_parent_id() {
+                    return 0;
+                }
+
+                public function get_id() {
+                    return 9204;
+                }
+            };
+        };
+
+        $context = intersoccer_roster_product_name_resolve_context('', 9204, 0);
+        $resolved = intersoccer_roster_resolve_product_name_for_storage($context);
+
+        $this->assertSame('SYNTH Cours FR', $resolved['product_name']);
+        $this->assertTrue($resolved['used_english_catalogue_fallback']);
     }
 
     public function test_catalog_product_name_uses_english_helper_for_translated_product(): void {
