@@ -438,17 +438,32 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
 
     $params = array();
 
-    // Add date filters - prioritize date range over year
+    // post_date is site-local; bounds are local midnight (half-open end) — do not use post_date_gmt.
     if ($start_date && $end_date) {
-        $query .= " AND DATE(p.post_date) BETWEEN %s AND %s";
-        $params[] = $start_date;
-        $params[] = $end_date;
+        if (intersoccer_booking_report_start_after_end($start_date, $end_date)) {
+            $query .= ' AND p.post_date >= %s AND p.post_date <= %s';
+            $params[] = intersoccer_booking_report_normalize_ymd($start_date) ?: $start_date;
+            $params[] = intersoccer_booking_report_normalize_ymd($end_date) ?: $end_date;
+        } else {
+            [$start_bound, $end_exclusive] = intersoccer_booking_report_date_bounds($start_date, $end_date);
+            if ($start_bound !== null && $end_exclusive !== null) {
+                $query .= ' AND p.post_date >= %s AND p.post_date < %s';
+                $params[] = $start_bound;
+                $params[] = $end_exclusive;
+            }
+        }
     } elseif ($start_date) {
-        $query .= " AND DATE(p.post_date) >= %s";
-        $params[] = $start_date;
+        [$start_bound, ] = intersoccer_booking_report_date_bounds($start_date, '');
+        if ($start_bound !== null) {
+            $query .= ' AND p.post_date >= %s';
+            $params[] = $start_bound;
+        }
     } elseif ($end_date) {
-        $query .= " AND DATE(p.post_date) <= %s";
-        $params[] = $end_date;
+        [, $end_exclusive] = intersoccer_booking_report_date_bounds('', $end_date);
+        if ($end_exclusive !== null) {
+            $query .= ' AND p.post_date < %s';
+            $params[] = $end_exclusive;
+        }
     } else {
         // Fallback to year filtering if no dates provided
         $query .= " AND YEAR(p.post_date) = %d";
@@ -699,10 +714,25 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
 
     global $wpdb;
 
-    // Build date filter
+    // Build date filter (post_date is site-local; half-open local range — do not use post_date_gmt).
     $date_where = '';
     if (!empty($start_date) && !empty($end_date)) {
-        $date_where = $wpdb->prepare("AND p.post_date >= %s AND p.post_date <= %s", $start_date, $end_date);
+        if (intersoccer_booking_report_start_after_end($start_date, $end_date)) {
+            $date_where = $wpdb->prepare(
+                'AND p.post_date >= %s AND p.post_date <= %s',
+                intersoccer_booking_report_normalize_ymd($start_date) ?: $start_date,
+                intersoccer_booking_report_normalize_ymd($end_date) ?: $end_date
+            );
+        } else {
+            [$start_bound, $end_exclusive] = intersoccer_booking_report_date_bounds($start_date, $end_date);
+            if ($start_bound !== null && $end_exclusive !== null) {
+                $date_where = $wpdb->prepare(
+                    'AND p.post_date >= %s AND p.post_date < %s',
+                    $start_bound,
+                    $end_exclusive
+                );
+            }
+        }
     } elseif (!empty($year)) {
         $date_where = $wpdb->prepare("AND YEAR(p.post_date) = %d", $year);
     }

@@ -67,6 +67,9 @@ class FinancialReportService {
      * Get booking/financial report data.
      */
     public function getFinancialBookingReport(string $start_date = '', string $end_date = '', string $year = '', string $region = ''): array {
+        if (!function_exists('intersoccer_booking_report_date_bounds')) {
+            require_once dirname(__DIR__, 2) . '/includes/financial-attribution-helpers.php';
+        }
         $this->logger->info('FinancialReportService: Generating financial report', [
             'start_date' => $start_date,
             'end_date' => $end_date,
@@ -76,7 +79,24 @@ class FinancialReportService {
 
         $date_where = '';
         if (!empty($start_date) && !empty($end_date)) {
-            $date_where = $this->wpdb->prepare('AND p.post_date >= %s AND p.post_date <= %s', $start_date, $end_date);
+            // post_date is site-local; filter bounds are local midnight (half-open end) — do not use post_date_gmt.
+            if (function_exists('intersoccer_booking_report_start_after_end')
+                && intersoccer_booking_report_start_after_end($start_date, $end_date)) {
+                $date_where = $this->wpdb->prepare(
+                    'AND p.post_date >= %s AND p.post_date <= %s',
+                    intersoccer_booking_report_normalize_ymd($start_date) ?: $start_date,
+                    intersoccer_booking_report_normalize_ymd($end_date) ?: $end_date
+                );
+            } else {
+                [$start_bound, $end_exclusive] = intersoccer_booking_report_date_bounds($start_date, $end_date);
+                if ($start_bound !== null && $end_exclusive !== null) {
+                    $date_where = $this->wpdb->prepare(
+                        'AND p.post_date >= %s AND p.post_date < %s',
+                        $start_bound,
+                        $end_exclusive
+                    );
+                }
+            }
         } elseif (!empty($year)) {
             $date_where = $this->wpdb->prepare('AND YEAR(p.post_date) = %d', $year);
         }

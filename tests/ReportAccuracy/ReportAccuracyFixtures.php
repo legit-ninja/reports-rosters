@@ -435,10 +435,13 @@ namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy {
         private function bookingRows(string $query): array {
             preg_match("/post_status IN \\(([^)]*)\\)/", $query, $sm);
             $statuses = array_map(static function ($s) { return trim($s, " '\n\t"); }, explode(',', $sm[1] ?? ''));
-            $from = $to = null;
-            if (preg_match("/p\\.post_date >= '([^']*)' AND p\\.post_date <= '([^']*)'/", $query, $dm)) {
+            $from = $to_exclusive = null;
+            if (preg_match("/p\\.post_date >= '([^']*)' AND p\\.post_date < '([^']*)'/", $query, $dm)) {
                 $from = $dm[1];
-                $to = $dm[2];
+                $to_exclusive = $dm[2];
+            } elseif (preg_match("/p\\.post_date >= '([^']*)' AND p\\.post_date <= '([^']*)'/", $query, $dm)) {
+                $from = $dm[1];
+                $to_exclusive = $dm[2];
             }
             $orders = ReportAccuracyStore::$orders;
             uasort($orders, static function ($a, $b) { return strcmp($b->date, $a->date) ?: ($b->get_id() <=> $a->get_id()); });
@@ -447,9 +450,15 @@ namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy {
                 if (!in_array('wc-' . $order->status, $statuses, true)) {
                     continue;
                 }
-                // MySQL compares DATETIME with a 'Y-m-d' literal as midnight; string order gives the same result here.
-                if ($from !== null && (strcmp($order->date, $from) < 0 || strcmp($order->date, $to) > 0)) {
-                    continue;
+                // Half-open [start, end+1): strcmp on DATETIME strings matches MySQL for Y-m-d H:i:s.
+                if ($from !== null) {
+                    if ($to_exclusive !== null && strpos($query, 'post_date <') !== false) {
+                        if (strcmp($order->date, $from) < 0 || strcmp($order->date, $to_exclusive) >= 0) {
+                            continue;
+                        }
+                    } elseif (strcmp($order->date, $from) < 0 || strcmp($order->date, $to_exclusive) > 0) {
+                        continue;
+                    }
                 }
                 foreach ($order->get_items('line_item') as $item_id => $item) {
                     $rows[] = (object) [
