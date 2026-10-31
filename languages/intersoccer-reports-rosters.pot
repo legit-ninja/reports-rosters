@@ -128,7 +128,7 @@ msgid "Processing orders... Please wait."
 msgstr ""
 
 #: classes/Admin/asset-manager.php:269
-#: includes/roster-details.php:1583
+#: includes/roster-details.php:1584
 msgid "Dismiss this notice."
 msgstr ""
 
@@ -1342,7 +1342,7 @@ msgstr ""
 #: classes/ui/pages/camp-pages.php:573
 #: includes/advanced.php:2927
 #: includes/reports-ui.php:292
-#: includes/roster-details.php:1137
+#: includes/roster-details.php:1138
 #: includes/rosters.php:3026
 #: includes/rosters.php:3454
 #: includes/signature-drift-report.php:156
@@ -1375,7 +1375,7 @@ msgstr ""
 #: includes/reports-ui.php:639
 #: includes/reports.php:462
 #: includes/reports.php:657
-#: includes/roster-details.php:1149
+#: includes/roster-details.php:1150
 #: includes/roster-editor-ajax.php:159
 #: includes/rosters.php:3037
 #: includes/rosters.php:3152
@@ -1398,7 +1398,7 @@ msgstr ""
 #: includes/advanced.php:2817
 #: includes/reports-data.php:101
 #: includes/roster-details.php:979
-#: includes/roster-details.php:1155
+#: includes/roster-details.php:1156
 #: includes/rosters.php:3048
 #: includes/rosters.php:3156
 #: includes/rosters.php:3731
@@ -2381,7 +2381,7 @@ msgstr ""
 #: includes/advanced.php:706
 #: includes/advanced.php:736
 #: includes/advanced.php:3326
-#: includes/roster-details.php:2337
+#: includes/roster-details.php:2346
 #: includes/roster-move-reason-messages.php:96
 msgid "Unknown error occurred."
 msgstr ""
@@ -3098,7 +3098,7 @@ msgid "Sync failed."
 msgstr ""
 
 #: includes/advanced.php:3372
-#: includes/roster-details.php:1712
+#: includes/roster-details.php:1713
 #: includes/rosters.php:738
 #: includes/rosters.php:760
 #: includes/rosters.php:864
@@ -3106,7 +3106,7 @@ msgid "Failed to close roster."
 msgstr ""
 
 #: includes/advanced.php:3413
-#: includes/roster-details.php:1726
+#: includes/roster-details.php:1727
 #: includes/rosters.php:803
 #: includes/rosters.php:825
 #: includes/rosters.php:900
@@ -3687,7 +3687,7 @@ msgid "You do not have permission to repair day presence."
 msgstr ""
 
 #: includes/db.php:2061
-#: includes/roster-details.php:1628
+#: includes/roster-details.php:1629
 msgid "Missing event signature."
 msgstr ""
 
@@ -4600,7 +4600,7 @@ msgstr ""
 #: includes/reports-ui.php:355
 #: includes/reports-ui.php:1140
 #: includes/reports.php:546
-#: includes/roster-details.php:1360
+#: includes/roster-details.php:1361
 msgid "Also sync to Office 365"
 msgstr ""
 
@@ -4749,18 +4749,18 @@ msgid "Category"
 msgstr ""
 
 #: includes/reports-ui.php:834
-#: includes/roster-details.php:2323
+#: includes/roster-details.php:2332
 msgid "Export completed successfully!"
 msgstr ""
 
 #: includes/reports-ui.php:836
 #: includes/reports-ui.php:1309
-#: includes/roster-details.php:2325
+#: includes/roster-details.php:2334
 msgid "Export completed and synced to Office 365."
 msgstr ""
 
 #: includes/reports-ui.php:838
-#: includes/roster-details.php:2327
+#: includes/roster-details.php:2336
 msgid "Export completed. Sync to Office 365 failed:"
 msgstr ""
 
@@ -4785,7 +4785,7 @@ msgid "Export timeout. Please try again."
 msgstr ""
 
 #: includes/reports-ui.php:856
-#: includes/roster-details.php:2343
+#: includes/roster-details.php:2352
 msgid "Export failed: Connection error"
 msgstr ""
 
@@ -4892,7 +4892,7 @@ msgid "AJAX configuration error: nonce not available."
 msgstr ""
 
 #: includes/reports-ui.php:1277
-#: includes/roster-details.php:2294
+#: includes/roster-details.php:2303
 msgid "Exporting..."
 msgstr ""
 
@@ -5086,187 +5086,187 @@ msgstr ""
 msgid "Shorts Size"
 msgstr ""
 
-#: includes/roster-details.php:1139
-#: includes/roster-details.php:1861
-#: includes/roster-details.php:1940
+#: includes/roster-details.php:1140
+#: includes/roster-details.php:1867
+#: includes/roster-details.php:1949
 msgid "Select season..."
 msgstr ""
 
-#: includes/roster-details.php:1143
+#: includes/roster-details.php:1144
 msgid "Day / Term"
 msgstr ""
 
-#: includes/roster-details.php:1145
-#: includes/roster-details.php:1771
+#: includes/roster-details.php:1146
+#: includes/roster-details.php:1772
 msgid "Select season first..."
 msgstr ""
 
-#: includes/roster-details.php:1151
-#: includes/roster-details.php:1772
+#: includes/roster-details.php:1152
+#: includes/roster-details.php:1773
 msgid "Select day or term first..."
 msgstr ""
 
-#: includes/roster-details.php:1157
-#: includes/roster-details.php:1773
+#: includes/roster-details.php:1158
+#: includes/roster-details.php:1774
 msgid "Select venue first..."
 msgstr ""
 
-#: includes/roster-details.php:1161
+#: includes/roster-details.php:1162
 #: includes/rosters.php:3059
 #: includes/rosters.php:3160
 msgid "Time"
 msgstr ""
 
-#: includes/roster-details.php:1163
-#: includes/roster-details.php:1774
+#: includes/roster-details.php:1164
+#: includes/roster-details.php:1775
 msgid "Select age group first..."
 msgstr ""
 
-#: includes/roster-details.php:1167
+#: includes/roster-details.php:1168
 msgid "Destination Roster"
 msgstr ""
 
-#: includes/roster-details.php:1169
-#: includes/roster-details.php:1775
+#: includes/roster-details.php:1170
+#: includes/roster-details.php:1776
 msgid "Select time first..."
 msgstr ""
 
-#: includes/roster-details.php:1173
+#: includes/roster-details.php:1174
 #: includes/roster-move-reason-messages.php:50
 msgid "Apply"
 msgstr ""
 
-#: includes/roster-details.php:1177
+#: includes/roster-details.php:1178
 msgid "Use each filter in order to narrow destination rosters."
 msgstr ""
 
-#: includes/roster-details.php:1179
-#: includes/roster-details.php:1770
+#: includes/roster-details.php:1180
+#: includes/roster-details.php:1771
 msgid "Select a destination roster..."
 msgstr ""
 
-#: includes/roster-details.php:1222
+#: includes/roster-details.php:1223
 #: includes/roster-move-reason-messages.php:295
 msgid "Untitled roster"
 msgstr ""
 
-#: includes/roster-details.php:1238
+#: includes/roster-details.php:1239
 #, php-format
 msgid "%d player"
 msgid_plural "%d players"
 msgstr[0] ""
 msgstr[1] ""
 
-#: includes/roster-details.php:1273
-#: includes/roster-details.php:1279
-#: includes/roster-details.php:1283
-#: includes/roster-details.php:1287
-#: includes/roster-details.php:1291
+#: includes/roster-details.php:1274
+#: includes/roster-details.php:1280
+#: includes/roster-details.php:1284
+#: includes/roster-details.php:1288
+#: includes/roster-details.php:1292
 msgid "Not set"
 msgstr ""
 
-#: includes/roster-details.php:1309
+#: includes/roster-details.php:1310
 msgid "No other rosters available"
 msgstr ""
 
-#: includes/roster-details.php:1315
+#: includes/roster-details.php:1316
 msgid "Instructions:"
 msgstr ""
 
-#: includes/roster-details.php:1316
+#: includes/roster-details.php:1317
 msgid "1) Select players using checkboxes"
 msgstr ""
 
-#: includes/roster-details.php:1317
+#: includes/roster-details.php:1318
 msgid "2) Choose \"Move to Another Roster\""
 msgstr ""
 
-#: includes/roster-details.php:1318
+#: includes/roster-details.php:1319
 msgid "3) Choose season, day/term, venue, age group, and time to reveal destination roster options"
 msgstr ""
 
-#: includes/roster-details.php:1319
+#: includes/roster-details.php:1320
 msgid "4) Select destination roster and click Apply"
 msgstr ""
 
-#: includes/roster-details.php:1321
+#: includes/roster-details.php:1322
 msgid "Note:"
 msgstr ""
 
-#: includes/roster-details.php:1321
+#: includes/roster-details.php:1322
 msgid "This will update order items and preserve original pricing. Changes cannot be undone."
 msgstr ""
 
-#: includes/roster-details.php:1361
+#: includes/roster-details.php:1362
 msgid "Export Roster"
 msgstr ""
 
-#: includes/roster-details.php:1364
+#: includes/roster-details.php:1365
 #: includes/roster-editor.php:1048
 msgid "Event Details"
 msgstr ""
 
-#: includes/roster-details.php:1365
+#: includes/roster-details.php:1366
 msgid "Product Name: "
 msgstr ""
 
-#: includes/roster-details.php:1366
+#: includes/roster-details.php:1367
 msgid "Venue: "
 msgstr ""
 
-#: includes/roster-details.php:1367
+#: includes/roster-details.php:1368
 msgid "Age Group: "
 msgstr ""
 
-#: includes/roster-details.php:1370
+#: includes/roster-details.php:1371
 msgid "Tournament Day: "
 msgstr ""
 
-#: includes/roster-details.php:1372
+#: includes/roster-details.php:1373
 msgid "Course Day: "
 msgstr ""
 
-#: includes/roster-details.php:1374
+#: includes/roster-details.php:1375
 msgid "Camp Terms: "
 msgstr ""
 
-#: includes/roster-details.php:1379
+#: includes/roster-details.php:1380
 msgid "Tournament Time: "
 msgstr ""
 
-#: includes/roster-details.php:1382
+#: includes/roster-details.php:1383
 msgid "Camp Times: "
 msgstr ""
 
-#: includes/roster-details.php:1385
+#: includes/roster-details.php:1386
 msgid "Course Times: "
 msgstr ""
 
-#: includes/roster-details.php:1389
+#: includes/roster-details.php:1390
 msgid "Girls Only: "
 msgstr ""
 
-#: includes/roster-details.php:1394
+#: includes/roster-details.php:1395
 msgid "Status: "
 msgstr ""
 
-#: includes/roster-details.php:1394
+#: includes/roster-details.php:1395
 msgid "Closed"
 msgstr ""
 
-#: includes/roster-details.php:1397
+#: includes/roster-details.php:1398
 #: includes/rosters.php:3732
 msgid "Total Players"
 msgstr ""
 
-#: includes/roster-details.php:1405
+#: includes/roster-details.php:1406
 #: includes/rosters.php:721
 #: includes/rosters.php:1849
 #: includes/rosters.php:2340
 msgid "Reopen Roster"
 msgstr ""
 
-#: includes/roster-details.php:1406
+#: includes/roster-details.php:1407
 #: includes/rosters.php:804
 #: includes/rosters.php:809
 #: includes/rosters.php:826
@@ -5278,13 +5278,13 @@ msgstr ""
 msgid "Reopen"
 msgstr ""
 
-#: includes/roster-details.php:1411
+#: includes/roster-details.php:1412
 #: includes/rosters.php:1856
 #: includes/rosters.php:2347
 msgid "Close Out Roster"
 msgstr ""
 
-#: includes/roster-details.php:1412
+#: includes/roster-details.php:1413
 #: includes/rosters.php:786
 #: includes/rosters.php:865
 #: includes/rosters.php:870
@@ -5293,28 +5293,28 @@ msgstr ""
 msgid "Close Out"
 msgstr ""
 
-#: includes/roster-details.php:1437
+#: includes/roster-details.php:1438
 msgid "Repair Day Presence"
 msgstr ""
 
-#: includes/roster-details.php:1710
+#: includes/roster-details.php:1711
 #: includes/rosters.php:715
 #: includes/rosters.php:847
 msgid "Are you sure you want to close out this roster? This will mark the event as completed."
 msgstr ""
 
-#: includes/roster-details.php:1709
+#: includes/roster-details.php:1710
 #: includes/rosters.php:850
 #: includes/rosters.php:957
 #: includes/rosters.php:1041
 msgid "Closing..."
 msgstr ""
 
-#: includes/roster-details.php:1711
+#: includes/roster-details.php:1712
 msgid "Roster closed successfully."
 msgstr ""
 
-#: includes/roster-details.php:1691
+#: includes/roster-details.php:1692
 #: includes/roster-move-reason-messages.php:94
 #: includes/rosters.php:743
 #: includes/rosters.php:765
@@ -5328,42 +5328,42 @@ msgstr ""
 msgid "An error occurred. Please try again."
 msgstr ""
 
-#: includes/roster-details.php:1724
+#: includes/roster-details.php:1725
 #: includes/rosters.php:780
 #: includes/rosters.php:883
 msgid "Are you sure you want to reopen this roster?"
 msgstr ""
 
-#: includes/roster-details.php:1723
+#: includes/roster-details.php:1724
 #: includes/rosters.php:783
 #: includes/rosters.php:886
 #: includes/rosters.php:998
 msgid "Reopening..."
 msgstr ""
 
-#: includes/roster-details.php:1725
+#: includes/roster-details.php:1726
 msgid "Roster reopened successfully."
 msgstr ""
 
-#: includes/roster-details.php:1776
+#: includes/roster-details.php:1777
 msgid "No destination rosters match current filters"
 msgstr ""
 
-#: includes/roster-details.php:2293
+#: includes/roster-details.php:2302
 msgid "Exporting roster..."
 msgstr ""
 
-#: includes/roster-details.php:2332
+#: includes/roster-details.php:2341
 msgid "Export generated but download failed. Please try again."
 msgstr ""
 
-#: includes/roster-details.php:2338
-#: includes/roster-details.php:2348
-#: includes/roster-details.php:2353
+#: includes/roster-details.php:2347
+#: includes/roster-details.php:2357
+#: includes/roster-details.php:2362
 msgid "Export failed: "
 msgstr ""
 
-#: includes/roster-details.php:2346
+#: includes/roster-details.php:2355
 msgid "Export timeout. The roster may be too large. Please try again or contact support."
 msgstr ""
 
@@ -5506,7 +5506,7 @@ msgstr ""
 msgid "Edit Field"
 msgstr ""
 
-#: includes/roster-details.php:1596
+#: includes/roster-details.php:1597
 #: includes/roster-editor.php:331
 #: includes/roster-editor.php:705
 #: includes/roster-editor.php:1124
@@ -6415,26 +6415,31 @@ msgstr ""
 msgid "Show empty rosters"
 msgstr ""
 
-#: includes/roster-details.php:1592
+#: includes/roster-details.php:1593
 msgid "Confirm roster status change"
 msgstr ""
 
-#: includes/roster-details.php:1595
+#: includes/roster-details.php:1596
 msgid "Confirm"
 msgstr ""
 
-#: includes/roster-details.php:1633
+#: includes/roster-details.php:1634
 msgid "Repairing..."
 msgstr ""
 
-#: includes/roster-details.php:1646
+#: includes/roster-details.php:1647
 msgid "Repair completed."
 msgstr ""
 
-#: includes/roster-details.php:1648
+#: includes/roster-details.php:1649
 msgid "Repair failed."
 msgstr ""
 
-#: includes/roster-details.php:1653
+#: includes/roster-details.php:1654
 msgid "Repair failed (network/server error)."
+msgstr ""
+
+#: includes/roster-details.php:1132
+#: includes/roster-details.php:1778
+msgid "Pick a season first to see empty rosters."
 msgstr ""

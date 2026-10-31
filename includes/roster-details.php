@@ -1129,6 +1129,7 @@ function intersoccer_render_roster_details_page() {
     echo '            <input type="checkbox" id="showEmptyRosters" value="1">';
     echo '            <strong>' . esc_html__('Show empty rosters', 'intersoccer-reports-rosters') . '</strong>';
     echo '        </label>';
+    echo '        <span id="showEmptyRostersHint" style="display: none; margin-left: 8px; font-size: 13px; color: #646970;">' . esc_html__('Pick a season first to see empty rosters.', 'intersoccer-reports-rosters') . '</span>';
     echo '    </div>';
             
     echo '    <div id="moveOptions" style="display: none; margin-top: 10px;">';
@@ -1773,7 +1774,8 @@ function intersoccer_render_roster_details_page() {
             chooseVenueFirst: '<?php echo esc_js(__('Select venue first...', 'intersoccer-reports-rosters')); ?>',
             chooseAgeFirst: '<?php echo esc_js(__('Select age group first...', 'intersoccer-reports-rosters')); ?>',
             chooseTimeFirst: '<?php echo esc_js(__('Select time first...', 'intersoccer-reports-rosters')); ?>',
-            noMatchingRosters: '<?php echo esc_js(__('No destination rosters match current filters', 'intersoccer-reports-rosters')); ?>'
+            noMatchingRosters: '<?php echo esc_js(__('No destination rosters match current filters', 'intersoccer-reports-rosters')); ?>',
+            pickSeasonForEmptyRosters: '<?php echo esc_js(__('Pick a season first to see empty rosters.', 'intersoccer-reports-rosters')); ?>'
         };
 
         function resetSelectOptions($select, placeholderText, disabledState) {
@@ -1827,7 +1829,11 @@ function intersoccer_render_roster_details_page() {
         }
 
         // Empty destinations still honour every filter the admin has chosen (season, day/term, venue, age group, time).
+        // No season chosen means no empty destinations: the admin is asked to pick a season first.
         function emptyDestinationsMatchingFilters(options, chosen) {
+            if (!chosen.season) {
+                return [];
+            }
             const keys = ['season', 'schedule', 'venue', 'ageGroup', 'time'];
             return emptyPlayerDestinations(options).filter((option) => keys.every((key) => !chosen[key] || option[key] === chosen[key]));
         }
@@ -1913,12 +1919,15 @@ function intersoccer_render_roster_details_page() {
                     : emptyDestinations;
             }
 
+            const needsSeasonForEmpty = showEmpty && !targetSeasonSelect.val();
+            $('#showEmptyRostersHint').toggle(needsSeasonForEmpty);
+
             if (showEmpty && !targetTimeSelect.val()) {
-                fillDestinationRosterSelect(
-                    rosterOptions,
-                    rosterOptions.length ? migrationTexts.chooseDestination : migrationTexts.noMatchingRosters,
-                    true
-                );
+                let placeholder = rosterOptions.length ? migrationTexts.chooseDestination : migrationTexts.noMatchingRosters;
+                if (needsSeasonForEmpty) {
+                    placeholder = migrationTexts.pickSeasonForEmptyRosters;
+                }
+                fillDestinationRosterSelect(rosterOptions, placeholder, true);
                 return;
             }
 

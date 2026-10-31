@@ -133,4 +133,16 @@ class MovePlayersRosterMoveUiTest extends TestCase {
         $this->assertStringContainsString('emptyDestinationsMatchingFilters(eligible, {', $source);
         $this->assertStringNotContainsString('showEmpty ? emptyPlayerDestinations(eligible)', $source);
     }
+
+    public function test_show_empty_rosters_without_season_lists_none_and_shows_hint(): void {
+        $source = file_get_contents(dirname(__DIR__, 2) . '/includes/roster-details.php');
+        $this->assertIsString($source);
+        $this->assertMatchesRegularExpression('/function emptyDestinationsMatchingFilters\\(options, chosen\\) \\{\\s*if \\(!chosen\\.season\\) \\{\\s*return \\[\\];/', $source);
+        $this->assertStringContainsString("pickSeasonForEmptyRosters: '<?php echo esc_js(__('Pick a season first to see empty rosters.', 'intersoccer-reports-rosters')); ?>'", $source);
+        $this->assertStringContainsString("esc_html__('Pick a season first to see empty rosters.', 'intersoccer-reports-rosters')", $source);
+        $this->assertStringContainsString('id="showEmptyRostersHint"', $source);
+        $this->assertStringContainsString('const needsSeasonForEmpty = showEmpty && !targetSeasonSelect.val();', $source);
+        $this->assertStringContainsString("$('#showEmptyRostersHint').toggle(needsSeasonForEmpty);", $source);
+        $this->assertStringContainsString('placeholder = migrationTexts.pickSeasonForEmptyRosters;', $source);
+    }
 }
