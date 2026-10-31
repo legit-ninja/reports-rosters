@@ -15,6 +15,12 @@ namespace {
             return date($format, $timestamp ?? time());
         }
     }
+
+    if (!function_exists('date_i18n')) {
+        function date_i18n($format, $timestamp = null) {
+            return date($format, is_numeric($timestamp) ? (int) $timestamp : strtotime((string) $timestamp));
+        }
+    }
 }
 
 namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy {
@@ -149,6 +155,130 @@ class BookingReportEndDateInclusive152Test extends TestCase {
         $this->assertNotContains('9006-90061', $refs);
     }
 
+    public function test_adjacent_half_month_ranges_partition_full_month_without_gap_or_overlap(): void {
+        $month_start = '2026-03-01';
+        $month_end = '2026-03-31';
+        $this->seedMonthPartitionOrders($month_start, $month_end);
+
+        $first_half = $this->reportBookingCount('2026-03-01', '2026-03-15');
+        $second_half = $this->reportBookingCount('2026-03-16', '2026-03-31');
+        $full_month = $this->reportBookingCount($month_start, $month_end);
+
+        $this->assertSame(2, $first_half, 'expected two bookings in 1–15');
+        $this->assertSame(2, $second_half, 'expected two bookings in 16–31');
+        $this->assertSame(4, $full_month, 'expected four bookings in full month');
+        $this->assertSame($full_month, $first_half + $second_half);
+
+        $first_refs = $this->reportRefs('2026-03-01', '2026-03-15');
+        $second_refs = $this->reportRefs('2026-03-16', '2026-03-31');
+        $this->assertSame([], array_values(array_intersect($first_refs, $second_refs)));
+
+        $GLOBALS['wpdb'] = $this->wpdb;
+        if (!function_exists('intersoccer_get_financial_booking_report')) {
+            require_once dirname(__DIR__, 2) . '/includes/reporting-discounts.php';
+        }
+        $legacy_full = (int) intersoccer_get_financial_booking_report($month_start, $month_end, '', '')['totals']['bookings'];
+        $this->assertSame($full_month, $legacy_full);
+
+        if (!function_exists('intersoccer_get_enhanced_booking_report')) {
+            require_once dirname(__DIR__, 2) . '/includes/reporting-discounts.php';
+        }
+        $enhanced_full = (int) intersoccer_get_enhanced_booking_report($month_start, $month_end, '2026', '')['totals']['bookings'];
+        $this->assertSame($full_month, $enhanced_full);
+    }
+
+    public function test_fixture_honors_inclusive_post_date_lte_operator(): void {
+        ReportAccuracyStore::addOrder(
+            (new FakeOrder(9050, 'completed', '2026-04-10'))->addLine(
+                new FakeLineItem(90501, ['subtotal' => 10.0, 'total' => 10.0])
+            )
+        );
+        ReportAccuracyStore::addOrder(
+            (new FakeOrder(9051, 'completed', '2026-04-10 00:00:01'))->addLine(
+                new FakeLineItem(90511, ['subtotal' => 10.0, 'total' => 10.0])
+            )
+        );
+
+        $wpdb = new FakeBookingWpdb();
+        $query = "
+            SELECT p.ID FROM wp_posts p
+            INNER JOIN wp_woocommerce_order_items oi ON p.ID = oi.order_id
+            WHERE p.post_type = 'shop_order'
+            AND p.post_status IN ('wc-completed')
+            AND p.post_date >= '2026-04-01' AND p.post_date <= '2026-04-10'
+        ";
+        $rows = $wpdb->get_results($query);
+        $this->assertCount(1, $rows);
+        $this->assertSame(9050, (int) $rows[0]->order_id);
+    }
+
+    public function test_legacy_financial_invalid_range_without_year_returns_empty(): void {
+        ReportAccuracyStore::addOrder(
+            (new FakeOrder(9070, 'completed', '2026-06-01 12:00:00'))->addLine(
+                new FakeLineItem(90701, ['subtotal' => 10.0, 'total' => 10.0])
+            )
+        );
+
+        $GLOBALS['wpdb'] = $this->wpdb;
+        if (!function_exists('intersoccer_get_financial_booking_report')) {
+            require_once dirname(__DIR__, 2) . '/includes/reporting-discounts.php';
+        }
+        $this->assertSame(0, (int) intersoccer_get_financial_booking_report('bad-start', 'bad-end', '', '')['totals']['bookings']);
+    }
+
+    public function test_invalid_end_date_with_year_falls_back_to_year_filter(): void {
+        ReportAccuracyStore::addOrder(
+            (new FakeOrder(9060, 'completed', '2026-05-01 12:00:00'))->addLine(
+                new FakeLineItem(90601, ['subtotal' => 10.0, 'total' => 10.0])
+            )
+        );
+        ReportAccuracyStore::addOrder(
+            (new FakeOrder(9061, 'completed', '2027-01-02 12:00:00'))->addLine(
+                new FakeLineItem(90611, ['subtotal' => 10.0, 'total' => 10.0])
+            )
+        );
+
+        $this->assertSame(1, $this->reportBookingCount('2026-01-01', 'not-a-date', '2026'));
+    }
+
+    public function test_invalid_date_without_year_returns_empty(): void {
+        ReportAccuracyStore::addOrder(
+            (new FakeOrder(9071, 'completed', '2026-06-01 12:00:00'))->addLine(
+                new FakeLineItem(90711, ['subtotal' => 10.0, 'total' => 10.0])
+            )
+        );
+
+        $this->assertSame(0, $this->reportBookingCount('bad-start', '2026-06-30', ''));
+    }
+
+    public function test_valid_range_unchanged_with_invalid_year_param(): void {
+        $this->seedEdgeOrders('2026-08-01', '2026-08-31');
+        $this->assertSame(4, $this->reportBookingCount('2026-08-01', '2026-08-31', '1999'));
+    }
+
+    public function test_service_sql_invalid_range_without_year_uses_always_false(): void {
+        $database = $this->createMock(Database::class);
+        $database->method('get_wpdb')->willReturn(new SqlCaptureBookingWpdb());
+        $classifier = $this->createMock(ProductTypeClassifierService::class);
+        $service = new FinancialReportService($this->createMock(Logger::class), $database, $classifier);
+        SqlCaptureBookingWpdb::$booking_query = '';
+        $service->getFinancialBookingReport('not-a-date', 'also-bad', '', '');
+
+        $this->assertStringContainsString('AND 1=0', SqlCaptureBookingWpdb::$booking_query);
+    }
+
+    public function test_service_sql_invalid_range_with_year_uses_year_filter(): void {
+        $database = $this->createMock(Database::class);
+        $database->method('get_wpdb')->willReturn(new SqlCaptureBookingWpdb());
+        $classifier = $this->createMock(ProductTypeClassifierService::class);
+        $service = new FinancialReportService($this->createMock(Logger::class), $database, $classifier);
+        SqlCaptureBookingWpdb::$booking_query = '';
+        $service->getFinancialBookingReport('not-a-date', '2026-01-01', '2026', '');
+
+        $this->assertStringContainsString('YEAR(p.post_date) = 2026', SqlCaptureBookingWpdb::$booking_query);
+        $this->assertStringNotContainsString('AND 1=0', SqlCaptureBookingWpdb::$booking_query);
+    }
+
     public function test_site_today_default_uses_wp_date_local(): void {
         $GLOBALS['intersoccer_rr_test_wp_date_ymd'] = '2026-07-01';
         $this->assertSame('2026-07-01', intersoccer_booking_report_site_today_ymd());
@@ -168,7 +298,18 @@ class BookingReportEndDateInclusive152Test extends TestCase {
         foreach ($result['data'] as $row) {
             $refs[] = $row['ref'];
         }
+        sort($refs);
         return $refs;
+    }
+
+    private function reportBookingCount(string $from, string $to, string $year = ''): int {
+        $database = $this->createMock(Database::class);
+        $database->method('get_wpdb')->willReturn($this->wpdb);
+        $classifier = $this->createMock(ProductTypeClassifierService::class);
+        $classifier->method('classifyOrderItem')->willReturn(ProductTypeClassifierService::TYPE_CAMP);
+        $service = new FinancialReportService($this->createMock(Logger::class), $database, $classifier);
+        $result = $service->getFinancialBookingReport($from, $to, $year);
+        return (int) $result['totals']['bookings'];
     }
 
     private function seedEdgeOrders(string $start, string $end): void {
@@ -203,6 +344,39 @@ class BookingReportEndDateInclusive152Test extends TestCase {
             $attributed(9006, $before_start)->addLine(new FakeLineItem(90061, ['subtotal' => 10.0, 'total' => 10.0]))
         );
     }
+
+    private function seedMonthPartitionOrders(string $month_start, string $month_end): void {
+        $attributed = static function (int $id, string $date) {
+            return (new FakeOrder($id, 'completed', $date))->setMeta(
+                \InterSoccer\ReportsRosters\Services\OrderFinancialAttributionService::META_ORDER_ATTRIBUTION_AT,
+                $date
+            );
+        };
+
+        $before_month = \DateTime::createFromFormat('!Y-m-d', intersoccer_booking_report_normalize_ymd($month_start))
+            ->modify('-1 day')->format('Y-m-d') . ' 23:59:59';
+        $after_month = \DateTime::createFromFormat('!Y-m-d', intersoccer_booking_report_normalize_ymd($month_end))
+            ->modify('+1 day')->format('Y-m-d') . ' 00:00:00';
+
+        ReportAccuracyStore::addOrder(
+            $attributed(9101, $month_start . ' 08:00:00')->addLine(new FakeLineItem(91011, ['subtotal' => 10.0, 'total' => 10.0]))
+        );
+        ReportAccuracyStore::addOrder(
+            $attributed(9102, '2026-03-15 23:59:59')->addLine(new FakeLineItem(91021, ['subtotal' => 10.0, 'total' => 10.0]))
+        );
+        ReportAccuracyStore::addOrder(
+            $attributed(9103, '2026-03-16 00:00:01')->addLine(new FakeLineItem(91031, ['subtotal' => 10.0, 'total' => 10.0]))
+        );
+        ReportAccuracyStore::addOrder(
+            $attributed(9104, $month_end . ' 22:30:00')->addLine(new FakeLineItem(91041, ['subtotal' => 10.0, 'total' => 10.0]))
+        );
+        ReportAccuracyStore::addOrder(
+            $attributed(9105, $before_month)->addLine(new FakeLineItem(91051, ['subtotal' => 10.0, 'total' => 10.0]))
+        );
+        ReportAccuracyStore::addOrder(
+            $attributed(9106, $after_month)->addLine(new FakeLineItem(91061, ['subtotal' => 10.0, 'total' => 10.0]))
+        );
+    }
 }
 
 class SqlCaptureBookingWpdb {
@@ -214,7 +388,8 @@ class SqlCaptureBookingWpdb {
 
     private static function noteQuery(string $query): void {
         self::$last_query = $query;
-        if (strpos($query, 'p.post_date >=') !== false) {
+        if (strpos($query, "post_type = 'shop_order'") !== false
+            && strpos($query, 'woocommerce_order_items') !== false) {
             self::$booking_query = $query;
         }
     }

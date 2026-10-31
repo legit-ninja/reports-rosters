@@ -410,17 +410,20 @@ namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy {
 
         public function get_results($query = null, $output = OBJECT) {
             $this->queries[] = (string) $query;
+            $rows = [];
             if (strpos($query, "post_type = 'shop_order'") !== false && strpos($query, 'woocommerce_order_items oi') !== false) {
-                return $this->bookingRows((string) $query);
-            }
-            if (preg_match('/woocommerce_order_itemmeta WHERE order_item_id = (\d+)/', (string) $query, $m)) {
-                $rows = [];
+                $rows = $this->bookingRows((string) $query);
+            } elseif (preg_match('/woocommerce_order_itemmeta WHERE order_item_id = (\d+)/', (string) $query, $m)) {
                 foreach (ReportAccuracyStore::$item_meta[(int) $m[1]] ?? [] as $k => $v) {
                     $rows[] = (object) ['meta_key' => $k, 'meta_value' => is_array($v) ? serialize($v) : (string) $v];
                 }
-                return $rows;
             }
-            return [];
+            if ($output === ARRAY_A || $output === 'ARRAY_A') {
+                return array_map(static function ($row) {
+                    return (array) $row;
+                }, $rows);
+            }
+            return $rows;
         }
 
         public function get_col($query = null, $x = 0) {
@@ -433,16 +436,35 @@ namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy {
         }
 
         private function bookingRows(string $query): array {
+            if (preg_match('/\bAND 1=0\b/', $query)) {
+                return [];
+            }
+
             preg_match("/post_status IN \\(([^)]*)\\)/", $query, $sm);
             $statuses = array_map(static function ($s) { return trim($s, " '\n\t"); }, explode(',', $sm[1] ?? ''));
-            $from = $to_exclusive = null;
+            $from = null;
+            $to_bound = null;
+            $half_open_end = false;
+            $filter_year = null;
+
+            if (preg_match('/YEAR\\(p\\.post_date\\) = (\\d+)/', $query, $ym)) {
+                $filter_year = (int) $ym[1];
+            }
             if (preg_match("/p\\.post_date >= '([^']*)' AND p\\.post_date < '([^']*)'/", $query, $dm)) {
                 $from = $dm[1];
-                $to_exclusive = $dm[2];
+                $to_bound = $dm[2];
+                $half_open_end = true;
             } elseif (preg_match("/p\\.post_date >= '([^']*)' AND p\\.post_date <= '([^']*)'/", $query, $dm)) {
                 $from = $dm[1];
-                $to_exclusive = $dm[2];
+                $to_bound = $dm[2];
+                $half_open_end = false;
+            } elseif (preg_match("/p\\.post_date >= '([^']*)'/", $query, $dm)) {
+                $from = $dm[1];
+            } elseif (preg_match("/p\\.post_date < '([^']*)'/", $query, $dm)) {
+                $to_bound = $dm[1];
+                $half_open_end = true;
             }
+
             $orders = ReportAccuracyStore::$orders;
             uasort($orders, static function ($a, $b) { return strcmp($b->date, $a->date) ?: ($b->get_id() <=> $a->get_id()); });
             $rows = [];
@@ -450,28 +472,46 @@ namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy {
                 if (!in_array('wc-' . $order->status, $statuses, true)) {
                     continue;
                 }
-                // Half-open [start, end+1): strcmp on DATETIME strings matches MySQL for Y-m-d H:i:s.
-                if ($from !== null) {
-                    if ($to_exclusive !== null && strpos($query, 'post_date <') !== false) {
-                        if (strcmp($order->date, $from) < 0 || strcmp($order->date, $to_exclusive) >= 0) {
+                if ($filter_year !== null && (int) substr($order->date, 0, 4) !== $filter_year) {
+                    continue;
+                }
+                if ($from !== null && strcmp($order->date, $from) < 0) {
+                    continue;
+                }
+                if ($to_bound !== null) {
+                    if ($half_open_end) {
+                        if (strcmp($order->date, $to_bound) >= 0) {
                             continue;
                         }
-                    } elseif (strcmp($order->date, $from) < 0 || strcmp($order->date, $to_exclusive) > 0) {
+                    } elseif (strcmp($order->date, $to_bound) > 0) {
                         continue;
                     }
                 }
                 foreach ($order->get_items('line_item') as $item_id => $item) {
+                    $line_subtotal = ReportAccuracyStore::getItemMeta($item_id, '_line_subtotal');
+                    $line_total = ReportAccuracyStore::getItemMeta($item_id, '_line_total');
                     $rows[] = (object) [
                         'order_id' => $order->get_id(),
                         'order_date' => $order->date,
                         'order_status' => 'wc-' . $order->status,
                         'order_item_id' => $item_id,
                         'order_item_name' => $item->get_name(),
-                        'product_id' => ReportAccuracyStore::getItemMeta($item_id, '_product_id'),
+                        'product_id' => ReportAccuracyStore::getItemMeta($item_id, '_product_id') ?: '1000',
+                        'product_name' => $item->get_name(),
                         'variation_id' => ReportAccuracyStore::getItemMeta($item_id, '_variation_id'),
                         'quantity' => ReportAccuracyStore::getItemMeta($item_id, '_qty'),
-                        'line_total' => ReportAccuracyStore::getItemMeta($item_id, '_line_total'),
-                        'line_subtotal' => ReportAccuracyStore::getItemMeta($item_id, '_line_subtotal'),
+                        'line_total' => $line_total,
+                        'line_subtotal' => $line_subtotal,
+                        'base_price' => $line_subtotal,
+                        'final_price' => $line_total,
+                        'gender' => '',
+                        'venue' => '',
+                        'billing_email' => '',
+                        'billing_phone' => '',
+                        'age' => '',
+                        'reimbursement' => 0,
+                        'intersoccer_item_discount_amount' => 0,
+                        'intersoccer_order_discount_amount' => 0,
                     ];
                 }
             }

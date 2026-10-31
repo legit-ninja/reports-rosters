@@ -89,6 +89,86 @@ function intersoccer_booking_report_start_after_end($start_date, $end_date): boo
 }
 
 /**
+ * Booking report SQL fragment for filtering p.post_date (local half-open range).
+ *
+ * When a date filter was requested but cannot be built, falls back to YEAR() when $year is set;
+ * otherwise AND 1=0 so the query never returns unconstrained history.
+ *
+ * @return array{0:string,1:array<int,mixed>}
+ */
+function intersoccer_booking_report_post_date_filter_sql(
+    string $start_date,
+    string $end_date,
+    $year = '',
+    bool $allow_open_ended = false
+): array {
+    $year_clause = static function () use ($year): ?array {
+        if ($year === '' || $year === null || $year === false) {
+            return null;
+        }
+        $y = (int) $year;
+        if ($y <= 0) {
+            return null;
+        }
+        return [' AND YEAR(p.post_date) = %d', [$y]];
+    };
+
+    $reject_or_year = static function () use ($year_clause): array {
+        $yf = $year_clause();
+        if ($yf !== null) {
+            return $yf;
+        }
+        return [' AND 1=0', []];
+    };
+
+    $has_start = $start_date !== '';
+    $has_end = $end_date !== '';
+
+    if ($has_start && $has_end) {
+        if (intersoccer_booking_report_start_after_end($start_date, $end_date)) {
+            $start_ymd = intersoccer_booking_report_normalize_ymd($start_date);
+            $end_ymd = intersoccer_booking_report_normalize_ymd($end_date);
+            if ($start_ymd === null || $end_ymd === null) {
+                return $reject_or_year();
+            }
+            return [
+                ' AND p.post_date >= %s AND p.post_date <= %s',
+                [$start_ymd, $end_ymd],
+            ];
+        }
+        [$start_bound, $end_exclusive] = intersoccer_booking_report_date_bounds($start_date, $end_date);
+        if ($start_bound !== null && $end_exclusive !== null) {
+            return [' AND p.post_date >= %s AND p.post_date < %s', [$start_bound, $end_exclusive]];
+        }
+        return $reject_or_year();
+    }
+
+    if ($allow_open_ended) {
+        if ($has_start) {
+            [$start_bound, ] = intersoccer_booking_report_date_bounds($start_date, '');
+            if ($start_bound !== null) {
+                return [' AND p.post_date >= %s', [$start_bound]];
+            }
+            return $reject_or_year();
+        }
+        if ($has_end) {
+            [, $end_exclusive] = intersoccer_booking_report_date_bounds('', $end_date);
+            if ($end_exclusive !== null) {
+                return [' AND p.post_date < %s', [$end_exclusive]];
+            }
+            return $reject_or_year();
+        }
+    }
+
+    $yf = $year_clause();
+    if ($yf !== null) {
+        return $yf;
+    }
+
+    return ['', []];
+}
+
+/**
  * Map EN/FR/DE fee or discount labels to a canonical discount type.
  */
 function intersoccer_canonical_discount_type_from_label(string $label): string {

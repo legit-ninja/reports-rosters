@@ -438,36 +438,17 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
 
     $params = array();
 
-    // post_date is site-local; bounds are local midnight (half-open end) — do not use post_date_gmt.
-    if ($start_date && $end_date) {
-        if (intersoccer_booking_report_start_after_end($start_date, $end_date)) {
-            $query .= ' AND p.post_date >= %s AND p.post_date <= %s';
-            $params[] = intersoccer_booking_report_normalize_ymd($start_date) ?: $start_date;
-            $params[] = intersoccer_booking_report_normalize_ymd($end_date) ?: $end_date;
-        } else {
-            [$start_bound, $end_exclusive] = intersoccer_booking_report_date_bounds($start_date, $end_date);
-            if ($start_bound !== null && $end_exclusive !== null) {
-                $query .= ' AND p.post_date >= %s AND p.post_date < %s';
-                $params[] = $start_bound;
-                $params[] = $end_exclusive;
-            }
+    [$date_sql, $date_params] = intersoccer_booking_report_post_date_filter_sql(
+        (string) $start_date,
+        (string) $end_date,
+        $year,
+        true
+    );
+    if ($date_sql !== '') {
+        $query .= $date_sql;
+        foreach ($date_params as $date_param) {
+            $params[] = $date_param;
         }
-    } elseif ($start_date) {
-        [$start_bound, ] = intersoccer_booking_report_date_bounds($start_date, '');
-        if ($start_bound !== null) {
-            $query .= ' AND p.post_date >= %s';
-            $params[] = $start_bound;
-        }
-    } elseif ($end_date) {
-        [, $end_exclusive] = intersoccer_booking_report_date_bounds('', $end_date);
-        if ($end_exclusive !== null) {
-            $query .= ' AND p.post_date < %s';
-            $params[] = $end_exclusive;
-        }
-    } else {
-        // Fallback to year filtering if no dates provided
-        $query .= " AND YEAR(p.post_date) = %d";
-        $params[] = $year;
     }
 
     $query .= " ORDER BY p.post_date DESC, p.ID, oi.order_item_id";
@@ -485,7 +466,7 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
     // Add missing fields to match roster table structure
     foreach ($results as &$row) {
         // Set defaults for fields not available in direct WooCommerce query
-        $row['player_gender'] = $row['gender']; // Map to same field
+        $row['player_gender'] = $row['gender'] ?? '';
         $row['registration_timestamp'] = $row['order_date'];
         $row['start_date'] = null; // Not available in direct query
         $row['intersoccer_item_discounts'] = null;
@@ -714,27 +695,17 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
 
     global $wpdb;
 
-    // Build date filter (post_date is site-local; half-open local range — do not use post_date_gmt).
+    [$date_sql, $date_params] = intersoccer_booking_report_post_date_filter_sql(
+        (string) $start_date,
+        (string) $end_date,
+        $year,
+        false
+    );
     $date_where = '';
-    if (!empty($start_date) && !empty($end_date)) {
-        if (intersoccer_booking_report_start_after_end($start_date, $end_date)) {
-            $date_where = $wpdb->prepare(
-                'AND p.post_date >= %s AND p.post_date <= %s',
-                intersoccer_booking_report_normalize_ymd($start_date) ?: $start_date,
-                intersoccer_booking_report_normalize_ymd($end_date) ?: $end_date
-            );
-        } else {
-            [$start_bound, $end_exclusive] = intersoccer_booking_report_date_bounds($start_date, $end_date);
-            if ($start_bound !== null && $end_exclusive !== null) {
-                $date_where = $wpdb->prepare(
-                    'AND p.post_date >= %s AND p.post_date < %s',
-                    $start_bound,
-                    $end_exclusive
-                );
-            }
-        }
-    } elseif (!empty($year)) {
-        $date_where = $wpdb->prepare("AND YEAR(p.post_date) = %d", $year);
+    if ($date_sql !== '') {
+        $date_where = $date_params === []
+            ? $date_sql
+            : $wpdb->prepare($date_sql, ...$date_params);
     }
 
     // Build region filter (if needed)
