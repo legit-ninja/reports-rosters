@@ -11,6 +11,7 @@ use InterSoccer\ReportsRosters\Data\Models\Roster;
 use InterSoccer\ReportsRosters\Data\Repositories\PlayerRepository;
 use InterSoccer\ReportsRosters\Data\Repositories\RosterRepository;
 use InterSoccer\ReportsRosters\Exceptions\DatabaseException;
+use InterSoccer\ReportsRosters\Exceptions\RosterRebuildAbortedException;
 use InterSoccer\ReportsRosters\Services\CacheManager;
 use InterSoccer\ReportsRosters\Services\DataValidator;
 use InterSoccer\ReportsRosters\Services\EventMatcher;
@@ -264,10 +265,7 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
     }
 
     private function assertTransactionLevelZero(Database $database): void {
-        $ref = new \ReflectionClass($database);
-        $prop = $ref->getProperty('transaction_level');
-        $prop->setAccessible(true);
-        $this->assertSame(0, $prop->getValue($database));
+        $this->assertSame(0, $database->get_transaction_level());
     }
 
     private function deleteSql(int $order_item_id): string {
@@ -337,6 +335,7 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
         $this->assertSame($this->expectedTwoDeleteCommitSequence(6101, 6102), $sequence);
         $this->assertWriteSequenceBoundedByTransaction($sequence);
         $this->assertSame([], $this->wpdb->committed_item_ids());
+        $this->assertTransactionLevelZero($database);
     }
 
     public function test_rebuild_specific_orders_two_deletes_nested_savepoints_single_commit(): void {
@@ -436,6 +435,7 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
         $this->assertSame($this->expectedTwoDeleteCommitSequence($removed_a, $removed_b), $sequence);
         $this->assertWriteSequenceBoundedByTransaction($sequence);
         $this->assertSame([$line_keep], $this->wpdb->committed_item_ids());
+        $this->assertTransactionLevelZero($database);
     }
 
     public function test_full_rebuild_second_delete_failure_rolls_back_all_and_rebuild_failed(): void {
@@ -455,6 +455,36 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
         $this->assertSame([6101, 6102], $this->wpdb->committed_item_ids());
         $this->assertSame([], $this->admin_log_actions);
         $this->assertTransactionLevelZero($database);
+    }
+
+    public function test_resolve_rebuild_abort_error_message_prefers_abort_exception_over_line_errors(): void {
+        $database = $this->realDatabase();
+        $repo = $this->realRosterRepository($database);
+        $builder = $this->minimalBuilder($database, $repo);
+
+        $ref = new \ReflectionClass($builder);
+        $ref->getMethod('init_build_stats')->invoke($builder);
+
+        $abort_prop = $ref->getProperty('last_rebuild_abort_exception');
+        $abort_prop->setAccessible(true);
+        $abort_prop->setValue(
+            $builder,
+            new RosterRebuildAbortedException('Failed to delete obsolete roster 6102: synthetic delete failure')
+        );
+
+        $stats_prop = $ref->getProperty('build_stats');
+        $stats_prop->setAccessible(true);
+        $stats = $stats_prop->getValue($builder);
+        $stats['errors'][] = 'Order 6501, item 6601: synthetic line validation failure';
+        $stats_prop->setValue($builder, $stats);
+
+        $message = $ref->getMethod('resolveRebuildAbortErrorMessage')->invoke(
+            $builder,
+            'Rebuild failed; no roster rows were changed.'
+        );
+
+        $this->assertStringContainsString('Failed to delete obsolete roster 6102', $message);
+        $this->assertStringNotContainsString('synthetic line validation failure', $message);
     }
 
     public function test_rebuild_specific_orders_second_delete_failure_rolls_back_and_rebuild_failed(): void {

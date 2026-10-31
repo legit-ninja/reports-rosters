@@ -110,6 +110,9 @@ class RosterBuilder {
      */
     private $build_stats = [];
 
+    /** @var RosterRebuildAbortedException|null Set when a rebuild-scoped delete aborts the run. */
+    private $last_rebuild_abort_exception = null;
+
     /** Rebuild transaction: a failed delete aborts the whole run. */
     private const DELETE_ORDER_ITEM_ABORT_RUN = 'abort_run';
 
@@ -272,25 +275,33 @@ class RosterBuilder {
             ],
             'rosters_deleted' => 0,
         ];
+        $this->last_rebuild_abort_exception = null;
     }
 
     /**
-     * @param string $generic_fallback Message used when no earlier abort error was recorded
+     * @param string $generic_fallback Message used when no abort exception was recorded
      */
     private function resolveRebuildAbortErrorMessage(string $generic_fallback): string {
-        $errors = $this->build_stats['errors'] ?? [];
-        for ($i = count($errors) - 1; $i >= 0; $i--) {
-            $err = $errors[$i];
-            if (is_string($err) && $err !== '' && $err !== $generic_fallback) {
-                return $err;
+        $abort = $this->last_rebuild_abort_exception;
+        if (!$abort instanceof RosterRebuildAbortedException) {
+            return $generic_fallback;
+        }
+
+        $message = $abort->getMessage();
+        $previous = $abort->getPrevious();
+        if ($previous instanceof \Throwable) {
+            $prev_msg = $previous->getMessage();
+            if ($prev_msg !== '' && strpos($message, $prev_msg) === false) {
+                $message .= ': ' . $prev_msg;
             }
         }
 
-        return $generic_fallback;
+        return $message !== '' ? $message : $generic_fallback;
     }
 
     private function rethrowIfRebuildAborted(\Throwable $e): void {
         if ($e instanceof RosterRebuildAbortedException) {
+            $this->last_rebuild_abort_exception = $e;
             throw $e;
         }
     }
@@ -959,7 +970,9 @@ class RosterBuilder {
                 $this->rethrowIfRebuildAborted($e);
                 $message = "Failed to delete obsolete roster {$order_item_id}: {$e->getMessage()}";
                 $this->build_stats['errors'][] = $message;
-                throw new RosterRebuildAbortedException($message, 0, $e);
+                $abort = new RosterRebuildAbortedException($message, 0, $e);
+                $this->last_rebuild_abort_exception = $abort;
+                throw $abort;
             }
 
             $message = "Failed to delete obsolete roster {$order_item_id}: {$e->getMessage()}";

@@ -1114,6 +1114,7 @@ if (!class_exists('WC_Order')) {
         }
         
         public function get_id() { return $this->id; }
+        public function get_type() { return 'shop_order'; }
         public function get_status() { return 'completed'; }
         public function get_customer_id() { return 1; }
         public function get_billing_email() { return 'test@example.com'; }
@@ -1281,6 +1282,8 @@ if (!function_exists('wc_delete_order_item_meta')) {
 // InterSoccer-specific stubs
 // ============================================================================
 
+require_once dirname(__DIR__) . '/includes/roster-canonical-fields.php';
+
 if (!function_exists('intersoccer_roster_rebuild_statuses')) {
     function intersoccer_roster_rebuild_statuses(): array {
         $default = ['completed', 'processing', 'on-hold'];
@@ -1288,21 +1291,8 @@ if (!function_exists('intersoccer_roster_rebuild_statuses')) {
             return $default;
         }
         $filtered = apply_filters('intersoccer_roster_rebuild_statuses', $default);
-        if (!is_array($filtered) || $filtered === []) {
-            return $default;
-        }
-        $normalized = [];
-        foreach ($filtered as $status) {
-            if (!is_string($status)) {
-                continue;
-            }
-            $status = trim($status);
-            if ($status !== '') {
-                $normalized[] = $status;
-            }
-        }
 
-        return $normalized !== [] ? $normalized : $default;
+        return intersoccer_normalize_roster_rebuild_statuses($filtered);
     }
 }
 
