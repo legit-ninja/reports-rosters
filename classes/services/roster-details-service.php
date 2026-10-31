@@ -723,6 +723,8 @@ class RosterDetailsService {
             return [];
         }
 
+        $currentVariationId = $this->canonicalVariationIdForGrouping($currentVariationId);
+
         $collection = $this->repository->where(['activity_type' => $activityType]);
         $summaries = [];
 
@@ -731,7 +733,8 @@ class RosterDetailsService {
                 continue;
             }
 
-            if ((int) $model->variation_id === $currentVariationId) {
+            $canonicalVariationId = $this->canonicalVariationIdForGrouping((int) $model->variation_id);
+            if ($canonicalVariationId === $currentVariationId) {
                 continue;
             }
 
@@ -760,7 +763,7 @@ class RosterDetailsService {
 
             $keyParts = [
                 $canonicalProductId,
-                (int) $model->variation_id,
+                $canonicalVariationId,
                 (string) $model->venue,
                 (string) $model->age_group,
                 (string) $model->activity_type,
@@ -784,7 +787,7 @@ class RosterDetailsService {
 
                 $summaries[$key] = (object) [
                     'product_id' => $canonicalProductId,
-                    'variation_id' => (int) $model->variation_id,
+                    'variation_id' => $canonicalVariationId,
                     'product_name' => $label !== '' ? $label : $storedName,
                     'venue' => $model->venue,
                     'age_group' => $model->age_group,
@@ -827,6 +830,26 @@ class RosterDetailsService {
         }, $summaryValues);
 
         return $summaryValues;
+    }
+
+    private function canonicalVariationIdForGrouping(int $variationId): int {
+        if ($variationId <= 0) {
+            return 0;
+        }
+        if (function_exists('intersoccer_get_default_language_variation_id')) {
+            return (int) intersoccer_get_default_language_variation_id($variationId);
+        }
+        if (function_exists('apply_filters')) {
+            $default_lang = apply_filters('wpml_default_language', null);
+            if ($default_lang) {
+                $mapped = (int) apply_filters('wpml_object_id', $variationId, 'product_variation', true, $default_lang);
+                if ($mapped > 0) {
+                    return $mapped;
+                }
+            }
+        }
+
+        return $variationId;
     }
 
     private function countUnknownAttendees(array $rosters): int {

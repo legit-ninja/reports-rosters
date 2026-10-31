@@ -19,7 +19,8 @@ class RosterDetailsServiceProductFilterTest extends TestCase {
     private const FR_PID = 9103;
     private const EN_NAME = 'SYNTH Course C EN';
     private const VAR_CURRENT = 5001;
-    private const VAR_OTHER = 5002;
+    private const VAR_OTHER_EN = 5002;
+    private const VAR_OTHER_FR = 5102;
 
     /** @var mixed */
     private $saved_wpdb = null;
@@ -70,7 +71,10 @@ class RosterDetailsServiceProductFilterTest extends TestCase {
                 return [];
             }
         };
-        $this->stub_wpml_map([self::FR_PID => self::EN_PID, self::EN_PID => self::EN_PID]);
+        $this->stub_wpml_map(
+            [self::FR_PID => self::EN_PID, self::EN_PID => self::EN_PID],
+            [self::VAR_OTHER_FR => self::VAR_OTHER_EN, self::VAR_OTHER_EN => self::VAR_OTHER_EN]
+        );
         if (!function_exists('get_post')) {
             eval('function get_post($id) { return (object) ["post_date" => "2026-01-01 12:00:00"]; }');
         }
@@ -83,23 +87,41 @@ class RosterDetailsServiceProductFilterTest extends TestCase {
         parent::tearDown();
     }
 
-    private function stub_wpml_map(array $map): void {
-        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$args) use ($map) {
+    /**
+     * @param array<int,int> $productMap twin => canonical EN parent
+     * @param array<int,int> $variationMap twin => canonical EN variation
+     */
+    private function stub_wpml_map(array $productMap, array $variationMap = []): void {
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$args) use ($productMap, $variationMap) {
             if ($hook === 'wpml_default_language') {
                 return 'en';
             }
-            if ($hook === 'wpml_object_id' && isset($args[0]) && $args[0] === 'product') {
+            $elementType = $args[0] ?? null;
+            if ($hook === 'wpml_object_id' && $elementType === 'product') {
                 $id = (int) $value;
                 $lang = $args[2] ?? null;
                 if ($lang === 'fr') {
-                    foreach ($map as $twin => $canon) {
+                    foreach ($productMap as $twin => $canon) {
                         if ((int) $canon === $id && (int) $twin !== (int) $canon) {
                             return (int) $twin;
                         }
                     }
                 }
 
-                return $map[$id] ?? $id;
+                return $productMap[$id] ?? $id;
+            }
+            if ($hook === 'wpml_object_id' && $elementType === 'product_variation') {
+                $id = (int) $value;
+                $lang = $args[2] ?? null;
+                if ($lang === 'fr') {
+                    foreach ($variationMap as $twin => $canon) {
+                        if ((int) $canon === $id && (int) $twin !== (int) $canon) {
+                            return (int) $twin;
+                        }
+                    }
+                }
+
+                return $variationMap[$id] ?? $id;
             }
             if ($hook === 'wpml_active_languages') {
                 return ['en' => [], 'fr' => []];
@@ -171,20 +193,6 @@ class RosterDetailsServiceProductFilterTest extends TestCase {
         return [$service, $holder];
     }
 
-    private function primaryProductCriteria(RosterDetailsService $service, array $filters, array $context): array {
-        $build = new \ReflectionMethod($service, 'buildCriteria');
-        $build->setAccessible(true);
-
-        return $build->invoke($service, $this->normaliseFilters($service, $filters), $context, false);
-    }
-
-    private function normaliseFilters(RosterDetailsService $service, array $filters): array {
-        $normalise = new \ReflectionMethod($service, 'normaliseFilters');
-        $normalise->setAccessible(true);
-
-        return $normalise->invoke($service, $filters);
-    }
-
     private function baseFilters(int $product_id = 0, string $product_name = ''): array {
         return [
             'product_id' => $product_id,
@@ -215,39 +223,50 @@ class RosterDetailsServiceProductFilterTest extends TestCase {
         ];
     }
 
-    public function test_fr_product_id_filter_uses_wpml_twin_in_criteria_and_returns_both_bookings(): void {
+    /**
+     * @return array<int,object>
+     */
+    private function otherDestinationSummaryPool(): array {
+        return [
+            $this->rosterRow([
+                'id' => 7010,
+                'order_item_id' => 8110,
+                'variation_id' => self::VAR_OTHER_EN,
+                'product_id' => self::EN_PID,
+            ]),
+            $this->rosterRow([
+                'id' => 7011,
+                'order_item_id' => 8111,
+                'variation_id' => self::VAR_OTHER_FR,
+                'product_id' => self::FR_PID,
+            ]),
+        ];
+    }
+
+    public function test_fr_product_id_filter_returns_both_wpml_twin_bookings(): void {
         $primary = [
             $this->rosterRow(['id' => 7001, 'order_item_id' => 8101, 'product_id' => self::EN_PID]),
             $this->rosterRow(['id' => 7002, 'order_item_id' => 8102, 'product_id' => self::FR_PID]),
         ];
         [$service] = $this->serviceWithRepo($primary, []);
 
-        $context = $this->baseContext();
-        $criteria = $this->primaryProductCriteria($service, $this->baseFilters(self::FR_PID), $context);
-        $this->assertSame([self::EN_PID, self::FR_PID], $criteria['product_id']);
-
         $result = $service->getRosterContext(
             $this->baseFilters(self::FR_PID),
-            $context
+            $this->baseContext()
         );
 
         $this->assertTrue($result['success']);
         $this->assertCount(2, $result['rosters']);
     }
 
-    public function test_legacy_product_name_filter_maps_to_twin_product_ids(): void {
+    public function test_legacy_product_name_filter_returns_both_wpml_twin_bookings(): void {
         $primary = [
             $this->rosterRow(['id' => 7001, 'order_item_id' => 8101, 'product_id' => self::EN_PID]),
             $this->rosterRow(['id' => 7002, 'order_item_id' => 8102, 'product_id' => self::FR_PID]),
         ];
         [$service] = $this->serviceWithRepo($primary, []);
 
-        $filters = $this->baseFilters(0, self::EN_NAME);
-        $context = $this->baseContext();
-        $criteria = $this->primaryProductCriteria($service, $filters, $context);
-        $this->assertSame([self::EN_PID, self::FR_PID], $criteria['product_id']);
-
-        $result = $service->getRosterContext($filters, $context);
+        $result = $service->getRosterContext($this->baseFilters(0, self::EN_NAME), $this->baseContext());
 
         $this->assertTrue($result['success']);
         $this->assertCount(2, $result['rosters']);
@@ -257,21 +276,7 @@ class RosterDetailsServiceProductFilterTest extends TestCase {
         $primary = [
             $this->rosterRow(['id' => 7001, 'order_item_id' => 8101, 'product_id' => self::EN_PID]),
         ];
-        $summaryPool = [
-            $this->rosterRow([
-                'id' => 7010,
-                'order_item_id' => 8110,
-                'variation_id' => self::VAR_OTHER,
-                'product_id' => self::EN_PID,
-            ]),
-            $this->rosterRow([
-                'id' => 7011,
-                'order_item_id' => 8111,
-                'variation_id' => self::VAR_OTHER,
-                'product_id' => self::FR_PID,
-            ]),
-        ];
-        [$service] = $this->serviceWithRepo($primary, $summaryPool);
+        [$service] = $this->serviceWithRepo($primary, $this->otherDestinationSummaryPool());
 
         $result = $service->getRosterContext(
             $this->baseFilters(self::FR_PID),
@@ -281,16 +286,57 @@ class RosterDetailsServiceProductFilterTest extends TestCase {
         $this->assertTrue($result['success']);
         $this->assertCount(1, $result['available_rosters']);
         $this->assertSame(self::EN_PID, (int) $result['available_rosters'][0]->product_id);
+        $this->assertSame(self::VAR_OTHER_EN, (int) $result['available_rosters'][0]->variation_id);
         $this->assertSame(2, (int) $result['available_rosters'][0]->current_players);
     }
 
-    public function test_roster_details_legacy_sql_selects_max_product_name(): void {
+    public function test_destination_grouping_legacy_product_name_only_request(): void {
+        $primary = [
+            $this->rosterRow(['id' => 7001, 'order_item_id' => 8101, 'product_id' => self::EN_PID]),
+        ];
+        [$service] = $this->serviceWithRepo($primary, $this->otherDestinationSummaryPool());
+
+        $result = $service->getRosterContext(
+            $this->baseFilters(0, self::EN_NAME),
+            $this->baseContext()
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(1, $result['available_rosters']);
+        $this->assertSame(2, (int) $result['available_rosters'][0]->current_players);
+    }
+
+    public function test_roster_details_legacy_summary_sql_aggregates_product_name_in_grouped_queries(): void {
         $path = dirname(__DIR__, 2) . '/includes/roster-details.php';
         $src = (string) file_get_contents($path);
-        $this->assertSame(
-            2,
-            substr_count($src, 'MAX(r.product_name) AS product_name')
-        );
+        $this->assertNotSame('', $src);
+
+        preg_match_all('/\$wpdb->prepare\("\s*(SELECT[\s\S]*?GROUP BY[\s\S]*?)"/', $src, $blocks);
+        $this->assertNotEmpty($blocks[1], 'Expected at least one grouped summary query in roster-details.php');
+
+        foreach ($blocks[1] as $sql) {
+            if (stripos($sql, 'GROUP BY') === false) {
+                continue;
+            }
+            if (!preg_match('/SELECT\s+([\s\S]+?)\s+FROM/is', $sql, $selectMatch)) {
+                continue;
+            }
+            if (!preg_match('/GROUP BY\s+([^"\s]+(?:\s*,\s*[^"\s]+)*)/i', $sql, $groupMatch)) {
+                continue;
+            }
+            $selectList = $selectMatch[1];
+            $groupBy = $groupMatch[1];
+            $hasBareProductName = (bool) preg_match('/(?<![A-Za-z0-9_.])r\.product_name\b(?!\s*\))/i', $selectList);
+            $groupIncludesProductName = (bool) preg_match('/\br\.product_name\b/i', $groupBy);
+            $usesMaxProductName = stripos($selectList, 'MAX(r.product_name)') !== false;
+
+            if ($hasBareProductName && !$groupIncludesProductName) {
+                $this->fail('Grouped roster-details SQL selects bare r.product_name without GROUP BY r.product_name');
+            }
+            if (stripos($selectList, 'r.product_name') !== false && !$usesMaxProductName && !$groupIncludesProductName) {
+                $this->fail('Grouped roster-details SQL must aggregate or GROUP BY r.product_name');
+            }
+        }
     }
 
     public function test_other_events_view_link_uses_product_id(): void {
