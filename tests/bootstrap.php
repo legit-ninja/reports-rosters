@@ -261,6 +261,56 @@ if (!function_exists('wpml_get_current_language')) {
     }
 }
 
+if (!function_exists('intersoccer_rr_test_wpml_language_for_term_lookup')) {
+    function intersoccer_rr_test_wpml_language_for_term_lookup(): string {
+        $filtered = apply_filters('wpml_current_language', null);
+        if (is_string($filtered) && $filtered !== '') {
+            return strtolower($filtered);
+        }
+
+        return strtolower((string) ($GLOBALS['intersoccer_test_wpml_current_language'] ?? 'en'));
+    }
+}
+
+if (!function_exists('intersoccer_rr_test_term_matches_wpml_language')) {
+    /**
+     * @param object|array<string,mixed> $term
+     */
+    function intersoccer_rr_test_term_matches_wpml_language($term): bool {
+        $current = intersoccer_rr_test_wpml_language_for_term_lookup();
+        if ($current === '' || $current === 'all') {
+            return true;
+        }
+        $row = is_object($term) ? $term : (object) $term;
+        $term_lang = '';
+        if (isset($row->wpml_lang) && is_string($row->wpml_lang) && $row->wpml_lang !== '') {
+            $term_lang = strtolower($row->wpml_lang);
+        } else {
+            $term_id = (int) ($row->term_id ?? 0);
+            $lang_map = $GLOBALS['intersoccer_test_term_languages'] ?? [];
+            if ($term_id > 0 && isset($lang_map[$term_id])) {
+                $term_lang = strtolower((string) $lang_map[$term_id]);
+            }
+        }
+        if ($term_lang === '') {
+            return true;
+        }
+
+        return substr($term_lang, 0, 2) === substr($current, 0, 2);
+    }
+}
+
+if (function_exists('add_action')) {
+    add_action(
+        'wpml_switch_language',
+        static function ($language_code) {
+            $GLOBALS['intersoccer_test_wpml_current_language'] = (string) $language_code;
+        },
+        0,
+        1
+    );
+}
+
 // URL functions
 if (!function_exists('admin_url')) {
     function admin_url($path = '', $scheme = 'admin') {
@@ -455,7 +505,11 @@ if (!function_exists('get_term_by')) {
                 $slug_key = strtolower((string) $value);
                 if (isset($by_slug[$taxonomy][$slug_key])) {
                     $row = $by_slug[$taxonomy][$slug_key];
-                    return is_object($row) ? $row : (object) $row;
+                    $row_obj = is_object($row) ? $row : (object) $row;
+                    if (!intersoccer_rr_test_term_matches_wpml_language($row_obj)) {
+                        return false;
+                    }
+                    return $row_obj;
                 }
             }
         }
@@ -465,7 +519,11 @@ if (!function_exists('get_term_by')) {
                 $name_key = function_exists('mb_strtolower') ? mb_strtolower((string) $value) : strtolower((string) $value);
                 if (isset($by_name[$taxonomy][$name_key])) {
                     $row = $by_name[$taxonomy][$name_key];
-                    return is_object($row) ? $row : (object) $row;
+                    $row_obj = is_object($row) ? $row : (object) $row;
+                    if (!intersoccer_rr_test_term_matches_wpml_language($row_obj)) {
+                        return false;
+                    }
+                    return $row_obj;
                 }
             }
         }
