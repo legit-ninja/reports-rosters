@@ -128,33 +128,42 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
 
     private function registerCatalogTerms(): void {
         $GLOBALS['intersoccer_test_terms_by_slug'] = [
-            'pa_intersoccer-venues' => [
-                'stade-de-vessy' => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
-                'geneve-stade-vessy' => (object) ['term_id' => 7101, 'slug' => 'geneve-stade-vessy', 'name' => 'Genève – Stade de Vessy'],
-            ],
-            'pa_age-group' => [
-                '5-13y-full-day' => (object) ['term_id' => 7200, 'slug' => '5-13y-full-day', 'name' => '5-13y (Full Day)'],
-                '5-13-ans-journee-complete' => (object) ['term_id' => 7201, 'slug' => '5-13-ans-journee-complete', 'name' => '5-13 ans (journée complète)'],
-                '5-13-jahre-ganzer-tag' => (object) ['term_id' => 7202, 'slug' => '5-13-jahre-ganzer-tag', 'name' => '5-13 Jahre (ganzer Tag)'],
-            ],
-            'pa_booking-type' => [
-                'full-week' => (object) ['term_id' => 7300, 'slug' => 'full-week', 'name' => 'Full Week'],
-                'semaine-complete' => (object) ['term_id' => 7301, 'slug' => 'semaine-complete', 'name' => 'Semaine complète'],
-                'ganze-woche' => (object) ['term_id' => 7302, 'slug' => 'ganze-woche', 'name' => 'Ganze Woche'],
-            ],
             'pa_canton-region' => [
                 'geneva' => (object) ['term_id' => 7400, 'slug' => 'geneva', 'name' => 'Geneva'],
                 'geneve' => (object) ['term_id' => 7401, 'slug' => 'geneve', 'name' => 'Genève'],
+                'vaud' => (object) ['term_id' => 7402, 'slug' => 'vaud', 'name' => 'Vaud'],
+                'zurich' => (object) ['term_id' => 7403, 'slug' => 'zurich', 'name' => 'Zürich'],
             ],
             'pa_city' => [
                 'geneva' => (object) ['term_id' => 7500, 'slug' => 'geneva', 'name' => 'Geneva'],
                 'geneve-ville' => (object) ['term_id' => 7501, 'slug' => 'geneve-ville', 'name' => 'Genève'],
                 'genf' => (object) ['term_id' => 7502, 'slug' => 'genf', 'name' => 'Genf'],
+                'zuerich' => (object) ['term_id' => 7503, 'slug' => 'zuerich', 'name' => 'Zürich'],
+                'lausanne-ville' => (object) ['term_id' => 7504, 'slug' => 'lausanne-ville', 'name' => 'Lausanne'],
             ],
             'pa_camp-terms' => [
                 'week-one' => (object) ['term_id' => 7600, 'slug' => 'week-one', 'name' => 'Week One'],
                 'semaine-un' => (object) ['term_id' => 7601, 'slug' => 'semaine-un', 'name' => 'Semaine un'],
                 'woche-eins' => (object) ['term_id' => 7602, 'slug' => 'woche-eins', 'name' => 'Woche eins'],
+                'semaine-deux' => (object) ['term_id' => 7603, 'slug' => 'semaine-deux', 'name' => 'Semaine deux'],
+                'woche-zwei' => (object) ['term_id' => 7604, 'slug' => 'woche-zwei', 'name' => 'Woche zwei'],
+            ],
+            'pa_age-group' => [
+                '5-13y-full-day' => (object) ['term_id' => 7200, 'slug' => '5-13y-full-day', 'name' => '5-13y (Full Day)'],
+                '5-13-ans-journee-complete' => (object) ['term_id' => 7201, 'slug' => '5-13-ans-journee-complete', 'name' => '5-13 ans (journée complète)'],
+                '5-13-jahre-ganzer-tag' => (object) ['term_id' => 7202, 'slug' => '5-13-jahre-ganzer-tag', 'name' => '5-13 Jahre (ganzer Tag)'],
+                '5-8-ans' => (object) ['term_id' => 7203, 'slug' => '5-8-ans', 'name' => '5-8 ans'],
+                '5-8-jahre' => (object) ['term_id' => 7204, 'slug' => '5-8-jahre', 'name' => '5-8 Jahre'],
+            ],
+            'pa_intersoccer-venues' => [
+                'stade-de-vessy' => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
+                'geneve-stade-vessy' => (object) ['term_id' => 7101, 'slug' => 'geneve-stade-vessy', 'name' => 'Genève – Stade de Vessy'],
+                'lausanne-centre' => (object) ['term_id' => 7102, 'slug' => 'lausanne-centre', 'name' => 'Lausanne Centre'],
+            ],
+            'pa_booking-type' => [
+                'full-week' => (object) ['term_id' => 7300, 'slug' => 'full-week', 'name' => 'Full Week'],
+                'semaine-complete' => (object) ['term_id' => 7301, 'slug' => 'semaine-complete', 'name' => 'Semaine complète'],
+                'ganze-woche' => (object) ['term_id' => 7302, 'slug' => 'ganze-woche', 'name' => 'Ganze Woche'],
             ],
         ];
         $by_id = [];
@@ -169,15 +178,24 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
     private function stubWpml(): void {
         $GLOBALS['intersoccer_test_wpml_term_map'] = [
             7101 => 7100,
+            7102 => 7100,
             7201 => 7200,
             7202 => 7200,
+            7203 => 7200,
+            7204 => 7200,
             7301 => 7300,
             7302 => 7300,
             7401 => 7400,
+            7402 => 7400,
+            7403 => 7400,
             7501 => 7500,
             7502 => 7500,
+            7503 => 7500,
+            7504 => 7500,
             7601 => 7600,
             7602 => 7600,
+            7603 => 7600,
+            7604 => 7600,
         ];
         $GLOBALS['intersoccer_test_wpml_object_map'] = [
             'product_variation' => [
@@ -197,6 +215,17 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
                 $id = (int) $value;
                 $element_type = isset($args[0]) ? (string) $args[0] : '';
                 $lang = isset($args[2]) ? (string) $args[2] : '';
+                if ($element_type !== '' && str_starts_with($element_type, 'pa_') && $lang !== '' && $lang !== 'en') {
+                    if ($lang === 'fr') {
+                        foreach ($GLOBALS['intersoccer_test_wpml_term_map'] ?? [] as $translated_id => $original_id) {
+                            if ((int) $original_id === $id) {
+                                return (int) $translated_id;
+                            }
+                        }
+                    }
+
+                    return $id;
+                }
                 $map = $GLOBALS['intersoccer_test_wpml_object_map'][$element_type][$lang] ?? [];
 
                 return $map[$id] ?? $id;
@@ -831,21 +860,21 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             'item_meta' => [
                 'Activity Type' => 'Camp',
                 'Assigned Attendee' => 'RR175 R4 FR facets',
-                "Groupe d'âge" => '5-13 ans (journée complète)',
-                'Lieux InterSoccer' => 'Genève – Stade de Vessy',
-                'Ville' => 'Genève',
-                'Canton / Région' => 'Genève',
-                'Termes du camp' => 'Semaine un',
-                'attribute_pa_age-group' => '5-13-ans-journee-complete',
-                'pa_age-group' => '5-13-ans-journee-complete',
-                'attribute_pa_intersoccer-venues' => 'geneve-stade-vessy',
-                'pa_intersoccer-venues' => 'geneve-stade-vessy',
-                'attribute_pa_city' => 'geneve-ville',
-                'pa_city' => 'geneve-ville',
-                'attribute_pa_canton-region' => 'geneve',
-                'pa_canton-region' => 'geneve',
-                'attribute_pa_camp-terms' => 'semaine-un',
-                'pa_camp-terms' => 'semaine-un',
+                "Groupe d'âge" => '5-8 ans',
+                'Lieux InterSoccer' => 'Lausanne Centre',
+                'Ville' => 'Lausanne',
+                'Canton / région' => 'Vaud',
+                'Semaine de camp' => 'Semaine deux',
+                'attribute_pa_age-group' => '5-8-ans',
+                'pa_age-group' => '5-8-ans',
+                'attribute_pa_intersoccer-venues' => 'lausanne-centre',
+                'pa_intersoccer-venues' => 'lausanne-centre',
+                'attribute_pa_city' => 'lausanne-ville',
+                'pa_city' => 'lausanne-ville',
+                'attribute_pa_canton-region' => 'vaud',
+                'pa_canton-region' => 'vaud',
+                'attribute_pa_camp-terms' => 'semaine-deux',
+                'pa_camp-terms' => 'semaine-deux',
                 'attribute_pa_booking-type' => 'semaine-complete',
                 'pa_booking-type' => 'semaine-complete',
             ],
@@ -857,14 +886,19 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         global $intersoccer_test_wc_order_item_meta, $intersoccer_test_roster_store;
         $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
         $this->assertSame('5-13 ans (journée complète)', $meta["Groupe d'âge"] ?? '');
+        $this->assertNotSame('5-8-ans', $meta['pa_age-group'] ?? '');
         $this->assertSame('5-13-ans-journee-complete', $meta['pa_age-group'] ?? '');
         $this->assertSame('Genève – Stade de Vessy', $meta['Lieux InterSoccer'] ?? '');
+        $this->assertNotSame('lausanne-centre', $meta['pa_intersoccer-venues'] ?? '');
         $this->assertSame('geneve-stade-vessy', $meta['pa_intersoccer-venues'] ?? '');
         $this->assertSame('Genève', $meta['Ville'] ?? '');
+        $this->assertNotSame('lausanne-ville', $meta['pa_city'] ?? '');
         $this->assertSame('geneve-ville', $meta['pa_city'] ?? '');
-        $this->assertSame('Genève', $meta['Canton / Région'] ?? '');
+        $this->assertSame('Genève', $meta['Canton / région'] ?? '');
+        $this->assertNotSame('vaud', $meta['pa_canton-region'] ?? '');
         $this->assertSame('geneve', $meta['pa_canton-region'] ?? '');
-        $this->assertSame('Semaine un', $meta['Termes du camp'] ?? '');
+        $this->assertSame('Semaine un', $meta['Semaine de camp'] ?? '');
+        $this->assertNotSame('semaine-deux', $meta['pa_camp-terms'] ?? '');
         $this->assertSame('semaine-un', $meta['pa_camp-terms'] ?? '');
 
         $row = $intersoccer_test_roster_store[self::ITEM_ID];
@@ -883,21 +917,21 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             'item_meta' => [
                 'Activity Type' => 'Camp',
                 'Assigned Attendee' => 'RR175 R4 DE facets',
-                'Altersgruppe' => '5-13 Jahre (ganzer Tag)',
-                'InterSoccer-Standorte' => 'Stade de Vessy',
-                'Stadt' => 'Genf',
-                'Kanton / Region' => 'Geneva',
-                'Camp-Bedingungen' => 'Woche eins',
-                'attribute_pa_age-group' => '5-13-jahre-ganzer-tag',
-                'pa_age-group' => '5-13-jahre-ganzer-tag',
-                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
-                'pa_intersoccer-venues' => 'stade-de-vessy',
-                'attribute_pa_city' => 'genf',
-                'pa_city' => 'genf',
-                'attribute_pa_canton-region' => 'geneva',
-                'pa_canton-region' => 'geneva',
-                'attribute_pa_camp-terms' => 'woche-eins',
-                'pa_camp-terms' => 'woche-eins',
+                'Altersgruppe' => '5-8 Jahre',
+                'InterSoccer-Standorte' => 'Lausanne Centre',
+                'Stadt' => 'Zürich',
+                'Kanton / Region' => 'Zürich',
+                'Camp-Woche' => 'Woche zwei',
+                'attribute_pa_age-group' => '5-8-jahre',
+                'pa_age-group' => '5-8-jahre',
+                'attribute_pa_intersoccer-venues' => 'lausanne-centre',
+                'pa_intersoccer-venues' => 'lausanne-centre',
+                'attribute_pa_city' => 'zuerich',
+                'pa_city' => 'zuerich',
+                'attribute_pa_canton-region' => 'zurich',
+                'pa_canton-region' => 'zurich',
+                'attribute_pa_camp-terms' => 'woche-zwei',
+                'pa_camp-terms' => 'woche-zwei',
                 'attribute_pa_booking-type' => 'ganze-woche',
                 'pa_booking-type' => 'ganze-woche',
             ],
@@ -909,10 +943,17 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         global $intersoccer_test_wc_order_item_meta, $intersoccer_test_roster_store;
         $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
         $this->assertSame('5-13 Jahre (ganzer Tag)', $meta['Altersgruppe'] ?? '');
+        $this->assertNotSame('5-8-jahre', $meta['pa_age-group'] ?? '');
         $this->assertSame('5-13-jahre-ganzer-tag', $meta['pa_age-group'] ?? '');
         $this->assertSame('Genf', $meta['Stadt'] ?? '');
+        $this->assertNotSame('zuerich', $meta['pa_city'] ?? '');
         $this->assertSame('genf', $meta['pa_city'] ?? '');
-        $this->assertSame('Woche eins', $meta['Camp-Bedingungen'] ?? '');
+        $this->assertSame('Geneva', $meta['Kanton / Region'] ?? '');
+        $this->assertNotSame('zurich', $meta['pa_canton-region'] ?? '');
+        $this->assertSame('geneva', $meta['pa_canton-region'] ?? '');
+        $this->assertSame('Woche eins', $meta['Camp-Woche'] ?? '');
+        $this->assertNotSame('woche-zwei', $meta['pa_camp-terms'] ?? '');
+        $this->assertSame('woche-eins', $meta['pa_camp-terms'] ?? '');
 
         $row = $intersoccer_test_roster_store[self::ITEM_ID];
         $this->assertSame('5-13y (Full Day)', $row['age_group'] ?? '');
@@ -928,11 +969,12 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             'item_meta' => [
                 'Activity Type' => 'Camp',
                 'Assigned Attendee' => 'RR175 R4 EN',
-                'Age Group' => '5-13y (Full Day)',
-                'attribute_pa_age-group' => '5-13y-full-day',
-                'pa_age-group' => '5-13y-full-day',
-                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
-                'pa_intersoccer-venues' => 'stade-de-vessy',
+                'Age Group' => '5-8 ans',
+                'InterSoccer Venues' => 'Lausanne Centre',
+                'attribute_pa_age-group' => '5-8-ans',
+                'pa_age-group' => '5-8-ans',
+                'attribute_pa_intersoccer-venues' => 'lausanne-centre',
+                'pa_intersoccer-venues' => 'lausanne-centre',
                 'attribute_pa_booking-type' => 'full-week',
                 'pa_booking-type' => 'full-week',
             ],
@@ -944,6 +986,197 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         global $intersoccer_test_wc_order_item_meta;
         $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
         $this->assertSame('5-13y (Full Day)', $meta['Age Group'] ?? '');
+        $this->assertNotSame('5-8-ans', $meta['pa_age-group'] ?? '');
         $this->assertSame('5-13y-full-day', $meta['pa_age-group'] ?? '');
+        $this->assertNotSame('lausanne-centre', $meta['pa_intersoccer-venues'] ?? '');
+        $this->assertSame('stade-de-vessy', $meta['pa_intersoccer-venues'] ?? '');
+    }
+
+    public function test_rr175_r6_fr_de_human_label_keys_get_new_value(): void {
+        $this->registerCatalogTerms();
+        $this->stubWpml();
+
+        $this->installMoveWorld([
+            'order_lang' => 'fr',
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'RR175 R6 FR labels',
+                'Canton / région' => 'Vaud',
+                'Semaine de camp' => 'Semaine deux',
+                'attribute_pa_canton-region' => 'vaud',
+                'pa_canton-region' => 'vaud',
+                'attribute_pa_camp-terms' => 'semaine-deux',
+                'pa_camp-terms' => 'semaine-deux',
+                'attribute_pa_booking-type' => 'semaine-complete',
+                'pa_booking-type' => 'semaine-complete',
+            ],
+        ]);
+        $this->invokeMoveAjax();
+        $meta = $GLOBALS['intersoccer_test_wc_order_item_meta'][self::ITEM_ID];
+        $this->assertSame('Genève', $meta['Canton / région'] ?? '');
+        $this->assertSame('Semaine un', $meta['Semaine de camp'] ?? '');
+
+        $this->installMoveWorld([
+            'order_lang' => 'de',
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'RR175 R6 DE labels',
+                'Kanton / Region' => 'Zürich',
+                'Camp-Woche' => 'Woche zwei',
+                'attribute_pa_canton-region' => 'zurich',
+                'pa_canton-region' => 'zurich',
+                'attribute_pa_camp-terms' => 'woche-zwei',
+                'pa_camp-terms' => 'woche-zwei',
+                'attribute_pa_booking-type' => 'ganze-woche',
+                'pa_booking-type' => 'ganze-woche',
+            ],
+        ]);
+        $this->invokeMoveAjax();
+        $meta = $GLOBALS['intersoccer_test_wc_order_item_meta'][self::ITEM_ID];
+        $this->assertSame('Geneva', $meta['Kanton / Region'] ?? '');
+        $this->assertSame('Woche eins', $meta['Camp-Woche'] ?? '');
+    }
+
+    public function test_rr175_r6_fr_variation_with_en_slug_writes_fr_term_on_order_line(): void {
+        $this->registerCatalogTerms();
+        $this->stubWpml();
+
+        $this->installMoveWorld([
+            'order_lang' => 'fr',
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'RR175 R6 EN slug on FR variation',
+                'Canton / région' => 'Vaud',
+                'attribute_pa_canton-region' => 'vaud',
+                'pa_canton-region' => 'vaud',
+                'attribute_pa_booking-type' => 'semaine-complete',
+                'pa_booking-type' => 'semaine-complete',
+            ],
+        ]);
+
+        global $intersoccer_test_wc_get_product_callback;
+        $fr_target_attrs = [
+            'attribute_pa_intersoccer-venues' => 'geneve-stade-vessy',
+            'attribute_pa_age-group' => '5-13-ans-journee-complete',
+            'attribute_pa_booking-type' => 'semaine-complete',
+            'attribute_pa_canton-region' => 'geneva',
+            'attribute_pa_city' => 'geneva',
+            'attribute_pa_camp-terms' => 'semaine-un',
+            'attribute_pa_girls-only' => 'no',
+        ];
+        $make_variation = static function (int $vid, array $attrs, int $parent_id, string $name) {
+            $v = Mockery::mock(\WC_Product_Variation::class);
+            $v->shouldReceive('get_id')->andReturn($vid);
+            $v->shouldReceive('get_parent_id')->andReturn($parent_id);
+            $v->shouldReceive('managing_stock')->andReturn(true);
+            $v->shouldReceive('backorders_allowed')->andReturn(false);
+            $v->shouldReceive('get_stock_quantity')->andReturnUsing(static function () use ($vid) {
+                return (int) ($GLOBALS['intersoccer_test_wc_stock_qty'][$vid] ?? 0);
+            });
+            $v->shouldReceive('get_variation_attributes')->andReturn($attrs);
+            $v->shouldReceive('get_attribute')->andReturnUsing(static function ($name) use ($attrs) {
+                $key = 'attribute_' . ltrim((string) $name, 'attribute_');
+                if (isset($attrs[$key])) {
+                    return $attrs[$key];
+                }
+                if (isset($attrs[$name])) {
+                    return $attrs[$name];
+                }
+
+                return '';
+            });
+            $v->shouldReceive('get_attributes')->andReturn([]);
+            $v->shouldReceive('get_name')->andReturn($name);
+            $v->shouldReceive('get_price')->andReturn('100');
+            $v->shouldReceive('is_purchasable')->andReturn(true);
+            $v->shouldReceive('is_type')->with('variation')->andReturn(true);
+            $v->shouldReceive('get_stock_status')->andReturn('instock');
+            $v->shouldReceive('set_stock_quantity')->never();
+            $v->shouldReceive('get_meta')->andReturn('');
+
+            return $v;
+        };
+        $make_parent = static function (int $pid, string $name) {
+            $parent = Mockery::mock('WC_Product');
+            $parent->shouldReceive('get_id')->andReturn($pid);
+            $parent->shouldReceive('get_catalog_visibility')->andReturn('visible');
+            $parent->shouldReceive('get_meta')->with('capacity', true)->andReturn('');
+            $parent->shouldReceive('get_name')->andReturn($name);
+            $parent->shouldReceive('get_attribute')->andReturn('');
+            $parent->shouldReceive('get_attributes')->andReturn([]);
+
+            return $parent;
+        };
+        $en_target_attrs = [
+            'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+            'attribute_pa_age-group' => '5-13y-full-day',
+            'attribute_pa_booking-type' => 'full-week',
+            'attribute_pa_canton-region' => 'geneva',
+            'attribute_pa_city' => 'geneva',
+            'attribute_pa_camp-terms' => 'week-one',
+            'attribute_pa_girls-only' => 'no',
+        ];
+        $de_target_attrs = [
+            'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+            'attribute_pa_age-group' => '5-13-jahre-ganzer-tag',
+            'attribute_pa_booking-type' => 'ganze-woche',
+            'attribute_pa_canton-region' => 'geneva',
+            'attribute_pa_city' => 'genf',
+            'attribute_pa_camp-terms' => 'woche-eins',
+            'attribute_pa_girls-only' => 'no',
+        ];
+        $intersoccer_test_wc_get_product_callback = static function ($id) use (
+            $make_variation,
+            $make_parent,
+            $en_target_attrs,
+            $fr_target_attrs,
+            $de_target_attrs
+        ) {
+            $id = (int) $id;
+            switch ($id) {
+                case self::EN_PARENT:
+                    return $make_parent($id, 'English Camp Title');
+                case self::FR_PARENT:
+                    return $make_parent($id, 'Camp titre FR');
+                case self::DE_PARENT:
+                    return $make_parent($id, 'Camp Titel DE');
+                case self::SOURCE_VAR:
+                    return $make_variation($id, [
+                        'attribute_pa_booking-type' => 'full-week',
+                        'attribute_pa_girls-only' => 'no',
+                    ], self::EN_PARENT, 'Source variation EN');
+                case self::EN_TARGET:
+                    return $make_variation(
+                        $id,
+                        $en_target_attrs,
+                        self::EN_PARENT,
+                        'Destination EN line name'
+                    );
+                case self::FR_TARGET:
+                    return $make_variation(
+                        $id,
+                        $fr_target_attrs,
+                        self::FR_PARENT,
+                        'Ligne destination FR'
+                    );
+                case self::DE_TARGET:
+                    return $make_variation(
+                        $id,
+                        $de_target_attrs,
+                        self::DE_PARENT,
+                        'Zielzeile DE'
+                    );
+            }
+
+            return false;
+        };
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        $meta = $GLOBALS['intersoccer_test_wc_order_item_meta'][self::ITEM_ID];
+        $this->assertSame('Genève', $meta['Canton / région'] ?? '');
+        $this->assertNotSame('vaud', $meta['pa_canton-region'] ?? '');
+        $this->assertContains($meta['pa_canton-region'] ?? '', ['geneve', 'geneva'], 'FR order line canton slug should reflect destination catalog');
     }
 }

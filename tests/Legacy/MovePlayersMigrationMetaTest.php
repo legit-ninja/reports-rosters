@@ -275,7 +275,7 @@ class MovePlayersMigrationMetaTest extends TestCase {
         };
 
         $variation = $this->makeParentGirlsOnlyVariationForMigration();
-        $payload = intersoccer_build_migration_meta_updates($variation);
+        $payload = intersoccer_build_migration_meta_updates($variation, true);
 
         $this->assertStringContainsString(
             'Girls Only',
@@ -333,7 +333,7 @@ class MovePlayersMigrationMetaTest extends TestCase {
 
         if (function_exists('intersoccer_build_migration_meta_updates')) {
             $variation = $this->makeParentGirlsOnlyVariationForMigration();
-            $payload = intersoccer_build_migration_meta_updates($variation);
+            $payload = intersoccer_build_migration_meta_updates($variation, true);
             $stored['Activity Type'] = $payload['human_meta']['activity_type'] ?? '';
             foreach ($payload['slug_meta'] ?? [] as $slug_key => $slug_val) {
                 if ($slug_key !== '' && $slug_val !== '') {
@@ -422,7 +422,7 @@ class MovePlayersMigrationMetaTest extends TestCase {
             intersoccer_migration_remove_variation_meta_for_move($item, $lookup);
 
             $variation = $this->makeParentGirlsOnlyVariationForMigration();
-            $payload = intersoccer_build_migration_meta_updates($variation);
+            $payload = intersoccer_build_migration_meta_updates($variation, true);
             foreach ($payload['human_meta'] as $canonical => $val) {
                 $label = intersoccer_migration_english_meta_label($canonical);
                 $stored[$label] = $val;
@@ -640,7 +640,7 @@ class MovePlayersMigrationMetaTest extends TestCase {
         };
 
         $variation = $this->makeParentGirlsOnlyVariationForMigration();
-        $payload = intersoccer_build_migration_meta_updates($variation);
+        $payload = intersoccer_build_migration_meta_updates($variation, true);
 
         $this->assertSame('Course, Girls Only', $payload['human_meta']['activity_type'] ?? '');
     }

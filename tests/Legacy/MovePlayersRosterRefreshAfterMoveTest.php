@@ -248,6 +248,155 @@ class MovePlayersRosterRefreshAfterMoveTest extends TestCase {
         $this->assertSame('2026-09-01', $row['start_date']);
         $this->assertSame('2026-12-20', $row['end_date']);
         $this->assertSame(1, (int) $row['girls_only']);
-        $this->assertSame('Course, Girls Only', $row['activity_type']);
+        $this->assertSame('Course', $row['activity_type']);
+    }
+
+    public function test_rr175_r6_move_girls_only_row_keeps_base_activity_type_and_flag(): void {
+        $this->installWorld();
+
+        intersoccer_manual_update_roster_entry(self::ORDER_ID, self::ITEM_ID, self::TARGET_VAR);
+
+        $row = $GLOBALS['intersoccer_test_roster_store'][self::ITEM_ID];
+        $this->assertSame(1, (int) $row['girls_only']);
+        $this->assertSame('Course', $row['activity_type']);
+    }
+
+    public function test_rr175_r6_move_refreshes_roster_term_from_destination(): void {
+        $this->installWorld();
+
+        intersoccer_manual_update_roster_entry(self::ORDER_ID, self::ITEM_ID, self::TARGET_VAR);
+
+        $row = $GLOBALS['intersoccer_test_roster_store'][self::ITEM_ID];
+        $this->assertSame('Wednesday', $row['term']);
+
+        global $intersoccer_test_product_type_safe_callback, $intersoccer_test_get_product_type_callback;
+        global $intersoccer_test_wc_get_product_callback;
+
+        $GLOBALS['intersoccer_test_terms_by_slug']['pa_camp-terms'] = [
+            'week-one' => (object) ['term_id' => 98420, 'slug' => 'week-one', 'name' => 'Week One'],
+        ];
+        $intersoccer_test_product_type_safe_callback = static function () {
+            return 'camp';
+        };
+        $intersoccer_test_get_product_type_callback = static function () {
+            return 'camp';
+        };
+
+        $camp_target_attrs = [
+            'attribute_pa_intersoccer-venues' => 'venue-b',
+            'attribute_pa_camp-terms' => 'week-one',
+            'attribute_pa_age-group' => '6-8y',
+            'attribute_pa_girls-only' => 'no',
+        ];
+
+        $make_variation = static function (int $vid, array $attrs) {
+            $v = Mockery::mock(\WC_Product_Variation::class);
+            $v->shouldReceive('get_id')->andReturn($vid);
+            $v->shouldReceive('get_parent_id')->andReturn(self::PARENT_ID);
+            $v->shouldReceive('get_variation_attributes')->andReturn($attrs);
+            $v->shouldReceive('get_attribute')->andReturnUsing(static function ($name) use ($attrs) {
+                $key = 'attribute_' . ltrim((string) $name, 'attribute_');
+                if (isset($attrs[$key])) {
+                    return $attrs[$key];
+                }
+                if (isset($attrs[$name])) {
+                    return $attrs[$name];
+                }
+
+                return '';
+            });
+            $v->shouldReceive('get_name')->andReturn('Camp variation');
+            $v->shouldReceive('get_meta')->andReturn('');
+            $v->shouldReceive('get_attributes')->andReturn([]);
+            $v->shouldReceive('is_type')->with('variation')->andReturn(true);
+
+            return $v;
+        };
+
+        $parent = Mockery::mock('WC_Product');
+        $parent->shouldReceive('get_id')->andReturn(self::PARENT_ID);
+        $parent->shouldReceive('get_name')->andReturn('Parent camp');
+        $parent->shouldReceive('get_attribute')->andReturn('');
+        $parent->shouldReceive('get_attributes')->andReturn([]);
+
+        $camp_var_id = self::TARGET_VAR + 1;
+        $intersoccer_test_wc_get_product_callback = static function ($id) use ($make_variation, $parent, $camp_target_attrs, $camp_var_id) {
+            $id = (int) $id;
+            if ($id === self::PARENT_ID) {
+                return $parent;
+            }
+            if ($id === $camp_var_id) {
+                return $make_variation($id, $camp_target_attrs);
+            }
+
+            return false;
+        };
+
+        intersoccer_manual_update_roster_entry(self::ORDER_ID, self::ITEM_ID, $camp_var_id);
+
+        $camp_row = $GLOBALS['intersoccer_test_roster_store'][self::ITEM_ID];
+        $this->assertSame('Week One', $camp_row['term']);
+    }
+
+    public function test_rr175_r6_move_destination_without_city_canton_does_not_keep_source_values(): void {
+        global $intersoccer_test_wc_get_product_callback;
+
+        $this->installWorld();
+
+        $target_attrs = [
+            'attribute_pa_intersoccer-venues' => 'venue-b',
+            'attribute_pa_course-day' => 'wednesday',
+            'attribute_pa_course-times' => '1530-1700',
+            'attribute_pa_age-group' => '6-8y',
+            'attribute_pa_girls-only' => 'no',
+        ];
+
+        $make_variation = static function (int $vid, array $attrs) {
+            $v = Mockery::mock(\WC_Product_Variation::class);
+            $v->shouldReceive('get_id')->andReturn($vid);
+            $v->shouldReceive('get_parent_id')->andReturn(self::PARENT_ID);
+            $v->shouldReceive('get_variation_attributes')->andReturn($attrs);
+            $v->shouldReceive('get_attribute')->andReturnUsing(static function ($name) use ($attrs) {
+                $key = 'attribute_' . ltrim((string) $name, 'attribute_');
+                if (isset($attrs[$key])) {
+                    return $attrs[$key];
+                }
+                if (isset($attrs[$name])) {
+                    return $attrs[$name];
+                }
+
+                return '';
+            });
+            $v->shouldReceive('get_name')->andReturn('Variation ' . $vid);
+            $v->shouldReceive('get_meta')->andReturn('');
+            $v->shouldReceive('get_attributes')->andReturn([]);
+            $v->shouldReceive('is_type')->with('variation')->andReturn(true);
+
+            return $v;
+        };
+
+        $parent = Mockery::mock('WC_Product');
+        $parent->shouldReceive('get_id')->andReturn(self::PARENT_ID);
+        $parent->shouldReceive('get_name')->andReturn('Parent course');
+        $parent->shouldReceive('get_attribute')->andReturn('');
+        $parent->shouldReceive('get_attributes')->andReturn([]);
+
+        $intersoccer_test_wc_get_product_callback = static function ($id) use ($make_variation, $parent, $target_attrs) {
+            $id = (int) $id;
+            if ($id === self::PARENT_ID) {
+                return $parent;
+            }
+            if ($id === self::TARGET_VAR) {
+                return $make_variation($id, $target_attrs);
+            }
+
+            return false;
+        };
+
+        intersoccer_manual_update_roster_entry(self::ORDER_ID, self::ITEM_ID, self::TARGET_VAR);
+
+        $row = $GLOBALS['intersoccer_test_roster_store'][self::ITEM_ID];
+        $this->assertSame('', $row['city']);
+        $this->assertSame('', $row['canton_region']);
     }
 }

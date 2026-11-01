@@ -273,7 +273,7 @@ function intersoccer_roster_move_build_move_ajax_success_payload(
 }
 
 /**
- * Human destination label (product + season + schedule + venue + age + time), matching roster-details picker.
+ * Resolve a taxonomy value for roster move destination picker labels.
  */
 function intersoccer_roster_move_resolve_picker_term_label(string $value, string $taxonomy): string {
     $raw = trim($value);
@@ -339,7 +339,7 @@ function intersoccer_roster_move_destination_picker_row_from_variation(int $vari
 }
 
 /**
- * Admin move success / destination label (comma-separated; season matches picker option text).
+ * Human destination label (product + season + schedule + venue + age + time), matching roster-details picker.
  *
  * @param object $roster Row with product_name, season, course_day, camp_terms, venue, age_group, times.
  */

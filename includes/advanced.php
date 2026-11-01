@@ -1060,6 +1060,25 @@ if (!function_exists('intersoccer_migration_remove_human_meta')) {
     }
 }
 
+if (!function_exists('intersoccer_roster_move_order_line_girls_only_activity_label')) {
+    /**
+     * Order-line Activity Type label on roster move (composite when girls_only=1).
+     */
+    function intersoccer_roster_move_order_line_girls_only_activity_label(string $activity_type, int $girls_only_flag): string {
+        $base = function_exists('intersoccer_canonical_activity_type_for_roster')
+            ? (string) intersoccer_canonical_activity_type_for_roster($activity_type)
+            : trim($activity_type);
+        if ($base === '' || $base === 'Girls Only') {
+            $base = trim($activity_type);
+        }
+        if ($girls_only_flag !== 1 || $base === '') {
+            return $base !== '' ? $base : trim($activity_type);
+        }
+
+        return $base . ', Girls Only';
+    }
+}
+
 if (!function_exists('intersoccer_build_migration_meta_updates')) {
     /**
      * Build the complete set of order item metadata updates for a variation migration.
@@ -1068,7 +1087,11 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
      * @param bool                  $for_order_line When true, keep catalog slugs/labels in the active WPML language (order line).
      * @return array{meta: array<string,string>, slugs: array<string,string>, product_type: string}
      */
-    function intersoccer_build_migration_meta_updates(\WC_Product_Variation $variation, bool $for_order_line = false) {
+    function intersoccer_build_migration_meta_updates(
+        \WC_Product_Variation $variation,
+        bool $for_order_line = false,
+        ?string $order_lang = null
+    ) {
         $slug_meta   = array();
         $human_meta  = array();
         $other_meta  = array();
@@ -1278,16 +1301,18 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
 
             $girls_only_flag = (int) ($normalized['girls_only'] ?? 0);
             $activity_for_label = $human_meta['activity_type'] ?? $normalized['activity_type'] ?? '';
-            if (function_exists('intersoccer_migration_activity_type_for_girls_only_tristate')) {
-                $human_meta['activity_type'] = intersoccer_migration_activity_type_for_girls_only_tristate(
-                    (string) $activity_for_label,
-                    $girls_only_tristate
-                );
-            } elseif (function_exists('intersoccer_migration_activity_type_with_girls_only_flag')) {
-                $human_meta['activity_type'] = intersoccer_migration_activity_type_with_girls_only_flag(
+            if ($for_order_line && function_exists('intersoccer_roster_move_order_line_girls_only_activity_label')) {
+                $human_meta['activity_type'] = intersoccer_roster_move_order_line_girls_only_activity_label(
                     (string) $activity_for_label,
                     $girls_only_flag
                 );
+            } elseif (function_exists('intersoccer_canonical_activity_type_for_roster')) {
+                $canonical_activity = (string) intersoccer_canonical_activity_type_for_roster((string) $activity_for_label);
+                if ($canonical_activity !== '' && $canonical_activity !== 'Girls Only') {
+                    $human_meta['activity_type'] = $canonical_activity;
+                } elseif (!empty($normalized['activity_type'])) {
+                    $human_meta['activity_type'] = $normalized['activity_type'];
+                }
             } elseif (!empty($normalized['activity_type'])) {
                 $human_meta['activity_type'] = $normalized['activity_type'];
             }
@@ -1323,7 +1348,8 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
                 $slug_meta,
                 $expected_slugs,
                 $variation,
-                $variation_raw_by_pa
+                $variation_raw_by_pa,
+                $order_lang
             );
         }
 
@@ -1331,7 +1357,8 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
             $human_meta = intersoccer_migration_apply_order_language_time_human_labels(
                 $human_meta,
                 $expected_slugs,
-                $variation_raw_by_pa
+                $variation_raw_by_pa,
+                $order_lang
             );
         }
 
@@ -1703,8 +1730,8 @@ function intersoccer_move_players_ajax() {
                 $new_product_id = (int) $order_variation->get_parent_id();
             }
 
-            $build_meta_payload = static function () use ($order_variation) {
-                return intersoccer_build_migration_meta_updates($order_variation, true);
+            $build_meta_payload = static function () use ($order_variation, $order_lang) {
+                return intersoccer_build_migration_meta_updates($order_variation, true, $order_lang);
             };
             if (function_exists('intersoccer_with_wpml_language')) {
                 $meta_payload = intersoccer_with_wpml_language($order_lang, $build_meta_payload);
@@ -1740,6 +1767,26 @@ function intersoccer_move_players_ajax() {
                     $legacy_slug_filter_variation,
                     $existing_pa_slug_values,
                     $order_lang !== $site_default_lang
+                );
+            }
+            if (strtolower(substr($order_lang, 0, 2)) !== strtolower(substr((string) $site_default_lang, 0, 2))
+                && function_exists('intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line')
+            ) {
+                $variation_raw_by_pa = [];
+                foreach ($order_variation->get_variation_attributes() as $attribute_key => $attribute_value) {
+                    $clean_key = str_replace('attribute_', '', (string) $attribute_key);
+                    $variation_raw_by_pa[$clean_key] = is_array($attribute_value)
+                        ? (string) reset($attribute_value)
+                        : (string) $attribute_value;
+                }
+                $expected_slugs = $meta_payload['slugs'] ?? [];
+                [$human_meta, $slug_meta, $expected_slugs] = intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line(
+                    $human_meta,
+                    $slug_meta,
+                    $expected_slugs,
+                    $order_variation,
+                    $variation_raw_by_pa,
+                    $order_lang
                 );
             }
             if (function_exists('intersoccer_migration_allowed_canonicals_for_move')) {
@@ -2015,6 +2062,26 @@ function intersoccer_move_players_ajax() {
             }
 
             if ($migration_success && function_exists('intersoccer_migration_finalize_move_item_meta')) {
+                if (strtolower(substr($order_lang, 0, 2)) !== strtolower(substr((string) $site_default_lang, 0, 2))
+                    && function_exists('intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line')
+                ) {
+                    $variation_raw_by_pa = [];
+                    foreach ($order_variation->get_variation_attributes() as $attribute_key => $attribute_value) {
+                        $clean_key = str_replace('attribute_', '', (string) $attribute_key);
+                        $variation_raw_by_pa[$clean_key] = is_array($attribute_value)
+                            ? (string) reset($attribute_value)
+                            : (string) $attribute_value;
+                    }
+                    $expected_slugs = $meta_payload['slugs'] ?? [];
+                    [$human_meta, $slug_meta, $expected_slugs] = intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line(
+                        $human_meta,
+                        $slug_meta,
+                        $expected_slugs,
+                        $order_variation,
+                        $variation_raw_by_pa,
+                        $order_lang
+                    );
+                }
                 $run_finalize_order_line_meta = static function () use (
                     &$migration_success,
                     $item_id,
@@ -2372,37 +2439,34 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
             'girls_only'    => (int) ($normalized['girls_only'] ?? 0),
         ];
 
-    if ((int) ($normalized['girls_only'] ?? 0) === 1
-        && function_exists('intersoccer_migration_activity_type_with_girls_only_flag')) {
-        $activity_for_label = function_exists('intersoccer_roster_facet_value_or_record')
-            ? (string) intersoccer_roster_facet_value_or_record($normalized, $record, 'activity_type')
-            : (string) ($normalized['activity_type'] ?? ($record['activity_type'] ?? ''));
-        if ($activity_for_label !== ''
-            && function_exists('intersoccer_roster_strip_girls_only_from_activity_label')) {
-            $activity_for_label = (string) intersoccer_roster_strip_girls_only_from_activity_label($activity_for_label);
+    if (function_exists('intersoccer_canonical_activity_type_for_roster')) {
+        $activity_source = (string) ($normalized['activity_type'] ?? '');
+        if ($activity_source === '' && $product_type !== '') {
+            $activity_source = ucfirst($product_type);
         }
-        if ($activity_for_label === '' && $product_type !== '') {
-            $activity_for_label = ucfirst($product_type);
-        }
-        $labeled = (string) intersoccer_migration_activity_type_with_girls_only_flag($activity_for_label, 1);
-        if ($labeled !== '' && function_exists('intersoccer_canonical_activity_type_for_roster')) {
-            $canonical_base = (string) intersoccer_canonical_activity_type_for_roster($activity_for_label);
-            if ($canonical_base !== 'Girls Only' && $canonical_base !== '' && $labeled === $canonical_base) {
-                if ($canonical_base === 'Camp') {
-                    $labeled = 'Camp, Girls Only';
-                } elseif ($canonical_base === 'Course') {
-                    $labeled = 'Course, Girls Only';
-                } elseif ($canonical_base === 'Tournament') {
-                    $labeled = 'Tournament, Girls Only';
-                } else {
-                    $labeled = $canonical_base . ', Girls Only';
-                }
-            }
-        }
-        if ($labeled !== '') {
-            $facet_update['activity_type'] = substr($labeled, 0, 50);
+        $canonical_activity = (string) intersoccer_canonical_activity_type_for_roster($activity_source);
+        if ($canonical_activity !== '' && $canonical_activity !== 'Girls Only') {
+            $facet_update['activity_type'] = substr($canonical_activity, 0, 50);
         }
     }
+
+    $city_value = trim((string) ($normalized['city'] ?? ''));
+    if ($city_value !== '' && function_exists('intersoccer_roster_facet_en_term_name_if_resolved')) {
+        $city_value = (string) intersoccer_roster_facet_en_term_name_if_resolved($city_value, 'pa_city');
+    }
+    $facet_update['city'] = substr($city_value, 0, 100);
+
+    $canton_value = trim((string) ($normalized['canton_region'] ?? ''));
+    if ($canton_value !== '' && function_exists('intersoccer_roster_facet_en_term_name_if_resolved')) {
+        $canton_value = (string) intersoccer_roster_facet_en_term_name_if_resolved($canton_value, 'pa_canton-region');
+    }
+    $facet_update['canton_region'] = substr($canton_value, 0, 100);
+
+    $term_value = trim((string) ($normalized['camp_terms'] ?? ''));
+    if ($term_value === '') {
+        $term_value = trim((string) ($normalized['course_day'] ?? ''));
+    }
+    $facet_update['term'] = substr($term_value !== '' ? $term_value : 'N/A', 0, 200);
 
     if (!empty($normalized['start_date'])) {
         $facet_update['start_date'] = (string) $normalized['start_date'];
