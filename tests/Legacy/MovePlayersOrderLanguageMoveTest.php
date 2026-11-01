@@ -28,6 +28,7 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
     private const EN_TARGET = 97320;
     private const FR_TARGET = 97321;
     private const DE_TARGET = 97322;
+    private const SIBLING_ITEM_ID = 97312;
 
     protected function setUp(): void {
         parent::setUp();
@@ -77,6 +78,7 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
     }
 
     protected function tearDown(): void {
+        $this->resetMovePlayersTestGlobals();
         unset(
             $GLOBALS['intersoccer_test_apply_filters_callback'],
             $GLOBALS['intersoccer_test_wpml_term_map'],
@@ -90,7 +92,9 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             $GLOBALS['intersoccer_test_roster_row_filter_map'],
             $GLOBALS['intersoccer_test_roster_move_log'],
             $GLOBALS['intersoccer_test_get_english_product_name_callback'],
-            $GLOBALS['intersoccer_test_wpml_current_language']
+            $GLOBALS['intersoccer_test_wpml_current_language'],
+            $GLOBALS['intersoccer_test_simulate_wc_order_save_pa_rewrite'],
+            $GLOBALS['intersoccer_test_simulate_wc_order_save_moved_item_id']
         );
         $this->resetMovePlayersTestGlobals();
         parent::tearDown();
@@ -261,7 +265,7 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             'attribute_pa_camp-terms'         => 'week-one',
             'attribute_pa_girls-only'         => $girls_only_fr_slug !== '' ? 'yes' : 'no',
         ];
-        $fr_target_attrs = [
+        $fr_target_attrs = (array) ($options['fr_target_attrs'] ?? [
             'attribute_pa_intersoccer-venues' => 'geneve-stade-vessy',
             'attribute_pa_age-group'          => '5-13-ans-journee-complete',
             'attribute_pa_booking-type'       => 'semaine-complete',
@@ -269,7 +273,7 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             'attribute_pa_city'               => 'geneve-ville',
             'attribute_pa_camp-terms'         => 'semaine-un',
             'attribute_pa_girls-only'         => $girls_only_fr_slug !== '' ? $girls_only_fr_slug : 'no',
-        ];
+        ]);
         $de_target_attrs = (array) ($options['de_target_attrs'] ?? [
             'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
             'attribute_pa_age-group'          => '5-13-jahre-ganzer-tag',
@@ -1474,5 +1478,140 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         $this->assertNotSame('semaine-deux', $meta['pa_camp-terms'] ?? '');
         $this->assertSame('semaine-un', $meta['pa_camp-terms'] ?? '');
         $this->assertSame('semaine-complete', $meta['pa_booking-type'] ?? '');
+    }
+
+    // Regression: RR #180 — destination session year on order line and English roster season after move.
+    public function test_rr180_move_writes_destination_year_on_item_and_roster(): void {
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'fr';
+        $this->registerCatalogTerms();
+        $this->stubWpml();
+        $this->installMoveWorld([
+            'order_lang' => 'fr',
+            'fr_target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'geneve-stade-vessy',
+                'attribute_pa_age-group'          => '5-13-ans-journee-complete',
+                'attribute_pa_booking-type'       => 'semaine-complete',
+                'attribute_pa_canton-region'      => 'geneve',
+                'attribute_pa_city'               => 'geneve-ville',
+                'attribute_pa_camp-terms'         => 'semaine-un',
+                'attribute_pa_program-year'       => '2026',
+                'attribute_pa_girls-only'         => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'RR180 year move QA',
+                'Year' => '2027',
+                'Année' => '2027',
+                'Season' => 'Summer',
+                'attribute_pa_booking-type' => 'full-week',
+                'pa_booking-type' => 'full-week',
+            ],
+        ]);
+
+        $GLOBALS['intersoccer_test_get_product_season_callback'] = static function ($parent_id) {
+            if ((int) $parent_id === self::FR_PARENT) {
+                return 'Summer';
+            }
+            if ((int) $parent_id === self::EN_PARENT) {
+                return 'Summer';
+            }
+
+            return '';
+        };
+        $GLOBALS['intersoccer_test_roster_store'][self::ITEM_ID]['season'] = 'Summer 2027';
+
+        $response = $this->invokeMoveAjax();
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        global $intersoccer_test_wc_order_item_meta;
+        $year_aliases = function_exists('intersoccer_migration_human_alias_map_static_fallback')
+            ? intersoccer_migration_human_alias_map_static_fallback('program_year')
+            : ['Year', 'Année', 'Jahr'];
+        $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('2026', $meta['Year'] ?? '');
+        foreach ($year_aliases as $year_alias) {
+            if ($year_alias === 'Year' || !array_key_exists($year_alias, $meta)) {
+                continue;
+            }
+            $this->assertSame('2026', $meta[$year_alias] ?? '');
+        }
+
+        $roster = $GLOBALS['intersoccer_test_roster_store'][self::ITEM_ID] ?? [];
+        $this->assertSame('Summer', $roster['season'] ?? '');
+        $this->assertSame('2026', $roster['program_year'] ?? '');
+    }
+
+    // Regression: RR #181 — unmoved siblings keep exact meta; moved line still gets order-language pa_*.
+    public function test_rr181_move_leaves_sibling_items_meta_untouched(): void {
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'fr';
+        $this->registerCatalogTerms();
+        $this->stubWpml();
+        $this->installMoveWorld([
+            'order_lang' => 'fr',
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'RR181 moved line',
+                "Groupe d'âge" => '5-8 ans',
+                'attribute_pa_age-group' => '5-8-ans',
+                'pa_age-group' => '5-8-ans',
+                'attribute_pa_booking-type' => 'full-week',
+                'pa_booking-type' => 'full-week',
+            ],
+        ]);
+
+        $sibling_meta = [
+            'Activity Type' => 'Course',
+            'Assigned Attendee' => 'RR181 sibling',
+            "Groupe d'âge" => '3-6 ans',
+            'Jour de cours' => 'Mercredi',
+            'attribute_pa_age-group' => '3-6-ans',
+            'pa_age-group' => '3-6-ans',
+            'attribute_pa_course-day' => 'mercredi',
+            'pa_course-day' => 'mercredi',
+            'attribute_pa_booking-type' => 'full-term',
+            'pa_booking-type' => 'full-term',
+        ];
+        global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_data;
+        $intersoccer_test_wc_order_item_meta[self::SIBLING_ITEM_ID] = $sibling_meta;
+        $intersoccer_test_wc_order_item_data[self::SIBLING_ITEM_ID] = [
+            'product_id' => self::FR_PARENT,
+            'variation_id' => self::SOURCE_VAR,
+            'subtotal' => 80.00,
+            'total' => 80.00,
+            'name' => 'Sibling course line',
+        ];
+        $GLOBALS['intersoccer_test_roster_row_filter_map'][self::SIBLING_ITEM_ID] = true;
+
+        $order = wc_get_order(self::ORDER_ID);
+        $this->assertInstanceOf(\WC_Order::class, $order);
+        $order->set_items([
+            self::ITEM_ID => new \WC_Order_Item_Product(self::ITEM_ID),
+            self::SIBLING_ITEM_ID => new \WC_Order_Item_Product(self::SIBLING_ITEM_ID),
+        ]);
+        $GLOBALS['intersoccer_test_wc_get_order_id_by_order_item_id_callback'] = static function ($item_id) {
+            $item_id = (int) $item_id;
+            if ($item_id === self::ITEM_ID || $item_id === self::SIBLING_ITEM_ID) {
+                return self::ORDER_ID;
+            }
+
+            return 0;
+        };
+
+        $sibling_before = $intersoccer_test_wc_order_item_meta[self::SIBLING_ITEM_ID];
+
+        $GLOBALS['intersoccer_test_simulate_wc_order_save_pa_rewrite'] = true;
+        $GLOBALS['intersoccer_test_simulate_wc_order_save_moved_item_id'] = self::ITEM_ID;
+
+        $response = $this->invokeMoveAjax();
+        unset($GLOBALS['intersoccer_test_simulate_wc_order_save_pa_rewrite'], $GLOBALS['intersoccer_test_simulate_wc_order_save_moved_item_id']);
+
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+
+        $sibling_after = $intersoccer_test_wc_order_item_meta[self::SIBLING_ITEM_ID];
+        $this->assertSame($sibling_before, $sibling_after);
+
+        $moved_meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $this->assertSame('5-13-ans-journee-complete', $moved_meta['pa_age-group'] ?? '');
+        $this->assertSame('5-13 ans (journée complète)', $moved_meta["Groupe d'âge"] ?? '');
     }
 }

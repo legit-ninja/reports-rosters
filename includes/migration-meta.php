@@ -98,7 +98,7 @@ if (!function_exists('intersoccer_migration_human_alias_map_static_fallback')) {
             'selected_days'      => ['Days Selected', 'Jours sélectionnés', 'Ausgewählte Tage'],
             'canton_region'      => ['Canton / Region', 'Canton / Région', 'Canton / région', 'Kanton / Region'],
             'city'               => ['City', 'Ville'],
-            'program_year'       => ['Year'],
+            'program_year'       => ['Year', 'Année', 'Jahr'],
             'girls_only'         => ['Girls Only', 'girls_only'],
         ];
 
@@ -1180,6 +1180,205 @@ if (!function_exists('intersoccer_migration_roster_booking_from_destination_vari
         }
 
         return $booking;
+    }
+}
+
+if (!function_exists('intersoccer_migration_resolve_destination_program_year_for_move')) {
+    /**
+     * Program year for order-line writes from the destination session (order-language variation).
+     */
+    function intersoccer_migration_resolve_destination_program_year_for_move(
+        WC_Product_Variation $order_variation,
+        string $order_lang
+    ): string {
+        if (function_exists('intersoccer_build_migration_meta_updates')) {
+            $build_payload = static function () use ($order_variation, $order_lang) {
+                return intersoccer_build_migration_meta_updates($order_variation, true, $order_lang);
+            };
+            if (function_exists('intersoccer_with_wpml_language')) {
+                $payload = intersoccer_with_wpml_language($order_lang, $build_payload);
+            } else {
+                $payload = $build_payload();
+            }
+            $year = trim((string) ($payload['human_meta']['program_year'] ?? ''));
+            if ($year !== '') {
+                return $year;
+            }
+        }
+
+        if (function_exists('intersoccer_get_parent_product_attributes')) {
+            $alias_map = intersoccer_migration_human_alias_map();
+            $lookup = intersoccer_migration_build_lookup($alias_map);
+            $parent_attributes = intersoccer_get_parent_product_attributes(
+                (int) $order_variation->get_parent_id(),
+                (int) $order_variation->get_id()
+            );
+            foreach ($parent_attributes as $label => $value) {
+                $normalized_label = intersoccer_migration_normalize_meta_key((string) $label);
+                if (($lookup[$normalized_label] ?? '') !== 'program_year') {
+                    continue;
+                }
+                $year = trim(is_array($value) ? implode(', ', $value) : (string) $value);
+                if ($year !== '') {
+                    return $year;
+                }
+            }
+        }
+
+        $raw_year = intersoccer_migration_pa_attribute_slug_for_variation($order_variation, 'pa_program-year', false);
+        if ($raw_year === '') {
+            return '';
+        }
+        if (preg_match('/^\d{4}$/', $raw_year)) {
+            return $raw_year;
+        }
+        if (preg_match('/(\d{4})/', $raw_year, $matches)) {
+            return (string) $matches[1];
+        }
+
+        return trim($raw_year);
+    }
+}
+
+if (!function_exists('intersoccer_migration_apply_destination_program_year_meta_for_move')) {
+    /**
+     * @param array<int,string> $existing_line_keys
+     */
+    function intersoccer_migration_apply_destination_program_year_meta_for_move(
+        int $item_id,
+        WC_Product_Variation $order_variation,
+        string $order_lang,
+        array $existing_line_keys
+    ): void {
+        if ($item_id <= 0) {
+            return;
+        }
+
+        $year = intersoccer_migration_resolve_destination_program_year_for_move($order_variation, $order_lang);
+        if ($year === '') {
+            return;
+        }
+
+        $alias_map = intersoccer_migration_human_alias_map();
+        $aliases = array_unique(array_merge(
+            ['Year', 'Année', 'Jahr'],
+            $alias_map['program_year'] ?? intersoccer_migration_human_alias_map_static_fallback('program_year')
+        ));
+        $existing_flip = array_fill_keys($existing_line_keys, true);
+        if (!function_exists('wc_update_order_item_meta')) {
+            return;
+        }
+        foreach ($aliases as $alias_key) {
+            if (!isset($existing_flip[$alias_key])) {
+                continue;
+            }
+            wc_update_order_item_meta($item_id, $alias_key, $year);
+        }
+        foreach (['pa_program-year', 'attribute_pa_program-year'] as $pa_key) {
+            if (!isset($existing_flip[$pa_key])) {
+                continue;
+            }
+            wc_update_order_item_meta($item_id, $pa_key, $year);
+        }
+    }
+}
+
+if (!function_exists('intersoccer_migration_snapshot_order_item_meta_map')) {
+    /**
+     * @return array<string,mixed>
+     */
+    function intersoccer_migration_snapshot_order_item_meta_map(int $item_id): array {
+        if ($item_id <= 0) {
+            return [];
+        }
+
+        $item = new WC_Order_Item_Product($item_id);
+        $snapshot = [];
+        foreach ($item->get_meta_data() as $meta) {
+            if (!is_object($meta) || !method_exists($meta, 'get_data')) {
+                continue;
+            }
+            $data = $meta->get_data();
+            $key = (string) ($data['key'] ?? '');
+            if ($key === '') {
+                continue;
+            }
+            $snapshot[$key] = $data['value'] ?? '';
+        }
+
+        return $snapshot;
+    }
+}
+
+if (!function_exists('intersoccer_migration_restore_order_item_meta_map')) {
+    /**
+     * @param array<string,mixed> $snapshot
+     */
+    function intersoccer_migration_restore_order_item_meta_map(int $item_id, array $snapshot): void {
+        if ($item_id <= 0 || $snapshot === []) {
+            return;
+        }
+
+        $item = new WC_Order_Item_Product($item_id);
+        $existing_keys = [];
+        foreach ($item->get_meta_data() as $meta) {
+            if (!is_object($meta) || !method_exists($meta, 'get_data')) {
+                continue;
+            }
+            $key = (string) ($meta->get_data()['key'] ?? '');
+            if ($key === '') {
+                continue;
+            }
+            $existing_keys[$key] = true;
+        }
+
+        foreach ($existing_keys as $key => $_unused) {
+            if (!array_key_exists($key, $snapshot)) {
+                $item->delete_meta_data($key);
+            }
+        }
+
+        foreach ($snapshot as $key => $value) {
+            $item->update_meta_data((string) $key, $value);
+        }
+
+        $item->save();
+    }
+}
+
+if (!function_exists('intersoccer_migration_snapshot_sibling_order_item_meta_for_move')) {
+    /**
+     * @param \WC_Order $order
+     * @return array<int,array<string,mixed>>
+     */
+    function intersoccer_migration_snapshot_sibling_order_item_meta_for_move(
+        WC_Order $order,
+        int $moved_item_id
+    ): array {
+        $snapshots = [];
+        foreach ($order->get_items('line_item') as $order_item_id => $order_item) {
+            $order_item_id = (int) $order_item_id;
+            if ($order_item_id <= 0 || $order_item_id === $moved_item_id) {
+                continue;
+            }
+            $snapshots[$order_item_id] = intersoccer_migration_snapshot_order_item_meta_map($order_item_id);
+        }
+
+        return $snapshots;
+    }
+}
+
+if (!function_exists('intersoccer_migration_restore_sibling_order_item_meta_for_move')) {
+    /**
+     * @param array<int,array<string,mixed>> $snapshots
+     */
+    function intersoccer_migration_restore_sibling_order_item_meta_for_move(array $snapshots): void {
+        foreach ($snapshots as $item_id => $snapshot) {
+            if (!is_array($snapshot) || $snapshot === []) {
+                continue;
+            }
+            intersoccer_migration_restore_order_item_meta_map((int) $item_id, $snapshot);
+        }
     }
 }
 
@@ -2459,6 +2658,14 @@ if (!function_exists('intersoccer_migration_allowed_canonicals_for_move')) {
 
         if (isset($existing_flip['Year'])) {
             $allowed['program_year'] = true;
+        } else {
+            $year_aliases = intersoccer_migration_human_alias_map_static_fallback('program_year');
+            foreach ($year_aliases as $year_alias) {
+                if (isset($existing_flip[$year_alias])) {
+                    $allowed['program_year'] = true;
+                    break;
+                }
+            }
         }
 
         return array_keys($allowed);
@@ -3700,7 +3907,7 @@ if (!function_exists('intersoccer_migration_preserve_unchanged_human_meta_for_mo
             if (!isset($allowed_flip[$canonical])) {
                 continue;
             }
-            if (in_array($canonical, ['booking_type', 'girls_only', 'selected_days', 'program_year', 'activity_type'], true)) {
+            if (in_array($canonical, ['booking_type', 'girls_only', 'selected_days', 'activity_type'], true)) {
                 continue;
             }
 

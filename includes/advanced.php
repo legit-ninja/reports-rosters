@@ -1827,7 +1827,21 @@ function intersoccer_move_players_ajax() {
                     $human_lookup
                 );
                 $human_meta = intersoccer_migration_filter_human_meta_for_move($human_meta, $allowed_canonicals);
+                if (in_array('program_year', $allowed_canonicals, true)
+                    && function_exists('intersoccer_migration_resolve_destination_program_year_for_move')
+                ) {
+                    $destination_year = intersoccer_migration_resolve_destination_program_year_for_move(
+                        $order_variation,
+                        $order_lang
+                    );
+                    if ($destination_year !== '') {
+                        $human_meta['program_year'] = $destination_year;
+                    }
+                }
                 foreach ($allowed_canonicals as $canonical) {
+                    if ($canonical === 'program_year') {
+                        continue;
+                    }
                     if (function_exists('intersoccer_migration_move_meta_value_is_blank')
                         && intersoccer_migration_move_meta_value_is_blank($human_meta[$canonical] ?? null)
                         && !intersoccer_migration_move_meta_value_is_blank($line_meta_snapshot['human'][$canonical] ?? null)
@@ -2026,10 +2040,20 @@ function intersoccer_move_players_ajax() {
             if ($migration_success) {
                 try {
                     $item->save();
-                    
+
+                    $sibling_meta_snapshots = function_exists('intersoccer_migration_snapshot_sibling_order_item_meta_for_move')
+                        ? intersoccer_migration_snapshot_sibling_order_item_meta_for_move($order, (int) $item_id)
+                        : [];
+
                     // Minimal order recalculation to preserve pricing
                     $order->calculate_taxes();
                     $order->save();
+
+                    if ($sibling_meta_snapshots !== []
+                        && function_exists('intersoccer_migration_restore_sibling_order_item_meta_for_move')
+                    ) {
+                        intersoccer_migration_restore_sibling_order_item_meta_for_move($sibling_meta_snapshots);
+                    }
 
                     if ($pending_restore) {
                         intersoccer_migration_restore_canonical_meta(
@@ -2115,7 +2139,8 @@ function intersoccer_move_players_ajax() {
                     $prior_canonical_order_meta,
                     $variation,
                     $log_line,
-                    $booking_before
+                    $booking_before,
+                    $order_lang
                 ): void {
                 try {
                     intersoccer_migration_finalize_move_item_meta(
@@ -2221,6 +2246,15 @@ function intersoccer_move_players_ajax() {
                             'InterSoccer Migration: Repaired booking meta after restore wipe for item ' . $item_id .
                             ' (before=' . ($booking_before['booking_type'] ?? '') .
                             ', after_restore=' . ($booking_after_restore['booking_type'] ?? '') . ')'
+                        );
+                    }
+
+                    if (function_exists('intersoccer_migration_apply_destination_program_year_meta_for_move')) {
+                        intersoccer_migration_apply_destination_program_year_meta_for_move(
+                            (int) $item_id,
+                            $order_variation,
+                            $order_lang,
+                            $existing_line_meta_keys
                         );
                     }
                 } catch (Exception $e) {
@@ -2518,6 +2552,37 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
         'product_id'   => $parent_id,
         'product_name' => substr((string) $product_name, 0, 255),
     ]);
+
+    if (function_exists('intersoccer_migration_resolve_destination_program_year_for_move')) {
+        $order_lang_for_year = '';
+        if ((int) $order_id > 0 && function_exists('wc_get_order')) {
+            $order_for_lang = wc_get_order((int) $order_id);
+            if ($order_for_lang instanceof WC_Order && function_exists('intersoccer_roster_move_order_language')) {
+                $order_lang_for_year = intersoccer_roster_move_order_language($order_for_lang);
+            }
+        }
+        if ($order_lang_for_year === '') {
+            $order_lang_for_year = 'en';
+        }
+        $line_variation_id = 0;
+        if (function_exists('wc_get_order_item_meta')) {
+            $line_variation_id = (int) wc_get_order_item_meta((int) $item_id, '_variation_id', true);
+        }
+        if ($line_variation_id <= 0) {
+            $line_item = new WC_Order_Item_Product((int) $item_id);
+            $line_variation_id = (int) $line_item->get_variation_id();
+        }
+        $order_line_variation = $line_variation_id > 0 ? wc_get_product($line_variation_id) : null;
+        if ($order_line_variation instanceof WC_Product_Variation) {
+            $destination_program_year = intersoccer_migration_resolve_destination_program_year_for_move(
+                $order_line_variation,
+                $order_lang_for_year
+            );
+            if ($destination_program_year !== '') {
+                $update_data['program_year'] = $destination_program_year;
+            }
+        }
+    }
 
     $camp_product_type = $product_type;
     if ($camp_product_type === '' && function_exists('intersoccer_get_product_type')) {

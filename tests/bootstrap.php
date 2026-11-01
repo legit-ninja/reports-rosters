@@ -1348,7 +1348,35 @@ if (!class_exists('WC_Order')) {
             return 0;
         }
         public function calculate_taxes() { return true; }
-        public function save() { return true; }
+        public function save() {
+            if (!empty($GLOBALS['intersoccer_test_simulate_wc_order_save_pa_rewrite'])) {
+                $moved_item_id = (int) ($GLOBALS['intersoccer_test_simulate_wc_order_save_moved_item_id'] ?? 0);
+                global $intersoccer_test_wc_order_item_meta;
+                if (is_array($intersoccer_test_wc_order_item_meta)) {
+                    foreach ($this->items as $line_item_id => $_item) {
+                        $line_item_id = (int) $line_item_id;
+                        if ($line_item_id <= 0 || $line_item_id === $moved_item_id) {
+                            continue;
+                        }
+                        if (!isset($intersoccer_test_wc_order_item_meta[$line_item_id])
+                            || !is_array($intersoccer_test_wc_order_item_meta[$line_item_id])
+                        ) {
+                            continue;
+                        }
+                        $rewrite = static function (string $key, string $from, string $to) use ($line_item_id) {
+                            global $intersoccer_test_wc_order_item_meta;
+                            if (($intersoccer_test_wc_order_item_meta[$line_item_id][$key] ?? null) === $from) {
+                                $intersoccer_test_wc_order_item_meta[$line_item_id][$key] = $to;
+                            }
+                        };
+                        $rewrite('pa_age-group', '3-6-ans', '3-6y');
+                        $rewrite('pa_course-day', 'mercredi', 'wednesday');
+                    }
+                }
+            }
+
+            return true;
+        }
     }
 }
 

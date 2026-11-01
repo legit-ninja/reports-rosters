@@ -53,7 +53,10 @@ trait MovePlayersTestIsolationTrait {
             $GLOBALS['intersoccer_test_wpml_object_map'],
             $GLOBALS['intersoccer_test_apply_filters_callback'],
             $GLOBALS['intersoccer_test_roster_store'],
-            $GLOBALS['intersoccer_test_roster_row_filter_map']
+            $GLOBALS['intersoccer_test_roster_row_filter_map'],
+            $GLOBALS['intersoccer_test_wpml_current_language'],
+            $GLOBALS['intersoccer_test_simulate_wc_order_save_pa_rewrite'],
+            $GLOBALS['intersoccer_test_simulate_wc_order_save_moved_item_id']
         );
         $GLOBALS['intersoccer_test_term_def_request_cache'] = [];
         if (function_exists('intersoccer_reset_term_def_request_cache')) {
