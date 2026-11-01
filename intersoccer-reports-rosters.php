@@ -169,6 +169,19 @@ if (file_exists($final_reports_aggregation)) {
     require_once $final_reports_aggregation;
 }
 
+$migration_meta_bootstrap = plugin_dir_path(__FILE__) . 'includes/migration-meta.php';
+if (file_exists($migration_meta_bootstrap)) {
+    require_once $migration_meta_bootstrap;
+}
+$order_meta_keys_bootstrap = plugin_dir_path(__FILE__) . 'includes/order-meta-keys.php';
+if (file_exists($order_meta_keys_bootstrap)) {
+    require_once $order_meta_keys_bootstrap;
+}
+$order_admin_line_item_meta_display = plugin_dir_path(__FILE__) . 'includes/order-admin-line-item-meta-display.php';
+if (file_exists($order_admin_line_item_meta_display)) {
+    require_once $order_admin_line_item_meta_display;
+}
+
 // Load Office 365 cron runner on init so the cron hook is registered (cron runs without admin).
 $office365_cron_file = plugin_dir_path(__FILE__) . 'includes/office365-cron.php';
 if (file_exists($office365_cron_file)) {

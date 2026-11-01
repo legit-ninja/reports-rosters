@@ -25,6 +25,12 @@ if (!defined('ABSPATH')) {
 }
 
 // Database output format constants
+if (!function_exists('wp_get_post_terms')) {
+    function wp_get_post_terms($post_id, $taxonomy = 'post_tag', $args = []) {
+        return [];
+    }
+}
+
 if (!defined('ARRAY_A')) {
     define('ARRAY_A', 'ARRAY_A');
 }
@@ -40,6 +46,9 @@ if (!defined('OBJECT_K')) {
 
 // Composer autoloader (must come AFTER ABSPATH is defined)
 require_once dirname(__DIR__) . '/vendor/autoload.php';
+
+// Term-def request cache: test shim loads before includes/utils.php (production has no test globals).
+require_once __DIR__ . '/shims/term-def-request-cache-test-shim.php';
 
 // ============================================================================
 // WordPress Function Stubs - Defined BEFORE loading classes that use them
@@ -79,9 +88,19 @@ if (!function_exists('intersoccer_test_store_wp_hook_callback')) {
     }
 }
 
+if (!function_exists('intersoccer_test_wp_hook_should_run')) {
+    function intersoccer_test_wp_hook_should_run($hook) {
+        if (!empty($GLOBALS['intersoccer_test_emit_wp_hooks'])) {
+            return true;
+        }
+
+        return is_string($hook) && str_starts_with($hook, 'intersoccer_pre_');
+    }
+}
+
 if (!function_exists('intersoccer_test_run_wp_hooks')) {
     function intersoccer_test_run_wp_hooks($type, $hook, $initial_value, array $args) {
-        if (empty($GLOBALS['intersoccer_test_emit_wp_hooks'])
+        if (!intersoccer_test_wp_hook_should_run($hook)
             || empty($GLOBALS['intersoccer_test_wp_hooks'][$type][$hook])) {
             return $initial_value;
         }
@@ -132,16 +151,57 @@ if (!function_exists('add_filter')) {
 }
 
 if (!function_exists('remove_action')) {
-    function remove_action($hook, $callback, $priority = 10) { return true; }
+    function remove_action($hook, $callback, $priority = 10) {
+        if (empty($GLOBALS['intersoccer_test_wp_hooks']['actions'][$hook][(int) $priority])) {
+            return false;
+        }
+        $bucket = &$GLOBALS['intersoccer_test_wp_hooks']['actions'][$hook][(int) $priority];
+        foreach ($bucket as $i => $entry) {
+            if (($entry['callback'] ?? null) === $callback) {
+                unset($bucket[$i]);
+                $bucket = array_values($bucket);
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 if (!function_exists('remove_filter')) {
-    function remove_filter($hook, $callback, $priority = 10) { return true; }
+    function remove_filter($hook, $callback, $priority = 10) {
+        if (empty($GLOBALS['intersoccer_test_wp_hooks']['filters'][$hook][(int) $priority])) {
+            return false;
+        }
+        $bucket = &$GLOBALS['intersoccer_test_wp_hooks']['filters'][$hook][(int) $priority];
+        foreach ($bucket as $i => $entry) {
+            if (($entry['callback'] ?? null) === $callback) {
+                unset($bucket[$i]);
+                $bucket = array_values($bucket);
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 if (!function_exists('do_action')) {
     function do_action($hook, ...$args) {
+        if (!isset($GLOBALS['intersoccer_test_did_action_counts'])
+            || !is_array($GLOBALS['intersoccer_test_did_action_counts'])) {
+            $GLOBALS['intersoccer_test_did_action_counts'] = [];
+        }
+        $GLOBALS['intersoccer_test_did_action_counts'][$hook] =
+            (int) ($GLOBALS['intersoccer_test_did_action_counts'][$hook] ?? 0) + 1;
         intersoccer_test_run_wp_hooks('actions', $hook, null, $args);
+    }
+}
+
+if (!function_exists('did_action')) {
+    function did_action($hook, $callback = null) {
+        if ($callback !== null) {
+            return false;
+        }
+        return (int) ($GLOBALS['intersoccer_test_did_action_counts'][$hook] ?? 0);
     }
 }
 
@@ -357,16 +417,43 @@ if (!class_exists('InterSoccerRRTestMeta')) {
     }
 }
 
+if (!function_exists('taxonomy_exists')) {
+    function taxonomy_exists($taxonomy) {
+        if ($taxonomy === '') {
+            return false;
+        }
+        $by_slug = $GLOBALS['intersoccer_test_terms_by_slug'] ?? [];
+        if (!is_array($by_slug) || !isset($by_slug[$taxonomy]) || !is_array($by_slug[$taxonomy])) {
+            return false;
+        }
+
+        return $by_slug[$taxonomy] !== [];
+    }
+}
+
 if (!function_exists('get_term_by')) {
     function get_term_by($field, $value, $taxonomy = '') {
         if (isset($GLOBALS['intersoccer_test_get_term_by_call_count'])) {
             $GLOBALS['intersoccer_test_get_term_by_call_count']++;
         }
-        if ($field === 'slug' && $taxonomy !== '' && isset($GLOBALS['intersoccer_test_terms_by_slug'][$taxonomy])) {
-            $slug_key = strtolower((string) $value);
-            if (isset($GLOBALS['intersoccer_test_terms_by_slug'][$taxonomy][$slug_key])) {
-                $row = $GLOBALS['intersoccer_test_terms_by_slug'][$taxonomy][$slug_key];
-                return is_object($row) ? $row : (object) $row;
+        if ($field === 'slug' && $taxonomy !== '') {
+            $by_slug = $GLOBALS['intersoccer_test_terms_by_slug'] ?? [];
+            if (isset($by_slug[$taxonomy])) {
+                $slug_key = strtolower((string) $value);
+                if (isset($by_slug[$taxonomy][$slug_key])) {
+                    $row = $by_slug[$taxonomy][$slug_key];
+                    return is_object($row) ? $row : (object) $row;
+                }
+            }
+        }
+        if ($field === 'name' && $taxonomy !== '') {
+            $by_name = $GLOBALS['intersoccer_test_terms_by_name'] ?? [];
+            if (isset($by_name[$taxonomy])) {
+                $name_key = function_exists('mb_strtolower') ? mb_strtolower((string) $value) : strtolower((string) $value);
+                if (isset($by_name[$taxonomy][$name_key])) {
+                    $row = $by_name[$taxonomy][$name_key];
+                    return is_object($row) ? $row : (object) $row;
+                }
             }
         }
         return false;
@@ -649,6 +736,21 @@ if (!function_exists('sanitize_textarea_field')) {
     }
 }
 
+if (!function_exists('get_userdata')) {
+    function get_userdata($user_id) {
+        $user_id = (int) $user_id;
+        if (isset($GLOBALS['intersoccer_test_get_userdata'][ $user_id ])) {
+            return $GLOBALS['intersoccer_test_get_userdata'][ $user_id ];
+        }
+        global $intersoccer_test_userdata_map;
+        if (is_array($intersoccer_test_userdata_map) && isset($intersoccer_test_userdata_map[$user_id])) {
+            return $intersoccer_test_userdata_map[$user_id];
+        }
+
+        return false;
+    }
+}
+
 if (!function_exists('get_role')) {
     function get_role($role) {
         $mock = new stdClass();
@@ -862,6 +964,14 @@ if (!function_exists('_e')) {
 
 if (!function_exists('_n')) {
     function _n($single, $plural, $number, $domain = 'default') {
+        if (!empty($GLOBALS['intersoccer_test_record_n_calls'])) {
+            if (!isset($GLOBALS['intersoccer_test_recorded_n_numbers'])
+                || !is_array($GLOBALS['intersoccer_test_recorded_n_numbers'])) {
+                $GLOBALS['intersoccer_test_recorded_n_numbers'] = [];
+            }
+            $GLOBALS['intersoccer_test_recorded_n_numbers'][] = (int) $number;
+        }
+
         return $number === 1 ? $single : $plural;
     }
 }
@@ -991,6 +1101,12 @@ if (!function_exists('wp_convert_hr_to_bytes')) {
     }
 }
 
+if (!function_exists('flush_rewrite_rules')) {
+    function flush_rewrite_rules($hard = true) {
+        return true;
+    }
+}
+
 // AJAX functions
 if (!function_exists('check_ajax_referer')) {
     function check_ajax_referer($action = -1, $query_arg = false, $die = true) { return true; }
@@ -1012,7 +1128,11 @@ if (!function_exists('wp_send_json')) {
 
 if (!function_exists('wp_send_json_success')) {
     function wp_send_json_success($data = null, $status_code = null, $flags = 0) {
-        echo json_encode(['success' => true, 'data' => $data], $flags);
+        $json = json_encode(['success' => true, 'data' => $data], $flags);
+        echo $json;
+        if (!empty($GLOBALS['intersoccer_test_json_success_throws'])) {
+            throw new \RuntimeException($json);
+        }
     }
 }
 
@@ -1114,13 +1234,22 @@ if (!class_exists('WC_Order')) {
         }
         
         public function get_id() { return $this->id; }
-        public function get_status() { return 'completed'; }
+        public function get_order_number() { return (string) $this->id; }
+        public function get_status() { return $this->data['status'] ?? 'completed'; }
+        public function get_payment_method() { return $this->data['payment_method'] ?? 'stripe'; }
+        public function get_total_tax() { return $this->data['total_tax'] ?? 0.0; }
         public function get_customer_id() { return 1; }
+        public function get_user_id() { return $this->data['user_id'] ?? 1; }
+        public function get_coupon_codes() { return $this->data['coupon_codes'] ?? []; }
         public function get_billing_email() { return 'test@example.com'; }
         public function get_billing_phone() { return '+41 12 345 67 89'; }
         public function get_billing_first_name() { return 'John'; }
         public function get_billing_last_name() { return 'Doe'; }
         public function get_items($types = 'line_item') { return $this->items; }
+        public function get_item($item_id) {
+            $item_id = (int) $item_id;
+            return $this->items[$item_id] ?? null;
+        }
         public function set_items($items) { $this->items = $items; }
         public function get_total() { return 100.00; }
         public function get_total_refunded() { return 0.0; }
@@ -1132,6 +1261,22 @@ if (!class_exists('WC_Order')) {
             return $this->meta_data[$key] ?? ($single ? '' : []);
         }
         public function update_meta_data($key, $value) { $this->meta_data[$key] = $value; }
+        public function add_order_note($note, $is_customer_note = false, $added_by_user = false) {
+            global $intersoccer_test_order_notes;
+            if (!is_array($intersoccer_test_order_notes)) {
+                $intersoccer_test_order_notes = [];
+            }
+            if (!isset($intersoccer_test_order_notes[$this->id])) {
+                $intersoccer_test_order_notes[$this->id] = [];
+            }
+            $intersoccer_test_order_notes[$this->id][] = [
+                'note' => (string) $note,
+                'is_customer_note' => (bool) $is_customer_note,
+                'added_by_user' => (bool) $added_by_user,
+            ];
+            return 0;
+        }
+        public function calculate_taxes() { return true; }
         public function save() { return true; }
     }
 }
@@ -1144,14 +1289,123 @@ if (!class_exists('WC_DateTime')) {
     }
 }
 
+if (!class_exists('WC_Order_Item_Meta_Stub')) {
+    class WC_Order_Item_Meta_Stub {
+        public $id;
+        public $key;
+        public $value;
+
+        public function __construct($key, $value, $id = 0) {
+            $this->id = (int) $id;
+            $this->key = $key;
+            $this->value = $value;
+        }
+
+        public function get_data() {
+            return ['id' => $this->id, 'key' => $this->key, 'value' => $this->value];
+        }
+    }
+}
+
 if (!class_exists('WC_Order_Item_Product')) {
     class WC_Order_Item_Product {
         protected $data = [];
         protected $id = 1;
         protected $meta_data = [];
-        
+        /** @var array<int,array{id:int,key:string,value:mixed}> */
+        protected $meta_rows = [];
+
         public function __construct($item_id = 0) {
             $this->id = $item_id ?: 1;
+            $this->hydrateMetaFromTestStore();
+        }
+
+        protected function nextMetaRowId(): int {
+            global $intersoccer_test_wc_order_item_meta_next_id;
+            if (!isset($intersoccer_test_wc_order_item_meta_next_id)) {
+                $intersoccer_test_wc_order_item_meta_next_id = 1000;
+            }
+
+            return ++$intersoccer_test_wc_order_item_meta_next_id;
+        }
+
+        protected function rebuildFlatMetaFromRows(): void {
+            $this->meta_data = [];
+            foreach ($this->meta_rows as $row) {
+                $key = (string) $row['key'];
+                if (!array_key_exists($key, $this->meta_data)) {
+                    $this->meta_data[$key] = $row['value'];
+                }
+            }
+        }
+
+        protected function metaRowsHaveDuplicateKeys(): bool {
+            $seen = [];
+            foreach ($this->meta_rows as $row) {
+                $key = (string) $row['key'];
+                if (isset($seen[$key])) {
+                    return true;
+                }
+                $seen[$key] = true;
+            }
+
+            return false;
+        }
+
+        protected function hydrateMetaFromTestStore(): void {
+            global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_data;
+            $item_id = (int) $this->id;
+            if (is_array($intersoccer_test_wc_order_item_data) && isset($intersoccer_test_wc_order_item_data[$item_id])) {
+                $this->data = array_merge($this->data, $intersoccer_test_wc_order_item_data[$item_id]);
+            }
+            if (!is_array($intersoccer_test_wc_order_item_meta) || !isset($intersoccer_test_wc_order_item_meta[$item_id])) {
+                return;
+            }
+            $store = $intersoccer_test_wc_order_item_meta[$item_id];
+            if (isset($store['_meta_rows']) && is_array($store['_meta_rows'])) {
+                $this->meta_rows = [];
+                foreach ($store['_meta_rows'] as $row) {
+                    if (!is_array($row) || !isset($row['key'])) {
+                        continue;
+                    }
+                    $this->meta_rows[] = [
+                        'id' => (int) ($row['id'] ?? $this->nextMetaRowId()),
+                        'key' => (string) $row['key'],
+                        'value' => $row['value'] ?? '',
+                    ];
+                }
+                $this->rebuildFlatMetaFromRows();
+
+                return;
+            }
+            $this->meta_rows = [];
+            foreach ($store as $key => $value) {
+                if ($key === '_meta_rows') {
+                    continue;
+                }
+                $this->meta_rows[] = [
+                    'id' => $this->nextMetaRowId(),
+                    'key' => (string) $key,
+                    'value' => $value,
+                ];
+            }
+            $this->rebuildFlatMetaFromRows();
+        }
+
+        protected function persistMetaToTestStore(): void {
+            global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_data;
+            if (!is_array($intersoccer_test_wc_order_item_meta)) {
+                $intersoccer_test_wc_order_item_meta = [];
+            }
+            $store = $this->meta_data;
+            if ($this->metaRowsHaveDuplicateKeys()) {
+                $store['_meta_rows'] = $this->meta_rows;
+            }
+            $intersoccer_test_wc_order_item_meta[(int) $this->id] = $store;
+            if (!is_array($intersoccer_test_wc_order_item_data)) {
+                $intersoccer_test_wc_order_item_data = [];
+            }
+            $intersoccer_test_wc_order_item_data[(int) $this->id] = $this->data;
         }
         
         public function get_id() { return $this->id; }
@@ -1161,13 +1415,103 @@ if (!class_exists('WC_Order_Item_Product')) {
         public function get_total() { return $this->data['total'] ?? 100.00; }
         public function get_subtotal() { return $this->data['subtotal'] ?? 100.00; }
         public function get_name() { return $this->data['name'] ?? 'Test Product'; }
-        public function get_product() { return null; }
-        public function get_meta_data() { return $this->meta_data; }
+        public function get_product() {
+            if (!function_exists('wc_get_product')) {
+                return null;
+            }
+            $variation_id = (int) $this->get_variation_id();
+            $product_id = (int) $this->get_product_id();
+            if ($variation_id > 0) {
+                $product = wc_get_product($variation_id);
+                if ($product) {
+                    return $product;
+                }
+            }
+
+            return wc_get_product($product_id) ?: null;
+        }
+        public function get_meta_data() {
+            $out = [];
+            foreach ($this->meta_rows as $row) {
+                $out[] = new WC_Order_Item_Meta_Stub($row['key'], $row['value'], $row['id']);
+            }
+            return $out;
+        }
         public function get_meta($key, $single = true) {
-            return $this->meta_data[$key] ?? ($single ? '' : []);
+            $key = (string) $key;
+            if (!array_key_exists($key, $this->meta_data)) {
+                return $single ? '' : [];
+            }
+            $val = $this->meta_data[$key];
+            return $single ? $val : [$val];
+        }
+        public function update_meta_data($key, $value, $meta_id = 0) {
+            $key = (string) $key;
+            $meta_id = (int) $meta_id;
+            if ($meta_id > 0) {
+                foreach ($this->meta_rows as &$row) {
+                    if ((int) $row['id'] === $meta_id) {
+                        $row['key'] = $key;
+                        $row['value'] = $value;
+                        $this->rebuildFlatMetaFromRows();
+
+                        return;
+                    }
+                }
+                unset($row);
+            }
+
+            $updated = false;
+            foreach ($this->meta_rows as &$row) {
+                if ((string) $row['key'] === $key) {
+                    $row['value'] = $value;
+                    $updated = true;
+                    break;
+                }
+            }
+            unset($row);
+            if (!$updated) {
+                $this->meta_rows[] = [
+                    'id' => $this->nextMetaRowId(),
+                    'key' => $key,
+                    'value' => $value,
+                ];
+            }
+            $this->rebuildFlatMetaFromRows();
+        }
+        public function add_meta_data($key, $value, $unique = false) {
+            $key = (string) $key;
+            if ($unique) {
+                $this->delete_meta_data($key);
+            }
+            $this->meta_rows[] = [
+                'id' => $this->nextMetaRowId(),
+                'key' => $key,
+                'value' => $value,
+            ];
+            $this->rebuildFlatMetaFromRows();
+        }
+        public function delete_meta_data($key) {
+            $key = (string) $key;
+            $this->meta_rows = array_values(array_filter(
+                $this->meta_rows,
+                static function ($row) use ($key) {
+                    return (string) $row['key'] !== $key;
+                }
+            ));
+            $this->rebuildFlatMetaFromRows();
+        }
+        public function save() {
+            $this->persistMetaToTestStore();
+            return (int) $this->id;
         }
         public function set_data($data) { $this->data = $data; }
         public function set_meta_data($meta) { $this->meta_data = $meta; }
+        public function set_product_id($product_id) { $this->data['product_id'] = (int) $product_id; }
+        public function set_variation_id($variation_id) { $this->data['variation_id'] = (int) $variation_id; }
+        public function set_subtotal($amount) { $this->data['subtotal'] = $amount; }
+        public function set_total($amount) { $this->data['total'] = $amount; }
+        public function set_name($name) { $this->data['name'] = (string) $name; }
     }
 }
 
@@ -1252,11 +1596,42 @@ if (!function_exists('wc_get_product')) {
     }
 }
 
+if (!function_exists('wc_update_product_stock')) {
+    function wc_update_product_stock($product, $amount, $mode = 'set', $updating = false) {
+        intersoccer_rr_test_api_call_count('wc_update_product_stock');
+        global $intersoccer_test_wc_update_stock_callback;
+        if (is_callable($intersoccer_test_wc_update_stock_callback)) {
+            return call_user_func($intersoccer_test_wc_update_stock_callback, $product, $amount, $mode, $updating);
+        }
+
+        return true;
+    }
+}
+
 if (!function_exists('wc_get_order_item_meta')) {
     function wc_get_order_item_meta($item_id, $key, $single = true) {
         intersoccer_rr_test_api_call_count('wc_get_order_item_meta');
         if (isset($GLOBALS['intersoccer_test_wc_get_order_item_meta_call_count'])) {
             $GLOBALS['intersoccer_test_wc_get_order_item_meta_call_count']++;
+        }
+        global $intersoccer_test_wc_order_item_meta;
+        $item_id = (int) $item_id;
+        if ($key === '' || $key === null) {
+            if (!is_array($intersoccer_test_wc_order_item_meta) || !isset($intersoccer_test_wc_order_item_meta[$item_id])) {
+                return [];
+            }
+            $all = [];
+            foreach ($intersoccer_test_wc_order_item_meta[$item_id] as $meta_key => $meta_value) {
+                $all[$meta_key] = is_array($meta_value) ? $meta_value : [$meta_value];
+            }
+
+            return $all;
+        }
+        if (is_array($intersoccer_test_wc_order_item_meta)
+            && isset($intersoccer_test_wc_order_item_meta[$item_id][$key])
+        ) {
+            $val = $intersoccer_test_wc_order_item_meta[$item_id][$key];
+            return $single ? $val : [$val];
         }
         return $single ? '' : [];
     }
@@ -1264,6 +1639,15 @@ if (!function_exists('wc_get_order_item_meta')) {
 
 if (!function_exists('wc_update_order_item_meta')) {
     function wc_update_order_item_meta($item_id, $meta_key, $meta_value, $prev_value = '') {
+        global $intersoccer_test_wc_order_item_meta;
+        $item_id = (int) $item_id;
+        if (!is_array($intersoccer_test_wc_order_item_meta)) {
+            $intersoccer_test_wc_order_item_meta = [];
+        }
+        if (!isset($intersoccer_test_wc_order_item_meta[$item_id])) {
+            $intersoccer_test_wc_order_item_meta[$item_id] = [];
+        }
+        $intersoccer_test_wc_order_item_meta[$item_id][(string) $meta_key] = $meta_value;
         return true;
     }
 }
@@ -1434,3 +1818,39 @@ foreach (glob(dirname(__DIR__) . '/classes/woocommerce/*.php') as $file) {
 foreach (glob(dirname(__DIR__) . '/classes/admin/*.php') as $file) {
     require_once $file;
 }
+
+require_once __DIR__ . '/helpers/migration-meta-seed.php';
+
+add_filter(
+    'intersoccer_pre_roster_move_post_status',
+    static function ($status, $post_id) {
+        global $intersoccer_test_post_status_map;
+        if (is_array($intersoccer_test_post_status_map)
+            && array_key_exists((int) $post_id, $intersoccer_test_post_status_map)
+        ) {
+            return (string) $intersoccer_test_post_status_map[(int) $post_id];
+        }
+
+        return $status;
+    },
+    10,
+    2
+);
+
+add_filter(
+    'intersoccer_pre_get_product_type_safe',
+    static function ($type, $product_id, $variation_id = null) {
+        global $intersoccer_test_product_type_safe_callback;
+        if (is_callable($intersoccer_test_product_type_safe_callback)) {
+            return (string) call_user_func(
+                $intersoccer_test_product_type_safe_callback,
+                $product_id,
+                $variation_id
+            );
+        }
+
+        return $type;
+    },
+    10,
+    3
+);

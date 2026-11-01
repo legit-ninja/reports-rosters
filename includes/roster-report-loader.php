@@ -2026,7 +2026,7 @@ if (!function_exists('intersoccer_roster_report_prime_program_year_meta_from_row
 		if (!empty($item_ids)) {
 			intersoccer_roster_report_batch_prime_order_item_meta(
 				array_values($item_ids),
-				['Year', 'pa_program-year']
+				['Year', 'pa_program-year', 'attribute_pa_program-year']
 			);
 		}
 		foreach ($rows as &$row) {
@@ -2037,7 +2037,7 @@ if (!function_exists('intersoccer_roster_report_prime_program_year_meta_from_row
 			if ($oid <= 0) {
 				continue;
 			}
-			foreach (['Year', 'pa_program-year'] as $meta_key) {
+			foreach (['Year', 'pa_program-year', 'attribute_pa_program-year'] as $meta_key) {
 				if (!empty($row[ $meta_key ])) {
 					continue;
 				}

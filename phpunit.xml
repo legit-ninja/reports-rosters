@@ -61,6 +61,15 @@
             <file>tests/Core/ActivationRequirementsTest.php</file>
             <file>tests/Core/CommittedPluginAutoloadTest.php</file>
             <file>tests/WarmupBootstrapTest.php</file>
+            <file>tests/Legacy/MovePlayersAdminTargetTest.php</file>
+            <file>tests/Legacy/MovePlayersConfirmFlowTest.php</file>
+            <file>tests/Legacy/MovePlayersMigrationMetaTest.php</file>
+            <file>tests/Legacy/MovePlayersMoveAuditTest.php</file>
+            <file>tests/Legacy/MovePlayersRosterMoveUiTest.php</file>
+            <file>tests/Legacy/MovePlayersAjaxAcceptanceTest.php</file>
+            <file>tests/Legacy/MovePlayersCapacityPrivacyTest.php</file>
+            <file>tests/Legacy/MovePlayersAjaxPartialFailureTest.php</file>
+            <file>tests/Legacy/MovePlayersServiceEmptySiblingBootstrapTest.php</file>
             <file>tests/Reports/FinalReportsTotalsTest.php</file>
             <file>tests/Reports/BookingReportTotalsHtmlTest.php</file>
             <file>tests/Reports/FinalReportsAggregationAccuracyTest.php</file>
@@ -101,10 +110,12 @@
             <file>tests/Ajax/RosterVenueAccessTest.php</file>
             <file>tests/Unit/RosterDaysUnknownTest.php</file>
             <file>tests/Reports/OrderMetaFieldMapTest.php</file>
+            <file>tests/Reports/PaTwinOrderMetaReadersTest.php</file>
             <file>tests/Services/RosterBuilderSingleDayTest.php</file>
             <file>tests/Services/DataValidatorSingleDayUnknownTest.php</file>
             <file>tests/Unit/RosterCampBookingDisplayTest.php</file>
             <file>tests/Unit/BookingTypeNormalizerTest.php</file>
+            <file>tests/Unit/InterSoccerPreFilterTestingGateTest.php</file>
             <file>tests/Unit/MedicalAccessTest.php</file>
             <file>tests/Unit/MedicalAccessSplitPermissionsTest.php</file>
             <file>tests/Unit/MedicalAccessPmMissingTest.php</file>
@@ -114,6 +125,22 @@
             <file>tests/Unit/RosterSingleExportSplitPermissionsTest.php</file>
             <file>tests/Unit/MedicalRosterEditorDobGateTest.php</file>
             <file>tests/Unit/PlayerCampStatusDobGatingTest.php</file>
+            <file>tests/Unit/RosterMovePartialSummaryPluralTest.php</file>
+            <file>tests/Unit/RosterMoveFullOverCapacityPluralTest.php</file>
+            <file>tests/Unit/RosterMoveRosterDataHelpersTest.php</file>
+            <file>tests/Legacy/RosterMoveDestinationDisplayTest.php</file>
+            <file>tests/Legacy/MovePlayersRoundTripRosterDataTest.php</file>
+            <file>tests/Legacy/MovePlayersAjaxRoundTripRosterDataTest.php</file>
+            <file>tests/Legacy/MovePlayersStockAdjustTest.php</file>
+            <file>tests/Legacy/MovePlayersHistoryTest.php</file>
+            <file>tests/Legacy/MovePlayersAttendeeFieldsTest.php</file>
+            <file>tests/Legacy/MovePlayersItemDiscountsTest.php</file>
+            <file>tests/Legacy/MovePlayersCanonicalGirlsOnlyMoveTest.php</file>
+            <file>tests/Legacy/MovePlayersCanonicalOrderMetaMoveTest.php</file>
+            <file>tests/Legacy/MovePlayersFrDeQaFixesTest.php</file>
+            <file>tests/Services/RosterBuilderMigrationBlankFillTest.php</file>
+            <file>tests/Legacy/OrderAdminLineItemMetaDisplayTest.php</file>
+            <file>tests/Legacy/MovePlayersRosterHistoryNoWriteOnBuildTest.php</file>
             <directory>tests/ReportAccuracy</directory>
         </testsuite>
         <testsuite name="Complete">

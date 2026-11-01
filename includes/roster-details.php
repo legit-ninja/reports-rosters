@@ -466,6 +466,11 @@ function intersoccer_fetch_roster_sibling_candidates_for_consolidation(array $an
  * Render the roster details page
  */
 function intersoccer_render_roster_details_page() {
+    if (!function_exists('intersoccer_roster_move_merge_empty_sibling_variation_targets')) {
+        require_once __DIR__ . '/roster-move-admin-target.php';
+    } elseif (!function_exists('intersoccer_roster_move_js_localize_strings')) {
+        require_once __DIR__ . '/roster-move-reason-messages.php';
+    }
     if (!intersoccer_user_can_view_roster_admin()) {
         wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
     }
@@ -812,7 +817,36 @@ function intersoccer_render_roster_details_page() {
         $base_roster = $rosters[0];
         $base_roster_girls_only = (int) ($base_roster->girls_only ?? 0);
 
-        $available_rosters_query = $wpdb->prepare("
+        $page_exclude_variation_ids = function_exists('intersoccer_roster_move_page_exclude_variation_ids')
+            ? intersoccer_roster_move_page_exclude_variation_ids($rosters)
+            : [];
+        if ($page_exclude_variation_ids === [] && $variation_id > 0) {
+            $page_exclude_variation_ids = [$variation_id];
+        }
+        if (function_exists('intersoccer_roster_move_normalize_exclude_variation_ids')) {
+            $page_exclude_variation_ids = intersoccer_roster_move_normalize_exclude_variation_ids($page_exclude_variation_ids);
+        }
+
+        $exclude_sql = '';
+        $exclude_params = [];
+        if ($page_exclude_variation_ids !== []) {
+            $exclude_placeholders = implode(',', array_fill(0, count($page_exclude_variation_ids), '%d'));
+            $exclude_sql = " AND r.variation_id NOT IN ({$exclude_placeholders})";
+            $exclude_params = $page_exclude_variation_ids;
+        }
+
+        $source_order_item_ids = [];
+        foreach ($rosters as $row) {
+            $oid = is_object($row) ? (int) ($row->order_item_id ?? 0) : 0;
+            if ($oid > 0) {
+                $source_order_item_ids[$oid] = $oid;
+            }
+        }
+        $source_girls_tristate = function_exists('intersoccer_roster_move_resolve_source_girls_only_tristate')
+            ? intersoccer_roster_move_resolve_source_girls_only_tristate(array_values($source_order_item_ids))
+            : ($base_roster_girls_only === 1 ? 'yes' : 'mixed');
+
+        $all_destinations_query = $wpdb->prepare("
         SELECT DISTINCT 
             r.product_id,
             r.variation_id,
@@ -824,45 +858,41 @@ function intersoccer_render_roster_details_page() {
             r.course_day,
             r.times,
             r.season,
-            r.girls_only,
+            MAX(r.girls_only) AS girls_only,
             COUNT(DISTINCT r.order_item_id) as current_players
         FROM $rosters_table r
         JOIN {$wpdb->posts} p ON r.order_id = p.ID
         WHERE p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
         AND r.activity_type = %s
-        AND r.girls_only = %d
-        AND r.variation_id != %d
-        GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season, r.girls_only
+        {$exclude_sql}
+        GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season
         ORDER BY r.product_name, r.venue, r.age_group
-    ", $base_roster->activity_type, $base_roster_girls_only, $variation_id);
+    ", array_merge([$base_roster->activity_type], $exclude_params));
 
-        $available_rosters = $wpdb->get_results($available_rosters_query, OBJECT);
+        $all_destination_rows = $wpdb->get_results($all_destinations_query, OBJECT);
+        if (function_exists('intersoccer_roster_move_collapse_destination_rows_by_variation')) {
+            $all_destination_rows = intersoccer_roster_move_collapse_destination_rows_by_variation(
+                is_array($all_destination_rows) ? $all_destination_rows : []
+            );
+        }
 
-        $cross_gender_rosters_query = $wpdb->prepare("
-        SELECT DISTINCT 
-            r.product_id,
-            r.variation_id,
-            r.product_name,
-            r.venue,
-            r.age_group,
-            r.activity_type,
-            r.camp_terms,
-            r.course_day,
-            r.times,
-            r.season,
-            r.girls_only,
-            COUNT(DISTINCT r.order_item_id) as current_players
-        FROM $rosters_table r
-        JOIN {$wpdb->posts} p ON r.order_id = p.ID
-        WHERE p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold')
-        AND r.activity_type = %s
-        AND r.girls_only != %d
-        AND r.variation_id != %d
-        GROUP BY r.product_id, r.variation_id, r.product_name, r.venue, r.age_group, r.activity_type, r.camp_terms, r.course_day, r.times, r.season, r.girls_only
-        ORDER BY r.product_name, r.venue, r.age_group
-    ", $base_roster->activity_type, $base_roster_girls_only, $variation_id);
-
-        $cross_gender_rosters = $wpdb->get_results($cross_gender_rosters_query, OBJECT);
+        $partitioned = function_exists('intersoccer_roster_move_build_admin_destination_lists')
+            ? intersoccer_roster_move_build_admin_destination_lists(
+                is_array($all_destination_rows) ? $all_destination_rows : [],
+                $source_girls_tristate,
+                (int) ($base_roster->product_id ?? 0),
+                $page_exclude_variation_ids,
+                (string) $base_roster->activity_type,
+                $base_roster_girls_only
+            )
+            : (function_exists('intersoccer_roster_move_partition_destination_lists')
+                ? intersoccer_roster_move_partition_destination_lists(
+                    is_array($all_destination_rows) ? $all_destination_rows : [],
+                    $source_girls_tristate
+                )
+                : [$all_destination_rows, []]);
+        $available_rosters = $partitioned[0];
+        $cross_gender_rosters = $partitioned[1];
 
         $unknown_count = count(array_filter($rosters, fn($row) => $row->player_name === 'Unknown Attendee'));
 
@@ -957,6 +987,8 @@ function intersoccer_render_roster_details_page() {
         echo '<th style="width: 90px;">' . esc_html__('Shirt Size', 'intersoccer-reports-rosters') . '</th>';
         echo '<th style="width: 90px;">' . esc_html__('Shorts Size', 'intersoccer-reports-rosters') . '</th>';
     }
+
+    echo '<th style="width: 120px;">History</th>';
     
     echo '</tr>';
     echo '</thead><tbody>';
@@ -1053,6 +1085,14 @@ function intersoccer_render_roster_details_page() {
             echo '<td>' . esc_html($row->shirt_size ?? 'N/A') . '</td>';
             echo '<td>' . esc_html($row->shorts_size ?? 'N/A') . '</td>';
         }
+
+        echo '<td>';
+        if (function_exists('intersoccer_roster_history_render_admin_cell')) {
+            echo intersoccer_roster_history_render_admin_cell((int) ($row->order_item_id ?? 0));
+        } else {
+            echo '—';
+        }
+        echo '</td>';
         
         echo '</tr>';
     }
@@ -1125,7 +1165,8 @@ function intersoccer_render_roster_details_page() {
     echo '                <button id="applyBulk" class="button button-primary">' . esc_html__('Apply', 'intersoccer-reports-rosters') . '</button>';
     echo '            </div>';
     echo '        </div>';
-    echo '        <div style="margin-top: 8px; font-size: 12px; color: #666;">' . esc_html__('Use each filter in order to narrow destination rosters.', 'intersoccer-reports-rosters') . '</div>';
+        echo '        <div id="rosterMoveInlinePanel" class="isrr-roster-move-panel" style="display: none;" aria-live="polite"></div>';
+        echo '        <div style="margin-top: 8px; font-size: 12px; color: #666;">' . esc_html__('Use each filter in order to narrow destination rosters.', 'intersoccer-reports-rosters') . '</div>';
     echo '        <select id="targetRosterOptionsSource" style="display: none;" aria-hidden="true" tabindex="-1">';
     echo '            <option value="">' . esc_html__('Select a destination roster...', 'intersoccer-reports-rosters') . '</option>';
     
@@ -1433,6 +1474,44 @@ function intersoccer_render_roster_details_page() {
             background: #2e7d32;
             transform: translateY(-1px);
         }
+        .isrr-roster-move-panel {
+            margin-top: 12px;
+            padding: 14px 16px;
+            border-radius: 4px;
+            border: 1px solid #c3c4c7;
+            background: #fff;
+            color: #1d2327;
+            max-width: 640px;
+            line-height: 1.5;
+        }
+        .isrr-roster-move-panel.isrr-roster-move-panel--confirm {
+            border-color: #dba617;
+            background: #fff8e5;
+        }
+        .isrr-roster-move-panel.isrr-roster-move-panel--error {
+            border-color: #d63638;
+            background: #fcf0f1;
+        }
+        .isrr-roster-move-panel.isrr-roster-move-panel--success {
+            border-color: #00a32a;
+            background: #edfaef;
+        }
+        .isrr-roster-move-panel h3 {
+            margin: 0 0 8px;
+            font-size: 14px;
+        }
+        .isrr-roster-move-panel ul {
+            margin: 8px 0 12px 18px;
+        }
+        .isrr-roster-move-panel .isrr-roster-move-actions {
+            margin-top: 12px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .isrr-roster-move-panel .isrr-roster-move-icon {
+            margin-right: 6px;
+        }
     </style>';
     
     echo '</div>';
@@ -1444,7 +1523,43 @@ function intersoccer_render_roster_details_page() {
         var intersoccerAjaxUrl = (typeof ajaxurl !== 'undefined' && ajaxurl) ? ajaxurl : '<?php echo esc_js(admin_url('admin-ajax.php')); ?>';
         var rosterDetailsBaseUrl = '<?php echo esc_js(admin_url('admin.php?page=intersoccer-roster-details')); ?>';
         var rosterDetailsFromPage = '<?php echo esc_js($from_page); ?>';
-        
+        var isrrRosterMoveL10n = <?php echo wp_json_encode(intersoccer_roster_move_js_localize_strings()); ?>;
+        var rosterMovePanel = $('#rosterMoveInlinePanel');
+        var applyBulkDefaultLabel = isrrRosterMoveL10n.apply;
+
+        function rosterMoveL10n(key) {
+            return isrrRosterMoveL10n[key] || '';
+        }
+
+        function resetRosterMoveApplyButton() {
+            applyBulk.prop('disabled', false).text(applyBulkDefaultLabel);
+        }
+
+        function hideRosterMovePanel() {
+            rosterMovePanel.hide().empty().removeClass('isrr-roster-move-panel--confirm isrr-roster-move-panel--error isrr-roster-move-panel--success');
+        }
+
+        function showRosterMovePanel(markup, role, variant) {
+            rosterMovePanel
+                .removeClass('isrr-roster-move-panel--confirm isrr-roster-move-panel--error isrr-roster-move-panel--success')
+                .addClass(variant ? 'isrr-roster-move-panel--' + variant : '')
+                .attr('role', role || 'status')
+                .html(markup)
+                .show();
+            if (variant === 'confirm') {
+                const $heading = rosterMovePanel.find('#rosterMoveConfirmHeading');
+                if ($heading.length) {
+                    $heading.trigger('focus');
+                }
+            }
+        }
+
+        rosterMovePanel.on('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+            }
+        });
+
         // Repair day presence handler
         $(document).on('click', '#repair-day-presence-btn', function(e) {
             e.preventDefault();
@@ -1760,185 +1875,241 @@ function intersoccer_render_roster_details_page() {
 
         applyBulk.on('click', function() {
             console.log('InterSoccer Migration: Apply bulk action clicked');
-            
+
             const action = bulkActionSelect.val();
             if (action !== 'move') {
-                console.log('InterSoccer Migration: No move action selected');
                 return;
             }
 
             const targetVar = targetRosterSelect.val().trim();
+            const selectedOption = targetRosterSelect.find('option:selected');
+            const destinationName = selectedOption.text();
+            const allowCrossGender = $('#allowCrossGender').is(':checked');
+
+            const selectedItems = [];
+            const selectedRows = [];
+            playerSelects.each(function() {
+                if ($(this).prop('checked')) {
+                    const $row = $(this).closest('tr');
+                    const itemId = $row.data('order-item-id');
+                    if (itemId) {
+                        selectedItems.push(itemId);
+                        selectedRows.push($row);
+                    }
+                }
+            });
+
             if (!targetVar) {
-                alert('<?php echo esc_js(__('Please select a destination roster.', 'intersoccer-reports-rosters')); ?>');
+                showRosterMovePanel(
+                    '<p><span class="isrr-roster-move-icon" aria-hidden="true">⚠</span>' +
+                    rosterMoveL10n('select_destination') + '</p>',
+                    'alert',
+                    'error'
+                );
                 targetRosterSelect.focus();
                 return;
             }
 
-            const selectedItems = [];
-            playerSelects.each(function() {
-                if ($(this).prop('checked')) {
-                    const itemId = $(this).closest('tr').data('order-item-id');
-                    if (itemId) {
-                        selectedItems.push(itemId);
-                    }
-                }
-            });
-
-            console.log('InterSoccer Migration: Selected items:', selectedItems);
-
             if (selectedItems.length === 0) {
-                alert('No players selected.');
+                showRosterMovePanel(
+                    '<p><span class="isrr-roster-move-icon" aria-hidden="true">⚠</span>' +
+                    rosterMoveL10n('no_players_selected') + '</p>',
+                    'alert',
+                    'error'
+                );
                 return;
             }
 
-            // Enhanced confirmation with details
-            const selectedOption = targetRosterSelect.find('option:selected');
-            const destinationName = selectedOption.text();
-            const destinationGirlsOnly = selectedOption.data('girls-only') === '1' || selectedOption.data('girls-only') === 1;
-            const sourceGirlsOnly = <?php echo $is_girls_only ? 'true' : 'false'; ?>;
-            const allowCrossGender = $('#allowCrossGender').is(':checked');
-            const isCrossGender = sourceGirlsOnly !== destinationGirlsOnly;
-            
-            // Build confirmation message
-            let confirmMessage = `Move ${selectedItems.length} player(s) to:\n"${destinationName}"\n\n`;
-            
-            // Add gender warning if applicable
-            if (isCrossGender) {
-                if (sourceGirlsOnly && !destinationGirlsOnly) {
-                    confirmMessage += '⚠️ WARNING: Moving from Girls Only to Regular (Mixed Gender) roster\n\n';
-                } else {
-                    confirmMessage += '⚠️ WARNING: Moving from Regular to Girls Only roster\n\n';
+            hideRosterMovePanel();
+
+            function renderConfirmPanel(data) {
+                const lines = data.reason_lines || data.confirm_messages || [];
+                let listHtml = '';
+                if (lines.length) {
+                    listHtml = '<ul>' + lines.map(function(line) {
+                        return '<li>' + $('<div>').text(line).html() + '</li>';
+                    }).join('') + '</ul>';
                 }
-            }
-            
-            confirmMessage += 'This will:\n';
-            confirmMessage += '  ✓ Update order items to new variation\n';
-            confirmMessage += '  ✓ Change roster assignment\n';
-            confirmMessage += '  ✓ Preserve original pricing\n';
-            confirmMessage += '  ✓ Update roster database\n\n';
-            confirmMessage += 'This action cannot be undone.\n\n';
-            confirmMessage += 'Continue?';
-            
-            if (!confirm(confirmMessage)) {
-                console.log('InterSoccer Migration: Migration cancelled by user');
-                return;
+                const heading = data.heading || rosterMoveL10n('heading');
+                const consequence = data.consequence || rosterMoveL10n('consequence');
+                const moveLabel = data.move_anyway || rosterMoveL10n('move_anyway');
+                const cancelLabel = data.cancel || rosterMoveL10n('cancel');
+                return (
+                    '<h3 id="rosterMoveConfirmHeading" tabindex="-1"><span class="isrr-roster-move-icon" aria-hidden="true">⚠</span>' + $('<div>').text(heading).html() + '</h3>' +
+                    listHtml +
+                    '<p>' + $('<div>').text(consequence).html() + '</p>' +
+                    '<div class="isrr-roster-move-actions">' +
+                    '<button type="button" class="button button-primary" id="rosterMoveConfirmAnyway">' + $('<div>').text(moveLabel).html() + '</button>' +
+                    '<button type="button" class="button" id="rosterMoveConfirmCancel">' + $('<div>').text(cancelLabel).html() + '</button>' +
+                    '</div>'
+                );
             }
 
-            const targetRosterUrl = new URL(rosterDetailsBaseUrl, window.location.origin);
-            targetRosterUrl.searchParams.set('variation_id', String(parseInt(targetVar, 10)));
-            if (rosterDetailsFromPage) {
-                targetRosterUrl.searchParams.set('from', rosterDetailsFromPage);
+            function removeMovedRows(movedIds) {
+                const movedSet = new Set((movedIds || []).map(String));
+                playerSelects.each(function() {
+                    const $row = $(this).closest('tr');
+                    const itemId = String($row.data('order-item-id'));
+                    if (movedSet.has(itemId)) {
+                        $row.remove();
+                    }
+                });
             }
-            
 
-            console.log('InterSoccer Migration: Starting AJAX request with allow_cross_gender=' + allowCrossGender);
+            function runMoveAjax(confirmWarnings, retryFailedOnly) {
+                const confirmFlag = retryFailedOnly && window.isrrRosterMoveLastConfirmWarnings
+                    ? window.isrrRosterMoveLastConfirmWarnings
+                    : confirmWarnings;
+                let itemIds = selectedItems;
+                if (retryFailedOnly) {
+                    const retryIds = Array.isArray(window.isrrRosterMoveLastFailedIds)
+                        ? window.isrrRosterMoveLastFailedIds
+                        : [];
+                    if (!retryIds.length) {
+                        return;
+                    }
+                    itemIds = retryIds;
+                }
 
-            // Enhanced AJAX call with better error handling
-            $.ajax({
-                url: ajaxurl,
-                type: 'POST',
-                data: {
-                    action: 'intersoccer_move_players',
-                    nonce: '<?php echo esc_js(wp_create_nonce('intersoccer_move_nonce')); ?>',
-                    target_variation_id: parseInt(targetVar),
-                    order_item_ids: selectedItems,
-                    allow_cross_gender: allowCrossGender ? '1' : '0'
-                },
-                beforeSend: function() {
-                    console.log('InterSoccer Migration: AJAX request started');
-                    applyBulk.prop('disabled', true).text('Moving Players...');
-                    
-                    // Show progress indicator
-                    $('<div id="migration-progress" style="margin-top: 10px; padding: 10px; background: #f0f8ff; border: 1px solid #0073aa; border-radius: 4px;">' +
-                    '<strong>Migration in Progress...</strong><br>' +
-                    'Moving ' + selectedItems.length + ' player(s) to "' + destinationName + '"...' +
-                    '</div>').insertAfter(applyBulk);
-                },
-                success: function(response) {
-                    console.log('InterSoccer Migration: AJAX success:', response);
-                    
-                    $('#migration-progress').remove();
-                    
-                    if (response.success) {
-                        alert('Success: ' + response.data.message);
-                        const shouldOpenTargetRoster = confirm('<?php echo esc_js(__('Open destination roster in a new tab to verify migrated player data?', 'intersoccer-reports-rosters')); ?>');
-                        if (shouldOpenTargetRoster) {
-                            window.open(targetRosterUrl.toString(), '_blank');
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'intersoccer_move_players',
+                        nonce: '<?php echo esc_js(wp_create_nonce('intersoccer_move_nonce')); ?>',
+                        target_variation_id: parseInt(targetVar, 10),
+                        order_item_ids: itemIds,
+                        allow_cross_gender: allowCrossGender ? '1' : '0',
+                        confirm_warnings: confirmFlag ? '1' : '0'
+                    },
+                    beforeSend: function() {
+                        applyBulk.prop('disabled', true).text(rosterMoveL10n('checking'));
+                    },
+                    success: function(response) {
+                        console.log('InterSoccer Migration: AJAX success:', response);
+                        resetRosterMoveApplyButton();
+
+                        if (response.success && response.data && response.data.gender_block) {
+                            const msg = response.data.gender_message || response.data.message || rosterMoveL10n('gender_block');
+                            showRosterMovePanel(
+                                '<p><span class="isrr-roster-move-icon" aria-hidden="true">⚠</span>' + $('<div>').text(msg).html() + '</p>',
+                                'alert',
+                                'error'
+                            );
+                            return;
                         }
-                        
-                        // Clear selections and reset form
-                        playerSelects.prop('checked', false);
-                        selectAll.prop('checked', false);
-                        bulkActionSelect.val('');
-                        resetDestinationFilters();
-                        moveOptions.hide();
-                        
-                        // Reload without moved order_item_ids so source details can soft-filter / show empty
-                        console.log('InterSoccer Migration: Reloading page to show changes');
-                        try {
-                            const reloadUrl = new URL(window.location.href);
-                            const rawIds = reloadUrl.searchParams.get('order_item_ids');
-                            if (rawIds) {
-                                const moved = new Set(selectedItems.map(String));
-                                const remaining = rawIds.split(',')
-                                    .map(function(s) { return String(s).trim(); })
-                                    .filter(Boolean)
-                                    .filter(function(id) { return !moved.has(id); });
-                                if (remaining.length > 0) {
-                                    reloadUrl.searchParams.set('order_item_ids', remaining.join(','));
-                                } else {
-                                    reloadUrl.searchParams.delete('order_item_ids');
+
+                        if (response.success && response.data && (response.data.needs_confirm || response.data.needs_confirmation)) {
+                            window.isrrRosterMoveLastConfirmWarnings = false;
+                            showRosterMovePanel(renderConfirmPanel(response.data), 'alert', 'confirm');
+                            $('#rosterMoveConfirmCancel').on('click', function() {
+                                hideRosterMovePanel();
+                            });
+                            $('#rosterMoveConfirmAnyway').on('click', function() {
+                                hideRosterMovePanel();
+                                window.isrrRosterMoveLastConfirmWarnings = true;
+                                runMoveAjax(true, false);
+                            });
+                            return;
+                        }
+
+                        if (response.success && response.data && (typeof response.data.moved_count !== 'undefined' || (response.data.failed && response.data.failed.length))) {
+                            const moved = parseInt(response.data.moved_count, 10) || 0;
+                            const total = parseInt(response.data.total_count, 10) || selectedItems.length;
+                            const failed = response.data.failed || [];
+                            const failedCount = response.data.failed_count || failed.length;
+                            const movedIds = response.data.moved_order_item_ids || [];
+
+                            if (failedCount > 0 || (response.data.partial && moved < total)) {
+                                let failList = '';
+                                const failLineTpl = rosterMoveL10n('failed_player_line');
+                                failed.forEach(function(item) {
+                                    const reason = item.reason || item.message || rosterMoveL10n('unknown_error');
+                                    const name = item.player_first_name || '';
+                                    const line = name
+                                        ? failLineTpl.replace('%1$s', name).replace('%2$s', reason)
+                                        : reason;
+                                    failList += '<li>' + $('<div>').text(line).html() + '</li>';
+                                });
+                                const partialLine = response.data.partial_summary || '';
+                                const retryableFailedIds = failed
+                                    .filter(function(f) { return f.retryable !== false; })
+                                    .map(function(f) { return f.order_item_id; })
+                                    .filter(Boolean);
+                                window.isrrRosterMoveLastFailedIds = retryableFailedIds;
+                                let actionsHtml = '<div class="isrr-roster-move-actions">';
+                                if (retryableFailedIds.length > 0) {
+                                    actionsHtml += '<button type="button" class="button button-primary" id="rosterMoveTryAgain">' +
+                                        $('<div>').text(rosterMoveL10n('try_again')).html() + '</button>';
                                 }
-                                window.location.href = reloadUrl.toString();
-                            } else {
-                                location.reload();
+                                actionsHtml += '<button type="button" class="button" id="rosterMoveDismiss">' +
+                                    $('<div>').text(rosterMoveL10n('dismiss')).html() + '</button></div>';
+                                showRosterMovePanel(
+                                    '<p role="alert"><span class="isrr-roster-move-icon" aria-hidden="true">⚠</span>' +
+                                    $('<div>').text(partialLine).html() + '</p><ul>' + failList + '</ul>' +
+                                    actionsHtml,
+                                    'alert',
+                                    'error'
+                                );
+                                $('#rosterMoveTryAgain').on('click', function() {
+                                    hideRosterMovePanel();
+                                    runMoveAjax(confirmFlag, true);
+                                });
+                                $('#rosterMoveDismiss').on('click', function() {
+                                    hideRosterMovePanel();
+                                });
+                                if (moved > 0) {
+                                    removeMovedRows(movedIds.length ? movedIds : selectedItems);
+                                }
+                                return;
                             }
-                        } catch (reloadErr) {
-                            console.error('InterSoccer Migration: URL rewrite failed, falling back to reload', reloadErr);
-                            location.reload();
+
+                            const successMsg = response.data.message || '';
+                            showRosterMovePanel(
+                                '<p><span class="isrr-roster-move-icon" aria-hidden="true">✓</span>' +
+                                $('<div>').text(successMsg).html() + '</p>' +
+                                '<div class="isrr-roster-move-actions"><button type="button" class="button" id="rosterMoveDismiss">' +
+                                $('<div>').text(rosterMoveL10n('dismiss')).html() + '</button></div>',
+                                'status',
+                                'success'
+                            );
+                            removeMovedRows(movedIds.length ? movedIds : selectedItems);
+                            $('#rosterMoveDismiss').on('click', function() {
+                                hideRosterMovePanel();
+                            });
+                            return;
                         }
-                    } else {
-                        alert('Error: ' + (response.data?.message || 'Unknown error occurred'));
-                        console.error('InterSoccer Migration: Server returned error:', response.data);
+
+                        const errMsg = (response.data && response.data.message) ? response.data.message : rosterMoveL10n('unknown_error');
+                        showRosterMovePanel(
+                            '<p><span class="isrr-roster-move-icon" aria-hidden="true">⚠</span>' + $('<div>').text(errMsg).html() + '</p>',
+                            'alert',
+                            'error'
+                        );
+                    },
+                    error: function(xhr) {
+                        resetRosterMoveApplyButton();
+                        let errorMessage = rosterMoveL10n('ajax_error');
+                        try {
+                            const errorResponse = JSON.parse(xhr.responseText);
+                            if (errorResponse.data && errorResponse.data.message) {
+                                errorMessage = errorResponse.data.message;
+                            }
+                        } catch (e) {
+                            if (xhr.status === 403) {
+                                errorMessage = rosterMoveL10n('permission_denied');
+                            }
+                        }
+                        showRosterMovePanel(
+                            '<p><span class="isrr-roster-move-icon" aria-hidden="true">⚠</span>' + $('<div>').text(errorMessage).html() + '</p>',
+                            'alert',
+                            'error'
+                        );
                     }
-                },
-                error: function(xhr, status, error) {
-                    console.error('InterSoccer Migration: AJAX error:', {
-                        status: status,
-                        error: error,
-                        responseText: xhr.responseText,
-                        statusCode: xhr.status
-                    });
-                    
-                    $('#migration-progress').remove();
-                    
-                    let errorMessage = 'AJAX error occurred.';
-                    
-                    // Try to parse JSON error response
-                    try {
-                        const errorResponse = JSON.parse(xhr.responseText);
-                        if (errorResponse.data && errorResponse.data.message) {
-                            errorMessage = 'Error: ' + errorResponse.data.message;
-                        }
-                    } catch (e) {
-                        // If not JSON, use status text or generic message
-                        if (xhr.status === 403) {
-                            errorMessage = 'Permission denied. Please refresh the page and try again.';
-                        } else if (xhr.status === 404) {
-                            errorMessage = 'Migration function not found. Please check plugin configuration.';
-                        } else if (xhr.status >= 500) {
-                            errorMessage = 'Server error occurred. Please check the error logs.';
-                        }
-                    }
-                    
-                    alert(errorMessage);
-                },
-                complete: function() {
-                    console.log('InterSoccer Migration: AJAX request completed');
-                    applyBulk.prop('disabled', false).text('Apply');
-                    $('#migration-progress').remove();
-                }
-            });
+                });
+            }
+
+            runMoveAjax(false, false);
         });
 
         // Add keyboard shortcuts for better UX
