@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.11.2 — 2026-11-01
+
+### Fixed
+- Roster move: admin target checks, order-item meta preservation, and safety checks (#104).
+- Roster move writes the destination to the order in the order's language, fixes the UPDATE columns, and rolls back the order line if the roster update fails (#175).
+
 ## 2.11.1 — 2026-11-01
 
 ### Fixed
