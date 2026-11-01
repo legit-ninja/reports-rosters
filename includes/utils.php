@@ -5913,21 +5913,6 @@ if (!function_exists('intersoccer_build_roster_facet_db_update')) {
             'activity_type'   => substr((string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'activity_type'), 0, 50),
         ];
 
-        if ((int) ($normalized_data['girls_only'] ?? 0) === 1
-            && function_exists('intersoccer_migration_activity_type_for_girls_only_tristate')) {
-            $base_activity = (string) intersoccer_roster_facet_value_or_record($normalized_data, $record, 'activity_type');
-            $canonical_base = function_exists('intersoccer_canonical_activity_type_for_roster')
-                ? (string) intersoccer_canonical_activity_type_for_roster($base_activity)
-                : $base_activity;
-            if ($canonical_base !== 'Girls Only') {
-                $update['activity_type'] = substr(
-                    (string) intersoccer_migration_activity_type_for_girls_only_tristate($base_activity, 'yes'),
-                    0,
-                    50
-                );
-            }
-        }
-
         if ($product_name !== '') {
             $update['product_name'] = substr((string) $product_name, 0, 255);
         }

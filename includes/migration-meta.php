@@ -963,11 +963,33 @@ if (!function_exists('intersoccer_migration_build_roster_normalized_from_destina
         $normalized = intersoccer_migration_overwrite_roster_normalized_from_variation($normalized, $variation);
 
         if ((int) ($normalized['girls_only'] ?? 0) === 1
-            && function_exists('intersoccer_migration_activity_type_for_girls_only_tristate')) {
-            $normalized['activity_type'] = intersoccer_migration_activity_type_for_girls_only_tristate(
-                (string) ($normalized['activity_type'] ?? ''),
-                'yes'
-            );
+            && function_exists('intersoccer_migration_activity_type_with_girls_only_flag')) {
+            $activity_for_label = (string) ($normalized['activity_type'] ?? '');
+            if ($activity_for_label !== ''
+                && function_exists('intersoccer_roster_strip_girls_only_from_activity_label')) {
+                $activity_for_label = (string) intersoccer_roster_strip_girls_only_from_activity_label($activity_for_label);
+            }
+            if ($activity_for_label === '' && $product_type !== '') {
+                $activity_for_label = ucfirst($product_type);
+            }
+            $labeled = (string) intersoccer_migration_activity_type_with_girls_only_flag($activity_for_label, 1);
+            if ($labeled !== '' && function_exists('intersoccer_canonical_activity_type_for_roster')) {
+                $canonical_base = (string) intersoccer_canonical_activity_type_for_roster($activity_for_label);
+                if ($canonical_base !== 'Girls Only' && $canonical_base !== '' && $labeled === $canonical_base) {
+                    if ($canonical_base === 'Camp') {
+                        $labeled = 'Camp, Girls Only';
+                    } elseif ($canonical_base === 'Course') {
+                        $labeled = 'Course, Girls Only';
+                    } elseif ($canonical_base === 'Tournament') {
+                        $labeled = 'Tournament, Girls Only';
+                    } else {
+                        $labeled = $canonical_base . ', Girls Only';
+                    }
+                }
+            }
+            if ($labeled !== '') {
+                $normalized['activity_type'] = $labeled;
+            }
         }
 
         if (function_exists('intersoccer_roster_facet_en_term_name_if_resolved')) {

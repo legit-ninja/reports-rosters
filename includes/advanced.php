@@ -2372,6 +2372,38 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
             'girls_only'    => (int) ($normalized['girls_only'] ?? 0),
         ];
 
+    if ((int) ($normalized['girls_only'] ?? 0) === 1
+        && function_exists('intersoccer_migration_activity_type_with_girls_only_flag')) {
+        $activity_for_label = function_exists('intersoccer_roster_facet_value_or_record')
+            ? (string) intersoccer_roster_facet_value_or_record($normalized, $record, 'activity_type')
+            : (string) ($normalized['activity_type'] ?? ($record['activity_type'] ?? ''));
+        if ($activity_for_label !== ''
+            && function_exists('intersoccer_roster_strip_girls_only_from_activity_label')) {
+            $activity_for_label = (string) intersoccer_roster_strip_girls_only_from_activity_label($activity_for_label);
+        }
+        if ($activity_for_label === '' && $product_type !== '') {
+            $activity_for_label = ucfirst($product_type);
+        }
+        $labeled = (string) intersoccer_migration_activity_type_with_girls_only_flag($activity_for_label, 1);
+        if ($labeled !== '' && function_exists('intersoccer_canonical_activity_type_for_roster')) {
+            $canonical_base = (string) intersoccer_canonical_activity_type_for_roster($activity_for_label);
+            if ($canonical_base !== 'Girls Only' && $canonical_base !== '' && $labeled === $canonical_base) {
+                if ($canonical_base === 'Camp') {
+                    $labeled = 'Camp, Girls Only';
+                } elseif ($canonical_base === 'Course') {
+                    $labeled = 'Course, Girls Only';
+                } elseif ($canonical_base === 'Tournament') {
+                    $labeled = 'Tournament, Girls Only';
+                } else {
+                    $labeled = $canonical_base . ', Girls Only';
+                }
+            }
+        }
+        if ($labeled !== '') {
+            $facet_update['activity_type'] = substr($labeled, 0, 50);
+        }
+    }
+
     if (!empty($normalized['start_date'])) {
         $facet_update['start_date'] = (string) $normalized['start_date'];
     }
