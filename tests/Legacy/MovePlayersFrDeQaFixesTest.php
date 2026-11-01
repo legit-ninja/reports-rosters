@@ -382,6 +382,14 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
                         return is_string($value) && trim($value) !== '' ? $value : null;
                     }
                 }
+                if (strpos($sql, 'variation_id') !== false) {
+                    $row = $GLOBALS['intersoccer_test_roster_store'][self::ITEM_ID] ?? null;
+                    if (is_array($row) && !empty($row['variation_id'])) {
+                        return (string) (int) $row['variation_id'];
+                    }
+
+                    return null;
+                }
 
                 return '972';
             }
@@ -4482,6 +4490,84 @@ class MovePlayersFrDeQaFixesTest extends TestCase {
         ]);
         $this->seedRosterHistoryMetaForBlockTest();
         $this->assertBookingTypeMismatchHardBlockNoWrites(['confirm_warnings' => '1']);
+    }
+
+    public function test_camp_four_day_days_only_meta_blocks_single_day_target_from_source_variation(): void {
+        $four_days = 'Monday, Tuesday, Wednesday, Thursday';
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9770, 'slug' => 'full-week', 'name' => 'Full Week'],
+                    'single-days' => (object) ['term_id' => 9771, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                ],
+            ],
+            [
+                9770 => (object) ['term_id' => 9770, 'slug' => 'full-week', 'name' => 'Full Week'],
+                9771 => (object) ['term_id' => 9771, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'source_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'single-days',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'parent_attrs' => [
+                'pa_days-of-week' => $four_days,
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Four day line without booking meta',
+                'Days Selected' => $four_days,
+            ],
+            'roster_row' => ['booking_type' => ''],
+        ]);
+        $this->seedRosterHistoryMetaForBlockTest();
+        $this->assertBookingTypeMismatchHardBlockNoWrites(['confirm_warnings' => '1']);
+    }
+
+    // Regression: RR #175 — roster single-day booking type allows single-day target when line meta is days-only.
+    public function test_camp_days_only_meta_allows_single_day_target_when_roster_booking_type_single_days(): void {
+        $four_days = 'Monday, Tuesday, Wednesday, Thursday';
+        $this->registerTerms(
+            [
+                'pa_booking-type' => [
+                    'full-week' => (object) ['term_id' => 9772, 'slug' => 'full-week', 'name' => 'Full Week'],
+                    'single-days' => (object) ['term_id' => 9773, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+                ],
+            ],
+            [
+                9772 => (object) ['term_id' => 9772, 'slug' => 'full-week', 'name' => 'Full Week'],
+                9773 => (object) ['term_id' => 9773, 'slug' => 'single-days', 'name' => 'Single Day(s)'],
+            ]
+        );
+        $this->stubWpmlEnTerms([]);
+        $this->installMoveWorld([
+            'source_attrs' => [
+                'attribute_pa_booking-type' => 'full-week',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'target_attrs' => [
+                'attribute_pa_booking-type' => 'single-days',
+                'attribute_pa_girls-only' => 'no',
+            ],
+            'parent_attrs' => [
+                'pa_days-of-week' => $four_days,
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'Roster single day with days-only line',
+                'Days Selected' => $four_days,
+            ],
+            'roster_row' => ['booking_type' => 'Single Day(s)'],
+        ]);
+
+        $response = $this->invokeMoveAjax(null, ['confirm_warnings' => '1']);
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
     }
 
     public function test_camp_four_day_parent_three_days_selected_blocks_full_week_target(): void {

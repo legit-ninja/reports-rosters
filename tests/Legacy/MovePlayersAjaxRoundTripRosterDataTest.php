@@ -45,6 +45,19 @@ class MovePlayersAjaxRoundTripRosterDataTest extends TestCase {
         require_once dirname(__DIR__, 2) . '/includes/roster-move-audit.php';
         require_once dirname(__DIR__, 2) . '/includes/advanced.php';
 
+        $GLOBALS['intersoccer_test_terms_by_slug'] = [
+            'pa_city' => [
+                'geneva' => (object) ['term_id' => 92151, 'slug' => 'geneva', 'name' => 'Geneva'],
+            ],
+            'pa_canton-region' => [
+                'geneva' => (object) ['term_id' => 92152, 'slug' => 'geneva', 'name' => 'Geneva'],
+            ],
+        ];
+        $GLOBALS['intersoccer_test_terms_by_id'] = [
+            92151 => (object) ['term_id' => 92151, 'slug' => 'geneva', 'name' => 'Geneva'],
+            92152 => (object) ['term_id' => 92152, 'slug' => 'geneva', 'name' => 'Geneva'],
+        ];
+
         if (!self::$rosterRowFilterRegistered) {
             add_filter(
                 'intersoccer_roster_move_order_item_has_roster_row',
@@ -124,7 +137,7 @@ class MovePlayersAjaxRoundTripRosterDataTest extends TestCase {
             'selected_days' => '',
             'days_selected' => '',
             'day_presence' => '',
-            'city' => 'geneva',
+            'city' => 'Geneva',
             'canton_region' => 'Geneva',
             'event_signature' => 'ajax-roundtrip-shared-sig',
             'product_name' => 'Course FR',
@@ -211,13 +224,28 @@ class MovePlayersAjaxRoundTripRosterDataTest extends TestCase {
             return (int) $id === self::ORDER_ID ? $order : false;
         };
 
-        $make_variation = static function (int $vid, array $overrides = []) {
+        $source_attrs = [
+            'attribute_pa_city' => 'geneva',
+            'attribute_pa_canton-region' => 'geneva',
+        ];
+        $make_variation = static function (int $vid, array $overrides = []) use ($source_attrs) {
+            $attrs = in_array($vid, [self::SOURCE_VAR, self::SOURCE_VAR_FR], true) ? $source_attrs : [];
             $v = Mockery::mock(\WC_Product_Variation::class);
             $v->shouldReceive('get_id')->andReturn($vid);
             $v->shouldReceive('get_parent_id')->andReturn(self::PARENT_ID);
-            $v->shouldReceive('get_variation_attributes')->andReturn([]);
+            $v->shouldReceive('get_variation_attributes')->andReturn($attrs);
             $v->shouldReceive('get_name')->andReturn('Variation ' . $vid);
-            $v->shouldReceive('get_attribute')->andReturn('');
+            $v->shouldReceive('get_attribute')->andReturnUsing(static function ($name) use ($attrs) {
+                $key = 'attribute_' . ltrim((string) $name, 'attribute_');
+                if (isset($attrs[$key])) {
+                    return $attrs[$key];
+                }
+                if (isset($attrs[$name])) {
+                    return $attrs[$name];
+                }
+
+                return '';
+            });
             $v->shouldReceive('get_attributes')->andReturn([]);
             $v->shouldReceive('get_meta')->with('capacity', true)->andReturn($overrides['capacity'] ?? '');
             $v->shouldReceive('get_price')->andReturn($overrides['price'] ?? '100');

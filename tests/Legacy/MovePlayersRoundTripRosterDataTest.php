@@ -38,6 +38,19 @@ class MovePlayersRoundTripRosterDataTest extends TestCase {
         require_once dirname(__DIR__) . '/stubs/get-product-type-stub.php';
         require_once dirname(__DIR__, 2) . '/includes/roster-move-admin-target.php';
         require_once dirname(__DIR__, 2) . '/includes/advanced.php';
+
+        $GLOBALS['intersoccer_test_terms_by_slug'] = [
+            'pa_city' => [
+                'geneva' => (object) ['term_id' => 92051, 'slug' => 'geneva', 'name' => 'Geneva'],
+            ],
+            'pa_canton-region' => [
+                'geneva' => (object) ['term_id' => 92052, 'slug' => 'geneva', 'name' => 'Geneva'],
+            ],
+        ];
+        $GLOBALS['intersoccer_test_terms_by_id'] = [
+            92051 => (object) ['term_id' => 92051, 'slug' => 'geneva', 'name' => 'Geneva'],
+            92052 => (object) ['term_id' => 92052, 'slug' => 'geneva', 'name' => 'Geneva'],
+        ];
     }
 
     protected function tearDown(): void {
@@ -64,7 +77,7 @@ class MovePlayersRoundTripRosterDataTest extends TestCase {
             'selected_days' => '',
             'days_selected' => '',
             'day_presence' => '',
-            'city' => 'geneva',
+            'city' => 'Geneva',
             'canton_region' => 'Geneva',
             'event_signature' => 'baseline-sig-course',
             'product_name' => 'Course FR',
@@ -90,12 +103,28 @@ class MovePlayersRoundTripRosterDataTest extends TestCase {
         ];
 
         $make_variation = static function (int $vid) {
+            $attrs = $vid === self::SOURCE_VAR
+                ? [
+                    'attribute_pa_city' => 'geneva',
+                    'attribute_pa_canton-region' => 'geneva',
+                ]
+                : [];
             $v = Mockery::mock(\WC_Product_Variation::class);
             $v->shouldReceive('get_id')->andReturn($vid);
             $v->shouldReceive('get_parent_id')->andReturn(self::PARENT_ID);
-            $v->shouldReceive('get_variation_attributes')->andReturn([]);
+            $v->shouldReceive('get_variation_attributes')->andReturn($attrs);
             $v->shouldReceive('get_name')->andReturn('Variation ' . $vid);
-            $v->shouldReceive('get_attribute')->andReturn('');
+            $v->shouldReceive('get_attribute')->andReturnUsing(static function ($name) use ($attrs) {
+                $key = 'attribute_' . ltrim((string) $name, 'attribute_');
+                if (isset($attrs[$key])) {
+                    return $attrs[$key];
+                }
+                if (isset($attrs[$name])) {
+                    return $attrs[$name];
+                }
+
+                return '';
+            });
             $v->shouldReceive('get_meta')->andReturn('');
             $v->shouldReceive('get_attributes')->andReturn([]);
             $v->shouldReceive('is_type')->with('variation')->andReturn(true);

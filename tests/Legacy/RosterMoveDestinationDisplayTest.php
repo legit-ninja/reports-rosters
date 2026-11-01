@@ -190,4 +190,70 @@ class RosterMoveDestinationDisplayTest extends TestCase {
         $this->assertSame([$go_variation], $cross_ids);
         $this->assertCount(1, $cross_ids);
     }
+
+    public function test_rr175_r4_move_success_label_uses_destination_season_like_picker(): void {
+        require_once dirname(__DIR__, 2) . '/includes/migration-meta.php';
+        require_once dirname(__DIR__) . '/stubs/course-meta-stub.php';
+
+        $target_var = 902100;
+        $parent_id = 902000;
+
+        $variation = Mockery::mock(\WC_Product_Variation::class);
+        $variation->shouldReceive('get_id')->andReturn($target_var);
+        $variation->shouldReceive('get_parent_id')->andReturn($parent_id);
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_program-season' => 'autumn-2026',
+            'attribute_pa_intersoccer-venues' => 'venue-a',
+            'attribute_pa_age-group' => '6-8y',
+            'attribute_pa_course-day' => 'wednesday',
+            'attribute_pa_course-times' => '1530-1700',
+            'attribute_pa_girls-only' => 'no',
+        ]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_name')->andReturn('Course EN');
+        $variation->shouldReceive('get_meta')->andReturn('');
+        $variation->shouldReceive('get_attributes')->andReturn([]);
+
+        global $intersoccer_test_wc_get_product_callback, $intersoccer_test_get_product_season_callback;
+        $intersoccer_test_wc_get_product_callback = static function ($id) use ($variation, $parent_id, $target_var) {
+            if ((int) $id === $target_var) {
+                return $variation;
+            }
+            if ((int) $id === $parent_id) {
+                $parent = Mockery::mock('WC_Product');
+                $parent->shouldReceive('get_id')->andReturn($parent_id);
+                $parent->shouldReceive('get_attribute')->andReturn('');
+                $parent->shouldReceive('get_name')->andReturn('Course EN');
+
+                return $parent;
+            }
+
+            return null;
+        };
+        $intersoccer_test_get_product_season_callback = static function ($pid) use ($parent_id) {
+            return (int) $pid === $parent_id ? 'Autumn 2026' : '';
+        };
+
+        $GLOBALS['intersoccer_test_terms_by_slug']['pa_program-season'] = [
+            'autumn-2026' => (object) ['term_id' => 90201, 'slug' => 'autumn-2026', 'name' => 'Autumn 2026'],
+        ];
+
+        global $wpdb;
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $wpdb->shouldReceive('prepare')->andReturn('query');
+        $wpdb->shouldReceive('get_row')->andReturn([
+            'product_name' => 'Course EN',
+            'season' => 'Autumn-2025',
+            'course_day' => 'Monday',
+            'camp_terms' => '',
+            'venue' => 'venue-a',
+            'age_group' => '6-8y',
+            'times' => '09:30-11:00',
+        ]);
+
+        $label = intersoccer_roster_move_target_display_name_for_variation($target_var);
+        $this->assertStringContainsString('Autumn 2026', $label);
+        $this->assertStringNotContainsString('Autumn-2025', $label);
+    }
 }

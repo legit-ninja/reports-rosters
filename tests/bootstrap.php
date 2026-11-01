@@ -14,6 +14,8 @@ if (!defined('ABSPATH')) {
     define('WP_DEBUG', true);
     define('INTERSOCCER_TESTING', true);
     define('INTERSOCCER_RR_TESTING', true);
+
+    require_once __DIR__ . '/stubs/course-meta-stub.php';
     
     // WordPress time constants
     define('MINUTE_IN_SECONDS', 60);
@@ -248,6 +250,67 @@ if (!function_exists('wpml_get_default_language')) {
     }
 }
 
+if (!function_exists('wpml_get_current_language')) {
+    function wpml_get_current_language() {
+        $filtered = apply_filters('wpml_current_language', null);
+        if (is_string($filtered) && $filtered !== '') {
+            return $filtered;
+        }
+
+        return (string) ($GLOBALS['intersoccer_test_wpml_current_language'] ?? 'en');
+    }
+}
+
+if (!function_exists('intersoccer_rr_test_wpml_language_for_term_lookup')) {
+    function intersoccer_rr_test_wpml_language_for_term_lookup(): string {
+        $filtered = apply_filters('wpml_current_language', null);
+        if (is_string($filtered) && $filtered !== '') {
+            return strtolower($filtered);
+        }
+
+        return strtolower((string) ($GLOBALS['intersoccer_test_wpml_current_language'] ?? 'en'));
+    }
+}
+
+if (!function_exists('intersoccer_rr_test_term_matches_wpml_language')) {
+    /**
+     * @param object|array<string,mixed> $term
+     */
+    function intersoccer_rr_test_term_matches_wpml_language($term): bool {
+        $current = intersoccer_rr_test_wpml_language_for_term_lookup();
+        if ($current === '' || $current === 'all') {
+            return true;
+        }
+        $row = is_object($term) ? $term : (object) $term;
+        $term_lang = '';
+        if (isset($row->wpml_lang) && is_string($row->wpml_lang) && $row->wpml_lang !== '') {
+            $term_lang = strtolower($row->wpml_lang);
+        } else {
+            $term_id = (int) ($row->term_id ?? 0);
+            $lang_map = $GLOBALS['intersoccer_test_term_languages'] ?? [];
+            if ($term_id > 0 && isset($lang_map[$term_id])) {
+                $term_lang = strtolower((string) $lang_map[$term_id]);
+            }
+        }
+        if ($term_lang === '') {
+            return true;
+        }
+
+        return substr($term_lang, 0, 2) === substr($current, 0, 2);
+    }
+}
+
+if (function_exists('add_action')) {
+    add_action(
+        'wpml_switch_language',
+        static function ($language_code) {
+            $GLOBALS['intersoccer_test_wpml_current_language'] = (string) $language_code;
+        },
+        0,
+        1
+    );
+}
+
 // URL functions
 if (!function_exists('admin_url')) {
     function admin_url($path = '', $scheme = 'admin') {
@@ -442,7 +505,11 @@ if (!function_exists('get_term_by')) {
                 $slug_key = strtolower((string) $value);
                 if (isset($by_slug[$taxonomy][$slug_key])) {
                     $row = $by_slug[$taxonomy][$slug_key];
-                    return is_object($row) ? $row : (object) $row;
+                    $row_obj = is_object($row) ? $row : (object) $row;
+                    if (!intersoccer_rr_test_term_matches_wpml_language($row_obj)) {
+                        return false;
+                    }
+                    return $row_obj;
                 }
             }
         }
@@ -452,7 +519,11 @@ if (!function_exists('get_term_by')) {
                 $name_key = function_exists('mb_strtolower') ? mb_strtolower((string) $value) : strtolower((string) $value);
                 if (isset($by_name[$taxonomy][$name_key])) {
                     $row = $by_name[$taxonomy][$name_key];
-                    return is_object($row) ? $row : (object) $row;
+                    $row_obj = is_object($row) ? $row : (object) $row;
+                    if (!intersoccer_rr_test_term_matches_wpml_language($row_obj)) {
+                        return false;
+                    }
+                    return $row_obj;
                 }
             }
         }
@@ -1277,7 +1348,40 @@ if (!class_exists('WC_Order')) {
             return 0;
         }
         public function calculate_taxes() { return true; }
-        public function save() { return true; }
+        public function save() {
+            if (!empty($GLOBALS['intersoccer_test_simulate_wc_order_save_pa_rewrite'])) {
+                $moved_item_id = (int) ($GLOBALS['intersoccer_test_simulate_wc_order_save_moved_item_id'] ?? 0);
+                global $intersoccer_test_wc_order_item_meta;
+                if (is_array($intersoccer_test_wc_order_item_meta)) {
+                    foreach ($this->items as $line_item_id => $_item) {
+                        $line_item_id = (int) $line_item_id;
+                        if ($line_item_id <= 0 || $line_item_id === $moved_item_id) {
+                            continue;
+                        }
+                        if (!isset($intersoccer_test_wc_order_item_meta[$line_item_id])
+                            || !is_array($intersoccer_test_wc_order_item_meta[$line_item_id])
+                        ) {
+                            continue;
+                        }
+                        $rewrite = static function (string $key, string $from, string $to) use ($line_item_id) {
+                            global $intersoccer_test_wc_order_item_meta;
+                            if (($intersoccer_test_wc_order_item_meta[$line_item_id][$key] ?? null) === $from) {
+                                $intersoccer_test_wc_order_item_meta[$line_item_id][$key] = $to;
+                            }
+                        };
+                        $rewrite('pa_age-group', '3-6-ans', '3-6y');
+                        $rewrite('pa_course-day', 'mercredi', 'wednesday');
+                        if (!empty($GLOBALS['intersoccer_test_simulate_wc_order_save_add_sibling_meta'])
+                            && ($intersoccer_test_wc_order_item_meta[$line_item_id]['pa_age-group'] ?? null) === '3-6y'
+                        ) {
+                            $intersoccer_test_wc_order_item_meta[$line_item_id]['rr181_save_added_key'] = 'during-save';
+                        }
+                    }
+                }
+            }
+
+            return true;
+        }
     }
 }
 
@@ -1641,6 +1745,13 @@ if (!function_exists('wc_update_order_item_meta')) {
     function wc_update_order_item_meta($item_id, $meta_key, $meta_value, $prev_value = '') {
         global $intersoccer_test_wc_order_item_meta;
         $item_id = (int) $item_id;
+        if (!isset($GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'])) {
+            $GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'] = [];
+        }
+        if (!isset($GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'][$item_id])) {
+            $GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'][$item_id] = 0;
+        }
+        $GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'][$item_id]++;
         if (!is_array($intersoccer_test_wc_order_item_meta)) {
             $intersoccer_test_wc_order_item_meta = [];
         }
@@ -1654,6 +1765,15 @@ if (!function_exists('wc_update_order_item_meta')) {
 
 if (!function_exists('wc_delete_order_item_meta')) {
     function wc_delete_order_item_meta($item_id, $meta_key, $meta_value = '', $delete_all = false) {
+        if (!isset($GLOBALS['intersoccer_test_wc_delete_order_item_meta_call_counts'])) {
+            $GLOBALS['intersoccer_test_wc_delete_order_item_meta_call_counts'] = [];
+        }
+        $item_id = (int) $item_id;
+        if (!isset($GLOBALS['intersoccer_test_wc_delete_order_item_meta_call_counts'][$item_id])) {
+            $GLOBALS['intersoccer_test_wc_delete_order_item_meta_call_counts'][$item_id] = 0;
+        }
+        $GLOBALS['intersoccer_test_wc_delete_order_item_meta_call_counts'][$item_id]++;
+
         return true;
     }
 }

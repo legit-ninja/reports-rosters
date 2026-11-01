@@ -41,6 +41,7 @@ trait MovePlayersTestIsolationTrait {
             $GLOBALS['intersoccer_test_get_userdata'],
             $GLOBALS['intersoccer_test_current_user'],
             $GLOBALS['intersoccer_test_current_user_caps'],
+            $GLOBALS['intersoccer_test_current_user_caps'],
             $GLOBALS['intersoccer_test_live_order_status_map'],
             $GLOBALS['intersoccer_migrated_items'],
             $GLOBALS['intersoccer_rr_product_type_safe_cache'],
@@ -49,9 +50,16 @@ trait MovePlayersTestIsolationTrait {
             $GLOBALS['intersoccer_test_terms_by_slug'],
             $GLOBALS['intersoccer_test_terms_by_id'],
             $GLOBALS['intersoccer_test_wpml_term_map'],
+            $GLOBALS['intersoccer_test_wpml_object_map'],
             $GLOBALS['intersoccer_test_apply_filters_callback'],
             $GLOBALS['intersoccer_test_roster_store'],
-            $GLOBALS['intersoccer_test_roster_row_filter_map']
+            $GLOBALS['intersoccer_test_roster_row_filter_map'],
+            $GLOBALS['intersoccer_test_wpml_current_language'],
+            $GLOBALS['intersoccer_test_simulate_wc_order_save_pa_rewrite'],
+            $GLOBALS['intersoccer_test_simulate_wc_order_save_moved_item_id'],
+            $GLOBALS['intersoccer_test_simulate_wc_order_save_add_sibling_meta'],
+            $GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'],
+            $GLOBALS['intersoccer_test_wc_delete_order_item_meta_call_counts']
         );
         $GLOBALS['intersoccer_test_term_def_request_cache'] = [];
         if (function_exists('intersoccer_reset_term_def_request_cache')) {
