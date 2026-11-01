@@ -5,9 +5,15 @@ if (!function_exists('intersoccer_get_course_meta')) {
      * Test shim for course schedule meta on variations.
      */
     function intersoccer_get_course_meta($variation_id, $key, $default = null) {
-        $cb = $GLOBALS['intersoccer_test_get_course_meta_callback'] ?? null;
-        if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING && is_callable($cb)) {
-            return call_user_func($cb, $variation_id, $key, $default);
+        if (defined('INTERSOCCER_TESTING') && INTERSOCCER_TESTING) {
+            $map = $GLOBALS['intersoccer_test_course_meta_by_variation'][(int) $variation_id] ?? [];
+            if (array_key_exists($key, $map)) {
+                return $map[$key];
+            }
+            $cb = $GLOBALS['intersoccer_test_get_course_meta_callback'] ?? null;
+            if (is_callable($cb)) {
+                return call_user_func($cb, $variation_id, $key, $default);
+            }
         }
 
         return $default;

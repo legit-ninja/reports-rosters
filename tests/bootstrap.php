@@ -14,6 +14,8 @@ if (!defined('ABSPATH')) {
     define('WP_DEBUG', true);
     define('INTERSOCCER_TESTING', true);
     define('INTERSOCCER_RR_TESTING', true);
+
+    require_once __DIR__ . '/stubs/course-meta-stub.php';
     
     // WordPress time constants
     define('MINUTE_IN_SECONDS', 60);

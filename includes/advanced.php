@@ -2445,33 +2445,6 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
         }
     }
 
-    if (($product_type === 'course'
-            || (function_exists('intersoccer_migration_pa_attribute_slug_for_variation')
-                && (intersoccer_migration_pa_attribute_slug_for_variation($variation, 'pa_course-day', false) !== ''
-                    || intersoccer_migration_pa_attribute_slug_for_variation($variation, 'pa_course-times', false) !== '')))
-        && function_exists('intersoccer_get_course_meta')) {
-        $course_start = intersoccer_get_course_meta($target_variation_id, '_course_start_date', '');
-        $course_end = intersoccer_get_course_meta($target_variation_id, '_end_date', '');
-        $to_ymd = static function ($raw) {
-            $raw = trim((string) $raw);
-            if ($raw === '') {
-                return '';
-            }
-            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) {
-                return $raw;
-            }
-            $ts = strtotime($raw);
-
-            return $ts !== false ? gmdate('Y-m-d', $ts) : '';
-        };
-        $start_ymd = $to_ymd($course_start);
-        $end_ymd = $to_ymd($course_end);
-        if ($start_ymd !== '' && $start_ymd !== '1970-01-01') {
-            $update_data['start_date'] = $start_ymd;
-            $update_data['end_date'] = ($end_ymd !== '' && $end_ymd !== '1970-01-01') ? $end_ymd : $start_ymd;
-        }
-    }
-
     if (function_exists('intersoccer_roster_canonicalize_row_product_ids')) {
         $canonical = intersoccer_roster_canonicalize_row_product_ids([
             'product_id'   => $parent_id,

@@ -62,6 +62,9 @@ class MovePlayersRosterRefreshAfterMoveTest extends TestCase {
             'pa_age-group' => [
                 '6-8y' => (object) ['term_id' => 98409, 'slug' => '6-8y', 'name' => '6-8y'],
             ],
+            'pa_city' => [
+                'lausanne' => (object) ['term_id' => 98411, 'slug' => 'lausanne', 'name' => 'Lausanne'],
+            ],
         ];
         $by_id = [];
         foreach ($GLOBALS['intersoccer_test_terms_by_slug'] as $terms) {
@@ -73,7 +76,11 @@ class MovePlayersRosterRefreshAfterMoveTest extends TestCase {
     }
 
     protected function tearDown(): void {
-        unset($GLOBALS['intersoccer_test_roster_store'], $GLOBALS['intersoccer_test_get_course_meta_callback']);
+        unset(
+            $GLOBALS['intersoccer_test_roster_store'],
+            $GLOBALS['intersoccer_test_get_course_meta_callback'],
+            $GLOBALS['intersoccer_test_course_meta_by_variation']
+        );
         $this->resetMovePlayersTestGlobals();
         parent::tearDown();
     }
@@ -142,7 +149,8 @@ class MovePlayersRosterRefreshAfterMoveTest extends TestCase {
             'attribute_pa_course-times' => '1530-1700',
             'attribute_pa_canton-region' => 'vaud',
             'attribute_pa_age-group' => '6-8y',
-            'attribute_pa_girls-only' => 'no',
+            'attribute_pa_city' => 'lausanne',
+            'attribute_pa_girls-only' => 'girls-only',
         ];
 
         $parent = Mockery::mock('WC_Product');
@@ -166,16 +174,12 @@ class MovePlayersRosterRefreshAfterMoveTest extends TestCase {
             return false;
         };
 
-        $GLOBALS['intersoccer_test_get_course_meta_callback'] = static function ($variation_id, $key, $default) {
-            if ((int) $variation_id === self::TARGET_VAR && $key === '_course_start_date') {
-                return '2026-09-01';
-            }
-            if ((int) $variation_id === self::TARGET_VAR && $key === '_end_date') {
-                return '2026-12-20';
-            }
-
-            return $default;
-        };
+        $GLOBALS['intersoccer_test_course_meta_by_variation'] = [
+            self::TARGET_VAR => [
+                '_course_start_date' => '2026-09-01',
+                '_end_date' => '2026-12-20',
+            ],
+        ];
 
         $wpdb = Mockery::mock('wpdb');
         $wpdb->prefix = 'wp_';
@@ -237,8 +241,13 @@ class MovePlayersRosterRefreshAfterMoveTest extends TestCase {
         $this->assertSame('Wednesday', $row['course_day']);
         $this->assertSame('Vaud', $row['canton_region']);
         $this->assertSame('Venue B', $row['venue']);
+        $this->assertSame('6-8y', $row['age_group']);
+        $this->assertSame('', $row['camp_terms']);
+        $this->assertSame('Lausanne', $row['city']);
         $this->assertSame('Autumn 2026', $row['season']);
         $this->assertSame('2026-09-01', $row['start_date']);
         $this->assertSame('2026-12-20', $row['end_date']);
+        $this->assertSame(1, (int) $row['girls_only']);
+        $this->assertSame('Course, Girls Only', $row['activity_type']);
     }
 }

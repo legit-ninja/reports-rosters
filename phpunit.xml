@@ -142,6 +142,7 @@
             <file>tests/Services/RosterBuilderMigrationBlankFillTest.php</file>
             <file>tests/Legacy/OrderAdminLineItemMetaDisplayTest.php</file>
             <file>tests/Legacy/MovePlayersRosterHistoryNoWriteOnBuildTest.php</file>
+            <file>tests/Legacy/MovePlayersRosterRefreshAfterMoveTest.php</file>
             <directory>tests/ReportAccuracy</directory>
         </testsuite>
         <testsuite name="Complete">
