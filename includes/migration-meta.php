@@ -795,6 +795,297 @@ if (!function_exists('intersoccer_migration_supplement_roster_normalized_from_va
     }
 }
 
+if (!function_exists('intersoccer_migration_overwrite_roster_normalized_from_variation')) {
+    /**
+     * Replace roster facet columns from the destination variation (English storage shape).
+     *
+     * @param array<string,mixed> $normalized
+     */
+    function intersoccer_migration_overwrite_roster_normalized_from_variation(
+        array $normalized,
+        WC_Product_Variation $variation
+    ): array {
+        if (!function_exists('intersoccer_migration_pa_attribute_slug_for_variation')) {
+            return $normalized;
+        }
+
+        $facet_taxonomies = [
+            'venue'         => 'pa_intersoccer-venues',
+            'age_group'     => 'pa_age-group',
+            'camp_terms'    => 'pa_camp-terms',
+            'course_day'    => 'pa_course-day',
+            'times'         => 'pa_camp-times',
+            'city'          => 'pa_city',
+            'canton_region' => 'pa_canton-region',
+        ];
+
+        foreach ($facet_taxonomies as $facet => $taxonomy) {
+            $raw_slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy, false);
+            if ($raw_slug === '') {
+                if ($facet === 'times') {
+                    $raw_slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, 'pa_course-times', false);
+                    if ($raw_slug !== '') {
+                        $taxonomy = 'pa_course-times';
+                    }
+                }
+                if ($raw_slug === '') {
+                    continue;
+                }
+            }
+
+            $en_slug = null;
+            if (function_exists('intersoccer_migration_default_language_term_slug_strict')) {
+                $en_slug = intersoccer_migration_default_language_term_slug_strict($taxonomy, $raw_slug);
+            }
+            if ($en_slug === null || $en_slug === '') {
+                continue;
+            }
+
+            if (function_exists('intersoccer_get_term_name')) {
+                $name = intersoccer_get_term_name($en_slug, $taxonomy);
+                if ($name !== '' && $name !== 'N/A') {
+                    $normalized[$facet] = $name;
+                    continue;
+                }
+            }
+
+            $normalized[$facet] = $en_slug;
+        }
+
+        if (function_exists('intersoccer_get_product_season')) {
+            $season = intersoccer_get_product_season((int) $variation->get_parent_id());
+            if ($season !== '') {
+                $normalized['season'] = $season;
+            }
+        }
+
+        return $normalized;
+    }
+}
+
+if (!function_exists('intersoccer_migration_build_roster_normalized_from_destination_variation')) {
+    /**
+     * English roster facets for a destination variation (move roster sync / admin labels).
+     *
+     * @return array<string,mixed>
+     */
+    function intersoccer_migration_build_roster_normalized_from_destination_variation(
+        WC_Product_Variation $variation
+    ): array {
+        $parent_id = (int) $variation->get_parent_id();
+        $product_type = function_exists('intersoccer_get_product_type')
+            ? (string) intersoccer_get_product_type($parent_id)
+            : '';
+
+        $event_data = [
+            'activity_type' => $product_type ? ucfirst($product_type) : '',
+            'venue'         => '',
+            'age_group'     => '',
+            'camp_terms'    => '',
+            'course_day'    => '',
+            'times'         => '',
+            'season'        => '',
+            'city'          => '',
+            'canton_region' => '',
+            'girls_only'    => 0,
+            'product_id'    => $parent_id,
+        ];
+
+        if (function_exists('intersoccer_get_product_season')) {
+            $season = intersoccer_get_product_season($parent_id);
+            if ($season !== '') {
+                $event_data['season'] = $season;
+            }
+        }
+
+        foreach ($variation->get_variation_attributes() as $attribute_key => $attribute_value) {
+            $clean_key = str_replace('attribute_', '', $attribute_key);
+            $display_value = function_exists('intersoccer_migration_format_attribute_value')
+                ? intersoccer_migration_format_attribute_value($clean_key, $attribute_value)
+                : (is_array($attribute_value) ? (string) reset($attribute_value) : (string) $attribute_value);
+
+            switch ($clean_key) {
+                case 'pa_intersoccer-venues':
+                    $event_data['venue'] = $display_value;
+                    break;
+                case 'pa_age-group':
+                    $event_data['age_group'] = $display_value;
+                    break;
+                case 'pa_camp-terms':
+                    $event_data['camp_terms'] = $display_value;
+                    break;
+                case 'pa_course-day':
+                    $event_data['course_day'] = $display_value;
+                    break;
+                case 'pa_camp-times':
+                case 'pa_course-times':
+                    $event_data['times'] = $display_value;
+                    break;
+                case 'pa_activity-type':
+                    $event_data['activity_type'] = $display_value;
+                    break;
+                case 'pa_city':
+                    $event_data['city'] = $display_value;
+                    break;
+                case 'pa_canton-region':
+                    $raw_canton = is_array($attribute_value) ? (string) reset($attribute_value) : (string) $attribute_value;
+                    if (function_exists('intersoccer_migration_default_language_term_slug_strict')) {
+                        $resolved_canton = intersoccer_migration_default_language_term_slug_strict(
+                            'pa_canton-region',
+                            $raw_canton
+                        );
+                        if ($resolved_canton !== null && $resolved_canton !== '') {
+                            $event_data['canton_region'] = $display_value;
+                        }
+                    } else {
+                        $event_data['canton_region'] = $display_value;
+                    }
+                    break;
+                case 'pa_girls-only':
+                    $girls_only_flag = strtolower(is_array($attribute_value) ? reset($attribute_value) : (string) $attribute_value);
+                    $event_data['girls_only'] = in_array($girls_only_flag, ['girls-only', 'yes', 'girls'], true) ? 1 : 0;
+                    break;
+            }
+        }
+
+        if (function_exists('intersoccer_roster_move_resolve_variation_girls_only_flag')) {
+            $event_data['girls_only'] = intersoccer_roster_move_resolve_variation_girls_only_flag($variation, [
+                'activity_type' => $event_data['activity_type'] ?? '',
+                'raw_activity_type' => $event_data['activity_type'] ?? '',
+                'Activity Type' => $event_data['activity_type'] ?? '',
+            ]);
+        }
+
+        $normalized = function_exists('intersoccer_normalize_roster_facets_for_storage')
+            ? intersoccer_normalize_roster_facets_for_storage($event_data)
+            : $event_data;
+
+        $normalized = intersoccer_migration_overwrite_roster_normalized_from_variation($normalized, $variation);
+
+        if ((int) ($normalized['girls_only'] ?? 0) === 1
+            && function_exists('intersoccer_migration_activity_type_for_girls_only_tristate')) {
+            $normalized['activity_type'] = intersoccer_migration_activity_type_for_girls_only_tristate(
+                (string) ($normalized['activity_type'] ?? ''),
+                'yes'
+            );
+        }
+
+        if (function_exists('intersoccer_roster_facet_en_term_name_if_resolved')) {
+            if (trim((string) ($normalized['canton_region'] ?? '')) !== '') {
+                $normalized['canton_region'] = intersoccer_roster_facet_en_term_name_if_resolved(
+                    $normalized['canton_region'],
+                    'pa_canton-region'
+                );
+            }
+            if (trim((string) ($normalized['city'] ?? '')) !== '') {
+                $normalized['city'] = intersoccer_roster_facet_en_term_name_if_resolved(
+                    $normalized['city'],
+                    'pa_city'
+                );
+            }
+        }
+
+        $variation_id = (int) $variation->get_id();
+        $activity_lower = strtolower(trim((string) ($normalized['activity_type'] ?? $product_type)));
+        $has_course_facets = intersoccer_migration_pa_attribute_slug_for_variation($variation, 'pa_course-day', false) !== ''
+            || intersoccer_migration_pa_attribute_slug_for_variation($variation, 'pa_course-times', false) !== '';
+        if (($activity_lower === 'course' || $has_course_facets) && function_exists('intersoccer_get_course_meta')) {
+            $to_ymd = static function ($raw) {
+                $raw = trim((string) $raw);
+                if ($raw === '') {
+                    return '';
+                }
+                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) {
+                    return $raw;
+                }
+                $ts = strtotime($raw);
+
+                return $ts !== false ? gmdate('Y-m-d', $ts) : '';
+            };
+            $start_ymd = $to_ymd(intersoccer_get_course_meta($variation_id, '_course_start_date', ''));
+            $end_ymd = $to_ymd(intersoccer_get_course_meta($variation_id, '_end_date', ''));
+            if ($start_ymd !== '' && $start_ymd !== '1970-01-01') {
+                $normalized['start_date'] = $start_ymd;
+                $normalized['end_date'] = ($end_ymd !== '' && $end_ymd !== '1970-01-01') ? $end_ymd : $start_ymd;
+            }
+        } elseif ($activity_lower === 'camp' && function_exists('intersoccer_migration_read_variation_camp_schedule_ymd')) {
+            $schedule = intersoccer_migration_read_variation_camp_schedule_ymd($variation_id);
+            if ($schedule['start'] !== '' && $schedule['start'] !== '1970-01-01') {
+                $normalized['start_date'] = $schedule['start'];
+                $normalized['end_date'] = ($schedule['end'] !== '' && $schedule['end'] !== '1970-01-01')
+                    ? $schedule['end']
+                    : $schedule['start'];
+            }
+        }
+
+        return $normalized;
+    }
+}
+
+if (!function_exists('intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line')) {
+    /**
+     * Order-line human labels and pa_* slugs from the order-language variation (not EN roster normalize).
+     *
+     * @param array<string,string> $human_meta
+     * @param array<string,string> $slug_meta
+     * @param array<string,string> $expected_slugs
+     * @param array<string,string> $variation_raw_by_pa
+     * @return array{0: array<string,string>, 1: array<string,string>, 2: array<string,string>}
+     */
+    function intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line(
+        array $human_meta,
+        array $slug_meta,
+        array $expected_slugs,
+        WC_Product_Variation $order_variation,
+        array $variation_raw_by_pa,
+        ?string $order_lang = null
+    ): array {
+        $site_default = function_exists('intersoccer_wpml_default_language_code')
+            ? intersoccer_wpml_default_language_code()
+            : (string) apply_filters('wpml_default_language', 'en');
+        if ($order_lang === null || trim($order_lang) === '') {
+            $order_lang = function_exists('intersoccer_wpml_current_language_code')
+                ? intersoccer_wpml_current_language_code()
+                : $site_default;
+        } else {
+            $order_lang = trim($order_lang);
+        }
+
+        if (strtolower(substr($order_lang, 0, 2)) === strtolower(substr((string) $site_default, 0, 2))) {
+            return [$human_meta, $slug_meta, $expected_slugs];
+        }
+
+        $canonical_to_pa = intersoccer_migration_human_canonical_to_pa_taxonomy();
+        foreach ($canonical_to_pa as $canonical => $pa_taxonomy) {
+            if ($canonical === 'course_times' || $canonical === 'camp_times') {
+                continue;
+            }
+
+            $raw_slug = trim((string) ($variation_raw_by_pa[$pa_taxonomy] ?? ''));
+            if ($raw_slug === '') {
+                $raw_slug = intersoccer_migration_pa_attribute_slug_for_variation($order_variation, $pa_taxonomy, false);
+            }
+            if ($raw_slug === '') {
+                continue;
+            }
+
+            $display = intersoccer_migration_order_language_term_name_from_pa_slug($pa_taxonomy, $raw_slug);
+            if ($display === '' && function_exists('intersoccer_migration_format_attribute_value')) {
+                $display = intersoccer_migration_format_attribute_value($pa_taxonomy, $raw_slug);
+            }
+            if ($display !== '') {
+                $human_meta[$canonical] = $display;
+            }
+
+            $expected_slugs[$pa_taxonomy] = $raw_slug;
+            $slug_meta[$pa_taxonomy] = $raw_slug;
+            $slug_meta['attribute_' . $pa_taxonomy] = $raw_slug;
+        }
+
+        return [$human_meta, $slug_meta, $expected_slugs];
+    }
+}
+
 if (!function_exists('intersoccer_migration_roster_booking_from_destination_variation')) {
     /**
      * When order item meta has no booking keys, derive roster booking_type from the destination variation.

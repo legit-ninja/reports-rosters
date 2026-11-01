@@ -275,7 +275,125 @@ function intersoccer_roster_move_build_move_ajax_success_payload(
 /**
  * Human destination label (product + season + schedule + venue + age + time), matching roster-details picker.
  */
+function intersoccer_roster_move_resolve_picker_term_label(string $value, string $taxonomy): string {
+    $raw = trim($value);
+    if ($raw === '' || strcasecmp($raw, 'N/A') === 0) {
+        return '';
+    }
+
+    $resolved = function_exists('intersoccer_get_term_name')
+        ? intersoccer_get_term_name($raw, $taxonomy)
+        : $raw;
+
+    return ($resolved && strcasecmp((string) $resolved, 'N/A') !== 0) ? (string) $resolved : $raw;
+}
+
+/**
+ * Season label for destination picker filters (matches roster-details.php data-season).
+ */
+function intersoccer_roster_move_picker_season_label(string $season_raw): string {
+    $season = trim($season_raw);
+    if ($season === '' || strcasecmp($season, 'N/A') === 0) {
+        return __('Not set', 'intersoccer-reports-rosters');
+    }
+
+    return $season;
+}
+
+/**
+ * Build a roster-like object for destination labels from the English catalog variation.
+ *
+ * @return object|null
+ */
+function intersoccer_roster_move_destination_picker_row_from_variation(int $variation_id) {
+    $variation_id = function_exists('intersoccer_resolve_variation_for_roster')
+        ? (int) intersoccer_resolve_variation_for_roster($variation_id)
+        : (int) $variation_id;
+    if ($variation_id <= 0 || !function_exists('wc_get_product')) {
+        return null;
+    }
+
+    $variation = wc_get_product($variation_id);
+    if (!$variation instanceof WC_Product_Variation) {
+        return null;
+    }
+
+    $normalized = function_exists('intersoccer_migration_build_roster_normalized_from_destination_variation')
+        ? intersoccer_migration_build_roster_normalized_from_destination_variation($variation)
+        : [];
+
+    $product_name = function_exists('intersoccer_get_english_product_name')
+        ? intersoccer_get_english_product_name($variation->get_name(), (int) $variation->get_parent_id())
+        : $variation->get_name();
+
+    return (object) [
+        'product_name'   => $product_name,
+        'season'         => (string) ($normalized['season'] ?? ''),
+        'course_day'     => (string) ($normalized['course_day'] ?? ''),
+        'camp_terms'     => (string) ($normalized['camp_terms'] ?? ''),
+        'venue'          => (string) ($normalized['venue'] ?? ''),
+        'age_group'      => (string) ($normalized['age_group'] ?? ''),
+        'times'          => (string) ($normalized['times'] ?? ''),
+        'current_players'=> 0,
+    ];
+}
+
+/**
+ * Admin move success / destination label (comma-separated; season matches picker option text).
+ *
+ * @param object $roster Row with product_name, season, course_day, camp_terms, venue, age_group, times.
+ */
+function intersoccer_roster_move_format_destination_admin_label($roster): string {
+    if (!is_object($roster)) {
+        return '';
+    }
+
+    $product = trim((string) ($roster->product_name ?? ''));
+    if ($product === '') {
+        $product = __('Untitled roster', 'intersoccer-reports-rosters');
+    }
+
+    $parts = [$product];
+    $season = intersoccer_roster_move_picker_season_label((string) ($roster->season ?? ''));
+    if ($season !== '' && strcasecmp($season, 'N/A') !== 0) {
+        $parts[] = $season;
+    }
+
+    $schedule = intersoccer_roster_move_resolve_picker_term_label((string) ($roster->course_day ?? ''), 'pa_course-day');
+    if ($schedule === '') {
+        $schedule = intersoccer_roster_move_resolve_picker_term_label((string) ($roster->camp_terms ?? ''), 'pa_camp-terms');
+    }
+    if ($schedule !== '' && strcasecmp($schedule, 'N/A') !== 0) {
+        $parts[] = $schedule;
+    }
+
+    $venue = intersoccer_roster_move_resolve_picker_term_label((string) ($roster->venue ?? ''), 'pa_intersoccer-venues');
+    if ($venue !== '' && strcasecmp($venue, 'N/A') !== 0) {
+        $parts[] = $venue;
+    }
+
+    $age = intersoccer_roster_move_resolve_picker_term_label((string) ($roster->age_group ?? ''), 'pa_age-group');
+    if ($age !== '' && strcasecmp($age, 'N/A') !== 0) {
+        $parts[] = $age;
+    }
+
+    $times = trim((string) ($roster->times ?? ''));
+    if ($times !== '' && strcasecmp($times, 'N/A') !== 0) {
+        $parts[] = $times;
+    }
+
+    return implode(', ', $parts);
+}
+
 function intersoccer_roster_move_target_display_name_for_variation(int $variation_id): string {
+    $picker_row = intersoccer_roster_move_destination_picker_row_from_variation($variation_id);
+    if ($picker_row !== null) {
+        $from_variation = intersoccer_roster_move_format_destination_admin_label($picker_row);
+        if ($from_variation !== '') {
+            return $from_variation;
+        }
+    }
+
     global $wpdb;
     $variation_id = (int) $variation_id;
     if ($variation_id <= 0) {
