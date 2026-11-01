@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.11.1 — 2026-11-01
+
+### Fixed
+- Booking Report now includes orders placed on the end date of the selected range (#172, issue #152).
+
 ## 2.8.26 — 2026-09-24
 
 ### Changed
