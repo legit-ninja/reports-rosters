@@ -1372,6 +1372,48 @@ if (!function_exists('intersoccer_build_migration_meta_updates')) {
     }
 }
 
+if (!function_exists('intersoccer_roster_move_reapply_order_language_pa_facets')) {
+    /**
+     * Re-run order-language pa_* facet labels/slugs after slug-meta filtering (move AJAX only).
+     *
+     * @param array<string,string> $human_meta
+     * @param array<string,string> $slug_meta
+     * @param array<string,string> $expected_slugs
+     * @return array{0: array<string,string>, 1: array<string,string>, 2: array<string,string>}
+     */
+    function intersoccer_roster_move_reapply_order_language_pa_facets(
+        array $human_meta,
+        array $slug_meta,
+        array $expected_slugs,
+        WC_Product_Variation $order_variation,
+        string $order_lang,
+        string $site_default_lang
+    ): array {
+        if (strtolower(substr($order_lang, 0, 2)) === strtolower(substr($site_default_lang, 0, 2))
+            || !function_exists('intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line')
+        ) {
+            return [$human_meta, $slug_meta, $expected_slugs];
+        }
+
+        $variation_raw_by_pa = [];
+        foreach ($order_variation->get_variation_attributes() as $attribute_key => $attribute_value) {
+            $clean_key = str_replace('attribute_', '', (string) $attribute_key);
+            $variation_raw_by_pa[$clean_key] = is_array($attribute_value)
+                ? (string) reset($attribute_value)
+                : (string) $attribute_value;
+        }
+
+        return intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line(
+            $human_meta,
+            $slug_meta,
+            $expected_slugs,
+            $order_variation,
+            $variation_raw_by_pa,
+            $order_lang
+        );
+    }
+}
+
 function intersoccer_move_players_ajax() {
     if (function_exists('intersoccer_roster_move_log')) {
         intersoccer_roster_move_log('InterSoccer Migration: Starting player migration request');
@@ -1769,26 +1811,15 @@ function intersoccer_move_players_ajax() {
                     $order_lang !== $site_default_lang
                 );
             }
-            if (strtolower(substr($order_lang, 0, 2)) !== strtolower(substr((string) $site_default_lang, 0, 2))
-                && function_exists('intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line')
-            ) {
-                $variation_raw_by_pa = [];
-                foreach ($order_variation->get_variation_attributes() as $attribute_key => $attribute_value) {
-                    $clean_key = str_replace('attribute_', '', (string) $attribute_key);
-                    $variation_raw_by_pa[$clean_key] = is_array($attribute_value)
-                        ? (string) reset($attribute_value)
-                        : (string) $attribute_value;
-                }
-                $expected_slugs = $meta_payload['slugs'] ?? [];
-                [$human_meta, $slug_meta, $expected_slugs] = intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line(
-                    $human_meta,
-                    $slug_meta,
-                    $expected_slugs,
-                    $order_variation,
-                    $variation_raw_by_pa,
-                    $order_lang
-                );
-            }
+            $expected_slugs = $meta_payload['slugs'] ?? [];
+            [$human_meta, $slug_meta, $expected_slugs] = intersoccer_roster_move_reapply_order_language_pa_facets(
+                $human_meta,
+                $slug_meta,
+                $expected_slugs,
+                $order_variation,
+                $order_lang,
+                $site_default_lang
+            );
             if (function_exists('intersoccer_migration_allowed_canonicals_for_move')) {
                 $allowed_canonicals = intersoccer_migration_allowed_canonicals_for_move(
                     $existing_line_meta_keys,
@@ -2062,26 +2093,15 @@ function intersoccer_move_players_ajax() {
             }
 
             if ($migration_success && function_exists('intersoccer_migration_finalize_move_item_meta')) {
-                if (strtolower(substr($order_lang, 0, 2)) !== strtolower(substr((string) $site_default_lang, 0, 2))
-                    && function_exists('intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line')
-                ) {
-                    $variation_raw_by_pa = [];
-                    foreach ($order_variation->get_variation_attributes() as $attribute_key => $attribute_value) {
-                        $clean_key = str_replace('attribute_', '', (string) $attribute_key);
-                        $variation_raw_by_pa[$clean_key] = is_array($attribute_value)
-                            ? (string) reset($attribute_value)
-                            : (string) $attribute_value;
-                    }
-                    $expected_slugs = $meta_payload['slugs'] ?? [];
-                    [$human_meta, $slug_meta, $expected_slugs] = intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line(
-                        $human_meta,
-                        $slug_meta,
-                        $expected_slugs,
-                        $order_variation,
-                        $variation_raw_by_pa,
-                        $order_lang
-                    );
-                }
+                $expected_slugs = $meta_payload['slugs'] ?? [];
+                [$human_meta, $slug_meta, $expected_slugs] = intersoccer_roster_move_reapply_order_language_pa_facets(
+                    $human_meta,
+                    $slug_meta,
+                    $expected_slugs,
+                    $order_variation,
+                    $order_lang,
+                    $site_default_lang
+                );
                 $run_finalize_order_line_meta = static function () use (
                     &$migration_success,
                     $item_id,

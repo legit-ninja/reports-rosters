@@ -133,6 +133,7 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
                 'geneve' => (object) ['term_id' => 7401, 'slug' => 'geneve', 'name' => 'Genève'],
                 'vaud' => (object) ['term_id' => 7402, 'slug' => 'vaud', 'name' => 'Vaud'],
                 'zurich' => (object) ['term_id' => 7403, 'slug' => 'zurich', 'name' => 'Zürich'],
+                'genf' => (object) ['term_id' => 7405, 'slug' => 'genf', 'name' => 'Genf'],
             ],
             'pa_city' => [
                 'geneva' => (object) ['term_id' => 7500, 'slug' => 'geneva', 'name' => 'Geneva'],
@@ -158,6 +159,7 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             'pa_intersoccer-venues' => [
                 'stade-de-vessy' => (object) ['term_id' => 7100, 'slug' => 'stade-de-vessy', 'name' => 'Stade de Vessy'],
                 'geneve-stade-vessy' => (object) ['term_id' => 7101, 'slug' => 'geneve-stade-vessy', 'name' => 'Genève – Stade de Vessy'],
+                'genf-stade-de-vessy' => (object) ['term_id' => 7103, 'slug' => 'genf-stade-de-vessy', 'name' => 'Genf – Stade de Vessy'],
                 'lausanne-centre' => (object) ['term_id' => 7102, 'slug' => 'lausanne-centre', 'name' => 'Lausanne Centre'],
             ],
             'pa_booking-type' => [
@@ -268,7 +270,7 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             'attribute_pa_camp-terms'         => 'semaine-un',
             'attribute_pa_girls-only'         => $girls_only_fr_slug !== '' ? $girls_only_fr_slug : 'no',
         ];
-        $de_target_attrs = [
+        $de_target_attrs = (array) ($options['de_target_attrs'] ?? [
             'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
             'attribute_pa_age-group'          => '5-13-jahre-ganzer-tag',
             'attribute_pa_booking-type'       => 'ganze-woche',
@@ -276,7 +278,7 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             'attribute_pa_city'               => 'genf',
             'attribute_pa_camp-terms'         => 'woche-eins',
             'attribute_pa_girls-only'         => 'no',
-        ];
+        ]);
 
         $item_meta = (array) ($options['item_meta'] ?? [
             'Activity Type' => 'Camp',
@@ -914,6 +916,16 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         $this->stubWpml();
         $this->installMoveWorld([
             'order_lang' => 'de',
+            // EN catalog slugs on the DE variation — normalize/coerce leave English until apply runs.
+            'de_target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_age-group'          => '5-13y-full-day',
+                'attribute_pa_booking-type'       => 'ganze-woche',
+                'attribute_pa_canton-region'      => 'geneva',
+                'attribute_pa_city'               => 'geneva',
+                'attribute_pa_camp-terms'         => 'week-one',
+                'attribute_pa_girls-only'         => 'no',
+            ],
             'item_meta' => [
                 'Activity Type' => 'Camp',
                 'Assigned Attendee' => 'RR175 R4 DE facets',
@@ -937,6 +949,29 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             ],
         ]);
 
+        $previous_apply_filters = $GLOBALS['intersoccer_test_apply_filters_callback'];
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$args) use ($previous_apply_filters) {
+            if ($hook === 'wpml_object_id') {
+                $id = (int) $value;
+                $element_type = isset($args[0]) ? (string) $args[0] : '';
+                $lang = isset($args[2]) ? (string) $args[2] : '';
+                if ($element_type !== '' && str_starts_with($element_type, 'pa_') && $lang === 'de') {
+                    $de_term_twins = [
+                        7100 => 7103,
+                        7200 => 7202,
+                        7400 => 7405,
+                        7500 => 7502,
+                        7600 => 7602,
+                    ];
+                    if (isset($de_term_twins[$id])) {
+                        return $de_term_twins[$id];
+                    }
+                }
+            }
+
+            return $previous_apply_filters($hook, $value, ...$args);
+        };
+
         $response = $this->invokeMoveAjax();
         $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
 
@@ -944,16 +979,19 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
         $this->assertSame('5-13 Jahre (ganzer Tag)', $meta['Altersgruppe'] ?? '');
         $this->assertNotSame('5-8-jahre', $meta['pa_age-group'] ?? '');
-        $this->assertSame('5-13-jahre-ganzer-tag', $meta['pa_age-group'] ?? '');
+        $this->assertSame('5-13y-full-day', $meta['pa_age-group'] ?? '');
+        $this->assertSame('Genf – Stade de Vessy', $meta['InterSoccer-Standorte'] ?? '');
+        $this->assertNotSame('lausanne-centre', $meta['pa_intersoccer-venues'] ?? '');
+        $this->assertSame('stade-de-vessy', $meta['pa_intersoccer-venues'] ?? '');
         $this->assertSame('Genf', $meta['Stadt'] ?? '');
         $this->assertNotSame('zuerich', $meta['pa_city'] ?? '');
-        $this->assertSame('genf', $meta['pa_city'] ?? '');
-        $this->assertSame('Geneva', $meta['Kanton / Region'] ?? '');
+        $this->assertSame('geneva', $meta['pa_city'] ?? '');
+        $this->assertSame('Genf', $meta['Kanton / Region'] ?? '');
         $this->assertNotSame('zurich', $meta['pa_canton-region'] ?? '');
         $this->assertSame('geneva', $meta['pa_canton-region'] ?? '');
         $this->assertSame('Woche eins', $meta['Camp-Woche'] ?? '');
         $this->assertNotSame('woche-zwei', $meta['pa_camp-terms'] ?? '');
-        $this->assertSame('woche-eins', $meta['pa_camp-terms'] ?? '');
+        $this->assertSame('week-one', $meta['pa_camp-terms'] ?? '');
 
         $row = $intersoccer_test_roster_store[self::ITEM_ID];
         $this->assertSame('5-13y (Full Day)', $row['age_group'] ?? '');
