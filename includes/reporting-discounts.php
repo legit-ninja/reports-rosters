@@ -438,21 +438,17 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
 
     $params = array();
 
-    // Add date filters - prioritize date range over year
-    if ($start_date && $end_date) {
-        $query .= " AND DATE(p.post_date) BETWEEN %s AND %s";
-        $params[] = $start_date;
-        $params[] = $end_date;
-    } elseif ($start_date) {
-        $query .= " AND DATE(p.post_date) >= %s";
-        $params[] = $start_date;
-    } elseif ($end_date) {
-        $query .= " AND DATE(p.post_date) <= %s";
-        $params[] = $end_date;
-    } else {
-        // Fallback to year filtering if no dates provided
-        $query .= " AND YEAR(p.post_date) = %d";
-        $params[] = $year;
+    [$date_sql, $date_params] = intersoccer_booking_report_post_date_filter_sql(
+        (string) $start_date,
+        (string) $end_date,
+        $year,
+        true
+    );
+    if ($date_sql !== '') {
+        $query .= $date_sql;
+        foreach ($date_params as $date_param) {
+            $params[] = $date_param;
+        }
     }
 
     $query .= " ORDER BY p.post_date DESC, p.ID, oi.order_item_id";
@@ -470,7 +466,7 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
     // Add missing fields to match roster table structure
     foreach ($results as &$row) {
         // Set defaults for fields not available in direct WooCommerce query
-        $row['player_gender'] = $row['gender']; // Map to same field
+        $row['player_gender'] = $row['gender'] ?? '';
         $row['registration_timestamp'] = $row['order_date'];
         $row['start_date'] = null; // Not available in direct query
         $row['intersoccer_item_discounts'] = null;
@@ -699,12 +695,17 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
 
     global $wpdb;
 
-    // Build date filter
+    [$date_sql, $date_params] = intersoccer_booking_report_post_date_filter_sql(
+        (string) $start_date,
+        (string) $end_date,
+        $year,
+        false
+    );
     $date_where = '';
-    if (!empty($start_date) && !empty($end_date)) {
-        $date_where = $wpdb->prepare("AND p.post_date >= %s AND p.post_date <= %s", $start_date, $end_date);
-    } elseif (!empty($year)) {
-        $date_where = $wpdb->prepare("AND YEAR(p.post_date) = %d", $year);
+    if ($date_sql !== '') {
+        $date_where = $date_params === []
+            ? $date_sql
+            : $wpdb->prepare($date_sql, ...$date_params);
     }
 
     // Build region filter (if needed)

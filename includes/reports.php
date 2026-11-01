@@ -103,6 +103,13 @@ function intersoccer_enqueue_datepicker() {
                     return true;
                 }
                 
+                function intersoccerFormatLocalYmd(dateObj) {
+                    var y = dateObj.getFullYear();
+                    var m = String(dateObj.getMonth() + 1).padStart(2, "0");
+                    var d = String(dateObj.getDate()).padStart(2, "0");
+                    return y + "-" + m + "-" + d;
+                }
+                
                 // Quick date range buttons
                 $(".quick-date-range").on("click", function(e) {
                     e.preventDefault();
@@ -136,8 +143,8 @@ function intersoccer_enqueue_datepicker() {
                             return;
                     }
                     
-                    $("#start_date").val(startDate.toISOString().split("T")[0]);
-                    $("#end_date").val(endDate.toISOString().split("T")[0]);
+                    $("#start_date").val(intersoccerFormatLocalYmd(startDate));
+                    $("#end_date").val(intersoccerFormatLocalYmd(endDate));
                     validateDateRange();
                     intersoccerUpdateReport();
                 });
@@ -296,8 +303,8 @@ function intersoccer_enqueue_datepicker() {
                 if (!$("#start_date").val() && !$("#end_date").val()) {
                     var today = new Date();
                     var thirtyDaysAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30);
-                    $("#start_date").val(thirtyDaysAgo.toISOString().split("T")[0]);
-                    $("#end_date").val(today.toISOString().split("T")[0]);
+                    $("#start_date").val(intersoccerFormatLocalYmd(thirtyDaysAgo));
+                    $("#end_date").val(intersoccerFormatLocalYmd(today));
                 }
                 console.log("InterSoccer: About to call initial intersoccerUpdateReport");
                 intersoccerUpdateReport();
@@ -426,9 +433,15 @@ add_action('wp_ajax_intersoccer_filter_report', 'intersoccer_filter_report_callb
  * Render the Booking Report tab content.
  */
 function intersoccer_render_booking_report_tab() {
+    if (!function_exists('intersoccer_booking_report_site_today_ymd')) {
+        require_once dirname(__FILE__) . '/financial-attribution-helpers.php';
+    }
     // Get current filters from URL or defaults
-    $default_end_date = date('Y-m-d'); // Today
-    $default_start_date = date('Y-m-d', strtotime('-30 days')); // 30 days ago
+    $default_end_date = intersoccer_booking_report_site_today_ymd();
+    $default_start_ymd = intersoccer_booking_report_normalize_ymd($default_end_date);
+    $default_start_date = $default_start_ymd
+        ? DateTime::createFromFormat('!Y-m-d', $default_start_ymd)->modify('-30 days')->format('Y-m-d')
+        : date('Y-m-d', strtotime('-30 days'));
 
     $start_date = isset($_GET['start_date']) && !empty($_GET['start_date']) 
         ? sanitize_text_field($_GET['start_date']) 

@@ -159,7 +159,6 @@ class BookingReportAccuracyTest extends TestCase {
     // ---------------------------------------------------------------- S03 (end date excludes its own day)
 
     public function test_S03_order_on_end_date_is_included(): void {
-        $this->markTestIncomplete('Pending fix D: inclusive Booking Report end date.');
         ReportAccuracyStore::addOrder($this->attributedOrder(106, 'completed', '2026-10-12 09:38:00')
             ->addLine(new FakeLineItem(1061, ['subtotal' => 525.0, 'total' => 525.0])));
 
