@@ -1927,6 +1927,17 @@ function intersoccer_move_players_ajax() {
             $migration_success = true;
             $pending_restore = false;
             $prior_canonical_order_meta = [];
+            $pre_move_order_item_rollback = [
+                'product_id'   => (int) $item->get_product_id(),
+                'variation_id' => (int) $item->get_variation_id(),
+                'subtotal'     => (float) $item->get_subtotal(),
+                'total'        => (float) $item->get_total(),
+                'name'         => (string) $item->get_name(),
+                'meta'         => function_exists('intersoccer_migration_snapshot_order_item_meta_map')
+                    ? intersoccer_migration_snapshot_order_item_meta_map((int) $item_id)
+                    : [],
+            ];
+            $item_catalog_save_completed = false;
 
             try {
 
@@ -1934,6 +1945,7 @@ function intersoccer_move_players_ajax() {
                 &$migration_success,
                 &$pending_restore,
                 &$prior_canonical_order_meta,
+                &$item_catalog_save_completed,
                 $item,
                 $new_product_id,
                 $order_variation_id,
@@ -2071,6 +2083,7 @@ function intersoccer_move_players_ajax() {
                             intersoccer_migration_apply_slug_meta_for_move($item_id, $slug_meta);
                         }
                     }
+                    $item_catalog_save_completed = true;
                     $log_line('InterSoccer Migration: Saved order item and order for item ' . $item_id);
                 } catch (Exception $e) {
                     $log_line('InterSoccer Migration: Failed to save order for item ' . $item_id . ': ' . $e->getMessage());
@@ -2113,6 +2126,38 @@ function intersoccer_move_players_ajax() {
                 } catch (Exception $e) {
                     $log_line('InterSoccer Migration: Failed to update roster for item ' . $item_id . ': ' . $e->getMessage());
                     $migration_success = false;
+                }
+            }
+
+            if (!$migration_success && $item_catalog_save_completed && $pre_move_order_item_rollback !== []) {
+                try {
+                    $rollback_item = new WC_Order_Item_Product((int) $item_id);
+                    $rollback_item->set_product_id((int) $pre_move_order_item_rollback['product_id']);
+                    $rollback_item->set_variation_id((int) $pre_move_order_item_rollback['variation_id']);
+                    $rollback_item->set_subtotal((float) $pre_move_order_item_rollback['subtotal']);
+                    $rollback_item->set_total((float) $pre_move_order_item_rollback['total']);
+                    if (($pre_move_order_item_rollback['name'] ?? '') !== '') {
+                        $rollback_item->set_name((string) $pre_move_order_item_rollback['name']);
+                    }
+                    $rollback_item->save();
+                    if (!empty($pre_move_order_item_rollback['meta'])
+                        && function_exists('intersoccer_migration_restore_order_item_meta_map')
+                    ) {
+                        intersoccer_migration_restore_order_item_meta_map(
+                            (int) $item_id,
+                            $pre_move_order_item_rollback['meta']
+                        );
+                    }
+                    $order->calculate_taxes();
+                    $order->save();
+                    $log_line(
+                        'InterSoccer Migration: Rolled back order item after roster update failure for item ' . $item_id
+                    );
+                } catch (Exception $e) {
+                    $log_line(
+                        'InterSoccer Migration: Rollback after roster failure failed for item '
+                        . $item_id . ': ' . $e->getMessage()
+                    );
                 }
             }
 
@@ -2552,37 +2597,6 @@ function intersoccer_manual_update_roster_entry($order_id, $item_id, $target_var
         'product_id'   => $parent_id,
         'product_name' => substr((string) $product_name, 0, 255),
     ]);
-
-    if (function_exists('intersoccer_migration_resolve_destination_program_year_for_move')) {
-        $order_lang_for_year = '';
-        if ((int) $order_id > 0 && function_exists('wc_get_order')) {
-            $order_for_lang = wc_get_order((int) $order_id);
-            if ($order_for_lang instanceof WC_Order && function_exists('intersoccer_roster_move_order_language')) {
-                $order_lang_for_year = intersoccer_roster_move_order_language($order_for_lang);
-            }
-        }
-        if ($order_lang_for_year === '') {
-            $order_lang_for_year = 'en';
-        }
-        $line_variation_id = 0;
-        if (function_exists('wc_get_order_item_meta')) {
-            $line_variation_id = (int) wc_get_order_item_meta((int) $item_id, '_variation_id', true);
-        }
-        if ($line_variation_id <= 0) {
-            $line_item = new WC_Order_Item_Product((int) $item_id);
-            $line_variation_id = (int) $line_item->get_variation_id();
-        }
-        $order_line_variation = $line_variation_id > 0 ? wc_get_product($line_variation_id) : null;
-        if ($order_line_variation instanceof WC_Product_Variation) {
-            $destination_program_year = intersoccer_migration_resolve_destination_program_year_for_move(
-                $order_line_variation,
-                $order_lang_for_year
-            );
-            if ($destination_program_year !== '') {
-                $update_data['program_year'] = $destination_program_year;
-            }
-        }
-    }
 
     $camp_product_type = $product_type;
     if ($camp_product_type === '' && function_exists('intersoccer_get_product_type')) {

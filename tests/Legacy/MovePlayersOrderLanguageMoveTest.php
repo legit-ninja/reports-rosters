@@ -505,6 +505,18 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             if (!is_array($data) || !is_array($where)) {
                 return false;
             }
+            if (is_string($table) && strpos($table, 'intersoccer_rosters') !== false) {
+                if (isset($GLOBALS['intersoccer_test_capture_roster_wpdb_update_keys'])
+                    && is_array($GLOBALS['intersoccer_test_capture_roster_wpdb_update_keys'])
+                ) {
+                    foreach (array_keys($data) as $update_key) {
+                        $GLOBALS['intersoccer_test_capture_roster_wpdb_update_keys'][] = (string) $update_key;
+                    }
+                }
+                if (!empty($GLOBALS['intersoccer_test_force_roster_wpdb_update_failure'])) {
+                    return false;
+                }
+            }
             $store = &$GLOBALS['intersoccer_test_roster_store'];
             foreach ($store as $key => $row) {
                 if (isset($where['order_item_id']) && (int) $row['order_item_id'] === (int) $where['order_item_id']) {
@@ -549,6 +561,99 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         $decoded = json_decode((string) $json, true);
 
         return is_array($decoded) ? $decoded : [];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function rosterSchemaColumnNamesFromDbPhp(): array {
+        $path = dirname(__DIR__, 2) . '/includes/db.php';
+        $source = (string) file_get_contents($path);
+        if (!preg_match('/CREATE TABLE \$rosters_table \(\s*(.*?)\)\s*\$charset_collate/s', $source, $matches)) {
+            $this->fail('Could not parse roster CREATE TABLE from includes/db.php');
+        }
+        $columns = [];
+        foreach (preg_split('/\r?\n/', (string) $matches[1]) as $line) {
+            $line = trim($line);
+            if ($line === '' || preg_match('/^(PRIMARY KEY|UNIQUE KEY|KEY)\s/i', $line)) {
+                continue;
+            }
+            if (preg_match('/^([a-z_][a-z0-9_]*)\s+/i', $line, $col)) {
+                $columns[] = strtolower($col[1]);
+            }
+        }
+
+        return $columns;
+    }
+
+    public function test_rr175_r9_roster_update_keys_are_schema_columns(): void {
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'fr';
+        $this->registerCatalogTerms();
+        $this->stubWpml();
+        $this->installMoveWorld([
+            'order_lang' => 'fr',
+            'fr_target_attrs' => [
+                'attribute_pa_intersoccer-venues' => 'geneve-stade-vessy',
+                'attribute_pa_age-group'          => '5-13-ans-journee-complete',
+                'attribute_pa_booking-type'       => 'semaine-complete',
+                'attribute_pa_canton-region'      => 'geneve',
+                'attribute_pa_city'               => 'geneve-ville',
+                'attribute_pa_camp-terms'         => 'semaine-un',
+                'attribute_pa_program-year'       => '2026',
+                'attribute_pa_girls-only'         => 'no',
+            ],
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'RR175 r9 schema keys QA',
+                'Year' => '2027',
+                'attribute_pa_booking-type' => 'full-week',
+                'pa_booking-type' => 'full-week',
+            ],
+        ]);
+
+        $GLOBALS['intersoccer_test_capture_roster_wpdb_update_keys'] = [];
+        $response = $this->invokeMoveAjax();
+        $captured = $GLOBALS['intersoccer_test_capture_roster_wpdb_update_keys'] ?? [];
+        unset($GLOBALS['intersoccer_test_capture_roster_wpdb_update_keys']);
+
+        $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
+        $this->assertNotEmpty($captured, 'Expected at least one roster $wpdb->update during move');
+
+        $schema_columns = array_fill_keys($this->rosterSchemaColumnNamesFromDbPhp(), true);
+        foreach (array_unique($captured) as $update_key) {
+            $this->assertArrayHasKey(
+                strtolower((string) $update_key),
+                $schema_columns,
+                'Roster update key "' . $update_key . '" is not in includes/db.php schema'
+            );
+        }
+    }
+
+    public function test_rr175_r9_roster_update_failure_rolls_back_moved_item(): void {
+        $this->registerCatalogTerms();
+        $this->stubWpml();
+        $this->installMoveWorld([
+            'order_lang' => 'en',
+            'item_meta' => [
+                'Activity Type' => 'Camp',
+                'Assigned Attendee' => 'RR175 r9 rollback QA',
+                'attribute_pa_booking-type' => 'full-week',
+                'pa_booking-type' => 'full-week',
+            ],
+        ]);
+
+        global $intersoccer_test_wc_order_item_meta, $intersoccer_test_wc_order_item_data;
+        $meta_before = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
+        $data_before = $intersoccer_test_wc_order_item_data[self::ITEM_ID];
+
+        $GLOBALS['intersoccer_test_force_roster_wpdb_update_failure'] = true;
+        $response = $this->invokeMoveAjax();
+        unset($GLOBALS['intersoccer_test_force_roster_wpdb_update_failure']);
+
+        $this->assertSame(0, (int) ($response['data']['moved_count'] ?? -1));
+        $this->assertNotEmpty($response['data']['failed'] ?? []);
+        $this->assertSame($meta_before, $intersoccer_test_wc_order_item_meta[self::ITEM_ID]);
+        $this->assertSame($data_before, $intersoccer_test_wc_order_item_data[self::ITEM_ID]);
     }
 
     public function test_roster_move_order_language_reads_wpml_meta_and_default(): void {
@@ -1542,7 +1647,8 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
 
         $roster = $GLOBALS['intersoccer_test_roster_store'][self::ITEM_ID] ?? [];
         $this->assertSame('Summer', $roster['season'] ?? '');
-        $this->assertSame('2026', $roster['program_year'] ?? '');
+        // Roster table has season (English), not program_year; year stays on order-item meta only.
+        $this->assertArrayNotHasKey('program_year', $roster);
     }
 
     // Regression: RR #181 — unmoved siblings keep exact meta; moved line still gets order-language pa_*.
