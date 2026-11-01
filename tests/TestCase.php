@@ -52,7 +52,10 @@ abstract class TestCase extends PHPUnitTestCase {
             $GLOBALS['intersoccer_test_json_success_throws'],
             $GLOBALS['intersoccer_test_wpml_current_language'],
             $GLOBALS['intersoccer_test_simulate_wc_order_save_pa_rewrite'],
-            $GLOBALS['intersoccer_test_simulate_wc_order_save_moved_item_id']
+            $GLOBALS['intersoccer_test_simulate_wc_order_save_moved_item_id'],
+            $GLOBALS['intersoccer_test_simulate_wc_order_save_add_sibling_meta'],
+            $GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'],
+            $GLOBALS['intersoccer_test_wc_delete_order_item_meta_call_counts']
         );
         if (function_exists('intersoccer_roster_report_reset_live_order_status_memo')) {
             intersoccer_roster_report_reset_live_order_status_memo();

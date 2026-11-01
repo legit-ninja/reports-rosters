@@ -1348,6 +1348,12 @@ if (!function_exists('intersoccer_migration_restore_order_item_meta_map')) {
 
 if (!function_exists('intersoccer_migration_snapshot_sibling_order_item_meta_for_move')) {
     /**
+     * Snapshots unmoved sibling line-item meta immediately before {@see WC_Order::save()} during a move.
+     *
+     * Order-level save can persist pa_* or human-label changes on siblings (e.g. a translation plugin
+     * rewriting item attributes to the current admin language). The move compares post-save values to
+     * this snapshot and only reverts keys that changed; siblings whose meta is unchanged are not written.
+     *
      * @param \WC_Order $order
      * @return array<int,array<string,mixed>>
      */
@@ -1368,11 +1374,53 @@ if (!function_exists('intersoccer_migration_snapshot_sibling_order_item_meta_for
     }
 }
 
+if (!function_exists('intersoccer_migration_revert_changed_sibling_order_item_meta_for_move')) {
+    /**
+     * Reverts only sibling meta keys whose values changed during {@see WC_Order::save()}.
+     *
+     * Uses {@see wc_update_order_item_meta()} per changed key only. Does not load {@see WC_Order_Item},
+     * delete keys, or save line items. Keys added on siblings during order save are left intact.
+     *
+     * @param array<int,array<string,mixed>> $snapshots Pre-order-save meta per sibling item ID.
+     */
+    function intersoccer_migration_revert_changed_sibling_order_item_meta_for_move(array $snapshots): void {
+        if ($snapshots === [] || !function_exists('wc_update_order_item_meta')) {
+            return;
+        }
+
+        foreach ($snapshots as $item_id => $snapshot) {
+            $item_id = (int) $item_id;
+            if ($item_id <= 0 || !is_array($snapshot) || $snapshot === []) {
+                continue;
+            }
+
+            $current = intersoccer_migration_snapshot_order_item_meta_map($item_id);
+            foreach ($snapshot as $key => $old_value) {
+                $key = (string) $key;
+                if ($key === '') {
+                    continue;
+                }
+                $current_value = array_key_exists($key, $current) ? $current[$key] : null;
+                if ($current_value == $old_value) {
+                    continue;
+                }
+                wc_update_order_item_meta($item_id, $key, $old_value);
+            }
+        }
+    }
+}
+
 if (!function_exists('intersoccer_migration_restore_sibling_order_item_meta_for_move')) {
     /**
-     * @param array<int,array<string,mixed>> $snapshots
+     * @param array<int,array<string,mixed>> $snapshots Pre-order-save meta per sibling item ID.
      */
     function intersoccer_migration_restore_sibling_order_item_meta_for_move(array $snapshots): void {
+        if (function_exists('intersoccer_migration_revert_changed_sibling_order_item_meta_for_move')) {
+            intersoccer_migration_revert_changed_sibling_order_item_meta_for_move($snapshots);
+
+            return;
+        }
+
         foreach ($snapshots as $item_id => $snapshot) {
             if (!is_array($snapshot) || $snapshot === []) {
                 continue;

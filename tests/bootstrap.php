@@ -1371,6 +1371,11 @@ if (!class_exists('WC_Order')) {
                         };
                         $rewrite('pa_age-group', '3-6-ans', '3-6y');
                         $rewrite('pa_course-day', 'mercredi', 'wednesday');
+                        if (!empty($GLOBALS['intersoccer_test_simulate_wc_order_save_add_sibling_meta'])
+                            && ($intersoccer_test_wc_order_item_meta[$line_item_id]['pa_age-group'] ?? null) === '3-6y'
+                        ) {
+                            $intersoccer_test_wc_order_item_meta[$line_item_id]['rr181_save_added_key'] = 'during-save';
+                        }
                     }
                 }
             }
@@ -1740,6 +1745,13 @@ if (!function_exists('wc_update_order_item_meta')) {
     function wc_update_order_item_meta($item_id, $meta_key, $meta_value, $prev_value = '') {
         global $intersoccer_test_wc_order_item_meta;
         $item_id = (int) $item_id;
+        if (!isset($GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'])) {
+            $GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'] = [];
+        }
+        if (!isset($GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'][$item_id])) {
+            $GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'][$item_id] = 0;
+        }
+        $GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'][$item_id]++;
         if (!is_array($intersoccer_test_wc_order_item_meta)) {
             $intersoccer_test_wc_order_item_meta = [];
         }
@@ -1753,6 +1765,15 @@ if (!function_exists('wc_update_order_item_meta')) {
 
 if (!function_exists('wc_delete_order_item_meta')) {
     function wc_delete_order_item_meta($item_id, $meta_key, $meta_value = '', $delete_all = false) {
+        if (!isset($GLOBALS['intersoccer_test_wc_delete_order_item_meta_call_counts'])) {
+            $GLOBALS['intersoccer_test_wc_delete_order_item_meta_call_counts'] = [];
+        }
+        $item_id = (int) $item_id;
+        if (!isset($GLOBALS['intersoccer_test_wc_delete_order_item_meta_call_counts'][$item_id])) {
+            $GLOBALS['intersoccer_test_wc_delete_order_item_meta_call_counts'][$item_id] = 0;
+        }
+        $GLOBALS['intersoccer_test_wc_delete_order_item_meta_call_counts'][$item_id]++;
+
         return true;
     }
 }

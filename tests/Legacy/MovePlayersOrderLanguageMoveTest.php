@@ -29,6 +29,7 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
     private const FR_TARGET = 97321;
     private const DE_TARGET = 97322;
     private const SIBLING_ITEM_ID = 97312;
+    private const SIBLING_UNCHANGED_ITEM_ID = 97313;
 
     protected function setUp(): void {
         parent::setUp();
@@ -94,7 +95,10 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
             $GLOBALS['intersoccer_test_get_english_product_name_callback'],
             $GLOBALS['intersoccer_test_wpml_current_language'],
             $GLOBALS['intersoccer_test_simulate_wc_order_save_pa_rewrite'],
-            $GLOBALS['intersoccer_test_simulate_wc_order_save_moved_item_id']
+            $GLOBALS['intersoccer_test_simulate_wc_order_save_moved_item_id'],
+            $GLOBALS['intersoccer_test_simulate_wc_order_save_add_sibling_meta'],
+            $GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'],
+            $GLOBALS['intersoccer_test_wc_delete_order_item_meta_call_counts']
         );
         $this->resetMovePlayersTestGlobals();
         parent::tearDown();
@@ -1582,15 +1586,38 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         ];
         $GLOBALS['intersoccer_test_roster_row_filter_map'][self::SIBLING_ITEM_ID] = true;
 
+        $unchanged_sibling_meta = [
+            'Activity Type' => 'Course',
+            'Assigned Attendee' => 'RR181 unchanged sibling',
+            "Groupe d'âge" => '9-12 ans',
+            'attribute_pa_age-group' => '9-12-ans',
+            'pa_age-group' => '9-12-ans',
+            'attribute_pa_booking-type' => 'full-term',
+            'pa_booking-type' => 'full-term',
+        ];
+        $intersoccer_test_wc_order_item_meta[self::SIBLING_UNCHANGED_ITEM_ID] = $unchanged_sibling_meta;
+        $intersoccer_test_wc_order_item_data[self::SIBLING_UNCHANGED_ITEM_ID] = [
+            'product_id' => self::FR_PARENT,
+            'variation_id' => self::SOURCE_VAR,
+            'subtotal' => 70.00,
+            'total' => 70.00,
+            'name' => 'Unchanged sibling course line',
+        ];
+        $GLOBALS['intersoccer_test_roster_row_filter_map'][self::SIBLING_UNCHANGED_ITEM_ID] = true;
+
         $order = wc_get_order(self::ORDER_ID);
         $this->assertInstanceOf(\WC_Order::class, $order);
         $order->set_items([
             self::ITEM_ID => new \WC_Order_Item_Product(self::ITEM_ID),
             self::SIBLING_ITEM_ID => new \WC_Order_Item_Product(self::SIBLING_ITEM_ID),
+            self::SIBLING_UNCHANGED_ITEM_ID => new \WC_Order_Item_Product(self::SIBLING_UNCHANGED_ITEM_ID),
         ]);
         $GLOBALS['intersoccer_test_wc_get_order_id_by_order_item_id_callback'] = static function ($item_id) {
             $item_id = (int) $item_id;
-            if ($item_id === self::ITEM_ID || $item_id === self::SIBLING_ITEM_ID) {
+            if ($item_id === self::ITEM_ID
+                || $item_id === self::SIBLING_ITEM_ID
+                || $item_id === self::SIBLING_UNCHANGED_ITEM_ID
+            ) {
                 return self::ORDER_ID;
             }
 
@@ -1598,17 +1625,40 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         };
 
         $sibling_before = $intersoccer_test_wc_order_item_meta[self::SIBLING_ITEM_ID];
+        $unchanged_sibling_before = $intersoccer_test_wc_order_item_meta[self::SIBLING_UNCHANGED_ITEM_ID];
 
         $GLOBALS['intersoccer_test_simulate_wc_order_save_pa_rewrite'] = true;
         $GLOBALS['intersoccer_test_simulate_wc_order_save_moved_item_id'] = self::ITEM_ID;
+        $GLOBALS['intersoccer_test_simulate_wc_order_save_add_sibling_meta'] = true;
+        $GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'] = [];
+        $GLOBALS['intersoccer_test_wc_delete_order_item_meta_call_counts'] = [];
 
         $response = $this->invokeMoveAjax();
-        unset($GLOBALS['intersoccer_test_simulate_wc_order_save_pa_rewrite'], $GLOBALS['intersoccer_test_simulate_wc_order_save_moved_item_id']);
+        unset(
+            $GLOBALS['intersoccer_test_simulate_wc_order_save_pa_rewrite'],
+            $GLOBALS['intersoccer_test_simulate_wc_order_save_moved_item_id'],
+            $GLOBALS['intersoccer_test_simulate_wc_order_save_add_sibling_meta']
+        );
 
         $this->assertSame(1, (int) ($response['data']['moved_count'] ?? 0));
 
         $sibling_after = $intersoccer_test_wc_order_item_meta[self::SIBLING_ITEM_ID];
-        $this->assertSame($sibling_before, $sibling_after);
+        $expected_sibling_after = $sibling_before;
+        $expected_sibling_after['rr181_save_added_key'] = 'during-save';
+        $this->assertSame($expected_sibling_after, $sibling_after);
+        $this->assertSame(
+            $unchanged_sibling_before,
+            $intersoccer_test_wc_order_item_meta[self::SIBLING_UNCHANGED_ITEM_ID]
+        );
+
+        $update_counts = $GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'] ?? [];
+        $delete_counts = $GLOBALS['intersoccer_test_wc_delete_order_item_meta_call_counts'] ?? [];
+        $this->assertSame(0, (int) ($update_counts[self::SIBLING_UNCHANGED_ITEM_ID] ?? 0));
+        $this->assertSame(0, (int) ($delete_counts[self::SIBLING_UNCHANGED_ITEM_ID] ?? 0));
+        $this->assertGreaterThan(0, (int) ($update_counts[self::SIBLING_ITEM_ID] ?? 0));
+        $this->assertSame(0, (int) ($delete_counts[self::SIBLING_ITEM_ID] ?? 0));
+        $this->assertSame('3-6-ans', $sibling_after['pa_age-group'] ?? '');
+        $this->assertSame('mercredi', $sibling_after['pa_course-day'] ?? '');
 
         $moved_meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
         $this->assertSame('5-13-ans-journee-complete', $moved_meta['pa_age-group'] ?? '');
