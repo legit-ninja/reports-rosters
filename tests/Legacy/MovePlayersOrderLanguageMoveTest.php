@@ -982,19 +982,19 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         $meta = $intersoccer_test_wc_order_item_meta[self::ITEM_ID];
         $this->assertSame('5-13 Jahre (ganzer Tag)', $meta['Altersgruppe'] ?? '');
         $this->assertNotSame('5-8-jahre', $meta['pa_age-group'] ?? '');
-        $this->assertSame('5-13y-full-day', $meta['pa_age-group'] ?? '');
+        $this->assertSame('5-13-jahre-ganzer-tag', $meta['pa_age-group'] ?? '');
         $this->assertSame('Genf – Stade de Vessy', $meta['InterSoccer-Standorte'] ?? '');
         $this->assertNotSame('lausanne-centre', $meta['pa_intersoccer-venues'] ?? '');
-        $this->assertSame('stade-de-vessy', $meta['pa_intersoccer-venues'] ?? '');
+        $this->assertSame('genf-stade-de-vessy', $meta['pa_intersoccer-venues'] ?? '');
         $this->assertSame('Genf', $meta['Stadt'] ?? '');
         $this->assertNotSame('zuerich', $meta['pa_city'] ?? '');
-        $this->assertSame('geneva', $meta['pa_city'] ?? '');
+        $this->assertSame('genf', $meta['pa_city'] ?? '');
         $this->assertSame('Genf', $meta['Kanton / Region'] ?? '');
         $this->assertNotSame('zurich', $meta['pa_canton-region'] ?? '');
-        $this->assertSame('geneva', $meta['pa_canton-region'] ?? '');
+        $this->assertSame('genf', $meta['pa_canton-region'] ?? '');
         $this->assertSame('Woche eins', $meta['Camp-Woche'] ?? '');
         $this->assertNotSame('woche-zwei', $meta['pa_camp-terms'] ?? '');
-        $this->assertSame('week-one', $meta['pa_camp-terms'] ?? '');
+        $this->assertSame('woche-eins', $meta['pa_camp-terms'] ?? '');
 
         $row = $intersoccer_test_roster_store[self::ITEM_ID];
         $this->assertSame('5-13y (Full Day)', $row['age_group'] ?? '');
@@ -1229,12 +1229,12 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         $this->installMoveWorld([
             'order_lang' => 'de',
             'de_target_attrs' => [
-                'attribute_pa_intersoccer-venues' => 'genf-stade-de-vessy',
-                'attribute_pa_age-group'          => '5-13-jahre-ganzer-tag',
+                'attribute_pa_intersoccer-venues' => 'stade-de-vessy',
+                'attribute_pa_age-group'          => '5-13y-full-day',
                 'attribute_pa_booking-type'       => 'ganze-woche',
-                'attribute_pa_canton-region'      => 'genf',
-                'attribute_pa_city'               => 'genf',
-                'attribute_pa_camp-terms'         => 'woche-eins',
+                'attribute_pa_canton-region'      => 'geneva',
+                'attribute_pa_city'               => 'geneva',
+                'attribute_pa_camp-terms'         => 'week-one',
                 'attribute_pa_girls-only'         => 'no',
             ],
             'item_meta' => [
@@ -1473,5 +1473,6 @@ class MovePlayersOrderLanguageMoveTest extends TestCase {
         $this->assertSame('Semaine un', $meta['Semaine de camp'] ?? '');
         $this->assertNotSame('semaine-deux', $meta['pa_camp-terms'] ?? '');
         $this->assertSame('semaine-un', $meta['pa_camp-terms'] ?? '');
+        $this->assertSame('semaine-complete', $meta['pa_booking-type'] ?? '');
     }
 }

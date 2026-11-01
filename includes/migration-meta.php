@@ -1077,22 +1077,13 @@ if (!function_exists('intersoccer_migration_apply_order_language_pa_facet_meta_f
             $display = '';
             $slug_for_line = $raw_slug;
             if (function_exists('get_term_by')) {
-                $prev_wpml_lang = '';
-                if (function_exists('intersoccer_wpml_current_language_code')) {
-                    $prev_wpml_lang = intersoccer_wpml_current_language_code();
-                } else {
-                    $filtered_lang = apply_filters('wpml_current_language', null);
-                    if (is_string($filtered_lang) && $filtered_lang !== '') {
-                        $prev_wpml_lang = $filtered_lang;
-                    } elseif (function_exists('wpml_get_current_language')) {
-                        $prev_wpml_lang = (string) wpml_get_current_language();
-                    }
-                }
-                $switched_wpml_all = ($prev_wpml_lang !== 'all');
-                if ($switched_wpml_all) {
-                    do_action('wpml_switch_language', 'all');
-                }
-                try {
+                $resolve_order_language_term = static function () use (
+                    $raw_slug,
+                    $pa_taxonomy,
+                    $order_lang,
+                    &$display,
+                    &$slug_for_line
+                ): void {
                     $term = get_term_by('slug', $raw_slug, $pa_taxonomy);
                     if ($term && !is_wp_error($term)) {
                         $twin_id = (int) apply_filters(
@@ -1106,16 +1097,15 @@ if (!function_exists('intersoccer_migration_apply_order_language_pa_facet_meta_f
                             $resolved_term = get_term($twin_id, $pa_taxonomy);
                             if ($resolved_term && !is_wp_error($resolved_term)) {
                                 $display = trim((string) $resolved_term->name);
-                                if (strtolower(substr($order_lang, 0, 2)) === 'fr') {
-                                    $slug_for_line = trim((string) $resolved_term->slug);
-                                }
+                                $slug_for_line = trim((string) $resolved_term->slug);
                             }
                         }
                     }
-                } finally {
-                    if ($switched_wpml_all && $prev_wpml_lang !== '') {
-                        do_action('wpml_switch_language', $prev_wpml_lang);
-                    }
+                };
+                if (function_exists('intersoccer_with_wpml_language')) {
+                    intersoccer_with_wpml_language('all', $resolve_order_language_term);
+                } else {
+                    $resolve_order_language_term();
                 }
             }
             if ($display === '') {
@@ -2071,72 +2061,6 @@ if (!function_exists('intersoccer_migration_pa_stored_value_same_term_as_slug'))
     }
 }
 
-if (!function_exists('intersoccer_migration_pa_order_language_slug_prefers_stored_over_variation_raw')) {
-    /**
-     * True when stored slug is the order-language twin of the EN variation raw slug (FR orders).
-     */
-    function intersoccer_migration_pa_order_language_slug_prefers_stored_over_variation_raw(
-        string $taxonomy,
-        string $stored_slug,
-        string $variation_raw_slug,
-        string $order_lang
-    ): bool {
-        if (strtolower(substr(trim($order_lang), 0, 2)) !== 'fr') {
-            return false;
-        }
-        $stored_slug = trim($stored_slug);
-        $variation_raw_slug = trim($variation_raw_slug);
-        if ($stored_slug === '' || $variation_raw_slug === '' || $stored_slug === $variation_raw_slug) {
-            return false;
-        }
-        if (!function_exists('get_term_by')) {
-            return false;
-        }
-
-        $prev_lang = '';
-        if (function_exists('intersoccer_wpml_current_language_code')) {
-            $prev_lang = intersoccer_wpml_current_language_code();
-        } else {
-            $filtered_lang = apply_filters('wpml_current_language', null);
-            if (is_string($filtered_lang) && $filtered_lang !== '') {
-                $prev_lang = $filtered_lang;
-            } elseif (function_exists('wpml_get_current_language')) {
-                $prev_lang = (string) wpml_get_current_language();
-            }
-        }
-        $switched = ($prev_lang !== 'all');
-        if ($switched) {
-            do_action('wpml_switch_language', 'all');
-        }
-        try {
-            $term = get_term_by('slug', $variation_raw_slug, $taxonomy);
-            if (!$term || is_wp_error($term)) {
-                return false;
-            }
-            $twin_id = (int) apply_filters(
-                'wpml_object_id',
-                (int) $term->term_id,
-                $taxonomy,
-                false,
-                $order_lang
-            );
-            if ($twin_id <= 0) {
-                return false;
-            }
-            $resolved = get_term($twin_id, $taxonomy);
-            if (!$resolved || is_wp_error($resolved)) {
-                return false;
-            }
-
-            return trim((string) $resolved->slug) === $stored_slug;
-        } finally {
-            if ($switched && $prev_lang !== '') {
-                do_action('wpml_switch_language', $prev_lang);
-            }
-        }
-    }
-}
-
 if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation')) {
     /**
      * @param array<string,string> $slug_meta
@@ -2147,8 +2071,7 @@ if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation'))
         array $slug_meta,
         WC_Product_Variation $variation,
         array $existing_line_pa = [],
-        bool $prefer_order_language_catalog_slugs = false,
-        string $order_lang = ''
+        bool $prefer_order_language_catalog_slugs = false
     ): array {
         $normalized = [];
         foreach ($slug_meta as $meta_key => $meta_value) {
@@ -2163,22 +2086,10 @@ if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation'))
             $raw_from_variation = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy, false);
             $slug = intersoccer_migration_pa_attribute_slug_for_variation($variation, $taxonomy);
             if ($prefer_order_language_catalog_slugs) {
-                $from_meta = trim(is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value);
-                $raw_trimmed = trim((string) $raw_from_variation);
-                if ($from_meta !== '' && $raw_trimmed !== '' && $from_meta !== $raw_trimmed
-                    && function_exists('intersoccer_migration_pa_order_language_slug_prefers_stored_over_variation_raw')
-                    && intersoccer_migration_pa_order_language_slug_prefers_stored_over_variation_raw(
-                        $taxonomy,
-                        $from_meta,
-                        $raw_trimmed,
-                        $order_lang
-                    )
-                ) {
-                    $slug = $from_meta;
-                } elseif ($raw_trimmed !== '') {
-                    $slug = $raw_trimmed;
-                } elseif ($from_meta !== '') {
-                    $slug = $from_meta;
+                if ($raw_from_variation !== '') {
+                    $slug = trim($raw_from_variation);
+                } elseif ($meta_value !== '' && $meta_value !== null) {
+                    $slug = trim(is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value);
                 }
             } elseif ($raw_from_variation !== '' && function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
                 $strict_from_variation = intersoccer_migration_coerce_pa_taxonomy_slug_strict(
@@ -3999,8 +3910,7 @@ if (!function_exists('intersoccer_migration_finalize_move_item_meta')) {
                     $slug_meta,
                     $variation,
                     $existing_line_pa,
-                    true,
-                    $order_lang_for_slugs
+                    true
                 );
             } else {
                 $allowed = [];
@@ -4018,6 +3928,26 @@ if (!function_exists('intersoccer_migration_finalize_move_item_meta')) {
                     $filtered[$meta_key] = is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value;
                 }
                 $slug_meta = $filtered;
+            }
+            if ($order_lang_for_slugs !== ''
+                && function_exists('intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line')
+            ) {
+                $variation_raw_by_pa = [];
+                foreach ($variation->get_variation_attributes() as $attribute_key => $attribute_value) {
+                    $clean_key = str_replace('attribute_', '', (string) $attribute_key);
+                    $variation_raw_by_pa[$clean_key] = is_array($attribute_value)
+                        ? (string) reset($attribute_value)
+                        : (string) $attribute_value;
+                }
+                $expected_slugs = [];
+                [$human_meta, $slug_meta, $expected_slugs] = intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line(
+                    $human_meta,
+                    $slug_meta,
+                    $expected_slugs,
+                    $variation,
+                    $variation_raw_by_pa,
+                    $order_lang_for_slugs
+                );
             }
         }
 
