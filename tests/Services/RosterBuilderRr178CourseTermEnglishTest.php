@@ -45,7 +45,8 @@ class RosterBuilderRr178CourseTermEnglishTest extends TestCase {
         unset(
             $GLOBALS['intersoccer_test_terms_by_slug'],
             $GLOBALS['intersoccer_test_terms_by_id'],
-            $GLOBALS['intersoccer_test_terms_by_name']
+            $GLOBALS['intersoccer_test_terms_by_name'],
+            $GLOBALS['intersoccer_test_wpml_current_language']
         );
         parent::tearDown();
     }
@@ -63,14 +64,12 @@ class RosterBuilderRr178CourseTermEnglishTest extends TestCase {
                 'dimanche' => (object) [
                     'term_id' => 8800,
                     'slug' => 'dimanche',
-                    'name' => 'Sunday',
-                    'wpml_lang' => 'en',
+                    'name' => 'Dimanche',
                 ],
                 'sonntag' => (object) [
                     'term_id' => 8800,
                     'slug' => 'sonntag',
-                    'name' => 'Sunday',
-                    'wpml_lang' => 'en',
+                    'name' => 'Sonntag',
                 ],
             ],
         ];
@@ -80,14 +79,17 @@ class RosterBuilderRr178CourseTermEnglishTest extends TestCase {
         $GLOBALS['intersoccer_test_terms_by_name'] = [
             'pa_course-day' => [
                 'sunday' => $sunday,
+                'dimanche' => $GLOBALS['intersoccer_test_terms_by_slug']['pa_course-day']['dimanche'],
+                'sonntag' => $GLOBALS['intersoccer_test_terms_by_slug']['pa_course-day']['sonntag'],
             ],
         ];
     }
 
     /**
+     * @param array<string,mixed> $order_overrides
      * @return array<string,mixed>
      */
-    private function buildCourseRoster(string $course_day_slug): array {
+    private function buildCourseRoster(array $order_overrides): array {
         $this->registerCourseDayTerms();
 
         $player = new Player([
@@ -106,14 +108,13 @@ class RosterBuilderRr178CourseTermEnglishTest extends TestCase {
             'emergency_contact' => 'Parent Example',
             'emergency_phone' => '0790000000',
         ];
-        $order_data = [
+        $order_data = array_merge([
             'activity_type' => 'Course',
-            'course_day' => $course_day_slug,
             'product_id' => 91001,
             'variation_id' => 0,
             'order_id' => 91002,
             'order_item_id' => 91003,
-        ];
+        ], $order_overrides);
 
         $method = (new ReflectionClass($this->rosterBuilder))->getMethod('buildRosterData');
         $method->setAccessible(true);
@@ -122,16 +123,25 @@ class RosterBuilderRr178CourseTermEnglishTest extends TestCase {
     }
 
     public function test_rr178_fr_de_course_term_is_english_day(): void {
-        foreach (['dimanche', 'sonntag'] as $localized_slug) {
-            $row = $this->buildCourseRoster($localized_slug);
-            $this->assertSame('Sunday', $row['course_day'], $localized_slug . ' course_day');
-            $this->assertSame('Sunday', $row['term'], $localized_slug . ' term');
-            $this->assertSame($row['course_day'], $row['term'], $localized_slug . ' term vs course_day');
-        }
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'fr';
+        $fr_row = $this->buildCourseRoster(['course_day' => 'dimanche']);
+        $this->assertSame('Sunday', $fr_row['course_day']);
+        $this->assertSame('Sunday', $fr_row['term']);
 
-        $en_row = $this->buildCourseRoster('sunday');
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'de';
+        $de_row = $this->buildCourseRoster(['course_day' => 'sonntag']);
+        $this->assertSame('Sunday', $de_row['course_day']);
+        $this->assertSame('Sunday', $de_row['term']);
+
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'en';
+        $en_row = $this->buildCourseRoster(['course_day' => 'sunday']);
         $this->assertSame('Sunday', $en_row['course_day']);
         $this->assertSame('Sunday', $en_row['term']);
-        $this->assertSame($en_row['course_day'], $en_row['term']);
+    }
+
+    public function test_rr178_empty_activity_type_normalizes_course_term_to_english(): void {
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'fr';
+        $row = $this->buildCourseRoster(['course_day' => 'dimanche', 'activity_type' => '']);
+        $this->assertSame('Sunday', $row['term']);
     }
 }
