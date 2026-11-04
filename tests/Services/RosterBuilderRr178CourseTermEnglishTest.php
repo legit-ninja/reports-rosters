@@ -5,7 +5,6 @@
 
 namespace InterSoccer\ReportsRosters\Tests\Services;
 
-use Brain\Monkey\Functions;
 use InterSoccer\ReportsRosters\Core\Database;
 use InterSoccer\ReportsRosters\Core\Logger;
 use InterSoccer\ReportsRosters\Data\Models\Player;
@@ -40,16 +39,6 @@ class RosterBuilderRr178CourseTermEnglishTest extends TestCase {
             Mockery::mock(EventMatcher::class),
             Mockery::mock(PlayerMatcher::class)
         );
-
-        Functions\when('remove_accents')->alias(static function ($string) {
-            if (!is_string($string) || !class_exists('\Normalizer')) {
-                return $string;
-            }
-            $n = \Normalizer::normalize($string, \Normalizer::FORM_D);
-
-            return $n === false ? $string : (preg_replace('/\p{Mn}+/u', '', $n) ?? $string);
-        });
-        Functions\when('wc_get_product')->justReturn(null);
     }
 
     protected function tearDown(): void {
