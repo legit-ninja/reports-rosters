@@ -393,7 +393,10 @@ class MovePlayersRr161MoveMetaIdTest extends TestCase {
         }
 
         $this->assertSame(self::META_ID_AGE_GROUP, $after_ids['Age Group'] ?? 0);
-        $this->assertSame(self::TARGET_AGE_SLUG, (string) wc_get_order_item_meta(self::ITEM_ID, 'Age Group', true));
+        $expected_age_label = function_exists('intersoccer_format_attribute_for_storage')
+            ? intersoccer_format_attribute_for_storage('pa_age-group', self::TARGET_AGE_SLUG)
+            : self::TARGET_AGE_SLUG;
+        $this->assertSame($expected_age_label, (string) wc_get_order_item_meta(self::ITEM_ID, 'Age Group', true));
         $this->assertSame(self::META_ID_PA_AGE, $after_ids['pa_age-group'] ?? 0);
         $this->assertSame(self::TARGET_AGE_SLUG, (string) wc_get_order_item_meta(self::ITEM_ID, 'pa_age-group', true));
 
@@ -413,5 +416,25 @@ class MovePlayersRr161MoveMetaIdTest extends TestCase {
             self::META_ID_DISCOUNT_SEASON,
         ];
         $this->assertSame($stable_prefix, array_slice($after_display_order, 0, count($stable_prefix)));
+    }
+
+    /**
+     * Regression: RR #161 bootstrap — flat fixtures must not gain a _meta_rows store key on save().
+     */
+    public function test_rr161_flat_line_save_does_not_persist_meta_rows_key(): void {
+        global $intersoccer_test_wc_order_item_meta;
+
+        $item_id = 97112;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [
+            'Activity Type' => 'Course',
+            'Age Group' => self::SOURCE_AGE_SLUG,
+        ];
+
+        $item = new \WC_Order_Item_Product($item_id);
+        $item->update_meta_data('Age Group', self::TARGET_AGE_SLUG);
+        $item->save();
+
+        $this->assertArrayNotHasKey('_meta_rows', $intersoccer_test_wc_order_item_meta[$item_id]);
+        $this->assertSame(self::TARGET_AGE_SLUG, $intersoccer_test_wc_order_item_meta[$item_id]['Age Group']);
     }
 }
