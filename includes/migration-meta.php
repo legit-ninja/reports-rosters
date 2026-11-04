@@ -4293,9 +4293,17 @@ if (!function_exists('intersoccer_migration_prune_unexpected_move_meta_keys')) {
                 $allowed[$related] = true;
             }
         }
+        $existing_pa_key_flip = [];
+        foreach ($existing_line_keys as $line_key) {
+            $line_key = (string) $line_key;
+            if ($line_key !== '' && preg_match('/^(attribute_)?pa_/i', $line_key)) {
+                $existing_pa_key_flip[$line_key] = true;
+            }
+        }
         $item = new WC_Order_Item_Product($item_id);
         foreach ($item->get_meta_data() as $meta) {
-            $key = (string) ($meta->get_data()['key'] ?? '');
+            $data = $meta->get_data();
+            $key = (string) ($data['key'] ?? '');
             if ($key === '' || isset($allowed[$key])) {
                 continue;
             }
@@ -4309,6 +4317,20 @@ if (!function_exists('intersoccer_migration_prune_unexpected_move_meta_keys')) {
             }
             if (!intersoccer_migration_is_variation_rewrite_meta_key($key, $human_lookup)) {
                 continue;
+            }
+            if (function_exists('intersoccer_migration_move_pa_slug_meta_key_allowed_for_rewrite')) {
+                $meta_value = isset($data['value']) ? $data['value'] : '';
+                if (is_array($meta_value)) {
+                    $meta_value = reset($meta_value);
+                }
+                if (intersoccer_migration_move_pa_slug_meta_key_allowed_for_rewrite(
+                    $key,
+                    $existing_pa_key_flip,
+                    $existing_line_keys,
+                    (string) $meta_value
+                )) {
+                    continue;
+                }
             }
             $item->delete_meta_data($key);
         }
