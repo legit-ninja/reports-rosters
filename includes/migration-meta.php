@@ -4467,6 +4467,14 @@ if (!function_exists('intersoccer_migration_finalize_move_item_meta')) {
             }
         }
 
+        if ($existing_line_keys !== [] && function_exists('intersoccer_migration_strip_slug_meta_to_allowed_pa_keys_for_move')) {
+            $slug_meta = intersoccer_migration_strip_slug_meta_to_allowed_pa_keys_for_move(
+                $slug_meta,
+                $existing_pa,
+                $existing_line_keys
+            );
+        }
+
         $canonical_variation = $canonical_source_variation instanceof WC_Product_Variation
             ? $canonical_source_variation
             : $variation;
