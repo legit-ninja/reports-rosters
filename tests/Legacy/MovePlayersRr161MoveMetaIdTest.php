@@ -84,6 +84,9 @@ class MovePlayersRr161MoveMetaIdTest extends TestCase {
     protected function tearDown(): void {
         unset(
             $GLOBALS['intersoccer_test_emit_wp_hooks'],
+            $GLOBALS['intersoccer_test_terms_by_id'],
+            $GLOBALS['intersoccer_test_terms_by_slug'],
+            $GLOBALS['intersoccer_test_terms_by_name'],
             $GLOBALS['intersoccer_test_roster_row_filter_map'],
             $GLOBALS['intersoccer_test_roster_store'],
             $GLOBALS['intersoccer_test_wc_order_item_meta'],
@@ -94,6 +97,45 @@ class MovePlayersRr161MoveMetaIdTest extends TestCase {
         $this->resetMovePlayersTestGlobals();
         $_POST = [];
         parent::tearDown();
+    }
+
+    /**
+     * @param array<string,array<string,object>> $by_slug
+     * @param array<int,object>                $by_id
+     */
+    private function registerTerms(array $by_slug, array $by_id): void {
+        $GLOBALS['intersoccer_test_terms_by_slug'] = $by_slug;
+        $GLOBALS['intersoccer_test_terms_by_id'] = $by_id;
+        $by_name = [];
+        foreach ($by_slug as $taxonomy => $terms) {
+            foreach ($terms as $row) {
+                $obj = is_object($row) ? $row : (object) $row;
+                if (!empty($obj->name)) {
+                    $key = function_exists('mb_strtolower') ? mb_strtolower((string) $obj->name) : strtolower((string) $obj->name);
+                    $by_name[$taxonomy][$key] = $obj;
+                }
+            }
+        }
+        $GLOBALS['intersoccer_test_terms_by_name'] = $by_name;
+    }
+
+    private function registerRr161MovePaTerms(): void {
+        $this->registerTerms(
+            [
+                'pa_age-group' => [
+                    '5-8y' => (object) ['term_id' => 971801, 'slug' => '5-8y', 'name' => '5-8y'],
+                    '5-12' => (object) ['term_id' => 971802, 'slug' => '5-12', 'name' => '5-12'],
+                ],
+                'pa_activity-type' => [
+                    'course' => (object) ['term_id' => 971803, 'slug' => 'course', 'name' => 'Course'],
+                ],
+            ],
+            [
+                971801 => (object) ['term_id' => 971801, 'slug' => '5-8y', 'name' => '5-8y'],
+                971802 => (object) ['term_id' => 971802, 'slug' => '5-12', 'name' => '5-12'],
+                971803 => (object) ['term_id' => 971803, 'slug' => 'course', 'name' => 'Course'],
+            ]
+        );
     }
 
     /**
@@ -157,6 +199,7 @@ class MovePlayersRr161MoveMetaIdTest extends TestCase {
         global $intersoccer_test_wc_get_order_callback, $intersoccer_test_post_status_map;
         global $intersoccer_test_wc_get_product_callback;
 
+        $this->registerRr161MovePaTerms();
         $this->seedOrderItemMetaWithRowIds();
         $GLOBALS['intersoccer_test_roster_row_filter_map'] = [self::ITEM_ID => true];
         $GLOBALS['intersoccer_test_roster_store'] = [
@@ -387,6 +430,7 @@ class MovePlayersRr161MoveMetaIdTest extends TestCase {
                 'Attendee DOB' => self::META_ID_ATTENDEE_DOB,
                 'Medical Conditions' => self::META_ID_MEDICAL,
                 '_intersoccer_discount_season_key' => self::META_ID_DISCOUNT_SEASON,
+                'Note' => self::META_ID_NOTE,
             ] as $key => $expected_id
         ) {
             $this->assertSame($expected_id, $after_ids[$key] ?? 0, $key . ' meta_id must stay stable');
@@ -400,7 +444,6 @@ class MovePlayersRr161MoveMetaIdTest extends TestCase {
         $this->assertSame(self::META_ID_PA_AGE, $after_ids['pa_age-group'] ?? 0);
         $this->assertSame(self::TARGET_AGE_SLUG, (string) wc_get_order_item_meta(self::ITEM_ID, 'pa_age-group', true));
 
-        $this->assertArrayNotHasKey('Note', $after_ids);
         $this->assertArrayHasKey('pa_activity-type', $after_ids);
         $this->assertNotContains($after_ids['pa_activity-type'], $before_ids);
 
