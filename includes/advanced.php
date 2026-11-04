@@ -1790,7 +1790,6 @@ function intersoccer_move_players_ajax() {
             $slug_meta      = $meta_payload['slug_meta'];
             $human_meta     = $meta_payload['human_meta'];
             $other_meta     = $meta_payload['other_meta'];
-            $destination_built_other_meta = $meta_payload['other_meta'] ?? [];
             $english_target_variation = $variation instanceof WC_Product_Variation
                 ? $variation
                 : $order_variation;
@@ -1856,11 +1855,6 @@ function intersoccer_move_players_ajax() {
             if (function_exists('intersoccer_migration_filter_other_meta_for_move')) {
                 $other_meta = intersoccer_migration_filter_other_meta_for_move($other_meta, $existing_line_meta_keys);
                 foreach ($existing_line_meta_keys as $meta_key) {
-                    if (function_exists('intersoccer_migration_is_variation_rewrite_meta_key')
-                        && intersoccer_migration_is_variation_rewrite_meta_key((string) $meta_key, $human_lookup)
-                        && !array_key_exists($meta_key, $destination_built_other_meta)) {
-                        continue;
-                    }
                     if (function_exists('intersoccer_migration_move_meta_value_is_blank')
                         && intersoccer_migration_move_meta_value_is_blank($other_meta[$meta_key] ?? null)
                         && !intersoccer_migration_move_meta_value_is_blank($line_meta_snapshot['other'][$meta_key] ?? null)

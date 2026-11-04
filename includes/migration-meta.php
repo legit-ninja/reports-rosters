@@ -1118,17 +1118,6 @@ if (!function_exists('intersoccer_migration_apply_order_language_pa_facet_meta_f
                 $human_meta[$canonical] = $display;
             }
 
-            if (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
-                $strict_slug_for_line = intersoccer_migration_coerce_pa_taxonomy_slug_strict(
-                    $pa_taxonomy,
-                    $slug_for_line
-                );
-                if ($strict_slug_for_line === null || $strict_slug_for_line === '') {
-                    continue;
-                }
-                $slug_for_line = $strict_slug_for_line;
-            }
-
             $expected_slugs[$pa_taxonomy] = $slug_for_line;
             $slug_meta[$pa_taxonomy] = $slug_for_line;
             $slug_meta['attribute_' . $pa_taxonomy] = $slug_for_line;
@@ -2548,40 +2537,11 @@ if (!function_exists('intersoccer_migration_apply_slug_meta_for_move')) {
         }
 
         $item = new WC_Order_Item_Product($item_id);
-        $meta_row_id = static function ($meta): int {
-            if (!is_object($meta)) {
-                return 0;
-            }
-            if (isset($meta->id)) {
-                return (int) $meta->id;
-            }
-            if (method_exists($meta, 'get_data')) {
-                $data = $meta->get_data();
-
-                return (int) ($data['id'] ?? 0);
-            }
-
-            return 0;
-        };
         foreach ($slug_meta as $meta_key => $meta_value) {
             if ($meta_key === '' || $meta_value === '' || $meta_value === null) {
                 continue;
             }
-            $meta_key = (string) $meta_key;
-            $meta_value = is_array($meta_value) ? reset($meta_value) : $meta_value;
-            $row_id = 0;
-            foreach ($item->get_meta_data() as $meta) {
-                $data = $meta->get_data();
-                if ((string) ($data['key'] ?? '') === $meta_key) {
-                    $row_id = $meta_row_id($meta);
-                    break;
-                }
-            }
-            if ($row_id > 0) {
-                $item->update_meta_data($meta_key, $meta_value, $row_id);
-            } else {
-                $item->update_meta_data($meta_key, $meta_value);
-            }
+            $item->update_meta_data((string) $meta_key, is_array($meta_value) ? reset($meta_value) : $meta_value);
         }
         $item->save();
     }
@@ -2988,6 +2948,8 @@ if (!function_exists('intersoccer_migration_resolve_move_en_slug_from_line')) {
             if ($from_pa !== null) {
                 return $from_pa;
             }
+
+            return null;
         }
 
         if ($canonical_internal !== ''
@@ -4119,9 +4081,7 @@ if (!function_exists('intersoccer_migration_preserve_unchanged_human_meta_for_mo
                 );
             }
 
-            if ($dest_slug === null || $source_slug === null
-                || $dest_slug === '' || $source_slug === ''
-                || (string) $dest_slug !== (string) $source_slug) {
+            if ($dest_slug === null || $source_slug === null || $dest_slug !== $source_slug) {
                 continue;
             }
 
