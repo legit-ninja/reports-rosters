@@ -29,7 +29,11 @@ class MovePlayersRr190DestinationPaKeysTest extends TestCase {
             $GLOBALS['intersoccer_test_terms_by_id'],
             $GLOBALS['intersoccer_test_terms_by_slug'],
             $GLOBALS['intersoccer_test_terms_by_name'],
-            $GLOBALS['intersoccer_test_wpml_current_language']
+            $GLOBALS['intersoccer_test_wpml_current_language'],
+            $GLOBALS['intersoccer_test_apply_filters_callback'],
+            $GLOBALS['intersoccer_test_wc_get_order_callback'],
+            $GLOBALS['intersoccer_test_wc_get_order_id_by_order_item_id_callback'],
+            $GLOBALS['intersoccer_rr_test_log_order_item_meta_writes']
         );
         $this->resetMovePlayersTestGlobals();
         parent::tearDown();
@@ -217,5 +221,107 @@ class MovePlayersRr190DestinationPaKeysTest extends TestCase {
         );
 
         $this->assertSame([], $unresolved_strip);
+    }
+
+    public function test_finalize_move_order_language_never_writes_unresolved_destination_canton_pa(): void {
+        $item_id = 99190;
+        $order_id = 99180;
+        $GLOBALS['intersoccer_rr_test_log_order_item_meta_writes'] = [];
+
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value) {
+            if ($hook === 'wpml_default_language') {
+                return 'en';
+            }
+
+            return $value;
+        };
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'fr';
+        $GLOBALS['intersoccer_test_wc_get_order_id_by_order_item_id_callback'] = static function () use ($order_id) {
+            return $order_id;
+        };
+        $GLOBALS['intersoccer_test_wc_get_order_callback'] = static function ($oid) use ($order_id) {
+            if ((int) $oid !== $order_id) {
+                return false;
+            }
+            $order = new \WC_Order($order_id);
+            $order->update_meta_data('wpml_language', 'fr');
+
+            return $order;
+        };
+
+        $existing_line_keys = [
+            'Canton / Région',
+            'Age Group',
+            'pa_age-group',
+            'attribute_pa_age-group',
+        ];
+        global $intersoccer_test_wc_order_item_meta;
+        $intersoccer_test_wc_order_item_meta[$item_id] = [
+            'Canton / Région' => 'Vaud',
+            'Age Group' => '5-8y',
+            'pa_age-group' => '5-8y',
+            'attribute_pa_age-group' => '5-8y',
+            'wpml_language' => 'fr',
+        ];
+
+        $unresolved_canton_slug = 'dest-canton-unregistered';
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_activity-type' => 'course',
+            'attribute_pa_age-group' => '5-8y',
+            'attribute_pa_canton-region' => $unresolved_canton_slug,
+        ]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn(0);
+        $variation->shouldReceive('get_id')->andReturn(99191);
+
+        $human_alias_map = intersoccer_migration_human_alias_map();
+        $human_lookup = intersoccer_migration_build_lookup($human_alias_map);
+        $slug_meta = [
+            'pa_age-group' => '5-8y',
+            'attribute_pa_age-group' => '5-8y',
+            'pa_canton-region' => $unresolved_canton_slug,
+            'attribute_pa_canton-region' => $unresolved_canton_slug,
+        ];
+        $human_meta = [
+            'canton_region' => 'Vaud',
+            'age_group' => '5-8y',
+        ];
+
+        intersoccer_migration_finalize_move_item_meta(
+            $item_id,
+            $human_alias_map,
+            $human_lookup,
+            $human_meta,
+            [],
+            $slug_meta,
+            $existing_line_keys,
+            $variation,
+            [],
+            null,
+            true
+        );
+
+        $item = new \WC_Order_Item_Product($item_id);
+        $this->assertSame('', $item->get_meta('pa_canton-region', true));
+        $this->assertSame('', $item->get_meta('attribute_pa_canton-region', true));
+
+        $writes = $GLOBALS['intersoccer_rr_test_log_order_item_meta_writes'] ?? [];
+        foreach ($writes as $write) {
+            if ((int) ($write['item_id'] ?? 0) !== $item_id) {
+                continue;
+            }
+            $key = (string) ($write['key'] ?? '');
+            $this->assertNotSame(
+                'pa_canton-region',
+                $key,
+                'pa_canton-region must never be written when destination slug does not strict-resolve'
+            );
+            $this->assertNotSame(
+                'attribute_pa_canton-region',
+                $key,
+                'attribute_pa_canton-region must never be written when destination slug does not strict-resolve'
+            );
+        }
     }
 }

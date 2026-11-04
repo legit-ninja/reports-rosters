@@ -69,6 +69,25 @@ if (!function_exists('intersoccer_rr_test_api_call_count')) {
     }
 }
 
+if (!function_exists('intersoccer_rr_test_log_order_item_meta_write')) {
+    /**
+     * Test-only audit trail for order item meta writes (PHPUnit stubs).
+     *
+     * @param mixed $value
+     */
+    function intersoccer_rr_test_log_order_item_meta_write(int $item_id, string $meta_key, $value): void {
+        if (!isset($GLOBALS['intersoccer_rr_test_log_order_item_meta_writes'])
+            || !is_array($GLOBALS['intersoccer_rr_test_log_order_item_meta_writes'])) {
+            $GLOBALS['intersoccer_rr_test_log_order_item_meta_writes'] = [];
+        }
+        $GLOBALS['intersoccer_rr_test_log_order_item_meta_writes'][] = [
+            'item_id' => $item_id,
+            'key' => $meta_key,
+            'value' => $value,
+        ];
+    }
+}
+
 // Core WordPress functions
 if (!function_exists('current_time')) {
     function current_time($type, $gmt = 0) {
@@ -1555,6 +1574,9 @@ if (!class_exists('WC_Order_Item_Product')) {
         }
         public function update_meta_data($key, $value, $meta_id = 0) {
             $key = (string) $key;
+            if (function_exists('intersoccer_rr_test_log_order_item_meta_write')) {
+                intersoccer_rr_test_log_order_item_meta_write((int) $this->id, $key, $value);
+            }
             $meta_id = (int) $meta_id;
             if ($meta_id > 0) {
                 foreach ($this->meta_rows as &$row) {
@@ -1589,6 +1611,9 @@ if (!class_exists('WC_Order_Item_Product')) {
         }
         public function add_meta_data($key, $value, $unique = false) {
             $key = (string) $key;
+            if (function_exists('intersoccer_rr_test_log_order_item_meta_write')) {
+                intersoccer_rr_test_log_order_item_meta_write((int) $this->id, $key, $value);
+            }
             if ($unique) {
                 $this->delete_meta_data($key);
             }
@@ -1756,6 +1781,9 @@ if (!function_exists('wc_update_order_item_meta')) {
             $GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'][$item_id] = 0;
         }
         $GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'][$item_id]++;
+        if (function_exists('intersoccer_rr_test_log_order_item_meta_write')) {
+            intersoccer_rr_test_log_order_item_meta_write($item_id, (string) $meta_key, $meta_value);
+        }
         if (!is_array($intersoccer_test_wc_order_item_meta)) {
             $intersoccer_test_wc_order_item_meta = [];
         }
