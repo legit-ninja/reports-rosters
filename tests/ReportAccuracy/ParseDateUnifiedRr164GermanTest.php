@@ -5,7 +5,6 @@
 
 namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy;
 
-use Brain\Monkey\Functions;
 use InterSoccer\ReportsRosters\Core\Database;
 use InterSoccer\ReportsRosters\Core\Logger;
 use InterSoccer\ReportsRosters\Data\Repositories\PlayerRepository;
@@ -24,7 +23,9 @@ class ParseDateUnifiedRr164GermanTest extends TestCase {
     protected function setUp(): void {
         parent::setUp();
 
-        require_once dirname(__DIR__, 2) . '/includes/utils.php';
+        if (!function_exists('intersoccer_parse_date_unified')) {
+            require_once dirname(__DIR__, 2) . '/includes/utils.php';
+        }
 
         $logger = Mockery::mock(Logger::class);
         $logger->shouldReceive('info', 'debug', 'warning', 'error')->andReturn(null);
@@ -38,24 +39,6 @@ class ParseDateUnifiedRr164GermanTest extends TestCase {
             Mockery::mock(EventMatcher::class),
             Mockery::mock(PlayerMatcher::class)
         );
-
-        Functions\when('remove_accents')->alias(static function ($string) {
-            if (!is_string($string)) {
-                return $string;
-            }
-            if (!class_exists('\Normalizer')) {
-                return $string;
-            }
-            $normalized = \Normalizer::isNormalized($string, \Normalizer::FORM_D)
-                ? $string
-                : \Normalizer::normalize($string, \Normalizer::FORM_D);
-            if ($normalized === false) {
-                return $string;
-            }
-            $without_accents = preg_replace('/\p{Mn}+/u', '', $normalized);
-
-            return $without_accents === null ? $string : $without_accents;
-        });
     }
 
     /**
