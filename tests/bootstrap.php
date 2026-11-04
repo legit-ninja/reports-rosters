@@ -1418,6 +1418,8 @@ if (!class_exists('WC_Order_Item_Product')) {
         protected $meta_data = [];
         /** @var array<int,array{id:int,key:string,value:mixed}> */
         protected $meta_rows = [];
+        /** Persist _meta_rows when the fixture seeded explicit row ids (RR #161) or duplicate keys exist. */
+        protected $track_meta_row_ids = false;
 
         public function __construct($item_id = 0) {
             $this->id = $item_id ?: 1;
@@ -1466,7 +1468,9 @@ if (!class_exists('WC_Order_Item_Product')) {
                 return;
             }
             $store = $intersoccer_test_wc_order_item_meta[$item_id];
+            $this->track_meta_row_ids = false;
             if (isset($store['_meta_rows']) && is_array($store['_meta_rows'])) {
+                $this->track_meta_row_ids = true;
                 $this->meta_rows = [];
                 foreach ($store['_meta_rows'] as $row) {
                     if (!is_array($row) || !isset($row['key'])) {
@@ -1502,7 +1506,7 @@ if (!class_exists('WC_Order_Item_Product')) {
                 $intersoccer_test_wc_order_item_meta = [];
             }
             $store = $this->meta_data;
-            if ($this->metaRowsHaveDuplicateKeys()) {
+            if ($this->metaRowsHaveDuplicateKeys() || $this->track_meta_row_ids) {
                 $store['_meta_rows'] = $this->meta_rows;
             }
             $intersoccer_test_wc_order_item_meta[(int) $this->id] = $store;
