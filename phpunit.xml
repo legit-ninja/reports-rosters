@@ -120,6 +120,8 @@
             <file>tests/Data/Repositories/RosterRepositoryFillFields167Test.php</file>
             <file>tests/Core/DatabaseNestedTransactionTest.php</file>
             <file>tests/Services/RosterRebuildNestedTransaction160Test.php</file>
+            <file>tests/Services/RosterBuilderRr178CourseTermEnglishTest.php</file>
+            <file>tests/Services/RosterBuilderRr178CampTermEnglishTest.php</file>
             <file>tests/Services/DataValidatorSingleDayUnknownTest.php</file>
             <file>tests/Unit/RosterCampBookingDisplayTest.php</file>
             <file>tests/Unit/BookingTypeNormalizerTest.php</file>

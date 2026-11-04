@@ -2477,7 +2477,6 @@ class RosterBuilder {
             // Times/term/days for DB columns (keep: times, camp_terms, selected_days)
             'times' => $order_data['camp_times'] ?? $order_data['course_times'] ?? '',
             'camp_terms' => $order_data['camp_terms'] ?? '',
-            'term' => $order_data['course_day'] ?? $order_data['camp_terms'] ?? '',
             'selected_days' => $selected_days_raw,
             'days_selected' => $selected_days_raw,
         ]);
@@ -2572,10 +2571,21 @@ class RosterBuilder {
                 ? intersoccer_canonical_activity_type_for_roster($raw_activity)
                 : $raw_activity;
 
+            $activity_for_term = strtolower(trim((string) ($roster_data['activity_type'] ?? '')));
+            if ($activity_for_term === 'course') {
+                $roster_data['term'] = (string) ($roster_data['course_day'] ?? '');
+            } elseif ($activity_for_term === 'camp') {
+                $roster_data['term'] = (string) ($roster_data['camp_terms'] ?? '');
+            } else {
+                $roster_data['term'] = (string) ($roster_data['course_day'] ?? $roster_data['camp_terms'] ?? '');
+            }
+
             // Generate event signature from original facet payload (wrapper normalizes internally).
             $roster_data['event_signature'] = function_exists('intersoccer_event_signature_from_event_data')
                 ? intersoccer_event_signature_from_event_data($event_data_to_normalize)
                 : $this->signature_generator->generate($event_data_to_normalize);
+        } else {
+            $roster_data['term'] = (string) ($order_data['course_day'] ?? $order_data['camp_terms'] ?? '');
         }
 
         // Camps: English weekday list + day_presence JSON (canonical storage for roster UI and reports).
