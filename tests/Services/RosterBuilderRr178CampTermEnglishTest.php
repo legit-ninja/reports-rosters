@@ -45,7 +45,8 @@ class RosterBuilderRr178CampTermEnglishTest extends TestCase {
         unset(
             $GLOBALS['intersoccer_test_terms_by_slug'],
             $GLOBALS['intersoccer_test_terms_by_id'],
-            $GLOBALS['intersoccer_test_terms_by_name']
+            $GLOBALS['intersoccer_test_terms_by_name'],
+            $GLOBALS['intersoccer_test_wpml_current_language']
         );
         parent::tearDown();
     }
@@ -63,14 +64,12 @@ class RosterBuilderRr178CampTermEnglishTest extends TestCase {
                 'paques' => (object) [
                     'term_id' => 8900,
                     'slug' => 'paques',
-                    'name' => 'Easter',
-                    'wpml_lang' => 'en',
+                    'name' => 'Pâques',
                 ],
                 'ostern' => (object) [
                     'term_id' => 8900,
                     'slug' => 'ostern',
-                    'name' => 'Easter',
-                    'wpml_lang' => 'en',
+                    'name' => 'Ostern',
                 ],
             ],
         ];
@@ -80,14 +79,34 @@ class RosterBuilderRr178CampTermEnglishTest extends TestCase {
         $GLOBALS['intersoccer_test_terms_by_name'] = [
             'pa_camp-terms' => [
                 'easter' => $easter,
+                'pâques' => $GLOBALS['intersoccer_test_terms_by_slug']['pa_camp-terms']['paques'],
+                'ostern' => $GLOBALS['intersoccer_test_terms_by_slug']['pa_camp-terms']['ostern'],
             ],
         ];
     }
 
+    private function registerStaleCourseDayPollution(): void {
+        $sunday = (object) [
+            'term_id' => 8800,
+            'slug' => 'sunday',
+            'name' => 'Sunday',
+            'wpml_lang' => 'en',
+        ];
+        $GLOBALS['intersoccer_test_terms_by_slug']['pa_course-day'] = [
+            'dimanche' => (object) [
+                'term_id' => 8800,
+                'slug' => 'dimanche',
+                'name' => 'Dimanche',
+            ],
+        ];
+        $GLOBALS['intersoccer_test_terms_by_id'][8800] = $sunday;
+    }
+
     /**
+     * @param array<string,mixed> $order_overrides
      * @return array<string,mixed>
      */
-    private function buildCampRoster(string $camp_terms_slug): array {
+    private function buildCampRoster(array $order_overrides): array {
         $this->registerCampTerms();
 
         $player = new Player([
@@ -106,15 +125,14 @@ class RosterBuilderRr178CampTermEnglishTest extends TestCase {
             'emergency_contact' => 'Parent Example',
             'emergency_phone' => '0790000000',
         ];
-        $order_data = [
+        $order_data = array_merge([
             'activity_type' => 'Camp',
-            'camp_terms' => $camp_terms_slug,
             'booking_type' => 'Full Week',
             'product_id' => 92001,
             'variation_id' => 0,
             'order_id' => 92002,
             'order_item_id' => 92003,
-        ];
+        ], $order_overrides);
 
         $method = (new ReflectionClass($this->rosterBuilder))->getMethod('buildRosterData');
         $method->setAccessible(true);
@@ -123,16 +141,33 @@ class RosterBuilderRr178CampTermEnglishTest extends TestCase {
     }
 
     public function test_rr178_fr_de_camp_term_is_english_camp_terms(): void {
-        foreach (['paques', 'ostern'] as $localized_slug) {
-            $row = $this->buildCampRoster($localized_slug);
-            $this->assertSame('Easter', $row['camp_terms'], $localized_slug . ' camp_terms');
-            $this->assertSame('Easter', $row['term'], $localized_slug . ' term');
-            $this->assertSame($row['camp_terms'], $row['term'], $localized_slug . ' term vs camp_terms');
-        }
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'fr';
+        $fr_row = $this->buildCampRoster(['camp_terms' => 'paques']);
+        $this->assertSame('Easter', $fr_row['camp_terms']);
+        $this->assertSame('Easter', $fr_row['term']);
 
-        $en_row = $this->buildCampRoster('easter');
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'de';
+        $de_row = $this->buildCampRoster(['camp_terms' => 'ostern']);
+        $this->assertSame('Easter', $de_row['camp_terms']);
+        $this->assertSame('Easter', $de_row['term']);
+
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'en';
+        $en_row = $this->buildCampRoster(['camp_terms' => 'easter']);
         $this->assertSame('Easter', $en_row['camp_terms']);
         $this->assertSame('Easter', $en_row['term']);
-        $this->assertSame($en_row['camp_terms'], $en_row['term']);
+    }
+
+    public function test_rr178_camp_term_uses_camp_terms_when_course_day_also_present(): void {
+        $this->registerCampTerms();
+        $this->registerStaleCourseDayPollution();
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'fr';
+
+        $row = $this->buildCampRoster([
+            'camp_terms' => 'paques',
+            'course_day' => 'dimanche',
+            'activity_type' => '',
+        ]);
+
+        $this->assertSame('Easter', $row['term']);
     }
 }
