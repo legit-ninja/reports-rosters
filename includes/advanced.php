@@ -1801,7 +1801,8 @@ function intersoccer_move_players_ajax() {
                     $slug_meta,
                     $existing_pa_slug_keys,
                     $legacy_slug_filter_variation,
-                    $existing_pa_slug_values
+                    $existing_pa_slug_values,
+                    $existing_line_meta_keys
                 );
             } elseif (function_exists('intersoccer_migration_normalize_slug_meta_for_variation')) {
                 $slug_meta = intersoccer_migration_normalize_slug_meta_for_variation(
