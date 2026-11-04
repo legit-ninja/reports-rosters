@@ -1379,6 +1379,7 @@ if (!function_exists('intersoccer_roster_move_reapply_order_language_pa_facets')
      * @param array<string,string> $human_meta
      * @param array<string,string> $slug_meta
      * @param array<string,string> $expected_slugs
+     * @param array<int,string>    $existing_line_keys
      * @return array{0: array<string,string>, 1: array<string,string>, 2: array<string,string>}
      */
     function intersoccer_roster_move_reapply_order_language_pa_facets(
@@ -1387,7 +1388,8 @@ if (!function_exists('intersoccer_roster_move_reapply_order_language_pa_facets')
         array $expected_slugs,
         WC_Product_Variation $order_variation,
         string $order_lang,
-        string $site_default_lang
+        string $site_default_lang,
+        array $existing_line_keys = []
     ): array {
         if (strtolower(substr($order_lang, 0, 2)) === strtolower(substr($site_default_lang, 0, 2))
             || !function_exists('intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line')
@@ -1409,7 +1411,8 @@ if (!function_exists('intersoccer_roster_move_reapply_order_language_pa_facets')
             $expected_slugs,
             $order_variation,
             $variation_raw_by_pa,
-            $order_lang
+            $order_lang,
+            $existing_line_keys
         );
     }
 }
@@ -1801,7 +1804,8 @@ function intersoccer_move_players_ajax() {
                     $slug_meta,
                     $existing_pa_slug_keys,
                     $legacy_slug_filter_variation,
-                    $existing_pa_slug_values
+                    $existing_pa_slug_values,
+                    $existing_line_meta_keys
                 );
             } elseif (function_exists('intersoccer_migration_normalize_slug_meta_for_variation')) {
                 $slug_meta = intersoccer_migration_normalize_slug_meta_for_variation(
@@ -1818,7 +1822,8 @@ function intersoccer_move_players_ajax() {
                 $expected_slugs,
                 $order_variation,
                 $order_lang,
-                $site_default_lang
+                $site_default_lang,
+                $existing_line_meta_keys
             );
             if (function_exists('intersoccer_migration_allowed_canonicals_for_move')) {
                 $allowed_canonicals = intersoccer_migration_allowed_canonicals_for_move(
@@ -2182,7 +2187,8 @@ function intersoccer_move_players_ajax() {
                     $expected_slugs,
                     $order_variation,
                     $order_lang,
-                    $site_default_lang
+                    $site_default_lang,
+                    $existing_line_meta_keys
                 );
                 $run_finalize_order_line_meta = static function () use (
                     &$migration_success,

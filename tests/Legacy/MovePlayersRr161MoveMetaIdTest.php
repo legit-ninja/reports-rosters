@@ -444,6 +444,9 @@ class MovePlayersRr161MoveMetaIdTest extends TestCase {
         $this->assertSame(self::META_ID_PA_AGE, $after_ids['pa_age-group'] ?? 0);
         $this->assertSame(self::TARGET_AGE_SLUG, (string) wc_get_order_item_meta(self::ITEM_ID, 'pa_age-group', true));
 
+        $this->assertArrayHasKey('pa_activity-type', $after_ids);
+        $this->assertNotContains($after_ids['pa_activity-type'], $before_ids);
+
         $after_display_order = $this->metaRowIdDisplayOrder(self::ITEM_ID);
         $stable_prefix = [
             self::META_ID_ASSIGNED_ATTENDEE,
