@@ -5,7 +5,6 @@
 
 namespace InterSoccer\ReportsRosters\Tests\Services;
 
-use Brain\Monkey\Functions;
 use InterSoccer\ReportsRosters\Core\Database;
 use InterSoccer\ReportsRosters\Core\Logger;
 use InterSoccer\ReportsRosters\Data\Collections\PlayersCollection;
@@ -119,10 +118,13 @@ class RosterBuilderRr160Test extends TestCase {
             }
         }
         ini_set('error_log', (string) $previous_log);
+    }
 
-        Functions\when('remove_accents')->alias(static function ($string) {
-            return is_string($string) ? $string : $string;
-        });
+    protected function tearDown(): void {
+        global $intersoccer_test_wc_get_orders_callback;
+        $intersoccer_test_wc_get_orders_callback = null;
+        unset($GLOBALS['intersoccer_test_wc_get_orders_callback']);
+        parent::tearDown();
     }
 
     private function mismatchCampMeta(): array {
@@ -207,18 +209,11 @@ class RosterBuilderRr160Test extends TestCase {
         );
     }
 
-    private function stubWcOrderLookup(): void {
-        Functions\when('wc_get_order')->alias(static function ($order_id) {
-            return ReportAccuracyStore::$orders[(int) $order_id] ?? false;
-        });
-    }
-
     public function test_rr160_build_rosters_clear_existing_keeps_age_mismatch_booking(): void {
         $this->registerOrder(
             self::FIXTURE_ORDER_ID,
             new Rr160CampLineItem(self::FIXTURE_ITEM_MISMATCH, $this->mismatchCampMeta())
         );
-        $this->stubWcOrderLookup();
 
         $wpdb_stub = Mockery::mock('wpdb');
         $wpdb_stub->prefix = 'wp_';
@@ -237,13 +232,14 @@ class RosterBuilderRr160Test extends TestCase {
             $repo->shouldReceive('clearAllCaches')->once();
         });
 
-        Functions\when('wc_get_orders')->alias(static function ($args) {
+        global $intersoccer_test_wc_get_orders_callback;
+        $intersoccer_test_wc_get_orders_callback = static function ($args) {
             $offset = isset($args['offset']) ? (int) $args['offset'] : 0;
             if ($offset > 0) {
                 return [];
             }
             return [self::FIXTURE_ORDER_ID];
-        });
+        };
 
         $result = $builder->buildRosters(['clear_existing' => true]);
 
@@ -259,7 +255,6 @@ class RosterBuilderRr160Test extends TestCase {
             self::FIXTURE_ORDER_ID,
             new Rr160CampLineItem(self::FIXTURE_ITEM_MISMATCH, $this->mismatchCampMeta())
         );
-        $this->stubWcOrderLookup();
 
         $database = Mockery::mock(Database::class);
         $database->shouldReceive('transaction')->andReturnUsing(static function ($callback) {
@@ -286,7 +281,6 @@ class RosterBuilderRr160Test extends TestCase {
             self::FIXTURE_ORDER_ID,
             new Rr160CampLineItem(self::FIXTURE_ITEM_UNPARSED, $this->unparsedCampMeta())
         );
-        $this->stubWcOrderLookup();
 
         $database = Mockery::mock(Database::class);
         $database->shouldReceive('transaction')->andReturnUsing(static function ($callback) {
