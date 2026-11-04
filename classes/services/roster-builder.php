@@ -243,7 +243,15 @@ class RosterBuilder {
             'start_time' => microtime(true),
             'end_time' => null,
             'errors' => [],
-            'warnings' => []
+            'warnings' => [],
+            'age_group_mismatch_warnings' => [
+                'count' => 0,
+                'order_item_ids' => [],
+            ],
+            'unparsed_age_group_warnings' => [
+                'count' => 0,
+                'order_item_ids' => [],
+            ],
         ];
     }
     
@@ -266,7 +274,8 @@ class RosterBuilder {
                 'date_range' => null,
                 'batch_size' => 100,
                 'validate_data' => true,
-                'skip_duplicates' => true
+                'skip_duplicates' => true,
+                'skip_age_group_validation' => true,
             ], $options);
             
             // Clear existing rosters if requested
@@ -931,6 +940,14 @@ class RosterBuilder {
                 if ($roster) {
                     $rosters->add($roster);
                     $this->build_stats['players_processed']++;
+                    if (!empty($options['skip_age_group_validation'])) {
+                        $this->recordAgeGroupEligibilityWarnings(
+                            $player,
+                            $roster_data,
+                            (int) $order->get_id(),
+                            (int) $item_id
+                        );
+                    }
                     // One roster row per order line item (uniq_order_item_id).
                     break;
                 }
@@ -1953,6 +1970,86 @@ class RosterBuilder {
 
         return $player->isBelowMinAgeForAgeGroupAt($age_group, $start_date);
     }
+
+    /**
+     * Invoke Player age-group parsing without changing the parser implementation.
+     *
+     * @param Player $player Player context for parseAgeGroup()
+     * @param string $age_group Age group label
+     * @return array|null Parsed min/max range or null when unparsed
+     */
+    private function playerParseAgeGroup(Player $player, string $age_group): ?array {
+        static $method = null;
+        if ($method === null) {
+            $method = new \ReflectionMethod(Player::class, 'parseAgeGroup');
+            $method->setAccessible(true);
+        }
+        $parsed = $method->invoke($player, $age_group);
+
+        return is_array($parsed) ? $parsed : null;
+    }
+
+    /**
+     * Record age-group eligibility warnings when validation is skipped but the row is kept.
+     *
+     * @param Player $player Assigned player
+     * @param array $roster_data Roster payload (post buildRosterData)
+     * @param int $order_id WooCommerce order ID
+     * @param int $order_item_id Order line item ID
+     * @return void
+     */
+    private function recordAgeGroupEligibilityWarnings(
+        Player $player,
+        array $roster_data,
+        int $order_id,
+        int $order_item_id
+    ): void {
+        $age_group = trim((string) ($roster_data['age_group'] ?? ''));
+        $start_date = trim((string) ($roster_data['start_date'] ?? ''));
+        $dob = trim((string) ($player->dob ?? ''));
+        if ($age_group === '' || $start_date === '' || $dob === '') {
+            return;
+        }
+        if ($player->isEligibleForAgeGroup($age_group, $start_date)) {
+            return;
+        }
+        if ($this->playerParseAgeGroup($player, $age_group) === null) {
+            $this->appendAgeGroupBuildWarning(
+                'unparsed_age_group_warnings',
+                $order_id,
+                $order_item_id,
+                "Order {$order_id}, item {$order_item_id}: Unparsed age group label \"{$age_group}\" — roster row kept."
+            );
+            return;
+        }
+        $this->appendAgeGroupBuildWarning(
+            'age_group_mismatch_warnings',
+            $order_id,
+            $order_item_id,
+            "Order {$order_id}, item {$order_item_id}: Player age is outside the booked age group — roster row kept."
+        );
+    }
+
+    /**
+     * @param string $bucket age_group_mismatch_warnings|unparsed_age_group_warnings
+     */
+    private function appendAgeGroupBuildWarning(
+        string $bucket,
+        int $order_id,
+        int $order_item_id,
+        string $message
+    ): void {
+        if (!isset($this->build_stats[$bucket]) || !is_array($this->build_stats[$bucket])) {
+            $this->build_stats[$bucket] = ['count' => 0, 'order_item_ids' => []];
+        }
+        $this->build_stats[$bucket]['count']++;
+        $this->build_stats[$bucket]['order_item_ids'][] = $order_item_id;
+        $this->build_stats['warnings'][] = $message;
+        $this->logger->warning($message, [
+            'order_id' => $order_id,
+            'order_item_id' => $order_item_id,
+        ]);
+    }
     
     /**
      * Parse and validate dates in roster data
@@ -2557,7 +2654,8 @@ class RosterBuilder {
             $options = array_merge([
                 'validate_data' => true,
                 'update_existing' => true,
-                'skip_duplicates' => false
+                'skip_duplicates' => false,
+                'skip_age_group_validation' => true,
             ], $options);
             
             $results = new RostersCollection();
