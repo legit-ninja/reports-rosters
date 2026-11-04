@@ -1118,6 +1118,17 @@ if (!function_exists('intersoccer_migration_apply_order_language_pa_facet_meta_f
                 $human_meta[$canonical] = $display;
             }
 
+            if (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
+                $strict_slug_for_line = intersoccer_migration_coerce_pa_taxonomy_slug_strict(
+                    $pa_taxonomy,
+                    $slug_for_line
+                );
+                if ($strict_slug_for_line === null || $strict_slug_for_line === '') {
+                    continue;
+                }
+                $slug_for_line = $strict_slug_for_line;
+            }
+
             $expected_slugs[$pa_taxonomy] = $slug_for_line;
             $slug_meta[$pa_taxonomy] = $slug_for_line;
             $slug_meta['attribute_' . $pa_taxonomy] = $slug_for_line;
@@ -2344,10 +2355,7 @@ if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation'))
                     $raw_from_variation
                 );
                 if ($strict_from_variation === null) {
-                    $slug = trim($raw_from_variation);
-                    if ($slug === '' && function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
-                        $slug = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $raw_from_variation);
-                    }
+                    $slug = '';
                 } else {
                     $slug = $strict_from_variation;
                 }
@@ -2356,11 +2364,7 @@ if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation'))
                 $fallback_raw = is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value;
                 if (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
                     $strict_slug = intersoccer_migration_coerce_pa_taxonomy_slug_strict($taxonomy, $fallback_raw);
-                    if ($strict_slug !== null) {
-                        $slug = $strict_slug;
-                    } elseif (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
-                        $slug = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $fallback_raw);
-                    }
+                    $slug = $strict_slug !== null ? $strict_slug : '';
                 } elseif (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
                     $slug = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $fallback_raw);
                 }
@@ -2412,13 +2416,10 @@ if (!function_exists('intersoccer_migration_set_slug_meta_pair')) {
         }
         if (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
             $strict_value = intersoccer_migration_coerce_pa_taxonomy_slug_strict($taxonomy, $value);
-            if ($strict_value !== null && $strict_value !== '') {
-                $value = $strict_value;
-            } elseif (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
-                $value = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $value);
-            } else {
+            if ($strict_value === null || $strict_value === '') {
                 return;
             }
+            $value = $strict_value;
         } elseif (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
             $value = intersoccer_migration_coerce_pa_taxonomy_slug($taxonomy, $value);
         }
@@ -2914,21 +2915,17 @@ if (!function_exists('intersoccer_migration_resolve_move_en_slug_from_variation'
 
         if (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
             $strict = intersoccer_migration_coerce_pa_taxonomy_slug_strict($pa_taxonomy, $raw_slug);
-            if ($strict !== null) {
-                $raw_slug = $strict;
-            } elseif (function_exists('intersoccer_migration_coerce_pa_taxonomy_slug')) {
-                $raw_slug = intersoccer_migration_coerce_pa_taxonomy_slug($pa_taxonomy, $raw_slug);
+            if ($strict === null) {
+                return null;
             }
+            $raw_slug = $strict;
         }
 
         if (function_exists('intersoccer_migration_default_language_term_slug_strict')) {
-            $resolved = intersoccer_migration_default_language_term_slug_strict($pa_taxonomy, $raw_slug);
-            if ($resolved !== null) {
-                return $resolved;
-            }
+            return intersoccer_migration_default_language_term_slug_strict($pa_taxonomy, $raw_slug);
         }
 
-        return $raw_slug !== '' ? $raw_slug : null;
+        return $raw_slug;
     }
 }
 
