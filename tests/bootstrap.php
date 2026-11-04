@@ -1502,9 +1502,7 @@ if (!class_exists('WC_Order_Item_Product')) {
                 $intersoccer_test_wc_order_item_meta = [];
             }
             $store = $this->meta_data;
-            if ($this->metaRowsHaveDuplicateKeys()) {
-                $store['_meta_rows'] = $this->meta_rows;
-            }
+            $store['_meta_rows'] = $this->meta_rows;
             $intersoccer_test_wc_order_item_meta[(int) $this->id] = $store;
             if (!is_array($intersoccer_test_wc_order_item_data)) {
                 $intersoccer_test_wc_order_item_data = [];

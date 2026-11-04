@@ -138,6 +138,7 @@
             <file>tests/Legacy/MovePlayersCanonicalGirlsOnlyMoveTest.php</file>
             <file>tests/Legacy/MovePlayersCanonicalOrderMetaMoveTest.php</file>
             <file>tests/Legacy/MovePlayersFrDeQaFixesTest.php</file>
+            <file>tests/Legacy/MovePlayersRr161MoveMetaIdTest.php</file>
             <file>tests/Legacy/MovePlayersOrderLanguageMoveTest.php</file>
             <file>tests/Services/RosterBuilderMigrationBlankFillTest.php</file>
             <file>tests/Legacy/OrderAdminLineItemMetaDisplayTest.php</file>

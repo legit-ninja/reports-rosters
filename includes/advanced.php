@@ -2010,7 +2010,20 @@ function intersoccer_move_players_ajax() {
                         }
                     }
                     $player_meta_snapshot = intersoccer_migration_snapshot_player_attendee_meta($item);
-                    intersoccer_migration_remove_variation_meta_for_move($item, $human_lookup);
+                    $destination_line_keys = function_exists('intersoccer_migration_destination_line_meta_keys_for_move')
+                        ? intersoccer_migration_destination_line_meta_keys_for_move(
+                            $human_alias_map,
+                            $human_meta,
+                            $other_meta,
+                            $slug_meta,
+                            $existing_line_meta_keys
+                        )
+                        : [];
+                    intersoccer_migration_remove_variation_meta_for_move(
+                        $item,
+                        $human_lookup,
+                        $destination_line_keys
+                    );
                     if ($preserved_stock_delta !== '' && $preserved_stock_delta !== null
                         && function_exists('intersoccer_roster_move_stock_delta_meta_key')) {
                         $item->update_meta_data(
