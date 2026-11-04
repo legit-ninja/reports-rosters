@@ -660,22 +660,24 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
         }
     );
     foreach ($german_month_patterns as $pattern => $english) {
-        $english_date_string = preg_replace('/\b' . $pattern . '\b/iu', $english, $english_date_string);
+        // (?![\w]) allows abbreviated months with a trailing dot (e.g. "Okt.") — \b fails after the dot.
+        $english_date_string = preg_replace('/(?<![\w])' . $pattern . '(?![\w])/iu', $english, $english_date_string);
     }
 
-    $german_days = [
-        'Montag' => 'Monday',
-        'Dienstag' => 'Tuesday',
-        'Mittwoch' => 'Wednesday',
-        'Donnerstag' => 'Thursday',
-        'Freitag' => 'Friday',
-        'Samstag' => 'Saturday',
-        'Sonntag' => 'Sunday',
-    ];
-    foreach ($german_days as $german => $english) {
-        $english_date_string = preg_replace('/\b' . preg_quote($german, '/') . '\b/iu', $english, $english_date_string);
-    }
-    
+    $strip_leading_weekday_comma = static function (string $s): string {
+        $stripped = preg_replace(
+            '/^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|'
+            . 'lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|'
+            . 'Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag)\s*,\s*/iu',
+            '',
+            $s
+        );
+
+        return is_string($stripped) ? $stripped : $s;
+    };
+
+    $english_date_string = $strip_leading_weekday_comma($english_date_string);
+
     // If we replaced a French month, try parsing the English version
     if ($english_date_string !== $date_string) {
         // Try common formats with the English month name
@@ -752,6 +754,7 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
     // Fallback to strtotime() for formats we don't explicitly handle
     // First try with English month names if we translated them
     $strtotime_string = $english_date_string !== $date_string ? $english_date_string : $date_string;
+    $strtotime_string = $strip_leading_weekday_comma($strtotime_string);
     $timestamp = strtotime($strtotime_string);
     if ($timestamp !== false) {
         $parsed_date = date('Y-m-d', $timestamp);

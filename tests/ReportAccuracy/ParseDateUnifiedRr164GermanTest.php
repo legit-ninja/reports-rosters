@@ -50,7 +50,9 @@ class ParseDateUnifiedRr164GermanTest extends TestCase {
             'day dot maerz umlaut' => ['14. März 2027', '2027-03-14'],
             'day dot dezember' => ['1. Dezember 2026', '2026-12-01'],
             'weekday comma oktober' => ['Montag, 4. Oktober 2027', '2027-10-04'],
-            'no dot mai' => ['3 Mai 2027', '2027-05-03'],
+            'wrong weekday ignored' => ['Freitag, 4. Oktober 2027', '2027-10-04'],
+            'abbr month trailing dot' => ['5. Okt. 2027', '2027-10-05'],
+            'no dot dezember' => ['12 Dezember 2026', '2026-12-12'],
             'ascii maerz' => ['14. Maerz 2027', '2027-03-14'],
         ];
     }
