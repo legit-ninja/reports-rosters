@@ -1736,10 +1736,28 @@ if (!function_exists('wc_get_order_item_meta')) {
             return $all;
         }
         if (is_array($intersoccer_test_wc_order_item_meta)
-            && isset($intersoccer_test_wc_order_item_meta[$item_id][$key])
+            && isset($intersoccer_test_wc_order_item_meta[$item_id])
         ) {
-            $val = $intersoccer_test_wc_order_item_meta[$item_id][$key];
-            return $single ? $val : [$val];
+            $store = $intersoccer_test_wc_order_item_meta[$item_id];
+            if (isset($store['_meta_rows']) && is_array($store['_meta_rows'])) {
+                foreach ($store['_meta_rows'] as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
+                    if ((string) ($row['key'] ?? '') !== (string) $key) {
+                        continue;
+                    }
+                    $val = $row['value'] ?? '';
+
+                    return $single ? $val : [$val];
+                }
+
+                return $single ? '' : [];
+            }
+            if (array_key_exists($key, $store)) {
+                $val = $store[$key];
+                return $single ? $val : [$val];
+            }
         }
         return $single ? '' : [];
     }
@@ -1762,7 +1780,28 @@ if (!function_exists('wc_update_order_item_meta')) {
         if (!isset($intersoccer_test_wc_order_item_meta[$item_id])) {
             $intersoccer_test_wc_order_item_meta[$item_id] = [];
         }
-        $intersoccer_test_wc_order_item_meta[$item_id][(string) $meta_key] = $meta_value;
+        $meta_key = (string) $meta_key;
+        $store = &$intersoccer_test_wc_order_item_meta[$item_id];
+        if (isset($store['_meta_rows']) && is_array($store['_meta_rows'])) {
+            $updated = false;
+            foreach ($store['_meta_rows'] as &$row) {
+                if (!is_array($row) || (string) ($row['key'] ?? '') !== $meta_key) {
+                    continue;
+                }
+                $row['value'] = $meta_value;
+                $updated = true;
+                break;
+            }
+            unset($row);
+            if (!$updated) {
+                $store['_meta_rows'][] = [
+                    'id' => 0,
+                    'key' => $meta_key,
+                    'value' => $meta_value,
+                ];
+            }
+        }
+        $store[$meta_key] = $meta_value;
         return true;
     }
 }
