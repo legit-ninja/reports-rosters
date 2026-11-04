@@ -665,15 +665,45 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
     }
 
     $strip_leading_weekday_comma = static function (string $s): string {
-        $stripped = preg_replace(
-            '/^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|'
+        $full_weekdays = 'Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|'
             . 'lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|'
-            . 'Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag)\s*,\s*/iu',
-            '',
-            $s
-        );
+            . 'Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag';
+        $abbr_weekdays = 'Mon|Tue|Wed|Thu|Fri|Sat|Sun|lun|mar|mer|jeu|ven|sam|dim|Mo|Di|Mi|Do|Fr|Sa|So';
+        $pattern = '/^(?:' . $full_weekdays . '|' . $abbr_weekdays . ')\.?(?:\s*,\s*|\s+)(?=\d)/iu';
 
-        return is_string($stripped) ? $stripped : $s;
+        $match_subject = $s;
+        if (function_exists('remove_accents')) {
+            $match_subject = remove_accents($s);
+        }
+        if (!preg_match($pattern, $match_subject)) {
+            return $s;
+        }
+
+        $stripped = preg_replace($pattern, '', $s, 1);
+        if (!is_string($stripped) || $stripped === $s) {
+            $stripped = preg_replace($pattern, '', $match_subject, 1);
+            if (!is_string($stripped) || $stripped === $match_subject) {
+                return $s;
+            }
+        }
+
+        $remainder_has_month = static function (string $remainder): bool {
+            if (preg_match(
+                '/\b(?:January|February|March|April|May|June|July|August|September|October|November|December'
+                . '|Jan|Feb|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\b/i',
+                $remainder
+            )) {
+                return true;
+            }
+
+            return (bool) preg_match('#\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}#', $remainder);
+        };
+
+        if (!$remainder_has_month($stripped)) {
+            return $s;
+        }
+
+        return $stripped;
     };
 
     $english_date_string = $strip_leading_weekday_comma($english_date_string);

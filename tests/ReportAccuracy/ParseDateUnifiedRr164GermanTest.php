@@ -50,6 +50,9 @@ class ParseDateUnifiedRr164GermanTest extends TestCase {
             'day dot maerz umlaut' => ['14. März 2027', '2027-03-14'],
             'day dot dezember' => ['1. Dezember 2026', '2026-12-01'],
             'weekday comma oktober' => ['Montag, 4. Oktober 2027', '2027-10-04'],
+            'weekday space no comma oktober' => ['Montag 4. Oktober 2027', '2027-10-04'],
+            'de abbr weekday dot oktober' => ['Mo. 4. Oktober 2027', '2027-10-04'],
+            'de abbr weekday comma oktober' => ['Fr, 8. Oktober 2027', '2027-10-08'],
             'wrong weekday ignored' => ['Freitag, 4. Oktober 2027', '2027-10-04'],
             'abbr month trailing dot' => ['5. Okt. 2027', '2027-10-05'],
             'no dot dezember' => ['12 Dezember 2026', '2026-12-12'],
@@ -71,8 +74,11 @@ class ParseDateUnifiedRr164GermanTest extends TestCase {
         return [
             'english comma' => ['August 17, 2025', '2025-08-17'],
             'english iso' => ['2025-12-14', '2025-12-14'],
+            'english abbr weekday space month' => ['Mon 4 October 2027', '2027-10-04'],
+            'english mar month not weekday' => ['Mar 5, 2027', '2027-03-05'],
             'french janvier comma' => ['janvier 10, 2027', '2027-01-10'],
             'french day month year' => ['14 décembre 2025', '2025-12-14'],
+            'french abbr weekday dot month' => ['lun. 4 octobre 2027', '2027-10-04'],
         ];
     }
 
