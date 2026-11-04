@@ -615,6 +615,66 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
         // Match whole word to avoid partial replacements
         $english_date_string = preg_replace('/\b' . preg_quote($french, '/') . '\b/i', $english, $english_date_string);
     }
+
+    // German day-with-trailing-dot (e.g. "5. Januar 2027") before month/day name translation.
+    $german_day_dot_stripped = preg_replace('/(?<=\d)\.(?=\s)/u', '', $english_date_string);
+    if (is_string($german_day_dot_stripped) && $german_day_dot_stripped !== $english_date_string) {
+        $english_date_string = $german_day_dot_stripped;
+    }
+
+    // German month and day names (whole-word, case-insensitive) — RR #164.
+    $german_month_patterns = [
+        'Januar' => 'January',
+        'Jänner' => 'January',
+        'Februar' => 'February',
+        'März' => 'March',
+        'Maerz' => 'March',
+        'Marz' => 'March',
+        'April' => 'April',
+        'Mai' => 'May',
+        'Juni' => 'June',
+        'Juli' => 'July',
+        'August' => 'August',
+        'September' => 'September',
+        'Oktober' => 'October',
+        'November' => 'November',
+        'Dezember' => 'December',
+        'Jan\.?' => 'January',
+        'Feb\.?' => 'February',
+        'Mär\.?' => 'March',
+        'Mae\.?' => 'March',
+        'Apr\.?' => 'April',
+        'Jun\.?' => 'June',
+        'Jul\.?' => 'July',
+        'Aug\.?' => 'August',
+        'Sept\.?' => 'September',
+        'Sep\.?' => 'September',
+        'Okt\.?' => 'October',
+        'Nov\.?' => 'November',
+        'Dez\.?' => 'December',
+    ];
+    uksort(
+        $german_month_patterns,
+        static function ($a, $b) {
+            return strlen($b) <=> strlen($a);
+        }
+    );
+    foreach ($german_month_patterns as $pattern => $english) {
+        $english_date_string = preg_replace('/\b' . $pattern . '\b/iu', $english, $english_date_string);
+    }
+
+    $german_days = [
+        'Montag' => 'Monday',
+        'Dienstag' => 'Tuesday',
+        'Mittwoch' => 'Wednesday',
+        'Donnerstag' => 'Thursday',
+        'Freitag' => 'Friday',
+        'Samstag' => 'Saturday',
+        'Sonntag' => 'Sunday',
+    ];
+    foreach ($german_days as $german => $english) {
+        $english_date_string = preg_replace('/\b' . preg_quote($german, '/') . '\b/iu', $english, $english_date_string);
+    }
     
     // If we replaced a French month, try parsing the English version
     if ($english_date_string !== $date_string) {
