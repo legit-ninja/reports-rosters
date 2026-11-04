@@ -18,6 +18,8 @@ use InterSoccer\ReportsRosters\Services\DataValidator;
 use InterSoccer\ReportsRosters\Services\EventMatcher;
 use InterSoccer\ReportsRosters\Services\PlayerMatcher;
 use InterSoccer\ReportsRosters\Services\RosterBuilder;
+use InterSoccer\ReportsRosters\Tests\ReportAccuracy\FakeLineItem;
+use InterSoccer\ReportsRosters\Tests\ReportAccuracy\FakeOrder;
 use InterSoccer\ReportsRosters\Tests\ReportAccuracy\ReportAccuracyStore;
 use InterSoccer\ReportsRosters\Tests\TestCase;
 use Mockery;
@@ -38,7 +40,7 @@ class Rr160MetaStub {
     }
 }
 
-class Rr160CampLineItem extends \FakeLineItem {
+class Rr160CampLineItem extends FakeLineItem {
     /** @var array<string,mixed> */
     private $visible_meta;
 
@@ -68,7 +70,7 @@ class Rr160CampLineItem extends \FakeLineItem {
     }
 }
 
-class Rr160Order extends \FakeOrder {
+class Rr160Order extends FakeOrder {
     public function get_customer_id() {
         return 1;
     }
