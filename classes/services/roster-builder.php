@@ -1449,7 +1449,6 @@ class RosterBuilder {
             // Times/term/days for DB columns (keep: times, camp_terms, selected_days)
             'times' => $order_data['camp_times'] ?? $order_data['course_times'] ?? '',
             'camp_terms' => $order_data['camp_terms'] ?? '',
-            'term' => $order_data['course_day'] ?? $order_data['camp_terms'] ?? '',
             'selected_days' => $selected_days_raw,
             'days_selected' => $selected_days_raw,
         ]);
@@ -1536,10 +1535,31 @@ class RosterBuilder {
                 ? intersoccer_canonical_activity_type_for_roster($raw_activity)
                 : $raw_activity;
 
+            $activity_for_term = strtolower(trim((string) ($roster_data['activity_type'] ?? '')));
+            $camp_term_value = trim((string) ($roster_data['camp_terms'] ?? ''));
+            $course_day_value = trim((string) ($roster_data['course_day'] ?? ''));
+            if ($activity_for_term === 'camp') {
+                $roster_data['term'] = $camp_term_value;
+            } elseif ($activity_for_term === 'course') {
+                $roster_data['term'] = $course_day_value;
+            } else {
+                $roster_data['term'] = $camp_term_value !== '' ? $camp_term_value : $course_day_value;
+            }
+
             // Generate event signature from original facet payload (wrapper normalizes internally).
             $roster_data['event_signature'] = function_exists('intersoccer_event_signature_from_event_data')
                 ? intersoccer_event_signature_from_event_data($event_data_to_normalize)
                 : $this->signature_generator->generate($event_data_to_normalize);
+        } else {
+            $camp_raw = trim((string) ($order_data['camp_terms'] ?? $order_data['event_type'] ?? ''));
+            $course_raw = trim((string) ($order_data['course_day'] ?? ''));
+            if ($camp_raw !== '') {
+                $roster_data['term'] = $this->termNameForStorage($camp_raw, 'pa_camp-terms');
+            } elseif ($course_raw !== '') {
+                $roster_data['term'] = $this->termNameForStorage($course_raw, 'pa_course-day');
+            } else {
+                $roster_data['term'] = '';
+            }
         }
 
         // Camps: English weekday list + day_presence JSON (canonical storage for roster UI and reports).
