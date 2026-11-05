@@ -14,6 +14,7 @@ namespace InterSoccer\ReportsRosters\Data\Models;
 
 use InterSoccer\ReportsRosters\Data\Models\AbstractModel;
 use InterSoccer\ReportsRosters\Utils\DateHelper;
+use InterSoccer\ReportsRosters\Utils\ValidationHelper;
 use InterSoccer\ReportsRosters\Exceptions\ValidationException;
 
 // Prevent direct access
@@ -214,6 +215,11 @@ class Player extends AbstractModel {
         // Parse age group
         $age_range = $this->parseAgeGroup($age_group);
         if (!$age_range) {
+            $label = (string) $age_group;
+            if (ValidationHelper::isGradeAgeGroup($label)) {
+                ValidationHelper::logGradeAgeCheckSkippedOnce($label);
+                return true;
+            }
             return false;
         }
         
@@ -240,31 +246,14 @@ class Player extends AbstractModel {
      * @return array|null Age range or null if invalid
      */
     private function parseAgeGroup($age_group) {
-        // Check predefined age groups first
-        foreach (self::AGE_GROUPS as $activity_groups) {
-            if (isset($activity_groups[$age_group])) {
-                return $activity_groups[$age_group];
-            }
+        if ($age_group === null || $age_group === '') {
+            return null;
         }
-        
-        // Try to parse "Under" age groups (e.g., "U14", "U12", "Under 14")
-        if (preg_match('/U(\d+)/i', $age_group, $matches) || 
-            preg_match('/Under\s*(\d+)/i', $age_group, $matches)) {
-            return [
-                'min' => 0,
-                'max' => (int) $matches[1]
-            ];
-        }
-        
-        // Try to parse dynamic age groups (e.g., "5-13y", "3-5y (Half-Day)")
-        if (preg_match('/(\d+)-(\d+)y/', $age_group, $matches)) {
-            return [
-                'min' => (int) $matches[1],
-                'max' => (int) $matches[2]
-            ];
-        }
-        
-        return null;
+
+        return ValidationHelper::parseAgeGroupMinMax(
+            (string) $age_group,
+            ValidationHelper::flattenPredefinedAgeGroupCatalog(self::AGE_GROUPS)
+        );
     }
     
     /**

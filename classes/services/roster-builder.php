@@ -38,6 +38,13 @@ if (!defined('ABSPATH')) {
  * Orchestrates the complex process of building rosters from orders and player data
  */
 class RosterBuilder {
+
+    /**
+     * Age-group labels already logged when roster creation was swallowed (once per request).
+     *
+     * @var array<string, true>
+     */
+    private static $logged_swallowed_age_group_failures = [];
     
     /**
      * Logger instance
@@ -949,6 +956,16 @@ class RosterBuilder {
                 $this->build_stats['validation_errors']++;
                 $reason = $this->formatRosterFailureReason($e, $db_error);
                 $this->build_stats['errors'][] = "Order {$order->get_id()}, item {$item_id}: {$reason}";
+
+                $failed_age_group = isset($roster_data['age_group']) ? (string) $roster_data['age_group'] : '';
+                if ($failed_age_group !== ''
+                    && stripos($e->getMessage(), 'not eligible for age group') !== false
+                    && !isset(self::$logged_swallowed_age_group_failures[$failed_age_group])) {
+                    self::$logged_swallowed_age_group_failures[$failed_age_group] = true;
+                    error_log(
+                        'InterSoccer Reports: roster row not created for age group: ' . $failed_age_group
+                    );
+                }
 
                 $this->logger->error('Failed to create roster for player', [
                     'order_id' => $order->get_id(),
