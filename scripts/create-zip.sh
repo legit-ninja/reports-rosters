@@ -40,6 +40,8 @@ echo "Copying plugin files into staging (excluding working-tree vendor/)..."
 rsync -a \
     --exclude='.git' \
     --exclude='.gitignore' \
+    --exclude='bin' \
+    --exclude='scripts' \
     --exclude='node_modules' \
     --exclude='vendor' \
     --exclude='tests' \
