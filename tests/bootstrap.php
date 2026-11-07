@@ -499,6 +499,27 @@ if (!class_exists('InterSoccerRRTestMeta')) {
     }
 }
 
+if (!function_exists('remove_accents')) {
+    /**
+     * Offline stand-in for WordPress remove_accents().
+     * migration-meta.php calls it only when the reports lookup helper is absent.
+     */
+    function remove_accents($string) {
+        $string = (string) $string;
+        $map = [
+            'à' => 'a', 'á' => 'a', 'â' => 'a', 'ä' => 'a', 'å' => 'a',
+            'è' => 'e', 'é' => 'e', 'ê' => 'e', 'ë' => 'e',
+            'ì' => 'i', 'í' => 'i', 'î' => 'i', 'ï' => 'i',
+            'ò' => 'o', 'ó' => 'o', 'ô' => 'o', 'ö' => 'o',
+            'ù' => 'u', 'ú' => 'u', 'û' => 'u', 'ü' => 'u',
+            'ç' => 'c', 'ñ' => 'n',
+            'À' => 'A', 'É' => 'E', 'È' => 'E',
+        ];
+
+        return strtr($string, $map);
+    }
+}
+
 if (!function_exists('taxonomy_exists')) {
     function taxonomy_exists($taxonomy) {
         if ($taxonomy === '') {
