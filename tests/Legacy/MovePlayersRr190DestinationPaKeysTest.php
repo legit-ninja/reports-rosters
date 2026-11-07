@@ -33,7 +33,8 @@ class MovePlayersRr190DestinationPaKeysTest extends TestCase {
             $GLOBALS['intersoccer_test_apply_filters_callback'],
             $GLOBALS['intersoccer_test_wc_get_order_callback'],
             $GLOBALS['intersoccer_test_wc_get_order_id_by_order_item_id_callback'],
-            $GLOBALS['intersoccer_rr_test_log_order_item_meta_writes']
+            $GLOBALS['intersoccer_rr_test_log_order_item_meta_writes'],
+            $GLOBALS['intersoccer_test_wc_get_product_callback']
         );
         $this->resetMovePlayersTestGlobals();
         parent::tearDown();
@@ -323,5 +324,346 @@ class MovePlayersRr190DestinationPaKeysTest extends TestCase {
                 'attribute_pa_canton-region must never be written when destination slug does not strict-resolve'
             );
         }
+    }
+
+    public function test_order_line_normalize_keeps_variation_slugs_when_get_attribute_returns_labels(): void {
+        $this->registerCampAndCityTerms();
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_activity-type' => 'camp',
+            'attribute_pa_city' => 'zurich',
+        ]);
+        $variation->shouldReceive('get_attribute')->andReturnUsing(static function ($name) {
+            if ($name === 'pa_activity-type') {
+                return 'Camp';
+            }
+            if ($name === 'pa_city') {
+                return 'Zurich';
+            }
+
+            return '';
+        });
+        $variation->shouldReceive('get_parent_id')->andReturn(0);
+
+        $normalized = intersoccer_migration_normalize_slug_meta_for_variation(
+            [
+                'pa_activity-type' => 'camp',
+                'attribute_pa_activity-type' => 'camp',
+                'pa_city' => 'zurich',
+                'attribute_pa_city' => 'zurich',
+                'Attendee DOB' => '2014-01-02',
+                'Attendee Gender' => 'female',
+                'Medical Conditions' => 'none-recorded',
+            ],
+            $variation,
+            [],
+            true
+        );
+
+        $this->assertSame('camp', $normalized['pa_activity-type']);
+        $this->assertSame('camp', $normalized['attribute_pa_activity-type']);
+        $this->assertSame('zurich', $normalized['pa_city']);
+        $this->assertSame('zurich', $normalized['attribute_pa_city']);
+        $this->assertNotSame('Camp', $normalized['pa_activity-type']);
+        $this->assertNotSame('Zurich', $normalized['pa_city']);
+        $this->assertSame('2014-01-02', $normalized['Attendee DOB']);
+        $this->assertSame('female', $normalized['Attendee Gender']);
+        $this->assertSame('none-recorded', $normalized['Medical Conditions']);
+    }
+
+    public function test_order_line_normalize_resolves_parent_display_labels_when_variation_omits_taxonomies(): void {
+        $this->registerCampAndCityTerms();
+        $parent_id = 27150;
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_age-group' => '5-8y',
+        ]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn($parent_id);
+        $variation->shouldReceive('get_id')->andReturn(27152);
+
+        $parent = Mockery::mock('WC_Product');
+        $parent->shouldReceive('get_attribute')->andReturnUsing(static function ($name) {
+            if ($name === 'pa_activity-type') {
+                return 'Camp';
+            }
+            if ($name === 'pa_city') {
+                return 'Zurich';
+            }
+
+            return '';
+        });
+        $GLOBALS['intersoccer_test_wc_get_product_callback'] = static function ($id) use ($parent, $parent_id) {
+            return (int) $id === $parent_id ? $parent : false;
+        };
+
+        $existing_line_pa = [
+            'pa_age-group' => '5-8y',
+            'attribute_pa_age-group' => '5-8y',
+            'pa_city' => 'Zurich',
+            'attribute_pa_city' => 'Zurich',
+        ];
+        $normalized = intersoccer_migration_normalize_slug_meta_for_variation(
+            [
+                'pa_activity-type' => 'Camp',
+                'attribute_pa_activity-type' => 'Camp',
+                'pa_city' => 'Zurich',
+                'attribute_pa_city' => 'Zurich',
+                'pa_age-group' => '5-8y',
+                'attribute_pa_age-group' => '5-8y',
+            ],
+            $variation,
+            $existing_line_pa,
+            true
+        );
+
+        $this->assertSame('camp', $normalized['pa_activity-type']);
+        $this->assertSame('camp', $normalized['attribute_pa_activity-type']);
+        $this->assertSame('Zurich', $normalized['pa_city']);
+        $this->assertSame('Zurich', $normalized['attribute_pa_city']);
+        $this->assertSame('5-8y', $normalized['pa_age-group']);
+        $this->assertSame('5-8y', $normalized['attribute_pa_age-group']);
+    }
+
+    public function test_order_line_normalize_does_not_invent_slug_for_unresolved_parent_label(): void {
+        $this->registerCampAndCityTerms();
+        $parent_id = 27151;
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn($parent_id);
+
+        $parent = Mockery::mock('WC_Product');
+        $parent->shouldReceive('get_attribute')->andReturnUsing(static function ($name) {
+            if ($name === 'pa_city') {
+                return 'Not A Real City';
+            }
+
+            return '';
+        });
+        $GLOBALS['intersoccer_test_wc_get_product_callback'] = static function ($id) use ($parent, $parent_id) {
+            return (int) $id === $parent_id ? $parent : false;
+        };
+
+        $normalized = intersoccer_migration_normalize_slug_meta_for_variation(
+            [
+                'pa_city' => 'Not A Real City',
+                'attribute_pa_city' => 'Not A Real City',
+            ],
+            $variation,
+            [],
+            true
+        );
+
+        $this->assertSame('Not A Real City', $normalized['pa_city']);
+        $this->assertNotSame('not-a-real-city', $normalized['pa_city']);
+
+        $stripped = intersoccer_migration_strip_slug_meta_to_allowed_pa_keys_for_move(
+            $normalized,
+            [],
+            ['City', 'Activity Type']
+        );
+        $this->assertArrayNotHasKey('pa_city', $stripped);
+        $this->assertArrayNotHasKey('attribute_pa_city', $stripped);
+    }
+
+    public function test_order_language_facet_stores_slug_when_parent_catalog_value_is_display_label(): void {
+        $this->registerCampAndCityTerms();
+        $parent_id = 27153;
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn($parent_id);
+        $variation->shouldReceive('get_id')->andReturn(27152);
+
+        $parent = $this->catalogParent($parent_id, ['pa_activity-type' => 'Camp']);
+        $GLOBALS['intersoccer_test_wc_get_product_callback'] = static function ($id) use ($parent, $parent_id) {
+            return (int) $id === $parent_id ? $parent : false;
+        };
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$ignored) {
+            unset($ignored);
+            if ($hook === 'wpml_default_language') {
+                return 'en';
+            }
+
+            return $value;
+        };
+
+        [, $slug_meta] = intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line(
+            [],
+            [],
+            [],
+            $variation,
+            [],
+            'fr'
+        );
+
+        $this->assertSame('camp', $slug_meta['pa_activity-type'] ?? null);
+        $this->assertSame('camp', $slug_meta['attribute_pa_activity-type'] ?? null);
+        $this->assertNotSame('Camp', $slug_meta['pa_activity-type'] ?? null);
+    }
+
+    public function test_order_line_normalize_keeps_order_language_slug_instead_of_english_slug(): void {
+        $this->registerTerms(
+            [
+                'pa_city' => [
+                    'geneva' => (object) ['term_id' => 99201, 'slug' => 'geneva', 'name' => 'Geneva'],
+                    'geneve-ville' => (object) ['term_id' => 99202, 'slug' => 'geneve-ville', 'name' => 'Genève'],
+                ],
+            ],
+            [
+                99201 => (object) ['term_id' => 99201, 'slug' => 'geneva', 'name' => 'Geneva'],
+                99202 => (object) ['term_id' => 99202, 'slug' => 'geneve-ville', 'name' => 'Genève'],
+            ]
+        );
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_city' => 'geneve-ville',
+        ]);
+        $variation->shouldReceive('get_attribute')->with('pa_city')->andReturn('Genève');
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn(0);
+
+        $normalized = intersoccer_migration_normalize_slug_meta_for_variation(
+            [
+                'pa_city' => 'geneve-ville',
+                'attribute_pa_city' => 'geneve-ville',
+            ],
+            $variation,
+            [],
+            true
+        );
+
+        $this->assertSame('geneve-ville', $normalized['pa_city']);
+        $this->assertSame('geneve-ville', $normalized['attribute_pa_city']);
+        $this->assertNotSame('geneva', $normalized['pa_city']);
+    }
+
+    public function test_order_language_facet_maps_display_label_to_order_language_slug(): void {
+        $this->registerTerms(
+            [
+                'pa_city' => [
+                    'zurich' => (object) ['term_id' => 99211, 'slug' => 'zurich', 'name' => 'Zurich'],
+                    'zuerich' => (object) ['term_id' => 99212, 'slug' => 'zuerich', 'name' => 'Zürich'],
+                ],
+            ],
+            [
+                99211 => (object) ['term_id' => 99211, 'slug' => 'zurich', 'name' => 'Zurich'],
+                99212 => (object) ['term_id' => 99212, 'slug' => 'zuerich', 'name' => 'Zürich'],
+            ]
+        );
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn(27154);
+        $variation->shouldReceive('get_id')->andReturn(27152);
+        $parent = $this->catalogParent(27154, ['pa_city' => 'Zurich']);
+        $GLOBALS['intersoccer_test_wc_get_product_callback'] = static function ($id) use ($parent) {
+            return (int) $id === 27154 ? $parent : false;
+        };
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$args) {
+            if ($hook === 'wpml_default_language') {
+                return 'en';
+            }
+            if ($hook === 'wpml_object_id' && (int) $value === 99211 && ($args[2] ?? '') === 'fr') {
+                return 99212;
+            }
+
+            return $value;
+        };
+
+        [, $slug_meta] = intersoccer_migration_apply_order_language_pa_facet_meta_for_order_line(
+            [],
+            [],
+            [],
+            $variation,
+            [],
+            'fr'
+        );
+
+        $this->assertSame('zuerich', $slug_meta['pa_city'] ?? null);
+        $this->assertSame('zuerich', $slug_meta['attribute_pa_city'] ?? null);
+        $this->assertNotSame('zurich', $slug_meta['pa_city'] ?? null);
+        $this->assertNotSame('Zurich', $slug_meta['pa_city'] ?? null);
+    }
+
+    public function test_parent_multi_name_label_is_not_split_or_guessed(): void {
+        $this->registerCampAndCityTerms();
+        $parent_id = 27155;
+        $variation = Mockery::mock('WC_Product_Variation');
+        $variation->shouldReceive('get_variation_attributes')->andReturn([]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_parent_id')->andReturn($parent_id);
+        $parent = Mockery::mock('WC_Product');
+        $parent->shouldReceive('get_attribute')->andReturnUsing(static function ($name) {
+            return $name === 'pa_city' ? 'Zurich, Geneva' : '';
+        });
+        $GLOBALS['intersoccer_test_wc_get_product_callback'] = static function ($id) use ($parent, $parent_id) {
+            return (int) $id === $parent_id ? $parent : false;
+        };
+
+        $normalized = intersoccer_migration_normalize_slug_meta_for_variation(
+            [
+                'pa_city' => 'Zurich, Geneva',
+                'attribute_pa_city' => 'Zurich, Geneva',
+            ],
+            $variation,
+            [],
+            true
+        );
+
+        $this->assertSame('Zurich, Geneva', $normalized['pa_city']);
+        $this->assertSame('Zurich, Geneva', $normalized['attribute_pa_city']);
+        $stripped = intersoccer_migration_strip_slug_meta_to_allowed_pa_keys_for_move(
+            $normalized,
+            [],
+            ['City']
+        );
+        $this->assertArrayNotHasKey('pa_city', $stripped);
+        $this->assertArrayNotHasKey('attribute_pa_city', $stripped);
+    }
+
+    /**
+     * Harness WC_Product has no get_attribute(), so Mockery doubles fail method_exists().
+     *
+     * @param array<string,string> $attributes
+     */
+    private function catalogParent(int $product_id, array $attributes): \WC_Product {
+        return new class($product_id, $attributes) extends \WC_Product {
+            /** @var array<string,string> */
+            private $catalogAttributes;
+
+            public function __construct($product_id = 0, array $attributes = []) {
+                parent::__construct($product_id);
+                $this->catalogAttributes = $attributes;
+            }
+
+            public function get_attribute($name) {
+                return $this->catalogAttributes[(string) $name] ?? '';
+            }
+        };
+    }
+
+    private function registerCampAndCityTerms(): void {
+        $this->registerTerms(
+            [
+                'pa_activity-type' => [
+                    'camp' => (object) ['term_id' => 99101, 'slug' => 'camp', 'name' => 'Camp'],
+                    'course' => (object) ['term_id' => 99001, 'slug' => 'course', 'name' => 'Course'],
+                ],
+                'pa_city' => [
+                    'zurich' => (object) ['term_id' => 99102, 'slug' => 'zurich', 'name' => 'Zurich'],
+                ],
+                'pa_age-group' => [
+                    '5-8y' => (object) ['term_id' => 99002, 'slug' => '5-8y', 'name' => '5-8y'],
+                ],
+            ],
+            [
+                99101 => (object) ['term_id' => 99101, 'slug' => 'camp', 'name' => 'Camp'],
+                99001 => (object) ['term_id' => 99001, 'slug' => 'course', 'name' => 'Course'],
+                99102 => (object) ['term_id' => 99102, 'slug' => 'zurich', 'name' => 'Zurich'],
+                99002 => (object) ['term_id' => 99002, 'slug' => '5-8y', 'name' => '5-8y'],
+            ]
+        );
     }
 }
