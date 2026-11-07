@@ -499,34 +499,6 @@ if (!class_exists('InterSoccerRRTestMeta')) {
     }
 }
 
-if (!function_exists('remove_accents')) {
-    /**
-     * Offline stand-in for WordPress remove_accents(). Partial map only
-     * (a few Latin letters), not the WordPress accent table.
-     *
-     * includes/migration-meta.php calls remove_accents() from
-     * intersoccer_migration_normalize_meta_key() when
-     * intersoccer_normalize_meta_key_for_lookup() is absent.
-     * When that helper is loaded, it still calls remove_accents() via
-     * intersoccer_normalize_comparison_string(). Other plugin files call
-     * remove_accents() directly. This stub does not close those gaps.
-     */
-    function remove_accents($string) {
-        $string = (string) $string;
-        $map = [
-            'à' => 'a', 'á' => 'a', 'â' => 'a', 'ä' => 'a', 'å' => 'a',
-            'è' => 'e', 'é' => 'e', 'ê' => 'e', 'ë' => 'e',
-            'ì' => 'i', 'í' => 'i', 'î' => 'i', 'ï' => 'i',
-            'ò' => 'o', 'ó' => 'o', 'ô' => 'o', 'ö' => 'o',
-            'ù' => 'u', 'ú' => 'u', 'û' => 'u', 'ü' => 'u',
-            'ç' => 'c', 'ñ' => 'n',
-            'À' => 'A', 'É' => 'E', 'È' => 'E',
-        ];
-
-        return strtr($string, $map);
-    }
-}
-
 if (!function_exists('taxonomy_exists')) {
     function taxonomy_exists($taxonomy) {
         if ($taxonomy === '') {
@@ -2000,6 +1972,24 @@ foreach (glob(dirname(__DIR__) . '/classes/admin/*.php') as $file) {
 }
 
 require_once __DIR__ . '/helpers/migration-meta-seed.php';
+
+// remove_accents() is not defined in this file. Patchwork refuses to replace a
+// function whose file was included before Patchwork loaded. Brain Monkey tests
+// call Functions\when('remove_accents') after that. Import Patchwork, then the
+// partial shim, then remove Patchwork's stream wrapper so later test files are
+// included the same way they were before this shim. Other stubs stay in this
+// file and remain non-redefinable.
+if (!function_exists('remove_accents')) {
+    $intersoccer_rr_patchwork = dirname(__DIR__) . '/vendor/antecedent/patchwork/Patchwork.php';
+    if (is_file($intersoccer_rr_patchwork)) {
+        require_once $intersoccer_rr_patchwork;
+    }
+    require_once __DIR__ . '/shims/remove-accents.php';
+    if (class_exists(\Patchwork\CodeManipulation\Stream::class, false)) {
+        \Patchwork\CodeManipulation\Stream::unwrap();
+    }
+    unset($intersoccer_rr_patchwork);
+}
 
 add_filter(
     'intersoccer_pre_roster_move_post_status',
