@@ -1097,7 +1097,15 @@ if (!function_exists('intersoccer_migration_apply_order_language_pa_facet_meta_f
                     &$slug_for_line
                 ): void {
                     $term = get_term_by('slug', $raw_slug, $pa_taxonomy);
+                    $matched_by_name = false;
+                    if (!$term || is_wp_error($term)) {
+                        $term = get_term_by('name', $raw_slug, $pa_taxonomy);
+                        $matched_by_name = (bool) ($term && !is_wp_error($term));
+                    }
                     if ($term && !is_wp_error($term)) {
+                        if ($matched_by_name && !empty($term->slug)) {
+                            $slug_for_line = trim((string) $term->slug);
+                        }
                         $twin_id = (int) apply_filters(
                             'wpml_object_id',
                             (int) $term->term_id,
@@ -2310,6 +2318,33 @@ if (!function_exists('intersoccer_migration_apply_blank_roster_fill_from_variati
     }
 }
 
+if (!function_exists('intersoccer_migration_order_line_catalog_pa_slug')) {
+    /**
+     * Term slug for an order-line pa_* value taken from variation or parent catalog text.
+     *
+     * Keeps a value that is already a term slug (including an order-language slug).
+     * When the catalog text is a display label and that label matches one term, returns
+     * that term's slug. Does not invent a slug when nothing matches.
+     */
+    function intersoccer_migration_order_line_catalog_pa_slug(string $taxonomy, string $raw): string {
+        $raw = trim($raw);
+        $taxonomy = str_replace('attribute_', '', $taxonomy);
+        if ($raw === '' || $taxonomy === '' || !function_exists('get_term_by')) {
+            return '';
+        }
+
+        $term = get_term_by('slug', $raw, $taxonomy);
+        if (!$term || is_wp_error($term)) {
+            $term = get_term_by('name', $raw, $taxonomy);
+        }
+        if (!$term || is_wp_error($term) || empty($term->slug)) {
+            return '';
+        }
+
+        return (string) $term->slug;
+    }
+}
+
 if (!function_exists('intersoccer_migration_pa_stored_value_same_term_as_slug')) {
     /**
      * Whether a stored pa_* / attribute_pa_* value refers to the same taxonomy term as the target slug.
@@ -2360,6 +2395,12 @@ if (!function_exists('intersoccer_migration_normalize_slug_meta_for_variation'))
                     $slug = trim($raw_from_variation);
                 } elseif ($meta_value !== '' && $meta_value !== null) {
                     $slug = trim(is_array($meta_value) ? (string) reset($meta_value) : (string) $meta_value);
+                }
+                if ($slug !== '' && function_exists('intersoccer_migration_order_line_catalog_pa_slug')) {
+                    $catalog_slug = intersoccer_migration_order_line_catalog_pa_slug($taxonomy, $slug);
+                    if ($catalog_slug !== '') {
+                        $slug = $catalog_slug;
+                    }
                 }
             } elseif ($raw_from_variation !== '' && function_exists('intersoccer_migration_coerce_pa_taxonomy_slug_strict')) {
                 $strict_from_variation = intersoccer_migration_coerce_pa_taxonomy_slug_strict(

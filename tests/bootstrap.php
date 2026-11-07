@@ -1973,6 +1973,24 @@ foreach (glob(dirname(__DIR__) . '/classes/admin/*.php') as $file) {
 
 require_once __DIR__ . '/helpers/migration-meta-seed.php';
 
+// remove_accents() is not defined in this file. Patchwork refuses to replace a
+// function whose file was included before Patchwork loaded. Brain Monkey tests
+// call Functions\when('remove_accents') after that. Import Patchwork, then the
+// partial shim, then remove Patchwork's stream wrapper so later test files are
+// included the same way they were before this shim. Other stubs stay in this
+// file and remain non-redefinable.
+if (!function_exists('remove_accents')) {
+    $intersoccer_rr_patchwork = dirname(__DIR__) . '/vendor/antecedent/patchwork/Patchwork.php';
+    if (is_file($intersoccer_rr_patchwork)) {
+        require_once $intersoccer_rr_patchwork;
+    }
+    require_once __DIR__ . '/shims/remove-accents.php';
+    if (class_exists(\Patchwork\CodeManipulation\Stream::class, false)) {
+        \Patchwork\CodeManipulation\Stream::unwrap();
+    }
+    unset($intersoccer_rr_patchwork);
+}
+
 add_filter(
     'intersoccer_pre_roster_move_post_status',
     static function ($status, $post_id) {
