@@ -501,8 +501,15 @@ if (!class_exists('InterSoccerRRTestMeta')) {
 
 if (!function_exists('remove_accents')) {
     /**
-     * Offline stand-in for WordPress remove_accents().
-     * migration-meta.php calls it only when the reports lookup helper is absent.
+     * Offline stand-in for WordPress remove_accents(). Partial map only
+     * (a few Latin letters), not the WordPress accent table.
+     *
+     * includes/migration-meta.php calls remove_accents() from
+     * intersoccer_migration_normalize_meta_key() when
+     * intersoccer_normalize_meta_key_for_lookup() is absent.
+     * When that helper is loaded, it still calls remove_accents() via
+     * intersoccer_normalize_comparison_string(). Other plugin files call
+     * remove_accents() directly. This stub does not close those gaps.
      */
     function remove_accents($string) {
         $string = (string) $string;
