@@ -1123,6 +1123,10 @@ if (!function_exists('intersoccer_roster_report_reset_idx_name_collision_state')
 	 */
 	function intersoccer_roster_report_reset_idx_name_collision_state() {
 		$GLOBALS['intersoccer_rr_idx_name_collision_keys'] = [];
+		// note_idx_name_for_collision_detection reads this map. Clearing only
+		// the flag leaves the previous request's names in place, so the next
+		// different name at the same customer/index is marked a collision.
+		$GLOBALS['intersoccer_rr_idx_name_by_slot'] = [];
 	}
 }
 

@@ -106,7 +106,9 @@ class SignatureDriftServiceTest extends TestCase {
             ->andReturn('tournament_sig');
 
         $service = new SignatureDriftService(new Logger(), $gen);
-        $this->assertFalse($service->rowHasDrift($row + ['event_signature' => 'tournament_sig']));
+        // Array union keeps the left-hand event_signature ('sig'). merge replaces it.
+        $probe = array_merge($row, ['event_signature' => 'tournament_sig']);
+        $this->assertFalse($service->rowHasDrift($probe));
     }
 
     public function test_row_has_no_drift_when_expected_empty(): void {

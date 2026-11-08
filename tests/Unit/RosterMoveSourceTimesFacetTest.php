@@ -5,6 +5,10 @@
  * @runTestsInSeparateProcesses
  * @preserveGlobalState disabled
  *
+ * These processes install the hyphenated fallback map because the real
+ * resolver in includes/utils.php is not loaded. RosterTimesRealResolverTest
+ * covers that loaded resolver, including where the two disagree.
+ *
  * Repro fixture: order_item_id still in list, row times moved to 11:15–12:45,
  * URL times still 09:30–11:00 → excluded. Same times → included. Empty normalize → fail open.
  *
