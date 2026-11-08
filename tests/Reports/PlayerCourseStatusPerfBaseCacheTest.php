@@ -50,7 +50,9 @@ class PlayerCourseStatusPerfBaseCacheTest extends TestCase {
 			$GLOBALS['intersoccer_test_player_course_status_players'],
 			$GLOBALS['intersoccer_test_player_course_status_roster_rows'],
 			$GLOBALS['intersoccer_test_live_order_status_map'],
-			$GLOBALS['intersoccer_test_order_customer_id_map']
+			$GLOBALS['intersoccer_test_order_customer_id_map'],
+			$GLOBALS['intersoccer_test_pcs_cache_force_enabled'],
+			$GLOBALS['intersoccer_test_winback_cache_force_enabled']
 		);
 	}
 
