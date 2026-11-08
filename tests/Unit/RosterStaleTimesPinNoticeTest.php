@@ -2,6 +2,9 @@
 /**
  * Stale URL times pin detection for roster details admin notice.
  *
+ * @runTestsInSeparateProcesses
+ * @preserveGlobalState disabled
+ *
  * Bookmarked source details after a times move: order_item_ids + old times → notice.
  * Matching times / empty normalize → no notice (fail open).
  *
