@@ -108,9 +108,11 @@ class DataValidatorTest extends TestCase {
     }
     
     public function test_validate_age_group_format() {
-        $errors = $this->validator->validate_field('age_group', 'U10', ['age_group_format']);
-        
+        // validate_age_group_format accepts "5-13y (Full Day)", "5-13", and "13+".
+        $errors = $this->validator->validate_field('age_group', '5-13y (Full Day)', ['age_group_format']);
+
         $this->assertEmpty($errors);
+        $this->assertNotEmpty($this->validator->validate_field('age_group', 'U10', ['age_group_format']));
     }
     
     public function test_validate_age_group_format_invalid() {
@@ -191,49 +193,67 @@ class DataValidatorTest extends TestCase {
     public function test_validate_roster_data() {
         $roster_data = [
             'order_id' => 1,
-            'customer_id' => 1,
+            'order_item_id' => 2,
+            'product_id' => 3,
+            'customer_id' => 4,
+            'player_index' => 0,
             'first_name' => 'John',
             'last_name' => 'Doe',
-            'dob' => '2010-01-01',
+            'dob' => '2015-06-01',
             'gender' => 'male',
             'activity_type' => 'Camp',
-            'venue' => 'Zurich',
+            'venue' => 'Geneva - Stade de Varembé',
             'start_date' => '2024-06-01',
-            'end_date' => '2024-06-07'
+            'end_date' => '2024-06-07',
+            'order_status' => 'completed',
         ];
-        
+
         $result = $this->validator->validateRosterData($roster_data);
-        
-        $this->assertTrue($result);
+
+        $this->assertIsArray($result);
+        $this->assertTrue($result['valid']);
+        $this->assertSame([], $result['errors']);
     }
-    
+
     public function test_validate_roster_data_with_missing_fields() {
-        $this->expectException(\Exception::class);
-        
-        $incomplete_data = [
+        $result = $this->validator->validateRosterData([
             'order_id' => 1,
-            // Missing required fields
-        ];
-        
-        $this->validator->validateRosterData($incomplete_data);
+        ]);
+
+        $this->assertIsArray($result);
+        $this->assertFalse($result['valid']);
+        foreach ([
+            'order_item_id is required',
+            'product_id is required',
+            'customer_id is required',
+            'player_index is required',
+            'first_name is required',
+            'last_name is required',
+            'dob is required',
+            'gender is required',
+            'activity_type is required',
+            'venue is required',
+            'start_date is required',
+            'order_status is required',
+        ] as $message) {
+            $this->assertContains($message, $result['errors']);
+        }
     }
-    
+
     public function test_validate_multiple_rules() {
         $errors = $this->validator->validate_field('username', 'ab', ['required', 'min:3', 'max:20']);
-        
+
         $this->assertNotEmpty($errors);
-        $this->assertStringContainsString('min', strtolower($errors[0]));
+        $this->assertSame('username must be at least 3 characters', $errors[0]);
     }
-    
+
     public function test_custom_validation_rule() {
-        $customRule = function($value) {
-            return $value === 'special';
-        };
-        
-        $this->validator->addCustomRule('is_special', $customRule);
-        
+        $this->validator->addCustomRule('is_special', function ($field_name, $value) {
+            return $value === 'special' ? true : $field_name . ' is not special';
+        });
+
         $errors = $this->validator->validate_field('field', 'special', ['is_special']);
-        
+
         $this->assertEmpty($errors);
     }
 }
