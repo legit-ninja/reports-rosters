@@ -1847,28 +1847,62 @@ if (!class_exists('InterSoccerTestWpdb')) {
         public $rows_affected = 1;
         
         public function prepare($query, ...$args) {
-            if (empty($args)) {
-                return $query;
-            }
             $flat_args = [];
             foreach ($args as $arg) {
                 if (is_array($arg)) {
-                    $flat_args = array_merge($flat_args, $arg);
+                    foreach ($arg as $item) {
+                        $flat_args[] = $item;
+                    }
                 } else {
                     $flat_args[] = $arg;
                 }
             }
-            $safe_args = array_map(function($v) {
+            $safe_args = array_map(function ($v) {
                 return is_string($v) ? addslashes($v) : $v;
             }, $flat_args);
-            $format = str_replace(['%s', '%d', '%f'], ["'%s'", '%d', '%f'], $query);
-            try {
-                $formatted = vsprintf($format, $safe_args);
-            } catch (\ValueError $e) {
-                return $query;
+
+            // Supported: %s, %d, %f, and %% for a literal percent.
+            // Numbered placeholders and anything else (including %i and %c)
+            // are rejected. A supported placeholder with the wrong argument
+            // count is also rejected. Neither case returns the unbound query.
+            $format = '';
+            $expected = 0;
+            $query = (string) $query;
+            $length = strlen($query);
+            for ($i = 0; $i < $length; $i++) {
+                if ($query[$i] !== '%') {
+                    $format .= $query[$i];
+                    continue;
+                }
+                if ($i + 1 < $length && $query[$i + 1] === '%') {
+                    $format .= '%%';
+                    $i++;
+                    continue;
+                }
+                if (!preg_match('/\G%(?:\d+\$)?([a-zA-Z])/', $query, $match, 0, $i)) {
+                    throw new \ValueError('Unsupported prepare placeholder %');
+                }
+                $token = $match[0];
+                $type = strtolower($match[1]);
+                if (strpos($token, '$') !== false || !in_array($type, ['s', 'd', 'f'], true)) {
+                    throw new \ValueError('Unsupported prepare placeholder ' . $token);
+                }
+                $format .= $type === 's' ? "'%s'" : '%' . $type;
+                $expected++;
+                $i += strlen($token) - 1;
+            }
+            if ($expected !== count($safe_args)) {
+                throw new \ValueError(sprintf(
+                    'The arguments array must contain %d items, %d given',
+                    $expected,
+                    count($safe_args)
+                ));
+            }
+            if ($expected === 0) {
+                return str_replace('%%', '%', $format);
             }
 
-            return ($formatted === false || $formatted === null || $formatted === '') ? $query : $formatted;
+            return vsprintf($format, $safe_args);
         }
         
         public function get_results($query = null, $output = OBJECT) { return []; }

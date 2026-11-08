@@ -70,23 +70,26 @@ abstract class TestCase extends PHPUnitTestCase {
 
         unset($GLOBALS['intersoccer_test_admin_log_insert_callback']);
 
-        Mockery::close();
-        if (function_exists('Patchwork\\restoreAll')) {
-            \Patchwork\restoreAll();
-        }
-        // Reset after close. Brain Monkey keeps the previous test's mock, so a
-        // later expect() would attach counts to a mock Mockery::close() no longer
-        // verifies. Resetting makes each test's counts apply to the live mock.
-        if (class_exists(\Brain\Monkey\Container::class, false)) {
-            \Brain\Monkey\Container::instance()->reset();
-        }
+        try {
+            Mockery::close();
+        } finally {
+            // close() throws on an unmet count. The next test still needs the
+            // redefinitions, Brain Monkey registry, database, and PHPUnit
+            // teardown cleared, and the unmet count must keep failing this test.
+            if (function_exists('Patchwork\\restoreAll')) {
+                \Patchwork\restoreAll();
+            }
+            if (class_exists(\Brain\Monkey\Container::class, false)) {
+                \Brain\Monkey\Container::instance()->reset();
+            }
 
-        global $wpdb;
-        if (class_exists('InterSoccerTestWpdb', false)) {
-            $wpdb = new \InterSoccerTestWpdb();
-        }
+            global $wpdb;
+            if (class_exists('InterSoccerTestWpdb', false)) {
+                $wpdb = new \InterSoccerTestWpdb();
+            }
 
-        parent::tearDown();
+            parent::tearDown();
+        }
     }
     
     /**

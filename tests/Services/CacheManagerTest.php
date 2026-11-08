@@ -163,7 +163,7 @@ class CacheManagerTest extends TestCase {
     public function test_has_no_cache_entry() {
         Functions\expect('get_transient')
             ->once()
-            ->with('intersoccer_missing_key')
+            ->with('intersoccer_default_' . md5('missing_key'))
             ->andReturn(false);
         
         $result = $this->cacheManager->has('missing_key');

@@ -53,7 +53,12 @@ class CampReport extends AbstractReport {
         
         // Add camp-specific filter
         [$where_conditions, $params] = $this->apply_filters($filters);
-        $where_conditions[] = "(product_type LIKE '%camp%' OR product_name LIKE '%camp%' OR product_name LIKE '%summer%')";
+        // Literal percent signs cannot sit in a string passed to prepare().
+        // Pass the LIKE patterns as %s arguments so %camp%/%summer% stay wildcards.
+        $where_conditions[] = '(product_type LIKE %s OR product_name LIKE %s OR product_name LIKE %s)';
+        $params[] = '%camp%';
+        $params[] = '%camp%';
+        $params[] = '%summer%';
         
         $where_clause = 'WHERE ' . implode(' AND ', $where_conditions);
         
