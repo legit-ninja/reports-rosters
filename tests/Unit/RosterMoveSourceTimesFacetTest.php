@@ -2,6 +2,9 @@
 /**
  * Soft-filter / move-verify helpers for URL times vs roster row times.
  *
+ * @runTestsInSeparateProcesses
+ * @preserveGlobalState disabled
+ *
  * Repro fixture: order_item_id still in list, row times moved to 11:15–12:45,
  * URL times still 09:30–11:00 → excluded. Same times → included. Empty normalize → fail open.
  *

@@ -1,0 +1,12 @@
+{
+    "redefinable-internals": [
+        "date",
+        "extension_loaded",
+        "ini_get",
+        "ini_set",
+        "intval",
+        "memory_get_usage",
+        "time",
+        "version_compare"
+    ]
+}

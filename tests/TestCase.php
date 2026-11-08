@@ -17,7 +17,14 @@ abstract class TestCase extends PHPUnitTestCase {
      */
     protected function setUp(): void {
         parent::setUp();
-        
+
+        // Cache gates treat a leftover TRUE as enabled for every later test.
+        // Opt in again after this setup when a test really wants the cache.
+        unset(
+            $GLOBALS['intersoccer_test_pcs_cache_force_enabled'],
+            $GLOBALS['intersoccer_test_winback_cache_force_enabled']
+        );
+
         // Setup global mocks
         $this->setupGlobalMocks();
     }
@@ -64,6 +71,15 @@ abstract class TestCase extends PHPUnitTestCase {
         unset($GLOBALS['intersoccer_test_admin_log_insert_callback']);
 
         Mockery::close();
+        if (function_exists('Patchwork\\restoreAll')) {
+            \Patchwork\restoreAll();
+        }
+        // Reset after close. Brain Monkey keeps the previous test's mock, so a
+        // later expect() would attach counts to a mock Mockery::close() no longer
+        // verifies. Resetting makes each test's counts apply to the live mock.
+        if (class_exists(\Brain\Monkey\Container::class, false)) {
+            \Brain\Monkey\Container::instance()->reset();
+        }
 
         global $wpdb;
         if (class_exists('InterSoccerTestWpdb', false)) {
