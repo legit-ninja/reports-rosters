@@ -587,5 +587,7 @@ final class Plugin {
     /**
      * Prevent unserialization
      */
-    public function __wakeup() {}
+    public function __wakeup() {
+        throw new \Error('Cannot unserialize singleton');
+    }
 }
