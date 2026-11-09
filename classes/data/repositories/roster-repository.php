@@ -586,6 +586,59 @@ class RosterRepository implements RepositoryInterface {
      * @param array $data Data to update
      * @return Roster|null Updated roster or null if not found
      */
+    /**
+     * Fill the given fields on an existing row, validating only those fields.
+     *
+     * Used by rebuilds to fill fields that are empty on the row. Rules for fields that are not
+     * written (e.g. a legacy row without customer_id or dob) are not run, so they cannot block
+     * an unrelated fill. When a date is written, end date must not be before start date.
+     *
+     * @param int   $id
+     * @param array $fields field => value (only these columns are written)
+     * @return Roster|null
+     * @throws ValidationException|DatabaseException
+     */
+    public function fillFields($id, array $fields) {
+        unset($fields['_skip_age_group_validation']);
+        if ($fields === []) {
+            return $this->find($id);
+        }
+
+        $roster = $this->find($id);
+        if (!$roster) {
+            $this->logger->warning('Roster not found for fill', ['id' => $id]);
+            return null;
+        }
+
+        $roster->fill($fields);
+        $roster->validateOnly(array_keys($fields));
+
+        if (array_key_exists('start_date', $fields) || array_key_exists('end_date', $fields)) {
+            $start = (string) ($roster->start_date ?? '');
+            $end = (string) ($roster->end_date ?? '');
+            if ($start !== '' && $end !== '' && strtotime($end) !== false && strtotime($start) !== false
+                && strtotime($end) < strtotime($start)) {
+                throw new ValidationException('End date cannot be before start date', 0, null, ['end_date' => ['before start_date']]);
+            }
+        }
+
+        $write = ['id' => $id];
+        foreach (array_keys($fields) as $field) {
+            $write[$field] = $roster->getAttribute($field);
+        }
+        $write['updated_at'] = current_time('mysql');
+
+        if (!$this->database->update_roster_entry($write)) {
+            throw new DatabaseException('Failed to fill roster entry');
+        }
+
+        $roster->syncOriginal();
+        $this->cache->set(self::CACHE_PREFIX . $id, $roster, self::CACHE_EXPIRY);
+        $this->clearRelatedCaches();
+
+        return $roster;
+    }
+
     public function update($id, array $data) {
         try {
             $this->logger->debug('Updating roster entry', [

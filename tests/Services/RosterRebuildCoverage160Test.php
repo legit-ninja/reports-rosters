@@ -232,6 +232,22 @@ class RosterRebuildCoverage160Test extends TestCase {
             $this->updated[] = (int) ($data['order_item_id'] ?? $id);
             return $roster;
         });
+        $repo->shouldReceive('fillFields')->andReturnUsing(function ($id, array $fields) {
+            unset($fields['_skip_age_group_validation']);
+            // Like RosterRepository::fillFields(): validate only the filled fields, then write them.
+            $item_id = (int) $id;
+            $stored_row = $this->stored[$item_id] ?? [];
+            $roster = new Roster(array_merge($stored_row, $fields));
+            $roster->validateOnly(array_keys($fields));
+            $start = (string) ($roster->start_date ?? '');
+            $end = (string) ($roster->end_date ?? '');
+            if ($start !== '' && $end !== '' && strtotime($end) < strtotime($start)) {
+                throw new \InterSoccer\ReportsRosters\Exceptions\ValidationException('End date cannot be before start date');
+            }
+            $this->stored[$item_id] = array_merge($stored_row, $fields);
+            $this->updated[] = $item_id;
+            return $roster;
+        });
         $repo->shouldReceive('deleteByOrderItemId')->andReturnUsing(function (int $id) {
             $this->deleted[] = $id;
             unset($this->stored[$id]);
@@ -293,7 +309,12 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertEmpty($result['rebuild_failed'] ?? null);
         $this->assertSame([['completed', 'processing', 'on-hold']], $this->ordersQueryStatuses);
         $this->assertSame([], $this->created, 'every line already has a row');
-        $this->assertSame([], $this->updated, 'existing rows are not overwritten');
+        // The seeded rows only hold ids and status: their empty fields are filled, nothing is overwritten.
+        $this->assertSame([8001, 8002, 8003, 8004, 8005, 8006], $this->updated, 'empty fields are filled');
+        $this->assertSame(6, $result['row_fill']['count']);
+        $this->assertSame(0, $result['row_fill']['failed']);
+        $this->assertSame(0, $result['row_drift']['count']);
+        $this->assertSame('completed', $this->stored[8001]['order_status'], 'non-empty fields are untouched');
         $this->assertSame([], $this->deleted, 'a rebuild never deletes');
         $this->assertArrayHasKey(8005, $this->stored, 'a line without a DOB keeps its old row');
         $this->assertArrayHasKey(8999, $this->stored, 'the removed line keeps its row');
@@ -344,7 +365,10 @@ class RosterRebuildCoverage160Test extends TestCase {
         $result = $this->builder()->buildRosters(['clear_existing' => true]);
 
         $this->assertSame([7107], $this->created, 'the completed line without a row is added');
-        $this->assertSame([], $this->updated, 'on-hold and processing rows are kept as they are');
+        $updated = $this->updated;
+        sort($updated);
+        $this->assertSame([7105, 7106], $updated, 'on-hold and processing rows only get empty fields filled');
+        $this->assertSame(0, $result['row_drift']['count']);
         $this->assertSame([], $this->deleted, 'a rebuild never deletes');
         $this->assertArrayHasKey(7103, $this->stored, 'failed-order row is kept for review');
         $this->assertArrayHasKey(7108, $this->stored, 'removed-line row is kept for review');
@@ -389,7 +413,7 @@ class RosterRebuildCoverage160Test extends TestCase {
 
         // Reconcile still deletes obsolete rows; the rebuild keeps the same rows and lists them for review.
         $this->assertSame([], $rebuild_deleted);
-        $this->assertSame([], $rebuild_upserts);
+        $this->assertSame(0, $rebuild['row_drift']['count'], 'only empty fields were filled');
         $review = array_map(static fn ($row) => $row['order_item_id'], $rebuild['rows_for_review']['rows']);
         sort($review);
         $this->assertSame($reconcile_deleted, $review);
@@ -419,7 +443,8 @@ class RosterRebuildCoverage160Test extends TestCase {
 
         $result = $this->builder($this->ageDobs())->rebuildSpecificOrders([8101, 8102, 8103, 8104, 8105, 8106]);
 
-        $this->assertSame([], array_merge($this->created, $this->updated), 'existing rows are not overwritten');
+        $this->assertSame([], $this->created);
+        $this->assertSame(0, $result['row_drift']['count'], 'existing rows are not overwritten, only empty fields filled');
         $this->assertSame([], $this->deleted, 'a rebuild never deletes');
         $this->assertArrayHasKey(8999, $this->stored);
         $this->assertSame(['line_removed' => 1], $result['rows_for_review']['by_reason']);
@@ -615,17 +640,18 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertNotSame('2026-08-04', $row['values']['start_date']['order_line']);
     }
 
-    public function test_fill_that_fails_validation_keeps_the_row_and_is_counted(): void {
+    public function test_row_without_customer_id_or_dob_still_gets_empty_fields_filled(): void {
         $this->seedAgeCases();
-        $this->routeOrders([8101, 8102, 8103, 8104, 8105, 8106]);
+        $this->routeOrders([8101]);
 
         $result = $this->builder($this->ageDobs())->buildRosters(['clear_existing' => true]);
 
-        // The seeded rows are minimal (missing required model fields), so a fill cannot validate.
-        $this->assertSame(0, $result['row_fill']['count']);
-        $this->assertGreaterThan(0, $result['row_fill']['failed']);
-        $this->assertSame(['order_item_id' => 8001, 'order_id' => 8101, 'order_status' => 'completed'], $this->stored[8001]);
-        $this->assertEmpty($result['rebuild_failed'] ?? null);
+        // The seeded row has no customer_id or dob: only the filled fields are validated.
+        $this->assertArrayNotHasKey('customer_id', $this->stored[8001]);
+        $this->assertArrayNotHasKey('dob', $this->stored[8001]);
+        $this->assertContains(8001, $this->updated);
+        $this->assertSame(0, $result['row_fill']['failed']);
+        $this->assertSame('venue-a', $this->stored[8001]['venue']);
     }
 
     public function test_date_half_is_not_filled_when_the_other_half_conflicts(): void {
@@ -643,20 +669,52 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertSame(['end_date', 'start_date'], $fields);
     }
 
-    public function test_failed_fill_reports_fields_and_reason(): void {
-        $this->seedAgeCases();
-        $this->routeOrders([8101]);
+    public function test_failed_fill_reports_fields_and_reason_and_keeps_the_row(): void {
+        // The order line's own end date is before its start date, so filling it must fail.
+        $this->order(9401, 'completed', [9411 => $this->meta(['End Date' => 'June 1, 2026'])]);
+        $this->existingRow(9411, 9401);
+        $this->stored[9411]['start_date'] = '2026-07-01';
+        $this->stored[9411]['end_date'] = '';
+        $this->routeOrders([9401]);
 
-        $result = $this->builder($this->ageDobs())->buildRosters(['clear_existing' => true]);
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
 
-        $this->assertGreaterThan(0, $result['row_fill']['failed']);
-        $this->assertNotEmpty($result['row_fill']['failed_by_reason']);
+        $this->assertSame(1, $result['row_fill']['failed']);
+        $this->assertSame(['End date cannot be before start date' => 1], $result['row_fill']['failed_by_reason']);
         $row = $result['row_fill']['failed_rows'][0];
-        $this->assertSame(8001, $row['order_item_id']);
-        $this->assertNotEmpty($row['fields']);
-        $this->assertNotSame('', $row['reason']);
-        $this->assertArrayHasKey('start_date', $row['dates']);
-        $this->assertArrayHasKey('end_date', $row['dates']);
+        $this->assertSame(9411, $row['order_item_id']);
+        $this->assertContains('end_date', $row['fields']);
+        $this->assertSame('2026-07-01', $row['dates']['start_date']['roster']);
+        $this->assertSame('', $this->stored[9411]['end_date'], 'the row is kept as it was');
+        $this->assertNotContains(9411, $this->updated);
+    }
+
+    public function test_added_row_with_start_year_outside_its_season_is_counted(): void {
+        $this->order(9601, 'completed', [9611 => $this->meta(['Start Date' => 'January 4, 2025', 'End Date' => 'March 29, 2025', 'Season' => 'Winter 2026', 'pa_program-season' => 'winter-2026'])]);
+        $this->routeOrders([9601]);
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
+
+        $this->assertSame([9611], $this->created);
+        $this->assertSame(1, $result['created']['start_year_not_in_season']);
+        $this->assertTrue($result['created']['rows'][0]['start_year_not_in_season']);
+    }
+
+    public function test_missing_line_without_dates_is_held_not_created(): void {
+        $this->order(9501, 'completed', [9511 => $this->meta(['Start Date' => '', 'End Date' => ''])]);
+        $this->routeOrders([9501]);
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
+
+        $this->assertSame([], $this->created, 'an undated row is not added');
+        $this->assertSame(0, $result['created']['count']);
+        $held = $result['created']['held_no_dates'];
+        $this->assertSame(1, $held['count']);
+        $this->assertSame(9511, $held['rows'][0]['order_item_id']);
+        $this->assertArrayHasKey('line_date_meta', $held['rows'][0]);
+        $this->assertArrayHasKey('variation_schedule', $held['rows'][0]);
+        $this->assertArrayHasKey('camp_terms_parse', $held['rows'][0]);
+        $this->assertNotEmpty($held['by_date_source_found']);
     }
 
     public function test_created_rows_report_order_month_status_and_missing_products(): void {
@@ -674,6 +732,8 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertSame(9311, $row['order_item_id']);
         $this->assertArrayHasKey('product_missing', $row);
         $this->assertArrayHasKey('product_id', $row);
+        $this->assertArrayHasKey('season', $row);
+        $this->assertArrayHasKey('start_year_not_in_season', $row);
         $this->assertCount(1, $result['created']['by_age_group']);
         $this->assertCount(1, $result['created']['by_start_month']);
         $this->assertArrayHasKey('variation_missing', $row);

@@ -110,6 +110,9 @@ class RosterBuilder {
      */
     private $build_stats = [];
 
+    /** @var array<int,bool> Lines already listed in created.held_no_dates this run. */
+    private $held_undated_item_ids = [];
+
     /** @var array<string,string> Where the current line's times value came from (drift diagnostics). */
     private $current_times_trace = [];
 
@@ -311,11 +314,21 @@ class RosterBuilder {
                 'by_start_month' => [],
                 'product_missing' => 0,
                 'variation_missing' => 0,
+                // Added rows whose start year is not a year named in their season (check the date).
+                'start_year_not_in_season' => 0,
                 'rows' => [],
+                // Missing lines not added because no event date could be found.
+                'held_no_dates' => [
+                    'count' => 0,
+                    'by_age_group' => [],
+                    'by_date_source_found' => [],
+                    'rows' => [],
+                ],
             ],
             'dry_run' => false,
         ];
         $this->last_rebuild_abort_exception = null;
+        $this->held_undated_item_ids = [];
     }
 
     /** Max per-row entries kept in rows_for_review / row_drift lists (counts are always complete). */
@@ -1376,7 +1389,15 @@ class RosterBuilder {
         $age_group = (string) ($roster_data['age_group'] ?? '');
         $start_norm = $this->normalizeDriftValue('start_date', $roster_data['start_date'] ?? '');
         $start_month = $this->isEmptyRosterValue('start_date', $start_norm) ? 'none' : substr($start_norm, 0, 7);
+        $season = (string) ($roster_data['season'] ?? '');
+        $year_mismatch = false;
+        if ($start_month !== 'none' && preg_match_all('/(?:19|20)\d{2}/', $season, $season_years) && !empty($season_years[0])) {
+            $year_mismatch = !in_array(substr($start_month, 0, 4), $season_years[0], true);
+        }
         $bucket = &$this->build_stats['created'];
+        if ($year_mismatch) {
+            $bucket['start_year_not_in_season']++;
+        }
         $bucket['by_age_group'][$age_group] = (int) ($bucket['by_age_group'][$age_group] ?? 0) + 1;
         $bucket['by_start_month'][$start_month] = (int) ($bucket['by_start_month'][$start_month] ?? 0) + 1;
         $bucket['count']++;
@@ -1399,11 +1420,90 @@ class RosterBuilder {
                 'activity_type' => $activity,
                 'age_group' => (string) ($roster_data['age_group'] ?? ''),
                 'start_date' => $this->normalizeDriftValue('start_date', $roster_data['start_date'] ?? ''),
+                'season' => $season,
+                'start_year_not_in_season' => $year_mismatch,
                 'product_id' => $product_id,
                 'variation_id' => $variation_id,
                 'product_name' => (string) ($roster_data['product_name'] ?? ''),
                 'product_missing' => $product_missing,
                 'variation_missing' => $variation_missing,
+            ];
+        }
+        unset($bucket);
+    }
+
+    /**
+     * A missing line that a rebuild did not add because it has no start date, with where the
+     * date was looked for: order-line date meta, camp schedule meta on the variation, camp terms.
+     */
+    private function recordHeldUndatedRow(array $roster_data): void {
+        $order_item_id = (int) ($roster_data['order_item_id'] ?? 0);
+        if (isset($this->held_undated_item_ids[$order_item_id])) {
+            return;
+        }
+        $this->held_undated_item_ids[$order_item_id] = true;
+
+        $line = [];
+        if ($order_item_id > 0 && function_exists('wc_get_order_item_meta')) {
+            foreach (['Start Date', 'End Date', 'Camp Start Date', 'Camp End Date', '_camp_start_date', 'Date de début', 'Startdatum', 'Camp Terms', 'Season'] as $key) {
+                $value = wc_get_order_item_meta($order_item_id, $key, true);
+                if (is_scalar($value) && trim((string) $value) !== '') {
+                    $line[$key] = (string) $value;
+                }
+            }
+        }
+        $variation_id = (int) ($roster_data['variation_id'] ?? 0);
+        $variation_schedule = null;
+        if ($variation_id > 0 && function_exists('intersoccer_get_camp_schedule_meta')) {
+            try {
+                $variation_schedule = intersoccer_get_camp_schedule_meta($variation_id);
+            } catch (\Throwable $e) {
+                $variation_schedule = null;
+            }
+        }
+        $camp_terms = (string) ($roster_data['camp_terms'] ?? '');
+        $season = (string) ($roster_data['season'] ?? '');
+        $terms_parse = null;
+        if ($camp_terms !== '' && function_exists('intersoccer_parse_camp_dates_fixed')) {
+            try {
+                $normalized_terms = function_exists('intersoccer_reports_normalize_camp_terms_for_dates')
+                    ? intersoccer_reports_normalize_camp_terms_for_dates($camp_terms)
+                    : $camp_terms;
+                $terms_parse = array_slice((array) intersoccer_parse_camp_dates_fixed($normalized_terms, $season), 0, 2);
+            } catch (\Throwable $e) {
+                $terms_parse = null;
+            }
+        }
+
+        $found = [];
+        if ($line !== []) {
+            $found[] = 'line_meta';
+        }
+        if (!empty($variation_schedule['start'])) {
+            $found[] = 'variation_schedule';
+        }
+        if ($camp_terms !== '') {
+            $found[] = 'camp_terms';
+        }
+        $found_key = $found === [] ? 'none' : implode('+', $found);
+
+        $age_group = (string) ($roster_data['age_group'] ?? '');
+        $bucket = &$this->build_stats['created']['held_no_dates'];
+        $bucket['count']++;
+        $bucket['by_age_group'][$age_group] = (int) ($bucket['by_age_group'][$age_group] ?? 0) + 1;
+        $bucket['by_date_source_found'][$found_key] = (int) ($bucket['by_date_source_found'][$found_key] ?? 0) + 1;
+        if (count($bucket['rows']) < self::REVIEW_LIST_LIMIT) {
+            $bucket['rows'][] = [
+                'order_id' => (int) ($roster_data['order_id'] ?? 0),
+                'order_item_id' => $order_item_id,
+                'variation_id' => $variation_id,
+                'product_name' => (string) ($roster_data['product_name'] ?? ''),
+                'age_group' => $age_group,
+                'camp_terms' => $camp_terms,
+                'season' => $season,
+                'line_date_meta' => $line,
+                'variation_schedule' => $variation_schedule,
+                'camp_terms_parse' => $terms_parse,
             ];
         }
         unset($bucket);
@@ -1507,7 +1607,9 @@ class RosterBuilder {
             $fill_data['_skip_age_group_validation'] = true;
         }
         try {
-            $updated = $this->roster_repository->update($existing_roster->id, $fill_data);
+            // Validate only the filled fields: a legacy row missing e.g. customer_id or dob must not
+            // block filling an unrelated empty field (#167 dry run: 33 failures on "customer_id, dob").
+            $updated = $this->roster_repository->fillFields($existing_roster->id, $fill_data);
         } catch (\Throwable $e) {
             $reason = $e->getMessage() !== '' ? $e->getMessage() : get_class($e);
             $errors = [];
@@ -3022,6 +3124,14 @@ class RosterBuilder {
             }
         }
         
+        // Rebuilds do not add a missing row without event dates: an undated row can show up as a
+        // current event. It is listed (with where the dates were looked for) instead (#167 dry run).
+        if (!empty($options['report_drift'])
+            && $this->isEmptyRosterValue('start_date', $this->normalizeDriftValue('start_date', $roster_data['start_date'] ?? ''))) {
+            $this->recordHeldUndatedRow($roster_data);
+            return null;
+        }
+
         // Create new roster
         $roster_data = $this->ensureRosterProductIds($roster_data);
         if (!empty($options['skip_age_group_validation'])) {

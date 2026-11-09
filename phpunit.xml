@@ -117,6 +117,7 @@
             <file>tests/Services/RosterRebuildKeepRows160Test.php</file>
             <file>tests/Services/RosterRebuildProcessPath160Test.php</file>
             <file>tests/Services/RosterRebuildCoverage160Test.php</file>
+            <file>tests/Data/Repositories/RosterRepositoryFillFields167Test.php</file>
             <file>tests/Core/DatabaseNestedTransactionTest.php</file>
             <file>tests/Services/RosterRebuildNestedTransaction160Test.php</file>
             <file>tests/Services/DataValidatorSingleDayUnknownTest.php</file>
