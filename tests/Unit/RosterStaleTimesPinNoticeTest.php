@@ -2,6 +2,13 @@
 /**
  * Stale URL times pin detection for roster details admin notice.
  *
+ * @runTestsInSeparateProcesses
+ * @preserveGlobalState disabled
+ *
+ * These processes install the hyphenated fallback map because the real
+ * resolver in includes/utils.php is not loaded. RosterTimesRealResolverTest
+ * covers that loaded resolver, including where the two disagree.
+ *
  * Bookmarked source details after a times move: order_item_ids + old times → notice.
  * Matching times / empty normalize → no notice (fail open).
  *

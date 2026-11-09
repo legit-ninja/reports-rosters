@@ -151,7 +151,7 @@ class CampaignExporterTest extends TestCase {
 		$bookings = $wb->getSheetByName('Bookings');
 		$headers = [];
 		for ($c = 1; $c <= 12; $c++) {
-			$headers[] = (string) $bookings->getCellByColumnAndRow($c, 4)->getValue();
+			$headers[] = (string) $bookings->getCell([$c, 4])->getValue();
 		}
 		$this->assertSame(CampaignReportSections::booking_headers(), $headers);
 

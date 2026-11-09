@@ -9,6 +9,7 @@ namespace InterSoccer\ReportsRosters\Tests\Core;
 
 use InterSoccer\ReportsRosters\Tests\TestCase;
 use InterSoccer\ReportsRosters\Core\Plugin;
+use Brain\Monkey\Functions;
 use Mockery;
 
 class PluginTest extends TestCase {

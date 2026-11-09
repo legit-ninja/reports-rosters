@@ -310,6 +310,10 @@ function intersoccer_get_order_meta_manual_aliases() {
             'assigned player',
             'player index',
         ],
+        'Player Index' => [
+            'indice joueur',
+            'spielerindex',
+        ],
         'assigned_player_id' => [
             'assigned player id',
             'player id',
