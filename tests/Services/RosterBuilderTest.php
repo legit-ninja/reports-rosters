@@ -650,7 +650,9 @@ class RosterBuilderTest extends TestCase {
             ->with(999)
             ->andReturn($refundOrder);
 
-        $result = $this->rosterBuilder->buildRosters();
+        // A one-id page fills the batch only when batch_size is 1, which is
+        // what makes the loop request the empty terminator (the second call).
+        $result = $this->rosterBuilder->buildRosters(['batch_size' => 1]);
 
         $this->assertIsArray($result);
         $this->assertEquals(1, $result['skipped_orders']);
@@ -672,7 +674,9 @@ class RosterBuilderTest extends TestCase {
             ->with(888)
             ->andReturn(false);
 
-        $result = $this->rosterBuilder->buildRosters();
+        // A one-id page fills the batch only when batch_size is 1, which is
+        // what makes the loop request the empty terminator (the second call).
+        $result = $this->rosterBuilder->buildRosters(['batch_size' => 1]);
 
         $this->assertIsArray($result);
         $this->assertEquals(1, $result['skipped_orders']);
