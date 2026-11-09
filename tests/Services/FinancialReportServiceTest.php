@@ -49,4 +49,16 @@ class FinancialReportServiceTest extends TestCase {
         $html = '<span class="woocommerce-Price-amount amount"><bdi>54.00</bdi></span>';
         $this->assertEquals(54.0, intersoccer_parse_legacy_discount_amount($html));
     }
+
+    public function test_line_final_price_does_not_double_subtract_attributed_discount(): void {
+        $this->assertEquals(420.0, intersoccer_financial_line_final_price(420.0, 420.0, 105.0));
+    }
+
+    public function test_line_final_price_unchanged_without_discount(): void {
+        $this->assertEquals(945.0, intersoccer_financial_line_final_price(945.0, 945.0, 0.0));
+    }
+
+    public function test_line_final_price_subtracts_discount_when_subtotal_is_pre_discount(): void {
+        $this->assertEquals(420.0, intersoccer_financial_line_final_price(525.0, 420.0, 105.0));
+    }
 }
