@@ -36,6 +36,7 @@ class RosterExportTest extends TestCase {
         Functions\when('wp_send_json_error')->alias(function($data) {
             $GLOBALS['test_json_response'] = ['success' => false, 'data' => $data];
             echo json_encode($GLOBALS['test_json_response']);
+            throw new \RuntimeException('wp_send_json_error');
         });
         Functions\when('wp_create_nonce')->justReturn('test_nonce');
         Functions\when('sanitize_text_field')->returnArg();
@@ -163,7 +164,8 @@ class RosterExportTest extends TestCase {
         $response = $this->exportResponse($output);
         
         $this->assertFalse($response['success']);
-        $this->assertArrayHasKey('message', $response['data']);
+        $this->assertIsString($response['data']['message']);
+        $this->assertStringContainsString('You do not have permission to export rosters.', $response['data']['message']);
     }
     
     /**
@@ -193,7 +195,7 @@ class RosterExportTest extends TestCase {
         $response = $this->exportResponse($output);
         
         $this->assertFalse($response['success']);
-        $this->assertArrayHasKey('message', $response['data']);
+        $this->assertIsString($response['data']['message']);
         $this->assertStringContainsString('No roster data', $response['data']['message']);
     }
     
@@ -204,8 +206,7 @@ class RosterExportTest extends TestCase {
         $_POST = [
             'action' => 'intersoccer_export_roster',
             'nonce' => 'test_nonce',
-            'use_fields' => '0',
-            // Missing variation_ids and event_signature
+            'use_fields' => 0,
         ];
         
         ob_start();
@@ -218,7 +219,8 @@ class RosterExportTest extends TestCase {
         $response = $this->exportResponse($output);
         
         $this->assertFalse($response['success']);
-        $this->assertArrayHasKey('message', $response['data']);
+        $this->assertIsString($response['data']['message']);
+        $this->assertStringContainsString('No variation IDs', $response['data']['message']);
     }
     
     /**
@@ -281,17 +283,14 @@ class RosterExportTest extends TestCase {
         }
         $output = ob_get_clean();
         $response = $this->exportResponse($output);
-        
-        if ($response['success']) {
-            // Decode base64 content
-            $content = base64_decode($response['data']['content']);
-            
-            // Verify content is not empty
-            $this->assertNotEmpty($content);
-            
-            // Verify it's a valid Excel file (starts with PK header for ZIP-based format)
-            $this->assertStringStartsWith('PK', $content);
-        }
+
+        $this->assertTrue($response['success']);
+        $this->assertArrayHasKey('content', $response['data']);
+        $this->assertArrayHasKey('filename', $response['data']);
+        $content = base64_decode($response['data']['content']);
+        $this->assertNotEmpty($content);
+        $this->assertStringStartsWith('PK', $content);
+        $this->assertStringContainsString('.xlsx', $response['data']['filename']);
     }
     
     /**
@@ -358,7 +357,10 @@ class RosterExportTest extends TestCase {
         
         $output = ob_get_clean();
         $response = $this->exportResponse($output);
-        $this->assertArrayHasKey('success', $response);
+        $this->assertTrue($response['success']);
+        $this->assertArrayHasKey('content', $response['data']);
+        $this->assertArrayHasKey('filename', $response['data']);
+        $this->assertStringContainsString('.xlsx', $response['data']['filename']);
     }
 
     private function exportResponse(string $output): array {
