@@ -63,13 +63,6 @@ class RosterQueryHelperTest extends TestCase
 
     public function test_fetch_rosters_prefers_event_signature()
     {
-        if (!function_exists('intersoccer_fetch_roster_entries')) {
-            $this->markTestIncomplete(
-                'intersoccer_fetch_roster_entries has no definition in repository history. '
-                . 'Roster details select event_signature inside the page renderer and do not return a source/results pair.'
-            );
-        }
-
         $rows = [
             ['player_name' => 'Test Player']
         ];
@@ -94,13 +87,6 @@ class RosterQueryHelperTest extends TestCase
 
     public function test_fetch_rosters_falls_back_to_field_filters()
     {
-        if (!function_exists('intersoccer_fetch_roster_entries')) {
-            $this->markTestIncomplete(
-                'intersoccer_fetch_roster_entries has no definition in repository history. '
-                . 'Roster details select event_signature inside the page renderer and do not return a source/results pair.'
-            );
-        }
-
         $responses = [
             [], // signature exact
             [], // signature like
