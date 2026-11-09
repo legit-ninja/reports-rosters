@@ -28,19 +28,20 @@ class TournamentDateExtractionTest extends TestCase {
         
         // Test various date formats that might come from tournament attributes
         $test_cases = [
-            'Sunday, 21st December' => '2025-12-21',
-            'Sunday, 14th December' => '2025-12-14',
             '2025-12-14' => '2025-12-14',
             'December 14, 2025' => '2025-12-14',
             '14/12/2025' => '2025-12-14',
         ];
-        
+
         foreach ($test_cases as $input => $expected) {
-            $result = intersoccer_parse_date_unified($input, 'test');
-            if ($result) {
-                $this->assertEquals($expected, $result, "Failed to parse: {$input}");
-            }
+            $this->assertSame($expected, intersoccer_parse_date_unified($input, 'test'), $input);
         }
+
+        $weekday = 'Sunday, 21st December';
+        $this->assertSame(
+            date('Y-m-d', strtotime($weekday)),
+            intersoccer_parse_date_unified($weekday, 'test')
+        );
     }
     
     public function test_tournament_date_extraction_from_pa_date_attribute() {

@@ -124,6 +124,12 @@ class EventSignatureNormalizationTest extends TestCase {
     
     public function test_rebuild_event_signatures_updates_stored_values() {
         if (!function_exists('intersoccer_rebuild_event_signatures')) {
+            $db = dirname(__DIR__, 2) . '/includes/db.php';
+            if (is_readable($db)) {
+                require_once $db;
+            }
+        }
+        if (!function_exists('intersoccer_rebuild_event_signatures')) {
             $this->markTestSkipped('intersoccer_rebuild_event_signatures function not found');
         }
         
@@ -135,12 +141,20 @@ class EventSignatureNormalizationTest extends TestCase {
         
         $mock_record = [
             'id' => 1,
+            'order_item_id' => 0,
             'activity_type' => 'Tournament',
             'venue' => 'geneve-college-sismondi-nations',
             'age_group' => '5-12',
+            'camp_terms' => '',
+            'course_day' => '',
+            'times' => '',
+            'season' => 'Automne 2025',
+            'girls_only' => 0,
             'city' => 'geneve',
             'canton_region' => 'geneve',
             'product_id' => 39827,
+            'variation_id' => 0,
+            'product_name' => 'Tournament',
             'start_date' => '2025-12-14',
         ];
         
@@ -167,6 +181,10 @@ class EventSignatureNormalizationTest extends TestCase {
         global $wpdb;
         $wpdb = \Mockery::mock('wpdb');
         $wpdb->prefix = 'wp_';
+        $wpdb->shouldReceive('prepare')->andReturnUsing(function ($query) {
+            return $query;
+        });
+        $wpdb->shouldIgnoreMissing();
 
         $mock_record = [
             'id' => 5,
@@ -185,7 +203,11 @@ class EventSignatureNormalizationTest extends TestCase {
             'start_date' => '2025-07-07',
         ];
 
-        $wpdb->shouldReceive('get_row')->once()->andReturn($mock_record);
+        $wpdb->shouldReceive('get_row')->andReturn(
+            ['id' => 5],
+            $mock_record,
+            $mock_record
+        );
 
         $captured_update = null;
         $wpdb->shouldReceive('update')
