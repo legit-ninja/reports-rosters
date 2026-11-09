@@ -15,6 +15,10 @@ class RosterListingServiceGirlsOnlyTest extends TestCase {
     protected function setUp(): void {
         parent::setUp();
 
+        if (!function_exists('intersoccer_roster_listing_season_filter_matches')) {
+            require_once dirname(__DIR__, 2) . '/includes/utils.php';
+        }
+
         if (!function_exists('sanitize_key')) {
             eval('function sanitize_key($key) { return strtolower(preg_replace("/[^a-z0-9_-]/", "", (string) $key)); }');
         }
@@ -216,43 +220,43 @@ class RosterListingServiceGirlsOnlyTest extends TestCase {
         $repository = Mockery::mock(RosterRepository::class);
         $service = new RosterListingService(null, $repository);
 
+        // season_raw is what applyGirlsFilters forwards. Course matching rewrites
+        // "Autumn Camps" to "Autumn Courses". Camp matching compares the strings.
         $courseGroup = [
-            'season' => 'Course Season Label',
-            'season_raw' => '2026-2027',
+            'season' => 'Autumn Courses',
+            'season_raw' => 'Autumn Camps',
             'corrected_start_date' => '2026-09-01',
             'product_name' => 'Weekly Course',
             'venue' => 'Geneva',
             'course_day' => 'Monday',
             'camp_terms' => 'N/A',
         ];
+        $forwarded = [
+            'season' => 'Autumn Camps',
+            'start_date' => '2026-09-01',
+            'product_name' => 'Weekly Course',
+        ];
 
-        $campFilterCalled = false;
-        $courseFilterCalled = false;
-
-        if (!function_exists('intersoccer_roster_listing_season_filter_matches')) {
-            eval('function intersoccer_roster_listing_season_filter_matches($row, $filter, $kind) {
-                $GLOBALS["audit_017_last_kind"] = $kind;
-                return true;
-            }');
-        }
-        if (!function_exists('intersoccer_roster_course_season_filter_matches')) {
-            eval('function intersoccer_roster_course_season_filter_matches($row, $filter) {
-                $GLOBALS["audit_017_course_filter_called"] = true;
-                return true;
-            }');
-        }
-
-        $GLOBALS['audit_017_last_kind'] = null;
-        $GLOBALS['audit_017_course_filter_called'] = false;
+        $this->assertTrue(
+            intersoccer_roster_listing_season_filter_matches($forwarded, 'Autumn Courses', 'course')
+        );
+        $this->assertFalse(
+            intersoccer_roster_listing_season_filter_matches($forwarded, 'Autumn Courses', 'camp')
+        );
 
         $method = new \ReflectionMethod(RosterListingService::class, 'applyGirlsFilters');
         $method->setAccessible(true);
-        $method->invoke($service, [$courseGroup], ['season' => '2026-2027', 'type' => 'courses']);
 
-        $this->assertSame(
-            'course',
-            $GLOBALS['audit_017_last_kind'] ?? null,
-            'Course girls-only listings should use course season filter logic, not camp'
-        );
+        $kept = $method->invoke($service, [$courseGroup], [
+            'season' => 'Autumn Courses',
+            'type' => 'courses',
+        ]);
+        $this->assertCount(1, $kept);
+
+        $dropped = $method->invoke($service, [$courseGroup], [
+            'season' => 'Summer Courses',
+            'type' => 'courses',
+        ]);
+        $this->assertCount(0, $dropped);
     }
 }

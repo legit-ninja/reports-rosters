@@ -7,6 +7,7 @@ namespace InterSoccer\ReportsRosters\Tests\Data\Collections;
 
 use InterSoccer\ReportsRosters\Tests\TestCase;
 use InterSoccer\ReportsRosters\Data\Collections\PlayersCollection;
+use InterSoccer\ReportsRosters\Data\Models\Player;
 use Mockery;
 
 class PlayersCollectionTest extends TestCase {
@@ -16,7 +17,7 @@ class PlayersCollectionTest extends TestCase {
     }
     
     public function test_add_player() {
-        $player = Mockery::mock();
+        $player = Mockery::mock(Player::class);
         $collection = new PlayersCollection();
         $collection->add($player);
         

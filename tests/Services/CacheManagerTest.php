@@ -27,7 +27,14 @@ class CacheManagerTest extends TestCase {
         $this->logger->shouldReceive('warning')->andReturn(null);
         $this->logger->shouldReceive('error')->andReturn(null);
         
-        $this->cacheManager = new CacheManager($this->logger);
+        $this->cacheManager = new CacheManager($this->logger, [
+            'compression' => false,
+            'cleanup_probability' => 0,
+        ]);
+    }
+
+    private function transientKey(string $key, string $group = 'default'): string {
+        return 'intersoccer_' . $group . '_' . md5($key);
     }
     
     public function test_cache_manager_initialization() {
@@ -37,10 +44,10 @@ class CacheManagerTest extends TestCase {
     public function test_set_cache() {
         Functions\expect('set_transient')
             ->once()
-            ->with('intersoccer_test_key', 'test_value', 3600)
+            ->with($this->transientKey('test_key'), 'test_value', 3600)
             ->andReturn(true);
         
-        $result = $this->cacheManager->set('test_key', 'test_value', 3600);
+        $result = $this->cacheManager->set('test_key', 'test_value', 'default', 3600);
         
         $this->assertTrue($result);
     }
@@ -48,7 +55,7 @@ class CacheManagerTest extends TestCase {
     public function test_get_cache() {
         Functions\expect('get_transient')
             ->once()
-            ->with('intersoccer_test_key')
+            ->with($this->transientKey('test_key'))
             ->andReturn('cached_value');
         
         $result = $this->cacheManager->get('test_key');
@@ -59,18 +66,18 @@ class CacheManagerTest extends TestCase {
     public function test_get_cache_miss() {
         Functions\expect('get_transient')
             ->once()
-            ->with('intersoccer_missing_key')
+            ->with($this->transientKey('missing_key'))
             ->andReturn(false);
         
         $result = $this->cacheManager->get('missing_key');
         
-        $this->assertFalse($result);
+        $this->assertNull($result);
     }
     
     public function test_delete_cache() {
         Functions\expect('delete_transient')
             ->once()
-            ->with('intersoccer_test_key')
+            ->with($this->transientKey('test_key'))
             ->andReturn(true);
         
         $result = $this->cacheManager->delete('test_key');
@@ -82,14 +89,19 @@ class CacheManagerTest extends TestCase {
         global $wpdb;
         $wpdb = Mockery::mock('wpdb');
         $wpdb->prefix = 'wp_';
-        $wpdb->shouldReceive('query')
+        $wpdb->options = 'wp_options';
+        $seen = [];
+        $wpdb->shouldReceive('prepare')
             ->once()
-            ->with(Mockery::pattern('/DELETE.*intersoccer/'))
-            ->andReturn(5);
+            ->andReturnUsing(function ($sql, $a, $b) use (&$seen) {
+                $seen = [$a, $b];
+                return 'DELETE_ALL';
+            });
+        $wpdb->shouldReceive('query')->once()->with('DELETE_ALL')->andReturn(5);
         
-        $result = $this->cacheManager->clear_all();
-        
-        $this->assertEquals(5, $result);
+        $this->assertTrue($this->cacheManager->clear_all());
+        $this->assertStringContainsString('intersoccer_', $seen[0]);
+        $this->assertStringContainsString('intersoccer_', $seen[1]);
     }
     
     public function test_cache_key_generation() {
@@ -101,6 +113,15 @@ class CacheManagerTest extends TestCase {
     
     public function test_remember_caches_and_returns_value() {
         // remember() signature is: remember($key, callable $callback, $group = 'default', $ttl = null)
+        Functions\expect('get_transient')
+            ->once()
+            ->with($this->transientKey('computed_key'))
+            ->andReturn(false);
+        Functions\expect('set_transient')
+            ->once()
+            ->with($this->transientKey('computed_key'), 'computed_value', 3600)
+            ->andReturn(true);
+
         $result = $this->cacheManager->remember('computed_key', function() {
             return 'computed_value';
         }, 'default', 3600);
@@ -109,12 +130,13 @@ class CacheManagerTest extends TestCase {
     }
     
     public function test_remember_returns_cached_value() {
-        // First set a value
-        $this->cacheManager->set('cached_key', 'existing_value');
-        
-        // Then remember should return it without calling callback
+        Functions\expect('get_transient')
+            ->once()
+            ->with($this->transientKey('cached_key'))
+            ->andReturn('existing_value');
+
         $result = $this->cacheManager->remember('cached_key', function() {
-            return 'should_not_compute';
+            $this->fail('Cached remember must not call the generator');
         });
         
         $this->assertEquals('existing_value', $result);
@@ -124,14 +146,20 @@ class CacheManagerTest extends TestCase {
         global $wpdb;
         $wpdb = Mockery::mock('wpdb');
         $wpdb->prefix = 'wp_';
-        $wpdb->shouldReceive('query')
-            ->once()
-            ->with(Mockery::pattern('/DELETE.*roster/'))
-            ->andReturn(3);
+        $wpdb->options = 'wp_options';
+        $seen = '';
+        $wpdb->shouldReceive('esc_like')->once()->andReturnUsing(function ($text) {
+            return addcslashes($text, '_%\\');
+        });
+        $wpdb->shouldReceive('prepare')->once()->andReturnUsing(function ($sql, $a, $b) use (&$seen) {
+            $seen = $a . ' ' . $b;
+            return 'DELETE_PATTERN';
+        });
+        $wpdb->shouldReceive('query')->once()->with('DELETE_PATTERN')->andReturn(3);
         
-        $result = $this->cacheManager->flush_pattern('roster');
-        
-        $this->assertEquals(3, $result);
+        $this->assertSame(3, $this->cacheManager->flush_pattern('roster'));
+        $this->assertStringContainsString('intersoccer', $seen);
+        $this->assertStringContainsString('roster', $seen);
     }
     
     public function test_get_cache_stats() {
@@ -152,7 +180,7 @@ class CacheManagerTest extends TestCase {
     public function test_has_cache_entry() {
         Functions\expect('get_transient')
             ->once()
-            ->with('intersoccer_exists_key')
+            ->with($this->transientKey('exists_key'))
             ->andReturn('value');
         
         $result = $this->cacheManager->has('exists_key');

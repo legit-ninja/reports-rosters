@@ -35,18 +35,35 @@ class FailedExpectationIsolationFixtureTest extends TestCase {
 PHP
         );
 
-        $command = escapeshellarg(PHP_BINARY)
-            . ' ' . escapeshellarg($root . '/vendor/bin/phpunit')
-            . ' --no-configuration'
-            . ' --bootstrap ' . escapeshellarg($root . '/tests/bootstrap.php')
-            . ' ' . escapeshellarg($fixturePhp);
-        $output = [];
-        $exit = 0;
-        exec($command . ' 2>&1', $output, $exit);
+        $plain = $this->runFixture($root, $fixturePhp, false);
+        $configured = $this->runFixture($root, $fixturePhp, true);
         @unlink($fixturePhp);
         @rmdir($dir);
 
-        $text = implode("\n", $output);
+        $this->assertIsolatedFailure($plain['exit'], $plain['text']);
+        $this->assertStringContainsString('phpunit.xml', $configured['text']);
+        $this->assertIsolatedFailure($configured['exit'], $configured['text']);
+    }
+
+    private function runFixture(string $root, string $fixturePhp, bool $useSuiteConfiguration): array {
+        $command = escapeshellarg(PHP_BINARY)
+            . ' ' . escapeshellarg($root . '/vendor/bin/phpunit');
+        if ($useSuiteConfiguration) {
+            $command .= ' --configuration ' . escapeshellarg($root . '/phpunit.xml');
+        } else {
+            $command .= ' --no-configuration'
+                . ' --bootstrap ' . escapeshellarg($root . '/tests/bootstrap.php');
+        }
+        $command .= ' ' . escapeshellarg($fixturePhp);
+
+        $output = [];
+        $exit = 0;
+        exec($command . ' 2>&1', $output, $exit);
+
+        return ['exit' => $exit, 'text' => implode("\n", $output)];
+    }
+
+    private function assertIsolatedFailure(int $exit, string $text): void {
         $this->assertNotSame(0, $exit, $text);
         $this->assertStringContainsString('test_unmet_expectation_fails', $text);
         $this->assertStringContainsString('should be called', $text);
