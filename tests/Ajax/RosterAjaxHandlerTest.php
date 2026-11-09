@@ -69,7 +69,7 @@ class RosterAjaxHandlerTest extends TestCase
         $this->rosterBuilder
             ->shouldReceive('buildRosters')
             ->once()
-            ->with(['clear_existing' => true, 'batch_size' => 100])
+            ->with(['clear_existing' => true, 'batch_size' => 100, 'dry_run' => false])
             ->andReturn($buildResults);
 
         $capturedSuccess = null;

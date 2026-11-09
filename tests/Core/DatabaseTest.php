@@ -168,6 +168,17 @@ class DatabaseTest extends TestCase {
             ->once()
             ->andReturn(true);
         
+        // A nested transaction() uses a savepoint inside the outer transaction (#167).
+        $this->wpdb->shouldReceive('query')
+            ->with('SAVEPOINT intersoccer_sp_2')
+            ->once()
+            ->andReturn(true);
+
+        $this->wpdb->shouldReceive('query')
+            ->with('RELEASE SAVEPOINT intersoccer_sp_2')
+            ->once()
+            ->andReturn(true);
+
         $this->wpdb->shouldReceive('query')
             ->with('COMMIT')
             ->once()
