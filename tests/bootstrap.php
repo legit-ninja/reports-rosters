@@ -1325,6 +1325,7 @@ if (!class_exists('WC_Order')) {
         
         public function get_id() { return $this->id; }
         public function get_order_number() { return (string) $this->id; }
+        public function get_type() { return 'shop_order'; }
         public function get_status() { return $this->data['status'] ?? 'completed'; }
         public function get_payment_method() { return $this->data['payment_method'] ?? 'stripe'; }
         public function get_total_tax() { return $this->data['total_tax'] ?? 0.0; }
@@ -1772,6 +1773,9 @@ if (!function_exists('wc_get_order_item_meta')) {
 
 if (!function_exists('wc_update_order_item_meta')) {
     function wc_update_order_item_meta($item_id, $meta_key, $meta_value, $prev_value = '') {
+        if (!empty($GLOBALS['intersoccer_test_track_order_meta_writes'])) {
+            $GLOBALS['intersoccer_test_order_meta_write_count'] = (int) ($GLOBALS['intersoccer_test_order_meta_write_count'] ?? 0) + 1;
+        }
         global $intersoccer_test_wc_order_item_meta;
         $item_id = (int) $item_id;
         if (!isset($GLOBALS['intersoccer_test_wc_update_order_item_meta_call_counts'])) {
@@ -1813,6 +1817,20 @@ if (!function_exists('wc_delete_order_item_meta')) {
 // ============================================================================
 // InterSoccer-specific stubs
 // ============================================================================
+
+require_once dirname(__DIR__) . '/includes/roster-canonical-fields.php';
+
+if (!function_exists('intersoccer_roster_rebuild_statuses')) {
+    function intersoccer_roster_rebuild_statuses(): array {
+        $default = ['completed', 'processing', 'on-hold'];
+        if (!function_exists('apply_filters')) {
+            return $default;
+        }
+        $filtered = apply_filters('intersoccer_roster_rebuild_statuses', $default);
+
+        return intersoccer_normalize_roster_rebuild_statuses($filtered);
+    }
+}
 
 if (!function_exists('intersoccer_schedule_order_completion_check')) {
     function intersoccer_schedule_order_completion_check($order_id, $delay = null) {
