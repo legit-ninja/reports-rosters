@@ -115,6 +115,10 @@ abstract class TestCase extends PHPUnitTestCase {
     protected function createWpdbMock(): \Mockery\MockInterface {
         $wpdb = Mockery::mock('wpdb');
         $wpdb->prefix = 'wp_';
+        $wpdb->last_error = '';
+        $wpdb->shouldReceive('esc_like')->andReturnUsing(function ($text) {
+            return addcslashes((string) $text, '_%\\');
+        });
         $wpdb->shouldReceive('prepare')->andReturnUsing(function($query) {
             $args = func_get_args();
             array_shift($args);

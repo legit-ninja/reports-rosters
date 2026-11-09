@@ -43,7 +43,12 @@ if (!function_exists('current_time')) {
 }
 
 if (!function_exists('is_admin')) {
-    function is_admin() { return false; }
+    function is_admin() {
+        if (array_key_exists('intersoccer_test_is_admin', $GLOBALS)) {
+            return (bool) $GLOBALS['intersoccer_test_is_admin'];
+        }
+        return false;
+    }
 }
 
 if (!function_exists('intersoccer_test_store_wp_hook_callback')) {

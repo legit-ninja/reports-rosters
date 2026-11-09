@@ -20,6 +20,9 @@ class DependenciesTest extends TestCase {
     
     protected function setUp(): void {
         parent::setUp();
+        require_once dirname(__DIR__) . '/shims/is-multisite.php';
+        require_once dirname(__DIR__) . '/shims/core-extension-loaded.php';
+        unset($GLOBALS['intersoccer_test_is_admin'], $GLOBALS['intersoccer_test_current_user_caps'], $GLOBALS['intersoccer_test_loaded_extensions']);
         
         $this->logger = Mockery::mock(Logger::class);
         $this->logger->shouldReceive('debug')->andReturn(null);
@@ -35,27 +38,9 @@ class DependenciesTest extends TestCase {
     }
     
     public function test_check_all_with_all_dependencies_met() {
-        Functions\expect('is_plugin_active')
-            ->times(3)
-            ->andReturn(true);
+        $this->satisfyDependencyChecks();
         
-        Functions\expect('get_plugin_data')
-            ->times(3)
-            ->andReturn(['Version' => '5.0.0']);
-        
-        Functions\expect('extension_loaded')
-            ->times(4)
-            ->andReturn(true);
-        
-        Functions\when('current_user_can')->justReturn(true);
-        
-        global $wpdb;
-        $wpdb = Mockery::mock('wpdb');
-        $wpdb->shouldReceive('get_var')->andReturn('1');
-        
-        $result = $this->dependencies->check_all();
-        
-        $this->assertTrue($result);
+        $this->assertTrue($this->dependencies->check_all());
     }
     
     public function test_check_woocommerce_dependency() {
@@ -85,56 +70,34 @@ class DependenciesTest extends TestCase {
     }
     
     public function test_get_missing_dependencies() {
-        Functions\expect('is_plugin_active')
-            ->andReturn(false);
+        Functions\when('is_plugin_active')->justReturn(false);
+        Functions\when('get_option')->justReturn([]);
+        unset($GLOBALS['intersoccer_test_loaded_extensions']);
         
-        Functions\expect('extension_loaded')
-            ->andReturn(true);
-        
-        Functions\when('current_user_can')->justReturn(true);
-        
-        global $wpdb;
-        $wpdb = Mockery::mock('wpdb');
-        $wpdb->shouldReceive('get_var')->andReturn('1');
-        
-        $this->dependencies->check_all();
         $missing = $this->dependencies->get_missing_dependencies();
         
-        $this->assertIsArray($missing);
-        $this->assertNotEmpty($missing);
+        $this->assertContains('WooCommerce', $missing);
+        $this->assertContains('InterSoccer Product Variations', $missing);
+        $this->assertContains('Player Management', $missing);
+        $this->assertNotContains('PHP mysqli extension', $missing);
     }
     
     public function test_check_php_extensions() {
-        Functions\expect('extension_loaded')
-            ->times(4)
-            ->with(Mockery::anyOf('json', 'mysqli', 'curl', 'mbstring'))
-            ->andReturn(true);
+        unset($GLOBALS['intersoccer_test_loaded_extensions']);
         
-        $result = $this->dependencies->check_php_extensions();
-        
-        $this->assertTrue($result);
+        $this->assertTrue($this->dependencies->check_php_extensions());
     }
     
     public function test_check_missing_php_extension() {
-        Functions\expect('extension_loaded')
-            ->with('json')
-            ->andReturn(true);
+        $GLOBALS['intersoccer_test_loaded_extensions'] = [
+            'json' => true,
+            'mysqli' => false,
+            'curl' => true,
+            'mbstring' => true,
+        ];
         
-        Functions\expect('extension_loaded')
-            ->with('mysqli')
-            ->andReturn(false);
-        
-        Functions\expect('extension_loaded')
-            ->with('curl')
-            ->andReturn(true);
-        
-        Functions\expect('extension_loaded')
-            ->with('mbstring')
-            ->andReturn(true);
-        
-        $result = $this->dependencies->check_php_extensions();
-        
-        $this->assertFalse($result);
+        $this->assertFalse($this->dependencies->check_php_extensions());
+        unset($GLOBALS['intersoccer_test_loaded_extensions']);
     }
     
     public function test_check_system_requirements() {
@@ -163,71 +126,74 @@ class DependenciesTest extends TestCase {
     }
     
     public function test_check_user_capabilities() {
-        Functions\expect('current_user_can')
-            ->times(3)
-            ->andReturn(true);
+        $this->actAsAdminUser([
+            'manage_options' => true,
+            'manage_woocommerce' => true,
+            'view_woocommerce_reports' => true,
+        ]);
         
-        $result = $this->dependencies->check_user_capabilities();
-        
-        $this->assertTrue($result);
+        $this->assertTrue($this->dependencies->check_user_capabilities());
     }
     
     public function test_check_missing_capability() {
-        Functions\expect('current_user_can')
-            ->with('manage_options')
-            ->andReturn(true);
+        $this->actAsAdminUser([
+            'manage_options' => true,
+            'manage_woocommerce' => false,
+            'view_woocommerce_reports' => true,
+        ]);
         
-        Functions\expect('current_user_can')
-            ->with('manage_woocommerce')
-            ->andReturn(false);
-        
-        Functions\expect('current_user_can')
-            ->with('view_woocommerce_reports')
-            ->andReturn(true);
-        
-        $result = $this->dependencies->check_user_capabilities();
-        
-        $this->assertFalse($result);
+        $this->assertFalse($this->dependencies->check_user_capabilities());
     }
     
     public function test_get_dependency_report() {
-        Functions\when('is_plugin_active')->justReturn(true);
-        Functions\when('get_plugin_data')->justReturn(['Version' => '1.0.0']);
-        Functions\when('extension_loaded')->justReturn(true);
-        Functions\when('current_user_can')->justReturn(true);
+        $this->satisfyDependencyChecks();
         
-        global $wpdb;
-        $wpdb = Mockery::mock('wpdb');
-        $wpdb->shouldReceive('get_var')->andReturn('8.0.0');
-        
-        global $wp_version;
-        $wp_version = '6.0';
-        
-        $report = $this->dependencies->get_dependency_report();
+        $report = $this->dependencies->generate_report();
         
         $this->assertIsArray($report);
-        $this->assertArrayHasKey('plugins', $report);
+        $this->assertArrayHasKey('required_plugins', $report);
         $this->assertArrayHasKey('php_extensions', $report);
-        $this->assertArrayHasKey('system', $report);
+        $this->assertArrayHasKey('system_requirements', $report);
+        $this->assertTrue($report['php_extensions']['status']);
+        $this->assertContains('mysqli', $report['php_extensions']['required']);
     }
     
     public function test_force_refresh_clears_cache() {
-        Functions\when('is_plugin_active')->justReturn(true);
-        Functions\when('get_plugin_data')->justReturn(['Version' => '1.0.0']);
-        Functions\when('extension_loaded')->justReturn(true);
-        Functions\when('current_user_can')->justReturn(true);
+        $this->satisfyDependencyChecks();
         
+        $this->assertTrue($this->dependencies->check_all(false));
+        $this->dependencies->clear_cache();
+        $this->assertTrue($this->dependencies->check_all(true));
+    }
+
+    private function actAsAdminUser(array $caps = null): void {
+        $GLOBALS['intersoccer_test_is_admin'] = true;
+        $GLOBALS['intersoccer_test_current_user'] = new class {
+            public $ID = 7;
+
+            public function exists() {
+                return true;
+            }
+        };
+        if ($caps !== null) {
+            $GLOBALS['intersoccer_test_current_user_caps'] = $caps;
+        }
+    }
+
+    private function satisfyDependencyChecks(): void {
+        Functions\when('is_plugin_active')->justReturn(true);
+        Functions\when('get_plugin_data')->justReturn(['Version' => '8.0.0']);
+        Functions\when('get_option')->justReturn([]);
+        unset($GLOBALS['intersoccer_test_loaded_extensions']);
+
+        global $wp_version;
+        $wp_version = '6.0';
+
         global $wpdb;
         $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
         $wpdb->shouldReceive('get_var')->andReturn('8.0.0');
-        
-        // First check
-        $this->dependencies->check_all(false);
-        
-        // Second check with force refresh should re-check
-        $result = $this->dependencies->check_all(true);
-        
-        $this->assertTrue($result);
+        $wpdb->shouldReceive('query')->andReturn(true);
     }
 }
 

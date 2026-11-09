@@ -90,18 +90,29 @@ class CacheManagerTest extends TestCase {
         $wpdb = Mockery::mock('wpdb');
         $wpdb->prefix = 'wp_';
         $wpdb->options = 'wp_options';
+        $sqlSeen = '';
         $seen = [];
         $wpdb->shouldReceive('prepare')
             ->once()
-            ->andReturnUsing(function ($sql, $a, $b) use (&$seen) {
+            ->andReturnUsing(function ($sql, $a, $b) use (&$seen, &$sqlSeen) {
+                $sqlSeen = $sql;
                 $seen = [$a, $b];
                 return 'DELETE_ALL';
             });
         $wpdb->shouldReceive('query')->once()->with('DELETE_ALL')->andReturn(5);
         
         $this->assertTrue($this->cacheManager->clear_all());
-        $this->assertStringContainsString('intersoccer_', $seen[0]);
-        $this->assertStringContainsString('intersoccer_', $seen[1]);
+        $this->assertStringContainsString('DELETE FROM', $sqlSeen);
+        $this->assertStringContainsString('option_name LIKE', $sqlSeen);
+        $this->assertSame('_transient_intersoccer_%', $seen[0]);
+        $this->assertSame('_transient_timeout_intersoccer_%', $seen[1]);
+
+        $empty = Mockery::mock('wpdb');
+        $empty->options = 'wp_options';
+        $empty->shouldReceive('prepare')->once()->andReturn('DELETE_NONE');
+        $empty->shouldReceive('query')->once()->with('DELETE_NONE')->andReturn(0);
+        $wpdb = $empty;
+        $this->assertFalse($this->cacheManager->clear_all());
     }
     
     public function test_cache_key_generation() {
