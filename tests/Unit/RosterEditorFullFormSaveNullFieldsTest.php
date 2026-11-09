@@ -16,7 +16,7 @@
  *              branch (:432-442, which would return NULL).
  *   write      $wpdb->update() :337.
  *
- * Mirrors QA sandbox row 285551 (synthetic values here; no real data).
+ * Mirrors QA roster row 285551 (synthetic values here; no real data).
  */
 
 namespace InterSoccer\ReportsRosters\Tests\Unit;

@@ -114,9 +114,15 @@ function intersoccer_office365_run_scheduled_sync() {
                 }
             }
         } elseif ($job === 'booking_report') {
-            $end_date = date('Y-m-d');
-            $start_date = date('Y-m-d', strtotime('-30 days'));
-            $year = (int) date('Y');
+            if (!function_exists('intersoccer_booking_report_site_today_ymd')) {
+                require_once $plugin_root . '/includes/financial-attribution-helpers.php';
+            }
+            $end_date = intersoccer_booking_report_site_today_ymd();
+            $start_ymd = intersoccer_booking_report_normalize_ymd($end_date);
+            $start_date = $start_ymd
+                ? (DateTime::createFromFormat('!Y-m-d', $start_ymd)->modify('-30 days')->format('Y-m-d'))
+                : date('Y-m-d', strtotime('-30 days'));
+            $year = $start_ymd ? (int) substr($start_ymd, 0, 4) : (int) date('Y');
             if (function_exists('intersoccer_office365_generate_booking_report_xlsx')) {
                 $result = intersoccer_office365_generate_booking_report_xlsx($start_date, $end_date, $year);
                 if ($result) {

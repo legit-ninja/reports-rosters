@@ -67,6 +67,9 @@ class FinancialReportService {
      * Get booking/financial report data.
      */
     public function getFinancialBookingReport(string $start_date = '', string $end_date = '', string $year = '', string $region = ''): array {
+        if (!function_exists('intersoccer_booking_report_date_bounds')) {
+            require_once dirname(__DIR__, 2) . '/includes/financial-attribution-helpers.php';
+        }
         $this->logger->info('FinancialReportService: Generating financial report', [
             'start_date' => $start_date,
             'end_date' => $end_date,
@@ -74,11 +77,17 @@ class FinancialReportService {
             'region' => $region,
         ]);
 
+        [$date_sql, $date_params] = intersoccer_booking_report_post_date_filter_sql(
+            (string) $start_date,
+            (string) $end_date,
+            $year,
+            false
+        );
         $date_where = '';
-        if (!empty($start_date) && !empty($end_date)) {
-            $date_where = $this->wpdb->prepare('AND p.post_date >= %s AND p.post_date <= %s', $start_date, $end_date);
-        } elseif (!empty($year)) {
-            $date_where = $this->wpdb->prepare('AND YEAR(p.post_date) = %d', $year);
+        if ($date_sql !== '') {
+            $date_where = $date_params === []
+                ? $date_sql
+                : $this->wpdb->prepare($date_sql, ...$date_params);
         }
 
         $region_where = '';
@@ -191,9 +200,9 @@ class FinancialReportService {
                 'Days Selected', 'Days of Week'
             ]);
 
-            $age_group = $this->extractMetaValue($meta_map, ['pa_age-group', 'Age Group']);
-            $activity_type_display = $this->extractMetaValue($meta_map, ['pa_booking-type', 'Activity Type']);
-            $venue = $this->extractMetaValue($meta_map, ['pa_intersoccer-venues', 'Sites InterSoccer', 'InterSoccer Venues']);
+            $age_group = $this->extractMetaValue($meta_map, ['pa_age-group', 'attribute_pa_age-group', 'Age Group']);
+            $activity_type_display = $this->extractMetaValue($meta_map, ['pa_booking-type', 'attribute_pa_booking-type', 'Activity Type']);
+            $venue = $this->extractMetaValue($meta_map, ['pa_intersoccer-venues', 'attribute_pa_intersoccer-venues', 'Sites InterSoccer', 'InterSoccer Venues']);
 
             // Classify product type using the classification chain
             $productType = $productTypeClassifier->classifyOrderItem($meta_map, (int) $row->product_id);

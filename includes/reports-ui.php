@@ -1070,8 +1070,14 @@ function intersoccer_render_final_course_reports_page() {
  * with date filters and Excel export.
  */
 function intersoccer_render_revenue_by_type_tab() {
-    $default_end_date = date('Y-m-d');
-    $default_start_date = date('Y-m-d', strtotime('-30 days'));
+    if (!function_exists('intersoccer_booking_report_site_today_ymd')) {
+        require_once dirname(__FILE__) . '/financial-attribution-helpers.php';
+    }
+    $default_end_date = intersoccer_booking_report_site_today_ymd();
+    $default_start_ymd = intersoccer_booking_report_normalize_ymd($default_end_date);
+    $default_start_date = $default_start_ymd
+        ? DateTime::createFromFormat('!Y-m-d', $default_start_ymd)->modify('-30 days')->format('Y-m-d')
+        : date('Y-m-d', strtotime('-30 days'));
 
     $start_date = isset($_GET['rbt_start_date']) && !empty($_GET['rbt_start_date'])
         ? sanitize_text_field($_GET['rbt_start_date'])

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: InterSoccer Reports and Rosters
  * Description: Generates event rosters and reports for InterSoccer Switzerland admins using WooCommerce data.
- * Version: 2.10.25
+ * Version: 2.11.2
  * Author: Jeremy Lee
  * Text Domain: intersoccer-reports-rosters
  * License: GPL-2.0+
@@ -181,6 +181,19 @@ if (file_exists($intersoccer_pcs_warmup)) {
 $final_reports_aggregation = plugin_dir_path(__FILE__) . 'includes/final-reports-aggregation.php';
 if (file_exists($final_reports_aggregation)) {
     require_once $final_reports_aggregation;
+}
+
+$migration_meta_bootstrap = plugin_dir_path(__FILE__) . 'includes/migration-meta.php';
+if (file_exists($migration_meta_bootstrap)) {
+    require_once $migration_meta_bootstrap;
+}
+$order_meta_keys_bootstrap = plugin_dir_path(__FILE__) . 'includes/order-meta-keys.php';
+if (file_exists($order_meta_keys_bootstrap)) {
+    require_once $order_meta_keys_bootstrap;
+}
+$order_admin_line_item_meta_display = plugin_dir_path(__FILE__) . 'includes/order-admin-line-item-meta-display.php';
+if (file_exists($order_admin_line_item_meta_display)) {
+    require_once $order_admin_line_item_meta_display;
 }
 
 // Load Office 365 cron runner on init so the cron hook is registered (cron runs without admin).

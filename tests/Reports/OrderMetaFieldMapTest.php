@@ -160,4 +160,76 @@ class OrderMetaFieldMapTest extends TestCase {
             'Days of Week lists the camp offering, not the booked days; it must not stand in for Days Selected'
         );
     }
+
+    public function test_get_order_item_pa_taxonomy_meta_value_reads_attribute_pa_shape(): void {
+        if (!function_exists('intersoccer_get_order_item_pa_taxonomy_meta_value')) {
+            $this->markTestSkipped('pa taxonomy meta helper not loaded');
+        }
+
+        $meta = [
+            'attribute_pa_intersoccer-venues' => 'geneva-stade-chenois-thonex',
+            'attribute_pa_age-group' => '5-12',
+        ];
+        $this->assertSame('geneva-stade-chenois-thonex', intersoccer_get_order_item_pa_taxonomy_meta_value($meta, 'pa_intersoccer-venues'));
+        $this->assertSame('5-12', intersoccer_get_order_item_pa_taxonomy_meta_value($meta, 'pa_age-group'));
+    }
+
+    public function test_get_order_item_pa_taxonomy_meta_value_reads_pa_slug_shape(): void {
+        if (!function_exists('intersoccer_get_order_item_pa_taxonomy_meta_value')) {
+            $this->markTestSkipped('pa taxonomy meta helper not loaded');
+        }
+
+        $meta = [
+            'pa_intersoccer-venues' => 'geneva-college-sismondi-nations',
+            'pa_age-group' => '5-8y',
+        ];
+        $this->assertSame('geneva-college-sismondi-nations', intersoccer_get_order_item_pa_taxonomy_meta_value($meta, 'pa_intersoccer-venues'));
+        $this->assertSame('5-8y', intersoccer_get_order_item_pa_taxonomy_meta_value($meta, 'pa_age-group'));
+    }
+
+    public function test_apply_order_item_attribute_meta_reads_single_key_venue_and_age_group_shapes(): void {
+        if (!function_exists('intersoccer_apply_order_item_attribute_meta_to_data')) {
+            $this->markTestSkipped('apply_order_item_attribute_meta_to_data not loaded');
+        }
+
+        $build_item = static function (array $meta) {
+            $item = \Mockery::mock('WC_Order_Item_Product');
+            $item->shouldReceive('get_meta_data')->andReturnUsing(static function () use ($meta) {
+                $objects = [];
+                foreach ($meta as $key => $value) {
+                    $objects[] = new class ($key, $value) {
+                        private $key;
+                        private $value;
+
+                        public function __construct($key, $value) {
+                            $this->key = $key;
+                            $this->value = $value;
+                        }
+
+                        public function get_data() {
+                            return ['key' => $this->key, 'value' => $this->value];
+                        }
+                    };
+                }
+
+                return $objects;
+            });
+
+            return $item;
+        };
+
+        $attribute_only = intersoccer_apply_order_item_attribute_meta_to_data([], $build_item([
+            'attribute_pa_intersoccer-venues' => 'geneva-stade-chenois-thonex',
+            'attribute_pa_age-group' => '5-12',
+        ]));
+        $this->assertSame('geneva-stade-chenois-thonex', $attribute_only['venue'] ?? '');
+        $this->assertSame('5-12', $attribute_only['age_group'] ?? '');
+
+        $pa_only = intersoccer_apply_order_item_attribute_meta_to_data([], $build_item([
+            'pa_intersoccer-venues' => 'geneva-college-sismondi-nations',
+            'pa_age-group' => '5-8y',
+        ]));
+        $this->assertSame('geneva-college-sismondi-nations', $pa_only['venue'] ?? '');
+        $this->assertSame('5-8y', $pa_only['age_group'] ?? '');
+    }
 }

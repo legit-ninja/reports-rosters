@@ -337,14 +337,27 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
         COALESCE(attendee_gender.meta_value, gender_meta.meta_value, player_gender.meta_value) as gender,
         
         -- Booking details
-        booking_type_meta.meta_value as booking_type,
+        COALESCE(NULLIF(booking_type_meta.meta_value, ''), booking_type_meta_attr.meta_value) as booking_type,
         COALESCE(days_selected_meta.meta_value, days_of_week_meta.meta_value) as selected_days,
-        age_group_meta.meta_value as age_group,
-        activity_type_meta.meta_value as activity_type,
+        COALESCE(NULLIF(age_group_meta.meta_value, ''), age_group_meta_attr.meta_value) as age_group,
+        COALESCE(
+            NULLIF(activity_type_human.meta_value, ''),
+            NULLIF(activity_type_pa.meta_value, ''),
+            activity_type_pa_attr.meta_value
+        ) as activity_type,
         
         -- Venue and location
-        venue_meta.meta_value as venue,
-        canton_region.meta_value as canton_region,
+        COALESCE(
+            NULLIF(venue_pa.meta_value, ''),
+            venue_pa_attr.meta_value,
+            NULLIF(venue_sites.meta_value, ''),
+            venue_intersoccer.meta_value
+        ) as venue,
+        COALESCE(
+            NULLIF(canton_pa.meta_value, ''),
+            canton_pa_attr.meta_value,
+            canton_human.meta_value
+        ) as canton_region,
         
         -- Price data
         COALESCE(CAST(subtotal.meta_value AS DECIMAL(10,2)), 0) AS base_price,
@@ -389,20 +402,38 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
     -- Booking details
     LEFT JOIN $order_itemmeta_table booking_type_meta ON oi.order_item_id = booking_type_meta.order_item_id
         AND booking_type_meta.meta_key = 'pa_booking-type'
+    LEFT JOIN $order_itemmeta_table booking_type_meta_attr ON oi.order_item_id = booking_type_meta_attr.order_item_id
+        AND booking_type_meta_attr.meta_key = 'attribute_pa_booking-type'
     LEFT JOIN $order_itemmeta_table days_selected_meta ON oi.order_item_id = days_selected_meta.order_item_id
         AND days_selected_meta.meta_key = 'Days Selected'
     LEFT JOIN $order_itemmeta_table days_of_week_meta ON oi.order_item_id = days_of_week_meta.order_item_id
         AND days_of_week_meta.meta_key = 'Days of Week'
     LEFT JOIN $order_itemmeta_table age_group_meta ON oi.order_item_id = age_group_meta.order_item_id
         AND age_group_meta.meta_key = 'pa_age-group'
-    LEFT JOIN $order_itemmeta_table activity_type_meta ON oi.order_item_id = activity_type_meta.order_item_id
-        AND (activity_type_meta.meta_key = 'Activity Type' OR activity_type_meta.meta_key = 'pa_activity-type')
+    LEFT JOIN $order_itemmeta_table age_group_meta_attr ON oi.order_item_id = age_group_meta_attr.order_item_id
+        AND age_group_meta_attr.meta_key = 'attribute_pa_age-group'
+    LEFT JOIN $order_itemmeta_table activity_type_human ON oi.order_item_id = activity_type_human.order_item_id
+        AND activity_type_human.meta_key = 'Activity Type'
+    LEFT JOIN $order_itemmeta_table activity_type_pa ON oi.order_item_id = activity_type_pa.order_item_id
+        AND activity_type_pa.meta_key = 'pa_activity-type'
+    LEFT JOIN $order_itemmeta_table activity_type_pa_attr ON oi.order_item_id = activity_type_pa_attr.order_item_id
+        AND activity_type_pa_attr.meta_key = 'attribute_pa_activity-type'
     
     -- Venue and location
-    LEFT JOIN $order_itemmeta_table venue_meta ON oi.order_item_id = venue_meta.order_item_id 
-        AND (venue_meta.meta_key = 'pa_intersoccer-venues' OR venue_meta.meta_key = 'Sites InterSoccer' OR venue_meta.meta_key = 'InterSoccer Venues')
-    LEFT JOIN $order_itemmeta_table canton_region ON oi.order_item_id = canton_region.order_item_id
-        AND (canton_region.meta_key = 'pa_canton-region' OR canton_region.meta_key = 'Canton / Region')
+    LEFT JOIN $order_itemmeta_table venue_pa ON oi.order_item_id = venue_pa.order_item_id
+        AND venue_pa.meta_key = 'pa_intersoccer-venues'
+    LEFT JOIN $order_itemmeta_table venue_pa_attr ON oi.order_item_id = venue_pa_attr.order_item_id
+        AND venue_pa_attr.meta_key = 'attribute_pa_intersoccer-venues'
+    LEFT JOIN $order_itemmeta_table venue_sites ON oi.order_item_id = venue_sites.order_item_id
+        AND venue_sites.meta_key = 'Sites InterSoccer'
+    LEFT JOIN $order_itemmeta_table venue_intersoccer ON oi.order_item_id = venue_intersoccer.order_item_id
+        AND venue_intersoccer.meta_key = 'InterSoccer Venues'
+    LEFT JOIN $order_itemmeta_table canton_pa ON oi.order_item_id = canton_pa.order_item_id
+        AND canton_pa.meta_key = 'pa_canton-region'
+    LEFT JOIN $order_itemmeta_table canton_pa_attr ON oi.order_item_id = canton_pa_attr.order_item_id
+        AND canton_pa_attr.meta_key = 'attribute_pa_canton-region'
+    LEFT JOIN $order_itemmeta_table canton_human ON oi.order_item_id = canton_human.order_item_id
+        AND canton_human.meta_key = 'Canton / Region'
     
     -- Price data
     LEFT JOIN $order_itemmeta_table subtotal ON oi.order_item_id = subtotal.order_item_id 
@@ -438,21 +469,17 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
 
     $params = array();
 
-    // Add date filters - prioritize date range over year
-    if ($start_date && $end_date) {
-        $query .= " AND DATE(p.post_date) BETWEEN %s AND %s";
-        $params[] = $start_date;
-        $params[] = $end_date;
-    } elseif ($start_date) {
-        $query .= " AND DATE(p.post_date) >= %s";
-        $params[] = $start_date;
-    } elseif ($end_date) {
-        $query .= " AND DATE(p.post_date) <= %s";
-        $params[] = $end_date;
-    } else {
-        // Fallback to year filtering if no dates provided
-        $query .= " AND YEAR(p.post_date) = %d";
-        $params[] = $year;
+    [$date_sql, $date_params] = intersoccer_booking_report_post_date_filter_sql(
+        (string) $start_date,
+        (string) $end_date,
+        $year,
+        true
+    );
+    if ($date_sql !== '') {
+        $query .= $date_sql;
+        foreach ($date_params as $date_param) {
+            $params[] = $date_param;
+        }
     }
 
     $query .= " ORDER BY p.post_date DESC, p.ID, oi.order_item_id";
@@ -470,7 +497,7 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
     // Add missing fields to match roster table structure
     foreach ($results as &$row) {
         // Set defaults for fields not available in direct WooCommerce query
-        $row['player_gender'] = $row['gender']; // Map to same field
+        $row['player_gender'] = $row['gender'] ?? '';
         $row['registration_timestamp'] = $row['order_date'];
         $row['start_date'] = null; // Not available in direct query
         $row['intersoccer_item_discounts'] = null;
@@ -699,12 +726,17 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
 
     global $wpdb;
 
-    // Build date filter
+    [$date_sql, $date_params] = intersoccer_booking_report_post_date_filter_sql(
+        (string) $start_date,
+        (string) $end_date,
+        $year,
+        false
+    );
     $date_where = '';
-    if (!empty($start_date) && !empty($end_date)) {
-        $date_where = $wpdb->prepare("AND p.post_date >= %s AND p.post_date <= %s", $start_date, $end_date);
-    } elseif (!empty($year)) {
-        $date_where = $wpdb->prepare("AND YEAR(p.post_date) = %d", $year);
+    if ($date_sql !== '') {
+        $date_where = $date_params === []
+            ? $date_sql
+            : $wpdb->prepare($date_sql, ...$date_params);
     }
 
     // Build region filter (if needed)
@@ -808,13 +840,29 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
         if (isset($meta_data['Days Selected'])) $selected_days = $meta_data['Days Selected'];
         if (isset($meta_data['Days of Week'])) $selected_days = $meta_data['Days of Week'];
 
-        if (isset($meta_data['pa_age-group'])) $age_group = $meta_data['pa_age-group'];
+        if (function_exists('intersoccer_get_order_item_pa_taxonomy_meta_value')) {
+            $age_from_pa = intersoccer_get_order_item_pa_taxonomy_meta_value($meta_data, 'pa_age-group');
+            if ($age_from_pa !== '') {
+                $age_group = $age_from_pa;
+            }
+            $activity_from_pa = intersoccer_get_order_item_pa_taxonomy_meta_value($meta_data, 'pa_activity-type');
+            if ($activity_from_pa !== '') {
+                $activity_type = $activity_from_pa;
+            }
+            $venue_from_pa = intersoccer_get_order_item_pa_taxonomy_meta_value($meta_data, 'pa_intersoccer-venues');
+            if ($venue_from_pa !== '') {
+                $venue = $venue_from_pa;
+            }
+        } else {
+            if (isset($meta_data['pa_age-group'])) $age_group = $meta_data['pa_age-group'];
+            if (isset($meta_data['attribute_pa_age-group'])) $age_group = $meta_data['attribute_pa_age-group'];
+            if (isset($meta_data['pa_activity-type'])) $activity_type = $meta_data['pa_activity-type'];
+            if (isset($meta_data['attribute_pa_activity-type'])) $activity_type = $meta_data['attribute_pa_activity-type'];
+            if (isset($meta_data['pa_intersoccer-venues'])) $venue = $meta_data['pa_intersoccer-venues'];
+            if (isset($meta_data['attribute_pa_intersoccer-venues'])) $venue = $meta_data['attribute_pa_intersoccer-venues'];
+        }
         if (isset($meta_data['Age Group'])) $age_group = $meta_data['Age Group'];
-
-        if (isset($meta_data['pa_booking-type'])) $activity_type = $meta_data['pa_booking-type'];
         if (isset($meta_data['Activity Type'])) $activity_type = $meta_data['Activity Type'];
-
-        if (isset($meta_data['pa_intersoccer-venues'])) $venue = $meta_data['pa_intersoccer-venues'];
         if (isset($meta_data['Sites InterSoccer'])) $venue = $meta_data['Sites InterSoccer'];
         if (isset($meta_data['InterSoccer Venues'])) $venue = $meta_data['InterSoccer Venues'];
 
