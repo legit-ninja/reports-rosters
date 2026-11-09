@@ -651,7 +651,7 @@ if (!function_exists('update_user_meta')) {
 
 if (!function_exists('get_user_by')) {
     function get_user_by($field, $value) {
-        if ($field === 'id' && is_numeric($value) && $value > 0) {
+        if (is_string($field) && strcasecmp($field, 'id') === 0 && is_numeric($value) && $value > 0) {
             $user = new stdClass();
             $user->ID = (int) $value;
             $user->user_email = 'test@example.com';
@@ -790,10 +790,17 @@ if (!function_exists('get_userdata')) {
 
 if (!function_exists('get_role')) {
     function get_role($role) {
-        $mock = new stdClass();
-        $mock->capabilities = [];
-        $mock->add_cap = function($cap) {};
-        return $mock;
+        return new class {
+            public $capabilities = [];
+
+            public function add_cap($cap, $grant = true) {
+                $this->capabilities[$cap] = (bool) $grant;
+            }
+
+            public function remove_cap($cap) {
+                unset($this->capabilities[$cap]);
+            }
+        };
     }
 }
 
@@ -975,6 +982,16 @@ if (!function_exists('sanitize_key')) {
         $key = preg_replace('/[^a-z0-9_\-]/', '', $key);
 
         return is_string($key) ? $key : '';
+    }
+}
+
+if (!function_exists('sanitize_sql_orderby')) {
+    function sanitize_sql_orderby($orderby) {
+        if (!is_string($orderby) || !preg_match('/^[a-zA-Z0-9_]+(?:\s+(?:ASC|DESC))?(?:\s*,\s*[a-zA-Z0-9_]+(?:\s+(?:ASC|DESC))?)*$/i', $orderby)) {
+            return false;
+        }
+
+        return $orderby;
     }
 }
 

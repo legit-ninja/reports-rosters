@@ -11,6 +11,15 @@
  * also included after Patchwork, so Brain Monkey can replace it.
  */
 
+// PHPUnit isolated processes are fed on stdin. They keep their own preload
+// decision: the times-facet processes must not see the real resolver, and
+// preloading here would also emit log lines into those processes.
+$intersoccer_rr_script = (string) ($_SERVER['SCRIPT_FILENAME'] ?? '');
+$intersoccer_rr_preload_skip = $intersoccer_rr_script === ''
+    || $intersoccer_rr_script === 'Standard input code'
+    || !is_file($intersoccer_rr_script);
+unset($intersoccer_rr_script);
+
 if (!defined('ABSPATH')) {
     define('ABSPATH', dirname(__DIR__) . '/');
     define('WP_CONTENT_DIR', ABSPATH . 'wp-content');
@@ -52,6 +61,23 @@ require_once __DIR__ . '/stubs/course-meta-stub.php';
 require_once __DIR__ . '/shims/term-def-request-cache-test-shim.php';
 require_once __DIR__ . '/shims/remove-accents.php';
 require_once __DIR__ . '/bootstrap-runtime.php';
+
+// Load product functions while Patchwork can still rewrite them. The two
+// separate-process times tests must not see the real resolver. Their skip
+// flag is computed before this wrapper exists, because reading the child
+// script through the wrapper does not return its source.
+if (!$intersoccer_rr_preload_skip) {
+    foreach ([
+        dirname(__DIR__) . '/includes/utils.php',
+        dirname(__DIR__) . '/includes/roster-export.php',
+        dirname(__DIR__) . '/wp-admin/includes/upgrade.php',
+    ] as $intersoccer_rr_preload_file) {
+        if (is_file($intersoccer_rr_preload_file)) {
+            require_once $intersoccer_rr_preload_file;
+        }
+    }
+}
+unset($intersoccer_rr_preload_skip, $intersoccer_rr_preload_file);
 
 if (class_exists(\Patchwork\CodeManipulation\Stream::class, false)) {
     \Patchwork\CodeManipulation\Stream::unwrap();

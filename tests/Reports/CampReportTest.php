@@ -14,11 +14,16 @@ class CampReportTest extends TestCase {
     }
 
     public function test_generate_camp_report() {
-        $data = $this->reportWithStatsRow()->generate(['venue' => 'Zurich']);
+        $report = $this->reportWithStatsRow();
+        $data = $report->generate(['venue' => 'Zurich']);
 
         $this->assertIsArray($data);
         $this->assertSame(4, $data['statistics']['total_camps']);
         $this->assertSame(12, $data['statistics']['total_participants']);
+
+        $sql = implode("\n", $this->statsDb->prepared);
+        $this->assertStringContainsString("LIKE '%camp%'", $sql);
+        $this->assertStringContainsString("LIKE '%summer%'", $sql);
     }
 
     public function test_filter_by_date_range() {
@@ -28,8 +33,20 @@ class CampReportTest extends TestCase {
         $this->assertSame(4, $filtered['statistics']['total_camps']);
     }
 
+    /** @var \InterSoccerTestWpdb */
+    private $statsDb;
+
     private function reportWithStatsRow(): CampReport {
-        $db = new class extends \InterSoccerTestWpdb {
+        $this->statsDb = new class extends \InterSoccerTestWpdb {
+            public $prepared = [];
+
+            public function prepare($query, ...$args) {
+                $bound = parent::prepare($query, ...$args);
+                $this->prepared[] = $bound;
+
+                return $bound;
+            }
+
             public function get_row($query = null, $output = OBJECT, $y = 0) {
                 return (object) [
                     'total_camps' => 4,
@@ -51,7 +68,7 @@ class CampReportTest extends TestCase {
         };
 
         global $wpdb;
-        $wpdb = $db;
+        $wpdb = $this->statsDb;
 
         return new CampReport();
     }
