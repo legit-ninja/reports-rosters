@@ -203,24 +203,30 @@ class RosterExportTest extends TestCase {
      * Test that export handles missing required parameters
      */
     public function test_export_handles_missing_parameters() {
-        $_POST = [
-            'action' => 'intersoccer_export_roster',
-            'nonce' => 'test_nonce',
-            'use_fields' => 0,
-        ];
-        
-        ob_start();
-        try {
-            intersoccer_export_roster();
-        } catch (\Exception $e) {
-            // wp_send_json_error exits
+        // (bool)'0' and (bool)0 are both false. With no variation, order-item,
+        // or signature values, the first JSON error is the missing-parameter
+        // message. The test double throws there, as wp_send_json_error stops.
+        foreach (['0', 0] as $use_fields) {
+            unset($GLOBALS['test_json_response']);
+            $_POST = [
+                'action' => 'intersoccer_export_roster',
+                'nonce' => 'test_nonce',
+                'use_fields' => $use_fields,
+            ];
+
+            ob_start();
+            try {
+                intersoccer_export_roster();
+            } catch (\Exception $e) {
+                // wp_send_json_error stops the handler
+            }
+            $output = ob_get_clean();
+            $response = $this->exportResponse($output);
+
+            $this->assertFalse($response['success']);
+            $this->assertIsString($response['data']['message']);
+            $this->assertStringContainsString('No variation IDs', $response['data']['message']);
         }
-        $output = ob_get_clean();
-        $response = $this->exportResponse($output);
-        
-        $this->assertFalse($response['success']);
-        $this->assertIsString($response['data']['message']);
-        $this->assertStringContainsString('No variation IDs', $response['data']['message']);
     }
     
     /**
