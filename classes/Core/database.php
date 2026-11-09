@@ -930,6 +930,11 @@ class Database {
                 $where_values = array_merge($where_values, $excluded_row_statuses);
             }
 
+            // Rows a rebuild keeps for review because their order line is gone are not counted
+            // (#160 review). Missing and failed orders are already excluded by the post_status join.
+            $order_items_table = $this->wpdb->prefix . 'woocommerce_order_items';
+            $where_conditions[] = "EXISTS (SELECT 1 FROM {$order_items_table} oi WHERE oi.order_item_id = r.order_item_id)";
+
             $group_key_expr = "CASE
                 WHEN r.event_signature IS NOT NULL AND r.event_signature != '' THEN r.event_signature
                 ELSE CONCAT(
@@ -1321,6 +1326,13 @@ class Database {
         return $stats;
     }
     
+    /**
+     * @return Logger|null
+     */
+    public function get_logger() {
+        return $this->logger;
+    }
+
     /**
      * Get WordPress database instance
      * 

@@ -212,7 +212,8 @@ class RosterRebuildCoverage160Test extends TestCase {
             $id = (int) $data['order_item_id'];
             $roster->setKey($id);
             $this->created[] = $id;
-            $this->stored[$id] = ['order_item_id' => $id, 'order_id' => (int) $data['order_id'], 'order_status' => 'completed'];
+            // Keep the written values so a later rebuild can compare them with the order line.
+            $this->stored[$id] = array_merge($data, ['order_item_id' => $id, 'order_id' => (int) $data['order_id'], 'order_status' => 'completed']);
             return $roster;
         });
         $repo->shouldReceive('update')->andReturnUsing(function ($id, array $data) {
@@ -283,16 +284,18 @@ class RosterRebuildCoverage160Test extends TestCase {
 
         $this->assertEmpty($result['rebuild_failed'] ?? null);
         $this->assertSame([['completed', 'processing', 'on-hold']], $this->ordersQueryStatuses);
-        $upserted = array_merge($this->created, $this->updated);
-        sort($upserted);
-        $this->assertSame([8001, 8002, 8003, 8004, 8006], $upserted, 'every line with a DOB is upserted');
-        $this->assertSame([8999], $this->deleted, 'only the removed line is deleted');
-        $this->assertArrayHasKey(8005, $this->stored, 'a line the model refuses (no DOB) keeps its old row');
+        $this->assertSame([], $this->created, 'every line already has a row');
+        $this->assertSame([], $this->updated, 'existing rows are not overwritten');
+        $this->assertSame([], $this->deleted, 'a rebuild never deletes');
+        $this->assertArrayHasKey(8005, $this->stored, 'a line without a DOB keeps its old row');
+        $this->assertArrayHasKey(8999, $this->stored, 'the removed line keeps its row');
+        $this->assertSame(['line_removed' => 1], $result['rows_for_review']['by_reason']);
+        $this->assertSame(8999, $result['rows_for_review']['rows'][0]['order_item_id']);
         $this->assertSame([8001, 8002], self::ids($result['age_mismatches']));
         $not_checked = $result['not_checked']['order_item_ids'];
         sort($not_checked);
-        $this->assertSame([8003, 8004], $not_checked);
-        $this->assertSame(2, $result['not_checked']['count']);
+        $this->assertSame([8003, 8004, 8005], $not_checked);
+        $this->assertSame(3, $result['not_checked']['count']);
         $this->assertCount(1, $this->adminLog);
         $this->assertSame('rebuild_age_mismatch', $this->adminLog[0][0]);
         $this->assertSame([8001, 8002], $this->adminLog[0][1]['order_item_ids']);
@@ -311,7 +314,7 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertSame([], $this->deleted);
     }
 
-    public function test_full_rebuild_statuses_keep_flags_delete_failed_and_rebuild_on_hold(): void {
+    public function test_full_rebuild_statuses_keep_every_row_and_list_failed_and_removed_for_review(): void {
         $this->order(7001, 'cancelled', [7101 => $this->meta()]);
         $this->order(7002, 'refunded', [7102 => $this->meta()]);
         $this->order(7003, 'failed', [7103 => $this->meta()]);
@@ -330,14 +333,19 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->routeOrders([7005, 7006, 7007]);
         $before = $this->snapshotOrderWrites();
 
-        $this->builder()->buildRosters(['clear_existing' => true]);
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
 
-        $upserted = array_merge($this->created, $this->updated);
-        sort($upserted);
-        $this->assertSame([7105, 7106, 7107], $upserted, 'on-hold, processing and completed are rebuilt');
-        $deleted = $this->deleted;
-        sort($deleted);
-        $this->assertSame([7103, 7108], $deleted, 'failed order and removed line only');
+        $this->assertSame([7107], $this->created, 'the completed line without a row is added');
+        $this->assertSame([], $this->updated, 'on-hold and processing rows are kept as they are');
+        $this->assertSame([], $this->deleted, 'a rebuild never deletes');
+        $this->assertArrayHasKey(7103, $this->stored, 'failed-order row is kept for review');
+        $this->assertArrayHasKey(7108, $this->stored, 'removed-line row is kept for review');
+        $review = [];
+        foreach ($result['rows_for_review']['rows'] as $row) {
+            $review[$row['order_item_id']] = $row['reason'];
+        }
+        ksort($review);
+        $this->assertSame([7103 => 'order_failed', 7108 => 'line_removed'], $review);
         $this->assertArrayHasKey(7101, $this->stored);
         $this->assertArrayHasKey(7102, $this->stored);
         $this->assertArrayHasKey(7104, $this->stored, 'pending row is kept');
@@ -346,7 +354,7 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertSame($before, $this->snapshotOrderWrites());
     }
 
-    public function test_rebuild_and_reconcile_agree(): void {
+    public function test_rebuild_lists_for_review_exactly_what_reconcile_deletes(): void {
         $this->seedAgeCases();
         $this->order(8107, 'failed', [8007 => $this->meta()]);
         $this->existingRow(8007, 8107);
@@ -371,15 +379,14 @@ class RosterRebuildCoverage160Test extends TestCase {
         $reconcile_deleted = $this->deleted;
         sort($reconcile_deleted);
 
-        $this->assertSame($rebuild_upserts, $reconcile_upserts);
-        $this->assertSame($rebuild_deleted, $reconcile_deleted);
-        $this->assertSame([8007, 8999], $rebuild_deleted);
+        // Reconcile still deletes obsolete rows; the rebuild keeps the same rows and lists them for review.
+        $this->assertSame([], $rebuild_deleted);
+        $this->assertSame([], $rebuild_upserts);
+        $review = array_map(static fn ($row) => $row['order_item_id'], $rebuild['rows_for_review']['rows']);
+        sort($review);
+        $this->assertSame($reconcile_deleted, $review);
+        $this->assertSame([8007, 8999], $review);
         $this->assertSame(self::ids($rebuild['age_mismatches']), self::ids($reconcile['age_mismatches']));
-        $a = $rebuild['not_checked']['order_item_ids'];
-        $b = $reconcile['not_checked']['order_item_ids'];
-        sort($a);
-        sort($b);
-        $this->assertSame($a, $b);
     }
 
     public function test_full_rebuild_transaction_failure_reports_error_and_changes_nothing(): void {
@@ -404,13 +411,13 @@ class RosterRebuildCoverage160Test extends TestCase {
 
         $result = $this->builder($this->ageDobs())->rebuildSpecificOrders([8101, 8102, 8103, 8104, 8105, 8106]);
 
-        $upserted = array_merge($this->created, $this->updated);
-        sort($upserted);
-        $this->assertSame([8001, 8002, 8003, 8004, 8006], $upserted);
-        $this->assertSame([8999], $this->deleted, 'removed line deleted after the build');
+        $this->assertSame([], array_merge($this->created, $this->updated), 'existing rows are not overwritten');
+        $this->assertSame([], $this->deleted, 'a rebuild never deletes');
+        $this->assertArrayHasKey(8999, $this->stored);
+        $this->assertSame(['line_removed' => 1], $result['rows_for_review']['by_reason']);
         $this->assertArrayHasKey(8005, $this->stored);
         $this->assertSame([8001, 8002], self::ids($result['age_mismatches']));
-        $this->assertSame(2, $result['not_checked']['count']);
+        $this->assertSame(3, $result['not_checked']['count'], 'start date, school-grade label and placeholder DOB');
         $this->assertCount(1, $this->adminLog);
         $this->assertSame($before, $this->snapshotOrderWrites());
     }
@@ -448,7 +455,7 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertNotEmpty($result['statistics']['warnings']);
     }
 
-    public function test_rebuild_specific_orders_inactive_statuses_use_obsolete_rule(): void {
+    public function test_rebuild_specific_orders_inactive_statuses_list_rows_for_review(): void {
         $this->order(7201, 'cancelled', [7301 => $this->meta()]);
         $this->order(7202, 'refunded', [7302 => $this->meta()]);
         $this->order(7203, 'failed', [7303 => $this->meta()]);
@@ -462,14 +469,156 @@ class RosterRebuildCoverage160Test extends TestCase {
 
         $result = $this->builder()->rebuildSpecificOrders([7201, 7202, 7203, 7204, 7299]);
 
-        $deleted = $this->deleted;
-        sort($deleted);
-        $this->assertSame([7303, 7305], $deleted);
+        $this->assertSame([], $this->deleted, 'a rebuild never deletes');
         $this->assertSame([], $this->created);
+        $review = [];
+        foreach ($result['rows_for_review']['rows'] as $row) {
+            $review[$row['order_item_id']] = $row['reason'];
+        }
+        ksort($review);
+        $this->assertSame([7303 => 'order_failed', 7305 => 'order_not_found'], $review);
         $this->assertContains([7201, Roster::STATUS_CANCELLED], $this->synced);
         $this->assertContains([7202, Roster::STATUS_REFUNDED], $this->synced);
         $this->assertSame(5, $result['statistics']['skipped_orders']);
         $this->assertSame([], $result['statistics']['errors']);
+    }
+
+    // ---- #160 review: no overwrite, drift report, dry run, DB-logging guard ------------------------------------
+
+    /** Build rows for three single-line orders once, so stored rows match their order lines. */
+    private function seedBuiltRows(): array {
+        $this->order(9101, 'completed', [9001 => $this->meta()]);
+        $this->order(9102, 'completed', [9002 => $this->meta()]);
+        $this->order(9103, 'completed', [9003 => $this->meta()]);
+        $this->routeOrders([9101, 9102, 9103]);
+        $this->builder()->buildRosters(['clear_existing' => true]);
+        $this->assertSame([9001, 9002, 9003], $this->created);
+        $this->created = $this->updated = [];
+        foreach ([9001 => 9101, 9002 => 9102, 9003 => 9103] as $item => $order) {
+            $this->wpdb->existing[] = ['order_item_id' => (string) $item, 'order_id' => (string) $order];
+        }
+
+        return [9001, 9002, 9003];
+    }
+
+    public function test_full_rebuild_matching_rows_report_no_drift(): void {
+        $this->seedBuiltRows();
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
+
+        $this->assertSame([], $this->created);
+        $this->assertSame([], $this->updated);
+        $this->assertSame(0, $result['row_drift']['count'], 'rows built from the same order line do not drift');
+    }
+
+    public function test_full_rebuild_reports_drift_without_overwriting_and_counts_moves(): void {
+        global $intersoccer_test_wc_order_item_meta;
+        $this->seedBuiltRows();
+        // 9001: roster row points at another variation (moved before the move audit existed).
+        $this->stored[9001]['variation_id'] = 99999;
+        // 9002: moved with the audit meta on the line; only the venue differs.
+        $this->stored[9002]['venue'] = 'Old Venue';
+        $this->order(9102, 'completed', [9002 => $this->meta(['_intersoccer_roster_move_to_variation_id' => '4242'])]);
+        $intersoccer_test_wc_order_item_meta[9002]['_intersoccer_roster_move_to_variation_id'] = 4242;
+        // 9003: hand-edited venue, never moved.
+        $this->stored[9003]['venue'] = 'Old Venue';
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
+
+        $this->assertSame([], $this->updated, 'drifted rows are not overwritten');
+        $this->assertSame(99999, (int) $this->stored[9001]['variation_id']);
+        $this->assertSame('Old Venue', $this->stored[9003]['venue']);
+        $this->assertSame(3, $result['row_drift']['count']);
+        $this->assertSame(2, $result['row_drift']['moved']);
+        $this->assertSame(1, $result['row_drift']['not_moved']);
+        $by_item = [];
+        foreach ($result['row_drift']['rows'] as $row) {
+            $by_item[$row['order_item_id']] = $row;
+        }
+        $this->assertContains('variation_id', $by_item[9001]['fields']);
+        $this->assertSame(['venue'], $by_item[9002]['fields']);
+        $this->assertTrue($by_item[9002]['moved']);
+        $this->assertSame(['venue'], $by_item[9003]['fields']);
+        $this->assertFalse($by_item[9003]['moved']);
+        unset($intersoccer_test_wc_order_item_meta[9002]);
+    }
+
+    public function test_overwrite_existing_opt_in_updates_rows(): void {
+        $this->seedBuiltRows();
+        $this->stored[9003]['venue'] = 'Old Venue';
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true, 'overwrite_existing' => true]);
+
+        $updated = $this->updated;
+        sort($updated);
+        $this->assertSame([9001, 9002, 9003], $updated);
+        $this->assertSame(0, $result['row_drift']['count']);
+        $this->assertSame([], $this->deleted);
+    }
+
+    public function test_dry_run_rolls_back_and_writes_no_admin_log(): void {
+        $this->seedAgeCases();
+        $this->routeOrders([8101, 8102, 8103, 8104, 8105, 8106]);
+        $calls = [];
+        $database = Mockery::mock(Database::class);
+        $database->shouldReceive('get_wpdb')->andReturn($this->wpdb);
+        $database->shouldNotReceive('transaction');
+        $database->shouldReceive('begin_transaction')->once()->andReturnUsing(function () use (&$calls) {
+            $calls[] = 'begin';
+            return true;
+        });
+        $database->shouldReceive('rollback_transaction')->once()->andReturnUsing(function () use (&$calls) {
+            $calls[] = 'rollback';
+            return true;
+        });
+
+        $result = $this->builder($this->ageDobs(), [], $database)->buildRosters(['clear_existing' => true, 'dry_run' => true]);
+
+        $this->assertTrue($result['dry_run']);
+        $this->assertEmpty($result['rebuild_failed'] ?? null);
+        $this->assertSame(['begin', 'rollback'], $calls);
+        $this->assertSame([], $this->adminLog, 'a dry run writes no admin-log entry');
+        $this->assertSame([8001, 8002], self::ids($result['age_mismatches']), 'counts are still reported');
+        $this->assertSame(['line_removed' => 1], $result['rows_for_review']['by_reason']);
+    }
+
+    public function test_rebuild_specific_orders_dry_run_rolls_back(): void {
+        $this->order(9201, 'completed', [9211 => $this->meta()]);
+        $this->routeOrders([]);
+        $database = Mockery::mock(Database::class);
+        $database->shouldReceive('get_wpdb')->andReturn($this->wpdb);
+        $database->shouldNotReceive('transaction');
+        $database->shouldReceive('begin_transaction')->once()->andReturn(true);
+        $database->shouldReceive('rollback_transaction')->once()->andReturn(true);
+
+        $result = $this->builder([], [], $database)->rebuildSpecificOrders([9201], ['dry_run' => true]);
+
+        $this->assertTrue($result['dry_run']);
+        $this->assertEmpty($result['rebuild_failed'] ?? null);
+    }
+
+    public function test_rebuild_refused_while_db_logging_is_on(): void {
+        $this->seedAgeCases();
+        $this->routeOrders([8101]);
+        $database = Mockery::mock(Database::class);
+        $database->shouldReceive('get_wpdb')->andReturn($this->wpdb);
+        $database->shouldNotReceive('transaction');
+        $database->shouldNotReceive('begin_transaction');
+        $builder = $this->builder([], [], $database);
+        $logger = Mockery::mock(Logger::class);
+        $logger->shouldReceive('info', 'debug', 'warning', 'error')->andReturn(null);
+        $logger->shouldReceive('is_db_logging_enabled')->andReturn(true);
+        (function () use ($logger) { $this->logger = $logger; })->call($builder);
+
+        $full = $builder->buildRosters(['clear_existing' => true]);
+        $this->assertTrue($full['rebuild_failed']);
+        $this->assertStringContainsString('database logging is on', $full['error']);
+
+        $specific = $builder->rebuildSpecificOrders([8101]);
+        $this->assertTrue($specific['rebuild_failed']);
+        $this->assertStringContainsString('database logging is on', $specific['error']);
+        $this->assertSame([], $this->created);
+        $this->assertSame([], $this->deleted);
     }
 
     public function test_reconcile_still_counts_delete_failures_as_errors(): void {

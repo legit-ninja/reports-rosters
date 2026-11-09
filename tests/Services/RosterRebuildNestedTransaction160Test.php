@@ -304,6 +304,17 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
         ];
     }
 
+    /**
+     * #160 review: rebuilds never delete roster rows; only the transaction control statements remain.
+     */
+    private function assertNoDeleteSql(array $sequence): void {
+        foreach ($sequence as $sql) {
+            $this->assertStringNotContainsString('DELETE', strtoupper($sql), 'a rebuild must not delete roster rows');
+        }
+        $this->assertSame('START TRANSACTION', $sequence[0] ?? null);
+        $this->assertSame('COMMIT', $sequence[count($sequence) - 1] ?? null);
+    }
+
     private function minimalBuilder(Database $database, RosterRepository $repo): RosterBuilder {
         $logger = Mockery::mock(Logger::class);
         $logger->shouldReceive('info', 'debug', 'warning', 'error')->andReturn(null);
@@ -323,22 +334,24 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
         );
     }
 
-    public function test_full_rebuild_two_deletes_nested_savepoints_single_commit(): void {
+    public function test_full_rebuild_keeps_removed_line_rows_and_lists_them_for_review(): void {
         $this->seedObsoletePair();
         $database = $this->realDatabase();
         $repo = $this->realRosterRepository($database);
         $builder = $this->minimalBuilder($database, $repo);
 
-        $builder->buildRosters(['clear_existing' => true, 'batch_size' => 5]);
+        $result = $builder->buildRosters(['clear_existing' => true, 'batch_size' => 5]);
 
         $sequence = $this->writeSqlSequence();
-        $this->assertSame($this->expectedTwoDeleteCommitSequence(6101, 6102), $sequence);
+        $this->assertNoDeleteSql($sequence);
         $this->assertWriteSequenceBoundedByTransaction($sequence);
-        $this->assertSame([], $this->wpdb->committed_item_ids());
+        $this->assertSame([6101, 6102], $this->wpdb->committed_item_ids(), 'removed-line rows are kept');
+        $this->assertSame(2, $result['rows_for_review']['count']);
+        $this->assertSame(['line_removed' => 2], $result['rows_for_review']['by_reason']);
         $this->assertTransactionLevelZero($database);
     }
 
-    public function test_rebuild_specific_orders_two_deletes_nested_savepoints_single_commit(): void {
+    public function test_rebuild_specific_orders_keeps_removed_line_rows_and_lists_them_for_review(): void {
         $order_id = 7001;
         $line_keep = 7101;
         $removed_a = 7102;
@@ -429,16 +442,18 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
             $matcher
         );
 
-        $builder->rebuildSpecificOrders([$order_id]);
+        $result = $builder->rebuildSpecificOrders([$order_id]);
 
         $sequence = $this->writeSqlSequence();
-        $this->assertSame($this->expectedTwoDeleteCommitSequence($removed_a, $removed_b), $sequence);
+        $this->assertNoDeleteSql($sequence);
         $this->assertWriteSequenceBoundedByTransaction($sequence);
-        $this->assertSame([$line_keep], $this->wpdb->committed_item_ids());
+        $this->assertSame([$line_keep, $removed_a, $removed_b], $this->wpdb->committed_item_ids(), 'removed-line rows are kept');
+        $this->assertSame(2, $result['rows_for_review']['count']);
+        $this->assertSame(['line_removed' => 2], $result['rows_for_review']['by_reason']);
         $this->assertTransactionLevelZero($database);
     }
 
-    public function test_full_rebuild_second_delete_failure_rolls_back_all_and_rebuild_failed(): void {
+    public function test_full_rebuild_sends_no_delete_even_when_a_delete_would_fail(): void {
         $this->seedObsoletePair();
         $this->wpdb->fail_delete_on_attempt = 2;
         $database = $this->realDatabase();
@@ -447,10 +462,9 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
 
         $result = $builder->buildRosters(['clear_existing' => true, 'batch_size' => 5]);
 
-        $this->assertTrue($result['rebuild_failed'] ?? false);
-        $this->assertStringContainsString('Failed to delete obsolete roster 6102', (string) ($result['error'] ?? ''));
+        $this->assertFalse($result['rebuild_failed'] ?? false);
         $sequence = $this->writeSqlSequence();
-        $this->assertSame($this->expectedSecondDeleteFailureSequence(6101, 6102), $sequence);
+        $this->assertNoDeleteSql($sequence);
         $this->assertWriteSequenceBoundedByTransaction($sequence);
         $this->assertSame([6101, 6102], $this->wpdb->committed_item_ids());
         $this->assertSame([], $this->admin_log_actions);
@@ -482,8 +496,6 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
             $builder,
             'Rebuild failed; no roster rows were changed.'
         );
-
-        $this->assertStringContainsString('Failed to delete obsolete roster 6102', $message);
         $this->assertStringNotContainsString('synthetic line validation failure', $message);
     }
 
@@ -509,7 +521,7 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
         return [$order_id, $item_id, $earlier_error_fragment];
     }
 
-    public function test_rebuild_specific_orders_abort_error_excludes_earlier_line_errors(): void {
+    public function test_rebuild_specific_orders_with_line_error_still_commits_without_deletes(): void {
         [$bad_order_id, , $earlier_error_fragment] = $this->seedOrderWithMissingActivityTypeLine();
 
         $order_id = 7001;
@@ -605,15 +617,13 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
 
         $result = $builder->rebuildSpecificOrders([$bad_order_id, $order_id]);
 
-        $this->assertTrue($result['rebuild_failed'] ?? false);
+        $this->assertFalse($result['rebuild_failed'] ?? false);
         $error = (string) ($result['error'] ?? '');
-        $this->assertStringContainsString('Failed to delete obsolete roster 7103', $error);
-        $this->assertStringNotContainsString($earlier_error_fragment, $error);
         $this->assertSame([$line_keep, $removed_a, $removed_b], $this->wpdb->committed_item_ids());
         $this->assertTransactionLevelZero($database);
     }
 
-    public function test_full_rebuild_abort_error_excludes_earlier_line_errors(): void {
+    public function test_full_rebuild_with_line_error_still_commits_without_deletes(): void {
         $this->seedObsoletePair();
         [$bad_order_id, , $earlier_error_fragment] = $this->seedOrderWithMissingActivityTypeLine();
 
@@ -643,15 +653,13 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
 
         $result = $builder->buildRosters(['clear_existing' => true, 'batch_size' => 5]);
 
-        $this->assertTrue($result['rebuild_failed'] ?? false);
+        $this->assertFalse($result['rebuild_failed'] ?? false);
         $error = (string) ($result['error'] ?? '');
-        $this->assertStringContainsString('Failed to delete obsolete roster 6102', $error);
-        $this->assertStringNotContainsString($earlier_error_fragment, $error);
         $this->assertSame([6101, 6102], $this->wpdb->committed_item_ids());
         $this->assertTransactionLevelZero($database);
     }
 
-    public function test_rebuild_specific_orders_second_delete_failure_rolls_back_and_rebuild_failed(): void {
+    public function test_rebuild_specific_orders_sends_no_delete_even_when_a_delete_would_fail(): void {
         $order_id = 7001;
         $line_keep = 7101;
         $removed_a = 7102;
@@ -745,17 +753,16 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
 
         $result = $builder->rebuildSpecificOrders([$order_id]);
 
-        $this->assertTrue($result['rebuild_failed'] ?? false);
-        $this->assertStringContainsString('Failed to delete obsolete roster 7103', (string) ($result['error'] ?? ''));
+        $this->assertFalse($result['rebuild_failed'] ?? false);
         $sequence = $this->writeSqlSequence();
-        $this->assertSame($this->expectedSecondDeleteFailureSequence($removed_a, $removed_b), $sequence);
+        $this->assertNoDeleteSql($sequence);
         $this->assertWriteSequenceBoundedByTransaction($sequence);
         $this->assertSame([$line_keep, $removed_a, $removed_b], $this->wpdb->committed_item_ids());
         $this->assertSame([], $this->admin_log_actions);
         $this->assertTransactionLevelZero($database);
     }
 
-    public function test_rebuild_specific_orders_inactive_order_second_delete_failure_rolls_back(): void {
+    public function test_rebuild_specific_orders_inactive_order_sends_no_delete(): void {
         $order_id = 7203;
         $row_a = 7303;
         $row_b = 7304;
@@ -802,10 +809,9 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
         $builder = $this->minimalBuilder($database, $repo);
         $result = $builder->rebuildSpecificOrders([$order_id]);
 
-        $this->assertTrue($result['rebuild_failed'] ?? false);
-        $this->assertStringContainsString('Failed to delete obsolete roster 7304', (string) ($result['error'] ?? ''));
+        $this->assertFalse($result['rebuild_failed'] ?? false);
         $sequence = $this->writeSqlSequence();
-        $this->assertSame($this->expectedSecondDeleteFailureSequence($row_a, $row_b), $sequence);
+        $this->assertNoDeleteSql($sequence);
         $this->assertWriteSequenceBoundedByTransaction($sequence);
         $this->assertSame([$row_a, $row_b], $this->wpdb->committed_item_ids());
         $this->assertSame([], $this->admin_log_actions);

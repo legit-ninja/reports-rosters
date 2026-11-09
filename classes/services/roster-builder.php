@@ -274,8 +274,99 @@ class RosterBuilder {
                 'order_item_ids' => [],
             ],
             'rosters_deleted' => 0,
+            // Rows a rebuild would previously have deleted; kept and listed for review (#160 review).
+            'rows_for_review' => [
+                'count' => 0,
+                'by_reason' => [],
+                'rows' => [],
+            ],
+            // Existing rows whose stored values differ from their order line; not overwritten.
+            'row_drift' => [
+                'count' => 0,
+                'moved' => 0,
+                'not_moved' => 0,
+                'rows' => [],
+            ],
+            'dry_run' => false,
         ];
         $this->last_rebuild_abort_exception = null;
+    }
+
+    /** Max per-row entries kept in rows_for_review / row_drift lists (counts are always complete). */
+    private const REVIEW_LIST_LIMIT = 500;
+
+    /** Fields compared between an existing roster row and its order line. */
+    private const DRIFT_FIELDS = [
+        'variation_id',
+        'product_id',
+        'activity_type',
+        'venue',
+        'age_group',
+        'camp_terms',
+        'course_day',
+        'times',
+        'season',
+        'start_date',
+        'end_date',
+        'girls_only',
+        'days_selected',
+        'first_name',
+        'last_name',
+    ];
+
+    /**
+     * Refuse a rebuild while DB logging is on: the logger may run CREATE TABLE (implicit commit)
+     * inside the rebuild transaction (#168 item 3).
+     */
+    private function rebuildRefusalReason(): ?string {
+        $loggers = [$this->logger];
+        try {
+            if (is_object($this->database) && method_exists($this->database, 'get_logger')) {
+                $loggers[] = $this->database->get_logger();
+            }
+        } catch (\Throwable $e) {
+            // Logger not reachable (e.g. test doubles): DB logging is off by default.
+        }
+        foreach ($loggers as $logger) {
+            try {
+                if (is_object($logger) && method_exists($logger, 'is_db_logging_enabled') && $logger->is_db_logging_enabled()) {
+                    return 'Rebuild refused: database logging is on. Turn off log_to_db before rebuilding rosters.';
+                }
+            } catch (\Throwable $e) {
+                continue;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Run $work in a transaction that is always rolled back (dry run). Nothing is written.
+     *
+     * @param callable $work
+     * @return mixed Result of $work, or false when it threw
+     */
+    private function runDryRunTransaction(callable $work) {
+        if (!$this->database->begin_transaction()) {
+            return false;
+        }
+        try {
+            return $work();
+        } catch (\Throwable $e) {
+            if ($e instanceof RosterRebuildAbortedException) {
+                $this->last_rebuild_abort_exception = $e;
+            }
+            $this->build_stats['errors'][] = $e->getMessage();
+            return false;
+        } finally {
+            $this->database->rollback_transaction();
+            try {
+                // Cached rows from the rolled-back writes must not outlive the dry run.
+                $this->roster_repository->clearAllCaches();
+            } catch (\Throwable $e) {
+                $this->logger->warning('Dry run: could not clear roster caches', ['error' => $e->getMessage()]);
+            }
+        }
     }
 
     /**
@@ -333,25 +424,50 @@ class RosterBuilder {
                 'update_existing' => false,
                 'update_past_events' => false,
                 'skip_age_group_validation' => false,
+                'overwrite_existing' => false,
+                'dry_run' => false,
             ], $options);
 
             $is_full_rebuild = !empty($options['clear_existing']);
+            $is_dry_run = $is_full_rebuild && !empty($options['dry_run']);
             if ($is_full_rebuild) {
-                // Full rebuild: upsert all eligible lines, then delete only obsolete rows (no TRUNCATE).
-                $options['update_existing'] = true;
-                $options['skip_duplicates'] = false;
+                $refusal = $this->rebuildRefusalReason();
+                if ($refusal !== null) {
+                    $this->build_stats['rebuild_failed'] = true;
+                    $this->build_stats['errors'][] = $refusal;
+                    $this->build_stats['error'] = $refusal;
+                    $this->build_stats['end_time'] = microtime(true);
+                    return $this->build_stats;
+                }
+                // Full rebuild: insert missing lines; existing rows are kept as they are and
+                // differences are reported (row_drift) unless overwrite_existing is set.
+                // Nothing is deleted: rows that no longer match an order are listed in rows_for_review.
+                $overwrite = !empty($options['overwrite_existing']);
+                $options['update_existing'] = $overwrite;
+                $options['skip_duplicates'] = !$overwrite;
+                $options['report_drift'] = !$overwrite;
                 $options['update_past_events'] = true;
                 $options['skip_age_group_validation'] = true;
                 $options['order_statuses'] = $default_statuses;
             }
 
-            $stats = $this->database->transaction(function () use ($options, $is_full_rebuild) {
-                if ($is_full_rebuild) {
+            if ($is_dry_run) {
+                $this->build_stats['dry_run'] = true;
+                $stats = $this->runDryRunTransaction(function () use ($options) {
                     return $this->runFullRebuildInTransaction($options);
+                });
+                if ($stats !== false) {
+                    $stats['dry_run'] = true;
                 }
+            } else {
+                $stats = $this->database->transaction(function () use ($options, $is_full_rebuild) {
+                    if ($is_full_rebuild) {
+                        return $this->runFullRebuildInTransaction($options);
+                    }
 
-                return $this->processOrdersInBatches($options);
-            });
+                    return $this->processOrdersInBatches($options);
+                });
+            }
 
             if ($is_full_rebuild) {
                 if ($stats === false) {
@@ -364,7 +480,7 @@ class RosterBuilder {
                     $this->build_stats['error'] = $this->resolveRebuildAbortErrorMessage($generic);
                     return $this->build_stats;
                 }
-                if (!empty($stats['age_mismatches'])) {
+                if (!$is_dry_run && !empty($stats['age_mismatches'])) {
                     $this->logRebuildAgeMismatchAdminEntry($stats['age_mismatches']);
                 }
                 return $stats;
@@ -417,12 +533,8 @@ class RosterBuilder {
             $remaining_map = is_array($this->full_rebuild_existing_item_map)
                 ? $this->full_rebuild_existing_item_map
                 : [];
-            $deleted = $this->deleteObsoleteReconcileRows(
-                $remaining_map,
-                200,
-                self::DELETE_ORDER_ITEM_ABORT_RUN
-            );
-            $this->build_stats['rosters_deleted'] = $deleted;
+            // Never delete during a rebuild: list rows that no longer match an order for review.
+            $this->flagObsoleteRowsForReview($remaining_map);
         } finally {
             $this->full_rebuild_existing_item_map = null;
         }
@@ -887,37 +999,47 @@ class RosterBuilder {
      * returns false (keep).
      */
     private function shouldDeleteObsoleteReconcileRow(int $order_item_id, int $stored_order_id): bool {
+        return $this->obsoleteRowReason($order_item_id, $stored_order_id) !== null;
+    }
+
+    /**
+     * Why a stored roster row no longer matches an active order line, or null when it still does
+     * (or when that can't be decided). Used by Reconcile to delete, and by rebuilds to flag only.
+     *
+     * @return string|null order_not_found | order_failed | line_removed | null
+     */
+    private function obsoleteRowReason(int $order_item_id, int $stored_order_id): ?string {
         try {
             if ($order_item_id <= 0 || $stored_order_id <= 0) {
-                return false;
+                return null;
             }
 
             if (!function_exists('wc_get_order')) {
-                return false;
+                return null;
             }
 
             $order = wc_get_order($stored_order_id);
             if (!$order || !is_object($order) || !method_exists($order, 'get_status')) {
-                return true;
+                return 'order_not_found';
             }
 
             $status = (string) $order->get_status();
             if (RosterRefundService::isFlaggedRowStatus($status)) {
                 $this->syncKeptObsoleteOrderStatus($stored_order_id, $status);
                 unset($order);
-                return false;
+                return null;
             }
 
             $normalized = RosterRefundService::normalizeWooOrderStatus($status);
             if (in_array($normalized, ['refunded', 'cancelled'], true)) {
                 $this->syncKeptObsoleteOrderStatus($stored_order_id, $status);
                 unset($order);
-                return false;
+                return null;
             }
 
             if (RosterRefundService::isInactiveRebuildOrderStatus($status)) {
                 unset($order);
-                return true;
+                return 'order_' . RosterRefundService::normalizeWooOrderStatus($status);
             }
 
             if (!method_exists($order, 'get_items')) {
@@ -925,7 +1047,7 @@ class RosterBuilder {
                 $this->logger->warning('Keeping obsolete reconcile row; order line items unreadable', [
                     'order_id' => $stored_order_id,
                 ]);
-                return false;
+                return null;
             }
 
             $items = $order->get_items();
@@ -935,17 +1057,17 @@ class RosterBuilder {
                 $this->logger->warning('Keeping obsolete reconcile row; order line items unreadable', [
                     'order_id' => $stored_order_id,
                 ]);
-                return false;
+                return null;
             }
 
             $line_still_on_order = array_key_exists($order_item_id, $items);
 
-            return !$line_still_on_order;
+            return $line_still_on_order ? null : 'line_removed';
         } catch (\Throwable $e) {
             $this->logger->warning('Keeping obsolete reconcile row; order line items unreadable', [
                 'order_id' => $stored_order_id,
             ]);
-            return false;
+            return null;
         }
     }
 
@@ -1089,47 +1211,125 @@ class RosterBuilder {
     }
 
     /**
-     * Remove roster rows for an order whose lines no longer exist (after a successful per-order rebuild).
+     * Rebuild-only: list rows that no longer match an active order line. Nothing is deleted.
+     *
+     * @param array<int,int> $item_map order_item_id => stored order_id
      */
-    private function deleteObsoleteRowsForOrderAfterRebuild(int $order_id, \WC_Order $order): void {
-        if ($order_id <= 0 || !method_exists($order, 'get_items')) {
-            return;
-        }
-
-        $line_ids = array_map('intval', array_keys($order->get_items()));
-        $existing = $this->roster_repository->where(['order_id' => $order_id]);
-        foreach ($existing as $roster_row) {
-            $item_id = (int) ($roster_row->order_item_id ?? 0);
-            if ($item_id <= 0 || in_array($item_id, $line_ids, true)) {
-                continue;
+    private function flagObsoleteRowsForReview(array $item_map): void {
+        foreach ($item_map as $order_item_id => $stored_order_id) {
+            $reason = $this->obsoleteRowReason((int) $order_item_id, (int) $stored_order_id);
+            if ($reason !== null) {
+                $this->recordRowForReview((int) $stored_order_id, (int) $order_item_id, $reason);
             }
-            if (!$this->shouldDeleteObsoleteReconcileRow($item_id, $order_id)) {
-                continue;
-            }
-            $this->deleteRosterRowByOrderItemId($item_id, self::DELETE_ORDER_ITEM_ABORT_RUN);
         }
     }
 
+    private function recordRowForReview(int $order_id, int $order_item_id, string $reason): void {
+        $bucket = &$this->build_stats['rows_for_review'];
+        $bucket['count']++;
+        $bucket['by_reason'][$reason] = (int) ($bucket['by_reason'][$reason] ?? 0) + 1;
+        if (count($bucket['rows']) < self::REVIEW_LIST_LIMIT) {
+            $bucket['rows'][] = [
+                'order_id' => $order_id,
+                'order_item_id' => $order_item_id,
+                'reason' => $reason,
+            ];
+        }
+        unset($bucket);
+        $this->logger->warning('Rebuild kept a roster row for review instead of deleting it', [
+            'order_id' => $order_id,
+            'order_item_id' => $order_item_id,
+            'reason' => $reason,
+        ]);
+    }
+
     /**
-     * Apply obsolete-row cleanup to every stored roster row for an order (no upsert rebuild).
+     * Per-order rebuild: list this order's rows that no longer match a line (no delete).
      */
-    private function reconcileStoredOrderRowsWithoutRebuild(int $order_id): void {
+    private function flagObsoleteRowsForOrder(int $order_id): void {
         if ($order_id <= 0) {
             return;
         }
 
-        $existing = $this->roster_repository->where(['order_id' => $order_id]);
-        foreach ($existing as $roster_row) {
+        $item_map = [];
+        foreach ($this->roster_repository->where(['order_id' => $order_id]) as $roster_row) {
             $item_id = (int) ($roster_row->order_item_id ?? 0);
-            if ($item_id <= 0) {
-                continue;
+            if ($item_id > 0) {
+                $item_map[$item_id] = $order_id;
             }
-            if (!$this->shouldDeleteObsoleteReconcileRow($item_id, $order_id)) {
-                continue;
-            }
-            $this->deleteRosterRowByOrderItemId($item_id, self::DELETE_ORDER_ITEM_ABORT_RUN);
         }
+        $this->flagObsoleteRowsForReview($item_map);
     }
+
+    private function normalizeDriftValue(string $field, $value): string {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+        if (is_object($value) && method_exists($value, 'format')) {
+            return (string) $value->format('Y-m-d');
+        }
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+        $value = trim((string) $value);
+        if (in_array($field, ['start_date', 'end_date'], true) && $value !== '') {
+            $ts = strtotime($value);
+            return $ts ? gmdate('Y-m-d', $ts) : $value;
+        }
+        if (in_array($field, ['variation_id', 'product_id', 'girls_only'], true)) {
+            return (string) (int) $value;
+        }
+
+        return $value;
+    }
+
+    /**
+     * Record (do not apply) differences between an existing roster row and its order line.
+     * A row is counted as moved when the line carries the roster-move audit meta, or when the
+     * row and line point at different variations.
+     *
+     * @param Roster $existing_roster
+     * @param array  $roster_data Order-line-derived data
+     */
+    private function recordRowDrift($existing_roster, array $roster_data): void {
+        $changed = [];
+        foreach (self::DRIFT_FIELDS as $field) {
+            if (!array_key_exists($field, $roster_data)) {
+                continue;
+            }
+            $incoming = $this->normalizeDriftValue($field, $roster_data[$field]);
+            if ($incoming === '') {
+                continue;
+            }
+            $stored = $this->normalizeDriftValue($field, $existing_roster->$field ?? '');
+            if ($stored !== $incoming) {
+                $changed[] = $field;
+            }
+        }
+        if ($changed === []) {
+            return;
+        }
+
+        $order_item_id = (int) ($roster_data['order_item_id'] ?? $existing_roster->order_item_id ?? 0);
+        $moved = in_array('variation_id', $changed, true);
+        if (!$moved && $order_item_id > 0 && function_exists('wc_get_order_item_meta')) {
+            $moved = (int) wc_get_order_item_meta($order_item_id, '_intersoccer_roster_move_to_variation_id', true) > 0;
+        }
+
+        $bucket = &$this->build_stats['row_drift'];
+        $bucket['count']++;
+        $bucket[$moved ? 'moved' : 'not_moved']++;
+        if (count($bucket['rows']) < self::REVIEW_LIST_LIMIT) {
+            $bucket['rows'][] = [
+                'order_id' => (int) ($roster_data['order_id'] ?? $existing_roster->order_id ?? 0),
+                'order_item_id' => $order_item_id,
+                'moved' => $moved,
+                'fields' => $changed,
+            ];
+        }
+        unset($bucket);
+    }
+
     
     /**
      * Process items from a WooCommerce order
@@ -2433,6 +2633,9 @@ class RosterBuilder {
         
         if ($existing_roster) {
             if ($options['skip_duplicates'] && !$options['update_existing']) {
+                if (!empty($options['report_drift'])) {
+                    $this->recordRowDrift($existing_roster, $roster_data);
+                }
                 $this->logger->debug('Skipping duplicate roster entry', [
                     'existing_id' => $existing_roster->id,
                     'order_id' => $roster_data['order_id']
@@ -2860,20 +3063,43 @@ class RosterBuilder {
             $this->init_build_stats();
             $options = array_merge([
                 'validate_data' => true,
-                'update_existing' => true,
-                'skip_duplicates' => false,
                 'update_past_events' => true,
                 'skip_age_group_validation' => true,
+                'overwrite_existing' => false,
+                'dry_run' => false,
             ], $options);
+            // Insert missing lines; existing rows are kept and differences reported unless
+            // overwrite_existing is set (#160 review: a rebuild must not undo roster moves).
+            $overwrite = !empty($options['overwrite_existing']);
+            $options['update_existing'] = $overwrite;
+            $options['skip_duplicates'] = !$overwrite;
+            $options['report_drift'] = !$overwrite;
+            $is_dry_run = !empty($options['dry_run']);
+            $this->build_stats['dry_run'] = $is_dry_run;
+
+            $refusal = $this->rebuildRefusalReason();
+            if ($refusal !== null) {
+                $this->build_stats['rebuild_failed'] = true;
+                $this->build_stats['errors'][] = $refusal;
+                $this->build_stats['end_time'] = microtime(true);
+                return [
+                    'rosters' => new RostersCollection(),
+                    'statistics' => $this->getBuildStatistics(),
+                    'age_mismatches' => [],
+                    'not_checked' => ['count' => 0, 'order_item_ids' => []],
+                    'rebuild_failed' => true,
+                    'error' => $refusal,
+                ];
+            }
 
             $results = new RostersCollection();
 
-            $tx_ok = $this->database->transaction(function () use ($order_ids, $options, &$results) {
+            $work = function () use ($order_ids, $options, &$results) {
                 foreach ($order_ids as $order_id) {
                     $order_id = (int) $order_id;
                     $order = wc_get_order($order_id);
                     if (!$order || !is_object($order)) {
-                        $this->reconcileStoredOrderRowsWithoutRebuild($order_id);
+                        $this->flagObsoleteRowsForOrder($order_id);
                         $this->build_stats['skipped_orders']++;
                         continue;
                     }
@@ -2882,7 +3108,7 @@ class RosterBuilder {
                         ? intersoccer_roster_rebuild_statuses()
                         : ['completed', 'processing', 'on-hold'];
                     if (!in_array((string) $order->get_status(), $allowed_statuses, true)) {
-                        $this->reconcileStoredOrderRowsWithoutRebuild($order_id);
+                        $this->flagObsoleteRowsForOrder($order_id);
                         $this->build_stats['skipped_orders']++;
                         continue;
                     }
@@ -2890,14 +3116,8 @@ class RosterBuilder {
                     try {
                         $order_rosters = $this->processOrderItems($order, $options);
                         $results = $results->merge($order_rosters);
-                        if ($this->current_order_unbuilt_line_items === 0) {
-                            // Only after every line of the order built: drop rows of lines no longer on it.
-                            $this->deleteObsoleteRowsForOrderAfterRebuild($order_id, $order);
-                        } else {
-                            $this->logger->warning('Keeping removed-line rows; order did not build cleanly', [
-                                'order_id' => $order_id,
-                            ]);
-                        }
+                        // Never delete: rows of lines no longer on the order are listed for review.
+                        $this->flagObsoleteRowsForOrder($order_id);
                         $this->build_stats['orders_processed']++;
                     } catch (\Throwable $e) {
                         $this->rethrowIfRebuildAborted($e);
@@ -2912,7 +3132,11 @@ class RosterBuilder {
                 }
 
                 return true;
-            });
+            };
+
+            $tx_ok = $is_dry_run
+                ? $this->runDryRunTransaction($work)
+                : $this->database->transaction($work);
 
             $this->build_stats['end_time'] = microtime(true);
 
@@ -2934,7 +3158,7 @@ class RosterBuilder {
                 ];
             }
 
-            if (!empty($this->build_stats['age_mismatches'])) {
+            if (!$is_dry_run && !empty($this->build_stats['age_mismatches'])) {
                 $this->logRebuildAgeMismatchAdminEntry($this->build_stats['age_mismatches']);
             }
 
@@ -2949,6 +3173,9 @@ class RosterBuilder {
                 'statistics' => $statistics,
                 'age_mismatches' => $this->build_stats['age_mismatches'],
                 'not_checked' => $this->build_stats['not_checked'],
+                'rows_for_review' => $this->build_stats['rows_for_review'],
+                'row_drift' => $this->build_stats['row_drift'],
+                'dry_run' => $is_dry_run,
             ];
 
         } catch (\Throwable $e) {

@@ -144,15 +144,24 @@ class RosterAjaxHandler {
             
             $this->logger->info('AJAX: Rebuild rosters request started');
             
-            // Run rebuild
+            if (function_exists('set_time_limit')) {
+                @set_time_limit(0);
+            }
+
+            $dry_run = !empty($_POST['dry_run']) && (string) $_POST['dry_run'] !== '0';
+
+            // Run rebuild (dry run: same work inside a transaction that is always rolled back)
             $results = $this->roster_builder->buildRosters([
                 'clear_existing' => true,
-                'batch_size' => 100
+                'batch_size' => 100,
+                'dry_run' => $dry_run,
             ]);
 
             if (!empty($results['rebuild_failed'])) {
                 wp_send_json_error([
-                    'message' => __('Rebuild failed; no roster rows were changed.', 'intersoccer-reports-rosters'),
+                    'message' => !empty($results['error'])
+                        ? (string) $results['error']
+                        : __('Rebuild failed; no roster rows were changed.', 'intersoccer-reports-rosters'),
                     'results' => $results,
                 ]);
             }
@@ -169,12 +178,24 @@ class RosterAjaxHandler {
                 $mismatch_count,
                 $not_checked_count
             );
+            $message .= ' ' . sprintf(
+                __('Kept for review (not deleted): %1$d. Rows differing from their order line (not overwritten): %2$d (moved: %3$d).', 'intersoccer-reports-rosters'),
+                (int) ($results['rows_for_review']['count'] ?? 0),
+                (int) ($results['row_drift']['count'] ?? 0),
+                (int) ($results['row_drift']['moved'] ?? 0)
+            );
+            if (!empty($results['dry_run'])) {
+                $message = __('Dry run, nothing was saved.', 'intersoccer-reports-rosters') . ' ' . $message;
+            }
 
             wp_send_json_success([
                 'message' => $message,
                 'results' => $results,
                 'age_mismatches' => $results['age_mismatches'] ?? [],
                 'not_checked' => $results['not_checked'] ?? ['count' => 0, 'order_item_ids' => []],
+                'rows_for_review' => $results['rows_for_review'] ?? ['count' => 0, 'by_reason' => [], 'rows' => []],
+                'row_drift' => $results['row_drift'] ?? ['count' => 0, 'moved' => 0, 'not_moved' => 0, 'rows' => []],
+                'dry_run' => !empty($results['dry_run']),
             ]);
             
         } catch (\Exception $e) {
