@@ -179,10 +179,11 @@ class RosterAjaxHandler {
                 $not_checked_count
             );
             $message .= ' ' . sprintf(
-                __('Kept for review (not deleted): %1$d. Rows differing from their order line (not overwritten): %2$d (moved: %3$d).', 'intersoccer-reports-rosters'),
+                __('Kept for review (not deleted): %1$d. Rows conflicting with their order line (not overwritten): %2$d (moved: %3$d). Rows with empty fields filled: %4$d.', 'intersoccer-reports-rosters'),
                 (int) ($results['rows_for_review']['count'] ?? 0),
                 (int) ($results['row_drift']['count'] ?? 0),
-                (int) ($results['row_drift']['moved'] ?? 0)
+                (int) ($results['row_drift']['moved'] ?? 0),
+                (int) ($results['row_fill']['count'] ?? 0)
             );
             if (!empty($results['dry_run'])) {
                 $message = __('Dry run, nothing was saved.', 'intersoccer-reports-rosters') . ' ' . $message;
@@ -195,6 +196,8 @@ class RosterAjaxHandler {
                 'not_checked' => $results['not_checked'] ?? ['count' => 0, 'order_item_ids' => []],
                 'rows_for_review' => $results['rows_for_review'] ?? ['count' => 0, 'by_reason' => [], 'rows' => []],
                 'row_drift' => $results['row_drift'] ?? ['count' => 0, 'moved' => 0, 'not_moved' => 0, 'rows' => []],
+                'row_fill' => $results['row_fill'] ?? ['count' => 0, 'by_field' => [], 'rows' => []],
+                'created' => $results['created'] ?? ['count' => 0],
                 'dry_run' => !empty($results['dry_run']),
             ]);
             

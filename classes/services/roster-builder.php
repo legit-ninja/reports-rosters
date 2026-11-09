@@ -110,6 +110,9 @@ class RosterBuilder {
      */
     private $build_stats = [];
 
+    /** @var array<string,string> Where the current line's times value came from (drift diagnostics). */
+    private $current_times_trace = [];
+
     /** @var RosterRebuildAbortedException|null Set when a rebuild-scoped delete aborts the run. */
     private $last_rebuild_abort_exception = null;
 
@@ -285,6 +288,25 @@ class RosterBuilder {
                 'count' => 0,
                 'moved' => 0,
                 'not_moved' => 0,
+                'by_field' => [],
+                'rows' => [],
+            ],
+            // Existing rows whose empty fields were filled from their order line (only empty fields).
+            'row_fill' => [
+                'count' => 0,
+                'by_field' => [],
+                'held_times' => 0,
+                'failed' => 0,
+                'rows' => [],
+            ],
+            // Lines that had no roster row and were added (diagnostics for past gaps).
+            'created' => [
+                'count' => 0,
+                'by_order_month' => [],
+                'by_order_status' => [],
+                'by_activity_type' => [],
+                'product_missing' => 0,
+                'variation_missing' => 0,
                 'rows' => [],
             ],
             'dry_run' => false,
@@ -313,6 +335,27 @@ class RosterBuilder {
         'first_name',
         'last_name',
     ];
+
+    /**
+     * Fields a rebuild may fill on an existing row, and only when the row's copy is empty.
+     * times is deliberately absent: order-line times are not trusted yet (#160 review).
+     */
+    private const FILLABLE_FIELDS = [
+        'activity_type',
+        'venue',
+        'age_group',
+        'camp_terms',
+        'course_day',
+        'season',
+        'start_date',
+        'end_date',
+        'days_selected',
+        'first_name',
+        'last_name',
+    ];
+
+    /** Fields compared without regard to letter case. */
+    private const CASE_INSENSITIVE_DRIFT_FIELDS = ['season'];
 
     /**
      * Refuse a rebuild while DB logging is on: the logger may run CREATE TABLE (implicit commit)
@@ -1284,28 +1327,204 @@ class RosterBuilder {
     }
 
     /**
-     * Record (do not apply) differences between an existing roster row and its order line.
-     * A row is counted as moved when the line carries the roster-move audit meta, or when the
-     * row and line point at different variations.
+     * Diagnostics for a line that had no roster row (why past gaps happened).
+     *
+     * @param array $roster_data
+     */
+    private function recordCreatedRow(array $roster_data): void {
+        $order_id = (int) ($roster_data['order_id'] ?? 0);
+        $month = 'unknown';
+        $status = 'unknown';
+        $created_via = '';
+        if ($order_id > 0 && function_exists('wc_get_order')) {
+            try {
+                $order = wc_get_order($order_id);
+                if ($order && is_object($order)) {
+                    if (method_exists($order, 'get_date_created') && $order->get_date_created()) {
+                        $month = $order->get_date_created()->format('Y-m');
+                    }
+                    if (method_exists($order, 'get_status')) {
+                        $status = (string) $order->get_status();
+                    }
+                    if (method_exists($order, 'get_created_via')) {
+                        $created_via = (string) $order->get_created_via();
+                    }
+                }
+            } catch (\Throwable $e) {
+                // diagnostics only
+            }
+        }
+
+        $product_id = (int) ($roster_data['product_id'] ?? 0);
+        $variation_id = (int) ($roster_data['variation_id'] ?? 0);
+        $product_missing = false;
+        $variation_missing = false;
+        if (function_exists('wc_get_product')) {
+            try {
+                $product_missing = $product_id <= 0 || !wc_get_product($product_id);
+                $variation_missing = $variation_id > 0 && !wc_get_product($variation_id);
+            } catch (\Throwable $e) {
+                // diagnostics only
+            }
+        }
+
+        $activity = (string) ($roster_data['activity_type'] ?? '');
+        $bucket = &$this->build_stats['created'];
+        $bucket['count']++;
+        $bucket['by_order_month'][$month] = (int) ($bucket['by_order_month'][$month] ?? 0) + 1;
+        $bucket['by_order_status'][$status] = (int) ($bucket['by_order_status'][$status] ?? 0) + 1;
+        $bucket['by_activity_type'][$activity] = (int) ($bucket['by_activity_type'][$activity] ?? 0) + 1;
+        if ($product_missing) {
+            $bucket['product_missing']++;
+        }
+        if ($variation_missing) {
+            $bucket['variation_missing']++;
+        }
+        if (count($bucket['rows']) < self::REVIEW_LIST_LIMIT) {
+            $bucket['rows'][] = [
+                'order_id' => $order_id,
+                'order_item_id' => (int) ($roster_data['order_item_id'] ?? 0),
+                'order_month' => $month,
+                'order_status' => $status,
+                'created_via' => $created_via,
+                'activity_type' => $activity,
+                'age_group' => (string) ($roster_data['age_group'] ?? ''),
+                'start_date' => $this->normalizeDriftValue('start_date', $roster_data['start_date'] ?? ''),
+                'product_missing' => $product_missing,
+                'variation_missing' => $variation_missing,
+            ];
+        }
+        unset($bucket);
+    }
+
+    private function isEmptyRosterValue(string $field, string $normalized): bool {
+        if ($normalized === '' || strcasecmp($normalized, 'N/A') === 0) {
+            return true;
+        }
+        if (in_array($field, ['variation_id', 'product_id'], true) && $normalized === '0') {
+            return true;
+        }
+        if (in_array($field, ['start_date', 'end_date'], true)
+            && in_array($normalized, ['1970-01-01', '0000-00-00', '-0001-11-30'], true)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Compare an existing roster row with its order line.
+     *
+     * - fill: fields empty on the row and set on the line (safe to fill; times excluded);
+     * - held_fill: empty-on-row fields not filled on purpose (times);
+     * - conflicts: fields set on both sides with different values (reported, never applied).
      *
      * @param Roster $existing_roster
      * @param array  $roster_data Order-line-derived data
+     * @return array{fill:array<string,mixed>,held_fill:string[],conflicts:string[]}
      */
-    private function recordRowDrift($existing_roster, array $roster_data): void {
-        $changed = [];
+    private function compareRowWithOrderLine($existing_roster, array $roster_data): array {
+        $fill = [];
+        $held_fill = [];
+        $conflicts = [];
         foreach (self::DRIFT_FIELDS as $field) {
             if (!array_key_exists($field, $roster_data)) {
                 continue;
             }
             $incoming = $this->normalizeDriftValue($field, $roster_data[$field]);
-            if ($incoming === '') {
+            if ($this->isEmptyRosterValue($field, $incoming)) {
                 continue;
             }
             $stored = $this->normalizeDriftValue($field, $existing_roster->$field ?? '');
-            if ($stored !== $incoming) {
-                $changed[] = $field;
+            if ($this->isEmptyRosterValue($field, $stored)) {
+                if (in_array($field, self::FILLABLE_FIELDS, true)) {
+                    $fill[$field] = $roster_data[$field];
+                } else {
+                    $held_fill[] = $field;
+                }
+                continue;
+            }
+            $same = in_array($field, self::CASE_INSENSITIVE_DRIFT_FIELDS, true)
+                ? strcasecmp($stored, $incoming) === 0
+                : $stored === $incoming;
+            if (!$same) {
+                $conflicts[] = $field;
             }
         }
+
+        return ['fill' => $fill, 'held_fill' => $held_fill, 'conflicts' => $conflicts];
+    }
+
+    /**
+     * Report conflicts (never applied) and fill empty fields on an existing row.
+     * Fills are written in a real run and rolled back with everything else in a dry run.
+     *
+     * @param Roster $existing_roster
+     * @param array  $roster_data Order-line-derived data
+     * @param array  $options
+     * @return Roster The existing row, refreshed when a fill was written
+     */
+    private function reconcileExistingRowWithOrderLine($existing_roster, array $roster_data, array $options) {
+        $diff = $this->compareRowWithOrderLine($existing_roster, $roster_data);
+        $order_item_id = (int) ($roster_data['order_item_id'] ?? $existing_roster->order_item_id ?? 0);
+        $order_id = (int) ($roster_data['order_id'] ?? $existing_roster->order_id ?? 0);
+
+        if (in_array('times', $diff['held_fill'], true)) {
+            $this->build_stats['row_fill']['held_times']++;
+        }
+
+        if ($diff['conflicts'] !== []) {
+            $this->recordRowDrift($existing_roster, $roster_data, $diff['conflicts']);
+        }
+
+        if ($diff['fill'] === []) {
+            return $existing_roster;
+        }
+
+        $fill_data = $diff['fill'];
+        if (!empty($options['skip_age_group_validation'])) {
+            $fill_data['_skip_age_group_validation'] = true;
+        }
+        try {
+            $updated = $this->roster_repository->update($existing_roster->id, $fill_data);
+        } catch (\Throwable $e) {
+            $this->build_stats['row_fill']['failed']++;
+            $this->logger->warning('Rebuild could not fill empty roster fields; row kept as it was', [
+                'order_id' => $order_id,
+                'order_item_id' => $order_item_id,
+                'fields' => array_keys($diff['fill']),
+                'error' => $e->getMessage(),
+            ]);
+            return $existing_roster;
+        }
+
+        $bucket = &$this->build_stats['row_fill'];
+        $bucket['count']++;
+        foreach (array_keys($diff['fill']) as $field) {
+            $bucket['by_field'][$field] = (int) ($bucket['by_field'][$field] ?? 0) + 1;
+        }
+        if (count($bucket['rows']) < self::REVIEW_LIST_LIMIT) {
+            $bucket['rows'][] = [
+                'order_id' => $order_id,
+                'order_item_id' => $order_item_id,
+                'fields' => array_keys($diff['fill']),
+            ];
+        }
+        unset($bucket);
+
+        return $updated ?: $existing_roster;
+    }
+
+    /**
+     * Record (do not apply) conflicting values between an existing roster row and its order line.
+     * A row is counted as moved when the line carries the roster-move audit meta, or when the
+     * row and line point at different variations.
+     *
+     * @param Roster   $existing_roster
+     * @param array    $roster_data Order-line-derived data
+     * @param string[] $changed Conflicting fields
+     */
+    private function recordRowDrift($existing_roster, array $roster_data, array $changed): void {
         if ($changed === []) {
             return;
         }
@@ -1319,15 +1538,56 @@ class RosterBuilder {
         $bucket = &$this->build_stats['row_drift'];
         $bucket['count']++;
         $bucket[$moved ? 'moved' : 'not_moved']++;
+        foreach ($changed as $field) {
+            $bucket['by_field'][$field] = (int) ($bucket['by_field'][$field] ?? 0) + 1;
+        }
         if (count($bucket['rows']) < self::REVIEW_LIST_LIMIT) {
-            $bucket['rows'][] = [
+            $entry = [
                 'order_id' => (int) ($roster_data['order_id'] ?? $existing_roster->order_id ?? 0),
                 'order_item_id' => $order_item_id,
                 'moved' => $moved,
                 'fields' => $changed,
             ];
+            foreach ($changed as $field) {
+                if (in_array($field, ['times', 'start_date', 'end_date', 'variation_id'], true)) {
+                    $entry['values'][$field] = [
+                        'roster' => $this->normalizeDriftValue($field, $existing_roster->$field ?? ''),
+                        'order_line' => $this->normalizeDriftValue($field, $roster_data[$field] ?? ''),
+                    ];
+                }
+            }
+            if (in_array('times', $changed, true)) {
+                $entry['times_trace'] = $this->currentTimesTrace($order_item_id);
+            }
+            $bucket['rows'][] = $entry;
         }
         unset($bucket);
+    }
+
+    /**
+     * Where the order-line times value came from, plus the raw time-like line meta (diagnostics).
+     *
+     * @return array<string,mixed>
+     */
+    private function currentTimesTrace(int $order_item_id): array {
+        $trace = $this->current_times_trace;
+        $trace['line_meta'] = [];
+        if ($order_item_id > 0 && function_exists('wc_get_order_item_meta')) {
+            $all = wc_get_order_item_meta($order_item_id, '', false);
+            if (is_array($all)) {
+                foreach ($all as $key => $value) {
+                    if (!is_string($key) || !preg_match('/time|heure|horaire|zeit/i', $key)) {
+                        continue;
+                    }
+                    if (is_array($value)) {
+                        $value = implode(' | ', array_map('strval', array_filter($value, 'is_scalar')));
+                    }
+                    $trace['line_meta'][$key] = (string) $value;
+                }
+            }
+        }
+
+        return $trace;
     }
 
     
@@ -1984,6 +2244,12 @@ class RosterBuilder {
             $roster_data['age'] = $this->computeAgeFromDob($roster_data['dob'], $refDate);
         }
 
+        $this->current_times_trace = [
+            'camp_times' => (string) ($order_data['camp_times'] ?? ''),
+            'course_times' => (string) ($order_data['course_times'] ?? ''),
+            'from_line' => (string) ($roster_data['times'] ?? ''),
+        ];
+
         if (function_exists('intersoccer_roster_sync_product_ids_from_order_line')) {
             $roster_data = intersoccer_roster_sync_product_ids_from_order_line($roster_data);
         }
@@ -2012,6 +2278,8 @@ class RosterBuilder {
                 }
             }
         }
+
+        $this->current_times_trace['after_backfill'] = (string) ($roster_data['times'] ?? '');
 
         // Normalize event data to English for consistent storage
         // This ensures all roster entries are stored in English regardless of order language
@@ -2145,6 +2413,8 @@ class RosterBuilder {
             if (function_exists('intersoccer_roster_apply_canonical_write_fields')) {
                 $roster_data = intersoccer_roster_apply_canonical_write_fields($roster_data);
             }
+
+        $this->current_times_trace['stored_as'] = (string) ($roster_data['times'] ?? '');
 
         return $roster_data;
     }
@@ -2634,7 +2904,7 @@ class RosterBuilder {
         if ($existing_roster) {
             if ($options['skip_duplicates'] && !$options['update_existing']) {
                 if (!empty($options['report_drift'])) {
-                    $this->recordRowDrift($existing_roster, $roster_data);
+                    $existing_roster = $this->reconcileExistingRowWithOrderLine($existing_roster, $roster_data, $options);
                 }
                 $this->logger->debug('Skipping duplicate roster entry', [
                     'existing_id' => $existing_roster->id,
@@ -2737,6 +3007,9 @@ class RosterBuilder {
         }
         if ($roster) {
             $this->build_stats['rosters_created']++;
+            if (!empty($options['report_drift'])) {
+                $this->recordCreatedRow($roster_data);
+            }
             $this->logger->debug('Created new roster entry', [
                 'id' => $roster->id,
                 'order_id' => $roster_data['order_id']
@@ -3175,6 +3448,8 @@ class RosterBuilder {
                 'not_checked' => $this->build_stats['not_checked'],
                 'rows_for_review' => $this->build_stats['rows_for_review'],
                 'row_drift' => $this->build_stats['row_drift'],
+                'row_fill' => $this->build_stats['row_fill'],
+                'created' => $this->build_stats['created'],
                 'dry_run' => $is_dry_run,
             ];
 

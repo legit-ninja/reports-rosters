@@ -218,9 +218,17 @@ class RosterRebuildCoverage160Test extends TestCase {
         });
         $repo->shouldReceive('update')->andReturnUsing(function ($id, array $data) {
             unset($data['_skip_age_group_validation']);
+            // Like RosterRepository::update(): merge into the stored row, then validate.
+            $stored_row = $this->stored[(int) ($data['order_item_id'] ?? $id)] ?? [];
+            $data = array_merge(
+                ['customer_id' => 1, 'player_index' => 0, 'first_name' => 'Synthetic', 'last_name' => 'Player', 'dob' => '2018-01-01', 'gender' => 'male'],
+                $stored_row,
+                $data
+            );
             $roster = new Roster($data);
             $roster->setSkipAgeGroupValidation(true);
             $roster->validate();
+            $this->stored[(int) ($data['order_item_id'] ?? $id)] = $data;
             $this->updated[] = (int) ($data['order_item_id'] ?? $id);
             return $roster;
         });
@@ -541,6 +549,100 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertSame(['venue'], $by_item[9003]['fields']);
         $this->assertFalse($by_item[9003]['moved']);
         unset($intersoccer_test_wc_order_item_meta[9002]);
+    }
+
+    public function test_full_rebuild_fills_only_empty_fields_and_counts_no_conflict(): void {
+        $this->seedBuiltRows();
+        $start = $this->stored[9001]['start_date'];
+        $season = $this->stored[9001]['season'];
+        $this->assertNotEmpty($start);
+        $this->stored[9001]['start_date'] = '';
+        $this->stored[9001]['season'] = 'N/A';
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
+
+        $this->assertSame([9001], $this->updated, 'only the row with empty fields is written');
+        $this->assertSame(1, $result['row_fill']['count']);
+        $this->assertSame(['season' => 1, 'start_date' => 1], (function ($a) { ksort($a); return $a; })($result['row_fill']['by_field']));
+        $this->assertSame(0, $result['row_drift']['count'], 'filled fields are not conflicts');
+        $this->assertEquals($start, $this->stored[9001]['start_date']);
+        $this->assertSame($season, $this->stored[9001]['season']);
+    }
+
+    public function test_season_differing_only_in_case_is_not_a_conflict(): void {
+        $this->seedBuiltRows();
+        $this->stored[9002]['season'] = strtoupper((string) $this->stored[9002]['season']);
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
+
+        $this->assertSame(0, $result['row_drift']['count']);
+        $this->assertSame([], $this->updated);
+    }
+
+    public function test_times_are_never_overwritten_or_filled_and_carry_a_trace(): void {
+        $this->seedBuiltRows();
+        $this->stored[9001]['times'] = '09:00-16:00';
+        $this->stored[9002]['times'] = '';
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
+
+        $this->assertSame([], $this->updated, 'times are neither overwritten nor filled');
+        $this->assertSame('09:00-16:00', $this->stored[9001]['times']);
+        $this->assertSame('', $this->stored[9002]['times']);
+        $this->assertSame(1, $result['row_fill']['held_times']);
+        $this->assertSame(1, $result['row_drift']['count']);
+        $this->assertSame(['times' => 1], $result['row_drift']['by_field']);
+        $row = $result['row_drift']['rows'][0];
+        $this->assertSame(9001, $row['order_item_id']);
+        $this->assertSame('09:00-16:00', $row['values']['times']['roster']);
+        $this->assertArrayHasKey('from_line', $row['times_trace']);
+        $this->assertArrayHasKey('after_backfill', $row['times_trace']);
+        $this->assertArrayHasKey('stored_as', $row['times_trace']);
+        $this->assertArrayHasKey('line_meta', $row['times_trace']);
+    }
+
+    public function test_date_conflict_is_reported_with_both_values_and_kept(): void {
+        $this->seedBuiltRows();
+        $this->stored[9003]['start_date'] = '2026-08-04';
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
+
+        $this->assertSame([], $this->updated);
+        $this->assertSame('2026-08-04', $this->stored[9003]['start_date']);
+        $row = $result['row_drift']['rows'][0];
+        $this->assertSame(['start_date'], $row['fields']);
+        $this->assertSame('2026-08-04', $row['values']['start_date']['roster']);
+        $this->assertNotSame('2026-08-04', $row['values']['start_date']['order_line']);
+    }
+
+    public function test_fill_that_fails_validation_keeps_the_row_and_is_counted(): void {
+        $this->seedAgeCases();
+        $this->routeOrders([8101, 8102, 8103, 8104, 8105, 8106]);
+
+        $result = $this->builder($this->ageDobs())->buildRosters(['clear_existing' => true]);
+
+        // The seeded rows are minimal (missing required model fields), so a fill cannot validate.
+        $this->assertSame(0, $result['row_fill']['count']);
+        $this->assertGreaterThan(0, $result['row_fill']['failed']);
+        $this->assertSame(['order_item_id' => 8001, 'order_id' => 8101, 'order_status' => 'completed'], $this->stored[8001]);
+        $this->assertEmpty($result['rebuild_failed'] ?? null);
+    }
+
+    public function test_created_rows_report_order_month_status_and_missing_products(): void {
+        $this->order(9301, 'completed', [9311 => $this->meta()]);
+        $this->routeOrders([9301]);
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
+
+        $this->assertSame([9311], $this->created);
+        $this->assertSame(1, $result['created']['count']);
+        $this->assertCount(1, $result['created']['by_order_month']);
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}$/', (string) array_key_first($result['created']['by_order_month']));
+        $this->assertSame(['completed' => 1], $result['created']['by_order_status']);
+        $row = $result['created']['rows'][0];
+        $this->assertSame(9311, $row['order_item_id']);
+        $this->assertArrayHasKey('product_missing', $row);
+        $this->assertArrayHasKey('variation_missing', $row);
     }
 
     public function test_overwrite_existing_opt_in_updates_rows(): void {
