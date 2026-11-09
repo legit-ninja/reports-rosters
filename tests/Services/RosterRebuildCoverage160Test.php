@@ -35,10 +35,15 @@ require_once dirname(__DIR__) . '/ReportAccuracy/DeletedProductRosterTest.php';
 class RosterRebuildCoverage160Wpdb extends DeletedProductWpdb {
     /** @var array<int,array<string,string>> */
     public $existing = [];
+    /** @var array<int,array<string,string>> DESCRIBE rows for the rosters table */
+    public $describe = [];
 
     public function get_results($query = null, $output = OBJECT) {
         if (preg_match('/SELECT order_item_id, order_id FROM \S*intersoccer_rosters/', (string) $query)) {
             return $this->existing;
+        }
+        if (preg_match('/^DESCRIBE \S*intersoccer_rosters/', (string) $query)) {
+            return $this->describe;
         }
         return parent::get_results($query, $output);
     }
@@ -68,6 +73,8 @@ class RosterRebuildCoverage160Test extends TestCase {
     private $adminLog = [];
     /** @var array<int,mixed> */
     private $ordersQueryStatuses = [];
+    /** @var array<int,string> order_item_id => MySQL error the insert fails with */
+    private $createDbError = [];
 
     protected function setUp(): void {
         parent::setUp();
@@ -206,6 +213,11 @@ class RosterRebuildCoverage160Test extends TestCase {
         });
         $repo->shouldReceive('create')->andReturnUsing(function (array $data) {
             unset($data['_skip_age_group_validation']);
+            $failing_id = (int) ($data['order_item_id'] ?? 0);
+            if (isset($this->createDbError[$failing_id])) {
+                $this->wpdb->last_error = $this->createDbError[$failing_id];
+                return null;
+            }
             $roster = new Roster($data);
             $roster->setSkipAgeGroupValidation(true);
             $roster->validate();
@@ -702,6 +714,55 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertSame('2025-01-04', $held['rows'][0]['start_date']);
         $this->assertStringContainsString('2026', $held['rows'][0]['season']);
         $this->assertArrayHasKey('product_id', $held['rows'][0]);
+    }
+
+    public function test_event_and_tournament_orders_get_roster_rows(): void {
+        foreach (['Event' => 9801, 'Tournament' => 9802] as $type => $oid) {
+            $this->order($oid, 'completed', [$oid + 10 => $this->meta(['Activity Type' => $type, 'pa_activity-type' => strtolower($type)])]);
+        }
+        $this->routeOrders([9801, 9802]);
+        $builder = $this->builder();
+
+        // The path new orders take (order hooks -> buildRosterFromOrder).
+        $builder->buildRosterFromOrder(9801);
+        $builder->buildRosterFromOrder(9802);
+
+        $this->assertSame([9811, 9812], $this->created);
+        $this->assertSame([], $builder->getBuildStatistics()['errors']);
+    }
+
+    public function test_line_error_reports_validation_fields(): void {
+        // 'Other' is still outside the allowed activity types.
+        $this->order(9901, 'completed', [9911 => $this->meta(['Activity Type' => 'Other', 'pa_activity-type' => 'other'])]);
+        $this->routeOrders([9901]);
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
+
+        $this->assertSame([], $this->created);
+        $errors = $result['line_errors'];
+        $this->assertSame(1, $errors['count']);
+        $this->assertSame(['ValidationException: activity_type' => 1], $errors['by_reason']);
+        $this->assertSame(9911, $errors['rows'][0]['order_item_id']);
+        $this->assertSame('Other', $errors['rows'][0]['activity_type']);
+        $this->assertArrayHasKey('activity_type', $errors['rows'][0]['validation_errors']);
+    }
+
+    public function test_too_long_insert_reports_column_value_length_and_width(): void {
+        $this->order(9951, 'completed', [9961 => $this->meta(['Camp Terms' => str_repeat('Summer Week 1: June 30 - July 4 (5 days), ', 6)])]);
+        $this->routeOrders([9951]);
+        $this->createDbError[9961] = "Data too long for column 'event_type' at row 1";
+        $this->wpdb->describe = [['Field' => 'event_type', 'Type' => 'varchar(100)']];
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
+
+        $errors = $result['line_errors'];
+        $this->assertSame(1, $errors['count']);
+        $this->assertSame(['Data too long for column event_type' => 1], $errors['by_reason']);
+        $too_long = $errors['rows'][0]['too_long'];
+        $this->assertSame('event_type', $too_long['column']);
+        $this->assertSame(100, $too_long['column_width']);
+        $this->assertTrue($too_long['column_narrower_than_schema'], 'varchar(100) is below the 191 schema 2.4.0 sets');
+        $this->assertNotNull($too_long['value_length'], 'the length of the value that did not fit is reported');
     }
 
     public function test_missing_line_without_dates_is_held_not_created(): void {
