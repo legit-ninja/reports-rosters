@@ -628,6 +628,37 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertEmpty($result['rebuild_failed'] ?? null);
     }
 
+    public function test_date_half_is_not_filled_when_the_other_half_conflicts(): void {
+        $this->seedBuiltRows();
+        $this->stored[9001]['start_date'] = '2026-08-04';
+        $this->stored[9001]['end_date'] = '';
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
+
+        $this->assertSame([], $this->updated, 'end date is not filled next to an edited start date');
+        $this->assertSame('', $this->stored[9001]['end_date']);
+        $this->assertSame(0, $result['row_fill']['count']);
+        $fields = $result['row_drift']['rows'][0]['fields'];
+        sort($fields);
+        $this->assertSame(['end_date', 'start_date'], $fields);
+    }
+
+    public function test_failed_fill_reports_fields_and_reason(): void {
+        $this->seedAgeCases();
+        $this->routeOrders([8101]);
+
+        $result = $this->builder($this->ageDobs())->buildRosters(['clear_existing' => true]);
+
+        $this->assertGreaterThan(0, $result['row_fill']['failed']);
+        $this->assertNotEmpty($result['row_fill']['failed_by_reason']);
+        $row = $result['row_fill']['failed_rows'][0];
+        $this->assertSame(8001, $row['order_item_id']);
+        $this->assertNotEmpty($row['fields']);
+        $this->assertNotSame('', $row['reason']);
+        $this->assertArrayHasKey('start_date', $row['dates']);
+        $this->assertArrayHasKey('end_date', $row['dates']);
+    }
+
     public function test_created_rows_report_order_month_status_and_missing_products(): void {
         $this->order(9301, 'completed', [9311 => $this->meta()]);
         $this->routeOrders([9301]);
@@ -642,6 +673,9 @@ class RosterRebuildCoverage160Test extends TestCase {
         $row = $result['created']['rows'][0];
         $this->assertSame(9311, $row['order_item_id']);
         $this->assertArrayHasKey('product_missing', $row);
+        $this->assertArrayHasKey('product_id', $row);
+        $this->assertCount(1, $result['created']['by_age_group']);
+        $this->assertCount(1, $result['created']['by_start_month']);
         $this->assertArrayHasKey('variation_missing', $row);
     }
 

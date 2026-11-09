@@ -297,6 +297,8 @@ class RosterBuilder {
                 'by_field' => [],
                 'held_times' => 0,
                 'failed' => 0,
+                'failed_by_reason' => [],
+                'failed_rows' => [],
                 'rows' => [],
             ],
             // Lines that had no roster row and were added (diagnostics for past gaps).
@@ -305,6 +307,8 @@ class RosterBuilder {
                 'by_order_month' => [],
                 'by_order_status' => [],
                 'by_activity_type' => [],
+                'by_age_group' => [],
+                'by_start_month' => [],
                 'product_missing' => 0,
                 'variation_missing' => 0,
                 'rows' => [],
@@ -1369,7 +1373,12 @@ class RosterBuilder {
         }
 
         $activity = (string) ($roster_data['activity_type'] ?? '');
+        $age_group = (string) ($roster_data['age_group'] ?? '');
+        $start_norm = $this->normalizeDriftValue('start_date', $roster_data['start_date'] ?? '');
+        $start_month = $this->isEmptyRosterValue('start_date', $start_norm) ? 'none' : substr($start_norm, 0, 7);
         $bucket = &$this->build_stats['created'];
+        $bucket['by_age_group'][$age_group] = (int) ($bucket['by_age_group'][$age_group] ?? 0) + 1;
+        $bucket['by_start_month'][$start_month] = (int) ($bucket['by_start_month'][$start_month] ?? 0) + 1;
         $bucket['count']++;
         $bucket['by_order_month'][$month] = (int) ($bucket['by_order_month'][$month] ?? 0) + 1;
         $bucket['by_order_status'][$status] = (int) ($bucket['by_order_status'][$status] ?? 0) + 1;
@@ -1390,6 +1399,9 @@ class RosterBuilder {
                 'activity_type' => $activity,
                 'age_group' => (string) ($roster_data['age_group'] ?? ''),
                 'start_date' => $this->normalizeDriftValue('start_date', $roster_data['start_date'] ?? ''),
+                'product_id' => $product_id,
+                'variation_id' => $variation_id,
+                'product_name' => (string) ($roster_data['product_name'] ?? ''),
                 'product_missing' => $product_missing,
                 'variation_missing' => $variation_missing,
             ];
@@ -1452,6 +1464,15 @@ class RosterBuilder {
             }
         }
 
+        // Never fill one half of a date pair whose other half conflicts with the order line
+        // (e.g. an office-edited start date): report it with the conflict instead.
+        foreach ([['start_date', 'end_date'], ['end_date', 'start_date']] as [$half, $other]) {
+            if (array_key_exists($half, $fill) && in_array($other, $conflicts, true)) {
+                unset($fill[$half]);
+                $conflicts[] = $half;
+            }
+        }
+
         return ['fill' => $fill, 'held_fill' => $held_fill, 'conflicts' => $conflicts];
     }
 
@@ -1488,7 +1509,33 @@ class RosterBuilder {
         try {
             $updated = $this->roster_repository->update($existing_roster->id, $fill_data);
         } catch (\Throwable $e) {
-            $this->build_stats['row_fill']['failed']++;
+            $reason = $e->getMessage() !== '' ? $e->getMessage() : get_class($e);
+            $errors = [];
+            if ($e instanceof ValidationException && $e->hasValidationErrors()) {
+                $errors = $e->getValidationErrors();
+                $reason .= ': ' . implode(', ', array_map('strval', array_keys($errors)));
+            }
+            $fill_bucket = &$this->build_stats['row_fill'];
+            $fill_bucket['failed']++;
+            $fill_bucket['failed_by_reason'][$reason] = (int) ($fill_bucket['failed_by_reason'][$reason] ?? 0) + 1;
+            if (count($fill_bucket['failed_rows']) < self::REVIEW_LIST_LIMIT) {
+                $values = [];
+                foreach (['start_date', 'end_date'] as $date_field) {
+                    $values[$date_field] = [
+                        'roster' => $this->normalizeDriftValue($date_field, $existing_roster->$date_field ?? ''),
+                        'order_line' => $this->normalizeDriftValue($date_field, $roster_data[$date_field] ?? ''),
+                    ];
+                }
+                $fill_bucket['failed_rows'][] = [
+                    'order_id' => $order_id,
+                    'order_item_id' => $order_item_id,
+                    'fields' => array_keys($diff['fill']),
+                    'reason' => $e->getMessage(),
+                    'validation_errors' => $errors,
+                    'dates' => $values,
+                ];
+            }
+            unset($fill_bucket);
             $this->logger->warning('Rebuild could not fill empty roster fields; row kept as it was', [
                 'order_id' => $order_id,
                 'order_item_id' => $order_item_id,
