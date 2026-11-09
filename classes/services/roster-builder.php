@@ -321,7 +321,15 @@ class RosterBuilder {
                 'held_no_dates' => [
                     'count' => 0,
                     'by_age_group' => [],
+                    'by_activity_type' => [],
                     'by_date_source_found' => [],
+                    // Held lines that would also fail creation (so they were never in earlier "to add" counts).
+                    'would_fail_validation' => 0,
+                    'rows' => [],
+                ],
+                // Missing lines not added because their start year is not a year named in their season.
+                'held_suspect_dates' => [
+                    'count' => 0,
                     'rows' => [],
                 ],
             ],
@@ -1432,6 +1440,64 @@ class RosterBuilder {
         unset($bucket);
     }
 
+    private function startYearNotInSeason(array $roster_data): bool {
+        $start = $this->normalizeDriftValue('start_date', $roster_data['start_date'] ?? '');
+        if ($this->isEmptyRosterValue('start_date', $start)) {
+            return false;
+        }
+        $season = (string) ($roster_data['season'] ?? '');
+        if (!preg_match_all('/(?:19|20)\d{2}/', $season, $years) || empty($years[0])) {
+            return false;
+        }
+
+        return !in_array(substr($start, 0, 4), $years[0], true);
+    }
+
+    /**
+     * Whether the row would pass the model checks a real insert runs (age group skipped, as in rebuilds).
+     *
+     * @return string|null null when it would pass, otherwise the reason
+     */
+    private function wouldFailCreateValidation(array $roster_data): ?string {
+        try {
+            $data = $roster_data;
+            unset($data['_skip_age_group_validation']);
+            $roster = new Roster($data);
+            $roster->setSkipAgeGroupValidation(true);
+            $roster->validate();
+            return null;
+        } catch (ValidationException $e) {
+            $fields = $e->hasValidationErrors() ? ': ' . implode(', ', array_keys($e->getValidationErrors())) : '';
+            return $e->getMessage() . $fields;
+        } catch (\Throwable $e) {
+            return $e->getMessage();
+        }
+    }
+
+    private function recordHeldSuspectDateRow(array $roster_data): void {
+        $order_item_id = (int) ($roster_data['order_item_id'] ?? 0);
+        if (isset($this->held_undated_item_ids[$order_item_id])) {
+            return;
+        }
+        $this->held_undated_item_ids[$order_item_id] = true;
+
+        $bucket = &$this->build_stats['created']['held_suspect_dates'];
+        $bucket['count']++;
+        if (count($bucket['rows']) < self::REVIEW_LIST_LIMIT) {
+            $bucket['rows'][] = [
+                'order_id' => (int) ($roster_data['order_id'] ?? 0),
+                'order_item_id' => $order_item_id,
+                'product_id' => (int) ($roster_data['product_id'] ?? 0),
+                'variation_id' => (int) ($roster_data['variation_id'] ?? 0),
+                'product_name' => (string) ($roster_data['product_name'] ?? ''),
+                'season' => (string) ($roster_data['season'] ?? ''),
+                'start_date' => $this->normalizeDriftValue('start_date', $roster_data['start_date'] ?? ''),
+                'end_date' => $this->normalizeDriftValue('end_date', $roster_data['end_date'] ?? ''),
+            ];
+        }
+        unset($bucket);
+    }
+
     /**
      * A missing line that a rebuild did not add because it has no start date, with where the
      * date was looked for: order-line date meta, camp schedule meta on the variation, camp terms.
@@ -1453,6 +1519,16 @@ class RosterBuilder {
             }
         }
         $variation_id = (int) ($roster_data['variation_id'] ?? 0);
+        $product_id = (int) ($roster_data['product_id'] ?? 0);
+        $product_schedule = null;
+        if ($product_id > 0 && function_exists('intersoccer_get_camp_schedule_meta')) {
+            try {
+                $product_schedule = intersoccer_get_camp_schedule_meta($product_id);
+            } catch (\Throwable $e) {
+                $product_schedule = null;
+            }
+        }
+        $validation_failure = $this->wouldFailCreateValidation($roster_data);
         $variation_schedule = null;
         if ($variation_id > 0 && function_exists('intersoccer_get_camp_schedule_meta')) {
             try {
@@ -1482,23 +1558,35 @@ class RosterBuilder {
         if (!empty($variation_schedule['start'])) {
             $found[] = 'variation_schedule';
         }
+        if (!empty($product_schedule['start'])) {
+            $found[] = 'product_schedule';
+        }
         if ($camp_terms !== '') {
             $found[] = 'camp_terms';
         }
         $found_key = $found === [] ? 'none' : implode('+', $found);
 
         $age_group = (string) ($roster_data['age_group'] ?? '');
+        $activity = (string) ($roster_data['activity_type'] ?? '');
         $bucket = &$this->build_stats['created']['held_no_dates'];
         $bucket['count']++;
         $bucket['by_age_group'][$age_group] = (int) ($bucket['by_age_group'][$age_group] ?? 0) + 1;
+        $bucket['by_activity_type'][$activity] = (int) ($bucket['by_activity_type'][$activity] ?? 0) + 1;
+        if ($validation_failure !== null) {
+            $bucket['would_fail_validation']++;
+        }
         $bucket['by_date_source_found'][$found_key] = (int) ($bucket['by_date_source_found'][$found_key] ?? 0) + 1;
         if (count($bucket['rows']) < self::REVIEW_LIST_LIMIT) {
             $bucket['rows'][] = [
                 'order_id' => (int) ($roster_data['order_id'] ?? 0),
                 'order_item_id' => $order_item_id,
+                'product_id' => $product_id,
                 'variation_id' => $variation_id,
                 'product_name' => (string) ($roster_data['product_name'] ?? ''),
+                'activity_type' => $activity,
                 'age_group' => $age_group,
+                'would_fail_validation' => $validation_failure,
+                'product_schedule' => $product_schedule,
                 'camp_terms' => $camp_terms,
                 'season' => $season,
                 'line_date_meta' => $line,
@@ -3129,6 +3217,12 @@ class RosterBuilder {
         if (!empty($options['report_drift'])
             && $this->isEmptyRosterValue('start_date', $this->normalizeDriftValue('start_date', $roster_data['start_date'] ?? ''))) {
             $this->recordHeldUndatedRow($roster_data);
+            return null;
+        }
+        // Nor one whose start year is not a year named in its season (e.g. 2025-01-04 on a
+        // Winter 2026 course): the date needs checking before the row is added.
+        if (!empty($options['report_drift']) && $this->startYearNotInSeason($roster_data)) {
+            $this->recordHeldSuspectDateRow($roster_data);
             return null;
         }
 

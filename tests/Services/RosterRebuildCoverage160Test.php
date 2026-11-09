@@ -689,15 +689,19 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertNotContains(9411, $this->updated);
     }
 
-    public function test_added_row_with_start_year_outside_its_season_is_counted(): void {
+    public function test_missing_line_with_start_year_outside_its_season_is_held(): void {
         $this->order(9601, 'completed', [9611 => $this->meta(['Start Date' => 'January 4, 2025', 'End Date' => 'March 29, 2025', 'Season' => 'Winter 2026', 'pa_program-season' => 'winter-2026'])]);
         $this->routeOrders([9601]);
 
         $result = $this->builder()->buildRosters(['clear_existing' => true]);
 
-        $this->assertSame([9611], $this->created);
-        $this->assertSame(1, $result['created']['start_year_not_in_season']);
-        $this->assertTrue($result['created']['rows'][0]['start_year_not_in_season']);
+        $this->assertSame([], $this->created, 'a row with a suspect date is not added');
+        $held = $result['created']['held_suspect_dates'];
+        $this->assertSame(1, $held['count']);
+        $this->assertSame(9611, $held['rows'][0]['order_item_id']);
+        $this->assertSame('2025-01-04', $held['rows'][0]['start_date']);
+        $this->assertStringContainsString('2026', $held['rows'][0]['season']);
+        $this->assertArrayHasKey('product_id', $held['rows'][0]);
     }
 
     public function test_missing_line_without_dates_is_held_not_created(): void {
@@ -714,7 +718,26 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertArrayHasKey('line_date_meta', $held['rows'][0]);
         $this->assertArrayHasKey('variation_schedule', $held['rows'][0]);
         $this->assertArrayHasKey('camp_terms_parse', $held['rows'][0]);
+        $this->assertArrayHasKey('product_id', $held['rows'][0]);
+        $this->assertArrayHasKey('product_schedule', $held['rows'][0]);
+        $this->assertNull($held['rows'][0]['would_fail_validation'], 'this line would otherwise have been added');
+        $this->assertSame(0, $held['would_fail_validation']);
         $this->assertNotEmpty($held['by_date_source_found']);
+        $this->assertNotEmpty($held['by_activity_type']);
+    }
+
+    public function test_held_undated_line_that_would_also_fail_creation_is_counted_separately(): void {
+        $this->order(9701, 'completed', [9711 => $this->meta(['Start Date' => '', 'End Date' => ''])]);
+        $this->routeOrders([9701]);
+
+        // Placeholder DOB: the model refuses the insert, so this line was never in earlier "to add" counts.
+        $result = $this->builder([9711 => '1970-01-01'])->buildRosters(['clear_existing' => true]);
+
+        $held = $result['created']['held_no_dates'];
+        $this->assertSame(1, $held['count']);
+        $this->assertSame(1, $held['would_fail_validation']);
+        $this->assertNotNull($held['rows'][0]['would_fail_validation']);
+        $this->assertSame([], $this->created);
     }
 
     public function test_created_rows_report_order_month_status_and_missing_products(): void {
