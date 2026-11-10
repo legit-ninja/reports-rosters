@@ -45,6 +45,46 @@ namespace {
     }
 }
 
+namespace InterSoccer\ReportsRosters\Services {
+
+    /**
+     * Bootstrap records wp_schedule_event and reads wp_next_scheduled from separate
+     * globals, and its wp_clear_scheduled_hook stub returns without recording the hook.
+     * Unqualified calls in this namespace use these fallbacks so a scheduled event
+     * stays visible to the next check, and a clear is visible to tests.
+     */
+    if (!function_exists(__NAMESPACE__ . '\\wp_schedule_event')) {
+        function wp_schedule_event($timestamp, $recurrence, $hook, $args = [], $wp_error = false) {
+            $result = \wp_schedule_event($timestamp, $recurrence, $hook, $args, $wp_error);
+            if ($result) {
+                if (!isset($GLOBALS['intersoccer_test_wp_next_scheduled']) || !is_array($GLOBALS['intersoccer_test_wp_next_scheduled'])) {
+                    $GLOBALS['intersoccer_test_wp_next_scheduled'] = [];
+                }
+                $key = (string) $hook . '|' . \maybe_serialize($args);
+                $GLOBALS['intersoccer_test_wp_next_scheduled'][$key] = (int) $timestamp;
+            }
+            return $result;
+        }
+    }
+
+    if (!function_exists(__NAMESPACE__ . '\\wp_clear_scheduled_hook')) {
+        function wp_clear_scheduled_hook($hook, $args = [], $wp_error = false) {
+            if (!isset($GLOBALS['intersoccer_test_wp_clear_scheduled_hook_log']) || !is_array($GLOBALS['intersoccer_test_wp_clear_scheduled_hook_log'])) {
+                $GLOBALS['intersoccer_test_wp_clear_scheduled_hook_log'] = [];
+            }
+            $GLOBALS['intersoccer_test_wp_clear_scheduled_hook_log'][] = [
+                'hook' => (string) $hook,
+                'args' => $args,
+            ];
+            if (isset($GLOBALS['intersoccer_test_wp_next_scheduled']) && is_array($GLOBALS['intersoccer_test_wp_next_scheduled'])) {
+                $key = (string) $hook . '|' . \maybe_serialize($args);
+                unset($GLOBALS['intersoccer_test_wp_next_scheduled'][$key]);
+            }
+            return \wp_clear_scheduled_hook($hook, $args, $wp_error);
+        }
+    }
+}
+
 namespace InterSoccer\ReportsRosters\Tests\Services {
 
 use InterSoccer\ReportsRosters\Core\Database;
@@ -167,12 +207,18 @@ class DailyBfSalesEmailTest extends TestCase {
         $GLOBALS['intersoccer_rr_bf_wp_mail_fail'] = false;
         $GLOBALS['intersoccer_rr_bf_wp_mail_error'] = '';
         $GLOBALS['intersoccer_test_emit_wp_hooks'] = false;
+        $GLOBALS['intersoccer_test_wp_schedule_event_log'] = [];
+        $GLOBALS['intersoccer_test_wp_next_scheduled'] = [];
+        $GLOBALS['intersoccer_test_wp_clear_scheduled_hook_log'] = [];
         \InterSoccerRRTestMeta::reset();
     }
 
     protected function tearDown(): void {
         $GLOBALS['intersoccer_test_emit_wp_hooks'] = false;
         $GLOBALS['intersoccer_rr_bf_wp_mail_fail'] = false;
+        $GLOBALS['intersoccer_test_wp_schedule_event_log'] = [];
+        $GLOBALS['intersoccer_test_wp_next_scheduled'] = [];
+        $GLOBALS['intersoccer_test_wp_clear_scheduled_hook_log'] = [];
         unset($GLOBALS['intersoccer_test_current_user_caps'], $GLOBALS['intersoccer_test_current_user']);
         \InterSoccerRRTestMeta::reset();
         parent::tearDown();
@@ -541,12 +587,126 @@ class DailyBfSalesEmailTest extends TestCase {
     public function test_schedule_uses_hourly_wp_cron(): void {
         $GLOBALS['intersoccer_test_wp_schedule_event_log'] = [];
         $GLOBALS['intersoccer_test_wp_next_scheduled'] = [];
+        $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS] = $this->settingsOption(true);
         DailyBfSalesEmail::ensureScheduled();
-        $log = $GLOBALS['intersoccer_test_wp_schedule_event_log'];
-        $this->assertNotEmpty($log);
+        $log = $this->salesCronEvents();
+        $this->assertCount(1, $log);
         $last = $log[count($log) - 1];
         $this->assertSame(DailyBfSalesEmail::CRON_HOOK, $last['hook']);
         $this->assertSame('hourly', $last['recurrence']);
+    }
+
+    public function test_register_and_ensure_scheduled_schedule_nothing_when_enable_is_off(): void {
+        $GLOBALS['intersoccer_test_option_store'] = [];
+        DailyBfSalesEmail::register();
+        DailyBfSalesEmail::ensureScheduled();
+
+        $this->assertSame([], $this->salesCronEvents());
+        $this->assertSame([], $this->salesCronClears());
+        $this->assertFalse(wp_next_scheduled(DailyBfSalesEmail::CRON_HOOK));
+        $this->assertActionRegistered('update_option', 'onOptionUpdated', 3);
+        $this->assertActionRegistered('update_option_' . DailyBfSalesEmail::OPTION_SETTINGS, 'onSettingsUpdated', 3);
+        $this->assertActionRegistered(DailyBfSalesEmail::CRON_HOOK, 'runScheduledFromCron', 1);
+        $this->assertActionRegistered('admin_menu', 'registerMenu', 1);
+        $this->assertActionRegistered('admin_init', 'maybeHandlePost', 1);
+    }
+
+    public function test_turning_enable_on_schedules_the_hourly_event_once(): void {
+        $GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
+        $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS] = $this->settingsOption(false);
+        DailyBfSalesEmail::register();
+        $this->assertSame([], $this->salesCronEvents());
+
+        $enabled = $this->settingsOption(true);
+        update_option(DailyBfSalesEmail::OPTION_SETTINGS, $enabled, false);
+        $events = $this->salesCronEvents();
+        $this->assertCount(1, $events);
+        $this->assertSame(DailyBfSalesEmail::CRON_HOOK, $events[0]['hook']);
+        $this->assertSame('hourly', $events[0]['recurrence']);
+
+        update_option(DailyBfSalesEmail::OPTION_SETTINGS, $enabled, false);
+        DailyBfSalesEmail::ensureScheduled();
+        DailyBfSalesEmail::onSettingsUpdated(null, $enabled, DailyBfSalesEmail::OPTION_SETTINGS);
+        $this->assertCount(1, $this->salesCronEvents());
+        $this->assertNotFalse(wp_next_scheduled(DailyBfSalesEmail::CRON_HOOK));
+    }
+
+    public function test_turning_enable_off_unschedules_the_event(): void {
+        $GLOBALS['intersoccer_test_emit_wp_hooks'] = false;
+        $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS] = $this->settingsOption(true);
+        DailyBfSalesEmail::ensureScheduled();
+        $this->assertCount(1, $this->salesCronEvents());
+
+        $service = $this->makeService($this->novemberCoupon());
+        $result = $service->handleAdminPost([
+            'bf_save' => '1',
+            '_wpnonce' => 'test',
+            'bf_recipients' => 'ops@example.com',
+            'bf_send_time' => '08:00',
+            'bf_coupon_code' => 'BF',
+        ]);
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('saved', $result['code']);
+        $this->assertFalse($service->settings()['enabled']);
+        $clears = $this->salesCronClears();
+        $this->assertNotEmpty($clears);
+        $this->assertSame(DailyBfSalesEmail::CRON_HOOK, $clears[0]['hook']);
+        $this->assertFalse(wp_next_scheduled(DailyBfSalesEmail::CRON_HOOK));
+        $this->assertCount(1, $this->salesCronEvents());
+    }
+
+    public function test_plugin_deactivation_unschedules_the_event(): void {
+        $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS] = $this->settingsOption(true);
+        DailyBfSalesEmail::ensureScheduled();
+        $this->assertNotFalse(wp_next_scheduled(DailyBfSalesEmail::CRON_HOOK));
+
+        $this->pluginForDeactivation()->deactivate();
+
+        $clears = $this->salesCronClears();
+        $this->assertNotEmpty($clears);
+        $this->assertSame(DailyBfSalesEmail::CRON_HOOK, $clears[count($clears) - 1]['hook']);
+        $this->assertFalse(wp_next_scheduled(DailyBfSalesEmail::CRON_HOOK));
+    }
+
+    public function test_test_send_works_with_enable_off_without_scheduling_the_event(): void {
+        $GLOBALS['intersoccer_test_option_store'] = [
+            DailyBfSalesEmail::OPTION_SETTINGS => [
+                'enabled' => false,
+                'recipients' => 'list@example.test',
+                'send_time' => '08:00',
+                'coupon_code' => 'BF',
+            ],
+            DailyBfSalesEmail::OPTION_STATE => [
+                'sent_dates' => ['2026-10-01' => 1],
+                'last_sent_at' => '2026-10-02 08:00',
+                'last_result' => 'sent',
+            ],
+        ];
+        DailyBfSalesEmail::register();
+        DailyBfSalesEmail::ensureScheduled();
+        $this->assertSame([], $this->salesCronEvents());
+
+        $service = $this->makeService([
+            'start' => $this->unix('2026-12-01 00:00:00'),
+            'expires' => $this->unix('2026-12-31 23:59:59'),
+        ]);
+        $now = $this->zurich('2026-11-01 09:00:00');
+        $before = $service->state();
+
+        $this->assertSame('disabled', $service->runScheduled($now));
+        $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $result = $service->sendTest('ops@example.com', $now);
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('test_sent', $result['code']);
+        $this->assertCount(1, $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $mail = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0];
+        $this->assertSame('ops@example.com', $mail['to']);
+        $this->assertStringStartsWith('[TEST] ', $mail['subject']);
+        $this->assertSame($before, $service->state());
+        $this->assertSame([], $this->salesCronEvents());
+        $this->assertFalse(wp_next_scheduled(DailyBfSalesEmail::CRON_HOOK));
     }
 
     public function test_test_send_goes_only_to_the_typed_address_with_test_subject(): void {
@@ -746,6 +906,80 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertFalse(strpos($blob, '@') !== false, $blob);
         $this->assertFalse(strpos($blob, 'example.com') !== false, $blob);
         $this->assertFalse(strpos($blob, 'example.test') !== false, $blob);
+    }
+
+    private function settingsOption(bool $enabled): array {
+        return [
+            'enabled' => $enabled,
+            'recipients' => 'ops@example.com',
+            'send_time' => '08:00',
+            'coupon_code' => 'BF',
+        ];
+    }
+
+    private function salesCronEvents(): array {
+        $log = isset($GLOBALS['intersoccer_test_wp_schedule_event_log']) && is_array($GLOBALS['intersoccer_test_wp_schedule_event_log'])
+            ? $GLOBALS['intersoccer_test_wp_schedule_event_log']
+            : [];
+        $events = [];
+        foreach ($log as $entry) {
+            if (is_array($entry) && ($entry['hook'] ?? '') === DailyBfSalesEmail::CRON_HOOK) {
+                $events[] = $entry;
+            }
+        }
+        return $events;
+    }
+
+    private function salesCronClears(): array {
+        $log = isset($GLOBALS['intersoccer_test_wp_clear_scheduled_hook_log']) && is_array($GLOBALS['intersoccer_test_wp_clear_scheduled_hook_log'])
+            ? $GLOBALS['intersoccer_test_wp_clear_scheduled_hook_log']
+            : [];
+        $clears = [];
+        foreach ($log as $entry) {
+            if (is_array($entry) && ($entry['hook'] ?? '') === DailyBfSalesEmail::CRON_HOOK) {
+                $clears[] = $entry;
+            }
+        }
+        return $clears;
+    }
+
+    private function assertActionRegistered(string $hook, string $method, int $acceptedArgs): void {
+        $byPriority = $GLOBALS['intersoccer_test_wp_hooks']['actions'][$hook] ?? [];
+        foreach ($byPriority as $callbacks) {
+            if (!is_array($callbacks)) {
+                continue;
+            }
+            foreach ($callbacks as $entry) {
+                $callback = $entry['callback'] ?? null;
+                if (!is_array($callback) || ($callback[1] ?? '') !== $method) {
+                    continue;
+                }
+                $this->assertGreaterThanOrEqual($acceptedArgs, (int) ($entry['accepted_args'] ?? 0), $hook);
+                return;
+            }
+        }
+        $this->fail('Missing action ' . $hook . ' ' . $method);
+    }
+
+    private function pluginForDeactivation(): \InterSoccer\ReportsRosters\Core\Plugin {
+        $class = new \ReflectionClass(\InterSoccer\ReportsRosters\Core\Plugin::class);
+        $plugin = $class->newInstanceWithoutConstructor();
+        $logger = new \InterSoccer\ReportsRosters\Core\Logger([
+            'level' => 'emergency',
+            'log_to_file' => false,
+            'log_to_db' => false,
+        ]);
+        $this->setPluginProperty($plugin, 'logger', $logger);
+        $this->setPluginProperty($plugin, 'database', new \InterSoccer\ReportsRosters\Core\Database($logger));
+        $this->setPluginProperty($plugin, 'cache', new \InterSoccer\ReportsRosters\Services\CacheManager($logger));
+        $this->setPluginProperty($plugin, 'plugin_path', dirname(__DIR__, 2) . DIRECTORY_SEPARATOR);
+        return $plugin;
+    }
+
+    private function setPluginProperty($plugin, string $name, $value): void {
+        $property = new \ReflectionProperty($plugin, $name);
+        $property->setAccessible(true);
+        $property->setValue($plugin, $value);
     }
 
     private function enabledService(array $coupon, string $recipients): DailyBfSalesEmail {

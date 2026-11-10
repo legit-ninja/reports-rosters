@@ -3,11 +3,14 @@
  * Daily sales email for a coupon window.
  *
  * Enable is off by default. Recipients come only from the Send to setting.
- * The schedule follows the coupon's Europe/Zurich active days. The morning
- * after expiry is the final campaign email: it reports the expiry day's paid
- * sales and the running total for the whole campaign (coupon start through
- * expiry). After that send, nothing more goes out for the campaign. A test
- * send goes to one typed address and does not mark the day.
+ * The hourly check is scheduled only while Enable is on. Turning Enable off,
+ * or deactivating the plugin, clears that event. A plain load with Enable off
+ * does not schedule it. The schedule follows the coupon's Europe/Zurich active
+ * days. The morning after expiry is the final campaign email: it reports the
+ * expiry day's paid sales and the running total for the whole campaign
+ * (coupon start through expiry). After that send, nothing more goes out for
+ * the campaign. A test send goes to one typed address and does not mark the
+ * day. It does not depend on the cron event.
  *
  * @package InterSoccer\ReportsRosters\Services
  */
@@ -86,7 +89,8 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * Register cron, the admin page, and the request handler.
+     * Register the admin page, the cron callback, and settings listeners.
+     * The hourly event is queued only when Enable is on.
      *
      * @return void
      */
@@ -99,14 +103,66 @@ class DailyBfSalesEmail {
         add_action(self::CRON_HOOK, [self::instance(), 'runScheduledFromCron']);
         add_action('admin_menu', [self::class, 'registerMenu']);
         add_action('admin_init', [self::class, 'maybeHandlePost']);
+        add_action('update_option', [self::class, 'onOptionUpdated'], 10, 3);
+        add_action('update_option_' . self::OPTION_SETTINGS, [self::class, 'onSettingsUpdated'], 10, 3);
     }
 
     /**
-     * Schedule an hourly check. The Zurich clock, not a fixed 24-hour offset, decides the send.
+     * Schedule the hourly check when Enable is on and the event is not already queued.
+     * Enable off leaves any existing event in place. Saving settings, or deactivating
+     * the plugin, clears it. The Zurich clock decides the send.
      *
      * @return void
      */
     public static function ensureScheduled() {
+        if (!self::storedEnabled()) {
+            return;
+        }
+        self::scheduleHourly();
+    }
+
+    /**
+     * Option writes pass the option name first. Ignore every option except settings.
+     *
+     * @param mixed $option
+     * @param mixed $oldValue
+     * @param mixed $value
+     * @return void
+     */
+    public static function onOptionUpdated($option, $oldValue = null, $value = null) {
+        if ((string) $option !== self::OPTION_SETTINGS) {
+            return;
+        }
+        self::syncScheduleToValue($value);
+    }
+
+    /**
+     * The settings option hook passes the new value second, after the option is stored.
+     *
+     * @param mixed $oldValue
+     * @param mixed $value
+     * @param mixed $option
+     * @return void
+     */
+    public static function onSettingsUpdated($oldValue = null, $value = null, $option = '') {
+        self::syncScheduleToValue($value);
+    }
+
+    /**
+     * @return void
+     */
+    public static function unschedule() {
+        if (function_exists('wp_clear_scheduled_hook')) {
+            wp_clear_scheduled_hook(self::CRON_HOOK);
+        }
+    }
+
+    /**
+     * Queue the hourly event once. A second call leaves the existing event in place.
+     *
+     * @return void
+     */
+    private static function scheduleHourly() {
         if (!function_exists('wp_next_scheduled') || !function_exists('wp_schedule_event')) {
             return;
         }
@@ -118,12 +174,30 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * @param mixed $value Saved settings array.
      * @return void
      */
-    public static function unschedule() {
-        if (function_exists('wp_clear_scheduled_hook')) {
-            wp_clear_scheduled_hook(self::CRON_HOOK);
+    private static function syncScheduleToValue($value) {
+        if (self::valueEnabled($value)) {
+            self::scheduleHourly();
+            return;
         }
+        self::unschedule();
+    }
+
+    /**
+     * @return bool
+     */
+    private static function storedEnabled() {
+        return !empty(self::instance()->settings()['enabled']);
+    }
+
+    /**
+     * @param mixed $value
+     * @return bool
+     */
+    private static function valueEnabled($value) {
+        return is_array($value) && !empty($value['enabled']);
     }
 
     /**
@@ -725,12 +799,14 @@ class DailyBfSalesEmail {
         if (strlen($code) > 64) {
             $code = substr($code, 0, 64);
         }
-        update_option(self::OPTION_SETTINGS, [
+        $settings = [
             'enabled' => !empty($post['bf_enabled']),
             'recipients' => $recipients,
             'send_time' => $sendTime,
             'coupon_code' => $code,
-        ], false);
+        ];
+        update_option(self::OPTION_SETTINGS, $settings, false);
+        self::syncScheduleToValue($settings);
         return [
             'ok' => true,
             'code' => 'saved',
