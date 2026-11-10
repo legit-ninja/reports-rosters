@@ -333,6 +333,17 @@ class RosterBuilder {
                     'rows' => [],
                 ],
             ],
+            // Tournament lines whose date could not be read from the variation, product or line label.
+            'unparsed_event_dates' => [
+                'count' => 0,
+                'rows' => [],
+            ],
+            // Values shortened to fit their column (the full value stays on the order line).
+            'truncated' => [
+                'count' => 0,
+                'by_field' => [],
+                'rows' => [],
+            ],
             // Lines that could not be written, with the reason in a form someone can act on.
             'line_errors' => [
                 'count' => 0,
@@ -2703,6 +2714,50 @@ class RosterBuilder {
 
         $this->current_times_trace['stored_as'] = (string) ($roster_data['times'] ?? '');
 
+        $roster_data = $this->truncateEventTypeForStorage($roster_data);
+
+        return $roster_data;
+    }
+
+    /** event_type is varchar(191) (schema 2.4.0). */
+    private const EVENT_TYPE_MAX_LENGTH = 191;
+
+    /**
+     * event_type receives the order line's "Camp Terms" label, which can exceed the column (e.g. 352
+     * characters for multi-week labels), and the insert then fails. Truncate it to the column width,
+     * multibyte-safe, after the event signature was computed so grouping is unchanged. The full label
+     * stays on the order line; the truncation is reported (truncated) for the dry run.
+     */
+    private function truncateEventTypeForStorage(array $roster_data): array {
+        if (!isset($roster_data['event_type']) || !is_string($roster_data['event_type'])) {
+            return $roster_data;
+        }
+        $value = $roster_data['event_type'];
+        $length = function_exists('mb_strlen') ? mb_strlen($value, 'UTF-8') : strlen($value);
+        if ($length <= self::EVENT_TYPE_MAX_LENGTH) {
+            return $roster_data;
+        }
+
+        $roster_data['event_type'] = function_exists('mb_substr')
+            ? mb_substr($value, 0, self::EVENT_TYPE_MAX_LENGTH, 'UTF-8')
+            : substr($value, 0, self::EVENT_TYPE_MAX_LENGTH);
+
+        $camp_terms = trim((string) ($roster_data['camp_terms'] ?? ''));
+        $bucket = &$this->build_stats['truncated'];
+        $bucket['count']++;
+        $bucket['by_field']['event_type'] = (int) ($bucket['by_field']['event_type'] ?? 0) + 1;
+        if (count($bucket['rows']) < self::REVIEW_LIST_LIMIT) {
+            $bucket['rows'][] = [
+                'order_id' => (int) ($roster_data['order_id'] ?? 0),
+                'order_item_id' => (int) ($roster_data['order_item_id'] ?? 0),
+                'field' => 'event_type',
+                'original_length' => $length,
+                'stored_length' => self::EVENT_TYPE_MAX_LENGTH,
+                'camp_terms_holds_full_value' => $camp_terms !== '' && $camp_terms === trim($value),
+            ];
+        }
+        unset($bucket);
+
         return $roster_data;
     }
     
@@ -3108,47 +3163,178 @@ class RosterBuilder {
     }
     
     /**
+     * Raw tournament date values in priority order: variation (slug, then term name), parent product,
+     * then the order line's labels.
+     *
+     * @return array<string,string> source => raw value
+     */
+    private function tournamentDateCandidates(array $data): array {
+        $candidates = [];
+        $variation_id = (int) ($data['variation_id'] ?? 0);
+        $product_id = (int) ($data['product_id'] ?? 0);
+        try {
+            if ($variation_id > 0) {
+                if (function_exists('get_post_meta')) {
+                    $slug = get_post_meta($variation_id, 'attribute_pa_date', true);
+                    if (is_string($slug) && trim($slug) !== '') {
+                        $candidates['variation:attribute_pa_date'] = trim($slug);
+                    }
+                }
+                $variation = function_exists('wc_get_product') ? wc_get_product($variation_id) : null;
+                if ($variation && method_exists($variation, 'get_attribute')) {
+                    foreach (['pa_date', 'Date'] as $attr) {
+                        $value = $variation->get_attribute($attr);
+                        if (is_string($value) && trim($value) !== '') {
+                            $candidates['variation:' . $attr] = trim($value);
+                        }
+                    }
+                }
+            }
+            if ($product_id > 0 && function_exists('wc_get_product')) {
+                $product = wc_get_product($product_id);
+                if ($product && method_exists($product, 'get_attribute')) {
+                    foreach (['pa_date', 'Date'] as $attr) {
+                        $value = $product->get_attribute($attr);
+                        if (is_string($value) && trim($value) !== '') {
+                            $candidates['product:' . $attr] = trim($value);
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // fall through to the order line
+        }
+        foreach (['pa_date', 'date', 'Date'] as $key) {
+            if (isset($data[$key]) && is_scalar($data[$key]) && trim((string) $data[$key]) !== '') {
+                $candidates['line:' . $key] = trim((string) $data[$key]);
+            }
+        }
+        // No field map carries the line's date, so read it from the order item meta directly.
+        $order_item_id = (int) ($data['order_item_id'] ?? 0);
+        if ($order_item_id > 0 && function_exists('wc_get_order_item_meta')) {
+            foreach (['pa_date', 'Date', 'Datum'] as $key) {
+                if (isset($candidates['line:' . $key])) {
+                    continue;
+                }
+                $value = wc_get_order_item_meta($order_item_id, $key, true);
+                if (is_scalar($value) && trim((string) $value) !== '') {
+                    $candidates['line:' . $key] = trim((string) $value);
+                }
+            }
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * @param array<string,string> $candidates source => raw value
+     * @return array{0:?string,1:?string} [Y-m-d or null, source]
+     */
+    private function firstParsableEventDate(array $candidates): array {
+        foreach ($candidates as $source => $raw) {
+            $ymd = $this->parseEventDateStrict($raw);
+            if ($ymd !== null) {
+                return [$ymd, $source];
+            }
+        }
+
+        return [null, null];
+    }
+
+    /**
+     * Parse a single event date written in English, French or German, as a label ("Samedi 14 mars
+     * 2026", "Samstag, 14. März 2026") or a slug ("saturday-14-march-2026"). A four-digit year is
+     * required: a value without one is not guessed.
+     */
+    private function parseEventDateStrict(string $raw): ?string {
+        $value = trim($raw);
+        if ($value === '') {
+            return null;
+        }
+        if (preg_match('/^(\d{4})-(\d{1,2})-(\d{1,2})$/', $value, $m)) {
+            return checkdate((int) $m[2], (int) $m[3], (int) $m[1]) ? sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]) : null;
+        }
+        if (preg_match('/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})$/', $value, $m)) {
+            // Swiss/European day-first order.
+            return checkdate((int) $m[2], (int) $m[1], (int) $m[3]) ? sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]) : null;
+        }
+
+        $text = function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+        if (strpos($text, ' ') === false && strpos($text, '-') !== false) {
+            $text = str_replace('-', ' ', $text); // slug form
+        }
+        $text = str_replace([',', '.'], ' ', $text);
+        $weekdays = 'monday|tuesday|wednesday|thursday|friday|saturday|sunday|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonnabend|sonntag';
+        $text = preg_replace('/\b(' . $weekdays . ')\b/u', ' ', $text);
+        $months = [
+            'january' => 1, 'janvier' => 1, 'januar' => 1, 'jänner' => 1,
+            'february' => 2, 'février' => 2, 'fevrier' => 2, 'februar' => 2,
+            'march' => 3, 'mars' => 3, 'märz' => 3, 'maerz' => 3, 'marz' => 3,
+            'april' => 4, 'avril' => 4,
+            'may' => 5, 'mai' => 5,
+            'june' => 6, 'juin' => 6, 'juni' => 6,
+            'july' => 7, 'juillet' => 7, 'juli' => 7,
+            'august' => 8, 'août' => 8, 'aout' => 8,
+            'september' => 9, 'septembre' => 9,
+            'october' => 10, 'octobre' => 10, 'oktober' => 10,
+            'november' => 11, 'novembre' => 11,
+            'december' => 12, 'décembre' => 12, 'decembre' => 12, 'dezember' => 12,
+        ];
+        $tokens = preg_split('/\s+/u', trim((string) $text)) ?: [];
+        $day = $month = $year = null;
+        foreach ($tokens as $token) {
+            if ($token === '' || $token === 'er' || $token === '1er') {
+                if ($token === '1er' && $day === null) {
+                    $day = 1;
+                }
+                continue;
+            }
+            if (isset($months[$token])) {
+                $month = $month ?? $months[$token];
+            } elseif (preg_match('/^\d{4}$/', $token)) {
+                $year = $year ?? (int) $token;
+            } elseif (preg_match('/^(\d{1,2})(st|nd|rd|th)?$/', $token, $m)) {
+                $day = $day ?? (int) $m[1];
+            }
+        }
+        if ($day === null || $month === null || $year === null || !checkdate($month, $day, $year)) {
+            return null;
+        }
+
+        return sprintf('%04d-%02d-%02d', $year, $month, $day);
+    }
+
+    /**
      * Parse and validate dates in roster data
      * 
      * @param array $data Data with potential date fields
      * @return array Data with parsed dates
      */
     private function parseDates(array $data) {
-        // For tournaments, check for date attribute (pa_date or Date)
-        if (!empty($data['activity_type']) && strtolower($data['activity_type']) === 'tournament') {
-            $tournament_date = null;
-            
-            // Check for date attribute (could be 'date' after pa_ prefix removal, or 'Date')
-            $tournament_date = $data['date'] ?? $data['Date'] ?? null;
-            
-            // If not found in extracted attributes, try to get from product directly
-            if (!$tournament_date && !empty($data['variation_id'])) {
-                $variation = wc_get_product($data['variation_id']);
-                if ($variation) {
-                    $tournament_date = $variation->get_attribute('pa_date') ?: $variation->get_attribute('Date');
+        // Tournaments: one date, from the variation's pa_date first (the product's date field), then the
+        // parent product, then the order line's "Date" label (order language). The first value that
+        // parses wins; a label that does not parse no longer hides the variation's date (#167).
+        if (!empty($data['activity_type']) && strtolower((string) $data['activity_type']) === 'tournament') {
+            $candidates = $this->tournamentDateCandidates($data);
+            [$parsed_date, $source] = $this->firstParsableEventDate($candidates);
+            if ($parsed_date !== null) {
+                $data['start_date'] = $parsed_date;
+                $data['end_date'] = $parsed_date;
+                $this->logger->debug('Extracted tournament date', ['source' => $source, 'parsed_date' => $parsed_date]);
+            } elseif ($candidates !== []) {
+                $bucket = &$this->build_stats['unparsed_event_dates'];
+                $bucket['count']++;
+                if (count($bucket['rows']) < self::REVIEW_LIST_LIMIT) {
+                    $bucket['rows'][] = [
+                        'order_item_id' => (int) ($data['order_item_id'] ?? 0),
+                        'variation_id' => (int) ($data['variation_id'] ?? 0),
+                        'values' => $candidates,
+                    ];
                 }
-            }
-            if (!$tournament_date && !empty($data['product_id'])) {
-                $product = wc_get_product($data['product_id']);
-                if ($product) {
-                    $tournament_date = $product->get_attribute('pa_date') ?: $product->get_attribute('Date');
-                }
-            }
-            
-            if ($tournament_date) {
-                $parsed_date = $this->parseDate($tournament_date);
-                if ($parsed_date) {
-                    // Tournaments are typically one day, so use same date for start and end
-                    $data['start_date'] = $parsed_date;
-                    $data['end_date'] = $parsed_date;
-                    $this->logger->debug('Extracted tournament date from attribute', [
-                        'date_attribute' => $tournament_date,
-                        'parsed_date' => $parsed_date
-                    ]);
-                }
+                unset($bucket);
             }
         }
-        
+
         $date_fields = ['start_date', 'end_date'];
         
         foreach ($date_fields as $field) {
