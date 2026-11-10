@@ -61,6 +61,8 @@ abstract class TestCase extends PHPUnitTestCase {
             intersoccer_roster_report_reset_live_order_status_memo();
         }
 
+        unset($GLOBALS['intersoccer_test_admin_log_insert_callback']);
+
         Mockery::close();
 
         global $wpdb;

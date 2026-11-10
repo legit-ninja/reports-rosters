@@ -32,6 +32,8 @@ use Mockery;
 require_once dirname(__DIR__) . '/ReportAccuracy/ReportAccuracyFixtures.php';
 require_once dirname(__DIR__) . '/ReportAccuracy/DeletedProductRosterTest.php';
 
+
+require_once dirname(__DIR__) . '/shims/roster-admin-log-recorder.php';
 class RosterRebuildCoverage160Wpdb extends DeletedProductWpdb {
     /** @var array<int,array<string,string>> */
     public $existing = [];
@@ -86,7 +88,7 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->created = $this->updated = $this->deleted = $this->synced = $this->stored = [];
         $this->adminLog = [];
         $this->ordersQueryStatuses = [];
-        Functions\when('intersoccer_roster_admin_log_insert')->alias(function ($action, $sig = '', $payload = []) {
+        $GLOBALS['intersoccer_test_admin_log_insert_callback'] = (function ($action, $sig = '', $payload = []) {
             $this->adminLog[] = [$action, $payload];
             return true;
         });
