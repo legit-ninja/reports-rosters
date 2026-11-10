@@ -2413,17 +2413,58 @@ class RosterBuilder {
     }
     
     /**
-     * Extract customer contact data
-     * 
+     * Extract customer contact data.
+     *
+     * parent_first_name and parent_last_name are NOT NULL with no default.
+     * Empty billing names fall back to the customer user name, then a placeholder,
+     * so roster insert does not write NULL into those columns.
+     *
      * @param \WC_Order $order WooCommerce order
      * @return array Customer data
      */
     private function extractCustomerData(\WC_Order $order) {
+        $customer_id = (int) $order->get_customer_id();
+        $order_id = (int) $order->get_id();
+
+        $billing_first = $order->get_billing_first_name();
+        $first_name = trim((string) $billing_first);
+        if ($first_name === '') {
+            $from_user = '';
+            if ($customer_id > 0) {
+                $from_user = trim((string) get_user_meta($customer_id, 'first_name', true));
+            }
+            $first_name = $from_user !== '' ? $from_user : 'Unknown';
+            $this->logger->warning('Roster parent name fallback applied', [
+                'order_id' => $order_id,
+                'column' => 'parent_first_name',
+                'source' => $from_user !== '' ? 'user_first_name' : 'unknown',
+            ]);
+        } else {
+            $first_name = (string) $billing_first;
+        }
+
+        $billing_last = $order->get_billing_last_name();
+        $last_name = trim((string) $billing_last);
+        if ($last_name === '') {
+            $from_user = '';
+            if ($customer_id > 0) {
+                $from_user = trim((string) get_user_meta($customer_id, 'last_name', true));
+            }
+            $last_name = $from_user !== '' ? $from_user : 'Unknown';
+            $this->logger->warning('Roster parent name fallback applied', [
+                'order_id' => $order_id,
+                'column' => 'parent_last_name',
+                'source' => $from_user !== '' ? 'user_last_name' : 'unknown',
+            ]);
+        } else {
+            $last_name = (string) $billing_last;
+        }
+
         return [
             'email' => $order->get_billing_email(),
             'phone' => $order->get_billing_phone(),
-            'first_name' => $order->get_billing_first_name(),
-            'last_name' => $order->get_billing_last_name(),
+            'first_name' => $first_name,
+            'last_name' => $last_name,
             'emergency_contact' => $order->get_billing_first_name() . ' ' . $order->get_billing_last_name(),
             'emergency_phone' => $order->get_billing_phone()
         ];
