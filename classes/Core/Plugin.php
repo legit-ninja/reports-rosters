@@ -18,6 +18,7 @@ use InterSoccer\ReportsRosters\Ajax\AjaxHandler;
 use InterSoccer\ReportsRosters\WooCommerce\HooksManager;
 use InterSoccer\ReportsRosters\Services\CacheManager;
 use InterSoccer\ReportsRosters\Campaign\CampaignModule;
+use InterSoccer\ReportsRosters\Services\DailyBfSalesEmail;
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
@@ -279,6 +280,9 @@ final class Plugin {
             
             // Clear any cached data
             $this->cache->clear_all();
+
+            $this->load_daily_bf_sales_email();
+            DailyBfSalesEmail::unschedule();
             
             $this->logger->info('InterSoccer Plugin: Deactivation completed');
             
@@ -304,6 +308,9 @@ final class Plugin {
             $this->load_textdomain();
 
             CampaignModule::boot();
+
+            $this->load_daily_bf_sales_email();
+            DailyBfSalesEmail::register();
             
             $this->initialized = true;
             $this->logger->info('InterSoccer Plugin: Main initialization completed');
@@ -555,6 +562,21 @@ final class Plugin {
      */
     public function is_initialized() {
         return $this->initialized;
+    }
+
+    /**
+     * Load the daily sales email class.
+     *
+     * The file lives under includes/ so it is required explicitly. A new class
+     * under classes/ would have to be added to the committed Composer classmap.
+     *
+     * @return void
+     */
+    private function load_daily_bf_sales_email() {
+        $file = $this->plugin_path . 'includes/daily-bf-sales-email.php';
+        if (is_readable($file)) {
+            require_once $file;
+        }
     }
     
     /**
