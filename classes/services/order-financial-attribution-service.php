@@ -1253,7 +1253,12 @@ class OrderFinancialAttributionService {
             $line_total = (float) $item->get_total();
             $discount = (float) wc_get_order_item_meta((int) $item_id, self::META_ITEM_DISCOUNT_TOTAL, true);
             $refund = (float) wc_get_order_item_meta((int) $item_id, self::META_ITEM_REFUND, true);
-            $final = intersoccer_financial_line_final_price($base, $line_total, $discount);
+            $raw_breakdown = wc_get_order_item_meta((int) $item_id, self::META_ITEM_DISCOUNTS, true);
+            if (is_string($raw_breakdown) && function_exists('maybe_unserialize')) {
+                $raw_breakdown = maybe_unserialize($raw_breakdown);
+            }
+            $breakdown = is_array($raw_breakdown) ? $raw_breakdown : [];
+            $final = intersoccer_financial_line_final_price($base, $line_total, $discount, $breakdown);
             $attributed_net += $final - $refund;
         }
 

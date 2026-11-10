@@ -531,7 +531,17 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
         
         $totals['discount_amount'] += $discount_amt;
         $totals['reimbursement'] += $reimbursement;
-        $line_final = intersoccer_financial_line_final_price($base_price, floatval($row['final_price']), $discount_amt);
+        $line_breakdown = [];
+        if (!empty($row['intersoccer_item_discount_breakdown'])) {
+            $raw_breakdown = $row['intersoccer_item_discount_breakdown'];
+            if (is_string($raw_breakdown)) {
+                $raw_breakdown = maybe_unserialize($raw_breakdown);
+            }
+            if (is_array($raw_breakdown)) {
+                $line_breakdown = $raw_breakdown;
+            }
+        }
+        $line_final = intersoccer_financial_line_final_price($base_price, floatval($row['final_price']), $discount_amt, $line_breakdown);
         $totals['final_price'] += max(0.0, $line_final - $reimbursement);
     }
 
@@ -594,7 +604,7 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
 
         $base_price = floatval($row['base_price']);
         $reimbursement = floatval($row['reimbursement']);
-        $line_final = intersoccer_financial_line_final_price($base_price, floatval($row['final_price']), $total_discount);
+        $line_final = intersoccer_financial_line_final_price($base_price, floatval($row['final_price']), $total_discount, $item_discount_breakdown);
         $net_final_price = max(0.0, $line_final - $reimbursement);
 
         $data[] = array(
@@ -1027,7 +1037,7 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
             $reimbursement = floatval($meta_data['_intersoccer_item_refund']);
         }
 
-        $line_final = intersoccer_financial_line_final_price($base_price, floatval($row->line_total), $discount_amount);
+        $line_final = intersoccer_financial_line_final_price($base_price, floatval($row->line_total), $discount_amount, $item_discount_breakdown);
         $final_price = max(0.0, $line_final - $reimbursement);
 
         // Calculate Stripe fee (approximate 2.9% + 0.30 CHF)
