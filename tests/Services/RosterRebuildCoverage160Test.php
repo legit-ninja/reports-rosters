@@ -75,6 +75,8 @@ class RosterRebuildCoverage160Test extends TestCase {
     private $adminLog = [];
     /** @var array<int,mixed> */
     private $ordersQueryStatuses = [];
+    /** @var callable|null receives the data passed to RosterRepository::create() */
+    private $createDataSpy = null;
     /** @var array<int,string> order_item_id => MySQL error the insert fails with */
     private $createDbError = [];
 
@@ -215,6 +217,9 @@ class RosterRebuildCoverage160Test extends TestCase {
         });
         $repo->shouldReceive('create')->andReturnUsing(function (array $data) {
             unset($data['_skip_age_group_validation']);
+            if (is_callable($this->createDataSpy)) {
+                ($this->createDataSpy)($data);
+            }
             $failing_id = (int) ($data['order_item_id'] ?? 0);
             if (isset($this->createDbError[$failing_id])) {
                 $this->wpdb->last_error = $this->createDbError[$failing_id];
@@ -747,6 +752,43 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertSame(9911, $errors['rows'][0]['order_item_id']);
         $this->assertSame('Other', $errors['rows'][0]['activity_type']);
         $this->assertArrayHasKey('activity_type', $errors['rows'][0]['validation_errors']);
+    }
+
+    public function test_long_camp_terms_label_is_truncated_to_the_event_type_column_and_reported(): void {
+        // A 352-character multi-week "Camp Terms" label, with a multibyte character at the cut.
+        $label = str_repeat('Été Semaine 1 : 30 juin – 4 juillet (5 jours), ', 8);
+        $label = mb_substr($label, 0, 352, 'UTF-8');
+        $this->assertSame(352, mb_strlen($label, 'UTF-8'));
+        $this->order(9971, 'completed', [9981 => $this->meta(['Camp Terms' => $label])]);
+        $this->routeOrders([9971]);
+        $captured = null;
+        $this->createDataSpy = function (array $data) use (&$captured) { $captured = $data; };
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
+
+        $this->assertSame([9981], $this->created, 'the line now gets a row');
+        $this->assertSame(0, $result['line_errors']['count']);
+        $this->assertSame(191, mb_strlen((string) $captured['event_type'], 'UTF-8'));
+        $this->assertSame(mb_substr($label, 0, 191, 'UTF-8'), $captured['event_type']);
+        $this->assertTrue(mb_check_encoding((string) $captured['event_type'], 'UTF-8'), 'cut on a character boundary');
+        $this->assertSame(1, $result['truncated']['count']);
+        $row = $result['truncated']['rows'][0];
+        $this->assertSame(9981, $row['order_item_id']);
+        $this->assertSame('event_type', $row['field']);
+        $this->assertSame(352, $row['original_length']);
+        $this->assertArrayHasKey('camp_terms_holds_full_value', $row);
+    }
+
+    public function test_event_type_within_the_column_is_unchanged(): void {
+        $this->order(9972, 'completed', [9982 => $this->meta(['Camp Terms' => 'Summer Week 1: June 30 - July 4 (5 days)'])]);
+        $this->routeOrders([9972]);
+        $captured = null;
+        $this->createDataSpy = function (array $data) use (&$captured) { $captured = $data; };
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true]);
+
+        $this->assertSame('Summer Week 1: June 30 - July 4 (5 days)', $captured['event_type']);
+        $this->assertSame(0, $result['truncated']['count']);
     }
 
     public function test_too_long_insert_reports_column_value_length_and_width(): void {

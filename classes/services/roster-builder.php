@@ -333,6 +333,12 @@ class RosterBuilder {
                     'rows' => [],
                 ],
             ],
+            // Values shortened to fit their column (the full value stays on the order line).
+            'truncated' => [
+                'count' => 0,
+                'by_field' => [],
+                'rows' => [],
+            ],
             // Lines that could not be written, with the reason in a form someone can act on.
             'line_errors' => [
                 'count' => 0,
@@ -2702,6 +2708,50 @@ class RosterBuilder {
             }
 
         $this->current_times_trace['stored_as'] = (string) ($roster_data['times'] ?? '');
+
+        $roster_data = $this->truncateEventTypeForStorage($roster_data);
+
+        return $roster_data;
+    }
+
+    /** event_type is varchar(191) (schema 2.4.0). */
+    private const EVENT_TYPE_MAX_LENGTH = 191;
+
+    /**
+     * event_type receives the order line's "Camp Terms" label, which can exceed the column (e.g. 352
+     * characters for multi-week labels), and the insert then fails. Truncate it to the column width,
+     * multibyte-safe, after the event signature was computed so grouping is unchanged. The full label
+     * stays on the order line; the truncation is reported (truncated) for the dry run.
+     */
+    private function truncateEventTypeForStorage(array $roster_data): array {
+        if (!isset($roster_data['event_type']) || !is_string($roster_data['event_type'])) {
+            return $roster_data;
+        }
+        $value = $roster_data['event_type'];
+        $length = function_exists('mb_strlen') ? mb_strlen($value, 'UTF-8') : strlen($value);
+        if ($length <= self::EVENT_TYPE_MAX_LENGTH) {
+            return $roster_data;
+        }
+
+        $roster_data['event_type'] = function_exists('mb_substr')
+            ? mb_substr($value, 0, self::EVENT_TYPE_MAX_LENGTH, 'UTF-8')
+            : substr($value, 0, self::EVENT_TYPE_MAX_LENGTH);
+
+        $camp_terms = trim((string) ($roster_data['camp_terms'] ?? ''));
+        $bucket = &$this->build_stats['truncated'];
+        $bucket['count']++;
+        $bucket['by_field']['event_type'] = (int) ($bucket['by_field']['event_type'] ?? 0) + 1;
+        if (count($bucket['rows']) < self::REVIEW_LIST_LIMIT) {
+            $bucket['rows'][] = [
+                'order_id' => (int) ($roster_data['order_id'] ?? 0),
+                'order_item_id' => (int) ($roster_data['order_item_id'] ?? 0),
+                'field' => 'event_type',
+                'original_length' => $length,
+                'stored_length' => self::EVENT_TYPE_MAX_LENGTH,
+                'camp_terms_holds_full_value' => $camp_terms !== '' && $camp_terms === trim($value),
+            ];
+        }
+        unset($bucket);
 
         return $roster_data;
     }
