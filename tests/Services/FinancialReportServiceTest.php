@@ -95,4 +95,22 @@ class FinancialReportServiceTest extends TestCase {
     public function test_line_final_price_subtracts_discount_when_subtotal_is_pre_discount(): void {
         $this->assertEquals(420.0, intersoccer_financial_line_final_price(525.0, 420.0, 105.0));
     }
+
+    public function test_line_final_price_does_not_double_subtract_sibling_when_coupon_reduces_total(): void {
+        $breakdown = [
+            [
+                'name' => 'Sibling Discount',
+                'type' => 'camp_sibling',
+                'amount' => 105.0,
+                'source' => 'legacy_item_meta',
+            ],
+            [
+                'name' => 'SYNTH15',
+                'type' => 'coupon',
+                'amount' => 63.0,
+                'source' => 'woocommerce_coupon',
+            ],
+        ];
+        $this->assertEquals(357.0, intersoccer_financial_line_final_price(420.0, 357.0, 168.0, $breakdown));
+    }
 }

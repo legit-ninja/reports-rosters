@@ -347,11 +347,12 @@ function intersoccer_financial_baked_line_sibling_discount_amount(array $discoun
 /**
  * Post-discount line revenue before refunds (WooCommerce line total semantics).
  *
- * When subtotal already equals line total, subtract attributed discount that is
- * not a product-variation sibling discount already included in that total.
- * Order-level fees and coupons listed in the breakdown are still subtracted.
- * With no breakdown, the full attributed amount is subtracted: a three-argument
- * call cannot tell a baked-in sibling discount from an order-level fee.
+ * Subtract attributed discount that is not already reflected in the line:
+ * a product-variation sibling baked into the subtotal, and the WooCommerce
+ * subtotal-to-total gap. Order-level fees and coupons not reflected in the
+ * line are still subtracted. With no breakdown, a baked sibling cannot be
+ * distinguished from an order-level fee, so only the gap is treated as already
+ * in the line (same as subtotal minus attributed).
  *
  * @param array<int,array<string,mixed>> $discount_breakdown
  */
@@ -365,16 +366,24 @@ function intersoccer_financial_line_final_price(
         return max(0.0, $line_total);
     }
 
-    if (abs($line_subtotal - $line_total) < 0.02) {
-        $baked = intersoccer_financial_baked_line_sibling_discount_amount($discount_breakdown);
-        if ($baked > $attributed_discount_amount) {
-            $baked = $attributed_discount_amount;
-        }
-
-        return max(0.0, $line_total - ($attributed_discount_amount - $baked));
+    $baked = intersoccer_financial_baked_line_sibling_discount_amount($discount_breakdown);
+    if ($baked > $attributed_discount_amount) {
+        $baked = $attributed_discount_amount;
     }
 
-    return max(0.0, $line_subtotal - $attributed_discount_amount);
+    $gap = max(0.0, $line_subtotal - $line_total);
+    // When the sibling is already in the subtotal, it is not part of the gap,
+    // so count both. When the sibling is the gap, do not count it twice.
+    if ($baked > $gap + 0.02) {
+        $already_in_line = $baked + $gap;
+    } else {
+        $already_in_line = $gap;
+    }
+    if ($already_in_line > $attributed_discount_amount) {
+        $already_in_line = $attributed_discount_amount;
+    }
+
+    return max(0.0, $line_total - ($attributed_discount_amount - $already_in_line));
 }
 
 /**
