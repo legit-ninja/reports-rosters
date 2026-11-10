@@ -433,6 +433,109 @@ class DailyBfSalesEmailTest extends TestCase {
         $html = $service->renderHtml($dayTwo);
         $this->assertStringContainsString('Running total since campaign start', $html);
         $this->assertStringContainsString('2026-11-28 through 2026-11-29', $html);
+        $this->assertStringNotContainsString(DailyBfSalesEmail::FINAL_CAMPAIGN_LINE, $html);
+    }
+
+    public function test_final_morning_reports_the_expiry_day_and_whole_campaign_total(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $this->seedCatalogue();
+        $this->seedExpiryDayOrder();
+
+        $dayOne = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $dayTwo = $service->buildDigest($this->zurich('2026-11-30 08:00:00'));
+        $final = $service->buildDigest($this->zurich('2026-12-01 08:00:00'));
+
+        $this->assertSame('2026-11-28', $dayOne['report_date']);
+        $this->assertSame('2026-11-29', $dayTwo['report_date']);
+        $this->assertSame('2026-11-30', $final['report_date']);
+        $this->assertFalse($dayOne['final_campaign']);
+        $this->assertFalse($dayTwo['final_campaign']);
+        $this->assertTrue($final['final_campaign']);
+        $this->assertSame('2026-11-28', $final['campaign_start']);
+        $this->assertSame('55.00', $this->cents($final['daily']['net_ex_vat']));
+        $this->assertSame(1, $final['daily']['order_count']);
+
+        $dailyEx = $dayOne['daily']['net_ex_vat'] + $dayTwo['daily']['net_ex_vat'] + $final['daily']['net_ex_vat'];
+        $dailyInc = $dayOne['daily']['net_inc_vat'] + $dayTwo['daily']['net_inc_vat'] + $final['daily']['net_inc_vat'];
+        $dailyOrders = $dayOne['daily']['order_count'] + $dayTwo['daily']['order_count'] + $final['daily']['order_count'];
+        $this->assertSame($this->cents($dailyEx), $this->cents($final['campaign']['net_ex_vat']));
+        $this->assertSame($this->cents($dailyInc), $this->cents($final['campaign']['net_inc_vat']));
+        $this->assertSame($dailyOrders, $final['campaign']['order_count']);
+        $this->assertGreaterThan($dayTwo['campaign']['net_ex_vat'], $final['campaign']['net_ex_vat']);
+
+        $html = $service->renderHtml($final);
+        $this->assertStringContainsString('2026-11-28 through 2026-11-30', $html);
+        $this->assertStringContainsString(DailyBfSalesEmail::FINAL_CAMPAIGN_LINE, $html);
+        $this->assertStringContainsString('Closing Camp', $html);
+
+        $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
+        $this->assertSame('sent', $service->runScheduled($this->zurich('2026-12-01 08:00:00')));
+        $this->assertCount(1, $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $mail = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0];
+        $this->assertSame('Final Daily sales report 2026-11-30', $mail['subject']);
+        $this->assertStringNotContainsString('[TEST]', $mail['subject']);
+        $this->assertStringContainsString(DailyBfSalesEmail::FINAL_CAMPAIGN_LINE, $mail['message']);
+        $this->assertSame(['ops@example.com'], (array) $mail['to']);
+        $this->assertArrayHasKey('2026-11-30', $service->state()['sent_dates']);
+    }
+
+    public function test_morning_before_the_final_morning_is_not_marked_final(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'list@example.test');
+        $this->seedCatalogue();
+        $now = $this->zurich('2026-11-30 08:00:00');
+        $digest = $service->buildDigest($now);
+
+        $this->assertSame('2026-11-29', $digest['report_date']);
+        $this->assertFalse($digest['final_campaign']);
+        $html = $service->renderHtml($digest);
+        $this->assertStringNotContainsString(DailyBfSalesEmail::FINAL_CAMPAIGN_LINE, $html);
+
+        $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
+        $before = $service->state();
+        $test = $service->sendTest('ops@example.com', $now);
+        $this->assertTrue($test['ok']);
+        $this->assertSame('[TEST] Daily sales report 2026-11-29', $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['subject']);
+        $this->assertStringNotContainsString('Final', $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['subject']);
+        $this->assertStringNotContainsString(DailyBfSalesEmail::FINAL_CAMPAIGN_LINE, $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['message']);
+        $this->assertSame('ops@example.com', $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['to']);
+        $this->assertSame($before, $service->state());
+
+        $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
+        $this->assertSame('sent', $service->runScheduled($now));
+        $mail = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0];
+        $this->assertSame('Daily sales report 2026-11-29', $mail['subject']);
+        $this->assertStringNotContainsString('Final', $mail['subject']);
+        $this->assertStringNotContainsString('[TEST]', $mail['subject']);
+        $this->assertStringNotContainsString(DailyBfSalesEmail::FINAL_CAMPAIGN_LINE, $mail['message']);
+    }
+
+    public function test_morning_after_the_final_morning_sends_nothing(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $this->seedCatalogue();
+        $this->seedExpiryDayOrder();
+
+        $this->assertSame('outside_window', $service->runScheduled($this->zurich('2026-12-02 08:00:00')));
+        $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $this->assertSame([], $service->state()['sent_dates']);
+    }
+
+    public function test_test_send_on_the_final_morning_includes_final_after_the_test_prefix(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'list@example.test');
+        $this->seedCatalogue();
+        $this->seedExpiryDayOrder();
+        $before = $service->state();
+
+        $result = $service->sendTest('ops@example.com', $this->zurich('2026-12-01 08:00:00'));
+        $this->assertTrue($result['ok']);
+        $this->assertCount(1, $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $mail = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0];
+        $this->assertSame('[TEST] Final Daily sales report 2026-11-30', $mail['subject']);
+        $this->assertStringStartsWith('[TEST] Final ', $mail['subject']);
+        $this->assertStringContainsString(DailyBfSalesEmail::FINAL_CAMPAIGN_LINE, $mail['message']);
+        $this->assertStringContainsString('2026-11-28 through 2026-11-30', $mail['message']);
+        $this->assertSame('ops@example.com', $mail['to']);
+        $this->assertStringNotContainsString('list@example.test', $mail['message']);
+        $this->assertSame($before, $service->state());
     }
 
     public function test_schedule_uses_hourly_wp_cron(): void {
@@ -575,7 +678,8 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringContainsString('Send test email', $html);
         $this->assertStringContainsString('value="admin@example.com"', $html);
         $this->assertStringContainsString('name="bf_enabled" value="1" />', $html);
-        $this->assertStringContainsString('default / pending drop', $html);
+        $this->assertStringContainsString('final campaign email', $html);
+        $this->assertStringContainsString('with Final in the subject', $html);
         $this->assertStringContainsString('Last sent', $html);
         $this->assertStringContainsString('Never', $html);
         $this->assertStringContainsString('Last result', $html);
@@ -739,6 +843,20 @@ class DailyBfSalesEmailTest extends TestCase {
             5061 => ['_intersoccer_canonical_activity_type' => 'camp'],
         ];
         \InterSoccerRRTestMeta::$data[501]['_billing_email'] = 'secret-buyer@example.com';
+    }
+
+    private function seedExpiryDayOrder(): void {
+        $this->wpdb->orders[] = [
+            'id' => 507,
+            'post_date' => '2026-11-30 09:00:00',
+            'date_paid' => (string) $this->unix('2026-11-30 09:00:00'),
+            'items' => [
+                $this->item(5071, 'Closing Camp', 100, 1003, 1, '55.00', '55.00', '4.24'),
+            ],
+        ];
+        $this->wpdb->itemMeta[5071] = [
+            '_intersoccer_canonical_activity_type' => 'camp',
+        ];
     }
 
     private function item($id, $name, $productId, $variationId, $qty, $subtotal, $total, $tax): array {

@@ -3,9 +3,11 @@
  * Daily sales email for a coupon window.
  *
  * Enable is off by default. Recipients come only from the Send to setting.
- * The schedule follows the coupon's Europe/Zurich active days, plus the
- * morning after expiry (default / pending drop) so the last active day is
- * reported. A test send goes to one typed address and does not mark the day.
+ * The schedule follows the coupon's Europe/Zurich active days. The morning
+ * after expiry is the final campaign email: it reports the expiry day's paid
+ * sales and the running total for the whole campaign (coupon start through
+ * expiry). After that send, nothing more goes out for the campaign. A test
+ * send goes to one typed address and does not mark the day.
  *
  * @package InterSoccer\ReportsRosters\Services
  */
@@ -28,6 +30,7 @@ class DailyBfSalesEmail {
 
     const FOOTER_PAID_DATE = 'Figures use the paid date in Europe/Zurich.';
     const FOOTER_CREATED_FALLBACK = 'This report includes orders with no paid date; those orders are counted on their created date.';
+    const FINAL_CAMPAIGN_LINE = 'Final campaign totals';
 
     /**
      * @var self|null
@@ -348,7 +351,7 @@ class DailyBfSalesEmail {
             echo '<div class="notice ' . esc_attr($class) . '"><p>' . esc_html($detail) . '</p></div>';
         }
         echo '<p>Enable is off until you turn it on. Recipients come only from Send to. Nothing is hardcoded.</p>';
-        echo '<p>The email sends each morning at the chosen Europe/Zurich time while yesterday falls on a day the coupon is active, including the morning after expiry (<strong>default / pending drop</strong>) so the last active day is reported.</p>';
+        echo '<p>The email sends each morning at the chosen Europe/Zurich time while yesterday falls on a day the coupon is active. The morning after expiry is the final campaign email. It reports the expiry day\'s paid sales and the running total for the whole campaign (coupon start through expiry), with Final in the subject. After that send, nothing more goes out for the campaign.</p>';
         echo '<form method="post" action="' . esc_url(admin_url('admin.php?page=' . self::PAGE_SLUG)) . '">';
         $this->nonceField(self::NONCE_SETTINGS);
         echo '<table class="form-table"><tbody>';
@@ -396,8 +399,14 @@ class DailyBfSalesEmail {
         $campaignStart = '';
         $campaign = null;
         $campaignStarted = false;
+        $finalCampaign = false;
         if ($couponStatus['coupon'] !== null) {
             $campaignStart = self::zurichYmdFromTimestamp((int) $couponStatus['coupon']['start_unix']);
+            $finalCampaign = self::isFinalCampaignDay(
+                $reportDate,
+                (int) $couponStatus['coupon']['start_unix'],
+                (int) $couponStatus['coupon']['expires_unix']
+            );
             if (strcmp($campaignStart, $reportDate) <= 0) {
                 $campaignStarted = true;
                 $campaignReport = $this->loadReport($campaignStart, $reportDate);
@@ -418,6 +427,7 @@ class DailyBfSalesEmail {
             'daily' => $daily,
             'campaign' => $campaign,
             'used_created_fallback' => $fallback,
+            'final_campaign' => $finalCampaign,
             'booking_report_url' => $this->bookingReportUrl($reportDate),
         ];
     }
@@ -435,6 +445,9 @@ class DailyBfSalesEmail {
         $html .= $this->renderTypeTable($daily);
         $html .= '<h3>Products sold</h3>';
         $html .= $this->renderProductTable($daily);
+        if (!empty($digest['final_campaign'])) {
+            $html .= '<p>' . esc_html(self::FINAL_CAMPAIGN_LINE) . '</p>';
+        }
         $html .= '<h2>Running total since campaign start</h2>';
         if (empty($digest['campaign_available'])) {
             $html .= '<p>The coupon window is not available, so the running total is empty.</p>';
@@ -569,7 +582,7 @@ class DailyBfSalesEmail {
      * A Zurich calendar day overlaps the inclusive coupon window [start, expiry].
      *
      * The morning after expiry reports the expiry day, which still overlaps.
-     * The following morning does not.
+     * That expiry day is the final campaign day. The following morning does not.
      *
      * @param string $ymd
      * @param int    $startUnix
@@ -591,6 +604,23 @@ class DailyBfSalesEmail {
             return false;
         }
         return true;
+    }
+
+    /**
+     * A reported day is final when it is the last Zurich calendar day that
+     * overlaps the coupon window: the expiry day.
+     *
+     * @param string $reportDate
+     * @param int    $startUnix
+     * @param int    $expiresUnix
+     * @return bool
+     */
+    public static function isFinalCampaignDay($reportDate, $startUnix, $expiresUnix) {
+        $expiryDay = self::zurichYmdFromTimestamp((int) $expiresUnix);
+        if ((string) $reportDate !== $expiryDay) {
+            return false;
+        }
+        return self::zurichDayOverlapsWindow($reportDate, $startUnix, $expiresUnix);
     }
 
     /**
@@ -958,7 +988,8 @@ class DailyBfSalesEmail {
      */
     private function subjectFor(array $digest) {
         $date = isset($digest['report_date']) ? (string) $digest['report_date'] : '';
-        return $this->stripHeaderBreaks('Daily sales report ' . $date);
+        $prefix = !empty($digest['final_campaign']) ? 'Final ' : '';
+        return $this->stripHeaderBreaks($prefix . 'Daily sales report ' . $date);
     }
 
     /**
