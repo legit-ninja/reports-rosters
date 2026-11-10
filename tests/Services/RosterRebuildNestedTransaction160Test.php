@@ -30,6 +30,8 @@ require_once dirname(__DIR__) . '/ReportAccuracy/DeletedProductRosterTest.php';
 /**
  * wpdb stand-in: records SQL, applies roster deletes only on COMMIT, supports SAVEPOINT stack.
  */
+
+require_once dirname(__DIR__) . '/shims/roster-admin-log-recorder.php';
 class RosterRebuildTransactionJournalWpdb {
     public $prefix = 'wp_';
     public $last_error = '';
@@ -157,7 +159,7 @@ class RosterRebuildNestedTransaction160Test extends TestCase {
         $this->previous_wpdb = $GLOBALS['wpdb'] ?? null;
         $GLOBALS['wpdb'] = $this->wpdb;
         $this->admin_log_actions = [];
-        \Brain\Monkey\Functions\when('intersoccer_roster_admin_log_insert')->alias(function ($action) {
+        $GLOBALS['intersoccer_test_admin_log_insert_callback'] = (function ($action) {
             $this->admin_log_actions[] = (string) $action;
             return true;
         });

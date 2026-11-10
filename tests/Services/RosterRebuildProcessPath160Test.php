@@ -27,6 +27,8 @@ use Mockery;
 require_once dirname(__DIR__) . '/ReportAccuracy/ReportAccuracyFixtures.php';
 require_once dirname(__DIR__) . '/ReportAccuracy/DeletedProductRosterTest.php';
 
+
+require_once dirname(__DIR__) . '/shims/roster-admin-log-recorder.php';
 class RosterRebuildProcessPath160Test extends TestCase {
 
     /** @var DeletedProductWpdb */
@@ -244,7 +246,7 @@ class RosterRebuildProcessPath160Test extends TestCase {
 
     public function test_transaction_false_sets_rebuild_failed_and_skips_admin_log(): void {
         $logged = [];
-        \Brain\Monkey\Functions\when('intersoccer_roster_admin_log_insert')->alias(function ($action, $sig = '', $payload = []) use (&$logged) {
+        $GLOBALS['intersoccer_test_admin_log_insert_callback'] = (function ($action, $sig = '', $payload = []) use (&$logged) {
             $logged[] = $action;
             return true;
         });

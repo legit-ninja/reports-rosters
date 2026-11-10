@@ -333,6 +333,18 @@ class RosterBuilder {
                     'rows' => [],
                 ],
             ],
+            // Values shortened to fit their column (the full value stays on the order line).
+            'truncated' => [
+                'count' => 0,
+                'by_field' => [],
+                'rows' => [],
+            ],
+            // Lines that could not be written, with the reason in a form someone can act on.
+            'line_errors' => [
+                'count' => 0,
+                'by_reason' => [],
+                'rows' => [],
+            ],
             'dry_run' => false,
         ];
         $this->last_rebuild_abort_exception = null;
@@ -1875,6 +1887,7 @@ class RosterBuilder {
                 $this->current_order_unbuilt_line_items++;
                 $this->build_stats['validation_errors']++;
                 $this->build_stats['errors'][] = "Order {$order_id}, Item {$item_id}: " . $e->getMessage();
+                $this->recordLineError((int) $order_id, (int) $item_id, $e, '', null);
                 
                 $this->logger->error('Failed to process order item', [
                     'order_id' => $order_id,
@@ -1931,6 +1944,7 @@ class RosterBuilder {
         
         // Create roster entry for each assigned player
         foreach ($assigned_players as $player) {
+            $roster_data = null;
             try {
                 $roster_data = $this->buildRosterData($order_data, $player, $customer_data);
 
@@ -1968,6 +1982,7 @@ class RosterBuilder {
                 $this->build_stats['validation_errors']++;
                 $reason = $this->formatRosterFailureReason($e, $db_error);
                 $this->build_stats['errors'][] = "Order {$order->get_id()}, item {$item_id}: {$reason}";
+                $this->recordLineError((int) $order->get_id(), (int) $item_id, $e, $db_error, is_array($roster_data) ? $roster_data : null);
 
                 $this->logger->error('Failed to create roster for player', [
                     'order_id' => $order->get_id(),
@@ -2404,17 +2419,58 @@ class RosterBuilder {
     }
     
     /**
-     * Extract customer contact data
-     * 
+     * Extract customer contact data.
+     *
+     * parent_first_name and parent_last_name are NOT NULL with no default.
+     * Empty billing names fall back to the customer user name, then a placeholder,
+     * so roster insert does not write NULL into those columns.
+     *
      * @param \WC_Order $order WooCommerce order
      * @return array Customer data
      */
     private function extractCustomerData(\WC_Order $order) {
+        $customer_id = (int) $order->get_customer_id();
+        $order_id = (int) $order->get_id();
+
+        $billing_first = $order->get_billing_first_name();
+        $first_name = trim((string) $billing_first);
+        if ($first_name === '') {
+            $from_user = '';
+            if ($customer_id > 0) {
+                $from_user = trim((string) get_user_meta($customer_id, 'first_name', true));
+            }
+            $first_name = $from_user !== '' ? $from_user : 'Unknown';
+            $this->logger->warning('Roster parent name fallback applied', [
+                'order_id' => $order_id,
+                'column' => 'parent_first_name',
+                'source' => $from_user !== '' ? 'user_first_name' : 'unknown',
+            ]);
+        } else {
+            $first_name = (string) $billing_first;
+        }
+
+        $billing_last = $order->get_billing_last_name();
+        $last_name = trim((string) $billing_last);
+        if ($last_name === '') {
+            $from_user = '';
+            if ($customer_id > 0) {
+                $from_user = trim((string) get_user_meta($customer_id, 'last_name', true));
+            }
+            $last_name = $from_user !== '' ? $from_user : 'Unknown';
+            $this->logger->warning('Roster parent name fallback applied', [
+                'order_id' => $order_id,
+                'column' => 'parent_last_name',
+                'source' => $from_user !== '' ? 'user_last_name' : 'unknown',
+            ]);
+        } else {
+            $last_name = (string) $billing_last;
+        }
+
         return [
             'email' => $order->get_billing_email(),
             'phone' => $order->get_billing_phone(),
-            'first_name' => $order->get_billing_first_name(),
-            'last_name' => $order->get_billing_last_name(),
+            'first_name' => $first_name,
+            'last_name' => $last_name,
             'emergency_contact' => $order->get_billing_first_name() . ' ' . $order->get_billing_last_name(),
             'emergency_phone' => $order->get_billing_phone()
         ];
@@ -2653,6 +2709,50 @@ class RosterBuilder {
 
         $this->current_times_trace['stored_as'] = (string) ($roster_data['times'] ?? '');
 
+        $roster_data = $this->truncateEventTypeForStorage($roster_data);
+
+        return $roster_data;
+    }
+
+    /** event_type is varchar(191) (schema 2.4.0). */
+    private const EVENT_TYPE_MAX_LENGTH = 191;
+
+    /**
+     * event_type receives the order line's "Camp Terms" label, which can exceed the column (e.g. 352
+     * characters for multi-week labels), and the insert then fails. Truncate it to the column width,
+     * multibyte-safe, after the event signature was computed so grouping is unchanged. The full label
+     * stays on the order line; the truncation is reported (truncated) for the dry run.
+     */
+    private function truncateEventTypeForStorage(array $roster_data): array {
+        if (!isset($roster_data['event_type']) || !is_string($roster_data['event_type'])) {
+            return $roster_data;
+        }
+        $value = $roster_data['event_type'];
+        $length = function_exists('mb_strlen') ? mb_strlen($value, 'UTF-8') : strlen($value);
+        if ($length <= self::EVENT_TYPE_MAX_LENGTH) {
+            return $roster_data;
+        }
+
+        $roster_data['event_type'] = function_exists('mb_substr')
+            ? mb_substr($value, 0, self::EVENT_TYPE_MAX_LENGTH, 'UTF-8')
+            : substr($value, 0, self::EVENT_TYPE_MAX_LENGTH);
+
+        $camp_terms = trim((string) ($roster_data['camp_terms'] ?? ''));
+        $bucket = &$this->build_stats['truncated'];
+        $bucket['count']++;
+        $bucket['by_field']['event_type'] = (int) ($bucket['by_field']['event_type'] ?? 0) + 1;
+        if (count($bucket['rows']) < self::REVIEW_LIST_LIMIT) {
+            $bucket['rows'][] = [
+                'order_id' => (int) ($roster_data['order_id'] ?? 0),
+                'order_item_id' => (int) ($roster_data['order_item_id'] ?? 0),
+                'field' => 'event_type',
+                'original_length' => $length,
+                'stored_length' => self::EVENT_TYPE_MAX_LENGTH,
+                'camp_terms_holds_full_value' => $camp_terms !== '' && $camp_terms === trim($value),
+            ];
+        }
+        unset($bucket);
+
         return $roster_data;
     }
     
@@ -2819,6 +2919,80 @@ class RosterBuilder {
         }
 
         return $details;
+    }
+
+    /** @var array<string,int>|null roster column => varchar width, read once per run for line errors */
+    private $roster_column_widths = null;
+
+    private function rosterColumnWidth(string $column): ?int {
+        if ($this->roster_column_widths === null) {
+            $this->roster_column_widths = [];
+            try {
+                $wpdb = $this->database->get_wpdb();
+                $rows = $wpdb->get_results('DESCRIBE ' . $wpdb->prefix . 'intersoccer_rosters', ARRAY_A);
+                foreach ((array) $rows as $row) {
+                    if (isset($row['Field'], $row['Type']) && preg_match('/^(?:var)?char\((\d+)\)/i', (string) $row['Type'], $m)) {
+                        $this->roster_column_widths[(string) $row['Field']] = (int) $m[1];
+                    }
+                }
+            } catch (\Throwable $e) {
+                // diagnostics only
+            }
+        }
+
+        return $this->roster_column_widths[$column] ?? null;
+    }
+
+    /**
+     * Structured record of a line that could not be written (line_errors), for the dry-run report.
+     * Values are never copied; for a "too long" error only the value's length and the column width.
+     */
+    private function recordLineError(int $order_id, int $order_item_id, ?\Throwable $e, string $db_error, ?array $roster_data): void {
+        $entry = [
+            'order_id' => $order_id,
+            'order_item_id' => $order_item_id,
+            'error' => $e ? (new \ReflectionClass($e))->getShortName() : 'insert_failed',
+            'message' => $e ? $e->getMessage() : '',
+        ];
+        $reason = $entry['error'];
+
+        if ($e instanceof ValidationException) {
+            $errors = $e->hasValidationErrors() ? $e->getValidationErrors() : [];
+            if ($errors !== []) {
+                $entry['validation_errors'] = $errors;
+                $reason .= ': ' . implode(', ', array_map('strval', array_keys($errors)));
+            } elseif ($e->getMessage() !== '' && $e->getMessage() !== 'Model validation failed') {
+                $reason .= ': ' . $e->getMessage();
+            }
+            if (isset($errors['activity_type']) && is_array($roster_data)) {
+                $entry['activity_type'] = (string) ($roster_data['activity_type'] ?? '');
+            }
+        }
+
+        if ($db_error !== '' && preg_match("/Data too long for column '([A-Za-z0-9_]+)'/", $db_error, $m)) {
+            $column = $m[1];
+            $value = is_array($roster_data) && array_key_exists($column, $roster_data) ? (string) $roster_data[$column] : null;
+            $width = $this->rosterColumnWidth($column);
+            $length = $value !== null ? (function_exists('mb_strlen') ? mb_strlen($value) : strlen($value)) : null;
+            $entry['too_long'] = [
+                'column' => $column,
+                'value_length' => $length,
+                'column_width' => $width,
+                // Below the 191 that schema 2.4.0 sets: the column was never widened on this site.
+                'column_narrower_than_schema' => $width !== null && $width < 191,
+            ];
+            $reason = 'Data too long for column ' . $column;
+        } elseif ($db_error !== '') {
+            $reason .= ': ' . $this->sanitizeMysqlErrorForLog($db_error);
+        }
+
+        $bucket = &$this->build_stats['line_errors'];
+        $bucket['count']++;
+        $bucket['by_reason'][$reason] = (int) ($bucket['by_reason'][$reason] ?? 0) + 1;
+        if (count($bucket['rows']) < self::REVIEW_LIST_LIMIT) {
+            $bucket['rows'][] = $entry;
+        }
+        unset($bucket);
     }
 
     private function recordRosterInsertFailure(int $order_id, int $order_item_id, string $reason): void {
@@ -3274,6 +3448,13 @@ class RosterBuilder {
                 (int) ($roster_data['order_id'] ?? 0),
                 (int) ($roster_data['order_item_id'] ?? 0),
                 $reason
+            );
+            $this->recordLineError(
+                (int) ($roster_data['order_id'] ?? 0),
+                (int) ($roster_data['order_item_id'] ?? 0),
+                null,
+                $db_error,
+                $roster_data
             );
         }
         

@@ -17,6 +17,8 @@ use InterSoccer\ReportsRosters\Services\RosterRefundService;
 use InterSoccer\ReportsRosters\Tests\TestCase;
 use Mockery;
 
+
+require_once dirname(__DIR__) . '/shims/roster-admin-log-recorder.php';
 class RosterRebuildKeepRows160Test extends TestCase {
 
     /** @var int[] */
@@ -162,7 +164,7 @@ class RosterRebuildKeepRows160Test extends TestCase {
     public function test_admin_log_once_when_mismatches(): void {
         $builder = $this->makeBuilder();
         $logged = [];
-        Functions\when('intersoccer_roster_admin_log_insert')->alias(function ($action, $sig, $payload) use (&$logged) {
+        $GLOBALS['intersoccer_test_admin_log_insert_callback'] = (function ($action, $sig, $payload) use (&$logged) {
             $logged[] = [$action, $payload];
             return true;
         });
