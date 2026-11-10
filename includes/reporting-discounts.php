@@ -531,7 +531,18 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
         
         $totals['discount_amount'] += $discount_amt;
         $totals['reimbursement'] += $reimbursement;
-        $totals['final_price'] += max(0.0, $base_price - $discount_amt - $reimbursement);
+        $line_breakdown = [];
+        if (!empty($row['intersoccer_item_discount_breakdown'])) {
+            $raw_breakdown = $row['intersoccer_item_discount_breakdown'];
+            if (is_string($raw_breakdown)) {
+                $raw_breakdown = maybe_unserialize($raw_breakdown);
+            }
+            if (is_array($raw_breakdown)) {
+                $line_breakdown = $raw_breakdown;
+            }
+        }
+        $line_final = intersoccer_financial_line_final_price($base_price, floatval($row['final_price']), $discount_amt, $line_breakdown);
+        $totals['final_price'] += max(0.0, $line_final - $reimbursement);
     }
 
     error_log("InterSoccer WooCommerce Fallback: Found " . count($results) . " bookings");
@@ -593,7 +604,8 @@ function intersoccer_get_enhanced_booking_report($start_date = '', $end_date = '
 
         $base_price = floatval($row['base_price']);
         $reimbursement = floatval($row['reimbursement']);
-        $net_final_price = max(0.0, $base_price - $total_discount - $reimbursement);
+        $line_final = intersoccer_financial_line_final_price($base_price, floatval($row['final_price']), $total_discount, $item_discount_breakdown);
+        $net_final_price = max(0.0, $line_final - $reimbursement);
 
         $data[] = array(
             'ref' => 'ORD-' . $row['order_id'] . '-' . $row['order_item_id'],
@@ -1025,7 +1037,8 @@ function intersoccer_get_financial_booking_report($start_date = '', $end_date = 
             $reimbursement = floatval($meta_data['_intersoccer_item_refund']);
         }
 
-        $final_price = max(0.0, $base_price - $discount_amount - $reimbursement);
+        $line_final = intersoccer_financial_line_final_price($base_price, floatval($row->line_total), $discount_amount, $item_discount_breakdown);
+        $final_price = max(0.0, $line_final - $reimbursement);
 
         // Calculate Stripe fee (approximate 2.9% + 0.30 CHF)
         $stripe_fee = $final_price > 0 ? ($final_price * 0.029) + 0.30 : 0;

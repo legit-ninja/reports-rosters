@@ -49,4 +49,50 @@ class FinancialReportServiceTest extends TestCase {
         $html = '<span class="woocommerce-Price-amount amount"><bdi>54.00</bdi></span>';
         $this->assertEquals(54.0, intersoccer_parse_legacy_discount_amount($html));
     }
+
+    public function test_line_final_price_does_not_double_subtract_attributed_discount(): void {
+        $sibling = [[
+            'name' => 'Sibling Discount',
+            'type' => 'camp_sibling',
+            'amount' => 105.0,
+            'source' => 'legacy_item_meta',
+        ]];
+        $this->assertEquals(420.0, intersoccer_financial_line_final_price(420.0, 420.0, 105.0, $sibling));
+    }
+
+    public function test_line_final_price_subtracts_order_fee_when_subtotal_equals_total(): void {
+        $points = [[
+            'name' => 'Referral Credits Discount',
+            'type' => 'referral_points',
+            'amount' => 15.0,
+            'source' => 'order_fee',
+        ]];
+        $this->assertEquals(510.0, intersoccer_financial_line_final_price(525.0, 525.0, 15.0, $points));
+
+        $order_level_sibling = [[
+            'name' => 'Sibling Discount',
+            'type' => 'sibling',
+            'amount' => 15.0,
+            'source' => 'order_fee',
+        ]];
+        $this->assertEquals(510.0, intersoccer_financial_line_final_price(525.0, 525.0, 15.0, $order_level_sibling));
+    }
+
+    public function test_line_final_price_subtracts_coupon_when_subtotal_equals_total(): void {
+        $coupon = [[
+            'name' => 'SYNTH40',
+            'type' => 'coupon',
+            'amount' => 40.0,
+            'source' => 'woocommerce_coupon',
+        ]];
+        $this->assertEquals(485.0, intersoccer_financial_line_final_price(525.0, 525.0, 40.0, $coupon));
+    }
+
+    public function test_line_final_price_unchanged_without_discount(): void {
+        $this->assertEquals(945.0, intersoccer_financial_line_final_price(945.0, 945.0, 0.0));
+    }
+
+    public function test_line_final_price_subtracts_discount_when_subtotal_is_pre_discount(): void {
+        $this->assertEquals(420.0, intersoccer_financial_line_final_price(525.0, 420.0, 105.0));
+    }
 }
