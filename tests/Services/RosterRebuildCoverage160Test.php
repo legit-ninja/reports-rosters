@@ -754,6 +754,115 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertArrayHasKey('activity_type', $errors['rows'][0]['validation_errors']);
     }
 
+    private function invokeBuilder(RosterBuilder $builder, string $method, ...$args) {
+        $m = new \ReflectionMethod(RosterBuilder::class, $method);
+        $m->setAccessible(true);
+        return $m->invoke($builder, ...$args);
+    }
+
+    public function test_event_date_parser_reads_english_french_german_and_slugs_and_needs_a_year(): void {
+        $builder = $this->builder();
+        $cases = [
+            '2026-03-14' => '2026-03-14',
+            '14/03/2026' => '2026-03-14',
+            '14.03.2026' => '2026-03-14',
+            'March 14, 2026' => '2026-03-14',
+            'Saturday 14 March 2026' => '2026-03-14',
+            'Samedi 14 mars 2026' => '2026-03-14',
+            '14 mars 2026' => '2026-03-14', // the shared parser reads this as 2026-03-15
+            'Samstag, 14. März 2026' => '2026-03-14',
+            '14. Maerz 2026' => '2026-03-14',
+            'samedi-14-mars-2026' => '2026-03-14',
+            'Dimanche 1er février 2026' => '2026-02-01',
+            'Saturday 14 March' => null, // no year: not guessed
+            '31 février 2026' => null,
+            'TBA' => null,
+        ];
+        foreach ($cases as $raw => $expected) {
+            $this->assertSame($expected, $this->invokeBuilder($builder, 'parseEventDateStrict', $raw), $raw);
+        }
+    }
+
+    public function test_first_parsable_event_date_skips_unparseable_candidates_in_order(): void {
+        [$date, $source] = $this->invokeBuilder($this->builder(), 'firstParsableEventDate', [
+            'variation:pa_date' => 'TBA',
+            'product:pa_date' => 'Samedi 14 mars 2026',
+            'line:Date' => '2026-04-01',
+        ]);
+        $this->assertSame('2026-03-14', $date);
+        $this->assertSame('product:pa_date', $source);
+    }
+
+    public function test_tournament_date_comes_from_the_variation_before_the_order_line_label(): void {
+        $live = DeletedProductFixture::$catalogue[DeletedProductFixture::LIVE_VID];
+        $attributes = [];
+        foreach ($live->get_variation_attributes() as $key => $value) {
+            $attributes[substr($key, strlen('attribute_'))] = $value;
+        }
+        $attributes['pa_date'] = 'Saturday 14 March 2026';
+        DeletedProductFixture::$catalogue[DeletedProductFixture::LIVE_VID] = new \InterSoccer\ReportsRosters\Tests\ReportAccuracy\FakeVariation(
+            DeletedProductFixture::LIVE_VID,
+            DeletedProductFixture::LIVE_PID,
+            $attributes,
+            'Synthetic Tournament'
+        );
+        $this->order(9991, 'completed', [9992 => $this->meta([
+            'Activity Type' => 'Tournament', 'pa_activity-type' => 'tournament',
+            'Start Date' => '', 'End Date' => '',
+            'Date' => 'Samedi 21 mars 2026',
+        ])]);
+        $this->routeOrders([9991]);
+        $captured = null;
+        $this->createDataSpy = function (array $data) use (&$captured) { $captured = $data; };
+
+        $builder = $this->builder();
+        $builder->buildRosterFromOrder(9991);
+
+        $this->assertSame([9992], $this->created);
+        $this->assertSame('2026-03-14', $this->normalizeDate($captured['start_date']), "the variation's date wins over the line label");
+        $this->assertSame('2026-03-14', $this->normalizeDate($captured['end_date']));
+    }
+
+    public function test_tournament_french_date_label_is_used_when_the_variation_has_no_date(): void {
+        $this->order(9993, 'completed', [9994 => $this->meta([
+            'Activity Type' => 'Tournament', 'pa_activity-type' => 'tournament',
+            'Start Date' => '', 'End Date' => '',
+            'Date' => 'Samedi 14 mars 2026',
+        ])]);
+        $this->routeOrders([9993]);
+        $captured = null;
+        $this->createDataSpy = function (array $data) use (&$captured) { $captured = $data; };
+
+        $builder = $this->builder();
+        $builder->buildRosterFromOrder(9993);
+
+        $this->assertSame([9994], $this->created);
+        $this->assertSame('2026-03-14', $this->normalizeDate($captured['start_date']));
+    }
+
+    public function test_tournament_without_a_readable_date_is_reported(): void {
+        $this->order(9995, 'completed', [9996 => $this->meta([
+            'Activity Type' => 'Tournament', 'pa_activity-type' => 'tournament',
+            'Start Date' => '', 'End Date' => '',
+            'Date' => 'Saturday 14 March',
+        ])]);
+        $this->routeOrders([9995]);
+
+        $result = $this->builder()->buildRosters(['clear_existing' => true, 'dry_run' => false]);
+
+        $this->assertSame(1, $result['unparsed_event_dates']['count']);
+        $this->assertSame(9996, $result['unparsed_event_dates']['rows'][0]['order_item_id']);
+        $this->assertSame('Saturday 14 March', $result['unparsed_event_dates']['rows'][0]['values']['line:Date']);
+        $this->assertSame(1, $result['created']['held_no_dates']['count'], 'an undated tournament is held, not added');
+    }
+
+    private function normalizeDate($value): string {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+        return substr((string) $value, 0, 10);
+    }
+
     public function test_long_camp_terms_label_is_truncated_to_the_event_type_column_and_reported(): void {
         // A 352-character multi-week "Camp Terms" label, with a multibyte character at the cut.
         $label = str_repeat('Été Semaine 1 : 30 juin – 4 juillet (5 jours), ', 8);
