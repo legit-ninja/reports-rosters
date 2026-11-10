@@ -77,22 +77,36 @@ class BookingReportAccuracyTest extends TestCase {
     }
 
     /**
-     * S01b: same as S01a plus a 63 coupon on the line (subtotal 420, total 357). Attribution = 105 + 63 = 168.
-     * Expected final 357; report 252 (#113 does not change this line: subtotal != total).
+     * S01b: sibling 105 already baked into the line (subtotal 420) plus a 63 coupon
+     * reflected in the line total (357). Attribution = 105 + 63 = 168.
+     * Final must stay 357, not 420 - 168 = 252.
      */
     public function test_S01b_sibling_plus_coupon_final_equals_line_total(): void {
-        $this->markTestIncomplete('Pending fix B: sibling gross/final (#113 family).');
         $order = $this->attributedOrder(102)->addLine(new FakeLineItem(1021, ['subtotal' => 420.0, 'total' => 357.0], [
             'Discount' => 'Sibling Discount',
             'Discount Amount' => '105.00',
             Attr::META_ITEM_DISCOUNT_TOTAL => '168',
-        ]))->addCoupon(new FakeCoupon('synthetic15', 63.0));
+            Attr::META_ITEM_DISCOUNTS => [
+                [
+                    'name' => 'Sibling Discount',
+                    'type' => 'camp_sibling',
+                    'amount' => 105.0,
+                    'source' => 'legacy_item_meta',
+                ],
+                [
+                    'name' => 'SYNTH15',
+                    'type' => 'coupon',
+                    'amount' => 63.0,
+                    'source' => 'woocommerce_coupon',
+                ],
+            ],
+        ]))->addCoupon(new FakeCoupon('SYNTH15', 63.0));
         ReportAccuracyStore::addOrder($order);
 
         $row = $this->report()['by_ref']['102-1021'];
 
         $this->assertSame(357.0, self::money($row['final_price']),
-            'S01b: expected final 357.00; report final ' . $row['final_price']);
+            'S01b: expected final 357.00 (not 420 - 168 = 252); report final ' . $row['final_price']);
     }
 
     /**
