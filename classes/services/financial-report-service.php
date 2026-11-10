@@ -65,8 +65,18 @@ class FinancialReportService {
 
     /**
      * Get booking/financial report data.
+     *
+     * Options (all optional; omitted values keep the post_date booking-report filter):
+     * - date_basis: `paid_or_created` selects orders by paid timestamp, or by created
+     *   date when no paid timestamp is stored. Bounds are paid_start_unix (inclusive),
+     *   paid_end_unix (exclusive), created_start_local, and created_end_local.
+     *
+     * Net, discount, and refund math is unchanged. The paid basis only changes which
+     * rows are read and adds raw amount fields used by the daily sales email.
+     *
+     * @param array<string,mixed> $options
      */
-    public function getFinancialBookingReport(string $start_date = '', string $end_date = '', string $year = '', string $region = ''): array {
+    public function getFinancialBookingReport(string $start_date = '', string $end_date = '', string $year = '', string $region = '', array $options = []): array {
         if (!function_exists('intersoccer_booking_report_date_bounds')) {
             require_once dirname(__DIR__, 2) . '/includes/financial-attribution-helpers.php';
         }
@@ -76,6 +86,8 @@ class FinancialReportService {
             'year' => $year,
             'region' => $region,
         ]);
+
+        $date_basis = isset($options['date_basis']) ? (string) $options['date_basis'] : 'post_date';
 
         [$date_sql, $date_params] = intersoccer_booking_report_post_date_filter_sql(
             (string) $start_date,
@@ -88,6 +100,32 @@ class FinancialReportService {
             $date_where = $date_params === []
                 ? $date_sql
                 : $this->wpdb->prepare($date_sql, ...$date_params);
+        }
+
+        $select_extra = '';
+        $join_extra = '';
+        if ($date_basis === 'paid_or_created') {
+            $paid_start = isset($options['paid_start_unix']) ? (int) $options['paid_start_unix'] : 0;
+            $paid_end = isset($options['paid_end_unix']) ? (int) $options['paid_end_unix'] : 0;
+            $created_start = isset($options['created_start_local']) ? (string) $options['created_start_local'] : '';
+            $created_end = isset($options['created_end_local']) ? (string) $options['created_end_local'] : '';
+            if ($paid_start <= 0 || $paid_end <= $paid_start || $created_start === '' || $created_end === '') {
+                $date_where = ' AND 1=0';
+            } else {
+                $date_where = $this->wpdb->prepare(
+                    " AND ((paid_meta.meta_value IS NOT NULL AND paid_meta.meta_value <> '' AND paid_meta.meta_value <> '0' AND CAST(paid_meta.meta_value AS UNSIGNED) >= %d AND CAST(paid_meta.meta_value AS UNSIGNED) < %d) OR ((paid_meta.meta_value IS NULL OR paid_meta.meta_value = '' OR paid_meta.meta_value = '0') AND p.post_date >= %s AND p.post_date < %s))",
+                    $paid_start,
+                    $paid_end,
+                    $created_start,
+                    $created_end
+                );
+            }
+            $select_extra = ",
+                paid_meta.meta_value as date_paid_gmt,
+                oim_tax.meta_value as line_tax";
+            $join_extra = "
+            LEFT JOIN {$this->wpdb->postmeta} paid_meta ON p.ID = paid_meta.post_id AND paid_meta.meta_key = '_date_paid'
+            LEFT JOIN {$this->wpdb->prefix}woocommerce_order_itemmeta oim_tax ON oi.order_item_id = oim_tax.order_item_id AND oim_tax.meta_key = '_line_tax'";
         }
 
         $region_where = '';
@@ -108,7 +146,7 @@ class FinancialReportService {
                 oim_variation.meta_value as variation_id,
                 oim_qty.meta_value as quantity,
                 oim_total.meta_value as line_total,
-                oim_subtotal.meta_value as line_subtotal
+                oim_subtotal.meta_value as line_subtotal{$select_extra}
             FROM {$this->wpdb->posts} p
             INNER JOIN {$this->wpdb->prefix}woocommerce_order_items oi ON p.ID = oi.order_id AND oi.order_item_type = 'line_item'
             LEFT JOIN {$this->wpdb->prefix}woocommerce_order_itemmeta oim_product ON oi.order_item_id = oim_product.order_item_id AND oim_product.meta_key = '_product_id'
@@ -116,6 +154,7 @@ class FinancialReportService {
             LEFT JOIN {$this->wpdb->prefix}woocommerce_order_itemmeta oim_qty ON oi.order_item_id = oim_qty.order_item_id AND oim_qty.meta_key = '_qty'
             LEFT JOIN {$this->wpdb->prefix}woocommerce_order_itemmeta oim_total ON oi.order_item_id = oim_total.order_item_id AND oim_total.meta_key = '_line_total'
             LEFT JOIN {$this->wpdb->prefix}woocommerce_order_itemmeta oim_subtotal ON oi.order_item_id = oim_subtotal.order_item_id AND oim_subtotal.meta_key = '_line_subtotal'
+            {$join_extra}
             WHERE p.post_type = 'shop_order'
             AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold', 'wc-refunded')
             {$date_where}
@@ -283,6 +322,18 @@ class FinancialReportService {
                 'age_group' => $age_group ?: 'N/A',
                 'activity_type' => $activity_type_display ?: 'N/A',
                 'product_type' => $productType,
+                'order_id' => $order_id,
+                'product_id' => (int) ($row->product_id ?? 0),
+                'variation_id' => (int) ($row->variation_id ?? 0),
+                'order_item_name' => (string) ($row->order_item_name ?? ''),
+                'net_ex_vat' => $net_price,
+                'base_price_raw' => $base_price,
+                'discount_raw' => $discount_amount,
+                'final_price_raw' => $final_price,
+                'reimbursement_raw' => $reimbursement,
+                'line_tax_amount' => (isset($row->line_tax) && $row->line_tax !== '' && $row->line_tax !== null) ? (float) $row->line_tax : 0.0,
+                'used_created_date' => $date_basis === 'paid_or_created'
+                    && (!isset($row->date_paid_gmt) || $row->date_paid_gmt === '' || $row->date_paid_gmt === null || (string) $row->date_paid_gmt === '0'),
             ];
 
             $totals['base_price'] += $base_price;

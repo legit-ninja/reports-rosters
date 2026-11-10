@@ -144,6 +144,7 @@
             <file>tests/Legacy/MovePlayersRosterHistoryNoWriteOnBuildTest.php</file>
             <file>tests/Legacy/MovePlayersRosterRefreshAfterMoveTest.php</file>
             <directory>tests/ReportAccuracy</directory>
+            <file>tests/Services/DailyBfSalesEmailTest.php</file>
         </testsuite>
         <testsuite name="Complete">
             <directory>tests</directory>
