@@ -257,6 +257,11 @@ function intersoccer_render_final_reports_page(string $page_slug = 'intersoccer-
         <h1><?php echo $live
             ? esc_html__('Live Numbers Report', 'intersoccer-reports-rosters')
             : esc_html__('Final Numbers Report', 'intersoccer-reports-rosters'); ?></h1>
+        <?php
+        if ($activity_type === 'Camp' && function_exists('intersoccer_reports_render_camp_missing_dates_notice')) {
+            echo intersoccer_reports_render_camp_missing_dates_notice();
+        }
+        ?>
         <?php if ($live): ?>
             <div class="notice notice-info intersoccer-live-notice">
                 <p><strong><?php esc_html_e('Live figures (completed + processing)', 'intersoccer-reports-rosters'); ?></strong>

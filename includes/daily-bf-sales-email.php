@@ -1732,6 +1732,9 @@ class DailyBfSalesEmail {
      * @return string
      */
     private function catalogueSeason($seasonRaw, $terms, $name, $type) {
+        if ($this->normalizeSeasonValue($seasonRaw) === 'Easter') {
+            return 'Easter';
+        }
         $bucket = $this->normalizeSeasonValue($seasonRaw);
         if ($bucket === '') {
             $bucket = $this->normalizeSeasonValue($terms);
@@ -2091,6 +2094,9 @@ class DailyBfSalesEmail {
             $name = trim((string) ($row['class_name'] ?? ''));
         }
         $bucket = $this->normalizeSeasonValue($raw);
+        if ($bucket === 'Easter') {
+            return 'Easter';
+        }
         if ($productType === ProductTypeClassifierService::TYPE_CAMP
             && $bucket === 'Spring'
             && ($this->mentionsEaster($raw) || $this->mentionsEaster($terms) || $this->mentionsEaster($name))

@@ -61,6 +61,8 @@ class FacetNormalizer {
 			'season' => '',
 		];
 
+		$season_raw = $this->first_meta($raw, self::season_meta_keys());
+
 		$from_canonical = [];
 		foreach (self::canonical_meta_map() as $meta_key => $field) {
 			if (!array_key_exists($meta_key, $raw) || $raw[$meta_key] === '' || $raw[$meta_key] === null) {
@@ -81,7 +83,7 @@ class FacetNormalizer {
 			} elseif ($field === 'age_group') {
 				$out['age_group'] = $this->normalize_age_group($val);
 			} elseif ($field === 'camp_week_key') {
-				$out['camp_week'] = $this->normalize_camp_week($val);
+				$out['camp_week'] = $this->normalize_camp_week($val, $season_raw);
 			}
 		}
 
@@ -141,7 +143,7 @@ class FacetNormalizer {
 		$camp_terms = $this->first_meta($raw, self::camp_term_meta_keys());
 		if (empty($from_canonical['camp_week_key']) && $out['camp_week'] === 'not_recorded') {
 			if ($camp_terms !== '') {
-				$out['camp_week'] = $this->normalize_camp_week($camp_terms);
+				$out['camp_week'] = $this->normalize_camp_week($camp_terms, $season_raw);
 			} elseif ($out['camp_week_index']) {
 				$out['camp_week'] = 'week_' . $out['camp_week_index'];
 			}
@@ -158,7 +160,7 @@ class FacetNormalizer {
 		$out['day_length'] = $this->normalize_day_length($age_label, $times);
 
 		$out['product_name'] = $this->first_meta($raw, ['_product_name', 'product_name']);
-		$out['season'] = $this->first_meta($raw, self::season_meta_keys());
+		$out['season'] = $season_raw;
 
 		return $out;
 	}
@@ -358,10 +360,15 @@ class FacetNormalizer {
 	/**
 	 * Merge EN/FR camp week labels into a stable key (e.g. summer_week_5).
 	 *
+	 * The programme season field wins when it names a season. Camp-term text is
+	 * the legacy fallback. A seasonless "Week 1: March 22-25 (4 days)" label
+	 * does not default to summer.
+	 *
 	 * @param string $raw
+	 * @param string $season Programme season (pa_program-season / Season meta).
 	 * @return string
 	 */
-	public function normalize_camp_week($raw) {
+	public function normalize_camp_week($raw, $season = '') {
 		$t = self::decode_label($raw);
 		if ($t === '') {
 			return 'not_recorded';
@@ -376,16 +383,22 @@ class FacetNormalizer {
 			|| preg_match('/semaine[-_]?d[\'’`]?e?te[-_]?(\d+)/i', $t, $m)
 			|| preg_match('/\bwoche\s*(\d+)/i', $t, $m)) {
 			$n = (int) $m[1];
-			$season = 'summer';
+			$from_field = $this->camp_week_season_from_field($season);
+			if ($from_field !== '') {
+				return $from_field . '_week_' . $n;
+			}
+			$from_term = 'summer';
 			$lower = strtolower($t);
 			if (preg_match('/autumn|automne|fall/i', $lower)) {
-				$season = 'autumn';
+				$from_term = 'autumn';
 			} elseif (preg_match('/winter|hiver/i', $lower)) {
-				$season = 'winter';
+				$from_term = 'winter';
 			} elseif (preg_match('/easter|pâques|paques/i', $lower)) {
-				$season = 'easter';
+				$from_term = 'easter';
+			} elseif ($this->camp_term_text_is_seasonless_week($t)) {
+				return 'week_' . $n;
 			}
-			return $season . '_week_' . $n;
+			return $from_term . '_week_' . $n;
 		}
 
 		if (preg_match('/autumn|automne/i', $t) && preg_match('/course/i', $t)) {
@@ -410,6 +423,56 @@ class FacetNormalizer {
 		}
 		$slug = function_exists('sanitize_title') ? sanitize_title($t) : preg_replace('/[^a-z0-9]+/i', '-', strtolower($t));
 		return 'course_' . trim((string) $slug, '-');
+	}
+
+	/**
+	 * Season slug from the programme season field. Empty when the field has no season word.
+	 *
+	 * @param string $season
+	 * @return string
+	 */
+	private function camp_week_season_from_field($season) {
+		$value = self::decode_label($season);
+		if ($value === '') {
+			return '';
+		}
+		$value = str_ireplace(
+			['Pâques', 'Paques', 'Ostern', 'Oster', 'Frühling', 'Fruhling', 'Hiver', 'Printemps', 'Automne', 'Sommer', 'Herbst', 'Été', 'Ete'],
+			['Easter', 'Easter', 'Easter', 'Easter', 'Spring', 'Spring', 'Winter', 'Spring', 'Autumn', 'Summer', 'Autumn', 'Summer', 'Summer'],
+			$value
+		);
+		$lower = strtolower($value);
+		$buckets = [
+			'easter' => 'easter',
+			'winter' => 'winter',
+			'spring' => 'spring',
+			'summer' => 'summer',
+			'autumn' => 'autumn',
+			'fall' => 'autumn',
+		];
+		foreach ($buckets as $needle => $slug) {
+			if (strpos($lower, $needle) !== false) {
+				return $slug;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * English seasonless week label or slug. Legacy season-week strings are not this form.
+	 *
+	 * @param string $raw
+	 * @return bool
+	 */
+	private function camp_term_text_is_seasonless_week($raw) {
+		$raw = trim((string) $raw);
+		if (preg_match('/^\s*week\s+\d+\b/i', $raw)) {
+			return true;
+		}
+		if (preg_match('/^\s*week-\d+\b/i', $raw)) {
+			return true;
+		}
+		return false;
 	}
 
 	/**
