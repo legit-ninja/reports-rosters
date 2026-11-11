@@ -185,7 +185,13 @@ class DailyBfSalesEmailFixtureWpdb extends \InterSoccerTestWpdb {
         if (strpos($query, '_date_paid') === false) {
             return [];
         }
-        if (!preg_match('/CAST\(paid_meta\.meta_value AS UNSIGNED\) >= (\d+) AND CAST\(paid_meta\.meta_value AS UNSIGNED\) < (\d+)/', $query, $paid)) {
+        $paidStart = 1;
+        $paidEnd = PHP_INT_MAX;
+        $hasWindow = preg_match('/CAST\(paid_meta\.meta_value AS UNSIGNED\) >= (\d+) AND CAST\(paid_meta\.meta_value AS UNSIGNED\) < (\d+)/', $query, $paid);
+        if ($hasWindow) {
+            $paidStart = (int) $paid[1];
+            $paidEnd = (int) $paid[2];
+        } elseif (strpos($query, "paid_meta.meta_value <> '0'") === false) {
             return [];
         }
         $createdFallback = strpos($query, 'paid_meta.meta_value IS NULL') !== false;
@@ -201,7 +207,7 @@ class DailyBfSalesEmailFixtureWpdb extends \InterSoccerTestWpdb {
         $statuses = $this->statusList($query);
         $rows = [];
         foreach ($this->orders as $order) {
-            if (!$this->orderIncluded($order, (int) $paid[1], (int) $paid[2], $createdFallback, $createdStart, $createdEnd, $statuses)) {
+            if (!$this->orderIncluded($order, $paidStart, $paidEnd, $createdFallback, $createdStart, $createdEnd, $statuses)) {
                 continue;
             }
             foreach ($order['items'] as $item) {
@@ -1693,6 +1699,98 @@ class DailyBfSalesEmailTest extends TestCase {
         } finally {
             unset($GLOBALS['intersoccer_test_wp_hooks']['filters'][$hook]);
             $GLOBALS['intersoccer_test_emit_wp_hooks'] = false;
+            unset($GLOBALS['intersoccer_test_get_posts_callback'], $GLOBALS['intersoccer_test_post_titles']);
+        }
+    }
+
+    public function test_bookings_before_the_campaign_window_are_not_flagged_low_or_zero(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $products = [8501, 8502];
+        $GLOBALS['intersoccer_test_get_posts_callback'] = static function ($args) use ($products) {
+            $type = isset($args['post_type']) ? (string) $args['post_type'] : '';
+            if ($type === 'product') {
+                return $products;
+            }
+            return [];
+        };
+        $GLOBALS['intersoccer_test_post_titles'] = [
+            8501 => 'Early Winter Camp',
+            8502 => 'Quiet Early Camp',
+        ];
+        $meta = [
+            8501 => [
+                '_intersoccer_product_type' => 'camp',
+                'attribute_pa_program-season' => 'Winter',
+                'attribute_pa_program-year' => '2027',
+                '_camp_start_date' => '2027-01-04',
+                'attribute_pa_canton-region' => 'Geneva',
+            ],
+            8502 => [
+                '_intersoccer_product_type' => 'camp',
+                'attribute_pa_program-season' => 'Winter',
+                'attribute_pa_program-year' => '2027',
+                '_camp_start_date' => '2027-01-11',
+                'attribute_pa_canton-region' => 'Zurich',
+            ],
+        ];
+        foreach ($meta as $postId => $pairs) {
+            foreach ($pairs as $key => $value) {
+                \InterSoccerRRTestMeta::$data[$postId][$key] = $value;
+            }
+        }
+        $this->wpdb->orders = [
+            [
+                'id' => 951,
+                'status' => 'wc-completed',
+                'post_date' => '2026-10-02 10:00:00',
+                'date_paid' => (string) $this->unix('2026-10-02 10:00:00'),
+                'items' => [
+                    $this->item(9511, 'Early Winter Camp', 8501, 0, 4, '40.00', '40.00', '3.08'),
+                ],
+            ],
+            [
+                'id' => 952,
+                'status' => 'wc-processing',
+                'post_date' => '2026-10-03 11:00:00',
+                'date_paid' => (string) $this->unix('2026-10-03 11:00:00'),
+                'items' => [
+                    $this->item(9521, 'Quiet Early Camp', 8502, 0, 1, '10.00', '10.00', '0.77'),
+                ],
+            ],
+            [
+                'id' => 953,
+                'status' => 'wc-on-hold',
+                'post_date' => '2026-10-04 12:00:00',
+                'date_paid' => (string) $this->unix('2026-10-04 12:00:00'),
+                'items' => [
+                    $this->item(9531, 'Held Early Camp', 8502, 0, 9, '90.00', '90.00', '6.93'),
+                ],
+            ],
+        ];
+        try {
+            $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+            $low = $this->bookingLabels($digest['low_bookings']);
+            $zero = $this->bookingLabels($digest['zero_bookings']);
+            $this->assertNotContains('Early Winter Camp', $low);
+            $this->assertNotContains('Early Winter Camp', $zero);
+            $this->assertSame(['Quiet Early Camp'], $low);
+            $this->assertSame(1, $digest['low_bookings'][0]['count']);
+            $this->assertSame(['label', 'season', 'type', 'region', 'count'], array_keys($digest['low_bookings'][0]));
+            $this->assertSame([], $zero);
+
+            $sql = '';
+            foreach ($this->wpdb->queries as $query) {
+                if (strpos($query, "paid_meta.meta_value <> '0'") !== false
+                    && strpos($query, 'CAST(paid_meta.meta_value AS UNSIGNED)') === false
+                ) {
+                    $sql = $query;
+                }
+            }
+            $this->assertNotSame('', $sql);
+            $this->assertStringContainsString("'wc-processing'", $sql);
+            $this->assertStringContainsString("'wc-completed'", $sql);
+            $this->assertStringNotContainsString("'wc-on-hold'", $sql);
+        } finally {
             unset($GLOBALS['intersoccer_test_get_posts_callback'], $GLOBALS['intersoccer_test_post_titles']);
         }
     }

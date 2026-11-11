@@ -18,8 +18,9 @@
  * from the paid totals.
  *
  * Low and zero booking lists cover published Winter, Spring, and Easter 2027
- * programmes that have not started. The low threshold is an admin setting
- * and defaults to 3. Zero bookings are a separate list.
+ * programmes that have not started. Counts include every paid booking, of any
+ * date. The low threshold is an admin setting and defaults to 3. Zero bookings
+ * are a separate list.
  *
  * @package InterSoccer\ReportsRosters\Services
  */
@@ -472,7 +473,7 @@ class DailyBfSalesEmail {
         echo '</td></tr>';
         echo '<tr><th scope="row"><label for="bf_low_booking_threshold">Low booking threshold</label></th><td>';
         echo '<input type="number" name="bf_low_booking_threshold" id="bf_low_booking_threshold" min="0" max="999" value="' . esc_attr((string) (int) $settings['low_booking_threshold']) . '" />';
-        echo '<p class="description">Published Winter, Spring, and Easter 2027 programmes that have not started. Paid bookings from 1 through this number are listed as low. Zero bookings are a separate list. On-hold orders are not counted.</p>';
+        echo '<p class="description">Published Winter, Spring, and Easter 2027 programmes that have not started. Paid bookings of any date, from 1 through this number, are listed as low. Zero paid bookings are a separate list. On-hold orders are not counted.</p>';
         echo '</td></tr>';
         echo '<tr><th scope="row">Last sent</th><td><p>' . esc_html($state['last_sent_at'] !== '' ? $state['last_sent_at'] . ' Europe/Zurich' : 'Never') . '</p></td></tr>';
         echo '<tr><th scope="row">Last result</th><td><p>' . esc_html($this->resultLabel($state['last_result'])) . '</p></td></tr>';
@@ -524,7 +525,7 @@ class DailyBfSalesEmail {
                 $campaign = $this->emptySummary();
             }
         }
-        $coverage = $this->programmeBookingLists($now->format('Y-m-d'), $campaignStart, $reportDate, $campaignStarted);
+        $coverage = $this->programmeBookingLists($now->format('Y-m-d'));
         return [
             'report_date' => $reportDate,
             'campaign_start' => $campaignStart,
@@ -1091,22 +1092,19 @@ class DailyBfSalesEmail {
 
     /**
      * Published Winter, Spring, and Easter programmes for the scoped year that
-     * have not started. Counts use the strict paid campaign window.
+     * have not started. Counts include every paid booking, of any date.
      *
      * @param string $asOfYmd
-     * @param string $campaignStart
-     * @param string $reportDate
-     * @param bool   $campaignStarted
      * @return array{low:array<int,array<string,mixed>>,zero:array<int,array<string,mixed>>}
      */
-    private function programmeBookingLists($asOfYmd, $campaignStart, $reportDate, $campaignStarted) {
+    private function programmeBookingLists($asOfYmd) {
         $threshold = (int) $this->settings()['low_booking_threshold'];
         $events = $this->catalogueEvents($asOfYmd);
-        $counts = [];
-        if ($campaignStarted && $campaignStart !== '' && strcmp($campaignStart, $reportDate) <= 0) {
-            $report = $this->loadReport($campaignStart, $reportDate, self::paidOrderStatuses());
-            $counts = $this->paidCountsByProduct(is_array($report) ? $report : []);
-        }
+        $report = $this->reportService()->getFinancialBookingReport($asOfYmd, $asOfYmd, '', '', [
+            'date_basis' => 'paid_any',
+            'order_statuses' => self::paidOrderStatuses(),
+        ]);
+        $counts = $this->paidCountsByProduct(is_array($report) ? $report : []);
         $low = [];
         $zero = [];
         foreach ($events as $event) {

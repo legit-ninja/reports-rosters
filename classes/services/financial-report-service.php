@@ -71,12 +71,14 @@ class FinancialReportService {
      *   date when no paid timestamp is stored. `paid_only` selects by paid timestamp
      *   and does not fall back to the created date. Bounds are paid_start_unix
      *   (inclusive), paid_end_unix (exclusive), created_start_local, and created_end_local.
-     * - order_statuses: used only when date_basis is `paid_only` or `created_only`.
-     *   `created_only` selects by created_start_local (inclusive) and created_end_local
-     *   (exclusive) and does not require a paid date. `include_line_meta` on that
-     *   basis also reads line tax. Every other basis keeps the booking-report
-     *   status list. The default call, with no date_basis, still filters post_date
-     *   and the booking-report statuses.
+     * - order_statuses: used only when date_basis is `paid_only`, `paid_any`, or
+     *   `created_only`. `created_only` selects by created_start_local (inclusive)
+     *   and created_end_local (exclusive) and does not require a paid date.
+     *   `include_line_meta` on that basis also reads line tax. `paid_any` selects
+     *   paid orders of any date and does not apply a created-date or paid-date
+     *   window. Every other basis keeps the booking-report status list. The
+     *   default call, with no date_basis, still filters post_date and the
+     *   booking-report statuses.
      *
      * Net, discount, and refund math is unchanged. The paid basis only changes which
      * rows are read and adds raw amount fields used by the daily sales email.
@@ -171,6 +173,16 @@ class FinancialReportService {
                 $join_extra = "
             LEFT JOIN {$this->wpdb->prefix}woocommerce_order_itemmeta oim_tax ON oi.order_item_id = oim_tax.order_item_id AND oim_tax.meta_key = '_line_tax'";
             }
+        } elseif ($date_basis === 'paid_any') {
+            $custom_status = $this->orderStatusInSql(isset($options['order_statuses']) ? $options['order_statuses'] : null);
+            if ($custom_status !== '') {
+                $status_in = $custom_status;
+            }
+            $select_extra = ",
+                paid_meta.meta_value as date_paid_gmt";
+            $join_extra = "
+            LEFT JOIN {$this->wpdb->postmeta} paid_meta ON p.ID = paid_meta.post_id AND paid_meta.meta_key = '_date_paid'";
+            $date_where = " AND (paid_meta.meta_value IS NOT NULL AND paid_meta.meta_value <> '' AND paid_meta.meta_value <> '0')";
         }
 
         $region_where = '';
