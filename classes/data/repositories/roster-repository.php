@@ -586,6 +586,59 @@ class RosterRepository implements RepositoryInterface {
      * @param array $data Data to update
      * @return Roster|null Updated roster or null if not found
      */
+    /**
+     * Fill the given fields on an existing row, validating only those fields.
+     *
+     * Used by rebuilds to fill fields that are empty on the row. Rules for fields that are not
+     * written (e.g. a legacy row without customer_id or dob) are not run, so they cannot block
+     * an unrelated fill. When a date is written, end date must not be before start date.
+     *
+     * @param int   $id
+     * @param array $fields field => value (only these columns are written)
+     * @return Roster|null
+     * @throws ValidationException|DatabaseException
+     */
+    public function fillFields($id, array $fields) {
+        unset($fields['_skip_age_group_validation']);
+        if ($fields === []) {
+            return $this->find($id);
+        }
+
+        $roster = $this->find($id);
+        if (!$roster) {
+            $this->logger->warning('Roster not found for fill', ['id' => $id]);
+            return null;
+        }
+
+        $roster->fill($fields);
+        $roster->validateOnly(array_keys($fields));
+
+        if (array_key_exists('start_date', $fields) || array_key_exists('end_date', $fields)) {
+            $start = (string) ($roster->start_date ?? '');
+            $end = (string) ($roster->end_date ?? '');
+            if ($start !== '' && $end !== '' && strtotime($end) !== false && strtotime($start) !== false
+                && strtotime($end) < strtotime($start)) {
+                throw new ValidationException('End date cannot be before start date', 0, null, ['end_date' => ['before start_date']]);
+            }
+        }
+
+        $write = ['id' => $id];
+        foreach (array_keys($fields) as $field) {
+            $write[$field] = $roster->getAttribute($field);
+        }
+        $write['updated_at'] = current_time('mysql');
+
+        if (!$this->database->update_roster_entry($write)) {
+            throw new DatabaseException('Failed to fill roster entry');
+        }
+
+        $roster->syncOriginal();
+        $this->cache->set(self::CACHE_PREFIX . $id, $roster, self::CACHE_EXPIRY);
+        $this->clearRelatedCaches();
+
+        return $roster;
+    }
+
     public function update($id, array $data) {
         try {
             $this->logger->debug('Updating roster entry', [
@@ -853,20 +906,38 @@ class RosterRepository implements RepositoryInterface {
             $this->logger->debug('Deleting roster entries by order_item_id', ['order_item_id' => $order_item_id]);
 
             $deleted_count = $this->database->transaction(function () use ($order_item_id) {
-                return (int) $this->database->delete_roster_entries(['order_item_id' => $order_item_id]);
+                $deleted = $this->database->delete_roster_entries(['order_item_id' => $order_item_id]);
+                if ($deleted === false) {
+                    throw new DatabaseException('Delete roster entries failed for order_item_id ' . $order_item_id);
+                }
+
+                return (int) $deleted;
             });
+
+            if ($deleted_count === false) {
+                throw new DatabaseException(
+                    'Failed to delete roster entries by order_item_id ' . $order_item_id
+                );
+            }
 
             if ($deleted_count > 0) {
                 $this->clearRelatedCaches();
             }
 
-            return $deleted_count;
-        } catch (\Exception $e) {
+            return (int) $deleted_count;
+        } catch (\Throwable $e) {
             $this->logger->error('Failed to delete roster entries by order_item_id', [
                 'order_item_id' => $order_item_id,
                 'error' => $e->getMessage(),
             ]);
-            throw $e;
+            if ($e instanceof DatabaseException) {
+                throw $e;
+            }
+            throw new DatabaseException(
+                'Failed to delete roster entries by order_item_id ' . $order_item_id . ': ' . $e->getMessage(),
+                0,
+                $e
+            );
         }
     }
 
@@ -1207,33 +1278,6 @@ class RosterRepository implements RepositoryInterface {
                 'error' => $e->getMessage()
             ]);
             return [];
-        }
-    }
-    
-    /**
-     * Rebuild roster entries from WooCommerce orders
-     * 
-     * @param array $options Rebuild options
-     * @return array Rebuild results
-     */
-    public function rebuildFromOrders(array $options = []) {
-        try {
-            $this->logger->info('Starting roster rebuild from orders');
-            
-            $results = $this->database->rebuild_rosters($options);
-            
-            // Clear all caches after rebuild
-            $this->clearAllCaches();
-            
-            $this->logger->info('Roster rebuild completed', $results);
-            
-            return $results;
-            
-        } catch (\Exception $e) {
-            $this->logger->error('Roster rebuild failed', [
-                'error' => $e->getMessage()
-            ]);
-            throw $e;
         }
     }
     

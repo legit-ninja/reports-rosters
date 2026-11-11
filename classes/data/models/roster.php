@@ -113,7 +113,9 @@ class Roster extends AbstractModel {
         'last_name' => ['required', 'string', 'min:1', 'max:100'],
         'dob' => ['required', 'date', 'before:today'],
         'gender' => ['required', 'in:male,female,other'],
-        'activity_type' => ['required', 'in:Camp,Course,Birthday Party'],
+        // Tournament and Event are written by the canonical activity mapping and read by the roster
+        // listing, Roster Details and Live Numbers; rejecting them dropped those bookings (#167).
+        'activity_type' => ['required', 'in:Camp,Course,Birthday Party,Tournament,Event'],
         'venue' => ['string', 'max:200'],
         'start_date' => ['nullable', 'date'],
         'order_status' => ['required', 'in:pending,processing,on-hold,completed,cancelled,refunded,failed']

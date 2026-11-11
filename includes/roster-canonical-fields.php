@@ -238,3 +238,45 @@ function intersoccer_roster_normalize_export_row(array $row) {
 	return $row;
 }
 }
+
+/**
+ * Normalize filtered WooCommerce order statuses allowed for roster rebuild.
+ *
+ * @param mixed $filtered Value from apply_filters('intersoccer_roster_rebuild_statuses', …).
+ * @return string[]
+ */
+if (!function_exists('intersoccer_normalize_roster_rebuild_statuses')) {
+function intersoccer_normalize_roster_rebuild_statuses($filtered): array {
+	$default = ['completed', 'processing', 'on-hold'];
+	$allowlist = $default;
+
+	if (!is_array($filtered) || $filtered === []) {
+		return $default;
+	}
+
+	$seen = [];
+	$normalized = [];
+	foreach ($filtered as $status) {
+		if (!is_string($status)) {
+			continue;
+		}
+		$status = strtolower(trim($status));
+		if ($status === '') {
+			continue;
+		}
+		if (strpos($status, 'wc-') === 0) {
+			$status = substr($status, 3);
+		}
+		if (!in_array($status, $allowlist, true)) {
+			continue;
+		}
+		if (isset($seen[$status])) {
+			continue;
+		}
+		$seen[$status] = true;
+		$normalized[] = $status;
+	}
+
+	return $normalized !== [] ? $normalized : $default;
+}
+}

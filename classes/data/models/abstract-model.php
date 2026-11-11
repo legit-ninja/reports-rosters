@@ -289,6 +289,37 @@ abstract class AbstractModel {
     }
     
     /**
+     * Validate only the named attributes (rules for other attributes are not run).
+     *
+     * @param string[] $fields
+     * @throws ValidationException If any named attribute fails its rules
+     * @return bool
+     */
+    public function validateOnly(array $fields) {
+        if (empty($this->validation_rules) || $fields === []) {
+            return true;
+        }
+
+        $validator = new DataValidator(new Logger());
+        $errors = [];
+        foreach ($fields as $field) {
+            if (!isset($this->validation_rules[$field])) {
+                continue;
+            }
+            $field_errors = $validator->validate_field($field, $this->getAttribute($field), $this->validation_rules[$field]);
+            if (!empty($field_errors)) {
+                $errors[$field] = $field_errors;
+            }
+        }
+
+        if (!empty($errors)) {
+            throw new ValidationException('Model validation failed', 0, null, $errors);
+        }
+
+        return true;
+    }
+
+    /**
      * Check if model is valid
      * 
      * @return bool Is valid
