@@ -409,18 +409,6 @@ class FinancialReportService {
                     $item_discount_breakdown = [];
                 }
             }
-
-            if ($item_discount_breakdown === []
-                && isset($meta_map['Discount'])
-                && trim((string) $meta_map['Discount']) !== ''
-            ) {
-                $discount_name = trim((string) $meta_map['Discount']);
-                $item_discount_breakdown = [[
-                    'name' => $discount_name,
-                    'type' => intersoccer_determine_discount_type_from_name($discount_name),
-                    'amount' => $discount_amount,
-                ]];
-            }
         } elseif (isset($meta_map['Discount Amount']) && $meta_map['Discount Amount'] !== '') {
             $discount_amount = intersoccer_parse_legacy_discount_amount($meta_map['Discount Amount']);
 
