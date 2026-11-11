@@ -2529,7 +2529,6 @@ class RosterBuilder {
             // Times/term/days for DB columns (keep: times, camp_terms, selected_days)
             'times' => $order_data['camp_times'] ?? $order_data['course_times'] ?? '',
             'camp_terms' => $order_data['camp_terms'] ?? '',
-            'term' => $order_data['course_day'] ?? $order_data['camp_terms'] ?? '',
             'selected_days' => $selected_days_raw,
             'days_selected' => $selected_days_raw,
         ]);
@@ -2624,10 +2623,31 @@ class RosterBuilder {
                 ? intersoccer_canonical_activity_type_for_roster($raw_activity)
                 : $raw_activity;
 
+            $activity_for_term = strtolower(trim((string) ($roster_data['activity_type'] ?? '')));
+            $camp_term_value = trim((string) ($roster_data['camp_terms'] ?? ''));
+            $course_day_value = trim((string) ($roster_data['course_day'] ?? ''));
+            if ($activity_for_term === 'camp') {
+                $roster_data['term'] = $camp_term_value;
+            } elseif ($activity_for_term === 'course') {
+                $roster_data['term'] = $course_day_value;
+            } else {
+                $roster_data['term'] = $camp_term_value !== '' ? $camp_term_value : $course_day_value;
+            }
+
             // Generate event signature from original facet payload (wrapper normalizes internally).
             $roster_data['event_signature'] = function_exists('intersoccer_event_signature_from_event_data')
                 ? intersoccer_event_signature_from_event_data($event_data_to_normalize)
                 : $this->signature_generator->generate($event_data_to_normalize);
+        } else {
+            $camp_raw = trim((string) ($order_data['camp_terms'] ?? $order_data['event_type'] ?? ''));
+            $course_raw = trim((string) ($order_data['course_day'] ?? ''));
+            if ($camp_raw !== '') {
+                $roster_data['term'] = $this->termNameForStorage($camp_raw, 'pa_camp-terms');
+            } elseif ($course_raw !== '') {
+                $roster_data['term'] = $this->termNameForStorage($course_raw, 'pa_course-day');
+            } else {
+                $roster_data['term'] = '';
+            }
         }
 
         // Camps: English weekday list + day_presence JSON (canonical storage for roster UI and reports).
@@ -2770,6 +2790,63 @@ class RosterBuilder {
      * @param string|null $alt_taxonomy Optional second taxonomy to try (e.g. pa_course-times for times)
      * @return string English term name or original value if not resolved
      */
+    /** Taxonomies whose stored term name is mapped to the WPML default-language term. */
+    private const DEFAULT_LANGUAGE_TERM_TAXONOMIES = ['pa_course-day'];
+
+    /**
+     * Resolve a term from a slug or label in any language, then return the name of its WPML
+     * default-language translation. Null when no term matches.
+     *
+     * The lookup runs with WPML switched to "all" languages, because a French or German term is not
+     * found while the default language is active; wpml_object_id then maps the term to the default
+     * language. Without WPML, wpml_object_id returns the same ID and the term's own name is used.
+     */
+    private function defaultLanguageTermName(string $value, string $taxonomy): ?string {
+        $value = trim($value);
+        if ($value === '' || strcasecmp($value, 'N/A') === 0 || !function_exists('get_term_by')) {
+            return null;
+        }
+
+        $previous_language = function_exists('apply_filters') ? apply_filters('wpml_current_language', null) : null;
+        $switched = false;
+        if (function_exists('do_action') && is_string($previous_language) && $previous_language !== '') {
+            do_action('wpml_switch_language', 'all');
+            $switched = true;
+        }
+        try {
+            $lower = function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+            $slug = function_exists('sanitize_title') ? sanitize_title($value) : preg_replace('/\s+/', '-', $lower);
+            $term = get_term_by('slug', $slug, $taxonomy);
+            if (!$term || is_wp_error($term)) {
+                $term = get_term_by('name', $value, $taxonomy);
+            }
+            if ((!$term || is_wp_error($term)) && $lower !== $value) {
+                $term = get_term_by('name', $lower, $taxonomy);
+            }
+        } finally {
+            if ($switched) {
+                do_action('wpml_switch_language', $previous_language);
+            }
+        }
+        if (!$term || is_wp_error($term) || empty($term->term_id)) {
+            return null;
+        }
+
+        $default_language = function_exists('apply_filters') ? apply_filters('wpml_default_language', null) : null;
+        if (!is_string($default_language) || $default_language === '') {
+            $default_language = 'en';
+        }
+        $default_id = (int) apply_filters('wpml_object_id', (int) $term->term_id, $taxonomy, true, $default_language);
+        if ($default_id > 0 && $default_id !== (int) $term->term_id && function_exists('get_term')) {
+            $default_term = get_term($default_id, $taxonomy);
+            if ($default_term && !is_wp_error($default_term) && !empty($default_term->name)) {
+                return (string) $default_term->name;
+            }
+        }
+
+        return !empty($term->name) ? (string) $term->name : null;
+    }
+
     /**
      * Normalize selected camp days to English weekday names (comma-separated) for storage.
      *
@@ -2804,6 +2881,14 @@ class RosterBuilder {
     private function termNameForStorage($value, $taxonomy, $alt_taxonomy = null) {
         if ($value === '' || $value === null) {
             return '';
+        }
+        // Course days: store the default-language (English) term so FR/DE orders match the
+        // course_day filter (e.g. "dimanche" / "Sonntag" -> "Sunday").
+        if (in_array($taxonomy, self::DEFAULT_LANGUAGE_TERM_TAXONOMIES, true)) {
+            $english = $this->defaultLanguageTermName((string) $value, (string) $taxonomy);
+            if ($english !== null) {
+                return $english;
+            }
         }
         if (function_exists('intersoccer_get_term_name')) {
             $name = intersoccer_get_term_name($value, $taxonomy);
