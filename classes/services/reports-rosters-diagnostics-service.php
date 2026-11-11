@@ -18,6 +18,21 @@ class ReportsRostersDiagnosticsService {
     private const MAX_LIMIT = 500;
 
     /**
+     * Bound for wc_get_orders / roster id pages during diagnostics.
+     */
+    private const ORDER_ID_PAGE_SIZE = 200;
+
+    /**
+     * How many loaded orders to keep before flushing the object cache.
+     */
+    private const ORDER_META_CHUNK = 50;
+
+    /**
+     * @var array<string,array<int,int>>
+     */
+    private $resolved_order_ids_cache = [];
+
+    /**
      * Sync queue compares only completed orders by default (matches roster build scope).
      */
     private const DEFAULT_ORDER_STATUSES = [
@@ -900,6 +915,8 @@ class ReportsRostersDiagnosticsService {
             'order_item_id' => isset($filters['order_item_id']) ? (int) $filters['order_item_id'] : 0,
             'order_statuses' => $this->sanitizeOrderStatuses($filters['order_statuses'] ?? null),
             'reason_filter' => $reason_filter,
+            'date_from' => isset($filters['date_from']) ? sanitize_text_field((string) $filters['date_from']) : '',
+            'date_to' => isset($filters['date_to']) ? sanitize_text_field((string) $filters['date_to']) : '',
         ];
     }
 
@@ -1035,34 +1052,126 @@ class ReportsRostersDiagnosticsService {
             return [$order_id];
         }
 
-        $year = (int) $filters['year'];
-        $statuses = is_array($filters['order_statuses'] ?? null) ? $filters['order_statuses'] : self::DEFAULT_ORDER_STATUSES;
-        $order_ids = [];
-
-        if (function_exists('wc_get_orders')) {
-            $by_date = wc_get_orders([
-                'limit' => -1,
-                'status' => $statuses,
-                'date_created' => $year . '-01-01...' . $year . '-12-31',
-                'return' => 'ids',
-            ]);
-            if (is_array($by_date)) {
-                foreach ($by_date as $id) {
-                    $order_ids[] = (int) $id;
-                }
-            }
+        $cache_key = md5((string) wp_json_encode([
+            (int) ($filters['year'] ?? 0),
+            (string) ($filters['date_from'] ?? ''),
+            (string) ($filters['date_to'] ?? ''),
+            $filters['order_statuses'] ?? null,
+        ]));
+        if (isset($this->resolved_order_ids_cache[$cache_key])) {
+            return $this->resolved_order_ids_cache[$cache_key];
         }
 
-        $season_order_ids = $this->resolveOrderIdsBySeasonYear($year, $statuses);
-        $order_ids = array_values(array_unique(array_merge($order_ids, $season_order_ids)));
+        $year = (int) $filters['year'];
+        $statuses = is_array($filters['order_statuses'] ?? null) ? $filters['order_statuses'] : self::DEFAULT_ORDER_STATUSES;
+        $date_created = $this->dateCreatedQueryFromFilters($filters);
+        $order_query = [
+            'status' => $statuses,
+            'type' => 'shop_order',
+        ];
+        if ($date_created !== '') {
+            $order_query['date_created'] = $date_created;
+        } else {
+            $order_query['date_created'] = $year . '-01-01...' . $year . '-12-31';
+        }
 
-        if ($order_ids === []) {
+        $order_ids = $this->pagedShopOrderIds($order_query);
+
+        // A selected range must not widen into a season-long order scan.
+        if ($date_created === '') {
+            $season_order_ids = $this->resolveOrderIdsBySeasonYear($year, $statuses);
+            $order_ids = array_values(array_unique(array_merge($order_ids, $season_order_ids)));
+        }
+
+        if ($order_ids === [] && $date_created === '') {
             $order_ids = $this->resolveOrderIdsFromPosts($year, $statuses);
         }
 
-        return array_values(array_filter(array_map('intval', $order_ids), static function (int $id): bool {
+        $order_ids = array_values(array_filter(array_map('intval', $order_ids), static function (int $id): bool {
             return $id > 0;
         }));
+        $this->resolved_order_ids_cache[$cache_key] = $order_ids;
+
+        return $order_ids;
+    }
+
+    /**
+     * Woo date_created query for an optional admin range. Empty when no range was given.
+     */
+    private function dateCreatedQueryFromFilters(array $filters): string {
+        $from = $this->normalizeFilterDate(isset($filters['date_from']) ? (string) $filters['date_from'] : '');
+        $to = $this->normalizeFilterDate(isset($filters['date_to']) ? (string) $filters['date_to'] : '');
+        if ($from !== '' && $to !== '') {
+            return $from . '...' . $to;
+        }
+        if ($from !== '') {
+            return '>=' . $from;
+        }
+        if ($to !== '') {
+            return '<=' . $to;
+        }
+
+        return '';
+    }
+
+    private function normalizeFilterDate(string $value): string {
+        $value = trim($value);
+        if ($value === '') {
+            return '';
+        }
+        $ts = strtotime($value);
+        if ($ts === false) {
+            return '';
+        }
+
+        return date('Y-m-d', $ts);
+    }
+
+    /**
+     * Shop order ids in bounded pages. Frees the order cache between full pages.
+     *
+     * @param array<string,mixed> $base_args
+     * @return array<int,int>
+     */
+    private function pagedShopOrderIds(array $base_args): array {
+        if (!function_exists('wc_get_orders')) {
+            return [];
+        }
+
+        $page_size = self::ORDER_ID_PAGE_SIZE;
+        $offset = 0;
+        $ids = [];
+
+        do {
+            $args = $base_args;
+            $args['limit'] = $page_size;
+            $args['offset'] = $offset;
+            $args['return'] = 'ids';
+            $args['paginate'] = false;
+            $batch = wc_get_orders($args);
+            if (!is_array($batch) || $batch === []) {
+                break;
+            }
+
+            $added = 0;
+            foreach ($batch as $id) {
+                $id = (int) $id;
+                if ($id <= 0 || isset($ids[$id])) {
+                    continue;
+                }
+                $ids[$id] = $id;
+                $added++;
+            }
+
+            $count = count($batch);
+            unset($batch);
+            if ($count >= $page_size && function_exists('wp_cache_flush')) {
+                wp_cache_flush();
+            }
+            $offset += $page_size;
+        } while ($count >= $page_size && $added > 0);
+
+        return array_values($ids);
     }
 
     /**
@@ -1101,15 +1210,23 @@ class ReportsRostersDiagnosticsService {
         }
 
         $filtered = [];
-        foreach ($ids as $id) {
-            $order = wc_get_order((int) $id);
-            if (!$order) {
-                continue;
+        $chunks = array_chunk($ids, self::ORDER_META_CHUNK);
+        $last_chunk = count($chunks) - 1;
+        foreach ($chunks as $chunk_index => $chunk) {
+            foreach ($chunk as $id) {
+                $order = wc_get_order((int) $id);
+                if (!$order) {
+                    continue;
+                }
+                $order_status = (string) $order->get_status();
+                $prefixed = strpos($order_status, 'wc-') === 0 ? $order_status : 'wc-' . $order_status;
+                if (isset($status_lookup[$order_status]) || isset($status_lookup[$prefixed])) {
+                    $filtered[] = (int) $id;
+                }
+                unset($order);
             }
-            $order_status = (string) $order->get_status();
-            $prefixed = strpos($order_status, 'wc-') === 0 ? $order_status : 'wc-' . $order_status;
-            if (isset($status_lookup[$order_status]) || isset($status_lookup[$prefixed])) {
-                $filtered[] = (int) $id;
+            if ($chunk_index < $last_chunk && function_exists('wp_cache_flush')) {
+                wp_cache_flush();
             }
         }
 
@@ -1231,23 +1348,34 @@ class ReportsRostersDiagnosticsService {
      */
     private function loadOrderMetaForIds(array $order_ids): array {
         $meta = [];
-        foreach ($order_ids as $order_id) {
-            $order_id = (int) $order_id;
-            if ($order_id <= 0) {
-                continue;
-            }
-            if (function_exists('wc_get_order')) {
-                $order = wc_get_order($order_id);
-                if ($order) {
-                    $created = $order->get_date_created();
-                    $meta[$order_id] = [
-                        'status' => (string) $order->get_status(),
-                        'date' => $created ? $created->date('Y-m-d H:i:s') : '',
-                    ];
+        $chunks = array_chunk(array_values($order_ids), self::ORDER_META_CHUNK);
+        $last_chunk = count($chunks) - 1;
+        foreach ($chunks as $chunk_index => $chunk) {
+            foreach ($chunk as $order_id) {
+                $order_id = (int) $order_id;
+                if ($order_id <= 0) {
                     continue;
                 }
+                if (function_exists('wc_get_order')) {
+                    $order = wc_get_order($order_id);
+                    if ($order) {
+                        $created = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
+                        $meta[$order_id] = [
+                            'status' => method_exists($order, 'get_status') ? (string) $order->get_status() : '',
+                            'date' => ($created && is_object($created) && method_exists($created, 'date'))
+                                ? $created->date('Y-m-d H:i:s')
+                                : '',
+                        ];
+                        unset($order, $created);
+                        continue;
+                    }
+                    unset($order);
+                }
+                $meta[$order_id] = ['status' => '', 'date' => ''];
             }
-            $meta[$order_id] = ['status' => '', 'date' => ''];
+            if ($chunk_index < $last_chunk && function_exists('wp_cache_flush')) {
+                wp_cache_flush();
+            }
         }
         return $meta;
     }
@@ -1703,17 +1831,40 @@ class ReportsRostersDiagnosticsService {
     private function fetchRosterRows(array $filters): array {
         global $wpdb;
         $table = $wpdb->prefix . 'intersoccer_rosters';
-
-        $sql = "SELECT id, order_item_id, order_id, product_id, variation_id, activity_type,
+        $select = "SELECT id, order_item_id, order_id, product_id, variation_id, activity_type,
                        venue, course_day, season, canton_region, start_date, end_date,
                        player_name, player_first_name, player_last_name, first_name, last_name, product_name,
                        event_signature, is_placeholder
                 FROM {$table}
                 WHERE order_item_id > 0";
 
-        $rows = $wpdb->get_results($sql, ARRAY_A);
-        if (!is_array($rows)) {
-            return [];
+        $date_created = $this->dateCreatedQueryFromFilters($filters);
+        $rows = [];
+        if ($date_created !== '') {
+            $scoped_ids = $this->resolveOrderIdsForFilters($filters);
+            if ($scoped_ids === []) {
+                return [];
+            }
+            $chunks = array_chunk($scoped_ids, self::ORDER_ID_PAGE_SIZE);
+            $last_chunk = count($chunks) - 1;
+            foreach ($chunks as $chunk_index => $chunk) {
+                $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+                $chunk_rows = $wpdb->get_results(
+                    $wpdb->prepare($select . " AND order_id IN ({$placeholders})", ...$chunk),
+                    ARRAY_A
+                );
+                if (is_array($chunk_rows)) {
+                    $rows = array_merge($rows, $chunk_rows);
+                }
+                unset($chunk_rows);
+                if ($chunk_index < $last_chunk && function_exists('wp_cache_flush')) {
+                    wp_cache_flush();
+                }
+            }
+        } else {
+            $loaded = $wpdb->get_results($select, ARRAY_A);
+            $rows = is_array($loaded) ? $loaded : [];
+            unset($loaded);
         }
 
         $year = (int) $filters['year'];
@@ -2699,6 +2850,7 @@ class ReportsRostersDiagnosticsService {
         $course_day_mismatch_samples = [];
         $missing_in_woo_meta_count = 0;
         $course_day_mismatch_count = 0;
+        $processed = 0;
 
         foreach ($mismatches as $row) {
             if (!is_array($row)) {
@@ -2747,6 +2899,11 @@ class ReportsRostersDiagnosticsService {
                     'roster_norm' => self::normalizeComparableValue($row['roster_course_day'] ?? ''),
                 ];
                 }
+            }
+
+            $processed++;
+            if ($processed % self::ORDER_META_CHUNK === 0 && function_exists('wp_cache_flush')) {
+                wp_cache_flush();
             }
         }
 
@@ -2883,9 +3040,10 @@ class ReportsRostersDiagnosticsService {
         $customer_id = 0;
         if ($order_id > 0 && function_exists('wc_get_order')) {
             $order = wc_get_order($order_id);
-            if ($order) {
+            if ($order && method_exists($order, 'get_customer_id')) {
                 $customer_id = (int) $order->get_customer_id();
             }
+            unset($order);
         }
 
         $roster_eligible = is_array($woo_row)
