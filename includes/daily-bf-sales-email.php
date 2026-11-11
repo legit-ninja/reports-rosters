@@ -13,8 +13,9 @@
  * day. It does not depend on the cron event.
  *
  * Paid totals count processing and completed orders whose paid date falls in
- * the Europe/Zurich window. On-hold orders are reported beside those totals
- * and are not added in. Orders with no paid date are omitted.
+ * the Europe/Zurich window. On-hold orders are counted separately by the date
+ * they were created and are not added in. Orders with no paid date are omitted
+ * from the paid totals.
  *
  * Low and zero booking lists cover published Winter, Spring, and Easter 2027
  * programmes that have not started. The low threshold is an admin setting
@@ -452,7 +453,7 @@ class DailyBfSalesEmail {
         }
         echo '<p>Enable is off until you turn it on. Recipients come only from Send to. Nothing is hardcoded.</p>';
         echo '<p>The email sends each morning at the chosen Europe/Zurich time while yesterday falls on a day the coupon is active. The morning after expiry is the final campaign email. It reports the expiry day\'s paid sales and the running total for the whole campaign (coupon start through expiry), with Final in the subject. After that send, nothing more goes out for the campaign.</p>';
-        echo '<p>Totals are net inc-VAT for processing and completed orders with a paid date in the window. On-hold orders are shown separately and are not included. Orders with no paid date are omitted.</p>';
+        echo '<p>Totals are net inc-VAT for processing and completed orders with a paid date in the window. On-hold orders are counted separately by the date they were created and are not included. Orders with no paid date are omitted from the paid totals.</p>';
         echo '<form method="post" action="' . esc_url(admin_url('admin.php?page=' . self::PAGE_SLUG)) . '">';
         $this->nonceField(self::NONCE_SETTINGS);
         echo '<table class="form-table"><tbody>';
@@ -948,12 +949,22 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * On-hold orders have no paid date, so this count uses the created date.
+     * The rows stay out of the paid totals.
+     *
      * @param string $startYmd
      * @param string $endYmd
      * @return array<string,mixed>
      */
     private function loadOnHoldReport($startYmd, $endYmd) {
-        $report = $this->loadReport($startYmd, $endYmd, ['wc-on-hold']);
+        $bounds = self::rangeBounds($startYmd, $endYmd, $this->siteTimezone());
+        $report = $this->reportService()->getFinancialBookingReport($startYmd, $endYmd, '', '', [
+            'date_basis' => 'created_only',
+            'order_statuses' => ['wc-on-hold'],
+            'created_start_local' => $bounds['created_start_local'],
+            'created_end_local' => $bounds['created_end_local'],
+            'include_line_meta' => true,
+        ]);
         return is_array($report) ? $report : [];
     }
 

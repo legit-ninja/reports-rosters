@@ -73,8 +73,10 @@ class FinancialReportService {
      *   (inclusive), paid_end_unix (exclusive), created_start_local, and created_end_local.
      * - order_statuses: used only when date_basis is `paid_only` or `created_only`.
      *   `created_only` selects by created_start_local (inclusive) and created_end_local
-     *   (exclusive) and does not require a paid date. Every other basis keeps the
-     *   booking-report status list.
+     *   (exclusive) and does not require a paid date. `include_line_meta` on that
+     *   basis also reads line tax. Every other basis keeps the booking-report
+     *   status list. The default call, with no date_basis, still filters post_date
+     *   and the booking-report statuses.
      *
      * Net, discount, and refund math is unchanged. The paid basis only changes which
      * rows are read and adds raw amount fields used by the daily sales email.
@@ -162,6 +164,12 @@ class FinancialReportService {
                     $created_start,
                     $created_end
                 );
+            }
+            if (!empty($options['include_line_meta'])) {
+                $select_extra = ",
+                oim_tax.meta_value as line_tax";
+                $join_extra = "
+            LEFT JOIN {$this->wpdb->prefix}woocommerce_order_itemmeta oim_tax ON oi.order_item_id = oim_tax.order_item_id AND oim_tax.meta_key = '_line_tax'";
             }
         }
 

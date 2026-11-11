@@ -124,6 +124,9 @@ class DailyBfSalesEmailFixtureWpdb extends \InterSoccerTestWpdb {
             if (strpos($query, "'wc-failed'") !== false || strpos($query, "'wc-pending'") !== false) {
                 return $this->createdStatusRows($query);
             }
+            if ($this->isOnHoldCreatedQuery($query)) {
+                return $this->createdStatusRows($query);
+            }
             return [];
         }
         if (preg_match('/order_item_id = (\d+)/', $query, $matches)) {
@@ -135,6 +138,12 @@ class DailyBfSalesEmailFixtureWpdb extends \InterSoccerTestWpdb {
     public function get_col($query = null, $x = 0) {
         $this->queries[] = (string) $query;
         return [];
+    }
+
+    private function isOnHoldCreatedQuery($query) {
+        return strpos($query, "'wc-on-hold'") !== false
+            && strpos($query, "'wc-completed'") === false
+            && strpos($query, 'p.post_date') !== false;
     }
 
     private function createdStatusRows($query) {
@@ -414,7 +423,6 @@ class DailyBfSalesEmailTest extends TestCase {
             'id' => 602,
             'status' => 'wc-on-hold',
             'post_date' => '2026-11-28 14:00:00',
-            'date_paid' => (string) $this->unix('2026-11-28 14:00:00'),
             'items' => [
                 $this->item(6021, 'Held Camp', 100, 1005, 1, '100.00', '100.00', '7.70'),
             ],
@@ -461,7 +469,9 @@ class DailyBfSalesEmailTest extends TestCase {
             }
         }
         $this->assertNotSame('', $onHoldSql);
-        $this->assertStringContainsString('_date_paid', $onHoldSql);
+        $this->assertStringContainsString('p.post_date', $onHoldSql);
+        $this->assertStringContainsString('_line_tax', $onHoldSql);
+        $this->assertStringNotContainsString('_date_paid', $onHoldSql);
     }
 
     public function test_paid_status_filter_replaces_the_default_set(): void {
