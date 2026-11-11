@@ -536,6 +536,34 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertSame([], $result['statistics']['errors']);
     }
 
+    public function test_full_and_targeted_rebuild_keep_on_hold_refunded_and_cancelled_status(): void {
+        $this->order(7401, 'on-hold', [7501 => $this->meta()]);
+        $this->order(7402, 'refunded', [7502 => $this->meta()]);
+        $this->order(7403, 'cancelled', [7503 => $this->meta()]);
+        $this->existingRow(7501, 7401, 'on-hold');
+        $this->existingRow(7502, 7402, 'refunded');
+        $this->existingRow(7503, 7403, 'cancelled');
+        $this->routeOrders([7401]);
+
+        $this->builder()->buildRosters(['clear_existing' => true, 'batch_size' => 10]);
+
+        $this->assertSame([], $this->deleted);
+        $this->assertSame('on-hold', $this->stored[7501]['order_status']);
+        $this->assertSame('refunded', $this->stored[7502]['order_status']);
+        $this->assertSame('cancelled', $this->stored[7503]['order_status']);
+        $this->assertArrayHasKey(7501, $this->stored);
+        $this->assertArrayHasKey(7502, $this->stored);
+        $this->assertArrayHasKey(7503, $this->stored);
+
+        $this->deleted = [];
+        $this->builder()->rebuildSpecificOrders([7401, 7402, 7403]);
+
+        $this->assertSame([], $this->deleted);
+        $this->assertSame('on-hold', $this->stored[7501]['order_status']);
+        $this->assertSame('refunded', $this->stored[7502]['order_status']);
+        $this->assertSame('cancelled', $this->stored[7503]['order_status']);
+    }
+
     // ---- #160 review: no overwrite, drift report, dry run, DB-logging guard ------------------------------------
 
     /** Build rows for three single-line orders once, so stored rows match their order lines. */
