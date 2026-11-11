@@ -181,7 +181,7 @@ class RosterReconcileDeleteRulesTest extends TestCase {
         $this->assertNotContains($itemId, $this->deletedItemIds);
     }
 
-    public function test_row_deleted_when_stored_order_no_longer_exists(): void {
+    public function test_lookup_false_keeps_row(): void {
         $itemId = 8002;
         $this->runReconcile(
             [['order_item_id' => (string) $itemId, 'order_id' => '7500']],
@@ -193,7 +193,22 @@ class RosterReconcileDeleteRulesTest extends TestCase {
             }
         );
 
-        $this->assertContains($itemId, $this->deletedItemIds);
+        $this->assertNotContains($itemId, $this->deletedItemIds);
+    }
+
+    public function test_lookup_null_keeps_row(): void {
+        $itemId = 8014;
+        $this->runReconcile(
+            [['order_item_id' => (string) $itemId, 'order_id' => '7501']],
+            static function (array $args): array {
+                return [];
+            },
+            static function ($order_id) {
+                return null;
+            }
+        );
+
+        $this->assertNotContains($itemId, $this->deletedItemIds);
     }
 
     public function test_row_deleted_when_line_item_removed_from_eligible_order(): void {
@@ -215,7 +230,7 @@ class RosterReconcileDeleteRulesTest extends TestCase {
         $this->assertContains($itemId, $this->deletedItemIds);
     }
 
-    public function test_failed_order_status_row_is_deleted(): void {
+    public function test_failed_order_status_keeps_row(): void {
         $orderId = 5004;
         $itemId = 8004;
         $this->runReconcile(
@@ -240,7 +255,7 @@ class RosterReconcileDeleteRulesTest extends TestCase {
             }
         );
 
-        $this->assertContains($itemId, $this->deletedItemIds);
+        $this->assertNotContains($itemId, $this->deletedItemIds);
     }
 
     public function test_invalid_stored_order_id_keeps_row(): void {

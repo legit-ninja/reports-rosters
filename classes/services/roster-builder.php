@@ -1077,14 +1077,29 @@ class RosterBuilder {
     }
 
     /**
-     * True only when the roster row's stored order is gone or confirmed ineligible for rebuild.
+     * True only when the stored line is confirmed gone from an order that loaded.
      *
-     * Uses the row's denormalized order_id (never wc_get_order_id_by_order_item_id). On any
-     * uncertainty (missing helper, invalid stored id, lookup failure, unreadable line items),
-     * returns false (keep).
+     * Uses the row's denormalized order_id (never wc_get_order_id_by_order_item_id). A lookup
+     * that returns nothing, or an order whose status is failed, is not proof the booking is
+     * obsolete, so the row is kept and logged.
      */
     private function shouldDeleteObsoleteReconcileRow(int $order_item_id, int $stored_order_id): bool {
-        return $this->obsoleteRowReason($order_item_id, $stored_order_id) !== null;
+        $reason = $this->obsoleteRowReason($order_item_id, $stored_order_id);
+        if ($reason === null) {
+            return false;
+        }
+        if ($reason === 'order_not_found' || $reason === 'order_failed') {
+            $message = $reason === 'order_not_found'
+                ? 'Keeping roster row; order lookup failed'
+                : 'Keeping roster row; order status is failed';
+            $this->logger->warning($message, [
+                'order_id' => $stored_order_id,
+                'order_item_id' => $order_item_id,
+            ]);
+            return false;
+        }
+
+        return true;
     }
 
     /**

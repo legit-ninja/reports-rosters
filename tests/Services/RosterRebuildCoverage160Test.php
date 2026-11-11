@@ -430,13 +430,14 @@ class RosterRebuildCoverage160Test extends TestCase {
         $reconcile_deleted = $this->deleted;
         sort($reconcile_deleted);
 
-        // Reconcile still deletes obsolete rows; the rebuild keeps the same rows and lists them for review.
+        // Rebuild lists a failed order and a removed line. Reconcile deletes only the
+        // removed line: a failed status or a failed order lookup is not deleted.
         $this->assertSame([], $rebuild_deleted);
         $this->assertSame(0, $rebuild['row_drift']['count'], 'only empty fields were filled');
         $review = array_map(static fn ($row) => $row['order_item_id'], $rebuild['rows_for_review']['rows']);
         sort($review);
-        $this->assertSame($reconcile_deleted, $review);
         $this->assertSame([8007, 8999], $review);
+        $this->assertSame([8999], $reconcile_deleted);
         $this->assertSame(self::ids($rebuild['age_mismatches']), self::ids($reconcile['age_mismatches']));
     }
 
@@ -1055,7 +1056,8 @@ class RosterRebuildCoverage160Test extends TestCase {
     }
 
     public function test_reconcile_still_counts_delete_failures_as_errors(): void {
-        $this->order(8501, 'failed', [8601 => $this->meta()]);
+        // A failed order is kept, so the delete that can fail is a line confirmed gone.
+        $this->order(8501, 'completed', [8602 => $this->meta()]);
         $this->existingRow(8601, 8501);
         $this->routeOrders([]);
         $builder = $this->builder();
