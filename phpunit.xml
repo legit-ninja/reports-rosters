@@ -125,6 +125,8 @@
             <file>tests/Services/RosterBuilderRr178CourseTermEnglishTest.php</file>
             <file>tests/Services/RosterBuilderRr178CampTermEnglishTest.php</file>
             <file>tests/Services/DataValidatorSingleDayUnknownTest.php</file>
+            <file>tests/Services/DataValidatorTest.php</file>
+            <file>tests/Services/SignatureDriftServiceTest.php</file>
             <file>tests/Services/RosterReconcileDeleteRulesTest.php</file>
             <file>tests/Services/RosterReconcileWpmlLanguageFilterTest.php</file>
             <file>tests/Services/RosterReconcilePaging155Test.php</file>
