@@ -275,14 +275,14 @@ class DailyBfSalesEmailTest extends TestCase {
     }
 
     /**
-     * Drop state left by earlier tests: Brain Monkey patches, the email's
-     * static registration flag, cron bookkeeping, options, and hook callbacks.
+     * Drop state left by earlier tests: the email's static registration flag,
+     * cron bookkeeping, options, and hook callbacks.
+     *
+     * Brain Monkey teardown is intentionally not called here. Container reset
+     * and Patchwork restore forget redefinitions that later tests still use,
+     * and this class does not install its own Monkey patches.
      */
     private function resetDailyBfIsolation(): void {
-        if (function_exists('Brain\\Monkey\\tearDown') && function_exists('Patchwork\\restoreAll')) {
-            \Brain\Monkey\tearDown();
-        }
-
         $resetStatics = \Closure::bind(static function () {
             self::$hooksRegistered = false;
             self::$instance = null;
