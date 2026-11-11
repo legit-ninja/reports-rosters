@@ -290,6 +290,103 @@ function intersoccer_map_discount_type_to_report_bucket(string $type): string {
 }
 
 /**
+ * True when a breakdown entry is a product-variation sibling discount already
+ * included in the WooCommerce line total.
+ *
+ * Order-level fees and coupons are not baked into that total, even when the
+ * label classifies as a sibling discount.
+ *
+ * @param array<string,mixed> $entry
+ */
+function intersoccer_financial_discount_entry_is_baked_line_sibling(array $entry): bool {
+    $source = strtolower(trim((string) ($entry['source'] ?? '')));
+    if (in_array($source, [
+        'order_fee',
+        'woocommerce_coupon',
+        'coupon_precise',
+        'referral_order_meta',
+        'combo_fee',
+        'combo_precise',
+    ], true)) {
+        return false;
+    }
+
+    $type = strtolower(trim((string) ($entry['type'] ?? '')));
+    if ($type === '' && isset($entry['name']) && (string) $entry['name'] !== '') {
+        $type = intersoccer_determine_discount_type_from_name($entry['name']);
+    }
+
+    return intersoccer_map_discount_type_to_report_bucket($type) === 'sibling';
+}
+
+/**
+ * Portion of an attributed discount that is a baked-in line sibling discount.
+ *
+ * @param array<int,mixed> $discount_breakdown
+ */
+function intersoccer_financial_baked_line_sibling_discount_amount(array $discount_breakdown): float {
+    $baked = 0.0;
+
+    foreach ($discount_breakdown as $entry) {
+        if (is_object($entry)) {
+            $entry = (array) $entry;
+        }
+        if (!is_array($entry) || !intersoccer_financial_discount_entry_is_baked_line_sibling($entry)) {
+            continue;
+        }
+
+        $amount = isset($entry['amount']) ? (float) $entry['amount'] : 0.0;
+        if ($amount > 0.0) {
+            $baked += $amount;
+        }
+    }
+
+    return $baked;
+}
+
+/**
+ * Post-discount line revenue before refunds (WooCommerce line total semantics).
+ *
+ * Subtract attributed discount that is not already reflected in the line:
+ * a product-variation sibling baked into the subtotal, and the WooCommerce
+ * subtotal-to-total gap. Order-level fees and coupons not reflected in the
+ * line are still subtracted. With no breakdown, a baked sibling cannot be
+ * distinguished from an order-level fee, so only the gap is treated as already
+ * in the line (same as subtotal minus attributed).
+ *
+ * @param array<int,array<string,mixed>> $discount_breakdown
+ */
+function intersoccer_financial_line_final_price(
+    float $line_subtotal,
+    float $line_total,
+    float $attributed_discount_amount,
+    array $discount_breakdown = []
+): float {
+    if ($attributed_discount_amount <= 0.01) {
+        return max(0.0, $line_total);
+    }
+
+    $baked = intersoccer_financial_baked_line_sibling_discount_amount($discount_breakdown);
+    if ($baked > $attributed_discount_amount) {
+        $baked = $attributed_discount_amount;
+    }
+
+    $gap = max(0.0, $line_subtotal - $line_total);
+    // When the sibling is already in the subtotal, it is not part of the gap,
+    // so count both. When the sibling is the gap, do not count it twice.
+    if ($baked > $gap + 0.02) {
+        $already_in_line = $baked + $gap;
+    } else {
+        $already_in_line = $gap;
+    }
+    if ($already_in_line > $attributed_discount_amount) {
+        $already_in_line = $attributed_discount_amount;
+    }
+
+    return max(0.0, $line_total - ($attributed_discount_amount - $already_in_line));
+}
+
+/**
  * Parse a legacy HTML or plain-text discount amount from order item meta.
  */
 function intersoccer_parse_legacy_discount_amount($value): float {
