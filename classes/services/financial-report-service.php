@@ -91,6 +91,7 @@ class FinancialReportService {
         ]);
 
         $date_basis = isset($options['date_basis']) ? (string) $options['date_basis'] : 'post_date';
+        $include_line_meta = $date_basis !== 'post_date' && !empty($options['include_line_meta']);
 
         [$date_sql, $date_params] = intersoccer_booking_report_post_date_filter_sql(
             (string) $start_date,
@@ -353,6 +354,10 @@ class FinancialReportService {
                 'used_created_date' => $date_basis === 'paid_or_created'
                     && (!isset($row->date_paid_gmt) || $row->date_paid_gmt === '' || $row->date_paid_gmt === null || (string) $row->date_paid_gmt === '0'),
             ];
+            if ($include_line_meta) {
+                $data[count($data) - 1]['line_meta'] = $meta_map;
+                $data[count($data) - 1]['order_item_id'] = (int) $row->order_item_id;
+            }
 
             $totals['base_price'] += $base_price;
             $totals['discount_amount'] += $discount_amount;

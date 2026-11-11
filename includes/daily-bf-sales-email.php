@@ -21,6 +21,7 @@
 
 namespace InterSoccer\ReportsRosters\Services;
 
+use InterSoccer\ReportsRosters\Campaign\FacetNormalizer;
 use InterSoccer\ReportsRosters\Core\Logger;
 
 defined('ABSPATH') or die('Restricted access');
@@ -69,6 +70,11 @@ class DailyBfSalesEmail {
      * @var \DateTimeZone|null
      */
     private $siteTimezone;
+
+    /**
+     * @var FacetNormalizer|null
+     */
+    private $facets = null;
 
     /**
      * @param Logger|null                  $logger
@@ -529,9 +535,11 @@ class DailyBfSalesEmail {
             'On hold yesterday',
             isset($digest['daily_on_hold']) && is_array($digest['daily_on_hold']) ? $digest['daily_on_hold'] : []
         );
+        $html .= '<h3>Regions</h3>';
+        $html .= $this->renderComparisonTable('Region', $daily, $campaign, 'regions', true);
         $html .= $this->renderComparisonTable('Product type', $daily, $campaign, 'types');
         $html .= '<h3>Products</h3>';
-        $html .= $this->renderComparisonTable('Product', $daily, $campaign, 'products');
+        $html .= $this->renderComparisonTable('Product', $daily, $campaign, 'products', true);
         if (!empty($digest['final_campaign'])) {
             $html .= '<p>' . esc_html(self::FINAL_CAMPAIGN_LINE) . '</p>';
         }
@@ -763,6 +771,7 @@ class DailyBfSalesEmail {
             'order_statuses' => array_values($statuses),
             'paid_start_unix' => $bounds['paid_start_unix'],
             'paid_end_unix' => $bounds['paid_end_unix'],
+            'include_line_meta' => true,
         ];
     }
 
@@ -899,6 +908,7 @@ class DailyBfSalesEmail {
             $types[$bucket] = $this->emptyType($bucket);
         }
         $products = [];
+        $regions = [];
         $orders = [];
         $fallback = false;
         $rows = isset($report['data']) && is_array($report['data']) ? $report['data'] : [];
@@ -947,6 +957,20 @@ class DailyBfSalesEmail {
             $products[$key]['net_ex_vat'] += $netEx;
             $products[$key]['net_inc_vat'] += $netInc;
 
+            $regionLabel = $this->regionLabel($row);
+            if (!isset($regions[$regionLabel])) {
+                $regions[$regionLabel] = [
+                    'key' => $regionLabel,
+                    'label' => $regionLabel,
+                    'quantity' => 0,
+                    'net_ex_vat' => 0.0,
+                    'net_inc_vat' => 0.0,
+                ];
+            }
+            $regions[$regionLabel]['quantity'] += $qty;
+            $regions[$regionLabel]['net_ex_vat'] += $netEx;
+            $regions[$regionLabel]['net_inc_vat'] += $netInc;
+
             $orderId = (int) ($row['order_id'] ?? 0);
             if ($orderId > 0) {
                 $orders[$orderId] = true;
@@ -970,17 +994,119 @@ class DailyBfSalesEmail {
             $products[$key]['net_ex_vat'] = round($product['net_ex_vat'], 2);
             $products[$key]['net_inc_vat'] = round($product['net_inc_vat'], 2);
         }
+        foreach ($regions as $key => $region) {
+            $regions[$key]['net_ex_vat'] = round($region['net_ex_vat'], 2);
+            $regions[$key]['net_inc_vat'] = round($region['net_inc_vat'], 2);
+        }
         uasort($products, function ($a, $b) {
+            return strcmp((string) $a['label'], (string) $b['label']);
+        });
+        uasort($regions, function ($a, $b) {
             return strcmp((string) $a['label'], (string) $b['label']);
         });
         return [
             'order_count' => count($orders),
             'types' => array_values($types),
             'products' => array_values($products),
+            'regions' => array_values($regions),
             'used_created_fallback' => $fallback,
             'net_ex_vat' => round($netEx, 2),
             'net_inc_vat' => round($netInc, 2),
         ];
+    }
+
+    /**
+     * Canonical canton, then FR/DE/EN labels, then the product attribute.
+     *
+     * @param array<string,mixed> $row
+     * @return string
+     */
+    private function regionLabel(array $row) {
+        $meta = (isset($row['line_meta']) && is_array($row['line_meta'])) ? $row['line_meta'] : [];
+        $facets = $this->facetNormalizer()->normalize_from_meta($meta);
+        $region = isset($facets['region']) ? (string) $facets['region'] : '';
+        if ($region === '' || $region === 'not_recorded') {
+            $fromProduct = $this->cantonFromProduct($row);
+            if ($fromProduct !== '') {
+                $region = $this->facetNormalizer()->normalize_region($fromProduct);
+            }
+        }
+        if ($region === '' || $region === 'not_recorded') {
+            return 'Unknown';
+        }
+        return $region;
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return string
+     */
+    private function cantonFromProduct(array $row) {
+        if (function_exists('intersoccer_reports_enrich_camp_canton_from_product')) {
+            $entry = [
+                'canton' => '',
+                'product_id' => (int) ($row['product_id'] ?? 0),
+                'variation_id' => (int) ($row['variation_id'] ?? 0),
+                'order_item_id' => (int) ($row['order_item_id'] ?? 0),
+            ];
+            intersoccer_reports_enrich_camp_canton_from_product($entry);
+            $canton = trim((string) ($entry['canton'] ?? ''));
+            if ($canton !== '' && strcasecmp($canton, 'Unknown') !== 0) {
+                return $canton;
+            }
+        }
+        $variationId = (int) ($row['variation_id'] ?? 0);
+        $productId = (int) ($row['product_id'] ?? 0);
+        if (function_exists('wc_get_product')) {
+            $product = wc_get_product($variationId > 0 ? $variationId : $productId);
+            $attr = $this->productCantonAttribute($product);
+            if ($attr === '' && is_object($product) && method_exists($product, 'is_type') && $product->is_type('variation') && method_exists($product, 'get_parent_id')) {
+                $attr = $this->productCantonAttribute(wc_get_product((int) $product->get_parent_id()));
+            }
+            if ($attr !== '') {
+                return $attr;
+            }
+        }
+        if (!function_exists('get_post_meta')) {
+            return '';
+        }
+        foreach ([$variationId, $productId] as $id) {
+            if ($id <= 0) {
+                continue;
+            }
+            foreach (['attribute_pa_canton-region', 'pa_canton-region'] as $key) {
+                $value = get_post_meta($id, $key, true);
+                if (is_string($value) && trim($value) !== '') {
+                    return trim($value);
+                }
+            }
+        }
+        return '';
+    }
+
+    /**
+     * @param mixed $product
+     * @return string
+     */
+    private function productCantonAttribute($product) {
+        if (!is_object($product) || !method_exists($product, 'get_attribute')) {
+            return '';
+        }
+        $attr = $product->get_attribute('pa_canton-region');
+        if (!is_string($attr) || trim($attr) === '') {
+            return '';
+        }
+        return trim($attr);
+    }
+
+    /**
+     * @return FacetNormalizer
+     */
+    private function facetNormalizer() {
+        if (!($this->facets instanceof FacetNormalizer)) {
+            $this->facets = new FacetNormalizer();
+        }
+        return $this->facets;
     }
 
     /**
@@ -1044,6 +1170,7 @@ class DailyBfSalesEmail {
             'order_count' => 0,
             'types' => $types,
             'products' => [],
+            'regions' => [],
             'used_created_fallback' => false,
             'net_ex_vat' => 0.0,
             'net_inc_vat' => 0.0,
@@ -1082,7 +1209,7 @@ class DailyBfSalesEmail {
      * @param string              $collection types|products
      * @return string
      */
-    private function renderComparisonTable($labelHeading, array $daily, array $campaign, $collection) {
+    private function renderComparisonTable($labelHeading, array $daily, array $campaign, $collection, $hideEmpty = false) {
         $dailyRows = (isset($daily[$collection]) && is_array($daily[$collection])) ? $daily[$collection] : [];
         $campaignRows = (isset($campaign[$collection]) && is_array($campaign[$collection])) ? $campaign[$collection] : [];
         $campaignByKey = [];
@@ -1128,7 +1255,7 @@ class DailyBfSalesEmail {
             $rightQty = (int) ($right['quantity'] ?? 0);
             $leftInc = (float) ($left['net_inc_vat'] ?? 0);
             $rightInc = (float) ($right['net_inc_vat'] ?? 0);
-            if ($collection === 'products' && $leftQty === 0 && $rightQty === 0) {
+            if ($hideEmpty && $leftQty === 0 && $rightQty === 0) {
                 continue;
             }
             $label = (string) ($left['label'] ?? '');
@@ -1148,8 +1275,9 @@ class DailyBfSalesEmail {
             $campaignQty += $rightQty;
             $campaignInc += $rightInc;
         }
-        if ($collection === 'products' && $shown === 0) {
-            $html .= '<tr><td colspan="5">No products sold in this range.</td></tr>';
+        if ($hideEmpty && $shown === 0) {
+            $empty = ($collection === 'regions') ? 'No regions in this range.' : 'No products sold in this range.';
+            $html .= '<tr><td colspan="5">' . esc_html($empty) . '</td></tr>';
         }
         $html .= '<tr><td>Total</td>';
         $html .= '<td>' . esc_html((string) $dailyQty) . '</td>';

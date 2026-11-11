@@ -536,6 +536,54 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertNoAddressesLogged();
     }
 
+    public function test_region_buckets_group_french_german_and_english_labels(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $orders = [];
+        $meta = [];
+        $add = function ($id, $name, $itemMeta) use (&$orders, &$meta, $paid) {
+            $orders[] = [
+                'id' => $id,
+                'post_date' => '2026-11-28 10:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item($id * 10, $name, $id, 0, 1, '10.00', '10.00', '0.77'),
+                ],
+            ];
+            $itemMeta['_intersoccer_canonical_activity_type'] = 'camp';
+            $meta[$id * 10] = $itemMeta;
+        };
+        $add(801, 'Canonical Geneva Camp', ['_intersoccer_canonical_canton' => 'geneva']);
+        $add(802, 'French Label Camp', ['Canton / Région' => 'Genève']);
+        $add(803, 'German Label Camp', ['Kanton / Region' => 'Genf']);
+        $add(804, 'English Geneva Camp', ['Canton / Region' => 'Geneva']);
+        $add(805, 'French Basel Camp', ['Canton / Region' => 'Bâle']);
+        $add(806, 'English Basel Camp', ['pa_canton-region' => 'Basel']);
+        $add(807, 'Product Region Camp', []);
+        $add(808, 'Canonical Vaud Camp', [
+            '_intersoccer_canonical_canton' => 'vaud',
+            'Canton / Région' => 'Genf',
+        ]);
+        $this->wpdb->orders = $orders;
+        $this->wpdb->itemMeta = $meta;
+        \InterSoccerRRTestMeta::$data[807]['attribute_pa_canton-region'] = 'Zurich';
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $this->assertSame(4, $this->regionByLabel($digest['daily'], 'Geneva')['quantity']);
+        $this->assertSame(2, $this->regionByLabel($digest['daily'], 'Basel-Stadt')['quantity']);
+        $this->assertSame(1, $this->regionByLabel($digest['daily'], 'Zurich')['quantity']);
+        $this->assertSame(1, $this->regionByLabel($digest['daily'], 'Vaud')['quantity']);
+
+        $html = $service->renderHtml($digest);
+        $this->assertStringContainsString('<h3>Regions</h3>', $html);
+        $this->assertStringContainsString('Geneva', $html);
+        $this->assertStringContainsString('Basel-Stadt', $html);
+        $this->assertStringContainsString('Zurich', $html);
+        $this->assertStringNotContainsString('Genève', $html);
+        $this->assertStringNotContainsString('Genf', $html);
+        $this->assertStringNotContainsString('Bâle', $html);
+    }
+
     public function test_product_lines_reconcile_to_type_totals_and_the_booking_report(): void {
         $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
         $this->seedCatalogue();
@@ -1278,6 +1326,16 @@ class DailyBfSalesEmailTest extends TestCase {
     private function ymdFromUtc(string $local): string {
         $stamp = (new \DateTimeImmutable($local, new \DateTimeZone('UTC')))->getTimestamp();
         return DailyBfSalesEmail::zurichYmdFromTimestamp($stamp);
+    }
+
+    private function regionByLabel(array $summary, string $label): array {
+        $regions = isset($summary['regions']) && is_array($summary['regions']) ? $summary['regions'] : [];
+        foreach ($regions as $region) {
+            if (is_array($region) && ($region['label'] ?? '') === $label) {
+                return $region;
+            }
+        }
+        $this->fail('Missing region ' . $label);
     }
 
     private function typeByLabel(array $summary, string $label): array {

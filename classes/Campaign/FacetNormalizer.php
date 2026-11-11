@@ -108,7 +108,16 @@ class FacetNormalizer {
 			$out['venue'] = $this->normalize_venue($venue);
 		}
 
-		$region = $this->first_meta($raw, ['Canton / Region', 'pa_canton-region', 'attribute_pa_canton-region']);
+		$region = $this->first_meta($raw, [
+			'Canton / Region',
+			'Canton / Région',
+			'Canton / région',
+			'Canton Region',
+			'Kanton / Region',
+			'Kanton Region',
+			'pa_canton-region',
+			'attribute_pa_canton-region',
+		]);
 		if (empty($from_canonical['region']) && $out['region'] === 'not_recorded' && $region !== '') {
 			$out['region'] = $this->normalize_region($region);
 		}
