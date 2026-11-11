@@ -297,7 +297,14 @@ function intersoccer_player_camp_status_build_roster_index(array $rows) {
 			&& !intersoccer_roster_report_status_counts_as_booked($row['order_status'] ?? '')) {
 			continue;
 		}
+		$remaining = function_exists('intersoccer_roster_report_row_remaining_booked_quantity')
+			? (float) intersoccer_roster_report_row_remaining_booked_quantity($row)
+			: 1.0;
+		if ($remaining <= 0) {
+			continue;
+		}
 		$summary = intersoccer_player_camp_status_booking_summary($row);
+		$summary['quantity'] = $remaining;
 		$customer_id = (int) ($row['customer_id'] ?? 0);
 		$player_index = isset($row['player_index']) ? (int) $row['player_index'] : null;
 
@@ -607,6 +614,12 @@ function intersoccer_player_camp_status_load_camp_roster_rows($year, $season_typ
 
 	if (function_exists('intersoccer_roster_report_rows_apply_live_order_status')) {
 		$rows = intersoccer_roster_report_rows_apply_live_order_status($rows);
+	}
+	if (function_exists('intersoccer_roster_report_prime_line_refund_item_results_from_rows')) {
+		intersoccer_roster_report_prime_line_refund_item_results_from_rows($rows);
+	}
+	if (function_exists('intersoccer_roster_report_stamp_line_fully_refunded_on_rows')) {
+		$rows = intersoccer_roster_report_stamp_line_fully_refunded_on_rows($rows);
 	}
 
 	foreach ($rows as &$row) {

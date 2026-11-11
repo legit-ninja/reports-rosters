@@ -732,6 +732,11 @@ if (!function_exists('intersoccer_roster_report_prime_line_refund_item_results_f
 			$GLOBALS['intersoccer_rr_line_refund_item_result_cache'] = [];
 		}
 		$item_cache = &$GLOBALS['intersoccer_rr_line_refund_item_result_cache'];
+		if (!isset($GLOBALS['intersoccer_rr_line_refund_remaining_qty_cache'])
+			|| !is_array($GLOBALS['intersoccer_rr_line_refund_remaining_qty_cache'])) {
+			$GLOBALS['intersoccer_rr_line_refund_remaining_qty_cache'] = [];
+		}
+		$qty_cache = &$GLOBALS['intersoccer_rr_line_refund_remaining_qty_cache'];
 		if (defined('INTERSOCCER_RR_TESTING') && INTERSOCCER_RR_TESTING) {
 			foreach ($rows as $row) {
 				if (!is_array($row)) {
@@ -740,6 +745,7 @@ if (!function_exists('intersoccer_roster_report_prime_line_refund_item_results_f
 				$order_item_id = (int) ( $row['order_item_id'] ?? 0 );
 				if ($order_item_id > 0) {
 					unset($item_cache[ $order_item_id ]);
+					unset($qty_cache[ $order_item_id ]);
 				}
 			}
 		}
@@ -753,6 +759,7 @@ if (!function_exists('intersoccer_roster_report_prime_line_refund_item_results_f
 				$order_item_id = (int) ( $row['order_item_id'] ?? 0 );
 				if ($order_item_id > 0 && !empty($GLOBALS['intersoccer_test_line_fully_refunded_item_ids'][ $order_item_id ])) {
 					$item_cache[ $order_item_id ] = true;
+					$qty_cache[ $order_item_id ] = 0.0;
 				}
 			}
 		}
@@ -825,9 +832,52 @@ if (!function_exists('intersoccer_roster_report_prime_line_refund_item_results_f
 				continue;
 			}
 			foreach ($item_ids as $order_item_id) {
-				$item_cache[ $order_item_id ] = $service->isOrderItemFullyRefunded($order, (int) $order_item_id);
+				$order_item_id = (int) $order_item_id;
+				$item_cache[ $order_item_id ] = $service->isOrderItemFullyRefunded($order, $order_item_id);
+				$remaining = $service->getOrderItemRemainingQuantity($order, $order_item_id);
+				if ($remaining !== null) {
+					$qty_cache[ $order_item_id ] = $remaining;
+				}
 			}
+			unset($order);
 		}
+	}
+}
+
+if (!function_exists('intersoccer_roster_report_row_remaining_booked_quantity')) {
+	/**
+	 * Seats still booked on a roster line after a full or partial refund.
+	 *
+	 * Fully refunded lines are 0. A line with no refund information counts as 1.
+	 * When the row carries quantity and qty_refunded, those values are used if the
+	 * order has not already supplied a remaining quantity.
+	 *
+	 * @param array<string,mixed> $row
+	 */
+	function intersoccer_roster_report_row_remaining_booked_quantity(array $row) {
+		if (intersoccer_roster_report_row_line_is_fully_refunded($row)) {
+			return 0.0;
+		}
+
+		$order_item_id = (int) ( $row['order_item_id'] ?? 0 );
+		if ($order_item_id > 0
+			&& isset($GLOBALS['intersoccer_rr_line_refund_remaining_qty_cache'])
+			&& is_array($GLOBALS['intersoccer_rr_line_refund_remaining_qty_cache'])
+			&& array_key_exists($order_item_id, $GLOBALS['intersoccer_rr_line_refund_remaining_qty_cache'])) {
+			return max(0.0, (float) $GLOBALS['intersoccer_rr_line_refund_remaining_qty_cache'][ $order_item_id ]);
+		}
+
+		if (isset($row['quantity']) || isset($row['qty_refunded'])) {
+			$qty = isset($row['quantity']) ? (float) $row['quantity'] : 1.0;
+			$refunded = isset($row['qty_refunded']) ? abs((float) $row['qty_refunded']) : 0.0;
+			if ($qty < 0) {
+				$qty = 0.0;
+			}
+
+			return max(0.0, $qty - $refunded);
+		}
+
+		return 1.0;
 	}
 }
 
@@ -1223,6 +1273,7 @@ if (!function_exists('intersoccer_roster_report_reset_line_refund_check_state'))
 	function intersoccer_roster_report_reset_line_refund_check_state() {
 		unset($GLOBALS['intersoccer_rr_line_refund_order_cache']);
 		unset($GLOBALS['intersoccer_rr_line_refund_item_result_cache']);
+		unset($GLOBALS['intersoccer_rr_line_refund_remaining_qty_cache']);
 		unset($GLOBALS['intersoccer_rr_orders_with_refunds']);
 		unset($GLOBALS['intersoccer_rr_orders_refund_presence_checked']);
 	}

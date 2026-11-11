@@ -619,4 +619,19 @@ class RosterRefundServiceTest extends TestCase {
             $this->assertContains($status, $captured_values);
         }
     }
+
+    public function test_remaining_quantity_subtracts_refunded_units(): void {
+        $line = Mockery::mock('WC_Order_Item_Product');
+        $line->shouldReceive('get_quantity')->andReturn(3.0);
+        $line->shouldReceive('get_total')->andReturn(300.0);
+        $line->shouldReceive('get_subtotal')->andReturn(300.0);
+
+        $order = Mockery::mock('WC_Order');
+        $order->shouldReceive('get_item')->with(40)->andReturn($line);
+        $order->shouldReceive('get_qty_refunded_for_item')->with(40)->andReturn(-1.0);
+
+        $service = new RosterRefundService(new Logger());
+
+        $this->assertSame(2.0, $service->getOrderItemRemainingQuantity($order, 40));
+    }
 }

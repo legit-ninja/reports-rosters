@@ -251,6 +251,40 @@ class RosterRefundService {
     }
 
     /**
+     * Quantity still booked on a line after refunds.
+     *
+     * Null when the line cannot be read. Zero when the line is fully refunded.
+     *
+     * @param object $order
+     * @return float|null
+     */
+    public function getOrderItemRemainingQuantity($order, int $item_id) {
+        if ($item_id <= 0 || !is_object($order) || !is_callable([$order, 'get_item'])) {
+            return null;
+        }
+
+        $item = $order->get_item($item_id);
+        if (!$item || !is_callable([$item, 'get_quantity'])) {
+            return null;
+        }
+
+        if ($this->isOrderItemFullyRefunded($order, $item_id)) {
+            return 0.0;
+        }
+
+        $item_qty = (float) $item->get_quantity();
+        $qty_refunded = 0.0;
+        if (is_callable([$order, 'get_qty_refunded_for_item'])) {
+            $qty_refunded = abs((float) $order->get_qty_refunded_for_item($item_id));
+        }
+        if ($item_qty <= 0) {
+            return 1.0;
+        }
+
+        return max(0.0, $item_qty - $qty_refunded);
+    }
+
+    /**
      * Sum refunded line totals for an original order item across refund orders.
      *
      * @param \WC_Order $order
