@@ -51,14 +51,18 @@ class CampReport extends AbstractReport {
     public function generate($filters = []) {
         $rosters_table = $this->db->prefix . 'intersoccer_rosters';
         
-        // Add camp-specific filter
+        // event_type and payment_status filter on columns the roster table does not have
+        // (product_type, payment_status); this report does not offer them.
+        unset($filters['event_type'], $filters['payment_status']);
         [$where_conditions, $params] = $this->apply_filters($filters);
-        // Literal percent signs cannot sit in a string passed to prepare().
-        // Pass the LIKE patterns as %s arguments so %camp%/%summer% stay wildcards.
-        $where_conditions[] = '(product_type LIKE %s OR product_name LIKE %s OR product_name LIKE %s)';
+        // Camps: activity type or product name. Literal percent signs cannot sit in a string passed
+        // to prepare(), so the LIKE patterns are %s arguments and %camp%/%summer% stay wildcards.
+        $where_conditions[] = '(activity_type LIKE %s OR product_name LIKE %s OR product_name LIKE %s)';
         $params[] = '%camp%';
         $params[] = '%camp%';
         $params[] = '%summer%';
+        // Placeholder rows hold a roster slot, not a participant.
+        $where_conditions[] = 'COALESCE(is_placeholder, 0) = 0';
         
         $where_clause = 'WHERE ' . implode(' AND ', $where_conditions);
         
@@ -90,22 +94,24 @@ class CampReport extends AbstractReport {
     private function get_camp_details($where_clause, $params) {
         $rosters_table = $this->db->prefix . 'intersoccer_rosters';
         
+        // Roster columns: product_name (camp name), age, final_price, player_gender/gender, order_status.
+        $gender = "LOWER(COALESCE(NULLIF(player_gender, ''), gender))";
         $sql = "SELECT 
-                    event_name,
+                    product_name AS event_name,
                     venue,
                     MIN(start_date) as start_date,
                     MAX(end_date) as end_date,
                     COUNT(*) as participant_count,
-                    MIN(player_age) as min_age,
-                    MAX(player_age) as max_age,
-                    AVG(player_age) as avg_age,
-                    SUM(order_total) as total_revenue,
-                    SUM(CASE WHEN gender = 'male' THEN 1 ELSE 0 END) as male_count,
-                    SUM(CASE WHEN gender = 'female' THEN 1 ELSE 0 END) as female_count,
-                    SUM(CASE WHEN payment_status = 'completed' THEN 1 ELSE 0 END) as paid_count
+                    MIN(NULLIF(age, 0)) as min_age,
+                    MAX(NULLIF(age, 0)) as max_age,
+                    AVG(NULLIF(age, 0)) as avg_age,
+                    SUM(final_price) as total_revenue,
+                    SUM(CASE WHEN {$gender} = 'male' THEN 1 ELSE 0 END) as male_count,
+                    SUM(CASE WHEN {$gender} = 'female' THEN 1 ELSE 0 END) as female_count,
+                    SUM(CASE WHEN order_status = 'completed' THEN 1 ELSE 0 END) as paid_count
                 FROM {$rosters_table}
                 {$where_clause}
-                GROUP BY event_name, venue
+                GROUP BY product_name, venue
                 ORDER BY start_date ASC, event_name";
         
         if (!empty($params)) {
@@ -113,6 +119,10 @@ class CampReport extends AbstractReport {
         }
         
         $results = $this->db->get_results($sql);
+        if (!is_array($results)) {
+            $this->log_query_failure('camp_details');
+            return [];
+        }
         
         // Format results
         foreach ($results as &$camp) {
@@ -154,12 +164,12 @@ class CampReport extends AbstractReport {
         $rosters_table = $this->db->prefix . 'intersoccer_rosters';
         
         $sql = "SELECT 
-                    COUNT(DISTINCT event_name) as total_camps,
+                    COUNT(DISTINCT product_name) as total_camps,
                     COUNT(*) as total_participants,
                     COUNT(DISTINCT venue) as venues_used,
-                    SUM(order_total) as total_revenue,
-                    AVG(order_total) as avg_camp_price,
-                    AVG(player_age) as avg_participant_age,
+                    SUM(final_price) as total_revenue,
+                    AVG(final_price) as avg_camp_price,
+                    AVG(NULLIF(age, 0)) as avg_participant_age,
                     MIN(start_date) as earliest_camp,
                     MAX(end_date) as latest_camp
                 FROM {$rosters_table}
@@ -170,6 +180,19 @@ class CampReport extends AbstractReport {
         }
         
         $result = $this->db->get_row($sql);
+        if (!is_object($result)) {
+            $this->log_query_failure('camp_statistics');
+            $result = (object) [
+                'total_camps' => 0,
+                'total_participants' => 0,
+                'venues_used' => 0,
+                'total_revenue' => 0,
+                'avg_camp_price' => 0,
+                'avg_participant_age' => null,
+                'earliest_camp' => null,
+                'latest_camp' => null,
+            ];
+        }
         
         // Get most popular venue
         $popular_venue_sql = "SELECT venue, COUNT(*) as count
@@ -186,14 +209,20 @@ class CampReport extends AbstractReport {
         $popular_venue = $this->db->get_row($popular_venue_sql);
         
         return [
-            'total_camps' => intval($result->total_camps),
-            'total_participants' => intval($result->total_participants),
-            'venues_used' => intval($result->venues_used),
-            'total_revenue' => $this->format_currency($result->total_revenue),
-            'average_camp_price' => $this->format_currency($result->avg_camp_price),
-            'average_participant_age' => round($result->avg_participant_age, 1) . ' years',
-            'camp_season' => $this->format_date($result->earliest_camp) . ' to ' . $this->format_date($result->latest_camp),
-            'most_popular_venue' => $popular_venue ? $popular_venue->venue . ' (' . $popular_venue->count . ' participants)' : 'N/A'
+            'total_camps' => (int) ($result->total_camps ?? 0),
+            'total_participants' => (int) ($result->total_participants ?? 0),
+            'venues_used' => (int) ($result->venues_used ?? 0),
+            'total_revenue' => $this->format_currency($result->total_revenue ?? 0),
+            'average_camp_price' => $this->format_currency($result->avg_camp_price ?? 0),
+            'average_participant_age' => ($result->avg_participant_age ?? null) !== null
+                ? round((float) $result->avg_participant_age, 1) . ' years'
+                : 'N/A',
+            'camp_season' => (!empty($result->earliest_camp) && !empty($result->latest_camp))
+                ? $this->format_date($result->earliest_camp) . ' to ' . $this->format_date($result->latest_camp)
+                : 'N/A',
+            'most_popular_venue' => is_object($popular_venue) && isset($popular_venue->venue)
+                ? $popular_venue->venue . ' (' . (int) ($popular_venue->count ?? 0) . ' participants)'
+                : 'N/A'
         ];
     }
     
@@ -228,6 +257,10 @@ class CampReport extends AbstractReport {
         }
         
         $weekly_attendance = $this->db->get_results($weekly_sql);
+        if (!is_array($weekly_attendance)) {
+            $this->log_query_failure('camp_weekly_attendance');
+            $weekly_attendance = [];
+        }
 
         $no_date_label = __('No date', 'intersoccer-reports-rosters');
         foreach ($weekly_attendance as &$row) {
@@ -247,17 +280,17 @@ class CampReport extends AbstractReport {
         // Age group distribution
         $age_distribution_sql = "SELECT 
                                     CASE 
-                                        WHEN player_age <= 6 THEN 'U7'
-                                        WHEN player_age <= 8 THEN 'U9'
-                                        WHEN player_age <= 10 THEN 'U11'
-                                        WHEN player_age <= 12 THEN 'U13'
-                                        WHEN player_age <= 14 THEN 'U15'
+                                        WHEN age <= 6 THEN 'U7'
+                                        WHEN age <= 8 THEN 'U9'
+                                        WHEN age <= 10 THEN 'U11'
+                                        WHEN age <= 12 THEN 'U13'
+                                        WHEN age <= 14 THEN 'U15'
                                         ELSE '15+'
-                                    END as age_group,
+                                    END as age_band,
                                     COUNT(*) as count
                                  FROM {$rosters_table}
-                                 {$where_clause} AND player_age IS NOT NULL
-                                 GROUP BY age_group
+                                 {$where_clause} AND age IS NOT NULL AND age > 0
+                                 GROUP BY age_band
                                  ORDER BY count DESC";
         
         if (!empty($params)) {
@@ -265,6 +298,16 @@ class CampReport extends AbstractReport {
         }
         
         $age_distribution = $this->db->get_results($age_distribution_sql);
+        if (!is_array($age_distribution)) {
+            $this->log_query_failure('camp_age_distribution');
+            $age_distribution = [];
+        }
+        // Keep the age_group key callers read.
+        foreach ($age_distribution as $band_row) {
+            if (is_object($band_row) && isset($band_row->age_band) && !isset($band_row->age_group)) {
+                $band_row->age_group = $band_row->age_band;
+            }
+        }
         
         return [
             'weekly_attendance' => $weekly_attendance,
@@ -272,6 +315,16 @@ class CampReport extends AbstractReport {
         ];
     }
     
+    /**
+     * Log a failed report query once, with the database error (no personal data).
+     */
+    private function log_query_failure(string $query): void {
+        $error = isset($this->db->last_error) ? (string) $this->db->last_error : '';
+        if (function_exists('error_log')) {
+            error_log('InterSoccer CampReport: ' . $query . ' query failed' . ($error !== '' ? ': ' . $error : ''));
+        }
+    }
+
     /**
      * Get summary statistics for camps
      * 
