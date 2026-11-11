@@ -403,7 +403,8 @@ class DailyBfSalesEmailTest extends TestCase {
             $GLOBALS['intersoccer_test_post_titles'],
             $GLOBALS['intersoccer_test_post_parents'],
             $GLOBALS['intersoccer_rr_bf_coupon_ids'],
-            $GLOBALS['intersoccer_rr_bf_coupons']
+            $GLOBALS['intersoccer_rr_bf_coupons'],
+            $GLOBALS['intersoccer_rr_bf_hpos_enabled']
         );
         \InterSoccerRRTestMeta::reset();
 
@@ -1934,6 +1935,41 @@ class DailyBfSalesEmailTest extends TestCase {
             $this->assertStringNotContainsString("'wc-on-hold'", $sql);
         } finally {
             unset($GLOBALS['intersoccer_test_get_posts_callback'], $GLOBALS['intersoccer_test_post_titles']);
+        }
+    }
+
+    public function test_order_admin_link_uses_post_edit_when_hpos_is_off(): void {
+        $this->loadHposClassesWithUsageOff();
+        $this->assertTrue(class_exists('Automattic\\WooCommerce\\Internal\\DataStores\\Orders\\OrdersTableDataStore', false));
+        $this->assertFalse(\Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled());
+
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $this->wpdb->orders = [[
+            'id' => 880,
+            'status' => 'wc-failed',
+            'post_date' => '2026-11-28 10:00:00',
+            'date_paid' => '',
+            'items' => [
+                $this->item(8801, 'Failed Link Camp', 880, 0, 1, '10.00', '10.00', '0.77'),
+            ],
+        ]];
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $this->assertCount(1, $digest['attention_orders']);
+        $url = (string) $digest['attention_orders'][0]['admin_url'];
+        $this->assertStringContainsString('post.php?post=880&action=edit', $url);
+        $this->assertStringNotContainsString('page=wc-orders', $url);
+        $html = $service->renderHtml($digest);
+        $this->assertStringContainsString('post.php?post=880&action=edit', $html);
+        $this->assertStringNotContainsString('page=wc-orders', $html);
+    }
+
+    private function loadHposClassesWithUsageOff(): void {
+        $GLOBALS['intersoccer_rr_bf_hpos_enabled'] = false;
+        if (!class_exists('Automattic\\WooCommerce\\Internal\\DataStores\\Orders\\OrdersTableDataStore', false)) {
+            eval('namespace Automattic\WooCommerce\Internal\DataStores\Orders; class OrdersTableDataStore {}');
+        }
+        if (!class_exists('Automattic\\WooCommerce\\Utilities\\OrderUtil', false)) {
+            eval('namespace Automattic\WooCommerce\Utilities; class OrderUtil { public static function custom_orders_table_usage_is_enabled() { return !empty($GLOBALS["intersoccer_rr_bf_hpos_enabled"]); } }');
         }
     }
 

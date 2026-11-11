@@ -1089,7 +1089,8 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * Legacy edit link, or the HPOS orders screen when that datastore exists.
+     * Legacy edit link, or the HPOS orders screen when that storage is on.
+     * The orders-table class can be loaded while HPOS is still off.
      *
      * @param int $orderId
      * @return string
@@ -1099,10 +1100,21 @@ class DailyBfSalesEmail {
         if ($orderId <= 0 || !function_exists('admin_url')) {
             return '';
         }
-        if (class_exists('Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore')) {
+        if ($this->hposOrdersEnabled()) {
             return admin_url('admin.php?page=wc-orders&action=edit&id=' . $orderId);
         }
         return admin_url('post.php?post=' . $orderId . '&action=edit');
+    }
+
+    /**
+     * @return bool
+     */
+    private function hposOrdersEnabled() {
+        $class = 'Automattic\\WooCommerce\\Utilities\\OrderUtil';
+        if (!class_exists($class) || !method_exists($class, 'custom_orders_table_usage_is_enabled')) {
+            return false;
+        }
+        return (bool) call_user_func([$class, 'custom_orders_table_usage_is_enabled']);
     }
 
     /**
