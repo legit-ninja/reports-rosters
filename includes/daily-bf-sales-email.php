@@ -670,7 +670,7 @@ class DailyBfSalesEmail {
                 ],
                 [
                     'label' => 'Sample Tournament B',
-                    'season' => 'Summer',
+                    'season' => 'Easter',
                     'type' => 'Tournament',
                     'region' => 'Sample Region C',
                     'count' => 1,

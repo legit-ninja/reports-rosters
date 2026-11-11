@@ -1984,6 +1984,32 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringContainsString('Sample Course D', $mail['message']);
         $this->assertStringContainsString('Sample Tournament B', $mail['message']);
         $this->assertStringContainsString('>Sample Camp F<', $mail['message']);
+        $scopedSeasons = ['Winter', 'Spring', 'Easter'];
+        foreach (['low_bookings', 'zero_bookings'] as $list) {
+            $this->assertNotEmpty($digest[$list], $list);
+            foreach ($digest[$list] as $row) {
+                $this->assertTrue(
+                    in_array((string) ($row['season'] ?? ''), $scopedSeasons, true),
+                    (string) ($row['label'] ?? $list)
+                );
+            }
+        }
+        $sampleTournament = null;
+        foreach ($digest['low_bookings'] as $row) {
+            if (($row['label'] ?? '') === 'Sample Tournament B') {
+                $sampleTournament = $row;
+            }
+        }
+        $this->assertIsArray($sampleTournament);
+        $this->assertSame('Easter', $sampleTournament['season']);
+        $this->assertSame('Tournament', $sampleTournament['type']);
+        $lowHtml = $this->htmlSection($mail['message'], '<h3>Low bookings</h3>', '<h3>Zero bookings</h3>');
+        $zeroHtml = $this->htmlSection($mail['message'], '<h3>Zero bookings</h3>', '<h2>Running total since campaign start</h2>');
+        $this->assertStringContainsString('>Sample Tournament B</td><td>Easter</td>', $lowHtml);
+        $this->assertStringNotContainsString('Summer', $lowHtml);
+        $this->assertStringNotContainsString('Autumn', $lowHtml);
+        $this->assertStringNotContainsString('Summer', $zeroHtml);
+        $this->assertStringNotContainsString('Autumn', $zeroHtml);
         $this->assertStringContainsString('>0<', $mail['message']);
         $this->assertStringContainsString('On hold yesterday: 2 orders, 45.00 CHF inc-VAT.', $mail['message']);
         $this->assertStringContainsString('On hold in the campaign: 3 orders, 90.50 CHF inc-VAT.', $mail['message']);
