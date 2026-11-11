@@ -47,6 +47,8 @@ class DailyBfSalesEmail {
      */
     const COMPOSITE_SEASON_TYPE_LABELS = true;
     const COMPOSITE_SEASON_TYPE_FILTER = 'intersoccer_rr_daily_bf_composite_season_type_labels';
+    const ATTENTION_ORDER_STATUSES = ['wc-failed', 'wc-pending'];
+    const ATTENTION_ORDER_STATUSES_FILTER = 'intersoccer_rr_daily_bf_attention_order_statuses';
 
     /**
      * @var self|null
@@ -520,6 +522,7 @@ class DailyBfSalesEmail {
             'campaign' => $campaign,
             'daily_on_hold' => $dailyOnHold,
             'campaign_on_hold' => $campaignOnHold,
+            'attention_orders' => $this->attentionOrders($reportDate),
             'used_created_fallback' => false,
             'final_campaign' => $finalCampaign,
             'booking_report_url' => $this->bookingReportUrl($reportDate),
@@ -554,6 +557,9 @@ class DailyBfSalesEmail {
         }
         $html .= '<h3>Products</h3>';
         $html .= $this->renderComparisonTable('Product', $daily, $campaign, 'products', true);
+        $html .= '<h3>Failed and pending orders</h3>';
+        $attention = (isset($digest['attention_orders']) && is_array($digest['attention_orders'])) ? $digest['attention_orders'] : [];
+        $html .= $this->renderAttentionOrders($attention);
         if (!empty($digest['final_campaign'])) {
             $html .= '<p>' . esc_html(self::FINAL_CAMPAIGN_LINE) . '</p>';
         }
@@ -758,6 +764,19 @@ class DailyBfSalesEmail {
     /**
      * @return bool
      */
+    /**
+     * Failed and pending-payment statuses. One filter changes the set.
+     *
+     * @return array<int,string>
+     */
+    public static function attentionOrderStatuses() {
+        $raw = function_exists('apply_filters')
+            ? apply_filters(self::ATTENTION_ORDER_STATUSES_FILTER, self::ATTENTION_ORDER_STATUSES)
+            : self::ATTENTION_ORDER_STATUSES;
+        $clean = self::sanitizeOrderStatuses($raw);
+        return $clean !== [] ? $clean : self::ATTENTION_ORDER_STATUSES;
+    }
+
     public static function compositeSeasonTypeLabels() {
         $default = self::COMPOSITE_SEASON_TYPE_LABELS;
         if (!function_exists('apply_filters')) {
@@ -910,6 +929,108 @@ class DailyBfSalesEmail {
     private function loadOnHoldReport($startYmd, $endYmd) {
         $report = $this->loadReport($startYmd, $endYmd, ['wc-on-hold']);
         return is_array($report) ? $report : [];
+    }
+
+    /**
+     * Failed and pending orders created on the reported Zurich day.
+     * The list keeps the order number, created time, and admin link only.
+     *
+     * @param string $ymd
+     * @return array<int,array{order_number:string,created_at:string,admin_url:string}>
+     */
+    private function attentionOrders($ymd) {
+        $bounds = self::rangeBounds($ymd, $ymd, $this->siteTimezone());
+        $report = $this->reportService()->getFinancialBookingReport($ymd, $ymd, '', '', [
+            'date_basis' => 'created_only',
+            'order_statuses' => self::attentionOrderStatuses(),
+            'created_start_local' => $bounds['created_start_local'],
+            'created_end_local' => $bounds['created_end_local'],
+        ]);
+        $rows = (isset($report['data']) && is_array($report['data'])) ? $report['data'] : [];
+        $seen = [];
+        $list = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $orderId = (int) ($row['order_id'] ?? 0);
+            if ($orderId <= 0 || isset($seen[$orderId])) {
+                continue;
+            }
+            $seen[$orderId] = true;
+            $list[] = [
+                'order_number' => (string) $orderId,
+                'created_at' => $this->zurichCreatedLabel(isset($row['order_date_local']) ? (string) $row['order_date_local'] : ''),
+                'admin_url' => $this->orderAdminUrl($orderId),
+            ];
+        }
+        usort($list, function ($a, $b) {
+            return strcmp((string) $a['order_number'], (string) $b['order_number']);
+        });
+        return $list;
+    }
+
+    /**
+     * @param string $local Site-local Y-m-d H:i:s.
+     * @return string
+     */
+    private function zurichCreatedLabel($local) {
+        $local = trim((string) $local);
+        if ($local === '') {
+            return '';
+        }
+        try {
+            $dt = new \DateTimeImmutable($local, $this->siteTimezone());
+        } catch (\Exception $e) {
+            return '';
+        }
+        return $dt->setTimezone(new \DateTimeZone(self::TIMEZONE))->format('Y-m-d H:i');
+    }
+
+    /**
+     * Legacy edit link, or the HPOS orders screen when that datastore exists.
+     *
+     * @param int $orderId
+     * @return string
+     */
+    private function orderAdminUrl($orderId) {
+        $orderId = (int) $orderId;
+        if ($orderId <= 0 || !function_exists('admin_url')) {
+            return '';
+        }
+        if (class_exists('Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore')) {
+            return admin_url('admin.php?page=wc-orders&action=edit&id=' . $orderId);
+        }
+        return admin_url('post.php?post=' . $orderId . '&action=edit');
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $orders
+     * @return string
+     */
+    private function renderAttentionOrders(array $orders) {
+        if ($orders === []) {
+            return '<p>No failed or pending orders were created on this day.</p>';
+        }
+        $html = '<table><thead><tr><th>Order</th><th>Created (Europe/Zurich)</th><th>Admin</th></tr></thead><tbody>';
+        foreach ($orders as $order) {
+            if (!is_array($order)) {
+                continue;
+            }
+            $number = (string) ($order['order_number'] ?? '');
+            $created = (string) ($order['created_at'] ?? '');
+            $url = (string) ($order['admin_url'] ?? '');
+            $html .= '<tr>';
+            $html .= '<td>' . esc_html($number) . '</td>';
+            $html .= '<td>' . esc_html($created) . '</td>';
+            $html .= '<td>';
+            if ($url !== '') {
+                $html .= '<a href="' . esc_url($url) . '">Edit order</a>';
+            }
+            $html .= '</td></tr>';
+        }
+        $html .= '</tbody></table>';
+        return $html;
     }
 
     /**

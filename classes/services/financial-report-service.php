@@ -71,8 +71,10 @@ class FinancialReportService {
      *   date when no paid timestamp is stored. `paid_only` selects by paid timestamp
      *   and does not fall back to the created date. Bounds are paid_start_unix
      *   (inclusive), paid_end_unix (exclusive), created_start_local, and created_end_local.
-     * - order_statuses: used only when date_basis is `paid_only`. The default
-     *   booking-report status list is left in place for every other basis.
+     * - order_statuses: used only when date_basis is `paid_only` or `created_only`.
+     *   `created_only` selects by created_start_local (inclusive) and created_end_local
+     *   (exclusive) and does not require a paid date. Every other basis keeps the
+     *   booking-report status list.
      *
      * Net, discount, and refund math is unchanged. The paid basis only changes which
      * rows are read and adds raw amount fields used by the daily sales email.
@@ -141,6 +143,22 @@ class FinancialReportService {
                     " AND ((paid_meta.meta_value IS NOT NULL AND paid_meta.meta_value <> '' AND paid_meta.meta_value <> '0' AND CAST(paid_meta.meta_value AS UNSIGNED) >= %d AND CAST(paid_meta.meta_value AS UNSIGNED) < %d) OR ((paid_meta.meta_value IS NULL OR paid_meta.meta_value = '' OR paid_meta.meta_value = '0') AND p.post_date >= %s AND p.post_date < %s))",
                     $paid_start,
                     $paid_end,
+                    $created_start,
+                    $created_end
+                );
+            }
+        } elseif ($date_basis === 'created_only') {
+            $custom_status = $this->orderStatusInSql(isset($options['order_statuses']) ? $options['order_statuses'] : null);
+            if ($custom_status !== '') {
+                $status_in = $custom_status;
+            }
+            $created_start = isset($options['created_start_local']) ? (string) $options['created_start_local'] : '';
+            $created_end = isset($options['created_end_local']) ? (string) $options['created_end_local'] : '';
+            if ($created_start === '' || $created_end === '') {
+                $date_where = ' AND 1=0';
+            } else {
+                $date_where = $this->wpdb->prepare(
+                    ' AND p.post_date >= %s AND p.post_date < %s',
                     $created_start,
                     $created_end
                 );
@@ -357,6 +375,9 @@ class FinancialReportService {
             if ($include_line_meta) {
                 $data[count($data) - 1]['line_meta'] = $meta_map;
                 $data[count($data) - 1]['order_item_id'] = (int) $row->order_item_id;
+            }
+            if ($date_basis !== 'post_date') {
+                $data[count($data) - 1]['order_date_local'] = (string) $row->order_date;
             }
 
             $totals['base_price'] += $base_price;

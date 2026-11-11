@@ -118,7 +118,13 @@ class DailyBfSalesEmailFixtureWpdb extends \InterSoccerTestWpdb {
         $query = (string) $query;
         $this->queries[] = $query;
         if (strpos($query, "post_type = 'shop_order'") !== false) {
-            return $this->bookingRows($query);
+            if (strpos($query, '_date_paid') !== false) {
+                return $this->bookingRows($query);
+            }
+            if (strpos($query, "'wc-failed'") !== false || strpos($query, "'wc-pending'") !== false) {
+                return $this->createdStatusRows($query);
+            }
+            return [];
         }
         if (preg_match('/order_item_id = (\d+)/', $query, $matches)) {
             return $this->metaRows((int) $matches[1]);
@@ -129,6 +135,41 @@ class DailyBfSalesEmailFixtureWpdb extends \InterSoccerTestWpdb {
     public function get_col($query = null, $x = 0) {
         $this->queries[] = (string) $query;
         return [];
+    }
+
+    private function createdStatusRows($query) {
+        if (!preg_match("/p\\.post_date >= '([^']+)' AND p\\.post_date < '([^']+)'/", $query, $created)) {
+            return [];
+        }
+        $statuses = $this->statusList($query);
+        $rows = [];
+        foreach ($this->orders as $order) {
+            $status = isset($order['status']) ? (string) $order['status'] : 'wc-completed';
+            if ($statuses !== [] && !in_array($status, $statuses, true)) {
+                continue;
+            }
+            $postDate = (string) $order['post_date'];
+            if (strcmp($postDate, $created[1]) < 0 || strcmp($postDate, $created[2]) >= 0) {
+                continue;
+            }
+            foreach ($order['items'] as $item) {
+                $rows[] = (object) [
+                    'order_id' => $order['id'],
+                    'order_date' => $order['post_date'],
+                    'order_status' => $status,
+                    'order_item_id' => $item['id'],
+                    'order_item_name' => $item['name'],
+                    'product_id' => (string) $item['product_id'],
+                    'variation_id' => (string) $item['variation_id'],
+                    'quantity' => (string) $item['qty'],
+                    'line_total' => $item['total'],
+                    'line_subtotal' => $item['subtotal'],
+                    'line_tax' => $item['tax'],
+                    'date_paid_gmt' => isset($order['date_paid']) ? (string) $order['date_paid'] : '',
+                ];
+            }
+        }
+        return $rows;
     }
 
     private function bookingRows($query) {
@@ -650,6 +691,147 @@ class DailyBfSalesEmailTest extends TestCase {
             $this->assertStringNotContainsString('<h3>Season and type</h3>', $split);
             $this->assertStringContainsString('Easter', $split);
             $this->assertStringContainsString('Spring', $split);
+        } finally {
+            unset($GLOBALS['intersoccer_test_wp_hooks']['filters'][$filter]);
+            $GLOBALS['intersoccer_test_emit_wp_hooks'] = false;
+        }
+    }
+
+    public function test_failed_and_pending_orders_list_order_number_date_and_link_only(): void {
+        $this->assertSame(['wc-failed', 'wc-pending'], DailyBfSalesEmail::ATTENTION_ORDER_STATUSES);
+        $this->assertSame(['wc-failed', 'wc-pending'], DailyBfSalesEmail::attentionOrderStatuses());
+
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $this->wpdb->orders = [
+            [
+                'id' => 711,
+                'status' => 'wc-failed',
+                'post_date' => '2026-11-28 10:30:00',
+                'date_paid' => '',
+                'items' => [
+                    $this->item(7111, 'Failed Camp', 711, 0, 1, '10.00', '10.00', '0.77'),
+                    $this->item(7112, 'Failed Camp Extra', 711, 0, 1, '5.00', '5.00', '0.39'),
+                ],
+            ],
+            [
+                'id' => 712,
+                'status' => 'wc-pending',
+                'post_date' => '2026-11-28 16:05:00',
+                'date_paid' => '',
+                'items' => [
+                    $this->item(7121, 'Pending Course', 712, 0, 1, '10.00', '10.00', '0.77'),
+                ],
+            ],
+            [
+                'id' => 713,
+                'status' => 'wc-cancelled',
+                'post_date' => '2026-11-28 11:00:00',
+                'date_paid' => '',
+                'items' => [
+                    $this->item(7131, 'Cancelled Camp', 713, 0, 1, '10.00', '10.00', '0.77'),
+                ],
+            ],
+            [
+                'id' => 714,
+                'status' => 'wc-on-hold',
+                'post_date' => '2026-11-28 12:00:00',
+                'date_paid' => '',
+                'items' => [
+                    $this->item(7141, 'Held Created Camp', 714, 0, 1, '10.00', '10.00', '0.77'),
+                ],
+            ],
+            [
+                'id' => 715,
+                'status' => 'wc-failed',
+                'post_date' => '2026-11-27 23:00:00',
+                'date_paid' => '',
+                'items' => [
+                    $this->item(7151, 'Earlier Failed Camp', 715, 0, 1, '10.00', '10.00', '0.77'),
+                ],
+            ],
+        ];
+        $this->wpdb->itemMeta = [
+            7111 => [
+                '_intersoccer_canonical_activity_type' => 'camp',
+                'Attendee Name' => 'Secret Child',
+                'Parent Phone' => '079 555 12 12',
+                'Emergency Phone' => '+41 79 123 45 67',
+            ],
+            7112 => [
+                'Attendee Name' => 'Secret Child',
+            ],
+            7121 => [
+                '_intersoccer_canonical_activity_type' => 'course',
+                'Attendee Name' => 'Pending Child',
+            ],
+        ];
+        \InterSoccerRRTestMeta::$data[711]['_billing_email'] = 'booker@example.com';
+        \InterSoccerRRTestMeta::$data[711]['_billing_phone'] = '+41 79 123 45 67';
+        \InterSoccerRRTestMeta::$data[711]['_billing_first_name'] = 'Secret Booker';
+        \InterSoccerRRTestMeta::$data[712]['_billing_email'] = 'pending@example.test';
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $numbers = [];
+        foreach ($digest['attention_orders'] as $order) {
+            $this->assertSame(['order_number', 'created_at', 'admin_url'], array_keys($order));
+            $numbers[] = $order['order_number'];
+        }
+        $this->assertSame(['711', '712'], $numbers);
+        $this->assertSame('2026-11-28 10:30', $digest['attention_orders'][0]['created_at']);
+        $this->assertStringContainsString('post.php?post=711&action=edit', $digest['attention_orders'][0]['admin_url']);
+        $this->assertStringNotContainsString('wc-orders&action=edit', $digest['attention_orders'][0]['admin_url']);
+
+        $html = $service->renderHtml($digest);
+        $this->assertStringContainsString('<h3>Failed and pending orders</h3>', $html);
+        $this->assertStringContainsString('>711<', $html);
+        $this->assertStringContainsString('2026-11-28 10:30', $html);
+        $this->assertStringContainsString('post.php?post=711&action=edit', $html);
+        $this->assertStringContainsString('>712<', $html);
+        $this->assertStringContainsString('2026-11-28 16:05', $html);
+        $this->assertStringNotContainsString('>713<', $html);
+        $this->assertStringNotContainsString('>714<', $html);
+        $this->assertStringNotContainsString('>715<', $html);
+        $this->assertStringNotContainsString('Cancelled Camp', $html);
+        $this->assertStringNotContainsString('Held Created Camp', $html);
+        $this->assertStringNotContainsString('Earlier Failed Camp', $html);
+        $this->assertStringNotContainsString('Secret Child', $html);
+        $this->assertStringNotContainsString('Secret Booker', $html);
+        $this->assertStringNotContainsString('Pending Child', $html);
+        $this->assertStringNotContainsString('booker@example.com', $html);
+        $this->assertStringNotContainsString('pending@example.test', $html);
+        $this->assertStringNotContainsString('mailto:', $html);
+        $this->assertStringNotContainsString('+41 79 123 45 67', $html);
+        $this->assertStringNotContainsString('079 555 12 12', $html);
+        $this->assertSame(0, preg_match('/\+\d[\d\s().-]{6,}/', $html));
+        $this->assertSame(0, preg_match('/\b0\d{2}[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}\b/', $html));
+        $this->assertSame(1, substr_count($html, 'post.php?post=711&action=edit'));
+
+        $attentionSql = '';
+        foreach ($this->wpdb->queries as $query) {
+            if (strpos($query, "'wc-failed'") !== false) {
+                $attentionSql = $query;
+                break;
+            }
+        }
+        $this->assertNotSame('', $attentionSql);
+        $this->assertStringContainsString("'wc-pending'", $attentionSql);
+        $this->assertStringContainsString('p.post_date', $attentionSql);
+        $this->assertStringNotContainsString('_date_paid', $attentionSql);
+        $this->assertStringNotContainsString("'wc-cancelled'", $attentionSql);
+        $this->assertStringNotContainsString("'wc-on-hold'", $attentionSql);
+
+        $GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
+        $filter = DailyBfSalesEmail::ATTENTION_ORDER_STATUSES_FILTER;
+        add_filter($filter, static function () {
+            return ['wc-failed'];
+        });
+        try {
+            $narrow = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+            $narrowNumbers = [];
+            foreach ($narrow['attention_orders'] as $order) {
+                $narrowNumbers[] = $order['order_number'];
+            }
+            $this->assertSame(['711'], $narrowNumbers);
         } finally {
             unset($GLOBALS['intersoccer_test_wp_hooks']['filters'][$filter]);
             $GLOBALS['intersoccer_test_emit_wp_hooks'] = false;
