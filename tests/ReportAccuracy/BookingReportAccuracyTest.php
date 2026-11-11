@@ -58,11 +58,11 @@ class BookingReportAccuracyTest extends TestCase {
     // ---------------------------------------------------------------- S01a / S01b / S01c (sibling double-subtract, gross)
 
     /**
-     * S01a: PV already lowered _line_subtotal by the sibling discount (subtotal = total = 420 after a 105 sibling
-     * discount on a 525 camp). Attribution recorded the same 105. The report subtracts it again.
+     * S01a: line subtotal already includes the sibling discount (subtotal = total = 420).
+     * Attribution stored 105 with a Sibling Discount name and no breakdown array.
+     * Final stays 420.
      */
     public function test_S01a_sibling_discount_not_subtracted_twice_from_final(): void {
-        $this->markTestIncomplete('Pending fix B: sibling gross/final (#113 family).');
         $order = $this->attributedOrder(101)->addLine(new FakeLineItem(1011, ['subtotal' => 420.0, 'total' => 420.0], [
             'Discount' => 'Sibling Discount',
             'Discount Amount' => '105.00',
