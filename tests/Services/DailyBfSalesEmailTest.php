@@ -265,21 +265,80 @@ class DailyBfSalesEmailTest extends TestCase {
 
     protected function setUp(): void {
         parent::setUp();
+        $this->resetDailyBfIsolation();
         $this->logger = new DailyBfSalesEmailCapturingLogger();
+    }
+
+    protected function tearDown(): void {
+        $this->resetDailyBfIsolation();
+        parent::tearDown();
+    }
+
+    /**
+     * Drop state left by earlier tests: Brain Monkey patches, the email's
+     * static registration flag, cron bookkeeping, options, and hook callbacks.
+     */
+    private function resetDailyBfIsolation(): void {
+        if (function_exists('Brain\\Monkey\\tearDown') && function_exists('Patchwork\\restoreAll')) {
+            \Brain\Monkey\tearDown();
+        }
+
+        $resetStatics = \Closure::bind(static function () {
+            self::$hooksRegistered = false;
+            self::$instance = null;
+        }, null, DailyBfSalesEmail::class);
+        $resetStatics();
+
+        if (!isset($GLOBALS['intersoccer_test_wp_hooks']) || !is_array($GLOBALS['intersoccer_test_wp_hooks'])) {
+            $GLOBALS['intersoccer_test_wp_hooks'] = ['actions' => [], 'filters' => []];
+        }
+        if (!isset($GLOBALS['intersoccer_test_wp_hooks']['actions']) || !is_array($GLOBALS['intersoccer_test_wp_hooks']['actions'])) {
+            $GLOBALS['intersoccer_test_wp_hooks']['actions'] = [];
+        }
+        if (!isset($GLOBALS['intersoccer_test_wp_hooks']['filters']) || !is_array($GLOBALS['intersoccer_test_wp_hooks']['filters'])) {
+            $GLOBALS['intersoccer_test_wp_hooks']['filters'] = [];
+        }
+        $actionHooks = [
+            DailyBfSalesEmail::CRON_HOOK,
+            'admin_menu',
+            'admin_init',
+            'update_option',
+            'update_option_' . DailyBfSalesEmail::OPTION_SETTINGS,
+        ];
+        foreach ($actionHooks as $hook) {
+            if (empty($GLOBALS['intersoccer_test_wp_hooks']['actions'][$hook]) || !is_array($GLOBALS['intersoccer_test_wp_hooks']['actions'][$hook])) {
+                continue;
+            }
+            foreach ($GLOBALS['intersoccer_test_wp_hooks']['actions'][$hook] as $priority => $callbacks) {
+                if (!is_array($callbacks)) {
+                    continue;
+                }
+                $kept = [];
+                foreach ($callbacks as $entry) {
+                    $callback = is_array($entry) ? ($entry['callback'] ?? null) : null;
+                    $owner = is_array($callback) ? ($callback[0] ?? null) : null;
+                    if ($owner === DailyBfSalesEmail::class || $owner instanceof DailyBfSalesEmail) {
+                        continue;
+                    }
+                    $kept[] = $entry;
+                }
+                $GLOBALS['intersoccer_test_wp_hooks']['actions'][$hook][$priority] = $kept;
+            }
+        }
+        foreach ([
+            DailyBfSalesEmail::PAID_ORDER_STATUSES_FILTER,
+            DailyBfSalesEmail::COMPOSITE_SEASON_TYPE_FILTER,
+            DailyBfSalesEmail::ATTENTION_ORDER_STATUSES_FILTER,
+            'wpml_object_id',
+        ] as $filterHook) {
+            unset($GLOBALS['intersoccer_test_wp_hooks']['filters'][$filterHook]);
+        }
+
         $GLOBALS['intersoccer_test_option_store'] = [];
         $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
         $GLOBALS['intersoccer_rr_bf_wp_mail_fail'] = false;
         $GLOBALS['intersoccer_rr_bf_wp_mail_error'] = '';
         $GLOBALS['intersoccer_test_emit_wp_hooks'] = false;
-        $GLOBALS['intersoccer_test_wp_schedule_event_log'] = [];
-        $GLOBALS['intersoccer_test_wp_next_scheduled'] = [];
-        $GLOBALS['intersoccer_test_wp_clear_scheduled_hook_log'] = [];
-        \InterSoccerRRTestMeta::reset();
-    }
-
-    protected function tearDown(): void {
-        $GLOBALS['intersoccer_test_emit_wp_hooks'] = false;
-        $GLOBALS['intersoccer_rr_bf_wp_mail_fail'] = false;
         $GLOBALS['intersoccer_test_wp_schedule_event_log'] = [];
         $GLOBALS['intersoccer_test_wp_next_scheduled'] = [];
         $GLOBALS['intersoccer_test_wp_clear_scheduled_hook_log'] = [];
@@ -291,7 +350,11 @@ class DailyBfSalesEmailTest extends TestCase {
             $GLOBALS['intersoccer_test_post_parents']
         );
         \InterSoccerRRTestMeta::reset();
-        parent::tearDown();
+
+        global $wpdb;
+        if (class_exists('InterSoccerTestWpdb', false)) {
+            $wpdb = new \InterSoccerTestWpdb();
+        }
     }
 
     public function test_zurich_day_bucketing_includes_dst_edges(): void {
