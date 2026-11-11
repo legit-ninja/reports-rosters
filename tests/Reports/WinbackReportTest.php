@@ -544,6 +544,25 @@ class WinbackReportTest extends TestCase {
 		$this->assertSame('2024-07-07', $bits['date']);
 	}
 
+	public function test_yearless_new_style_camp_terms_use_order_year() {
+		$camp_terms = 'week-1-march-22-25-4-days';
+		$GLOBALS['intersoccer_test_wc_get_order_callback'] = static function () {
+			return new class() {
+				public function get_date_created() {
+					return new class() {
+						public function date($format) {
+							return '2025-01-10';
+						}
+					};
+				}
+			};
+		};
+		$row = $this->winback_camp_row_for_terms_parse($camp_terms, '', 7104);
+		$bits = intersoccer_winback_resolve_row_event_date($row);
+		$this->assertSame('camp_terms_parse', $bits['source']);
+		$this->assertSame('2025-03-22', $bits['date']);
+	}
+
 	public function test_yearless_camp_terms_without_order_date_falls_through_not_run_year() {
 		$camp_terms = 'july-week-1-july-7-july-11-5-days';
 		$row = $this->winback_camp_row_for_terms_parse($camp_terms, '', 0);

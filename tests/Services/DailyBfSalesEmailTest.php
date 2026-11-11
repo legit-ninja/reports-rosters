@@ -1173,6 +1173,54 @@ class DailyBfSalesEmailTest extends TestCase {
         }
     }
 
+    public function test_easter_season_field_counts_when_the_camp_term_does_not_mention_easter(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $this->wpdb->orders = [
+            [
+                'id' => 921,
+                'post_date' => '2026-11-28 10:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item(9210, 'Sample Camp B', 921, 0, 1, '10.00', '10.00', '0.77'),
+                ],
+            ],
+        ];
+        $this->wpdb->itemMeta = [
+            9210 => [
+                '_intersoccer_canonical_activity_type' => 'camp',
+                'Season' => 'Easter',
+                'Camp Terms' => 'Week 1: March 22-25 (4 days)',
+            ],
+        ];
+        $GLOBALS['intersoccer_test_get_posts_callback'] = static function ($args) {
+            $type = isset($args['post_type']) ? (string) $args['post_type'] : '';
+            if ($type === 'product') {
+                return [8601];
+            }
+            return [];
+        };
+        $GLOBALS['intersoccer_test_post_titles'] = [
+            8601 => 'Sample Camp A',
+        ];
+        \InterSoccerRRTestMeta::$data[8601] = [
+            '_intersoccer_product_type' => 'camp',
+            'attribute_pa_program-season' => 'Easter',
+            'attribute_pa_program-year' => '2027',
+            'attribute_pa_camp-terms' => 'Week 1: March 22-25 (4 days)',
+            '_camp_start_date' => '2027-03-22',
+        ];
+        try {
+            $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+            $this->assertSame(1, $this->seasonTypeByLabel($digest['daily'], 'Easter Camps')['quantity']);
+            $this->assertSame(1, $this->seasonByLabel($digest['daily'], 'Easter')['quantity']);
+            $this->assertSame(['Sample Camp A'], $this->bookingLabels($digest['zero_bookings']));
+            $this->assertSame('Easter', $digest['zero_bookings'][0]['season']);
+        } finally {
+            unset($GLOBALS['intersoccer_test_get_posts_callback'], $GLOBALS['intersoccer_test_post_titles']);
+        }
+    }
+
     public function test_failed_and_pending_orders_list_order_number_date_and_link_only(): void {
         $this->assertSame(['wc-failed', 'wc-pending'], DailyBfSalesEmail::ATTENTION_ORDER_STATUSES);
         $this->assertSame(['wc-failed', 'wc-pending'], DailyBfSalesEmail::attentionOrderStatuses());
