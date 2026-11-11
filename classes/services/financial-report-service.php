@@ -68,8 +68,17 @@ class FinancialReportService {
      *
      * Options (all optional; omitted values keep the post_date booking-report filter):
      * - date_basis: `paid_or_created` selects orders by paid timestamp, or by created
-     *   date when no paid timestamp is stored. Bounds are paid_start_unix (inclusive),
-     *   paid_end_unix (exclusive), created_start_local, and created_end_local.
+     *   date when no paid timestamp is stored. `paid_only` selects by paid timestamp
+     *   and does not fall back to the created date. Bounds are paid_start_unix
+     *   (inclusive), paid_end_unix (exclusive), created_start_local, and created_end_local.
+     * - order_statuses: used only when date_basis is `paid_only`, `paid_any`, or
+     *   `created_only`. `created_only` selects by created_start_local (inclusive)
+     *   and created_end_local (exclusive) and does not require a paid date.
+     *   `include_line_meta` on that basis also reads line tax. `paid_any` selects
+     *   paid orders of any date and does not apply a created-date or paid-date
+     *   window. Every other basis keeps the booking-report status list. The
+     *   default call, with no date_basis, still filters post_date and the
+     *   booking-report statuses.
      *
      * Net, discount, and refund math is unchanged. The paid basis only changes which
      * rows are read and adds raw amount fields used by the daily sales email.
@@ -88,6 +97,7 @@ class FinancialReportService {
         ]);
 
         $date_basis = isset($options['date_basis']) ? (string) $options['date_basis'] : 'post_date';
+        $include_line_meta = $date_basis !== 'post_date' && !empty($options['include_line_meta']);
 
         [$date_sql, $date_params] = intersoccer_booking_report_post_date_filter_sql(
             (string) $start_date,
@@ -104,12 +114,33 @@ class FinancialReportService {
 
         $select_extra = '';
         $join_extra = '';
-        if ($date_basis === 'paid_or_created') {
+        $status_in = "('wc-completed', 'wc-processing', 'wc-on-hold', 'wc-refunded')";
+        if ($date_basis === 'paid_only' || $date_basis === 'paid_or_created') {
             $paid_start = isset($options['paid_start_unix']) ? (int) $options['paid_start_unix'] : 0;
             $paid_end = isset($options['paid_end_unix']) ? (int) $options['paid_end_unix'] : 0;
             $created_start = isset($options['created_start_local']) ? (string) $options['created_start_local'] : '';
             $created_end = isset($options['created_end_local']) ? (string) $options['created_end_local'] : '';
-            if ($paid_start <= 0 || $paid_end <= $paid_start || $created_start === '' || $created_end === '') {
+            $select_extra = ",
+                paid_meta.meta_value as date_paid_gmt,
+                oim_tax.meta_value as line_tax";
+            $join_extra = "
+            LEFT JOIN {$this->wpdb->postmeta} paid_meta ON p.ID = paid_meta.post_id AND paid_meta.meta_key = '_date_paid'
+            LEFT JOIN {$this->wpdb->prefix}woocommerce_order_itemmeta oim_tax ON oi.order_item_id = oim_tax.order_item_id AND oim_tax.meta_key = '_line_tax'";
+            if ($date_basis === 'paid_only') {
+                $custom_status = $this->orderStatusInSql(isset($options['order_statuses']) ? $options['order_statuses'] : null);
+                if ($custom_status !== '') {
+                    $status_in = $custom_status;
+                }
+                if ($paid_start <= 0 || $paid_end <= $paid_start) {
+                    $date_where = ' AND 1=0';
+                } else {
+                    $date_where = $this->wpdb->prepare(
+                        " AND (paid_meta.meta_value IS NOT NULL AND paid_meta.meta_value <> '' AND paid_meta.meta_value <> '0' AND CAST(paid_meta.meta_value AS UNSIGNED) >= %d AND CAST(paid_meta.meta_value AS UNSIGNED) < %d)",
+                        $paid_start,
+                        $paid_end
+                    );
+                }
+            } elseif ($paid_start <= 0 || $paid_end <= $paid_start || $created_start === '' || $created_end === '') {
                 $date_where = ' AND 1=0';
             } else {
                 $date_where = $this->wpdb->prepare(
@@ -120,12 +151,38 @@ class FinancialReportService {
                     $created_end
                 );
             }
-            $select_extra = ",
-                paid_meta.meta_value as date_paid_gmt,
+        } elseif ($date_basis === 'created_only') {
+            $custom_status = $this->orderStatusInSql(isset($options['order_statuses']) ? $options['order_statuses'] : null);
+            if ($custom_status !== '') {
+                $status_in = $custom_status;
+            }
+            $created_start = isset($options['created_start_local']) ? (string) $options['created_start_local'] : '';
+            $created_end = isset($options['created_end_local']) ? (string) $options['created_end_local'] : '';
+            if ($created_start === '' || $created_end === '') {
+                $date_where = ' AND 1=0';
+            } else {
+                $date_where = $this->wpdb->prepare(
+                    ' AND p.post_date >= %s AND p.post_date < %s',
+                    $created_start,
+                    $created_end
+                );
+            }
+            if (!empty($options['include_line_meta'])) {
+                $select_extra = ",
                 oim_tax.meta_value as line_tax";
-            $join_extra = "
-            LEFT JOIN {$this->wpdb->postmeta} paid_meta ON p.ID = paid_meta.post_id AND paid_meta.meta_key = '_date_paid'
+                $join_extra = "
             LEFT JOIN {$this->wpdb->prefix}woocommerce_order_itemmeta oim_tax ON oi.order_item_id = oim_tax.order_item_id AND oim_tax.meta_key = '_line_tax'";
+            }
+        } elseif ($date_basis === 'paid_any') {
+            $custom_status = $this->orderStatusInSql(isset($options['order_statuses']) ? $options['order_statuses'] : null);
+            if ($custom_status !== '') {
+                $status_in = $custom_status;
+            }
+            $select_extra = ",
+                paid_meta.meta_value as date_paid_gmt";
+            $join_extra = "
+            LEFT JOIN {$this->wpdb->postmeta} paid_meta ON p.ID = paid_meta.post_id AND paid_meta.meta_key = '_date_paid'";
+            $date_where = " AND (paid_meta.meta_value IS NOT NULL AND paid_meta.meta_value <> '' AND paid_meta.meta_value <> '0')";
         }
 
         $region_where = '';
@@ -156,7 +213,7 @@ class FinancialReportService {
             LEFT JOIN {$this->wpdb->prefix}woocommerce_order_itemmeta oim_subtotal ON oi.order_item_id = oim_subtotal.order_item_id AND oim_subtotal.meta_key = '_line_subtotal'
             {$join_extra}
             WHERE p.post_type = 'shop_order'
-            AND p.post_status IN ('wc-completed', 'wc-processing', 'wc-on-hold', 'wc-refunded')
+            AND p.post_status IN {$status_in}
             {$date_where}
             {$region_where}
             ORDER BY p.post_date DESC, p.ID DESC
@@ -340,6 +397,13 @@ class FinancialReportService {
                 'used_created_date' => $date_basis === 'paid_or_created'
                     && (!isset($row->date_paid_gmt) || $row->date_paid_gmt === '' || $row->date_paid_gmt === null || (string) $row->date_paid_gmt === '0'),
             ];
+            if ($include_line_meta) {
+                $data[count($data) - 1]['line_meta'] = $meta_map;
+                $data[count($data) - 1]['order_item_id'] = (int) $row->order_item_id;
+            }
+            if ($date_basis !== 'post_date') {
+                $data[count($data) - 1]['order_date_local'] = (string) $row->order_date;
+            }
 
             $totals['base_price'] += $base_price;
             $totals['discount_amount'] += $discount_amount;
@@ -372,6 +436,33 @@ class FinancialReportService {
             'totals' => $totals,
             'revenue_by_type' => $revenueByType,
         ];
+    }
+
+    /**
+     * Parenthesized status list for a paid-only query. Empty when the caller
+     * did not pass a usable list, so the booking-report statuses stay in place.
+     *
+     * @param mixed $statuses
+     * @return string
+     */
+    private function orderStatusInSql($statuses): string {
+        if (!is_array($statuses)) {
+            return '';
+        }
+        $parts = [];
+        foreach ($statuses as $status) {
+            $status = (string) $status;
+            if (preg_match('/^wc-[a-z0-9_-]+$/', $status) !== 1) {
+                continue;
+            }
+            if (!in_array("'" . $status . "'", $parts, true)) {
+                $parts[] = "'" . $status . "'";
+            }
+        }
+        if ($parts === []) {
+            return '';
+        }
+        return '(' . implode(', ', $parts) . ')';
     }
 
     /**

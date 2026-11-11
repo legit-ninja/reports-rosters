@@ -3,20 +3,35 @@
  * Daily sales email for a coupon window.
  *
  * Enable is off by default. Recipients come only from the Send to setting.
+ * Invalid addresses in that list are dropped. The email goes to the valid
+ * ones. Nothing is sent when no valid address remains.
  * The hourly check is scheduled only while Enable is on. Turning Enable off,
  * or deactivating the plugin, clears that event. A plain load with Enable off
- * does not schedule it. The schedule follows the coupon's Europe/Zurich active
- * days. The morning after expiry is the final campaign email: it reports the
- * expiry day's paid sales and the running total for the whole campaign
- * (coupon start through expiry). After that send, nothing more goes out for
- * the campaign. A test send goes to one typed address and does not mark the
- * day. It does not depend on the cron event.
+ * does not schedule it. The window starts at 00:00 Europe/Zurich on the
+ * campaign start date and ends on the WooCommerce coupon expiry. There is
+ * no coupon start date. The morning after the last day is the final campaign
+ * email. A coupon that expires at 00:00 Europe/Zurich ends on the previous
+ * calendar day. The final email reports that day's paid sales and the running
+ * total for the whole campaign (campaign start through that day). After that
+ * send, nothing more goes out for the campaign. A test send goes to one typed
+ * address and does not mark the day. It does not depend on the cron event.
+ *
+ * Paid totals count processing and completed orders whose paid date falls in
+ * the Europe/Zurich window. On-hold orders are counted separately by the date
+ * they were created and are not added in. Orders with no paid date are omitted
+ * from the paid totals.
+ *
+ * Low and zero booking lists cover published Winter, Spring, and Easter 2027
+ * programmes that have not started. Counts include every paid booking, of any
+ * date. The low threshold is an admin setting and defaults to 3. Zero bookings
+ * are a separate list.
  *
  * @package InterSoccer\ReportsRosters\Services
  */
 
 namespace InterSoccer\ReportsRosters\Services;
 
+use InterSoccer\ReportsRosters\Campaign\FacetNormalizer;
 use InterSoccer\ReportsRosters\Core\Logger;
 
 defined('ABSPATH') or die('Restricted access');
@@ -32,8 +47,20 @@ class DailyBfSalesEmail {
     const NONCE_TEST = 'intersoccer_rr_daily_bf_sales_test';
 
     const FOOTER_PAID_DATE = 'Figures use the paid date in Europe/Zurich.';
-    const FOOTER_CREATED_FALLBACK = 'This report includes orders with no paid date; those orders are counted on their created date.';
     const FINAL_CAMPAIGN_LINE = 'Final campaign totals';
+    const PAID_ORDER_STATUSES = ['wc-processing', 'wc-completed'];
+    const PAID_ORDER_STATUSES_FILTER = 'intersoccer_rr_daily_bf_paid_order_statuses';
+
+    /**
+     * Composite season×type labels (for example Winter Courses, Easter Camps).
+     * Set this to false for a separate season table and a separate type table.
+     */
+    const COMPOSITE_SEASON_TYPE_LABELS = true;
+    const COMPOSITE_SEASON_TYPE_FILTER = 'intersoccer_rr_daily_bf_composite_season_type_labels';
+    const ATTENTION_ORDER_STATUSES = ['wc-failed', 'wc-pending'];
+    const ATTENTION_ORDER_STATUSES_FILTER = 'intersoccer_rr_daily_bf_attention_order_statuses';
+    const DEFAULT_LOW_BOOKING_THRESHOLD = 3;
+    const LOW_BOOKING_YEAR = '2027';
 
     /**
      * @var self|null
@@ -64,6 +91,11 @@ class DailyBfSalesEmail {
      * @var \DateTimeZone|null
      */
     private $siteTimezone;
+
+    /**
+     * @var FacetNormalizer|null
+     */
+    private $facets = null;
 
     /**
      * @param Logger|null                  $logger
@@ -425,22 +457,34 @@ class DailyBfSalesEmail {
             echo '<div class="notice ' . esc_attr($class) . '"><p>' . esc_html($detail) . '</p></div>';
         }
         echo '<p>Enable is off until you turn it on. Recipients come only from Send to. Nothing is hardcoded.</p>';
-        echo '<p>The email sends each morning at the chosen Europe/Zurich time while yesterday falls on a day the coupon is active. The morning after expiry is the final campaign email. It reports the expiry day\'s paid sales and the running total for the whole campaign (coupon start through expiry), with Final in the subject. After that send, nothing more goes out for the campaign.</p>';
+        echo '<p>The email sends each morning at the chosen Europe/Zurich time while yesterday falls inside the campaign window. The window starts at 00:00 Europe/Zurich on the campaign start date and ends on the coupon expiry. The morning after the last day is the final campaign email. A coupon that expires at 00:00 Europe/Zurich ends on the previous calendar day. It reports that day\'s paid sales and the running total for the whole campaign (campaign start through that day), with Final in the subject. After that send, nothing more goes out for the campaign.</p>';
+        foreach ($this->configurationWarnings() as $warning) {
+            echo '<div class="notice notice-warning"><p>' . esc_html($warning) . '</p></div>';
+        }
+        echo '<p>Totals are net inc-VAT for processing and completed orders with a paid date in the window. On-hold orders are counted separately by the date they were created and are not included. Orders with no paid date are omitted from the paid totals.</p>';
         echo '<form method="post" action="' . esc_url(admin_url('admin.php?page=' . self::PAGE_SLUG)) . '">';
         $this->nonceField(self::NONCE_SETTINGS);
         echo '<table class="form-table"><tbody>';
         echo '<tr><th scope="row">Enable</th><td><label><input type="checkbox" name="bf_enabled" value="1"' . $checked . ' /> Send the daily email</label></td></tr>';
         echo '<tr><th scope="row"><label for="bf_recipients">Send to</label></th><td>';
         echo '<textarea name="bf_recipients" id="bf_recipients" rows="3" cols="50" class="large-text">' . esc_html($settings['recipients']) . '</textarea>';
-        echo '<p class="description">Comma-separated email addresses. An empty list, or any invalid address, sends nothing.</p>';
+        echo '<p class="description">Comma-separated email addresses. Empty entries are skipped. Invalid addresses are dropped, and the email sends to the valid ones. Nothing is sent when no valid address remains.</p>';
         echo '</td></tr>';
         echo '<tr><th scope="row"><label for="bf_send_time">Send time</label></th><td>';
         echo '<input type="text" name="bf_send_time" id="bf_send_time" value="' . esc_attr($settings['send_time']) . '" pattern="[0-2][0-9]:[0-5][0-9]" />';
         echo '<p class="description">HH:MM on the Europe/Zurich clock. Daylight saving is handled by that timezone.</p>';
         echo '</td></tr>';
+        echo '<tr><th scope="row"><label for="bf_campaign_start">Campaign start date</label></th><td>';
+        echo '<input type="date" name="bf_campaign_start" id="bf_campaign_start" value="' . esc_attr($settings['campaign_start']) . '" />';
+        echo '<p class="description">First day of the window, saved as YYYY-MM-DD and read as 00:00 Europe/Zurich. Leave it empty to save without a start. The scheduled email does not send until a start date is set.</p>';
+        echo '</td></tr>';
         echo '<tr><th scope="row"><label for="bf_coupon_code">Coupon code</label></th><td>';
         echo '<input type="text" name="bf_coupon_code" id="bf_coupon_code" value="' . esc_attr($settings['coupon_code']) . '" class="regular-text" />';
-        echo '<p class="description">Schedule start is the coupon <code>_date_starts</code> value (Unix timestamp or YYYY-MM-DD). Schedule end is the WooCommerce coupon expiry. Both are required. Dates are read in Europe/Zurich.</p>';
+        echo '<p class="description">The window ends on the WooCommerce coupon expiry (<code>date_expires</code>). WooCommerce does not store a coupon start date. A missing expiry means the scheduled email does not send. Dates are read in Europe/Zurich.</p>';
+        echo '</td></tr>';
+        echo '<tr><th scope="row"><label for="bf_low_booking_threshold">Low booking threshold</label></th><td>';
+        echo '<input type="number" name="bf_low_booking_threshold" id="bf_low_booking_threshold" min="0" max="999" value="' . esc_attr((string) (int) $settings['low_booking_threshold']) . '" />';
+        echo '<p class="description">Published Winter, Spring, and Easter 2027 programmes that have not started. Paid bookings of any date, from 1 through this number, are listed as low. Zero paid bookings are a separate list. On-hold orders are not counted.</p>';
         echo '</td></tr>';
         echo '<tr><th scope="row">Last sent</th><td><p>' . esc_html($state['last_sent_at'] !== '' ? $state['last_sent_at'] . ' Europe/Zurich' : 'Never') . '</p></td></tr>';
         echo '<tr><th scope="row">Last result</th><td><p>' . esc_html($this->resultLabel($state['last_result'])) . '</p></td></tr>';
@@ -467,11 +511,13 @@ class DailyBfSalesEmail {
     public function buildDigest($now = null) {
         $now = $this->asZurich($now);
         $reportDate = self::yesterdayYmd($now);
-        $dailyReport = $this->loadReport($reportDate, $reportDate);
+        $dailyReport = $this->loadReport($reportDate, $reportDate, self::paidOrderStatuses());
         $daily = $this->summarize(is_array($dailyReport) ? $dailyReport : []);
+        $dailyOnHold = $this->onHoldFigures($this->summarize($this->loadOnHoldReport($reportDate, $reportDate)));
         $couponStatus = $this->couponStatus($this->settings()['coupon_code']);
         $campaignStart = '';
         $campaign = null;
+        $campaignOnHold = $this->onHoldFigures($this->emptySummary());
         $campaignStarted = false;
         $finalCampaign = false;
         if ($couponStatus['coupon'] !== null) {
@@ -483,16 +529,14 @@ class DailyBfSalesEmail {
             );
             if (strcmp($campaignStart, $reportDate) <= 0) {
                 $campaignStarted = true;
-                $campaignReport = $this->loadReport($campaignStart, $reportDate);
+                $campaignReport = $this->loadReport($campaignStart, $reportDate, self::paidOrderStatuses());
                 $campaign = $this->summarize(is_array($campaignReport) ? $campaignReport : []);
+                $campaignOnHold = $this->onHoldFigures($this->summarize($this->loadOnHoldReport($campaignStart, $reportDate)));
             } else {
                 $campaign = $this->emptySummary();
             }
         }
-        $fallback = !empty($daily['used_created_fallback']);
-        if (is_array($campaign) && !empty($campaign['used_created_fallback'])) {
-            $fallback = true;
-        }
+        $coverage = $this->programmeBookingLists($now->format('Y-m-d'));
         return [
             'report_date' => $reportDate,
             'campaign_start' => $campaignStart,
@@ -500,7 +544,12 @@ class DailyBfSalesEmail {
             'campaign_started' => $campaignStarted,
             'daily' => $daily,
             'campaign' => $campaign,
-            'used_created_fallback' => $fallback,
+            'daily_on_hold' => $dailyOnHold,
+            'campaign_on_hold' => $campaignOnHold,
+            'attention_orders' => $this->attentionOrders($this->attentionWindowStart($campaignStart, $reportDate), $reportDate),
+            'low_bookings' => $coverage['low'],
+            'zero_bookings' => $coverage['zero'],
+            'used_created_fallback' => false,
             'final_campaign' => $finalCampaign,
             'booking_report_url' => $this->bookingReportUrl($reportDate),
         ];
@@ -513,12 +562,36 @@ class DailyBfSalesEmail {
     public function renderHtml(array $digest) {
         $reportDate = (string) ($digest['report_date'] ?? '');
         $daily = isset($digest['daily']) && is_array($digest['daily']) ? $digest['daily'] : $this->emptySummary();
+        $campaign = isset($digest['campaign']) && is_array($digest['campaign']) ? $digest['campaign'] : $this->emptySummary();
         $html = '<div>';
         $html .= '<h2>Yesterday (' . esc_html($reportDate) . ', Europe/Zurich)</h2>';
+        $html .= '<p><strong>' . esc_html($this->money((float) ($daily['net_inc_vat'] ?? 0))) . ' CHF</strong> net inc-VAT</p>';
         $html .= '<p>Orders: ' . esc_html((string) (int) ($daily['order_count'] ?? 0)) . '</p>';
-        $html .= $this->renderTypeTable($daily);
-        $html .= '<h3>Products sold</h3>';
-        $html .= $this->renderProductTable($daily);
+        $html .= $this->renderOnHoldNote(
+            'On hold yesterday',
+            isset($digest['daily_on_hold']) && is_array($digest['daily_on_hold']) ? $digest['daily_on_hold'] : []
+        );
+        $html .= '<h3>Regions</h3>';
+        $html .= $this->renderComparisonTable('Region', $daily, $campaign, 'regions', true);
+        if (self::compositeSeasonTypeLabels()) {
+            $html .= '<h3>Season and type</h3>';
+            $html .= $this->renderComparisonTable('Season and type', $daily, $campaign, 'season_types', true);
+        } else {
+            $html .= '<h3>Seasons</h3>';
+            $html .= $this->renderComparisonTable('Season', $daily, $campaign, 'seasons', true);
+            $html .= $this->renderComparisonTable('Product type', $daily, $campaign, 'types');
+        }
+        $html .= '<h3>Products</h3>';
+        $html .= $this->renderComparisonTable('Product', $daily, $campaign, 'products', true);
+        $html .= '<h3>Failed and pending orders</h3>';
+        $attention = (isset($digest['attention_orders']) && is_array($digest['attention_orders'])) ? $digest['attention_orders'] : [];
+        $html .= $this->renderAttentionOrders($attention);
+        $html .= '<h3>Low bookings</h3>';
+        $lowBookings = (isset($digest['low_bookings']) && is_array($digest['low_bookings'])) ? $digest['low_bookings'] : [];
+        $html .= $this->renderBookingList($lowBookings, 'No programmes in this scope have a low booking count.');
+        $html .= '<h3>Zero bookings</h3>';
+        $zeroBookings = (isset($digest['zero_bookings']) && is_array($digest['zero_bookings'])) ? $digest['zero_bookings'] : [];
+        $html .= $this->renderBookingList($zeroBookings, 'No programmes in this scope have zero bookings.');
         if (!empty($digest['final_campaign'])) {
             $html .= '<p>' . esc_html(self::FINAL_CAMPAIGN_LINE) . '</p>';
         }
@@ -528,36 +601,37 @@ class DailyBfSalesEmail {
         } elseif (empty($digest['campaign_started'])) {
             $html .= '<p>The campaign has not started, so the running total is empty.</p>';
         } else {
-            $campaign = isset($digest['campaign']) && is_array($digest['campaign']) ? $digest['campaign'] : $this->emptySummary();
             $html .= '<p>' . esc_html((string) ($digest['campaign_start'] ?? '')) . ' through ' . esc_html($reportDate) . ' (Europe/Zurich, paid date).</p>';
             $html .= '<p>Orders: ' . esc_html((string) (int) ($campaign['order_count'] ?? 0)) . '</p>';
-            $html .= $this->renderTypeTable($campaign);
-            $html .= '<h3>Products sold since campaign start</h3>';
-            $html .= $this->renderProductTable($campaign);
-            $html .= '<p>Campaign net ex-VAT: ' . esc_html($this->money((float) ($campaign['net_ex_vat'] ?? 0))) . ' CHF. Campaign net inc-VAT: ' . esc_html($this->money((float) ($campaign['net_inc_vat'] ?? 0))) . ' CHF.</p>';
+            $html .= $this->renderOnHoldNote(
+                'On hold in the campaign',
+                isset($digest['campaign_on_hold']) && is_array($digest['campaign_on_hold']) ? $digest['campaign_on_hold'] : []
+            );
+            $html .= '<p>Campaign total: ' . esc_html($this->money((float) ($campaign['net_inc_vat'] ?? 0))) . ' CHF inc-VAT.</p>';
         }
         $url = (string) ($digest['booking_report_url'] ?? '');
         $html .= '<p><a href="' . esc_url($url) . '">Booking report for this day</a></p>';
-        $html .= '<p>Net ex-VAT is the booking-report net after discounts and refunds, tax excluded. Net inc-VAT adds the line tax that remains after refunds.</p>';
+        $html .= '<p>Net inc-VAT is what the customer paid after discounts and refunds, including remaining line tax.</p>';
         $html .= '<p>' . esc_html(self::FOOTER_PAID_DATE) . '</p>';
-        if (!empty($digest['used_created_fallback'])) {
-            $html .= '<p>' . esc_html(self::FOOTER_CREATED_FALLBACK) . '</p>';
-        }
         $html .= '</div>';
         return $html;
     }
 
     /**
+     * Skip empty tokens and drop invalid ones. ok is true when at least one
+     * valid address remains, in the original order.
+     *
      * @param string $raw
-     * @return array{ok:bool,reason:string,emails:array<int,string>}
+     * @return array{ok:bool,reason:string,emails:array<int,string>,dropped:array<int,string>}
      */
     public function parseRecipientList($raw) {
         $raw = trim((string) $raw);
         if ($raw === '') {
-            return ['ok' => false, 'reason' => 'empty_recipients', 'emails' => []];
+            return ['ok' => false, 'reason' => 'empty_recipients', 'emails' => [], 'dropped' => []];
         }
         $parts = explode(',', $raw);
         $emails = [];
+        $dropped = [];
         $sawToken = false;
         foreach ($parts as $part) {
             $token = trim((string) $part);
@@ -566,14 +640,18 @@ class DailyBfSalesEmail {
             }
             $sawToken = true;
             if (strpos($token, ';') !== false || preg_match('/\s/', $token) || !function_exists('is_email') || !is_email($token)) {
-                return ['ok' => false, 'reason' => 'invalid_recipient', 'emails' => []];
+                $dropped[] = $token;
+                continue;
             }
             $emails[] = $this->stripHeaderBreaks($token);
         }
-        if (!$sawToken || $emails === []) {
-            return ['ok' => false, 'reason' => 'empty_recipients', 'emails' => []];
+        if (!$sawToken) {
+            return ['ok' => false, 'reason' => 'empty_recipients', 'emails' => [], 'dropped' => []];
         }
-        return ['ok' => true, 'reason' => '', 'emails' => $emails];
+        if ($emails === []) {
+            return ['ok' => false, 'reason' => 'invalid_recipient', 'emails' => [], 'dropped' => $dropped];
+        }
+        return ['ok' => true, 'reason' => '', 'emails' => $emails, 'dropped' => $dropped];
     }
 
     /**
@@ -655,8 +733,9 @@ class DailyBfSalesEmail {
     /**
      * A Zurich calendar day overlaps the inclusive coupon window [start, expiry].
      *
-     * The morning after expiry reports the expiry day, which still overlaps.
-     * That expiry day is the final campaign day. The following morning does not.
+     * An expiry stored as 00:00:00 Europe/Zurich ends on the previous calendar
+     * day. The morning after that last day reports it and still overlaps.
+     * The following morning does not.
      *
      * @param string $ymd
      * @param int    $startUnix
@@ -664,6 +743,7 @@ class DailyBfSalesEmail {
      * @return bool
      */
     public static function zurichDayOverlapsWindow($ymd, $startUnix, $expiresUnix) {
+        $expiresUnix = self::effectiveExpiryUnix($expiresUnix);
         try {
             $tz = new \DateTimeZone(self::TIMEZONE);
             $dayStart = new \DateTimeImmutable($ymd . ' 00:00:00', $tz);
@@ -674,7 +754,7 @@ class DailyBfSalesEmail {
         if ($dayEnd->getTimestamp() <= (int) $startUnix) {
             return false;
         }
-        if ($dayStart->getTimestamp() > (int) $expiresUnix) {
+        if ($dayStart->getTimestamp() > $expiresUnix) {
             return false;
         }
         return true;
@@ -682,7 +762,7 @@ class DailyBfSalesEmail {
 
     /**
      * A reported day is final when it is the last Zurich calendar day that
-     * overlaps the coupon window: the expiry day.
+     * overlaps the coupon window. A midnight expiry uses the previous day.
      *
      * @param string $reportDate
      * @param int    $startUnix
@@ -690,11 +770,40 @@ class DailyBfSalesEmail {
      * @return bool
      */
     public static function isFinalCampaignDay($reportDate, $startUnix, $expiresUnix) {
-        $expiryDay = self::zurichYmdFromTimestamp((int) $expiresUnix);
+        $expiresUnix = self::effectiveExpiryUnix($expiresUnix);
+        $expiryDay = self::zurichYmdFromTimestamp($expiresUnix);
         if ((string) $reportDate !== $expiryDay) {
             return false;
         }
         return self::zurichDayOverlapsWindow($reportDate, $startUnix, $expiresUnix);
+    }
+
+    /**
+     * WooCommerce stores a date-only expiry as 00:00:00. That instant is the
+     * start of a day the coupon does not cover, so the previous day is last.
+     *
+     * @param int $expiresUnix
+     * @return int
+     */
+    public static function effectiveExpiryUnix($expiresUnix) {
+        $expiresUnix = (int) $expiresUnix;
+        if ($expiresUnix <= 0 || !self::isZurichMidnight($expiresUnix)) {
+            return $expiresUnix;
+        }
+        return $expiresUnix - 1;
+    }
+
+    /**
+     * @param int $unix
+     * @return bool
+     */
+    public static function isZurichMidnight($unix) {
+        try {
+            $dt = (new \DateTimeImmutable('@' . (int) $unix))->setTimezone(new \DateTimeZone(self::TIMEZONE));
+        } catch (\Exception $e) {
+            return false;
+        }
+        return $dt->format('H:i:s') === '00:00:00';
     }
 
     /**
@@ -724,7 +833,121 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * @return array{enabled:bool,recipients:string,send_time:string,coupon_code:string}
+     * Empty is allowed and stored as an empty string. Any other value must be
+     * a real YYYY-MM-DD date. Invalid input returns null so save can reject it.
+     *
+     * @param string $raw
+     * @return string|null
+     */
+    private static function validCampaignStartYmd($raw) {
+        $raw = trim((string) $raw);
+        if ($raw === '') {
+            return '';
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw) !== 1) {
+            return null;
+        }
+        $tz = new \DateTimeZone(self::TIMEZONE);
+        $dt = \DateTimeImmutable::createFromFormat('!Y-m-d', $raw, $tz);
+        $errors = \DateTimeImmutable::getLastErrors();
+        if (!($dt instanceof \DateTimeImmutable)) {
+            return null;
+        }
+        if (is_array($errors) && (!empty($errors['warning_count']) || !empty($errors['error_count']))) {
+            return null;
+        }
+        if ($dt->format('Y-m-d') !== $raw) {
+            return null;
+        }
+        return $raw;
+    }
+
+    /**
+     * Persistent settings-page warnings. These stay visible without a save flash.
+     *
+     * @return array<int,string>
+     */
+    private function configurationWarnings() {
+        $warnings = [];
+        $settings = $this->settings();
+        if ($settings['campaign_start'] === '') {
+            $warnings[] = 'Campaign start date is not set. The scheduled email will not send.';
+        }
+        $code = trim((string) $settings['coupon_code']);
+        if ($code === '') {
+            return $warnings;
+        }
+        $raw = $this->loadCouponRecord($code);
+        if (!is_array($raw)) {
+            return $warnings;
+        }
+        $expires = $this->parseInstant(isset($raw['expires']) ? $raw['expires'] : null);
+        if ($expires === null) {
+            $warnings[] = 'The coupon has no expiry date. The scheduled email will not send.';
+        }
+        return $warnings;
+    }
+
+    /**
+     * @return bool
+     */
+    /**
+     * Failed and pending-payment statuses. One filter changes the set.
+     *
+     * @return array<int,string>
+     */
+    public static function attentionOrderStatuses() {
+        $raw = function_exists('apply_filters')
+            ? apply_filters(self::ATTENTION_ORDER_STATUSES_FILTER, self::ATTENTION_ORDER_STATUSES)
+            : self::ATTENTION_ORDER_STATUSES;
+        $clean = self::sanitizeOrderStatuses($raw);
+        return $clean !== [] ? $clean : self::ATTENTION_ORDER_STATUSES;
+    }
+
+    public static function compositeSeasonTypeLabels() {
+        $default = self::COMPOSITE_SEASON_TYPE_LABELS;
+        if (!function_exists('apply_filters')) {
+            return $default;
+        }
+        return (bool) apply_filters(self::COMPOSITE_SEASON_TYPE_FILTER, $default);
+    }
+
+    /**
+     * Paid statuses for this email. One filter changes the set; the default is strict.
+     *
+     * @return array<int,string>
+     */
+    public static function paidOrderStatuses() {
+        $raw = function_exists('apply_filters')
+            ? apply_filters(self::PAID_ORDER_STATUSES_FILTER, self::PAID_ORDER_STATUSES)
+            : self::PAID_ORDER_STATUSES;
+        $clean = self::sanitizeOrderStatuses($raw);
+        return $clean !== [] ? $clean : self::PAID_ORDER_STATUSES;
+    }
+
+    /**
+     * @param string             $startYmd
+     * @param string             $endYmd
+     * @param \DateTimeZone      $siteTz
+     * @param array<int,string>|null $statuses
+     * @return array<string,mixed>
+     */
+    public static function paidWindowOptions($startYmd, $endYmd, \DateTimeZone $siteTz, $statuses = null) {
+        $bounds = self::rangeBounds($startYmd, $endYmd, $siteTz);
+        if ($statuses === null) {
+            $statuses = self::paidOrderStatuses();
+        }
+        return [
+            'date_basis' => 'paid_only',
+            'order_statuses' => array_values($statuses),
+            'paid_start_unix' => $bounds['paid_start_unix'],
+            'paid_end_unix' => $bounds['paid_end_unix'],
+            'include_line_meta' => true,
+        ];
+    }
+
+    /**
+     * @return array{enabled:bool,recipients:string,send_time:string,coupon_code:string,low_booking_threshold:int,campaign_start:string}
      */
     public function settings() {
         $stored = get_option(self::OPTION_SETTINGS, []);
@@ -735,11 +958,20 @@ class DailyBfSalesEmail {
         if (!self::isValidSendTime($sendTime)) {
             $sendTime = '08:00';
         }
+        $campaignStart = isset($stored['campaign_start']) ? (string) $stored['campaign_start'] : '';
+        $campaignStart = self::validCampaignStartYmd($campaignStart);
+        if ($campaignStart === null) {
+            $campaignStart = '';
+        }
         return [
             'enabled' => !empty($stored['enabled']),
             'recipients' => isset($stored['recipients']) ? (string) $stored['recipients'] : '',
             'send_time' => $sendTime,
             'coupon_code' => isset($stored['coupon_code']) ? (string) $stored['coupon_code'] : '',
+            'campaign_start' => $campaignStart,
+            'low_booking_threshold' => array_key_exists('low_booking_threshold', $stored)
+                ? self::normalizeLowBookingThreshold($stored['low_booking_threshold'])
+                : self::DEFAULT_LOW_BOOKING_THRESHOLD,
         ];
     }
 
@@ -794,19 +1026,71 @@ class DailyBfSalesEmail {
         if (strlen($recipients) > 2000) {
             $recipients = substr($recipients, 0, 2000);
         }
+        $parsedRecipients = $this->parseRecipientList($recipients);
+        $keptRecipients = implode(', ', $parsedRecipients['emails']);
+        $droppedNotice = [];
+        $droppedTokens = (isset($parsedRecipients['dropped']) && is_array($parsedRecipients['dropped']))
+            ? $parsedRecipients['dropped']
+            : [];
+        foreach ($droppedTokens as $token) {
+            $clean = $this->stripHeaderBreaks((string) $token);
+            if ($clean !== '') {
+                $droppedNotice[] = $clean;
+            }
+        }
         $code = isset($post['bf_coupon_code']) ? (string) $post['bf_coupon_code'] : '';
         $code = function_exists('sanitize_text_field') ? sanitize_text_field($code) : trim($code);
         if (strlen($code) > 64) {
             $code = substr($code, 0, 64);
         }
+        $campaignStartRaw = isset($post['bf_campaign_start']) ? (string) $post['bf_campaign_start'] : '';
+        $campaignStartRaw = function_exists('sanitize_text_field') ? sanitize_text_field($campaignStartRaw) : trim($campaignStartRaw);
+        $campaignStart = self::validCampaignStartYmd($campaignStartRaw);
+        if ($campaignStart === null) {
+            return [
+                'ok' => false,
+                'code' => 'invalid_campaign_start',
+                'message' => 'Enter the campaign start date as YYYY-MM-DD, or leave it empty.',
+            ];
+        }
+        $threshold = self::normalizeLowBookingThreshold(
+            array_key_exists('bf_low_booking_threshold', $post) ? $post['bf_low_booking_threshold'] : null
+        );
         $settings = [
             'enabled' => !empty($post['bf_enabled']),
-            'recipients' => $recipients,
+            'low_booking_threshold' => $threshold,
+            'recipients' => $keptRecipients,
             'send_time' => $sendTime,
             'coupon_code' => $code,
+            'campaign_start' => $campaignStart,
         ];
         update_option(self::OPTION_SETTINGS, $settings, false);
         self::syncScheduleToValue($settings);
+        if (!$parsedRecipients['ok'] && $parsedRecipients['reason'] === 'empty_recipients') {
+            return [
+                'ok' => false,
+                'code' => 'empty_recipients',
+                'message' => 'The Send to list is empty, so nothing will be sent.',
+            ];
+        }
+        if (!$parsedRecipients['ok']) {
+            $message = 'No valid email address remains, so nothing will be sent.';
+            if ($droppedNotice !== []) {
+                $message .= ' Removed: ' . implode(', ', $droppedNotice);
+            }
+            return [
+                'ok' => false,
+                'code' => 'invalid_recipient',
+                'message' => $message,
+            ];
+        }
+        if ($droppedNotice !== []) {
+            return [
+                'ok' => true,
+                'code' => 'saved',
+                'message' => 'Settings saved. Removed invalid addresses: ' . implode(', ', $droppedNotice),
+            ];
+        }
         return [
             'ok' => true,
             'code' => 'saved',
@@ -815,20 +1099,567 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * @param string            $startYmd
+     * @param string            $endYmd
+     * @param array<int,string> $statuses
+     * @return array<string,mixed>
+     */
+    private function loadReport($startYmd, $endYmd, array $statuses) {
+        $options = self::paidWindowOptions($startYmd, $endYmd, $this->siteTimezone(), $statuses);
+        return $this->reportService()->getFinancialBookingReport($startYmd, $endYmd, '', '', $options);
+    }
+
+    /**
+     * On-hold orders have no paid date, so this count uses the created date.
+     * The rows stay out of the paid totals.
+     *
      * @param string $startYmd
      * @param string $endYmd
      * @return array<string,mixed>
      */
-    private function loadReport($startYmd, $endYmd) {
+    private function loadOnHoldReport($startYmd, $endYmd) {
         $bounds = self::rangeBounds($startYmd, $endYmd, $this->siteTimezone());
-        $options = [
-            'date_basis' => 'paid_or_created',
-            'paid_start_unix' => $bounds['paid_start_unix'],
-            'paid_end_unix' => $bounds['paid_end_unix'],
+        $report = $this->reportService()->getFinancialBookingReport($startYmd, $endYmd, '', '', [
+            'date_basis' => 'created_only',
+            'order_statuses' => ['wc-on-hold'],
             'created_start_local' => $bounds['created_start_local'],
             'created_end_local' => $bounds['created_end_local'],
+            'include_line_meta' => true,
+        ]);
+        return is_array($report) ? $report : [];
+    }
+
+    /**
+     * Coupon start through the report day, or the report day when the coupon
+     * window is not known yet. Empty when the campaign has not started.
+     *
+     * @param string $campaignStart
+     * @param string $reportDate
+     * @return string
+     */
+    private function attentionWindowStart($campaignStart, $reportDate) {
+        $campaignStart = (string) $campaignStart;
+        $reportDate = (string) $reportDate;
+        if ($campaignStart === '') {
+            return $reportDate;
+        }
+        if (strcmp($campaignStart, $reportDate) > 0) {
+            return '';
+        }
+        return $campaignStart;
+    }
+
+    /**
+     * Failed and pending orders created from the campaign start through the
+     * reported Zurich day. The list keeps the order number, created time,
+     * and admin link only, newest first.
+     *
+     * @param string $startYmd
+     * @param string $endYmd
+     * @return array<int,array{order_number:string,created_at:string,admin_url:string}>
+     */
+    private function attentionOrders($startYmd, $endYmd) {
+        $startYmd = (string) $startYmd;
+        $endYmd = (string) $endYmd;
+        if ($startYmd === '' || $endYmd === '' || strcmp($startYmd, $endYmd) > 0) {
+            return [];
+        }
+        $bounds = self::rangeBounds($startYmd, $endYmd, $this->siteTimezone());
+        $report = $this->reportService()->getFinancialBookingReport($startYmd, $endYmd, '', '', [
+            'date_basis' => 'created_only',
+            'order_statuses' => self::attentionOrderStatuses(),
+            'created_start_local' => $bounds['created_start_local'],
+            'created_end_local' => $bounds['created_end_local'],
+        ]);
+        $rows = (isset($report['data']) && is_array($report['data'])) ? $report['data'] : [];
+        $seen = [];
+        $list = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $orderId = (int) ($row['order_id'] ?? 0);
+            if ($orderId <= 0 || isset($seen[$orderId])) {
+                continue;
+            }
+            $seen[$orderId] = true;
+            $list[] = [
+                'order_number' => (string) $orderId,
+                'created_at' => $this->zurichCreatedLabel(isset($row['order_date_local']) ? (string) $row['order_date_local'] : ''),
+                'admin_url' => $this->orderAdminUrl($orderId),
+            ];
+        }
+        usort($list, function ($a, $b) {
+            $byTime = strcmp((string) $b['created_at'], (string) $a['created_at']);
+            if ($byTime !== 0) {
+                return $byTime;
+            }
+            return strcmp((string) $b['order_number'], (string) $a['order_number']);
+        });
+        return $list;
+    }
+
+    /**
+     * @param string $local Site-local Y-m-d H:i:s.
+     * @return string
+     */
+    private function zurichCreatedLabel($local) {
+        $local = trim((string) $local);
+        if ($local === '') {
+            return '';
+        }
+        try {
+            $dt = new \DateTimeImmutable($local, $this->siteTimezone());
+        } catch (\Exception $e) {
+            return '';
+        }
+        return $dt->setTimezone(new \DateTimeZone(self::TIMEZONE))->format('Y-m-d H:i');
+    }
+
+    /**
+     * Legacy edit link, or the HPOS orders screen when that storage is on.
+     * The orders-table class can be loaded while HPOS is still off.
+     *
+     * @param int $orderId
+     * @return string
+     */
+    private function orderAdminUrl($orderId) {
+        $orderId = (int) $orderId;
+        if ($orderId <= 0 || !function_exists('admin_url')) {
+            return '';
+        }
+        if ($this->hposOrdersEnabled()) {
+            return admin_url('admin.php?page=wc-orders&action=edit&id=' . $orderId);
+        }
+        return admin_url('post.php?post=' . $orderId . '&action=edit');
+    }
+
+    /**
+     * @return bool
+     */
+    private function hposOrdersEnabled() {
+        $class = 'Automattic\\WooCommerce\\Utilities\\OrderUtil';
+        if (!class_exists($class) || !method_exists($class, 'custom_orders_table_usage_is_enabled')) {
+            return false;
+        }
+        return (bool) call_user_func([$class, 'custom_orders_table_usage_is_enabled']);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $orders
+     * @return string
+     */
+    private function renderAttentionOrders(array $orders) {
+        if ($orders === []) {
+            return '<p>No failed or pending orders were created in the campaign window.</p>';
+        }
+        $html = '<table><thead><tr><th>Order</th><th>Created (Europe/Zurich)</th><th>Admin</th></tr></thead><tbody>';
+        foreach ($orders as $order) {
+            if (!is_array($order)) {
+                continue;
+            }
+            $number = (string) ($order['order_number'] ?? '');
+            $created = (string) ($order['created_at'] ?? '');
+            $url = (string) ($order['admin_url'] ?? '');
+            $html .= '<tr>';
+            $html .= '<td>' . esc_html($number) . '</td>';
+            $html .= '<td>' . esc_html($created) . '</td>';
+            $html .= '<td>';
+            if ($url !== '') {
+                $html .= '<a href="' . esc_url($url) . '">Edit order</a>';
+            }
+            $html .= '</td></tr>';
+        }
+        $html .= '</tbody></table>';
+        return $html;
+    }
+
+    /**
+     * @param mixed $value
+     * @return int
+     */
+    private static function normalizeLowBookingThreshold($value) {
+        if ($value === null) {
+            return self::DEFAULT_LOW_BOOKING_THRESHOLD;
+        }
+        $text = trim((string) $value);
+        if (!preg_match('/^\d{1,3}$/', $text)) {
+            return self::DEFAULT_LOW_BOOKING_THRESHOLD;
+        }
+        $number = (int) $text;
+        if ($number > 999) {
+            return self::DEFAULT_LOW_BOOKING_THRESHOLD;
+        }
+        return $number;
+    }
+
+    /**
+     * Published Winter, Spring, and Easter programmes for the scoped year that
+     * have not started. Counts include every paid booking, of any date.
+     *
+     * @param string $asOfYmd
+     * @return array{low:array<int,array<string,mixed>>,zero:array<int,array<string,mixed>>}
+     */
+    private function programmeBookingLists($asOfYmd) {
+        $threshold = (int) $this->settings()['low_booking_threshold'];
+        $events = $this->catalogueEvents($asOfYmd);
+        $report = $this->reportService()->getFinancialBookingReport($asOfYmd, $asOfYmd, '', '', [
+            'date_basis' => 'paid_any',
+            'order_statuses' => self::paidOrderStatuses(),
+        ]);
+        $counts = $this->paidCountsByProduct(is_array($report) ? $report : []);
+        $low = [];
+        $zero = [];
+        foreach ($events as $event) {
+            $productId = (int) $event['product_id'];
+            $count = isset($counts[$productId]) ? (int) $counts[$productId] : 0;
+            $row = [
+                'label' => (string) $event['label'],
+                'season' => (string) $event['season'],
+                'type' => (string) $event['type'],
+                'region' => (string) $event['region'],
+                'count' => $count,
+            ];
+            if ($count === 0) {
+                $zero[] = $row;
+            } elseif ($count >= 1 && $count <= $threshold) {
+                $low[] = $row;
+            }
+        }
+        $sort = static function ($left, $right) {
+            return strcmp((string) $left['label'], (string) $right['label']);
+        };
+        usort($low, $sort);
+        usort($zero, $sort);
+        return ['low' => $low, 'zero' => $zero];
+    }
+
+    /**
+     * @param string $asOfYmd
+     * @return array<int,array<string,mixed>>
+     */
+    private function catalogueEvents($asOfYmd) {
+        $published = $this->publishedProductIds();
+        $events = [];
+        $seen = [];
+        foreach ($published as $id) {
+            $defaultId = $this->defaultLanguageProductId($id);
+            if (!isset($published[$defaultId]) || isset($seen[$defaultId])) {
+                continue;
+            }
+            $seen[$defaultId] = true;
+            $event = $this->catalogueEvent($defaultId, $asOfYmd);
+            if ($event !== null) {
+                $events[$defaultId] = $event;
+            }
+        }
+        return $events;
+    }
+
+    /**
+     * @return array<int,int>
+     */
+    private function publishedProductIds() {
+        if (!function_exists('get_posts')) {
+            return [];
+        }
+        $ids = get_posts([
+            'post_type' => 'product',
+            'post_status' => 'publish',
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+            'orderby' => 'ID',
+            'order' => 'ASC',
+        ]);
+        if (!is_array($ids)) {
+            return [];
+        }
+        $clean = [];
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $clean[$id] = $id;
+            }
+        }
+        return $clean;
+    }
+
+    /**
+     * @param int    $productId
+     * @param string $asOfYmd
+     * @return array<string,mixed>|null
+     */
+    private function catalogueEvent($productId, $asOfYmd) {
+        $productId = (int) $productId;
+        $type = $this->catalogueTypeLabel($this->productMeta($productId, ['_intersoccer_product_type']));
+        if ($type === '') {
+            return null;
+        }
+        $seasonKeys = FacetNormalizer::season_meta_keys();
+        $termKeys = FacetNormalizer::camp_term_meta_keys();
+        $yearKeys = ['pa_program-year', 'attribute_pa_program-year', 'Program Year', 'Année', 'Jahr'];
+        $regionKeys = [
+            '_intersoccer_canonical_canton',
+            'Canton / Region',
+            'Canton / Région',
+            'Kanton / Region',
+            'pa_canton-region',
+            'attribute_pa_canton-region',
         ];
-        return $this->reportService()->getFinancialBookingReport($startYmd, $endYmd, '', '', $options);
+        $seasonRaw = $this->productMeta($productId, $seasonKeys);
+        $terms = $this->productMeta($productId, $termKeys);
+        $yearRaw = $this->productMeta($productId, $yearKeys);
+        $regionRaw = $this->productMeta($productId, $regionKeys);
+        $start = $this->productMeta($productId, ['_camp_start_date']);
+        foreach ($this->variationIds($productId) as $variationId) {
+            if ($seasonRaw === '') {
+                $seasonRaw = $this->productMeta($variationId, $seasonKeys);
+            }
+            if ($terms === '') {
+                $terms = $this->productMeta($variationId, $termKeys);
+            }
+            if ($yearRaw === '') {
+                $yearRaw = $this->productMeta($variationId, $yearKeys);
+            }
+            if ($regionRaw === '') {
+                $regionRaw = $this->productMeta($variationId, $regionKeys);
+            }
+            $candidate = $this->productMeta($variationId, ['_camp_start_date']);
+            if ($candidate !== '' && ($start === '' || strcmp($candidate, $start) < 0)) {
+                $start = $candidate;
+            }
+        }
+        $name = function_exists('get_the_title') ? trim((string) get_the_title($productId)) : '';
+        if ($this->programmeYear($yearRaw, $seasonRaw, $terms, $name) !== self::LOW_BOOKING_YEAR) {
+            return null;
+        }
+        $season = $this->catalogueSeason($seasonRaw, $terms, $name, $type);
+        if ($season === '') {
+            return null;
+        }
+        if ($this->eventHasStarted($start, $asOfYmd)) {
+            return null;
+        }
+        $region = 'Unknown';
+        if ($regionRaw !== '') {
+            $normalized = $this->facetNormalizer()->normalize_region($regionRaw);
+            if ($normalized !== '' && $normalized !== 'not_recorded') {
+                $region = $normalized;
+            }
+        }
+        return [
+            'product_id' => $productId,
+            'label' => $name !== '' ? $name : ('Product ' . $productId),
+            'season' => $season,
+            'type' => $type,
+            'region' => $region,
+        ];
+    }
+
+    /**
+     * @param string $slug
+     * @return string
+     */
+    private function catalogueTypeLabel($slug) {
+        $slug = strtolower(trim((string) $slug));
+        $map = [
+            'camp' => ProductTypeClassifierService::TYPE_CAMP,
+            'course' => ProductTypeClassifierService::TYPE_COURSE,
+            'birthday' => ProductTypeClassifierService::TYPE_BIRTHDAY,
+            'tournament' => ProductTypeClassifierService::TYPE_TOURNAMENT,
+        ];
+        return isset($map[$slug]) ? $map[$slug] : '';
+    }
+
+    /**
+     * @param string $yearRaw
+     * @param string $seasonRaw
+     * @param string $terms
+     * @param string $name
+     * @return string
+     */
+    private function programmeYear($yearRaw, $seasonRaw, $terms, $name) {
+        foreach ([$yearRaw, $seasonRaw, $terms, $name] as $value) {
+            if (preg_match('/\b(20\d{2})\b/', (string) $value, $matches)) {
+                return $matches[1];
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Winter, Spring, or Easter. A Spring camp is promoted when Easter is named.
+     *
+     * @param string $seasonRaw
+     * @param string $terms
+     * @param string $name
+     * @param string $type
+     * @return string
+     */
+    private function catalogueSeason($seasonRaw, $terms, $name, $type) {
+        $bucket = $this->normalizeSeasonValue($seasonRaw);
+        if ($bucket === '') {
+            $bucket = $this->normalizeSeasonValue($terms);
+        }
+        if ($bucket === '') {
+            $bucket = $this->normalizeSeasonValue($name);
+        }
+        if ($type === ProductTypeClassifierService::TYPE_CAMP
+            && $bucket === 'Spring'
+            && ($this->mentionsEaster($seasonRaw) || $this->mentionsEaster($terms) || $this->mentionsEaster($name))
+        ) {
+            $bucket = 'Easter';
+        }
+        if ($bucket === 'Winter' || $bucket === 'Spring' || $bucket === 'Easter') {
+            return $bucket;
+        }
+        return '';
+    }
+
+    /**
+     * @param string $start
+     * @param string $asOfYmd
+     * @return bool
+     */
+    private function eventHasStarted($start, $asOfYmd) {
+        if (!preg_match('/^(\d{4}-\d{2}-\d{2})/', (string) $start, $matches)) {
+            return false;
+        }
+        return strcmp($matches[1], (string) $asOfYmd) < 0;
+    }
+
+    /**
+     * @param int $productId
+     * @return array<int,int>
+     */
+    private function variationIds($productId) {
+        if (!function_exists('get_posts')) {
+            return [];
+        }
+        $ids = get_posts([
+            'post_type' => 'product_variation',
+            'post_status' => 'publish',
+            'post_parent' => (int) $productId,
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+            'orderby' => 'ID',
+            'order' => 'ASC',
+        ]);
+        if (!is_array($ids)) {
+            return [];
+        }
+        $clean = [];
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $clean[] = $id;
+            }
+        }
+        return $clean;
+    }
+
+    /**
+     * @param int                $postId
+     * @param array<int,string>  $keys
+     * @return string
+     */
+    private function productMeta($postId, array $keys) {
+        if (!function_exists('get_post_meta')) {
+            return '';
+        }
+        foreach ($keys as $key) {
+            $value = get_post_meta((int) $postId, $key, true);
+            if (is_string($value) || is_numeric($value)) {
+                $text = trim((string) $value);
+                if ($text !== '') {
+                    return $text;
+                }
+            }
+        }
+        return '';
+    }
+
+    /**
+     * @param int $productId
+     * @return int
+     */
+    private function defaultLanguageProductId($productId) {
+        $productId = (int) $productId;
+        if ($productId <= 0) {
+            return 0;
+        }
+        if (function_exists('wp_get_post_parent_id')) {
+            $parent = (int) wp_get_post_parent_id($productId);
+            if ($parent > 0) {
+                $productId = $parent;
+            }
+        }
+        if (!function_exists('apply_filters')) {
+            return $productId;
+        }
+        $language = 'en';
+        if (function_exists('wpml_get_default_language')) {
+            $detected = wpml_get_default_language();
+            if (is_string($detected) && $detected !== '') {
+                $language = $detected;
+            }
+        }
+        $mapped = apply_filters('wpml_object_id', $productId, 'product', true, $language);
+        $mapped = (int) $mapped;
+        return $mapped > 0 ? $mapped : $productId;
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<int,int>
+     */
+    private function paidCountsByProduct(array $report) {
+        $counts = [];
+        $rows = isset($report['data']) && is_array($report['data']) ? $report['data'] : [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $productId = $this->defaultLanguageProductId(isset($row['product_id']) ? (int) $row['product_id'] : 0);
+            if ($productId <= 0) {
+                continue;
+            }
+            $quantity = isset($row['line_quantity']) ? (int) $row['line_quantity'] : 0;
+            if ($quantity < 1) {
+                $quantity = 1;
+            }
+            if (!isset($counts[$productId])) {
+                $counts[$productId] = 0;
+            }
+            $counts[$productId] += $quantity;
+        }
+        return $counts;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @param string                         $emptyMessage
+     * @return string
+     */
+    private function renderBookingList(array $rows, $emptyMessage) {
+        if ($rows === []) {
+            return '<p>' . esc_html($emptyMessage) . '</p>';
+        }
+        $html = '<table><thead><tr><th>Event</th><th>Season</th><th>Type</th><th>Region</th><th>Count</th></tr></thead><tbody>';
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $html .= '<tr>';
+            $html .= '<td>' . esc_html((string) ($row['label'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html((string) ($row['season'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html((string) ($row['type'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html((string) ($row['region'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html((string) (int) ($row['count'] ?? 0)) . '</td>';
+            $html .= '</tr>';
+        }
+        $html .= '</tbody></table>';
+        return $html;
     }
 
     /**
@@ -852,6 +1683,9 @@ class DailyBfSalesEmail {
             $types[$bucket] = $this->emptyType($bucket);
         }
         $products = [];
+        $regions = [];
+        $seasons = [];
+        $seasonTypes = [];
         $orders = [];
         $fallback = false;
         $rows = isset($report['data']) && is_array($report['data']) ? $report['data'] : [];
@@ -900,6 +1734,38 @@ class DailyBfSalesEmail {
             $products[$key]['net_ex_vat'] += $netEx;
             $products[$key]['net_inc_vat'] += $netInc;
 
+            $regionLabel = $this->regionLabel($row);
+            if (!isset($regions[$regionLabel])) {
+                $regions[$regionLabel] = [
+                    'key' => $regionLabel,
+                    'label' => $regionLabel,
+                    'quantity' => 0,
+                    'net_ex_vat' => 0.0,
+                    'net_inc_vat' => 0.0,
+                ];
+            }
+            $regions[$regionLabel]['quantity'] += $qty;
+            $regions[$regionLabel]['net_ex_vat'] += $netEx;
+            $regions[$regionLabel]['net_inc_vat'] += $netInc;
+
+            $season = $this->seasonBucket($row, $bucket);
+            if (!isset($seasons[$season])) {
+                $seasons[$season] = $this->moneyRow($season, $season);
+            }
+            $seasons[$season]['quantity'] += $qty;
+            $seasons[$season]['net_ex_vat'] += $netEx;
+            $seasons[$season]['net_inc_vat'] += $netInc;
+
+            $compositeKey = $season . '|' . $bucket;
+            if (!isset($seasonTypes[$compositeKey])) {
+                $seasonTypes[$compositeKey] = $this->moneyRow($compositeKey, $this->compositeLabel($season, $bucket));
+                $seasonTypes[$compositeKey]['season'] = $season;
+                $seasonTypes[$compositeKey]['type'] = $bucket;
+            }
+            $seasonTypes[$compositeKey]['quantity'] += $qty;
+            $seasonTypes[$compositeKey]['net_ex_vat'] += $netEx;
+            $seasonTypes[$compositeKey]['net_inc_vat'] += $netInc;
+
             $orderId = (int) ($row['order_id'] ?? 0);
             if ($orderId > 0) {
                 $orders[$orderId] = true;
@@ -923,17 +1789,244 @@ class DailyBfSalesEmail {
             $products[$key]['net_ex_vat'] = round($product['net_ex_vat'], 2);
             $products[$key]['net_inc_vat'] = round($product['net_inc_vat'], 2);
         }
+        foreach ($regions as $key => $region) {
+            $regions[$key]['net_ex_vat'] = round($region['net_ex_vat'], 2);
+            $regions[$key]['net_inc_vat'] = round($region['net_inc_vat'], 2);
+        }
+        foreach ($seasons as $key => $seasonRow) {
+            $seasons[$key]['net_ex_vat'] = round($seasonRow['net_ex_vat'], 2);
+            $seasons[$key]['net_inc_vat'] = round($seasonRow['net_inc_vat'], 2);
+        }
+        foreach ($seasonTypes as $key => $seasonType) {
+            $seasonTypes[$key]['net_ex_vat'] = round($seasonType['net_ex_vat'], 2);
+            $seasonTypes[$key]['net_inc_vat'] = round($seasonType['net_inc_vat'], 2);
+        }
         uasort($products, function ($a, $b) {
+            return strcmp((string) $a['label'], (string) $b['label']);
+        });
+        uasort($regions, function ($a, $b) {
+            return strcmp((string) $a['label'], (string) $b['label']);
+        });
+        uasort($seasons, function ($a, $b) {
+            return strcmp((string) $a['label'], (string) $b['label']);
+        });
+        uasort($seasonTypes, function ($a, $b) {
             return strcmp((string) $a['label'], (string) $b['label']);
         });
         return [
             'order_count' => count($orders),
             'types' => array_values($types),
             'products' => array_values($products),
+            'regions' => array_values($regions),
+            'seasons' => array_values($seasons),
+            'season_types' => array_values($seasonTypes),
             'used_created_fallback' => $fallback,
             'net_ex_vat' => round($netEx, 2),
             'net_inc_vat' => round($netInc, 2),
         ];
+    }
+
+    /**
+     * @param string $key
+     * @param string $label
+     * @return array<string,mixed>
+     */
+    private function moneyRow($key, $label) {
+        return [
+            'key' => (string) $key,
+            'label' => (string) $label,
+            'quantity' => 0,
+            'net_ex_vat' => 0.0,
+            'net_inc_vat' => 0.0,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @param string              $productType
+     * @return string
+     */
+    private function seasonBucket(array $row, $productType) {
+        $meta = (isset($row['line_meta']) && is_array($row['line_meta'])) ? $row['line_meta'] : [];
+        $facets = $this->facetNormalizer();
+        $raw = $facets->meta_value($meta, FacetNormalizer::season_meta_keys());
+        $terms = $facets->meta_value($meta, FacetNormalizer::camp_term_meta_keys());
+        $name = trim((string) ($row['order_item_name'] ?? ''));
+        if ($name === '') {
+            $name = trim((string) ($row['class_name'] ?? ''));
+        }
+        $bucket = $this->normalizeSeasonValue($raw);
+        if ($productType === ProductTypeClassifierService::TYPE_CAMP
+            && $bucket === 'Spring'
+            && ($this->mentionsEaster($raw) || $this->mentionsEaster($terms) || $this->mentionsEaster($name))
+        ) {
+            return 'Easter';
+        }
+        return $bucket === '' ? 'Unspecified' : $bucket;
+    }
+
+    /**
+     * English season bucket. Empty when the text has no season word.
+     *
+     * @param string $raw
+     * @return string
+     */
+    private function normalizeSeasonValue($raw) {
+        $value = FacetNormalizer::decode_label($raw);
+        if ($value === '') {
+            return '';
+        }
+        $value = str_ireplace(
+            ['Pâques', 'Paques', 'Ostern', 'Oster', 'Frühling', 'Fruhling', 'Hiver', 'Printemps', 'Automne', 'Sommer', 'Herbst', 'Été', 'Ete'],
+            ['Easter', 'Easter', 'Easter', 'Easter', 'Spring', 'Spring', 'Winter', 'Spring', 'Autumn', 'Summer', 'Autumn', 'Summer', 'Summer'],
+            $value
+        );
+        $lower = strtolower($value);
+        $buckets = [
+            'easter' => 'Easter',
+            'winter' => 'Winter',
+            'spring' => 'Spring',
+            'summer' => 'Summer',
+            'autumn' => 'Autumn',
+            'fall' => 'Autumn',
+        ];
+        foreach ($buckets as $needle => $label) {
+            if (strpos($lower, $needle) !== false) {
+                return $label;
+            }
+        }
+        return '';
+    }
+
+    /**
+     * @param string $value
+     * @return bool
+     */
+    private function mentionsEaster($value) {
+        $value = strtolower(FacetNormalizer::decode_label($value));
+        if ($value === '') {
+            return false;
+        }
+        foreach (['easter', 'pâques', 'paques', 'ostern', 'oster'] as $needle) {
+            if (strpos($value, $needle) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param string $season
+     * @param string $type
+     * @return string
+     */
+    private function compositeLabel($season, $type) {
+        $plurals = [
+            ProductTypeClassifierService::TYPE_CAMP => 'Camps',
+            ProductTypeClassifierService::TYPE_COURSE => 'Courses',
+            ProductTypeClassifierService::TYPE_BIRTHDAY => 'Birthdays',
+            ProductTypeClassifierService::TYPE_TOURNAMENT => 'Tournaments',
+            ProductTypeClassifierService::TYPE_OTHER => 'Other',
+        ];
+        $typeLabel = isset($plurals[$type]) ? $plurals[$type] : (string) $type;
+        if ($season === '' || $season === 'Unspecified') {
+            return $typeLabel;
+        }
+        return $season . ' ' . $typeLabel;
+    }
+
+    /**
+     * Canonical canton, then FR/DE/EN labels, then the product attribute.
+     *
+     * @param array<string,mixed> $row
+     * @return string
+     */
+    private function regionLabel(array $row) {
+        $meta = (isset($row['line_meta']) && is_array($row['line_meta'])) ? $row['line_meta'] : [];
+        $facets = $this->facetNormalizer()->normalize_from_meta($meta);
+        $region = isset($facets['region']) ? (string) $facets['region'] : '';
+        if ($region === '' || $region === 'not_recorded') {
+            $fromProduct = $this->cantonFromProduct($row);
+            if ($fromProduct !== '') {
+                $region = $this->facetNormalizer()->normalize_region($fromProduct);
+            }
+        }
+        if ($region === '' || $region === 'not_recorded') {
+            return 'Unknown';
+        }
+        return $region;
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return string
+     */
+    private function cantonFromProduct(array $row) {
+        if (function_exists('intersoccer_reports_enrich_camp_canton_from_product')) {
+            $entry = [
+                'canton' => '',
+                'product_id' => (int) ($row['product_id'] ?? 0),
+                'variation_id' => (int) ($row['variation_id'] ?? 0),
+                'order_item_id' => (int) ($row['order_item_id'] ?? 0),
+            ];
+            intersoccer_reports_enrich_camp_canton_from_product($entry);
+            $canton = trim((string) ($entry['canton'] ?? ''));
+            if ($canton !== '' && strcasecmp($canton, 'Unknown') !== 0) {
+                return $canton;
+            }
+        }
+        $variationId = (int) ($row['variation_id'] ?? 0);
+        $productId = (int) ($row['product_id'] ?? 0);
+        if (function_exists('wc_get_product')) {
+            $product = wc_get_product($variationId > 0 ? $variationId : $productId);
+            $attr = $this->productCantonAttribute($product);
+            if ($attr === '' && is_object($product) && method_exists($product, 'is_type') && $product->is_type('variation') && method_exists($product, 'get_parent_id')) {
+                $attr = $this->productCantonAttribute(wc_get_product((int) $product->get_parent_id()));
+            }
+            if ($attr !== '') {
+                return $attr;
+            }
+        }
+        if (!function_exists('get_post_meta')) {
+            return '';
+        }
+        foreach ([$variationId, $productId] as $id) {
+            if ($id <= 0) {
+                continue;
+            }
+            foreach (['attribute_pa_canton-region', 'pa_canton-region'] as $key) {
+                $value = get_post_meta($id, $key, true);
+                if (is_string($value) && trim($value) !== '') {
+                    return trim($value);
+                }
+            }
+        }
+        return '';
+    }
+
+    /**
+     * @param mixed $product
+     * @return string
+     */
+    private function productCantonAttribute($product) {
+        if (!is_object($product) || !method_exists($product, 'get_attribute')) {
+            return '';
+        }
+        $attr = $product->get_attribute('pa_canton-region');
+        if (!is_string($attr) || trim($attr) === '') {
+            return '';
+        }
+        return trim($attr);
+    }
+
+    /**
+     * @return FacetNormalizer
+     */
+    private function facetNormalizer() {
+        if (!($this->facets instanceof FacetNormalizer)) {
+            $this->facets = new FacetNormalizer();
+        }
+        return $this->facets;
     }
 
     /**
@@ -997,6 +2090,9 @@ class DailyBfSalesEmail {
             'order_count' => 0,
             'types' => $types,
             'products' => [],
+            'regions' => [],
+            'seasons' => [],
+            'season_types' => [],
             'used_created_fallback' => false,
             'net_ex_vat' => 0.0,
             'net_inc_vat' => 0.0,
@@ -1004,58 +2100,141 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * @param array<string,mixed> $summary
+     * @param string              $label
+     * @param array<string,mixed> $onHold
      * @return string
      */
-    private function renderTypeTable(array $summary) {
-        $html = '<table><thead><tr>';
-        $html .= '<th>Product type</th><th>Qty</th><th>Gross ex-VAT</th><th>Discounts</th><th>Refunds</th><th>Net ex-VAT</th><th>Net inc-VAT</th>';
-        $html .= '</tr></thead><tbody>';
-        $types = isset($summary['types']) && is_array($summary['types']) ? $summary['types'] : [];
-        foreach ($types as $type) {
-            if (!is_array($type)) {
+    private function renderOnHoldNote($label, array $onHold) {
+        $count = (int) ($onHold['order_count'] ?? 0);
+        $amount = $this->money((float) ($onHold['net_inc_vat'] ?? 0));
+        return '<p>' . esc_html((string) $label) . ': ' . esc_html((string) $count)
+            . ' orders, ' . esc_html($amount) . ' CHF inc-VAT. Not included in the totals.</p>';
+    }
+
+    /**
+     * @param array<string,mixed> $summary
+     * @return array{order_count:int,net_inc_vat:float}
+     */
+    private function onHoldFigures(array $summary) {
+        return [
+            'order_count' => (int) ($summary['order_count'] ?? 0),
+            'net_inc_vat' => round((float) ($summary['net_inc_vat'] ?? 0), 2),
+        ];
+    }
+
+    /**
+     * Daily and campaign-to-date columns in one table. Inc-VAT is the amount shown.
+     *
+     * @param string              $labelHeading
+     * @param array<string,mixed> $daily
+     * @param array<string,mixed> $campaign
+     * @param string              $collection types|products
+     * @return string
+     */
+    private function renderComparisonTable($labelHeading, array $daily, array $campaign, $collection, $hideEmpty = false) {
+        $dailyRows = (isset($daily[$collection]) && is_array($daily[$collection])) ? $daily[$collection] : [];
+        $campaignRows = (isset($campaign[$collection]) && is_array($campaign[$collection])) ? $campaign[$collection] : [];
+        $campaignByKey = [];
+        foreach ($campaignRows as $row) {
+            if (!is_array($row)) {
                 continue;
             }
-            $html .= '<tr>';
-            $html .= '<td>' . esc_html((string) ($type['label'] ?? '')) . '</td>';
-            $html .= '<td>' . esc_html((string) (int) ($type['quantity'] ?? 0)) . '</td>';
-            $html .= '<td>' . esc_html($this->money((float) ($type['gross_ex_vat'] ?? 0))) . '</td>';
-            $html .= '<td>' . esc_html($this->money((float) ($type['discounts'] ?? 0))) . '</td>';
-            $html .= '<td>' . esc_html($this->money((float) ($type['refunds'] ?? 0))) . '</td>';
-            $html .= '<td>' . esc_html($this->money((float) ($type['net_ex_vat'] ?? 0))) . '</td>';
-            $html .= '<td>' . esc_html($this->money((float) ($type['net_inc_vat'] ?? 0))) . '</td>';
-            $html .= '</tr>';
+            $campaignByKey[(string) ($row['key'] ?? '')] = $row;
         }
-        $html .= '<tr><td>Total</td><td></td><td></td><td></td><td></td>';
-        $html .= '<td>' . esc_html($this->money((float) ($summary['net_ex_vat'] ?? 0))) . '</td>';
-        $html .= '<td>' . esc_html($this->money((float) ($summary['net_inc_vat'] ?? 0))) . '</td></tr>';
+        $pairs = [];
+        $seen = [];
+        foreach ($dailyRows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $key = (string) ($row['key'] ?? '');
+            $seen[$key] = true;
+            $pairs[] = [$row, isset($campaignByKey[$key]) ? $campaignByKey[$key] : null];
+        }
+        foreach ($campaignRows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $key = (string) ($row['key'] ?? '');
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $pairs[] = [null, $row];
+        }
+        $html = '<table><thead><tr>';
+        $html .= '<th>' . esc_html((string) $labelHeading) . '</th>';
+        $html .= '<th>Daily qty</th><th>Daily inc-VAT</th><th>Campaign qty</th><th>Campaign inc-VAT</th>';
+        $html .= '</tr></thead><tbody>';
+        $shown = 0;
+        $dailyQty = 0;
+        $dailyInc = 0.0;
+        $campaignQty = 0;
+        $campaignInc = 0.0;
+        foreach ($pairs as $pair) {
+            $left = is_array($pair[0]) ? $pair[0] : [];
+            $right = is_array($pair[1]) ? $pair[1] : [];
+            $leftQty = (int) ($left['quantity'] ?? 0);
+            $rightQty = (int) ($right['quantity'] ?? 0);
+            $leftInc = (float) ($left['net_inc_vat'] ?? 0);
+            $rightInc = (float) ($right['net_inc_vat'] ?? 0);
+            if ($hideEmpty && $leftQty === 0 && $rightQty === 0) {
+                continue;
+            }
+            $label = (string) ($left['label'] ?? '');
+            if ($label === '') {
+                $label = (string) ($right['label'] ?? '');
+            }
+            $html .= '<tr>';
+            $html .= '<td>' . esc_html($label) . '</td>';
+            $html .= '<td>' . esc_html((string) $leftQty) . '</td>';
+            $html .= '<td>' . esc_html($this->money($leftInc)) . '</td>';
+            $html .= '<td>' . esc_html((string) $rightQty) . '</td>';
+            $html .= '<td>' . esc_html($this->money($rightInc)) . '</td>';
+            $html .= '</tr>';
+            $shown++;
+            $dailyQty += $leftQty;
+            $dailyInc += $leftInc;
+            $campaignQty += $rightQty;
+            $campaignInc += $rightInc;
+        }
+        if ($hideEmpty && $shown === 0) {
+            if ($collection === 'regions') {
+                $empty = 'No regions in this range.';
+            } elseif ($collection === 'products') {
+                $empty = 'No products sold in this range.';
+            } else {
+                $empty = 'None in this range.';
+            }
+            $html .= '<tr><td colspan="5">' . esc_html($empty) . '</td></tr>';
+        }
+        $html .= '<tr><td>Total</td>';
+        $html .= '<td>' . esc_html((string) $dailyQty) . '</td>';
+        $html .= '<td>' . esc_html($this->money($dailyInc)) . '</td>';
+        $html .= '<td>' . esc_html((string) $campaignQty) . '</td>';
+        $html .= '<td>' . esc_html($this->money($campaignInc)) . '</td></tr>';
         $html .= '</tbody></table>';
         return $html;
     }
 
     /**
-     * @param array<string,mixed> $summary
-     * @return string
+     * @param mixed $raw
+     * @return array<int,string>
      */
-    private function renderProductTable(array $summary) {
-        $html = '<table><thead><tr><th>Product</th><th>Qty</th><th>Net ex-VAT</th><th>Net inc-VAT</th></tr></thead><tbody>';
-        $products = isset($summary['products']) && is_array($summary['products']) ? $summary['products'] : [];
-        if ($products === []) {
-            $html .= '<tr><td colspan="4">No products sold in this range.</td></tr>';
+    private static function sanitizeOrderStatuses($raw) {
+        if (!is_array($raw)) {
+            return [];
         }
-        foreach ($products as $product) {
-            if (!is_array($product)) {
+        $out = [];
+        foreach ($raw as $status) {
+            $status = (string) $status;
+            if (preg_match('/^wc-[a-z0-9_-]+$/', $status) !== 1) {
                 continue;
             }
-            $html .= '<tr>';
-            $html .= '<td>' . esc_html((string) ($product['label'] ?? '')) . '</td>';
-            $html .= '<td>' . esc_html((string) (int) ($product['quantity'] ?? 0)) . '</td>';
-            $html .= '<td>' . esc_html($this->money((float) ($product['net_ex_vat'] ?? 0))) . '</td>';
-            $html .= '<td>' . esc_html($this->money((float) ($product['net_inc_vat'] ?? 0))) . '</td>';
-            $html .= '</tr>';
+            if (!in_array($status, $out, true)) {
+                $out[] = $status;
+            }
         }
-        $html .= '</tbody></table>';
-        return $html;
+        return $out;
     }
 
     /**
@@ -1103,19 +2282,17 @@ class DailyBfSalesEmail {
         if ($code === '') {
             return ['coupon' => null, 'reason' => 'coupon_missing'];
         }
-        $raw = null;
-        if ($this->couponLoader !== null) {
-            $raw = call_user_func($this->couponLoader, $code);
-        } else {
-            $raw = $this->loadCouponFromWoo($code);
-        }
+        $raw = $this->loadCouponRecord($code);
         if (!is_array($raw)) {
             return ['coupon' => null, 'reason' => 'coupon_not_found'];
         }
-        $start = $this->parseInstant(isset($raw['start']) ? $raw['start'] : null);
+        $start = $this->campaignStartUnix();
         $expires = $this->parseInstant(isset($raw['expires']) ? $raw['expires'] : null);
-        if ($start === null || $expires === null) {
-            return ['coupon' => null, 'reason' => 'coupon_missing_dates'];
+        if ($start === null) {
+            return ['coupon' => null, 'reason' => 'campaign_start_missing'];
+        }
+        if ($expires === null) {
+            return ['coupon' => null, 'reason' => 'coupon_missing_expiry'];
         }
         return [
             'coupon' => [
@@ -1127,8 +2304,37 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * Window start is the campaign start setting at 00:00 Europe/Zurich.
+     * A coupon loader may still return a start value; it is not the window.
+     *
+     * @return int|null
+     */
+    private function campaignStartUnix() {
+        $ymd = $this->settings()['campaign_start'];
+        if ($ymd === '') {
+            return null;
+        }
+        return $this->parseInstant($ymd);
+    }
+
+    /**
      * @param string $code
-     * @return array{start:mixed,expires:mixed}|null
+     * @return array<string,mixed>|null
+     */
+    private function loadCouponRecord($code) {
+        if ($this->couponLoader !== null) {
+            $raw = call_user_func($this->couponLoader, $code);
+            return is_array($raw) ? $raw : null;
+        }
+        return $this->loadCouponFromWoo($code);
+    }
+
+    /**
+     * Expiry comes from WC_Coupon::get_date_expires(), then the date_expires
+     * timestamp meta. WooCommerce does not store a coupon start date.
+     *
+     * @param string $code
+     * @return array{expires:mixed}|null
      */
     private function loadCouponFromWoo($code) {
         if (!function_exists('wc_get_coupon_id_by_code') || !function_exists('get_post_meta')) {
@@ -1138,30 +2344,46 @@ class DailyBfSalesEmail {
         if ($id <= 0) {
             return null;
         }
-        $start = get_post_meta($id, '_date_starts', true);
-        if ($start === '' || $start === false || $start === null) {
-            $start = get_post_meta($id, 'date_starts', true);
-        }
-        $expires = get_post_meta($id, '_date_expires', true);
-        if (function_exists('wc_get_coupon')) {
-            $coupon = wc_get_coupon($id);
-            if (is_object($coupon) && method_exists($coupon, 'get_date_starts')) {
-                $started = $coupon->get_date_starts();
-                if ($started instanceof \DateTimeInterface) {
-                    $start = $started->getTimestamp();
-                }
-            }
+        $expires = null;
+        if (class_exists('WC_Coupon')) {
+            $coupon = new \WC_Coupon($id);
             if (is_object($coupon) && method_exists($coupon, 'get_date_expires')) {
                 $expiry = $coupon->get_date_expires();
                 if ($expiry instanceof \DateTimeInterface) {
-                    $expires = $expiry->getTimestamp();
+                    $unix = $expiry->getTimestamp();
+                    if ($unix > 0) {
+                        $expires = $unix;
+                    }
                 }
             }
         }
+        if ($expires === null) {
+            $meta = get_post_meta($id, 'date_expires', true);
+            if ($meta !== '' && $meta !== false && $meta !== null) {
+                $expires = $meta;
+            }
+        }
         return [
-            'start' => $start,
-            'expires' => $expires,
+            'expires' => self::normalizeStoredExpiry($expires),
         ];
+    }
+
+    /**
+     * @param mixed $value
+     * @return mixed
+     */
+    private static function normalizeStoredExpiry($value) {
+        if ($value instanceof \DateTimeInterface) {
+            return self::effectiveExpiryUnix($value->getTimestamp());
+        }
+        if (is_int($value) || (is_string($value) && preg_match('/^\d+$/', (string) $value))) {
+            $unix = (int) $value;
+            if ($unix <= 0) {
+                return $value;
+            }
+            return self::effectiveExpiryUnix($unix);
+        }
+        return $value;
     }
 
     /**
@@ -1255,6 +2477,8 @@ class DailyBfSalesEmail {
             'coupon_missing',
             'coupon_not_found',
             'coupon_missing_dates',
+            'campaign_start_missing',
+            'coupon_missing_expiry',
             'report_failed',
             'disabled',
             'before_send_time',
@@ -1273,11 +2497,13 @@ class DailyBfSalesEmail {
             'sent' => 'Sent',
             'mail_failed' => 'Mail failed',
             'empty_recipients' => 'Not sent: the Send to list is empty',
-            'invalid_recipient' => 'Not sent: the Send to list contains an invalid address',
+            'invalid_recipient' => 'Not sent: the Send to list has no valid address',
             'outside_window' => 'Not sent: outside the coupon window',
             'coupon_missing' => 'Not sent: no coupon code is set',
             'coupon_not_found' => 'Not sent: the coupon was not found',
             'coupon_missing_dates' => 'Not sent: the coupon is missing a start or expiry',
+            'campaign_start_missing' => 'Not sent: the campaign start date is not set',
+            'coupon_missing_expiry' => 'Not sent: the coupon has no expiry date',
             'report_failed' => 'Not sent: the report could not be built',
             'unknown' => 'Not sent',
         ];
