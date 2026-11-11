@@ -5,12 +5,13 @@
  * Enable is off by default. Recipients come only from the Send to setting.
  * The hourly check is scheduled only while Enable is on. Turning Enable off,
  * or deactivating the plugin, clears that event. A plain load with Enable off
- * does not schedule it. The schedule follows the coupon's Europe/Zurich active
- * days. The morning after the last coupon day is the final campaign email.
- * A coupon that expires at 00:00 Europe/Zurich ends on the previous calendar
- * day. The final email reports that day's paid sales and the running total
- * for the whole campaign (coupon start through that day). After that send,
- * nothing more goes out for the campaign. A test send goes to one typed
+ * does not schedule it. The window starts at 00:00 Europe/Zurich on the
+ * campaign start date and ends on the WooCommerce coupon expiry. There is
+ * no coupon start date. The morning after the last day is the final campaign
+ * email. A coupon that expires at 00:00 Europe/Zurich ends on the previous
+ * calendar day. The final email reports that day's paid sales and the running
+ * total for the whole campaign (campaign start through that day). After that
+ * send, nothing more goes out for the campaign. A test send goes to one typed
  * address and does not mark the day. It does not depend on the cron event.
  *
  * Paid totals count processing and completed orders whose paid date falls in
@@ -454,7 +455,10 @@ class DailyBfSalesEmail {
             echo '<div class="notice ' . esc_attr($class) . '"><p>' . esc_html($detail) . '</p></div>';
         }
         echo '<p>Enable is off until you turn it on. Recipients come only from Send to. Nothing is hardcoded.</p>';
-        echo '<p>The email sends each morning at the chosen Europe/Zurich time while yesterday falls on a day the coupon is active. The morning after the last coupon day is the final campaign email. A coupon that expires at 00:00 Europe/Zurich ends on the previous calendar day. It reports that day\'s paid sales and the running total for the whole campaign (coupon start through that day), with Final in the subject. After that send, nothing more goes out for the campaign.</p>';
+        echo '<p>The email sends each morning at the chosen Europe/Zurich time while yesterday falls inside the campaign window. The window starts at 00:00 Europe/Zurich on the campaign start date and ends on the coupon expiry. The morning after the last day is the final campaign email. A coupon that expires at 00:00 Europe/Zurich ends on the previous calendar day. It reports that day\'s paid sales and the running total for the whole campaign (campaign start through that day), with Final in the subject. After that send, nothing more goes out for the campaign.</p>';
+        foreach ($this->configurationWarnings() as $warning) {
+            echo '<div class="notice notice-warning"><p>' . esc_html($warning) . '</p></div>';
+        }
         echo '<p>Totals are net inc-VAT for processing and completed orders with a paid date in the window. On-hold orders are counted separately by the date they were created and are not included. Orders with no paid date are omitted from the paid totals.</p>';
         echo '<form method="post" action="' . esc_url(admin_url('admin.php?page=' . self::PAGE_SLUG)) . '">';
         $this->nonceField(self::NONCE_SETTINGS);
@@ -468,9 +472,13 @@ class DailyBfSalesEmail {
         echo '<input type="text" name="bf_send_time" id="bf_send_time" value="' . esc_attr($settings['send_time']) . '" pattern="[0-2][0-9]:[0-5][0-9]" />';
         echo '<p class="description">HH:MM on the Europe/Zurich clock. Daylight saving is handled by that timezone.</p>';
         echo '</td></tr>';
+        echo '<tr><th scope="row"><label for="bf_campaign_start">Campaign start date</label></th><td>';
+        echo '<input type="date" name="bf_campaign_start" id="bf_campaign_start" value="' . esc_attr($settings['campaign_start']) . '" />';
+        echo '<p class="description">First day of the window, saved as YYYY-MM-DD and read as 00:00 Europe/Zurich. Leave it empty to save without a start. The scheduled email does not send until a start date is set.</p>';
+        echo '</td></tr>';
         echo '<tr><th scope="row"><label for="bf_coupon_code">Coupon code</label></th><td>';
         echo '<input type="text" name="bf_coupon_code" id="bf_coupon_code" value="' . esc_attr($settings['coupon_code']) . '" class="regular-text" />';
-        echo '<p class="description">Schedule start is the coupon <code>_date_starts</code> value (Unix timestamp or YYYY-MM-DD). Schedule end is the WooCommerce coupon expiry. Both are required. Dates are read in Europe/Zurich.</p>';
+        echo '<p class="description">The window ends on the WooCommerce coupon expiry (<code>date_expires</code>). WooCommerce does not store a coupon start date. A missing expiry means the scheduled email does not send. Dates are read in Europe/Zurich.</p>';
         echo '</td></tr>';
         echo '<tr><th scope="row"><label for="bf_low_booking_threshold">Low booking threshold</label></th><td>';
         echo '<input type="number" name="bf_low_booking_threshold" id="bf_low_booking_threshold" min="0" max="999" value="' . esc_attr((string) (int) $settings['low_booking_threshold']) . '" />';
@@ -815,6 +823,62 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * Empty is allowed and stored as an empty string. Any other value must be
+     * a real YYYY-MM-DD date. Invalid input returns null so save can reject it.
+     *
+     * @param string $raw
+     * @return string|null
+     */
+    private static function validCampaignStartYmd($raw) {
+        $raw = trim((string) $raw);
+        if ($raw === '') {
+            return '';
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw) !== 1) {
+            return null;
+        }
+        $tz = new \DateTimeZone(self::TIMEZONE);
+        $dt = \DateTimeImmutable::createFromFormat('!Y-m-d', $raw, $tz);
+        $errors = \DateTimeImmutable::getLastErrors();
+        if (!($dt instanceof \DateTimeImmutable)) {
+            return null;
+        }
+        if (is_array($errors) && (!empty($errors['warning_count']) || !empty($errors['error_count']))) {
+            return null;
+        }
+        if ($dt->format('Y-m-d') !== $raw) {
+            return null;
+        }
+        return $raw;
+    }
+
+    /**
+     * Persistent settings-page warnings. These stay visible without a save flash.
+     *
+     * @return array<int,string>
+     */
+    private function configurationWarnings() {
+        $warnings = [];
+        $settings = $this->settings();
+        if ($settings['campaign_start'] === '') {
+            $warnings[] = 'Campaign start date is not set. The scheduled email will not send.';
+        }
+        $code = trim((string) $settings['coupon_code']);
+        if ($code === '') {
+            return $warnings;
+        }
+        $raw = $this->loadCouponRecord($code);
+        if (!is_array($raw)) {
+            return $warnings;
+        }
+        $expires = $this->parseInstant(isset($raw['expires']) ? $raw['expires'] : null);
+        if ($expires === null) {
+            $warnings[] = 'The coupon has no expiry date. The scheduled email will not send.';
+        }
+        return $warnings;
+    }
+
+    /**
      * @return bool
      */
     /**
@@ -873,7 +937,7 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * @return array{enabled:bool,recipients:string,send_time:string,coupon_code:string,low_booking_threshold:int}
+     * @return array{enabled:bool,recipients:string,send_time:string,coupon_code:string,low_booking_threshold:int,campaign_start:string}
      */
     public function settings() {
         $stored = get_option(self::OPTION_SETTINGS, []);
@@ -884,11 +948,17 @@ class DailyBfSalesEmail {
         if (!self::isValidSendTime($sendTime)) {
             $sendTime = '08:00';
         }
+        $campaignStart = isset($stored['campaign_start']) ? (string) $stored['campaign_start'] : '';
+        $campaignStart = self::validCampaignStartYmd($campaignStart);
+        if ($campaignStart === null) {
+            $campaignStart = '';
+        }
         return [
             'enabled' => !empty($stored['enabled']),
             'recipients' => isset($stored['recipients']) ? (string) $stored['recipients'] : '',
             'send_time' => $sendTime,
             'coupon_code' => isset($stored['coupon_code']) ? (string) $stored['coupon_code'] : '',
+            'campaign_start' => $campaignStart,
             'low_booking_threshold' => array_key_exists('low_booking_threshold', $stored)
                 ? self::normalizeLowBookingThreshold($stored['low_booking_threshold'])
                 : self::DEFAULT_LOW_BOOKING_THRESHOLD,
@@ -951,6 +1021,16 @@ class DailyBfSalesEmail {
         if (strlen($code) > 64) {
             $code = substr($code, 0, 64);
         }
+        $campaignStartRaw = isset($post['bf_campaign_start']) ? (string) $post['bf_campaign_start'] : '';
+        $campaignStartRaw = function_exists('sanitize_text_field') ? sanitize_text_field($campaignStartRaw) : trim($campaignStartRaw);
+        $campaignStart = self::validCampaignStartYmd($campaignStartRaw);
+        if ($campaignStart === null) {
+            return [
+                'ok' => false,
+                'code' => 'invalid_campaign_start',
+                'message' => 'Enter the campaign start date as YYYY-MM-DD, or leave it empty.',
+            ];
+        }
         $threshold = self::normalizeLowBookingThreshold(
             array_key_exists('bf_low_booking_threshold', $post) ? $post['bf_low_booking_threshold'] : null
         );
@@ -960,6 +1040,7 @@ class DailyBfSalesEmail {
             'recipients' => $recipients,
             'send_time' => $sendTime,
             'coupon_code' => $code,
+            'campaign_start' => $campaignStart,
         ];
         update_option(self::OPTION_SETTINGS, $settings, false);
         self::syncScheduleToValue($settings);
@@ -1022,7 +1103,7 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * Failed and pending orders created from the coupon start through the
+     * Failed and pending orders created from the campaign start through the
      * reported Zurich day. The list keeps the order number, created time,
      * and admin link only, newest first.
      *
@@ -2154,19 +2235,17 @@ class DailyBfSalesEmail {
         if ($code === '') {
             return ['coupon' => null, 'reason' => 'coupon_missing'];
         }
-        $raw = null;
-        if ($this->couponLoader !== null) {
-            $raw = call_user_func($this->couponLoader, $code);
-        } else {
-            $raw = $this->loadCouponFromWoo($code);
-        }
+        $raw = $this->loadCouponRecord($code);
         if (!is_array($raw)) {
             return ['coupon' => null, 'reason' => 'coupon_not_found'];
         }
-        $start = $this->parseInstant(isset($raw['start']) ? $raw['start'] : null);
+        $start = $this->campaignStartUnix();
         $expires = $this->parseInstant(isset($raw['expires']) ? $raw['expires'] : null);
-        if ($start === null || $expires === null) {
-            return ['coupon' => null, 'reason' => 'coupon_missing_dates'];
+        if ($start === null) {
+            return ['coupon' => null, 'reason' => 'campaign_start_missing'];
+        }
+        if ($expires === null) {
+            return ['coupon' => null, 'reason' => 'coupon_missing_expiry'];
         }
         return [
             'coupon' => [
@@ -2178,8 +2257,37 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * Window start is the campaign start setting at 00:00 Europe/Zurich.
+     * A coupon loader may still return a start value; it is not the window.
+     *
+     * @return int|null
+     */
+    private function campaignStartUnix() {
+        $ymd = $this->settings()['campaign_start'];
+        if ($ymd === '') {
+            return null;
+        }
+        return $this->parseInstant($ymd);
+    }
+
+    /**
      * @param string $code
-     * @return array{start:mixed,expires:mixed}|null
+     * @return array<string,mixed>|null
+     */
+    private function loadCouponRecord($code) {
+        if ($this->couponLoader !== null) {
+            $raw = call_user_func($this->couponLoader, $code);
+            return is_array($raw) ? $raw : null;
+        }
+        return $this->loadCouponFromWoo($code);
+    }
+
+    /**
+     * Expiry comes from WC_Coupon::get_date_expires(), then the date_expires
+     * timestamp meta. WooCommerce does not store a coupon start date.
+     *
+     * @param string $code
+     * @return array{expires:mixed}|null
      */
     private function loadCouponFromWoo($code) {
         if (!function_exists('wc_get_coupon_id_by_code') || !function_exists('get_post_meta')) {
@@ -2189,28 +2297,26 @@ class DailyBfSalesEmail {
         if ($id <= 0) {
             return null;
         }
-        $start = get_post_meta($id, '_date_starts', true);
-        if ($start === '' || $start === false || $start === null) {
-            $start = get_post_meta($id, 'date_starts', true);
-        }
-        $expires = get_post_meta($id, '_date_expires', true);
-        if (function_exists('wc_get_coupon')) {
-            $coupon = wc_get_coupon($id);
-            if (is_object($coupon) && method_exists($coupon, 'get_date_starts')) {
-                $started = $coupon->get_date_starts();
-                if ($started instanceof \DateTimeInterface) {
-                    $start = $started->getTimestamp();
-                }
-            }
+        $expires = null;
+        if (class_exists('WC_Coupon')) {
+            $coupon = new \WC_Coupon($id);
             if (is_object($coupon) && method_exists($coupon, 'get_date_expires')) {
                 $expiry = $coupon->get_date_expires();
                 if ($expiry instanceof \DateTimeInterface) {
-                    $expires = $expiry->getTimestamp();
+                    $unix = $expiry->getTimestamp();
+                    if ($unix > 0) {
+                        $expires = $unix;
+                    }
                 }
             }
         }
+        if ($expires === null) {
+            $meta = get_post_meta($id, 'date_expires', true);
+            if ($meta !== '' && $meta !== false && $meta !== null) {
+                $expires = $meta;
+            }
+        }
         return [
-            'start' => $start,
             'expires' => self::normalizeStoredExpiry($expires),
         ];
     }
@@ -2324,6 +2430,8 @@ class DailyBfSalesEmail {
             'coupon_missing',
             'coupon_not_found',
             'coupon_missing_dates',
+            'campaign_start_missing',
+            'coupon_missing_expiry',
             'report_failed',
             'disabled',
             'before_send_time',
@@ -2347,6 +2455,8 @@ class DailyBfSalesEmail {
             'coupon_missing' => 'Not sent: no coupon code is set',
             'coupon_not_found' => 'Not sent: the coupon was not found',
             'coupon_missing_dates' => 'Not sent: the coupon is missing a start or expiry',
+            'campaign_start_missing' => 'Not sent: the campaign start date is not set',
+            'coupon_missing_expiry' => 'Not sent: the coupon has no expiry date',
             'report_failed' => 'Not sent: the report could not be built',
             'unknown' => 'Not sent',
         ];

@@ -53,12 +53,31 @@ namespace {
         }
     }
 
-    if (!function_exists('wc_get_coupon')) {
-        function wc_get_coupon($id) {
-            $map = (isset($GLOBALS['intersoccer_rr_bf_coupons']) && is_array($GLOBALS['intersoccer_rr_bf_coupons']))
-                ? $GLOBALS['intersoccer_rr_bf_coupons']
-                : [];
-            return isset($map[$id]) ? $map[$id] : false;
+    if (!class_exists('WC_Coupon')) {
+        class WC_Coupon {
+            /** @var int */
+            private $id;
+
+            /**
+             * @param mixed $data Coupon id.
+             */
+            public function __construct($data = 0) {
+                $this->id = is_object($data) && isset($data->ID) ? (int) $data->ID : (int) $data;
+            }
+
+            /**
+             * @return \DateTimeInterface|null
+             */
+            public function get_date_expires() {
+                $map = (isset($GLOBALS['intersoccer_rr_bf_coupon_expiries']) && is_array($GLOBALS['intersoccer_rr_bf_coupon_expiries']))
+                    ? $GLOBALS['intersoccer_rr_bf_coupon_expiries']
+                    : [];
+                if (!array_key_exists($this->id, $map)) {
+                    return null;
+                }
+                $value = $map[$this->id];
+                return ($value instanceof \DateTimeInterface) ? $value : null;
+            }
         }
     }
 }
@@ -111,27 +130,6 @@ use InterSoccer\ReportsRosters\Services\DailyBfSalesEmail;
 use InterSoccer\ReportsRosters\Services\FinancialReportService;
 use InterSoccer\ReportsRosters\Services\ProductTypeClassifierService;
 use InterSoccer\ReportsRosters\Tests\TestCase;
-
-class DailyBfSalesEmailCouponStub {
-    /** @var \DateTimeInterface */
-    private $start;
-
-    /** @var \DateTimeInterface */
-    private $expires;
-
-    public function __construct(\DateTimeInterface $start, \DateTimeInterface $expires) {
-        $this->start = $start;
-        $this->expires = $expires;
-    }
-
-    public function get_date_starts() {
-        return $this->start;
-    }
-
-    public function get_date_expires() {
-        return $this->expires;
-    }
-}
 
 class DailyBfSalesEmailCapturingLogger extends Logger {
     public $entries = [];
@@ -403,7 +401,7 @@ class DailyBfSalesEmailTest extends TestCase {
             $GLOBALS['intersoccer_test_post_titles'],
             $GLOBALS['intersoccer_test_post_parents'],
             $GLOBALS['intersoccer_rr_bf_coupon_ids'],
-            $GLOBALS['intersoccer_rr_bf_coupons'],
+            $GLOBALS['intersoccer_rr_bf_coupon_expiries'],
             $GLOBALS['intersoccer_rr_bf_hpos_enabled']
         );
         \InterSoccerRRTestMeta::reset();
@@ -668,54 +666,215 @@ class DailyBfSalesEmailTest extends TestCase {
     }
 
     public function test_woo_coupon_midnight_expiry_is_stored_as_the_previous_day(): void {
-        $this->wpdb = new DailyBfSalesEmailFixtureWpdb();
-        $database = $this->createMock(Database::class);
-        $database->method('get_wpdb')->willReturn($this->wpdb);
-        $this->reports = new FinancialReportService($this->logger, $database);
-        $start = new \DateTimeImmutable('2026-11-18 00:00:00', new \DateTimeZone('Europe/Zurich'));
-        $endOfDay = new \DateTimeImmutable('2026-11-30 23:59:59', new \DateTimeZone('Europe/Zurich'));
-        $midnight = new \DateTimeImmutable('2026-12-01 00:00:00', new \DateTimeZone('Europe/Zurich'));
-        $GLOBALS['intersoccer_rr_bf_coupon_ids'] = ['END' => 71, 'MIDNIGHT' => 72];
-        $GLOBALS['intersoccer_rr_bf_coupons'] = [
-            71 => new DailyBfSalesEmailCouponStub($start, $endOfDay),
-            72 => new DailyBfSalesEmailCouponStub($start, $midnight),
+        $zone = new \DateTimeZone('Europe/Zurich');
+        $endOfDay = new \DateTime('2026-11-30 23:59:59', $zone);
+        $midnight = new \WC_DateTime('2026-12-01 00:00:00', $zone);
+        $GLOBALS['intersoccer_rr_bf_coupon_ids'] = ['END' => 71, 'MIDNIGHT' => 72, 'META' => 73];
+        $GLOBALS['intersoccer_rr_bf_coupon_expiries'] = [
+            71 => $endOfDay,
+            72 => $midnight,
         ];
-        \InterSoccerRRTestMeta::$data[71]['_date_expires'] = (string) $endOfDay->getTimestamp();
-        \InterSoccerRRTestMeta::$data[72]['_date_expires'] = (string) $midnight->getTimestamp();
+        \InterSoccerRRTestMeta::$data[73]['date_expires'] = (string) $midnight->getTimestamp();
 
-        $service = new DailyBfSalesEmail(
-            $this->logger,
-            $this->reports,
-            null,
-            new \DateTimeZone('Europe/Zurich')
-        );
+        $service = $this->wooService();
         $method = new \ReflectionMethod(DailyBfSalesEmail::class, 'loadCouponFromWoo');
         $method->setAccessible(true);
         $end = $method->invoke($service, 'END');
         $mid = $method->invoke($service, 'MIDNIGHT');
+        $meta = $method->invoke($service, 'META');
         $this->assertSame($endOfDay->getTimestamp(), $end['expires']);
         $this->assertSame($endOfDay->getTimestamp(), $mid['expires']);
+        $this->assertSame($endOfDay->getTimestamp(), $meta['expires']);
 
-        $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS] = [
+        $settings = [
             'enabled' => true,
             'recipients' => 'ops@example.com',
             'send_time' => '08:00',
             'coupon_code' => 'MIDNIGHT',
+            'campaign_start' => '2026-11-18',
         ];
+        $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS] = $settings;
         $this->assertSame('sent', $service->runScheduled($this->zurich('2026-12-01 08:00:00')));
         $this->assertStringContainsString('Final ', $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['subject']);
         $this->assertStringContainsString('2026-11-30', $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['subject']);
+        $this->assertStringNotContainsString('2026-12-01', $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['subject']);
+
         $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
         $GLOBALS['intersoccer_test_option_store'] = [];
+        $nextMorning = $settings;
+        $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS] = $nextMorning;
+        $again = $this->wooService();
+        $this->assertSame('outside_window', $again->runScheduled($this->zurich('2026-12-02 08:00:00')));
+        $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+
+        $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
+        $GLOBALS['intersoccer_test_option_store'] = [
+            DailyBfSalesEmail::OPTION_SETTINGS => [
+                'enabled' => true,
+                'recipients' => 'ops@example.com',
+                'send_time' => '08:00',
+                'coupon_code' => 'META',
+                'campaign_start' => '2026-11-18',
+            ],
+        ];
+        $fromMeta = $this->wooService();
+        $this->assertSame('sent', $fromMeta->runScheduled($this->zurich('2026-12-01 08:00:00')));
+        $this->assertStringStartsWith('Final ', $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['subject']);
+        $this->assertStringContainsString('2026-11-30', $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['subject']);
+        $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
+        $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_STATE] = [];
+        $this->assertSame('outside_window', $fromMeta->runScheduled($this->zurich('2026-12-02 08:00:00')));
+        $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+    }
+
+    public function test_campaign_start_setting_and_woo_expiry_set_the_window(): void {
+        $zone = new \DateTimeZone('Europe/Zurich');
+        $GLOBALS['intersoccer_rr_bf_coupon_ids'] = ['BF' => 93];
+        $GLOBALS['intersoccer_rr_bf_coupon_expiries'] = [
+            93 => new \WC_DateTime('2026-11-30 23:59:59', $zone),
+        ];
+        \InterSoccerRRTestMeta::$data[93]['date_starts'] = '2026-12-20';
+        \InterSoccerRRTestMeta::$data[93]['_date_starts'] = '2026-12-20';
+        \InterSoccerRRTestMeta::$data[93]['date_expires'] = (string) $this->unix('2026-12-31 23:59:59');
+
+        $service = $this->wooService();
         $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS] = [
             'enabled' => true,
             'recipients' => 'ops@example.com',
             'send_time' => '08:00',
-            'coupon_code' => 'MIDNIGHT',
+            'coupon_code' => 'BF',
+            'campaign_start' => '2026-11-18',
         ];
-        $again = new DailyBfSalesEmail($this->logger, $this->reports, null, new \DateTimeZone('Europe/Zurich'));
-        $this->assertSame('outside_window', $again->runScheduled($this->zurich('2026-12-02 08:00:00')));
+        $this->logger->entries = [];
+
+        $this->assertSame('outside_window', $service->runScheduled($this->zurich('2026-11-18 08:00:00')));
         $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $this->assertSame('sent', $service->runScheduled($this->zurich('2026-11-19 08:00:00')));
+        $this->assertStringContainsString('2026-11-18', $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['subject']);
+        $this->assertStringNotContainsString('Final', $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['subject']);
+        $this->assertSame('outside_window', $service->runScheduled($this->zurich('2026-12-31 08:00:00')));
+        $this->assertNoAddressesLogged();
+
+        ob_start();
+        $service->renderPage();
+        $html = (string) ob_get_clean();
+        $this->assertStringContainsString('name="bf_campaign_start"', $html);
+        $this->assertStringContainsString('value="2026-11-18"', $html);
+        $this->assertStringContainsString('date_expires', $html);
+        $this->assertStringNotContainsString('_date_starts', $html);
+        $this->assertStringNotContainsString('date_starts', $html);
+        $this->assertStringNotContainsString('notice-warning', $html);
+    }
+
+    public function test_loader_start_is_ignored_and_the_setting_opens_the_window(): void {
+        $service = $this->enabledService([
+            'start' => $this->unix('2026-12-20 00:00:00'),
+            'expires' => $this->unix('2026-11-30 23:59:59'),
+        ], 'ops@example.com');
+        $stored = $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS];
+        $stored['campaign_start'] = '2026-11-18';
+        $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS] = $stored;
+
+        $this->assertSame('outside_window', $service->runScheduled($this->zurich('2026-11-18 08:00:00')));
+        $this->assertSame('sent', $service->runScheduled($this->zurich('2026-11-19 08:00:00')));
+        $this->assertStringContainsString('2026-11-18', $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['subject']);
+    }
+
+    public function test_missing_campaign_start_shows_a_notice_and_does_not_send(): void {
+        $GLOBALS['intersoccer_rr_bf_coupon_ids'] = ['BF' => 94];
+        $GLOBALS['intersoccer_rr_bf_coupon_expiries'] = [
+            94 => new \WC_DateTime('2026-11-30 23:59:59', new \DateTimeZone('Europe/Zurich')),
+        ];
+        $service = $this->wooService();
+        $saved = $service->handleAdminPost([
+            'bf_save' => '1',
+            '_wpnonce' => 'test',
+            'bf_enabled' => '1',
+            'bf_recipients' => 'ops@example.com',
+            'bf_send_time' => '08:00',
+            'bf_coupon_code' => 'BF',
+            'bf_campaign_start' => '',
+        ]);
+        $this->assertTrue($saved['ok']);
+        $this->assertSame('', $service->settings()['campaign_start']);
+
+        $this->logger->entries = [];
+        $this->assertSame('campaign_start_missing', $service->runScheduled($this->zurich('2026-11-29 08:00:00')));
+        $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $this->assertSame([], $service->state()['sent_dates']);
+        $this->assertSame('campaign_start_missing', $service->state()['last_result']);
+        $this->assertNoAddressesLogged();
+
+        unset($_GET['bf_notice'], $_GET['bf_detail']);
+        ob_start();
+        $service->renderPage();
+        $html = (string) ob_get_clean();
+        $this->assertStringContainsString('Campaign start date is not set. The scheduled email will not send.', $html);
+        $this->assertStringContainsString('notice-warning', $html);
+        $warning = $this->htmlSection($html, 'notice-warning', '</div>');
+        $this->assertStringNotContainsString('@', $warning);
+        $this->assertStringNotContainsString('ops@example.com', $warning);
+    }
+
+    public function test_missing_coupon_expiry_shows_a_notice_and_does_not_send(): void {
+        $GLOBALS['intersoccer_rr_bf_coupon_ids'] = ['BF' => 95];
+        $service = $this->wooService();
+        $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS] = [
+            'enabled' => true,
+            'recipients' => 'ops@example.com',
+            'send_time' => '08:00',
+            'coupon_code' => 'BF',
+            'campaign_start' => '2026-11-18',
+        ];
+        $this->logger->entries = [];
+        $this->assertSame('coupon_missing_expiry', $service->runScheduled($this->zurich('2026-11-29 08:00:00')));
+        $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $this->assertSame([], $service->state()['sent_dates']);
+        $this->assertSame('coupon_missing_expiry', $service->state()['last_result']);
+        $this->assertNoAddressesLogged();
+
+        unset($_GET['bf_notice'], $_GET['bf_detail']);
+        ob_start();
+        $service->renderPage();
+        $html = (string) ob_get_clean();
+        $this->assertStringContainsString('The coupon has no expiry date. The scheduled email will not send.', $html);
+        $this->assertStringNotContainsString('Campaign start date is not set.', $html);
+        $warning = $this->htmlSection($html, 'notice-warning', '</div>');
+        $this->assertStringNotContainsString('@', $warning);
+    }
+
+    public function test_invalid_campaign_start_is_rejected_and_an_empty_start_can_be_saved(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $before = $service->settings();
+        $rejected = $service->handleAdminPost([
+            'bf_save' => '1',
+            '_wpnonce' => 'test',
+            'bf_enabled' => '1',
+            'bf_recipients' => 'ops@example.com',
+            'bf_send_time' => '08:00',
+            'bf_coupon_code' => 'BF',
+            'bf_campaign_start' => '2026-02-31',
+        ]);
+        $this->assertFalse($rejected['ok']);
+        $this->assertSame('invalid_campaign_start', $rejected['code']);
+        $this->assertStringContainsString('YYYY-MM-DD', $rejected['message']);
+        $this->assertSame($before, $service->settings());
+
+        $cleared = $service->handleAdminPost([
+            'bf_save' => '1',
+            '_wpnonce' => 'test',
+            'bf_enabled' => '1',
+            'bf_recipients' => 'ops@example.com',
+            'bf_send_time' => '08:00',
+            'bf_coupon_code' => 'BF',
+            'bf_campaign_start' => '',
+        ]);
+        $this->assertTrue($cleared['ok']);
+        $this->assertSame('', $service->settings()['campaign_start']);
+        $this->logger->entries = [];
+        $this->assertSame('campaign_start_missing', $service->runScheduled($this->zurich('2026-11-29 08:00:00')));
+        $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $this->assertNoAddressesLogged();
     }
 
     public function test_dst_mornings_still_send_inside_the_window(): void {
@@ -1545,11 +1704,13 @@ class DailyBfSalesEmailTest extends TestCase {
 
     public function test_settings_default_to_disabled_and_an_empty_recipient_list(): void {
         $service = $this->makeService($this->novemberCoupon());
+        unset($GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS]);
         $settings = $service->settings();
         $this->assertFalse($settings['enabled']);
         $this->assertSame('', $settings['recipients']);
         $this->assertSame('08:00', $settings['send_time']);
         $this->assertSame('', $settings['coupon_code']);
+        $this->assertSame('', $settings['campaign_start']);
         $this->assertSame(3, $settings['low_booking_threshold']);
         $this->assertSame(3, DailyBfSalesEmail::DEFAULT_LOW_BOOKING_THRESHOLD);
     }
@@ -1802,6 +1963,7 @@ class DailyBfSalesEmailTest extends TestCase {
                 'bf_recipients' => 'ops@example.com',
                 'bf_send_time' => '08:00',
                 'bf_coupon_code' => 'BF',
+                'bf_campaign_start' => '2026-11-28',
                 'bf_low_booking_threshold' => '4',
                 'bf_enabled' => '1',
             ]);
@@ -1834,6 +1996,7 @@ class DailyBfSalesEmailTest extends TestCase {
                 'bf_recipients' => 'ops@example.com',
                 'bf_send_time' => '08:00',
                 'bf_coupon_code' => 'BF',
+                'bf_campaign_start' => '2026-11-28',
                 'bf_low_booking_threshold' => 'nope',
                 'bf_enabled' => '1',
             ]);
@@ -2133,6 +2296,7 @@ class DailyBfSalesEmailTest extends TestCase {
             'recipients' => $recipients,
             'send_time' => '08:00',
             'coupon_code' => 'BF',
+            'campaign_start' => $this->campaignStartYmd($coupon),
         ];
         return $this->makeService($coupon);
     }
@@ -2142,7 +2306,7 @@ class DailyBfSalesEmailTest extends TestCase {
         $database = $this->createMock(Database::class);
         $database->method('get_wpdb')->willReturn($this->wpdb);
         $this->reports = new FinancialReportService($this->logger, $database);
-        return new DailyBfSalesEmail(
+        $service = new DailyBfSalesEmail(
             $this->logger,
             $this->reports,
             function ($code) use ($coupon) {
@@ -2150,6 +2314,52 @@ class DailyBfSalesEmailTest extends TestCase {
             },
             new \DateTimeZone('Europe/Zurich')
         );
+        $this->writeCampaignStart($coupon);
+        return $service;
+    }
+
+    private function wooService(): DailyBfSalesEmail {
+        $this->wpdb = new DailyBfSalesEmailFixtureWpdb();
+        $database = $this->createMock(Database::class);
+        $database->method('get_wpdb')->willReturn($this->wpdb);
+        $this->reports = new FinancialReportService($this->logger, $database);
+        return new DailyBfSalesEmail(
+            $this->logger,
+            $this->reports,
+            null,
+            new \DateTimeZone('Europe/Zurich')
+        );
+    }
+
+    private function campaignStartYmd(array $coupon): string {
+        if (!array_key_exists('start', $coupon)) {
+            return '';
+        }
+        $start = $coupon['start'];
+        if ($start instanceof \DateTimeInterface) {
+            return DailyBfSalesEmail::zurichYmdFromTimestamp($start->getTimestamp());
+        }
+        if (is_int($start) || (is_string($start) && preg_match('/^\d+$/', (string) $start) === 1)) {
+            $unix = (int) $start;
+            if ($unix <= 0) {
+                return '';
+            }
+            return DailyBfSalesEmail::zurichYmdFromTimestamp($unix);
+        }
+        return '';
+    }
+
+    private function writeCampaignStart(array $coupon): void {
+        $ymd = $this->campaignStartYmd($coupon);
+        if ($ymd === '') {
+            return;
+        }
+        $key = DailyBfSalesEmail::OPTION_SETTINGS;
+        $stored = (isset($GLOBALS['intersoccer_test_option_store'][$key]) && is_array($GLOBALS['intersoccer_test_option_store'][$key]))
+            ? $GLOBALS['intersoccer_test_option_store'][$key]
+            : [];
+        $stored['campaign_start'] = $ymd;
+        $GLOBALS['intersoccer_test_option_store'][$key] = $stored;
     }
 
     private function seedCatalogue(): void {
