@@ -138,19 +138,27 @@ class DailyBfSalesEmailFixtureWpdb extends \InterSoccerTestWpdb {
         if (!preg_match('/CAST\(paid_meta\.meta_value AS UNSIGNED\) >= (\d+) AND CAST\(paid_meta\.meta_value AS UNSIGNED\) < (\d+)/', $query, $paid)) {
             return [];
         }
-        if (!preg_match("/p\\.post_date >= '([^']+)' AND p\\.post_date < '([^']+)'/", $query, $created)) {
-            return [];
+        $createdFallback = strpos($query, 'paid_meta.meta_value IS NULL') !== false;
+        $createdStart = '';
+        $createdEnd = '';
+        if ($createdFallback) {
+            if (!preg_match("/p\\.post_date >= '([^']+)' AND p\\.post_date < '([^']+)'/", $query, $created)) {
+                return [];
+            }
+            $createdStart = $created[1];
+            $createdEnd = $created[2];
         }
+        $statuses = $this->statusList($query);
         $rows = [];
         foreach ($this->orders as $order) {
-            if (!$this->orderIncluded($order, (int) $paid[1], (int) $paid[2], $created[1], $created[2])) {
+            if (!$this->orderIncluded($order, (int) $paid[1], (int) $paid[2], $createdFallback, $createdStart, $createdEnd, $statuses)) {
                 continue;
             }
             foreach ($order['items'] as $item) {
                 $rows[] = (object) [
                     'order_id' => $order['id'],
                     'order_date' => $order['post_date'],
-                    'order_status' => 'wc-completed',
+                    'order_status' => isset($order['status']) ? (string) $order['status'] : 'wc-completed',
                     'order_item_id' => $item['id'],
                     'order_item_name' => $item['name'],
                     'product_id' => (string) $item['product_id'],
@@ -166,11 +174,26 @@ class DailyBfSalesEmailFixtureWpdb extends \InterSoccerTestWpdb {
         return $rows;
     }
 
-    private function orderIncluded(array $order, $paidStart, $paidEnd, $createdStart, $createdEnd) {
+    private function statusList($query) {
+        if (!preg_match("/post_status IN \(([^)]+)\)/", $query, $matches)) {
+            return [];
+        }
+        preg_match_all("/'(wc-[a-z0-9_-]+)'/", $matches[1], $found);
+        return isset($found[1]) ? $found[1] : [];
+    }
+
+    private function orderIncluded(array $order, $paidStart, $paidEnd, $createdFallback, $createdStart, $createdEnd, array $statuses) {
+        $status = isset($order['status']) ? (string) $order['status'] : 'wc-completed';
+        if ($statuses !== [] && !in_array($status, $statuses, true)) {
+            return false;
+        }
         $raw = isset($order['date_paid']) ? (string) $order['date_paid'] : '';
         if ($raw !== '' && $raw !== '0') {
             $stamp = (int) $raw;
             return $stamp >= $paidStart && $stamp < $paidEnd;
+        }
+        if (!$createdFallback) {
+            return false;
         }
         $postDate = (string) $order['post_date'];
         return strcmp($postDate, $createdStart) >= 0 && strcmp($postDate, $createdEnd) < 0;
@@ -250,15 +273,134 @@ class DailyBfSalesEmailTest extends TestCase {
         $html = $service->renderHtml($digest);
 
         $this->assertSame('2026-11-28', $digest['report_date']);
-        $this->assertSame(4, $digest['daily']['order_count']);
-        $this->assertTrue($digest['used_created_fallback']);
+        $this->assertSame(3, $digest['daily']['order_count']);
+        $this->assertFalse($digest['used_created_fallback']);
         $this->assertStringContainsString(DailyBfSalesEmail::FOOTER_PAID_DATE, $html);
-        $this->assertStringContainsString(DailyBfSalesEmail::FOOTER_CREATED_FALLBACK, $html);
-        $this->assertStringContainsString('City Birthday', $html);
+        $this->assertStringNotContainsString('no paid date', $html);
+        $this->assertStringNotContainsString('City Birthday', $html);
         $this->assertStringContainsString('Regional Tournament', $html);
         $this->assertStringNotContainsString('Excluded Camp', $html);
         $this->assertStringNotContainsString('secret-buyer@example.com', $html);
         $this->assertStringNotContainsString('Secret Child', $html);
+    }
+
+    public function test_strict_paid_is_the_default_and_on_hold_is_separate(): void {
+        $this->assertSame(['wc-processing', 'wc-completed'], DailyBfSalesEmail::PAID_ORDER_STATUSES);
+        $this->assertSame(['wc-processing', 'wc-completed'], DailyBfSalesEmail::paidOrderStatuses());
+
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $this->seedCatalogue();
+        $before = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $this->wpdb->orders[] = [
+            'id' => 601,
+            'status' => 'wc-processing',
+            'post_date' => '2026-11-28 13:00:00',
+            'date_paid' => (string) $this->unix('2026-11-28 13:00:00'),
+            'items' => [
+                $this->item(6011, 'Processing Camp', 100, 1004, 1, '20.00', '20.00', '1.54'),
+            ],
+        ];
+        $this->wpdb->orders[] = [
+            'id' => 602,
+            'status' => 'wc-on-hold',
+            'post_date' => '2026-11-28 14:00:00',
+            'date_paid' => (string) $this->unix('2026-11-28 14:00:00'),
+            'items' => [
+                $this->item(6021, 'Held Camp', 100, 1005, 1, '100.00', '100.00', '7.70'),
+            ],
+        ];
+        $this->wpdb->orders[] = [
+            'id' => 603,
+            'status' => 'wc-refunded',
+            'post_date' => '2026-11-28 15:00:00',
+            'date_paid' => (string) $this->unix('2026-11-28 15:00:00'),
+            'items' => [
+                $this->item(6031, 'Refunded Status Camp', 100, 1006, 1, '80.00', '80.00', '6.16'),
+            ],
+        ];
+        $this->wpdb->itemMeta[6011] = ['_intersoccer_canonical_activity_type' => 'camp'];
+        $this->wpdb->itemMeta[6021] = ['_intersoccer_canonical_activity_type' => 'camp'];
+        $this->wpdb->itemMeta[6031] = ['_intersoccer_canonical_activity_type' => 'camp'];
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $html = $service->renderHtml($digest);
+        $this->assertSame($before['daily']['order_count'] + 1, $digest['daily']['order_count']);
+        $this->assertSame(
+            $this->cents($before['daily']['net_inc_vat'] + 21.54),
+            $this->cents($digest['daily']['net_inc_vat'])
+        );
+        $this->assertSame(1, $digest['daily_on_hold']['order_count']);
+        $this->assertSame('107.70', $this->cents($digest['daily_on_hold']['net_inc_vat']));
+        $this->assertStringContainsString('Processing Camp', $html);
+        $this->assertStringContainsString('On hold yesterday: 1 orders, 107.70 CHF inc-VAT. Not included in the totals.', $html);
+        $this->assertStringNotContainsString('Held Camp', $html);
+        $this->assertStringNotContainsString('Refunded Status Camp', $html);
+        $this->assertStringContainsString('<th>Daily qty</th><th>Daily inc-VAT</th><th>Campaign qty</th><th>Campaign inc-VAT</th>', $html);
+
+        $paidSql = $this->bookingSql();
+        $this->assertStringContainsString("'wc-processing'", $paidSql);
+        $this->assertStringContainsString("'wc-completed'", $paidSql);
+        $this->assertStringNotContainsString('paid_meta.meta_value IS NULL', $paidSql);
+        $this->assertStringNotContainsString("'wc-on-hold'", $paidSql);
+        $this->assertStringNotContainsString("'wc-refunded'", $paidSql);
+
+        $onHoldSql = '';
+        foreach ($this->wpdb->queries as $query) {
+            if (strpos($query, "post_type = 'shop_order'") !== false && strpos($query, "'wc-on-hold'") !== false) {
+                $onHoldSql = $query;
+            }
+        }
+        $this->assertNotSame('', $onHoldSql);
+        $this->assertStringContainsString('_date_paid', $onHoldSql);
+    }
+
+    public function test_paid_status_filter_replaces_the_default_set(): void {
+        $GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
+        $filter = DailyBfSalesEmail::PAID_ORDER_STATUSES_FILTER;
+        add_filter($filter, static function () {
+            return ['wc-completed'];
+        });
+        try {
+            $this->assertSame(['wc-completed'], DailyBfSalesEmail::paidOrderStatuses());
+            $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+            $this->seedCatalogue();
+            $this->wpdb->orders[] = [
+                'id' => 604,
+                'status' => 'wc-processing',
+                'post_date' => '2026-11-28 13:00:00',
+                'date_paid' => (string) $this->unix('2026-11-28 13:00:00'),
+                'items' => [
+                    $this->item(6041, 'Filtered Processing Camp', 100, 1007, 1, '15.00', '15.00', '1.16'),
+                ],
+            ];
+            $this->wpdb->itemMeta[6041] = ['_intersoccer_canonical_activity_type' => 'camp'];
+            $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+            $this->assertStringNotContainsString('Filtered Processing Camp', $service->renderHtml($digest));
+            $this->assertStringNotContainsString("'wc-processing'", $this->bookingSql());
+        } finally {
+            unset($GLOBALS['intersoccer_test_wp_hooks']['filters'][$filter]);
+            $GLOBALS['intersoccer_test_emit_wp_hooks'] = false;
+        }
+    }
+
+    public function test_booking_report_default_path_is_unchanged(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $this->seedCatalogue();
+        $this->reports->getFinancialBookingReport('2026-11-28', '2026-11-28');
+        $sql = '';
+        foreach ($this->wpdb->queries as $query) {
+            if (strpos($query, "post_type = 'shop_order'") !== false && strpos($query, '_date_paid') === false) {
+                $sql = $query;
+            }
+        }
+        $this->assertNotSame('', $sql);
+        $this->assertStringContainsString('p.post_date', $sql);
+        $this->assertStringContainsString("'wc-completed'", $sql);
+        $this->assertStringContainsString("'wc-processing'", $sql);
+        $this->assertStringContainsString("'wc-on-hold'", $sql);
+        $this->assertStringContainsString("'wc-refunded'", $sql);
+        $this->assertStringNotContainsString('CAST(paid_meta.meta_value', $sql);
+        unset($service);
     }
 
     public function test_footer_omits_created_fallback_when_every_order_was_paid(): void {
@@ -281,10 +423,10 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->seedCatalogue();
         $html = $service->renderHtml($service->buildDigest($this->zurich('2026-11-29 08:00:00')));
 
-        $this->assertStringContainsString('Gross ex-VAT', $html);
-        $this->assertStringContainsString('Net ex-VAT', $html);
-        $this->assertStringContainsString('Net inc-VAT', $html);
-        $this->assertStringContainsString('300.00', $html);
+        $this->assertStringContainsString('<strong>414.95 CHF</strong> net inc-VAT', $html);
+        $this->assertStringContainsString('<th>Daily qty</th><th>Daily inc-VAT</th><th>Campaign qty</th><th>Campaign inc-VAT</th>', $html);
+        $this->assertStringNotContainsString('Gross ex-VAT', $html);
+        $this->assertStringNotContainsString('Net ex-VAT', $html);
         $this->assertStringContainsString('323.10', $html);
 
         $this->wpdb->orders = [[
@@ -313,8 +455,9 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame('50.00', $this->cents($camp['net_ex_vat']));
         $this->assertSame('53.85', $this->cents($camp['net_inc_vat']));
         $refundedHtml = $service->renderHtml($refunded);
-        $this->assertStringContainsString('50.00', $refundedHtml);
+        $this->assertStringContainsString('<strong>53.85 CHF</strong> net inc-VAT', $refundedHtml);
         $this->assertStringContainsString('53.85', $refundedHtml);
+        $this->assertStringNotContainsString('>50.00<', $refundedHtml);
     }
 
     public function test_coupon_window_includes_morning_after_expiry_and_skips_outside_days(): void {
@@ -413,13 +556,12 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame(3, $alpine['quantity']);
         $this->assertSame('300.00', $this->cents($alpine['net_ex_vat']));
 
-        $bounds = DailyBfSalesEmail::rangeBounds('2026-11-28', '2026-11-28', new \DateTimeZone('Europe/Zurich'));
         $report = $this->reports->getFinancialBookingReport(
             '2026-11-28',
             '2026-11-28',
             '',
             '',
-            array_merge(['date_basis' => 'paid_or_created'], $bounds)
+            DailyBfSalesEmail::paidWindowOptions('2026-11-28', '2026-11-28', new \DateTimeZone('Europe/Zurich'))
         );
         foreach ($daily['types'] as $type) {
             $reported = (float) $report['revenue_by_type'][$type['key']]['net'];
@@ -430,8 +572,9 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringContainsString('_date_paid', $sql);
         $this->assertStringContainsString('wc-completed', $sql);
         $this->assertStringContainsString('wc-processing', $sql);
-        $this->assertStringContainsString('wc-on-hold', $sql);
-        $this->assertStringContainsString('wc-refunded', $sql);
+        $this->assertStringNotContainsString('paid_meta.meta_value IS NULL', $sql);
+        $this->assertStringNotContainsString('wc-on-hold', $sql);
+        $this->assertStringNotContainsString('wc-refunded', $sql);
         $this->assertFalse(stripos($sql, 'INSERT') !== false, $sql);
         $this->assertFalse(stripos($sql, 'UPDATE') !== false, $sql);
         $this->assertFalse(stripos($sql, 'DELETE') !== false, $sql);
@@ -451,7 +594,7 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame(1, $dayTwo['daily']['order_count']);
         $this->assertSame('40.00', $this->cents($dayTwo['daily']['net_ex_vat']));
         $this->assertTrue($dayTwo['campaign_started']);
-        $this->assertSame(5, $dayTwo['campaign']['order_count']);
+        $this->assertSame(4, $dayTwo['campaign']['order_count']);
         $this->assertSame(
             $this->cents($dayOne['daily']['net_ex_vat'] + $dayTwo['daily']['net_ex_vat']),
             $this->cents($dayTwo['campaign']['net_ex_vat'])
@@ -462,13 +605,12 @@ class DailyBfSalesEmailTest extends TestCase {
         );
         $this->assertProductLinesMatchTypes($dayTwo['campaign']);
 
-        $bounds = DailyBfSalesEmail::rangeBounds('2026-11-28', '2026-11-29', new \DateTimeZone('Europe/Zurich'));
         $report = $this->reports->getFinancialBookingReport(
             '2026-11-28',
             '2026-11-29',
             '',
             '',
-            array_merge(['date_basis' => 'paid_or_created'], $bounds)
+            DailyBfSalesEmail::paidWindowOptions('2026-11-28', '2026-11-29', new \DateTimeZone('Europe/Zurich'))
         );
         $reported = 0.0;
         foreach ($report['revenue_by_type'] as $bucket) {
@@ -479,6 +621,13 @@ class DailyBfSalesEmailTest extends TestCase {
         $html = $service->renderHtml($dayTwo);
         $this->assertStringContainsString('Running total since campaign start', $html);
         $this->assertStringContainsString('2026-11-28 through 2026-11-29', $html);
+        $this->assertStringContainsString(
+            'Campaign total: ' . $this->cents($dayTwo['campaign']['net_inc_vat']) . ' CHF inc-VAT.',
+            $html
+        );
+        $this->assertStringContainsString('<th>Daily qty</th><th>Daily inc-VAT</th><th>Campaign qty</th><th>Campaign inc-VAT</th>', $html);
+        $this->assertStringContainsString('43.08', $html);
+        $this->assertStringContainsString('366.18', $html);
         $this->assertStringNotContainsString(DailyBfSalesEmail::FINAL_CAMPAIGN_LINE, $html);
     }
 
@@ -512,6 +661,11 @@ class DailyBfSalesEmailTest extends TestCase {
         $html = $service->renderHtml($final);
         $this->assertStringContainsString('2026-11-28 through 2026-11-30', $html);
         $this->assertStringContainsString(DailyBfSalesEmail::FINAL_CAMPAIGN_LINE, $html);
+        $this->assertStringContainsString(
+            'Campaign total: ' . $this->cents($final['campaign']['net_inc_vat']) . ' CHF inc-VAT.',
+            $html
+        );
+        $this->assertStringContainsString('<th>Daily qty</th><th>Daily inc-VAT</th><th>Campaign qty</th><th>Campaign inc-VAT</th>', $html);
         $this->assertStringContainsString('Closing Camp', $html);
 
         $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];

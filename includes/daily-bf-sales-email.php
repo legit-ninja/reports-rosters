@@ -12,6 +12,10 @@
  * the campaign. A test send goes to one typed address and does not mark the
  * day. It does not depend on the cron event.
  *
+ * Paid totals count processing and completed orders whose paid date falls in
+ * the Europe/Zurich window. On-hold orders are reported beside those totals
+ * and are not added in. Orders with no paid date are omitted.
+ *
  * @package InterSoccer\ReportsRosters\Services
  */
 
@@ -32,8 +36,9 @@ class DailyBfSalesEmail {
     const NONCE_TEST = 'intersoccer_rr_daily_bf_sales_test';
 
     const FOOTER_PAID_DATE = 'Figures use the paid date in Europe/Zurich.';
-    const FOOTER_CREATED_FALLBACK = 'This report includes orders with no paid date; those orders are counted on their created date.';
     const FINAL_CAMPAIGN_LINE = 'Final campaign totals';
+    const PAID_ORDER_STATUSES = ['wc-processing', 'wc-completed'];
+    const PAID_ORDER_STATUSES_FILTER = 'intersoccer_rr_daily_bf_paid_order_statuses';
 
     /**
      * @var self|null
@@ -426,6 +431,7 @@ class DailyBfSalesEmail {
         }
         echo '<p>Enable is off until you turn it on. Recipients come only from Send to. Nothing is hardcoded.</p>';
         echo '<p>The email sends each morning at the chosen Europe/Zurich time while yesterday falls on a day the coupon is active. The morning after expiry is the final campaign email. It reports the expiry day\'s paid sales and the running total for the whole campaign (coupon start through expiry), with Final in the subject. After that send, nothing more goes out for the campaign.</p>';
+        echo '<p>Totals are net inc-VAT for processing and completed orders with a paid date in the window. On-hold orders are shown separately and are not included. Orders with no paid date are omitted.</p>';
         echo '<form method="post" action="' . esc_url(admin_url('admin.php?page=' . self::PAGE_SLUG)) . '">';
         $this->nonceField(self::NONCE_SETTINGS);
         echo '<table class="form-table"><tbody>';
@@ -467,11 +473,13 @@ class DailyBfSalesEmail {
     public function buildDigest($now = null) {
         $now = $this->asZurich($now);
         $reportDate = self::yesterdayYmd($now);
-        $dailyReport = $this->loadReport($reportDate, $reportDate);
+        $dailyReport = $this->loadReport($reportDate, $reportDate, self::paidOrderStatuses());
         $daily = $this->summarize(is_array($dailyReport) ? $dailyReport : []);
+        $dailyOnHold = $this->onHoldFigures($this->summarize($this->loadOnHoldReport($reportDate, $reportDate)));
         $couponStatus = $this->couponStatus($this->settings()['coupon_code']);
         $campaignStart = '';
         $campaign = null;
+        $campaignOnHold = $this->onHoldFigures($this->emptySummary());
         $campaignStarted = false;
         $finalCampaign = false;
         if ($couponStatus['coupon'] !== null) {
@@ -483,15 +491,12 @@ class DailyBfSalesEmail {
             );
             if (strcmp($campaignStart, $reportDate) <= 0) {
                 $campaignStarted = true;
-                $campaignReport = $this->loadReport($campaignStart, $reportDate);
+                $campaignReport = $this->loadReport($campaignStart, $reportDate, self::paidOrderStatuses());
                 $campaign = $this->summarize(is_array($campaignReport) ? $campaignReport : []);
+                $campaignOnHold = $this->onHoldFigures($this->summarize($this->loadOnHoldReport($campaignStart, $reportDate)));
             } else {
                 $campaign = $this->emptySummary();
             }
-        }
-        $fallback = !empty($daily['used_created_fallback']);
-        if (is_array($campaign) && !empty($campaign['used_created_fallback'])) {
-            $fallback = true;
         }
         return [
             'report_date' => $reportDate,
@@ -500,7 +505,9 @@ class DailyBfSalesEmail {
             'campaign_started' => $campaignStarted,
             'daily' => $daily,
             'campaign' => $campaign,
-            'used_created_fallback' => $fallback,
+            'daily_on_hold' => $dailyOnHold,
+            'campaign_on_hold' => $campaignOnHold,
+            'used_created_fallback' => false,
             'final_campaign' => $finalCampaign,
             'booking_report_url' => $this->bookingReportUrl($reportDate),
         ];
@@ -513,12 +520,18 @@ class DailyBfSalesEmail {
     public function renderHtml(array $digest) {
         $reportDate = (string) ($digest['report_date'] ?? '');
         $daily = isset($digest['daily']) && is_array($digest['daily']) ? $digest['daily'] : $this->emptySummary();
+        $campaign = isset($digest['campaign']) && is_array($digest['campaign']) ? $digest['campaign'] : $this->emptySummary();
         $html = '<div>';
         $html .= '<h2>Yesterday (' . esc_html($reportDate) . ', Europe/Zurich)</h2>';
+        $html .= '<p><strong>' . esc_html($this->money((float) ($daily['net_inc_vat'] ?? 0))) . ' CHF</strong> net inc-VAT</p>';
         $html .= '<p>Orders: ' . esc_html((string) (int) ($daily['order_count'] ?? 0)) . '</p>';
-        $html .= $this->renderTypeTable($daily);
-        $html .= '<h3>Products sold</h3>';
-        $html .= $this->renderProductTable($daily);
+        $html .= $this->renderOnHoldNote(
+            'On hold yesterday',
+            isset($digest['daily_on_hold']) && is_array($digest['daily_on_hold']) ? $digest['daily_on_hold'] : []
+        );
+        $html .= $this->renderComparisonTable('Product type', $daily, $campaign, 'types');
+        $html .= '<h3>Products</h3>';
+        $html .= $this->renderComparisonTable('Product', $daily, $campaign, 'products');
         if (!empty($digest['final_campaign'])) {
             $html .= '<p>' . esc_html(self::FINAL_CAMPAIGN_LINE) . '</p>';
         }
@@ -528,21 +541,18 @@ class DailyBfSalesEmail {
         } elseif (empty($digest['campaign_started'])) {
             $html .= '<p>The campaign has not started, so the running total is empty.</p>';
         } else {
-            $campaign = isset($digest['campaign']) && is_array($digest['campaign']) ? $digest['campaign'] : $this->emptySummary();
             $html .= '<p>' . esc_html((string) ($digest['campaign_start'] ?? '')) . ' through ' . esc_html($reportDate) . ' (Europe/Zurich, paid date).</p>';
             $html .= '<p>Orders: ' . esc_html((string) (int) ($campaign['order_count'] ?? 0)) . '</p>';
-            $html .= $this->renderTypeTable($campaign);
-            $html .= '<h3>Products sold since campaign start</h3>';
-            $html .= $this->renderProductTable($campaign);
-            $html .= '<p>Campaign net ex-VAT: ' . esc_html($this->money((float) ($campaign['net_ex_vat'] ?? 0))) . ' CHF. Campaign net inc-VAT: ' . esc_html($this->money((float) ($campaign['net_inc_vat'] ?? 0))) . ' CHF.</p>';
+            $html .= $this->renderOnHoldNote(
+                'On hold in the campaign',
+                isset($digest['campaign_on_hold']) && is_array($digest['campaign_on_hold']) ? $digest['campaign_on_hold'] : []
+            );
+            $html .= '<p>Campaign total: ' . esc_html($this->money((float) ($campaign['net_inc_vat'] ?? 0))) . ' CHF inc-VAT.</p>';
         }
         $url = (string) ($digest['booking_report_url'] ?? '');
         $html .= '<p><a href="' . esc_url($url) . '">Booking report for this day</a></p>';
-        $html .= '<p>Net ex-VAT is the booking-report net after discounts and refunds, tax excluded. Net inc-VAT adds the line tax that remains after refunds.</p>';
+        $html .= '<p>Net inc-VAT is what the customer paid after discounts and refunds, including remaining line tax.</p>';
         $html .= '<p>' . esc_html(self::FOOTER_PAID_DATE) . '</p>';
-        if (!empty($digest['used_created_fallback'])) {
-            $html .= '<p>' . esc_html(self::FOOTER_CREATED_FALLBACK) . '</p>';
-        }
         $html .= '</div>';
         return $html;
     }
@@ -724,6 +734,39 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * Paid statuses for this email. One filter changes the set; the default is strict.
+     *
+     * @return array<int,string>
+     */
+    public static function paidOrderStatuses() {
+        $raw = function_exists('apply_filters')
+            ? apply_filters(self::PAID_ORDER_STATUSES_FILTER, self::PAID_ORDER_STATUSES)
+            : self::PAID_ORDER_STATUSES;
+        $clean = self::sanitizeOrderStatuses($raw);
+        return $clean !== [] ? $clean : self::PAID_ORDER_STATUSES;
+    }
+
+    /**
+     * @param string             $startYmd
+     * @param string             $endYmd
+     * @param \DateTimeZone      $siteTz
+     * @param array<int,string>|null $statuses
+     * @return array<string,mixed>
+     */
+    public static function paidWindowOptions($startYmd, $endYmd, \DateTimeZone $siteTz, $statuses = null) {
+        $bounds = self::rangeBounds($startYmd, $endYmd, $siteTz);
+        if ($statuses === null) {
+            $statuses = self::paidOrderStatuses();
+        }
+        return [
+            'date_basis' => 'paid_only',
+            'order_statuses' => array_values($statuses),
+            'paid_start_unix' => $bounds['paid_start_unix'],
+            'paid_end_unix' => $bounds['paid_end_unix'],
+        ];
+    }
+
+    /**
      * @return array{enabled:bool,recipients:string,send_time:string,coupon_code:string}
      */
     public function settings() {
@@ -815,20 +858,24 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * @param string            $startYmd
+     * @param string            $endYmd
+     * @param array<int,string> $statuses
+     * @return array<string,mixed>
+     */
+    private function loadReport($startYmd, $endYmd, array $statuses) {
+        $options = self::paidWindowOptions($startYmd, $endYmd, $this->siteTimezone(), $statuses);
+        return $this->reportService()->getFinancialBookingReport($startYmd, $endYmd, '', '', $options);
+    }
+
+    /**
      * @param string $startYmd
      * @param string $endYmd
      * @return array<string,mixed>
      */
-    private function loadReport($startYmd, $endYmd) {
-        $bounds = self::rangeBounds($startYmd, $endYmd, $this->siteTimezone());
-        $options = [
-            'date_basis' => 'paid_or_created',
-            'paid_start_unix' => $bounds['paid_start_unix'],
-            'paid_end_unix' => $bounds['paid_end_unix'],
-            'created_start_local' => $bounds['created_start_local'],
-            'created_end_local' => $bounds['created_end_local'],
-        ];
-        return $this->reportService()->getFinancialBookingReport($startYmd, $endYmd, '', '', $options);
+    private function loadOnHoldReport($startYmd, $endYmd) {
+        $report = $this->loadReport($startYmd, $endYmd, ['wc-on-hold']);
+        return is_array($report) ? $report : [];
     }
 
     /**
@@ -1004,58 +1051,134 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * @param array<string,mixed> $summary
+     * @param string              $label
+     * @param array<string,mixed> $onHold
      * @return string
      */
-    private function renderTypeTable(array $summary) {
-        $html = '<table><thead><tr>';
-        $html .= '<th>Product type</th><th>Qty</th><th>Gross ex-VAT</th><th>Discounts</th><th>Refunds</th><th>Net ex-VAT</th><th>Net inc-VAT</th>';
-        $html .= '</tr></thead><tbody>';
-        $types = isset($summary['types']) && is_array($summary['types']) ? $summary['types'] : [];
-        foreach ($types as $type) {
-            if (!is_array($type)) {
+    private function renderOnHoldNote($label, array $onHold) {
+        $count = (int) ($onHold['order_count'] ?? 0);
+        $amount = $this->money((float) ($onHold['net_inc_vat'] ?? 0));
+        return '<p>' . esc_html((string) $label) . ': ' . esc_html((string) $count)
+            . ' orders, ' . esc_html($amount) . ' CHF inc-VAT. Not included in the totals.</p>';
+    }
+
+    /**
+     * @param array<string,mixed> $summary
+     * @return array{order_count:int,net_inc_vat:float}
+     */
+    private function onHoldFigures(array $summary) {
+        return [
+            'order_count' => (int) ($summary['order_count'] ?? 0),
+            'net_inc_vat' => round((float) ($summary['net_inc_vat'] ?? 0), 2),
+        ];
+    }
+
+    /**
+     * Daily and campaign-to-date columns in one table. Inc-VAT is the amount shown.
+     *
+     * @param string              $labelHeading
+     * @param array<string,mixed> $daily
+     * @param array<string,mixed> $campaign
+     * @param string              $collection types|products
+     * @return string
+     */
+    private function renderComparisonTable($labelHeading, array $daily, array $campaign, $collection) {
+        $dailyRows = (isset($daily[$collection]) && is_array($daily[$collection])) ? $daily[$collection] : [];
+        $campaignRows = (isset($campaign[$collection]) && is_array($campaign[$collection])) ? $campaign[$collection] : [];
+        $campaignByKey = [];
+        foreach ($campaignRows as $row) {
+            if (!is_array($row)) {
                 continue;
             }
-            $html .= '<tr>';
-            $html .= '<td>' . esc_html((string) ($type['label'] ?? '')) . '</td>';
-            $html .= '<td>' . esc_html((string) (int) ($type['quantity'] ?? 0)) . '</td>';
-            $html .= '<td>' . esc_html($this->money((float) ($type['gross_ex_vat'] ?? 0))) . '</td>';
-            $html .= '<td>' . esc_html($this->money((float) ($type['discounts'] ?? 0))) . '</td>';
-            $html .= '<td>' . esc_html($this->money((float) ($type['refunds'] ?? 0))) . '</td>';
-            $html .= '<td>' . esc_html($this->money((float) ($type['net_ex_vat'] ?? 0))) . '</td>';
-            $html .= '<td>' . esc_html($this->money((float) ($type['net_inc_vat'] ?? 0))) . '</td>';
-            $html .= '</tr>';
+            $campaignByKey[(string) ($row['key'] ?? '')] = $row;
         }
-        $html .= '<tr><td>Total</td><td></td><td></td><td></td><td></td>';
-        $html .= '<td>' . esc_html($this->money((float) ($summary['net_ex_vat'] ?? 0))) . '</td>';
-        $html .= '<td>' . esc_html($this->money((float) ($summary['net_inc_vat'] ?? 0))) . '</td></tr>';
+        $pairs = [];
+        $seen = [];
+        foreach ($dailyRows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $key = (string) ($row['key'] ?? '');
+            $seen[$key] = true;
+            $pairs[] = [$row, isset($campaignByKey[$key]) ? $campaignByKey[$key] : null];
+        }
+        foreach ($campaignRows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $key = (string) ($row['key'] ?? '');
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $pairs[] = [null, $row];
+        }
+        $html = '<table><thead><tr>';
+        $html .= '<th>' . esc_html((string) $labelHeading) . '</th>';
+        $html .= '<th>Daily qty</th><th>Daily inc-VAT</th><th>Campaign qty</th><th>Campaign inc-VAT</th>';
+        $html .= '</tr></thead><tbody>';
+        $shown = 0;
+        $dailyQty = 0;
+        $dailyInc = 0.0;
+        $campaignQty = 0;
+        $campaignInc = 0.0;
+        foreach ($pairs as $pair) {
+            $left = is_array($pair[0]) ? $pair[0] : [];
+            $right = is_array($pair[1]) ? $pair[1] : [];
+            $leftQty = (int) ($left['quantity'] ?? 0);
+            $rightQty = (int) ($right['quantity'] ?? 0);
+            $leftInc = (float) ($left['net_inc_vat'] ?? 0);
+            $rightInc = (float) ($right['net_inc_vat'] ?? 0);
+            if ($collection === 'products' && $leftQty === 0 && $rightQty === 0) {
+                continue;
+            }
+            $label = (string) ($left['label'] ?? '');
+            if ($label === '') {
+                $label = (string) ($right['label'] ?? '');
+            }
+            $html .= '<tr>';
+            $html .= '<td>' . esc_html($label) . '</td>';
+            $html .= '<td>' . esc_html((string) $leftQty) . '</td>';
+            $html .= '<td>' . esc_html($this->money($leftInc)) . '</td>';
+            $html .= '<td>' . esc_html((string) $rightQty) . '</td>';
+            $html .= '<td>' . esc_html($this->money($rightInc)) . '</td>';
+            $html .= '</tr>';
+            $shown++;
+            $dailyQty += $leftQty;
+            $dailyInc += $leftInc;
+            $campaignQty += $rightQty;
+            $campaignInc += $rightInc;
+        }
+        if ($collection === 'products' && $shown === 0) {
+            $html .= '<tr><td colspan="5">No products sold in this range.</td></tr>';
+        }
+        $html .= '<tr><td>Total</td>';
+        $html .= '<td>' . esc_html((string) $dailyQty) . '</td>';
+        $html .= '<td>' . esc_html($this->money($dailyInc)) . '</td>';
+        $html .= '<td>' . esc_html((string) $campaignQty) . '</td>';
+        $html .= '<td>' . esc_html($this->money($campaignInc)) . '</td></tr>';
         $html .= '</tbody></table>';
         return $html;
     }
 
     /**
-     * @param array<string,mixed> $summary
-     * @return string
+     * @param mixed $raw
+     * @return array<int,string>
      */
-    private function renderProductTable(array $summary) {
-        $html = '<table><thead><tr><th>Product</th><th>Qty</th><th>Net ex-VAT</th><th>Net inc-VAT</th></tr></thead><tbody>';
-        $products = isset($summary['products']) && is_array($summary['products']) ? $summary['products'] : [];
-        if ($products === []) {
-            $html .= '<tr><td colspan="4">No products sold in this range.</td></tr>';
+    private static function sanitizeOrderStatuses($raw) {
+        if (!is_array($raw)) {
+            return [];
         }
-        foreach ($products as $product) {
-            if (!is_array($product)) {
+        $out = [];
+        foreach ($raw as $status) {
+            $status = (string) $status;
+            if (preg_match('/^wc-[a-z0-9_-]+$/', $status) !== 1) {
                 continue;
             }
-            $html .= '<tr>';
-            $html .= '<td>' . esc_html((string) ($product['label'] ?? '')) . '</td>';
-            $html .= '<td>' . esc_html((string) (int) ($product['quantity'] ?? 0)) . '</td>';
-            $html .= '<td>' . esc_html($this->money((float) ($product['net_ex_vat'] ?? 0))) . '</td>';
-            $html .= '<td>' . esc_html($this->money((float) ($product['net_inc_vat'] ?? 0))) . '</td>';
-            $html .= '</tr>';
+            if (!in_array($status, $out, true)) {
+                $out[] = $status;
+            }
         }
-        $html .= '</tbody></table>';
-        return $html;
+        return $out;
     }
 
     /**
