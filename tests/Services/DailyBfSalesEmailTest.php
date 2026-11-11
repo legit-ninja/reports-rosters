@@ -10,6 +10,39 @@
 namespace {
     require_once dirname(__DIR__, 2) . '/includes/daily-bf-sales-email.php';
 
+    if (!function_exists('intersoccer_rr_bf_note_db_call')) {
+        /**
+         * Counts wpdb reads while the sample-send test has counting turned on.
+         *
+         * @return void
+         */
+        function intersoccer_rr_bf_note_db_call() {
+            if (empty($GLOBALS['intersoccer_rr_bf_db_counting'])) {
+                return;
+            }
+            $GLOBALS['intersoccer_rr_bf_db_calls'] = (int) ($GLOBALS['intersoccer_rr_bf_db_calls'] ?? 0) + 1;
+        }
+    }
+
+    if (!function_exists('intersoccer_rr_bf_note_shop_call')) {
+        /**
+         * Counts selected shop reads while the sample-send test has counting turned on.
+         *
+         * @param string $name
+         * @return void
+         */
+        function intersoccer_rr_bf_note_shop_call($name) {
+            if (empty($GLOBALS['intersoccer_rr_bf_shop_counting'])) {
+                return;
+            }
+            if (!isset($GLOBALS['intersoccer_rr_bf_shop_calls']) || !is_array($GLOBALS['intersoccer_rr_bf_shop_calls'])) {
+                $GLOBALS['intersoccer_rr_bf_shop_calls'] = [];
+            }
+            $name = (string) $name;
+            $GLOBALS['intersoccer_rr_bf_shop_calls'][$name] = (int) ($GLOBALS['intersoccer_rr_bf_shop_calls'][$name] ?? 0) + 1;
+        }
+    }
+
     if (!function_exists('is_email')) {
         function is_email($email) {
             $email = trim((string) $email);
@@ -46,6 +79,10 @@ namespace {
 
     if (!function_exists('wc_get_coupon_id_by_code')) {
         function wc_get_coupon_id_by_code($code) {
+            if (!isset($GLOBALS['intersoccer_rr_bf_coupon_lookup_calls'])) {
+                $GLOBALS['intersoccer_rr_bf_coupon_lookup_calls'] = 0;
+            }
+            $GLOBALS['intersoccer_rr_bf_coupon_lookup_calls']++;
             $map = (isset($GLOBALS['intersoccer_rr_bf_coupon_ids']) && is_array($GLOBALS['intersoccer_rr_bf_coupon_ids']))
                 ? $GLOBALS['intersoccer_rr_bf_coupon_ids']
                 : [];
@@ -62,6 +99,10 @@ namespace {
              * @param mixed $data Coupon id.
              */
             public function __construct($data = 0) {
+                if (!isset($GLOBALS['intersoccer_rr_bf_wc_coupon_calls'])) {
+                    $GLOBALS['intersoccer_rr_bf_wc_coupon_calls'] = 0;
+                }
+                $GLOBALS['intersoccer_rr_bf_wc_coupon_calls']++;
                 $this->id = is_object($data) && isset($data->ID) ? (int) $data->ID : (int) $data;
             }
 
@@ -152,6 +193,9 @@ class DailyBfSalesEmailFixtureWpdb extends \InterSoccerTestWpdb {
     public $itemMeta = [];
 
     public function get_results($query = null, $output = OBJECT) {
+        if (function_exists('intersoccer_rr_bf_note_db_call')) {
+            \intersoccer_rr_bf_note_db_call();
+        }
         $query = (string) $query;
         $this->queries[] = $query;
         if (strpos($query, "post_type = 'shop_order'") !== false) {
@@ -173,6 +217,9 @@ class DailyBfSalesEmailFixtureWpdb extends \InterSoccerTestWpdb {
     }
 
     public function get_col($query = null, $x = 0) {
+        if (function_exists('intersoccer_rr_bf_note_db_call')) {
+            \intersoccer_rr_bf_note_db_call();
+        }
         $this->queries[] = (string) $query;
         return [];
     }
@@ -390,6 +437,13 @@ class DailyBfSalesEmailTest extends TestCase {
         $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
         $GLOBALS['intersoccer_rr_bf_wp_mail_fail'] = false;
         $GLOBALS['intersoccer_rr_bf_wp_mail_error'] = '';
+        $GLOBALS['intersoccer_rr_bf_wc_coupon_calls'] = 0;
+        $GLOBALS['intersoccer_rr_bf_coupon_lookup_calls'] = 0;
+        $GLOBALS['intersoccer_rr_bf_db_calls'] = 0;
+        $GLOBALS['intersoccer_rr_bf_db_counting'] = false;
+        $GLOBALS['intersoccer_rr_bf_shop_calls'] = [];
+        $GLOBALS['intersoccer_rr_bf_shop_counting'] = false;
+        unset($GLOBALS['intersoccer_rr_test_api_counting_enabled'], $GLOBALS['intersoccer_rr_test_api_call_counts']);
         $GLOBALS['intersoccer_test_emit_wp_hooks'] = false;
         $GLOBALS['intersoccer_test_wp_schedule_event_log'] = [];
         $GLOBALS['intersoccer_test_wp_next_scheduled'] = [];
@@ -1866,6 +1920,282 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
     }
 
+    public function test_sample_send_does_not_read_shop_data(): void {
+        $this->installDisabledSampleSettings();
+        DailyBfSalesEmail::register();
+        DailyBfSalesEmail::ensureScheduled();
+        $this->assertSame([], $this->salesCronEvents());
+
+        $service = $this->wooService();
+        $this->wpdb->orders[] = [
+            'id' => 900,
+            'status' => 'wc-completed',
+            'post_date' => '2026-11-10 10:00:00',
+            'date_paid' => '1',
+            'items' => [
+                $this->item(9001, 'Should Not Load', 1, 1, 1, '1.00', '1.00', '0.00'),
+            ],
+        ];
+        $beforeState = $service->state();
+        $beforeOptions = $GLOBALS['intersoccer_test_option_store'];
+        $beforeQueries = $this->wpdb->queries;
+
+        $this->beginShopReadCounting();
+        $result = $service->handleAdminPost([
+            'bf_sample_send' => '1',
+            '_wpnonce' => 'test',
+            'bf_test_address' => 'ops@example.com',
+        ]);
+        $api = (isset($GLOBALS['intersoccer_rr_test_api_call_counts']) && is_array($GLOBALS['intersoccer_rr_test_api_call_counts']))
+            ? $GLOBALS['intersoccer_rr_test_api_call_counts']
+            : [];
+        $shop = (isset($GLOBALS['intersoccer_rr_bf_shop_calls']) && is_array($GLOBALS['intersoccer_rr_bf_shop_calls']))
+            ? $GLOBALS['intersoccer_rr_bf_shop_calls']
+            : [];
+        $dbCalls = (int) ($GLOBALS['intersoccer_rr_bf_db_calls'] ?? 0);
+        $couponCalls = (int) ($GLOBALS['intersoccer_rr_bf_wc_coupon_calls'] ?? 0);
+        $couponLookups = (int) ($GLOBALS['intersoccer_rr_bf_coupon_lookup_calls'] ?? 0);
+        $this->endShopReadCounting();
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('sample_sent', $result['code']);
+        $this->assertSame(0, (int) ($api['wc_get_orders'] ?? 0));
+        $this->assertSame(0, (int) ($api['wc_get_order'] ?? 0));
+        $this->assertSame(0, (int) ($api['wc_get_product'] ?? 0));
+        $this->assertSame(0, (int) ($api['get_post_meta'] ?? 0));
+        $this->assertSame(0, (int) ($shop['get_posts'] ?? 0));
+        $this->assertSame(0, (int) ($shop['get_option'] ?? 0));
+        $this->assertSame(0, $couponCalls);
+        $this->assertSame(0, $couponLookups);
+        $this->assertSame(0, $dbCalls);
+        $this->assertSame($beforeQueries, $this->wpdb->queries);
+        $this->assertSame($beforeOptions, $GLOBALS['intersoccer_test_option_store']);
+        $this->assertSame($beforeState, $service->state());
+        $this->assertSame([], $this->salesCronEvents());
+        $this->assertFalse(wp_next_scheduled(DailyBfSalesEmail::CRON_HOOK));
+
+        $this->assertCount(1, $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $mail = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0];
+        $this->assertSame('ops@example.com', $mail['to']);
+        $this->assertStringNotContainsString('list@example.test', (string) json_encode($mail['to']));
+        $this->assertStringNotContainsString('Should Not Load', $mail['message']);
+        $this->assertStringNotContainsString('page=intersoccer-reports', $mail['message']);
+        $this->assertStringStartsWith('[SAMPLE] ', $mail['subject']);
+    }
+
+    public function test_sample_body_is_the_shared_renderer_plus_banner(): void {
+        $service = $this->wooService();
+        $result = $service->sendSample('ops@example.com');
+        $this->assertTrue($result['ok']);
+        $this->assertCount(1, $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $mail = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0];
+        $digest = $this->invokeSampleDigest($service);
+        $rendered = $service->renderHtml($digest);
+
+        $this->assertStringNotContainsString(DailyBfSalesEmail::SAMPLE_BANNER, $rendered);
+        $this->assertSame('<p>' . DailyBfSalesEmail::SAMPLE_BANNER . '</p>' . $rendered, $mail['message']);
+        $this->assertStringContainsString('Sample data, not real sales.', $mail['message']);
+        $this->assertSame('[SAMPLE] Final Daily sales report 2026-11-10', $mail['subject']);
+        $this->assertStringStartsWith('[SAMPLE] ', $mail['subject']);
+        $this->assertStringContainsString('Yesterday (2026-11-10, Europe/Zurich)', $mail['message']);
+        $this->assertStringContainsString('<h3>Season and type</h3>', $mail['message']);
+        $this->assertStringContainsString('Easter Camps', $mail['message']);
+        $this->assertStringContainsString('Winter Camps', $mail['message']);
+        $this->assertStringContainsString('Spring Courses', $mail['message']);
+        $this->assertStringContainsString('Summer Tournaments', $mail['message']);
+        foreach ([
+            'Sample Camp A',
+            'Sample Camp B',
+            'Sample Camp C',
+            'Sample Camp D',
+            'Sample Course A',
+            'Sample Course B',
+            'Sample Course C',
+            'Sample Venue B',
+            'Sample Birthday A',
+            'Sample Tournament A',
+        ] as $label) {
+            $this->assertStringContainsString($label, $mail['message'], $label);
+        }
+        $this->assertCount(10, $digest['daily']['products']);
+        $this->assertStringContainsString('Sample Region A', $mail['message']);
+        $this->assertStringContainsString('Sample Region B', $mail['message']);
+        $this->assertStringContainsString('Sample Region C', $mail['message']);
+        $this->assertStringContainsString('>900101<', $mail['message']);
+        $this->assertStringContainsString('>900102<', $mail['message']);
+        $this->assertStringContainsString('>900103<', $mail['message']);
+        $this->assertStringContainsString('https://example.com/sample-order/900101', $mail['message']);
+        $this->assertStringContainsString('https://example.com/sample-order/900102', $mail['message']);
+        $this->assertStringContainsString('https://example.test/sample-order/900103', $mail['message']);
+        $this->assertStringContainsString('https://example.com/sample-booking-report/900001', $mail['message']);
+        $this->assertStringContainsString('Sample Camp E', $mail['message']);
+        $this->assertStringContainsString('Sample Course D', $mail['message']);
+        $this->assertStringContainsString('Sample Tournament B', $mail['message']);
+        $this->assertStringContainsString('>Sample Camp F<', $mail['message']);
+        $scopedSeasons = ['Winter', 'Spring', 'Easter'];
+        foreach (['low_bookings', 'zero_bookings'] as $list) {
+            $this->assertNotEmpty($digest[$list], $list);
+            foreach ($digest[$list] as $row) {
+                $this->assertTrue(
+                    in_array((string) ($row['season'] ?? ''), $scopedSeasons, true),
+                    (string) ($row['label'] ?? $list)
+                );
+            }
+        }
+        $sampleTournament = null;
+        foreach ($digest['low_bookings'] as $row) {
+            if (($row['label'] ?? '') === 'Sample Tournament B') {
+                $sampleTournament = $row;
+            }
+        }
+        $this->assertIsArray($sampleTournament);
+        $this->assertSame('Easter', $sampleTournament['season']);
+        $this->assertSame('Tournament', $sampleTournament['type']);
+        $lowHtml = $this->htmlSection($mail['message'], '<h3>Low bookings</h3>', '<h3>Zero bookings</h3>');
+        $zeroHtml = $this->htmlSection($mail['message'], '<h3>Zero bookings</h3>', '<h2>Running total since campaign start</h2>');
+        $this->assertStringContainsString('>Sample Tournament B</td><td>Easter</td>', $lowHtml);
+        $this->assertStringNotContainsString('Summer', $lowHtml);
+        $this->assertStringNotContainsString('Autumn', $lowHtml);
+        $this->assertStringNotContainsString('Summer', $zeroHtml);
+        $this->assertStringNotContainsString('Autumn', $zeroHtml);
+        $this->assertStringContainsString('>0<', $mail['message']);
+        $this->assertStringContainsString('On hold yesterday: 2 orders, 45.00 CHF inc-VAT.', $mail['message']);
+        $this->assertStringContainsString('On hold in the campaign: 3 orders, 90.50 CHF inc-VAT.', $mail['message']);
+        $this->assertStringContainsString('Orders: 4', $mail['message']);
+        $this->assertStringContainsString('Orders: 9', $mail['message']);
+        $this->assertStringContainsString('<h2>Running total since campaign start</h2>', $mail['message']);
+        $this->assertStringContainsString('2026-11-01 through 2026-11-10', $mail['message']);
+        $this->assertStringContainsString(DailyBfSalesEmail::FINAL_CAMPAIGN_LINE, $mail['message']);
+        $this->assertStringContainsString('<h3>Failed and pending orders</h3>', $mail['message']);
+        $this->assertStringContainsString('<h3>Low bookings</h3>', $mail['message']);
+        $this->assertStringContainsString('<h3>Zero bookings</h3>', $mail['message']);
+        $this->assertStringContainsString('<h3>Products</h3>', $mail['message']);
+        $this->assertStringContainsString('<h3>Regions</h3>', $mail['message']);
+        $this->assertTrue($digest['campaign_available']);
+        $this->assertTrue($digest['campaign_started']);
+        $this->assertTrue($digest['final_campaign']);
+    }
+
+    public function test_test_send_keeps_the_test_prefix_and_omits_the_sample_banner(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'list@example.test');
+        $this->seedCatalogue();
+        $result = $service->sendTest('ops@example.com', $this->zurich('2026-11-29 08:00:00'));
+        $this->assertTrue($result['ok']);
+        $this->assertSame('test_sent', $result['code']);
+        $mail = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0];
+        $this->assertStringStartsWith('[TEST] ', $mail['subject']);
+        $this->assertStringContainsString('Daily sales report 2026-11-28', $mail['subject']);
+        $this->assertStringNotContainsString('[SAMPLE]', $mail['subject']);
+        $this->assertStringNotContainsString(DailyBfSalesEmail::SAMPLE_BANNER, $mail['message']);
+        $this->assertSame('ops@example.com', $mail['to']);
+    }
+
+    /**
+     * @dataProvider invalidTestAddressProvider
+     */
+    public function test_sample_send_rejects_empty_invalid_and_multiple_addresses(string $address): void {
+        $service = $this->wooService();
+        $before = $service->state();
+        $result = $service->handleAdminPost([
+            'bf_sample_send' => '1',
+            '_wpnonce' => 'test',
+            'bf_test_address' => $address,
+        ]);
+        $this->assertFalse($result['ok']);
+        $this->assertSame('test_invalid', $result['code']);
+        $this->assertNotSame('', $result['message']);
+        $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $this->assertSame($before, $service->state());
+    }
+
+    public function test_sample_send_goes_only_to_the_typed_address_when_enable_is_off(): void {
+        $this->installDisabledSampleSettings();
+        DailyBfSalesEmail::register();
+        DailyBfSalesEmail::ensureScheduled();
+        $service = $this->wooService();
+        $before = $service->state();
+
+        $result = $service->sendSample('  ops@example.com  ');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('sample_sent', $result['code']);
+        $this->assertSame('Sample email sent.', $result['message']);
+        $this->assertCount(1, $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $mail = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0];
+        $this->assertSame('ops@example.com', $mail['to']);
+        $this->assertStringNotContainsString('list@example.test', (string) json_encode($mail['to']));
+        $this->assertStringNotContainsString('list@example.test', $mail['message']);
+        $this->assertStringStartsWith('[SAMPLE] ', $mail['subject']);
+        $this->assertSame($before, $service->state());
+        $this->assertSame($before['sent_dates'], $service->state()['sent_dates']);
+        $this->assertSame($before['last_sent_at'], $service->state()['last_sent_at']);
+        $this->assertSame($before['last_result'], $service->state()['last_result']);
+        $this->assertSame([], $this->salesCronEvents());
+        $this->assertFalse(wp_next_scheduled(DailyBfSalesEmail::CRON_HOOK));
+    }
+
+    public function test_sample_send_mailer_failure_does_not_mark_the_day(): void {
+        $GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
+        $GLOBALS['intersoccer_rr_bf_wp_mail_fail'] = true;
+        $GLOBALS['intersoccer_rr_bf_wp_mail_error'] = 'SMTP rejected the message for ops@example.com';
+        $this->installDisabledSampleSettings();
+        $service = $this->wooService();
+        $before = $service->state();
+
+        $result = $service->sendSample('ops@example.com');
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame('sample_failed', $result['code']);
+        $this->assertStringContainsString('SMTP rejected the message for ops@example.com', $result['message']);
+        $this->assertSame($before, $service->state());
+    }
+
+    public function test_sample_send_requires_manage_options(): void {
+        $GLOBALS['intersoccer_test_current_user_caps'] = ['manage_options' => false];
+        $service = $this->wooService();
+        $result = $service->handleAdminPost([
+            'bf_sample_send' => '1',
+            '_wpnonce' => 'test',
+            'bf_test_address' => 'ops@example.com',
+        ]);
+        $this->assertSame('forbidden', $result['code']);
+        $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+    }
+
+    public function test_admin_page_offers_sample_send_beside_the_test_send(): void {
+        $service = $this->makeService($this->novemberCoupon());
+        ob_start();
+        $service->renderPage();
+        $html = (string) ob_get_clean();
+
+        $addressAt = strpos($html, 'name="bf_test_address"');
+        $this->assertNotFalse($addressAt);
+        $form = substr($html, (int) $addressAt);
+        $formEnd = strpos($form, '</form>');
+        $this->assertNotFalse($formEnd);
+        $form = substr($form, 0, (int) $formEnd);
+        $this->assertStringContainsString('name="bf_test_send"', $form);
+        $this->assertStringContainsString('name="bf_sample_send"', $form);
+        $this->assertStringContainsString('Send sample email', $form);
+        $this->assertStringContainsString('Send test email', $form);
+        $this->assertStringContainsString('[SAMPLE]', $html);
+        $this->assertStringContainsString('sample (fake) data', $html);
+        $this->assertStringContainsString('does not use real sales', $html);
+        $this->assertStringContainsString('does not use the Send to list', $html);
+        $this->assertStringContainsString('does not require Enable', $html);
+        $this->assertStringContainsString('does not mark the day as sent', $html);
+
+        $_GET['bf_notice'] = 'sample_sent';
+        $_GET['bf_detail'] = 'Sample email sent.';
+        ob_start();
+        $service->renderPage();
+        $notice = (string) ob_get_clean();
+        unset($_GET['bf_notice'], $_GET['bf_detail']);
+        $this->assertStringContainsString('notice notice-success', $notice);
+        $this->assertStringNotContainsString('notice-error', $notice);
+        $this->assertStringContainsString('Sample email sent.', $notice);
+    }
+
     public function test_settings_default_to_disabled_and_an_empty_recipient_list(): void {
         $service = $this->makeService($this->novemberCoupon());
         unset($GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS]);
@@ -2371,6 +2701,55 @@ class DailyBfSalesEmailTest extends TestCase {
             $this->assertSame($this->cents($type['net_inc_vat']), $this->cents($fromProducts['net_inc_vat']), $type['label']);
             $this->assertSame((int) $type['quantity'], (int) $fromProducts['quantity'], $type['label']);
         }
+    }
+
+    private function installDisabledSampleSettings(): void {
+        $GLOBALS['intersoccer_test_option_store'] = [
+            DailyBfSalesEmail::OPTION_SETTINGS => [
+                'enabled' => false,
+                'recipients' => 'list@example.test',
+                'send_time' => '08:00',
+                'coupon_code' => 'BF',
+                'campaign_start' => '2026-11-01',
+            ],
+            DailyBfSalesEmail::OPTION_STATE => [
+                'sent_dates' => ['2026-10-01' => 1],
+                'last_sent_at' => '2026-10-02 08:00',
+                'last_result' => 'sent',
+            ],
+        ];
+        $GLOBALS['intersoccer_rr_bf_coupon_ids'] = ['BF' => 4242];
+        $GLOBALS['intersoccer_rr_bf_coupon_expiries'] = [
+            4242 => new \DateTimeImmutable('2026-12-01 00:00:00', new \DateTimeZone('UTC')),
+        ];
+    }
+
+    private function beginShopReadCounting(): void {
+        $GLOBALS['intersoccer_rr_test_api_counting_enabled'] = true;
+        $GLOBALS['intersoccer_rr_test_api_call_counts'] = [];
+        $GLOBALS['intersoccer_rr_bf_db_counting'] = true;
+        $GLOBALS['intersoccer_rr_bf_db_calls'] = 0;
+        $GLOBALS['intersoccer_rr_bf_shop_counting'] = true;
+        $GLOBALS['intersoccer_rr_bf_shop_calls'] = [];
+        $GLOBALS['intersoccer_rr_bf_wc_coupon_calls'] = 0;
+        $GLOBALS['intersoccer_rr_bf_coupon_lookup_calls'] = 0;
+    }
+
+    private function endShopReadCounting(): void {
+        $GLOBALS['intersoccer_rr_bf_db_counting'] = false;
+        $GLOBALS['intersoccer_rr_bf_shop_counting'] = false;
+        unset($GLOBALS['intersoccer_rr_test_api_counting_enabled']);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function invokeSampleDigest(DailyBfSalesEmail $service): array {
+        $method = new \ReflectionMethod(DailyBfSalesEmail::class, 'sampleDigest');
+        $method->setAccessible(true);
+        $digest = $method->invoke($service);
+        $this->assertIsArray($digest);
+        return $digest;
     }
 
     private function assertNoAddressesLogged(): void {
