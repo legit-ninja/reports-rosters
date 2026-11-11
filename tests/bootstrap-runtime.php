@@ -378,6 +378,9 @@ if (!function_exists('register_deactivation_hook')) {
 // Options API
 if (!function_exists('get_option')) {
     function get_option($option, $default = false) {
+        if (function_exists('intersoccer_rr_bf_note_shop_call')) {
+            intersoccer_rr_bf_note_shop_call('get_option');
+        }
         if (isset($GLOBALS['intersoccer_test_option_store'])
             && is_array($GLOBALS['intersoccer_test_option_store'])
             && array_key_exists($option, $GLOBALS['intersoccer_test_option_store'])) {
@@ -504,6 +507,9 @@ if (!function_exists('get_term_by')) {
 
 if (!function_exists('get_posts')) {
     function get_posts($args = []) {
+        if (function_exists('intersoccer_rr_bf_note_shop_call')) {
+            intersoccer_rr_bf_note_shop_call('get_posts');
+        }
         if (isset($GLOBALS['intersoccer_test_get_posts_callback']) && is_callable($GLOBALS['intersoccer_test_get_posts_callback'])) {
             return $GLOBALS['intersoccer_test_get_posts_callback']($args);
         }
@@ -1867,8 +1873,20 @@ if (!class_exists('InterSoccerTestWpdb')) {
         public $insert_id = 1;
         public $num_rows = 0;
         public $rows_affected = 1;
+
+        /**
+         * Optional test counter. The daily sales sample-send test defines the function.
+         *
+         * @return void
+         */
+        private function noteDbCall() {
+            if (function_exists('intersoccer_rr_bf_note_db_call')) {
+                intersoccer_rr_bf_note_db_call();
+            }
+        }
         
         public function prepare($query, ...$args) {
+            $this->noteDbCall();
             $flat_args = [];
             foreach ($args as $arg) {
                 if (is_array($arg)) {
@@ -1927,15 +1945,42 @@ if (!class_exists('InterSoccerTestWpdb')) {
             return vsprintf($format, $safe_args);
         }
         
-        public function get_results($query = null, $output = OBJECT) { return []; }
-        public function get_row($query = null, $output = OBJECT, $y = 0) { return null; }
-        public function get_var($query = null, $x = 0, $y = 0) { return null; }
-        public function get_col($query = null, $x = 0) { return []; }
-        public function query($query) { return true; }
-        public function insert($table, $data, $format = null) { return 1; }
-        public function update($table, $data, $where, $format = null, $where_format = null) { return 1; }
-        public function delete($table, $where, $where_format = null) { return 1; }
-        public function replace($table, $data, $format = null) { return 1; }
+        public function get_results($query = null, $output = OBJECT) {
+            $this->noteDbCall();
+            return [];
+        }
+        public function get_row($query = null, $output = OBJECT, $y = 0) {
+            $this->noteDbCall();
+            return null;
+        }
+        public function get_var($query = null, $x = 0, $y = 0) {
+            $this->noteDbCall();
+            return null;
+        }
+        public function get_col($query = null, $x = 0) {
+            $this->noteDbCall();
+            return [];
+        }
+        public function query($query) {
+            $this->noteDbCall();
+            return true;
+        }
+        public function insert($table, $data, $format = null) {
+            $this->noteDbCall();
+            return 1;
+        }
+        public function update($table, $data, $where, $format = null, $where_format = null) {
+            $this->noteDbCall();
+            return 1;
+        }
+        public function delete($table, $where, $where_format = null) {
+            $this->noteDbCall();
+            return 1;
+        }
+        public function replace($table, $data, $format = null) {
+            $this->noteDbCall();
+            return 1;
+        }
         public function get_charset_collate() { return 'DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'; }
         public function esc_like($text) { return addcslashes($text, '_%\\'); }
         public function tables($scope = 'all', $prefix = true, $blog_id = 0) { return []; }

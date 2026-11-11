@@ -15,6 +15,10 @@
  * total for the whole campaign (campaign start through that day). After that
  * send, nothing more goes out for the campaign. A test send goes to one typed
  * address and does not mark the day. It does not depend on the cron event.
+ * A sample send uses that same address and the same HTML renderer on a
+ * fixed fake dataset, with [SAMPLE] in the subject and a sample banner.
+ * It does not read shop data, does not use the Send to list, and does
+ * not mark the day.
  *
  * Paid totals count processing and completed orders whose paid date falls in
  * the Europe/Zurich window. On-hold orders are counted separately by the date
@@ -48,6 +52,7 @@ class DailyBfSalesEmail {
 
     const FOOTER_PAID_DATE = 'Figures use the paid date in Europe/Zurich.';
     const FINAL_CAMPAIGN_LINE = 'Final campaign totals';
+    const SAMPLE_BANNER = 'Sample data, not real sales.';
     const PAID_ORDER_STATUSES = ['wc-processing', 'wc-completed'];
     const PAID_ORDER_STATUSES_FILTER = 'intersoccer_rr_daily_bf_paid_order_statuses';
 
@@ -397,6 +402,44 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * Send a fixed fake digest to one address. Does not read orders, coupons,
+     * products, or the Send to list, and does not write the sent marker.
+     * Works when Enable is off. Does not schedule cron.
+     *
+     * @param string $rawAddress
+     * @return array{ok:bool,code:string,message:string}
+     */
+    public function sendSample($rawAddress) {
+        $valid = $this->validateTestAddress($rawAddress);
+        if (!$valid['ok']) {
+            return [
+                'ok' => false,
+                'code' => 'test_invalid',
+                'message' => $valid['message'],
+            ];
+        }
+        $digest = $this->sampleDigest();
+        $delivery = $this->deliver(
+            [$valid['email']],
+            '[SAMPLE] ' . $this->subjectFor($digest),
+            $this->renderSampleHtml($digest)
+        );
+        if (!$delivery['ok']) {
+            $detail = $delivery['message'] !== '' ? $delivery['message'] : 'The mailer did not accept the message.';
+            return [
+                'ok' => false,
+                'code' => 'sample_failed',
+                'message' => 'Sample email failed: ' . $detail,
+            ];
+        }
+        return [
+            'ok' => true,
+            'code' => 'sample_sent',
+            'message' => 'Sample email sent.',
+        ];
+    }
+
+    /**
      * @param array<string,mixed> $post
      * @return array{ok:bool,code:string,message:string}
      */
@@ -418,6 +461,17 @@ class DailyBfSalesEmail {
             }
             $address = isset($post['bf_test_address']) ? (string) $post['bf_test_address'] : '';
             return $this->sendTest($address);
+        }
+        if (isset($post['bf_sample_send'])) {
+            if (!$this->nonceOk(isset($post['_wpnonce']) ? (string) $post['_wpnonce'] : '', self::NONCE_TEST)) {
+                return [
+                    'ok' => false,
+                    'code' => 'bad_nonce',
+                    'message' => 'The request expired. Refresh the page and try again.',
+                ];
+            }
+            $address = isset($post['bf_test_address']) ? (string) $post['bf_test_address'] : '';
+            return $this->sendSample($address);
         }
         if (isset($post['bf_save'])) {
             if (!$this->nonceOk(isset($post['_wpnonce']) ? (string) $post['_wpnonce'] : '', self::NONCE_SETTINGS)) {
@@ -453,7 +507,7 @@ class DailyBfSalesEmail {
         echo '<div class="wrap">';
         echo '<h1>Daily sales email</h1>';
         if ($notice !== '' && $detail !== '') {
-            $class = ($notice === 'test_sent' || $notice === 'saved') ? 'notice-success' : 'notice-error';
+            $class = ($notice === 'test_sent' || $notice === 'sample_sent' || $notice === 'saved') ? 'notice-success' : 'notice-error';
             echo '<div class="notice ' . esc_attr($class) . '"><p>' . esc_html($detail) . '</p></div>';
         }
         echo '<p>Enable is off until you turn it on. Recipients come only from Send to. Nothing is hardcoded.</p>';
@@ -495,11 +549,13 @@ class DailyBfSalesEmail {
         echo '<hr />';
         echo '<h2>Send test email</h2>';
         echo '<p>Sends yesterday\'s report to one address, with [TEST] in the subject. It does not use the Send to list, does not require Enable, and does not mark the day as sent.</p>';
+        echo '<p>Send sample email uses that same address and sends sample (fake) data with [SAMPLE] in the subject. It does not use real sales, does not use the Send to list, does not require Enable, and does not mark the day as sent.</p>';
         echo '<form method="post" action="' . esc_url(admin_url('admin.php?page=' . self::PAGE_SLUG)) . '">';
         $this->nonceField(self::NONCE_TEST);
         echo '<p><label for="bf_test_address">Test address</label><br />';
         echo '<input type="text" name="bf_test_address" id="bf_test_address" value="' . esc_attr($prefill) . '" class="regular-text" /></p>';
-        echo '<p><button type="submit" name="bf_test_send" value="1" class="button">Send test email</button></p>';
+        echo '<p><button type="submit" name="bf_test_send" value="1" class="button">Send test email</button> ';
+        echo '<button type="submit" name="bf_sample_send" value="1" class="button">Send sample email</button></p>';
         echo '</form>';
         echo '</div>';
     }
@@ -553,6 +609,175 @@ class DailyBfSalesEmail {
             'final_campaign' => $finalCampaign,
             'booking_report_url' => $this->bookingReportUrl($reportDate),
         ];
+    }
+
+    /**
+     * Fixed fake digest for the sample send. Same shape as buildDigest().
+     * Numbers and names are invented. This method does not read the shop.
+     *
+     * @return array<string,mixed>
+     */
+    private function sampleDigest() {
+        $lines = $this->sampleLines();
+        $daily = $this->sampleSummary($lines, 'daily_qty', 'daily_inc', 4);
+        $campaign = $this->sampleSummary($lines, 'campaign_qty', 'campaign_inc', 9);
+        return [
+            'report_date' => '2026-11-10',
+            'campaign_start' => '2026-11-01',
+            'campaign_available' => true,
+            'campaign_started' => true,
+            'daily' => $daily,
+            'campaign' => $campaign,
+            'daily_on_hold' => [
+                'order_count' => 2,
+                'net_inc_vat' => 45.00,
+            ],
+            'campaign_on_hold' => [
+                'order_count' => 3,
+                'net_inc_vat' => 90.50,
+            ],
+            'attention_orders' => [
+                [
+                    'order_number' => '900101',
+                    'created_at' => '2026-11-10 09:15',
+                    'admin_url' => 'https://example.com/sample-order/900101',
+                ],
+                [
+                    'order_number' => '900102',
+                    'created_at' => '2026-11-10 11:40',
+                    'admin_url' => 'https://example.com/sample-order/900102',
+                ],
+                [
+                    'order_number' => '900103',
+                    'created_at' => '2026-11-10 16:05',
+                    'admin_url' => 'https://example.test/sample-order/900103',
+                ],
+            ],
+            'low_bookings' => [
+                [
+                    'label' => 'Sample Camp E',
+                    'season' => 'Winter',
+                    'type' => 'Camp',
+                    'region' => 'Sample Region A',
+                    'count' => 1,
+                ],
+                [
+                    'label' => 'Sample Course D',
+                    'season' => 'Spring',
+                    'type' => 'Course',
+                    'region' => 'Sample Region B',
+                    'count' => 2,
+                ],
+                [
+                    'label' => 'Sample Tournament B',
+                    'season' => 'Summer',
+                    'type' => 'Tournament',
+                    'region' => 'Sample Region C',
+                    'count' => 1,
+                ],
+            ],
+            'zero_bookings' => [
+                [
+                    'label' => 'Sample Camp F',
+                    'season' => 'Easter',
+                    'type' => 'Camp',
+                    'region' => 'Sample Region A',
+                    'count' => 0,
+                ],
+            ],
+            'used_created_fallback' => false,
+            'final_campaign' => true,
+            'booking_report_url' => 'https://example.com/sample-booking-report/900001',
+        ];
+    }
+
+    /**
+     * Invented product lines. Daily and campaign figures stay in one place
+     * so the two summaries cannot drift apart.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function sampleLines() {
+        return [
+            ['product_key' => 'p:sample-camp-a', 'product' => 'Sample Camp A', 'season' => 'Winter', 'type' => 'Camp', 'type_plural' => 'Camps', 'region' => 'Sample Region A', 'daily_qty' => 2, 'daily_inc' => 120.00, 'campaign_qty' => 5, 'campaign_inc' => 300.00],
+            ['product_key' => 'p:sample-camp-b', 'product' => 'Sample Camp B', 'season' => 'Winter', 'type' => 'Camp', 'type_plural' => 'Camps', 'region' => 'Sample Region B', 'daily_qty' => 1, 'daily_inc' => 80.00, 'campaign_qty' => 3, 'campaign_inc' => 240.00],
+            ['product_key' => 'p:sample-camp-c', 'product' => 'Sample Camp C', 'season' => 'Easter', 'type' => 'Camp', 'type_plural' => 'Camps', 'region' => 'Sample Region A', 'daily_qty' => 2, 'daily_inc' => 150.00, 'campaign_qty' => 4, 'campaign_inc' => 300.00],
+            ['product_key' => 'p:sample-camp-d', 'product' => 'Sample Camp D', 'season' => 'Easter', 'type' => 'Camp', 'type_plural' => 'Camps', 'region' => 'Sample Region C', 'daily_qty' => 1, 'daily_inc' => 75.00, 'campaign_qty' => 2, 'campaign_inc' => 150.00],
+            ['product_key' => 'p:sample-course-a', 'product' => 'Sample Course A', 'season' => 'Spring', 'type' => 'Course', 'type_plural' => 'Courses', 'region' => 'Sample Region B', 'daily_qty' => 3, 'daily_inc' => 90.00, 'campaign_qty' => 6, 'campaign_inc' => 180.00],
+            ['product_key' => 'p:sample-course-b', 'product' => 'Sample Course B', 'season' => 'Spring', 'type' => 'Course', 'type_plural' => 'Courses', 'region' => 'Sample Region A', 'daily_qty' => 1, 'daily_inc' => 40.00, 'campaign_qty' => 2, 'campaign_inc' => 80.00],
+            ['product_key' => 'p:sample-course-c', 'product' => 'Sample Course C', 'season' => 'Summer', 'type' => 'Course', 'type_plural' => 'Courses', 'region' => 'Sample Region C', 'daily_qty' => 1, 'daily_inc' => 55.00, 'campaign_qty' => 2, 'campaign_inc' => 110.00],
+            ['product_key' => 'p:sample-venue-b', 'product' => 'Sample Venue B', 'season' => 'Winter', 'type' => 'Course', 'type_plural' => 'Courses', 'region' => 'Sample Region B', 'daily_qty' => 2, 'daily_inc' => 64.00, 'campaign_qty' => 4, 'campaign_inc' => 128.00],
+            ['product_key' => 'p:sample-birthday-a', 'product' => 'Sample Birthday A', 'season' => 'Spring', 'type' => 'Birthday', 'type_plural' => 'Birthdays', 'region' => 'Sample Region A', 'daily_qty' => 1, 'daily_inc' => 35.00, 'campaign_qty' => 1, 'campaign_inc' => 35.00],
+            ['product_key' => 'p:sample-tournament-a', 'product' => 'Sample Tournament A', 'season' => 'Summer', 'type' => 'Tournament', 'type_plural' => 'Tournaments', 'region' => 'Sample Region C', 'daily_qty' => 1, 'daily_inc' => 48.00, 'campaign_qty' => 2, 'campaign_inc' => 96.00],
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $lines
+     * @param string                         $qtyKey
+     * @param string                         $incKey
+     * @param int                            $orderCount
+     * @return array<string,mixed>
+     */
+    private function sampleSummary(array $lines, $qtyKey, $incKey, $orderCount) {
+        $products = [];
+        $regions = [];
+        $seasons = [];
+        $seasonTypes = [];
+        $types = [];
+        $net = 0.0;
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+            $qty = (int) ($line[$qtyKey] ?? 0);
+            $inc = round((float) ($line[$incKey] ?? 0), 2);
+            $net += $inc;
+            $season = (string) ($line['season'] ?? '');
+            $type = (string) ($line['type'] ?? '');
+            $compositeKey = $season . '|' . $type;
+            $compositeLabel = $season . ' ' . (string) ($line['type_plural'] ?? $type);
+            $this->sampleAdd($products, (string) ($line['product_key'] ?? ''), (string) ($line['product'] ?? ''), $qty, $inc);
+            $this->sampleAdd($regions, (string) ($line['region'] ?? ''), (string) ($line['region'] ?? ''), $qty, $inc);
+            $this->sampleAdd($seasons, $season, $season, $qty, $inc);
+            $this->sampleAdd($seasonTypes, $compositeKey, $compositeLabel, $qty, $inc);
+            $seasonTypes[$compositeKey]['season'] = $season;
+            $seasonTypes[$compositeKey]['type'] = $type;
+            $this->sampleAdd($types, $type, $type, $qty, $inc);
+        }
+        return [
+            'order_count' => (int) $orderCount,
+            'types' => array_values($types),
+            'products' => array_values($products),
+            'regions' => array_values($regions),
+            'seasons' => array_values($seasons),
+            'season_types' => array_values($seasonTypes),
+            'used_created_fallback' => false,
+            'net_ex_vat' => 0.0,
+            'net_inc_vat' => round($net, 2),
+        ];
+    }
+
+    /**
+     * @param array<string,array<string,mixed>> $bucket
+     * @param string                            $key
+     * @param string                            $label
+     * @param int                               $qty
+     * @param float                             $inc
+     * @return void
+     */
+    private function sampleAdd(array &$bucket, $key, $label, $qty, $inc) {
+        if (!isset($bucket[$key])) {
+            $bucket[$key] = [
+                'key' => (string) $key,
+                'label' => (string) $label,
+                'quantity' => 0,
+                'net_ex_vat' => 0.0,
+                'net_inc_vat' => 0.0,
+            ];
+        }
+        $bucket[$key]['quantity'] += (int) $qty;
+        $bucket[$key]['net_inc_vat'] = round((float) $bucket[$key]['net_inc_vat'] + (float) $inc, 2);
     }
 
     /**
@@ -615,6 +840,16 @@ class DailyBfSalesEmail {
         $html .= '<p>' . esc_html(self::FOOTER_PAID_DATE) . '</p>';
         $html .= '</div>';
         return $html;
+    }
+
+    /**
+     * Sample banner plus the shared renderer. Real and test emails call renderHtml() directly.
+     *
+     * @param array<string,mixed> $digest
+     * @return string
+     */
+    private function renderSampleHtml(array $digest) {
+        return '<p>' . esc_html(self::SAMPLE_BANNER) . '</p>' . $this->renderHtml($digest);
     }
 
     /**
