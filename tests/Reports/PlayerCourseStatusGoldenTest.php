@@ -175,6 +175,30 @@ class PlayerCourseStatusGoldenTest extends TestCase {
 		}
 	}
 
+	public function test_collision_reset_drops_the_previous_slot_name(): void {
+		$this->assertTrue(function_exists('intersoccer_roster_report_note_idx_name_for_collision_detection'));
+		$ada = [
+			'customer_id' => 10,
+			'player_index' => 0,
+			'first_name' => 'Ada',
+			'last_name' => 'Lovelace',
+		];
+		$grace = [
+			'customer_id' => 10,
+			'player_index' => 0,
+			'first_name' => 'Grace',
+			'last_name' => 'Hopper',
+		];
+		intersoccer_roster_report_reset_idx_name_collision_state();
+		intersoccer_roster_report_note_idx_name_for_collision_detection($ada);
+		intersoccer_roster_report_note_idx_name_for_collision_detection($grace);
+		$this->assertTrue(intersoccer_roster_report_idx_has_name_collision(10, 0));
+
+		intersoccer_roster_report_reset_idx_name_collision_state();
+		intersoccer_roster_report_note_idx_name_for_collision_detection($grace);
+		$this->assertFalse(intersoccer_roster_report_idx_has_name_collision(10, 0));
+	}
+
 	public function test_generate_and_export_match_golden_baseline(): void {
 		$this->reset_fixtures();
 		if (function_exists('intersoccer_test_ensure_pm_filter_stub')) {

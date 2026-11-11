@@ -17,7 +17,14 @@ abstract class TestCase extends PHPUnitTestCase {
      */
     protected function setUp(): void {
         parent::setUp();
-        
+
+        // Cache gates treat a leftover TRUE as enabled for every later test.
+        // Opt in again after this setup when a test really wants the cache.
+        unset(
+            $GLOBALS['intersoccer_test_pcs_cache_force_enabled'],
+            $GLOBALS['intersoccer_test_winback_cache_force_enabled']
+        );
+
         // Setup global mocks
         $this->setupGlobalMocks();
     }
@@ -63,14 +70,26 @@ abstract class TestCase extends PHPUnitTestCase {
 
         unset($GLOBALS['intersoccer_test_admin_log_insert_callback']);
 
-        Mockery::close();
+        try {
+            Mockery::close();
+        } finally {
+            // close() throws on an unmet count. The next test still needs the
+            // redefinitions, Brain Monkey registry, database, and PHPUnit
+            // teardown cleared, and the unmet count must keep failing this test.
+            if (function_exists('Patchwork\\restoreAll')) {
+                \Patchwork\restoreAll();
+            }
+            if (class_exists(\Brain\Monkey\Container::class, false)) {
+                \Brain\Monkey\Container::instance()->reset();
+            }
 
-        global $wpdb;
-        if (class_exists('InterSoccerTestWpdb', false)) {
-            $wpdb = new \InterSoccerTestWpdb();
+            global $wpdb;
+            if (class_exists('InterSoccerTestWpdb', false)) {
+                $wpdb = new \InterSoccerTestWpdb();
+            }
+
+            parent::tearDown();
         }
-
-        parent::tearDown();
     }
     
     /**
@@ -98,6 +117,10 @@ abstract class TestCase extends PHPUnitTestCase {
     protected function createWpdbMock(): \Mockery\MockInterface {
         $wpdb = Mockery::mock('wpdb');
         $wpdb->prefix = 'wp_';
+        $wpdb->last_error = '';
+        $wpdb->shouldReceive('esc_like')->andReturnUsing(function ($text) {
+            return addcslashes((string) $text, '_%\\');
+        });
         $wpdb->shouldReceive('prepare')->andReturnUsing(function($query) {
             $args = func_get_args();
             array_shift($args);

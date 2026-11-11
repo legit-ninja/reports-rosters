@@ -23,7 +23,14 @@ class RosterDetailsUrlTest extends TestCase {
         Functions\when('wpml_get_default_language')->justReturn('en');
         Functions\when('do_action')->justReturn();
         Functions\when('get_terms')->justReturn([]);
-        Functions\when('get_term_by')->justReturn(false);
+        Functions\when('get_term_by')->alias(function ($field, $value, $taxonomy) {
+            unset($field);
+            if ($taxonomy === 'pa_intersoccer-venues'
+                && in_array(strtolower((string) $value), ['geneva', 'genève', 'geneve'], true)) {
+                return (object) ['term_id' => 41, 'name' => 'Geneva', 'slug' => 'geneva'];
+            }
+            return false;
+        });
         Functions\when('is_wp_error')->justReturn(false);
         Functions\when('admin_url')->alias(function ($path = '') {
             return 'https://example.test/wp-admin/' . ltrim((string) $path, '/');
@@ -184,6 +191,10 @@ class RosterDetailsUrlTest extends TestCase {
                 }
                 return [$this->anchor, $this->sibling];
             }
+
+            public function update($table, $data, $where, $format = null, $where_format = null) {
+                return 1;
+            }
         };
 
         $url = intersoccer_get_roster_details_url_for_order_item(4760);
@@ -192,7 +203,7 @@ class RosterDetailsUrlTest extends TestCase {
         $this->assertStringContainsString('page=intersoccer-roster-details', $url);
         $this->assertStringContainsString('from=courses', $url);
         $this->assertStringContainsString('event_signature=' . rawurlencode($shared_signature), $url);
-        $this->assertStringNotContainsString('order_item_ids=', $url);
+        $this->assertStringContainsString('order_item_ids=4760%2C5127', $url);
     }
 
     public function test_get_roster_details_url_for_order_item_falls_back_to_order_item_ids_without_signature() {
@@ -236,6 +247,8 @@ class RosterDetailsUrlTest extends TestCase {
                 return $query;
             }
 
+            public $updated = null;
+
             public function get_results($query, $output = OBJECT) {
                 $this->call++;
                 if ($this->call === 1) {
@@ -243,13 +256,21 @@ class RosterDetailsUrlTest extends TestCase {
                 }
                 return [$this->anchor, $this->sibling];
             }
+
+            public function update($table, $data, $where, $format = null, $where_format = null) {
+                $this->updated = [$data, $where];
+                return 1;
+            }
         };
 
         $url = intersoccer_get_roster_details_url_for_order_item(4760);
 
         $this->assertIsString($url);
-        $this->assertStringContainsString('order_item_ids=4760%2C5127', $url);
-        $this->assertStringNotContainsString('event_signature=', $url);
+        $this->assertNotSame('', (string) ($wpdb->updated[0]['event_signature'] ?? ''));
+        $this->assertSame(1, (int) ($wpdb->updated[1]['id'] ?? 0));
+        $this->assertStringContainsString('order_item_ids=', $url);
+        $this->assertStringContainsString('4760', $url);
+        $this->assertStringContainsString('5127', $url);
     }
 
     public function test_get_roster_listing_group_details_url_routes_girls_only_camp_to_girls_only_context() {

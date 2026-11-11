@@ -30,14 +30,13 @@ class RosterExportTest extends TestCase {
         Functions\when('check_ajax_referer')->justReturn(true);
         Functions\when('current_user_can')->justReturn(true);
         Functions\when('wp_send_json_success')->alias(function($data) {
-            // Capture the response for testing
             $GLOBALS['test_json_response'] = ['success' => true, 'data' => $data];
-            return true;
+            echo json_encode($GLOBALS['test_json_response']);
         });
         Functions\when('wp_send_json_error')->alias(function($data) {
-            // Capture the response for testing
             $GLOBALS['test_json_response'] = ['success' => false, 'data' => $data];
-            return true;
+            echo json_encode($GLOBALS['test_json_response']);
+            throw new \RuntimeException('wp_send_json_error');
         });
         Functions\when('wp_create_nonce')->justReturn('test_nonce');
         Functions\when('sanitize_text_field')->returnArg();
@@ -71,7 +70,7 @@ class RosterExportTest extends TestCase {
         $wpdb->prefix = 'wp_';
         $wpdb->shouldReceive('get_results')
             ->andReturn([
-                (object)[
+                [
                     'first_name' => 'John',
                     'last_name' => 'Doe',
                     'gender' => 'Male',
@@ -119,17 +118,14 @@ class RosterExportTest extends TestCase {
         ob_start();
         
         try {
-            // Call the export function
             intersoccer_export_roster();
         } catch (\Exception $e) {
-            // wp_send_json_success exits, so we catch the exception
+            // PHPUnit turns the debug last_error read into an exception when the
+            // mock has no property. A JSON body may already have been echoed.
         }
         
         $output = ob_get_clean();
-        
-        // Verify JSON response was set
-        $this->assertArrayHasKey('test_json_response', $GLOBALS);
-        $response = $GLOBALS['test_json_response'];
+        $response = $this->exportResponse($output);
         
         // Verify response structure
         $this->assertTrue($response['success']);
@@ -164,13 +160,12 @@ class RosterExportTest extends TestCase {
         } catch (\Exception $e) {
             // wp_send_json_error exits
         }
-        ob_get_clean();
-        
-        $this->assertArrayHasKey('test_json_response', $GLOBALS);
-        $response = $GLOBALS['test_json_response'];
+        $output = ob_get_clean();
+        $response = $this->exportResponse($output);
         
         $this->assertFalse($response['success']);
-        $this->assertArrayHasKey('message', $response['data']);
+        $this->assertIsString($response['data']['message']);
+        $this->assertStringContainsString('You do not have permission to export rosters.', $response['data']['message']);
     }
     
     /**
@@ -196,13 +191,11 @@ class RosterExportTest extends TestCase {
         } catch (\Exception $e) {
             // wp_send_json_error exits
         }
-        ob_get_clean();
-        
-        $this->assertArrayHasKey('test_json_response', $GLOBALS);
-        $response = $GLOBALS['test_json_response'];
+        $output = ob_get_clean();
+        $response = $this->exportResponse($output);
         
         $this->assertFalse($response['success']);
-        $this->assertArrayHasKey('message', $response['data']);
+        $this->assertIsString($response['data']['message']);
         $this->assertStringContainsString('No roster data', $response['data']['message']);
     }
     
@@ -210,26 +203,30 @@ class RosterExportTest extends TestCase {
      * Test that export handles missing required parameters
      */
     public function test_export_handles_missing_parameters() {
-        $_POST = [
-            'action' => 'intersoccer_export_roster',
-            'nonce' => 'test_nonce',
-            'use_fields' => '0',
-            // Missing variation_ids and event_signature
-        ];
-        
-        ob_start();
-        try {
-            intersoccer_export_roster();
-        } catch (\Exception $e) {
-            // wp_send_json_error exits
+        // (bool)'0' and (bool)0 are both false. With no variation, order-item,
+        // or signature values, the first JSON error is the missing-parameter
+        // message. The test double throws there, as wp_send_json_error stops.
+        foreach (['0', 0] as $use_fields) {
+            unset($GLOBALS['test_json_response']);
+            $_POST = [
+                'action' => 'intersoccer_export_roster',
+                'nonce' => 'test_nonce',
+                'use_fields' => $use_fields,
+            ];
+
+            ob_start();
+            try {
+                intersoccer_export_roster();
+            } catch (\Exception $e) {
+                // wp_send_json_error stops the handler
+            }
+            $output = ob_get_clean();
+            $response = $this->exportResponse($output);
+
+            $this->assertFalse($response['success']);
+            $this->assertIsString($response['data']['message']);
+            $this->assertStringContainsString('No variation IDs', $response['data']['message']);
         }
-        ob_get_clean();
-        
-        $this->assertArrayHasKey('test_json_response', $GLOBALS);
-        $response = $GLOBALS['test_json_response'];
-        
-        $this->assertFalse($response['success']);
-        $this->assertArrayHasKey('message', $response['data']);
     }
     
     /**
@@ -242,7 +239,7 @@ class RosterExportTest extends TestCase {
         $wpdb->prefix = 'wp_';
         $wpdb->shouldReceive('get_results')
             ->andReturn([
-                (object)[
+                [
                     'first_name' => 'John',
                     'last_name' => 'Doe',
                     'gender' => 'Male',
@@ -290,21 +287,16 @@ class RosterExportTest extends TestCase {
         } catch (\Exception $e) {
             // wp_send_json_success exits
         }
-        ob_get_clean();
-        
-        $this->assertArrayHasKey('test_json_response', $GLOBALS);
-        $response = $GLOBALS['test_json_response'];
-        
-        if ($response['success']) {
-            // Decode base64 content
-            $content = base64_decode($response['data']['content']);
-            
-            // Verify content is not empty
-            $this->assertNotEmpty($content);
-            
-            // Verify it's a valid Excel file (starts with PK header for ZIP-based format)
-            $this->assertStringStartsWith('PK', $content);
-        }
+        $output = ob_get_clean();
+        $response = $this->exportResponse($output);
+
+        $this->assertTrue($response['success']);
+        $this->assertArrayHasKey('content', $response['data']);
+        $this->assertArrayHasKey('filename', $response['data']);
+        $content = base64_decode($response['data']['content']);
+        $this->assertNotEmpty($content);
+        $this->assertStringStartsWith('PK', $content);
+        $this->assertStringContainsString('.xlsx', $response['data']['filename']);
     }
     
     /**
@@ -317,7 +309,7 @@ class RosterExportTest extends TestCase {
         $wpdb->prefix = 'wp_';
         $wpdb->shouldReceive('get_results')
             ->andReturn([
-                (object)[
+                [
                     'first_name' => 'John',
                     'last_name' => 'Doe',
                     'gender' => 'Male',
@@ -369,11 +361,29 @@ class RosterExportTest extends TestCase {
             // wp_send_json_success exits
         }
         
-        // Should not have any output (buffers should be cleared)
         $output = ob_get_clean();
-        
-        // Verify JSON response was set (function should have handled buffering)
-        $this->assertArrayHasKey('test_json_response', $GLOBALS);
+        $response = $this->exportResponse($output);
+        $this->assertTrue($response['success']);
+        $this->assertArrayHasKey('content', $response['data']);
+        $this->assertArrayHasKey('filename', $response['data']);
+        $this->assertStringContainsString('.xlsx', $response['data']['filename']);
+    }
+
+    private function exportResponse(string $output): array {
+        if (isset($GLOBALS['test_json_response']) && is_array($GLOBALS['test_json_response'])) {
+            return $GLOBALS['test_json_response'];
+        }
+
+        $start = strpos($output, '{');
+        $end = strrpos($output, '}');
+        if ($start !== false && $end !== false && $end >= $start) {
+            $decoded = json_decode(substr($output, $start, $end - $start + 1), true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        $this->fail('Export did not return JSON. Output: ' . substr($output, 0, 500));
     }
 }
 

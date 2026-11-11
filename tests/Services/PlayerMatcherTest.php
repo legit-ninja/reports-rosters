@@ -28,6 +28,7 @@ class PlayerMatcherTest extends TestCase {
     
     public function test_get_assigned_players_from_order_item() {
         $item = Mockery::mock('WC_Order_Item_Product');
+        $item->shouldReceive('get_id')->andReturn(1);
         $item->shouldReceive('get_meta')->andReturn('1');
         
         $players = new PlayersCollection();
@@ -40,6 +41,7 @@ class PlayerMatcherTest extends TestCase {
         $player = Mockery::mock();
         $player->player_index = 0;
         $player->first_name = 'John';
+        $player->last_name = 'Doe';
         
         $result = $this->playerMatcher->matchByIndex(0, new PlayersCollection([$player]));
         

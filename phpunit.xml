@@ -118,6 +118,7 @@
             <file>tests/Services/RosterRebuildProcessPath160Test.php</file>
             <file>tests/Services/RosterRebuildCoverage160Test.php</file>
             <file>tests/Data/Repositories/RosterRepositoryFillFields167Test.php</file>
+            <file>tests/Reports/CampReportTest.php</file>
             <file>tests/Core/DatabaseNestedTransactionTest.php</file>
             <file>tests/Services/RosterRebuildNestedTransaction160Test.php</file>
             <file>tests/Services/RosterBuilderRr178CourseTermEnglishTest.php</file>

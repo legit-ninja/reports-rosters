@@ -8,7 +8,9 @@ namespace InterSoccer\ReportsRosters\Tests\Data\Repositories;
 use InterSoccer\ReportsRosters\Tests\TestCase;
 use InterSoccer\ReportsRosters\Data\Repositories\RosterRepository;
 use InterSoccer\ReportsRosters\Data\Collections\RostersCollection;
+use InterSoccer\ReportsRosters\Core\Database;
 use InterSoccer\ReportsRosters\Data\Models\Roster;
+use InterSoccer\ReportsRosters\Services\CacheManager;
 use InterSoccer\ReportsRosters\Services\RosterRefundService;
 use Mockery;
 
@@ -28,28 +30,50 @@ class RosterRepositoryTest extends TestCase {
     }
     
     public function test_create_roster() {
-        $this->wpdb->shouldReceive('insert')->once()->andReturn(1);
-        $this->wpdb->insert_id = 123;
-        
-        $result = $this->repository->create(['order_id' => 1]);
-        
-        $this->assertNotNull($result);
+        $database = Mockery::mock(Database::class);
+        $database->shouldReceive('get_roster_entries')->andReturn([]);
+        $database->shouldReceive('insert_roster_entry')
+            ->once()
+            ->with(Mockery::on(function ($row) {
+                return ($row['order_id'] ?? null) === 1
+                    && ($row['order_item_id'] ?? null) === 2
+                    && ($row['first_name'] ?? null) === 'Ada'
+                    && ($row['activity_type'] ?? null) === 'Camp';
+            }))
+            ->andReturn(123);
+
+        $result = $this->repositoryWith($database)->create($this->validRosterRow());
+
+        $this->assertInstanceOf(Roster::class, $result);
+        $this->assertSame(1, (int) $result->order_id);
+        $this->assertSame('Ada', $result->first_name);
     }
     
     public function test_find_roster() {
-        $this->wpdb->shouldReceive('get_row')->once()->andReturn((object)['id' => 1, 'order_id' => 1]);
-        
-        $roster = $this->repository->find(1);
-        
-        $this->assertNotNull($roster);
+        $database = Mockery::mock(Database::class);
+        $database->shouldReceive('get_roster_entries')
+            ->once()
+            ->with(['id' => 1], ['limit' => 1])
+            ->andReturn([$this->validRosterRow() + ['id' => 1]]);
+
+        $roster = $this->repositoryWith($database)->find(1);
+
+        $this->assertInstanceOf(Roster::class, $roster);
+        $this->assertSame(1, (int) $roster->order_id);
+        $this->assertSame('Ada', $roster->first_name);
     }
     
     public function test_get_rosters_by_venue() {
-        $this->wpdb->shouldReceive('get_results')->once()->andReturn([]);
-        
-        $rosters = $this->repository->where(['venue' => 'Zurich']);
-        
+        $database = Mockery::mock(Database::class);
+        $database->shouldReceive('get_roster_entries')
+            ->once()
+            ->with(['venue' => 'Zurich'], Mockery::type('array'))
+            ->andReturn([]);
+
+        $rosters = $this->repositoryWith($database)->getByVenue('Zurich');
+
         $this->assertInstanceOf(RostersCollection::class, $rosters);
+        $this->assertSame(0, $rosters->count());
     }
     
     public function test_delete_roster() {
@@ -133,6 +157,32 @@ class RosterRepositoryTest extends TestCase {
         $this->assertStringContainsString($fragment['clause'], $captured_sql);
 
         $this->assertSame(0, $this->repository->syncOrderStatusForKeptRows(77, 'completed'));
+    }
+
+    private function repositoryWith(Database $database): RosterRepository {
+        $cache = Mockery::mock(CacheManager::class);
+        $cache->shouldReceive('get')->andReturn(null);
+        $cache->shouldReceive('set')->andReturn(true);
+        $cache->shouldReceive('forget')->andReturn(true);
+        $cache->shouldReceive('forgetPattern')->andReturn(0);
+
+        return new RosterRepository(null, $database, $cache);
+    }
+
+    private function validRosterRow(): array {
+        return [
+            'order_id' => 1,
+            'order_item_id' => 2,
+            'product_id' => 3,
+            'customer_id' => 4,
+            'player_index' => 0,
+            'first_name' => 'Ada',
+            'last_name' => 'Lovelace',
+            'dob' => '2016-04-01',
+            'gender' => 'female',
+            'activity_type' => 'Camp',
+            'order_status' => 'completed',
+        ];
     }
 }
 

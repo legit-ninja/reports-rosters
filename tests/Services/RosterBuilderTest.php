@@ -100,6 +100,8 @@ class RosterBuilderTest extends TestCase {
         $item->shouldReceive('get_product')->andReturn(null);
         $item->shouldReceive('get_variation_id')->andReturn(0);
         $item->shouldReceive('get_product_id')->andReturn(101);
+        $item->shouldReceive('get_id')->andReturn(555);
+        $item->shouldReceive('get_meta')->andReturn(null);
         $item->shouldReceive('get_meta_data')->andReturn([
             $this->createOrderItemMeta('Type d’activité', 'Cours'),
             $this->createOrderItemMeta('Saison', 'Printemps 2025'),
@@ -678,7 +680,9 @@ class RosterBuilderTest extends TestCase {
             ->with(999)
             ->andReturn($refundOrder);
 
-        $result = $this->rosterBuilder->buildRosters();
+        // A one-id page fills the batch only when batch_size is 1, which is
+        // what makes the loop request the empty terminator (the second call).
+        $result = $this->rosterBuilder->buildRosters(['batch_size' => 1]);
 
         $this->assertIsArray($result);
         $this->assertEquals(1, $result['skipped_orders']);
@@ -700,7 +704,9 @@ class RosterBuilderTest extends TestCase {
             ->with(888)
             ->andReturn(false);
 
-        $result = $this->rosterBuilder->buildRosters();
+        // A one-id page fills the batch only when batch_size is 1, which is
+        // what makes the loop request the empty terminator (the second call).
+        $result = $this->rosterBuilder->buildRosters(['batch_size' => 1]);
 
         $this->assertIsArray($result);
         $this->assertEquals(1, $result['skipped_orders']);
@@ -717,6 +723,8 @@ class RosterBuilderTest extends TestCase {
         $item->shouldReceive('get_product')->andReturn(null);
         $item->shouldReceive('get_variation_id')->andReturn(0);
         $item->shouldReceive('get_product_id')->andReturn(200);
+        $item->shouldReceive('get_id')->andReturn(600);
+        $item->shouldReceive('get_meta')->andReturn(null);
         $item->shouldReceive('get_meta_data')->andReturn([
             $this->createOrderItemMeta('Lieux InterSoccer', 'geneve-centre-sportif'),
             $this->createOrderItemMeta("Groupe d'âge", '5-13y-full-day'),
@@ -750,6 +758,8 @@ class RosterBuilderTest extends TestCase {
         $item->shouldReceive('get_product')->andReturn(null);
         $item->shouldReceive('get_variation_id')->andReturn(0);
         $item->shouldReceive('get_product_id')->andReturn(201);
+        $item->shouldReceive('get_id')->andReturn(601);
+        $item->shouldReceive('get_meta')->andReturn(null);
         $item->shouldReceive('get_meta_data')->andReturn([
             $this->createOrderItemMeta('InterSoccer-Standorte', 'zurich-venue'),
             $this->createOrderItemMeta('Altersgruppe', '3-5y-half-day'),
@@ -783,6 +793,8 @@ class RosterBuilderTest extends TestCase {
         $item->shouldReceive('get_product')->andReturn(null);
         $item->shouldReceive('get_variation_id')->andReturn(0);
         $item->shouldReceive('get_product_id')->andReturn(202);
+        $item->shouldReceive('get_id')->andReturn(602);
+        $item->shouldReceive('get_meta')->andReturn(null);
         $item->shouldReceive('get_meta_data')->andReturn([
             $this->createOrderItemMeta('Sites InterSoccer', 'lausanne-venue'),
             $this->createOrderItemMeta("Groupe d'âge", '3-12y'),
