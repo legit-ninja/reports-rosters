@@ -42,6 +42,13 @@ class DailyBfSalesEmail {
     const PAID_ORDER_STATUSES_FILTER = 'intersoccer_rr_daily_bf_paid_order_statuses';
 
     /**
+     * Composite season×type labels (for example Winter Courses, Easter Camps).
+     * Set this to false for a separate season table and a separate type table.
+     */
+    const COMPOSITE_SEASON_TYPE_LABELS = true;
+    const COMPOSITE_SEASON_TYPE_FILTER = 'intersoccer_rr_daily_bf_composite_season_type_labels';
+
+    /**
      * @var self|null
      */
     private static $instance = null;
@@ -537,7 +544,14 @@ class DailyBfSalesEmail {
         );
         $html .= '<h3>Regions</h3>';
         $html .= $this->renderComparisonTable('Region', $daily, $campaign, 'regions', true);
-        $html .= $this->renderComparisonTable('Product type', $daily, $campaign, 'types');
+        if (self::compositeSeasonTypeLabels()) {
+            $html .= '<h3>Season and type</h3>';
+            $html .= $this->renderComparisonTable('Season and type', $daily, $campaign, 'season_types', true);
+        } else {
+            $html .= '<h3>Seasons</h3>';
+            $html .= $this->renderComparisonTable('Season', $daily, $campaign, 'seasons', true);
+            $html .= $this->renderComparisonTable('Product type', $daily, $campaign, 'types');
+        }
         $html .= '<h3>Products</h3>';
         $html .= $this->renderComparisonTable('Product', $daily, $campaign, 'products', true);
         if (!empty($digest['final_campaign'])) {
@@ -742,6 +756,17 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * @return bool
+     */
+    public static function compositeSeasonTypeLabels() {
+        $default = self::COMPOSITE_SEASON_TYPE_LABELS;
+        if (!function_exists('apply_filters')) {
+            return $default;
+        }
+        return (bool) apply_filters(self::COMPOSITE_SEASON_TYPE_FILTER, $default);
+    }
+
+    /**
      * Paid statuses for this email. One filter changes the set; the default is strict.
      *
      * @return array<int,string>
@@ -909,6 +934,8 @@ class DailyBfSalesEmail {
         }
         $products = [];
         $regions = [];
+        $seasons = [];
+        $seasonTypes = [];
         $orders = [];
         $fallback = false;
         $rows = isset($report['data']) && is_array($report['data']) ? $report['data'] : [];
@@ -971,6 +998,24 @@ class DailyBfSalesEmail {
             $regions[$regionLabel]['net_ex_vat'] += $netEx;
             $regions[$regionLabel]['net_inc_vat'] += $netInc;
 
+            $season = $this->seasonBucket($row, $bucket);
+            if (!isset($seasons[$season])) {
+                $seasons[$season] = $this->moneyRow($season, $season);
+            }
+            $seasons[$season]['quantity'] += $qty;
+            $seasons[$season]['net_ex_vat'] += $netEx;
+            $seasons[$season]['net_inc_vat'] += $netInc;
+
+            $compositeKey = $season . '|' . $bucket;
+            if (!isset($seasonTypes[$compositeKey])) {
+                $seasonTypes[$compositeKey] = $this->moneyRow($compositeKey, $this->compositeLabel($season, $bucket));
+                $seasonTypes[$compositeKey]['season'] = $season;
+                $seasonTypes[$compositeKey]['type'] = $bucket;
+            }
+            $seasonTypes[$compositeKey]['quantity'] += $qty;
+            $seasonTypes[$compositeKey]['net_ex_vat'] += $netEx;
+            $seasonTypes[$compositeKey]['net_inc_vat'] += $netInc;
+
             $orderId = (int) ($row['order_id'] ?? 0);
             if ($orderId > 0) {
                 $orders[$orderId] = true;
@@ -998,10 +1043,24 @@ class DailyBfSalesEmail {
             $regions[$key]['net_ex_vat'] = round($region['net_ex_vat'], 2);
             $regions[$key]['net_inc_vat'] = round($region['net_inc_vat'], 2);
         }
+        foreach ($seasons as $key => $seasonRow) {
+            $seasons[$key]['net_ex_vat'] = round($seasonRow['net_ex_vat'], 2);
+            $seasons[$key]['net_inc_vat'] = round($seasonRow['net_inc_vat'], 2);
+        }
+        foreach ($seasonTypes as $key => $seasonType) {
+            $seasonTypes[$key]['net_ex_vat'] = round($seasonType['net_ex_vat'], 2);
+            $seasonTypes[$key]['net_inc_vat'] = round($seasonType['net_inc_vat'], 2);
+        }
         uasort($products, function ($a, $b) {
             return strcmp((string) $a['label'], (string) $b['label']);
         });
         uasort($regions, function ($a, $b) {
+            return strcmp((string) $a['label'], (string) $b['label']);
+        });
+        uasort($seasons, function ($a, $b) {
+            return strcmp((string) $a['label'], (string) $b['label']);
+        });
+        uasort($seasonTypes, function ($a, $b) {
             return strcmp((string) $a['label'], (string) $b['label']);
         });
         return [
@@ -1009,10 +1068,121 @@ class DailyBfSalesEmail {
             'types' => array_values($types),
             'products' => array_values($products),
             'regions' => array_values($regions),
+            'seasons' => array_values($seasons),
+            'season_types' => array_values($seasonTypes),
             'used_created_fallback' => $fallback,
             'net_ex_vat' => round($netEx, 2),
             'net_inc_vat' => round($netInc, 2),
         ];
+    }
+
+    /**
+     * @param string $key
+     * @param string $label
+     * @return array<string,mixed>
+     */
+    private function moneyRow($key, $label) {
+        return [
+            'key' => (string) $key,
+            'label' => (string) $label,
+            'quantity' => 0,
+            'net_ex_vat' => 0.0,
+            'net_inc_vat' => 0.0,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @param string              $productType
+     * @return string
+     */
+    private function seasonBucket(array $row, $productType) {
+        $meta = (isset($row['line_meta']) && is_array($row['line_meta'])) ? $row['line_meta'] : [];
+        $facets = $this->facetNormalizer();
+        $raw = $facets->meta_value($meta, FacetNormalizer::season_meta_keys());
+        $terms = $facets->meta_value($meta, FacetNormalizer::camp_term_meta_keys());
+        $name = trim((string) ($row['order_item_name'] ?? ''));
+        if ($name === '') {
+            $name = trim((string) ($row['class_name'] ?? ''));
+        }
+        $bucket = $this->normalizeSeasonValue($raw);
+        if ($productType === ProductTypeClassifierService::TYPE_CAMP
+            && $bucket === 'Spring'
+            && ($this->mentionsEaster($raw) || $this->mentionsEaster($terms) || $this->mentionsEaster($name))
+        ) {
+            return 'Easter';
+        }
+        return $bucket === '' ? 'Unspecified' : $bucket;
+    }
+
+    /**
+     * English season bucket. Empty when the text has no season word.
+     *
+     * @param string $raw
+     * @return string
+     */
+    private function normalizeSeasonValue($raw) {
+        $value = FacetNormalizer::decode_label($raw);
+        if ($value === '') {
+            return '';
+        }
+        $value = str_ireplace(
+            ['Pâques', 'Paques', 'Ostern', 'Oster', 'Frühling', 'Fruhling', 'Hiver', 'Printemps', 'Automne', 'Sommer', 'Herbst', 'Été', 'Ete'],
+            ['Easter', 'Easter', 'Easter', 'Easter', 'Spring', 'Spring', 'Winter', 'Spring', 'Autumn', 'Summer', 'Autumn', 'Summer', 'Summer'],
+            $value
+        );
+        $lower = strtolower($value);
+        $buckets = [
+            'easter' => 'Easter',
+            'winter' => 'Winter',
+            'spring' => 'Spring',
+            'summer' => 'Summer',
+            'autumn' => 'Autumn',
+            'fall' => 'Autumn',
+        ];
+        foreach ($buckets as $needle => $label) {
+            if (strpos($lower, $needle) !== false) {
+                return $label;
+            }
+        }
+        return '';
+    }
+
+    /**
+     * @param string $value
+     * @return bool
+     */
+    private function mentionsEaster($value) {
+        $value = strtolower(FacetNormalizer::decode_label($value));
+        if ($value === '') {
+            return false;
+        }
+        foreach (['easter', 'pâques', 'paques', 'ostern', 'oster'] as $needle) {
+            if (strpos($value, $needle) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param string $season
+     * @param string $type
+     * @return string
+     */
+    private function compositeLabel($season, $type) {
+        $plurals = [
+            ProductTypeClassifierService::TYPE_CAMP => 'Camps',
+            ProductTypeClassifierService::TYPE_COURSE => 'Courses',
+            ProductTypeClassifierService::TYPE_BIRTHDAY => 'Birthdays',
+            ProductTypeClassifierService::TYPE_TOURNAMENT => 'Tournaments',
+            ProductTypeClassifierService::TYPE_OTHER => 'Other',
+        ];
+        $typeLabel = isset($plurals[$type]) ? $plurals[$type] : (string) $type;
+        if ($season === '' || $season === 'Unspecified') {
+            return $typeLabel;
+        }
+        return $season . ' ' . $typeLabel;
     }
 
     /**
@@ -1171,6 +1341,8 @@ class DailyBfSalesEmail {
             'types' => $types,
             'products' => [],
             'regions' => [],
+            'seasons' => [],
+            'season_types' => [],
             'used_created_fallback' => false,
             'net_ex_vat' => 0.0,
             'net_inc_vat' => 0.0,
@@ -1276,7 +1448,13 @@ class DailyBfSalesEmail {
             $campaignInc += $rightInc;
         }
         if ($hideEmpty && $shown === 0) {
-            $empty = ($collection === 'regions') ? 'No regions in this range.' : 'No products sold in this range.';
+            if ($collection === 'regions') {
+                $empty = 'No regions in this range.';
+            } elseif ($collection === 'products') {
+                $empty = 'No products sold in this range.';
+            } else {
+                $empty = 'None in this range.';
+            }
             $html .= '<tr><td colspan="5">' . esc_html($empty) . '</td></tr>';
         }
         $html .= '<tr><td>Total</td>';

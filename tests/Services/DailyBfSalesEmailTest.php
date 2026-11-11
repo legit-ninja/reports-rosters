@@ -584,6 +584,78 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringNotContainsString('Bâle', $html);
     }
 
+    public function test_seasons_normalize_and_easter_promotes_spring_camps_only(): void {
+        $this->assertTrue(DailyBfSalesEmail::COMPOSITE_SEASON_TYPE_LABELS);
+        $this->assertTrue(DailyBfSalesEmail::compositeSeasonTypeLabels());
+
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $orders = [];
+        $meta = [];
+        $add = function ($id, $name, $type, array $itemMeta) use (&$orders, &$meta, $paid) {
+            $orders[] = [
+                'id' => $id,
+                'post_date' => '2026-11-28 10:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item($id * 10, $name, $id, 0, 1, '10.00', '10.00', '0.77'),
+                ],
+            ];
+            $itemMeta['_intersoccer_canonical_activity_type'] = $type;
+            $meta[$id * 10] = $itemMeta;
+        };
+        $add(901, 'Monday Course', 'course', ['Saison (Programm)' => 'Hiver']);
+        $add(902, 'Easter skills course', 'course', ['Jahreszeit' => 'Frühling']);
+        $add(903, 'Plain Camp', 'camp', ['Season' => 'Spring']);
+        $add(904, 'Lakeside Camp', 'camp', ['Saison' => 'Printemps', 'Semaine de camp' => 'Pâques']);
+        $add(905, 'Holiday Camp', 'camp', ['Season' => 'Ostern']);
+        $add(906, 'Skills Course', 'course', ['attribute_pa_program-season' => 'Paques']);
+        $this->wpdb->orders = $orders;
+        $this->wpdb->itemMeta = $meta;
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $daily = $digest['daily'];
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Winter Courses')['quantity']);
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Spring Courses')['quantity']);
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Spring Camps')['quantity']);
+        $this->assertSame(2, $this->seasonTypeByLabel($daily, 'Easter Camps')['quantity']);
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Easter Courses')['quantity']);
+        $this->assertSame(1, $this->seasonByLabel($daily, 'Winter')['quantity']);
+        $this->assertSame(2, $this->seasonByLabel($daily, 'Spring')['quantity']);
+        $this->assertSame(3, $this->seasonByLabel($daily, 'Easter')['quantity']);
+
+        $html = $service->renderHtml($digest);
+        $this->assertStringContainsString('<h3>Regions</h3>', $html);
+        $this->assertStringContainsString('<h3>Season and type</h3>', $html);
+        $this->assertStringContainsString('<h3>Products</h3>', $html);
+        $this->assertStringContainsString('Winter Courses', $html);
+        $this->assertStringContainsString('Easter Camps', $html);
+        $this->assertStringContainsString('Spring Courses', $html);
+        $this->assertStringNotContainsString('<h3>Seasons</h3>', $html);
+        $this->assertStringNotContainsString('<th>Product type</th>', $html);
+
+        $GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
+        $filter = DailyBfSalesEmail::COMPOSITE_SEASON_TYPE_FILTER;
+        add_filter($filter, static function () {
+            return false;
+        });
+        try {
+            $this->assertFalse(DailyBfSalesEmail::compositeSeasonTypeLabels());
+            $split = $service->renderHtml($digest);
+            $this->assertStringContainsString('<h3>Seasons</h3>', $split);
+            $this->assertStringContainsString('<th>Product type</th>', $split);
+            $this->assertStringContainsString('<h3>Regions</h3>', $split);
+            $this->assertStringNotContainsString('Winter Courses', $split);
+            $this->assertStringNotContainsString('Easter Camps', $split);
+            $this->assertStringNotContainsString('<h3>Season and type</h3>', $split);
+            $this->assertStringContainsString('Easter', $split);
+            $this->assertStringContainsString('Spring', $split);
+        } finally {
+            unset($GLOBALS['intersoccer_test_wp_hooks']['filters'][$filter]);
+            $GLOBALS['intersoccer_test_emit_wp_hooks'] = false;
+        }
+    }
+
     public function test_product_lines_reconcile_to_type_totals_and_the_booking_report(): void {
         $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
         $this->seedCatalogue();
@@ -1326,6 +1398,23 @@ class DailyBfSalesEmailTest extends TestCase {
     private function ymdFromUtc(string $local): string {
         $stamp = (new \DateTimeImmutable($local, new \DateTimeZone('UTC')))->getTimestamp();
         return DailyBfSalesEmail::zurichYmdFromTimestamp($stamp);
+    }
+
+    private function seasonByLabel(array $summary, string $label): array {
+        return $this->rowByLabel(isset($summary['seasons']) ? $summary['seasons'] : [], $label, 'season');
+    }
+
+    private function seasonTypeByLabel(array $summary, string $label): array {
+        return $this->rowByLabel(isset($summary['season_types']) ? $summary['season_types'] : [], $label, 'season and type');
+    }
+
+    private function rowByLabel(array $rows, string $label, string $kind): array {
+        foreach ($rows as $row) {
+            if (is_array($row) && ($row['label'] ?? '') === $label) {
+                return $row;
+            }
+        }
+        $this->fail('Missing ' . $kind . ' ' . $label);
     }
 
     private function regionByLabel(array $summary, string $label): array {

@@ -138,7 +138,7 @@ class FacetNormalizer {
 			$out['camp_week_index'] = (int) $week_index;
 		}
 
-		$camp_terms = $this->first_meta($raw, ['Camp Terms', 'pa_camp-terms', 'attribute_pa_camp-terms']);
+		$camp_terms = $this->first_meta($raw, self::camp_term_meta_keys());
 		if (empty($from_canonical['camp_week_key']) && $out['camp_week'] === 'not_recorded') {
 			if ($camp_terms !== '') {
 				$out['camp_week'] = $this->normalize_camp_week($camp_terms);
@@ -158,7 +158,7 @@ class FacetNormalizer {
 		$out['day_length'] = $this->normalize_day_length($age_label, $times);
 
 		$out['product_name'] = $this->first_meta($raw, ['_product_name', 'product_name']);
-		$out['season'] = $this->first_meta($raw, ['Season', 'pa_program-season', 'attribute_pa_program-season']);
+		$out['season'] = $this->first_meta($raw, self::season_meta_keys());
 
 		return $out;
 	}
@@ -429,6 +429,49 @@ class FacetNormalizer {
 			return 'Week ' . $m[1];
 		}
 		return $key === 'not_recorded' ? 'not recorded' : $key;
+	}
+
+	/**
+	 * Order-meta keys for programme season, including FR/DE labels.
+	 *
+	 * @return array<int,string>
+	 */
+	public static function season_meta_keys() {
+		return [
+			'Season',
+			'Saison',
+			'Saison (Programm)',
+			'Jahreszeit',
+			'pa_program-season',
+			'attribute_pa_program-season',
+		];
+	}
+
+	/**
+	 * Order-meta keys for camp terms, including FR/DE labels.
+	 *
+	 * @return array<int,string>
+	 */
+	public static function camp_term_meta_keys() {
+		return [
+			'Camp Terms',
+			'pa_camp-terms',
+			'attribute_pa_camp-terms',
+			'Conditions du camp',
+			'Conditions de camp',
+			'Camp Begriffe',
+			'Semaine de camp',
+			'Camp-Woche',
+		];
+	}
+
+	/**
+	 * @param array<string,mixed> $raw
+	 * @param array<int,string>   $keys
+	 * @return string
+	 */
+	public function meta_value(array $raw, array $keys) {
+		return $this->first_meta($raw, $keys);
 	}
 
 	/**
