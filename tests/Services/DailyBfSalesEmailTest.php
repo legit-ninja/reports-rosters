@@ -2,9 +2,9 @@
 /**
  * Daily sales email: Zurich bucketing, coupon window, VAT, and test send.
  *
- * Send-to fail-safe: the whole list is rejected when it is empty or any token
- * is invalid (bad format, semicolon, or internal whitespace). Valid addresses
- * in a mixed list are not mailed. Logs store a reason code only.
+ * Send-to: empty tokens are skipped and invalid tokens are dropped. A mixed
+ * list sends to the valid addresses only. The send stops when none remain.
+ * Logs store a reason code only.
  */
 
 namespace {
@@ -910,7 +910,7 @@ class DailyBfSalesEmailTest extends TestCase {
             '   ' => 'empty_recipients',
             ',' => 'empty_recipients',
             'not-an-email' => 'invalid_recipient',
-            'ops@example.com, not-an-email, other@example.test' => 'invalid_recipient',
+            'not-an-email, also-bad' => 'invalid_recipient',
             'ops@example.com;other@example.test' => 'invalid_recipient',
             'ops@example.com other@example.test' => 'invalid_recipient',
         ];
@@ -918,11 +918,127 @@ class DailyBfSalesEmailTest extends TestCase {
             $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
             $this->logger->entries = [];
             $service = $this->enabledService($this->novemberCoupon(), (string) $recipients);
-            $this->assertSame($reason, $service->runScheduled($this->zurich('2026-11-29 08:00:00')));
+            $this->assertSame($reason, $service->runScheduled($this->zurich('2026-11-29 08:00:00')), (string) $recipients);
             $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
             $this->assertSame([], $service->state()['sent_dates']);
             $this->assertNoAddressesLogged();
         }
+
+        $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
+        $this->logger->entries = [];
+        $mixed = $this->enabledService($this->novemberCoupon(), 'ops@example.com, not-an-email, other@example.test');
+        $this->assertSame('sent', $mixed->runScheduled($this->zurich('2026-11-29 08:00:00')));
+        $this->assertSame(
+            ['ops@example.com', 'other@example.test'],
+            $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['to']
+        );
+        $this->assertArrayHasKey('2026-11-28', $mixed->state()['sent_dates']);
+        $this->assertNoAddressesLogged();
+    }
+
+    public function test_mixed_recipient_save_keeps_valid_addresses_and_notices_dropped_tokens(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'keep@example.com');
+        $this->logger->entries = [];
+        $result = $service->handleAdminPost([
+            'bf_save' => '1',
+            '_wpnonce' => 'test',
+            'bf_enabled' => '1',
+            'bf_recipients' => "ops@example.com, not-an-email, other@example.test\n",
+            'bf_send_time' => '08:00',
+            'bf_coupon_code' => 'BF',
+            'bf_campaign_start' => '2026-11-28',
+        ]);
+        $this->assertTrue($result['ok']);
+        $this->assertSame('saved', $result['code']);
+        $this->assertStringContainsString('not-an-email', $result['message']);
+        $this->assertStringNotContainsString('ops@example.com', $result['message']);
+        $this->assertSame('ops@example.com, other@example.test', $service->settings()['recipients']);
+        $this->assertSame('2026-11-28', $service->settings()['campaign_start']);
+        $this->assertNoAddressesLogged();
+
+        $_GET['bf_notice'] = $result['code'];
+        $_GET['bf_detail'] = $result['message'];
+        ob_start();
+        $service->renderPage();
+        $html = (string) ob_get_clean();
+        unset($_GET['bf_notice'], $_GET['bf_detail']);
+        $this->assertStringContainsString('notice-success', $html);
+        $this->assertStringContainsString('not-an-email', $html);
+        $this->assertNoAddressesLogged();
+    }
+
+    public function test_mixed_recipient_list_sends_only_to_valid_addresses(): void {
+        $service = $this->enabledService(
+            $this->novemberCoupon(),
+            'ops@example.com, not-an-email, bad;token, other@example.test'
+        );
+        $this->logger->entries = [];
+        $this->assertSame('sent', $service->runScheduled($this->zurich('2026-11-29 08:00:00')));
+        $this->assertCount(1, $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $this->assertSame(
+            ['ops@example.com', 'other@example.test'],
+            $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['to']
+        );
+        $this->assertSame('sent', $service->state()['last_result']);
+        $this->assertNoAddressesLogged();
+    }
+
+    public function test_all_invalid_recipients_fail_on_save_and_send_without_logging_addresses(): void {
+        $direct = $this->enabledService($this->novemberCoupon(), 'not-an-email, also-bad');
+        $this->logger->entries = [];
+        $this->assertSame('invalid_recipient', $direct->runScheduled($this->zurich('2026-11-29 08:00:00')));
+        $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $this->assertSame([], $direct->state()['sent_dates']);
+        $this->assertNoAddressesLogged();
+
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $this->logger->entries = [];
+        $saved = $service->handleAdminPost([
+            'bf_save' => '1',
+            '_wpnonce' => 'test',
+            'bf_enabled' => '1',
+            'bf_recipients' => 'not-an-email, also-bad',
+            'bf_send_time' => '08:00',
+            'bf_coupon_code' => 'BF',
+            'bf_campaign_start' => '2026-11-28',
+        ]);
+        $this->assertFalse($saved['ok']);
+        $this->assertSame('invalid_recipient', $saved['code']);
+        $this->assertStringContainsString('not-an-email', $saved['message']);
+        $this->assertStringContainsString('also-bad', $saved['message']);
+        $this->assertSame('', $service->settings()['recipients']);
+        $this->assertStringNotContainsString('Test email sent', $saved['message']);
+        $this->assertNoAddressesLogged();
+
+        $this->assertSame('empty_recipients', $service->runScheduled($this->zurich('2026-11-29 08:00:00')));
+        $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $this->assertSame([], $service->state()['sent_dates']);
+        $this->assertNoAddressesLogged();
+    }
+
+    public function test_empty_recipient_list_saves_a_clear_result_and_does_not_send(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $this->logger->entries = [];
+        $saved = $service->handleAdminPost([
+            'bf_save' => '1',
+            '_wpnonce' => 'test',
+            'bf_enabled' => '1',
+            'bf_recipients' => ' , ',
+            'bf_send_time' => '09:30',
+            'bf_coupon_code' => 'BF',
+            'bf_campaign_start' => '2026-11-28',
+        ]);
+        $this->assertFalse($saved['ok']);
+        $this->assertSame('empty_recipients', $saved['code']);
+        $this->assertStringContainsString('empty', $saved['message']);
+        $this->assertSame('', $service->settings()['recipients']);
+        $this->assertSame('09:30', $service->settings()['send_time']);
+        $this->assertNoAddressesLogged();
+
+        $this->assertSame('empty_recipients', $service->runScheduled($this->zurich('2026-11-29 09:30:00')));
+        $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $this->assertSame('empty_recipients', $service->state()['last_result']);
+        $this->assertNoAddressesLogged();
     }
 
     public function test_valid_send_to_list_is_mailed_once_without_logging_addresses(): void {

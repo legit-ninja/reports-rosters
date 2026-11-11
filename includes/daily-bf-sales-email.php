@@ -3,6 +3,8 @@
  * Daily sales email for a coupon window.
  *
  * Enable is off by default. Recipients come only from the Send to setting.
+ * Invalid addresses in that list are dropped. The email goes to the valid
+ * ones. Nothing is sent when no valid address remains.
  * The hourly check is scheduled only while Enable is on. Turning Enable off,
  * or deactivating the plugin, clears that event. A plain load with Enable off
  * does not schedule it. The window starts at 00:00 Europe/Zurich on the
@@ -466,7 +468,7 @@ class DailyBfSalesEmail {
         echo '<tr><th scope="row">Enable</th><td><label><input type="checkbox" name="bf_enabled" value="1"' . $checked . ' /> Send the daily email</label></td></tr>';
         echo '<tr><th scope="row"><label for="bf_recipients">Send to</label></th><td>';
         echo '<textarea name="bf_recipients" id="bf_recipients" rows="3" cols="50" class="large-text">' . esc_html($settings['recipients']) . '</textarea>';
-        echo '<p class="description">Comma-separated email addresses. An empty list, or any invalid address, sends nothing.</p>';
+        echo '<p class="description">Comma-separated email addresses. Empty entries are skipped. Invalid addresses are dropped, and the email sends to the valid ones. Nothing is sent when no valid address remains.</p>';
         echo '</td></tr>';
         echo '<tr><th scope="row"><label for="bf_send_time">Send time</label></th><td>';
         echo '<input type="text" name="bf_send_time" id="bf_send_time" value="' . esc_attr($settings['send_time']) . '" pattern="[0-2][0-9]:[0-5][0-9]" />';
@@ -616,16 +618,20 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * Skip empty tokens and drop invalid ones. ok is true when at least one
+     * valid address remains, in the original order.
+     *
      * @param string $raw
-     * @return array{ok:bool,reason:string,emails:array<int,string>}
+     * @return array{ok:bool,reason:string,emails:array<int,string>,dropped:array<int,string>}
      */
     public function parseRecipientList($raw) {
         $raw = trim((string) $raw);
         if ($raw === '') {
-            return ['ok' => false, 'reason' => 'empty_recipients', 'emails' => []];
+            return ['ok' => false, 'reason' => 'empty_recipients', 'emails' => [], 'dropped' => []];
         }
         $parts = explode(',', $raw);
         $emails = [];
+        $dropped = [];
         $sawToken = false;
         foreach ($parts as $part) {
             $token = trim((string) $part);
@@ -634,14 +640,18 @@ class DailyBfSalesEmail {
             }
             $sawToken = true;
             if (strpos($token, ';') !== false || preg_match('/\s/', $token) || !function_exists('is_email') || !is_email($token)) {
-                return ['ok' => false, 'reason' => 'invalid_recipient', 'emails' => []];
+                $dropped[] = $token;
+                continue;
             }
             $emails[] = $this->stripHeaderBreaks($token);
         }
-        if (!$sawToken || $emails === []) {
-            return ['ok' => false, 'reason' => 'empty_recipients', 'emails' => []];
+        if (!$sawToken) {
+            return ['ok' => false, 'reason' => 'empty_recipients', 'emails' => [], 'dropped' => []];
         }
-        return ['ok' => true, 'reason' => '', 'emails' => $emails];
+        if ($emails === []) {
+            return ['ok' => false, 'reason' => 'invalid_recipient', 'emails' => [], 'dropped' => $dropped];
+        }
+        return ['ok' => true, 'reason' => '', 'emails' => $emails, 'dropped' => $dropped];
     }
 
     /**
@@ -1016,6 +1026,18 @@ class DailyBfSalesEmail {
         if (strlen($recipients) > 2000) {
             $recipients = substr($recipients, 0, 2000);
         }
+        $parsedRecipients = $this->parseRecipientList($recipients);
+        $keptRecipients = implode(', ', $parsedRecipients['emails']);
+        $droppedNotice = [];
+        $droppedTokens = (isset($parsedRecipients['dropped']) && is_array($parsedRecipients['dropped']))
+            ? $parsedRecipients['dropped']
+            : [];
+        foreach ($droppedTokens as $token) {
+            $clean = $this->stripHeaderBreaks((string) $token);
+            if ($clean !== '') {
+                $droppedNotice[] = $clean;
+            }
+        }
         $code = isset($post['bf_coupon_code']) ? (string) $post['bf_coupon_code'] : '';
         $code = function_exists('sanitize_text_field') ? sanitize_text_field($code) : trim($code);
         if (strlen($code) > 64) {
@@ -1037,13 +1059,38 @@ class DailyBfSalesEmail {
         $settings = [
             'enabled' => !empty($post['bf_enabled']),
             'low_booking_threshold' => $threshold,
-            'recipients' => $recipients,
+            'recipients' => $keptRecipients,
             'send_time' => $sendTime,
             'coupon_code' => $code,
             'campaign_start' => $campaignStart,
         ];
         update_option(self::OPTION_SETTINGS, $settings, false);
         self::syncScheduleToValue($settings);
+        if (!$parsedRecipients['ok'] && $parsedRecipients['reason'] === 'empty_recipients') {
+            return [
+                'ok' => false,
+                'code' => 'empty_recipients',
+                'message' => 'The Send to list is empty, so nothing will be sent.',
+            ];
+        }
+        if (!$parsedRecipients['ok']) {
+            $message = 'No valid email address remains, so nothing will be sent.';
+            if ($droppedNotice !== []) {
+                $message .= ' Removed: ' . implode(', ', $droppedNotice);
+            }
+            return [
+                'ok' => false,
+                'code' => 'invalid_recipient',
+                'message' => $message,
+            ];
+        }
+        if ($droppedNotice !== []) {
+            return [
+                'ok' => true,
+                'code' => 'saved',
+                'message' => 'Settings saved. Removed invalid addresses: ' . implode(', ', $droppedNotice),
+            ];
+        }
         return [
             'ok' => true,
             'code' => 'saved',
@@ -2450,7 +2497,7 @@ class DailyBfSalesEmail {
             'sent' => 'Sent',
             'mail_failed' => 'Mail failed',
             'empty_recipients' => 'Not sent: the Send to list is empty',
-            'invalid_recipient' => 'Not sent: the Send to list contains an invalid address',
+            'invalid_recipient' => 'Not sent: the Send to list has no valid address',
             'outside_window' => 'Not sent: outside the coupon window',
             'coupon_missing' => 'Not sent: no coupon code is set',
             'coupon_not_found' => 'Not sent: the coupon was not found',
