@@ -21,7 +21,9 @@ $intersoccer_rr_preload_skip = $intersoccer_rr_script === ''
 unset($intersoccer_rr_script);
 
 if (!defined('ABSPATH')) {
-    define('ABSPATH', dirname(__DIR__) . '/');
+    // WordPress core files the plugin requires via ABSPATH (wp-admin/includes/upgrade.php)
+    // resolve to stand-ins under tests/stubs/, so none of them sit in the plugin root.
+    define('ABSPATH', __DIR__ . '/stubs/');
     define('WP_CONTENT_DIR', ABSPATH . 'wp-content');
     define('WP_PLUGIN_DIR', WP_CONTENT_DIR . '/plugins');
     define('WPINC', 'wp-includes');

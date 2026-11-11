@@ -2,9 +2,11 @@
 /**
  * Harness stand-in for WordPress wp-admin/includes/upgrade.php.
  *
- * Unit tests set ABSPATH to this plugin root, and includes/db.php plus
- * Core\Database::create_tables() require this path. A real WordPress install
- * uses its own ABSPATH, so this file is not the copy WordPress loads.
+ * The test bootstrap sets ABSPATH to tests/stubs/, so the plugin's
+ * require_once ABSPATH . 'wp-admin/includes/upgrade.php' (includes/db.php,
+ * Core\Database::create_tables() and others) loads this file in tests. It lives
+ * under tests/ so nothing under wp-admin/ ships in the plugin zip; a real
+ * WordPress install uses its own ABSPATH and its own upgrade.php.
  */
 
 if (!function_exists('dbDelta')) {
