@@ -6,11 +6,12 @@
  * The hourly check is scheduled only while Enable is on. Turning Enable off,
  * or deactivating the plugin, clears that event. A plain load with Enable off
  * does not schedule it. The schedule follows the coupon's Europe/Zurich active
- * days. The morning after expiry is the final campaign email: it reports the
- * expiry day's paid sales and the running total for the whole campaign
- * (coupon start through expiry). After that send, nothing more goes out for
- * the campaign. A test send goes to one typed address and does not mark the
- * day. It does not depend on the cron event.
+ * days. The morning after the last coupon day is the final campaign email.
+ * A coupon that expires at 00:00 Europe/Zurich ends on the previous calendar
+ * day. The final email reports that day's paid sales and the running total
+ * for the whole campaign (coupon start through that day). After that send,
+ * nothing more goes out for the campaign. A test send goes to one typed
+ * address and does not mark the day. It does not depend on the cron event.
  *
  * Paid totals count processing and completed orders whose paid date falls in
  * the Europe/Zurich window. On-hold orders are counted separately by the date
@@ -453,7 +454,7 @@ class DailyBfSalesEmail {
             echo '<div class="notice ' . esc_attr($class) . '"><p>' . esc_html($detail) . '</p></div>';
         }
         echo '<p>Enable is off until you turn it on. Recipients come only from Send to. Nothing is hardcoded.</p>';
-        echo '<p>The email sends each morning at the chosen Europe/Zurich time while yesterday falls on a day the coupon is active. The morning after expiry is the final campaign email. It reports the expiry day\'s paid sales and the running total for the whole campaign (coupon start through expiry), with Final in the subject. After that send, nothing more goes out for the campaign.</p>';
+        echo '<p>The email sends each morning at the chosen Europe/Zurich time while yesterday falls on a day the coupon is active. The morning after the last coupon day is the final campaign email. A coupon that expires at 00:00 Europe/Zurich ends on the previous calendar day. It reports that day\'s paid sales and the running total for the whole campaign (coupon start through that day), with Final in the subject. After that send, nothing more goes out for the campaign.</p>';
         echo '<p>Totals are net inc-VAT for processing and completed orders with a paid date in the window. On-hold orders are counted separately by the date they were created and are not included. Orders with no paid date are omitted from the paid totals.</p>';
         echo '<form method="post" action="' . esc_url(admin_url('admin.php?page=' . self::PAGE_SLUG)) . '">';
         $this->nonceField(self::NONCE_SETTINGS);
@@ -714,8 +715,9 @@ class DailyBfSalesEmail {
     /**
      * A Zurich calendar day overlaps the inclusive coupon window [start, expiry].
      *
-     * The morning after expiry reports the expiry day, which still overlaps.
-     * That expiry day is the final campaign day. The following morning does not.
+     * An expiry stored as 00:00:00 Europe/Zurich ends on the previous calendar
+     * day. The morning after that last day reports it and still overlaps.
+     * The following morning does not.
      *
      * @param string $ymd
      * @param int    $startUnix
@@ -723,6 +725,7 @@ class DailyBfSalesEmail {
      * @return bool
      */
     public static function zurichDayOverlapsWindow($ymd, $startUnix, $expiresUnix) {
+        $expiresUnix = self::effectiveExpiryUnix($expiresUnix);
         try {
             $tz = new \DateTimeZone(self::TIMEZONE);
             $dayStart = new \DateTimeImmutable($ymd . ' 00:00:00', $tz);
@@ -733,7 +736,7 @@ class DailyBfSalesEmail {
         if ($dayEnd->getTimestamp() <= (int) $startUnix) {
             return false;
         }
-        if ($dayStart->getTimestamp() > (int) $expiresUnix) {
+        if ($dayStart->getTimestamp() > $expiresUnix) {
             return false;
         }
         return true;
@@ -741,7 +744,7 @@ class DailyBfSalesEmail {
 
     /**
      * A reported day is final when it is the last Zurich calendar day that
-     * overlaps the coupon window: the expiry day.
+     * overlaps the coupon window. A midnight expiry uses the previous day.
      *
      * @param string $reportDate
      * @param int    $startUnix
@@ -749,11 +752,40 @@ class DailyBfSalesEmail {
      * @return bool
      */
     public static function isFinalCampaignDay($reportDate, $startUnix, $expiresUnix) {
-        $expiryDay = self::zurichYmdFromTimestamp((int) $expiresUnix);
+        $expiresUnix = self::effectiveExpiryUnix($expiresUnix);
+        $expiryDay = self::zurichYmdFromTimestamp($expiresUnix);
         if ((string) $reportDate !== $expiryDay) {
             return false;
         }
         return self::zurichDayOverlapsWindow($reportDate, $startUnix, $expiresUnix);
+    }
+
+    /**
+     * WooCommerce stores a date-only expiry as 00:00:00. That instant is the
+     * start of a day the coupon does not cover, so the previous day is last.
+     *
+     * @param int $expiresUnix
+     * @return int
+     */
+    public static function effectiveExpiryUnix($expiresUnix) {
+        $expiresUnix = (int) $expiresUnix;
+        if ($expiresUnix <= 0 || !self::isZurichMidnight($expiresUnix)) {
+            return $expiresUnix;
+        }
+        return $expiresUnix - 1;
+    }
+
+    /**
+     * @param int $unix
+     * @return bool
+     */
+    public static function isZurichMidnight($unix) {
+        try {
+            $dt = (new \DateTimeImmutable('@' . (int) $unix))->setTimezone(new \DateTimeZone(self::TIMEZONE));
+        } catch (\Exception $e) {
+            return false;
+        }
+        return $dt->format('H:i:s') === '00:00:00';
     }
 
     /**
@@ -2136,8 +2168,26 @@ class DailyBfSalesEmail {
         }
         return [
             'start' => $start,
-            'expires' => $expires,
+            'expires' => self::normalizeStoredExpiry($expires),
         ];
+    }
+
+    /**
+     * @param mixed $value
+     * @return mixed
+     */
+    private static function normalizeStoredExpiry($value) {
+        if ($value instanceof \DateTimeInterface) {
+            return self::effectiveExpiryUnix($value->getTimestamp());
+        }
+        if (is_int($value) || (is_string($value) && preg_match('/^\d+$/', (string) $value))) {
+            $unix = (int) $value;
+            if ($unix <= 0) {
+                return $value;
+            }
+            return self::effectiveExpiryUnix($unix);
+        }
+        return $value;
     }
 
     /**

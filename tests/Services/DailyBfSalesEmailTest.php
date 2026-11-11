@@ -43,6 +43,24 @@ namespace {
             return true;
         }
     }
+
+    if (!function_exists('wc_get_coupon_id_by_code')) {
+        function wc_get_coupon_id_by_code($code) {
+            $map = (isset($GLOBALS['intersoccer_rr_bf_coupon_ids']) && is_array($GLOBALS['intersoccer_rr_bf_coupon_ids']))
+                ? $GLOBALS['intersoccer_rr_bf_coupon_ids']
+                : [];
+            return isset($map[$code]) ? (int) $map[$code] : 0;
+        }
+    }
+
+    if (!function_exists('wc_get_coupon')) {
+        function wc_get_coupon($id) {
+            $map = (isset($GLOBALS['intersoccer_rr_bf_coupons']) && is_array($GLOBALS['intersoccer_rr_bf_coupons']))
+                ? $GLOBALS['intersoccer_rr_bf_coupons']
+                : [];
+            return isset($map[$id]) ? $map[$id] : false;
+        }
+    }
 }
 
 namespace InterSoccer\ReportsRosters\Services {
@@ -93,6 +111,27 @@ use InterSoccer\ReportsRosters\Services\DailyBfSalesEmail;
 use InterSoccer\ReportsRosters\Services\FinancialReportService;
 use InterSoccer\ReportsRosters\Services\ProductTypeClassifierService;
 use InterSoccer\ReportsRosters\Tests\TestCase;
+
+class DailyBfSalesEmailCouponStub {
+    /** @var \DateTimeInterface */
+    private $start;
+
+    /** @var \DateTimeInterface */
+    private $expires;
+
+    public function __construct(\DateTimeInterface $start, \DateTimeInterface $expires) {
+        $this->start = $start;
+        $this->expires = $expires;
+    }
+
+    public function get_date_starts() {
+        return $this->start;
+    }
+
+    public function get_date_expires() {
+        return $this->expires;
+    }
+}
 
 class DailyBfSalesEmailCapturingLogger extends Logger {
     public $entries = [];
@@ -362,7 +401,9 @@ class DailyBfSalesEmailTest extends TestCase {
             $GLOBALS['intersoccer_test_current_user'],
             $GLOBALS['intersoccer_test_get_posts_callback'],
             $GLOBALS['intersoccer_test_post_titles'],
-            $GLOBALS['intersoccer_test_post_parents']
+            $GLOBALS['intersoccer_test_post_parents'],
+            $GLOBALS['intersoccer_rr_bf_coupon_ids'],
+            $GLOBALS['intersoccer_rr_bf_coupons']
         );
         \InterSoccerRRTestMeta::reset();
 
@@ -600,6 +641,80 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertNotEmpty($GLOBALS['intersoccer_rr_bf_wp_mail_log']);
         $this->assertStringContainsString('2026-11-30', $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['subject']);
         $this->assertArrayHasKey('2026-11-30', $service->state()['sent_dates']);
+    }
+
+    public function test_end_of_day_and_midnight_expiry_share_the_final_send_morning(): void {
+        $start = $this->unix('2026-11-18 00:00:00');
+        $endOfDay = $this->unix('2026-11-30 23:59:59');
+        $midnight = $this->unix('2026-12-01 00:00:00');
+
+        foreach ([$endOfDay, $midnight] as $expires) {
+            $this->assertTrue(DailyBfSalesEmail::zurichDayOverlapsWindow('2026-11-30', $start, $expires));
+            $this->assertFalse(DailyBfSalesEmail::zurichDayOverlapsWindow('2026-12-01', $start, $expires));
+            $this->assertTrue(DailyBfSalesEmail::isFinalCampaignDay('2026-11-30', $start, $expires));
+            $this->assertFalse(DailyBfSalesEmail::isFinalCampaignDay('2026-12-01', $start, $expires));
+            $this->assertFalse(DailyBfSalesEmail::isFinalCampaignDay('2026-11-29', $start, $expires));
+        }
+        $this->assertSame($endOfDay, DailyBfSalesEmail::effectiveExpiryUnix($endOfDay));
+        $this->assertSame($endOfDay, DailyBfSalesEmail::effectiveExpiryUnix($midnight));
+
+        $endOfDayCoupon = ['start' => $start, 'expires' => $endOfDay];
+        $midnightCoupon = ['start' => $start, 'expires' => $midnight];
+        $this->assertExpiryMorning($endOfDayCoupon, '2026-12-01 08:00:00', 'sent', true, '2026-11-30');
+        $this->assertExpiryMorning($endOfDayCoupon, '2026-12-02 08:00:00', 'outside_window', false, '');
+        $this->assertExpiryMorning($midnightCoupon, '2026-12-01 08:00:00', 'sent', true, '2026-11-30');
+        $this->assertExpiryMorning($midnightCoupon, '2026-12-02 08:00:00', 'outside_window', false, '');
+    }
+
+    public function test_woo_coupon_midnight_expiry_is_stored_as_the_previous_day(): void {
+        $this->wpdb = new DailyBfSalesEmailFixtureWpdb();
+        $database = $this->createMock(Database::class);
+        $database->method('get_wpdb')->willReturn($this->wpdb);
+        $this->reports = new FinancialReportService($this->logger, $database);
+        $start = new \DateTimeImmutable('2026-11-18 00:00:00', new \DateTimeZone('Europe/Zurich'));
+        $endOfDay = new \DateTimeImmutable('2026-11-30 23:59:59', new \DateTimeZone('Europe/Zurich'));
+        $midnight = new \DateTimeImmutable('2026-12-01 00:00:00', new \DateTimeZone('Europe/Zurich'));
+        $GLOBALS['intersoccer_rr_bf_coupon_ids'] = ['END' => 71, 'MIDNIGHT' => 72];
+        $GLOBALS['intersoccer_rr_bf_coupons'] = [
+            71 => new DailyBfSalesEmailCouponStub($start, $endOfDay),
+            72 => new DailyBfSalesEmailCouponStub($start, $midnight),
+        ];
+        \InterSoccerRRTestMeta::$data[71]['_date_expires'] = (string) $endOfDay->getTimestamp();
+        \InterSoccerRRTestMeta::$data[72]['_date_expires'] = (string) $midnight->getTimestamp();
+
+        $service = new DailyBfSalesEmail(
+            $this->logger,
+            $this->reports,
+            null,
+            new \DateTimeZone('Europe/Zurich')
+        );
+        $method = new \ReflectionMethod(DailyBfSalesEmail::class, 'loadCouponFromWoo');
+        $method->setAccessible(true);
+        $end = $method->invoke($service, 'END');
+        $mid = $method->invoke($service, 'MIDNIGHT');
+        $this->assertSame($endOfDay->getTimestamp(), $end['expires']);
+        $this->assertSame($endOfDay->getTimestamp(), $mid['expires']);
+
+        $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS] = [
+            'enabled' => true,
+            'recipients' => 'ops@example.com',
+            'send_time' => '08:00',
+            'coupon_code' => 'MIDNIGHT',
+        ];
+        $this->assertSame('sent', $service->runScheduled($this->zurich('2026-12-01 08:00:00')));
+        $this->assertStringContainsString('Final ', $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['subject']);
+        $this->assertStringContainsString('2026-11-30', $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['subject']);
+        $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
+        $GLOBALS['intersoccer_test_option_store'] = [];
+        $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS] = [
+            'enabled' => true,
+            'recipients' => 'ops@example.com',
+            'send_time' => '08:00',
+            'coupon_code' => 'MIDNIGHT',
+        ];
+        $again = new DailyBfSalesEmail($this->logger, $this->reports, null, new \DateTimeZone('Europe/Zurich'));
+        $this->assertSame('outside_window', $again->runScheduled($this->zurich('2026-12-02 08:00:00')));
+        $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
     }
 
     public function test_dst_mornings_still_send_inside_the_window(): void {
@@ -1811,6 +1926,28 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertNotFalse($to, $end);
         $this->assertGreaterThan($from, $to);
         return substr($html, $from, $to - $from);
+    }
+
+    private function assertExpiryMorning(array $coupon, string $nowLocal, string $expected, bool $final, string $reportDate): void {
+        $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
+        $GLOBALS['intersoccer_test_option_store'] = [];
+        $service = $this->enabledService($coupon, 'ops@example.com');
+        $reason = $service->runScheduled($this->zurich($nowLocal));
+        $this->assertSame($expected, $reason, $nowLocal);
+        if ($expected !== 'sent') {
+            $this->assertSame([], $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+            $this->assertSame([], $service->state()['sent_dates']);
+            return;
+        }
+        $this->assertCount(1, $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $subject = (string) $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['subject'];
+        $this->assertStringContainsString($reportDate, $subject);
+        if ($final) {
+            $this->assertStringStartsWith('Final ', $subject);
+        } else {
+            $this->assertStringNotContainsString('Final', $subject);
+        }
+        $this->assertArrayHasKey($reportDate, $service->state()['sent_dates']);
     }
 
     private function assertWindow(string $nowLocal, string $expected, bool $sends): void {
