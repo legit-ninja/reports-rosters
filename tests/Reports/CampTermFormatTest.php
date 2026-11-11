@@ -8,7 +8,11 @@ use InterSoccer\ReportsRosters\Services\RosterListingService;
 use PHPUnit\Framework\TestCase;
 
 class CampTermFormatTest extends TestCase {
+	/** @var array<string,mixed>|null */
+	private $lastGetPostsArgs;
+
 	protected function tearDown(): void {
+		$this->lastGetPostsArgs = null;
 		unset(
 			$GLOBALS['intersoccer_test_get_posts_callback'],
 			$GLOBALS['intersoccer_test_post_titles'],
@@ -213,7 +217,9 @@ class CampTermFormatTest extends TestCase {
 			903 => 'Sample Camp C',
 			904 => 'Sample Course A',
 		];
-		$GLOBALS['intersoccer_test_get_posts_callback'] = static function () {
+		$test = $this;
+		$GLOBALS['intersoccer_test_get_posts_callback'] = static function ($args) use ($test) {
+			$test->lastGetPostsArgs = $args;
 			return [901, 902, 903, 904];
 		};
 		InterSoccerRRTestMeta::$data = [
@@ -238,6 +244,7 @@ class CampTermFormatTest extends TestCase {
 		];
 
 		$rows = intersoccer_reports_list_camp_variations_missing_dates();
+		$this->assertMissingDatesQueryShape();
 		$ids = array_column($rows, 'variation_id');
 		$this->assertSame([901], $ids);
 		$this->assertTrue(intersoccer_reports_camp_variation_missing_dates(901));
@@ -257,6 +264,302 @@ class CampTermFormatTest extends TestCase {
 			return [902];
 		};
 		$this->assertSame('', intersoccer_reports_render_camp_missing_dates_notice());
+	}
+
+	public function test_missing_dates_notice_includes_a_high_id_past_the_old_ascending_window() {
+		$statuses = [];
+		$meta = [];
+		for ($id = 20001; $id <= 20450; $id++) {
+			$statuses[$id] = 'publish';
+			$meta[$id] = [
+				'_intersoccer_product_type' => 'camp',
+				'attribute_pa_camp-terms' => 'TBD',
+			];
+		}
+		$statuses[99000] = 'publish';
+		$meta[99000] = [
+			'_intersoccer_product_type' => 'camp',
+			'attribute_pa_camp-terms' => 'TBD',
+		];
+		$statuses[99001] = 'private';
+		$meta[99001] = [
+			'_intersoccer_product_type' => 'camp',
+			'attribute_pa_camp-terms' => 'TBD',
+		];
+		$statuses[99002] = 'draft';
+		$meta[99002] = [
+			'_intersoccer_product_type' => 'camp',
+			'attribute_pa_camp-terms' => 'TBD',
+		];
+		InterSoccerRRTestMeta::$data = $meta;
+		$this->stubVariationPosts($statuses);
+
+		$rows = intersoccer_reports_list_camp_variations_missing_dates();
+		$this->assertMissingDatesQueryShape();
+		$ids = array_column($rows, 'variation_id');
+		$this->assertSame(451, count($ids));
+		$this->assertSame([99000, 20450, 20449], array_slice($ids, 0, 3));
+		$this->assertContains(20411, $ids);
+		$this->assertNotContains(99001, $ids);
+		$this->assertNotContains(99002, $ids);
+
+		$notice = intersoccer_reports_render_camp_missing_dates_notice();
+		$this->assertStringContainsString('Showing 40 of 451', $notice);
+		$this->assertStringContainsString('variation 99000)', $notice);
+		$this->assertStringContainsString('variation 20412)', $notice);
+		$this->assertStringNotContainsString('variation 20411)', $notice);
+		$this->assertStringNotContainsString('variation 99001)', $notice);
+		$this->assertStringNotContainsString('variation 99002)', $notice);
+	}
+
+	public function test_missing_dates_notice_lists_published_variations_only() {
+		InterSoccerRRTestMeta::$data = [
+			701 => [
+				'_intersoccer_product_type' => 'camp',
+				'attribute_pa_camp-terms' => 'TBD',
+			],
+			702 => [
+				'_intersoccer_product_type' => 'camp',
+				'attribute_pa_camp-terms' => 'TBD',
+			],
+			703 => [
+				'_intersoccer_product_type' => 'camp',
+				'attribute_pa_camp-terms' => 'TBD',
+			],
+		];
+		$this->stubVariationPosts([
+			701 => 'publish',
+			702 => 'private',
+			703 => 'draft',
+		]);
+
+		$rows = intersoccer_reports_list_camp_variations_missing_dates();
+		$this->assertMissingDatesQueryShape();
+		$this->assertSame([701], array_column($rows, 'variation_id'));
+		$this->assertStringContainsString('variation 701)', intersoccer_reports_render_camp_missing_dates_notice());
+		$this->assertStringNotContainsString('variation 702)', intersoccer_reports_render_camp_missing_dates_notice());
+		$this->assertStringNotContainsString('variation 703)', intersoccer_reports_render_camp_missing_dates_notice());
+	}
+
+	public function test_missing_dates_notice_lists_newest_variations_first() {
+		$meta = [];
+		$statuses = [];
+		foreach ([10, 20, 30] as $id) {
+			$statuses[$id] = 'publish';
+			$meta[$id] = [
+				'_intersoccer_product_type' => 'camp',
+				'attribute_pa_camp-terms' => 'TBD',
+			];
+		}
+		InterSoccerRRTestMeta::$data = $meta;
+		$GLOBALS['intersoccer_test_post_titles'] = [
+			10 => 'Sample Camp Low',
+			20 => 'Sample Camp Mid',
+			30 => 'Sample Camp High',
+		];
+		$this->stubVariationPosts($statuses);
+
+		$rows = intersoccer_reports_list_camp_variations_missing_dates();
+		$this->assertMissingDatesQueryShape();
+		$this->assertSame([30, 20, 10], array_column($rows, 'variation_id'));
+
+		$notice = intersoccer_reports_render_camp_missing_dates_notice();
+		$this->assertStringNotContainsString('Showing 40 of', $notice);
+		$pos_high = strpos($notice, 'variation 30)');
+		$pos_mid = strpos($notice, 'variation 20)');
+		$pos_low = strpos($notice, 'variation 10)');
+		$this->assertNotFalse($pos_high);
+		$this->assertLessThan($pos_mid, $pos_high);
+		$this->assertLessThan($pos_low, $pos_mid);
+	}
+
+	public function test_missing_dates_keeps_camps_with_no_season_and_skips_a_finished_season() {
+		$past_year = (int) date('Y') - 2;
+		$upcoming_year = (int) date('Y') + 1;
+		InterSoccerRRTestMeta::$data = [
+			810 => [
+				'_intersoccer_product_type' => 'camp',
+				'attribute_pa_camp-terms' => 'TBD',
+			],
+			811 => [
+				'_intersoccer_product_type' => 'camp',
+				'attribute_pa_camp-terms' => 'TBD',
+				'attribute_pa_program-season' => 'Summer ' . $past_year,
+			],
+			812 => [
+				'_intersoccer_product_type' => 'camp',
+				'attribute_pa_camp-terms' => 'TBD',
+				'attribute_pa_program-season' => 'summer-camps-' . $upcoming_year,
+			],
+			813 => [
+				'_intersoccer_product_type' => 'camp',
+				'attribute_pa_camp-terms' => 'TBD',
+				'pa_program-season' => 'Autumn',
+			],
+			814 => [
+				'_intersoccer_product_type' => 'camp',
+				'_camp_start_date' => '2026-03-22',
+				'attribute_pa_camp-terms' => 'not-a-date',
+				'attribute_pa_program-season' => 'Summer ' . $upcoming_year,
+			],
+			815 => [
+				'_intersoccer_product_type' => 'camp',
+				'attribute_pa_camp-terms' => 'week-1-march-22-25-4-days',
+				'attribute_pa_program-season' => 'Easter ' . $upcoming_year,
+			],
+			816 => [
+				'_intersoccer_product_type' => 'course',
+			],
+		];
+		$this->stubVariationPosts([
+			810 => 'publish',
+			811 => 'publish',
+			812 => 'publish',
+			813 => 'publish',
+			814 => 'publish',
+			815 => 'publish',
+			816 => 'publish',
+		]);
+
+		$this->assertTrue(intersoccer_reports_camp_variation_missing_dates(810));
+		$this->assertTrue(intersoccer_reports_camp_variation_missing_dates(811));
+		$this->assertFalse(intersoccer_reports_camp_variation_missing_dates(814));
+		$this->assertFalse(intersoccer_reports_camp_variation_missing_dates(815));
+		$this->assertFalse(intersoccer_reports_camp_variation_missing_dates(816));
+
+		$rows = intersoccer_reports_list_camp_variations_missing_dates();
+		$this->assertMissingDatesQueryShape();
+		$this->assertSame([813, 812, 810], array_column($rows, 'variation_id'));
+	}
+
+	public function test_missing_dates_season_scope_uses_the_season_field_and_a_reference_date() {
+		$as_of = '2026-11-11';
+		$this->assertTrue(intersoccer_reports_camp_program_season_in_missing_dates_scope('', $as_of));
+		$this->assertTrue(intersoccer_reports_camp_program_season_in_missing_dates_scope('N/A', $as_of));
+		$this->assertTrue(intersoccer_reports_camp_program_season_in_missing_dates_scope('Autumn', $as_of));
+		$this->assertFalse(intersoccer_reports_camp_program_season_in_missing_dates_scope('Summer 2024', $as_of));
+		$this->assertTrue(intersoccer_reports_camp_program_season_in_missing_dates_scope('Summer 2027', $as_of));
+		$this->assertTrue(intersoccer_reports_camp_program_season_in_missing_dates_scope('autumn-2026', $as_of));
+		$this->assertFalse(intersoccer_reports_camp_program_season_in_missing_dates_scope('summer-camps-2026', $as_of));
+		$this->assertTrue(intersoccer_reports_camp_program_season_in_missing_dates_scope('Winter 2026', '2026-02-01'));
+		$this->assertFalse(intersoccer_reports_camp_program_season_in_missing_dates_scope('Winter 2026', $as_of));
+		$this->assertTrue(intersoccer_reports_camp_program_season_in_missing_dates_scope('Easter 2026', '2026-04-01'));
+		$this->assertFalse(intersoccer_reports_camp_program_season_in_missing_dates_scope('Easter 2026', $as_of));
+	}
+
+	/**
+	 * @param array<int,string> $id_to_status
+	 */
+	private function stubVariationPosts(array $id_to_status): void {
+		$test = $this;
+		$GLOBALS['intersoccer_test_get_posts_callback'] = static function ($args) use ($test, $id_to_status) {
+			$test->lastGetPostsArgs = $args;
+			$statuses = $args['post_status'] ?? ['publish'];
+			if (!is_array($statuses)) {
+				$statuses = [$statuses];
+			}
+			$ids = [];
+			foreach ($id_to_status as $id => $status) {
+				if (in_array((string) $status, $statuses, true)) {
+					$ids[] = (int) $id;
+				}
+			}
+			$order = strtoupper((string) ($args['order'] ?? 'DESC'));
+			if (($args['orderby'] ?? 'ID') === 'ID') {
+				if ($order === 'ASC') {
+					sort($ids, SORT_NUMERIC);
+				} else {
+					rsort($ids, SORT_NUMERIC);
+				}
+			}
+			$per_page = isset($args['posts_per_page']) ? (int) $args['posts_per_page'] : -1;
+			if ($per_page > 0) {
+				$ids = array_slice($ids, 0, $per_page);
+			}
+
+			return $ids;
+		};
+	}
+
+	private function assertMissingDatesQueryShape(): void {
+		$args = $this->lastGetPostsArgs;
+		$this->assertIsArray($args);
+		$this->assertSame('product_variation', $args['post_type'] ?? null);
+		$statuses = $args['post_status'] ?? null;
+		if (!is_array($statuses)) {
+			$statuses = [$statuses];
+		}
+		$this->assertSame(['publish'], array_values($statuses));
+		$this->assertSame('ID', $args['orderby'] ?? null);
+		$this->assertSame('DESC', strtoupper((string) ($args['order'] ?? '')));
+		$this->assertSame(-1, (int) ($args['posts_per_page'] ?? 0));
+		$this->assertNotSame('ASC', strtoupper((string) ($args['order'] ?? '')));
+		$this->assertNotSame(400, (int) ($args['posts_per_page'] ?? 0));
+		$this->assertTrue($this->metaQueryIncludesKeys($args['meta_query'] ?? [], [
+			'attribute_pa_camp-terms',
+			'_intersoccer_product_type',
+			'attribute_pa_activity-type',
+		]));
+		$this->assertTrue($this->metaQueryLooksForMissingCampDates($args['meta_query'] ?? []));
+	}
+
+	/**
+	 * @param mixed              $query
+	 * @param array<int,string>  $keys
+	 */
+	private function metaQueryIncludesKeys($query, array $keys): bool {
+		$found = array_fill_keys($keys, false);
+		$walk = function ($node) use (&$walk, &$found) {
+			if (!is_array($node)) {
+				return;
+			}
+			if (isset($node['key']) && array_key_exists($node['key'], $found)) {
+				$found[$node['key']] = true;
+			}
+			foreach ($node as $child) {
+				if (is_array($child)) {
+					$walk($child);
+				}
+			}
+		};
+		$walk($query);
+		foreach ($found as $present) {
+			if (!$present) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * @param mixed $query
+	 */
+	private function metaQueryLooksForMissingCampDates($query): bool {
+		$found = [
+			'_camp_start_date' => false,
+			'_camp_end_date' => false,
+		];
+		$walk = function ($node) use (&$walk, &$found) {
+			if (!is_array($node)) {
+				return;
+			}
+			if (isset($node['key']) && array_key_exists($node['key'], $found)) {
+				$compare = strtoupper((string) ($node['compare'] ?? '='));
+				$value = array_key_exists('value', $node) ? $node['value'] : null;
+				if ($compare === 'NOT EXISTS' || ($compare === '=' && $value === '')) {
+					$found[$node['key']] = true;
+				}
+			}
+			foreach ($node as $child) {
+				if (is_array($child)) {
+					$walk($child);
+				}
+			}
+		};
+		$walk($query);
+
+		return $found['_camp_start_date'] && $found['_camp_end_date'];
 	}
 
 	/**

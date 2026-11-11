@@ -8355,9 +8355,86 @@ function intersoccer_reports_camp_variation_missing_dates($variation_id) {
 }
 
 /**
- * Camp variations the office should fill dates for.
+ * Whether a program-season value belongs on the missing-dates notice.
  *
- * Read-only. Does not write orders or product data.
+ * Season is variation post meta, first non-empty of attribute_pa_program-season,
+ * pa_program-season, and Season. Stored values are slugs (autumn-2026) or labels
+ * (Autumn 2026). There is no separate current-season flag. An empty value, N/A,
+ * or a label with no four-digit year stays in scope so camps the office still
+ * needs to date are not hidden. A year before the reference year is finished.
+ * The same year stays in scope through that season's usual last month:
+ * Winter March, Easter May, Spring June, Summer September, Autumn and Halloween
+ * November. A later year stays in scope. Season words are read from this field
+ * only, after the same slug and FR/DE normalization used for display.
+ *
+ * @param string $season Raw program season. Empty means the field is unset.
+ * @param string $as_of  Reference date Y-m-d.
+ * @return bool
+ */
+function intersoccer_reports_camp_program_season_in_missing_dates_scope($season, $as_of) {
+    $season = trim((string) $season);
+    if ($season === '' || strcasecmp($season, 'N/A') === 0) {
+        return true;
+    }
+
+    $label = function_exists('intersoccer_normalize_season_for_display')
+        ? intersoccer_normalize_season_for_display($season)
+        : $season;
+
+    $year = null;
+    if (preg_match('/(\d{4})/', (string) $label, $year_match)) {
+        $year = (int) $year_match[1];
+    }
+    if (!$year) {
+        return true;
+    }
+
+    if (!is_string($as_of) || !preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $as_of, $as_of_match)) {
+        $as_of = date('Y-m-d');
+        preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $as_of, $as_of_match);
+    }
+    $as_of_year = (int) $as_of_match[1];
+    $as_of_month = (int) $as_of_match[2];
+
+    if ($year > $as_of_year) {
+        return true;
+    }
+    if ($year < $as_of_year) {
+        return false;
+    }
+
+    // Same order as intersoccer_extract_season_type(): Summer matches before Spring,
+    // so a combined Spring/Summer label is treated as Summer.
+    $type = null;
+    foreach (['Summer', 'Winter', 'Autumn', 'Spring', 'Easter', 'Halloween'] as $candidate) {
+        if (stripos((string) $label, $candidate) !== false) {
+            $type = $candidate;
+            break;
+        }
+    }
+    if ($type === null) {
+        return true;
+    }
+
+    $end_month = [
+        'Winter' => 3,
+        'Easter' => 5,
+        'Spring' => 6,
+        'Summer' => 9,
+        'Autumn' => 11,
+        'Halloween' => 11,
+    ];
+
+    return $as_of_month <= $end_month[$type];
+}
+
+/**
+ * Published camp variations the office should fill dates for, newest id first.
+ *
+ * Read-only. Does not write orders or product data. Loads every published
+ * camp-like variation whose start or end date meta is missing or empty
+ * (newest id first, not an oldest-first window), then keeps a row only when
+ * the term still does not parse and the program season is in scope.
  *
  * @return array<int,array{variation_id:int,label:string,camp_terms:string}>
  */
@@ -8367,24 +8444,48 @@ function intersoccer_reports_list_camp_variations_missing_dates() {
     }
     $ids = get_posts([
         'post_type' => 'product_variation',
-        'post_status' => ['publish', 'private'],
-        'posts_per_page' => 400,
+        'post_status' => 'publish',
+        'posts_per_page' => -1,
         'fields' => 'ids',
         'orderby' => 'ID',
-        'order' => 'ASC',
+        'order' => 'DESC',
         'meta_query' => [
-            'relation' => 'OR',
+            'relation' => 'AND',
             [
-                'key' => 'attribute_pa_camp-terms',
-                'compare' => 'EXISTS',
+                'relation' => 'OR',
+                [
+                    'key' => 'attribute_pa_camp-terms',
+                    'compare' => 'EXISTS',
+                ],
+                [
+                    'key' => '_intersoccer_product_type',
+                    'value' => 'camp',
+                ],
+                [
+                    'key' => 'attribute_pa_activity-type',
+                    'value' => 'camp',
+                ],
             ],
             [
-                'key' => '_intersoccer_product_type',
-                'value' => 'camp',
-            ],
-            [
-                'key' => 'attribute_pa_activity-type',
-                'value' => 'camp',
+                'relation' => 'OR',
+                [
+                    'key' => '_camp_start_date',
+                    'compare' => 'NOT EXISTS',
+                ],
+                [
+                    'key' => '_camp_start_date',
+                    'value' => '',
+                    'compare' => '=',
+                ],
+                [
+                    'key' => '_camp_end_date',
+                    'compare' => 'NOT EXISTS',
+                ],
+                [
+                    'key' => '_camp_end_date',
+                    'value' => '',
+                    'compare' => '=',
+                ],
             ],
         ],
     ]);
@@ -8392,10 +8493,15 @@ function intersoccer_reports_list_camp_variations_missing_dates() {
         return [];
     }
 
+    $as_of = function_exists('wp_date') ? wp_date('Y-m-d') : date('Y-m-d');
     $rows = [];
     foreach ($ids as $id) {
         $id = (int) $id;
         if (!intersoccer_reports_camp_variation_missing_dates($id)) {
+            continue;
+        }
+        $season = intersoccer_reports_variation_program_season($id);
+        if (!intersoccer_reports_camp_program_season_in_missing_dates_scope($season, $as_of)) {
             continue;
         }
         $label = function_exists('get_the_title') ? trim((string) get_the_title($id)) : '';
@@ -8407,16 +8513,15 @@ function intersoccer_reports_list_camp_variations_missing_dates() {
             'label' => $label,
             'camp_terms' => intersoccer_reports_variation_camp_terms($id),
         ];
-        if (count($rows) >= 40) {
-            break;
-        }
     }
 
     return $rows;
 }
 
 /**
- * English admin notice for camp variations that have no dates and no parseable term.
+ * English admin notice for published camp variations with no dates and no parseable term.
+ *
+ * Lists at most 40 rows, newest first, and states the total when the list is longer.
  *
  * @return string
  */
@@ -8426,10 +8531,18 @@ function intersoccer_reports_render_camp_missing_dates_notice() {
         return '';
     }
 
+    $total = count($rows);
+    $display_limit = 40;
+    $shown = $total > $display_limit ? array_slice($rows, 0, $display_limit) : $rows;
+
     $html = '<div class="notice notice-warning intersoccer-camp-missing-dates">';
     $html .= '<p><strong>Camp variations missing dates</strong></p>';
-    $html .= '<p>These camp variations have no start date and the camp term cannot be parsed. Fill in the camp start and end dates.</p><ul>';
-    foreach ($rows as $row) {
+    $html .= '<p>These camp variations have no start date and the camp term cannot be parsed. Fill in the camp start and end dates. Published variations only, newest first. A finished program season is omitted. A camp with no season set stays listed.</p>';
+    if ($total > $display_limit) {
+        $html .= '<p>Showing ' . (int) count($shown) . ' of ' . (int) $total . '.</p>';
+    }
+    $html .= '<ul>';
+    foreach ($shown as $row) {
         $line = (string) $row['label'] . ' (variation ' . (int) $row['variation_id'] . ')';
         $terms = trim((string) ($row['camp_terms'] ?? ''));
         if ($terms !== '') {
