@@ -914,9 +914,18 @@ class DailyBfSalesEmailTest extends TestCase {
                 ],
             ],
             [
+                'id' => 716,
+                'status' => 'wc-failed',
+                'post_date' => '2026-11-29 09:15:00',
+                'date_paid' => '',
+                'items' => [
+                    $this->item(7161, 'Older Failed Camp', 716, 0, 1, '10.00', '10.00', '0.77'),
+                ],
+            ],
+            [
                 'id' => 712,
                 'status' => 'wc-pending',
-                'post_date' => '2026-11-28 16:05:00',
+                'post_date' => '2026-11-30 16:05:00',
                 'date_paid' => '',
                 'items' => [
                     $this->item(7121, 'Pending Course', 712, 0, 1, '10.00', '10.00', '0.77'),
@@ -925,7 +934,7 @@ class DailyBfSalesEmailTest extends TestCase {
             [
                 'id' => 713,
                 'status' => 'wc-cancelled',
-                'post_date' => '2026-11-28 11:00:00',
+                'post_date' => '2026-11-29 11:00:00',
                 'date_paid' => '',
                 'items' => [
                     $this->item(7131, 'Cancelled Camp', 713, 0, 1, '10.00', '10.00', '0.77'),
@@ -934,7 +943,7 @@ class DailyBfSalesEmailTest extends TestCase {
             [
                 'id' => 714,
                 'status' => 'wc-on-hold',
-                'post_date' => '2026-11-28 12:00:00',
+                'post_date' => '2026-11-30 12:00:00',
                 'date_paid' => '',
                 'items' => [
                     $this->item(7141, 'Held Created Camp', 714, 0, 1, '10.00', '10.00', '0.77'),
@@ -947,6 +956,15 @@ class DailyBfSalesEmailTest extends TestCase {
                 'date_paid' => '',
                 'items' => [
                     $this->item(7151, 'Earlier Failed Camp', 715, 0, 1, '10.00', '10.00', '0.77'),
+                ],
+            ],
+            [
+                'id' => 717,
+                'status' => 'wc-pending',
+                'post_date' => '2026-12-01 08:00:00',
+                'date_paid' => '',
+                'items' => [
+                    $this->item(7171, 'Later Pending Course', 717, 0, 1, '10.00', '10.00', '0.77'),
                 ],
             ],
         ];
@@ -970,15 +988,17 @@ class DailyBfSalesEmailTest extends TestCase {
         \InterSoccerRRTestMeta::$data[711]['_billing_first_name'] = 'Secret Booker';
         \InterSoccerRRTestMeta::$data[712]['_billing_email'] = 'pending@example.test';
 
-        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $digest = $service->buildDigest($this->zurich('2026-12-01 08:00:00'));
         $numbers = [];
         foreach ($digest['attention_orders'] as $order) {
             $this->assertSame(['order_number', 'created_at', 'admin_url'], array_keys($order));
             $numbers[] = $order['order_number'];
         }
-        $this->assertSame(['711', '712'], $numbers);
-        $this->assertSame('2026-11-28 10:30', $digest['attention_orders'][0]['created_at']);
-        $this->assertStringContainsString('post.php?post=711&action=edit', $digest['attention_orders'][0]['admin_url']);
+        $this->assertSame(['712', '716', '711'], $numbers);
+        $this->assertSame('2026-11-30 16:05', $digest['attention_orders'][0]['created_at']);
+        $this->assertSame('2026-11-29 09:15', $digest['attention_orders'][1]['created_at']);
+        $this->assertSame('2026-11-28 10:30', $digest['attention_orders'][2]['created_at']);
+        $this->assertStringContainsString('post.php?post=712&action=edit', $digest['attention_orders'][0]['admin_url']);
         $this->assertStringNotContainsString('wc-orders&action=edit', $digest['attention_orders'][0]['admin_url']);
 
         $html = $service->renderHtml($digest);
@@ -986,11 +1006,16 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringContainsString('>711<', $html);
         $this->assertStringContainsString('2026-11-28 10:30', $html);
         $this->assertStringContainsString('post.php?post=711&action=edit', $html);
+        $this->assertStringContainsString('>716<', $html);
+        $this->assertStringContainsString('2026-11-29 09:15', $html);
         $this->assertStringContainsString('>712<', $html);
-        $this->assertStringContainsString('2026-11-28 16:05', $html);
+        $this->assertStringContainsString('2026-11-30 16:05', $html);
+        $this->assertTrue(strpos($html, '>712<') < strpos($html, '>716<'));
+        $this->assertTrue(strpos($html, '>716<') < strpos($html, '>711<'));
         $this->assertStringNotContainsString('>713<', $html);
         $this->assertStringNotContainsString('>714<', $html);
         $this->assertStringNotContainsString('>715<', $html);
+        $this->assertStringNotContainsString('>717<', $html);
         $this->assertStringNotContainsString('Cancelled Camp', $html);
         $this->assertStringNotContainsString('Held Created Camp', $html);
         $this->assertStringNotContainsString('Earlier Failed Camp', $html);
@@ -1016,6 +1041,8 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertNotSame('', $attentionSql);
         $this->assertStringContainsString("'wc-pending'", $attentionSql);
         $this->assertStringContainsString('p.post_date', $attentionSql);
+        $this->assertStringContainsString("p.post_date >= '2026-11-28 00:00:00'", $attentionSql);
+        $this->assertStringContainsString("p.post_date < '2026-12-01 00:00:00'", $attentionSql);
         $this->assertStringNotContainsString('_date_paid', $attentionSql);
         $this->assertStringNotContainsString("'wc-cancelled'", $attentionSql);
         $this->assertStringNotContainsString("'wc-on-hold'", $attentionSql);
@@ -1026,12 +1053,12 @@ class DailyBfSalesEmailTest extends TestCase {
             return ['wc-failed'];
         });
         try {
-            $narrow = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+            $narrow = $service->buildDigest($this->zurich('2026-12-01 08:00:00'));
             $narrowNumbers = [];
             foreach ($narrow['attention_orders'] as $order) {
                 $narrowNumbers[] = $order['order_number'];
             }
-            $this->assertSame(['711'], $narrowNumbers);
+            $this->assertSame(['716', '711'], $narrowNumbers);
         } finally {
             unset($GLOBALS['intersoccer_test_wp_hooks']['filters'][$filter]);
             $GLOBALS['intersoccer_test_emit_wp_hooks'] = false;

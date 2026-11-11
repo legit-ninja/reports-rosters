@@ -536,7 +536,7 @@ class DailyBfSalesEmail {
             'campaign' => $campaign,
             'daily_on_hold' => $dailyOnHold,
             'campaign_on_hold' => $campaignOnHold,
-            'attention_orders' => $this->attentionOrders($reportDate),
+            'attention_orders' => $this->attentionOrders($this->attentionWindowStart($campaignStart, $reportDate), $reportDate),
             'low_bookings' => $coverage['low'],
             'zero_bookings' => $coverage['zero'],
             'used_created_fallback' => false,
@@ -1002,15 +1002,42 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * Failed and pending orders created on the reported Zurich day.
-     * The list keeps the order number, created time, and admin link only.
+     * Coupon start through the report day, or the report day when the coupon
+     * window is not known yet. Empty when the campaign has not started.
      *
-     * @param string $ymd
+     * @param string $campaignStart
+     * @param string $reportDate
+     * @return string
+     */
+    private function attentionWindowStart($campaignStart, $reportDate) {
+        $campaignStart = (string) $campaignStart;
+        $reportDate = (string) $reportDate;
+        if ($campaignStart === '') {
+            return $reportDate;
+        }
+        if (strcmp($campaignStart, $reportDate) > 0) {
+            return '';
+        }
+        return $campaignStart;
+    }
+
+    /**
+     * Failed and pending orders created from the coupon start through the
+     * reported Zurich day. The list keeps the order number, created time,
+     * and admin link only, newest first.
+     *
+     * @param string $startYmd
+     * @param string $endYmd
      * @return array<int,array{order_number:string,created_at:string,admin_url:string}>
      */
-    private function attentionOrders($ymd) {
-        $bounds = self::rangeBounds($ymd, $ymd, $this->siteTimezone());
-        $report = $this->reportService()->getFinancialBookingReport($ymd, $ymd, '', '', [
+    private function attentionOrders($startYmd, $endYmd) {
+        $startYmd = (string) $startYmd;
+        $endYmd = (string) $endYmd;
+        if ($startYmd === '' || $endYmd === '' || strcmp($startYmd, $endYmd) > 0) {
+            return [];
+        }
+        $bounds = self::rangeBounds($startYmd, $endYmd, $this->siteTimezone());
+        $report = $this->reportService()->getFinancialBookingReport($startYmd, $endYmd, '', '', [
             'date_basis' => 'created_only',
             'order_statuses' => self::attentionOrderStatuses(),
             'created_start_local' => $bounds['created_start_local'],
@@ -1035,7 +1062,11 @@ class DailyBfSalesEmail {
             ];
         }
         usort($list, function ($a, $b) {
-            return strcmp((string) $a['order_number'], (string) $b['order_number']);
+            $byTime = strcmp((string) $b['created_at'], (string) $a['created_at']);
+            if ($byTime !== 0) {
+                return $byTime;
+            }
+            return strcmp((string) $b['order_number'], (string) $a['order_number']);
         });
         return $list;
     }
@@ -1080,7 +1111,7 @@ class DailyBfSalesEmail {
      */
     private function renderAttentionOrders(array $orders) {
         if ($orders === []) {
-            return '<p>No failed or pending orders were created on this day.</p>';
+            return '<p>No failed or pending orders were created in the campaign window.</p>';
         }
         $html = '<table><thead><tr><th>Order</th><th>Created (Europe/Zurich)</th><th>Admin</th></tr></thead><tbody>';
         foreach ($orders as $order) {
